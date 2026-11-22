@@ -73,6 +73,8 @@ import { FrameleafLibrarySetupController } from 'src/controllers/frameleaf-libra
 import { FrameleafServerSetupController } from 'src/controllers/frameleaf-server-setup.controller.js';
 import { HardwareCheckController } from 'src/controllers/hardware-check.controller.js';
 import { HelpController } from 'src/controllers/help.controller.js';
+import { HouseholdLinkController } from 'src/controllers/household-link.controller.js';
+import { HouseholdPeerController } from 'src/controllers/household-peer.controller.js';
 import { ICloudIdentityController } from 'src/controllers/icloud-identity.controller.js';
 import { ICloudSyncController } from 'src/controllers/icloud-sync.controller.js';
 import { IdenticalFilesController } from 'src/controllers/identical-files.controller.js';
@@ -245,6 +247,8 @@ export const controllers = [
   BuddyBackupAdminController,
   BuddyBackupOwnerController,
   BuddyBackupPeerController,
+  HouseholdLinkController,
+  HouseholdPeerController,
   CastController,
   CloudBackupOwnerController,
   HardwareCheckController,

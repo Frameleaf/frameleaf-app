@@ -97,12 +97,15 @@ The grant, `typ: household-grant+jwt`, `alg: EdDSA`, lifetime 300 s:
 
 Server side (FL-952):
 
-- Table `household_link` (`id`, `cloudLinkId` unique, `peerInstanceId`, `peerName`, `peerPublicKey`, `addresses` jsonb, `state` text, `pausedReason` text null, `connectionPath` text null, `lastSeenAt`, `createdAt`, `endedAt`). `state` is `active`, `paused` or `ended`; it is a text column and the API reports it with separate booleans where a new value might be added later, because new enum values break the native apps' strict decoders.
+- Table `household_link` (`id`, `cloudLinkId` unique, `peerInstanceId`, `peerName`, `peerPublicKey`, `addresses` jsonb, `state` text, `pausedReason` text null, `connectionPath` text null, `lastSeenAt`, `createdAt`, `endedAt`). `state` is `active`, `paused` or `ended`; it is a text column and the API reports it as text with one boolean per value (`active`, `paused`, `ended`), because new enum values break the native apps' strict decoders. An ended row is final: nothing changes it again.
+- `peerPublicKey` is the key Cloud introduced at pairing and is never replaced. If Cloud later names another key for the peer (the other server rotated or re-created its identity), the link pauses with reason `key` and the two households link again. Following the new key automatically would let whoever controls the introduction replace a linked household.
+- `pausedReason` is a short machine word, reported by the API as `reason`. On a paused link: `licence` (a Server licence is missing on either side), `unlinked` (this server is not linked to Cloud), `peer-unlinked` (the other server is not), `key`, `cloud` (Cloud did not answer, or refused for another reason). On an active link that did not answer: `home-network` (Cloud listed home addresses only, so the other household has no plan and can only be reached on its own network) or `unreachable`.
 - `HouseholdLinkService` and admin-only `HouseholdLinkController` at `/admin/household-links`: `POST invitations`, `GET invitations/:token` (preview), `POST invitations/accept`, `GET /`, `POST :id/refresh`, `DELETE :id`.
-- `HouseholdPeerService.authorize()` and `HouseholdPeerController` at `household/v1/*`, excluded from the OpenAPI document like `buddy/v1`.
+- `HouseholdPeerService.authorize()` and `HouseholdPeerController` at `household/v1/*`, excluded from the OpenAPI document like `buddy/v1`. The `:linkId` in a peer path is the link's id at Cloud (`cloudLinkId`), the one id both servers share.
 - Table `household_peer_request` (`jti` primary key, `linkId`, `expiresAt`): every admitted proof, kept until its grant expires, so a request cannot be replayed even across a restart or on another API worker.
-- A timer on the microservices worker (the Buddy Backup pattern, no queue job): every five minutes it tries each active link's addresses in grant order (home, direct, relay) with `GET handshake` and records `connectionPath` and `lastSeenAt`; every hour it reconciles local rows with `GET /v1/households/links`, so a link ended on the other side ends here.
-- Ending a link, from either side or from Cloud, sets `state = ended`, stops every job for it and deletes nothing that was received.
+- A timer on the microservices worker (the Buddy Backup pattern, no queue job): every five minutes it gets a grant for each active or paused link, tries its addresses in grant order (home, direct, relay) with `GET handshake` and records `addresses`, `connectionPath` and `lastSeenAt`; every hour it reconciles local rows with `GET /v1/households/links`, so a link ended on the other side ends here. The inviting server is told nothing when its invitation is accepted, so its row is created by that reconcile; `GET /admin/household-links` reconciles first for the same reason, and a new link can take until then to answer.
+- An address is only a candidate. Whatever answers there without the peer's signature is not the peer, so the next address is tried; only `https` addresses without credentials are called.
+- Ending a link, from either side or from Cloud, sets `state = ended`, stops every job for it and deletes nothing that was received. An administrator's end always takes effect here at once; if Cloud cannot be told then, the next reconcile tells it.
 
 ### 2. Transport and request signing (FL-952)
 
@@ -115,19 +118,21 @@ DPoP: <proof JWT: htm, htu, iat, jti, ath = SHA-256 of the grant>
 
 The destination runs these checks in order and refuses on the first failure. The order matters: nothing expensive runs for a caller that has not named a link this server knows.
 
-1. The path names a link (`household/v1/links/:linkId/...`) whose local row is `active` and whose `peerInstanceId` matches. Otherwise `403` with no detail.
+1. The path names a link (`household/v1/links/:linkId/...`, by its Cloud link id) whose local row is `active`, and this server is linked to Cloud and not a suspected copy. Otherwise `403` with no detail.
 2. Rate limit for that link (below). Over it: `429`.
-3. The grant verifies against the Cloud JWKS (cached on disk for Cloud outages, as Buddy), `iss` is this server's Cloud, `aud` is `frameleaf-household`, `exp` is in the future and at most 300 s after `iat`.
+3. The request carries a grant and a proof (otherwise `401`). The grant verifies against the Cloud JWKS (kept in memory for five minutes, and for as long as a Cloud outage lasts), `iss` is this server's Cloud, `aud` is `frameleaf-household`, `exp` is in the future and at most 300 s after `iat`. Buddy keeps its keys in a file; here a server restarted during a Cloud outage refuses peers until Cloud answers.
 4. `linkId`, `destinationInstanceId` and `destinationKey.x` are this link and this server; `sourceInstanceId` and `cnf.jwk.x` are the peer and the key stored for it at pairing. A grant for another link, another server or another key is refused and logged with the link id.
 5. The proof verifies against `cnf.jwk`, and its method, URL and grant hash match the request (`verifyBuddyProof`, generalised).
-6. `POST /v1/households/grants/verify` at Cloud. A refusal revokes that grant locally until it expires. Only a transport outage (no answer or `5xx`) falls back to the checks above.
+6. `POST /v1/households/grants/verify` at Cloud. A refusal revokes that grant locally (in memory) until it expires. Only a transport outage (no answer or `5xx`) falls back to the checks above.
 7. The proof `jti` is admitted once: it is inserted into `household_peer_request`, and a second request with the same `jti` is refused with `401`. Buddy Backup adds a server nonce because its admission state is a file; here the database row already makes a proof single-use across restarts and workers, so no nonce round trip is needed.
 
 Replies to peer requests are JSON signed with the responder's instance key (`verifyBuddyResponse`), so a relay or proxy in the path cannot alter a manifest. Original files are streamed unsigned and checked by their checksum instead.
 
 TLS is required off the home network; home addresses use the same certificate handling as Buddy. Photo traffic never passes through the Cloud API: it goes direct, or through the relay's data plane for subscribers.
 
-The caller refreshes its grant when fewer than 60 s remain. When Cloud refuses a grant (licence gone, link ended, server unlinked) the caller sets the link `paused` with the reason and retries hourly; a link Cloud reports ended becomes `ended`.
+A refused request (`401` or `403`) counts against the caller's address; an address past the limit in section 8 is answered `429` before step 1.
+
+The caller refreshes its grant when fewer than 60 s remain, and checks that the grant names the server and key stored at pairing before it sends anything. When Cloud refuses a grant (licence gone, server unlinked) or does not answer, the caller sets the link `paused` with the reason and tries again at each five-minute check; a link Cloud reports ended becomes `ended`.
 
 ### 3. Peer API (`household/v1/links/:linkId/`)
 

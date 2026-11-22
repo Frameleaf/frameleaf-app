@@ -1,4 +1,4 @@
-import { createHash, createPublicKey, verify } from 'node:crypto';
+import { createHash, createPublicKey, generateKeyPairSync, randomBytes, randomUUID, sign, verify } from 'node:crypto';
 import { once } from 'node:events';
 import { IncomingMessage, Server, ServerResponse, createServer } from 'node:http';
 import { AddressInfo } from 'node:net';
@@ -322,4 +322,256 @@ export const startFakeCloud = async ({
   fake.url = `http://${advertisedHost}:${(server.address() as AddressInfo).port}`;
   fake.close = () => new Promise((resolve) => server.close(() => resolve()));
   return fake;
+};
+
+type FakeKey = { kty: 'OKP'; crv: 'Ed25519'; x: string };
+/** One server as the fake Cloud knows it. `home` and `remote` are the addresses it lists in grants. */
+export type FakeHouseholdServer = {
+  instanceId: string;
+  name: string;
+  key: FakeKey;
+  /** A live Server licence. */
+  licensed: boolean;
+  /** The owner's remote access plan: without it only `home` is listed. */
+  plan: boolean;
+  home: string | null;
+  remote: string | null;
+};
+type FakeHouseholdLink = {
+  id: string;
+  a: string;
+  b: string;
+  createdAt: string;
+  endedAt: string | null;
+  endedBy: string | null;
+};
+
+/**
+ * `/v1/households/*` as Frameleaf Cloud serves it (FL-928 contracts, mirrored in `src/utils/frameleaf-household.ts`):
+ * invitations, links, five-minute grants signed with a real Ed25519 key, `grants/verify` and the JWKS. The caller is
+ * the registered server whose key signed the request's DPoP proof, which the fake cloud has already verified. Specs
+ * change `servers` and `links` directly (a lapsed licence, a plan, an ended link) and may replace any route.
+ */
+export const addHouseholdRoutes = (cloud: FakeCloud) => {
+  const signer = generateKeyPairSync('ed25519');
+  const kid = 'household-fixture';
+  const jwks = { keys: [{ ...(signer.publicKey.export({ format: 'jwk' }) as FakeKey), kid }] };
+  const servers = new Map<string, FakeHouseholdServer>();
+  const links = new Map<string, FakeHouseholdLink>();
+  /** Keyed by the 43-character token and by the short code without its dashes. */
+  const invitations = new Map<string, { instanceId: string; used: boolean }>();
+  const invitationKey = (value: unknown) => {
+    const text = String(value).replaceAll(/\s/g, '');
+    return text.length === 43 ? text : text.replaceAll('-', '').toUpperCase();
+  };
+  const grants = new Map<string, Record<string, any>>();
+  const issuer = () => `${cloud.url}/api`;
+
+  const refuse = (status: number, code: string, message: string, extra: Record<string, unknown> = {}) => ({
+    status,
+    body: { code, message, retryable: false, ...extra },
+  });
+  const denied = (detail?: string) =>
+    refuse(403, 'forbidden', 'This household link is not available to this server.', detail ? { detail } : {});
+  const unlicensed = (instanceId: string) =>
+    refuse(403, 'entitlement-missing', 'Both servers need a Server licence to link households.', {
+      data: { instanceId },
+    });
+  const byId = (instanceId: string) => [...servers.values()].find((server) => server.instanceId === instanceId);
+  const view = (link: FakeHouseholdLink, self: FakeHouseholdServer) => {
+    const peerId = link.a === self.instanceId ? link.b : link.a;
+    const peer = byId(peerId);
+    return {
+      version: 1,
+      linkId: link.id,
+      state: link.endedAt ? 'ended' : 'active',
+      peerInstanceId: peerId,
+      peerName: peer?.name ?? '',
+      peerPublicKey: peer?.key ?? null,
+      createdAt: link.createdAt,
+      endedAt: link.endedAt,
+      endedByInstanceId: link.endedBy,
+    };
+  };
+  const connection = (uri: string, local: boolean) => {
+    const url = new URL(uri);
+    return {
+      kind: local ? 'local' : 'wan',
+      uri,
+      protocol: url.protocol.slice(0, -1),
+      address: url.hostname,
+      port: Number(url.port) || 443,
+      local,
+      relay: false,
+      ipv6: false,
+      custom: false,
+      dnsRebindingProtection: false,
+      httpsRequired: true,
+      verified: !local,
+    };
+  };
+  /** A compact JWS signed by the fake Cloud's grant key, for specs that need a grant Cloud would not issue. */
+  const signGrant = (claims: Record<string, unknown>, header: Record<string, unknown> = {}) => {
+    const encode = (value: unknown) => Buffer.from(JSON.stringify(value)).toString('base64url');
+    const input = `${encode({ alg: 'EdDSA', typ: 'household-grant+jwt', kid, ...header })}.${encode(claims)}`;
+    return `${input}.${sign(null, Buffer.from(input), signer.privateKey).toString('base64url')}`;
+  };
+  const grantClaims = (link: FakeHouseholdLink, source: FakeHouseholdServer, destination: FakeHouseholdServer) => {
+    const iat = Math.floor(Date.now() / 1000);
+    return {
+      version: 1,
+      iss: issuer(),
+      aud: 'frameleaf-household',
+      sub: source.instanceId,
+      jti: randomUUID(),
+      iat,
+      exp: iat + 300,
+      linkId: link.id,
+      sourceInstanceId: source.instanceId,
+      destinationInstanceId: destination.instanceId,
+      cnf: { jkt: ed25519Thumbprint(source.key), jwk: source.key },
+      destinationKey: destination.key,
+    };
+  };
+
+  const guarded = (
+    route: string,
+    handler: (request: FakeCloudRequest, server: FakeHouseholdServer) => FakeCloudAnswer,
+  ) =>
+    cloud.on(route, (request) => {
+      const server = request.dpop && dpopTokenOf(request) ? servers.get(request.dpop.jkt) : undefined;
+      return server
+        ? handler(request, server)
+        : refuse(401, 'instance_revoked', "This server isn't linked to Frameleaf Cloud any more.");
+    });
+  const end = (link: FakeHouseholdLink, by: string) => {
+    link.endedAt ??= new Date().toISOString();
+    link.endedBy ??= by;
+  };
+
+  cloud.on('POST /id/token', (request) => tokenAnswer(request));
+  cloud.on('GET /v1/households/jwks', () => ({ status: 200, body: jwks }));
+  guarded('POST /v1/households/invitations', (_request, server) => {
+    if (!server.licensed) {
+      return unlicensed(server.instanceId);
+    }
+    const token = randomBytes(32).toString('base64url');
+    const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    const short = [...randomBytes(12)].map((byte) => alphabet[byte % alphabet.length]).join('');
+    const code = `${short.slice(0, 4)}-${short.slice(4, 8)}-${short.slice(8)}`;
+    const invitation = { instanceId: server.instanceId, used: false };
+    invitations.set(token, invitation);
+    invitations.set(short, invitation);
+    // the token, or the code as shown, without its dashes, or typed in lower case
+    for (const form of [token, code, short, code.toLowerCase(), short.toLowerCase()]) {
+      guarded(`GET /v1/households/invitations/${form}`, () =>
+        invitation.used
+          ? refuse(410, 'invitation_gone', 'This invitation has expired or was used.')
+          : {
+              status: 200,
+              body: { version: 1, instanceId: server.instanceId, name: server.name, publicKey: server.key },
+            },
+      );
+    }
+    return {
+      status: 201,
+      body: {
+        version: 1,
+        invitationId: randomUUID(),
+        token,
+        code,
+        expiresAt: new Date(Date.now() + 7 * 86_400_000).toISOString(),
+      },
+    };
+  });
+  guarded('POST /v1/households/invitations/accept', (request, server) => {
+    const invitation = invitations.get(invitationKey(request.json().token));
+    const inviter = invitation && byId(invitation.instanceId);
+    if (!invitation || invitation.used || !inviter) {
+      return refuse(410, 'invitation_gone', 'This invitation has expired or was used.');
+    }
+    if (invitation.instanceId === server.instanceId) {
+      return refuse(422, 'request-invalid', "A server can't be linked with itself.");
+    }
+    const without = [server, inviter].find((each) => !each.licensed);
+    if (without) {
+      return unlicensed(without.instanceId);
+    }
+    invitation.used = true;
+    const link: FakeHouseholdLink = {
+      id: randomUUID(),
+      a: inviter.instanceId,
+      b: server.instanceId,
+      createdAt: new Date().toISOString(),
+      endedAt: null,
+      endedBy: null,
+    };
+    links.set(link.id, link);
+    guarded(`POST /v1/households/links/${link.id}/end`, (_request, caller) => {
+      if (![link.a, link.b].includes(caller.instanceId)) {
+        return denied();
+      }
+      end(link, caller.instanceId);
+      return { status: 200, body: view(link, caller) };
+    });
+    return { status: 201, body: view(link, server) };
+  });
+  guarded('GET /v1/households/links', (_request, server) => ({
+    status: 200,
+    body: {
+      version: 1,
+      links: [...links.values()]
+        .filter((link) => [link.a, link.b].includes(server.instanceId))
+        .map((link) => view(link, server)),
+    },
+  }));
+  guarded('POST /v1/households/grants', (request, server) => {
+    const link = links.get(request.json().linkId);
+    if (!link || ![link.a, link.b].includes(server.instanceId)) {
+      return denied();
+    }
+    if (link.endedAt) {
+      return denied('link-ended');
+    }
+    const destination = byId(link.a === server.instanceId ? link.b : link.a);
+    if (!destination) {
+      return denied('peer-unavailable');
+    }
+    const without = [server, destination].find((each) => !each.licensed);
+    if (without) {
+      return unlicensed(without.instanceId);
+    }
+    const claims = grantClaims(link, server, destination);
+    const token = signGrant(claims);
+    grants.set(token, claims);
+    return {
+      status: 200,
+      body: {
+        version: 1,
+        token,
+        expiresAt: new Date(claims.exp * 1000).toISOString(),
+        claims,
+        connections: [
+          ...(destination.home ? [connection(destination.home, true)] : []),
+          ...(destination.plan && destination.remote ? [connection(destination.remote, false)] : []),
+        ],
+      },
+    };
+  });
+  guarded('POST /v1/households/grants/verify', (request, server) => {
+    const claims = grants.get(request.json().token);
+    const link = claims && links.get(claims.linkId);
+    if (!claims || !link || claims.exp * 1000 <= Date.now()) {
+      return refuse(401, 'invalid_token', 'This household grant is invalid or expired.');
+    }
+    if (claims.destinationInstanceId !== server.instanceId) {
+      return denied();
+    }
+    if (link.endedAt) {
+      return denied('link-ended');
+    }
+    return { status: 200, body: { version: 1, claims } };
+  });
+
+  return { servers, links, grants, issuer, signGrant, grantClaims, end, byId };
 };
