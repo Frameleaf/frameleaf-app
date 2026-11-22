@@ -387,6 +387,8 @@ class Api {
         .filter(Boolean),
       databaseStorage: await databaseDefaults(),
       onboardingFinished: !!store.get('onboarding-finished'),
+      /** FL-1742: what a Noodle Gallery import carried and left behind, as the importer reported it. */
+      importedGallery: installation ? (store.get(`import-gallery:${installation.id}`) ?? null) : null,
       installations: hostInstallations(inventory, installation?.id, security.requestOrigin(request)),
       suggestedPort: suggestedPort(inventory, [Number(new URL(security.requestOrigin(request)).port || 443)]),
       appUrl: installation ? new URL(`http://${new URL(security.requestOrigin(request)).hostname}:${installation.port}`).origin : null,

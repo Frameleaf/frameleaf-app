@@ -145,7 +145,7 @@ export class ImmichImportService {
       })),
       sourceVersion: this.config.version,
       sourceCommit: this.source.fixture.commit,
-      ...(this.source.gallery && { sourceKind: 'gallery' }),
+      ...(this.source.gallery && { sourceKind: 'gallery', gallery: this.source.galleryCounts }),
       notImported: this.source.notImported,
       fingerprint,
       status: run?.status ?? 'fresh',

@@ -118,6 +118,41 @@ describe('offline import of a Noodle Gallery library', () => {
     const report = await importer.preflight();
     expect(report).toMatchObject({ sourceKind: 'gallery', notImported: ['user groups'], status: 'fresh' });
     expect(importer.source.fixture.commit).toBe(frozenSource('3.2.4').commit);
+    // FL-1742: what the import will carry, counted through the reads themselves. 'Readers' has two members and
+    // 'Family' two; Ada is the one named, visible person; two hearts sit on somebody else's photo; Rex is the pet.
+    const counts = { spaces: 2, members: 2, memberships: 4, spacePhotos: 2, people: 1, favourites: 2, pets: 1 };
+    expect(report.gallery).toEqual(counts);
+    // Manager's review asks the running source the same questions (manager/src/gallery-preview.ts) and must
+    // get the same answers. Its statement is read here without the session setting, through the read-only role.
+    const manager: {
+      readGalleryPreview: (sql: (statement: string) => Promise<string>) => Promise<Record<string, unknown>>;
+    } = await import(new URL('../../../../../manager/src/gallery-preview.ts', import.meta.url).href);
+    const preview = await manager.readGalleryPreview(async (statement) => {
+      const [row] = await importer.source.db.query(
+        statement.replace(/^SET default_transaction_read_only = on;\n/u, '').replace(/;$/u, ''),
+      );
+      return JSON.stringify(Object.values(row)[0]);
+    });
+    expect(preview).toEqual({
+      readable: true,
+      counts,
+      spaces: [
+        { name: 'Family', members: 2, photos: 2 },
+        { name: 'Readers', members: 2, photos: 0 },
+      ],
+      notImported: ['user groups'],
+    });
+    // Nothing is written to the Gallery database: its tables hold what they held before either look.
+    expect(
+      await importer.source.db.query(`SELECT (SELECT count(*) FROM public.shared_space)::int AS spaces,
+        (SELECT count(*) FROM public.shared_space_member)::int AS members,
+        (SELECT count(*) FROM public.shared_space_asset)::int AS photos,
+        (SELECT count(*) FROM public.asset_favorite)::int AS favourites,
+        (SELECT count(*) FROM public.person_pet)::int AS pets,
+        (SELECT count(*) FROM public.shared_space_person)::int AS people`),
+    ).toEqual([{ spaces: 2, members: 4, photos: 2, favourites: 3, pets: 1, people: 4 }]);
+    // The importer's source role cannot write at all.
+    await expect(importer.source.db.query(`UPDATE public.shared_space SET name = name`)).rejects.toThrow();
 
     await importer.run();
     // A resumed run repeats the Gallery step without doubling anything.

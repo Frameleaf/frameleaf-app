@@ -1,5 +1,14 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { asDateString, asDateTimeString, extractTimeZone, withDateTimeOffset } from 'src/utils/date.js';
+import {
+  asDateString,
+  asDateTimeString,
+  extractTimeZone,
+  getAssetDateTimeUpdates,
+  getPeriodStart,
+  isApproximateYear,
+  withApproximateDate,
+  withDateTimeOffset,
+} from 'src/utils/date.js';
 
 describe('asDateString', () => {
   afterEach(() => {
@@ -84,5 +93,71 @@ describe('explicit edit offsets', () => {
     [undefined, undefined],
   ])('preserves precision and existing offsets for %s', (input, expected) => {
     expect(withDateTimeOffset(input)).toBe(expected);
+  });
+});
+
+describe('approximate dates (FL-936)', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  const sent = [
+    '1975-06-15T23:30:00-11:00',
+    '1975-01-01T00:30:00+14:00',
+    '1975-12-31T23:59:59.999-12:00',
+    '1975-12-31T23:59:59',
+    '1975-07-01T00:00:00Z',
+    '1975-07-01',
+  ];
+
+  it.each(['UTC', 'Pacific/Kiritimati', 'Pacific/Pago_Pago', 'America/Edmonton', 'Asia/Kolkata'])(
+    'stores a year or a decade as 1 January at midnight, with the server in %s',
+    (zone) => {
+      vi.stubEnv('TZ', zone);
+      for (const dateTimeOriginal of sent) {
+        for (const [dateAccuracy, start] of [
+          ['year', '1975-01-01T00:00:00.000Z'],
+          ['decade', '1970-01-01T00:00:00.000Z'],
+        ] as const) {
+          const edit = withApproximateDate({ dateTimeOriginal, dateAccuracy });
+          expect(edit).toEqual({ dateTimeOriginal: start, dateAccuracy });
+          // what the EXIF row and the asset row get: the same instant and the same clock, zone UTC
+          expect(withDateTimeOffset(edit.dateTimeOriginal)).toBe(start);
+          expect(extractTimeZone(edit.dateTimeOriginal)?.name).toBe('UTC');
+          const stored = { fileCreatedAt: new Date(start), localDateTime: new Date(start) };
+          expect(getAssetDateTimeUpdates(edit.dateTimeOriginal)).toEqual(stored);
+          expect(getAssetDateTimeUpdates(edit.dateTimeOriginal, 'UTC')).toEqual(stored);
+          expect(stored.localDateTime.toISOString().slice(0, 10)).toBe(start.slice(0, 10));
+        }
+      }
+    },
+  );
+
+  it('a date sent without an accuracy is exact again; an edit of neither is left alone', () => {
+    expect(withApproximateDate({ dateTimeOriginal: '1975-06-15T10:00:00+02:00' })).toEqual({
+      dateTimeOriginal: '1975-06-15T10:00:00+02:00',
+      dateAccuracy: null,
+    });
+    expect(withApproximateDate({ dateTimeOriginal: '1975-06-15T10:00:00', dateAccuracy: null })).toEqual({
+      dateTimeOriginal: '1975-06-15T10:00:00',
+      dateAccuracy: null,
+    });
+    expect(withApproximateDate({ dateAccuracy: null })).toEqual({ dateAccuracy: null });
+    const untouched = { isFavorite: true };
+    expect(withApproximateDate(untouched)).toBe(untouched);
+  });
+
+  it('takes a year from 1800 up to this one, and a decade that has begun', () => {
+    const now = new Date('2026-11-22T12:00:00.000Z');
+    expect(isApproximateYear(1800, 'year', now)).toBe(true);
+    expect(isApproximateYear(1799, 'year', now)).toBe(false);
+    expect(isApproximateYear(1799, 'decade', now)).toBe(false);
+    expect(isApproximateYear(2026, 'year', now)).toBe(true);
+    expect(isApproximateYear(2027, 'year', now)).toBe(false);
+    expect(isApproximateYear(2029, 'decade', now)).toBe(true);
+    expect(isApproximateYear(2030, 'decade', now)).toBe(false);
+    expect(getPeriodStart(1805, 'decade')).toBe('1800-01-01T00:00:00.000Z');
+    expect(getPeriodStart(1989, 'decade')).toBe('1980-01-01T00:00:00.000Z');
+    expect(getPeriodStart(2000, 'year')).toBe('2000-01-01T00:00:00.000Z');
   });
 });

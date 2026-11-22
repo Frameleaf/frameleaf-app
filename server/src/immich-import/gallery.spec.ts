@@ -1,6 +1,7 @@
 import type { SourceStructure } from 'src/immich-import/schema.js';
 import { frozenSource } from 'src/immich-import/adapters.js';
-import { withGalleryContent } from 'src/immich-import/gallery.js';
+import { GALLERY_READS, withGalleryContent } from 'src/immich-import/gallery.js';
+import { NOODLE_ONLY, OTHERS_FAVOURITES } from 'src/immich-import/source.js';
 
 const column = { type: 'uuid', not_null: true, default: null, identity: '', generated: '' };
 const GALLERY: Record<string, string[]> = {
@@ -24,6 +25,44 @@ const reads = (version: string, added: Record<string, string[]>) => {
   const source = withGalleryContent(frozenSource(version), structure(version, added));
   return { source, names: Object.keys(source.tables).filter((table) => table.startsWith('gallery_')) };
 };
+
+// FL-1742: Manager counts the source before the import starts, through its own copy of these reads
+// (manager/src/gallery-reads.ts; Manager is a separate package). Loaded by path, so neither package depends on the other.
+const managerReads = async (): Promise<{
+  GALLERY_READS: readonly string[];
+  GALLERY_ONLY: Record<string, { name: string; carriedBy?: string }>;
+  OTHERS_FAVOURITES: string;
+  OTHERS_FAVOURITES_NAME: string;
+  galleryReads: (has: (table: string, ...columns: string[]) => boolean) => Record<string, string>;
+}> => import(new URL('../../../manager/src/gallery-reads.ts', import.meta.url).href);
+const sql = (text: string) => text.replaceAll(/\s+/gu, ' ').trim();
+
+describe('Manager’s copy of the Noodle Gallery reads', () => {
+  it.each([
+    ['the 5.11 tables', '3.2.4', GALLERY],
+    ['pets kept in person.type', '3.2.4', { ...GALLERY, person_pet: [], person: ['type', 'species'] }],
+    ['a base older than person groups', '2.7.5', { ...GALLERY, person: ['type', 'species'] }],
+    ['Spaces that cannot be read', '3.2.4', { ...GALLERY, shared_space_asset: ['spaceId', 'assetId'] }],
+    ['no Gallery tables', '3.2.4', {}],
+  ])('reads %s with the SELECTs the importer runs', async (_, version, added) => {
+    const { galleryReads } = await managerReads();
+    const shape = structure(version, added);
+    const { source, names } = reads(version, added);
+    const copy = galleryReads((table, ...columns) => columns.every((column) => shape.tables[table]?.[column]));
+    expect(Object.keys(copy).toSorted()).toEqual(names.toSorted());
+    for (const name of names) {
+      expect(sql(copy[name])).toBe(sql(source.views[name]));
+    }
+  });
+
+  it('names what stays behind as the importer does', async () => {
+    const manager = await managerReads();
+    expect(manager.GALLERY_READS).toEqual(GALLERY_READS);
+    expect(manager.GALLERY_ONLY).toEqual(NOODLE_ONLY);
+    expect(sql(manager.OTHERS_FAVOURITES)).toBe(sql(OTHERS_FAVOURITES));
+    expect(manager.OTHERS_FAVOURITES_NAME).toBe('favourites set by other people');
+  });
+});
 
 describe('Noodle Gallery reads', () => {
   it('offers every read for the 5.11 tables, keyed for keyset paging', () => {
