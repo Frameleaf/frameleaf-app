@@ -116,6 +116,8 @@ export class AlbumSuggestionRepository {
         .where(sql<boolean>`not ${hiddenFromOthers(viewerId, 'photo')}`)
         // FL-1299: an estimated date is no evidence of when the trip was.
         .where(sql<boolean>`not ${dateEstimated('photo_exif')}`)
+        // FL-936: nor is the first day of a year or a decade.
+        .where('photo.dateAccuracy', 'is', null)
         // The session's own filter too: a session that isn't unlocked doesn't see its own Locked-rule matches.
         .$call((qb) => withHiddenContentFilter(qb, options, 'photo'))
         .select([
@@ -145,35 +147,39 @@ export class AlbumSuggestionRepository {
     lockedOwnerId: string | undefined,
     options?: HiddenContentQueryOptions,
   ): Promise<HealPhotoRow[]> {
-    return this.db
-      .selectFrom('album_asset')
-      .innerJoin('asset as photo', 'photo.id', 'album_asset.assetId')
-      .leftJoin('asset_exif as photo_exif', 'photo_exif.assetId', 'photo.id')
-      .where('album_asset.albumId', '=', albumId)
-      .where('photo.deletedAt', 'is', null)
-      .where('photo.visibility', '!=', AssetVisibility.Hidden)
-      .where(notLockedOrOwnedBy(lockedOwnerId, 'photo'))
-      .where(sql<boolean>`not ${hiddenFromOthers(viewerId, 'photo')}`)
-      .$call((qb) => withHiddenContentFilter(qb, options, 'photo'))
-      .select([
-        'photo.id',
-        'photo.ownerId',
-        'photo.originalFileName',
-        'photo.fileCreatedAt as takenAt',
-        'photo.localDateTime',
-        sql<boolean>`(photo_exif.make is not null or photo_exif.model is not null
+    return (
+      this.db
+        .selectFrom('album_asset')
+        .innerJoin('asset as photo', 'photo.id', 'album_asset.assetId')
+        .leftJoin('asset_exif as photo_exif', 'photo_exif.assetId', 'photo.id')
+        .where('album_asset.albumId', '=', albumId)
+        .where('photo.deletedAt', 'is', null)
+        .where('photo.visibility', '!=', AssetVisibility.Hidden)
+        // FL-936: a photo dated to a year or a decade is no evidence of the album's days, and is not healed
+        .where('photo.dateAccuracy', 'is', null)
+        .where(notLockedOrOwnedBy(lockedOwnerId, 'photo'))
+        .where(sql<boolean>`not ${hiddenFromOthers(viewerId, 'photo')}`)
+        .$call((qb) => withHiddenContentFilter(qb, options, 'photo'))
+        .select([
+          'photo.id',
+          'photo.ownerId',
+          'photo.originalFileName',
+          'photo.fileCreatedAt as takenAt',
+          'photo.localDateTime',
+          sql<boolean>`(photo_exif.make is not null or photo_exif.model is not null
           or photo_exif."timeZone" is not null)`.as('hasCameraDetails'),
-        dateEstimated('photo_exif').as('dateEstimated'),
-        // Whatever locked the date set it on purpose.
-        sql<boolean>`coalesce(photo_exif."lockedProperties" && array['dateTimeOriginal', 'timeZone']::varchar[], false)`.as(
-          'dateSet',
-        ),
-        isLocked('photo').as('isLocked'),
-      ])
-      .orderBy('photo.fileCreatedAt')
-      .orderBy('photo.id')
-      .limit(MAX_HEAL_PHOTOS + 1)
-      .execute();
+          dateEstimated('photo_exif').as('dateEstimated'),
+          // Whatever locked the date set it on purpose.
+          sql<boolean>`coalesce(photo_exif."lockedProperties" && array['dateTimeOriginal', 'timeZone']::varchar[], false)`.as(
+            'dateSet',
+          ),
+          isLocked('photo').as('isLocked'),
+        ])
+        .orderBy('photo.fileCreatedAt')
+        .orderBy('photo.id')
+        .limit(MAX_HEAL_PHOTOS + 1)
+        .execute()
+    );
   }
 
   /**
@@ -258,6 +264,7 @@ export class AlbumSuggestionRepository {
       .where(isNotLocked('photo'))
       .where(sql<boolean>`not ${hiddenFromOthers(viewerId, 'photo')}`)
       .where(sql<boolean>`not ${dateEstimated('photo_exif')}`)
+      .where('photo.dateAccuracy', 'is', null)
       .select([
         sql<Date | null>`min(photo."fileCreatedAt")`.as('from'),
         sql<Date | null>`max(photo."fileCreatedAt")`.as('to'),
@@ -269,18 +276,22 @@ export class AlbumSuggestionRepository {
   /** `ownerId`'s photos taken inside the windows that are not in the album and were not dismissed. */
   getTripCandidates(ownerId: string, albumId: string, windows: { from: Date; to: Date }[]): Promise<CandidateRow[]> {
     if (windows.length === 0) return Promise.resolve([]);
-    return this.candidates(ownerId, albumId)
-      .where(sql<boolean>`not ${dateEstimated('candidate_exif')}`)
-      .where((eb) =>
-        eb.or(
-          windows.map(({ from, to }) =>
-            eb.and([eb('candidate.fileCreatedAt', '>=', from), eb('candidate.fileCreatedAt', '<=', to)]),
+    return (
+      this.candidates(ownerId, albumId)
+        .where(sql<boolean>`not ${dateEstimated('candidate_exif')}`)
+        // FL-936: a photo dated to a year or a decade was not taken on the day that starts it
+        .where('candidate.dateAccuracy', 'is', null)
+        .where((eb) =>
+          eb.or(
+            windows.map(({ from, to }) =>
+              eb.and([eb('candidate.fileCreatedAt', '>=', from), eb('candidate.fileCreatedAt', '<=', to)]),
+            ),
           ),
-        ),
-      )
-      .orderBy('candidate.fileCreatedAt')
-      .limit(MAX_CANDIDATES)
-      .execute();
+        )
+        .orderBy('candidate.fileCreatedAt')
+        .limit(MAX_CANDIDATES)
+        .execute()
+    );
   }
 
   getCandidates(ownerId: string, albumId: string, ids: string[]): Promise<CandidateRow[]> {

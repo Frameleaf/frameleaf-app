@@ -213,7 +213,7 @@ export const duplicateDisposalReasons = (
 };
 
 type ReviewAsset = Pick<AssetResponseDto, 'id' | 'type' | 'localDateTime' | 'originalFileName' | 'exifInfo'> &
-  Partial<Pick<AssetResponseDto, 'checksum'>>;
+  Partial<Pick<AssetResponseDto, 'checksum' | 'dateAccuracy'>>;
 
 const captureTime = (asset: ReviewAsset): number | null => {
   const value = asset.exifInfo?.dateTimeOriginal ?? asset.localDateTime;
@@ -240,6 +240,10 @@ export const reviewKindOf = (assets: readonly ReviewAsset[]): DuplicateReviewKin
   const checksum = assets[0].checksum;
   if (checksum && assets.every((asset) => asset.checksum === checksum)) {
     return 'copies';
+  }
+  // FL-936: a year or a decade is not an instant: scans that share one are not copies or a burst for that
+  if (assets.some((asset) => asset.dateAccuracy)) {
+    return 'look-alike';
   }
   const times = assets.map((asset) => captureTime(asset));
   if (times.includes(null)) {

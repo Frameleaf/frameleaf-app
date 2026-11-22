@@ -1,6 +1,7 @@
 import { Column, CreateDateColumn, ForeignKeyColumn, Index, Table } from '@frameleaf/sql-tools';
 import type { Generated, Timestamp } from '@frameleaf/sql-tools';
 import type { DateFindingCause } from 'src/utils/date-doctor.js';
+import type { DateAccuracy } from 'src/utils/date.js';
 import { PrimaryGeneratedUuidV7Column } from 'src/decorators.js';
 import { AssetTable } from 'src/schema/tables/asset.table.js';
 import { UserTable } from 'src/schema/tables/user.table.js';
@@ -38,6 +39,13 @@ export class DateFixBatchTable {
 
   @Column({ type: 'text', nullable: true })
   timeZone!: string | null;
+
+  /** FL-936: set when the batch dated its photos to a year or a decade, with the year that period starts in. */
+  @Column({ type: 'text', nullable: true })
+  dateAccuracy!: DateAccuracy | null;
+
+  @Column({ type: 'integer', nullable: true })
+  periodStart!: number | null;
 }
 
 /**
@@ -78,4 +86,11 @@ export class DateFixItemTable {
 
   @Column({ type: 'timestamp with time zone' })
   newLocalDateTime!: Timestamp;
+
+  /** FL-936: the photo's `dateAccuracy` before and after; null is an exact date. */
+  @Column({ type: 'text', nullable: true })
+  previousDateAccuracy!: DateAccuracy | null;
+
+  @Column({ type: 'text', nullable: true })
+  newDateAccuracy!: DateAccuracy | null;
 }

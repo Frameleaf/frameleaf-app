@@ -688,6 +688,68 @@ describe(SearchService.name, () => {
     });
   });
 
+  describe('namedPlaceIds filter (FL-949)', () => {
+    it("matches items taken inside the viewer's own places, a partner's shared copy among them, with any, all, none and or branches", async () => {
+      const { sut, ctx } = setup();
+      const map = ctx.get(MapRepository);
+      const { user } = await ctx.newUser();
+      const { user: partner } = await ctx.newUser();
+      const { user: stranger } = await ctx.newUser();
+      const at = async (ownerId: string, latitude: number | null, longitude: number | null, isFavorite = false) => {
+        const { asset } = await ctx.newAsset({ ownerId, isFavorite });
+        await ctx.newExif({ assetId: asset.id, latitude, longitude });
+        return asset.id;
+      };
+      // Home reaches 200 m, the garden 60 m from a centre 111 m north of home's
+      const inHouse = await at(user.id, 51.0502, -114.0701);
+      const inGarden = await at(user.id, 51.0508, -114.07);
+      // what a partner shares arrives as the viewer's own copy (FL-326), with where it was taken
+      const partnerAtHome = await at(user.id, 51.0501, -114.0699);
+      await at(partner.id, 51.0501, -114.0699);
+      const downtown = await at(user.id, 51.0443, -114.0631, true);
+      const noLocation = await at(user.id, null, null);
+      // just outside: 250 m north of home's centre
+      const nextDoor = await at(user.id, 51.05225, -114.07);
+      await at(stranger.id, 51.05, -114.07);
+
+      const place = { latitude: 51.05, longitude: -114.07, radiusMeters: 200 };
+      const home = await map.createUserPlace({ ...place, ownerId: user.id, name: 'Home' });
+      const garden = await map.createUserPlace({
+        ownerId: user.id,
+        name: 'Garden',
+        latitude: 51.051,
+        longitude: -114.07,
+        radiusMeters: 60,
+      });
+      // the partner's own name for the same spot is never the viewer's
+      const partnersHome = await map.createUserPlace({ ...place, ownerId: partner.id, name: 'Home' });
+
+      const auth = factory.auth({ user: { id: user.id } });
+      const ids = async (filter: object) => {
+        const response = await sut.searchMetadata(auth, { filter, size: 100 });
+        return response.assets.items.map(({ id }) => id).toSorted();
+      };
+
+      await expect(ids({ namedPlaceIds: { any: [home.id] } })).resolves.toEqual(
+        [inHouse, inGarden, partnerAtHome].toSorted(),
+      );
+      await expect(ids({ namedPlaceIds: { any: [garden.id] } })).resolves.toEqual([inGarden]);
+      await expect(ids({ namedPlaceIds: { all: [home.id, garden.id] } })).resolves.toEqual([inGarden]);
+      await expect(ids({ namedPlaceIds: { none: [home.id] } })).resolves.toEqual(
+        [downtown, noLocation, nextDoor].toSorted(),
+      );
+      await expect(
+        ids({ or: [{ namedPlaceIds: { any: [garden.id] } }, { isFavorite: { eq: true } }] }),
+      ).resolves.toEqual([inGarden, downtown].toSorted());
+      await expect(ids({ namedPlaceIds: { any: [partnersHome.id] } })).resolves.toEqual([]);
+
+      // removing the place takes it out of search at once; the photos keep where they were taken
+      await map.deleteUserPlace(user.id, home.id);
+      await expect(ids({ namedPlaceIds: { any: [home.id] } })).resolves.toEqual([]);
+      await expect(ids({ namedPlaceIds: { any: [garden.id] } })).resolves.toEqual([inGarden]);
+    });
+  });
+
   describe('albumCount filter (FL-976)', () => {
     it('counts only the non-deleted albums the viewer owns or is a member of, in every branch', async () => {
       const { sut, ctx } = setup();
@@ -1089,6 +1151,52 @@ describe(SearchService.name, () => {
       expect(histogram.total).toBe(1);
       const byUtc = await sut.searchMetadata(auth, { filter: { takenAt: localDateTime } });
       expect(byUtc.assets.items.map(({ id }) => id).sort()).toEqual([lateJuly.id, august.id].sort());
+    });
+
+    it('FL-936: a photo dated to a year or a decade is in every range that overlaps it, and in its decade', async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const at = async (iso: string, dateAccuracy?: 'year' | 'decade') => {
+        const { asset } = await ctx.newAsset({
+          ownerId: user.id,
+          fileCreatedAt: new Date(iso),
+          localDateTime: new Date(iso),
+          ...(dateAccuracy && { dateAccuracy }),
+        });
+        await ctx.newExif({ assetId: asset.id, make: 'Epson' });
+        return asset.id;
+      };
+      const seventies = await at('1970-01-01T00:00:00.000Z', 'decade');
+      const in1975 = await at('1975-01-01T00:00:00.000Z', 'year');
+      const in1969 = await at('1969-01-01T00:00:00.000Z', 'year');
+      const july1976 = await at('1976-07-04T12:00:00.000Z');
+      const march1982 = await at('1982-03-01T12:00:00.000Z');
+      const auth = factory.auth({ user });
+      const found = async (dto: Parameters<typeof sut.searchMetadata>[1]) =>
+        (await sut.searchMetadata(auth, dto)).assets.items.map(({ id }) => id).sort();
+      const day = (date: string) => new Date(`${date}T00:00:00.000Z`);
+
+      // the summer of 1975 is inside the year 1975 and the 1970s; no photo is dated in it
+      const summer = { gte: day('1975-06-01'), lt: day('1975-09-01') };
+      expect(await found({ filter: { takenAt: summer } })).toEqual([seventies, in1975].sort());
+      expect(await found({ filter: { localDateTime: summer } })).toEqual([seventies, in1975].sort());
+      expect(await found({ takenAfter: summer.gte, takenBefore: summer.lt })).toEqual([seventies, in1975].sort());
+      // 1976: the decade and the photo of that July, not the year before
+      expect(await found({ filter: { takenAt: { gte: day('1976-01-01'), lt: day('1977-01-01') } } })).toEqual(
+        [seventies, july1976].sort(),
+      );
+      // a year or a decade ends when the next one starts
+      expect(await found({ filter: { takenAt: { gte: day('1980-01-01') } } })).toEqual([march1982]);
+      expect(await found({ filter: { takenAt: { gt: new Date('1979-12-31T23:59:59.999Z') } } })).toEqual([march1982]);
+      expect(await found({ filter: { takenAt: { gte: new Date('1979-12-31T23:59:59.000Z') } } })).toEqual(
+        [seventies, march1982].sort(),
+      );
+      // and does not begin before its first day
+      expect(await found({ filter: { takenAt: { lt: day('1970-01-01') } } })).toEqual([in1969]);
+
+      expect(await found({ filter: { takenDecade: { eq: 1970 } } })).toEqual([seventies, in1975, july1976].sort());
+      expect(await found({ filter: { takenDecade: { eq: 1960 } } })).toEqual([in1969]);
+      expect(await found({ filter: { takenDecade: { eq: 1990 } } })).toEqual([]);
     });
   });
 

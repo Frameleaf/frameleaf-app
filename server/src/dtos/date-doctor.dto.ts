@@ -2,6 +2,7 @@ import { IANAZone } from 'luxon';
 import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
 import { DateFindingCause } from 'src/utils/date-doctor.js';
+import { DATE_ACCURACIES, MIN_APPROXIMATE_YEAR, isApproximateYear } from 'src/utils/date.js';
 
 /** FL-912: what the Date & Time Doctor found, a shoot (camera and day) at a time. */
 
@@ -78,17 +79,34 @@ const DateDoctorFixSchema = z
       .max(52_560_000)
       .optional()
       .describe('Move their dates this many minutes (a camera clock that was off)'),
+    // FL-936
+    dateAccuracy: z
+      .enum(DATE_ACCURACIES)
+      .optional()
+      .describe('Date them to a year (`year`) or a decade (`decade`): only that much is known. Sent with `year` alone'),
+    year: z
+      .int()
+      .min(MIN_APPROXIMATE_YEAR)
+      .optional()
+      .describe('With dateAccuracy: the year, or any year of the decade; not after this year'),
   })
-  .refine(
-    (dto) =>
-      dto.useProposal
-        ? dto.timeZone === undefined && dto.shiftMinutes === undefined && dto.keepWallTime === undefined
-        : dto.timeZone !== undefined || (dto.shiftMinutes ?? 0) !== 0,
-    'Send useProposal alone, or a timeZone and/or shiftMinutes',
-  )
+  .refine((dto) => {
+    const noZoneOrShift =
+      dto.timeZone === undefined && dto.shiftMinutes === undefined && dto.keepWallTime === undefined;
+    if (dto.dateAccuracy !== undefined || dto.year !== undefined) {
+      return (
+        dto.dateAccuracy !== undefined &&
+        dto.year !== undefined &&
+        !dto.useProposal &&
+        noZoneOrShift &&
+        isApproximateYear(dto.year, dto.dateAccuracy)
+      );
+    }
+    return dto.useProposal ? noZoneOrShift : dto.timeZone !== undefined || (dto.shiftMinutes ?? 0) !== 0;
+  }, 'Send useProposal alone, a timeZone and/or shiftMinutes, or a dateAccuracy with a year up to this one')
   .refine((dto) => dto.keepWallTime === undefined || dto.timeZone !== undefined, 'keepWallTime needs a timeZone')
   .describe(
-    'Send `useProposal: true` alone, or a `timeZone` and/or a non-zero `shiftMinutes`; `keepWallTime` only with `timeZone`. Any other combination is refused (400).',
+    'Send `useProposal: true` alone, or a `timeZone` and/or a non-zero `shiftMinutes` (`keepWallTime` only with `timeZone`), or a `dateAccuracy` with its `year`. Any other combination is refused (400). A zone or shift leaves photos dated to a year or a decade as they are.',
   )
   .meta({ id: 'DateDoctorFixDto' });
 
@@ -119,6 +137,12 @@ const DateDoctorBatchSchema = z
     ),
     shiftMinutes: z.int().nullable().describe('The shift chosen, in minutes'),
     timeZone: z.string().nullable().describe('The time zone chosen'),
+    // plain strings, not an enum: a response enum can never gain a value without breaking the native apps
+    dateAccuracy: z
+      .string()
+      .nullish()
+      .describe('`year` or `decade` when the fix dated the photos to one; other values may be added'),
+    periodStart: z.int().nullish().describe('With dateAccuracy: the year that year or decade starts in'),
     undoneAt: z.string().nullable().describe('When it was undone'),
     restored: z
       .int()
