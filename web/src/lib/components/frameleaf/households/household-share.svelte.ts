@@ -25,9 +25,12 @@ export class HouseholdShareState {
   said = $state('');
 
   private readonly spaceId: string;
+  private readonly onChanged?: () => Promise<void> | void;
 
-  constructor(spaceId: string) {
+  /** `onChanged` runs after a change, so the page around the sheet can re-read who the space is shared with. */
+  constructor(spaceId: string, onChanged?: () => Promise<void> | void) {
     this.spaceId = spaceId;
+    this.onChanged = onChanged;
   }
 
   members = $derived<HouseholdMember[]>(
@@ -60,6 +63,7 @@ export class HouseholdShareState {
     try {
       await work();
       await this.load();
+      await this.onChanged?.();
     } finally {
       this.busy = false;
     }

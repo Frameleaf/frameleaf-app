@@ -55,6 +55,7 @@
     AlbumKind,
     getAllSharedLinks,
     getHouseholdShares,
+    getSharedSpaceHouseholds,
     SharedLinkType,
     type AlbumResponseDto,
     type AssetResponseDto,
@@ -144,6 +145,28 @@
   /** Invitations nobody has answered yet: the space is not private while one is waiting. */
   const pendingCount = $derived(members.filter((member) => member.pending).length);
   const name = $derived(space.albumName || $t('unnamed_album'));
+
+  // FL-998: people from linked households are not album members, so a space shared only with them
+  // would read "Private". Asked only in that case, because the answer comes from the other server.
+  let remoteMembers = $state(0);
+  $effect(() => {
+    const id = space.id;
+    if (!owner || others.length > 0 || pendingCount > 0) {
+      remoteMembers = 0;
+      return;
+    }
+    void members;
+    void untrack(async () => {
+      try {
+        const links = (await getSharedSpaceHouseholds({ id })) ?? [];
+        if (id === untrack(() => space.id)) {
+          remoteMembers = links.flatMap((link) => link.members).filter((member) => member.state !== 'left').length;
+        }
+      } catch {
+        remoteMembers = 0;
+      }
+    });
+  });
 
   // FL-998: a space received from a linked household says where it came from and how its copies are doing.
   let received = $state<HouseholdInboundShareDto>();
@@ -534,20 +557,29 @@
               <span aria-hidden="true"><Icon icon={mdiAccountClockOutline} size="16" /></span>
               <span>{$t('frameleaf_spaces_invited_count', { values: { count: pendingCount } })}</span>
             </button>
-          {:else if owner}
+          {:else if remoteMembers > 0}
+            <button type="button" class="members" onclick={() => choosePanel('members')}>
+              <span aria-hidden="true"><Icon icon={mdiHomeGroup} size="16" /></span>
+              <span>{$t('frameleaf_album_shared_with_count', { values: { count: remoteMembers } })}</span>
+            </button>
+          {:else if owner && !received}
             <button type="button" class="members" onclick={() => choosePanel('members')}>
               <span aria-hidden="true"><Icon icon={mdiAccountPlusOutline} size="16" /></span>
               <span>{$t('frameleaf_album_private_share_it')}</span>
             </button>
-          {:else}
+          {:else if !received}
             <span>{$t('frameleaf_album_private')}</span>
           {/if}
           {#if received}
+            <!-- A received space is not "private": it says whose it was. The dot before the first part is the one above. -->
             {#if received.ownerName}
-              <span class="dot" aria-hidden="true"></span>
+              {#if others.length > 0 || pendingCount > 0 || remoteMembers > 0}<span class="dot" aria-hidden="true"
+                ></span>{/if}
               <span>{$t('frameleaf_households_shared_by', { values: { name: received.ownerName } })}</span>
             {/if}
-            <span class="dot" aria-hidden="true"></span>
+            {#if received.ownerName || others.length > 0 || pendingCount > 0 || remoteMembers > 0}
+              <span class="dot" aria-hidden="true"></span>
+            {/if}
             <span>{$t('frameleaf_households_own_copies')}</span>
           {/if}
         </div>

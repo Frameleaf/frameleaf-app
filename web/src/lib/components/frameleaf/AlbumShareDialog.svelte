@@ -185,7 +185,7 @@
     void loadInvited();
     // FL-998: a space's owner can also add people from linked households.
     const nextHousehold = untrack(() =>
-      album.kind === AlbumKind.Space && isOwner ? new HouseholdShareState(album.id) : undefined,
+      album.kind === AlbumKind.Space && isOwner ? new HouseholdShareState(album.id, onChanged) : undefined,
     );
     household = nextHousehold;
     void nextHousehold?.load();

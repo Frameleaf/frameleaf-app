@@ -83,7 +83,7 @@
       household = undefined;
       return;
     }
-    const next = new HouseholdShareState(id);
+    const next = new HouseholdShareState(id, () => onChanged());
     household = next;
     void untrack(() => next.load());
   });
