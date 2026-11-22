@@ -72,7 +72,6 @@ const mapItem = (row: Record<string, unknown>): ImportConnectionItem => ({
   albumHint: (row.albumHint as string | null) ?? null,
   caption: (row.caption as string | null) ?? null,
   favourite: row.favourite === true,
-  contentHash: (row.contentHash as string | null) ?? null,
   state: row.state as TakeoutItemState,
   assetId: (row.assetId as string | null) ?? null,
   error: (row.error as string | null) ?? null,

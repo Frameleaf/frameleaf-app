@@ -18403,6 +18403,62 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/assets/restorations/batch": {
+      "post": {
+        "description": "Without confirm, answers which photos would run and every destination in the processing order with its time or cost; nothing is queued. With confirm, the destinationId and the estimate batchId, queues one durable job per photo. Confirming the same batch again queues only what is missing.",
+        "operationId": "restoreAssetsBatch",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssetRestorationBatchRequestDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetRestorationBatchResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Estimate or start a batch of photo repairs or colourisations",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.edit.create",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/assets/safety/lookup": {
       "post": {
         "description": "Up to 2000 hashes. Current own accessible assets only, including for admins; shared and partner assets omitted. Completed membership and GET + SHA-256 verification are separate facts. No bucket credentials/settings.",
@@ -22679,6 +22735,15 @@
             "schema": {
               "default": "faithful",
               "$ref": "#/components/schemas/AssetRestorationMode"
+            }
+          },
+          {
+            "name": "operation",
+            "required": false,
+            "in": "query",
+            "description": "FL-955: judge the destinations for repair or colourise. Left out, enhance.",
+            "schema": {
+              "$ref": "#/components/schemas/AssetRestorationOperation"
             }
           },
           {
@@ -95993,6 +96058,220 @@
         ],
         "type": "object"
       },
+      "AssetRestorationBatchDestinationDto": {
+        "properties": {
+          "available": {
+            "description": "The server would admit this operation here right now",
+            "type": "boolean"
+          },
+          "consentSummary": {
+            "description": "Frameleaf Cloud: what leaves this server, in its own words",
+            "nullable": true,
+            "type": "string"
+          },
+          "consentVersion": {
+            "description": "Frameleaf Cloud: the terms this estimate is confirmed under",
+            "nullable": true,
+            "type": "string"
+          },
+          "costUsd": {
+            "description": "AI Wallet cost of the batch. Null at home, where it is free, and while Cloud has no price.",
+            "format": "double",
+            "nullable": true,
+            "type": "number"
+          },
+          "estimateSeconds": {
+            "description": "Measured time for the whole batch, or null when nothing is measured yet",
+            "format": "double",
+            "nullable": true,
+            "type": "number"
+          },
+          "id": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/MlDestinationKind"
+          },
+          "leavesNetwork": {
+            "description": "Photos sent here leave the network",
+            "type": "boolean"
+          },
+          "maxCostUsd": {
+            "description": "Frameleaf Cloud: the most the batch may charge; send it back to confirm. Null otherwise.",
+            "format": "double",
+            "nullable": true,
+            "type": "number"
+          },
+          "name": {
+            "type": "string"
+          },
+          "refusal": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MlAdmissionRefusal"
+              }
+            ],
+            "description": "Why it cannot be chosen, or null",
+            "nullable": true
+          },
+          "refusalDetail": {
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "available",
+          "consentSummary",
+          "consentVersion",
+          "costUsd",
+          "estimateSeconds",
+          "id",
+          "kind",
+          "leavesNetwork",
+          "maxCostUsd",
+          "name",
+          "refusal",
+          "refusalDetail"
+        ],
+        "type": "object"
+      },
+      "AssetRestorationBatchOperation": {
+        "description": "What to do to each photo",
+        "enum": [
+          "repair",
+          "colourise"
+        ],
+        "type": "string"
+      },
+      "AssetRestorationBatchRequestDto": {
+        "properties": {
+          "acknowledgeDataLeaves": {
+            "description": "Frameleaf Cloud: the person agreed the photos leave",
+            "type": "boolean"
+          },
+          "assetIds": {
+            "description": "The photos to repair or colourise",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "maxItems": 500,
+            "minItems": 1,
+            "type": "array"
+          },
+          "batchId": {
+            "description": "The batchId of the estimate being confirmed. Confirming it again queues nothing twice.",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "confirm": {
+            "default": false,
+            "description": "False: estimate only, nothing is queued. True: queue the batch on destinationId.",
+            "type": "boolean"
+          },
+          "consentVersion": {
+            "description": "Frameleaf Cloud: the consentVersion of the estimate shown",
+            "type": "string"
+          },
+          "destinationId": {
+            "description": "Where the batch runs. Required to confirm; never inferred.",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "maxCostUsd": {
+            "description": "Frameleaf Cloud: the maxCostUsd of the estimate shown. The batch stops rather than go over it.",
+            "exclusiveMinimum": true,
+            "format": "double",
+            "minimum": 0,
+            "type": "number"
+          },
+          "operation": {
+            "$ref": "#/components/schemas/AssetRestorationBatchOperation"
+          }
+        },
+        "required": [
+          "assetIds",
+          "operation"
+        ],
+        "type": "object"
+      },
+      "AssetRestorationBatchResponseDto": {
+        "properties": {
+          "batchId": {
+            "description": "Send this back to confirm the estimate",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "destinations": {
+            "description": "Every destination in the processing order, those that cannot take it included",
+            "items": {
+              "$ref": "#/components/schemas/AssetRestorationBatchDestinationDto"
+            },
+            "type": "array"
+          },
+          "eligible": {
+            "description": "Photos that would be, or were, queued",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "operation": {
+            "$ref": "#/components/schemas/AssetRestorationOperation"
+          },
+          "queued": {
+            "description": "Photos queued by this request; 0 for an estimate",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "skipped": {
+            "items": {
+              "$ref": "#/components/schemas/AssetRestorationBatchSkipDto"
+            },
+            "type": "array"
+          },
+          "total": {
+            "description": "Photos asked for",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "batchId",
+          "destinations",
+          "eligible",
+          "operation",
+          "queued",
+          "skipped",
+          "total"
+        ],
+        "type": "object"
+      },
+      "AssetRestorationBatchSkipDto": {
+        "properties": {
+          "assetId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "reason": {
+            "description": "already-in-colour, colour-unknown, not-a-photo or unavailable",
+            "type": "string"
+          }
+        },
+        "required": [
+          "assetId",
+          "reason"
+        ],
+        "type": "object"
+      },
       "AssetRestorationDestinationDto": {
         "properties": {
           "available": {
@@ -96225,6 +96504,15 @@
         ],
         "type": "object"
       },
+      "AssetRestorationOperation": {
+        "description": "What the restoration does; left out, enhance",
+        "enum": [
+          "enhance",
+          "repair",
+          "colourise"
+        ],
+        "type": "string"
+      },
       "AssetRestorationOptionsDto": {
         "properties": {
           "adapterInstalled": {
@@ -96234,6 +96522,10 @@
           "assetId": {
             "format": "uuid",
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "colourRefusal": {
+            "description": "FL-955: colourise only: why this photo cannot be colourised, in words for the owner",
             "type": "string"
           },
           "destinations": {
@@ -96250,6 +96542,10 @@
           },
           "mode": {
             "$ref": "#/components/schemas/AssetRestorationMode"
+          },
+          "operation": {
+            "$ref": "#/components/schemas/AssetRestorationOperation",
+            "description": "FL-955: present only when the options were asked for repair or colourise"
           },
           "outputHeight": {
             "description": "Height the full render would produce after the 4K cap",
@@ -96318,6 +96614,10 @@
           "mode": {
             "$ref": "#/components/schemas/AssetRestorationMode",
             "default": "faithful"
+          },
+          "operation": {
+            "$ref": "#/components/schemas/AssetRestorationOperation",
+            "description": "FL-955: judge the destinations for repair or colourise. Left out, enhance."
           },
           "upscale": {
             "default": 2,
@@ -96414,6 +96714,10 @@
             "description": "FL-423: the restoration model to use, one of the destination's `models` for this mode. Left out, the destination uses its own model for the mode. Never substituted: a model the destination cannot run is refused.",
             "pattern": "^[a-z0-9][a-z0-9-]{1,63}$",
             "type": "string"
+          },
+          "operation": {
+            "$ref": "#/components/schemas/AssetRestorationOperation",
+            "description": "FL-955: enhance (the default), repair or colourise. Repair and colourise need mode faithful, keep the photo at its own size and name no model."
           },
           "region": {
             "$ref": "#/components/schemas/AssetRestorationRegionDto",
@@ -96566,6 +96870,10 @@
           "modelVersion": {
             "nullable": true,
             "type": "string"
+          },
+          "operation": {
+            "$ref": "#/components/schemas/AssetRestorationOperation",
+            "description": "FL-955: repair or colourise. Absent on every enhance restoration, so existing responses are unchanged."
           },
           "outputHeight": {
             "maximum": 9007199254740991,
@@ -106305,6 +106613,10 @@
             "description": "The model chosen on the slider; omitted, the chosen or recommended model for this work",
             "pattern": "^ms_[\\dA-HJKMNP-TV-Z]{8}$",
             "type": "string"
+          },
+          "operation": {
+            "$ref": "#/components/schemas/AssetRestorationOperation",
+            "description": "FL-955: repair or colourise a photo at its own size. A full render inherits it from its preview."
           },
           "purpose": {
             "$ref": "#/components/schemas/CloudMlJobPurpose"

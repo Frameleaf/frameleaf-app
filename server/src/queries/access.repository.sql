@@ -301,6 +301,17 @@ where
       )
     )
   )
+  and not (
+    "asset"."visibility" = 'hidden'
+    and exists (
+      select
+        1
+      from
+        asset_print_back
+      where
+        asset_print_back."backAssetId" = "asset"."id"
+    )
+  )
 
 -- AccessRepository.asset.checkOwnerAccess
 select
@@ -320,23 +331,50 @@ where
   )
   and not (
     "asset"."visibility" = 'hidden'
-    and exists (
-      select
-        1 as "exists"
-      from
-        "asset" as "lockedStill"
-      where
-        "lockedStill"."livePhotoVideoId" = "asset"."id"
-        and exists (
-          select
-            1
-          from
-            asset_lock
-          where
-            asset_lock."assetId" = "lockedStill"."id"
-        )
+    and (
+      exists (
+        select
+          1 as "exists"
+        from
+          "asset" as "lockedStill"
+        where
+          "lockedStill"."livePhotoVideoId" = "asset"."id"
+          and exists (
+            select
+              1
+            from
+              asset_lock
+            where
+              asset_lock."assetId" = "lockedStill"."id"
+          )
+      )
+      or exists (
+        select
+          1 as "exists"
+        from
+          "asset_print_back"
+          inner join "asset" as "lockedFront" on "lockedFront"."id" = "asset_print_back"."frontAssetId"
+        where
+          "asset_print_back"."backAssetId" = "asset"."id"
+          and exists (
+            select
+              1
+            from
+              asset_lock
+            where
+              asset_lock."assetId" = "lockedFront"."id"
+          )
+      )
     )
   )
+
+-- AccessRepository.asset.checkPrintBacks
+select
+  "backAssetId"
+from
+  "asset_print_back"
+where
+  "backAssetId" in ($1)
 
 -- AccessRepository.asset.checkSharedLinkAccess
 select
@@ -358,6 +396,17 @@ from
       asset_lock
     where
       asset_lock."assetId" = "asset"."id"
+  )
+  and not (
+    "asset"."visibility" = 'hidden'
+    and exists (
+      select
+        1
+      from
+        asset_print_back
+      where
+        asset_print_back."backAssetId" = "asset"."id"
+    )
   )
   and not (
     exists (
@@ -537,6 +586,17 @@ from
       asset_lock
     where
       asset_lock."assetId" = "albumAssets"."id"
+  )
+  and not (
+    "albumAssets"."visibility" = 'hidden'
+    and exists (
+      select
+        1
+      from
+        asset_print_back
+      where
+        asset_print_back."backAssetId" = "albumAssets"."id"
+    )
   )
   and not (
     exists (
@@ -732,21 +792,40 @@ where
   )
   and not (
     "asset"."visibility" = 'hidden'
-    and exists (
-      select
-        1 as "exists"
-      from
-        "asset" as "lockedStill"
-      where
-        "lockedStill"."livePhotoVideoId" = "asset"."id"
-        and exists (
-          select
-            1
-          from
-            asset_lock
-          where
-            asset_lock."assetId" = "lockedStill"."id"
-        )
+    and (
+      exists (
+        select
+          1 as "exists"
+        from
+          "asset" as "lockedStill"
+        where
+          "lockedStill"."livePhotoVideoId" = "asset"."id"
+          and exists (
+            select
+              1
+            from
+              asset_lock
+            where
+              asset_lock."assetId" = "lockedStill"."id"
+          )
+      )
+      or exists (
+        select
+          1 as "exists"
+        from
+          "asset_print_back"
+          inner join "asset" as "lockedFront" on "lockedFront"."id" = "asset_print_back"."frontAssetId"
+        where
+          "asset_print_back"."backAssetId" = "asset"."id"
+          and exists (
+            select
+              1
+            from
+              asset_lock
+            where
+              asset_lock."assetId" = "lockedFront"."id"
+          )
+      )
     )
   )
   and "asset"."ownerId" = $1

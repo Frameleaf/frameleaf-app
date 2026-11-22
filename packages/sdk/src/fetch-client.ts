@@ -6982,6 +6982,64 @@ export type ProcessingFailureActionDto = {
         step: ProcessingFailureStep;
     }[];
 };
+export type AssetRestorationBatchRequestDto = {
+    /** Frameleaf Cloud: the person agreed the photos leave */
+    acknowledgeDataLeaves?: boolean;
+    /** The photos to repair or colourise */
+    assetIds: string[];
+    /** The batchId of the estimate being confirmed. Confirming it again queues nothing twice. */
+    batchId?: string;
+    /** False: estimate only, nothing is queued. True: queue the batch on destinationId. */
+    confirm?: boolean;
+    /** Frameleaf Cloud: the consentVersion of the estimate shown */
+    consentVersion?: string;
+    /** Where the batch runs. Required to confirm; never inferred. */
+    destinationId?: string;
+    /** Frameleaf Cloud: the maxCostUsd of the estimate shown. The batch stops rather than go over it. */
+    maxCostUsd?: number;
+    operation: AssetRestorationBatchOperation;
+};
+export type AssetRestorationBatchDestinationDto = {
+    /** The server would admit this operation here right now */
+    available: boolean;
+    /** Frameleaf Cloud: what leaves this server, in its own words */
+    consentSummary: string | null;
+    /** Frameleaf Cloud: the terms this estimate is confirmed under */
+    consentVersion: string | null;
+    /** AI Wallet cost of the batch. Null at home, where it is free, and while Cloud has no price. */
+    costUsd: number | null;
+    /** Measured time for the whole batch, or null when nothing is measured yet */
+    estimateSeconds: number | null;
+    id: string;
+    kind: MlDestinationKind;
+    /** Photos sent here leave the network */
+    leavesNetwork: boolean;
+    /** Frameleaf Cloud: the most the batch may charge; send it back to confirm. Null otherwise. */
+    maxCostUsd: number | null;
+    name: string;
+    /** Why it cannot be chosen, or null */
+    refusal: (MlAdmissionRefusal) | null;
+    refusalDetail: string | null;
+};
+export type AssetRestorationBatchSkipDto = {
+    assetId: string;
+    /** already-in-colour, colour-unknown, not-a-photo or unavailable */
+    reason: string;
+};
+export type AssetRestorationBatchResponseDto = {
+    /** Send this back to confirm the estimate */
+    batchId: string;
+    /** Every destination in the processing order, those that cannot take it included */
+    destinations: AssetRestorationBatchDestinationDto[];
+    /** Photos that would be, or were, queued */
+    eligible: number;
+    operation: AssetRestorationOperation;
+    /** Photos queued by this request; 0 for an estimate */
+    queued: number;
+    skipped: AssetRestorationBatchSkipDto[];
+    /** Photos asked for */
+    total: number;
+};
 export type SafetyLookupDto = {
     /** SHA-256 hex hashes; inaccessible and foreign assets are omitted, including for administrators */
     hashes: string[];
@@ -7858,6 +7916,8 @@ export type AssetRestorationResponseDto = {
     /** Model the adapter reported, for provenance */
     modelName: string | null;
     modelVersion: string | null;
+    /** FL-955: repair or colourise. Absent on every enhance restoration, so existing responses are unchanged. */
+    operation?: AssetRestorationOperation;
     outputHeight: number | null;
     outputWidth: number | null;
     previewExpiresAt: string | null;
@@ -7896,6 +7956,8 @@ export type AssetRestorationRequestDto = {
     mode: AssetRestorationMode;
     /** FL-423: the restoration model to use, one of the destination's `models` for this mode. Left out, the destination uses its own model for the mode. Never substituted: a model the destination cannot run is refused. */
     model?: string;
+    /** FL-955: enhance (the default), repair or colourise. Repair and colourise need mode faithful, keep the photo at its own size and name no model. */
+    operation?: AssetRestorationOperation;
     region?: AssetRestorationRegionDto;
     /** Smooth motion only (FL-162): how many frames each frame becomes. Required for smooth_motion, refused otherwise. */
     smoothMotionFactor?: 2 | 4 | 8;
@@ -7945,10 +8007,14 @@ export type AssetRestorationOptionsDto = {
     /** Always true since the restoration adapter ships with the server; whether a model can run is reported per destination. */
     adapterInstalled: boolean;
     assetId: string;
+    /** FL-955: colourise only: why this photo cannot be colourised, in words for the owner */
+    colourRefusal?: string;
     destinations: AssetRestorationDestinationDto[];
     /** Video length; null for stills */
     durationSeconds: number | null;
     mode: AssetRestorationMode;
+    /** FL-955: present only when the options were asked for repair or colourise */
+    operation?: AssetRestorationOperation;
     /** Height the full render would produce after the 4K cap */
     outputHeight: number;
     /** Width the full render would produce after the 4K cap */
@@ -9280,6 +9346,8 @@ export type CloudMlJobEstimateRequestDto = {
     mode?: AssetRestorationMode;
     /** The model chosen on the slider; omitted, the chosen or recommended model for this work */
     modelSku?: string;
+    /** FL-955: repair or colourise a photo at its own size. A full render inherits it from its preview. */
+    operation?: AssetRestorationOperation;
     purpose: CloudMlJobPurpose;
     /** Preview: the part of the frame to preview */
     region?: AssetRestorationRegionDto;
@@ -23571,6 +23639,8 @@ export type AssetRestorationFileQueryDto = {
 };
 export type AssetRestorationOptionsQueryDto = {
     mode?: AssetRestorationMode;
+    /** FL-955: judge the destinations for repair or colourise. Left out, enhance. */
+    operation?: AssetRestorationOperation;
     upscale?: number;
 };
 export type AssetRestorationParamDto = {
@@ -30140,6 +30210,21 @@ export function retryProcessingFailures({ processingFailureActionDto }: {
     })));
 }
 /**
+ * Estimate or start a batch of photo repairs or colourisations
+ */
+export function restoreAssetsBatch({ assetRestorationBatchRequestDto }: {
+    assetRestorationBatchRequestDto: AssetRestorationBatchRequestDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AssetRestorationBatchResponseDto;
+    }>("/assets/restorations/batch", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: assetRestorationBatchRequestDto
+    })));
+}
+/**
  * Look up own asset safety by SHA-256
  */
 export function getAssetSafety({ safetyLookupDto }: {
@@ -31148,9 +31233,10 @@ export function setCurrentAssetRestoration({ id, assetRestorationSelectDto }: {
 /**
  * Get restoration options for an asset
  */
-export function getAssetRestorationOptions({ id, mode, upscale }: {
+export function getAssetRestorationOptions({ id, mode, operation, upscale }: {
     id: string;
     mode?: AssetRestorationMode;
+    operation?: AssetRestorationOperation;
     upscale?: number;
 }, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
@@ -31158,6 +31244,7 @@ export function getAssetRestorationOptions({ id, mode, upscale }: {
         data: AssetRestorationOptionsDto;
     }>(`/assets/${encodeURIComponent(id)}/restorations/options${QS.query(QS.explode({
         mode,
+        operation,
         upscale
     }))}`, {
         ...opts
@@ -47805,6 +47892,15 @@ export enum ProcessingFailureStep {
     SmartSearch = "SmartSearch",
     AssetDetectFaces = "AssetDetectFaces",
     Ocr = "Ocr"
+}
+export enum AssetRestorationBatchOperation {
+    Repair = "repair",
+    Colourise = "colourise"
+}
+export enum AssetRestorationOperation {
+    Enhance = "enhance",
+    Repair = "repair",
+    Colourise = "colourise"
 }
 export enum State2 {
     Unavailable = "unavailable",
