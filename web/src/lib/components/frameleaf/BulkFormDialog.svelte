@@ -16,6 +16,7 @@
     preview,
     open = $bindable(true),
     onSubmit,
+    onClosed,
     children,
   }: {
     title: string;
@@ -24,23 +25,37 @@
     danger?: boolean;
     preview?: string;
     open?: boolean;
-    onSubmit: () => void;
+    /** A promise keeps the dialog open until it settles; it closes when the promise gives true. */
+    onSubmit: () => void | Promise<boolean>;
+    /** Runs once the exit has finished, for a `modalManager.show` wrapper to unmount. */
+    onClosed?: () => void;
     children: Snippet;
   } = $props();
 
   const formId = $props.id();
+  let saving = $state(false);
 
   const submit = (event: SubmitEvent) => {
     event.preventDefault();
-    if (!valid) {
+    if (!valid || saving) {
       return;
     }
-    onSubmit();
-    open = false;
+    const result = onSubmit();
+    if (!(result instanceof Promise)) {
+      open = false;
+      return;
+    }
+    saving = true;
+    void result.then((done) => {
+      saving = false;
+      if (done) {
+        open = false;
+      }
+    });
   };
 </script>
 
-<Dialog bind:open {title} closeLabel={$t('cancel')}>
+<Dialog bind:open {title} {onClosed} closeLabel={$t('cancel')}>
   <form id={formId} onsubmit={submit}>
     {@render children()}
     {#if preview}
@@ -50,7 +65,7 @@
   {#snippet actions()}
     <button type="button" class="button" onclick={() => (open = false)}>{$t('cancel')}</button>
     <!-- The prototype's footer sits outside the scrolling body, so the submit button joins the form by id. -->
-    <button type="submit" form={formId} class="button" class:primary={!danger} class:danger disabled={!valid}
+    <button type="submit" form={formId} class="button" class:primary={!danger} class:danger disabled={!valid || saving}
       >{submitLabel}</button
     >
   {/snippet}

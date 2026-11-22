@@ -255,6 +255,37 @@ where
 group by
   "album_asset"."albumId"
 
+-- AlbumRepository.getRecentlyAddedIds
+select
+  "album_asset"."albumId"
+from
+  "asset"
+  inner join "album_asset" on "album_asset"."assetId" = "asset"."id"
+  inner join "album" on "album"."id" = "album_asset"."albumId"
+  inner join "album_user" on "album_user"."albumId" = "album"."id"
+where
+  (
+    "asset"."visibility" in ('archive', 'timeline')
+    and not exists (
+      select
+        1
+      from
+        asset_lock
+      where
+        asset_lock."assetId" = "asset"."id"
+    )
+  )
+  and "album_user"."userId" = $1
+  and "album_user"."role" in ($2, $3)
+  and "album"."deletedAt" is null
+  and "asset"."deletedAt" is null
+group by
+  "album_asset"."albumId"
+order by
+  max("album_asset"."createdAt") desc
+limit
+  $4
+
 -- AlbumRepository.getOwnerAssetCounts
 select
   "album_asset"."albumId",

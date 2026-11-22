@@ -82,16 +82,18 @@
       toastManager.primary($t(watched ? 'frameleaf_creators_marked_watched' : 'frameleaf_creators_marked_unwatched'));
     }, 'frameleaf_creators_action_error');
 
-  const addTo = (albumId: string | undefined) => {
-    if (!albumId) {
+  const addTo = (albumIds: string[]) => {
+    if (albumIds.length === 0) {
       return;
     }
     return run(async () => {
-      const result = await addAssetsToAlbum({ id: albumId, bulkIdsDto: { ids: [item.assetId] } });
-      if (result.some((row) => !row.success && row.error !== BulkIdErrorReason.Duplicate)) {
-        throw new Error('The item could not be added');
+      for (const albumId of albumIds) {
+        const result = await addAssetsToAlbum({ id: albumId, bulkIdsDto: { ids: [item.assetId] } });
+        if (result.some((row) => !row.success && row.error !== BulkIdErrorReason.Duplicate)) {
+          throw new Error('The item could not be added');
+        }
+        eventManager.emit('AlbumAddAssets', { assetIds: [item.assetId], albumIds: [albumId] });
       }
-      eventManager.emit('AlbumAddAssets', { assetIds: [item.assetId], albumIds: [albumId] });
       toastManager.primary($t('frameleaf_creators_added_to_collection'));
     }, 'frameleaf_creators_action_error');
   };
@@ -201,6 +203,6 @@
     libraryScope={LibraryViewScope.Design}
     bind:open={choosing}
     count={1}
-    onSubmit={(payload) => void addTo(payload.albumId)}
+    onSubmit={({ albumId, albumIds }) => void addTo(albumIds ?? (albumId ? [albumId] : []))}
   />
 {/if}

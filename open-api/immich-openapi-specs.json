@@ -14266,6 +14266,52 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/albums/recently-added": {
+      "get": {
+        "description": "Returns the albums the user may add to, the one that most recently received an item first.",
+        "operationId": "getRecentlyAddedAlbums",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AlbumRecentlyAddedResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List albums that recently received items",
+        "tags": [
+          "Albums"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v2",
+            "state": "Added"
+          },
+          {
+            "version": "v2",
+            "state": "Beta"
+          }
+        ],
+        "x-immich-permission": "album.read",
+        "x-immich-state": "Beta"
+      }
+    },
     "/albums/statistics": {
       "get": {
         "description": "Returns statistics about the albums available to the authenticated user.",
@@ -80845,6 +80891,47 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/users/me/unseen-count": {
+      "get": {
+        "description": "How many photos, videos and comments other people added to the shared spaces you belong to since you last marked each one visited (`POST /shared-spaces/{id}/visit`). Your own additions, pending invitations, and Locked, rule-hidden or trashed items are never counted.",
+        "operationId": "getMyUnseenCount",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnseenCountResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get my unseen count",
+        "tags": [
+          "Users"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "user.read"
+      }
+    },
     "/users/me/upload-skips": {
       "get": {
         "description": "While \"do not upload what I deleted again\" is on (preferences backup.skipDeleted), the photos and videos you permanently deleted since then, by checksum, latest first. A phone or app that uploads one of them is refused with 409 deleted_by_owner. Items deleted while Locked are listed only for an unlocked session.",
@@ -87302,6 +87389,23 @@
           "id",
           "name",
           "updatedAt"
+        ],
+        "type": "object"
+      },
+      "AlbumRecentlyAddedResponseDto": {
+        "properties": {
+          "albumIds": {
+            "description": "Albums the user may add to, the one that most recently received an item first",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "albumIds"
         ],
         "type": "object"
       },
@@ -190215,6 +190319,20 @@
         "required": [
           "otpauthUri",
           "secret"
+        ],
+        "type": "object"
+      },
+      "UnseenCountResponseDto": {
+        "properties": {
+          "count": {
+            "description": "Photos, videos and comments other people added to your shared spaces since you last marked each one visited",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "count"
         ],
         "type": "object"
       },

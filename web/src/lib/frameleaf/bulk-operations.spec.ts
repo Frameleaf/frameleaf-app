@@ -985,3 +985,32 @@ describe('durable jobs on the page', () => {
     expect(states).toEqual(ids.map(() => 'unchanged'));
   });
 });
+
+describe('adding to several albums', () => {
+  it('counts an item added to any album, and undo removes only what each album newly received', async () => {
+    const api = gateway();
+    vi.mocked(api.addAssetsToAlbum).mockImplementation(({ id, bulkIdsDto }) =>
+      Promise.resolve(
+        bulkIdsDto.ids.map((assetId) =>
+          id === 'one' && assetId === 'a'
+            ? { id: assetId, success: false }
+            : { id: assetId, success: id === 'one' || assetId === 'a' },
+        ),
+      ),
+    );
+    vi.mocked(api.removeAssetFromAlbum).mockImplementation(({ bulkIdsDto }) =>
+      Promise.resolve(bulkIdsDto.ids.map((id) => ({ id, success: true }))),
+    );
+
+    const result = await runBulkAction('add-to-album', ['a', 'b'], {
+      gateway: api,
+      payload: { albumId: 'one', albumIds: ['one', 'two'] },
+    });
+
+    expect(result.succeeded).toEqual(['a', 'b']);
+    expect(shouldRunDurably('add-to-album', DURABLE_BULK_THRESHOLD + 1, { albumIds: ['one', 'two'] })).toBe(false);
+    await runBulkAction('remove-from-album', result.undo!.ids, { gateway: api, payload: result.undo!.payload });
+    expect(api.removeAssetFromAlbum).toHaveBeenCalledWith({ id: 'one', bulkIdsDto: { ids: ['b'] } });
+    expect(api.removeAssetFromAlbum).toHaveBeenCalledWith({ id: 'two', bulkIdsDto: { ids: ['a'] } });
+  });
+});

@@ -114,6 +114,10 @@ export type BulkResult = {
 
 export type BulkPayload = {
   albumId?: string;
+  /** Add to several albums at once; `albumId` is then the first of them. */
+  albumIds?: string[];
+  /** For the undo of a several-album add: per album, only the items it newly received. */
+  addedByAlbum?: Record<string, string[]>;
   sharedLinkId?: string;
   tagIds?: string[];
   newTagNames?: string[];
@@ -624,6 +628,8 @@ const requirePayload = <K extends keyof BulkPayload>(
   return value as NonNullable<BulkPayload[K]>;
 };
 
+const severalAlbums = (payload?: BulkPayload) => (payload?.albumIds?.length ?? 0) > 1;
+
 /** Tag names the user typed are created first, then every id is applied in one call. */
 const resolveTagIds = async (payload: BulkPayload | undefined, gateway: BulkGateway): Promise<string[]> => {
   const existing = payload?.tagIds ?? [];
@@ -825,6 +831,36 @@ export const runBulkAction = async (
 
     /* PUT /albums/:id/assets and DELETE /albums/:id/assets — both answer per id. */
     case 'add-to-album': {
+      if (severalAlbums(payload)) {
+        const added: Record<string, string[]> = Object.fromEntries(payload!.albumIds!.map((id) => [id, []]));
+        return finish(
+          await runInChunks(runner, async (batch) => {
+            const byId = new Map<string, BulkOutcome>();
+            let refused: unknown;
+            for (const albumId of payload!.albumIds!) {
+              try {
+                const responses = await gateway.addAssetsToAlbum({ id: albumId, bulkIdsDto: { ids: batch } });
+                for (const [index, outcome] of fromBulkIdResponses(responses).entries()) {
+                  if (responses[index].success) {
+                    added[albumId].push(outcome.id);
+                    byId.set(outcome.id, outcome);
+                  } else if (!byId.has(outcome.id)) {
+                    byId.set(outcome.id, outcome);
+                  }
+                }
+              } catch (error) {
+                refused = error;
+              }
+            }
+            // Thrown only when no album took anything, so the retry can't add an item twice over.
+            if (refused && byId.size === 0) {
+              throw refused;
+            }
+            return batch.map((id) => byId.get(id) ?? failed(id, refused));
+          }),
+          (succeeded) => ({ action: 'remove-from-album', ids: succeeded, payload: { addedByAlbum: added } }),
+        );
+      }
       const albumId = requirePayload(payload, 'albumId');
       return finish(
         await runInChunks(runner, async (batch) =>
@@ -834,6 +870,24 @@ export const runBulkAction = async (
       );
     }
     case 'remove-from-album': {
+      if (payload?.addedByAlbum) {
+        const albums = Object.entries(payload.addedByAlbum).map(([id, added]) => [id, new Set(added)] as const);
+        return finish(
+          await runInChunks(runner, async (batch) => {
+            const byId = new Map<string, BulkOutcome>();
+            for (const [albumId, added] of albums) {
+              const inAlbum = batch.filter((id) => added.has(id));
+              if (inAlbum.length > 0) {
+                const responses = await gateway.removeAssetFromAlbum({ id: albumId, bulkIdsDto: { ids: inAlbum } });
+                for (const outcome of fromBulkIdResponses(responses)) {
+                  byId.set(outcome.id, outcome);
+                }
+              }
+            }
+            return batch.map((id) => byId.get(id) ?? ok(id));
+          }),
+        );
+      }
       const albumId = requirePayload(payload, 'albumId');
       return finish(
         await runInChunks(runner, async (batch) =>
@@ -1256,6 +1310,9 @@ export const shouldRunDurably = (action: BulkActionId, count: number, payload?: 
   !!durableBulkAction(action) &&
   count > DURABLE_BULK_THRESHOLD &&
   !payload?.offsetMinutesById &&
+  // the durable album job takes one album; several run from here in chunks, with one undo
+  !severalAlbums(payload) &&
+  !payload?.addedByAlbum &&
   // FL-936: a year or a decade, and its undo, are one Doctor batch; the durable date job knows neither
   !payload?.dateAccuracy &&
   !payload?.undoDateFixId &&

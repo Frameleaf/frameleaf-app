@@ -5594,6 +5594,10 @@ export type AlbumOrderDto = {
     /** Collection whose albums are ordered, or null for a top-level group (collections, albums on their own, or shared spaces) */
     parentId: string | null;
 };
+export type AlbumRecentlyAddedResponseDto = {
+    /** Albums the user may add to, the one that most recently received an item first */
+    albumIds: string[];
+};
 export type AlbumStatisticsResponseDto = {
     /** Number of non-shared albums */
     notShared: number;
@@ -23196,6 +23200,10 @@ export type LockedRulesCountResponseDto = {
     /** Your videos the draft would keep Locked */
     videos: number;
 };
+export type UnseenCountResponseDto = {
+    /** Photos, videos and comments other people added to your shared spaces since you last marked each one visited */
+    count: number;
+};
 export type UploadSkipItemDto = {
     /** The deleted file, as the hex digest of its bytes (SHA-256; SHA-1 for items stored before it) */
     checksum: string;
@@ -29291,6 +29299,17 @@ export function setAlbumOrder({ albumOrderDto }: {
         method: "PUT",
         body: albumOrderDto
     })));
+}
+/**
+ * List albums that recently received items
+ */
+export function getRecentlyAddedAlbums(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AlbumRecentlyAddedResponseDto;
+    }>("/albums/recently-added", {
+        ...opts
+    }));
 }
 /**
  * Retrieve album statistics
@@ -45649,6 +45668,17 @@ export function countLockedRules({ lockedRulesDraftDto }: {
         method: "POST",
         body: lockedRulesDraftDto
     })));
+}
+/**
+ * Get my unseen count
+ */
+export function getMyUnseenCount(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: UnseenCountResponseDto;
+    }>("/users/me/unseen-count", {
+        ...opts
+    }));
 }
 /**
  * List what I deleted that is not uploaded again

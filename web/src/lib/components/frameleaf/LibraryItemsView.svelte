@@ -736,7 +736,11 @@
   const organize = (payload: BulkPayload, operation: 'add' | 'remove' = 'add') => {
     const name = collectionName;
     return runSelection(
-      (keys, owner, current) => organizeLibraryItems(results.items, keys, owner, payload, current, operation),
+      async (keys, owner, current) => {
+        for (const albumId of payload.albumIds ?? [payload.albumId]) {
+          await organizeLibraryItems(results.items, keys, owner, { ...payload, albumId }, current, operation);
+        }
+      },
       operation === 'remove'
         ? (count) => toastManager.primary($t('frameleaf_boards_removed_from', { values: { count, name } }))
         : undefined,

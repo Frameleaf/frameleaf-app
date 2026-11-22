@@ -125,6 +125,18 @@ export const flattenAlbumTargets = (directory: AlbumTargetDirectory): AlbumTarge
   ...directory.spaces,
 ];
 
+/** The directory with these targets left out, and any collection that has nothing left. */
+export const withoutAlbumTargets = (
+  directory: AlbumTargetDirectory,
+  ids: ReadonlySet<string>,
+): AlbumTargetDirectory => ({
+  albums: directory.albums.filter(({ id }) => !ids.has(id)),
+  collections: directory.collections
+    .map((collection) => ({ ...collection, albums: collection.albums.filter(({ id }) => !ids.has(id)) }))
+    .filter((collection) => collection.albums.length > 0),
+  spaces: directory.spaces.filter(({ id }) => !ids.has(id)),
+});
+
 export const countAlbumTargets = (directory: AlbumTargetDirectory) => flattenAlbumTargets(directory).length;
 
 /**

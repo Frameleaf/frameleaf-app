@@ -21,6 +21,7 @@ import {
   AlbumIconCatalogueResponseDto,
   AlbumOrderDto,
   AlbumPersonResponseDto,
+  AlbumRecentlyAddedResponseDto,
   AlbumResponseDto,
   AlbumStatisticsResponseDto,
   AlbumTreeResponseDto,
@@ -252,6 +253,11 @@ export class AlbumService extends BaseService {
       shared: shared.length,
       notShared: notShared.length,
     };
+  }
+
+  /** The add-to-album picker's Recent group. Counts only items this session may see. */
+  async getRecentlyAdded(auth: AuthDto): Promise<AlbumRecentlyAddedResponseDto> {
+    return { albumIds: await this.albumRepository.getRecentlyAddedIds(auth.user.id, this.nsfwOptions(auth)) };
   }
 
   async getAll(
