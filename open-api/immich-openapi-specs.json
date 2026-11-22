@@ -188792,6 +188792,10 @@
             "description": "Additional fields of an imported definition, kept and exported unchanged",
             "type": "object"
           },
+          "generatedSecret": {
+            "description": "The signing secret this save made for a step that sends a Frameleaf event and had none. Returned once, by that save only",
+            "type": "string"
+          },
           "id": {
             "description": "Step ID",
             "format": "uuid",
