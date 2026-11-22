@@ -4984,6 +4984,8 @@
   "frameleaf_bgwork_working_body": "{work}. Puedes seguir usando Frameleaf.",
   "frameleaf_bgwork_working_everyday_body": "Puedes seguir usando Frameleaf. Actividad muestra qué espera cada elemento nuevo.",
   "frameleaf_boards_add_to_collection": "Añadir a la colección",
+  "frameleaf_boards_albums_all_failed": "No se ha podido añadir todo a {failed}. Vuelve a añadir a esos álbumes para terminar; los elementos que ya estén se omitirán.",
+  "frameleaf_boards_albums_some_failed": "Añadido a {added}. No se ha podido añadir todo a {failed}. Vuelve a añadir a esos álbumes para terminar; los elementos que ya estén se omitirán.",
   "frameleaf_boards_all_items": "Todos los elementos",
   "frameleaf_boards_annotate": "Anotar",
   "frameleaf_boards_annotate_arrow": "Flecha",

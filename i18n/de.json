@@ -4984,6 +4984,8 @@
   "frameleaf_bgwork_working_body": "{work}. Du kannst Frameleaf weiter nutzen.",
   "frameleaf_bgwork_working_everyday_body": "Du kannst Frameleaf weiter nutzen. Unter Aktivität siehst du, worauf jeder neue Zugang wartet.",
   "frameleaf_boards_add_to_collection": "Zur Sammlung hinzufügen",
+  "frameleaf_boards_albums_all_failed": "Nicht alles konnte zu {failed} hinzugefügt werden. Füge erneut zu diesen Alben hinzu, um abzuschließen. Bereits vorhandene Objekte werden übersprungen.",
+  "frameleaf_boards_albums_some_failed": "Zu {added} hinzugefügt. Nicht alles konnte zu {failed} hinzugefügt werden. Füge erneut zu diesen Alben hinzu, um abzuschließen. Bereits vorhandene Objekte werden übersprungen.",
   "frameleaf_boards_all_items": "Alle Elemente",
   "frameleaf_boards_annotate": "Kommentieren",
   "frameleaf_boards_annotate_arrow": "Pfeil",

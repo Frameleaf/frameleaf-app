@@ -4984,6 +4984,8 @@
   "frameleaf_bgwork_working_body": "{work}. Pode continuar a utilizar o Frameleaf.",
   "frameleaf_bgwork_working_everyday_body": "Pode continuar a utilizar o Frameleaf. A Atividade mostra o que cada novo item está a aguardar.",
   "frameleaf_boards_add_to_collection": "Adicionar à coleção",
+  "frameleaf_boards_albums_all_failed": "Não foi possível adicionar tudo a {failed}. Adicione novamente a esses álbuns para concluir; os itens já presentes são ignorados.",
+  "frameleaf_boards_albums_some_failed": "Adicionado a {added}. Não foi possível adicionar tudo a {failed}. Adicione novamente a esses álbuns para concluir; os itens já presentes são ignorados.",
   "frameleaf_boards_all_items": "Todos os itens",
   "frameleaf_boards_annotate": "Anotar",
   "frameleaf_boards_annotate_arrow": "Seta",

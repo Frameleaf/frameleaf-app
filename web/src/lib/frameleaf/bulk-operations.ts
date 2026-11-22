@@ -116,6 +116,8 @@ export type BulkPayload = {
   albumId?: string;
   /** Add to several albums at once; `albumId` is then the first of them. */
   albumIds?: string[];
+  /** The names of `albumIds`, so a partial failure can say which albums it was. */
+  albumNames?: Record<string, string>;
   /** For the undo of a several-album add: per album, only the items it newly received. */
   addedByAlbum?: Record<string, string[]>;
   sharedLinkId?: string;

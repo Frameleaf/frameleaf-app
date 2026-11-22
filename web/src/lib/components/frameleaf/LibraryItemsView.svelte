@@ -38,6 +38,7 @@
   } from '$lib/frameleaf/library-item-search';
   import { compilePaletteQuery, readPaletteState } from '$lib/frameleaf/search-palette';
   import {
+    organizeIntoAlbums,
     organizeLibraryItems,
     ownsLibrarySelection,
     rateLibraryItems,
@@ -215,6 +216,8 @@
   let generation = $state(0);
   let failed = $state(false);
   let organizationFailed = $state(false);
+  /** Says which albums took the items, when an add to several albums partly failed. */
+  let organizationMessage = $state<string | null>(null);
   let organizing = $state(false);
   let filterSection = $state<DiscoveryFilterSection | null>(null);
   let inspectorOpen = $state(true);
@@ -678,6 +681,7 @@
         reload();
       })
       .catch(() => {
+        organizationMessage = null;
         organizationFailed = true;
       });
   };
@@ -715,6 +719,7 @@
     dialog = null;
     organizing = true;
     organizationFailed = false;
+    organizationMessage = null;
     try {
       await change(keys, owner, () => current() && generation === version);
       if (current() && generation === version) {
@@ -737,20 +742,18 @@
     const name = collectionName;
     return runSelection(
       async (keys, owner, current) => {
-        let refused: unknown;
-        for (const albumId of payload.albumIds ?? [payload.albumId]) {
-          try {
-            await organizeLibraryItems(results.items, keys, owner, { ...payload, albumId }, current, operation);
-          } catch (error) {
-            // One album refusing doesn't stop the others, but a changed account or page does.
-            if (!current()) {
-              throw error;
-            }
-            refused = error;
-          }
+        if (!payload.albumIds) {
+          await organizeLibraryItems(results.items, keys, owner, payload, current, operation);
+          return;
         }
-        if (refused) {
-          throw refused;
+        const { added, failed } = await organizeIntoAlbums(results.items, keys, owner, payload.albumIds, current);
+        if (failed.length > 0) {
+          const names = (ids: string[]) => ids.map((id) => payload.albumNames?.[id] ?? $t('unnamed_album')).join(', ');
+          organizationMessage =
+            added.length > 0
+              ? $t('frameleaf_boards_albums_some_failed', { values: { added: names(added), failed: names(failed) } })
+              : $t('frameleaf_boards_albums_all_failed', { values: { failed: names(failed) } });
+          throw new Error('Some albums did not take the items');
         }
       },
       operation === 'remove'
@@ -1188,9 +1191,10 @@
     {/snippet}
     {#if organizationFailed}<InlineError
         compact
-        message={$t('frameleaf_pro_organization_failed')}
+        message={organizationMessage ?? $t('frameleaf_pro_organization_failed')}
         onRetry={() => {
           organizationFailed = false;
+          organizationMessage = null;
           session.clearSelection();
           reload();
         }}
