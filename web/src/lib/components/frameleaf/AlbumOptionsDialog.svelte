@@ -26,6 +26,7 @@
   let order = $state<AssetOrder>(album.order ?? AssetOrder.Desc);
   let activityEnabled = $state(album.isActivityEnabled);
   let locked = $state(album.isLocked ?? false);
+  let holdsScans = $state(album.holdsScans ?? false);
   const owner = $derived(isOwner(album, authManager.user.id));
   let saving = $state(false);
 
@@ -37,6 +38,7 @@
     order = album.order ?? AssetOrder.Desc;
     activityEnabled = album.isActivityEnabled;
     locked = album.isLocked ?? false;
+    holdsScans = album.holdsScans ?? false;
   });
 
   const save = async () => {
@@ -47,6 +49,7 @@
         {
           order,
           isActivityEnabled: activityEnabled,
+          ...(holdsScans !== (album.holdsScans ?? false) && { holdsScans }),
           // Only the owner may send it; unchanged it stays out so editors can still save.
           ...(locked !== (album.isLocked ?? false) && { isLocked: locked }),
         },
@@ -83,6 +86,16 @@
         <small>{$t('frameleaf_album_options_activity_description')}</small>
       </span>
     </label>
+
+    {#if album.kind !== 'space'}
+      <label class="switch">
+        <input type="checkbox" role="switch" bind:checked={holdsScans} />
+        <span class="switch-text">
+          <strong>{$t('frameleaf_album_options_holds_scans')}</strong>
+          <small>{$t('frameleaf_album_options_holds_scans_description')}</small>
+        </span>
+      </label>
+    {/if}
 
     {#if owner}
       <label class="switch">
