@@ -8,6 +8,7 @@ import {
   localizePlaceNames,
   parsePlaceNameLine,
   placeNameLanguageOf,
+  placeNameSpellings,
 } from 'src/utils/place-names.js';
 
 type Candidate = { id: number; lang: string; name: string; rank: number; exact: boolean; order: number };
@@ -256,5 +257,18 @@ describe('localizePlaceNames', () => {
     expect(localizePlaceNames('de', { ...stored, country: 'Austria' }, linked, german, countryIds)).toMatchObject({
       country: 'Austria',
     });
+  });
+});
+
+describe('placeNameSpellings (FL-1027)', () => {
+  it('tries the plain letters a German keyboard stands in for', () => {
+    expect(placeNameSpellings('Muenchen', 'de')).toEqual(['Muenchen', 'Munchen']);
+    expect(placeNameSpellings('Koeln', 'de')).toEqual(['Koeln', 'Koln']);
+    expect(placeNameSpellings('Gießen', 'de')).toEqual(['Gießen', 'Giessen']);
+    expect(placeNameSpellings('Berlin', 'de')).toEqual(['Berlin']);
+  });
+
+  it('leaves other languages as typed', () => {
+    expect(placeNameSpellings('Rafael', 'es')).toEqual(['Rafael']);
   });
 });
