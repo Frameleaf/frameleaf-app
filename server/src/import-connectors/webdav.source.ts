@@ -230,7 +230,7 @@ export class WebDavSource implements RemoteSource {
     }
     // Nothing here is the folder that was asked for, so an empty result would be a false "no files".
     if (entries.length > 0 && children.length === 0 && entries.every(({ href }) => !isSameFolder(href, url))) {
-      throw new RemoteSourceError('The server listed a different address than was asked for');
+      throw new RemoteSourceError('The folder listing could not be read');
     }
     return children;
   }
