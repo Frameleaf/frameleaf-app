@@ -3,9 +3,11 @@ import {
   MediaFeedSupport,
   MediaIndividualSupport,
   MediaProtocolVersion,
+  MediaImportItemState,
+  MediaImportState,
   type MediaCapabilitiesDto,
 } from '@frameleaf/sdk';
-import { render, screen, waitFor } from '@testing-library/svelte';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import en from '$i18n/en.json';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
@@ -14,7 +16,7 @@ import { authManager } from '$lib/managers/auth-manager.svelte';
 import { preferencesFactory } from '@test-data/factories/preferences-factory';
 import { userAdminFactory } from '@test-data/factories/user-factory';
 import CreatorsWorkspace from './CreatorsWorkspace.svelte';
-import { creatorFixture } from './creators.fixture';
+import { creatorFixture, inspectionFixture } from './creators.fixture';
 
 const app = vi.hoisted(() => ({ page: { url: new URL('http://localhost/pro?area=creators') } }));
 vi.mock('$app/state', () => ({ page: app.page }));
@@ -53,6 +55,49 @@ afterEach(() => {
 });
 
 describe('CreatorsWorkspace', () => {
+  it('lists every download on the Downloads page, with why a paused one stopped', async () => {
+    const [file] = inspectionFixture().items;
+    const paused = inspectionFixture({
+      id: 'import-paused',
+      albumId: 'album-1',
+      state: MediaImportState.Paused,
+      error: 'Media import could not continue; check access, destination and storage',
+      items: [{ ...file, title: 'Sawmill clip' }],
+    });
+    const going = inspectionFixture({
+      id: 'import-going',
+      albumId: 'album-1',
+      state: MediaImportState.Downloading,
+      discovered: 2,
+      saved: 1,
+      items: [
+        { ...file, id: 'a', title: 'Lake at first light', state: MediaImportItemState.Saved },
+        { ...file, id: 'b', title: 'Trail sign in fog', state: MediaImportItemState.Discovered },
+      ],
+    });
+    sdkMock.getMediaImports.mockResolvedValue({ imports: [paused, going] });
+    sdkMock.retryMediaImport.mockResolvedValue({ ...paused, state: MediaImportState.Queued, error: null });
+    app.page.url = new URL('http://localhost/pro?area=creators&view=downloads');
+    render(CreatorsWorkspace);
+
+    expect(await screen.findByRole('heading', { level: 1, name: 'Downloads' })).toBeInTheDocument();
+    const row = (await screen.findByText('Sawmill clip')).closest('tr')!;
+    expect(within(row).getByText('Paused')).toBeInTheDocument();
+    expect(within(row).getByText(/check access, destination and storage/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Waiting 1/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Needs you 1/ })).toBeInTheDocument();
+    // the page is the whole list, so the tray is not drawn over it
+    expect(screen.queryByRole('link', { name: 'See all downloads' })).not.toBeInTheDocument();
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Files in 2 items' }));
+    expect(screen.getByText('Trail sign in fog')).toBeInTheDocument();
+
+    await fireEvent.click(within(row).getByRole('button', { name: 'Retry' }));
+    await waitFor(() =>
+      expect(sdkMock.retryMediaImport).toHaveBeenCalledWith(expect.objectContaining({ id: 'import-paused' })),
+    );
+  });
+
   it('shows Home with everyone followed', async () => {
     render(CreatorsWorkspace);
     expect(await screen.findByRole('heading', { level: 1, name: 'Creators' })).toBeInTheDocument();

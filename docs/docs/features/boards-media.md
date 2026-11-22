@@ -1,6 +1,6 @@
 # Creators in Boards
 
-Boards has two areas: **Items**, your collections, and **Creators**, where Library saves media from the web. Follow a channel or account and Library keeps its own copy of what they post. Downloads run on Library and continue after you close the browser.
+Boards has two areas: **Items**, your collections, and **Creators**, where Library saves media from the web. Follow a channel or account and Library keeps its own copy of what they post. Downloads run on Library and continue after you close the browser. **Downloads**, in the Creators list, shows your latest 100 downloads: what is running, what is waiting its turn, what needs you and what was saved, with the reason a download stopped. A download you started yourself can be tried again there; for a creator you follow, use **Check now** on their page.
 
 ## Add from the web
 
@@ -28,7 +28,7 @@ Checks run hourly by default; you can choose 15 minutes, hourly, every six hours
 
 Connect only the site you want Library to access. Save to Frameleaf requests cookie access and the selected host permissions when you choose to connect. Library retains that site's access for scheduled downloads; sharing a collection never shares the connection. Some providers need supported credentials or tokens instead of browser cookies, such as a Bluesky app password or Reddit OAuth credentials.
 
-Refresh access when a session expires. Disconnect removes the retained credentials and stops dependent work. Signing out of the browser extension leaves already accepted Library downloads and subscriptions running. Account disablement, subscription pause and destination permission changes are still enforced.
+Refresh access when a session expires. A post the site will not show your account (a private account you do not follow, a blocked account, or age-restricted media your account has not turned on) fails on its own with that reason; it does not disconnect the site or stop your other downloads. Disconnect removes the retained credentials and stops dependent work. Signing out of the browser extension leaves already accepted Library downloads and subscriptions running. Account disablement, subscription pause and destination permission changes are still enforced.
 
 Site access is transferred over HTTPS. A Library address using a generated self-signed certificate can be used after Chrome trusts that certificate. Choose **Open Library**, accept the certificate in the browser, then choose **Retry** in the extension. If the browser exception does not apply to extension requests, import and trust the certificate for that Library address using Chrome's certificate manager or your operating system's trust settings, then retry. Saving a preference does not disable certificate verification.
 

@@ -986,6 +986,10 @@ export class JobRepository {
         : undefined,
       rootItemKey: context?.claim.rootItemKey ?? null,
       parentId: context?.buffering ? context.claim.id : undefined,
+      // A Boards download is a new arrival, as an upload is. It saves its file from inside its own job, so the file's
+      // work (metadata, then thumbnails) joins this job's run instead of an upload run; from the front, each next
+      // step keeps that place (`enqueueFollowups`) and does not wait behind a library-wide backlog.
+      ...(item.name === JobName.MediaImport && { front: true }),
     };
   }
 

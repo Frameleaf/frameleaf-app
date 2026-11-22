@@ -40,6 +40,8 @@ FORMATS = {
     "audio": "ba/b",
 }
 OUTPUT = sys.stdout
+# Whether this attempt carries a site sign-in. One request per process, so the attempt's own answer is enough.
+SIGNED_IN = False
 
 
 def write_message(kind, **fields):
@@ -67,6 +69,8 @@ class Extraction:
         self.gallery_session = gallery_session_factory(request["socketPath"], request["token"], self.session)
         self.auth_fields = {name for name in ("username", "password", "refreshToken", "accessToken", "clientId", "clientSecret")
                             if self.session.get(name)}
+        global SIGNED_IN
+        SIGNED_IN = bool(self.session.get("cookies") or self.auth_fields)
 
     @contextmanager
     def youtube(self, flat=False, feed=False, gallery_session=None):
@@ -740,12 +744,22 @@ def inspection(url, provider, kind, entries, checkpoint, limitation, title=None,
     }
 
 
+def refused():
+    """
+    The site would not show this. Signed in, that is about this post or account (private, blocked, age-restricted),
+    not about the sign-in: only an answer that the sign-in itself is not accepted says the connection has lapsed.
+    """
+    return BridgeError("restricted" if SIGNED_IN else "authentication_required")
+
+
 def http_status(status, headers):
     if status == 429:
         retry_after = headers.get("Retry-After")
         return BridgeError("rate_limited", int(retry_after) if str(retry_after).isdigit() and len(str(retry_after)) <= 5 else None)
-    if status in (401, 403):
+    if status == 401:
         return BridgeError("authentication_required")
+    if status == 403:
+        return refused()
     if status in (404, 410):
         return BridgeError("no_media")
     return BridgeError("failed")
@@ -756,8 +770,10 @@ def error_code(error):
         return error
     if isinstance(error, UnsupportedError) or isinstance(getattr(error, "exc_info", None), tuple) and isinstance(error.exc_info[1], UnsupportedError):
         return BridgeError("unsupported")
-    if isinstance(error, (gallery_error.AuthenticationError, gallery_error.AuthorizationError)):
+    if isinstance(error, gallery_error.AuthenticationError):
         return BridgeError("authentication_required")
+    if isinstance(error, gallery_error.AuthorizationError):
+        return refused()
     if isinstance(error, gallery_error.NotFoundError):
         return BridgeError("no_media")
     for inner in (error, getattr(error, "cause", None), getattr(error, "__cause__", None),
@@ -774,8 +790,10 @@ def error_code(error):
             return BridgeError("unsupported")
         if "no video" in details or "no formats" in details or "no media" in details:
             return BridgeError("no_media")
-        if "sign in" in details or "login required" in details or "private video" in details:
+        if "sign in" in details or "login required" in details:
             return BridgeError("authentication_required")
+        if "private video" in details:
+            return refused()
         if "http error 429" in details:
             return BridgeError("rate_limited")
     return BridgeError("failed")
