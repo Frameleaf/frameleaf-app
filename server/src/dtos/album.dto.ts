@@ -9,7 +9,7 @@ import { BulkIdErrorReasonSchema } from 'src/dtos/asset-ids.response.dto.js';
 import { MapAsset } from 'src/dtos/asset-response.dto.js';
 import { PartnerOriginSchema } from 'src/dtos/partner-origin.dto.js';
 import { SMART_ALBUM_BUILT_IN_KINDS } from 'src/dtos/system-config.dto.js';
-import { UserResponseSchema, mapUser } from 'src/dtos/user.dto.js';
+import { UserResponseSchema, mapMember } from 'src/dtos/user.dto.js';
 import {
   AlbumKind,
   AlbumKindSchema,
@@ -545,7 +545,7 @@ export const mapAlbum = (entity: MaybeDehydrated<MapAlbumDto>): AlbumResponseDto
 
   if (entity.albumUsers) {
     for (const albumUser of entity.albumUsers) {
-      const user = mapUser(albumUser.user);
+      const user = mapMember(albumUser.user);
       albumUsers.push({
         user,
         role: albumUser.role,

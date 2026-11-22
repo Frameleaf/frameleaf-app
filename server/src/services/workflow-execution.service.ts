@@ -354,6 +354,10 @@ export class WorkflowExecutionService extends BaseService {
       const headers = new Headers(
         Object.entries(request.headers ?? {}).filter(([name]) => !name.toLowerCase().startsWith('x-frameleaf-')),
       );
+      // FL-1631 (TM-7): nothing about a Frameleaf event leaves unsigned. Saving the step gives it a secret.
+      if (context.event && !signingSecret) {
+        throw new Error('A message about a Frameleaf event must be signed. Save this step with a signing secret.');
+      }
       const deliveryId = context.event?.deliveryId ?? context.deliveryId ?? crypto.randomUUID();
       if (context.event || signingSecret) {
         headers.set('X-Frameleaf-Delivery', deliveryId);

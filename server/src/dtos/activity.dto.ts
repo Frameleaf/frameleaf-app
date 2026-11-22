@@ -1,7 +1,7 @@
 import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
 import { Activity } from 'src/database.js';
-import { UserResponseSchema, mapUser } from 'src/dtos/user.dto.js';
+import { UserResponseSchema, mapMember } from 'src/dtos/user.dto.js';
 import { isoDatetimeToDate } from 'src/validation.js';
 
 export enum ReactionLevel {
@@ -68,7 +68,7 @@ export const mapActivity = (activity: Activity): ActivityResponseDto => {
     createdAt: activity.createdAt,
     comment: activity.comment,
     type: activity.isLiked ? ReactionType.LIKE : ReactionType.COMMENT,
-    user: mapUser(activity.user),
+    user: mapMember(activity.user),
   };
 };
 

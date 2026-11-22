@@ -22608,6 +22608,8 @@ export type WorkflowStepResponseDto = {
     extra: {
         [key: string]: any;
     };
+    /** The signing secret this save made for a step that sends a Frameleaf event and had none. Returned once, by that save only */
+    generatedSecret?: string;
     /** Step ID */
     id: string;
     /** Step plugin method, as plugin#method */

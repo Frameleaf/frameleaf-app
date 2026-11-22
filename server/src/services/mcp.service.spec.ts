@@ -278,6 +278,71 @@ describe(McpService.name, () => {
     expect(addAssets).not.toHaveBeenCalled();
   });
 
+  describe('write journal (FL-1634 TM-10)', () => {
+    const lastDetail = () => JSON.parse(mocks.accountEvent.create.mock.calls.at(-1)![0].detail!);
+    const ownedAndVisible = () => {
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([assetId, otherAssetId]));
+      mocks.asset.getByIds.mockResolvedValue([
+        { id: assetId, visibility: AssetVisibility.Timeline },
+        { id: otherAssetId, visibility: AssetVisibility.Timeline },
+      ] as never);
+    };
+
+    it('names the album and the photos add_to_album added', async () => {
+      await connect('albums:write');
+      ownedAndVisible();
+      addAssets.mockResolvedValue([
+        { id: assetId, success: true },
+        { id: otherAssetId, success: false, error: 'duplicate' },
+      ]);
+
+      const result = await client.callTool({
+        name: 'add_to_album',
+        arguments: { albumId: albumId.toUpperCase(), assetIds: [assetId, otherAssetId] },
+      });
+
+      expect(result.isError).toBeFalsy();
+      expect(lastDetail()).toEqual({
+        clientId: 'client',
+        grantId: 'grant',
+        tool: 'add_to_album',
+        outcome: 'success',
+        count: 1,
+        albumId,
+        assetIds: [assetId],
+      });
+    });
+
+    it('names the tag and the photos tag_assets tagged', async () => {
+      await connect('tags:write');
+      ownedAndVisible();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([assetId]));
+      mocks.asset.getByIds.mockResolvedValue([{ id: assetId, visibility: AssetVisibility.Timeline }] as never);
+      mocks.access.tag.checkOwnerAccess.mockResolvedValue(new Set([albumId]));
+      tagAssets.mockResolvedValue([{ id: assetId, success: true }]);
+
+      await client.callTool({ name: 'tag_assets', arguments: { tagId: albumId, assetIds: [assetId] } });
+
+      expect(lastDetail()).toMatchObject({ outcome: 'success', tagId: albumId, assetIds: [assetId] });
+    });
+
+    it('names the album create_album made, and nothing the app typed', async () => {
+      await connect('albums:write');
+      createAlbum.mockResolvedValue({ id: albumId, albumName: 'Typed by the app', description: '' });
+
+      await client.callTool({ name: 'create_album', arguments: { name: 'Typed by the app' } });
+
+      expect(lastDetail()).toEqual({
+        clientId: 'client',
+        grantId: 'grant',
+        tool: 'create_album',
+        outcome: 'success',
+        count: 1,
+        albumId,
+      });
+    });
+  });
+
   it('audits malformed tool arguments without reading the library', async () => {
     await connect('library:read');
     const result = await client.callTool({ name: 'get_asset', arguments: { assetId: 'invalid' } });

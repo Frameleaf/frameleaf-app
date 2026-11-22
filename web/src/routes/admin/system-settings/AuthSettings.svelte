@@ -497,7 +497,7 @@
         <!-- The server always returns `connectedApps`; the DTO marks it optional only because it has a default. -->
         <Switch
           label={$t('frameleaf_apps_admin_allow_registration')}
-          checked={configToEdit.connectedApps?.allowRegistration ?? true}
+          checked={configToEdit.connectedApps?.allowRegistration ?? false}
           held={disabled}
           onChange={(value) =>
             (configToEdit.connectedApps = { ...configToEdit.connectedApps, allowRegistration: value })}
@@ -509,7 +509,7 @@
           checked={configToEdit.connectedApps?.allowMcp ?? true}
           held={disabled}
           onChange={(value) =>
-            (configToEdit.connectedApps = { allowRegistration: true, ...configToEdit.connectedApps, allowMcp: value })}
+            (configToEdit.connectedApps = { allowRegistration: false, ...configToEdit.connectedApps, allowMcp: value })}
         />
       </Row>
       <RegisteredApps />
