@@ -1,5 +1,4 @@
 import { LoginResponseDto } from '@frameleaf/sdk';
-import { createUserDto } from 'src/fixtures.js';
 import { makeRandomImage } from 'src/generators.js';
 import { app, asBearerAuth, utils } from 'src/utils.js';
 import request from 'supertest';
@@ -60,8 +59,7 @@ describe.skipIf(!process.env.FRAMELEAF_E2E_WEBDAV)('import from WebDAV', () => {
 
   beforeAll(async () => {
     await utils.resetDatabase();
-    const admin = await utils.adminSetup();
-    owner = await utils.userSetup(admin.accessToken, createUserDto.user1);
+    owner = await utils.adminSetup(); // only an administrator may allow a home-network address
     for (let folder = 0; folder < FOLDERS; folder++) {
       const path = `Trips/Year ${2015 + folder}`;
       await dav('MKCOL', 'Trips/');

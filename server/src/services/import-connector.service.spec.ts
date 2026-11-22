@@ -241,6 +241,22 @@ describe(ImportConnectorService.name, () => {
       ).rejects.toBeInstanceOf(BadRequestException);
     });
 
+    it('lets only an administrator allow a home-network address, before anything is contacted', async () => {
+      const opened = vi.spyOn(fakeRemoteSourceProvider, 'open');
+      await expect(
+        sut.create(authStub.user1, {
+          provider: FAKE_PROVIDER,
+          displayName: 'NAS',
+          credentials: { allowPrivateAddress: true },
+          roots: [],
+          dailyCheck: false,
+        }),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(opened).not.toHaveBeenCalled();
+      expect(repository.create).not.toHaveBeenCalled();
+      opened.mockRestore();
+    });
+
     it('makes a connection usable again when the owner signs in again', async () => {
       await sut.update(authStub.user1, connectionId, { credentials: { token: 'renewed', files: [] } });
       expect(repository.update).toHaveBeenCalledWith(
