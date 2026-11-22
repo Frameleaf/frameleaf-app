@@ -33,7 +33,7 @@ const proofClaims = z.strictObject({
   nonce: z.string().max(128).optional(),
 });
 
-const decode = (token: string) => {
+export const decode = (token: string) => {
   if (token.length > 8192 || !/^[\w-]+\.[\w-]+\.[\w-]+$/.test(token)) throw new Error('Invalid Buddy authorization');
   const [header, payload, signature] = token.split('.', 3);
   return {
@@ -65,7 +65,7 @@ export const verifyBuddyGrant = (token: string, jwks: z.infer<typeof BuddyJwks>,
 export const verifyBuddyProof = (
   proof: string,
   token: string,
-  grant: BuddyGrantClaims,
+  grant: { cnf: { jkt: string } },
   method: string,
   uri: string,
   now = Date.now(),
