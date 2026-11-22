@@ -526,7 +526,9 @@ const resolveToken = (
         return null;
       }
       const least = Number(value.replace('+', ''));
-      filter.albumCount = { gte: least };
+      // Repeated tokens all hold, so the highest minimum is the one that decides.
+      const earlier = (filter.albumCount as { gte?: number } | undefined)?.gte ?? 0;
+      filter.albumCount = { gte: Math.max(earlier, least) };
       return { display: String(least), fields: ['albumCount'] };
     }
     case 'is': {
@@ -814,12 +816,15 @@ export const suggestSearchTokens = (
   push('type', 'type', 'photo', 'photo', catalog.typeCounts?.[AssetTypeEnum.Image], { labelKey: 'photos' });
   push('type', 'type', 'video', 'video', catalog.typeCounts?.[AssetTypeEnum.Video], { labelKey: 'videos' });
   push('is', 'is', 'favorite', 'favorite', catalog.favoriteCount, { labelKey: 'favorites' });
-  push('albums', 'albums', '2', 'In more than one album', undefined, {
-    labelKey: 'frameleaf_search_in_more_than_one_album',
-  });
+  // A count cannot be excluded, so `-albums:` is never offered.
+  if (!minus) {
+    push('albums', 'albums', '2', 'In more than one album', undefined, {
+      labelKey: 'frameleaf_search_in_more_than_one_album',
+    });
+  }
   if (!hasOperator && typedKey.length >= 2) {
     for (const operator of operators) {
-      if (operator.key.startsWith(typedKey)) {
+      if (operator.key.startsWith(typedKey) && !(minus && operator.key === 'albums')) {
         out.push({
           kind: 'operator',
           label: operator.key,

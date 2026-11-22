@@ -241,7 +241,9 @@
 
   // FL-976: the quick chip is "at least 2"; any other number lives under Advanced, which opens for it
   const albumLeast = $derived(albumCountAtLeast(filter.albumCount));
-  const albumCountIsCustom = $derived(!!filter.albumCount && albumLeast === null);
+  const albumCountIsCustom = $derived(
+    !!filter.albumCount && (albumLeast === null || albumLeast > MAX_ALBUM_COUNT_CONTROL),
+  );
   let advancedOpen = $state(
     untrack(() => !!query.filter.albumCount && albumCountAtLeast(query.filter.albumCount) !== 2),
   );
@@ -531,6 +533,7 @@
         </Button>
         <Button
           pressed={albumLeast === 2}
+          disabled={albumCountIsCustom}
           onclick={() => setCondition('albumCount', albumLeast === 2 ? null : { gte: 2 })}
         >
           <Icon icon={mdiImageMultipleOutline} size="16" aria-hidden />
@@ -568,7 +571,11 @@
               placeholder={$t('frameleaf_search_any')}
               readonly={albumCountIsCustom}
               value={albumLeast ?? ''}
-              oninput={(event) => setCondition('albumCount', albumCountConditionForValue(event.currentTarget.value))}
+              oninput={(event) => {
+                if (!albumCountIsCustom) {
+                  setCondition('albumCount', albumCountConditionForValue(event.currentTarget.value));
+                }
+              }}
             />
             {$t('frameleaf_search_album_count_unit')}
           </span>

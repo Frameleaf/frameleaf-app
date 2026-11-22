@@ -212,6 +212,10 @@ describe('albums: operator (FL-976)', () => {
     expect(parseSearchInput('albums:3+').filter).toEqual({ albumCount: { gte: 3 } });
   });
 
+  it('keeps the highest minimum when repeated', () => {
+    expect(parseSearchInput('albums:5 albums:2').filter).toEqual({ albumCount: { gte: 5 } });
+  });
+
   it('stays as text when it cannot be a count or is excluded', () => {
     for (const input of ['albums:0', 'albums:many', 'albums:100', '-albums:2']) {
       expect(parseSearchInput(input)).toMatchObject({ text: input, filter: {} });
