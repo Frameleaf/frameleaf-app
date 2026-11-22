@@ -35,6 +35,7 @@ const rowOf = (phase: TakeoutPhase, options: Record<string, unknown> = {}): Take
   phase,
   options: { ...TAKEOUT_DEFAULT_OPTIONS, ...options },
   runOperationId: null,
+  connectionId: null,
   createdAt: new Date(),
   updatedAt: new Date(),
 });
@@ -202,6 +203,7 @@ describe(TakeoutWorkerService.name, () => {
       albums as never,
       livePhoto as never,
       { getEnv: () => ({ storage: { importRoots } }) } as never,
+      {} as never,
     );
   });
 
