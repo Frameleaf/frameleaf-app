@@ -14,6 +14,7 @@
   import IconButton from '$lib/components/frameleaf/IconButton.svelte';
   import InlineError from '$lib/components/frameleaf/InlineError.svelte';
   import LandmarkBadge from '$lib/components/frameleaf/LandmarkBadge.svelte';
+  import MapSearch from '$lib/components/frameleaf/MapSearch.svelte';
   import NamedPlaceFields from '$lib/components/frameleaf/NamedPlaceFields.svelte';
   import {
     landmarksWithItems,
@@ -67,7 +68,9 @@
     placeAtPoint,
     PLACES_MAX,
   } from '$lib/frameleaf/named-places';
+  import type { MapSearchRow } from '$lib/frameleaf/map-search';
   import { namedPlaces } from '$lib/frameleaf/named-places.svelte';
+  import { authManager } from '$lib/managers/auth-manager.svelte';
   import { serverConfigManager } from '$lib/managers/server-config-manager.svelte';
   import { mapSettings, type MapSettings, locale } from '$lib/stores/preferences.store';
   import { getAssetMediaUrl } from '$lib/utils';
@@ -139,6 +142,7 @@
 
   const MIN_ZOOM = 1;
   const MAX_ZOOM = 18;
+  const SEARCH_AREA_BESIDE_BOX_PX = 860;
 
   type SettingsSwitch =
     'includeArchived' | 'withSharedAlbums' | 'withPartners' | 'onlyFavorites' | 'showAssetPanel' | 'loadAllItems';
@@ -950,6 +954,27 @@
     status = $t('frameleaf_map_status_centred', { values: { place: placeOf(marker) || $t('frameleaf_map_item') } });
   };
 
+  /* ------------------------------------------------------------------ */
+  /* Search box (FL-1027)                                                */
+  /* ------------------------------------------------------------------ */
+  // Named places are their owner's alone: no box on a shared link, nor on an album's map (FL-1019).
+  const showSearch = $derived(!scoped && !authManager.isSharedLink);
+  let stageWidth = $state(0);
+  /** Too narrow for "Search this area" beside the box: it goes in the column under it. */
+  const searchAreaInColumn = $derived(showSearch && stageWidth < SEARCH_AREA_BESIDE_BOX_PX);
+  /** Only when every item is on the map and no filter is hiding some is a count (or a zero) true. */
+  const countItemsIn = $derived(
+    complete && !narrowed
+      ? (area: MapArea) =>
+          points.filter(({ lon, lat }) => isInMapArea(area, lon, lat)).reduce((sum, point) => sum + point.count, 0)
+      : undefined,
+  );
+  const flyToResult = (row: MapSearchRow) => {
+    map?.flyTo({ center: [row.longitude, row.latitude], zoom: row.zoom });
+    changed = false;
+    status = $t('frameleaf_map_status_centred', { values: { place: row.name } });
+  };
+
   const searchArea = () => {
     if (!map) {
       return;
@@ -1004,10 +1029,24 @@
   onoffline={() => (offline = true)}
 />
 
+{#snippet searchAreaButton()}
+  <Button variant="primary" onclick={searchArea}>
+    <Icon icon={mdiMagnify} size="18" />
+    {$t('frameleaf_map_search_this_area')}
+  </Button>
+{/snippet}
+
 <!-- svelte-ignore a11y_no_static_element_interactions -->
-<div class="fl-map" class:with-list={listOpen} class:naming={!!draft} onkeydown={onKeydown}>
+<div
+  class="fl-map"
+  class:with-list={listOpen}
+  class:naming={!!draft}
+  class:has-search={showSearch}
+  onkeydown={onKeydown}
+>
   <div
     bind:this={stage}
+    bind:clientWidth={stageWidth}
     class="stage"
     role="region"
     aria-label={$t('frameleaf_map_region', { values: { title, count: inViewCount } })}
@@ -1230,7 +1269,21 @@
 
     <p id="fl-map-help" class="sr-only">{$t('frameleaf_map_help')}</p>
 
-    <div class="overlay top-left">
+    <div class="overlay top-left" class:with-search={showSearch}>
+      {#if showSearch}
+        <MapSearch
+          places={namedPlaces.places}
+          {landmarks}
+          countIn={countItemsIn}
+          onFly={flyToResult}
+          onShowPhotos={(area) => onSearchArea?.(area)}
+          onNameNew={() => {
+            if (!draft) {
+              nameAtCentre();
+            }
+          }}
+        />
+      {/if}
       {#if loaded}
         <span class="chip">
           <Icon icon={mdiMapMarkerMultipleOutline} size="16" />
@@ -1244,14 +1297,14 @@
           {$t('frameleaf_map_finding')}
         </span>
       {/if}
+      {#if changed && onSearchArea && searchAreaInColumn}
+        {@render searchAreaButton()}
+      {/if}
     </div>
 
-    {#if changed && onSearchArea}
+    {#if changed && onSearchArea && !searchAreaInColumn}
       <div class="overlay top-center">
-        <Button variant="primary" onclick={searchArea}>
-          <Icon icon={mdiMagnify} size="18" />
-          {$t('frameleaf_map_search_this_area')}
-        </Button>
+        {@render searchAreaButton()}
       </div>
     {/if}
 
@@ -1563,6 +1616,15 @@
     top: 12px;
     left: 12px;
   }
+  /* FL-1027: the box and the count in one column, over the tools and the map's other overlays. */
+  .top-left.with-search {
+    z-index: 3;
+    display: grid;
+    justify-items: start;
+    gap: var(--fl-space-2);
+    width: 360px;
+    max-width: calc(100% - 96px);
+  }
   .top-center {
     top: 12px;
     left: 50%;
@@ -1667,6 +1729,21 @@
       top: calc(var(--fl-space-3) + 34px + var(--fl-space-2));
       left: var(--fl-space-3);
       transform: none;
+    }
+    /* FL-1027: one 16px gutter for the box, the count and the tools; the tools take the legend's place. */
+    .top-left.with-search {
+      top: var(--fl-space-4);
+      right: var(--fl-space-4);
+      left: var(--fl-space-4);
+      width: auto;
+      max-width: none;
+    }
+    .has-search .legend {
+      display: none;
+    }
+    .has-search .tools {
+      right: var(--fl-space-4);
+      bottom: calc(var(--fl-space-3) + var(--fl-space-8));
     }
   }
   .video-dot {
