@@ -57,6 +57,7 @@
     enhanceStops,
     formatEstimateSeconds,
     initialEnhanceStop,
+    isFaceModelStop,
     isFullCropRect,
     isOutputCapped,
     isRestorationBusy,
@@ -83,6 +84,7 @@
     AssetMediaSize,
     AssetRestorationFileKind,
     AssetRestorationMode,
+    AssetRestorationOperation,
     CloudMlJobPurpose,
     CloudMlJobStage,
     CloudMlModelGroup,
@@ -878,6 +880,14 @@
     onCompare(null);
   };
 
+  /** FL-955: a Repair or Suggested colours preview says which it is, and that colours are a guess. */
+  const photoPreviewTag = (item: AssetRestorationResponseDto) => {
+    if (item.operation === AssetRestorationOperation.Repair) {
+      return $t('frameleaf_repair_tag_repair');
+    }
+    return item.operation === AssetRestorationOperation.Colourise ? $t('frameleaf_repair_tag_colourise') : null;
+  };
+
   const compare = (item: AssetRestorationResponseDto) => {
     const kind = compareKindFor(item);
     if (!kind || compareId === item.id) {
@@ -891,8 +901,8 @@
         before: restorationFileUrl(asset.id, item.id, AssetRestorationFileKind.Before, cacheKey),
         after: restorationFileUrl(asset.id, item.id, AssetRestorationFileKind.After, cacheKey),
         isVideo,
-        beforeLabel: $t('frameleaf_editor_before'),
-        afterLabel: $t('frameleaf_restoration_after_preview'),
+        beforeLabel: item.operation ? $t('frameleaf_editor_version_original') : $t('frameleaf_editor_before'),
+        afterLabel: photoPreviewTag(item) ?? $t('frameleaf_restoration_after_preview'),
       });
       return;
     }
@@ -940,7 +950,22 @@
       ? $t('frameleaf_restoration_upscale_same')
       : $t('frameleaf_restoration_upscale_times', { values: { factor } });
 
-  const itemTitle = (item: AssetRestorationResponseDto) =>
+  /** FL-955: "Repaired" or "Suggested colours", numbered from the second one on. */
+  const photoVersionName = (item: AssetRestorationResponseDto) => {
+    const name =
+      item.operation === AssetRestorationOperation.Repair
+        ? $t('frameleaf_repair_version_repair')
+        : $t('frameleaf_repair_version_colourise');
+    const number = items.filter(
+      (other) => other.operation === item.operation && other.revision <= item.revision,
+    ).length;
+    return number > 1 ? `${name} ${number}` : name;
+  };
+
+  const isPhotoOperation = (item: AssetRestorationResponseDto) =>
+    item.operation === AssetRestorationOperation.Repair || item.operation === AssetRestorationOperation.Colourise;
+
+  const enhanceTitle = (item: AssetRestorationResponseDto) =>
     item.mode === AssetRestorationMode.SmoothMotion
       ? $t('frameleaf_restoration_item_title_smooth_motion', {
           values: { revision: item.revision, factor: item.smoothMotionFactor ?? item.upscale },
@@ -952,6 +977,9 @@
             upscale: upscaleLabel(item.upscale as RestorationUpscale),
           },
         });
+
+  const itemTitle = (item: AssetRestorationResponseDto) =>
+    isPhotoOperation(item) ? photoVersionName(item) : enhanceTitle(item);
 
   const formatDate = (value: string | null) => (value ? new Date(value).toLocaleString($locale ?? undefined) : '');
 </script>
@@ -987,6 +1015,12 @@
           disabled={optionsPending}
           onChange={chooseEnhanceStop}
         />
+      {/if}
+      {#if isFaceModelStop(enhanceStop)}
+        <!-- Owner, 2026-11-22: on the face model only, never on SeedVR2. -->
+        <p class="rs-warning" role="status" data-testid="enhance-face-warning">
+          {$t('frameleaf_enhance_face_warning')}
+        </p>
       {/if}
       <div class="rs-actions">
         <button type="button" class="ed-button primary" disabled={!canRequest} onclick={requestPreview}>

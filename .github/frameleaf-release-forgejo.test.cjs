@@ -33,7 +33,7 @@ function forgejoFixture(status = () => "success") {
     id: 65,
     commit_sha: sha,
     prettyref: "main",
-    trigger_event: "push",
+    trigger_event: "workflow_dispatch",
     status: jobs.some((job) => job.status === "failure")
       ? "failure"
       : "success",

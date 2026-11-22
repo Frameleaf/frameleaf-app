@@ -12,6 +12,7 @@ const modules = [
   'contracts',
   'gallery-preview',
   'gallery-reads',
+  'gallery-required',
   'import-plan',
   'import-source-authority',
   'import-sqlite',

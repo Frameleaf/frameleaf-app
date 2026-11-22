@@ -72,7 +72,7 @@ import {
   storedRestorationModels,
 } from 'src/utils/ml-destination.js';
 import { KIND_SOURCE, sourcesFor } from 'src/utils/ml-processing-order.js';
-import { ALREADY_IN_COLOUR, photoColourRefusal } from 'src/utils/photo-monochrome.js';
+import { HAND_TINTED, colourRefusalReason, photoColourRefusal } from 'src/utils/photo-monochrome.js';
 import {
   INTERPOLATION_PREVIEW_SECONDS,
   RESTORATION_PREVIEW_SECONDS,
@@ -270,7 +270,7 @@ export class AssetRestorationService {
     // FL-955: repair and colourise run as a faithful restoration that keeps the photo's size
     const photoOperation = toPhotoOperation(dto.operation);
     if (photoOperation && source.sourceType !== AssetRestorationSourceType.Image) {
-      throw new BadRequestException('Repair and Colourise work on photos');
+      throw new BadRequestException('Repair and Suggested colours work on photos');
     }
     const mode = photoOperation ? AssetRestorationMode.Faithful : (dto.mode ?? AssetRestorationMode.Faithful);
     const smooth = mode === AssetRestorationMode.SmoothMotion;
@@ -368,7 +368,7 @@ export class AssetRestorationService {
       destinations,
       route,
       ...(photoOperation && { operation: dto.operation }),
-      ...(colourRefusal && { colourRefusal }),
+      ...(colourRefusal && { colourRefusal, colourRefusalReason: colourRefusalReason(colourRefusal) }),
     };
   }
 
@@ -467,9 +467,9 @@ export class AssetRestorationService {
     const source = await this.requireSource(assetId);
     if (photoOperation) {
       if (source.sourceType !== AssetRestorationSourceType.Image) {
-        throw new BadRequestException('Repair and Colourise work on photos');
+        throw new BadRequestException('Repair and Suggested colours work on photos');
       }
-      const refusal = photoOperation === 'colourise' ? await this.colourRefusal(assetId) : null;
+      const refusal = photoOperation === 'colourise' ? await this.colourRefusal(assetId, dto.allowHandTinted) : null;
       if (refusal) {
         throw new BadRequestException(refusal);
       }
@@ -538,7 +538,11 @@ export class AssetRestorationService {
       sourceDurationSeconds: source.durationSeconds,
       previewRegion: region,
       estimate,
-      provenance: { ...provenance, ...(photoOperation && { operation: photoOperation }) },
+      provenance: {
+        ...provenance,
+        ...(photoOperation && { operation: photoOperation }),
+        ...(photoOperation === 'colourise' && dto.allowHandTinted && { allowHandTinted: true }),
+      },
     });
 
     try {
@@ -613,19 +617,32 @@ export class AssetRestorationService {
     const photoOperation = toPhotoOperation(dto.operation)!;
     const skipped: AssetRestorationBatchResponseDto['skipped'] = [];
     const eligible: RestorationSource[] = [];
+    const allowHandTinted = photoOperation === 'colourise' && !!dto.allowHandTinted;
+    const tinted = { count: 0 };
     for (const assetId of ids) {
-      const reason = await this.batchSkipReason(assetId, photoOperation, eligible);
+      const reason = await this.batchSkipReason(assetId, photoOperation, eligible, allowHandTinted, tinted);
       if (reason) {
         skipped.push({ assetId, reason });
       }
     }
     const destinations = await this.batchDestinations(photoOperation, eligible);
+    if (allowHandTinted && tinted.count > 0) {
+      // Frameleaf Cloud has no override yet, so a batch with hand-tinted prints in it stays at home.
+      for (const row of destinations) {
+        if (row.kind === MlDestinationKind.FrameleafCloud && row.available) {
+          row.available = false;
+          row.refusal = MlAdmissionRefusal.WorkloadNotServed;
+          row.refusalDetail = 'Frameleaf Cloud cannot include hand-tinted prints yet';
+        }
+      }
+    }
     const summary = {
       batchId: dto.batchId ?? randomUUID(),
       operation: dto.operation,
       total: ids.length,
       eligible: eligible.length,
       skipped,
+      ...(photoOperation === 'colourise' && { handTinted: tinted.count }),
       destinations,
     };
     if (!dto.confirm) {
@@ -643,7 +660,9 @@ export class AssetRestorationService {
       );
     }
     if (eligible.length === 0) {
-      throw new BadRequestException('None of these photos can be repaired or colourised; nothing was queued');
+      throw new BadRequestException(
+        'None of these photos can be repaired or given suggested colours; nothing was queued',
+      );
     }
     if (chosen.kind === MlDestinationKind.FrameleafCloud) {
       if (dto.maxCostUsd === undefined || !dto.consentVersion || dto.acknowledgeDataLeaves !== true) {
@@ -668,7 +687,7 @@ export class AssetRestorationService {
     const destination = await this.requireDestination(chosen.id);
     let queued = 0;
     for (const source of eligible) {
-      if (await this.queueBatchItem(auth, summary.batchId, photoOperation, source, destination)) {
+      if (await this.queueBatchItem(auth, summary.batchId, photoOperation, source, destination, allowHandTinted)) {
         queued++;
       }
     }
@@ -715,6 +734,8 @@ export class AssetRestorationService {
     assetId: string,
     photoOperation: RestorationPhotoOperation,
     eligible: RestorationSource[],
+    allowHandTinted: boolean,
+    tinted: { count: number },
   ): Promise<string | null> {
     let source: RestorationSource;
     try {
@@ -730,8 +751,11 @@ export class AssetRestorationService {
     }
     if (photoOperation === 'colourise') {
       const refusal = await this.colourRefusal(assetId);
-      if (refusal) {
-        return refusal === ALREADY_IN_COLOUR ? 'already-in-colour' : 'colour-unknown';
+      if (refusal === HAND_TINTED) {
+        tinted.count++;
+      }
+      if (refusal && !(refusal === HAND_TINTED && allowHandTinted)) {
+        return colourRefusalReason(refusal);
       }
     }
     eligible.push(source);
@@ -815,6 +839,7 @@ export class AssetRestorationService {
     photoOperation: RestorationPhotoOperation,
     source: RestorationSource,
     destination: MlDestinationRow,
+    allowHandTinted: boolean,
   ): Promise<boolean> {
     const output = { width: source.width, height: source.height };
     const sample = await this.mlDestinationRepository.getThroughput(
@@ -858,6 +883,7 @@ export class AssetRestorationService {
                 sessionElevated: !!auth.session?.hasElevatedPermission,
                 operation: photoOperation,
                 batchId,
+                ...(allowHandTinted && { allowHandTinted: true }),
               },
             },
             trx,
@@ -905,12 +931,12 @@ export class AssetRestorationService {
   }
 
   /**
-   * FL-955: why this photo cannot be colourised, or null for a black-and-white one (sepia counts). Read
-   * from its small thumbnail. A photo that cannot be read is refused too, rather than guessed at.
+   * FL-955: why this photo cannot get suggested colours, or null when it can (sepia counts). The same
+   * rule as the worker. A photo that cannot be read is refused too, rather than guessed at.
    */
-  private async colourRefusal(assetId: string): Promise<string | null> {
+  private async colourRefusal(assetId: string, allowHandTinted = false): Promise<string | null> {
     const asset = await this.assetRepository.getById(assetId, { files: true });
-    return photoColourRefusal(this.mediaRepository, this.logger, assetId, asset?.files ?? []);
+    return photoColourRefusal(this.mediaRepository, this.logger, assetId, asset?.files ?? [], allowHandTinted);
   }
 
   /**
@@ -1356,6 +1382,9 @@ export class AssetRestorationService {
         restoration.modelName && { model: { name: restoration.modelName, version: restoration.modelVersion } }),
       ...(stage === 'preview' && modelId && { modelId }),
       ...(photoOperation && { operation: photoOperation }),
+      ...((restoration.provenance as { allowHandTinted?: boolean } | null)?.allowHandTinted === true && {
+        allowHandTinted: true,
+      }),
     };
   }
 

@@ -1,4 +1,6 @@
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
+import { readFileSync } from 'node:fs';
+import { inflateSync } from 'node:zlib';
 import { type Mock, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   AssetRestorationFileKind,
@@ -1140,8 +1142,22 @@ describe(AssetRestorationService.name, () => {
     const pixels = (rgb: [number, number, number]) =>
       ({
         data: new Uint8Array(Array.from({ length: 300 }, (_, index) => rgb[index % 3])),
-        info: { channels: 3 },
+        info: { width: 10, height: 10, channels: 3 },
       }) as never;
+    /** A picture from the vectors the colourise runtime answered, so these use the worker's own verdict. */
+    const vector = (name: string) => {
+      const { vectors } = JSON.parse(
+        readFileSync(
+          new URL('../../../machine-learning/video-restoration/qualification/tint-vectors.json', import.meta.url),
+          'utf8',
+        ),
+      ) as { vectors: { name: string; width: number; height: number; rgb: string }[] };
+      const found = vectors.find((candidate) => candidate.name === name)!;
+      return {
+        data: new Uint8Array(inflateSync(Buffer.from(found.rgb, 'base64'))),
+        info: { width: found.width, height: found.height, channels: 3 },
+      } as never;
+    };
     const withThumbnail = { ...asset, files: [{ type: 'thumbnail', path: '/data/thumbs/t.webp', isEdited: false }] };
 
     beforeEach(() => {
@@ -1205,15 +1221,69 @@ describe(AssetRestorationService.name, () => {
     });
 
     it('refuses to colourise a colour photo and says why', async () => {
-      mocks.media.decodeImage.mockResolvedValue({
-        data: new Uint8Array(Array.from({ length: 300 }, (_, index) => [200, 40, 40, 40, 180, 60][index % 6])),
-        info: { channels: 3 },
-      } as never);
+      mocks.media.decodeImage.mockResolvedValue(vector('colour'));
 
       await expect(
         sut.requestPreview(authStub.user1, asset.id, { ...preview, operation: AssetRestorationOperation.Colourise }),
       ).rejects.toThrow('This photo is already in colour');
       expect(restorations.create).not.toHaveBeenCalled();
+    });
+
+    it('refuses a hand-tinted print and says why', async () => {
+      mocks.media.decodeImage.mockResolvedValue(vector('light-paint'));
+
+      await expect(
+        sut.requestPreview(authStub.user1, asset.id, { ...preview, operation: AssetRestorationOperation.Colourise }),
+      ).rejects.toThrow('Looks coloured by hand. A guess would replace those colours.');
+      expect(restorations.create).not.toHaveBeenCalled();
+    });
+
+    it('takes a hand-tinted print on the override and carries it to the worker job', async () => {
+      mocks.media.decodeImage.mockResolvedValue(vector('light-paint'));
+
+      await sut.requestPreview(authStub.user1, asset.id, {
+        ...preview,
+        operation: AssetRestorationOperation.Colourise,
+        allowHandTinted: true,
+      });
+
+      expect(recordedOperations[0]).toMatchObject({ snapshot: { operation: 'colourise', allowHandTinted: true } });
+    });
+
+    it('never lets the override through for a colour photo', async () => {
+      mocks.media.decodeImage.mockResolvedValue(vector('colour'));
+
+      await expect(
+        sut.requestPreview(authStub.user1, asset.id, {
+          ...preview,
+          operation: AssetRestorationOperation.Colourise,
+          allowHandTinted: true,
+        }),
+      ).rejects.toThrow('This photo is already in colour');
+      expect(restorations.create).not.toHaveBeenCalled();
+    });
+
+    it('accepts a sepia print by the same rule', async () => {
+      mocks.media.decodeImage.mockResolvedValue(vector('strong-sepia'));
+
+      await sut.requestPreview(authStub.user1, asset.id, {
+        ...preview,
+        operation: AssetRestorationOperation.Colourise,
+      });
+
+      expect(recordedOperations[0]).toMatchObject({ snapshot: { operation: 'colourise' } });
+      expect(recordedOperations[0].snapshot).not.toHaveProperty('allowHandTinted');
+    });
+
+    it('names a colourise job Suggested colours', async () => {
+      mocks.media.decodeImage.mockResolvedValue(vector('sepia'));
+
+      await sut.requestPreview(authStub.user1, asset.id, {
+        ...preview,
+        operation: AssetRestorationOperation.Colourise,
+      });
+
+      expect(recordedOperations[0]).toMatchObject({ settings: { mode: 'Suggested colours' } });
     });
 
     it('colourises a sepia photo', async () => {
@@ -1400,18 +1470,51 @@ describe(AssetRestorationService.name, () => {
       });
 
       it('skips colour photos when colourising, and says how many', async () => {
-        mocks.media.decodeImage.mockImplementation(() =>
-          Promise.resolve({
-            data: new Uint8Array(Array.from({ length: 300 }, (_, index) => [200, 40, 40, 40, 180, 60][index % 6])),
-            info: { channels: 3 },
-          } as never),
-        );
+        mocks.media.decodeImage.mockImplementation(() => Promise.resolve(vector('colour')));
 
         const result = await sut.batch(authStub.user1, { ...estimate, operation: AssetRestorationOperation.Colourise });
 
         expect(result.eligible).toBe(0);
         expect(result.skipped).toHaveLength(50);
         expect(result.skipped[0].reason).toBe('already-in-colour');
+      });
+
+      describe('hand-tinted prints', () => {
+        const colourise = { ...estimate, operation: AssetRestorationOperation.Colourise as const };
+        beforeEach(() => {
+          // Of every five photos: one hand-tinted, one in colour, three sepia.
+          let call = 0;
+          mocks.media.decodeImage.mockImplementation(() => {
+            const turn = call++ % 5;
+            return Promise.resolve(vector(turn === 0 ? 'light-paint' : turn === 1 ? 'colour' : 'sepia'));
+          });
+        });
+
+        it('skips them by default and counts them apart', async () => {
+          const result = await sut.batch(authStub.user1, colourise);
+
+          expect(result.handTinted).toBe(10);
+          expect(result.skipped.filter(({ reason }) => reason === 'hand-tinted')).toHaveLength(10);
+          expect(result.skipped.filter(({ reason }) => reason === 'already-in-colour')).toHaveLength(10);
+          expect(result.eligible).toBe(30);
+        });
+
+        it('includes them when asked, and still skips the colour photos', async () => {
+          const result = await sut.batch(authStub.user1, { ...colourise, allowHandTinted: true });
+
+          expect(result.handTinted).toBe(10);
+          expect(result.skipped.map(({ reason }) => reason)).toEqual(
+            Array.from({ length: 10 }, () => 'already-in-colour'),
+          );
+          expect(result.eligible).toBe(40);
+        });
+
+        it('keeps Frameleaf Cloud out of a batch that includes them', async () => {
+          const result = await sut.batch(authStub.user1, { ...colourise, allowHandTinted: true });
+
+          const cloud = result.destinations.find(({ kind }) => kind === MlDestinationKind.FrameleafCloud);
+          expect(cloud?.available).toBe(false);
+        });
       });
 
       it('needs edit access to every photo', async () => {

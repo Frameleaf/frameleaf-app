@@ -185,6 +185,15 @@ const AssetRestorationRequestSchema = z
     operation: AssetRestorationOperationSchema.optional().describe(
       'FL-955: enhance (the default), repair or colourise. Repair and colourise need mode faithful, keep the photo at its own size and name no model.',
     ),
+    allowHandTinted: z
+      .boolean()
+      .optional()
+      .describe(
+        'FL-955: colourise only. The owner chose Suggest colours anyway for a hand-tinted print. A photo already in colour is still refused.',
+      ),
+  })
+  .refine((dto) => !dto.allowHandTinted || dto.operation === AssetRestorationOperation.Colourise, {
+    message: 'allowHandTinted is only for colourise',
   })
   .refine((dto) => (dto.mode === AssetRestorationMode.SmoothMotion) === (dto.smoothMotionFactor !== undefined), {
     message: 'smoothMotionFactor is required for smooth_motion and only for it',
@@ -325,6 +334,10 @@ const AssetRestorationOptionsSchema = z
       .string()
       .optional()
       .describe('FL-955: colourise only: why this photo cannot be colourised, in words for the owner'),
+    colourRefusalReason: z
+      .string()
+      .optional()
+      .describe('FL-955: the same refusal as a stable word: hand-tinted, already-in-colour or colour-unknown'),
   })
   .meta({ id: 'AssetRestorationOptionsDto' });
 
@@ -442,9 +455,16 @@ const AssetRestorationBatchRequestSchema = z
       .describe('Frameleaf Cloud: the maxCostUsd of the estimate shown. The batch stops rather than go over it.'),
     consentVersion: z.string().optional().describe('Frameleaf Cloud: the consentVersion of the estimate shown'),
     acknowledgeDataLeaves: z.boolean().optional().describe('Frameleaf Cloud: the person agreed the photos leave'),
+    allowHandTinted: z
+      .boolean()
+      .optional()
+      .describe('FL-955: colourise only. Include hand-tinted prints, which are skipped by default.'),
   })
   .refine((dto) => !dto.confirm || (!!dto.destinationId && !!dto.batchId), {
     message: 'Confirming a batch needs the destinationId and the batchId of its estimate',
+  })
+  .refine((dto) => !dto.allowHandTinted || dto.operation === AssetRestorationOperation.Colourise, {
+    message: 'allowHandTinted is only for colourise',
   })
   .meta({ id: 'AssetRestorationBatchRequestDto' });
 
@@ -480,7 +500,7 @@ const AssetRestorationBatchDestinationSchema = z
 const AssetRestorationBatchSkipSchema = z
   .object({
     assetId: z.uuidv4(),
-    reason: z.string().describe('already-in-colour, colour-unknown, not-a-photo or unavailable'),
+    reason: z.string().describe('hand-tinted, already-in-colour, colour-unknown, not-a-photo or unavailable'),
   })
   .meta({ id: 'AssetRestorationBatchSkipDto' });
 
@@ -492,6 +512,10 @@ const AssetRestorationBatchResponseSchema = z
     eligible: z.int().describe('Photos that would be, or were, queued'),
     queued: z.int().describe('Photos queued by this request; 0 for an estimate'),
     skipped: z.array(AssetRestorationBatchSkipSchema),
+    handTinted: z
+      .int()
+      .optional()
+      .describe('FL-955: colourise only: hand-tinted prints in the selection, whether skipped or included'),
     destinations: z
       .array(AssetRestorationBatchDestinationSchema)
       .describe('Every destination in the processing order, those that cannot take it included'),

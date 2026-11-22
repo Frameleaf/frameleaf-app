@@ -75,6 +75,87 @@ describe('RestorationBatchDialog (FL-955)', () => {
     expect(restoreAssetsBatch).toHaveBeenCalledTimes(1);
   });
 
+  describe('Suggested colours', () => {
+    const places = [row('Studio PC', MlDestinationKind.Lan, true, 300)];
+    const skipped = [
+      { assetId: 'a', reason: 'hand-tinted' },
+      { assetId: 'b', reason: 'already-in-colour' },
+    ];
+    const chooseSuggested = async () => {
+      await fireEvent.click(await screen.findByRole('radio', { name: /frameleaf_repair_colourise/ }));
+      return screen.findByTestId('batch-colour-summary');
+    };
+
+    beforeEach(() => {
+      const reply = ({
+        assetRestorationBatchRequestDto: dto,
+      }: {
+        assetRestorationBatchRequestDto: Record<string, unknown>;
+      }) => {
+        if (dto.operation === 'repair') {
+          return Promise.resolve(answer(places));
+        }
+        return Promise.resolve(
+          dto.allowHandTinted
+            ? answer(places, { operation: 'colourise', eligible: 2, handTinted: 1, skipped: [skipped[1]] })
+            : answer(places, { operation: 'colourise', eligible: 1, handTinted: 1, skipped }),
+        );
+      };
+      restoreAssetsBatch.mockImplementation(reply as never);
+    });
+
+    it('says what is skipped, with the include option unticked', async () => {
+      render(RestorationBatchDialog, { assetIds });
+
+      const summary = await chooseSuggested();
+
+      expect(summary).toHaveTextContent('frameleaf_repair_batch_skip_both');
+      expect(screen.getByRole('checkbox', { name: /frameleaf_repair_batch_include/ })).not.toBeChecked();
+      expect(screen.getByText('frameleaf_repair_batch_note_colourise')).toBeInTheDocument();
+    });
+
+    it('asks again with the override when ticked, and starts with it', async () => {
+      render(RestorationBatchDialog, { assetIds });
+      await chooseSuggested();
+
+      await fireEvent.click(await screen.findByRole('checkbox', { name: /frameleaf_repair_batch_include/ }));
+
+      await waitFor(() =>
+        expect(restoreAssetsBatch).toHaveBeenLastCalledWith({
+          assetRestorationBatchRequestDto: { assetIds, operation: 'colourise', confirm: false, allowHandTinted: true },
+        }),
+      );
+      await waitFor(() =>
+        expect(screen.getByTestId('batch-colour-summary')).toHaveTextContent('frameleaf_repair_batch_skip_colour'),
+      );
+
+      const start = screen.getByRole('button', { name: 'frameleaf_repair_batch_start' });
+      await waitFor(() => expect(start).toBeEnabled());
+      await fireEvent.click(start);
+
+      expect(restoreAssetsBatch).toHaveBeenLastCalledWith({
+        assetRestorationBatchRequestDto: expect.objectContaining({
+          operation: 'colourise',
+          confirm: true,
+          allowHandTinted: true,
+        }),
+      });
+    });
+
+    it('starts without the override when left unticked', async () => {
+      render(RestorationBatchDialog, { assetIds });
+      await chooseSuggested();
+
+      const start = screen.getByRole('button', { name: 'frameleaf_repair_batch_start' });
+      await waitFor(() => expect(start).toBeEnabled());
+      await fireEvent.click(start);
+
+      const sent = restoreAssetsBatch.mock.lastCall?.[0].assetRestorationBatchRequestDto;
+      expect(sent.confirm).toBe(true);
+      expect(sent).not.toHaveProperty('allowHandTinted');
+    });
+  });
+
   it('shows Frameleaf Cloud without a price while it has none', async () => {
     restoreAssetsBatch.mockResolvedValue(
       answer([row('Studio PC', MlDestinationKind.Lan, true), row('cloud', MlDestinationKind.FrameleafCloud, false)]),

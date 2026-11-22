@@ -26,4 +26,4 @@ jobs:
           name: frameleaf-test-assets-63a12e4f97e7a1ce54bb72ebd9fa5c2c812480bf
           path: ${{ runner.temp }}/frameleaf-fixtures/
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 14
