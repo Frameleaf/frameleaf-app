@@ -283,7 +283,7 @@ describe(HouseholdReceiveService.name, () => {
     it('refuses a share list that breaks the protocol, writing nothing', async () => {
       await invite();
       vi.spyOn(anna.shares, 'offered').mockResolvedValue([{ id: 'not-a-uuid', evil: true }] as never);
-      await receiver.service.poll(await linkRow());
+      await expect(receiver.service.poll(await linkRow())).rejects.toThrow(HouseholdBadPage);
       expect(receiver.receive.shares).toHaveLength(0);
     });
 
@@ -983,6 +983,24 @@ describe(HouseholdReceiveService.name, () => {
       expect(copyOf(first.id).exif.description).not.toBe('After removal');
       expect(copyOf(second.id, benOther)).toBeDefined();
       expect(copyOf(first.id, benOther).exif.description).toBe('After removal');
+    });
+
+    it('a removal is read before the next pull, and an unreadable member list stops pulling', async () => {
+      const first = addItem({ originalFileName: 'a.jpg' });
+      await accept();
+      await pull();
+      await editedOnSender(first.id, 'Changed');
+      inbound().nextPullAt = null;
+      const offered = vi.spyOn(anna.shares, 'offered').mockResolvedValueOnce([{ id: 'broken' }] as never);
+      await receiver.service.run();
+      expect(copyOf(first.id).exif.description).not.toBe('Changed');
+
+      offered.mockRestore();
+      await anna.world.removeMember(spaceId, inbound().remoteShareId, benUser);
+      inbound().nextPullAt = null;
+      await receiver.service.run();
+      expect(inbound().state).toBe('left');
+      expect(copyOf(first.id).exif.description).not.toBe('Changed');
     });
 
     it('the sender deleting the share marks it left and keeps every copy', async () => {

@@ -13,13 +13,16 @@ const MAX_SEQ = 2_147_483_647;
 const MAX_COORDINATE = 1_000_000;
 
 // eslint-disable-next-line no-control-regex
-const CONTROL = /[\u0000-\u001F\u007F-\u009F\u2028\u2029]/;
+const CONTROL = /[\u{0}-\u{1F}\u{7F}-\u{9F}\u{2028}\u{2029}]/u;
 /** One line of text: a name or a place. Bidirectional overrides would let a name display as something else. */
 const line = (max: number) =>
   z
     .string()
     .max(max)
-    .refine((value) => !CONTROL.test(value) && !/[\u202A-\u202E\u2066-\u2069]/.test(value), 'Invalid characters');
+    .refine(
+      (value) => !CONTROL.test(value) && !/[\u{202A}-\u{202E}\u{2066}-\u{2069}]/u.test(value),
+      'Invalid characters',
+    );
 const text = (max: number) =>
   z
     .string()
@@ -181,6 +184,6 @@ export const HouseholdHandshake = z.object({ maxOriginalBytes: z.number().int().
 export const cleanHouseholdLine = (value: string, max = 255) =>
   value
     .replaceAll(new RegExp(CONTROL, 'gu'), ' ')
-    .replaceAll(/[\u202A-\u202E\u2066-\u2069]/g, '')
+    .replaceAll(/[\u{202A}-\u{202E}\u{2066}-\u{2069}]/gu, '')
     .trim()
     .slice(0, max);

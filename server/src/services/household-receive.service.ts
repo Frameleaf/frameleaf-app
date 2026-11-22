@@ -236,7 +236,10 @@ export class HouseholdReceiveService {
           await this.endLink(link);
         } else if (link.state === 'active') {
           const poked = !!link.pollRequestedAt;
-          if (poked || Date.now() - (this.polledAt.get(link.id) ?? 0) >= POLL_EVERY_MS) {
+          // the list is read before any pull, so someone removed from a share gets nothing more; a failed read
+          // throws, and nothing is pulled for this link until the sender says who is still a member
+          const due = quiet ? [] : await this.receive.getDue(link.id);
+          if (poked || due.length > 0 || Date.now() - (this.polledAt.get(link.id) ?? 0) >= POLL_EVERY_MS) {
             await this.poll(link);
           }
           if (!quiet) {
@@ -282,8 +285,7 @@ export class HouseholdReceiveService {
     const client = this.linkService.peerClient(link);
     const parsed = HouseholdOffered.safeParse(await client.get('shares'));
     if (!parsed.success) {
-      this.logger.warn(`Household link ${link.id} sent a share list that breaks the protocol`);
-      return;
+      throw new HouseholdBadPage(`Household link ${link.id} sent a share list that breaks the protocol`);
     }
     const offered = parsed.data;
     const rows = await this.receive.getSharesOfLink(link.id);
