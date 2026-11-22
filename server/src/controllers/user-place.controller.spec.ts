@@ -36,7 +36,7 @@ describe(UserPlaceController.name, () => {
   });
 
   it.each([
-    ['no name', { ...home, name: '   ' }],
+    ['no name', { ...home, name: ' '.repeat(3) }],
     ['a name over 80 characters', { ...home, name: 'x'.repeat(81) }],
     ['a radius under 25 m', { ...home, radiusMeters: 24 }],
     ['a radius over 5 km', { ...home, radiusMeters: 5001 }],

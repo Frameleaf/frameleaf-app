@@ -123,8 +123,8 @@ export class LocationHistoryService {
     const report: HistoryReport = { kind: null, skipped: 0 };
     let batch: HistoryPoint[] = [];
     let count = 0;
-    let first = Number.POSITIVE_INFINITY;
-    let last = Number.NEGATIVE_INFINITY;
+    let first = Infinity;
+    let last = -Infinity;
     try {
       // a run that was cut short starts the file again
       await this.repository.deletePoints(id);

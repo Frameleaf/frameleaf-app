@@ -50,8 +50,6 @@ import { ConnectMediaController } from 'src/controllers/connect-media.controller
 import { ConnectController } from 'src/controllers/connect.controller.js';
 import { DatabaseBackupController } from 'src/controllers/database-backup.controller.js';
 import { DateDoctorController } from 'src/controllers/date-doctor.controller.js';
-import { LocationHistoryController } from 'src/controllers/location-history.controller.js';
-import { LocationFillController } from 'src/controllers/location-fill.controller.js';
 import { DesktopDeviceController } from 'src/controllers/desktop-device.controller.js';
 import { DesktopOfflineAlbumController } from 'src/controllers/desktop-offline-album.controller.js';
 import { DesktopWorkerController } from 'src/controllers/desktop-worker.controller.js';
@@ -89,6 +87,8 @@ import { LibraryProgressController } from 'src/controllers/library-progress.cont
 import { LibraryAdminController, LibraryController } from 'src/controllers/library.controller.js';
 import { LicenseAdminController, LicenseController } from 'src/controllers/license-admin.controller.js';
 import { LivePhotoController } from 'src/controllers/live-photo.controller.js';
+import { LocationFillController } from 'src/controllers/location-fill.controller.js';
+import { LocationHistoryController } from 'src/controllers/location-history.controller.js';
 import { LockedEncryptionController } from 'src/controllers/locked-encryption.controller.js';
 import { MailConnectionController } from 'src/controllers/mail-connection.controller.js';
 import { MaintenanceController } from 'src/controllers/maintenance.controller.js';

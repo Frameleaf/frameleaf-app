@@ -60,8 +60,6 @@ import { ConnectService } from 'src/services/connect.service.js';
 import { DatabaseBackupService } from 'src/services/database-backup.service.js';
 import { DatabaseService } from 'src/services/database.service.js';
 import { DateDoctorService } from 'src/services/date-doctor.service.js';
-import { LocationHistoryService } from 'src/services/location-history.service.js';
-import { LocationFillService } from 'src/services/location-fill.service.js';
 import { DescriptionTagCleanupService } from 'src/services/description-tag-cleanup.service.js';
 import { DesktopAssistanceActivationService } from 'src/services/desktop-assistance-activation.service.js';
 import { DesktopAssistancePolicyService } from 'src/services/desktop-assistance-policy.service.js';
@@ -120,6 +118,8 @@ import { LibraryProgressService } from 'src/services/library-progress.service.js
 import { LibraryScanService } from 'src/services/library-scan.service.js';
 import { LibraryService } from 'src/services/library.service.js';
 import { LivePhotoService } from 'src/services/live-photo.service.js';
+import { LocationFillService } from 'src/services/location-fill.service.js';
+import { LocationHistoryService } from 'src/services/location-history.service.js';
 import { LockedEncryptionService } from 'src/services/locked-encryption.service.js';
 import { LockedSealService } from 'src/services/locked-seal.service.js';
 import { MailConnectionService } from 'src/services/mail-connection.service.js';

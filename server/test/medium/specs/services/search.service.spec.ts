@@ -709,7 +709,7 @@ describe(SearchService.name, () => {
       const downtown = await at(user.id, 51.0443, -114.0631, true);
       const noLocation = await at(user.id, null, null);
       // just outside: 250 m north of home's centre
-      const nextDoor = await at(user.id, 51.052_25, -114.07);
+      const nextDoor = await at(user.id, 51.05225, -114.07);
       await at(stranger.id, 51.05, -114.07);
 
       const place = { latitude: 51.05, longitude: -114.07, radiusMeters: 200 };

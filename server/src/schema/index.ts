@@ -142,8 +142,6 @@ import {
   ConnectRenditionTicketTable,
 } from 'src/schema/tables/connect-media.table.js';
 import { DateFixBatchTable, DateFixItemTable } from 'src/schema/tables/date-fix.table.js';
-import { LocationFillProposalTable, LocationFillRunTable } from 'src/schema/tables/location-fill.table.js';
-import { LocationHistorySourceTable, LocationPointTable } from 'src/schema/tables/location-history.table.js';
 import { DesktopClipIndexTable, DesktopClipProducerTable } from 'src/schema/tables/desktop-clip-index.table.js';
 import { DesktopDeviceTable } from 'src/schema/tables/desktop-device.table.js';
 import { DesktopMlAttemptTable, DesktopMlTaskTable } from 'src/schema/tables/desktop-ml-task.table.js';
@@ -175,6 +173,8 @@ import { AssetLandmarkTable, LandmarkAreaTable, LandmarkTable } from 'src/schema
 import { LibraryFolderAlbumAssetTable } from 'src/schema/tables/library-folder-album-asset.table.js';
 import { LibraryFolderAlbumTable } from 'src/schema/tables/library-folder-album.table.js';
 import { LibraryTable } from 'src/schema/tables/library.table.js';
+import { LocationFillProposalTable, LocationFillRunTable } from 'src/schema/tables/location-fill.table.js';
+import { LocationHistorySourceTable, LocationPointTable } from 'src/schema/tables/location-history.table.js';
 import { LockedEncryptionTable } from 'src/schema/tables/locked-encryption.table.js';
 import {
   MediaConnectionTable,
@@ -337,8 +337,8 @@ import {
   UserCredentialVersionTable,
   UserPasskeyTable,
 } from 'src/schema/tables/user-passkey.table.js';
-import { UserRecoveryCodeTable, UserTwoFactorTable } from 'src/schema/tables/user-two-factor.table.js';
 import { UserPlaceTable } from 'src/schema/tables/user-place.table.js';
+import { UserRecoveryCodeTable, UserTwoFactorTable } from 'src/schema/tables/user-two-factor.table.js';
 import { UserTable } from 'src/schema/tables/user.table.js';
 import { VersionHistoryTable } from 'src/schema/tables/version-history.table.js';
 import {

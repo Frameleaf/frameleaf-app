@@ -36,6 +36,7 @@ const readFixture = async (name: string) => {
 };
 
 /** The bytes a few at a time, so every entry and every multi-byte character is split across chunks. */
+// eslint-disable-next-line @typescript-eslint/require-await
 async function* drip(bytes: Buffer, size: number) {
   for (let offset = 0; offset < bytes.length; offset += size) {
     yield bytes.subarray(offset, offset + size);
@@ -146,9 +147,9 @@ describe('location history files', () => {
   });
 
   it('gives each list entry with its key, whatever sits in strings', async () => {
-    const text =
-      '{"a":"x[{","b":[{"n":1,"s":"}]\\"{"},{"n":[{"deep":2}]}],"c":{"d":[{"n":3}]},"e":[1,[{"n":4}],{"n":5}]}';
+    const text = String.raw`{"a":"x[{","b":[{"n":1,"s":"}]\"{"},{"n":[{"deep":2}]}],"c":{"d":[{"n":3}]},"e":[1,[{"n":4}],{"n":5}]}`;
     const seen = [];
+    // eslint-disable-next-line @typescript-eslint/require-await
     const strings = (async function* () {
       for (let index = 0; index < text.length; index += 3) {
         yield text.slice(index, index + 3);

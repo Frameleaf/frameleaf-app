@@ -180,7 +180,7 @@ describe(LocationFillService.name, () => {
       appliedCount: 0,
     });
     const proposals = await proposalsOf(sut, auth, run.id);
-    expect([...proposals.keys()].toSorted()).toEqual([between, fourBefore].toSorted());
+    expect(proposals.keys().toArray().toSorted()).toEqual([between, fourBefore].toSorted());
     expect(proposals.get(between)).toMatchObject({ method: 'interpolated', gapSeconds: 240, applied: false });
     expect(proposals.get(between)!.latitude).toBeCloseTo(51.1772, 6);
     expect(proposals.get(fourBefore)).toMatchObject({ method: 'nearest', gapSeconds: 240, latitude: 51.178 });
@@ -254,7 +254,7 @@ describe(LocationFillService.name, () => {
     await expect(exifOf(untouched)).resolves.toMatchObject({ latitude: 43.65, longitude: -79.38 });
     // each filled photo has its sidecar written, as any location edit does
     const sidecars = jobs.queueAll.mock.calls
-      .flat(2)
+      .flatMap(([items]) => items)
       .filter((job) => job.name === JobName.SidecarWrite)
       .map((job) => (job.data as { id: string }).id);
     expect(sidecars.toSorted()).toEqual([first, second, editedLater].toSorted());

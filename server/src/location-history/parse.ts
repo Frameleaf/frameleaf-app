@@ -60,14 +60,14 @@ const e7 = (value: unknown) => {
 
 /** A coordinate as a number; some exports write them as strings. */
 const coordinate = (value: unknown) =>
-  typeof value === 'number' ? value : typeof value === 'string' && value.trim() ? Number(value) : Number.NaN;
+  typeof value === 'number' ? value : typeof value === 'string' && value.trim() ? Number(value) : NaN;
 
 const check = (raw: Raw, report: HistoryReport): HistoryPoint | null => {
   const recordedAt = toDate(raw.time);
   const latitude = coordinate(raw.latitude);
   const longitude = coordinate(raw.longitude);
   const accuracy = raw.accuracy === undefined || raw.accuracy === null ? null : Number(raw.accuracy);
-  const time = recordedAt?.getTime() ?? Number.NaN;
+  const time = recordedAt?.getTime() ?? NaN;
   const valid =
     time >= EARLIEST &&
     time <= Date.now() + 86_400_000 &&
@@ -75,7 +75,7 @@ const check = (raw: Raw, report: HistoryReport): HistoryPoint | null => {
     Math.abs(longitude) <= 180 &&
     // 0,0 is what a device writes when it has no fix
     !(latitude === 0 && longitude === 0) &&
-    !(accuracy !== null && !(accuracy <= HISTORY_MAX_ACCURACY_M));
+    (accuracy === null || accuracy <= HISTORY_MAX_ACCURACY_M);
   report.kind ??= raw.kind;
   if (!valid) {
     report.skipped++;
@@ -196,7 +196,7 @@ export async function* jsonEntries(text: AsyncIterable<string>): AsyncGenerator<
   for await (const chunk of text) {
     let from = 0;
     for (let index = 0; index < chunk.length; index++) {
-      const code = chunk.charCodeAt(index);
+      const code = chunk.codePointAt(index);
       if (inString) {
         if (escaped) {
           escaped = false;
@@ -352,7 +352,7 @@ async function* recPoints(text: AsyncIterable<string>, report: HistoryReport): A
 }
 
 async function* decode(bytes: AsyncIterable<Uint8Array>): AsyncGenerator<string> {
-  const decoder = new TextDecoder('utf8');
+  const decoder = new TextDecoder('utf-8');
   for await (const chunk of bytes) {
     const text = decoder.decode(chunk, { stream: true });
     if (text) {

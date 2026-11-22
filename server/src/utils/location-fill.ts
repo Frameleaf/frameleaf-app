@@ -32,8 +32,8 @@ export const proposeLocation = (
   after: FillPoint | null,
   maxGapSeconds: number,
 ): FillProposal | null => {
-  const gapBefore = before ? seconds(before.recordedAt, at) : Number.NaN;
-  const gapAfter = after ? seconds(at, after.recordedAt) : Number.NaN;
+  const gapBefore = before ? seconds(before.recordedAt, at) : NaN;
+  const gapAfter = after ? seconds(at, after.recordedAt) : NaN;
   const useBefore = gapBefore >= 0 && gapBefore <= maxGapSeconds;
   const useAfter = gapAfter >= 0 && gapAfter <= maxGapSeconds;
   if (

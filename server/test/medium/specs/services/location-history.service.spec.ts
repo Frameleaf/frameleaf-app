@@ -234,7 +234,7 @@ describe(LocationHistoryService.name, () => {
     await expect(sut.uploadChunk(auth, upload.id, 600, bytes.subarray(600))).rejects.toBeInstanceOf(ConflictException);
     await sut.uploadChunk(auth, upload.id, 500, bytes.subarray(500));
 
-    const added = await sut.createSource(auth, { uploadId: upload.id, fileName: 'C:\\Users\\me\\track.gpx' });
+    const added = await sut.createSource(auth, { uploadId: upload.id, fileName: String.raw`C:\Users\me\track.gpx` });
     expect(added.fileName).toBe('track.gpx');
     await sut.handleImport({ id: added.id });
     expect(await pointsOf(added.id)).toHaveLength(6);
