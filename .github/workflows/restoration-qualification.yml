@@ -1,0 +1,176 @@
+name: Restoration qualification (photo repair and colourise)
+
+# FL-933: runs the photo repair and colourise runtimes on a real NVIDIA GPU and records the
+# measurements the qualification gate asks for. Forgejo only, on the Windows GPU runner, started
+# by hand only, so a push never starts a run on it. The runner is a personal computer: every
+# step stays inside the job's own work directory, installs nothing system-wide and the last step
+# removes everything the job fetched. Weights and runtimes come from their upstream pins here
+# (machine-learning/video-restoration/qualification/upstream.json); a worker only ever uses the
+# Frameleaf model source.
+on:
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: Scans to run (0 for the whole set)
+        type: string
+        default: '0'
+
+permissions: {}
+
+concurrency:
+  group: restoration-qualification
+  cancel-in-progress: false
+
+jobs:
+  qualify:
+    name: Photo workloads on the GPU runner
+    if: github.server_url != 'https://github.com' && github.repository == 'Frameleaf/frameleaf-app'
+    runs-on: windows-gpu
+    timeout-minutes: 150
+    permissions:
+      contents: read
+    env:
+      LIMIT: ${{ inputs.limit || '0' }}
+      PYTHONDONTWRITEBYTECODE: '1'
+      PYTHONUTF8: '1'
+      HF_HUB_OFFLINE: '1'
+      DO_NOT_TRACK: '1'
+    steps:
+      - name: What the runner has
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Continue'
+          Write-Output "workspace: $env:GITHUB_WORKSPACE"
+          nvidia-smi --query-gpu=name,driver_version,memory.total,memory.used --format=csv
+          python --version
+          uv --version
+          git --version
+          Get-PSDrive -PSProvider FileSystem | Format-Table Name, @{n='FreeGB';e={[math]::Round($_.Free/1GB,1)}}
+          exit 0
+
+      # Long paths are off on this runner, so only the one short folder is checked out.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: machine-learning/video-restoration
+
+      # Fails in seconds, before anything is installed, if the job cannot read the private package.
+      - name: The job can read the scan package
+        shell: pwsh
+        env:
+          PACKAGE_TOKEN: ${{ secrets.PACKAGES_READ_TOKEN }}
+        run: |
+          $q = Join-Path $env:GITHUB_WORKSPACE 'q'
+          New-Item -ItemType Directory -Force -Path "$q\s" | Out-Null
+          python -I machine-learning\video-restoration\qualification\fetch_inputs.py scans machine-learning\video-restoration\qualification\scan-set.json "$q\s" --check-only
+          exit $LASTEXITCODE
+
+      - name: Environment with a CUDA build of torch
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Continue'
+          $q = Join-Path $env:GITHUB_WORKSPACE 'q'
+          New-Item -ItemType Directory -Force -Path $q, "$q\tmp", "$q\uv" | Out-Null
+          # Everything a tool would cache goes under the work directory, never the user profile.
+          $env:UV_CACHE_DIR = "$q\uv"; $env:TEMP = "$q\tmp"; $env:TMP = "$q\tmp"
+          $pins = Get-Content machine-learning\video-restoration\qualification\upstream.json -Raw | ConvertFrom-Json
+          uv venv --python-preference only-system --python $pins.environment.python "$q\v"
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          uv pip install --python "$q\v\Scripts\python.exe" --index-strategy unsafe-best-match --extra-index-url $pins.environment.torchIndex @($pins.environment.packages)
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          & "$q\v\Scripts\python.exe" -I -c "import torch, torchvision, cv2, numpy, onnxruntime; print(torch.__version__, torch.version.cuda, torch.cuda.is_available(), torchvision.__version__, cv2.__version__, numpy.__version__, onnxruntime.__version__, onnxruntime.get_available_providers())"
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
+      - name: Runtimes at their pinned commits, weights by pinned sha256
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Continue'
+          $q = Join-Path $env:GITHUB_WORKSPACE 'q'
+          $env:TEMP = "$q\tmp"; $env:TMP = "$q\tmp"
+          $pins = Get-Content machine-learning\video-restoration\qualification\upstream.json -Raw | ConvertFrom-Json
+          foreach ($name in 'codeformer', 'ddcolor') {
+            $pin = $pins.checkouts.$name
+            git init -q "$q\$name"
+            git -C "$q\$name" remote add origin $pin.repository
+            git -C "$q\$name" -c core.longpaths=true fetch -q --depth 1 origin $pin.revision
+            if ($LASTEXITCODE -ne 0) { exit 1 }
+            git -C "$q\$name" -c core.longpaths=true checkout -q --detach FETCH_HEAD
+            if ((git -C "$q\$name" rev-parse HEAD) -ne $pin.revision) { Write-Error "$name is not at its pinned commit"; exit 1 }
+          }
+          & "$q\v\Scripts\python.exe" -I machine-learning\video-restoration\qualification\fetch_inputs.py weights machine-learning\video-restoration\qualification\upstream.json "$q\w"
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
+      - name: Scan set from the private package, every sha256 checked
+        shell: pwsh
+        env:
+          PACKAGE_TOKEN: ${{ secrets.PACKAGES_READ_TOKEN }}
+        run: |
+          $q = Join-Path $env:GITHUB_WORKSPACE 'q'
+          & "$q\v\Scripts\python.exe" -I machine-learning\video-restoration\qualification\fetch_inputs.py scans machine-learning\video-restoration\qualification\scan-set.json "$q\s" --limit $env:LIMIT
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
+      - name: Photo repair under an 8 GB cap
+        id: repair
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          $q = Join-Path $env:GITHUB_WORKSPACE 'q'
+          $env:TEMP = "$q\tmp"; $env:TMP = "$q\tmp"; $env:TORCH_HOME = "$q\tmp"
+          $d = 'machine-learning\video-restoration\qualification'
+          & "$q\v\Scripts\python.exe" -I "$d\qualify_photo.py" --workload photo-repair --runtime-root "$q\codeformer" --weights "$q\w" --upstream "$d\upstream.json" --scan-set "$d\scan-set.json" --scans "$q\s" --out "$q\o" --vram-cap-gib 8 --limit $env:LIMIT
+          exit $LASTEXITCODE
+
+      - name: Colourise under an 8 GB cap
+        id: colourise
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          $q = Join-Path $env:GITHUB_WORKSPACE 'q'
+          $env:TEMP = "$q\tmp"; $env:TMP = "$q\tmp"; $env:TORCH_HOME = "$q\tmp"
+          $d = 'machine-learning\video-restoration\qualification'
+          & "$q\v\Scripts\python.exe" -I "$d\qualify_photo.py" --workload colourise --runtime-root "$q\ddcolor" --weights "$q\w" --upstream "$d\upstream.json" --scan-set "$d\scan-set.json" --scans "$q\s" --out "$q\o" --vram-cap-gib 8 --limit $env:LIMIT
+          exit $LASTEXITCODE
+
+      - name: Evidence
+        id: upload
+        if: always()
+        continue-on-error: true
+        uses: https://code.forgejo.org/forgejo/upload-artifact@cb8afe72b42edc798abfb8fcb556cf660d894245 # forgejo/upload-artifact v5 (FL-1683)
+        with:
+          name: photo-qualification
+          path: q/o
+          if-no-files-found: warn
+
+      # Artifact upload from a host-mode Windows runner is not dependable, so the log carries
+      # the evidence too: the summaries are printed by the runs above, the sheets here.
+      - name: Contact sheets in the log
+        if: always()
+        shell: pwsh
+        run: |
+          $o = Join-Path $env:GITHUB_WORKSPACE 'q\o'
+          if (Test-Path $o) {
+            Get-ChildItem $o -Filter *.jpg | ForEach-Object {
+              Write-Output "SHEET-BEGIN $($_.Name)"
+              [Convert]::ToBase64String([IO.File]::ReadAllBytes($_.FullName), 'InsertLineBreaks')
+              Write-Output "SHEET-END $($_.Name)"
+            }
+          }
+          exit 0
+
+      - name: Remove everything this job fetched
+        if: always()
+        shell: pwsh
+        run: |
+          Set-Location $env:RUNNER_TEMP
+          Get-ChildItem $env:GITHUB_WORKSPACE -Force | Remove-Item -Recurse -Force -ErrorAction Continue
+          $left = @(Get-ChildItem $env:GITHUB_WORKSPACE -Force -ErrorAction SilentlyContinue)
+          Write-Output "CLEANUP items left in the work directory: $($left.Count)"
+          $left | Select-Object -ExpandProperty Name
+          exit 0
+
+      - name: Result
+        if: steps.repair.outcome != 'success' || steps.colourise.outcome != 'success'
+        shell: pwsh
+        run: |
+          Write-Output "repair: ${{ steps.repair.outcome }}, colourise: ${{ steps.colourise.outcome }}"
+          exit 1

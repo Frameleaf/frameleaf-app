@@ -29,7 +29,6 @@ Passwords and verification codes clear after submission. The server stores an en
 | Setting                                                                  | What it does                                                                                                                                                       |
 | ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | **Import available Apple-edited versions and stack them with originals** | Imports available finished edits as separate assets in a Stack with the original. Enabled by default.                                                              |
-| **Import hidden source media**                                           | Includes Apple Hidden media. Requires an unlocked elevated Frameleaf session when saving. Imported hidden media uses Locked privacy. Off by default.               |
 | **Allow damaged external-library matches to become managed assets**      | Allows a verified recovery copy to become Frameleaf-managed media while preserving the existing asset ID. It does not overwrite the external file. Off by default. |
 | **Interval (hours)**                                                     | Sets the interval between scheduled runs; default 24 hours.                                                                                                        |
 | **Concurrent downloads**                                                 | Sets the number of concurrent downloads for this connection; default 1, maximum 4, also subject to server limits.                                                  |
@@ -53,6 +52,20 @@ The connector compares file contents using hashes. A renamed file can still be t
 A database checksum alone is not enough to skip recovery: the connector verifies the destination file. A previously imported photo can therefore be fetched again if its Frameleaf copy later becomes missing or corrupt. Failed validation never counts as a repair.
 
 See [Recover missing or corrupt media](media-recovery.md) for the full workflow and how to review results.
+
+## Review photos {#review}
+
+Photos hidden in iCloud always import and go to your Locked photos. They never wait for review, and saving a connection does not ask for your PIN.
+
+When a sync can't settle a photo by itself, the connection shows how many need a look. **Review photos** opens each one with its reason. You can filter by reason, then accept one photo in the large view, a whole page, or all of them. Mark a photo **Later** to keep it out of an accept.
+
+| Reason                                 | What Accept does                                                |
+| -------------------------------------- | --------------------------------------------------------------- |
+| More than one photo has the same bytes | Uses the matching photo in your library. No copy is added.      |
+| Storage full                           | Tries the photo again.                                          |
+| Anything else                          | Keeps what's in Frameleaf now and stops asking for that reason. |
+
+Accepting never deletes anything. Locked photos in review appear after you unlock.
 
 ## Apple edits and Stacks
 

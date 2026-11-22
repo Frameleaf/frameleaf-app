@@ -3,6 +3,7 @@ import { lstat, mkdir, readFile, writeFile, stat, statfs, rename, open, realpath
 import { basename, isAbsolute, join, relative } from 'node:path';
 import { z } from 'zod';
 import { Store } from './store.js';
+import { galleryImportRefused, importedGallery } from './gallery-preview.js';
 import { Docker, type ImportInspection } from './docker.js';
 import { Discovery, COMPATIBLE_SETTINGS, maskSettings, unmaskSettings, unsupportedSettings } from './discovery.js';
 import { Releases, type VerifiedRelease } from './releases.js';
@@ -663,6 +664,8 @@ export class Operations {
     const source = this.editedSource(stored);
     // Review still opens so the administrator can see and edit the settings; cutover cannot start.
     if (requireCompatible && source.unsupportedSettings.length) throw new Refusal('incompatible_settings_require_review');
+    // FL-1752: the importer would refuse this Gallery, or Manager could not tell, so it is never stopped for an import.
+    if (requireCompatible && galleryImportRefused(source)) throw new Refusal('source_database_dump_failed');
     if (source.platform === 'unraid') {
       if (!this.autostartFile) throw new Refusal('unraid_autostart_file_required');
       await this.fencing.readAutostart(true);
@@ -1751,7 +1754,10 @@ export class Operations {
         if (state.status !== 'activated') {
           await this.runImport(operation, review, installation, state.status === 'fresh' ? 'run' : 'resume');
           await this.fencing.verify(source);
-          await this.runImport(operation, review, installation, 'verify');
+          const report = await this.runImport(operation, review, installation, 'verify');
+          // FL-1742: what the importer carried from Noodle Gallery and what stayed behind, for "Your server is ready".
+          const gallery = importedGallery(report);
+          if (gallery) this.store.set(`import-gallery:${installation.id}`, gallery);
         }
         return true;
       });
@@ -1763,8 +1769,10 @@ export class Operations {
         const result = JSON.parse(
           await this.docker.sql(
             db,
+            // A Noodle Gallery Space arrives as an album of kind "space"; the source counted its albums only.
             `SELECT json_build_object('users',(SELECT count(*) FROM public.user),
-          'assets',(SELECT count(*) FROM public.asset),'albums',(SELECT count(*) FROM public.album));`,
+          'assets',(SELECT count(*) FROM public.asset),'albums',(SELECT count(*) FROM public.album
+            WHERE kind IS DISTINCT FROM 'space'));`,
           ),
         );
         const receipt = operation.receipts['copy-current-database'] as { summary: Record<string, number> };

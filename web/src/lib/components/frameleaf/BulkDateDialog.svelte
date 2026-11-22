@@ -1,8 +1,17 @@
 <script lang="ts">
   import BulkFormDialog from '$lib/components/frameleaf/BulkFormDialog.svelte';
+  import DatePrecisionChoice from '$lib/components/frameleaf/DatePrecisionChoice.svelte';
   import Picker from '$lib/components/frameleaf/Picker.svelte';
   import type { ComboBoxOption } from '$lib/components/shared-components/Combobox.svelte';
   import type { BulkAsset } from '$lib/frameleaf/bulk-actions';
+  import {
+    dateAccuracyOf,
+    decadeChoices,
+    decadeOf,
+    MIN_APPROXIMATE_YEAR,
+    parseApproximateYear,
+    type DatePrecision,
+  } from '$lib/frameleaf/approximate-date';
   import type { BulkPayload } from '$lib/frameleaf/bulk-operations';
   import {
     splitLocalDateTime,
@@ -33,6 +42,9 @@
    * In an Added-date view (Recently added, "Added — newest") the timeline's dates are upload times,
    * so nothing is pre-filled from them: the real capture times are fetched on open, and if they
    * cannot be, "keep" is not offered, nothing is pre-filled and a zone must be chosen.
+   *
+   * FL-936: under "Set the same date", Exact date / Year / Decade. A year or a decade runs as one Date & Time Doctor
+   * fix, so one Undo puts every item's date back.
    */
   let {
     count,
@@ -73,6 +85,22 @@
   /** Every selected item's capture time is known, so "Keep each item's time zone" can keep it. */
   const canKeep = $derived(loaded && assets.every((asset) => captures[asset.id] !== undefined));
   const first = $derived(assets[0] ? captures[assets[0].id] : undefined);
+
+  const currentYear = new Date().getFullYear();
+  const decades = decadeChoices(currentYear);
+  /** The selection's accuracy when every item shares it, so reopening shows what is stored. */
+  const sharedAccuracy =
+    loaded && assets.every((asset) => dateAccuracyOf(asset.dateAccuracy) === dateAccuracyOf(assets[0].dateAccuracy))
+      ? dateAccuracyOf(assets[0].dateAccuracy)
+      : null;
+  const firstYear = Number(assets[0]?.localDateTime?.slice(0, 4)) || currentYear;
+  const knownYear = Math.min(Math.max(firstYear, MIN_APPROXIMATE_YEAR), currentYear);
+  let precision = $state<DatePrecision>(sharedAccuracy ?? 'exact');
+  let yearText = $state(String(knownYear));
+  let decade = $state(String(decadeOf(knownYear)));
+  const year = $derived(parseApproximateYear(yearText, currentYear));
+  /** The first year of the chosen period, or null while the year typed is not one. */
+  const periodYear = $derived(precision === 'year' ? year : precision === 'decade' ? Number(decade) : null);
 
   let mode = $state<'set' | 'shift'>('set');
   let date = $state('');
@@ -123,7 +151,9 @@
   const zoneChosen = $derived(zoneValue !== '');
   let valid = $derived(
     mode === 'set'
-      ? /^\d{4}-\d{2}-\d{2}$/.test(date) && /^\d{2}:\d{2}$/.test(time) && zoneChosen && !resolving
+      ? precision === 'exact'
+        ? /^\d{4}-\d{2}-\d{2}$/.test(date) && /^\d{2}:\d{2}$/.test(time) && zoneChosen && !resolving
+        : periodYear !== null
       : Number.isFinite(Number(amount)) && Number(amount) > 0,
   );
 
@@ -145,21 +175,41 @@
   /** Its label is read from the current options, so a date change relabels it. */
   const selectedZone = $derived(zoneOptions.find((option) => option.value === zoneValue));
 
+  const approximatePreview = $derived.by(() => {
+    if (precision === 'decade') {
+      return $t('frameleaf_bulk_date_will_show_decade', { values: { count, decade } });
+    }
+    if (year !== null) {
+      return $t('frameleaf_bulk_date_will_show_year', { values: { count, year: String(year) } });
+    }
+    return /^\d{4}$/.test(yearText.trim())
+      ? $t('frameleaf_date_year_range', { values: { min: String(MIN_APPROXIMATE_YEAR), max: String(currentYear) } })
+      : $t('frameleaf_date_enter_year');
+  });
+
   let preview = $derived(
-    valid
-      ? mode === 'set'
-        ? $t('frameleaf_bulk_date_preview_set', { values: { count, date, time } })
-        : $t('frameleaf_bulk_date_preview_shift', {
-            values: { count, amount: Number(amount), unit: $t(`frameleaf_bulk_date_unit_${unit}`).toLowerCase() },
-          })
-      : mode === 'set' && !zoneChosen
-        ? $t('frameleaf_bulk_date_choose_zone')
-        : $t('frameleaf_bulk_date_incomplete'),
+    mode === 'set' && precision !== 'exact'
+      ? approximatePreview
+      : valid
+        ? mode === 'set'
+          ? $t('frameleaf_bulk_date_preview_set', { values: { count, date, time } })
+          : $t('frameleaf_bulk_date_preview_shift', {
+              values: { count, amount: Number(amount), unit: $t(`frameleaf_bulk_date_unit_${unit}`).toLowerCase() },
+            })
+        : mode === 'set' && !zoneChosen
+          ? $t('frameleaf_bulk_date_choose_zone')
+          : $t('frameleaf_bulk_date_incomplete'),
   );
 
   const submit = () => {
     if (mode === 'shift') {
       onSubmit({ dateMode: 'shift', minutes });
+      return;
+    }
+    if (precision !== 'exact') {
+      if (periodYear !== null) {
+        onSubmit({ dateMode: 'set', dateAccuracy: precision, year: periodYear });
+      }
       return;
     }
     if (zoneValue === KEEP && canKeep) {
@@ -200,6 +250,32 @@
   </fieldset>
 
   {#if mode === 'set'}
+    <DatePrecisionChoice value={precision} onChange={(value) => (precision = value)} />
+  {/if}
+  {#if mode === 'set' && precision === 'year'}
+    <label>
+      {$t('frameleaf_date_precision_year')}
+      <input
+        type="text"
+        inputmode="numeric"
+        maxlength="4"
+        placeholder="1975"
+        bind:value={yearText}
+        aria-invalid={year === null}
+      />
+    </label>
+  {:else if mode === 'set' && precision === 'decade'}
+    <label>
+      {$t('frameleaf_date_precision_decade')}
+      <select bind:value={decade}>
+        {#each decades as option (option)}
+          <option value={String(option)}>
+            {$t('frameleaf_date_decade_option', { values: { decade: String(option) } })}
+          </option>
+        {/each}
+      </select>
+    </label>
+  {:else if mode === 'set'}
     <div class="fl-grid">
       <label>
         {$t('date')}

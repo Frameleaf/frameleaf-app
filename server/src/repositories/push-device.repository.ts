@@ -35,19 +35,34 @@ export type PushDeviceRegistration = {
   userId: string;
   sessionId: string;
   platform: PushPlatform;
-  pushToken: string;
+  /** Null only for an Android device that uses UnifiedPush alone (FL-926). */
+  pushToken: string | null;
   pushToStartToken: string | null;
   apnsEnvironment: 'production' | 'sandbox' | null;
   publicKey: string;
   backupDeviceKey: string | null;
   disabledEvents: string[];
+  /** FL-926: the UnifiedPush endpoint and its Web Push keys; all three, or none (absent clears them). */
+  unifiedPushEndpoint?: string | null;
+  unifiedPushPublicKey?: string | null;
+  unifiedPushAuth?: string | null;
 };
 export type PushDeviceChanges = Partial<
   Pick<
     PushDeviceRegistration,
-    'pushToken' | 'pushToStartToken' | 'apnsEnvironment' | 'publicKey' | 'backupDeviceKey' | 'disabledEvents'
+    | 'pushToken'
+    | 'pushToStartToken'
+    | 'apnsEnvironment'
+    | 'publicKey'
+    | 'backupDeviceKey'
+    | 'disabledEvents'
+    | 'unifiedPushEndpoint'
+    | 'unifiedPushPublicKey'
+    | 'unifiedPushAuth'
   >
 >;
+/** FL-926: a UnifiedPush endpoint the push server reported gone (404/410), on the device that had it. */
+export type UnifiedPushEndpointRef = { id: string; endpoint: string };
 export type StaleBackupWakeTarget = {
   deviceId: string;
   userId: string;
@@ -68,17 +83,32 @@ export class PushDeviceRepository {
   ) {}
   /**
    * Register the device of `sessionId`, or update its registration (a rotated push token, a new key).
-   * A push token belongs to one installation, so a registration elsewhere holding the same token (the
-   * app signed in again under a new session) is removed first.
+   * A push token (or UnifiedPush endpoint) belongs to one installation, so a registration elsewhere
+   * holding the same one (the app signed in again under a new session) is removed first.
    */
-  upsert(registration: PushDeviceRegistration): Promise<PushDevice> {
+  upsert(input: PushDeviceRegistration): Promise<PushDevice> {
+    const registration = {
+      ...input,
+      unifiedPushEndpoint: input.unifiedPushEndpoint ?? null,
+      unifiedPushPublicKey: input.unifiedPushPublicKey ?? null,
+      unifiedPushAuth: input.unifiedPushAuth ?? null,
+    };
     return this.db.transaction().execute(async (tx) => {
-      await tx
-        .deleteFrom('push_device')
-        .where('platform', '=', registration.platform)
-        .where('pushToken', '=', registration.pushToken)
-        .where('sessionId', '!=', registration.sessionId)
-        .execute();
+      if (registration.pushToken !== null) {
+        await tx
+          .deleteFrom('push_device')
+          .where('platform', '=', registration.platform)
+          .where('pushToken', '=', registration.pushToken)
+          .where('sessionId', '!=', registration.sessionId)
+          .execute();
+      }
+      if (registration.unifiedPushEndpoint !== null) {
+        await tx
+          .deleteFrom('push_device')
+          .where('unifiedPushEndpoint', '=', registration.unifiedPushEndpoint)
+          .where('sessionId', '!=', registration.sessionId)
+          .execute();
+      }
       return tx
         .insertInto('push_device')
         .values(registration)
@@ -92,6 +122,9 @@ export class PushDeviceRepository {
             publicKey: registration.publicKey,
             backupDeviceKey: registration.backupDeviceKey,
             disabledEvents: registration.disabledEvents,
+            unifiedPushEndpoint: registration.unifiedPushEndpoint,
+            unifiedPushPublicKey: registration.unifiedPushPublicKey,
+            unifiedPushAuth: registration.unifiedPushAuth,
             updatedAt: sql`now()`,
           }),
         )
@@ -102,7 +135,14 @@ export class PushDeviceRepository {
   /** Change some fields of the registration of `sessionId`; undefined when it has none. */
   update(sessionId: string, changes: PushDeviceChanges): Promise<PushDevice | undefined> {
     return this.db.transaction().execute(async (tx) => {
-      if (changes.pushToken !== undefined) {
+      if (typeof changes.unifiedPushEndpoint === 'string') {
+        await tx
+          .deleteFrom('push_device')
+          .where('unifiedPushEndpoint', '=', changes.unifiedPushEndpoint)
+          .where('sessionId', '!=', sessionId)
+          .execute();
+      }
+      if (typeof changes.pushToken === 'string') {
         const current = await tx
           .selectFrom('push_device')
           .select('platform')
@@ -117,12 +157,59 @@ export class PushDeviceRepository {
             .execute();
         }
       }
-      return tx
+      return (
+        tx
+          .updateTable('push_device')
+          .set({ ...changes, updatedAt: sql`now()` })
+          .where('sessionId', '=', sessionId)
+          // FL-926: clearing the endpoint never leaves a device without a route, whatever was read earlier
+          .$if(changes.unifiedPushEndpoint === null && typeof changes.pushToken !== 'string', (qb) =>
+            qb.where('pushToken', 'is not', null),
+          )
+          .returningAll()
+          .executeTakeFirst()
+      );
+    });
+  }
+  /** FL-926: one registration by id, for the test push (its owner or an administrator). */
+  async getById(id: string): Promise<PushDeviceWithActivities | undefined> {
+    const device = await this.devices().where('push_device.id', '=', id).executeTakeFirst();
+    return device ? (await this.withActivities([device]))[0] : undefined;
+  }
+  /** FL-926: whether any device uses UnifiedPush, which an unlinked server can still deliver to. */
+  async hasUnifiedPushDevices(): Promise<boolean> {
+    const row = await this.db
+      .selectFrom('push_device')
+      .select('id')
+      .where('unifiedPushEndpoint', 'is not', null)
+      .limit(1)
+      .executeTakeFirst();
+    return !!row;
+  }
+  /**
+   * FL-926: forget a UnifiedPush endpoint that is gone, unless the device has since replaced it. A device
+   * with an FCM token stays registered and goes back to the Cloud gateway; one without is removed.
+   */
+  async deleteGoneUnifiedPush(refs: UnifiedPushEndpointRef[]): Promise<void> {
+    if (refs.length === 0) {
+      return;
+    }
+    await this.db.transaction().execute(async (tx) => {
+      await tx
+        .deleteFrom('push_device')
+        .where('pushToken', 'is', null)
+        .where((eb) =>
+          eb.or(refs.map(({ id, endpoint }) => eb.and([eb('id', '=', id), eb('unifiedPushEndpoint', '=', endpoint)]))),
+        )
+        .execute();
+      await tx
         .updateTable('push_device')
-        .set({ ...changes, updatedAt: sql`now()` })
-        .where('sessionId', '=', sessionId)
-        .returningAll()
-        .executeTakeFirst();
+        .set({ unifiedPushEndpoint: null, unifiedPushPublicKey: null, unifiedPushAuth: null })
+        .where('pushToken', 'is not', null)
+        .where((eb) =>
+          eb.or(refs.map(({ id, endpoint }) => eb.and([eb('id', '=', id), eb('unifiedPushEndpoint', '=', endpoint)]))),
+        )
+        .execute();
     });
   }
   async getBySession(sessionId: string): Promise<PushDeviceWithActivities | undefined> {
@@ -169,14 +256,18 @@ export class PushDeviceRepository {
       .execute((tx) => tx.deleteFrom('push_device').where('userId', '=', userId).executeTakeFirst());
     return Number(result.numDeletedRows);
   }
-  /** A late gateway refusal must not remove a replacement token or a changed delivery platform. */
+  /**
+   * A late gateway refusal must not remove a replacement token or a changed delivery platform.
+   * FL-926: a device with a UnifiedPush endpoint loses only the refused token and keeps that route.
+   */
   async deleteByIds(tokens: PushTokenRef[]): Promise<void> {
     if (tokens.length === 0) {
       return;
     }
-    await this.db.transaction().execute((tx) =>
-      tx
+    await this.db.transaction().execute(async (tx) => {
+      await tx
         .deleteFrom('push_device')
+        .where('unifiedPushEndpoint', 'is', null)
         .where((eb) =>
           eb.or(
             tokens.map(({ id, token, platform }) =>
@@ -184,8 +275,20 @@ export class PushDeviceRepository {
             ),
           ),
         )
-        .execute(),
-    );
+        .execute();
+      await tx
+        .updateTable('push_device')
+        .set({ pushToken: null })
+        .where('unifiedPushEndpoint', 'is not', null)
+        .where((eb) =>
+          eb.or(
+            tokens.map(({ id, token, platform }) =>
+              eb.and([eb('id', '=', id), eb('pushToken', '=', token), matchesPushPlatform(platform)]),
+            ),
+          ),
+        )
+        .execute();
+    });
   }
   /** Forget a push-to-start token the gateway reported gone, keeping the registration. */
   async clearPushToStartTokens(tokens: PushTokenRef[]): Promise<void> {
@@ -333,29 +436,42 @@ export class PushDeviceRepository {
    * Push devices linked to a phone backup device whose last reported success is older than `cutoff`
    * (never-reported devices have nothing to be stale against), not woken since `wakeCutoff`.
    */
-  getStaleBackupWakeTargets(cutoff: Date, wakeCutoff: Date): Promise<StaleBackupWakeTarget[]> {
-    return this.db
-      .selectFrom('push_device')
-      .innerJoin('backup_device', (join) =>
-        join
-          .onRef('backup_device.ownerId', '=', 'push_device.userId')
-          .onRef('backup_device.deviceKey', '=', 'push_device.backupDeviceKey'),
-      )
-      .select([
-        'push_device.id as deviceId',
-        'push_device.userId',
-        'backup_device.deviceKey as backupDeviceKey',
-        'backup_device.displayName',
-        'backup_device.pendingCount',
-      ])
-      .select((eb) => eb.ref('backup_device.lastSuccessfulBackupAt').$notNull().as('lastSuccessfulBackupAt'))
-      .where('backup_device.deletedAt', 'is', null)
-      .where('backup_device.lastSuccessfulBackupAt', '<', cutoff)
-      .where((eb) =>
-        eb.or([eb('push_device.lastStaleWakeAt', 'is', null), eb('push_device.lastStaleWakeAt', '<', wakeCutoff)]),
-      )
-      .orderBy('push_device.id')
-      .execute() as Promise<StaleBackupWakeTarget[]>;
+  getStaleBackupWakeTargets(
+    cutoff: Date,
+    wakeCutoff: Date,
+    routes?: { cloud: boolean; unifiedPush: boolean },
+  ): Promise<StaleBackupWakeTarget[]> {
+    return (
+      this.db
+        .selectFrom('push_device')
+        .innerJoin('backup_device', (join) =>
+          join
+            .onRef('backup_device.ownerId', '=', 'push_device.userId')
+            .onRef('backup_device.deviceKey', '=', 'push_device.backupDeviceKey'),
+        )
+        .select([
+          'push_device.id as deviceId',
+          'push_device.userId',
+          'backup_device.deviceKey as backupDeviceKey',
+          'backup_device.displayName',
+          'backup_device.pendingCount',
+        ])
+        .select((eb) => eb.ref('backup_device.lastSuccessfulBackupAt').$notNull().as('lastSuccessfulBackupAt'))
+        .where('backup_device.deletedAt', 'is', null)
+        .where('backup_device.lastSuccessfulBackupAt', '<', cutoff)
+        .where((eb) =>
+          eb.or([eb('push_device.lastStaleWakeAt', 'is', null), eb('push_device.lastStaleWakeAt', '<', wakeCutoff)]),
+        )
+        // FL-926: only devices this server can reach now, so an unreachable one keeps its wake-up
+        .where((eb) =>
+          eb.or([
+            ...((routes?.cloud ?? true) ? [eb('push_device.pushToken', 'is not', null)] : []),
+            ...((routes?.unifiedPush ?? true) ? [eb('push_device.unifiedPushEndpoint', 'is not', null)] : []),
+          ]),
+        )
+        .orderBy('push_device.id')
+        .execute() as Promise<StaleBackupWakeTarget[]>
+    );
   }
   async markStaleWake(ids: string[]): Promise<void> {
     if (ids.length === 0) {

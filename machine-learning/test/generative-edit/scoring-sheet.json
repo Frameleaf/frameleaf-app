@@ -1,0 +1,267 @@
+{
+  "schema": "frameleaf.generative-edit-scoring-sheet/v1",
+  "qualitySet": "quality-set.json",
+  "run": {
+    "model": null,
+    "modelRevision": null,
+    "runtime": null,
+    "quantisation": null,
+    "hardware": null,
+    "steps": null,
+    "seed": null,
+    "date": null,
+    "scoredBy": null
+  },
+  "scores": [
+    {
+      "id": "instruct-01-street-cars",
+      "accepted": null,
+      "notes": ""
+    },
+    {
+      "id": "instruct-02-beach-background-people",
+      "accepted": null,
+      "notes": ""
+    },
+    {
+      "id": "instruct-03-picnic-rubbish",
+      "accepted": null,
+      "notes": ""
+    },
+    {
+      "id": "instruct-04-portrait-glasses",
+      "accepted": null,
+      "notes": ""
+    },
+    {
+      "id": "instruct-05-jacket-colour",
+      "accepted": null,
+      "notes": ""
+    },
+    {
+      "id": "instruct-06-dog-lead",
+      "accepted": null,
+      "notes": ""
+    },
+    {
+      "id": "instruct-07-cafe-sign-text",
+      "accepted": null,
+      "notes": ""
+    },
+    {
+      "id": "instruct-08-wall-colour",
+      "accepted": null,
+      "notes": ""
+    },
+    {
+      "id": "instruct-09-cake-candles",
+      "accepted": null,
+      "notes": ""
+    },
+    {
+      "id": "instruct-10-autumn-to-winter",
+      "accepted": null,
+      "notes": ""
+    },
+    {
+      "id": "instruct-11-make-him-smile",
+      "accepted": null,
+      "notes": ""
+    },
+    {
+      "id": "instruct-12-power-lines",
+      "accepted": null,
+      "notes": ""
+    },
+    {
+      "id": "instruct-13-food-warmer",
+      "accepted": null,
+      "notes": ""
+    },
+    {
+      "id": "instruct-14-car-colour",
+      "accepted": null,
+      "notes": ""
+    },
+    {
+      "id": "instruct-15-clear-counter",
+      "accepted": null,
+      "notes": ""
+    },
+    {
+      "id": "instruct-16-bike-helmet",
+      "accepted": null,
+      "notes": ""
+    },
+    {
+      "id": "instruct-17-fence-foreground",
+      "accepted": null,
+      "notes": ""
+    },
+    {
+      "id": "instruct-18-photobomber",
+      "accepted": null,
+      "notes": ""
+    },
+    {
+      "id": "instruct-19-blur-background",
+      "accepted": null,
+      "notes": ""
+    },
+    {
+      "id": "instruct-20-colourise",
+      "accepted": null,
+      "notes": ""
+    },
+    {
+      "id": "extend-01-pier-to-wide",
+      "accepted": null,
+      "notes": ""
+    },
+    {
+      "id": "extend-02-lake-to-square",
+      "accepted": null,
+      "notes": ""
+    },
+    {
+      "id": "extend-03-mountain-to-vertical",
+      "accepted": null,
+      "notes": ""
+    },
+    {
+      "id": "extend-04-cropped-head",
+      "accepted": null,
+      "notes": ""
+    },
+    {
+      "id": "extend-05-dinner-table-sides",
+      "accepted": null,
+      "notes": ""
+    },
+    {
+      "id": "extend-06-church-tower-top",
+      "accepted": null,
+      "notes": ""
+    },
+    {
+      "id": "extend-07-beach-panorama",
+      "accepted": null,
+      "notes": ""
+    },
+    {
+      "id": "extend-08-cat-square-to-wide",
+      "accepted": null,
+      "notes": ""
+    },
+    {
+      "id": "relight-01-backlit-face",
+      "accepted": null,
+      "notes": ""
+    },
+    {
+      "id": "relight-02-noon-to-golden-hour",
+      "accepted": null,
+      "notes": ""
+    },
+    {
+      "id": "relight-03-harsh-flash",
+      "accepted": null,
+      "notes": ""
+    },
+    {
+      "id": "relight-04-night-to-day",
+      "accepted": null,
+      "notes": ""
+    },
+    {
+      "id": "relight-05-overcast-house",
+      "accepted": null,
+      "notes": ""
+    },
+    {
+      "id": "relight-06-still-life-lamp",
+      "accepted": null,
+      "notes": ""
+    },
+    {
+      "id": "relight-07-blue-hour",
+      "accepted": null,
+      "notes": ""
+    },
+    {
+      "id": "relight-08-underexposed-dinner",
+      "accepted": null,
+      "notes": ""
+    },
+    {
+      "id": "sky-01-grey-to-blue",
+      "accepted": null,
+      "notes": ""
+    },
+    {
+      "id": "sky-02-skyline-sunset",
+      "accepted": null,
+      "notes": ""
+    },
+    {
+      "id": "sky-03-beach-milky-way",
+      "accepted": null,
+      "notes": ""
+    },
+    {
+      "id": "sky-04-lake-storm-reflection",
+      "accepted": null,
+      "notes": ""
+    },
+    {
+      "id": "sky-05-bare-branches",
+      "accepted": null,
+      "notes": ""
+    },
+    {
+      "id": "sky-06-hair-sunrise",
+      "accepted": null,
+      "notes": ""
+    },
+    {
+      "id": "transfer-01-dog-by-bench",
+      "accepted": null,
+      "notes": ""
+    },
+    {
+      "id": "transfer-02-cat-on-armchair",
+      "accepted": null,
+      "notes": ""
+    },
+    {
+      "id": "transfer-03-dog-on-beach",
+      "accepted": null,
+      "notes": ""
+    },
+    {
+      "id": "transfer-04-teapot-on-table",
+      "accepted": null,
+      "notes": ""
+    },
+    {
+      "id": "transfer-05-girl-on-avenue",
+      "accepted": null,
+      "notes": ""
+    },
+    {
+      "id": "transfer-06-woman-on-snow",
+      "accepted": null,
+      "notes": ""
+    },
+    {
+      "id": "transfer-07-man-at-lake",
+      "accepted": null,
+      "notes": ""
+    },
+    {
+      "id": "transfer-08-car-at-cottage",
+      "accepted": null,
+      "notes": ""
+    }
+  ]
+}

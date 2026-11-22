@@ -24,6 +24,7 @@
     isCreatorsArea,
     readCreatorsLocation,
   } from '$lib/frameleaf/creators';
+  import { creatorsDownloads } from '$lib/frameleaf/creators-downloads.svelte';
   import { creatorsStore } from '$lib/frameleaf/creators-store.svelte';
   import { savedSearchesStore } from '$lib/stores/saved-searches.svelte';
   import { menuButtonId } from '$lib/components/shared-components/navigation-bar/NavigationBar.svelte';
@@ -109,6 +110,7 @@
     mdiPaletteOutline,
     mdiPlus,
     mdiPuzzleOutline,
+    mdiProgressDownload,
     mdiRss,
     mdiVideoOutline,
     mdiViewDashboardOutline,
@@ -1039,6 +1041,7 @@
 {#snippet creatorsList()}
   {@const home = !creatorsWhere.creator && creatorsWhere.view === 'home'}
   {@const subscriptions = !creatorsWhere.creator && creatorsWhere.view === 'subscriptions'}
+  {@const downloads = !creatorsWhere.creator && creatorsWhere.view === 'downloads'}
   <nav class="fl-section" aria-label={$t('frameleaf_creators_title')}>
     <a
       href={creatorsHref()}
@@ -1070,6 +1073,24 @@
       {#if !iconOnly}
         <span class="fl-label">{$t('frameleaf_creators_subscriptions')}</span>
         <small class="fl-count">{creatorsStore.following.length}</small>
+      {/if}
+    </a>
+    <a
+      href={creatorsHref({ view: 'downloads' })}
+      class="fl-link"
+      class:fl-current={downloads}
+      aria-current={downloads ? 'page' : undefined}
+      title={iconOnly ? $t('frameleaf_creators_downloads') : undefined}
+      aria-label={iconOnly ? $t('frameleaf_creators_downloads') : undefined}
+    >
+      <Icon icon={mdiProgressDownload} size="1.25em" aria-hidden={true} class="fl-icon" />
+      {#if !iconOnly}
+        <span class="fl-label">{$t('frameleaf_creators_downloads')}</span>
+        {#if creatorsDownloads.needs > 0}
+          <small class="fl-count">
+            {$t('frameleaf_creators_tray_needs', { values: { count: creatorsDownloads.needs } })}
+          </small>
+        {/if}
       {/if}
     </a>
   </nav>

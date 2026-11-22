@@ -77,7 +77,7 @@ import { collectAllMetadata } from 'src/utils/all-metadata.js';
 import { getAssetFiles, getDimensions, getLivePhotoMotion, isPanorama } from 'src/utils/asset.util.js';
 import { PHOTOGRAPHY_INTAKE_CREDITS_KEY } from 'src/utils/capture-details.js';
 import { updateLockedColumns } from 'src/utils/database.js';
-import { extractTimeZone, getAssetDateTimeUpdates, withDateTimeOffset } from 'src/utils/date.js';
+import { extractTimeZone, getAssetDateTimeUpdates, withApproximateDate, withDateTimeOffset } from 'src/utils/date.js';
 import { EditOperationTracker } from 'src/utils/edit-operation-tracker.js';
 import { EditOperationEdit } from 'src/utils/edit-operation.js';
 import { fontFactsFromName, isBrowserFont } from 'src/utils/font-file.js';
@@ -260,6 +260,9 @@ export class AssetService extends BaseService {
     }
 
     await this.withLandmarks(data);
+    // FL-949: the viewer's own name for the spot; never through a shared link
+    await this.withNamedPlace(data, auth.sharedLink ? undefined : auth.user.id);
+    await this.localizeAssetPlaces(auth, [data]);
 
     data.fileProblem = await this.fileProblemFor(auth, asset);
 
@@ -310,8 +313,12 @@ export class AssetService extends BaseService {
       return data as AssetResponseDto;
     }
     await this.requireAccess({ auth, permission: Permission.AssetUpdate, ids: [id] });
+    if (dto.visibility) {
+      await this.assertNoPrintBack([id]);
+    }
 
-    const { libraryScope, ...editDto } = dto;
+    // FL-936: a year or a decade is stored as the day it starts; `dateAccuracy` goes to the asset row with `rest`
+    const { libraryScope, ...editDto } = withApproximateDate(dto);
     const {
       description,
       title,
@@ -723,14 +730,20 @@ export class AssetService extends BaseService {
       copyright,
       duplicateId,
       dateTimeRelative,
-      timeZone,
-    } = dto;
+      timeZone: givenTimeZone,
+      dateAccuracy,
+    } = withApproximateDate(dto);
+    // FL-936: a year or a decade starts at midnight UTC, whatever zone came with it
+    const timeZone = dateAccuracy ? undefined : givenTimeZone;
     // FL-786: hearts on items shared with the caller are theirs; their own items keep the owner's mark
     if (!sharedFavoritesSet && isFavoriteOnly(dto)) {
       const owned = await this.setSharedFavorites(auth, ids, isFavorite!);
       return owned.length === 0 ? undefined : this.updateAll(auth, { ids: owned, isFavorite }, true);
     }
     await this.requireAccess({ auth, permission: Permission.AssetUpdate, ids });
+    if (visibility) {
+      await this.assertNoPrintBack(ids);
+    }
 
     const originIds = visibility === AssetVisibility.Locked ? await this.assetRepository.findLockGroupIds(ids) : ids;
     const admitted = new Set(originIds);
@@ -753,6 +766,7 @@ export class AssetService extends BaseService {
             isFavorite,
             visibility: storedVisibility,
             duplicateId,
+            dateAccuracy,
             ...getAssetDateTimeUpdates(dateTimeOriginal, timeZone),
           },
           isUndefined,
@@ -796,6 +810,8 @@ export class AssetService extends BaseService {
                 ids,
                 dateTimeRelative,
                 timeZone ?? extractedTimeZone?.name,
+                // FL-936: a shift or a zone alone leaves a photo dated to a year or a decade as it is
+                dateTimeOriginal === undefined,
               )
             : [];
 
@@ -1063,6 +1079,10 @@ export class AssetService extends BaseService {
     await this.partnerOriginRepository.withOriginEdit('asset', ids, [], async () => {
       const previousClocks = new Map((await this.assetRepository.getByIds(ids)).map((asset) => [asset.id, asset]));
       for (const { id, from } of items) {
+        // FL-936: a year or a decade has no clock to shift
+        if (previousClocks.get(id)?.dateAccuracy) {
+          continue;
+        }
         const updated = await this.assetRepository.setDateTimeOriginal(id, new Date(from.getTime() + minutes * 60_000));
         if (updated) {
           await this.assetRepository.update({
@@ -1431,9 +1451,19 @@ export class AssetService extends BaseService {
     }
   }
 
+  /** FL-967: a back leaves through its front's Remove back, which puts it back where it was. */
+  private async assertNoPrintBack(ids: string[]) {
+    if ((await this.assetRepository.getPrintBackIds(ids)).length > 0) {
+      throw new BadRequestException('This scan is the back of a print. Remove it from the print first');
+    }
+  }
+
   private async isOrphanedMotionPart(asset: { id: string; visibility: AssetVisibility }) {
+    // FL-967: the back of a print is hidden too, and is nobody's leftover
     return (
-      asset.visibility === AssetVisibility.Hidden && (await this.assetRepository.getLivePhotoCount(asset.id)) === 0
+      asset.visibility === AssetVisibility.Hidden &&
+      (await this.assetRepository.getLivePhotoCount(asset.id)) === 0 &&
+      (await this.assetRepository.getPrintBackIds([asset.id])).length === 0
     );
   }
 
@@ -1441,6 +1471,7 @@ export class AssetService extends BaseService {
     const { ids, force } = dto;
 
     await this.requireAccess({ auth, permission: Permission.AssetDelete, ids });
+    await this.assertNoPrintBack(ids);
     if (force) {
       await this.assetRepository.updateAll(ids, { deletedAt: new Date(), status: AssetStatus.Deleted });
       await this.eventRepository.emit('AssetDeleteAll', { assetIds: ids, userId: auth.user.id });

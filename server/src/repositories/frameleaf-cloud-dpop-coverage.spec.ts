@@ -57,7 +57,8 @@ const RAW_FETCH = {
   // FL-632: Save a link reads a typed page's title and picture through the guarded public-only fetch
   // (no private addresses, checked at connect and on each redirect); anonymous, no instance token.
   // FL-1420: also every hop of a user's workflow HTTP step (fetchAutomationHop)
-  'utils/public-fetch.ts': 'link preview of a public page, automation messages and workflow HTTP steps',
+  // FL-926: and UnifiedPush messages to a device's push server (sendWebhook, same address checks)
+  'utils/public-fetch.ts': 'link preview of a public page, automation messages, workflow HTTP steps and UnifiedPush',
   // generic OIDC profile pictures
   'repositories/oauth.repository.ts': 'OIDC profile picture',
   // the public release feed: anonymous on purpose, no instance identity is ever sent (FL-80, FL-192)

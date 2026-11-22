@@ -313,6 +313,17 @@ select
   "asset"."checksum",
   "asset"."checksumAlgorithm",
   (
+    "asset"."visibility" = 'hidden'
+    and exists (
+      select
+        1
+      from
+        asset_print_back
+      where
+        asset_print_back."backAssetId" = "asset"."id"
+    )
+  ) as "isPrintBack",
+  (
     select
       coalesce(json_agg(agg), '[]')
     from
@@ -433,6 +444,7 @@ select
   "asset"."libraryScope",
   "asset"."livePhotoVideoId",
   "asset"."localDateTime",
+  "asset"."dateAccuracy",
   "asset"."originalFileName",
   "asset"."originalPath",
   "asset"."libraryPath",
@@ -775,7 +787,18 @@ select
       "asset_file"."assetId" = "asset"."id"
       and "asset_file"."type" = 'preview'
       and "asset_file"."isEdited" = false
-  ) as "previewFile"
+  ) as "previewFile",
+  (
+    "asset"."visibility" = 'hidden'
+    and exists (
+      select
+        1
+      from
+        asset_print_back
+      where
+        asset_print_back."backAssetId" = "asset"."id"
+    )
+  ) as "isPrintBack"
 from
   "asset"
 where
@@ -1286,7 +1309,20 @@ where
   "asset_job_status"."ocrAt" is null
   and "asset"."deletedAt" is null
   and "asset"."type" != 'OTHER'
-  and "asset"."visibility" != $1
+  and (
+    "asset"."visibility" != $1
+    or (
+      "asset"."visibility" = 'hidden'
+      and exists (
+        select
+          1
+        from
+          asset_print_back
+        where
+          asset_print_back."backAssetId" = "asset"."id"
+      )
+    )
+  )
 
 -- AssetJobRepository.streamForImageDescriptionJob
 select

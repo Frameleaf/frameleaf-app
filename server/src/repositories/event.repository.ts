@@ -107,6 +107,14 @@ type EventMap = {
   AssetLockAll: [{ assetIds: string[]; userId: string }];
   /** FL-90: a move into the Locked space committed (every lock path); interactive reads must stop. */
   AssetLocked: [{ assetIds: string[] }];
+  /** FL-979: these items changed in a way no other event reports (an unlock, a detected or recognised face). */
+  HouseholdFeedAssets: [{ assetIds: string[] }];
+  /** FL-979: a person was linked to or unlinked from a shared space. */
+  HouseholdFeedPerson: [{ albumId: string; personLinkId: string }];
+  /** FL-1012: comments or likes of a shared space were written, edited or (`deleted`) removed here. */
+  HouseholdFeedComments: [{ albumId: string; activityIds: string[]; deleted: boolean }];
+  /** FL-979: this account's Locked rules changed. */
+  LockedRulesChanged: [{ userId: string }];
 
   /** a worker receives a job and emits this event to run it */
   JobRun: [QueueName, JobItem];

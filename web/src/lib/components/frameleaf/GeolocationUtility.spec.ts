@@ -11,6 +11,8 @@ vi.mock('@frameleaf/sdk', async (original) => ({
   searchAssets: state.search,
   getAssetInfo: state.info,
   searchPlaces: state.places,
+  getLocationHistorySources: () => Promise.resolve([]),
+  getUtilitiesSummary: () => Promise.resolve({ withoutPlace: 0 }),
 }));
 vi.mock('$lib/managers/auth-manager.svelte', () => ({
   authManager: { user: { id: 'owner', name: 'Alex' }, params: {} },

@@ -7,10 +7,17 @@
   import { Route } from '$lib/route';
   import { notificationManager } from '$lib/stores/notification-manager.svelte';
   import { handleError } from '$lib/utils/handle-error';
-  import { NotificationType, type NotificationDto } from '@frameleaf/sdk';
+  import HouseholdInvitation from '$lib/components/frameleaf/households/HouseholdInvitation.svelte';
+  import { householdInviteShareId } from '$lib/frameleaf/linked-households';
+  import {
+    getHouseholdShares,
+    NotificationType,
+    type HouseholdInboundShareDto,
+    type NotificationDto,
+  } from '@frameleaf/sdk';
   import { Icon, toastManager } from '@frameleaf/ui';
   import { mdiBellOutline, mdiClose } from '@mdi/js';
-  import { onDestroy, onMount } from 'svelte';
+  import { onDestroy, onMount, untrack } from 'svelte';
   import { t } from 'svelte-i18n';
   import { motionFlip } from '$lib/frameleaf/motion';
   import { backupPageUrl } from '$lib/frameleaf/settings-areas';
@@ -155,6 +162,43 @@
     }
   };
 
+  /**
+   * FL-998: an invitation from another household is answered here, with Accept and Decline. The
+   * shares are read only when such a notification is listed, and a share already answered elsewhere
+   * falls back to the plain row.
+   */
+  let householdShares = $state<HouseholdInboundShareDto[]>([]);
+  const householdInviteIds = $derived(
+    notificationManager.notifications
+      .map((notification) => householdInviteShareId(notification.data))
+      .filter(Boolean)
+      .join(','),
+  );
+  $effect(() => {
+    if (!householdInviteIds) {
+      return;
+    }
+    void untrack(async () => {
+      const isCurrent = capturePanel();
+      try {
+        const shares = (await getHouseholdShares()) ?? [];
+        if (isCurrent()) {
+          householdShares = shares;
+        }
+      } catch {
+        // The row stays an ordinary notification, and Sharing still lists the invitation.
+      }
+    });
+  });
+  const openHouseholdShare = (notification: NotificationDto) => {
+    const id = householdInviteShareId(notification.data);
+    return id ? householdShares.find((share) => share.id === id && share.state === 'invited') : undefined;
+  };
+  const afterHouseholdAnswer = async (notification: NotificationDto, share: HouseholdInboundShareDto) => {
+    householdShares = householdShares.filter(({ id }) => id !== share.id);
+    await dismiss(notification);
+  };
+
   // The prototype's `open`: mark it read, go to its target, close the panel.
   const onclick = async (notification: NotificationDto) => {
     const isCurrent = capturePanel();
@@ -204,8 +248,17 @@
     {:else}
       <ul class="fl-notif-list">
         {#each notificationManager.notifications as notification (notification.id)}
+          {@const householdShare = openHouseholdShare(notification)}
           <li animate:motionFlip={{ duration: 400 }}>
-            <NotificationItem {notification} {onclick} />
+            {#if householdShare}
+              <HouseholdInvitation
+                share={householdShare}
+                createdAt={notification.createdAt}
+                onAnswered={() => afterHouseholdAnswer(notification, householdShare)}
+              />
+            {:else}
+              <NotificationItem {notification} {onclick} />
+            {/if}
             <button
               type="button"
               class="fl-icon-button fl-notif-dismiss"

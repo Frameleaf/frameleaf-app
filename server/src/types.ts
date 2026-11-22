@@ -424,6 +424,9 @@ export interface IPartnerPropagateJob {
   fields: string[];
 }
 
+/** FL-923: one print on a scan: its corners in the scan's displayed pixels and the quarter turns to apply. */
+export type ScanCropJobItem = { quad: [number, number][]; rotation: number };
+
 export interface IEntityJob extends IBaseJob {
   id: string;
   source?: JobSource;
@@ -784,11 +787,18 @@ export type JobItem =
   | { name: JobName.MemoryGenerate; data?: IBaseJob }
   | { name: JobName.LandmarkMatchAll; data?: IBaseJob }
   | { name: JobName.LandmarkInfer; data?: IBaseJob & { id?: string; trigger?: 'metadata' | 'embedding' } }
+  | { name: JobName.PlaceNameBackfill; data?: IBaseJob }
   | { name: JobName.AlbumSuggestionAutoAdd; data: IEntityJob }
   | { name: JobName.AlbumSuggestionOutfit; data: IEntityJob }
   | { name: JobName.AlbumCleanupScan; data: { userId: string } }
   | { name: JobName.DateDoctorScan; data: { userId: string } }
   | { name: JobName.DateDoctorScanQueueAll; data?: IBaseJob }
+  // FL-925: `id` is the location history source
+  | { name: JobName.LocationHistoryImport; data: IEntityJob }
+  // FL-964: `id` is the location fill run
+  | { name: JobName.LocationFillPropose; data: IEntityJob }
+  | { name: JobName.LocationFillApply; data: IEntityJob }
+  | { name: JobName.LocationFillUndo; data: IEntityJob }
   | { name: JobName.AlbumCleanupApply; data: { id: string } }
   | { name: JobName.MemoryExport; data: IEntityJob }
 
@@ -958,6 +968,7 @@ export type JobItem =
   // Editor
   | { name: JobName.AssetEditThumbnailGeneration; data: IEntityJob & IEditOperationJob }
   | { name: JobName.DevelopImport; data: IEntityJob & IDelayedJob }
+  | { name: JobName.ScanSplit; data: IEntityJob & { crops: ScanCropJobItem[] } }
   | { name: JobName.AssetDevelopRender; data: IEntityJob & IDelayedJob & IEditOperationJob };
 
 export type VectorExtension = (typeof VECTOR_EXTENSIONS)[number];
@@ -1710,6 +1721,8 @@ export interface SystemMetadata extends Record<SystemMetadataKey, Record<string,
   [SystemMetadataKey.FrameleafLibraryMovePause]: LibraryMovePauseState;
   [SystemMetadataKey.MediaLocation]: MediaLocation;
   [SystemMetadataKey.IdenticalFiles]: IdenticalFilesState;
+  /** FL-987: the SHA-256 of the place-name pack whose names are in `geodata_place_name`. */
+  [SystemMetadataKey.PlaceNamesState]: { sha256?: string };
   [SystemMetadataKey.ReverseGeocodingState]: {
     lastUpdate?: string;
     lastImportFileName?: string;
@@ -1849,6 +1862,10 @@ export type UserPreferences = {
     enabled: boolean;
     duration: number;
     sidebarWeb: boolean;
+    /** FL-880: Mother's Day and Father's Day memories */
+    occasions: boolean;
+    /** FL-880: a region from `OCCASION_REGIONS`, or `auto` to follow the account's locale */
+    occasionRegion: string;
   };
   people: {
     enabled: boolean;

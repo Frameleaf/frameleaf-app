@@ -1,5 +1,6 @@
 import { AssetEditAction, type AssetEditActionItem } from 'src/dtos/editing.dto.js';
 import { DocumentEditAction, DocumentField, DocumentFieldStatus, DocumentLineStatus } from 'src/enum.js';
+import { tokenizeForSearch } from 'src/utils/database.js';
 import { boundingBoxOverlap } from 'src/utils/editor.js';
 
 /**
@@ -485,6 +486,21 @@ const FIELD_STATUS: Record<DocumentEditAction, DocumentFieldStatus> = {
   [DocumentEditAction.Correct]: DocumentFieldStatus.Corrected,
   [DocumentEditAction.Dismiss]: DocumentFieldStatus.Dismissed,
 };
+
+/**
+ * FL-967: what the back of a print reads: its visible lines with the owner's corrections, and no dismissed line.
+ * The same for everyone who may read it, so a viewer never sees text the owner dismissed.
+ */
+export const printBackLines = (lines: DocumentOcrLine[], edits: DocumentEditRow[]): string[] =>
+  assembleDocument({ lines, edits, isRegionVisible: () => true, isOwner: false, fieldsEnabled: false })
+    .lines.filter((line) => line.status !== DocumentLineStatus.Dismissed)
+    .map((line) => line.text);
+
+/** FL-967: the back's text as search reads it. */
+export const printBackSearchText = (lines: DocumentOcrLine[], edits: DocumentEditRow[]) =>
+  printBackLines(lines, edits)
+    .flatMap((text) => tokenizeForSearch(text))
+    .join(' ');
 
 export const assembleDocument = ({
   lines,

@@ -11,6 +11,14 @@ import { ICloudScheduledStagingRepository } from 'src/repositories/icloud-schedu
 import { DB } from 'src/schema/index.js';
 import { readAliasedEnv } from 'src/utils/env-aliases.js';
 import { parseICloudAlbum, resourcesForICloudAsset, sanitizeICloudFields } from 'src/utils/icloud-records.js';
+import {
+  ICLOUD_HIDDEN_REVIEW_REASONS,
+  ICLOUD_REVIEW_GROUP_REASONS,
+  ICLOUD_REVIEW_TRY_AGAIN,
+  ICLOUD_REVIEW_USE_EXISTING,
+  type ICloudReviewEffect,
+  type ICloudReviewGroup,
+} from 'src/utils/icloud-review.js';
 import { ICLOUD_SMART_ALBUM_KINDS, type ICloudSmartAlbum, sortMediaKinds } from 'src/utils/media-kinds.js';
 import { ACTIVE_MEDIA_OPERATION_STATUSES } from 'src/utils/media-operation.js';
 
@@ -95,6 +103,43 @@ export type ICloudRunQueueResult =
 /** What removing a disconnected connection did (FL-68). */
 export type ICloudRemoveResult = 'removed' | 'not-found' | 'still-connected' | 'busy' | 'in-flight';
 /** One reconciliation finding a person may need to look at (FL-68). */
+export type ICloudReviewPage = {
+  total: number;
+  page: number;
+  pages: number;
+  size: number;
+  groups: Array<{ group: ICloudReviewGroup; count: number }>;
+  effects: { useExisting: number; keepCurrent: number; tryAgain: number };
+  privateWaiting: number;
+  hiddenLocked: number;
+  items: Array<{
+    resourceId: string;
+    group: ICloudReviewGroup;
+    effect: ICloudReviewEffect;
+    reason: string;
+    fileName: string | null;
+    takenAt: string | null;
+    previewAssetId: string | null;
+  }>;
+};
+
+const REVIEW_EFFECT_KEYS = {
+  'use-existing': 'useExisting',
+  'keep-current': 'keepCurrent',
+  'try-again': 'tryAgain',
+} as const;
+
+const reviewGroupSql = sql.raw(
+  `CASE ${Object.entries(ICLOUD_REVIEW_GROUP_REASONS)
+    .map(([group, reasons]) => `WHEN f.reason IN (${reasons.map((reason) => `'${reason}'`).join(',')}) THEN '${group}'`)
+    .join(' ')} ELSE 'other' END`,
+);
+const reviewEffectSql = sql.raw(
+  `CASE WHEN f.reason IN (${ICLOUD_REVIEW_USE_EXISTING.map((reason) => `'${reason}'`).join(',')}) THEN 'use-existing'
+    WHEN f.reason IN (${ICLOUD_REVIEW_TRY_AGAIN.map((reason) => `'${reason}'`).join(',')}) THEN 'try-again'
+    ELSE 'keep-current' END`,
+);
+
 export type ICloudReviewItem = {
   resourceId: string;
   kind: 'review' | 'failed' | 'unsupported' | 'kept-trashed' | 'source-removed';
@@ -357,6 +402,11 @@ export class ICloudSyncRepository {
           WHERE r."connectionId"=${connection.id}::uuid AND r.status IN ('failed','needs-review') AND r."auditRequestId" IS NULL
             AND (r.status <> 'needs-review' OR r."stagingPath" IS NULL)
             AND NOT coalesce(r.verification ? 'auditValidationInputs',false) AND ${hasOpenFileProblem}`.execute(db);
+        // Items held back for being hidden, before hidden photos always came in.
+        await sql`UPDATE public.icloud_resource r SET status='pending',attempts=0,"lastError"=NULL,"nextAttemptAt"=NULL
+          WHERE r."connectionId"=${connection.id}::uuid AND r.status='needs-review' AND r."auditRequestId" IS NULL
+            AND r."stagingPath" IS NULL AND r."lastError" = ANY(${ICLOUD_HIDDEN_REVIEW_REASONS}::text[])
+            AND NOT coalesce(r.verification ? 'auditValidationInputs',false)`.execute(db);
       }
     });
   }
@@ -390,10 +440,8 @@ export class ICloudSyncRepository {
       FROM public.icloud_resource WHERE "connectionId"=${connectionId}::uuid`.execute(this.db);
     const { rows: provenance } = await sql<{
       metadata: number;
-      review: number;
     }>`SELECT
-      count(DISTINCT "assetId") FILTER (WHERE source#>>'{_sync,metadata,status}'='applied')::int AS metadata,
-      count(DISTINCT "assetId") FILTER (WHERE source#>>'{_sync,metadata,status}'='needs-review' OR source#>>'{_sync,relations,status}'='needs-review')::int AS review
+      count(DISTINCT "assetId") FILTER (WHERE source#>>'{_sync,metadata,status}'='applied')::int AS metadata
       FROM public.icloud_resource WHERE "connectionId"=${connectionId}::uuid AND "auditRequestId" IS NULL AND coalesce((source->>'current')::boolean,true)`.execute(
       this.db,
     );
@@ -413,6 +461,8 @@ export class ICloudSyncRepository {
       count: number;
     }>`SELECT count(*)::int AS count FROM public.icloud_record
       WHERE "connectionId"=${connectionId}::uuid AND fields ? '__icloudUnsupported' AND NOT deleted`.execute(this.db);
+    const { rows: review } = await sql<{ count: number }>`SELECT count(*)::int AS count
+      FROM (${this.reviewPhotos(sql`r."connectionId"=${connectionId}::uuid`, true)}) p`.execute(this.db);
     return {
       ...Object.fromEntries(resources.rows.map(({ status, count }) => [status, count])),
       ...Object.fromEntries(outcomes.map(({ outcome, count }) => [outcome, count])),
@@ -425,8 +475,8 @@ export class ICloudSyncRepository {
       album_updated: albumCounts[0]?.count ?? 0,
       // deleted in iCloud and kept here: a sync never removes local media (FL-68)
       source_removed: sourceRemoved[0]?.count ?? 0,
-      'needs-review':
-        (resources.rows.find(({ status }) => status === 'needs-review')?.count ?? 0) + (provenance[0]?.review ?? 0),
+      // photos, each once, the same ones the review page lists
+      'needs-review': review[0]?.count ?? 0,
       unsupported:
         (resources.rows.find(({ status }) => status === 'unsupported')?.count ?? 0) + (unsupported[0]?.count ?? 0),
       resources: resources.rows.reduce((sum, row) => sum + row.count, 0),
@@ -971,8 +1021,137 @@ export class ICloudSyncRepository {
         )
         AND (${includePrivate}::boolean OR (NOT coalesce((r.source->>'isHidden')::boolean, false)
           AND NOT EXISTS (SELECT 1 FROM asset_lock l WHERE l."assetId" = r."assetId")))
+        AND NOT coalesce(r.source#>'{_sync,acceptedReasons}' ? r."lastError", false)
       ORDER BY r."updatedAt" DESC, r.id LIMIT 50`.execute(this.db);
     return rows;
+  }
+  /**
+   * Every resource waiting for a person's review, with what accepting it does. An accepted reason stays settled
+   * until the item needs review for a different one.
+   */
+  private reviewResources(where: RawBuilder<unknown>, includePrivate: boolean) {
+    return sql`SELECT f.*, ${reviewGroupSql} AS "group", ${reviewEffectSql} AS effect FROM (
+        SELECT r.id, r."connectionId", r."ownerId", r."libraryKey", r."sourceAssetId", r.role, r.status, r."assetId",
+          r."stagingPath", r."leaseToken", r.source,
+          coalesce(CASE WHEN r.status='needs-review' THEN r."lastError"
+            WHEN r.source#>>'{_sync,relations,status}'='needs-review' THEN r.source#>>'{_sync,relations,reason}'
+            ELSE r.source#>>'{_sync,metadata,reason}' END, 'unknown') AS reason
+        FROM public.icloud_resource r
+        WHERE ${where} AND r."auditRequestId" IS NULL AND r.role <> 'motion'
+          AND coalesce((r.source->>'current')::boolean, true)
+          AND NOT coalesce(r.verification ? 'auditValidationInputs', false)
+          AND (r.status='needs-review' OR r.source#>>'{_sync,metadata,status}'='needs-review'
+            OR r.source#>>'{_sync,relations,status}'='needs-review')
+          AND (${includePrivate}::boolean OR (NOT coalesce((r.source->>'isHidden')::boolean, false)
+            AND NOT EXISTS (SELECT 1 FROM public.asset_lock l WHERE l."assetId" = r."assetId")))
+      ) f
+      WHERE f.reason <> ALL(${ICLOUD_HIDDEN_REVIEW_REASONS}::text[])
+        AND NOT coalesce(f.source#>'{_sync,acceptedReasons}' ? f.reason, false)`;
+  }
+  /** One row per photo: its original when that is what needs review, so a photo and its edits count once. */
+  private reviewPhotos(where: RawBuilder<unknown>, includePrivate: boolean) {
+    return sql`SELECT DISTINCT ON (s."libraryKey", s."sourceAssetId") s.*
+      FROM (${this.reviewResources(where, includePrivate)}) s
+      ORDER BY s."libraryKey", s."sourceAssetId", (s.role = 'original') DESC, s.id`;
+  }
+  async reviewPage(
+    connectionId: string,
+    ownerId: string,
+    includePrivate: boolean,
+    { group, page, size }: { group?: string; page: number; size: number },
+  ): Promise<ICloudReviewPage> {
+    const where = sql`r."connectionId"=${connectionId}::uuid AND r."ownerId"=${ownerId}::uuid`;
+    const photos = this.reviewPhotos(where, includePrivate);
+    const { rows: totals } = await sql<{ group: ICloudReviewGroup; effect: ICloudReviewEffect; count: number }>`
+      SELECT p."group", p.effect, count(*)::int AS count FROM (${photos}) p GROUP BY 1, 2`.execute(this.db);
+    const inView = totals.filter((row) => !group || row.group === group);
+    const total = inView.reduce((sum, row) => sum + row.count, 0);
+    const effects = { useExisting: 0, keepCurrent: 0, tryAgain: 0 };
+    for (const row of inView) {
+      effects[REVIEW_EFFECT_KEYS[row.effect]] += row.count;
+    }
+    const groups = new Map<ICloudReviewGroup, number>();
+    for (const row of totals) {
+      groups.set(row.group, (groups.get(row.group) ?? 0) + row.count);
+    }
+    const last = Math.max(1, Math.ceil(total / size));
+    const current = Math.min(page, last);
+    // ponytail: offset paging over a few thousand rows at most; keyset it if a library ever holds far more.
+    const { rows: items } = await sql<ICloudReviewPage['items'][number]>`
+      SELECT p.id AS "resourceId", p."group", p.effect, p.reason,
+        CASE WHEN a.id IS NOT NULL THEN a."originalFileName" ELSE p.source->>'originalFileName' END AS "fileName",
+        p.source->>'fileCreatedAt' AS "takenAt", coalesce(a.id, m.id) AS "previewAssetId"
+      FROM (${photos}) p
+        LEFT JOIN public.asset a ON a.id = p."assetId" AND a."ownerId" = p."ownerId" AND a."deletedAt" IS NULL
+        -- An item not imported yet shows the library photo with its name and capture time, if there is one.
+        LEFT JOIN LATERAL (SELECT x.id FROM public.asset x
+          WHERE a.id IS NULL AND x."ownerId" = p."ownerId" AND x."deletedAt" IS NULL AND x.visibility = 'timeline'
+            AND x."originalFileName" = p.source->>'originalFileName'
+            AND to_char(x."fileCreatedAt" AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS') = left(p.source->>'fileCreatedAt', 19)
+            AND (${includePrivate}::boolean OR NOT EXISTS (SELECT 1 FROM public.asset_lock l WHERE l."assetId" = x.id))
+          ORDER BY x.id LIMIT 1) m ON true
+      WHERE (${group ?? null}::text IS NULL OR p."group" = ${group ?? null})
+      ORDER BY p.source->>'fileCreatedAt' DESC NULLS LAST, p.id
+      LIMIT ${size} OFFSET ${(current - 1) * size}`.execute(this.db);
+    let privateWaiting = 0;
+    if (!includePrivate) {
+      const { rows } = await sql<{ count: number }>`SELECT count(*)::int AS count
+        FROM (${this.reviewPhotos(where, true)}) p`.execute(this.db);
+      privateWaiting = Math.max(0, (rows[0]?.count ?? 0) - totals.reduce((sum, row) => sum + row.count, 0));
+    }
+    const { rows: locked } = await sql<{ count: number }>`SELECT count(DISTINCT r."assetId")::int AS count
+      FROM public.icloud_resource r JOIN public.asset_lock l ON l."assetId" = r."assetId"
+      WHERE ${where} AND r."auditRequestId" IS NULL AND r.source->>'isHidden' = 'true'`.execute(this.db);
+    return {
+      total,
+      page: current,
+      pages: last,
+      size,
+      groups: [...groups].map(([id, count]) => ({ group: id, count })),
+      effects,
+      privateWaiting,
+      hiddenLocked: locked[0]?.count ?? 0,
+      items,
+    };
+  }
+  /**
+   * Settle photos in review. Keeping what is here only records the answer; using a matching photo or trying again
+   * puts the item back in line. An item a worker holds right now is left alone and stays in the list.
+   */
+  async acceptReview(
+    connectionId: string,
+    ownerId: string,
+    includePrivate: boolean,
+    selection: { resourceIds?: string[]; all?: boolean; group?: string; exceptResourceIds?: string[] },
+  ): Promise<{ accepted: number; requeued: number }> {
+    return this.active(async (db) => {
+      const where = sql`r."connectionId"=${connectionId}::uuid AND r."ownerId"=${ownerId}::uuid`;
+      const chosen = selection.all
+        ? sql`(${selection.group ?? null}::text IS NULL OR p."group" = ${selection.group ?? null})
+            AND p.id <> ALL(${selection.exceptResourceIds ?? []}::uuid[])`
+        : sql`p.id = ANY(${selection.resourceIds ?? []}::uuid[])`;
+      const { rows } = await sql<{ accepted: number; requeued: number }>`
+        WITH chosen AS (SELECT p."libraryKey", p."sourceAssetId"
+            FROM (${this.reviewPhotos(where, includePrivate)}) p WHERE ${chosen}),
+          family AS (SELECT s.id, s.reason, s.effect FROM (${this.reviewResources(where, includePrivate)}) s
+            JOIN chosen c ON c."libraryKey" = s."libraryKey" AND c."sourceAssetId" = s."sourceAssetId"),
+          settled AS (
+            UPDATE public.icloud_resource r SET
+              source = CASE WHEN f.effect = 'try-again' THEN r.source ELSE jsonb_set(r.source, '{_sync}',
+                coalesce(r.source->'_sync', '{}'::jsonb) || jsonb_build_object('acceptedReasons',
+                  coalesce(r.source#>'{_sync,acceptedReasons}', '[]'::jsonb) || to_jsonb(f.reason)), true) END,
+              status = CASE WHEN f.effect <> 'keep-current' AND r.status = 'needs-review' THEN 'pending' ELSE r.status END,
+              attempts = CASE WHEN f.effect <> 'keep-current' AND r.status = 'needs-review' THEN 0 ELSE r.attempts END,
+              "nextAttemptAt" = CASE WHEN f.effect <> 'keep-current' AND r.status = 'needs-review' THEN NULL ELSE r."nextAttemptAt" END,
+              "updatedAt" = now()
+            FROM family f
+            WHERE r.id = f.id AND r."leaseToken" IS NULL AND (f.effect = 'keep-current' OR r."stagingPath" IS NULL)
+            RETURNING r."libraryKey", r."sourceAssetId", f.effect)
+        SELECT count(DISTINCT ("libraryKey", "sourceAssetId"))::int AS accepted,
+          count(DISTINCT ("libraryKey", "sourceAssetId")) FILTER (WHERE effect <> 'keep-current')::int AS requeued
+        FROM settled`.execute(db);
+      return rows[0] ?? { accepted: 0, requeued: 0 };
+    });
   }
   /** One notification for the owner (FL-68). Plain wording; never a file name or a path. */
   async notify(ownerId: string, level: NotificationLevel, title: string, description: string): Promise<void> {
@@ -1120,10 +1299,8 @@ export class ICloudSyncRepository {
         );
       }
       for (const resource of normalized) {
-        if (
-          (!connection.config.includeHidden && resource.source.isHidden) ||
-          (!connection.config.includeEdits && resource.role.startsWith('edited-'))
-        ) {
+        // A hidden iCloud photo always comes in, and arrives Locked (owner 2026-11-22).
+        if (!connection.config.includeEdits && resource.role.startsWith('edited-')) {
           continue;
         }
         if (connection.config.albums.length > 0) {

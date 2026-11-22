@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { groupDayAccuracy } from '$lib/frameleaf/approximate-date';
   /**
    * The Frameleaf timeline: justified rows that respect each item's aspect, sticky day headers with
    * a day select-all, and a draggable year and month scrubber.
@@ -54,7 +55,7 @@
   import { hasRouterStarted } from '$lib/utils/router-started';
   import { fromTimelinePlainYearMonth, type ScrubberListener } from '$lib/utils/timeline-util';
   import { Icon } from '@frameleaf/ui';
-  import { mdiCalendarAlert } from '@mdi/js';
+  import { mdiArrowUp, mdiCalendarAlert } from '@mdi/js';
   import { onMount, tick, untrack, type Snippet } from 'svelte';
   import { SvelteMap } from 'svelte/reactivity';
   import { locale, t, type Translations } from 'svelte-i18n';
@@ -846,7 +847,9 @@
         (page) =>
           page.yearMonth.year === year &&
           page.yearMonth.month === month &&
-          (!page.calendarPage?.days || page.calendarPage.days.some((entry) => entry.day === day.day)),
+          (!page.calendarPage?.days ||
+            // FL-936: the server counts a year or a decade under the day it is stored on, the 1st
+            page.calendarPage.days.some((entry) => entry.day === (groupDayAccuracy(day.day) ? 1 : day.day))),
       ),
     };
   };
@@ -1369,6 +1372,49 @@
     void holdWhileSettling(place, () => moves === scrubberMoves);
   };
 
+  /**
+   * Back to top (prototype `BackToTop.jsx`): the library reopens where it was left, so a long way
+   * down needs a one-step way back to the newest photos. It appears after a screen and a half of
+   * scrolling, leaves again at the top, and steps aside while photos are selected, as the status
+   * bar does for the selection bar.
+   */
+  const showBackToTop = $derived(
+    selection.length === 0 &&
+      timelineManager.viewportHeight > 0 &&
+      timelineManager.visibleWindow.top > timelineManager.viewportHeight * 1.5,
+  );
+  /** Set by the button: the first photo takes focus once the top is on screen. */
+  let focusFirstAtTop = false;
+  const backToTop = () => {
+    if (!scrollable) {
+      return;
+    }
+    focusFirstAtTop = true;
+    // A scrubber jump or a restore still settling would put the grid back where it was.
+    scrubberMoves++;
+    // Keyboard users carry on from the photos, not from a button that is about to leave.
+    scrollable.focus({ preventScroll: true });
+    // ponytail: a glide only from nearby. From years down it would load every month it passes, so
+    // that jumps, as the scrubber does.
+    if (!mediaQueryManager.reducedMotion && timelineManager.scrollTop <= timelineManager.viewportHeight * 4) {
+      scrollable.scrollTo({ top: 0, behavior: 'smooth' });
+    } else {
+      timelineManager.scrollTo(0);
+    }
+  };
+  $effect(() => {
+    if (timelineManager.visibleWindow.top > 0 || !focusFirstAtTop) {
+      return;
+    }
+    focusFirstAtTop = false;
+    void tick().then(() => {
+      // Focus moved elsewhere meanwhile stays where the person put it.
+      if (scrollable && document.activeElement === scrollable) {
+        scrollable.querySelector<HTMLElement>(':scope [data-asset-id] button')?.focus({ preventScroll: true });
+      }
+    });
+  });
+
   // note: don't throttle or debounce - it causes flicker
   const handleScroll = () => {
     // A hidden grid (the viewer is open) reports a scroll to 0. Acting on it would load and lay out
@@ -1734,7 +1780,9 @@
                   {onToggleSelect}
                   groupCount={month.toCheck
                     ? timelineManager.datesToCheck?.count
-                    : month.calendarPage?.days?.find((entry) => entry.day === timelineDay.day)?.count}
+                    : groupDayAccuracy(timelineDay.day)
+                      ? undefined
+                      : month.calendarPage?.days?.find((entry) => entry.day === timelineDay.day)?.count}
                   groupState={displayGroupState(dayGroup(timelineDay))}
                   onSelectGroup={(_ids, checked) => selectDisplayGroup(dayGroup(timelineDay), checked)}
                   onFocusAsset={(asset) => session.setScrollAnchor(asset.id)}
@@ -1770,6 +1818,17 @@
         bind:dragging={scrubbing}
       />
     {/if}
+    <button
+      type="button"
+      class="fl-back-to-top"
+      class:is-shown={showBackToTop}
+      inert={!showBackToTop}
+      onclick={backToTop}
+      data-testid="library-back-to-top"
+    >
+      <Icon icon={mdiArrowUp} size="18" aria-hidden={true} />
+      <span>{$t('frameleaf_back_to_top')}</span>
+    </button>
   {/if}
 </div>
 
@@ -1794,6 +1853,87 @@
    */
   .fl-timeline.has-header-menu :global(.fl-scrubber) {
     visibility: hidden;
+  }
+  /*
+   * Back to top (prototype back-to-top.css): a frosted capsule at the bottom end of the photos,
+   * level with the status bar (44px tall, centred on its 52px, which sits 18px up) and 8px clear
+   * of the year scrubber where there is one. The photo area ends 8px above the window's edge (the
+   * page shell's padding), which the status bar and tab bar, fixed to the window, do not.
+   */
+  .fl-back-to-top {
+    --fl-back-to-top-shell: 8px;
+    position: absolute;
+    inset-inline-end: max(24px, var(--fl-tl-scrubber-space, 0px) + 8px);
+    bottom: calc(max(22px, var(--fl-safe-bottom, 0px)) - var(--fl-back-to-top-shell));
+    z-index: 5;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--fl-space-2);
+    height: 44px;
+    padding: 0 18px 0 14px;
+    border: 1px solid var(--fl-material-edge);
+    border-radius: 999px;
+    background: var(--fl-material);
+    -webkit-backdrop-filter: var(--fl-material-blur);
+    backdrop-filter: var(--fl-material-blur);
+    box-shadow: var(--fl-shadow-3);
+    color: var(--fl-text);
+    font: inherit;
+    font-size: var(--fl-font-small);
+    white-space: nowrap;
+    cursor: pointer;
+    opacity: 0;
+    pointer-events: none;
+    translate: 0 12px;
+    transition:
+      opacity var(--fl-duration-fade) var(--fl-ease),
+      translate var(--fl-duration-dock) var(--fl-spring);
+  }
+  .fl-back-to-top.is-shown {
+    opacity: 1;
+    translate: 0 0;
+    pointer-events: auto;
+  }
+  .fl-back-to-top:hover {
+    background: var(--fl-panel);
+  }
+  .fl-back-to-top:focus-visible {
+    outline: var(--fl-focus-ring);
+    outline-offset: var(--fl-focus-offset);
+  }
+  /* Narrower windows and phones: no room for the words beside the status bar, so the arrow alone. */
+  @media (max-width: 1320px) {
+    .fl-back-to-top {
+      inset-inline-end: max(16px, var(--fl-tl-scrubber-space, 0px) + 8px);
+      width: 44px;
+      padding: 0;
+      justify-content: center;
+    }
+    .fl-back-to-top > span {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip-path: inset(50%);
+    }
+  }
+  /* Phones: the photo area already ends above the tab bar, so 12px up from its own edge. */
+  @media (max-width: 700px) {
+    .fl-back-to-top {
+      bottom: 12px;
+    }
+  }
+  @media (prefers-contrast: more), (prefers-reduced-transparency: reduce) {
+    .fl-back-to-top {
+      -webkit-backdrop-filter: none;
+      backdrop-filter: none;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .fl-back-to-top {
+      translate: none;
+      transition: opacity var(--fl-duration-reduced) var(--fl-ease);
+    }
   }
   .fl-timeline-scroll {
     flex: 1 1 auto;

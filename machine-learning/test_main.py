@@ -3275,6 +3275,18 @@ def test_options_validation_accepts_clip_language() -> None:
         validate_options(ModelTask.SEARCH, ModelType.TEXTUAL, {"bogus": "x"})
 
 
+def test_options_validation_accepts_scan_split_without_options() -> None:
+    # FL-923: the server sends `scan-split` with an empty option set. The task must be registered in
+    # OPTIONS_VALIDATORS so it has a closed keyspace like every other task.
+    from pydantic import ValidationError
+
+    from frameleaf_ml.schemas import validate_options
+
+    assert validate_options(ModelTask.SCAN_SPLIT, ModelType.VISUAL, {}) == {}
+    with pytest.raises(ValidationError):
+        validate_options(ModelTask.SCAN_SPLIT, ModelType.VISUAL, {"minArea": 0.1})
+
+
 def test_options_validation_accepts_ocr_max_resolution() -> None:
     # Regression: the server sends a `maxResolution` option for OCR text
     # detection (machine-learning.repository.ts -> DETECTION options) and the

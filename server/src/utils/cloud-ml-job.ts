@@ -439,6 +439,25 @@ export const CloudMlJobStudioCaptionsSchema = z.object({
 });
 export type CloudMlJobStudioCaptions = z.infer<typeof CloudMlJobStudioCaptionsSchema>;
 
+/**
+ * FL-961: the Frameleaf Cloud models of the photo operations. They are not in `/v2/catalog`, so they are
+ * named directly; Cloud answers 409 `model-mismatch` until each has an approved price and a pinned model.
+ */
+export const CLOUD_PHOTO_OPERATION_SKUS = { repair: 'ms_QFQGN68E', colourise: 'ms_AYG80R46' } as const;
+
+/** FL-955: the most photos one Cloud batch prices and runs; each is estimated on its own. */
+export const CLOUD_PHOTO_BATCH_MAX_ASSETS = 50;
+
+/** The `upscale` request of a photo operation: its size declared, nothing that would change it. */
+export const cloudPhotoOperationRequest = (
+  operation: keyof typeof CLOUD_PHOTO_OPERATION_SKUS,
+  size: { width: number; height: number },
+) => ({
+  operation,
+  items: [{ inputId: 'v1', width: size.width, height: size.height }],
+  output: { format: 'png' },
+});
+
 /** The immutable binding of a `cloud_ml_job` operation. Written once at confirmation. */
 export const CloudMlJobSnapshotSchema = z.object({
   version: z.literal(1),
@@ -472,6 +491,8 @@ export const CloudMlJobSnapshotSchema = z.object({
   upscale: CloudMlJobUpscaleSchema.optional(),
   /** FL-1304: set on a Studio captions job, whose `restorationId` is the Studio revision. */
   studio: CloudMlJobStudioCaptionsSchema.optional(),
+  /** FL-955: a same-size repair or colourise; its result is `frameleaf.photo-operation/v1`. */
+  photoOperation: z.enum(['repair', 'colourise']).optional(),
   consent: z.object({
     version: z.string().min(1),
     textSha256: z.string().nullable(),
@@ -578,6 +599,10 @@ export type CloudMlJobEstimateRecord = {
   upscale?: CloudMlJobUpscale;
   /** FL-1304: set on an estimate of Studio captions. */
   studio?: CloudMlJobStudioCaptions;
+  /** FL-955: a repair or colourise estimate. */
+  photoOperation?: 'repair' | 'colourise';
+  /** FL-955: the batch this estimate belongs to; such a full render needs no preview. */
+  batchId?: string;
 };
 
 /** A kept, job-bound upgrade quote; attempted prices reserve spending until the job reports them. */

@@ -78,6 +78,15 @@ export const mapUser = (entity: MaybeDehydrated<User | UserAdmin>): UserResponse
   };
 };
 
+/**
+ * FL-1743: people who share an album or a space are not sent each other's email address. The field stays, empty,
+ * because the native apps require it. The avatar colour is still the one their address gives.
+ */
+export const mapMember = (entity: Parameters<typeof mapUser>[0]): UserResponseDto => ({
+  ...mapUser(entity),
+  email: '',
+});
+
 const UserAdminSearchSchema = z
   .object({
     withDeleted: stringToBool.optional().describe('Include deleted users'),
@@ -263,6 +272,19 @@ const UserMeResponseSchema = UserAdminResponseSchema.extend({
 }).meta({ id: 'UserMeResponseDto' });
 
 export class UserMeResponseDto extends createZodDto(UserMeResponseSchema) {}
+
+const UnseenCountResponseSchema = z
+  .object({
+    count: z
+      .int()
+      .min(0)
+      .describe(
+        'Photos, videos and comments other people added to your shared spaces since you last marked each one visited',
+      ),
+  })
+  .meta({ id: 'UnseenCountResponseDto' });
+
+export class UnseenCountResponseDto extends createZodDto(UnseenCountResponseSchema) {}
 
 export function mapUserAdmin(entity: UserAdmin): UserAdminResponseDto {
   const metadata = entity.metadata || [];

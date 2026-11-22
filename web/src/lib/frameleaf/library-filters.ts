@@ -10,6 +10,8 @@ import {
 import type { Translations } from 'svelte-i18n';
 import { ENRICHMENT_FIELD, type DiscoveryQuery } from '$lib/components/discovery/query';
 import {
+  albumCountAtLeast,
+  albumCountText,
   captureDateControlValue,
   captureDateHasCustomCondition,
   ratingControlValue,
@@ -59,6 +61,7 @@ const FIELD_LABEL_KEYS: Record<string, Translations> = {
   hasTags: 'tags',
   albumIds: 'albums',
   hasAlbums: 'albums',
+  albumCount: 'albums',
   originalFileName: 'frameleaf_library_filter_field_file_name',
   originalPath: 'path',
   description: 'description',
@@ -181,6 +184,8 @@ export type FilterChipDescription = {
   detail: string | null;
   /** The panel's wording for the condition; when set, callers show it instead of `detail`. */
   detailText?: FilterText;
+  /** The chip reads as `detailText` alone, without the field's name in front. */
+  detailOnly?: boolean;
   /** How many values a list condition holds; 0 when it is not a list. */
   count: number;
   /** True for a boolean condition that is explicitly negated ("not favourite"). */
@@ -205,6 +210,10 @@ export const describeFilterField = (query: DiscoveryQuery, field: string): Filte
     return flag.no
       ? { ...described, labelKey: flag.no, negated: false }
       : { ...described, labelKey: flag.yes, negated: false, detailText: { key: 'no' } };
+  }
+  const albumsAtLeast = field === 'albumCount' ? albumCountAtLeast(condition) : null;
+  if (albumsAtLeast !== null) {
+    return { ...described, detail: null, detailText: albumCountText(albumsAtLeast), detailOnly: true };
   }
   const detailText = describeValue(field, condition);
   return detailText ? { ...described, detail: null, detailText } : described;

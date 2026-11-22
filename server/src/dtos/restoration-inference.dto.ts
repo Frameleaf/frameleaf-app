@@ -85,6 +85,14 @@ export const RestorationModelStateSchema = z
 // Request and result.
 // ---------------------------------------------------------------------------------------
 
+/** FL-933: the worker's photo operations, and the workload names it lists them under. */
+export const RestorationPhotoOperationSchema = z.enum(['repair', 'colourise']);
+export type RestorationPhotoOperation = z.infer<typeof RestorationPhotoOperationSchema>;
+export const PHOTO_OPERATION_WORKLOADS: Readonly<Record<RestorationPhotoOperation, string>> = {
+  repair: 'photo-repair',
+  colourise: 'colourise',
+};
+
 const RestorationWorkerSourceSchema = z.object({
   width: z.int().positive().max(16_384),
   height: z.int().positive().max(16_384),
@@ -100,7 +108,9 @@ export const RestorationWorkerRequestSchema = z
     protocol: z.literal(RESTORATION_PROTOCOL),
     /** Echoed in the result; an answer for another request is discarded. */
     requestId: z.string().min(1).max(200),
-    mode: AssetRestorationModeSchema,
+    /** Exactly one of `mode` and `operation` says what is asked for (FL-933). */
+    mode: AssetRestorationModeSchema.optional(),
+    operation: RestorationPhotoOperationSchema.optional(),
     kind: z.enum(['image', 'video']),
     /** Null: the worker's available model for the mode. A value names one model exactly. */
     modelId: z.string().min(1).max(64).nullable().optional(),
@@ -120,6 +130,12 @@ export const RestorationWorkerRequestSchema = z
       .optional(),
     /** Smooth motion: the last uploaded frame is the next chunk's first, sent as context and not returned. */
     trailingContextFrame: z.boolean().optional(),
+  })
+  .refine((request) => (request.mode === undefined) !== (request.operation === undefined), {
+    message: 'A request names either a mode or an operation',
+  })
+  .refine((request) => !request.operation || (request.kind === 'image' && request.scale === 1), {
+    message: 'A photo operation needs a still and keeps its size',
   })
   .refine((request) => request.kind === 'image' || (request.source.durationMs ?? null) !== null, {
     message: 'A video request needs source.durationMs',
@@ -142,11 +158,14 @@ const RestorationWeightIdentitySchema = z.object({
 export const RestorationWorkerResultSchema = z.object({
   protocol: z.literal(RESTORATION_PROTOCOL),
   requestId: z.string(),
-  mode: AssetRestorationModeSchema,
+  // FL-933: a photo operation answers with `operation` and a null mode
+  mode: AssetRestorationModeSchema.nullable(),
+  operation: RestorationPhotoOperationSchema.nullable().optional(),
   model: z.object({
     id: z.string(),
     family: z.string(),
-    mode: AssetRestorationModeSchema,
+    mode: AssetRestorationModeSchema.nullable(),
+    operation: RestorationPhotoOperationSchema.nullable().optional(),
     revision: z.string(),
     /** Identity of exactly this model and its weights. */
     fingerprint: z.string().regex(SHA256),
@@ -241,19 +260,53 @@ const RestorationGpuSchema = z
   })
   .meta({ id: 'RestorationGpuDto' });
 
+/** FL-933: only what deciding a photo operation needs; these models carry an operation, not a mode. */
+const RestorationPhotoModelSchema = z.object({
+  id: z.string(),
+  operation: RestorationPhotoOperationSchema.nullable().optional(),
+  fingerprint: z.string().nullable(),
+  state: z.string(),
+  qualificationId: z.string().nullable(),
+});
+
 /** The worker's own report (`GET /restoration/models`). Unknown workload names are dropped. */
 export const RestorationCapabilityReportSchema = z.object({
   protocol: z.literal(RESTORATION_PROTOCOL),
   workloads: z.array(z.string()),
   models: z.array(RestorationModelCapabilitySchema),
+  photoModels: z.array(RestorationPhotoModelSchema).default([]),
   gpus: z.array(RestorationGpuSchema),
   configurationProblems: z.array(z.string()),
   checkedAt: z.string(),
 });
 
-export type RestorationCapabilityReport = Omit<z.infer<typeof RestorationCapabilityReportSchema>, 'workloads'> & {
+export type RestorationCapabilityReport = Omit<
+  z.infer<typeof RestorationCapabilityReportSchema>,
+  'workloads' | 'photoModels'
+> & {
   workloads: MlWorkload[];
+  /** FL-955: photo operations the worker lists and backs with an available, verified, qualified model. */
+  photoOperations?: RestorationPhotoOperation[];
 };
+
+/**
+ * FL-955: the same proof FL-42 asks of a restoration workload. A listed name counts only with a model for
+ * that operation that is available, has verified weights and a qualification record.
+ */
+export const verifiedPhotoOperations = (
+  report: Pick<z.infer<typeof RestorationCapabilityReportSchema>, 'workloads' | 'photoModels'>,
+): RestorationPhotoOperation[] =>
+  RestorationPhotoOperationSchema.options.filter(
+    (operation) =>
+      report.workloads.includes(PHOTO_OPERATION_WORKLOADS[operation]) &&
+      report.photoModels.some(
+        (model) =>
+          model.operation === operation &&
+          model.state === RestorationModelState.Available &&
+          !!model.fingerprint &&
+          !!model.qualificationId,
+      ),
+  );
 
 const MlRestorationModelsResponseSchema = z
   .object({

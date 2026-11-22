@@ -37,6 +37,31 @@ export const AssetRestorationModeSchema = z
   .describe('Restoration model family')
   .meta({ id: 'AssetRestorationMode' });
 
+/**
+ * FL-955: what a restoration does. `enhance` is everything that existed before. Repair and Colourise are
+ * photo operations of their own, and a separate field because `AssetRestorationMode` is a response enum
+ * that installed native apps decode strictly: their rows answer `mode: faithful`.
+ */
+export enum AssetRestorationOperation {
+  Enhance = 'enhance',
+  /** Mends scratches, creases, dust and fading. */
+  Repair = 'repair',
+  /** Adds natural colour to a black-and-white photo. */
+  Colourise = 'colourise',
+}
+
+export const AssetRestorationOperationSchema = z
+  .enum(AssetRestorationOperation)
+  .describe('What the restoration does; left out, enhance')
+  .meta({ id: 'AssetRestorationOperation' });
+
+export type PhotoRestorationOperation = Exclude<AssetRestorationOperation, AssetRestorationOperation.Enhance>;
+
+export const isPhotoRestorationOperation = (
+  operation: AssetRestorationOperation | null | undefined,
+): operation is PhotoRestorationOperation =>
+  operation === AssetRestorationOperation.Repair || operation === AssetRestorationOperation.Colourise;
+
 export enum AssetRestorationStatus {
   PreviewQueued = 'preview_queued',
   PreviewRendering = 'preview_rendering',
@@ -157,10 +182,17 @@ const AssetRestorationRequestSchema = z
       .describe(
         'Smooth motion only (FL-162): how many frames each frame becomes. Required for smooth_motion, refused otherwise.',
       ),
+    operation: AssetRestorationOperationSchema.optional().describe(
+      'FL-955: enhance (the default), repair or colourise. Repair and colourise need mode faithful, keep the photo at its own size and name no model.',
+    ),
   })
   .refine((dto) => (dto.mode === AssetRestorationMode.SmoothMotion) === (dto.smoothMotionFactor !== undefined), {
     message: 'smoothMotionFactor is required for smooth_motion and only for it',
   })
+  .refine(
+    (dto) => !isPhotoRestorationOperation(dto.operation) || (dto.mode === AssetRestorationMode.Faithful && !dto.model),
+    { message: 'Repair and colourise use mode faithful and name no model' },
+  )
   .meta({ id: 'AssetRestorationRequestDto' });
 
 const AssetRestorationOptionsQuerySchema = z
@@ -172,6 +204,9 @@ const AssetRestorationOptionsQuerySchema = z
       .refine((value) => [1, 2, 4].includes(value), { error: 'Upscale must be 1, 2 or 4' })
       .default(2)
       .optional(),
+    operation: AssetRestorationOperationSchema.optional().describe(
+      'FL-955: judge the destinations for repair or colourise. Left out, enhance.',
+    ),
   })
   .meta({ id: 'AssetRestorationOptionsQueryDto' });
 
@@ -283,6 +318,13 @@ const AssetRestorationOptionsSchema = z
       .describe(
         'Where each job runs for this kind of work: Local only, Both or Cloud only (FL-159). Frameleaf Cloud is never chosen silently.',
       ),
+    operation: AssetRestorationOperationSchema.optional().describe(
+      'FL-955: present only when the options were asked for repair or colourise',
+    ),
+    colourRefusal: z
+      .string()
+      .optional()
+      .describe('FL-955: colourise only: why this photo cannot be colourised, in words for the owner'),
   })
   .meta({ id: 'AssetRestorationOptionsDto' });
 
@@ -330,6 +372,9 @@ const AssetRestorationResponseSchema = z
     resultExpiresAt: z.string().meta({ format: 'date-time' }).nullable(),
     createdAt: z.string().meta({ format: 'date-time' }),
     updatedAt: z.string().meta({ format: 'date-time' }),
+    operation: AssetRestorationOperationSchema.optional().describe(
+      'FL-955: repair or colourise. Absent on every enhance restoration, so existing responses are unchanged.',
+    ),
   })
   .meta({ id: 'AssetRestorationResponseDto' });
 
@@ -366,6 +411,95 @@ const AssetRestorationParamSchema = z
   })
   .meta({ id: 'AssetRestorationParamDto' });
 
+/** The most photos one batch takes; a larger selection is run as several. */
+export const RESTORATION_BATCH_MAX_ASSETS = 500;
+
+const AssetRestorationBatchRequestSchema = z
+  .object({
+    assetIds: z
+      .array(z.uuidv4())
+      .min(1)
+      .max(RESTORATION_BATCH_MAX_ASSETS)
+      .describe('The photos to repair or colourise'),
+    operation: z
+      .enum([AssetRestorationOperation.Repair, AssetRestorationOperation.Colourise])
+      .describe('What to do to each photo')
+      .meta({ id: 'AssetRestorationBatchOperation' }),
+    confirm: z
+      .boolean()
+      .default(false)
+      .describe('False: estimate only, nothing is queued. True: queue the batch on destinationId.'),
+    destinationId: z.uuidv4().optional().describe('Where the batch runs. Required to confirm; never inferred.'),
+    batchId: z
+      .uuidv4()
+      .optional()
+      .describe('The batchId of the estimate being confirmed. Confirming it again queues nothing twice.'),
+    maxCostUsd: z
+      .number()
+      .meta({ format: 'double' })
+      .positive()
+      .optional()
+      .describe('Frameleaf Cloud: the maxCostUsd of the estimate shown. The batch stops rather than go over it.'),
+    consentVersion: z.string().optional().describe('Frameleaf Cloud: the consentVersion of the estimate shown'),
+    acknowledgeDataLeaves: z.boolean().optional().describe('Frameleaf Cloud: the person agreed the photos leave'),
+  })
+  .refine((dto) => !dto.confirm || (!!dto.destinationId && !!dto.batchId), {
+    message: 'Confirming a batch needs the destinationId and the batchId of its estimate',
+  })
+  .meta({ id: 'AssetRestorationBatchRequestDto' });
+
+const AssetRestorationBatchDestinationSchema = z
+  .object({
+    id: z.uuidv4(),
+    kind: MlDestinationKindSchema,
+    name: z.string(),
+    available: z.boolean().describe('The server would admit this operation here right now'),
+    refusal: MlAdmissionRefusalSchema.nullable().describe('Why it cannot be chosen, or null'),
+    refusalDetail: z.string().nullable(),
+    leavesNetwork: z.boolean().describe('Photos sent here leave the network'),
+    estimateSeconds: z
+      .number()
+      .meta({ format: 'double' })
+      .nullable()
+      .describe('Measured time for the whole batch, or null when nothing is measured yet'),
+    costUsd: z
+      .number()
+      .meta({ format: 'double' })
+      .nullable()
+      .describe('AI Wallet cost of the batch. Null at home, where it is free, and while Cloud has no price.'),
+    maxCostUsd: z
+      .number()
+      .meta({ format: 'double' })
+      .nullable()
+      .describe('Frameleaf Cloud: the most the batch may charge; send it back to confirm. Null otherwise.'),
+    consentVersion: z.string().nullable().describe('Frameleaf Cloud: the terms this estimate is confirmed under'),
+    consentSummary: z.string().nullable().describe('Frameleaf Cloud: what leaves this server, in its own words'),
+  })
+  .meta({ id: 'AssetRestorationBatchDestinationDto' });
+
+const AssetRestorationBatchSkipSchema = z
+  .object({
+    assetId: z.uuidv4(),
+    reason: z.string().describe('already-in-colour, colour-unknown, not-a-photo or unavailable'),
+  })
+  .meta({ id: 'AssetRestorationBatchSkipDto' });
+
+const AssetRestorationBatchResponseSchema = z
+  .object({
+    batchId: z.uuidv4().describe('Send this back to confirm the estimate'),
+    operation: AssetRestorationOperationSchema,
+    total: z.int().describe('Photos asked for'),
+    eligible: z.int().describe('Photos that would be, or were, queued'),
+    queued: z.int().describe('Photos queued by this request; 0 for an estimate'),
+    skipped: z.array(AssetRestorationBatchSkipSchema),
+    destinations: z
+      .array(AssetRestorationBatchDestinationSchema)
+      .describe('Every destination in the processing order, those that cannot take it included'),
+  })
+  .meta({ id: 'AssetRestorationBatchResponseDto' });
+
+export class AssetRestorationBatchRequestDto extends createZodDto(AssetRestorationBatchRequestSchema) {}
+export class AssetRestorationBatchResponseDto extends createZodDto(AssetRestorationBatchResponseSchema) {}
 export class AssetRestorationRegionDto extends createZodDto(AssetRestorationRegionSchema) {}
 export class AssetRestorationRequestDto extends createZodDto(AssetRestorationRequestSchema) {}
 export class AssetRestorationOptionsQueryDto extends createZodDto(AssetRestorationOptionsQuerySchema) {}

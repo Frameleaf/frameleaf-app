@@ -4,6 +4,7 @@ import { Place } from 'src/database.js';
 import { HistoryBuilder } from 'src/decorators.js';
 import { AlbumResponseSchema } from 'src/dtos/album.dto.js';
 import { AssetResponseSchema } from 'src/dtos/asset-response.dto.js';
+import { PlaceNamesLocalizedSchema } from 'src/dtos/exif.dto.js';
 import { LandmarkSummarySchema } from 'src/dtos/landmark.dto.js';
 import {
   AssetOrder,
@@ -15,6 +16,7 @@ import {
   SearchOrderField,
   SearchOrderFieldSchema,
 } from 'src/enum.js';
+import { MIN_APPROXIMATE_YEAR } from 'src/utils/date.js';
 import { MEDIA_KINDS } from 'src/utils/media-kinds.js';
 import { isoDatetimeToDate, nonEmptyPartial, stringToBool } from 'src/validation.js';
 
@@ -137,6 +139,9 @@ const PlacesResponseSchema = z
     longitude: z.number().meta({ format: 'double' }).describe('Longitude coordinate'),
     admin1name: z.string().optional().describe('Administrative level 1 name (state/province)'),
     admin2name: z.string().optional().describe('Administrative level 2 name (county/district)'),
+    placeNamesLocalized: PlaceNamesLocalizedSchema.optional().describe(
+      'FL-987: the place (as `city`), its state/province and its country in the language of the signed-in account, when it is not English and one of them has a translation. Absent otherwise: show `name` and `admin1name`',
+    ),
   })
   .meta({ id: 'PlacesResponseDto' });
 
@@ -297,6 +302,13 @@ const DateFilterNullableSchema = nonEmptyPartial({
 
 const BoolFilterSchema = z.object({ eq: z.boolean() }).meta({ id: 'BoolFilter' });
 
+/** FL-936: a decade by its first year: 1970 is 1970 to 1979. */
+const DecadeFilterSchema = z
+  .object({
+    eq: z.int().min(MIN_APPROXIMATE_YEAR).max(9990).multipleOf(10).describe('The first year of the decade'),
+  })
+  .meta({ id: 'DecadeFilter' });
+
 const enumFilterSchema = <T extends z.core.util.EnumLike>(values: z.ZodEnum<T>, id: string) =>
   nonEmptyPartial({
     eq: values,
@@ -398,6 +410,9 @@ const searchFilterBranchShape = {
   // FL-49: the local capture date and time (the wall clock where the photo was taken, written as UTC), the
   // date the timeline and the search histogram bucket by; year:, month:, after: and before: narrow on it
   localDateTime: DateFilterSchema,
+  // FL-936: everything taken in a decade, by local date: photos dated to a day, to a year or to the decade itself.
+  // takenAt and localDateTime ranges also count a photo dated to a year or a decade as taken throughout it
+  takenDecade: DecadeFilterSchema.describe('Taken in this decade, whether dated to a day, a year or the decade'),
   createdAt: DateFilterSchema,
   updatedAt: DateFilterSchema,
   trashedAt: DateFilterNullableSchema,
@@ -412,6 +427,11 @@ const searchFilterBranchShape = {
   tagIds: IdsFilterSchema,
   // FL-353: photos and videos taken at any of (or none of) these landmarks
   landmarkIds: LandmarkIdsFilterSchema,
+  // FL-949: taken inside any (all, none) of the viewer's own named places; places are per viewer, so another
+  // account's place matches nothing, and through a shared link none does
+  namedPlaceIds: IdsFilterSchema.describe(
+    "The viewer's named places (Home, Grandma's …): items taken inside any, all or none of them",
+  ),
   // FL-1284: slow motion, panoramas, bursts, portraits … as the file's metadata records them
   mediaKinds: MediaKindsFilterSchema,
   albumIds: IdsFilterSchema,

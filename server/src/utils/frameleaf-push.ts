@@ -150,6 +150,23 @@ export const pushSendResultSchema = z.object({
 });
 export type PushSendResult = z.infer<typeof pushSendResultSchema>;
 
+/**
+ * FL-926: what a UnifiedPush device decrypts from a Web Push message (RFC 8291): exactly the data an
+ * FCM push from the Cloud gateway carries (`docs/developer/push-envelope-v1.md`, Delivery), so the
+ * Android app handles both the same way: `e`, the frameleaf-push-v1 envelope sealed to the device key,
+ * and `t`, the push type (`alert` or `background`). Priority, collapse id and TTL travel as the Web Push
+ * `Urgency`, `Topic` and `TTL` headers, as FCM carries them outside the data. No device token, ever.
+ */
+export type UnifiedPushPlaintext = { e: string; t: 'alert' | 'background' };
+
+export const unifiedPushPlaintextOf = (request: Pick<PushSendRequest, 'type' | 'payload'>): Buffer => {
+  if (!request.payload || (request.type !== 'alert' && request.type !== 'background')) {
+    throw new Error('Only alert and background pushes with a payload go to UnifiedPush');
+  }
+  const plaintext: UnifiedPushPlaintext = { e: request.payload, t: request.type };
+  return Buffer.from(JSON.stringify(plaintext), 'utf8');
+};
+
 /** The Live Activity state of an activation step: no free text, nothing personal. */
 export const liveActivityStateOf = (progress: CloudBackupActivationProgress): LiveActivityState => {
   if (progress.state === 'failed') {

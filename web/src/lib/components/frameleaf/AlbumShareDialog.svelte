@@ -47,8 +47,11 @@
     mdiLinkVariant,
     mdiPencilOutline,
   } from '@mdi/js';
-  import { tick } from 'svelte';
+  import { tick, untrack } from 'svelte';
   import { locale, t } from 'svelte-i18n';
+  import HouseholdMemberRows from '$lib/components/frameleaf/households/HouseholdMemberRows.svelte';
+  import HouseholdSharePicker from '$lib/components/frameleaf/households/HouseholdSharePicker.svelte';
+  import { HouseholdShareState } from '$lib/components/frameleaf/households/household-share.svelte';
 
   /**
    * Members, roles and public links for an album, a collection or a shared space (FL-53),
@@ -86,6 +89,7 @@
   let query = $state('');
   let inviteRole = $state<AlbumUserRole>(AlbumUserRole.Editor);
   let linkFormOpen = $state(false);
+  let household = $state<HouseholdShareState>();
 
   const currentUserId = $derived(authManager.user.id);
   const isOwner = $derived(
@@ -179,6 +183,12 @@
     void loadCandidates();
     void loadLinks();
     void loadInvited();
+    // FL-998: a space's owner can also add people from linked households.
+    const nextHousehold = untrack(() =>
+      album.kind === AlbumKind.Space && isOwner ? new HouseholdShareState(album.id, onChanged) : undefined,
+    );
+    household = nextHousehold;
+    void nextHousehold?.load();
     if (section === 'links') {
       void tick().then(() => linksSection?.scrollIntoView({ block: 'nearest' }));
     }
@@ -402,6 +412,10 @@
       </section>
     {/if}
 
+    {#if household?.loaded}
+      <HouseholdSharePicker share={household} />
+    {/if}
+
     <section aria-label={$t('frameleaf_album_share_access')}>
       <h3>{$t('frameleaf_album_share_access')}</h3>
       <ul class="members">
@@ -414,7 +428,6 @@
                 <strong>{self ? $t('frameleaf_album_you') : member.user.name}</strong>
                 {#if member.supporter}<SupporterTag />{/if}
               </span>
-              <small>{member.user.email}</small>
             </span>
             {#if member.role === AlbumUserRole.Owner || !isOwner}
               <span class="role-static">{roleLabel(member.role)}</span>
@@ -460,7 +473,6 @@
             <span class="avatar" aria-hidden="true"><UserAvatar user={member.user} size="md" /></span>
             <span class="who">
               <strong>{member.user.name}</strong>
-              <small>{member.user.email}</small>
             </span>
             <span class="role-static pending-tag">
               <Icon icon={mdiClockOutline} size="14" aria-hidden />
@@ -480,6 +492,9 @@
             {/if}
           </li>
         {/each}
+        {#if household?.loaded}
+          <HouseholdMemberRows share={household} />
+        {/if}
       </ul>
     </section>
 

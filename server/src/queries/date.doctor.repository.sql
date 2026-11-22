@@ -52,6 +52,7 @@ from
 where
   "asset"."ownerId" = $1
   and "asset"."deletedAt" is null
+  and "asset"."dateAccuracy" is null
   and (
     "asset"."visibility" in ('archive', 'timeline')
     and not exists (
@@ -157,6 +158,7 @@ select
   "asset"."localDateTime",
   "asset_exif"."dateTimeOriginal",
   "asset_exif"."timeZone",
+  "asset"."dateAccuracy",
   array(
     select
       property
@@ -171,7 +173,8 @@ select
   "earlier"."previousZone",
   "earlier"."previousTakenAt",
   "earlier"."previousLocalDateTime",
-  "earlier"."previousLocks"
+  "earlier"."previousLocks",
+  "earlier"."previousDateAccuracy"
 from
   "asset"
   inner join "asset_exif" on "asset_exif"."assetId" = "asset"."id"
@@ -181,7 +184,8 @@ from
       "date_fix_item"."previousZone",
       "date_fix_item"."previousTakenAt",
       "date_fix_item"."previousLocalDateTime",
-      "date_fix_item"."previousLocks"
+      "date_fix_item"."previousLocks",
+      "date_fix_item"."previousDateAccuracy"
     from
       "date_fix_item"
       inner join "date_fix_batch" on "date_fix_batch"."id" = "date_fix_item"."batchId"

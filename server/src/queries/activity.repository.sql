@@ -3,10 +3,33 @@
 -- ActivityRepository.search
 select
   "activity".*,
-  to_json("user") as "user"
+  case
+    when activity."remoteAuthorId" is null then to_json("user")
+    else (
+      select
+        json_build_object(
+          'id',
+          author.id,
+          'name',
+          author."displayName",
+          'email',
+          '',
+          'avatarColor',
+          null,
+          'profileImagePath',
+          '',
+          'profileChangedAt',
+          activity."createdAt"
+        )
+      from
+        household_remote_author author
+      where
+        author.id = activity."remoteAuthorId"
+    )
+  end as "user"
 from
   "activity"
-  inner join "user" as "user2" on "user2"."id" = "activity"."userId"
+  left join "user" as "user2" on "user2"."id" = "activity"."userId"
   and "user2"."deletedAt" is null
   inner join lateral (
     select
@@ -24,7 +47,11 @@ from
   ) as "user" on true
   left join "asset" on "asset"."id" = "activity"."assetId"
 where
-  "activity"."albumId" = $1
+  (
+    "user2"."id" is not null
+    or "activity"."remoteAuthorId" is not null
+  )
+  and "activity"."albumId" = $1
   and "asset"."deletedAt" is null
   and (
     "asset"."id" is null
@@ -94,11 +121,15 @@ select
   ) as "likes"
 from
   "activity"
-  inner join "user" on "user"."id" = "activity"."userId"
+  left join "user" on "user"."id" = "activity"."userId"
   and "user"."deletedAt" is null
   left join "asset" on "asset"."id" = "activity"."assetId"
 where
-  "activity"."assetId" = $3
+  (
+    "user"."id" is not null
+    or "activity"."remoteAuthorId" is not null
+  )
+  and "activity"."assetId" = $3
   and not (
     exists (
       select

@@ -35,7 +35,28 @@
     <link rel="icon" type="image/png" sizes="96x96" href="/favicon-96.png" />
     <link rel="icon" type="image/png" sizes="144x144" href="/favicon-144.png" />
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-icon-180.png" />
-    <link rel="preload" as="font" type="font/ttf" href="%app.font%" crossorigin="anonymous" />
+    <!-- FL-983: "Use system font" applies before first paint and skips loading the bundled font. -->
+    <script>
+      (() => {
+        let systemFont = false;
+        try {
+          systemFont = localStorage.getItem('frameleaf-system-font') === 'true';
+        } catch {
+          // Blocked storage keeps the default font.
+        }
+        if (systemFont) {
+          document.documentElement.dataset.font = 'system';
+          return;
+        }
+        const font = document.createElement('link');
+        font.rel = 'preload';
+        font.as = 'font';
+        font.type = 'font/ttf';
+        font.href = '%app.font%';
+        font.crossOrigin = 'anonymous';
+        document.head.append(font);
+      })();
+    </script>
 
     <!--
       The browser chrome colour: the dark canvas by default (template index.html:9), switched to the

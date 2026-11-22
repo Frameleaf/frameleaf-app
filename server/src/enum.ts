@@ -548,6 +548,8 @@ export const StorageFolderSchema = z.enum(StorageFolder).describe('Storage folde
 export enum SystemMetadataKey {
   MediaLocation = 'MediaLocation',
   ReverseGeocodingState = 'reverse-geocoding-state',
+  /** FL-987: which place-name pack `geodata_place_name` holds. */
+  PlaceNamesState = 'place-names-state',
   FacialRecognitionState = 'facial-recognition-state',
   /** FL-1493: the face model the library's faces were last found with. */
   FaceModelState = 'face-model-state',
@@ -2366,6 +2368,8 @@ export enum JobName {
   AssetEditThumbnailGeneration = 'AssetEditThumbnailGeneration',
   AssetDevelopRender = 'AssetDevelopRender',
   DevelopImport = 'DevelopImport',
+  /** FL-923: cut the confirmed prints out of a flatbed scan as new photos. */
+  ScanSplit = 'ScanSplit',
   AssetPaletteExtract = 'AssetPaletteExtract',
   AssetPaletteQueueAll = 'AssetPaletteQueueAll',
   PhotographyWorkflowRender = 'PhotographyWorkflowRender',
@@ -2430,6 +2434,8 @@ export enum JobName {
   MemoryGenerate = 'MemoryGenerate',
   LandmarkMatchAll = 'LandmarkMatchAll',
   LandmarkInfer = 'LandmarkInfer',
+  /** FL-987: links located items to the places their stored names came from, a slice at a time. */
+  PlaceNameBackfill = 'PlaceNameBackfill',
   AlbumSuggestionAutoAdd = 'AlbumSuggestionAutoAdd',
   AlbumSuggestionOutfit = 'AlbumSuggestionOutfit',
   AlbumCleanupScan = 'AlbumCleanupScan',
@@ -2437,6 +2443,12 @@ export enum JobName {
   // FL-912: the Date & Time Doctor, one scan per owner
   DateDoctorScan = 'DateDoctorScan',
   DateDoctorScanQueueAll = 'DateDoctorScanQueueAll',
+  // FL-925: read one staged location history file into its owner's places
+  LocationHistoryImport = 'LocationHistoryImport',
+  // FL-964: propose, apply and undo locations from location history, one run at a time
+  LocationFillPropose = 'LocationFillPropose',
+  LocationFillApply = 'LocationFillApply',
+  LocationFillUndo = 'LocationFillUndo',
   MemoryExport = 'MemoryExport',
 
   NotificationsCleanup = 'NotificationsCleanup',
@@ -2564,6 +2576,7 @@ export enum JobName {
 // is observed through asset details rather than the public job catalogue, and FL-1092's album auto-add
 // and FL-1094's outfit crops through the album itself. FL-819's workflow event jobs are observed
 // through the workflow's run history. FL-838's folder album sync is observed through the albums it keeps.
+// FL-987's place-name backfill is a background fill nobody watches.
 export const JobNameSchema = z
   .enum(JobName)
   .exclude([
@@ -2579,12 +2592,17 @@ export const JobNameSchema = z
     JobName.AssetVideoFingerprint,
     JobName.DescriptionFillerTagCleanup,
     JobName.LandmarkInfer,
+    JobName.PlaceNameBackfill,
     JobName.AlbumSuggestionAutoAdd,
     JobName.AlbumSuggestionOutfit,
     JobName.AlbumCleanupScan,
     JobName.AlbumCleanupApply,
     JobName.DateDoctorScan,
     JobName.DateDoctorScanQueueAll,
+    JobName.LocationHistoryImport,
+    JobName.LocationFillPropose,
+    JobName.LocationFillApply,
+    JobName.LocationFillUndo,
     JobName.LockedSeal,
     JobName.LockedUnseal,
     JobName.LockedRewrap,
@@ -2594,6 +2612,8 @@ export const JobNameSchema = z
     JobName.WorkflowEventDispatch,
     JobName.WorkflowEventTrigger,
     JobName.LibraryFolderAlbumSync,
+    // FL-923: observed through the photos it adds
+    JobName.ScanSplit,
     // the member's key: its value is 'media-import', unlike the names above
     'MediaImport',
   ])

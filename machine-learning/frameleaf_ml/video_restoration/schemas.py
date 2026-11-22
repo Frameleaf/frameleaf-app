@@ -46,6 +46,24 @@ WORKLOAD_BY_MODE: dict[RestorationMode, str] = {
     RestorationMode.SMOOTH_MOTION: "interpolation",
 }
 
+
+class PhotoOperation(StrEnum):
+    """What a photo workload does to a still (FL-933). These are not restoration modes: a mode is
+    a value people's apps decode, so the photo workloads are named by their own field instead."""
+
+    # Faces (CodeFormer) plus scratches and dust (LaMa) on an old print.
+    REPAIR = "repair"
+    # Colour for a black-and-white photo (DDColor).
+    COLOURISE = "colourise"
+
+
+# Workload names for the photo operations, listed in ``GET /capabilities`` beside the modes' workloads
+# only while a model for the operation is available. A server that does not know a name drops it.
+WORKLOAD_BY_OPERATION: dict[PhotoOperation, str] = {
+    PhotoOperation.REPAIR: "photo-repair",
+    PhotoOperation.COLOURISE: "colourise",
+}
+
 # How many frames each source frame becomes with Smooth motion.
 SUPPORTED_INTERPOLATION_FACTORS = (2, 4, 8)
 
@@ -124,7 +142,11 @@ class SourceDescription(WireModel):
 class RestorationRequest(WireModel):
     protocol: Literal["restoration-v1"]
     requestId: str = Field(min_length=1, max_length=200)
-    mode: RestorationMode
+    # Exactly one of ``mode`` and ``operation`` says what is asked for.
+    mode: RestorationMode | None = None
+    # A photo workload (FL-933): a still comes back at exactly its own size; ``scale`` must be 1 and
+    # the output box does not apply.
+    operation: PhotoOperation | None = None
     # A still is restored as a one-frame sequence and returned as PNG; a video as MP4.
     kind: Literal["image", "video"] = "video"
     # None: the worker's available model for the mode. A value names one model exactly.
@@ -152,6 +174,10 @@ class RestorationRequest(WireModel):
 
     @model_validator(mode="after")
     def _kind_fields(self) -> "RestorationRequest":
+        if (self.mode is None) == (self.operation is None):
+            raise ValueError("a request names either a mode or an operation")
+        if self.operation is not None and (self.kind != "image" or self.scale != 1):
+            raise ValueError("a photo operation needs a still and keeps its size; kind must be image and scale 1")
         if self.kind == "video" and self.source.durationMs is None:
             raise ValueError("a video request needs source.durationMs")
         if self.kind == "image" and self.segment is not None:
@@ -176,7 +202,9 @@ class WeightIdentity(WireModel):
 class ModelIdentity(WireModel):
     id: str
     family: str
-    mode: RestorationMode
+    # One of the two is set, as on the request.
+    mode: RestorationMode | None
+    operation: PhotoOperation | None = None
     revision: str
     fingerprint: str = Field(pattern=SHA256_PATTERN)
     weights: list[WeightIdentity]
@@ -212,7 +240,8 @@ class RestorationTiming(WireModel):
 class RestorationResult(WireModel):
     protocol: Literal["restoration-v1"]
     requestId: str
-    mode: RestorationMode
+    mode: RestorationMode | None
+    operation: PhotoOperation | None = None
     model: ModelIdentity
     output: OutputDescription
     timing: RestorationTiming
@@ -243,7 +272,10 @@ class MeasuredThroughput(WireModel):
 class ModelCapability(WireModel):
     id: str
     family: str
-    mode: RestorationMode
+    # A restoration model has a mode and is listed under ``models``; a photo model has an operation
+    # and is listed under ``photoModels``.
+    mode: RestorationMode | None
+    operation: PhotoOperation | None = None
     displayName: str
     revision: str
     fingerprint: str | None
@@ -267,6 +299,9 @@ class CapabilityReport(WireModel):
     protocol: Literal["restoration-v1"]
     workloads: list[str]
     models: list[ModelCapability]
+    # Photo repair and colourise models (FL-933). Kept apart from ``models`` because every entry there
+    # carries a restoration mode; a server that predates the photo workloads ignores this list.
+    photoModels: list[ModelCapability] = Field(default_factory=list)
     gpus: list[GpuDescription]
     # Problems reading the model manifest or qualification file. Non-empty means the worker
     # is misconfigured; every affected model is reported unavailable, never guessed.

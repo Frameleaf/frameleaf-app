@@ -4,6 +4,7 @@ import { jsonObjectFrom } from 'kysely/helpers/postgres';
 import { InjectKysely } from 'nestjs-kysely';
 import { validate as isUuid } from 'uuid';
 import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
+import type { PersonRelationshipEdge } from 'src/utils/person-relationship.js';
 import { AssetFace } from 'src/database.js';
 import { Chunked, ChunkedArray, DummyValue, GenerateSql } from 'src/decorators.js';
 import { AssetFileType, AssetType, AssetVisibility, LibraryScope, SourceType, UserMetadataKey } from 'src/enum.js';
@@ -2584,6 +2585,88 @@ export class PersonRepository {
           .where('person_category_member.personId', '=', fromPersonGroupId),
       )
       .onConflict((oc) => oc.doNothing())
+      .execute();
+  }
+
+  /** FL-842: every relationship between the owner's people. A family is small, so the rules are applied in memory. */
+  @GenerateSql({ params: [DummyValue.UUID] })
+  getRelationships(ownerId: string): Promise<PersonRelationshipEdge[]> {
+    return this.db
+      .selectFrom('person_relationship')
+      .select([
+        'person_relationship.personGroupId',
+        'person_relationship.relatedPersonGroupId',
+        'person_relationship.kind',
+        'person_relationship.parentRole',
+      ])
+      .where('person_relationship.ownerId', '=', ownerId)
+      .orderBy('person_relationship.createdAt')
+      .orderBy('person_relationship.id')
+      .execute();
+  }
+
+  /** FL-842: records relationships between the owner's people; a pair that already has one keeps it. */
+  async createRelationships(ownerId: string, edges: PersonRelationshipEdge[]): Promise<void> {
+    if (edges.length === 0) {
+      return;
+    }
+    await this.db
+      .insertInto('person_relationship')
+      .values(
+        edges.map(({ personGroupId, relatedPersonGroupId, kind, parentRole }) => ({
+          ownerId,
+          personGroupId,
+          relatedPersonGroupId,
+          kind,
+          parentRole,
+        })),
+      )
+      .onConflict((oc) => oc.doNothing())
+      .execute();
+  }
+
+  /** FL-842: removes whatever relationship joins two of the owner's people, whichever way round it is stored. */
+  @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID, DummyValue.UUID] })
+  async deleteRelationship(ownerId: string, personGroupId: string, relatedPersonGroupId: string): Promise<boolean> {
+    const result = await this.db
+      .deleteFrom('person_relationship')
+      .where('person_relationship.ownerId', '=', ownerId)
+      .where((eb) =>
+        eb.or([
+          eb.and([
+            eb('person_relationship.personGroupId', '=', personGroupId),
+            eb('person_relationship.relatedPersonGroupId', '=', relatedPersonGroupId),
+          ]),
+          eb.and([
+            eb('person_relationship.personGroupId', '=', relatedPersonGroupId),
+            eb('person_relationship.relatedPersonGroupId', '=', personGroupId),
+          ]),
+        ]),
+      )
+      .executeTakeFirst();
+    return Number(result.numDeletedRows ?? 0) > 0;
+  }
+
+  /**
+   * FL-880: which of the owner's people is the owner. The one place that answers it.
+   * ponytail: no account-to-person link exists yet, so nobody has a self-person; FL-856 adds `person.linkedUserId`
+   * and fills this in, which is all Mother's Day and Father's Day memories need to start appearing.
+   */
+  getSelfPersonId(_ownerId: string): Promise<string | undefined> {
+    return Promise.resolve(undefined);
+  }
+
+  /** FL-842: the owner's own people among these ids, for listing relatives. */
+  @GenerateSql({ params: [DummyValue.UUID, [DummyValue.UUID]] })
+  getOwnPeople(ownerId: string, personGroupIds: string[]) {
+    if (personGroupIds.length === 0) {
+      return Promise.resolve([]);
+    }
+    return this.db
+      .selectFrom('person')
+      .selectAll('person')
+      .where('person.ownerId', '=', ownerId)
+      .where('person.personGroupId', 'in', personGroupIds)
       .execute();
   }
 }

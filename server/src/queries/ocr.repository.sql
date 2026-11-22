@@ -68,6 +68,23 @@ with
 select
   1 as "dummy"
 
+-- OcrRepository.getDocumentEdits
+select
+  *
+from
+  "asset_document_edit"
+where
+  "assetId" = $1
+order by
+  "createdAt" asc
+
+-- OcrRepository.setPrintBackSearchText
+update "asset_print_back"
+set
+  "searchText" = $1
+where
+  "backAssetId" = $2
+
 -- OcrRepository.updateOcrVisibilities
 begin
 select

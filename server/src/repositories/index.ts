@@ -72,6 +72,10 @@ import { FrameleafCloudRepository } from 'src/repositories/frameleaf-cloud.repos
 import { FrameleafConsentRepository } from 'src/repositories/frameleaf-consent.repository.js';
 import { FrameleafUserLicenseRepository } from 'src/repositories/frameleaf-user-license.repository.js';
 import { HardwareProbeRepository } from 'src/repositories/hardware-probe.repository.js';
+import { HouseholdCommentRepository } from 'src/repositories/household-comment.repository.js';
+import { HouseholdLinkRepository } from 'src/repositories/household-link.repository.js';
+import { HouseholdReceiveRepository } from 'src/repositories/household-receive.repository.js';
+import { HouseholdShareRepository } from 'src/repositories/household-share.repository.js';
 import { ICloudAlbumRepository } from 'src/repositories/icloud-album.repository.js';
 import { ICloudAuditRepository } from 'src/repositories/icloud-audit.repository.js';
 import { ICloudIdentityAdoptionRepository } from 'src/repositories/icloud-identity-adoption.repository.js';
@@ -84,12 +88,15 @@ import { ICloudSyncRepository } from 'src/repositories/icloud-sync.repository.js
 import { ICloudTransportRepository } from 'src/repositories/icloud-transport.repository.js';
 import { ICloudWeeklyRepository } from 'src/repositories/icloud-weekly.repository.js';
 import { IdenticalFilesRepository } from 'src/repositories/identical-files.repository.js';
+import { ImportConnectorRepository } from 'src/repositories/import-connector.repository.js';
 import { InstanceIdentityRepository } from 'src/repositories/instance-identity.repository.js';
 import { IntegrityRepository } from 'src/repositories/integrity.repository.js';
 import { ItemShareRepository } from 'src/repositories/item-share.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LibraryRepository } from 'src/repositories/library.repository.js';
 import { LivePhotoRepository } from 'src/repositories/live-photo.repository.js';
+import { LocationFillRepository } from 'src/repositories/location-fill.repository.js';
+import { LocationHistoryRepository } from 'src/repositories/location-history.repository.js';
 import { LockedEncryptionRepository } from 'src/repositories/locked-encryption.repository.js';
 import { LockedFileRepository } from 'src/repositories/locked-file.repository.js';
 import { LockedKeyRepository } from 'src/repositories/locked-key.repository.js';
@@ -131,11 +138,13 @@ import { PhysicalFileRepository } from 'src/repositories/physical-file.repositor
 import { PluginRepository } from 'src/repositories/plugin.repository.js';
 import { PreservationFileRepository } from 'src/repositories/preservation-files.repository.js';
 import { PreservationRepository } from 'src/repositories/preservation.repository.js';
+import { PrintBackRepository } from 'src/repositories/print-back.repository.js';
 import { ProcessRepository } from 'src/repositories/process.repository.js';
 import { PushDeviceRepository } from 'src/repositories/push-device.repository.js';
 import { RateLimitRepository } from 'src/repositories/rate-limit.repository.js';
 import { RawSupportRepository } from 'src/repositories/raw-support.repository.js';
 import { RenderWorkerRepository } from 'src/repositories/render-worker.repository.js';
+import { ScanSplitRepository } from 'src/repositories/scan-split.repository.js';
 import { SearchRepository } from 'src/repositories/search.repository.js';
 import { ServerInfoRepository } from 'src/repositories/server-info.repository.js';
 import { SessionRepository } from 'src/repositories/session.repository.js';
@@ -164,6 +173,7 @@ import { TagRepository } from 'src/repositories/tag.repository.js';
 import { TakeoutStagingRepository } from 'src/repositories/takeout-staging.repository.js';
 import { TakeoutRepository } from 'src/repositories/takeout.repository.js';
 import { TrashRepository } from 'src/repositories/trash.repository.js';
+import { UnifiedPushRepository } from 'src/repositories/unified-push.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
 import { VersionHistoryRepository } from 'src/repositories/version-history.repository.js';
 import { VideoMomentRepository } from 'src/repositories/video-moment.repository.js';
@@ -185,6 +195,8 @@ export const repositories = [
   SpeechRepository,
   AssetAnnotationRepository,
   AssetPaletteRepository,
+  PrintBackRepository,
+  ScanSplitRepository,
   CaptureRepository,
   BrowserExtensionSignInRepository,
   OAuthAppRepository,
@@ -276,6 +288,10 @@ export const repositories = [
   CloudBackupIndexRepository,
   CloudBackupSelectionRepository,
   BuddyBackupRepository,
+  HouseholdLinkRepository,
+  HouseholdCommentRepository,
+  HouseholdReceiveRepository,
+  HouseholdShareRepository,
   CloudBackupKeyRepository,
   MediaRepository,
   MemoryRepository,
@@ -323,6 +339,8 @@ export const repositories = [
   AlbumChangeRunRepository,
   AlbumCleanupRepository,
   DateDoctorRepository,
+  LocationHistoryRepository,
+  LocationFillRepository,
   AssetLedgerRepository,
   FoundFileRepository,
   AlbumMergeRepository,
@@ -335,9 +353,11 @@ export const repositories = [
   TagRepository,
   TakeoutRepository,
   TakeoutStagingRepository,
+  ImportConnectorRepository,
   EagleImportRepository,
   EagleLibraryRepository,
   TrashRepository,
+  UnifiedPushRepository,
   UserRepository,
   ViewRepository,
   VersionHistoryRepository,

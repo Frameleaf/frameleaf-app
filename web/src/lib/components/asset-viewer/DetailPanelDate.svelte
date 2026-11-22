@@ -11,6 +11,7 @@
    * replaying a date the panel never saw would be a guess. A stale asset is reloaded instead.
    */
   import ViewerInlineEditError from '$lib/components/frameleaf/ViewerInlineEditError.svelte';
+  import { dateAccuracyOf, formatApproximateDate } from '$lib/frameleaf/approximate-date';
   import { formatLuxon } from '$lib/frameleaf/date-format';
   import { classifyInlineEditError, inlineEditRecovery, type InlineEditFailure } from '$lib/frameleaf/inline-edit';
   import { captureDateTime } from '$lib/frameleaf/viewer-headline';
@@ -40,13 +41,23 @@
    * the time with the zone's name after it when the photo has one. No seconds and no GMT offset.
    * Both follow the person's date and time format (FL-783).
    */
+  const accuracy = $derived(dateAccuracyOf(asset.dateAccuracy));
+  /** FL-936: "1975" over "Year only", "Circa 1970s" over "Decade only"; no day, time or zone. */
+  const approximate = $derived(formatApproximateDate(asset.localDateTime, accuracy, $locale, { heading: true, $t }));
   const dateLine = $derived(
-    dateTime && formatLuxon(dateTime, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }, $locale),
+    approximate ??
+      (dateTime &&
+        formatLuxon(dateTime, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }, $locale)),
   );
   const timeLine = $derived(
-    [dateTime && formatLuxon(dateTime, { hour: 'numeric', minute: '2-digit' }, $locale), timeZone?.replaceAll('_', ' ')]
-      .filter(Boolean)
-      .join(' · '),
+    approximate
+      ? $t(accuracy === 'decade' ? 'frameleaf_date_decade_only' : 'frameleaf_date_year_only')
+      : [
+          dateTime && formatLuxon(dateTime, { hour: 'numeric', minute: '2-digit' }, $locale),
+          timeZone?.replaceAll('_', ' '),
+        ]
+          .filter(Boolean)
+          .join(' · '),
   );
 
   let failure = $state<InlineEditFailure | null>(null);

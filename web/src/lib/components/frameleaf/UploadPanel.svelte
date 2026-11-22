@@ -2,6 +2,7 @@
   import '$lib/frameleaf/tokens.css';
   import { cancelRemainingUploads, retryFailedUploads, uploadExecutionQueue } from '$lib/utils/file-uploader';
   import { locale } from '$lib/stores/preferences.store';
+  import { scanOffers } from '$lib/stores/scan-offers.svelte';
   import { uploadAssetsStore } from '$lib/stores/upload';
   import { UploadState, type UploadAsset } from '$lib/types';
   import { getByteUnitString } from '$lib/utils/byte-units';
@@ -14,6 +15,7 @@
     mdiClose,
     mdiCloudCheckOutline,
     mdiContentDuplicate,
+    mdiImageMultipleOutline,
     mdiImageOutline,
     mdiProgressUpload,
     mdiRefresh,
@@ -75,6 +77,7 @@
     leaving = false;
     if ($remainingUploads === 0) {
       uploadAssetsStore.reset();
+      scanOffers.reset();
     }
   };
   const dismiss = () => {
@@ -86,6 +89,30 @@
     leaveTimer = setTimeout(afterLeave, EXIT_DURATION.dock + 150);
   };
   onDestroy(() => clearTimeout(leaveTimer));
+
+  // FL-923: a finished image that went into an album may be a scan; the server answers only for albums that hold scans.
+  $effect(() => {
+    for (const item of $uploadAssetsStore) {
+      if (item.state === UploadState.DONE && item.albumId && item.assetId && item.file.type.startsWith('image/')) {
+        scanOffers.check(item.assetId, item.file.name);
+      }
+    }
+  });
+
+  // Loaded on use: the sheet is only needed by someone who takes an offer.
+  const reviewOffer = async (assetId: string) => {
+    scanOffers.dismiss(assetId);
+    const { openScanSplit } = await import('$lib/services/scan-split.service.svelte');
+    await openScanSplit(assetId);
+  };
+
+  // FL-967: scans of one batch that may alternate front, back.
+  const reviewPairs = async () => {
+    const pairs = $state.snapshot(scanOffers.pairs);
+    scanOffers.dismissPairs();
+    const { openPrintPairs } = await import('$lib/services/print-back.service.svelte');
+    await openPrintPairs(pairs);
+  };
 
   $effect(() => {
     if (active) {
@@ -319,6 +346,47 @@
             </li>
           {/each}
         </ul>
+
+        {#if scanOffers.current}
+          {@const offer = scanOffers.current}
+          <div class="fl-scan-offer" role="status">
+            <Icon icon={mdiImageMultipleOutline} size="20" aria-hidden="true" />
+            <div>
+              <strong>{$t('frameleaf_scan_split_offer_title', { values: { count: offer.count } })}</strong>
+              <p>{$t('frameleaf_scan_split_offer_body')}</p>
+              <div class="fl-scan-offer-actions">
+                <button
+                  type="button"
+                  class="fl-button fl-button-primary"
+                  onclick={() => void reviewOffer(offer.assetId)}
+                >
+                  {$t('frameleaf_scan_split_offer_review')}
+                </button>
+                <button type="button" class="fl-button" onclick={() => scanOffers.dismiss(offer.assetId)}>
+                  {$t('frameleaf_scan_split_offer_later')}
+                </button>
+              </div>
+            </div>
+          </div>
+        {/if}
+
+        {#if !scanOffers.current && scanOffers.pairs.length > 0}
+          <div class="fl-scan-offer" role="status">
+            <Icon icon={mdiImageMultipleOutline} size="20" aria-hidden="true" />
+            <div>
+              <strong>{$t('frameleaf_print_back_offer_title')}</strong>
+              <p>{$t('frameleaf_print_back_offer_body', { values: { count: scanOffers.pairs.length } })}</p>
+              <div class="fl-scan-offer-actions">
+                <button type="button" class="fl-button fl-button-primary" onclick={() => void reviewPairs()}>
+                  {$t('frameleaf_print_back_offer_review')}
+                </button>
+                <button type="button" class="fl-button" onclick={() => scanOffers.dismissPairs()}>
+                  {$t('frameleaf_scan_split_offer_later')}
+                </button>
+              </div>
+            </div>
+          </div>
+        {/if}
 
         <footer class="fl-panel-foot">
           <!-- UploadPanel.jsx `upload-concurrency`: the slider sits in the footer, not behind Options. -->
@@ -577,6 +645,34 @@
     block-size: 0.875rem;
     border-radius: 50%;
     background: var(--fl-panel);
+  }
+  .fl-scan-offer {
+    display: flex;
+    flex-shrink: 0;
+    gap: 0.75rem;
+    margin: 0.5rem 0.75rem 0.75rem;
+    padding: 0.875rem;
+    color: var(--fl-text);
+    background: color-mix(in srgb, var(--fl-accent) 10%, var(--fl-panel));
+    border: 1px solid color-mix(in srgb, var(--fl-accent) 45%, var(--fl-border));
+    border-radius: var(--fl-radius-card);
+  }
+  .fl-scan-offer > :global(svg) {
+    flex-shrink: 0;
+    color: var(--fl-accent);
+  }
+  .fl-scan-offer strong {
+    font-size: 0.875rem;
+  }
+  .fl-scan-offer p {
+    margin: 0.25rem 0 0.75rem;
+    color: var(--fl-muted);
+    font-size: 0.75rem;
+  }
+  .fl-scan-offer-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
   }
   .fl-panel-foot {
     display: flex;

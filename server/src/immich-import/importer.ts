@@ -6,6 +6,9 @@ import {
   MediaHealthCategory,
   MediaHealthSeverity,
   MediaHealthStatus,
+  PetObservationSource,
+  PetObservationState,
+  PetSpecies,
   SystemMetadataKey,
 } from 'src/enum.js';
 import {
@@ -19,6 +22,7 @@ import {
 } from 'src/immich-import/adapters.js';
 import { assertCanonicalDestination } from 'src/immich-import/destination-schema.js';
 import { EmbeddingAdmission, inspectEmbeddingAdmission } from 'src/immich-import/embeddings.js';
+import { GALLERY_READS } from 'src/immich-import/gallery.js';
 import {
   LostOriginalReason,
   isUnmappedPath,
@@ -47,8 +51,30 @@ const LOST_REASON_TEXT: Record<LostOriginalReason, string> = {
 };
 const unlocked = (asset: string) => `NOT EXISTS (SELECT 1 FROM public.asset_lock l WHERE l."assetId"=${asset})`;
 const lockedFace = `NOT ${unlocked('(SELECT f."assetId" FROM public.asset_face f WHERE f.id=s."faceAssetId")')}`;
-/** Columns `convertLocks` rewrites. Verification accepts a changed value only where a lock explains it, and
- * only a value the conversion could have written. */
+const SPACES = `(SELECT id FROM public.album WHERE kind='space')`;
+/** Noodle Gallery Spaces become space albums, which no copied table holds: the copied-row counts leave them out. */
+const COPIED_ROWS: Record<string, string> = {
+  album: `WHERE kind<>'space'`,
+  album_user: `WHERE "albumId" NOT IN ${SPACES}`,
+  album_asset: `WHERE "albumId" NOT IN ${SPACES}`,
+};
+/** Where each Noodle Gallery read lands, one destination row for each source row. */
+const GALLERY_ROWS: Partial<Record<(typeof GALLERY_READS)[number], string>> = {
+  gallery_space: `public.album WHERE kind='space'`,
+  gallery_space_member: `public.album_user WHERE "albumId" IN ${SPACES}`,
+  gallery_space_asset: `public.album_asset WHERE "albumId" IN ${SPACES}`,
+  gallery_favorite: 'public.asset_favorite',
+  gallery_pet: 'public.pet',
+};
+/** The newest photo a cover may show: in the album, not deleted, on the timeline and not Locked. */
+const cover = (album: string, extra = '') => `(SELECT a.id FROM public.album_asset aa
+  JOIN public.asset a ON a.id=aa."assetId" AND a."deletedAt" IS NULL AND a.visibility='timeline' AND NOT a.is_nsfw
+    AND ${unlocked('a.id')}${extra}
+  WHERE aa."albumId"=${album} ORDER BY a."fileCreatedAt" DESC LIMIT 1)`;
+const petId = (ownerId: unknown, personGroupId: unknown) =>
+  v5(JSON.stringify(['noodle-gallery-pet', ownerId, personGroupId]), v5.URL);
+/** Columns `convertLocks` and the Noodle Gallery pets rewrite. Verification accepts a changed value only where a
+ * lock or a carried pet explains it, and only a value the conversion could have written. */
 const LOCK_REWRITES: Record<string, Record<string, string>> = {
   asset: {
     visibility: `s.visibility='locked' AND NOT ${unlocked('d.id')}
@@ -67,6 +93,8 @@ const LOCK_REWRITES: Record<string, Record<string, string>> = {
       WHERE f.id=d."faceAssetId" AND f."personGroupId"=d."personGroupId" AND f."deletedAt" IS NULL
         AND f."isVisible" IS TRUE AND ${unlocked('f."assetId"')}))`,
     thumbnailPath: `${lockedFace} AND d."thumbnailPath"=''`,
+    // A Noodle Gallery pet moved to Pets, so its entry in People is hidden.
+    isHidden: `d."isHidden" AND EXISTS (SELECT 1 FROM public.pet p WHERE p."ownerId"=d."ownerId" AND p.name=d.name)`,
   },
 };
 
@@ -117,6 +145,7 @@ export class ImmichImportService {
       })),
       sourceVersion: this.config.version,
       sourceCommit: this.source.fixture.commit,
+      ...(this.source.gallery && { sourceKind: 'gallery', gallery: this.source.galleryCounts }),
       notImported: this.source.notImported,
       fingerprint,
       status: run?.status ?? 'fresh',
@@ -158,6 +187,7 @@ export class ImmichImportService {
       }
       await this.buildAlbumTree();
       await this.convertLocks();
+      await this.carryGallery();
       await this.copyMediaLocation();
       await this.destination.query("UPDATE public.frameleaf_immich_import SET status='verifying'");
     });
@@ -189,8 +219,19 @@ export class ImmichImportService {
             }
           }
         }
-        const [count] = await this.destination.query(`SELECT count(*)::text AS count FROM public.${quote(table)}`);
+        const [count] = await this.destination.query(
+          `SELECT count(*)::text AS count FROM public.${quote(table)} ${COPIED_ROWS[table] ?? ''}`,
+        );
         if (count.count !== String(expected)) {
+          throw new ImportRefused('DESTINATION_CARDINALITY_MISMATCH');
+        }
+      }
+      for (const [read, rows] of Object.entries(GALLERY_ROWS) as [(typeof GALLERY_READS)[number], string][]) {
+        if (!this.source.fixture.tables[read]) {
+          continue;
+        }
+        const [count] = await this.destination.query(`SELECT count(*)::text AS count FROM ${rows}`);
+        if (count.count !== (await this.source.count(read))) {
           throw new ImportRefused('DESTINATION_CARDINALITY_MISMATCH');
         }
       }
@@ -280,7 +321,10 @@ export class ImmichImportService {
     }
   }
 
-  private async copyTable(table: string): Promise<void> {
+  private async copyTable(
+    table: string,
+    write?: (db: ImportDatabase, rows: ImportRow[]) => Promise<void>,
+  ): Promise<void> {
     const [checkpoint] = await this.destination.query(
       'SELECT cursor,complete FROM public.frameleaf_immich_import_checkpoint WHERE table_name=$1',
       [table],
@@ -289,8 +333,14 @@ export class ImmichImportService {
       return;
     }
     for await (const batch of this.source.batches(table, (checkpoint?.cursor as string[] | null) ?? null)) {
-      const mapped = await mapInOrder(batch, async (item) => ({ ...item, mapped: await this.mapRow(table, item.row) }));
+      const mapped = write
+        ? []
+        : await mapInOrder(batch, async (item) => ({ ...item, mapped: await this.mapRow(table, item.row) }));
       await this.destination.transaction(async (db) => {
+        await write?.(
+          db,
+          batch.map(({ row }) => row),
+        );
         for (const { row, mapped: target } of mapped) {
           if (!target) {
             continue;
@@ -423,6 +473,120 @@ export class ImmichImportService {
         WHERE f."personGroupId"=person."personGroupId" AND f."deletedAt" IS NULL AND f."isVisible" IS TRUE
         ORDER BY a."deletedAt" IS NOT NULL,a."fileCreatedAt" DESC LIMIT 1),"thumbnailPath"=''
       WHERE "faceAssetId" IN (SELECT f.id FROM public.asset_face f JOIN public.asset_lock l ON l."assetId"=f."assetId")`);
+  }
+
+  /**
+   * FL-995: what Noodle Gallery adds to the standard library, written as Frameleaf's own rows. A Space is an
+   * album of kind `space` whose members are `album_user` rows and whose photos are `album_asset` rows, as
+   * SharedSpaceService creates them. Runs after `convertLocks`, so no cover shows Locked media. Every write
+   * skips a row that is already there, and each read keeps a checkpoint, so a resumed run repeats safely.
+   */
+  private async carryGallery(): Promise<void> {
+    const rows = (columns: string) => `jsonb_to_recordset($1::text::jsonb) AS r(${columns})`;
+    const writes: Record<(typeof GALLERY_READS)[number], (db: ImportDatabase, batch: ImportRow[]) => Promise<void>> = {
+      gallery_space: async (db, batch) => {
+        const from = rows('id uuid, name text, description text, "createdAt" timestamptz, "updatedAt" timestamptz');
+        await db.query(
+          `INSERT INTO public.album(id,"albumName",description,kind,"createdAt","updatedAt")
+          SELECT id,name,description,'space',"createdAt","updatedAt" FROM ${from} ON CONFLICT (id) DO NOTHING`,
+          [JSON.stringify(batch)],
+        );
+        await db.query(
+          `INSERT INTO public.album_closure(id_ancestor,id_descendant) SELECT id,id FROM ${from} ON CONFLICT DO NOTHING`,
+          [JSON.stringify(batch)],
+        );
+      },
+      gallery_space_member: async (db, batch) => {
+        await db.query(
+          `INSERT INTO public.album_user("albumId","userId",role) SELECT "spaceId","userId",role::album_user_role_enum
+          FROM ${rows('"spaceId" uuid, "userId" uuid, role text')} ON CONFLICT DO NOTHING`,
+          [JSON.stringify(batch)],
+        );
+      },
+      gallery_space_asset: async (db, batch) => {
+        await db.query(
+          `INSERT INTO public.album_asset("albumId","assetId","createdAt") SELECT "spaceId","assetId","addedAt"
+          FROM ${rows('"spaceId" uuid, "assetId" uuid, "addedAt" timestamptz')} ON CONFLICT DO NOTHING`,
+          [JSON.stringify(batch)],
+        );
+      },
+      gallery_favorite: async (db, batch) => {
+        await db.query(
+          `INSERT INTO public.asset_favorite("userId","assetId","createdAt") SELECT "userId","assetId","createdAt"
+          FROM ${rows('"userId" uuid, "assetId" uuid, "createdAt" timestamptz')} ON CONFLICT DO NOTHING`,
+          [JSON.stringify(batch)],
+        );
+      },
+      // Frameleaf keeps pets apart from people. The name, species and birthday come across; each photo Gallery
+      // found the pet in becomes a confirmed sighting on its owner's photos, for Frameleaf's own recognition to
+      // build on; and the entry Gallery kept among the people is hidden.
+      gallery_pet: async (db, batch) => {
+        for (const pet of batch) {
+          const id = petId(pet.ownerId, pet.personGroupId);
+          const species = String(pet.species ?? '').toLowerCase() as PetSpecies;
+          await db.query(
+            `INSERT INTO public.pet(id,"ownerId",name,species,"birthDate","isHidden","isFavorite")
+            VALUES ($1::uuid,$2::uuid,$3,$4,$5::date,$6,$7) ON CONFLICT (id) DO NOTHING`,
+            [
+              id,
+              pet.ownerId,
+              pet.name,
+              Object.values(PetSpecies).includes(species) ? species : PetSpecies.Other,
+              pet.birthDate,
+              pet.isHidden,
+              pet.isFavorite,
+            ],
+          );
+          await db.query(
+            `INSERT INTO public.pet_observation("petId","assetId",state,source,"boundingBoxX1","boundingBoxY1",
+              "boundingBoxX2","boundingBoxY2","imageWidth","imageHeight")
+            SELECT DISTINCT ON (f."assetId") $1::uuid,f."assetId",$4,$5,f."boundingBoxX1",f."boundingBoxY1",
+              f."boundingBoxX2",f."boundingBoxY2",f."imageWidth",f."imageHeight"
+            FROM public.asset_face f JOIN public.asset a ON a.id=f."assetId" AND a."ownerId"=$2::uuid
+            WHERE f."personGroupId"=$3::uuid AND f."deletedAt" IS NULL ORDER BY f."assetId",f.id
+            ON CONFLICT ("petId","assetId") DO NOTHING`,
+            [id, pet.ownerId, pet.personGroupId, PetObservationState.Confirmed, PetObservationSource.Review],
+          );
+          await db.query(
+            `UPDATE public.pet SET "featuredAssetId"=(SELECT a.id FROM public.pet_observation o
+              JOIN public.asset a ON a.id=o."assetId" AND a."deletedAt" IS NULL AND ${unlocked('a.id')}
+              WHERE o."petId"=pet.id ORDER BY a."fileCreatedAt" DESC LIMIT 1)
+            WHERE id=$1::uuid AND "featuredAssetId" IS NULL`,
+            [id],
+          );
+          await db.query(
+            `UPDATE public.person SET "isHidden"=true WHERE "ownerId"=$1::uuid AND "personGroupId"=$2::uuid AND NOT "isHidden"`,
+            [pet.ownerId, pet.personGroupId],
+          );
+        }
+      },
+      // The link carries the Space's own name for the person and a cover from the Space, never the member's
+      // own name or thumbnail (shared-space-person.table.ts). Two Gallery people who resolve to the same
+      // person of the same member become one link.
+      gallery_space_person: async (db, batch) => {
+        await db.query(
+          `INSERT INTO public.shared_space_person("albumId","personOwnerId","personGroupId",name,"coverAssetId")
+          SELECT r."spaceId",r."personOwnerId",r."personGroupId",r.name,${cover(
+            'r."spaceId"',
+            ` AND EXISTS (SELECT 1 FROM public.asset_face f WHERE f."assetId"=a.id AND f."deletedAt" IS NULL
+              AND f."isVisible" IS TRUE AND f."personGroupId"=r."personGroupId")`,
+          )}
+          FROM ${rows('"spaceId" uuid, "personOwnerId" uuid, "personGroupId" uuid, name text')}
+          WHERE EXISTS (SELECT 1 FROM public.person p
+            WHERE p."ownerId"=r."personOwnerId" AND p."personGroupId"=r."personGroupId")
+          ON CONFLICT ("albumId","personOwnerId","personGroupId") DO NOTHING`,
+          [JSON.stringify(batch)],
+        );
+      },
+    };
+    for (const read of GALLERY_READS) {
+      if (this.source.fixture.tables[read]) {
+        await this.copyTable(read, writes[read]);
+      }
+    }
+    // ponytail: Gallery's own choice of Space cover is not read; the newest photo the Space may show stands in.
+    await this.destination.query(`UPDATE public.album SET "albumThumbnailAssetId"=${cover('album.id')}
+      WHERE kind='space' AND "albumThumbnailAssetId" IS NULL`);
   }
 
   /** Imported paths start with the source's media root; without its saved location the server assumes the
@@ -595,7 +759,7 @@ export class ImmichImportService {
    * re-upload restores one, and Library care searches for the rest. Derived ids make a repeated
    * verification idempotent.
    */
-  /** Tell administrators which Noodle Gallery features held data that stayed in the source. */
+  /** Tell administrators which Noodle Gallery data stayed in the source. */
   private async reportNotImported(fingerprint: string): Promise<void> {
     const names = this.source.notImported;
     if (names.length === 0) {
@@ -610,8 +774,8 @@ export class ImmichImportService {
           v5(JSON.stringify(['noodle-gallery-not-imported', fingerprint, id]), v5.URL),
           id,
           'Some Noodle Gallery data was not imported',
-          `Frameleaf doesn't have these Noodle Gallery features yet, so they stayed behind: ${names.join(', ')}. ` +
-            'Your photos, albums and people came across, and your Noodle Gallery database still holds the rest.',
+          `Frameleaf can't bring these across from Noodle Gallery yet, so they stayed behind: ${names.join(', ')}. ` +
+            'Everything else came across, and your Noodle Gallery database still holds the rest.',
           JSON.stringify({ kind: 'noodle-gallery-not-imported', items: names }),
         ],
       );

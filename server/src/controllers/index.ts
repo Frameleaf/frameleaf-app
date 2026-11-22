@@ -73,9 +73,15 @@ import { FrameleafLibrarySetupController } from 'src/controllers/frameleaf-libra
 import { FrameleafServerSetupController } from 'src/controllers/frameleaf-server-setup.controller.js';
 import { HardwareCheckController } from 'src/controllers/hardware-check.controller.js';
 import { HelpController } from 'src/controllers/help.controller.js';
+import { HouseholdLinkController } from 'src/controllers/household-link.controller.js';
+import { HouseholdPeerController } from 'src/controllers/household-peer.controller.js';
+import { HouseholdReceiveController } from 'src/controllers/household-receive.controller.js';
+import { HouseholdShareController } from 'src/controllers/household-share.controller.js';
 import { ICloudIdentityController } from 'src/controllers/icloud-identity.controller.js';
 import { ICloudSyncController } from 'src/controllers/icloud-sync.controller.js';
 import { IdenticalFilesController } from 'src/controllers/identical-files.controller.js';
+import { ImportConnectorController } from 'src/controllers/import-connector.controller.js';
+import { ImportSignInController } from 'src/controllers/import-sign-in.controller.js';
 import { IntegrityAdminController } from 'src/controllers/integrity-admin.controller.js';
 import { ItemShareController } from 'src/controllers/item-share.controller.js';
 import { JobController } from 'src/controllers/job.controller.js';
@@ -84,6 +90,8 @@ import { LibraryProgressController } from 'src/controllers/library-progress.cont
 import { LibraryAdminController, LibraryController } from 'src/controllers/library.controller.js';
 import { LicenseAdminController, LicenseController } from 'src/controllers/license-admin.controller.js';
 import { LivePhotoController } from 'src/controllers/live-photo.controller.js';
+import { LocationFillController } from 'src/controllers/location-fill.controller.js';
+import { LocationHistoryController } from 'src/controllers/location-history.controller.js';
 import { LockedEncryptionController } from 'src/controllers/locked-encryption.controller.js';
 import { MailConnectionController } from 'src/controllers/mail-connection.controller.js';
 import { MaintenanceController } from 'src/controllers/maintenance.controller.js';
@@ -132,12 +140,14 @@ import { PhysicalFileTrashController } from 'src/controllers/physical-file-trash
 import { PlaybackSelfTestController } from 'src/controllers/playback-self-test.controller.js';
 import { PluginController } from 'src/controllers/plugin.controller.js';
 import { PreservationController } from 'src/controllers/preservation.controller.js';
+import { PrintBackController } from 'src/controllers/print-back.controller.js';
 import { PrivateLogsController } from 'src/controllers/private-logs.controller.js';
 import { PushController } from 'src/controllers/push.controller.js';
 import { QueueController } from 'src/controllers/queue.controller.js';
 import { RawSupportController } from 'src/controllers/raw-support.controller.js';
 import { RenderWorkerAdminController, RenderWorkerController } from 'src/controllers/render-worker.controller.js';
 import { SafetyController } from 'src/controllers/safety.controller.js';
+import { ScanSplitController } from 'src/controllers/scan-split.controller.js';
 import { SearchController } from 'src/controllers/search.controller.js';
 import { ServerController } from 'src/controllers/server.controller.js';
 import { SessionController } from 'src/controllers/session.controller.js';
@@ -175,6 +185,7 @@ import { TimelineController } from 'src/controllers/timeline.controller.js';
 import { TrashAdminController, TrashController } from 'src/controllers/trash.controller.js';
 import { UpgradeCheckController } from 'src/controllers/upgrade-check.controller.js';
 import { UserAdminController } from 'src/controllers/user-admin.controller.js';
+import { UserPlaceController } from 'src/controllers/user-place.controller.js';
 import { UserController } from 'src/controllers/user.controller.js';
 import { UtilitiesController } from 'src/controllers/utilities.controller.js';
 import { VideoStreamController } from 'src/controllers/video-stream.controller.js';
@@ -199,6 +210,8 @@ export const controllers = [
   LibraryItemController,
   AssetAnnotationController,
   AssetPaletteController,
+  PrintBackController,
+  ScanSplitController,
   CaptureController,
   BrowserExtensionSignInController,
   McpController,
@@ -245,6 +258,10 @@ export const controllers = [
   BuddyBackupAdminController,
   BuddyBackupOwnerController,
   BuddyBackupPeerController,
+  HouseholdLinkController,
+  HouseholdPeerController,
+  HouseholdReceiveController,
+  HouseholdShareController,
   CastController,
   CloudBackupOwnerController,
   HardwareCheckController,
@@ -328,6 +345,8 @@ export const controllers = [
   AlbumSourceController,
   AlbumCleanupController,
   DateDoctorController,
+  LocationHistoryController,
+  LocationFillController,
   AssetLedgerController,
   AssetLedgerAdminController,
   AlbumMergeController,
@@ -356,11 +375,14 @@ export const controllers = [
   TagController,
   EagleImportController,
   TakeoutController,
+  ImportConnectorController,
+  ImportSignInController,
   TidyUpController,
   TimelineController,
   TrashController,
   TrashAdminController,
   UserAdminController,
+  UserPlaceController,
   UserController,
   VideoStreamController,
   ViewController,

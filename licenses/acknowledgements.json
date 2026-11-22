@@ -707,6 +707,23 @@
       "source": "Hugging Face card Falconsai/nsfw_image_detection (license: apache-2.0); the conversion declares none"
     },
     {
+      "status": "recorded",
+      "notice": null,
+      "id": "llama-cpp",
+      "group": "library-models",
+      "name": "llama.cpp",
+      "author": "The ggml authors",
+      "licence": "MIT",
+      "link": "https://github.com/ggml-org/llama.cpp",
+      "version": "b12477",
+      "shipped": "bundled",
+      "noticeFiles": [
+        "licenses/texts/llama-cpp-mit.txt"
+      ],
+      "covers": [],
+      "source": "LICENSE in the llama.cpp b12477 Linux Vulkan release, which the ML worker image installs (machine-learning/Dockerfile)"
+    },
+    {
       "status": "looked-up",
       "notice": "Place boundaries © OpenStreetMap contributors, available under the Open Database License (https://www.openstreetmap.org/copyright). The pack is a derivative database under the same licence; server/base-image/geodata/landmarks/build.mjs is the method that produces it. Place names, identifiers, kinds and ranks are from Wikidata (CC0).",
       "id": "landmark-place-pack",
@@ -722,6 +739,23 @@
       ],
       "covers": [],
       "source": "server/base-image/geodata/geodata.lock (landmarks.ndjson.gz) and server/base-image/geodata/landmarks/README.md; licence terms from https://osmfoundation.org/wiki/Licence and https://www.wikidata.org/wiki/Wikidata:Licensing"
+    },
+    {
+      "status": "looked-up",
+      "notice": "City, region and country data © GeoNames (https://www.geonames.org/), licensed under CC BY 4.0. The places used to name where a photo was taken ship with the server. Their names in the app's other languages are a selection from GeoNames' alternate names, made by server/bin/build-place-names-pack.mjs, which the server downloads as one file.",
+      "id": "geonames-place-names",
+      "group": "library-data",
+      "name": "GeoNames (cities, regions, countries and their names in other languages)",
+      "author": "GeoNames",
+      "licence": "CC-BY-4.0",
+      "link": "https://www.geonames.org/",
+      "version": "2026-11-22",
+      "shipped": "bundled",
+      "noticeFiles": [
+        "licenses/texts/cc-by-4.0.txt"
+      ],
+      "covers": [],
+      "source": "server/base-image/geodata/geodata.lock (cities500.zip, admin1CodesASCII.txt, admin2Codes.txt, countryInfo.txt) and PLACE_NAME_PACK in server/src/constants.ts; licence terms from https://www.geonames.org/export/ and https://creativecommons.org/licenses/by/4.0/"
     }
   ],
   "fonts": {
@@ -1767,6 +1801,13 @@
       "source": "https://opendatacommons.org/licenses/odbl/odbl-10.txt",
       "retrievedOn": "2026-10-10",
       "sha256": "607680718977f6f6c9607972afd98f208573f19251315ed1362a8589b51beaf5"
+    },
+    {
+      "file": "licenses/texts/llama-cpp-mit.txt",
+      "title": "MIT (OpenAI CLIP)",
+      "source": "https://github.com/ggml-org/llama.cpp/blob/054a1babf3f57074b0f63f415fc34bdf13435a64/LICENSE",
+      "retrievedOn": "2026-09-25",
+      "sha256": "94f29bbed6a22c35b992c5c6ebf0e7c92f13b836b90f36f461c9cf2f0f1d010d"
     }
   ]
 }

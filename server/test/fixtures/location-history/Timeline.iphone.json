@@ -1,0 +1,31 @@
+[
+  {
+    "endTime": "2024-08-10T09:30:00.000+02:00",
+    "startTime": "2024-08-10T08:00:00.000+02:00",
+    "visit": {
+      "hierarchyLevel": "0",
+      "topCandidate": { "probability": "0.950000", "semanticType": "Unknown", "placeID": "synthetic-2", "placeLocation": "geo:48.137400,11.575500" },
+      "probability": "0.900000"
+    }
+  },
+  {
+    "endTime": "2024-08-10T10:00:00.000+02:00",
+    "startTime": "2024-08-10T09:30:00.000+02:00",
+    "activity": {
+      "probability": "0.990000",
+      "end": "geo:48.152900,11.592100",
+      "topCandidate": { "type": "walking", "probability": "0.870000" },
+      "distanceMeters": "2100.000000",
+      "start": "geo:48.137400,11.575500"
+    }
+  },
+  {
+    "endTime": "2024-08-10T11:30:00.000+02:00",
+    "startTime": "2024-08-10T09:30:00.000+02:00",
+    "timelinePath": [
+      { "point": "geo:48.141000,11.579000", "durationMinutesOffsetFromStartTime": "8" },
+      { "point": "geo:48.146000,11.585000", "durationMinutesOffsetFromStartTime": "17" },
+      { "point": "geo:48.152900,11.592100", "durationMinutesOffsetFromStartTime": "30" }
+    ]
+  }
+]

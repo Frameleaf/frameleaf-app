@@ -1165,6 +1165,30 @@ describe(MediaService.name, () => {
       expect(mocks.media.transcode).not.toHaveBeenCalled();
     });
 
+    it('sends a video that will not open to Library care, unless care asked or only the path matches', async () => {
+      const originalPath = '/library/moov atom not found/clip.mov';
+      const asset = AssetFactory.from({ type: AssetType.Video, originalPath }).exif().build();
+      mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue({
+        ...getForGenerateThumbnail(asset),
+        videoStream: null,
+        format: null,
+      });
+      mocks.storage.checkFileExists.mockResolvedValue(true);
+      const care = { name: JobName.MediaHealthFixAsset, data: { id: asset.id, from: 'preview' } };
+
+      mocks.media.probe.mockRejectedValue(new Error(`ffprobe exited with code 1: moov atom not found ${originalPath}`));
+      await expect(sut.handleGenerateThumbnails({ id: asset.id })).resolves.toBe(JobStatus.Skipped);
+      expect(mocks.job.queue).toHaveBeenCalledExactlyOnceWith(care);
+
+      mocks.job.queue.mockClear();
+      await expect(sut.handleGenerateThumbnails({ id: asset.id, afterCare: true })).rejects.toThrow('moov atom');
+      expect(mocks.job.queue).not.toHaveBeenCalledWith(care);
+
+      mocks.media.probe.mockRejectedValue(new Error(`ffprobe exited with code 1: read failed ${originalPath}`));
+      await expect(sut.handleGenerateThumbnails({ id: asset.id })).rejects.toThrow('Failed to probe');
+      expect(mocks.job.queue).not.toHaveBeenCalledWith(care);
+    });
+
     it('should throw an "original file missing" error before probing when the file does not exist', async () => {
       const asset = AssetFactory.from({ type: AssetType.Video, originalPath: '/original/path.ext' }).exif().build();
       mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue({

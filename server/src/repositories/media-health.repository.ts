@@ -481,6 +481,9 @@ export class MediaHealthRepository {
       }>`
         SELECT count(*)::int AS count FROM public.icloud_resource
         WHERE status IN ('needs-review', 'failed')
+          AND NOT coalesce(source#>'{_sync,acceptedReasons}' ? "lastError", false)
+          AND "lastError" IS DISTINCT FROM 'source_hidden_requires_consent'
+          AND "lastError" IS DISTINCT FROM 'hidden_match_requires_consent'
         ${ownerId ? sql`AND "ownerId" = ${ownerId}::uuid` : sql``}`.execute(this.db);
       return Number(result.rows[0]?.count ?? 0);
     } catch {

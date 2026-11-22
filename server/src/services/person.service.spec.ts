@@ -251,6 +251,20 @@ describe(PersonService.name, () => {
         sut.setMergeVerdict(auth, { personId: low, suggestionId: low, verdict: 'different' }),
       ).rejects.toBeInstanceOf(BadRequestException);
     });
+
+    it('should store "ignore" as the person paired with itself', async () => {
+      const auth = AuthFactory.create();
+      mocks.access.person.checkOwnerAccess.mockResolvedValueOnce(new Set([low]));
+      mocks.person.setMergeVerdict.mockResolvedValue({
+        verdict: 'ignore',
+        createdAt: new Date('2026-09-24T00:00:00Z'),
+      });
+
+      await expect(sut.setMergeVerdict(auth, { personId: low, suggestionId: low, verdict: 'ignore' })).resolves.toEqual(
+        { personId: low, suggestionId: low, verdict: 'ignore', createdAt: '2026-09-24T00:00:00.000Z' },
+      );
+      expect(mocks.person.setMergeVerdict).toHaveBeenCalledWith(auth.user.id, low, low, 'ignore');
+    });
   });
 
   describe('deleteMergeVerdict', () => {
@@ -592,6 +606,29 @@ describe(PersonService.name, () => {
       const result = await sut.getById(auth, person.personGroupId);
       expect(result).not.toHaveProperty('categoryIds');
       expect(mocks.person.getPersonCategoryIds).not.toHaveBeenCalled();
+    });
+
+    it("carries the person's family on the single-person read only (FL-842)", async () => {
+      const auth = AuthFactory.create();
+      const person = PersonFactory.create({ ownerId: auth.user.id });
+      const mum = PersonFactory.create({ ownerId: auth.user.id, name: 'Mum' });
+      mocks.person.getByGroupId.mockResolvedValue(person);
+      mocks.person.getRelationships.mockResolvedValue([
+        {
+          personGroupId: mum.personGroupId,
+          relatedPersonGroupId: person.personGroupId,
+          kind: 'parent',
+          parentRole: 'mother',
+        },
+      ]);
+      mocks.person.getOwnPeople.mockResolvedValue([mum]);
+      mocks.access.person.checkOwnerAccess.mockImplementation((_userId, ids) => Promise.resolve(new Set(ids)));
+
+      const result = await sut.getById(auth, person.personGroupId);
+
+      expect(result.relationships?.parents).toEqual([
+        { person: expect.objectContaining({ id: mum.personGroupId, name: 'Mum' }), parentRole: 'mother' },
+      ]);
     });
 
     it('should get a person by id', async () => {
