@@ -5594,6 +5594,10 @@ export type AlbumOrderDto = {
     /** Collection whose albums are ordered, or null for a top-level group (collections, albums on their own, or shared spaces) */
     parentId: string | null;
 };
+export type AlbumRecentlyAddedResponseDto = {
+    /** Albums the user may add to, the one that most recently received an item first */
+    albumIds: string[];
+};
 export type AlbumStatisticsResponseDto = {
     /** Number of non-shared albums */
     notShared: number;
@@ -29303,6 +29307,21 @@ export function setAlbumOrder({ albumOrderDto }: {
         method: "PUT",
         body: albumOrderDto
     })));
+}
+/**
+ * List albums that recently received items
+ */
+export function getRecentlyAddedAlbums({ libraryScope }: {
+    libraryScope?: LibraryViewScope;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AlbumRecentlyAddedResponseDto;
+    }>(`/albums/recently-added${QS.query(QS.explode({
+        libraryScope
+    }))}`, {
+        ...opts
+    }));
 }
 /**
  * Retrieve album statistics

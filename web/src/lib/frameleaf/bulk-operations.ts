@@ -114,6 +114,10 @@ export type BulkResult = {
 
 export type BulkPayload = {
   albumId?: string;
+  /** Add to several albums at once; `albumId` is then the first of them. */
+  albumIds?: string[];
+  /** For the undo of a several-album add: per album, only the items it newly received. */
+  addedByAlbum?: Record<string, string[]>;
   sharedLinkId?: string;
   tagIds?: string[];
   newTagNames?: string[];
@@ -624,6 +628,8 @@ const requirePayload = <K extends keyof BulkPayload>(
   return value as NonNullable<BulkPayload[K]>;
 };
 
+const severalAlbums = (payload?: BulkPayload) => (payload?.albumIds?.length ?? 0) > 1;
+
 /** Tag names the user typed are created first, then every id is applied in one call. */
 const resolveTagIds = async (payload: BulkPayload | undefined, gateway: BulkGateway): Promise<string[]> => {
   const existing = payload?.tagIds ?? [];
@@ -825,6 +831,48 @@ export const runBulkAction = async (
 
     /* PUT /albums/:id/assets and DELETE /albums/:id/assets — both answer per id. */
     case 'add-to-album': {
+      if (severalAlbums(payload)) {
+        const added: Record<string, string[]> = Object.fromEntries(payload!.albumIds!.map((id) => [id, []]));
+        return finish(
+          await runInChunks(runner, async (batch) => {
+            // An album that refuses an item fails that item, so it stays selected for a retry,
+            // even when another album took it. Already being in an album is not a refusal.
+            const refused = new Map<string, BulkOutcome>();
+            const duplicate = new Map<string, BulkOutcome>();
+            const accepted = new Set<string>();
+            for (const albumId of payload!.albumIds!) {
+              try {
+                const responses = await gateway.addAssetsToAlbum({ id: albumId, bulkIdsDto: { ids: batch } });
+                for (const [index, outcome] of fromBulkIdResponses(responses).entries()) {
+                  if (responses[index].success) {
+                    added[albumId].push(outcome.id);
+                    accepted.add(outcome.id);
+                  } else if (responses[index].error === BulkIdErrorReason.Duplicate) {
+                    duplicate.set(outcome.id, outcome);
+                  } else if (!refused.has(outcome.id)) {
+                    refused.set(outcome.id, outcome);
+                  }
+                }
+              } catch (error) {
+                for (const id of batch) {
+                  if (!refused.has(id)) {
+                    refused.set(id, failed(id, error));
+                  }
+                }
+              }
+            }
+            return batch.map(
+              (id) => refused.get(id) ?? (accepted.has(id) ? ok(id) : (duplicate.get(id) ?? failed(id, undefined))),
+            );
+          }),
+          // Undo covers every item an album took, including one another album refused.
+          () => ({
+            action: 'remove-from-album',
+            ids: [...new Set(Object.values(added).flat())],
+            payload: { addedByAlbum: added },
+          }),
+        );
+      }
       const albumId = requirePayload(payload, 'albumId');
       return finish(
         await runInChunks(runner, async (batch) =>
@@ -834,6 +882,34 @@ export const runBulkAction = async (
       );
     }
     case 'remove-from-album': {
+      if (payload?.addedByAlbum) {
+        const albums = Object.entries(payload.addedByAlbum).map(([id, added]) => [id, new Set(added)] as const);
+        return finish(
+          await runInChunks(runner, async (batch) => {
+            const byId = new Map<string, BulkOutcome>();
+            for (const [albumId, added] of albums) {
+              const inAlbum = batch.filter((id) => added.has(id));
+              if (inAlbum.length > 0) {
+                try {
+                  const responses = await gateway.removeAssetFromAlbum({ id: albumId, bulkIdsDto: { ids: inAlbum } });
+                  for (const outcome of fromBulkIdResponses(responses)) {
+                    if (outcome.status !== 'ok' && !byId.has(outcome.id)) {
+                      byId.set(outcome.id, outcome);
+                    }
+                  }
+                } catch (error) {
+                  for (const id of inAlbum) {
+                    if (!byId.has(id)) {
+                      byId.set(id, failed(id, error));
+                    }
+                  }
+                }
+              }
+            }
+            return batch.map((id) => byId.get(id) ?? ok(id));
+          }),
+        );
+      }
       const albumId = requirePayload(payload, 'albumId');
       return finish(
         await runInChunks(runner, async (batch) =>
@@ -1256,6 +1332,9 @@ export const shouldRunDurably = (action: BulkActionId, count: number, payload?: 
   !!durableBulkAction(action) &&
   count > DURABLE_BULK_THRESHOLD &&
   !payload?.offsetMinutesById &&
+  // the durable album job takes one album; several run from here in chunks, with one undo
+  !severalAlbums(payload) &&
+  !payload?.addedByAlbum &&
   // FL-936: a year or a decade, and its undo, are one Doctor batch; the durable date job knows neither
   !payload?.dateAccuracy &&
   !payload?.undoDateFixId &&

@@ -736,7 +736,23 @@
   const organize = (payload: BulkPayload, operation: 'add' | 'remove' = 'add') => {
     const name = collectionName;
     return runSelection(
-      (keys, owner, current) => organizeLibraryItems(results.items, keys, owner, payload, current, operation),
+      async (keys, owner, current) => {
+        let refused: unknown;
+        for (const albumId of payload.albumIds ?? [payload.albumId]) {
+          try {
+            await organizeLibraryItems(results.items, keys, owner, { ...payload, albumId }, current, operation);
+          } catch (error) {
+            // One album refusing doesn't stop the others, but a changed account or page does.
+            if (!current()) {
+              throw error;
+            }
+            refused = error;
+          }
+        }
+        if (refused) {
+          throw refused;
+        }
+      },
       operation === 'remove'
         ? (count) => toastManager.primary($t('frameleaf_boards_removed_from', { values: { count, name } }))
         : undefined,

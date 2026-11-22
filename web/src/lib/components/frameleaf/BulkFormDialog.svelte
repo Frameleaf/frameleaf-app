@@ -1,5 +1,6 @@
 <script lang="ts">
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
+  import { handleError } from '$lib/utils/handle-error';
   import type { Snippet } from 'svelte';
   import { t } from 'svelte-i18n';
 
@@ -16,6 +17,8 @@
     preview,
     open = $bindable(true),
     onSubmit,
+    waitForSubmit = false,
+    onClosed,
     children,
   }: {
     title: string;
@@ -24,23 +27,45 @@
     danger?: boolean;
     preview?: string;
     open?: boolean;
-    onSubmit: () => void;
+    onSubmit: () => unknown;
+    /** Stay open until `onSubmit`'s promise settles, and close only if it gives true. */
+    waitForSubmit?: boolean;
+    /** Runs once the exit has finished, for a `modalManager.show` wrapper to unmount. */
+    onClosed?: () => void;
     children: Snippet;
   } = $props();
 
   const formId = $props.id();
+  let saving = $state(false);
 
   const submit = (event: SubmitEvent) => {
     event.preventDefault();
-    if (!valid) {
+    if (!valid || saving) {
       return;
     }
-    onSubmit();
-    open = false;
+    if (!waitForSubmit) {
+      onSubmit();
+      open = false;
+      return;
+    }
+    void submitAndWait();
+  };
+
+  const submitAndWait = async () => {
+    saving = true;
+    try {
+      if ((await onSubmit()) === true) {
+        open = false;
+      }
+    } catch (error) {
+      handleError(error, $t('error'));
+    } finally {
+      saving = false;
+    }
   };
 </script>
 
-<Dialog bind:open {title} closeLabel={$t('cancel')}>
+<Dialog bind:open {title} {onClosed} closeLabel={$t('cancel')}>
   <form id={formId} onsubmit={submit}>
     {@render children()}
     {#if preview}
@@ -50,7 +75,7 @@
   {#snippet actions()}
     <button type="button" class="button" onclick={() => (open = false)}>{$t('cancel')}</button>
     <!-- The prototype's footer sits outside the scrolling body, so the submit button joins the form by id. -->
-    <button type="submit" form={formId} class="button" class:primary={!danger} class:danger disabled={!valid}
+    <button type="submit" form={formId} class="button" class:primary={!danger} class:danger disabled={!valid || saving}
       >{submitLabel}</button
     >
   {/snippet}

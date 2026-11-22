@@ -509,6 +509,14 @@ export class AlbumViewDto extends createZodDto(AlbumViewSchema) {}
 export class GetAlbumsDto extends createZodDto(GetAlbumsSchema) {}
 export class GetAlbumInfoDto extends createZodDto(GetAlbumInfoSchema) {}
 export class AlbumStatisticsResponseDto extends createZodDto(AlbumStatisticsResponseSchema) {}
+const AlbumRecentlyAddedResponseSchema = z
+  .object({
+    albumIds: z
+      .array(z.uuidv4())
+      .describe('Albums the user may add to, the one that most recently received an item first'),
+  })
+  .meta({ id: 'AlbumRecentlyAddedResponseDto' });
+export class AlbumRecentlyAddedResponseDto extends createZodDto(AlbumRecentlyAddedResponseSchema) {}
 export class UpdateAlbumUserDto extends createZodDto(UpdateAlbumUserSchema) {}
 export class AlbumResponseDto extends createZodDto(AlbumResponseSchema) {}
 export class AlbumDescendantCountResponseDto extends createZodDto(AlbumDescendantCountResponseSchema) {}
