@@ -955,6 +955,46 @@ function petIdsPredicates(eb: AssetExpressionBuilder, filter: IdsFilter | undefi
   });
 }
 /**
+ * FL-949: items taken inside the viewer's named places: the photo's own coordinates against each place's circle,
+ * measured as `namedPlaceAt` measures it. Places are the viewer's own, so a partner's photo taken at the viewer's
+ * "Home" matches and the partner's own places never do. Without a viewer (a shared link) the positive groups match
+ * nothing and `none` excludes nothing.
+ */
+function namedPlaceIdsPredicates(
+  eb: AssetExpressionBuilder,
+  filter: IdsFilter | undefined,
+  viewerId: string | null | undefined,
+) {
+  if (filter === undefined) {
+    return [];
+  }
+  const matching = (ids: string[]) =>
+    eb
+      .selectFrom('user_place')
+      .where('user_place.ownerId', '=', viewerId ?? '')
+      .where('user_place.id', '=', anyUuid(ids))
+      .where(
+        sql<SqlBool>`earth_box(ll_to_earth_public(user_place.latitude, user_place.longitude), user_place."radiusMeters")
+          @> ll_to_earth_public(asset_exif.latitude, asset_exif.longitude)`,
+      )
+      .where(
+        sql<SqlBool>`earth_distance(
+          ll_to_earth_public(user_place.latitude, user_place.longitude),
+          ll_to_earth_public(asset_exif.latitude, asset_exif.longitude)) <= user_place."radiusMeters"`,
+      );
+  return idsPredicates(eb, filter, {
+    matchesAny: (ids) => (viewerId ? eb.exists(matching(ids).select('user_place.id')) : eb.lit(false)),
+    matchesAll: (ids) =>
+      viewerId
+        ? eb(
+            matching(ids).select((eb) => eb.fn.count('user_place.id').distinct().as('count')),
+            '=',
+            ids.length,
+          )
+        : eb.lit(false),
+  });
+}
+/**
  * Build landmark inclusion and exclusion filters against live, eligible matches. Both searches
  * revalidate inferred evidence instead of trusting stored associations that may have gone stale.
  */
@@ -1339,6 +1379,7 @@ function branchPredicates(
     ...petIdsPredicates(eb, branch.petIds, viewerId),
     ...tagIdsPredicates(eb, branch.tagIds),
     ...landmarkIdsPredicates(eb, branch.landmarkIds),
+    ...namedPlaceIdsPredicates(eb, branch.namedPlaceIds, privateViewerId),
     ...mediaKindsPredicates(branch.mediaKinds),
     ...checksumPredicates(eb, branch.checksum),
     ...(encodedVideoPath

@@ -5763,6 +5763,12 @@ export type PartnerLockedEncryptionDto = {
     ownerName: string;
     reason?: PartnerLockedEncryptionReason;
 };
+export type AssetNamedPlaceDto = {
+    /** Place ID */
+    id: string;
+    /** The name you gave the place */
+    name: string;
+};
 export type PersonResponseDto = {
     /** Person date of birth */
     birthDate: string | null;
@@ -5866,6 +5872,8 @@ export type AssetResponseDto = {
     locationInsight?: LocationInsightDto;
     /** Present on your own Locked copy of a partner's item when the partner encrypted its files (GET /assets/{id}) */
     lockedEncryption?: PartnerLockedEncryptionDto;
+    /** Your own named place the item was taken in (the nearest centre where several hold it); null when none does. Only in single asset-info responses, only for the signed-in person, never through a shared link. */
+    namedPlace?: (AssetNamedPlaceDto) | null;
     /** Present on your own asset when partner sharing copied it from another library (GET /assets/{id}) */
     origin?: PartnerOriginDto;
     /** Original file name */
@@ -8422,6 +8430,8 @@ export type BestPhotoAssetResponseDto = {
     locationInsight?: LocationInsightDto;
     /** Present on your own Locked copy of a partner's item when the partner encrypted its files (GET /assets/{id}) */
     lockedEncryption?: PartnerLockedEncryptionDto;
+    /** Your own named place the item was taken in (the nearest centre where several hold it); null when none does. Only in single asset-info responses, only for the signed-in person, never through a shared link. */
+    namedPlace?: (AssetNamedPlaceDto) | null;
     /** Present on your own asset when partner sharing copied it from another library (GET /assets/{id}) */
     origin?: PartnerOriginDto;
     /** Original file name */
@@ -8795,6 +8805,8 @@ export type SearchFilterBranch = {
     make?: StringPatternFilter;
     mediaKinds?: MediaKindsFilter;
     model?: StringPatternFilter;
+    /** The viewer's named places (Home, Grandma's …): items taken inside any, all or none of them */
+    namedPlaceIds?: IdsFilter;
     ocr?: StringSimilarityFilter;
     originalFileName?: StringPatternFilter;
     originalPath?: StringPatternFilter;
@@ -8857,6 +8869,8 @@ export type SearchFilter = {
     make?: StringPatternFilter;
     mediaKinds?: MediaKindsFilter;
     model?: StringPatternFilter;
+    /** The viewer's named places (Home, Grandma's …): items taken inside any, all or none of them */
+    namedPlaceIds?: IdsFilter;
     ocr?: StringSimilarityFilter;
     or?: SearchFilterBranch[];
     originalFileName?: StringPatternFilter;
@@ -22330,6 +22344,107 @@ export type AssetLedgerSummaryResponseDto = {
     /** Every original the server has accepted for this account */
     total: number;
 };
+export type LocationFillRunResponseDto = {
+    /** When proposals were last applied */
+    appliedAt: string | null;
+    /** Photos that hold a location from this run now */
+    appliedCount: number;
+    /** Photos without a location that were looked at so far */
+    candidateCount: number;
+    /** When the run was started */
+    createdAt: string;
+    /** Why the run stopped, when it did */
+    error: string | null;
+    /** Only photos taken from here on, when asked */
+    "from": string | null;
+    /** Run ID */
+    id: string;
+    /** How close in time a history place had to be */
+    maxGapMinutes: number;
+    /** Photos a location was found for so far */
+    proposalCount: number;
+    /** proposing (looking through your photos), ready (proposals to review), applying, applied, undoing, undone or failed; later versions may add more */
+    status: string;
+    /** Only photos taken up to here, when asked */
+    to: string | null;
+    /** When the run was undone */
+    undoneAt: string | null;
+};
+export type LocationFillCreateDto = {
+    /** Only photos taken from this local date and time on */
+    "from"?: string;
+    /** How close in time a place in your history must be to a photo: 5, 15 or 60 minutes */
+    maxGapMinutes: 5 | 15 | 60;
+    /** Only photos taken up to this local date and time */
+    to?: string;
+};
+export type LocationFillApplyDto = {
+    /** The photos to give their proposed location; leave out for every proposal of the run */
+    assetIds?: string[];
+};
+export type LocationFillProposalDto = {
+    /** The photo holds this location now */
+    applied: boolean;
+    /** Asset ID */
+    assetId: string;
+    /** Seconds between the photo and the nearest history place used */
+    gapSeconds: number;
+    /** Proposed latitude */
+    latitude: number;
+    /** The photo’s local date and time */
+    localDateTime: string;
+    /** Proposed longitude */
+    longitude: number;
+    /** nearest (the history place closest in time) or interpolated (between the places before and after) */
+    method: string;
+};
+export type LocationFillDayDto = {
+    /** The local day, YYYY-MM-DD */
+    day: string;
+    proposals: LocationFillProposalDto[];
+};
+export type LocationFillProposalsResponseDto = {
+    days: LocationFillDayDto[];
+    hasNextPage: boolean;
+    /** Proposals in the run */
+    total: number;
+};
+export type LocationHistorySourceResponseDto = {
+    /** When the file was added (ISO 8601) */
+    createdAt: string;
+    /** Why the file could not be read, when it could not */
+    error: string | null;
+    /** The file’s name */
+    fileName: string;
+    /** The earliest moment in the file */
+    firstAt: string | null;
+    /** Source ID */
+    id: string;
+    /** When the file was read to its end; null while it is being read */
+    importedAt: string | null;
+    /** What the file is, once known: google-timeline, google-records, gpx, owntracks, geojson or a later kind */
+    kind: string | null;
+    /** The latest moment in the file */
+    lastAt: string | null;
+    /** Places stored from this file so far */
+    pointCount: number;
+};
+export type LocationHistorySourceCreateDto = {
+    /** The file’s name, to show in the list */
+    fileName: string;
+    /** The finished upload to read */
+    uploadId: string;
+};
+export type LocationHistoryUploadCreateDto = {
+    /** The file’s size in bytes */
+    size: number;
+};
+export type LocationHistoryUploadResponseDto = {
+    /** Upload ID */
+    id: string;
+    /** Bytes stored so far; the next part starts here */
+    receivedBytes: number;
+};
 export type LocationScanBillingDto = {
     chargedMicros: number | null;
     checkedPhotos: number;
@@ -22511,6 +22626,42 @@ export type PinnedCollectionsUpdateDto = {
     expectedRevision: string | null;
     /** Replace the complete ordered list to add, remove or reorder pins; an empty list clears it */
     pins: PinnedCollectionRef[];
+};
+export type UserPlaceResponseDto = {
+    /** Creation date */
+    createdAt: string;
+    /** Place ID */
+    id: string;
+    /** Latitude of its centre */
+    latitude: number;
+    /** Longitude of its centre */
+    longitude: number;
+    /** What you call the place */
+    name: string;
+    /** How far it reaches from its centre, in metres */
+    radiusMeters: number;
+    /** Last change */
+    updatedAt: string;
+};
+export type UserPlaceCreateDto = {
+    /** Latitude of its centre */
+    latitude: number;
+    /** Longitude of its centre */
+    longitude: number;
+    /** What you call the place */
+    name: string;
+    /** How far it reaches from its centre, in metres (25 to 5000) */
+    radiusMeters: number;
+};
+export type UserPlaceUpdateDto = {
+    /** Latitude of its centre */
+    latitude?: number;
+    /** Longitude of its centre */
+    longitude?: number;
+    /** What you call the place */
+    name?: string;
+    /** How far it reaches from its centre, in metres (25 to 5000) */
+    radiusMeters?: number;
 };
 export type UserPreferenceHistoryChangeDto = {
     /** The value after, JSON encoded; null when protected */
@@ -43886,6 +44037,164 @@ export function setUserLicense({ licenseActivateDto }: {
     })));
 }
 /**
+ * List your location fill runs
+ */
+export function getLocationFills(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: LocationFillRunResponseDto[];
+    }>("/users/me/location-fills", {
+        ...opts
+    }));
+}
+/**
+ * Look for locations for your photos
+ */
+export function createLocationFill({ locationFillCreateDto }: {
+    locationFillCreateDto: LocationFillCreateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: LocationFillRunResponseDto;
+    }>("/users/me/location-fills", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: locationFillCreateDto
+    })));
+}
+/**
+ * Get a location fill run
+ */
+export function getLocationFill({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: LocationFillRunResponseDto;
+    }>(`/users/me/location-fills/${encodeURIComponent(id)}`, {
+        ...opts
+    }));
+}
+/**
+ * Apply the proposals of a location fill run
+ */
+export function applyLocationFill({ id, locationFillApplyDto }: {
+    id: string;
+    locationFillApplyDto: LocationFillApplyDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: LocationFillRunResponseDto;
+    }>(`/users/me/location-fills/${encodeURIComponent(id)}/apply`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: locationFillApplyDto
+    })));
+}
+/**
+ * List the proposals of a location fill run
+ */
+export function getLocationFillProposals({ id, page, size }: {
+    id: string;
+    page?: number;
+    size?: number;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: LocationFillProposalsResponseDto;
+    }>(`/users/me/location-fills/${encodeURIComponent(id)}/proposals${QS.query(QS.explode({
+        page,
+        size
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Undo a location fill run
+ */
+export function undoLocationFill({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: LocationFillRunResponseDto;
+    }>(`/users/me/location-fills/${encodeURIComponent(id)}/undo`, {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
+ * List your location history files
+ */
+export function getLocationHistorySources(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: LocationHistorySourceResponseDto[];
+    }>("/users/me/location-history/sources", {
+        ...opts
+    }));
+}
+/**
+ * Add an uploaded location history file
+ */
+export function createLocationHistorySource({ locationHistorySourceCreateDto }: {
+    locationHistorySourceCreateDto: LocationHistorySourceCreateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: LocationHistorySourceResponseDto;
+    }>("/users/me/location-history/sources", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: locationHistorySourceCreateDto
+    })));
+}
+/**
+ * Remove a location history file
+ */
+export function deleteLocationHistorySource({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/users/me/location-history/sources/${encodeURIComponent(id)}`, {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+/**
+ * Start uploading a location history file
+ */
+export function createLocationHistoryUpload({ locationHistoryUploadCreateDto }: {
+    locationHistoryUploadCreateDto: LocationHistoryUploadCreateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: LocationHistoryUploadResponseDto;
+    }>("/users/me/location-history/uploads", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: locationHistoryUploadCreateDto
+    })));
+}
+/**
+ * Upload part of a location history file
+ */
+export function uploadLocationHistoryPart({ id, offset, body }: {
+    id: string;
+    offset: number;
+    body: Blob;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: LocationHistoryUploadResponseDto;
+    }>(`/users/me/location-history/uploads/${encodeURIComponent(id)}${QS.query(QS.explode({
+        offset
+    }))}`, {
+        ...opts,
+        method: "PUT",
+        body
+    }));
+}
+/**
  * Read own photo location scan and Cloud availability
  */
 export function getLocationScanStatus(opts?: Oazapfts.RequestOpts) {
@@ -44106,6 +44415,59 @@ export function setMyPinnedCollections({ pinnedCollectionsUpdateDto }: {
         ...opts,
         method: "PUT",
         body: pinnedCollectionsUpdateDto
+    })));
+}
+/**
+ * List your named places
+ */
+export function getUserPlaces(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: UserPlaceResponseDto[];
+    }>("/users/me/places", {
+        ...opts
+    }));
+}
+/**
+ * Name a place
+ */
+export function createUserPlace({ userPlaceCreateDto }: {
+    userPlaceCreateDto: UserPlaceCreateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: UserPlaceResponseDto;
+    }>("/users/me/places", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: userPlaceCreateDto
+    })));
+}
+/**
+ * Remove a named place
+ */
+export function deleteUserPlace({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/users/me/places/${encodeURIComponent(id)}`, {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+/**
+ * Change a named place
+ */
+export function updateUserPlace({ id, userPlaceUpdateDto }: {
+    id: string;
+    userPlaceUpdateDto: UserPlaceUpdateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: UserPlaceResponseDto;
+    }>(`/users/me/places/${encodeURIComponent(id)}`, oazapfts.json({
+        ...opts,
+        method: "PATCH",
+        body: userPlaceUpdateDto
     })));
 }
 /**

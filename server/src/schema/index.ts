@@ -97,6 +97,7 @@ import { AssetOriginalTable } from 'src/schema/tables/asset-original.table.js';
 import { AssetPaletteSwatchTable, AssetPaletteTable } from 'src/schema/tables/asset-palette.table.js';
 import { AssetProcessingFailureTable } from 'src/schema/tables/asset-processing-failure.table.js';
 import { AssetRestorationTable } from 'src/schema/tables/asset-restoration.table.js';
+import { AssetScanCropTable } from 'src/schema/tables/asset-scan-crop.table.js';
 import { AssetSourceTable } from 'src/schema/tables/asset-source.table.js';
 import { AssetUploadPartTable, AssetUploadResourceTable } from 'src/schema/tables/asset-upload-resource.table.js';
 import { AssetUploadSkipExceptionTable } from 'src/schema/tables/asset-upload-skip-exception.table.js';
@@ -158,6 +159,7 @@ import { EagleImportItemTable, EagleImportTable } from 'src/schema/tables/eagle-
 import { FaceSearchTable } from 'src/schema/tables/face-search.table.js';
 import { FoundFileTable } from 'src/schema/tables/found-file.table.js';
 import { GeodataPlacesTable } from 'src/schema/tables/geodata-places.table.js';
+import { HouseholdLinkTable, HouseholdPeerRequestTable } from 'src/schema/tables/household-link.table.js';
 import {
   ICloudEditAliasTable,
   ICloudEditAuthorityTable,
@@ -171,6 +173,8 @@ import { AssetLandmarkTable, LandmarkAreaTable, LandmarkTable } from 'src/schema
 import { LibraryFolderAlbumAssetTable } from 'src/schema/tables/library-folder-album-asset.table.js';
 import { LibraryFolderAlbumTable } from 'src/schema/tables/library-folder-album.table.js';
 import { LibraryTable } from 'src/schema/tables/library.table.js';
+import { LocationFillProposalTable, LocationFillRunTable } from 'src/schema/tables/location-fill.table.js';
+import { LocationHistorySourceTable, LocationPointTable } from 'src/schema/tables/location-history.table.js';
 import { LockedEncryptionTable } from 'src/schema/tables/locked-encryption.table.js';
 import {
   MediaConnectionTable,
@@ -333,6 +337,7 @@ import {
   UserCredentialVersionTable,
   UserPasskeyTable,
 } from 'src/schema/tables/user-passkey.table.js';
+import { UserPlaceTable } from 'src/schema/tables/user-place.table.js';
 import { UserRecoveryCodeTable, UserTwoFactorTable } from 'src/schema/tables/user-two-factor.table.js';
 import { UserTable } from 'src/schema/tables/user.table.js';
 import { VersionHistoryTable } from 'src/schema/tables/version-history.table.js';
@@ -440,6 +445,11 @@ export class ImmichDatabase {
     AssetDateFindingTable,
     DateFixBatchTable,
     DateFixItemTable,
+    LocationHistorySourceTable,
+    LocationPointTable,
+    LocationFillRunTable,
+    LocationFillProposalTable,
+    UserPlaceTable,
     AssetLedgerTable,
     FoundFileTable,
     BookmarkTagTable,
@@ -510,6 +520,9 @@ export class ImmichDatabase {
     LibraryTable,
     LibraryFolderAlbumTable,
     LibraryFolderAlbumAssetTable,
+    AssetScanCropTable,
+    HouseholdLinkTable,
+    HouseholdPeerRequestTable,
     MediaOperationTable,
     MediaOperationCheckpointTable,
     RenderWorkerTable,
@@ -811,6 +824,11 @@ export interface DB extends QueueDatabase {
   asset_date_finding: AssetDateFindingTable;
   date_fix_batch: DateFixBatchTable;
   date_fix_item: DateFixItemTable;
+  location_history_source: LocationHistorySourceTable;
+  location_point: LocationPointTable;
+  location_fill_run: LocationFillRunTable;
+  location_fill_proposal: LocationFillProposalTable;
+  user_place: UserPlaceTable;
   asset_ledger: AssetLedgerTable;
   found_file: FoundFileTable;
   import_connection: ImportConnectionTable;
@@ -834,6 +852,10 @@ export interface DB extends QueueDatabase {
   library: LibraryTable;
   library_folder_album: LibraryFolderAlbumTable;
   library_folder_album_asset: LibraryFolderAlbumAssetTable;
+  asset_scan_crop: AssetScanCropTable;
+
+  household_link: HouseholdLinkTable;
+  household_peer_request: HouseholdPeerRequestTable;
 
   media_operation: MediaOperationTable;
   media_operation_checkpoint: MediaOperationCheckpointTable;

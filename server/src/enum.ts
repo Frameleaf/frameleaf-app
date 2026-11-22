@@ -2366,6 +2366,8 @@ export enum JobName {
   AssetEditThumbnailGeneration = 'AssetEditThumbnailGeneration',
   AssetDevelopRender = 'AssetDevelopRender',
   DevelopImport = 'DevelopImport',
+  /** FL-923: cut the confirmed prints out of a flatbed scan as new photos. */
+  ScanSplit = 'ScanSplit',
   AssetPaletteExtract = 'AssetPaletteExtract',
   AssetPaletteQueueAll = 'AssetPaletteQueueAll',
   PhotographyWorkflowRender = 'PhotographyWorkflowRender',
@@ -2437,6 +2439,12 @@ export enum JobName {
   // FL-912: the Date & Time Doctor, one scan per owner
   DateDoctorScan = 'DateDoctorScan',
   DateDoctorScanQueueAll = 'DateDoctorScanQueueAll',
+  // FL-925: read one staged location history file into its owner's places
+  LocationHistoryImport = 'LocationHistoryImport',
+  // FL-964: propose, apply and undo locations from location history, one run at a time
+  LocationFillPropose = 'LocationFillPropose',
+  LocationFillApply = 'LocationFillApply',
+  LocationFillUndo = 'LocationFillUndo',
   MemoryExport = 'MemoryExport',
 
   NotificationsCleanup = 'NotificationsCleanup',
@@ -2585,6 +2593,10 @@ export const JobNameSchema = z
     JobName.AlbumCleanupApply,
     JobName.DateDoctorScan,
     JobName.DateDoctorScanQueueAll,
+    JobName.LocationHistoryImport,
+    JobName.LocationFillPropose,
+    JobName.LocationFillApply,
+    JobName.LocationFillUndo,
     JobName.LockedSeal,
     JobName.LockedUnseal,
     JobName.LockedRewrap,
@@ -2594,6 +2606,8 @@ export const JobNameSchema = z
     JobName.WorkflowEventDispatch,
     JobName.WorkflowEventTrigger,
     JobName.LibraryFolderAlbumSync,
+    // FL-923: observed through the photos it adds
+    JobName.ScanSplit,
     // the member's key: its value is 'media-import', unlike the names above
     'MediaImport',
   ])

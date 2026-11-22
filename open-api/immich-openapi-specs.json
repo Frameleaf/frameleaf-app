@@ -76227,6 +76227,658 @@
         "x-immich-state": "Stable"
       }
     },
+    "/users/me/location-fills": {
+      "get": {
+        "description": "Newest first.",
+        "operationId": "getLocationFills",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/LocationFillRunResponseDto"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List your location fill runs",
+        "tags": [
+          "Users"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.4.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.4.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.read",
+        "x-immich-state": "Alpha"
+      },
+      "post": {
+        "description": "Starts a run that proposes a location for each of your photos that has none, from the places in your location history close enough in time. Nothing changes until you apply proposals. A photo that has a location is never proposed another.",
+        "operationId": "createLocationFill",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LocationFillCreateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LocationFillRunResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Look for locations for your photos",
+        "tags": [
+          "Users"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.4.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.4.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.update",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/users/me/location-fills/{id}": {
+      "get": {
+        "operationId": "getLocationFill",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LocationFillRunResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get a location fill run",
+        "tags": [
+          "Users"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.4.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.4.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.read",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/users/me/location-fills/{id}/apply": {
+      "post": {
+        "description": "Gives every proposal, or the chosen ones, to its photo, as a location edit does: the database and the sidecar change, the original file does not. A photo given a location since the run looked is left alone. Continues after the browser closes.",
+        "operationId": "applyLocationFill",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LocationFillApplyDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LocationFillRunResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Apply the proposals of a location fill run",
+        "tags": [
+          "Users"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.4.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.4.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.update",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/users/me/location-fills/{id}/proposals": {
+      "get": {
+        "description": "In the order the photos were taken, grouped by local day.",
+        "operationId": "getLocationFillProposals",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "description": "Page number",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100000,
+              "default": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "name": "size",
+            "required": false,
+            "in": "query",
+            "description": "Proposals a page",
+            "schema": {
+              "minimum": 1,
+              "maximum": 500,
+              "default": 100,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LocationFillProposalsResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List the proposals of a location fill run",
+        "tags": [
+          "Users"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.4.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.4.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.read",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/users/me/location-fills/{id}/undo": {
+      "post": {
+        "description": "Removes every location the run gave that is still as the run left it. A location you changed since stays as you set it.",
+        "operationId": "undoLocationFill",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LocationFillRunResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Undo a location fill run",
+        "tags": [
+          "Users"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.4.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.4.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.update",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/users/me/location-history/sources": {
+      "get": {
+        "description": "Each file with the dates it covers. A file still being read has no import date yet.",
+        "operationId": "getLocationHistorySources",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/LocationHistorySourceResponseDto"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List your location history files",
+        "tags": [
+          "Users"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.4.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.4.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.read",
+        "x-immich-state": "Alpha"
+      },
+      "post": {
+        "description": "Reads the finished upload in the background, which continues after the browser closes. The format is told from the file itself. Photos are not changed.",
+        "operationId": "createLocationHistorySource",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LocationHistorySourceCreateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LocationHistorySourceResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Add an uploaded location history file",
+        "tags": [
+          "Users"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.4.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.4.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.update",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/users/me/location-history/sources/{id}": {
+      "delete": {
+        "description": "Removes the history that came from this file. Photos keep any location they were given from it.",
+        "operationId": "deleteLocationHistorySource",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Remove a location history file",
+        "tags": [
+          "Users"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.4.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.4.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.update",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/users/me/location-history/uploads": {
+      "post": {
+        "description": "Send the file in parts next, then add it with its upload ID. An upload left unfinished is cleared after a day.",
+        "operationId": "createLocationHistoryUpload",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LocationHistoryUploadCreateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LocationHistoryUploadResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Start uploading a location history file",
+        "tags": [
+          "Users"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.4.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.4.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.update",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/users/me/location-history/uploads/{id}": {
+      "put": {
+        "description": "Appends up to 8 MiB at the given byte offset. Repeating a part already stored is harmless; a part at the wrong offset is refused with where to resume.",
+        "operationId": "uploadLocationHistoryPart",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "offset",
+            "required": true,
+            "in": "query",
+            "description": "Byte offset of this part",
+            "schema": {
+              "minimum": 0,
+              "maximum": 8589934592,
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "format": "binary",
+                "type": "string"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LocationHistoryUploadResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Upload part of a location history file",
+        "tags": [
+          "Users"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.4.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.4.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.update",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/users/me/location-scans": {
       "get": {
         "operationId": "getLocationScanStatus",
@@ -77082,6 +77734,224 @@
           }
         ],
         "x-immich-permission": "userPreference.update"
+      }
+    },
+    "/users/me/places": {
+      "get": {
+        "description": "The places you named, by name. Only you see them.",
+        "operationId": "getUserPlaces",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/UserPlaceResponseDto"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List your named places",
+        "tags": [
+          "Users"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.4.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.4.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "user.read",
+        "x-immich-state": "Alpha"
+      },
+      "post": {
+        "description": "Give a name to a centre and a radius of 25 m to 5 km. Photos taken inside it show the name to you, and search finds them by it. A name is used once, whatever its capitals; you can keep up to 200 places.",
+        "operationId": "createUserPlace",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserPlaceCreateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserPlaceResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Name a place",
+        "tags": [
+          "Users"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.4.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.4.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "user.update",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/users/me/places/{id}": {
+      "delete": {
+        "description": "Removes the name. Photos taken there keep their location.",
+        "operationId": "deleteUserPlace",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Remove a named place",
+        "tags": [
+          "Users"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.4.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.4.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "user.update",
+        "x-immich-state": "Alpha"
+      },
+      "patch": {
+        "description": "Rename, move or resize one of your places.",
+        "operationId": "updateUserPlace",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserPlaceUpdateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserPlaceResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Change a named place",
+        "tags": [
+          "Users"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.4.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.4.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "user.update",
+        "x-immich-state": "Alpha"
       }
     },
     "/users/me/preferences": {
@@ -92103,6 +92973,25 @@
         ],
         "type": "object"
       },
+      "AssetNamedPlaceDto": {
+        "properties": {
+          "id": {
+            "description": "Place ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "name": {
+            "description": "The name you gave the place",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "type": "object"
+      },
       "AssetOcrResponseDto": {
         "properties": {
           "assetId": {
@@ -92422,6 +93311,15 @@
           "lockedEncryption": {
             "$ref": "#/components/schemas/PartnerLockedEncryptionDto",
             "description": "Present on your own Locked copy of a partner's item when the partner encrypted its files (GET /assets/{id})"
+          },
+          "namedPlace": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AssetNamedPlaceDto"
+              }
+            ],
+            "description": "Your own named place the item was taken in (the nearest centre where several hold it); null when none does. Only in single asset-info responses, only for the signed-in person, never through a shared link.",
+            "nullable": true
           },
           "origin": {
             "$ref": "#/components/schemas/PartnerOriginDto",
@@ -95640,6 +96538,15 @@
           "lockedEncryption": {
             "$ref": "#/components/schemas/PartnerLockedEncryptionDto",
             "description": "Present on your own Locked copy of a partner's item when the partner encrypted its files (GET /assets/{id})"
+          },
+          "namedPlace": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AssetNamedPlaceDto"
+              }
+            ],
+            "description": "Your own named place the item was taken in (the nearest centre where several hold it); null when none does. Only in single asset-info responses, only for the signed-in person, never through a shared link.",
+            "nullable": true
           },
           "origin": {
             "$ref": "#/components/schemas/PartnerOriginDto",
@@ -123693,6 +124600,355 @@
           5000
         ],
         "type": "number"
+      },
+      "LocationFillApplyDto": {
+        "properties": {
+          "assetIds": {
+            "description": "The photos to give their proposed location; leave out for every proposal of the run",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "maxItems": 5000,
+            "minItems": 1,
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "LocationFillCreateDto": {
+        "properties": {
+          "from": {
+            "description": "Only photos taken from this local date and time on",
+            "format": "date-time",
+            "type": "string"
+          },
+          "maxGapMinutes": {
+            "anyOf": [
+              {
+                "type": "number",
+                "enum": [
+                  5
+                ]
+              },
+              {
+                "type": "number",
+                "enum": [
+                  15
+                ]
+              },
+              {
+                "type": "number",
+                "enum": [
+                  60
+                ]
+              }
+            ],
+            "description": "How close in time a place in your history must be to a photo: 5, 15 or 60 minutes"
+          },
+          "to": {
+            "description": "Only photos taken up to this local date and time",
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "maxGapMinutes"
+        ],
+        "type": "object"
+      },
+      "LocationFillDayDto": {
+        "properties": {
+          "day": {
+            "description": "The local day, YYYY-MM-DD",
+            "type": "string"
+          },
+          "proposals": {
+            "items": {
+              "$ref": "#/components/schemas/LocationFillProposalDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "day",
+          "proposals"
+        ],
+        "type": "object"
+      },
+      "LocationFillProposalDto": {
+        "properties": {
+          "applied": {
+            "description": "The photo holds this location now",
+            "type": "boolean"
+          },
+          "assetId": {
+            "description": "Asset ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "gapSeconds": {
+            "description": "Seconds between the photo and the nearest history place used",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "latitude": {
+            "description": "Proposed latitude",
+            "format": "double",
+            "type": "number"
+          },
+          "localDateTime": {
+            "description": "The photo’s local date and time",
+            "type": "string"
+          },
+          "longitude": {
+            "description": "Proposed longitude",
+            "format": "double",
+            "type": "number"
+          },
+          "method": {
+            "description": "nearest (the history place closest in time) or interpolated (between the places before and after)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "applied",
+          "assetId",
+          "gapSeconds",
+          "latitude",
+          "localDateTime",
+          "longitude",
+          "method"
+        ],
+        "type": "object"
+      },
+      "LocationFillProposalsResponseDto": {
+        "properties": {
+          "days": {
+            "items": {
+              "$ref": "#/components/schemas/LocationFillDayDto"
+            },
+            "type": "array"
+          },
+          "hasNextPage": {
+            "type": "boolean"
+          },
+          "total": {
+            "description": "Proposals in the run",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "days",
+          "hasNextPage",
+          "total"
+        ],
+        "type": "object"
+      },
+      "LocationFillRunResponseDto": {
+        "properties": {
+          "appliedAt": {
+            "description": "When proposals were last applied",
+            "nullable": true,
+            "type": "string"
+          },
+          "appliedCount": {
+            "description": "Photos that hold a location from this run now",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "candidateCount": {
+            "description": "Photos without a location that were looked at so far",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "createdAt": {
+            "description": "When the run was started",
+            "format": "date-time",
+            "type": "string"
+          },
+          "error": {
+            "description": "Why the run stopped, when it did",
+            "nullable": true,
+            "type": "string"
+          },
+          "from": {
+            "description": "Only photos taken from here on, when asked",
+            "nullable": true,
+            "type": "string"
+          },
+          "id": {
+            "description": "Run ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "maxGapMinutes": {
+            "description": "How close in time a history place had to be",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "proposalCount": {
+            "description": "Photos a location was found for so far",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "status": {
+            "description": "proposing (looking through your photos), ready (proposals to review), applying, applied, undoing, undone or failed; later versions may add more",
+            "type": "string"
+          },
+          "to": {
+            "description": "Only photos taken up to here, when asked",
+            "nullable": true,
+            "type": "string"
+          },
+          "undoneAt": {
+            "description": "When the run was undone",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "appliedAt",
+          "appliedCount",
+          "candidateCount",
+          "createdAt",
+          "error",
+          "from",
+          "id",
+          "maxGapMinutes",
+          "proposalCount",
+          "status",
+          "to",
+          "undoneAt"
+        ],
+        "type": "object"
+      },
+      "LocationHistorySourceCreateDto": {
+        "properties": {
+          "fileName": {
+            "description": "The file’s name, to show in the list",
+            "maxLength": 255,
+            "minLength": 1,
+            "type": "string"
+          },
+          "uploadId": {
+            "description": "The finished upload to read",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "fileName",
+          "uploadId"
+        ],
+        "type": "object"
+      },
+      "LocationHistorySourceResponseDto": {
+        "properties": {
+          "createdAt": {
+            "description": "When the file was added (ISO 8601)",
+            "type": "string"
+          },
+          "error": {
+            "description": "Why the file could not be read, when it could not",
+            "nullable": true,
+            "type": "string"
+          },
+          "fileName": {
+            "description": "The file’s name",
+            "type": "string"
+          },
+          "firstAt": {
+            "description": "The earliest moment in the file",
+            "nullable": true,
+            "type": "string"
+          },
+          "id": {
+            "description": "Source ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "importedAt": {
+            "description": "When the file was read to its end; null while it is being read",
+            "nullable": true,
+            "type": "string"
+          },
+          "kind": {
+            "description": "What the file is, once known: google-timeline, google-records, gpx, owntracks, geojson or a later kind",
+            "nullable": true,
+            "type": "string"
+          },
+          "lastAt": {
+            "description": "The latest moment in the file",
+            "nullable": true,
+            "type": "string"
+          },
+          "pointCount": {
+            "description": "Places stored from this file so far",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "createdAt",
+          "error",
+          "fileName",
+          "firstAt",
+          "id",
+          "importedAt",
+          "kind",
+          "lastAt",
+          "pointCount"
+        ],
+        "type": "object"
+      },
+      "LocationHistoryUploadCreateDto": {
+        "properties": {
+          "size": {
+            "description": "The file’s size in bytes",
+            "maximum": 8589934592,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "size"
+        ],
+        "type": "object"
+      },
+      "LocationHistoryUploadResponseDto": {
+        "properties": {
+          "id": {
+            "description": "Upload ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "receivedBytes": {
+            "description": "Bytes stored so far; the next part starts here",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "receivedBytes"
+        ],
+        "type": "object"
       },
       "LocationInsightConfidence": {
         "enum": [
@@ -165393,6 +166649,10 @@
           "model": {
             "$ref": "#/components/schemas/StringPatternFilter"
           },
+          "namedPlaceIds": {
+            "$ref": "#/components/schemas/IdsFilter",
+            "description": "The viewer's named places (Home, Grandma's …): items taken inside any, all or none of them"
+          },
           "ocr": {
             "$ref": "#/components/schemas/StringSimilarityFilter"
           },
@@ -165568,6 +166828,10 @@
           },
           "model": {
             "$ref": "#/components/schemas/StringPatternFilter"
+          },
+          "namedPlaceIds": {
+            "$ref": "#/components/schemas/IdsFilter",
+            "description": "The viewer's named places (Home, Grandma's …): items taken inside any, all or none of them"
           },
           "ocr": {
             "$ref": "#/components/schemas/StringSimilarityFilter"
@@ -186223,6 +187487,128 @@
           "partner-locked-notice"
         ],
         "type": "string"
+      },
+      "UserPlaceCreateDto": {
+        "properties": {
+          "latitude": {
+            "description": "Latitude of its centre",
+            "format": "double",
+            "maximum": 90,
+            "minimum": -90,
+            "type": "number"
+          },
+          "longitude": {
+            "description": "Longitude of its centre",
+            "format": "double",
+            "maximum": 180,
+            "minimum": -180,
+            "type": "number"
+          },
+          "name": {
+            "description": "What you call the place",
+            "maxLength": 80,
+            "minLength": 1,
+            "type": "string"
+          },
+          "radiusMeters": {
+            "description": "How far it reaches from its centre, in metres (25 to 5000)",
+            "maximum": 5000,
+            "minimum": 25,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "latitude",
+          "longitude",
+          "name",
+          "radiusMeters"
+        ],
+        "type": "object"
+      },
+      "UserPlaceResponseDto": {
+        "properties": {
+          "createdAt": {
+            "description": "Creation date",
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "description": "Place ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "latitude": {
+            "description": "Latitude of its centre",
+            "format": "double",
+            "maximum": 90,
+            "minimum": -90,
+            "type": "number"
+          },
+          "longitude": {
+            "description": "Longitude of its centre",
+            "format": "double",
+            "maximum": 180,
+            "minimum": -180,
+            "type": "number"
+          },
+          "name": {
+            "description": "What you call the place",
+            "type": "string"
+          },
+          "radiusMeters": {
+            "description": "How far it reaches from its centre, in metres",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "updatedAt": {
+            "description": "Last change",
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "createdAt",
+          "id",
+          "latitude",
+          "longitude",
+          "name",
+          "radiusMeters",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "UserPlaceUpdateDto": {
+        "properties": {
+          "latitude": {
+            "description": "Latitude of its centre",
+            "format": "double",
+            "maximum": 90,
+            "minimum": -90,
+            "type": "number"
+          },
+          "longitude": {
+            "description": "Longitude of its centre",
+            "format": "double",
+            "maximum": 180,
+            "minimum": -180,
+            "type": "number"
+          },
+          "name": {
+            "description": "What you call the place",
+            "maxLength": 80,
+            "minLength": 1,
+            "type": "string"
+          },
+          "radiusMeters": {
+            "description": "How far it reaches from its centre, in metres (25 to 5000)",
+            "maximum": 5000,
+            "minimum": 25,
+            "type": "integer"
+          }
+        },
+        "type": "object"
       },
       "UserPreferenceHistoryChangeDto": {
         "properties": {

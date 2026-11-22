@@ -40,6 +40,7 @@ class ModelTask(StrEnum):
     VOICE_CLEANUP = "voice-cleanup"
     TRANSLATE = "translate"
     ASSISTANT_PLAN = "assistant-plan"
+    SCAN_SPLIT = "scan-split"
 
 
 class ModelType(StrEnum):
@@ -283,6 +284,10 @@ class InpaintOptions(_OptionsBase):
     """Options for the inpaint task (Clean Up Remove fills). The server sends none today."""
 
 
+class ScanSplitOptions(_OptionsBase):
+    """Options for the scan-split task (FL-923, prints on a flatbed scan). The server sends none today."""
+
+
 class TranscribeOptions(_OptionsBase):
     """Options for the transcribe task (Studio captions, Whisper).
 
@@ -354,6 +359,7 @@ OPTIONS_VALIDATORS: dict[tuple[ModelTask, ModelType], type[BaseModel]] = {
     (ModelTask.VOICE_CLEANUP, ModelType.AUDIO): VoiceCleanupOptions,
     (ModelTask.TRANSLATE, ModelType.TEXTUAL): TranslateOptions,
     (ModelTask.ASSISTANT_PLAN, ModelType.TEXTUAL): AssistantPlanOptions,
+    (ModelTask.SCAN_SPLIT, ModelType.VISUAL): ScanSplitOptions,
 }
 
 
