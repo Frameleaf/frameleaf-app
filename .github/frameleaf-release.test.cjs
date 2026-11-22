@@ -3,7 +3,9 @@ const assert = require("node:assert/strict");
 // switch them to the Forgejo path. frameleaf-release-forgejo.test.cjs sets it explicitly per case.
 delete process.env.GITHUB_SERVER_URL;
 const test = require("node:test");
+const { execFileSync } = require("node:child_process");
 const fs = require("node:fs/promises");
+const fsSync = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const { createRequire } = require("node:module");
@@ -420,7 +422,7 @@ function testQualificationFixture() {
     head_sha: sha,
     head_branch: "main",
     head_repository: { full_name: "Frameleaf/frameleaf-app" },
-    event: "push",
+    event: "workflow_dispatch",
     status: "completed",
     conclusion: "success",
     path: ".github/workflows/test.yml",
@@ -483,33 +485,119 @@ test("the qualification job catalog covers every Test workflow axis, shard and e
   const { load } = createRequire(
     path.join(__dirname, "../server/package.json"),
   )("js-yaml");
-  const jobs = Object.values(load(source).jobs);
-  const resolved = jobs.flatMap(({ name, strategy }) => {
-    if (!name) return [];
-    if (!strategy?.matrix) return [name];
-    const { exclude = [], ...axes } = strategy.matrix;
-    const combinations = Object.entries(axes).reduce(
-      (rows, [key, values]) =>
-        rows.flatMap((row) =>
-          values.map((value) => ({ ...row, [key]: value })),
-        ),
-      [{}],
+  const workflow = load(source);
+  const scopeRun = workflow.jobs["e2e-scope"].steps[0].run;
+  const scopeFor = (event) => {
+    const directory = fsSync.mkdtempSync(path.join(os.tmpdir(), "e2e-scope-"));
+    const output = path.join(directory, "output");
+    execFileSync("bash", ["-euc", scopeRun], {
+      env: { ...process.env, EVENT_NAME: event, GITHUB_OUTPUT: output },
+    });
+    const values = Object.fromEntries(
+      fsSync
+        .readFileSync(output, "utf8")
+        .trim()
+        .split("\n")
+        .map((line) => {
+          const index = line.indexOf("=");
+          return [line.slice(0, index), JSON.parse(line.slice(index + 1))];
+        }),
     );
-    return combinations
-      .filter(
-        (row) =>
-          !exclude.some((entry) =>
-            Object.entries(entry).every(([key, value]) => row[key] === value),
+    fsSync.rmSync(directory, { recursive: true });
+    return values;
+  };
+  const resolvedFor = (event) => {
+    const scope = scopeFor(event);
+    return Object.values(workflow.jobs).flatMap(({ name, strategy }) => {
+      if (!name || name === "End-to-End Scope") return [];
+      if (!strategy?.matrix) return [name];
+      const { exclude: declared = [], ...axes } = strategy.matrix;
+      const output =
+        typeof declared === "string"
+          ? /^\$\{\{ fromJSON\(needs\.e2e-scope\.outputs\.([a-z-]+)\) \}\}$/.exec(
+              declared,
+            )?.[1]
+          : undefined;
+      const exclude = output ? scope[output] : declared;
+      assert(Array.isArray(exclude), `Unresolved matrix exclude for ${name}`);
+      const combinations = Object.entries(axes).reduce(
+        (rows, [key, values]) =>
+          rows.flatMap((row) =>
+            values.map((value) => ({ ...row, [key]: value })),
           ),
-      )
-      .map(
-        (row) =>
-          `${name} (${Object.keys(axes)
-            .map((key) => row[key])
-            .join(", ")})`,
+        [{}],
       );
-  });
-  assert.deepEqual(resolved.sort(), [...testJobNames].sort());
+      return combinations
+        .filter(
+          (row) =>
+            !exclude.some((entry) =>
+              Object.entries(entry).every(([key, value]) => row[key] === value),
+            ),
+        )
+        .map(
+          (row) =>
+            `${name} (${Object.keys(axes)
+              .map((key) => row[key])
+              .join(", ")})`,
+        );
+    });
+  };
+  // FL-1733: the dispatched candidate is exactly what the release gate requires.
+  assert.deepEqual(
+    resolvedFor("workflow_dispatch").sort(),
+    [...testJobNames].sort(),
+  );
+  // Pull requests and pushes run the same lanes minus every Arm e2e lane.
+  for (const event of ["pull_request", "push"])
+    assert.deepEqual(
+      resolvedFor(event).sort(),
+      testJobNames.filter((name) => !name.includes("ubuntu-24.04-arm")).sort(),
+    );
+});
+test("FL-1733: an x86-only push run cannot qualify a release, and cannot retire its candidate", async () => {
+  const pushOnly = testQualificationFixture();
+  pushOnly.run.event = "push";
+  await assert.rejects(
+    requireTestQualification(sha, pushOnly.request),
+    /no dispatched release-candidate run/,
+  );
+  // A dispatch without its Arm lanes is refused by name.
+  const noArm = testQualificationFixture();
+  noArm.jobs = noArm.jobs.filter(
+    (job) => !job.name.includes("ubuntu-24.04-arm"),
+  );
+  await assert.rejects(
+    requireTestQualification(sha, noArm.request),
+    /missing or duplicate End-to-End/,
+  );
+  // A push run of the same commit that finishes after the candidate changes nothing.
+  const later = testQualificationFixture();
+  later.runs = [
+    later.run,
+    {
+      ...later.run,
+      id: 43,
+      event: "push",
+      conclusion: "failure",
+      updated_at: "2026-10-04T05:00:00Z",
+    },
+  ];
+  assert.equal((await requireTestQualification(sha, later.request)).runId, 42);
+  // A newer failed candidate of the same commit still retires the older green one.
+  const retried = testQualificationFixture();
+  retried.runs = [
+    retried.run,
+    {
+      ...retried.run,
+      id: 44,
+      conclusion: "failure",
+      updated_at: "2026-10-04T05:00:00Z",
+    },
+  ];
+  await assert.rejects(
+    requireTestQualification(sha, retried.request),
+    /not trusted and successful/,
+  );
 });
 test("a green Test rollup cannot qualify missing, failed, skipped or wrong-SHA jobs", async () => {
   for (const name of testJobNames) {

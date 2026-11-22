@@ -424,8 +424,15 @@ async function requireTestQualification(sha, request = ci, expected) {
       ),
       "Test qualification: invalid run identity",
     );
+    // FL-1733: only a dispatched candidate runs the Arm e2e lanes. An x86-only push run of this commit,
+    // even one that finishes later, neither qualifies it nor retires the candidate's evidence.
+    const candidates = runs.filter((run) => run.event === "workflow_dispatch");
+    assert(
+      candidates.length > 0,
+      "Test qualification: no dispatched release-candidate run for this commit",
+    );
     // A rerun of an older run ID can be newer evidence than a later-created run.
-    const run = [...runs].sort(
+    const run = [...candidates].sort(
       (a, b) =>
         Date.parse(b.updated_at) - Date.parse(a.updated_at) || b.id - a.id,
     )[0];
