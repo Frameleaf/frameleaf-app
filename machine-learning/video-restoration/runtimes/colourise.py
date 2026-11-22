@@ -28,6 +28,7 @@ REPORT = "report.json"
 MAX_INPUT_EDGE = 8192
 MODEL_SIZE = 512
 STRIP_ROWS = 1024  # the Lab merge runs in strips so a large scan never needs several float copies
+UNUSED_CLASSIFIER_KEYS = frozenset({"encoder.arch.head_cls.weight", "encoder.arch.head_cls.bias"})
 
 Predict = Callable[[np.ndarray], np.ndarray]
 
@@ -76,6 +77,15 @@ def stub_package(name: str, path: Path) -> None:
     sys.modules[name] = module
 
 
+def model_weights(checkpoint: dict[str, Any]) -> dict[str, Any]:
+    """The checkpoint's weights without the ConvNeXt classifier head, which DDColor never builds.
+
+    Only those two keys are dropped, so the strict load still refuses any other mismatch.
+    """
+    weights = checkpoint["params"] if "params" in checkpoint else checkpoint
+    return {name: value for name, value in weights.items() if name not in UNUSED_CLASSIFIER_KEYS}
+
+
 def load_model(args: argparse.Namespace) -> Predict:
     import torch
 
@@ -103,7 +113,7 @@ def load_model(args: argparse.Namespace) -> Predict:
         dec_layers=9,
     )
     checkpoint = torch.load(args.checkpoint, map_location="cpu", weights_only=True)
-    model.load_state_dict(checkpoint["params"] if "params" in checkpoint else checkpoint, strict=True)
+    model.load_state_dict(model_weights(checkpoint), strict=True)
     model.eval().to(device)
 
     @torch.inference_mode()
