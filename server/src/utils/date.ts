@@ -78,3 +78,48 @@ export const getAssetDateTimeUpdates = (
     localDateTime,
   };
 };
+
+/** FL-936: how much of a capture date is known when it is not all of it. An exact date has no accuracy (null). */
+export const DATE_ACCURACIES = ['year', 'decade'] as const;
+export type DateAccuracy = (typeof DATE_ACCURACIES)[number];
+
+/** FL-936: the earliest year a photo can be dated to by year or decade. */
+export const MIN_APPROXIMATE_YEAR = 1800;
+
+/** The first year of the year or decade `year` is in. */
+export const getPeriodStartYear = (year: number, accuracy: DateAccuracy) =>
+  accuracy === 'decade' ? Math.floor(year / 10) * 10 : year;
+
+/** A year or decade can be chosen from 1800 up to the one that has begun. */
+export const isApproximateYear = (year: number, accuracy: DateAccuracy, now = new Date()) =>
+  Number.isInteger(year) && year >= MIN_APPROXIMATE_YEAR && getPeriodStartYear(year, accuracy) <= now.getUTCFullYear();
+
+/**
+ * FL-936: the capture date a year or a decade is stored as: its first day at midnight, in UTC, so the local date
+ * is 1 January of that year whatever time zone the server or the person is in.
+ */
+export const getPeriodStart = (year: number, accuracy: DateAccuracy) =>
+  `${String(getPeriodStartYear(year, accuracy)).padStart(4, '0')}-01-01T00:00:00.000Z`;
+
+/** The year a capture date names, on its own clock. */
+export const getCaptureYear = (dateTimeOriginal: string) =>
+  DateTime.fromISO(dateTimeOriginal, { setZone: true, zone: 'UTC' }).year;
+
+/**
+ * FL-936: a date edit as it is stored. With an accuracy the date becomes the start of its year or decade; a date
+ * sent without one is exact again. An edit that names neither is returned as it is.
+ */
+export const withApproximateDate = <T extends { dateTimeOriginal?: string; dateAccuracy?: DateAccuracy | null }>(
+  dto: T,
+): T => {
+  if (dto.dateTimeOriginal === undefined && dto.dateAccuracy === undefined) {
+    return dto;
+  }
+  const dateAccuracy = dto.dateAccuracy ?? null;
+  return {
+    ...dto,
+    dateAccuracy,
+    ...(dateAccuracy &&
+      dto.dateTimeOriginal && { dateTimeOriginal: getPeriodStart(getCaptureYear(dto.dateTimeOriginal), dateAccuracy) }),
+  };
+};

@@ -153,6 +153,7 @@ export type Asset = {
   libraryId: string | null;
   livePhotoVideoId: string | null;
   localDateTime: Date;
+  dateAccuracy?: string | null;
   originalFileName: string;
   originalPath: string;
   /** FL-417: the photo's own path while it shares a file kept elsewhere */
@@ -375,6 +376,7 @@ export const columns = {
     'asset.libraryScope',
     'asset.livePhotoVideoId',
     'asset.localDateTime',
+    'asset.dateAccuracy',
     'asset.originalFileName',
     'asset.originalPath',
     'asset.libraryPath',
@@ -407,6 +409,7 @@ export const columns = {
     'asset.libraryScope',
     'asset.livePhotoVideoId',
     'asset.localDateTime',
+    'asset.dateAccuracy',
     'asset.originalFileName',
     'asset.originalPath',
     'asset.libraryPath',
