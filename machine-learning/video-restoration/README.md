@@ -177,11 +177,21 @@ is FL-955.
 
 **Qualification run.** `qualification/qualify_photo.py` loads a runtime once, caps the
 process at 8 GB of GPU memory and, for every scan in `qualification/scan-set.json`
-(public-domain scanned prints, links and hashes only), records output size, orientation tag,
-seconds, megapixels and peak GPU memory, then a 42- and a 67-megapixel stress input, and
-writes before/after contact sheets. `qualification/upstream.json` pins where that run takes
-the runtimes and weights from; `.github/workflows/restoration-qualification.yml` runs it on
-the Forgejo Windows GPU runner. It measures; the comparison items still need a person.
+(200 public-domain scanned prints from The Met; links, hashes and licence basis only),
+records output size, orientation tag, seconds, megapixels and peak GPU memory, then a 42- and
+a 67-megapixel stress input, and writes before/after contact sheets. The scans themselves
+are a private Forgejo generic package (`Frameleaf/restoration-scan-set`, version 1), read
+with the org's package-reader secret and checked file by file. `qualification/upstream.json`
+pins where that run takes the runtimes and weights from;
+`.github/workflows/restoration-qualification.yml` runs it, when started by hand, on the
+Forgejo Windows GPU runner. It measures; the comparison items still need a person.
+
+**Result: neither photo model is qualified.** On an RTX 3060 (run 1293) both completed all
+200 scans and both stress inputs inside the 8 GB cap, at full scan size. Photo repair fails
+on faces (invented detail and eye colour, identity drift) and colourise fails on colour
+plausibility. Orientation, the fault tests and tile seams are still open. The evidence is in
+`qualification/qualification.photo.json` and `qualification/models.qualified.photo.json`;
+that record is unreviewed and carries `fail` entries, so the gate refuses both models.
 
 ## When a model is available
 

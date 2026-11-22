@@ -32,6 +32,7 @@ FILL_BYTES = 2 * GIB
 SHEET_EVERY = 8
 STRIP_HEIGHT = 300
 STRESS_SIZES = ((6000, 7000), (8192, 8192))  # a 600 dpi scan of a large print, and the limit
+OUTPUT_CAP = (3840, 2160)  # the worker's output box today; scans are measured at full size regardless
 
 
 class DeviceSampler:
@@ -89,13 +90,30 @@ def file_sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def most_changed_box(before: np.ndarray, after: np.ndarray, size: int) -> tuple[int, int]:
+    """Top-left corner of the ``size`` square block the model changed most."""
+    height, width = before.shape[:2]
+    change = np.abs(before[::4, ::4].astype(np.int16) - after[::4, ::4].astype(np.int16)).sum(axis=2)
+    best, corner = -1, (0, 0)
+    for top in range(0, max(1, height - size + 1), size // 2):
+        for left in range(0, max(1, width - size + 1), size // 2):
+            total = int(change[top // 4 : (top + size) // 4, left // 4 : (left + size) // 4].sum())
+            if total > best:
+                best, corner = total, (top, left)
+    return corner
+
+
 def strip(before: np.ndarray, after: np.ndarray) -> Image.Image:
-    """Before and after side by side, scaled down to a fixed height."""
+    """Whole picture before and after, then the most changed area before and after at full resolution."""
     height, width = before.shape[:2]
     scaled = (max(1, round(width * STRIP_HEIGHT / height)), STRIP_HEIGHT)
-    pair = Image.new("RGB", (scaled[0] * 2 + 6, STRIP_HEIGHT), (255, 255, 255))
+    top, left = most_changed_box(before, after, STRIP_HEIGHT)
+    crop = (left, top, left + STRIP_HEIGHT, top + STRIP_HEIGHT)
+    pair = Image.new("RGB", (scaled[0] * 2 + STRIP_HEIGHT * 2 + 18, STRIP_HEIGHT), (255, 255, 255))
     pair.paste(Image.fromarray(before).resize(scaled, Image.Resampling.LANCZOS), (0, 0))
     pair.paste(Image.fromarray(after).resize(scaled, Image.Resampling.LANCZOS), (scaled[0] + 6, 0))
+    pair.paste(Image.fromarray(before).crop(crop), (scaled[0] * 2 + 12, 0))
+    pair.paste(Image.fromarray(after).crop(crop), (scaled[0] * 2 + STRIP_HEIGHT + 18, 0))
     return pair
 
 
@@ -179,6 +197,7 @@ def main() -> int:
             "width": width,
             "height": height,
             "megapixels": round(width * height / 1e6, 3),
+            "exceedsOutputCap": max(width, height) > OUTPUT_CAP[0] or min(width, height) > OUTPUT_CAP[1],
         }
         torch.cuda.empty_cache()
         torch.cuda.reset_peak_memory_stats()
@@ -289,6 +308,16 @@ def main() -> int:
         "peakTorchAllocatedBytes": max((e["torchPeakAllocatedBytes"] for e in measured), default=0),
         "peakTorchReservedBytes": max((e["torchPeakReservedBytes"] for e in measured), default=0),
         "peakDeviceMiB": max((e["devicePeakMiB"] for e in measured), default=0),
+        "aboveOutputCap": {
+            "box": list(OUTPUT_CAP),
+            "scans": sum(1 for entry in results if entry.get("exceedsOutputCap")),
+            "succeeded": sum(1 for entry in done if entry["exceedsOutputCap"]),
+            "failed": [e["id"] for e in results if e.get("exceedsOutputCap") and "failure" in e],
+            "peakDeviceMiB": max((e["devicePeakMiB"] for e in done if e["exceedsOutputCap"]), default=0),
+            "peakTorchReservedBytes": max(
+                (e["torchPeakReservedBytes"] for e in done if e["exceedsOutputCap"]), default=0
+            ),
+        },
         "stress": stress,
         "sheets": write_sheets(strips, args.out, args.workload),
     }

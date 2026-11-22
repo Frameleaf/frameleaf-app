@@ -676,6 +676,14 @@ class TestRepair:
 
 
 class TestColourise:
+    @pytest.mark.parametrize("wrapped", [True, False])
+    def test_only_the_unused_classifier_head_is_dropped_from_the_checkpoint(self, wrapped: bool) -> None:
+        weights = {"encoder.arch.head_cls.weight": 1, "encoder.arch.head_cls.bias": 2, "decoder.other_head.weight": 3}
+
+        kept = COLOURISE["model_weights"]({"params": weights} if wrapped else weights)
+
+        assert kept == {"decoder.other_head.weight": 3}
+
     def test_keeps_the_size_and_the_lightness_of_the_photo(self) -> None:
         photo = old_print(333, 517)
         colour = np.zeros((512, 512, 2), dtype=np.float32)
