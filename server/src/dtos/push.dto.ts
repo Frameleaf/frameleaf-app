@@ -24,6 +24,26 @@ const PushPublicKeySchema = z
     "The device's X25519 public key: its raw 32 bytes, base64url (CryptoKit `rawRepresentation`). Every payload is encrypted to it (frameleaf-push-v1; see docs/developer/push-envelope-v1).",
   );
 
+// FL-926: UnifiedPush (ntfy and other distributors), so a phone without Google services still gets push
+const UnifiedPushEndpointSchema = z
+  .url({ protocol: /^https?$/ })
+  .max(2048)
+  .describe(
+    "Android only: the device's UnifiedPush endpoint (the distributor's push address, such as an ntfy topic URL). When set, pushes go there instead of through the Frameleaf Cloud gateway, and the server need not be linked. Needs unifiedPushPublicKey and unifiedPushAuth.",
+  );
+const UnifiedPushPublicKeySchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(128)
+  .describe('The Web Push P-256 public key (`p256dh`): the 65-byte uncompressed point, base64url (RFC 8291)');
+const UnifiedPushAuthSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(64)
+  .describe('The Web Push authentication secret (`auth`): 16 bytes, base64url (RFC 8291)');
+
 const PushPreferencesSchema = z
   .object({
     backupNeedsAttention: z.boolean().optional(),
@@ -55,7 +75,9 @@ const PushPreferencesResponseSchema = z
 export const PushDeviceRegisterSchema = z
   .object({
     platform: PushPlatformSchema,
-    pushToken: PushTokenSchema.describe('The APNs device token or FCM registration token'),
+    pushToken: PushTokenSchema.optional().describe(
+      'The APNs device token or FCM registration token. Optional only for an Android device that registers a UnifiedPush endpoint.',
+    ),
     pushToStartToken: PushTokenSchema.nullish().describe('iOS only: the ActivityKit push-to-start token'),
     apnsEnvironment: ApnsEnvironmentSchema.optional(),
     publicKey: PushPublicKeySchema,
@@ -66,6 +88,9 @@ export const PushDeviceRegisterSchema = z
         "This device's phone backup identity (the backup device registry's deviceKey), for stale-backup wake-ups",
       ),
     preferences: PushPreferencesSchema.optional(),
+    unifiedPushEndpoint: UnifiedPushEndpointSchema.nullish(),
+    unifiedPushPublicKey: UnifiedPushPublicKeySchema.nullish(),
+    unifiedPushAuth: UnifiedPushAuthSchema.nullish(),
   })
   .meta({ id: 'PushDeviceRegisterDto' });
 export class PushDeviceRegisterDto extends createZodDto(PushDeviceRegisterSchema) {}
@@ -80,6 +105,11 @@ export const PushDeviceUpdateSchema = z
     publicKey: PushPublicKeySchema.optional(),
     backupDeviceKey: z.uuid().nullish(),
     preferences: PushPreferencesSchema.optional(),
+    unifiedPushEndpoint: UnifiedPushEndpointSchema.nullish().describe(
+      'A new UnifiedPush endpoint (with its keys), or null to stop using UnifiedPush and go back to the Cloud gateway',
+    ),
+    unifiedPushPublicKey: UnifiedPushPublicKeySchema.nullish(),
+    unifiedPushAuth: UnifiedPushAuthSchema.nullish(),
   })
   .meta({ id: 'PushDeviceUpdateDto' });
 export class PushDeviceUpdateDto extends createZodDto(PushDeviceUpdateSchema) {}
@@ -118,6 +148,20 @@ const PushDeviceActivitySchema = z
   })
   .meta({ id: 'PushDeviceActivityDto' });
 
+const PushDeviceUnifiedPushSchema = z
+  .object({
+    endpointHost: z.string().describe("The host of the device's UnifiedPush endpoint; never the full address"),
+    available: z
+      .boolean()
+      .describe('Whether this server delivers to UnifiedPush now (the administrator may limit it to licensed servers)'),
+    reason: z
+      .string()
+      .nullable()
+      .describe('Why UnifiedPush is unavailable (`licence-required`); null when available. Open-ended.'),
+  })
+  .describe('FL-926: the UnifiedPush state of a device that registered an endpoint')
+  .meta({ id: 'PushDeviceUnifiedPushDto' });
+
 const PushDeviceResponseSchema = z
   .object({
     id: z.uuid(),
@@ -132,8 +176,16 @@ const PushDeviceResponseSchema = z
     createdAt: DateTime,
     updatedAt: DateTime,
     lastDeliveredAt: DateTime.nullable(),
+    transport: z
+      .string()
+      .describe(
+        'How pushes reach this device: `cloud` (the Frameleaf Cloud gateway) or `unifiedpush`. Open-ended: treat an unfamiliar value as cloud.',
+      ),
+    unifiedPush: PushDeviceUnifiedPushSchema.nullable().describe(
+      'The UnifiedPush state; null when the device has no UnifiedPush endpoint',
+    ),
   })
-  .describe('A registered push device. Push tokens are never returned.')
+  .describe('A registered push device. Push tokens and the UnifiedPush endpoint and keys are never returned.')
   .meta({ id: 'PushDeviceResponseDto' });
 export class PushDeviceResponseDto extends createZodDto(PushDeviceResponseSchema) {}
 
@@ -157,9 +209,39 @@ const PushStatusResponseSchema = z
       .array(z.string())
       .describe('The events this server can deliver. Open-ended: ignore unfamiliar event names.'),
     registered: z.boolean().describe('Whether the session asking has registered its device'),
+    unifiedPush: z
+      .object({
+        available: z
+          .boolean()
+          .describe('Whether this server delivers to a UnifiedPush endpoint; it need not be linked to Frameleaf Cloud'),
+        reason: z
+          .string()
+          .nullable()
+          .describe('Why UnifiedPush is unavailable (`licence-required`); null when available. Open-ended.'),
+        encoding: z
+          .string()
+          .describe(
+            'The Web Push content coding UnifiedPush messages are encrypted in (RFC 8291, RFC 8188): `aes128gcm`',
+          ),
+      })
+      .describe('FL-926: UnifiedPush delivery, for Android devices without Google services')
+      .meta({ id: 'PushUnifiedPushStatusDto' }),
   })
   .meta({ id: 'PushStatusResponseDto' });
 export class PushStatusResponseDto extends createZodDto(PushStatusResponseSchema) {}
+
+const PushDeviceTestResponseSchema = z
+  .object({
+    transport: z.string().describe('The way the test went: `cloud` or `unifiedpush`. Open-ended.'),
+    status: z
+      .string()
+      .describe(
+        '`sent`: accepted for delivery; `gone`: the push service no longer knows the device, so it was unregistered; `retry`: the push service is busy, try again later; `refused`: the push service or this server refused it (see message); `unavailable`: this server cannot deliver to the device now. Open-ended.',
+      ),
+    message: z.string().nullable().describe('Why it was not sent, in plain words; null when sent'),
+  })
+  .meta({ id: 'PushDeviceTestResponseDto' });
+export class PushDeviceTestResponseDto extends createZodDto(PushDeviceTestResponseSchema) {}
 
 // Preserve the known-event SDK enum while discovery accepts future event names.
 @ExtraModel()
