@@ -30,7 +30,7 @@ const cloudError = (status: number, code: string, detail?: string) =>
 const setup = () => {
   const requestJson = vi.fn();
   const crypto = { serverKeyedHash: vi.fn().mockResolvedValue('server-key') };
-  const config = { getEnv: () => ({}) };
+  const config = { getEnv: () => ({ frameleafCloud: { identityDir: '/identity' } }) };
   const broker = new ProviderSignInBroker({
     frameleafCloudRepository: { requestJson },
     cryptoRepository: crypto,
@@ -174,7 +174,7 @@ describe('the renewed-credentials hook', () => {
   it('stores what a provider renews sealed, and refreshes from the latest value', async () => {
     const deps = {
       crypto: { serverKeyedHash: vi.fn().mockResolvedValue('server-key') },
-      config: { getEnv: () => ({}) },
+      config: { getEnv: () => ({ frameleafCloud: { identityDir: '/identity' } }) },
     };
     const id = '0195e2a0-0000-7000-8000-0000000000c9';
     let stored = await sealImportCredentials(deps as never, id, { refreshToken: 'first' });

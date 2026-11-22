@@ -217,7 +217,7 @@ describe('Dropbox source', () => {
       const { source, calls } = setup(() => new Response('whole file', { status: 200 }));
       await expect(text(await source.open('id:é', { start: 0 }, signal))).resolves.toBe('whole file');
       expect(calls[0].url).toBe('https://content.dropboxapi.com/2/files/download');
-      expect(calls[0].headers['Dropbox-API-Arg']).toBe('{"path":"id:é"}');
+      expect(calls[0].headers['Dropbox-API-Arg']).toBe(String.raw`{"path":"id:\u00e9"}`);
       expect(calls[0].headers.Range).toBeUndefined();
     });
 

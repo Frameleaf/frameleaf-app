@@ -72,6 +72,7 @@ import { FrameleafCloudRepository } from 'src/repositories/frameleaf-cloud.repos
 import { FrameleafConsentRepository } from 'src/repositories/frameleaf-consent.repository.js';
 import { FrameleafUserLicenseRepository } from 'src/repositories/frameleaf-user-license.repository.js';
 import { HardwareProbeRepository } from 'src/repositories/hardware-probe.repository.js';
+import { HouseholdLinkRepository } from 'src/repositories/household-link.repository.js';
 import { ICloudAlbumRepository } from 'src/repositories/icloud-album.repository.js';
 import { ICloudAuditRepository } from 'src/repositories/icloud-audit.repository.js';
 import { ICloudIdentityAdoptionRepository } from 'src/repositories/icloud-identity-adoption.repository.js';
@@ -91,6 +92,8 @@ import { ItemShareRepository } from 'src/repositories/item-share.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LibraryRepository } from 'src/repositories/library.repository.js';
 import { LivePhotoRepository } from 'src/repositories/live-photo.repository.js';
+import { LocationFillRepository } from 'src/repositories/location-fill.repository.js';
+import { LocationHistoryRepository } from 'src/repositories/location-history.repository.js';
 import { LockedEncryptionRepository } from 'src/repositories/locked-encryption.repository.js';
 import { LockedFileRepository } from 'src/repositories/locked-file.repository.js';
 import { LockedKeyRepository } from 'src/repositories/locked-key.repository.js';
@@ -279,6 +282,7 @@ export const repositories = [
   CloudBackupIndexRepository,
   CloudBackupSelectionRepository,
   BuddyBackupRepository,
+  HouseholdLinkRepository,
   CloudBackupKeyRepository,
   MediaRepository,
   MemoryRepository,
@@ -326,6 +330,8 @@ export const repositories = [
   AlbumChangeRunRepository,
   AlbumCleanupRepository,
   DateDoctorRepository,
+  LocationHistoryRepository,
+  LocationFillRepository,
   AssetLedgerRepository,
   FoundFileRepository,
   AlbumMergeRepository,

@@ -30,11 +30,11 @@ export type ImportConnectionItem = {
   path: string;
   size: number;
   modifiedAt: Date;
+  /** What the source said identifies this version of the file, as the scan saw it. */
+  contentHash: string | null;
   albumHint: string | null;
   caption: string | null;
   favourite: boolean;
-  /** What the scan saw, so a resumed download can tell the file has not changed since. */
-  contentHash?: string | null;
   /** `ready` until it is downloaded, then whatever the import made of it. */
   state: TakeoutItemState;
   assetId: string | null;
@@ -68,6 +68,7 @@ const mapItem = (row: Record<string, unknown>): ImportConnectionItem => ({
   path: row.path as string,
   size: toNumber(row.size),
   modifiedAt: new Date(row.modifiedAt as string),
+  contentHash: (row.contentHash as string | null) ?? null,
   albumHint: (row.albumHint as string | null) ?? null,
   caption: (row.caption as string | null) ?? null,
   favourite: row.favourite === true,

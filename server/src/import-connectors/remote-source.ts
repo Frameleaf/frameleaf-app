@@ -55,15 +55,12 @@ export interface RemoteSource {
    * leaves out what it has already seen. The last batch's cursor is stored when the scan finishes.
    */
   scan(roots: string[], cursor: RemoteCursor | null, signal: AbortSignal): AsyncIterable<RemoteScanBatch>;
-  /** The file's bytes from `range.start` on; a download that was interrupted resumes there. */
-  open(remoteId: string, range: RemoteRange, signal: AbortSignal): Promise<Readable>;
+  /**
+   * The file's bytes from `range.start` on; a download that was interrupted resumes there.
+   * `range.contentHash` is what the scan saw, so a source can refuse to splice a file that changed since.
+   */
+  open(remoteId: string, range: { start: number; contentHash?: string }, signal: AbortSignal): Promise<Readable>;
 }
-
-/**
- * Where a download starts. `contentHash` is what the scan saw, so a source that can tell may refuse to
- * join bytes of a newer version onto a partial download of the older one.
- */
-export type RemoteRange = { start: number; contentHash?: string };
 
 /**
  * What a source may ask of the connection it reads for (FL-959). `renewCredentials` runs `renew` with

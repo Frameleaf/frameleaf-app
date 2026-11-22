@@ -1075,6 +1075,9 @@ export class AssetRepository {
           'asset_exif.city as city',
           'asset_exif.state as state',
           'asset_exif.country as country',
+          // FL-949: where it was taken, for the owner's named places
+          'asset_exif.latitude as latitude',
+          'asset_exif.longitude as longitude',
         ])
         // FL-356: every landmark the asset was taken at, so a visit to one can be a story
         .select((eb) =>

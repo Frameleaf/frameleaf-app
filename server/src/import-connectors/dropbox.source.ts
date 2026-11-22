@@ -7,7 +7,6 @@ import {
   type RemoteCursor,
   type RemoteFolder,
   type RemoteItem,
-  type RemoteRange,
   type RemoteScanBatch,
   type RemoteSource,
   RemoteSourceAuthError,
@@ -65,7 +64,7 @@ export const forgetDropboxPauses = () => pausedUntil.clear();
 /** Dropbox reads JSON from a header, which must stay ASCII. */
 const headerJson = (value: unknown) =>
   JSON.stringify(value).replaceAll(
-    /[\u007F-￿]/g,
+    /[^ -~]/g,
     (character) => String.raw`\u${character.codePointAt(0)!.toString(16).padStart(4, '0')}`,
   );
 
@@ -78,7 +77,7 @@ export const dropboxRoots = (roots: string[]) => {
   if (cleaned.length === 0 || cleaned.includes('')) {
     return [''];
   }
-  const unique = [...new Map(cleaned.map((root) => [root.toLowerCase(), root])).values()];
+  const unique = new Map(cleaned.map((root) => [root.toLowerCase(), root])).values().toArray();
   const lower = unique.map((root) => root.toLowerCase());
   return unique.filter((root) => lower.every((other) => !root.toLowerCase().startsWith(`${other}/`)));
 };
@@ -233,7 +232,11 @@ export class DropboxSource implements RemoteSource {
     yield { items: [], cursor: stamp() };
   }
 
-  async open(remoteId: string, { start, contentHash }: RemoteRange, signal: AbortSignal): Promise<Readable> {
+  async open(
+    remoteId: string,
+    { start, contentHash }: { start: number; contentHash?: string },
+    signal: AbortSignal,
+  ): Promise<Readable> {
     const response = await this.send(
       `${CONTENT}/files/download`,
       {

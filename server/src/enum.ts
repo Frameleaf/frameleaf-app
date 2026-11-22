@@ -2439,6 +2439,12 @@ export enum JobName {
   // FL-912: the Date & Time Doctor, one scan per owner
   DateDoctorScan = 'DateDoctorScan',
   DateDoctorScanQueueAll = 'DateDoctorScanQueueAll',
+  // FL-925: read one staged location history file into its owner's places
+  LocationHistoryImport = 'LocationHistoryImport',
+  // FL-964: propose, apply and undo locations from location history, one run at a time
+  LocationFillPropose = 'LocationFillPropose',
+  LocationFillApply = 'LocationFillApply',
+  LocationFillUndo = 'LocationFillUndo',
   MemoryExport = 'MemoryExport',
 
   NotificationsCleanup = 'NotificationsCleanup',
@@ -2587,6 +2593,10 @@ export const JobNameSchema = z
     JobName.AlbumCleanupApply,
     JobName.DateDoctorScan,
     JobName.DateDoctorScanQueueAll,
+    JobName.LocationHistoryImport,
+    JobName.LocationFillPropose,
+    JobName.LocationFillApply,
+    JobName.LocationFillUndo,
     JobName.LockedSeal,
     JobName.LockedUnseal,
     JobName.LockedRewrap,
