@@ -1,0 +1,2 @@
+DE.02	Bavaria	Bavaria	2951839
+JP.40	Tokyo	Tokyo	1850144

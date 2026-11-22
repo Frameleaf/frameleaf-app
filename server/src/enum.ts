@@ -548,6 +548,8 @@ export const StorageFolderSchema = z.enum(StorageFolder).describe('Storage folde
 export enum SystemMetadataKey {
   MediaLocation = 'MediaLocation',
   ReverseGeocodingState = 'reverse-geocoding-state',
+  /** FL-987: which place-name pack `geodata_place_name` holds. */
+  PlaceNamesState = 'place-names-state',
   FacialRecognitionState = 'facial-recognition-state',
   /** FL-1493: the face model the library's faces were last found with. */
   FaceModelState = 'face-model-state',
@@ -2432,6 +2434,8 @@ export enum JobName {
   MemoryGenerate = 'MemoryGenerate',
   LandmarkMatchAll = 'LandmarkMatchAll',
   LandmarkInfer = 'LandmarkInfer',
+  /** FL-987: links located items to the places their stored names came from, a slice at a time. */
+  PlaceNameBackfill = 'PlaceNameBackfill',
   AlbumSuggestionAutoAdd = 'AlbumSuggestionAutoAdd',
   AlbumSuggestionOutfit = 'AlbumSuggestionOutfit',
   AlbumCleanupScan = 'AlbumCleanupScan',
@@ -2572,6 +2576,7 @@ export enum JobName {
 // is observed through asset details rather than the public job catalogue, and FL-1092's album auto-add
 // and FL-1094's outfit crops through the album itself. FL-819's workflow event jobs are observed
 // through the workflow's run history. FL-838's folder album sync is observed through the albums it keeps.
+// FL-987's place-name backfill is a background fill nobody watches.
 export const JobNameSchema = z
   .enum(JobName)
   .exclude([
@@ -2587,6 +2592,7 @@ export const JobNameSchema = z
     JobName.AssetVideoFingerprint,
     JobName.DescriptionFillerTagCleanup,
     JobName.LandmarkInfer,
+    JobName.PlaceNameBackfill,
     JobName.AlbumSuggestionAutoAdd,
     JobName.AlbumSuggestionOutfit,
     JobName.AlbumCleanupScan,

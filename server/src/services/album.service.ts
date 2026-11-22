@@ -639,7 +639,10 @@ export class AlbumService extends BaseService {
       options.onlyOwnerId = auth.user.id;
     }
 
-    return this.mapRepository.getAlbumMapMarkers(id, { ...this.nsfwOptions(auth), ...options });
+    return this.localizeMarkerPlaces(
+      auth,
+      await this.mapRepository.getAlbumMapMarkers(id, { ...this.nsfwOptions(auth), ...options }),
+    );
   }
 
   async create(auth: AuthDto, dto: CreateAlbumDto): Promise<AlbumResponseDto> {

@@ -5,6 +5,34 @@ import { Exif } from 'src/database.js';
 import { asDateTimeString, isDateEstimated } from 'src/utils/date.js';
 import { isMediaKind } from 'src/utils/media-kinds.js';
 
+/**
+ * FL-987: a place's names in the viewer's language. A new field beside `city`, `state` and `country`, which
+ * keep their English values, so a client that does not know it shows what it always did.
+ */
+export const PlaceNamesLocalizedSchema = z
+  .object({
+    city: z.string().nullable().describe('City name in `lang`, or the English `city` where it has no translation'),
+    state: z
+      .string()
+      .nullable()
+      .describe('State/province name in `lang`, or the English `state` where it has no translation'),
+    country: z
+      .string()
+      .nullable()
+      .describe('Country name in `lang`, or the English `country` where it has no translation'),
+    lang: z
+      .string()
+      .describe('Language of the translated names: fr, es, de, it, pt, nl, pl, sv, da or nb (Norwegian Bokmål)'),
+  })
+  .describe('Place names in the viewer’s language')
+  .meta({ id: 'PlaceNamesLocalizedDto' });
+
+const placeNamesLocalized = PlaceNamesLocalizedSchema.nullish()
+  .default(null)
+  .describe(
+    'City, state and country in the language of the signed-in account, when it is not English and at least one of the three has a translation. Null otherwise: show `city`, `state` and `country`',
+  );
+
 export const ExifResponseSchema = z
   .object({
     bitsPerSample: z.int().nullish().default(null).describe('Bits per sample'),
@@ -38,6 +66,7 @@ export const ExifResponseSchema = z
     city: z.string().nullish().default(null).describe('City name'),
     state: z.string().nullish().default(null).describe('State/province name'),
     country: z.string().nullish().default(null).describe('Country name'),
+    placeNamesLocalized,
     description: z.string().nullish().default(null).describe('Image description'),
     title: z.string().nullable().optional().describe('Image title'),
     artist: z.string().nullable().optional().describe('Artist credit'),
@@ -88,6 +117,8 @@ export function mapExif(entity: MaybeDehydrated<Exif>): ExifResponseDto {
     city: entity.city,
     state: entity.state,
     country: entity.country,
+    // FL-987: filled by the service for the viewer's language (`BaseService.localizeAssetPlaces`)
+    placeNamesLocalized: null,
     description: entity.description,
     title: entity.title ?? undefined,
     artist: entity.artist ?? undefined,

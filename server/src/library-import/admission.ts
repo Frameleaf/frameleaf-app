@@ -10,6 +10,8 @@ const BOOTSTRAP_TABLES = new Set([
   'frameleaf_immich_import_work',
   'system_metadata',
   'geodata_places',
+  // FL-987: the downloaded place-name pack, never library data
+  'geodata_place_name',
   'naturalearth_countries',
 ]);
 
