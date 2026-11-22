@@ -1387,6 +1387,8 @@
       return;
     }
     focusFirstAtTop = true;
+    // A scrubber jump or a restore still settling would put the grid back where it was.
+    scrubberMoves++;
     // Keyboard users carry on from the photos, not from a button that is about to leave.
     scrollable.focus({ preventScroll: true });
     // ponytail: a glide only from nearby. From years down it would load every month it passes, so
