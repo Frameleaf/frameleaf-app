@@ -1,6 +1,6 @@
 # Creators in Boards
 
-Boards has two areas: **Items**, your collections, and **Creators**, where Library saves media from the web. Follow a channel or account and Library keeps its own copy of what they post. Downloads run on Library and continue after you close the browser. **Downloads**, in the Creators list, shows your latest 100 downloads: what is running, what is waiting its turn, what needs you and what was saved, with the reason a download stopped and a way to try it again.
+Boards has two areas: **Items**, your collections, and **Creators**, where Library saves media from the web. Follow a channel or account and Library keeps its own copy of what they post. Downloads run on Library and continue after you close the browser. **Downloads**, in the Creators list, shows your latest 100 downloads: what is running, what is waiting its turn, what needs you and what was saved, with the reason a download stopped. A download you started yourself can be tried again there; for a creator you follow, use **Check now** on their page.
 
 ## Add from the web
 
