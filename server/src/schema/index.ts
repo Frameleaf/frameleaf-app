@@ -851,9 +851,6 @@ export interface DB extends QueueDatabase {
 
   household_link: HouseholdLinkTable;
   household_peer_request: HouseholdPeerRequestTable;
-
-  household_link: HouseholdLinkTable;
-  household_peer_request: HouseholdPeerRequestTable;
   household_share: HouseholdShareTable;
   household_share_change: HouseholdShareChangeTable;
   household_share_member: HouseholdShareMemberTable;
