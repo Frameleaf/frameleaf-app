@@ -1,8 +1,13 @@
-import { Body, Controller, HttpCode, Param, Post } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Param, Post } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
-import { ScanSplitDetectResponseDto, ScanSplitDto } from 'src/dtos/scan-split.dto.js';
+import {
+  ScanSplitDetectResponseDto,
+  ScanSplitDto,
+  ScanSplitInfoResponseDto,
+  ScanSplitOfferResponseDto,
+} from 'src/dtos/scan-split.dto.js';
 import { ApiTag, Permission } from 'src/enum.js';
 import { Auth, Authenticated } from 'src/middleware/auth.guard.js';
 import { ScanSplitService } from 'src/services/scan-split.service.js';
@@ -12,6 +17,31 @@ import { UUIDParamDto } from 'src/validation.js';
 @Controller('assets')
 export class ScanSplitController {
   constructor(private service: ScanSplitService) {}
+
+  @Get(':id/scan-split')
+  @Authenticated({ permission: Permission.AssetEditGet })
+  @Endpoint({
+    summary: 'Read how a photo relates to a split scan',
+    description:
+      'For a scan, the photos cut from it and which of them a new split would keep. For a photo cut from a scan, that scan. Owner only.',
+    history: new HistoryBuilder().added('v3'),
+  })
+  getScanSplit(@Auth() auth: AuthDto, @Param() { id }: UUIDParamDto): Promise<ScanSplitInfoResponseDto> {
+    return this.service.getInfo(auth, id);
+  }
+
+  @Post(':id/scan-split/offer')
+  @HttpCode(200)
+  @Authenticated({ permission: Permission.AssetEditGet })
+  @Endpoint({
+    summary: 'Check an upload to an album that holds scans',
+    description:
+      'Counts the prints on a photo that is in an album marked as holding scans and has not been split. Any other photo answers 0 without being looked at. Nothing is split or saved.',
+    history: new HistoryBuilder().added('v3'),
+  })
+  offerScanSplit(@Auth() auth: AuthDto, @Param() { id }: UUIDParamDto): Promise<ScanSplitOfferResponseDto> {
+    return this.service.offer(auth, id);
+  }
 
   @Post(':id/scan-split/detect')
   @HttpCode(200)

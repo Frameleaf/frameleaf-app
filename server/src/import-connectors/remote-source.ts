@@ -80,6 +80,8 @@ export type RemoteSourceSignIn = {
   label: string;
   /** Who signed in: a stable account id, and a name to show. */
   account(accessToken: string): Promise<{ id: string; name: string }>;
+  /** What a browser needs to open the provider's own file picker, when the provider has one (FL-974). */
+  picker?(): { apiKey: string; appId: string } | null;
 };
 
 /** A kind of source: `webdav`, `dropbox`. Registered once at startup by the story that adds it. */

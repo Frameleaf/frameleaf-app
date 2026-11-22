@@ -1,7 +1,7 @@
 import { BadRequestException, ServiceUnavailableException } from '@nestjs/common';
 import { rm } from 'node:fs/promises';
 import { StorageCore } from 'src/cores/storage.core.js';
-import { AssetType, JobName, JobStatus } from 'src/enum.js';
+import { AssetType, AssetVisibility, JobName, JobStatus } from 'src/enum.js';
 import { ScanSplitUnavailableError } from 'src/repositories/machine-learning.repository.js';
 import { ScanSplitQuotaError } from 'src/repositories/scan-split.repository.js';
 import { ScanSplitService } from 'src/services/scan-split.service.js';
@@ -44,6 +44,8 @@ const setup = () => {
     getCrops: vi.fn().mockResolvedValue([]),
     publish: vi.fn().mockResolvedValue({ locked: false }),
     removeCrops: vi.fn().mockResolvedValue(undefined),
+    getSource: vi.fn().mockResolvedValue(undefined),
+    isInScanAlbum: vi.fn().mockResolvedValue(false),
   };
   const access = { asset: { checkOwnerAccess: vi.fn().mockResolvedValue(new Set(['scan'])) } };
   const assets = {
@@ -95,6 +97,128 @@ const setup = () => {
 
 describe(ScanSplitService.name, () => {
   beforeAll(() => StorageCore.setMediaLocation('/data'));
+
+  describe('getInfo', () => {
+    const crop = (assetId: string, extra: object = {}) => ({
+      assetId,
+      quad: [
+        [0, 0],
+        [100, 0],
+        [100, 100],
+        [0, 100],
+      ],
+      rotation: 90,
+      createdAt: new Date('2026-11-22T10:00:00Z'),
+      visibility: AssetVisibility.Archive,
+      edited: false,
+      trashed: false,
+      ...extra,
+    });
+
+    it("lists a scan's photos with the same edited rule the split job uses, without the trashed ones", async () => {
+      const { sut, repository } = setup();
+      repository.getCrops.mockResolvedValue([crop('a', { edited: true }), crop('b'), crop('c', { trashed: true })]);
+
+      const info = await sut.getInfo(auth, 'scan');
+
+      expect(info).toMatchObject({ width: 4000, height: 3000, cropCount: 2, editedCount: 1, sourceAssetId: null });
+      expect(info.crops.map(({ assetId }) => assetId)).toEqual(['a', 'b']);
+      expect(info.crops[0]).toMatchObject({ rotation: 90, edited: true, createdAt: '2026-11-22T10:00:00.000Z' });
+      expect(info.crops[0].quad[1]).toEqual({ x: 100, y: 0 });
+    });
+
+    it('counts a Locked photo of an unlocked scan without listing it', async () => {
+      const { sut, repository } = setup();
+      repository.getCrops.mockResolvedValue([crop('a'), crop('hidden', { visibility: AssetVisibility.Locked })]);
+
+      const info = await sut.getInfo(auth, 'scan');
+
+      expect(info.cropCount).toBe(2);
+      expect(info.crops.map(({ assetId }) => assetId)).toEqual(['a']);
+    });
+
+    it('names the scan on a photo cut from it, but not a Locked scan on an unlocked photo', async () => {
+      const { sut, repository } = setup();
+      const source = {
+        id: 'source',
+        ownerId: auth.user.id,
+        originalFileName: 'Scan 014.jpg',
+        sourceVisibility: AssetVisibility.Archive,
+        cropVisibility: AssetVisibility.Timeline,
+      };
+      repository.getSource.mockResolvedValue(source);
+      await expect(sut.getInfo(auth, 'scan')).resolves.toMatchObject({
+        sourceAssetId: 'source',
+        sourceFileName: 'Scan 014.jpg',
+      });
+
+      repository.getSource.mockResolvedValue({ ...source, sourceVisibility: AssetVisibility.Locked });
+      await expect(sut.getInfo(auth, 'scan')).resolves.toMatchObject({ sourceAssetId: null, sourceFileName: null });
+    });
+
+    it('refuses someone who does not own the photo', async () => {
+      const { sut, access, repository } = setup();
+      access.asset.checkOwnerAccess.mockResolvedValue(new Set());
+
+      await expect(sut.getInfo(auth, 'scan')).rejects.toThrow(BadRequestException);
+      expect(repository.getCrops).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('offer', () => {
+    const twoPrints = {
+      width: 2048,
+      height: 1536,
+      prints: [0, 1].map((index) => ({
+        quad: [
+          [index * 500, 0],
+          [index * 500 + 400, 0],
+          [index * 500 + 400, 400],
+          [index * 500, 400],
+        ],
+        rotation: 0,
+        confidence: 0.9,
+      })),
+    };
+
+    it('never looks at a normal upload', async () => {
+      const { sut, machineLearning, media, jobs } = setup();
+
+      await expect(sut.offer(auth, 'scan')).resolves.toEqual({ printCount: 0 });
+
+      expect(media.renderDownloadJpeg).not.toHaveBeenCalled();
+      expect(machineLearning.scanSplitLocal).not.toHaveBeenCalled();
+      expect(jobs.queue).not.toHaveBeenCalled();
+    });
+
+    it('counts the prints of an upload to an album that holds scans, and does not split it', async () => {
+      const { sut, repository, machineLearning, jobs } = setup();
+      repository.isInScanAlbum.mockResolvedValue(true);
+      machineLearning.scanSplitLocal.mockResolvedValue(twoPrints);
+
+      await expect(sut.offer(auth, 'scan')).resolves.toEqual({ printCount: 2 });
+
+      expect(jobs.queue).not.toHaveBeenCalled();
+      expect(repository.publish).not.toHaveBeenCalled();
+    });
+
+    it('does not offer again for a scan that was already split', async () => {
+      const { sut, repository, machineLearning } = setup();
+      repository.isInScanAlbum.mockResolvedValue(true);
+      repository.getCrops.mockResolvedValue([{ assetId: 'a', trashed: false, edited: false }]);
+
+      await expect(sut.offer(auth, 'scan')).resolves.toEqual({ printCount: 0 });
+      expect(machineLearning.scanSplitLocal).not.toHaveBeenCalled();
+    });
+
+    it('is simply no offer when no ML worker is available', async () => {
+      const { sut, repository, machineLearning } = setup();
+      repository.isInScanAlbum.mockResolvedValue(true);
+      machineLearning.scanSplitLocal.mockRejectedValue(new ScanSplitUnavailableError('none'));
+
+      await expect(sut.offer(auth, 'scan')).resolves.toEqual({ printCount: 0 });
+    });
+  });
 
   describe('detect', () => {
     it("answers the prints in the scan's own pixels and saves nothing", async () => {

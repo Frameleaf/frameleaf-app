@@ -50,6 +50,7 @@ export class ScanSplitRepository {
         'asset.localDateTime',
         'asset.deletedAt',
         'asset.isOffline',
+        'asset.visibility',
         'asset_exif.exifImageWidth',
         'asset_exif.exifImageHeight',
         'asset_exif.orientation',
@@ -79,7 +80,13 @@ export class ScanSplitRepository {
       .selectFrom('asset_scan_crop')
       .innerJoin('asset', 'asset.id', 'asset_scan_crop.assetId')
       .leftJoin('asset_exif', 'asset_exif.assetId', 'asset.id')
-      .select(['asset_scan_crop.assetId', 'asset_scan_crop.quad', 'asset_scan_crop.rotation'])
+      .select([
+        'asset_scan_crop.assetId',
+        'asset_scan_crop.quad',
+        'asset_scan_crop.rotation',
+        'asset_scan_crop.createdAt',
+        'asset.visibility',
+      ])
       .select([
         sql<boolean>`asset."deletedAt" is not null or asset.status != ${sql.lit(AssetStatus.Active)}`.as('trashed'),
         sql<boolean>`
@@ -94,6 +101,42 @@ export class ScanSplitRepository {
       .orderBy('asset_scan_crop.assetId')
       .execute();
     return rows.map((row) => ({ ...row, trashed: !!row.trashed, edited: !!row.edited }));
+  }
+
+  /** The scan a photo was cut from, if it still exists and is not in the trash. */
+  @GenerateSql({ params: [DummyValue.UUID] })
+  getSource(assetId: string) {
+    return this.db
+      .selectFrom('asset_scan_crop')
+      .innerJoin('asset as crop', 'crop.id', 'asset_scan_crop.assetId')
+      .innerJoin('asset as source', 'source.id', 'asset_scan_crop.sourceAssetId')
+      .select([
+        'source.id',
+        'source.ownerId',
+        'source.originalFileName',
+        'source.visibility as sourceVisibility',
+        'crop.visibility as cropVisibility',
+      ])
+      .where('asset_scan_crop.assetId', '=', asUuid(assetId))
+      .where('source.deletedAt', 'is', null)
+      .executeTakeFirst();
+  }
+
+  /** Whether this photo, outside Locked, is in a live album marked as holding scans. */
+  @GenerateSql({ params: [DummyValue.UUID] })
+  async isInScanAlbum(assetId: string): Promise<boolean> {
+    const row = await this.db
+      .selectFrom('album_asset')
+      .innerJoin('album', 'album.id', 'album_asset.albumId')
+      .innerJoin('asset', 'asset.id', 'album_asset.assetId')
+      .select('album.id')
+      .where('album_asset.assetId', '=', asUuid(assetId))
+      .where('album.holdsScans', '=', true)
+      .where('album.deletedAt', 'is', null)
+      .where('asset.visibility', '!=', AssetVisibility.Locked)
+      .limit(1)
+      .executeTakeFirst();
+    return !!row;
   }
 
   /**
