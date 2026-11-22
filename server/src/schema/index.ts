@@ -159,6 +159,7 @@ import { EagleImportItemTable, EagleImportTable } from 'src/schema/tables/eagle-
 import { FaceSearchTable } from 'src/schema/tables/face-search.table.js';
 import { FoundFileTable } from 'src/schema/tables/found-file.table.js';
 import { GeodataPlacesTable } from 'src/schema/tables/geodata-places.table.js';
+import { HouseholdLinkTable, HouseholdPeerRequestTable } from 'src/schema/tables/household-link.table.js';
 import {
   ICloudEditAliasTable,
   ICloudEditAuthorityTable,
@@ -512,6 +513,8 @@ export class ImmichDatabase {
     LibraryFolderAlbumTable,
     LibraryFolderAlbumAssetTable,
     AssetScanCropTable,
+    HouseholdLinkTable,
+    HouseholdPeerRequestTable,
     MediaOperationTable,
     MediaOperationCheckpointTable,
     RenderWorkerTable,
@@ -837,6 +840,9 @@ export interface DB extends QueueDatabase {
   library_folder_album: LibraryFolderAlbumTable;
   library_folder_album_asset: LibraryFolderAlbumAssetTable;
   asset_scan_crop: AssetScanCropTable;
+
+  household_link: HouseholdLinkTable;
+  household_peer_request: HouseholdPeerRequestTable;
 
   media_operation: MediaOperationTable;
   media_operation_checkpoint: MediaOperationCheckpointTable;
