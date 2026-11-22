@@ -14,7 +14,7 @@ import { PartnerLockedEncryptionSchema, PartnerOriginSchema } from 'src/dtos/par
 import { PersonResponseDto, PersonResponseSchema, mapPerson } from 'src/dtos/person.dto.js';
 import { LocationInsightSchema } from 'src/dtos/photo-locations.dto.js';
 import { TagResponseSchema, mapTag } from 'src/dtos/tag.dto.js';
-import { UserResponseSchema, mapUser } from 'src/dtos/user.dto.js';
+import { UserResponseSchema, mapMember } from 'src/dtos/user.dto.js';
 import {
   AssetFileType,
   AssetStatus,
@@ -330,7 +330,7 @@ export function mapAsset(entity: MaybeDehydrated<MapAsset>, options: AssetMapOpt
     id: entity.id,
     createdAt: asDateTimeString(entity.createdAt),
     ownerId: entity.ownerId,
-    owner: entity.owner ? mapUser(entity.owner) : undefined,
+    owner: entity.owner ? mapMember(entity.owner) : undefined,
     libraryId: entity.libraryId,
     type: entity.type,
     // FL-417: the photo's own path, never the folder a shared file is kept in

@@ -11,6 +11,7 @@ import {
 import type { AuthUser } from 'src/database.js';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { FrameleafVia } from 'src/utils/frameleaf-sign-in.js';
+import { OnEvent } from 'src/decorators.js';
 import {
   OAuthAppAccessPolicyDto,
   OAuthAppAdminClientDto,
@@ -25,7 +26,7 @@ import {
 import { AccountEventAction, SystemMetadataKey } from 'src/enum.js';
 import { toAccountEventVia } from 'src/repositories/account-event.repository.js';
 import { ConnectRepository } from 'src/repositories/connect.repository.js';
-import { OAuthAppRepository, OAuthClient } from 'src/repositories/oauth-app.repository.js';
+import { OAuthAppRepository, type OAuthAuthorizationCode, OAuthClient } from 'src/repositories/oauth-app.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { isCodeChallenge, verifierMatches } from 'src/utils/browser-extension-sign-in.js';
 import {
@@ -43,8 +44,11 @@ import {
   OAUTH_ACCESS_TTL_SECONDS,
   OAUTH_CODE_TTL_SECONDS,
   OAUTH_DYNAMIC_CLIENT_LIMIT,
+  OAUTH_PURGE_AFTER_DAYS,
+  OAUTH_REFRESH_IDLE_DAYS,
   OAUTH_REFRESH_TOKEN_PREFIX,
   OAUTH_SCOPES_SUPPORTED,
+  OAUTH_UNUSED_CLIENT_DAYS,
   OAUTH_USE_RECORD_INTERVAL_MS,
   assistantBrokerName,
   checkRegisteredRedirectUri,
@@ -59,6 +63,7 @@ import {
   verifiedApp,
 } from 'src/utils/oauth-apps.js';
 
+const DAY_MS = 24 * 60 * 60 * 1000;
 const UUID = /^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/i;
 
 /** The web page the authorization endpoint sends people to (FL-860 builds it). */
@@ -119,8 +124,9 @@ const text = (value: unknown) => (typeof value === 'string' ? value : undefined)
  * - Authorization code with PKCE (S256 only); no implicit or password grant, no client secrets.
  * - Return addresses match exactly what the app registered (a loopback address may use any port).
  * - The code is single-use, five minutes, bound to the app, person, session, return address,
- *   challenge, scopes and resource. Access tokens last an hour; refresh tokens rotate on every use
- *   and a used one presented again revokes the grant. Only SHA-256 hashes of any of them are kept.
+ *   challenge, scopes and resource; one presented again revokes the grant made from it. Access tokens
+ *   last an hour; refresh tokens rotate on every use, a used one presented again revokes the grant,
+ *   and one left unused for 90 days stops working. Only SHA-256 hashes of any of them are kept.
  * - Scopes map onto existing permissions (`OAUTH_APP_SCOPES`); Locked is never a scope, app tokens
  *   have no session (so are never unlocked) and never reach admin routes.
  * - Consent, denial, use, revocation and token reuse are written to the account activity (FL-808).
@@ -332,7 +338,7 @@ export class OAuthAppService extends BaseService {
     if (redirectUris.includes(null)) {
       throw oauthError(
         'invalid_redirect_uri',
-        'Return addresses must be https, or http on 127.0.0.1, [::1] or localhost, with no fragment',
+        'Return addresses must be https, or http on 127.0.0.1 or [::1] (not localhost), with no fragment',
       );
     }
     const method = body.token_endpoint_auth_method;
@@ -361,6 +367,7 @@ export class OAuthAppService extends BaseService {
         dynamic: true,
       },
       OAUTH_DYNAMIC_CLIENT_LIMIT,
+      OAUTH_UNUSED_CLIENT_DAYS,
     );
     if (!client) {
       throw oauthError(
@@ -556,13 +563,15 @@ export class OAuthAppService extends BaseService {
   async createClient(auth: AuthDto, dto: OAuthAppCreateClientDto) {
     this.requireSession(auth);
     if (!auth.user.isAdmin) throw new ForbiddenException();
-    const redirectUris = dto.redirectUris.map((uri) => checkRegisteredRedirectUri(uri));
+    // FL-1635: an administrator may still register a `localhost` return address by hand
+    const redirectUris = dto.redirectUris.map((uri) => checkRegisteredRedirectUri(uri, { allowLocalhost: true }));
     const name = cleanClientName(dto.name);
     if (!name || redirectUris.length === 0 || redirectUris.includes(null))
       throw requestError('invalid_redirect_uri', 'Invalid app return address');
     const client = await this.oauthAppRepository.createClient(
       { name, redirectUris: redirectUris as string[], logoUri: null, dynamic: false, createdById: auth.user.id },
       OAUTH_DYNAMIC_CLIENT_LIMIT,
+      OAUTH_UNUSED_CLIENT_DAYS,
     );
     if (!client) throw new BadRequestException('Unable to register app');
     return {
@@ -597,11 +606,53 @@ export class OAuthAppService extends BaseService {
     if (!code || code.length > 200) {
       throw oauthError('invalid_request', 'The code is missing');
     }
-    const found = await this.oauthAppRepository.takeCode(this.cryptoRepository.hashSha256(code));
+    const codeHash = this.cryptoRepository.hashSha256(code);
     const invalid = oauthError('invalid_grant', 'This code can’t be used. Connect the app again.');
+    const tokens = this.newTokens();
+    let refusal: HttpException | undefined;
+    // the code is taken, and its grant made, in one transaction: see `redeemCode`
+    const { code: found, grant } = await this.oauthAppRepository.redeemCode(codeHash, async (found) => {
+      try {
+        return await this.grantForCode(found, body, issuer, tokens, invalid);
+      } catch (error) {
+        if (!(error instanceof HttpException)) {
+          throw error;
+        }
+        refusal = error;
+      }
+    });
     if (!found) {
+      // FL-1635 (TM-12): a code that comes back was copied, so the grant made from it ends (OAuth 2.1 §4.1.3)
+      const replayed = await this.oauthAppRepository.getBySpentRefreshToken(codeHash);
+      if (replayed && (await this.oauthAppRepository.revoke(replayed.id))) {
+        this.logger.warn(`A used authorization code came back; revoked connected app grant ${replayed.id}`);
+        await this.recordAccountEvent({
+          userId: replayed.userId,
+          action: AccountEventAction.AppDisconnected,
+          subject: this.clientName(replayed.clientName, replayed.clientRedirectUris),
+          detail: 'token-reused',
+        });
+      }
       throw invalid;
     }
+    if (!grant) {
+      throw refusal ?? invalid;
+    }
+    return {
+      ...this.tokenResponse(tokens, found.scopes),
+      ...(found.frameleafAccountId && { frameleaf_account_id: found.frameleafAccountId }),
+      account_ref: this.cryptoRepository.hashSha256(`frameleaf-app-account:${grant.userId}`).toString('base64url'),
+    };
+  }
+
+  /** The grant a taken code may become; throws the OAuth error when the request does not match the code. */
+  private async grantForCode(
+    found: OAuthAuthorizationCode,
+    body: Record<string, unknown>,
+    issuer: string | undefined,
+    tokens: ReturnType<OAuthAppService['newTokens']>,
+    invalid: HttpException,
+  ) {
     if (new Date(found.expiresAt).getTime() <= Date.now()) {
       throw oauthError('invalid_grant', 'This code has expired. Connect the app again.');
     }
@@ -628,8 +679,7 @@ export class OAuthAppService extends BaseService {
     ) {
       throw invalid;
     }
-    const tokens = this.newTokens();
-    await this.oauthAppRepository.createGrant({
+    return {
       userId: user.id,
       clientId: client.id,
       scopes: found.scopes,
@@ -640,11 +690,6 @@ export class OAuthAppService extends BaseService {
       refreshTokenHash: this.cryptoRepository.hashSha256(tokens.refresh_token),
       accessTokenHash: this.cryptoRepository.hashSha256(tokens.access_token),
       accessExpiresAt: tokens.expiresAt,
-    });
-    return {
-      ...this.tokenResponse(tokens, found.scopes),
-      ...(found.frameleafAccountId && { frameleaf_account_id: found.frameleafAccountId }),
-      account_ref: this.cryptoRepository.hashSha256(`frameleaf-app-account:${user.id}`).toString('base64url'),
     };
   }
 
@@ -672,6 +717,8 @@ export class OAuthAppService extends BaseService {
     }
     if (
       grant.revokedAt ||
+      // FL-1633 (TM-9): unused for too long. Refused like any ended grant, and nothing is written.
+      new Date(grant.accessExpiresAt).getTime() < Date.now() - OAUTH_REFRESH_IDLE_DAYS * DAY_MS ||
       text(body.client_id) !== grant.clientId ||
       (isConnectResource(grant.resource) && !ConnectAccessPolicySchema.safeParse(grant.accessPolicy).success) ||
       (body.resource !== undefined && checkResource(body.resource) !== grant.resource) ||
@@ -715,6 +762,22 @@ export class OAuthAppService extends BaseService {
       throw invalid;
     }
     return this.tokenResponse(tokens, grant.scopes);
+  }
+
+  /**
+   * FL-1633 (TM-9): the nightly tidy-up. Grants nobody refreshed within the idle limit end (their tokens
+   * were already refused), and revoked grants and spent refresh tokens older than a month are deleted.
+   */
+  @OnEvent({ name: 'NightlyDatabaseCleanup' })
+  async onNightlyDatabaseCleanup(): Promise<void> {
+    const now = Date.now();
+    const purged = await this.oauthAppRepository.purge({
+      idleBefore: new Date(now - OAUTH_REFRESH_IDLE_DAYS * DAY_MS),
+      purgeBefore: new Date(now - OAUTH_PURGE_AFTER_DAYS * DAY_MS),
+    });
+    this.logger.log(
+      `Connected apps: ended ${purged.idle} unused grants, deleted ${purged.grants} revoked grants and ${purged.spentTokens} spent refresh tokens`,
+    );
   }
 
   private newTokens() {

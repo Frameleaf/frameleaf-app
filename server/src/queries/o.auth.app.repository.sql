@@ -37,13 +37,6 @@ from
 order by
   "createdAt" desc
 
--- OAuthAppRepository.takeCode
-delete from "oauth_authorization_code"
-where
-  "codeHash" = $1
-returning
-  *
-
 -- OAuthAppRepository.getByAccessToken
 select
   "oauth_grant"."id",

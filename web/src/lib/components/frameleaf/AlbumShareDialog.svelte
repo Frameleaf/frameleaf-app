@@ -414,7 +414,6 @@
                 <strong>{self ? $t('frameleaf_album_you') : member.user.name}</strong>
                 {#if member.supporter}<SupporterTag />{/if}
               </span>
-              <small>{member.user.email}</small>
             </span>
             {#if member.role === AlbumUserRole.Owner || !isOwner}
               <span class="role-static">{roleLabel(member.role)}</span>
@@ -460,7 +459,6 @@
             <span class="avatar" aria-hidden="true"><UserAvatar user={member.user} size="md" /></span>
             <span class="who">
               <strong>{member.user.name}</strong>
-              <small>{member.user.email}</small>
             </span>
             <span class="role-static pending-tag">
               <Icon icon={mdiClockOutline} size="14" aria-hidden />

@@ -180,7 +180,6 @@
           >
             <UserAvatar user={candidate.user} size="sm" noTitle />
             <span class="name">{candidate.user.name}</span>
-            <small>{candidate.user.email}</small>
           </button>
         </li>
       {/each}
@@ -264,10 +263,6 @@
     background: var(--fl-panel);
     outline: var(--fl-focus-ring);
     outline-offset: var(--fl-focus-inset);
-  }
-  .mentions small {
-    color: var(--fl-muted);
-    font-size: 0.75rem;
   }
   .preview {
     margin: 0;
