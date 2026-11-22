@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { formatApproximateDate } from '$lib/frameleaf/approximate-date';
   import { SlideshowMetadataOverlayMode, slideshowStore } from '$lib/stores/slideshow.store';
   import { fromISODateTime, fromISODateTimeUTC } from '$lib/utils/timeline-util';
   import type { AssetResponseDto } from '@frameleaf/sdk';
@@ -22,7 +23,11 @@
       ? fromISODateTime(asset.exifInfo.dateTimeOriginal, asset.exifInfo.timeZone)
       : fromISODateTimeUTC(asset.localDateTime),
   );
-  const dateString = $derived(dateTime.toLocaleString(DateTime.DATE_MED_WITH_WEEKDAY));
+  // FL-936: a photo dated to a year or a decade never shows a made-up day
+  const dateString = $derived(
+    formatApproximateDate(asset.localDateTime, asset.dateAccuracy, undefined, { heading: true }) ??
+      dateTime.toLocaleString(DateTime.DATE_MED_WITH_WEEKDAY),
+  );
 
   const locationString = $derived(
     [asset.exifInfo?.city, asset.exifInfo?.state, asset.exifInfo?.country].filter(Boolean).join(', '),

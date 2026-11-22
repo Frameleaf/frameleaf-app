@@ -230,4 +230,10 @@ describe('describeFilterChips', () => {
     expect(describeFilterChips($t, query({ city: {} }))).toEqual([]);
     expect(describeFilterChips($t, emptyDiscoveryQuery())).toEqual([]);
   });
+
+  it('names a decade (FL-936)', () => {
+    const [chip] = describeFilterChips($t, query({ takenDecade: { eq: 1970 } }));
+    expect(chip.label).toContain('frameleaf_date_precision_decade');
+    expect(chip.label).toContain('1970');
+  });
 });

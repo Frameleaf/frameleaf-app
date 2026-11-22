@@ -701,3 +701,26 @@ describe('landmarks under place: (FL-354)', () => {
     });
   });
 });
+
+describe('decade: (FL-936)', () => {
+  it('reads as the decade, and any year of it as that decade', () => {
+    expect(parseSearchInput('decade:1970', catalog).filter).toEqual({ takenDecade: { eq: 1970 } });
+    expect(parseSearchInput('decade:1975', catalog).filter).toEqual({ takenDecade: { eq: 1970 } });
+  });
+
+  it('leaves an out-of-range or excluded decade in the free text', () => {
+    for (const input of ['decade:1700', 'decade:abc', '-decade:1970']) {
+      const { filter, text } = parseSearchInput(input, catalog);
+      expect(filter).toEqual({});
+      expect(text).toBe(input);
+    }
+  });
+
+  it('round-trips through the query', () => {
+    const query = { ...emptyDiscoveryQuery(), filter: { takenDecade: { eq: 1970 } } } as DiscoveryQuery;
+    expect(isDiscoveryFilter(query.filter)).toBe(true);
+    const { tokens, base } = typedTokensFromQuery(query, catalog);
+    expect(tokens).toEqual(['decade:1970']);
+    expect(base.filter).toEqual({});
+  });
+});

@@ -1,4 +1,5 @@
 import type { AssetLockReason, AssetStackResponseDto, AssetVisibility, TimelineOrderedSort } from '@frameleaf/sdk';
+import type { DateAccuracy } from '$lib/frameleaf/approximate-date';
 import type { TimelineDate, TimelineDateTime, TimelineYearMonth } from '$lib/utils/timeline-util';
 import type { TimelineDay } from './timeline-day.svelte';
 import type { ViewerAsset } from './viewer-asset.svelte';
@@ -35,6 +36,8 @@ export type TimelineAsset = {
   ratio: number;
   thumbhash: string | null;
   localDateTime: TimelineDateTime;
+  /** FL-936: the date is known only to this period; absent or null for an exact date. */
+  dateAccuracy?: DateAccuracy | null;
   createdAt: TimelineDateTime;
   fileCreatedAt: TimelineDateTime;
   visibility: AssetVisibility;

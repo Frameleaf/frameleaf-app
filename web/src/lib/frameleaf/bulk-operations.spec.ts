@@ -64,6 +64,7 @@ const gateway = () =>
     searchAssetStatistics: vi.fn().mockResolvedValue({ total: 0 }),
     createBulkMediaOperation: vi.fn().mockImplementation(() => Promise.resolve({ id: 'job' })),
     applyDateFix: vi.fn().mockResolvedValue({ batch: { id: 'batch' }, skipped: [] }),
+    undoDateFix: vi.fn().mockResolvedValue({ id: 'batch' }),
     downloadArchive: vi.fn().mockResolvedValue(undefined),
   }) as unknown as BulkGateway;
 
@@ -215,6 +216,26 @@ describe('bulk actions bind to existing endpoints', () => {
     expect(api.updateAssets).toHaveBeenCalledWith({
       assetBulkUpdateDto: { ids: ['b'], dateTimeOriginal: '2026-07-01T12:00:00+01:00' },
     });
+  });
+
+  it('dates a selection to a decade as one Doctor batch, and its undo puts that batch back (FL-936)', async () => {
+    const ids = Array.from({ length: 100 }, (_, index) => `id-${index}`);
+    const payload = { dateMode: 'set', dateAccuracy: 'decade', year: 1970 } as const;
+    expect(shouldRunDurably('change-date', ids.length, payload)).toBe(false);
+
+    const result = await runBulkAction('change-date', ids, { gateway: api, payload });
+    expect(api.applyDateFix).toHaveBeenCalledTimes(1);
+    expect(api.applyDateFix).toHaveBeenCalledWith({
+      dateDoctorFixDto: { assetIds: ids, dateAccuracy: 'decade', year: 1970 },
+    });
+    expect(api.updateAssets).not.toHaveBeenCalled();
+    expect(result.undo).toEqual({ action: 'change-date', ids, payload: { undoDateFixId: 'batch' } });
+
+    expect(shouldRunDurably('change-date', ids.length, result.undo!.payload)).toBe(false);
+    const undone = await runBulkAction('change-date', ids, { gateway: api, payload: result.undo!.payload });
+    expect(api.undoDateFix).toHaveBeenCalledWith({ id: 'batch' });
+    expect(undone.succeeded).toEqual(ids);
+    expect(undone.undo).toBeUndefined();
   });
 
   it('fixes dates as one Date & Time Doctor fix, a zone keeping the clock time, and reports a fix the server refused (FL-943)', async () => {

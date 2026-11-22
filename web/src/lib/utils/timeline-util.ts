@@ -2,6 +2,7 @@ import { AssetTypeEnum, TimeBucketDateType, type AssetResponseDto } from '@frame
 import { DateTime, type LocaleOptions } from 'luxon';
 import { SvelteSet } from 'svelte/reactivity';
 import { get } from 'svelte/store';
+import { approximateGroupDay, dateAccuracyOf } from '$lib/frameleaf/approximate-date';
 import { getExifRating } from '$lib/frameleaf/rating';
 import type { AssetDescriptor, TimelineAsset, ViewportTopMonth } from '$lib/managers/timeline-manager/types';
 import { locale } from '$lib/stores/preferences.store';
@@ -166,6 +167,8 @@ export const toTimelineAsset = (unknownAsset: AssetResponseDto | TimelineAsset):
     ratio,
     thumbhash: assetResponse.thumbhash,
     localDateTime,
+    // always written, so an update that makes the date exact again clears it
+    dateAccuracy: dateAccuracyOf(assetResponse.dateAccuracy),
     createdAt,
     fileCreatedAt,
     isFavorite: assetResponse.isFavorite,
@@ -236,3 +239,12 @@ export function setDifference<T>(setA: Set<T>, setB: Set<T>): SvelteSet<T> {
 
 export const getOrderingDate = (asset: TimelineAsset, dateType: TimeBucketDateType = TimeBucketDateType.Taken) =>
   dateType === TimeBucketDateType.Added ? asset.createdAt : asset.localDateTime;
+
+/**
+ * FL-936: the day group an asset sits in. A photo dated to a year or a decade is in a group of its own at the start
+ * of the period, never under a made-up 1 January; an Added-date view groups by upload day whatever the capture date.
+ */
+export const getTimelineGroupDay = (asset: TimelineAsset, dateType: TimeBucketDateType = TimeBucketDateType.Taken) =>
+  asset.dateAccuracy && dateType !== TimeBucketDateType.Added
+    ? approximateGroupDay(asset.dateAccuracy)
+    : getOrderingDate(asset, dateType).day;

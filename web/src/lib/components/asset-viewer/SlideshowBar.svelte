@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { formatApproximateDate } from '$lib/frameleaf/approximate-date';
   import { isForwardKey } from '$lib/frameleaf/reading-direction';
   /**
    * The slideshow's engine (FL-36, V-18, VIEWER-P1). The slideshow plays inside the viewer and keeps
@@ -196,7 +197,11 @@
       locked: asset.visibility === AssetVisibility.Locked,
       title: asset.originalFileName,
       artist: title || MEDIA_SESSION_ARTIST,
-      album: [date.isValid ? date.toLocaleString(DateTime.DATE_MED, { locale: $locale }) : '', asset.exifInfo?.city]
+      album: [
+        formatApproximateDate(asset.localDateTime, asset.dateAccuracy, $locale, { heading: true }) ??
+          (date.isValid ? date.toLocaleString(DateTime.DATE_MED, { locale: $locale }) : ''),
+        asset.exifInfo?.city,
+      ]
         .filter(Boolean)
         .join(' · '),
       artwork: getAssetMediaUrl({ id: asset.id, size: AssetMediaSize.Preview, cacheKey: asset.thumbhash }),
