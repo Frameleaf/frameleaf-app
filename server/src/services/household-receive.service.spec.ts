@@ -162,7 +162,7 @@ describe(HouseholdReceiveService.name, () => {
       linkId: annaLink().id,
       remoteUserId: userId,
       displayName: 'Ben',
-      role: 'viewer',
+      role: 'contributor',
     })) as string;
     return shareId;
   };

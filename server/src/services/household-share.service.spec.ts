@@ -77,7 +77,7 @@ describe(HouseholdShareService.name, () => {
       linkId: localLink(cloudLinkId).id,
       remoteUserId: userId,
       displayName: 'Ben',
-      role: 'viewer',
+      role: 'contributor',
     })) as string;
     if (accepted) await anna.world.accept(shareId, userId);
     return shareId;
@@ -813,6 +813,30 @@ describe(HouseholdShareService.name, () => {
       await anna.world.leave(shareId, benUser);
       expect(await status(anna.shares.postComment(access, shareId, post()))).toBe(403);
       expect(anna.world.comments.activities.size).toBe(0);
+    });
+
+    it('a Viewer cannot post or edit, but can still delete what they wrote as a Contributor', async () => {
+      const shareId = await offer();
+      const access = await asBen();
+      const { id } = await anna.shares.postComment(access, shareId, post());
+      await anna.shares.setRole(auth(), spaceId, shareId, benUser, 'viewer');
+
+      expect(await status(anna.shares.postComment(await asBen(), shareId, post({ id: randomUUID() })))).toBe(403);
+      expect(
+        await status(
+          anna.shares.postComment(
+            await asBen(),
+            shareId,
+            post({ id: randomUUID(), comment: undefined, isLiked: true }),
+          ),
+        ),
+      ).toBeGreaterThanOrEqual(400);
+      const edit = { userId: benUser, comment: 'Changed' };
+      expect(await status(anna.shares.putComment(await asBen(), shareId, id, edit))).toBe(403);
+      expect(anna.world.comments.activities.get(id)?.comment).toBe('Lovely day');
+
+      await anna.shares.deleteComment(await asBen(), shareId, id, { userId: benUser });
+      expect(anna.world.comments.activities.has(id)).toBe(false);
     });
 
     it('T6: a member of the share on another link cannot be named over this one', async () => {

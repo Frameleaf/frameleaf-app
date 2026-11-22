@@ -564,10 +564,16 @@ export class HouseholdShareService {
    * T16: the peer speaks for its own accounts and nobody else. The acting id must be an accepted member of this
    * share on this link, and can never be an account of this server, whatever the directory once said.
    */
-  private async requireCommenter(access: HouseholdPeerAccess, shareId: string, userId: string) {
+  /** Writing needs the Contributor role; `removing` lets someone since made a Viewer still take back their own words. */
+  private async requireCommenter(access: HouseholdPeerAccess, shareId: string, userId: string, removing = false) {
     const share = await this.requireReadableShare(access, shareId);
     const member = await this.shares.getMember(share.id, userId);
-    if (!member?.acceptedAt || member.leftAt || (await this.comments.isLocalUser(userId))) {
+    if (
+      !member?.acceptedAt ||
+      member.leftAt ||
+      (!removing && member.role !== 'contributor') ||
+      (await this.comments.isLocalUser(userId))
+    ) {
       throw refused();
     }
     const { count } = await this.rates.hit(`household:comment:${access.link.id}:${userId}`, 60);
@@ -679,7 +685,7 @@ export class HouseholdShareService {
   /** Removes the comment and, as for a local author, its replies. No media is ever touched. */
   async deleteComment(access: HouseholdPeerAccess, shareId: string, commentId: string, body: unknown) {
     const dto = this.parseBody(HouseholdCommentDelete, body);
-    const { share } = await this.requireCommenter(access, shareId, dto.userId);
+    const { share } = await this.requireCommenter(access, shareId, dto.userId, true);
     const row = await this.requireOwnComment(access, share.albumId, commentId, dto.userId);
     const removed = await this.albumUsers.deleteCommentWithReplies(row.id);
     await this.events.emit('HouseholdFeedComments', { albumId: share.albumId, activityIds: removed, deleted: true });
