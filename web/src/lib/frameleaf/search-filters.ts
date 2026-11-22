@@ -217,6 +217,31 @@ export const toggleFlagCondition = (condition: Condition, value: boolean): Condi
   typeof value === 'boolean' ? (flagToggleActive(condition, value) ? null : { eq: value }) : (condition ?? null);
 
 /* -------------------------------------------------------------------------- */
+/* Album count                                                                 */
+/* -------------------------------------------------------------------------- */
+
+/** The most the panel's "Album count: at least" field takes, as in the approved mock (FL-976). */
+export const MAX_ALBUM_COUNT_CONTROL = 50;
+
+/** The number in an "at least N albums" condition; null for no condition or one the controls cannot show. */
+export const albumCountAtLeast = (condition: Condition): number | null => {
+  const value = condition?.gte;
+  return isOnly(condition, 'gte') && Number.isSafeInteger(value) && (value as number) >= 1 ? (value as number) : null;
+};
+
+/** What the number field writes: empty or below one clears the filter, and above the limit stops at it. */
+export const albumCountConditionForValue = (value: string): Condition => {
+  const next = Math.round(Number(value));
+  return value && next >= 1 ? { gte: Math.min(MAX_ALBUM_COUNT_CONTROL, next) } : null;
+};
+
+/** The wording every chip uses for "at least N albums". */
+export const albumCountText = (least: number): { key: Translations; values?: Record<string, number> } =>
+  least === 2
+    ? { key: 'frameleaf_search_in_more_than_one_album' }
+    : { key: 'frameleaf_search_in_albums_at_least', values: { count: least } };
+
+/* -------------------------------------------------------------------------- */
 /* Enrichment                                                                  */
 /* -------------------------------------------------------------------------- */
 
@@ -284,6 +309,7 @@ const FIELD_LABEL_KEYS: Record<string, Translations> = {
   isEncoded: 'frameleaf_search_field_encoded',
   hasPeople: 'people',
   hasAlbums: 'albums',
+  albumCount: 'albums',
   hasTags: 'tags',
   fileSizeInBytes: 'file_size',
   checksum: 'checksum',
@@ -459,6 +485,12 @@ export const describeFilterChips = (
     if (booleanLabels && isOnly(condition, 'eq') && typeof condition.eq === 'boolean') {
       const [whenFalse, whenTrue] = booleanLabels;
       return { field, personIds: [], label: $t(condition.eq ? whenTrue : whenFalse) };
+    }
+
+    const albumsAtLeast = field === 'albumCount' ? albumCountAtLeast(condition) : null;
+    if (albumsAtLeast !== null) {
+      const text = albumCountText(albumsAtLeast);
+      return { field, personIds: [], label: $t(text.key, { values: text.values }) };
     }
 
     const parts = Object.entries(condition).map(([operator, value]) => {

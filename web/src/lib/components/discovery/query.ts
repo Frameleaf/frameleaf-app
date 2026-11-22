@@ -238,6 +238,8 @@ const FIELD_OPERATORS: Readonly<Record<string, Readonly<Record<string, Check>>>>
     ]),
   ),
   rating: { eq: nullable(finite), ne: nullable(finite), ...numberRangeOperators },
+  // FL-976: how many of the viewer's albums hold the item
+  albumCount: { eq: finite, ne: finite, ...numberRangeOperators },
   fileSizeInBytes: { eq: finite, ne: finite, ...numberRangeOperators },
   takenAt: { eq: dateBound, ne: isIsoDatetime, ...dateRangeOperators },
   takenDecade: { eq: decade },

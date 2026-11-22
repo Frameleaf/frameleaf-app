@@ -204,6 +204,7 @@
     year: mdiCalendarRange,
     type: mdiImageMultipleOutline,
     is: mdiHeartOutline,
+    albums: mdiImageMultipleOutline,
     operator: mdiPoundBox,
   };
 
