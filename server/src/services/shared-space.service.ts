@@ -25,7 +25,14 @@ import {
   SharedSpacePreviewResponseDto,
 } from 'src/dtos/shared-space.dto.js';
 import { UserResponseDto, mapMember, mapUser } from 'src/dtos/user.dto.js';
-import { AlbumUserRole, AssetFileType, CacheControl, Permission, SharedSpaceEventType } from 'src/enum.js';
+import {
+  AlbumUserRole,
+  AssetFileType,
+  CacheControl,
+  Permission,
+  SharedSpaceEventType,
+  UserAvatarColor,
+} from 'src/enum.js';
 import { RecipientGroup, SharedSpaceEvent, SharedSpaceInvite } from 'src/repositories/album-user.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { requireEntityAccess } from 'src/utils/access.js';
@@ -115,7 +122,7 @@ type CommentRow = {
   id: string;
   createdAt: Date;
   updatedAt: Date;
-  userId: string;
+  userId: string | null;
   user: Parameters<typeof mapUser>[0];
   assetId: string | null;
   comment: string | null;
@@ -709,7 +716,17 @@ export class SharedSpaceService extends BaseService {
         id: event.id,
         type: event.type,
         createdAt: asDateTimeString(event.createdAt),
-        actor: await users.get(event.actorId),
+        // FL-1012: a remote author by name, in the shape every member has: no email, no picture
+        actor: event.remoteAuthorId
+          ? {
+              id: event.remoteAuthorId,
+              name: event.remoteAuthorName ?? '',
+              email: '',
+              profileImagePath: '',
+              avatarColor: UserAvatarColor.Primary,
+              profileChangedAt: asDateTimeString(event.createdAt),
+            }
+          : await users.get(event.actorId),
         targetUser: await users.get(event.targetUserId),
         subject: event.subject,
         assetIds: event.assetIds,
@@ -847,6 +864,11 @@ export class SharedSpaceService extends BaseService {
         : { albumId: id, actorId: auth.user.id, type: SharedSpaceEventType.Comment, activityId: activity.id },
     );
     await this.notifyMentioned(auth, id, assetId, activity.id, mentioned, []);
+    await this.eventRepository.emit('HouseholdFeedComments', {
+      albumId: id,
+      activityIds: [activity.id],
+      deleted: false,
+    });
 
     const recipient = root ? replyRecipient(space, root, auth.user.id, mentioned) : null;
     if (root && recipient) {
@@ -885,6 +907,7 @@ export class SharedSpaceService extends BaseService {
     await this.albumUserRepository.deleteMentions(commentId);
     await this.albumUserRepository.createMentions(commentId, mentioned);
     await this.notifyMentioned(auth, id, updated.assetId, commentId, mentioned, previous);
+    await this.eventRepository.emit('HouseholdFeedComments', { albumId: id, activityIds: [commentId], deleted: false });
 
     // Editing never moves a comment between threads; report where it already is.
     const [[parent], replies] = await Promise.all([
@@ -908,7 +931,12 @@ export class SharedSpaceService extends BaseService {
     const existing = await this.requireSpaceComment(id, commentId);
     requireCommentDeleteRights(space, existing, auth.user.id);
 
-    await this.albumUserRepository.deleteCommentWithReplies(commentId);
+    const removed = await this.albumUserRepository.deleteCommentWithReplies(commentId);
+    await this.eventRepository.emit('HouseholdFeedComments', {
+      albumId: id,
+      activityIds: removed,
+      deleted: true,
+    });
   }
 
   /**

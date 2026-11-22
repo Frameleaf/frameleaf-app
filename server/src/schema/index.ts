@@ -159,6 +159,7 @@ import { EagleImportItemTable, EagleImportTable } from 'src/schema/tables/eagle-
 import { FaceSearchTable } from 'src/schema/tables/face-search.table.js';
 import { FoundFileTable } from 'src/schema/tables/found-file.table.js';
 import { GeodataPlacesTable } from 'src/schema/tables/geodata-places.table.js';
+import { HouseholdCommentTable, HouseholdRemoteAuthorTable } from 'src/schema/tables/household-comment.table.js';
 import { HouseholdLinkTable, HouseholdPeerRequestTable } from 'src/schema/tables/household-link.table.js';
 import {
   HouseholdInboundShareTable,
@@ -542,6 +543,8 @@ export class ImmichDatabase {
     HouseholdOriginTable,
     HouseholdReceivedFileTable,
     HouseholdPersonPendingTable,
+    HouseholdRemoteAuthorTable,
+    HouseholdCommentTable,
     MediaOperationTable,
     MediaOperationCheckpointTable,
     RenderWorkerTable,
@@ -874,12 +877,14 @@ export interface DB extends QueueDatabase {
   library_folder_album_asset: LibraryFolderAlbumAssetTable;
   asset_scan_crop: AssetScanCropTable;
 
+  household_comment: HouseholdCommentTable;
   household_inbound_share: HouseholdInboundShareTable;
   household_link: HouseholdLinkTable;
   household_origin: HouseholdOriginTable;
   household_peer_request: HouseholdPeerRequestTable;
   household_person_pending: HouseholdPersonPendingTable;
   household_received_file: HouseholdReceivedFileTable;
+  household_remote_author: HouseholdRemoteAuthorTable;
   household_share: HouseholdShareTable;
   household_share_change: HouseholdShareChangeTable;
   household_share_member: HouseholdShareMemberTable;
