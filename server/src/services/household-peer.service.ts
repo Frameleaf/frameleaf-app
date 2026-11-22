@@ -1,4 +1,12 @@
-import { ForbiddenException, HttpException, Injectable, UnauthorizedException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  HttpException,
+  Injectable,
+  PayloadTooLargeException,
+  UnauthorizedException,
+  UnsupportedMediaTypeException,
+} from '@nestjs/common';
 import z from 'zod';
 import type { Request } from 'express';
 import type { Selectable } from 'kysely';
@@ -17,9 +25,12 @@ import { loadInstanceIdentity, readCloudLink } from 'src/utils/frameleaf-cloud-g
 import { FrameleafCloudError } from 'src/utils/frameleaf-cloud.js';
 import { type HouseholdGrantClaims, HouseholdVerifyResponse } from 'src/utils/frameleaf-household.js';
 import {
+  HOUSEHOLD_BODY_CONTENT_TYPE,
+  HOUSEHOLD_BODY_HEADER,
   HOUSEHOLD_MAX_ORIGINAL_BYTES,
   HOUSEHOLD_PROTOCOL_VERSION,
   HouseholdJwks,
+  isHouseholdBodyValid,
   signHouseholdResponse,
   verifyHouseholdGrant,
   verifyHouseholdProof,
@@ -34,6 +45,7 @@ export type HouseholdPeerAccess = {
 /** Design section 8. */
 const REQUESTS_PER_MINUTE = 120;
 const REFUSALS_PER_MINUTE = 30;
+const MAX_BODY_BYTES = 64 * 1024;
 /** Cloud serves its grant keys with `max-age=300`. */
 const KEYS_MAX_AGE_MS = 300_000;
 /** How long a grant Cloud confirmed is trusted before Cloud is asked again. */
@@ -229,6 +241,40 @@ export class HouseholdPeerService {
     if (!(await this.links.admit(requestId, link.id, new Date(grant.exp * 1000))))
       throw new UnauthorizedException('Household request was already used');
     return { link, grant, requestId };
+  }
+
+  /**
+   * FL-1012: a JSON body, read only after `authorize`. The private content type keeps it away from the app's general
+   * JSON parser, so it is capped here at 64 KiB and must carry this request's signature over its exact bytes.
+   */
+  async readBody(request: Request, access: HouseholdPeerAccess): Promise<unknown> {
+    if (request.headers['content-type']?.split(';', 1)[0].trim().toLowerCase() !== HOUSEHOLD_BODY_CONTENT_TYPE) {
+      throw new UnsupportedMediaTypeException();
+    }
+    const chunks: Buffer[] = [];
+    let length = 0;
+    for await (const chunk of request) {
+      const part = Buffer.from(chunk as Uint8Array);
+      length += part.length;
+      if (length > MAX_BODY_BYTES) {
+        throw new PayloadTooLargeException();
+      }
+      chunks.push(part);
+    }
+    const raw = Buffer.concat(chunks);
+    const signature = request.headers[HOUSEHOLD_BODY_HEADER];
+    if (
+      typeof signature !== 'string' ||
+      !isHouseholdBodyValid(signature, access.link.peerPublicKey, access.requestId, raw)
+    ) {
+      this.logger.warn(`Refused a request on household link ${access.link.id}: its body was not signed for it`);
+      throw new UnauthorizedException('Household request body rejected');
+    }
+    try {
+      return JSON.parse(raw.toString()) as unknown;
+    } catch {
+      throw new BadRequestException('Invalid body');
+    }
   }
 
   /** Replies are signed with this server's key, so nothing between the two servers can alter one. */

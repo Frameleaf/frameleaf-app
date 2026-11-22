@@ -142,7 +142,8 @@ export class AlbumMergeRepository {
         WHERE a."albumId" = ${loserId}::uuid
           AND NOT (a."isLiked" AND EXISTS (
             SELECT 1 FROM activity o WHERE o."albumId" = ${winnerId}::uuid AND o."isLiked"
-              AND o."userId" = a."userId" AND o."assetId" IS NOT DISTINCT FROM a."assetId"))
+              AND (o."userId" = a."userId" OR o."remoteAuthorId" = a."remoteAuthorId")
+              AND o."assetId" IS NOT DISTINCT FROM a."assetId"))
         RETURNING a.id
       ), base AS (
         SELECT coalesce(max(seq), 0) AS seq FROM album_change WHERE "runId" = ${runId}::uuid

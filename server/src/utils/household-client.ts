@@ -1,7 +1,12 @@
 import z from 'zod';
 import type { HouseholdGrantResponse } from 'src/utils/frameleaf-household.js';
 import { type FrameleafKeySigner, createDpopProof } from 'src/utils/frameleaf-dpop.js';
-import { verifyHouseholdResponse } from 'src/utils/household-protocol.js';
+import {
+  HOUSEHOLD_BODY_CONTENT_TYPE,
+  HOUSEHOLD_BODY_HEADER,
+  signHouseholdBody,
+  verifyHouseholdResponse,
+} from 'src/utils/household-protocol.js';
 
 /** The other household's server answered, but not with a usable signed reply. */
 export class HouseholdPeerError extends Error {
@@ -77,6 +82,20 @@ export class HouseholdClient {
     );
   }
 
+  /** FL-1012: a signed JSON call with a body, bound to this request by its own signature. */
+  send<T>(method: 'POST' | 'PUT' | 'DELETE', path: string, body: unknown): Promise<T> {
+    const raw = JSON.stringify(body);
+    return this.call(
+      method,
+      path,
+      undefined,
+      (response, grant, requestId) => this.signedReply<T>(response, grant, requestId),
+      {},
+      undefined,
+      raw,
+    );
+  }
+
   /**
    * An original, from byte `start`. The reply is unsigned: the caller limits what it reads and verifies the
    * checksum before it trusts a byte. The body is the caller's to read or cancel.
@@ -107,12 +126,13 @@ export class HouseholdClient {
   }
 
   private async call<T>(
-    method: 'GET' | 'POST',
+    method: 'GET' | 'POST' | 'PUT' | 'DELETE',
     path: string,
     query: Record<string, string> | undefined,
     read: (response: Response, grant: GrantResponse, requestId: string) => Promise<T>,
     headers: Record<string, string> = {},
     signal?: AbortSignal,
+    body?: string,
   ): Promise<T> {
     // every route is fixed words and ids, so the path can never leave this link's routes
     if (!/^[\w-]+(?:\/[\w-]+)*$/.test(path)) throw new Error('Invalid household route');
@@ -144,7 +164,16 @@ export class HouseholdClient {
         try {
           const response = await fetch(`${url}${search}`, {
             method,
-            headers: { Authorization: `DPoP ${grant.token}`, DPoP: proof, ...headers },
+            headers: {
+              Authorization: `DPoP ${grant.token}`,
+              DPoP: proof,
+              ...headers,
+              ...(body !== undefined && {
+                'Content-Type': HOUSEHOLD_BODY_CONTENT_TYPE,
+                [HOUSEHOLD_BODY_HEADER]: signHouseholdBody(this.signer(), requestId, body),
+              }),
+            },
+            ...(body !== undefined && { body }),
             redirect: 'error',
             signal: signal ? AbortSignal.any([signal, limit.signal]) : limit.signal,
           });

@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ForbiddenException,
   GoneException,
+  HttpException,
   Injectable,
   NotFoundException,
   ServiceUnavailableException,
@@ -17,6 +18,8 @@ import { CacheControl, Permission } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AlbumUserRepository } from 'src/repositories/album-user.repository.js';
 import { AlbumRepository } from 'src/repositories/album.repository.js';
+import { EventRepository } from 'src/repositories/event.repository.js';
+import { HouseholdCommentRepository } from 'src/repositories/household-comment.repository.js';
 import { HouseholdLinkRepository } from 'src/repositories/household-link.repository.js';
 import { HouseholdShareRepository } from 'src/repositories/household-share.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -28,6 +31,12 @@ import { HouseholdPeerService } from 'src/services/household-peer.service.js';
 import { SPACE_CONTENT_OPTIONS } from 'src/services/shared-space.service.js';
 import { requireAccess } from 'src/utils/access.js';
 import { FileDownloadResponse } from 'src/utils/file.js';
+import {
+  HOUSEHOLD_COMMENT_CHARS,
+  HouseholdCommentDelete,
+  HouseholdCommentPost,
+  HouseholdCommentPut,
+} from 'src/utils/household-manifest.js';
 import {
   HOUSEHOLD_DOWNLOAD_SECONDS,
   isHouseholdDownloadValid,
@@ -45,6 +54,7 @@ const DIRECTORY_CACHE_MS = 5 * 60_000;
 const MAX_AVATAR_BYTES = 1024 * 1024;
 const STREAMS_PER_LINK = 2;
 const POKES_PER_MINUTE = 1;
+const COMMENTS_PER_MINUTE = 30;
 
 const Directory = z
   .array(z.strictObject({ id: z.uuid(), name: z.string().max(100), hasAvatar: z.boolean() }))
@@ -62,6 +72,7 @@ type ManifestEntry = { seq: number; kind: string; id: string } & (
   | { stop: true }
   | { asset: Record<string, unknown> }
   | { person: { name: string; faces: Array<Record<string, unknown>> } }
+  | { comment: Record<string, unknown> }
 );
 
 /**
@@ -87,6 +98,8 @@ export class HouseholdShareService {
     private storage: StorageRepository,
     private rates: RateLimitRepository,
     private logger: LoggingRepository,
+    private comments: HouseholdCommentRepository,
+    private events: EventRepository,
   ) {
     this.logger.setContext(HouseholdShareService.name);
   }
@@ -335,12 +348,20 @@ export class HouseholdShareService {
     const page = rows.slice(0, limit);
     const assets = await this.assetEntries(access, share, page);
     const people = await this.personEntries(share, page);
+    const comments = await this.commentEntries(share, page);
 
     const entries: ManifestEntry[] = [];
     let bytes = 0;
     let cut = false;
     for (const { seq, kind, entityId: id } of page) {
-      const body = kind === 'asset' ? assets.get(id) : kind === 'person' ? people.get(id) : undefined;
+      const body =
+        kind === 'asset'
+          ? assets.get(id)
+          : kind === 'person'
+            ? people.get(id)
+            : kind === 'comment'
+              ? comments.get(id)
+              : undefined;
       const entry: ManifestEntry = body ? { seq, kind, id, ...body } : { seq, kind, id, stop: true };
       bytes += Buffer.byteLength(JSON.stringify(entry));
       if (bytes > PAGE_BYTES && entries.length > 0) {
@@ -498,6 +519,174 @@ export class HouseholdShareService {
   }
 
   /**
+   * Comments on the space and on items visible in it, decided now by the same query as the items. A comment on
+   * anything else is `stop`. An author is a name and an id, never an address.
+   */
+  private async commentEntries(share: { albumId: string }, page: Array<{ kind: string; entityId: string }>) {
+    const ids = page.filter(({ kind }) => kind === 'comment').map(({ entityId }) => entityId);
+    const result = new Map<string, { comment: Record<string, unknown> }>();
+    const rows = await this.comments.getComments(share.albumId, ids);
+    const visible = await this.visibleAssetIds(
+      share.albumId,
+      rows.flatMap(({ assetId }) => (assetId ? [assetId] : [])),
+    );
+    for (const row of rows) {
+      if (row.assetId && !visible.has(row.assetId)) {
+        continue;
+      }
+      result.set(row.id, {
+        comment: {
+          assetId: row.assetId,
+          isLiked: row.isLiked,
+          comment: row.isLiked ? null : (row.comment ?? '').slice(0, HOUSEHOLD_COMMENT_CHARS),
+          createdAt: iso(row.createdAt),
+          updatedAt: iso(row.updatedAt),
+          author: row.localId
+            ? { household: 'local', id: row.localId, name: peerName(row.localName ?? '') }
+            : { household: 'remote', id: row.remoteUserId, name: peerName(row.remoteName ?? '') },
+        },
+      });
+    }
+    return result;
+  }
+
+  /* ---------------------------------- comments from a peer ---------------------------------- */
+
+  private parseBody<T extends z.ZodType>(schema: T, body: unknown): z.output<T> {
+    const parsed = schema.safeParse(body);
+    if (!parsed.success) {
+      throw new BadRequestException('Invalid comment');
+    }
+    return parsed.data;
+  }
+
+  /**
+   * T16: the peer speaks for its own accounts and nobody else. The acting id must be an accepted member of this
+   * share on this link, and can never be an account of this server, whatever the directory once said.
+   */
+  private async requireCommenter(access: HouseholdPeerAccess, shareId: string, userId: string) {
+    const share = await this.requireReadableShare(access, shareId);
+    const member = await this.shares.getMember(share.id, userId);
+    if (!member?.acceptedAt || member.leftAt || (await this.comments.isLocalUser(userId))) {
+      throw refused();
+    }
+    const { count } = await this.rates.hit(`household:comment:${access.link.id}:${userId}`, 60);
+    if (count > COMMENTS_PER_MINUTE) {
+      throw new HttpException('Too many comments', 429);
+    }
+    return { share, member };
+  }
+
+  /** The comment, only when this member wrote it, in this space, over this link. */
+  private async requireOwnComment(access: HouseholdPeerAccess, albumId: string, commentId: string, userId: string) {
+    const row = UUID.test(commentId) ? await this.comments.getActivity(commentId) : undefined;
+    if (row?.albumId !== albumId || row.authorLinkId !== access.link.id || row.authorRemoteUserId !== userId) {
+      throw refused();
+    }
+    return row;
+  }
+
+  private async isVisibleInSpace(albumId: string, assetId: string) {
+    // the space's own items only: a live photo's video part is not something to comment on
+    const visible = await this.albumUsers.filterVisibleSpaceAssetIds(albumId, [assetId], SPACE_CONTENT_OPTIONS, {
+      inSpace: true,
+    });
+    return visible.has(assetId);
+  }
+
+  private async notifyMentions(
+    albumId: string,
+    assetId: string | null,
+    activityId: string,
+    text: string,
+    senderName: string,
+  ) {
+    const userIds = await this.comments.setMentions(activityId, albumId, text);
+    if (userIds.length > 0) {
+      await this.events.emit('SharedSpaceMention', { id: albumId, assetId, activityId, userIds, senderName });
+    }
+  }
+
+  async postComment(access: HouseholdPeerAccess, shareId: string, body: unknown) {
+    const dto = this.parseBody(HouseholdCommentPost, body);
+    const { share, member } = await this.requireCommenter(access, shareId, dto.userId);
+    const { albumId } = share;
+
+    // the same id again is a retry after a lost reply, and changes nothing
+    const existing = await this.comments.getActivity(dto.id);
+    if (existing) {
+      if (
+        existing.albumId !== albumId ||
+        existing.authorLinkId !== access.link.id ||
+        existing.authorRemoteUserId !== dto.userId
+      ) {
+        throw refused();
+      }
+      return { id: existing.id };
+    }
+
+    const album = await this.albums.getById(albumId, { withAssets: false });
+    if (!album?.isActivityEnabled) {
+      throw refused();
+    }
+    if (dto.assetId && !(await this.isVisibleInSpace(albumId, dto.assetId))) {
+      throw refused();
+    }
+
+    const name = peerName(member.displayName);
+    const remoteAuthorId = await this.comments.upsertAuthor(access.link.id, dto.userId, name);
+    const replaced = dto.isLiked ? await this.comments.removeRemoteLikes(albumId, dto.assetId, remoteAuthorId) : [];
+    const created = await this.comments.createRemote({
+      id: dto.id,
+      albumId,
+      assetId: dto.assetId,
+      remoteAuthorId,
+      isLiked: dto.isLiked,
+      comment: dto.comment,
+    });
+    if (!created) {
+      throw refused();
+    }
+    await this.comments.addEvent(albumId, created.id, dto.isLiked);
+    if (dto.comment !== null) {
+      await this.notifyMentions(albumId, dto.assetId, created.id, dto.comment, name);
+    }
+    await this.events.emit('HouseholdFeedComments', {
+      albumId,
+      activityIds: [...replaced, created.id],
+      deleted: false,
+    });
+    return { id: created.id };
+  }
+
+  async putComment(access: HouseholdPeerAccess, shareId: string, commentId: string, body: unknown) {
+    const dto = this.parseBody(HouseholdCommentPut, body);
+    const { share, member } = await this.requireCommenter(access, shareId, dto.userId);
+    const row = await this.requireOwnComment(access, share.albumId, commentId, dto.userId);
+    if (row.isLiked || (row.assetId && !(await this.isVisibleInSpace(share.albumId, row.assetId)))) {
+      throw refused();
+    }
+    await this.comments.updateText(row.id, dto.comment);
+    await this.notifyMentions(share.albumId, row.assetId, row.id, dto.comment, peerName(member.displayName));
+    await this.events.emit('HouseholdFeedComments', {
+      albumId: share.albumId,
+      activityIds: [row.id],
+      deleted: false,
+    });
+    return { id: row.id };
+  }
+
+  /** Removes the comment and, as for a local author, its replies. No media is ever touched. */
+  async deleteComment(access: HouseholdPeerAccess, shareId: string, commentId: string, body: unknown) {
+    const dto = this.parseBody(HouseholdCommentDelete, body);
+    const { share } = await this.requireCommenter(access, shareId, dto.userId);
+    const row = await this.requireOwnComment(access, share.albumId, commentId, dto.userId);
+    const removed = await this.albumUsers.deleteCommentWithReplies(row.id);
+    await this.events.emit('HouseholdFeedComments', { albumId: share.albumId, activityIds: removed, deleted: true });
+    return { id: row.id };
+  }
+
+  /**
    * One original. The token and the visibility check both run before a byte is sent: a token outlives a lock by
    * up to fifteen minutes, so it is never enough alone.
    */
@@ -641,6 +830,11 @@ export class HouseholdShareService {
   @OnEvent({ name: 'HouseholdFeedPerson' })
   onPerson({ albumId, personLinkId }: ArgOf<'HouseholdFeedPerson'>) {
     return this.feed(() => this.shares.touchPerson(albumId, personLinkId));
+  }
+
+  @OnEvent({ name: 'HouseholdFeedComments' })
+  onComments({ albumId, activityIds }: ArgOf<'HouseholdFeedComments'>) {
+    return this.feed(() => this.shares.touchComments(albumId, activityIds));
   }
 
   @OnEvent({ name: 'LockedRulesChanged' })

@@ -103,6 +103,9 @@ export type SharedSpaceEvent = {
   createdAt: Date;
   activityAssetId: string | null;
   activityComment: string | null;
+  /** FL-1012: who wrote it when that is a person on another household's server. */
+  remoteAuthorId?: string | null;
+  remoteAuthorName?: string | null;
 };
 /** A member named in a comment. */
 export type SharedSpaceMention = {
@@ -754,6 +757,7 @@ export class AlbumUserRepository {
     return this.db
       .selectFrom('shared_space_event as event')
       .leftJoin('activity', 'activity.id', 'event.activityId')
+      .leftJoin('household_remote_author as remote_author', 'remote_author.id', 'activity.remoteAuthorId')
       .select([
         'event.id',
         'event.albumId',
@@ -766,6 +770,8 @@ export class AlbumUserRepository {
         'event.createdAt',
         'activity.assetId as activityAssetId',
         'activity.comment as activityComment',
+        'remote_author.id as remoteAuthorId',
+        'remote_author.displayName as remoteAuthorName',
       ])
       .where('event.albumId', '=', spaceId)
       .$if(before !== undefined, (qb) => qb.where('event.createdAt', '<', before!))
@@ -880,8 +886,8 @@ export class AlbumUserRepository {
    * mentions, their feed events and their thread rows. One statement, so a
    * failure leaves the thread whole rather than half gone.
    */
-  async deleteCommentWithReplies(activityId: string): Promise<void> {
-    await this.db
+  async deleteCommentWithReplies(activityId: string): Promise<string[]> {
+    const rows = await this.db
       .deleteFrom('activity')
       .where((eb) =>
         eb.or([
@@ -896,6 +902,8 @@ export class AlbumUserRepository {
           ),
         ]),
       )
+      .returning('activity.id')
       .execute();
+    return rows.map(({ id }) => id);
   }
 }
