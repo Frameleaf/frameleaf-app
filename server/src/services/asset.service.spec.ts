@@ -50,6 +50,40 @@ const statResponse: AssetStatsResponseDto = {
   total: 33,
 };
 
+describe('approximate capture dates in requests (FL-936)', () => {
+  const single = (dto: object) => UpdateAssetDto.schema.safeParse(dto).success;
+  const bulk = (dto: object) => AssetBulkUpdateDto.schema.safeParse({ ids: [], ...dto }).success;
+  const thisYear = new Date().getUTCFullYear();
+
+  it.each([
+    [{ dateTimeOriginal: '1975-06-15T10:00:00', dateAccuracy: 'year' }, true],
+    [{ dateTimeOriginal: '1975-06-15T10:00:00+02:00', dateAccuracy: 'decade' }, true],
+    [{ dateTimeOriginal: '1975-06-15T10:00:00', dateAccuracy: null }, true],
+    [{ dateAccuracy: null }, true],
+    // an accuracy says how much of a date is known, so there must be one
+    [{ dateAccuracy: 'decade' }, false],
+    [{ dateTimeOriginal: '1975-06-15T10:00:00', dateAccuracy: 'month' }, false],
+    [{ dateTimeOriginal: '1800-01-01T00:00:00', dateAccuracy: 'year' }, true],
+    [{ dateTimeOriginal: '1799-12-31T00:00:00', dateAccuracy: 'year' }, false],
+    [{ dateTimeOriginal: '1799-12-31T00:00:00', dateAccuracy: 'decade' }, false],
+    [{ dateTimeOriginal: `${thisYear}-03-01T00:00:00`, dateAccuracy: 'year' }, true],
+    [{ dateTimeOriginal: `${thisYear + 1}-03-01T00:00:00`, dateAccuracy: 'year' }, false],
+    [{ dateTimeOriginal: `${Math.floor(thisYear / 10) * 10 + 9}-03-01T00:00:00`, dateAccuracy: 'decade' }, true],
+    [{ dateTimeOriginal: `${Math.floor(thisYear / 10) * 10 + 10}-03-01T00:00:00`, dateAccuracy: 'decade' }, false],
+    // an exact date may be any date, as before
+    [{ dateTimeOriginal: '1750-03-01T00:00:00' }, true],
+  ])('%j is accepted by single and bulk edits: %s', (dto, accepted) => {
+    expect(single(dto)).toBe(accepted);
+    expect(bulk(dto)).toBe(accepted);
+  });
+
+  it('cannot be combined with a relative shift', () => {
+    expect(bulk({ dateTimeRelative: 30 })).toBe(true);
+    expect(bulk({ dateTimeRelative: 30, dateAccuracy: null })).toBe(false);
+    expect(bulk({ dateTimeRelative: 30, dateTimeOriginal: '1975-06-15T10:00:00', dateAccuracy: 'year' })).toBe(false);
+  });
+});
+
 describe('capture-date request offsets', () => {
   it.each([
     '2020-12-10T12:30:00+01:60[Europe/Paris]',
@@ -2155,7 +2189,7 @@ describe(AssetService.name, () => {
         { assetId: asset.id, dateTimeOriginal: new Date('2020-06-10T19:30:00Z'), timeZone: 'UTC' },
       ]);
       await sut.updateAll(authStub.admin, { ids: [asset.id], dateTimeOriginal: '2020-06-10T19:30:00Z' });
-      expect(mocks.asset.updateDateTimeOriginal).toHaveBeenCalledWith([asset.id], undefined, 'UTC');
+      expect(mocks.asset.updateDateTimeOriginal).toHaveBeenCalledWith([asset.id], undefined, 'UTC', false);
       expect(mocks.asset.update).toHaveBeenCalledWith({
         id: asset.id,
         fileCreatedAt: new Date('2020-06-10T19:30:00Z'),
@@ -2169,7 +2203,7 @@ describe(AssetService.name, () => {
       const dateTimeOriginal = '2020-11-01T01:30:00' + offset + '[America/New_York]';
       mocks.asset.updateDateTimeOriginal.mockResolvedValue([]);
       await sut.updateAll(authStub.admin, { ids: [asset.id], dateTimeOriginal });
-      expect(mocks.asset.updateDateTimeOriginal).toHaveBeenCalledWith([asset.id], undefined, 'America/New_York');
+      expect(mocks.asset.updateDateTimeOriginal).toHaveBeenCalledWith([asset.id], undefined, 'America/New_York', false);
       expect(mocks.asset.updateAll).toHaveBeenCalledWith(
         [asset.id],
         expect.objectContaining({
@@ -2195,7 +2229,7 @@ describe(AssetService.name, () => {
         { dateTimeOriginal: '2020-06-10T12:30:00Z' },
         [],
       );
-      expect(mocks.asset.updateDateTimeOriginal).toHaveBeenCalledWith([asset.id], undefined, 'UTC');
+      expect(mocks.asset.updateDateTimeOriginal).toHaveBeenCalledWith([asset.id], undefined, 'UTC', false);
       expect(mocks.asset.update).toHaveBeenCalledWith({
         id: asset.id,
         fileCreatedAt: new Date('2020-06-10T12:30:00Z'),
@@ -2260,13 +2294,56 @@ describe(AssetService.name, () => {
         dateTimeRelative,
         timeZone,
       });
-      expect(mocks.asset.updateDateTimeOriginal).toHaveBeenCalledWith(['asset-1'], dateTimeRelative, timeZone);
+      expect(mocks.asset.updateDateTimeOriginal).toHaveBeenCalledWith(['asset-1'], dateTimeRelative, timeZone, true);
       expect(mocks.asset.update).toHaveBeenCalledWith({
         id: 'asset-1',
         fileCreatedAt: new Date('2020-02-25T04:41:00.000Z'),
         localDateTime: new Date('2020-02-25T06:41:00.000Z'),
       });
       expect(mocks.job.queueAll).toHaveBeenCalledWith([{ name: JobName.SidecarWrite, data: { id: 'asset-1' } }]);
+    });
+  });
+
+  describe('approximate dates (FL-936)', () => {
+    it('stores a decade as the day it starts, in UTC, whatever zone came with it', async () => {
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1']));
+      const start = new Date('1970-01-01T00:00:00.000Z');
+      mocks.asset.updateDateTimeOriginal.mockResolvedValue([
+        { assetId: 'asset-1', dateTimeOriginal: start, timeZone: 'UTC' },
+      ]);
+
+      await sut.updateAll(authStub.admin, {
+        ids: ['asset-1'],
+        dateTimeOriginal: '1975-06-15T23:30:00-07:00',
+        dateAccuracy: 'decade',
+        timeZone: 'America/Edmonton',
+      });
+
+      expect(mocks.asset.updateAllExif).toHaveBeenCalledWith(
+        ['asset-1'],
+        { dateTimeOriginal: '1970-01-01T00:00:00.000Z' },
+        [],
+      );
+      expect(mocks.asset.updateDateTimeOriginal).toHaveBeenCalledWith(['asset-1'], undefined, 'UTC', false);
+      expect(mocks.asset.updateAll).toHaveBeenCalledWith(['asset-1'], {
+        dateAccuracy: 'decade',
+        fileCreatedAt: start,
+        localDateTime: start,
+      });
+      expect(mocks.asset.update).toHaveBeenCalledWith({ id: 'asset-1', fileCreatedAt: start, localDateTime: start });
+    });
+
+    it('an exact date is exact again, and a shift is asked of exact photos only', async () => {
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1']));
+      mocks.asset.updateDateTimeOriginal.mockResolvedValue([]);
+
+      await sut.updateAll(authStub.admin, { ids: ['asset-1'], dateTimeOriginal: '2020-06-10T12:30:00Z' });
+      expect(mocks.asset.updateAll).toHaveBeenCalledWith(['asset-1'], expect.objectContaining({ dateAccuracy: null }));
+
+      mocks.asset.updateAll.mockClear();
+      await sut.updateAll(authStub.admin, { ids: ['asset-1'], dateTimeRelative: 30 });
+      expect(mocks.asset.updateDateTimeOriginal).toHaveBeenLastCalledWith(['asset-1'], 30, undefined, true);
+      expect(mocks.asset.updateAll).not.toHaveBeenCalled();
     });
   });
 

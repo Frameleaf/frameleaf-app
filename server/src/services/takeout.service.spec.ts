@@ -26,6 +26,7 @@ const rowOf = (phase: TakeoutPhase, overrides: Partial<TakeoutImport> = {}): Tak
   phase,
   options: { ...TAKEOUT_DEFAULT_OPTIONS },
   runOperationId: null,
+  connectionId: null,
   createdAt: new Date('2026-09-23T10:00:00.000Z'),
   updatedAt: new Date('2026-09-23T10:00:00.000Z'),
   ...overrides,

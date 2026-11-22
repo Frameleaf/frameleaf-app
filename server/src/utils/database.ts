@@ -26,6 +26,7 @@ import { DummyValue, GenerateSqlQueries } from 'src/decorators.js';
 import { AssetEditActionItem } from 'src/dtos/editing.dto.js';
 import {
   DEFAULT_SEARCH_ORDER,
+  DateFilter,
   IdsFilter,
   LandmarkIdsFilter,
   MediaKindsFilter,
@@ -648,7 +649,7 @@ export function searchAssetBuilderLegacy(kysely: Kysely<DB>, options: AssetSearc
       .$if(!!options.trashedBefore, (qb) => qb.where('asset.deletedAt', '<=', options.trashedBefore!))
       .$if(!!options.trashedAfter, (qb) => qb.where('asset.deletedAt', '>=', options.trashedAfter!))
       .$if(!!options.takenBefore, (qb) => qb.where('asset.fileCreatedAt', '<=', options.takenBefore!))
-      .$if(!!options.takenAfter, (qb) => qb.where('asset.fileCreatedAt', '>=', options.takenAfter!))
+      .$if(!!options.takenAfter, (qb) => qb.where(takenFrom('asset.fileCreatedAt', options.takenAfter!)))
       .$if(options.city !== undefined, (qb) =>
         qb
           .innerJoin('asset_exif', 'asset.id', 'asset_exif.assetId')
@@ -1006,6 +1007,22 @@ function tagIdsPredicates(eb: AssetExpressionBuilder, filter?: IdsFilter) {
       ),
   });
 }
+type CaptureDateColumn = 'asset.fileCreatedAt' | 'asset.localDateTime';
+/**
+ * FL-936: a photo dated to a year or a decade counts as taken throughout it. Its stored date is the day that
+ * period starts, so an upper bound needs nothing, and "from `from` on" also matches a period that began before
+ * `from` and has not ended by then. Photos with an exact date keep the plain comparison; the second arm reads
+ * only the ten years before `from`, so it is a range on the same date index.
+ */
+export function takenFrom(column: CaptureDateColumn, from: Date, strict = false) {
+  const date = sql.ref(column);
+  const earliest = new Date(from);
+  earliest.setUTCFullYear(earliest.getUTCFullYear() - 10);
+  return sql<SqlBool>`(${date} ${strict ? sql`>` : sql`>=`} ${from} or (
+    asset."dateAccuracy" is not null and ${date} > ${earliest}
+    and ${date} + case asset."dateAccuracy" when 'decade' then interval '10 years' else interval '1 year' end > ${from}
+  ))`;
+}
 type ComparisonFilter<T> = {
   eq?: T | null;
   ne?: T | null;
@@ -1199,6 +1216,18 @@ function boolPredicates(filter: { eq: boolean } | undefined, predicate: Expressi
   }
   return [filter.eq ? predicate : sql<SqlBool>`not coalesce(${predicate}, false)`];
 }
+/** A capture date filter, whose lower bounds also reach a year or decade still running then (`takenFrom`). */
+function captureDatePredicates(eb: AssetExpressionBuilder, column: CaptureDateColumn, filter?: DateFilter) {
+  if (!filter) {
+    return [];
+  }
+  const { gt, gte, ...rest } = filter;
+  return [
+    ...comparisonPredicates(eb, column, rest),
+    ...(gt === undefined ? [] : [takenFrom(column, gt, true)]),
+    ...(gte === undefined ? [] : [takenFrom(column, gte)]),
+  ];
+}
 // predicates are collected as expressions rather than chained `where` calls so the same
 // helpers can build each `or` branch, which must compose into eb.and/eb.or
 function branchPredicates(
@@ -1285,8 +1314,17 @@ function branchPredicates(
       >`(select score."technicalScore" from asset_best_photo_score as score where score."assetId" = asset.id)`,
       branch.technicalScore,
     ),
-    ...comparisonPredicates(eb, 'asset.fileCreatedAt', branch.takenAt),
-    ...comparisonPredicates(eb, 'asset.localDateTime', branch.localDateTime),
+    ...captureDatePredicates(eb, 'asset.fileCreatedAt', branch.takenAt),
+    ...captureDatePredicates(eb, 'asset.localDateTime', branch.localDateTime),
+    // FL-936: the local date is in the decade; a year or decade is stored as the day it starts, so it is too
+    ...(branch.takenDecade
+      ? [
+          eb.and([
+            eb('asset.localDateTime', '>=', new Date(Date.UTC(branch.takenDecade.eq, 0, 1))),
+            eb('asset.localDateTime', '<', new Date(Date.UTC(branch.takenDecade.eq + 10, 0, 1))),
+          ]),
+        ]
+      : []),
     ...comparisonPredicates(eb, 'asset.createdAt', branch.createdAt),
     ...comparisonPredicates(eb, 'asset.updatedAt', branch.updatedAt),
     ...comparisonPredicates(eb, 'asset.deletedAt', branch.trashedAt),

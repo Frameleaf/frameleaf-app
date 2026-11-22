@@ -48,6 +48,7 @@ import { WebsocketRepository } from 'src/repositories/websocket.repository.js';
 import { DB } from 'src/schema/index.js';
 import { AssetService } from 'src/services/asset.service.js';
 import { StorageTemplateService } from 'src/services/storage-template.service.js';
+import { dateProblem, hasDateToCheck } from 'src/utils/date-sanity.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { factory } from 'test/small.factory.js';
 import { getActiveForkKyselyDB, getKyselyDB } from 'test/utils.js';
@@ -1768,6 +1769,162 @@ describe(AssetService.name, () => {
       await expect(ctx.get(AssetRepository).getById(asset.id, { exifInfo: true })).resolves.toEqual(
         expect.objectContaining({
           exifInfo: expect.objectContaining({ dateTimeOriginal: '2023-11-19T18:11:00+00:00', timeZone: 'UTC' }),
+        }),
+      );
+    });
+  });
+
+  describe('approximate dates (FL-936)', () => {
+    const read = (ctx: ReturnType<typeof setup>['ctx'], id: string) =>
+      ctx.database
+        .selectFrom('asset')
+        .innerJoin('asset_exif', 'asset_exif.assetId', 'asset.id')
+        .select([
+          'asset.dateAccuracy',
+          'asset.fileCreatedAt',
+          'asset.localDateTime',
+          'asset_exif.dateTimeOriginal',
+          'asset_exif.timeZone',
+          hasDateToCheck('asset').as('toCheck'),
+          sql<boolean>`coalesce('dateTimeOriginal' = any(asset_exif."lockedProperties"), false)`.as('dateSetByHand'),
+        ])
+        .where('asset.id', '=', id)
+        .executeTakeFirstOrThrow();
+
+    // 1 January 1970, 1980 and 2000 are the days a camera's clock resets to: hand-set, they are right
+    it.each([
+      { sent: '1975-06-15T23:30:00-07:00', dateAccuracy: 'decade' as const, start: '1970-01-01T00:00:00.000Z' },
+      { sent: '1989-12-31T23:59:59+14:00', dateAccuracy: 'decade' as const, start: '1980-01-01T00:00:00.000Z' },
+      { sent: '2004-02-29T12:00:00', dateAccuracy: 'decade' as const, start: '2000-01-01T00:00:00.000Z' },
+      { sent: '1980-01-01T00:30:00+12:00', dateAccuracy: 'year' as const, start: '1980-01-01T00:00:00.000Z' },
+      { sent: '1975-12-31T23:30:00-11:00', dateAccuracy: 'year' as const, start: '1975-01-01T00:00:00.000Z' },
+    ])(
+      'dates a photo to the $dateAccuracy of $sent: it sorts at $start, says so, and is not a date to check',
+      async ({ sent, dateAccuracy, start }) => {
+        const { sut, ctx } = setup();
+        ctx.getMock(JobRepository).queue.mockResolvedValue();
+        const { user } = await ctx.newUser();
+        const auth = factory.auth({ user });
+        const { asset } = await ctx.newAsset({ ownerId: user.id });
+        await ctx.newExif({ assetId: asset.id, timeZone: 'America/Edmonton' });
+
+        const response = await sut.update(auth, asset.id, { dateTimeOriginal: sent, dateAccuracy });
+
+        expect(response.dateAccuracy).toBe(dateAccuracy);
+        expect(new Date(response.localDateTime).toISOString()).toBe(start);
+        expect(new Date(response.fileCreatedAt).toISOString()).toBe(start);
+        const row = await read(ctx, asset.id);
+        expect(row).toEqual({
+          dateAccuracy,
+          fileCreatedAt: new Date(start),
+          localDateTime: new Date(start),
+          dateTimeOriginal: new Date(start),
+          timeZone: 'UTC',
+          toCheck: false,
+          dateSetByHand: true,
+        });
+        expect(dateProblem({ takenAt: row.fileCreatedAt, localDateTime: row.localDateTime, dateSetByHand: true })).toBe(
+          undefined,
+        );
+      },
+    );
+
+    it('an exact date sent later is exact again, and null alone keeps the date and drops the label', async () => {
+      const { sut, ctx } = setup();
+      ctx.getMock(JobRepository).queue.mockResolvedValue();
+      const { user } = await ctx.newUser();
+      const auth = factory.auth({ user });
+      const { asset } = await ctx.newAsset({ ownerId: user.id });
+      await ctx.newExif({ assetId: asset.id, make: 'Canon' });
+
+      await sut.update(auth, asset.id, { dateTimeOriginal: '1975-01-01T00:00:00', dateAccuracy: 'year' });
+      const cleared = await sut.update(auth, asset.id, { dateAccuracy: null });
+      expect(cleared.dateAccuracy).toBeUndefined();
+      await expect(read(ctx, asset.id)).resolves.toEqual(
+        expect.objectContaining({ dateAccuracy: null, localDateTime: new Date('1975-01-01T00:00:00.000Z') }),
+      );
+
+      await sut.update(auth, asset.id, { dateTimeOriginal: '1975-01-01T00:00:00', dateAccuracy: 'decade' });
+      const exact = await sut.update(auth, asset.id, { dateTimeOriginal: '1976-07-04T12:00:00+02:00' });
+      expect(exact.dateAccuracy).toBeUndefined();
+      await expect(read(ctx, asset.id)).resolves.toEqual(
+        expect.objectContaining({
+          dateAccuracy: null,
+          fileCreatedAt: new Date('1976-07-04T10:00:00.000Z'),
+          localDateTime: new Date('1976-07-04T12:00:00.000Z'),
+          timeZone: 'UTC+2',
+        }),
+      );
+    });
+
+    it('a bulk update dates photos the same way, whatever time zone is sent with it', async () => {
+      const { sut, ctx } = setup();
+      ctx.getMock(JobRepository).queueAll.mockResolvedValue();
+      const { user } = await ctx.newUser();
+      const auth = factory.auth({ user });
+      const ids: string[] = [];
+      for (const timeZone of ['Pacific/Auckland', 'America/Edmonton', null]) {
+        const { asset } = await ctx.newAsset({ ownerId: user.id });
+        await ctx.newExif({ assetId: asset.id, dateTimeOriginal: '2011-03-04T10:00:00', timeZone });
+        ids.push(asset.id);
+      }
+
+      await sut.updateAll(auth, {
+        ids,
+        dateTimeOriginal: '1984-05-05T12:00:00',
+        dateAccuracy: 'year',
+        timeZone: 'Pacific/Auckland',
+      });
+
+      const start = new Date('1984-01-01T00:00:00.000Z');
+      for (const id of ids) {
+        await expect(read(ctx, id)).resolves.toEqual({
+          dateAccuracy: 'year',
+          fileCreatedAt: start,
+          localDateTime: start,
+          dateTimeOriginal: start,
+          timeZone: 'UTC',
+          toCheck: false,
+          dateSetByHand: true,
+        });
+      }
+
+      // an exact date for all of them is exact again
+      await sut.updateAll(auth, { ids, dateTimeOriginal: '1984-05-05T12:00:00', timeZone: 'Pacific/Auckland' });
+      for (const id of ids) {
+        await expect(read(ctx, id)).resolves.toEqual(
+          expect.objectContaining({
+            dateAccuracy: null,
+            localDateTime: new Date('1984-05-05T12:00:00.000Z'),
+            timeZone: 'Pacific/Auckland',
+          }),
+        );
+      }
+    });
+
+    it('a shift or a time zone alone leaves a year or a decade as it is, and still moves the other photos', async () => {
+      const { sut, ctx } = setup();
+      ctx.getMock(JobRepository).queueAll.mockResolvedValue();
+      const { user } = await ctx.newUser();
+      const auth = factory.auth({ user });
+      const { asset: scan } = await ctx.newAsset({ ownerId: user.id });
+      await ctx.newExif({ assetId: scan.id, make: 'Epson' });
+      const taken = new Date('2023-11-19T18:11:00.000Z');
+      const { asset: photo } = await ctx.newAsset({ ownerId: user.id, fileCreatedAt: taken, localDateTime: taken });
+      await ctx.newExif({ assetId: photo.id, dateTimeOriginal: taken, timeZone: 'UTC' });
+      await sut.updateAll(auth, { ids: [scan.id], dateTimeOriginal: '1975-01-01T00:00:00', dateAccuracy: 'decade' });
+      const before = await read(ctx, scan.id);
+
+      await sut.updateAll(auth, { ids: [scan.id, photo.id], dateTimeRelative: 60 });
+      await sut.updateAll(auth, { ids: [scan.id, photo.id], timeZone: 'Europe/Paris' });
+
+      await expect(read(ctx, scan.id)).resolves.toEqual(before);
+      await expect(read(ctx, photo.id)).resolves.toEqual(
+        expect.objectContaining({
+          dateAccuracy: null,
+          fileCreatedAt: new Date('2023-11-19T19:11:00.000Z'),
+          localDateTime: new Date('2023-11-19T20:11:00.000Z'),
+          timeZone: 'Europe/Paris',
         }),
       );
     });

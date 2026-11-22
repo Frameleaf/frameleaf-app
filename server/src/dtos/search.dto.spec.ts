@@ -148,3 +148,21 @@ describe('person category filter (FL-874)', () => {
     },
   );
 });
+
+describe('decade filter (FL-936)', () => {
+  it('takes the first year of a decade, on its own, next to other conditions and inside or branches', () => {
+    for (const filter of [
+      { takenDecade: { eq: 1970 } },
+      { takenDecade: { eq: 1800 }, isFavorite: { eq: true } },
+      { or: [{ takenDecade: { eq: 1970 } }, { takenDecade: { eq: 1980 } }] },
+    ]) {
+      expect(MetadataSearchDto.schema.safeParse({ filter }).success).toBe(true);
+      expect(SmartSearchDto.schema.safeParse({ filter, query: 'beach' }).success).toBe(true);
+      expect(StatisticsSearchDto.schema.safeParse({ filter }).success).toBe(true);
+    }
+  });
+
+  it.each([1975, 1790, 1970.5, '1970'])('refuses %s', (eq) => {
+    expect(MetadataSearchDto.schema.safeParse({ filter: { takenDecade: { eq } } }).success).toBe(false);
+  });
+});

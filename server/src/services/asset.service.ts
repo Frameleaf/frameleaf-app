@@ -77,7 +77,7 @@ import { collectAllMetadata } from 'src/utils/all-metadata.js';
 import { getAssetFiles, getDimensions, getLivePhotoMotion, isPanorama } from 'src/utils/asset.util.js';
 import { PHOTOGRAPHY_INTAKE_CREDITS_KEY } from 'src/utils/capture-details.js';
 import { updateLockedColumns } from 'src/utils/database.js';
-import { extractTimeZone, getAssetDateTimeUpdates, withDateTimeOffset } from 'src/utils/date.js';
+import { extractTimeZone, getAssetDateTimeUpdates, withApproximateDate, withDateTimeOffset } from 'src/utils/date.js';
 import { EditOperationTracker } from 'src/utils/edit-operation-tracker.js';
 import { EditOperationEdit } from 'src/utils/edit-operation.js';
 import { fontFactsFromName, isBrowserFont } from 'src/utils/font-file.js';
@@ -311,7 +311,8 @@ export class AssetService extends BaseService {
     }
     await this.requireAccess({ auth, permission: Permission.AssetUpdate, ids: [id] });
 
-    const { libraryScope, ...editDto } = dto;
+    // FL-936: a year or a decade is stored as the day it starts; `dateAccuracy` goes to the asset row with `rest`
+    const { libraryScope, ...editDto } = withApproximateDate(dto);
     const {
       description,
       title,
@@ -723,8 +724,11 @@ export class AssetService extends BaseService {
       copyright,
       duplicateId,
       dateTimeRelative,
-      timeZone,
-    } = dto;
+      timeZone: givenTimeZone,
+      dateAccuracy,
+    } = withApproximateDate(dto);
+    // FL-936: a year or a decade starts at midnight UTC, whatever zone came with it
+    const timeZone = dateAccuracy ? undefined : givenTimeZone;
     // FL-786: hearts on items shared with the caller are theirs; their own items keep the owner's mark
     if (!sharedFavoritesSet && isFavoriteOnly(dto)) {
       const owned = await this.setSharedFavorites(auth, ids, isFavorite!);
@@ -753,6 +757,7 @@ export class AssetService extends BaseService {
             isFavorite,
             visibility: storedVisibility,
             duplicateId,
+            dateAccuracy,
             ...getAssetDateTimeUpdates(dateTimeOriginal, timeZone),
           },
           isUndefined,
@@ -796,6 +801,8 @@ export class AssetService extends BaseService {
                 ids,
                 dateTimeRelative,
                 timeZone ?? extractedTimeZone?.name,
+                // FL-936: a shift or a zone alone leaves a photo dated to a year or a decade as it is
+                dateTimeOriginal === undefined,
               )
             : [];
 
@@ -1063,6 +1070,10 @@ export class AssetService extends BaseService {
     await this.partnerOriginRepository.withOriginEdit('asset', ids, [], async () => {
       const previousClocks = new Map((await this.assetRepository.getByIds(ids)).map((asset) => [asset.id, asset]));
       for (const { id, from } of items) {
+        // FL-936: a year or a decade has no clock to shift
+        if (previousClocks.get(id)?.dateAccuracy) {
+          continue;
+        }
         const updated = await this.assetRepository.setDateTimeOriginal(id, new Date(from.getTime() + minutes * 60_000));
         if (updated) {
           await this.assetRepository.update({
