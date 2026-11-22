@@ -98,6 +98,7 @@ import {
   readVendoredLut,
 } from 'src/utils/log-video.js';
 import {
+  DAMAGED_CONTAINER,
   type DecodeQualification,
   DecodeSupport,
   assertDecodeQualified,
@@ -649,6 +650,14 @@ export class MediaService extends BaseService {
           executionSignal()?.throwIfAborted();
           if (cinemaRaw && isUndecodableError(error)) {
             this.logger.log(`No thumbnail for cinema RAW ${asset.id}: this server has no decoder for it`);
+            return JobStatus.Skipped;
+          }
+          // A video that won't open goes to Library care like a photo. Care checks the file itself and words the
+          // cause, so no message is passed. The path is left out of the test: a folder name must not decide this.
+          if (handOffDamage && DAMAGED_CONTAINER.test((error as Error).message.replaceAll(asset.originalPath, ''))) {
+            this.logger.warn(`Sending asset ${id} to Library care: its video container could not be opened`);
+            await this.jobRepository.queue({ name: JobName.MediaHealthFixAsset, data: { id, from: 'preview' } });
+            noteJobHandedToCare();
             return JobStatus.Skipped;
           }
           throw new Error(`Failed to probe video metadata for asset ${asset.id}: ${(error as Error).message}`, {

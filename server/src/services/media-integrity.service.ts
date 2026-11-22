@@ -14,7 +14,7 @@ import { executionSignal } from 'src/utils/execution-signal.js';
 import { JPEG_MARKER_WINDOW, findJpegMarker, isJpegFileName } from 'src/utils/file-problem.js';
 import { hasFontSignature } from 'src/utils/font-file.js';
 import { isLockedPath } from 'src/utils/locked-read.js';
-import { isUndecodableError } from 'src/utils/media-decode.js';
+import { DAMAGED_CONTAINER, isUndecodableError } from 'src/utils/media-decode.js';
 import { classifyImageDecodeFailure } from 'src/utils/media-health.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import { RawRenderError, renderRawWithLibRaw } from 'src/utils/raw-renderer.js';
@@ -297,7 +297,7 @@ export class MediaIntegrityService {
         .trim();
       const said = message ? { message } : {};
       // "End of file" and "partial file" are also what a failed read looks like, so they stay unverified.
-      if (/moov atom not found|invalid data found when processing input/i.test(message)) {
+      if (DAMAGED_CONTAINER.test(message)) {
         return { status: 'corrupt', reason: 'decode_failed', ...said };
       }
       return { status: 'transient', reason: 'decode_unverified', ...said };
