@@ -9,6 +9,7 @@ import {
 } from 'src/dtos/import-sign-in.dto.js';
 import { type BrokerService, ProviderSignInBroker, isBrokerService } from 'src/import-connectors/broker-sign-in.js';
 import { dropboxRemoteSourceProvider } from 'src/import-connectors/dropbox.source.js';
+import { googleDriveRemoteSourceProvider } from 'src/import-connectors/google-drive.source.js';
 import { onedriveRemoteSourceProvider } from 'src/import-connectors/onedrive.source.js';
 import {
   RemoteSourceError,
@@ -64,8 +65,15 @@ export class ImportSignInService {
     return onedriveRemoteSourceProvider(this.broker);
   }
 
+  get googleDrive(): RemoteSourceProvider {
+    return googleDriveRemoteSourceProvider(this.broker, {
+      picker: () => this.configRepository.getEnv().googleDrivePicker ?? null,
+    });
+  }
+
   async availability(provider: string): Promise<ImportSignInAvailabilityResponseDto> {
-    return this.broker.availability(this.signInOf(provider).service);
+    const signIn = this.signInOf(provider);
+    return { ...(await this.broker.availability(signIn.service)), picker: signIn.picker?.() ?? null };
   }
 
   async start(auth: AuthDto, provider: string, dto: ImportSignInStartDto): Promise<ImportSignInStartResponseDto> {
