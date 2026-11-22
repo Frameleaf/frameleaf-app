@@ -56,11 +56,13 @@ export class PartnerLockService extends BaseService {
     const reason = sourceReason ?? ((await this.isHiddenByRules(input)) ? AssetLockReason.Marked : undefined);
     if (reason && !targetLocked) {
       await this.assetRepository.lock([targetAssetId], reason, null);
+      await this.eventRepository.emit('HouseholdFeedAssets', { assetIds: [targetAssetId] });
       await BaseService.create(PartnerLockedNoticeService, this).noteLockedCopy(targetOwnerId);
       return 'locked';
     }
     if (!reason && targetLocked) {
       await this.assetRepository.unlock([targetAssetId]);
+      await this.eventRepository.emit('HouseholdFeedAssets', { assetIds: [targetAssetId] });
       return 'unlocked';
     }
     return 'unchanged';

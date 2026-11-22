@@ -189,6 +189,11 @@ export class HouseholdLinkService {
     return client;
   }
 
+  /** FL-979: a signed read from the other household. The caller parses the reply with a strict schema. */
+  readPeer(link: Link, path: string) {
+    return this.client(link).get<unknown>(path);
+  }
+
   /** One grant and one handshake: the link's state, its addresses and the path that answered. */
   async check(link: Link): Promise<Link> {
     const client = this.client(link);

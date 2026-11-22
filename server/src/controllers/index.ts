@@ -75,6 +75,7 @@ import { HardwareCheckController } from 'src/controllers/hardware-check.controll
 import { HelpController } from 'src/controllers/help.controller.js';
 import { HouseholdLinkController } from 'src/controllers/household-link.controller.js';
 import { HouseholdPeerController } from 'src/controllers/household-peer.controller.js';
+import { HouseholdShareController } from 'src/controllers/household-share.controller.js';
 import { ICloudIdentityController } from 'src/controllers/icloud-identity.controller.js';
 import { ICloudSyncController } from 'src/controllers/icloud-sync.controller.js';
 import { IdenticalFilesController } from 'src/controllers/identical-files.controller.js';
@@ -255,6 +256,7 @@ export const controllers = [
   BuddyBackupPeerController,
   HouseholdLinkController,
   HouseholdPeerController,
+  HouseholdShareController,
   CastController,
   CloudBackupOwnerController,
   HardwareCheckController,

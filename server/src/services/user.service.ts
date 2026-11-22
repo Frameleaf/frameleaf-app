@@ -223,6 +223,7 @@ export class UserService extends BaseService {
     // stream changed; other preferences reach devices as an ordinary user metadata upsert.
     if (changesSyncVisibility(previous, updated)) {
       await this.sessionRepository.requestSyncResetForUser(auth.user.id);
+      await this.eventRepository.emit('LockedRulesChanged', { userId: auth.user.id });
     }
     await this.recordPreferenceHistory(auth, previous, updated);
     this.websocketRepository.clientSend('on_speech_index_change', auth.user.id);

@@ -94,6 +94,7 @@ import { HelpService } from 'src/services/help.service.js';
 import { HlsService } from 'src/services/hls.service.js';
 import { HouseholdLinkService } from 'src/services/household-link.service.js';
 import { HouseholdPeerService } from 'src/services/household-peer.service.js';
+import { HouseholdShareService } from 'src/services/household-share.service.js';
 import { ICloudAlbumService } from 'src/services/icloud-album.service.js';
 import { ICloudAuditService } from 'src/services/icloud-audit.service.js';
 import { ICloudIdentityAdoptionService } from 'src/services/icloud-identity-adoption.service.js';
@@ -320,6 +321,7 @@ export const services = [
   BuddyBackupRecoveryService,
   HouseholdLinkService,
   HouseholdPeerService,
+  HouseholdShareService,
   CloudMlBatchService,
   CloudLibraryBatchService,
   CloudMlJobService,
