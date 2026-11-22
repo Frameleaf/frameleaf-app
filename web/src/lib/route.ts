@@ -256,6 +256,7 @@ export const Route = {
   largeFileUtility: () => utilitiesUrl('large-files'),
   livePhotosUtility: () => utilitiesUrl('live-photos'),
   geolocationUtility: () => utilitiesUrl('geolocation'),
+  locationHistoryUtility: () => utilitiesUrl('location-history'),
   icloudSyncUtility: () => utilitiesUrl('icloud'),
   missingMediaUtility: (params?: { status?: MediaHealthStatus }) => utilitiesUrl('missing-media', params),
   corruptMediaUtility: (params?: { status?: MediaHealthStatus }) => utilitiesUrl('corrupt-media', params),
