@@ -76,6 +76,7 @@ import { AssetFaceTable } from 'src/schema/tables/asset-face.table.js';
 import { AssetFavoriteTable } from 'src/schema/tables/asset-favorite.table.js';
 import { AssetFileTable } from 'src/schema/tables/asset-file.table.js';
 import { AssetFontTable } from 'src/schema/tables/asset-font.table.js';
+import { AssetGeonameTable } from 'src/schema/tables/asset-geoname.table.js';
 import {
   AssetHealthCandidateTable,
   AssetHealthRunTable,
@@ -161,6 +162,7 @@ import { DuplicateDecisionTable } from 'src/schema/tables/duplicate-decision.tab
 import { EagleImportItemTable, EagleImportTable } from 'src/schema/tables/eagle-import.table.js';
 import { FaceSearchTable } from 'src/schema/tables/face-search.table.js';
 import { FoundFileTable } from 'src/schema/tables/found-file.table.js';
+import { GeodataPlaceNameTable } from 'src/schema/tables/geodata-place-name.table.js';
 import { GeodataPlacesTable } from 'src/schema/tables/geodata-places.table.js';
 import { HouseholdCommentTable, HouseholdRemoteAuthorTable } from 'src/schema/tables/household-comment.table.js';
 import { HouseholdLinkTable, HouseholdPeerRequestTable } from 'src/schema/tables/household-link.table.js';
@@ -528,6 +530,8 @@ export class ImmichDatabase {
     DuplicateDecisionTable,
     FaceSearchTable,
     GeodataPlacesTable,
+    GeodataPlaceNameTable,
+    AssetGeonameTable,
     LandmarkTable,
     LandmarkAreaTable,
     AssetLandmarkTable,
@@ -869,6 +873,8 @@ export interface DB extends QueueDatabase {
   face_search: FaceSearchTable;
 
   geodata_places: GeodataPlacesTable;
+  geodata_place_name: GeodataPlaceNameTable;
+  asset_geoname: AssetGeonameTable;
   landmark: LandmarkTable;
   landmark_area: LandmarkAreaTable;
   asset_landmark: AssetLandmarkTable;

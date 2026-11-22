@@ -166,6 +166,8 @@ const REPEATABLE_JOBS = new Set<JobName>([
   JobName.SmartAlbumReevaluate,
   JobName.LandmarkMatchAll,
   JobName.LandmarkInfer,
+  // FL-987: a slice links only items without a row, so a re-run carries on where the last one stopped
+  JobName.PlaceNameBackfill,
   // FL-1094: outfits are upserted per face, and only faces without one are encoded
   JobName.AlbumSuggestionOutfit,
   // FL-413: every batch saves the run's cursor; a retry carries on from it
@@ -1533,6 +1535,10 @@ export class JobRepository {
     switch (item.name) {
       case JobName.LandmarkInfer: {
         return item.data?.id ? null : { deduplication: { id: JobName.LandmarkInfer, keepLastIfActive: true } };
+      }
+      case JobName.PlaceNameBackfill: {
+        // FL-987: every start and every night asks; one run at a time, and one waiting, is enough
+        return { deduplication: { id: JobName.PlaceNameBackfill, keepLastIfActive: true } };
       }
       case JobName.AlbumSuggestionOutfit: {
         // every load of an album's suggestions asks again until the crops exist; one waiting job is enough

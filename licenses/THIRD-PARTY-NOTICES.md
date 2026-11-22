@@ -99,6 +99,9 @@ Frameleaf is built on Immich (AGPL-3.0; see `/licenses/LICENSE.txt`). The compon
 - **Landmark place pack (OpenStreetMap boundaries, Wikidata places)** — OpenStreetMap contributors; Wikidata contributors. Licence: ODbL-1.0 (boundaries); CC0-1.0 (Wikidata fields). https://www.openstreetmap.org/copyright
   Place boundaries © OpenStreetMap contributors, available under the Open Database License (https://www.openstreetmap.org/copyright). The pack is a derivative database under the same licence; server/base-image/geodata/landmarks/build.mjs is the method that produces it. Place names, identifiers, kinds and ranks are from Wikidata (CC0).
   Licence texts: licenses/texts/odbl-1.0.txt.
+- **GeoNames (cities, regions, countries and their names in other languages)** — GeoNames. Licence: CC-BY-4.0. https://www.geonames.org/
+  City, region and country data © GeoNames (https://www.geonames.org/), licensed under CC BY 4.0. The places used to name where a photo was taken ship with the server. Their names in the app's other languages are a selection from GeoNames' alternate names, made by server/bin/build-place-names-pack.mjs, which the server downloads as one file.
+  Licence texts: licenses/texts/cc-by-4.0.txt.
 
 ## Fonts (Studio titles)
 

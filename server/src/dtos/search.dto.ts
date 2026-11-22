@@ -4,6 +4,7 @@ import { Place } from 'src/database.js';
 import { HistoryBuilder } from 'src/decorators.js';
 import { AlbumResponseSchema } from 'src/dtos/album.dto.js';
 import { AssetResponseSchema } from 'src/dtos/asset-response.dto.js';
+import { PlaceNamesLocalizedSchema } from 'src/dtos/exif.dto.js';
 import { LandmarkSummarySchema } from 'src/dtos/landmark.dto.js';
 import {
   AssetOrder,
@@ -138,6 +139,9 @@ const PlacesResponseSchema = z
     longitude: z.number().meta({ format: 'double' }).describe('Longitude coordinate'),
     admin1name: z.string().optional().describe('Administrative level 1 name (state/province)'),
     admin2name: z.string().optional().describe('Administrative level 2 name (county/district)'),
+    placeNamesLocalized: PlaceNamesLocalizedSchema.optional().describe(
+      'FL-987: the place (as `city`), its state/province and its country in the language of the signed-in account, when it is not English and one of them has a translation. Absent otherwise: show `name` and `admin1name`',
+    ),
   })
   .meta({ id: 'PlacesResponseDto' });
 

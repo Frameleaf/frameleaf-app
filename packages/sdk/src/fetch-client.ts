@@ -5667,6 +5667,16 @@ export type AlbumDescendantCountResponseDto = {
     /** Number of descendant albums (children, grandchildren, etc.) */
     count: number;
 };
+export type PlaceNamesLocalizedDto = {
+    /** City name in `lang`, or the English `city` where it has no translation */
+    city: string | null;
+    /** Country name in `lang`, or the English `country` where it has no translation */
+    country: string | null;
+    /** Language of the translated names: fr, es, de, it, pt, nl, pl, sv, da or nb (Norwegian Bokmål) */
+    lang: string;
+    /** State/province name in `lang`, or the English `state` where it has no translation */
+    state: string | null;
+};
 export type ExifResponseDto = {
     /** Artist credit */
     artist?: string | null;
@@ -5722,6 +5732,8 @@ export type ExifResponseDto = {
     modifyDate?: string | null;
     /** Image orientation */
     orientation?: string | null;
+    /** City, state and country in the language of the signed-in account, when it is not English and at least one of the three has a translation. Null otherwise: show `city`, `state` and `country` */
+    placeNamesLocalized?: (PlaceNamesLocalizedDto) | null;
     /** Color profile description */
     profileDescription?: string | null;
     /** Projection type */
@@ -6086,6 +6098,8 @@ export type MapMarkerResponseDto = {
     lon: number;
     /** Original file name */
     originalFileName?: string;
+    /** FL-987: city, state and country in the language of the signed-in account, when it is not English and one of them has a translation. Absent otherwise: show `city`, `state` and `country` */
+    placeNamesLocalized?: PlaceNamesLocalizedDto;
     /** State/Province name */
     state: string | null;
     "type"?: AssetTypeEnum;
@@ -12587,6 +12601,8 @@ export type MapClusterResponseDto = {
     lon: number;
     /** Northernmost latitude of the items */
     north: number;
+    /** FL-987: city, state and country of the preview item in the language of the signed-in account, when it is not English and one of them has a translation. Absent otherwise */
+    placeNamesLocalized?: PlaceNamesLocalizedDto;
     /** Southernmost latitude of the items */
     south: number;
     /** State/Province of the preview item */
@@ -19235,6 +19251,8 @@ export type PlacesResponseDto = {
     longitude: number;
     /** Place name */
     name: string;
+    /** FL-987: the place (as `city`), its state/province and its country in the language of the signed-in account, when it is not English and one of them has a translation. Absent otherwise: show `name` and `admin1name` */
+    placeNamesLocalized?: PlaceNamesLocalizedDto;
 };
 export type RandomSearchDto = {
     /** Filter by album IDs */

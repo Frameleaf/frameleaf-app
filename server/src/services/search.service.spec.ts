@@ -105,8 +105,55 @@ describe(SearchService.name, () => {
         },
       ]);
 
-      await sut.searchPlaces({ name: 'place' });
+      await expect(sut.searchPlaces(AuthFactory.create(), { name: 'place' })).resolves.toEqual([
+        { name: 'my place', latitude: 420, longitude: 69, admin1name: undefined, admin2name: undefined },
+      ]);
       expect(mocks.search.searchPlaces).toHaveBeenCalledWith('place');
+    });
+
+    it('adds the place’s names in the account’s language (FL-987)', async () => {
+      const auth = AuthFactory.create();
+      mocks.search.searchPlaces.mockResolvedValue([
+        {
+          id: 2_867_714,
+          name: 'Munich',
+          latitude: 48.137,
+          longitude: 11.575,
+          admin1Code: '02',
+          admin1Name: 'Bavaria',
+          admin2Code: null,
+          admin2Name: null,
+          alternateNames: null,
+          countryCode: 'DE',
+          modificationDate: new Date(),
+        },
+      ]);
+      mocks.user.getMetadata.mockResolvedValue([
+        { key: UserMetadataKey.Preferences, value: { notifications: { locale: 'de' } } },
+      ]);
+      mocks.map.getGeonameIds.mockResolvedValue({
+        admin1: new Map([['DE.02', 2_951_839]]),
+        countries: new Map([['DE', 2_921_044]]),
+      });
+      mocks.map.getPlaceNames.mockResolvedValue([
+        { geonameId: 2_867_714, name: 'München' },
+        { geonameId: 2_921_044, name: 'Deutschland' },
+      ]);
+
+      await expect(sut.searchPlaces(auth, { name: 'munich' })).resolves.toEqual([
+        expect.objectContaining({
+          name: 'Munich',
+          admin1name: 'Bavaria',
+          placeNamesLocalized: { city: 'München', state: 'Bavaria', country: 'Deutschland', lang: 'de' },
+        }),
+      ]);
+      expect(mocks.map.getPlaceNames).toHaveBeenCalledWith('de', [2_867_714, 2_951_839, 2_921_044]);
+    });
+
+    it('keeps English names when the place names cannot be read (FL-987)', async () => {
+      mocks.search.searchPlaces.mockResolvedValue([]);
+      mocks.user.getMetadata.mockRejectedValue(new Error('database is away'));
+      await expect(sut.searchPlaces(AuthFactory.create(), { name: 'place' })).resolves.toEqual([]);
     });
   });
 
