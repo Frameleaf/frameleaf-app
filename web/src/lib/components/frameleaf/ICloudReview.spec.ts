@@ -82,7 +82,7 @@ describe('ICloudReview', () => {
     const viewer = await screen.findByRole('dialog', { name: 'IMG_1.HEIC' });
     expect(viewer).toHaveTextContent(en.frameleaf_icloud_reason_metadata);
     expect(viewer).toHaveTextContent(en.frameleaf_icloud_review_effect_use_existing);
-    await fireEvent.keyDown(window, { key: 'a' });
+    await fireEvent.keyDown(globalThis, { key: 'a' });
     await waitFor(() => expect(accepted()).toEqual({ resourceIds: [resource(1)] }));
   });
 

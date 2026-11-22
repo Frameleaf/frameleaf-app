@@ -73,7 +73,7 @@
   const openIndex = $derived(items.findIndex(({ resourceId }) => resourceId === openId));
   const open = $derived(openIndex === -1 ? undefined : items[openIndex]);
   const laterInView = $derived(Object.values(later).filter((item) => !group || item.group === group));
-  const pageToAccept = $derived(items.filter(({ resourceId }) => !later[resourceId]));
+  const pageToAccept = $derived(items.filter(({ resourceId }) => !Object.hasOwn(later, resourceId)));
   const allToAccept = $derived(Math.max(0, (review?.total ?? 0) - laterInView.length));
   const totalWaiting = $derived(review?.groups.reduce((sum, { count }) => sum + count, 0) ?? 0);
   const allEffects = $derived.by(() => {
@@ -101,9 +101,9 @@
         error = '';
       }
       return loaded;
-    } catch (cause) {
+    } catch (error_) {
       if (mine === request) {
-        error = $t(icloudErrorKey(getServerErrorMessage(cause)));
+        error = $t(icloudErrorKey(getServerErrorMessage(error_)));
       }
     }
   };
@@ -115,7 +115,7 @@
     void load(1);
   };
 
-  const toggleLater = (item: Item, hold = !later[item.resourceId]) => {
+  const toggleLater = (item: Item, hold = !Object.hasOwn(later, item.resourceId)) => {
     const next = { ...later };
     if (hold) {
       next[item.resourceId] = item;
@@ -144,8 +144,8 @@
         await load(1);
       }
       return true;
-    } catch (cause) {
-      error = $t(icloudErrorKey(getServerErrorMessage(cause)));
+    } catch (error_) {
+      error = $t(icloudErrorKey(getServerErrorMessage(error_)));
       return false;
     } finally {
       busy = false;
@@ -284,7 +284,7 @@
 
     <ul class="icr-grid">
       {#each items as item (item.resourceId)}
-        {@const held = !!later[item.resourceId]}
+        {@const held = Object.hasOwn(later, item.resourceId)}
         <li class:later={held}>
           <button
             type="button"
