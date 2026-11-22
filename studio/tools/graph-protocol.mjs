@@ -99,7 +99,7 @@ const matchesType = (value, type) =>
 const SUPPORTED = new Set([
   '$schema', '$id', '$defs', 'title', 'description', 'type', 'const', 'enum', 'required', 'properties',
   'additionalProperties', 'items', 'minItems', 'maxItems', 'minimum', 'maximum', 'exclusiveMinimum',
-  'minLength', 'maxLength', 'pattern', '$ref', 'allOf', 'anyOf', 'oneOf', 'if', 'then',
+  'minLength', 'maxLength', 'pattern', '$ref', 'allOf', 'anyOf', 'oneOf', 'if', 'then', 'uniqueItems',
 ]);
 
 export function validate(schema, value) {
@@ -138,6 +138,7 @@ export function validate(schema, value) {
     if (Array.isArray(data)) {
       if (node.minItems !== undefined && data.length < node.minItems) fail(`has fewer than ${node.minItems} items`);
       if (node.maxItems !== undefined && data.length > node.maxItems) fail(`has more than ${node.maxItems} items`);
+      if (node.uniqueItems === true && new Set(data.map((entry) => canonicalJson(entry))).size !== data.length) fail('has duplicate items');
       if (node.items) data.forEach((entry, index) => check(node.items, entry, `${at}[${index}]`) || fail(`[${index}] is invalid`));
     }
     if (data && typeof data === 'object' && !Array.isArray(data)) {
@@ -347,6 +348,9 @@ export function transitionKept(transition, graph) {
   if (!left || !right) return false;
   if (left.trackId !== right.trackId) return false;
   if (right.from > endOf(left) + 1) return false;
+  // FL-1555: two sound clips that are not compound items may share a transition.
+  const sound = (item) => item.type === 'audio' && !item.compositionId;
+  if (sound(left) && sound(right)) return true;
   return [left, right].every((item) => ['video', 'image', 'composition'].includes(item.type));
 }
 

@@ -128,6 +128,7 @@ describe(AnalyticsService.name, () => {
     applyRetention: vitest.fn(),
     getInsights: vitest.fn(),
     getDatabaseBytes: vitest.fn(),
+    getExternalImportPaths: vitest.fn(),
   };
   const storageRepository = { checkDiskUsage: vitest.fn(), getFolderBytes: vitest.fn(), getDevice: vitest.fn() };
   const jobRepository = { queue: vitest.fn() };
@@ -173,6 +174,7 @@ describe(AnalyticsService.name, () => {
     analyticsRepository.applyRetention.mockResolvedValue({ downsampled: 0, deleted: 0 });
     analyticsRepository.getInsights.mockResolvedValue(insightRows());
     analyticsRepository.getDatabaseBytes.mockResolvedValue(50_000);
+    analyticsRepository.getExternalImportPaths.mockResolvedValue([]);
     storageRepository.getFolderBytes.mockResolvedValue(0);
     storageRepository.getDevice.mockResolvedValue(1);
     storageRepository.checkDiskUsage.mockResolvedValue({ total: 1_000_000, free: 400_000, available: 350_000 });
@@ -532,6 +534,18 @@ describe(AnalyticsService.name, () => {
       expect(originalsBytes + previewsBytes! + encodedVideoBytes! + databaseBytes + otherBytes).toBe(
         host.volumeUsedBytes,
       );
+    });
+
+    it('counts external libraries with the originals only when they are on the library volume', async () => {
+      analyticsRepository.getExternalImportPaths.mockResolvedValue(['/mnt/photos', '/mnt/archive']);
+      const same = await sut.getReport(admin(), { scope: 'all', range: AnalyticsRange.Year });
+      expect(same.host.breakdown).toMatchObject({ originalsBytes: 8000, otherBytes: 600_000 - 8000 - 50_000 });
+
+      storageRepository.getDevice.mockImplementation((path: string) =>
+        Promise.resolve(path === '/mnt/archive' ? 2 : 1),
+      );
+      const elsewhere = await sut.getReport(admin(), { scope: 'all', range: AnalyticsRange.Year });
+      expect(elsewhere.host.breakdown).toMatchObject({ originalsBytes: 5000 });
     });
 
     it('keeps a generated folder on another disk out of the volume subtraction', async () => {

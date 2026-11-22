@@ -1,3 +1,4 @@
+import { Writable } from 'node:stream';
 import request from 'supertest';
 import { SyncController } from 'src/controllers/sync.controller.js';
 import { GlobalExceptionFilter } from 'src/middleware/global-exception.filter.js';
@@ -36,6 +37,25 @@ describe(SyncController.name, () => {
         ]),
       );
       expect(ctx.authenticate).toHaveBeenCalled();
+    });
+
+    it('should end the connection when the stream fails after its first line', async () => {
+      syncService.stream.mockImplementation((_auth, res) => {
+        (res as Writable).write('{"type":"AssetV2"}\n');
+        return Promise.reject(new Error('lock timeout'));
+      });
+      // An idle open stream would leave the client waiting for its own timeout; a closed one fails at once.
+      const error = await request(ctx.getHttpServer())
+        .post('/sync/stream')
+        .send({ types: ['AssetsV2'] })
+        .timeout(5000)
+        .then(
+          () => {},
+          (error: { code?: string; timeout?: number }) => error,
+        );
+      expect(error).toBeDefined();
+      expect(error?.timeout).toBeUndefined();
+      expect(errorService.handleError).toHaveBeenCalled();
     });
   });
 

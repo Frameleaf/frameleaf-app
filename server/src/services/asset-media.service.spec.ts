@@ -1727,6 +1727,93 @@ describe(AssetMediaService.name, () => {
       );
     });
 
+    describe('FL-826 formats', () => {
+      let folder: string;
+      beforeEach(async () => {
+        folder = await mkdtemp(join(tmpdir(), 'download-format-test-'));
+        mocks.media.renderDownloadJpeg.mockImplementation((input: string, output: string, maxEdge: number | null) =>
+          writeFile(output, `jpeg of ${input} at ${maxEdge ?? 'full size'}`),
+        );
+      });
+      afterEach(async () => {
+        await rm(folder, { recursive: true, force: true });
+      });
+      const source = (
+        asset: { id: string; originalFileName: string },
+        type = AssetType.Image,
+        overrides: Record<string, unknown> = {},
+      ) => ({
+        id: asset.id,
+        type,
+        width: 6000,
+        height: 4000,
+        originalFileName: asset.originalFileName,
+        fullsizePath: null,
+        previewPath: '/thumbs/preview.jpeg',
+        editedPreviewPath: null,
+        ...overrides,
+      });
+
+      it('downloads a HEIC as a full-size JPEG with its metadata', async () => {
+        const asset = AssetFactory.create({ originalFileName: 'IMG_1.HEIC', originalPath: '/library/IMG_1.HEIC' });
+        mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+        mocks.asset.getForOriginal.mockResolvedValue(asset);
+        mocks.downloadRepository.getConversionSources.mockResolvedValue([source(asset)] as never);
+
+        const file = await sut.downloadOriginal(authStub.admin, asset.id, { format: 'jpeg' });
+
+        expect(file).toMatchObject({ fileName: 'IMG_1.jpg', contentType: 'image/jpeg' });
+        await expect(readFile(file.path, 'utf8')).resolves.toBe('jpeg of /library/IMG_1.HEIC at full size');
+        expect(mocks.media.copyDownloadMetadata).toHaveBeenCalledWith('/library/IMG_1.HEIC', file.path, {
+          removeLocation: false,
+        });
+        await file.release?.();
+        await expect(stat(file.path)).rejects.toThrow();
+      });
+
+      it('downloads a RAW as a JPEG from its full-size copy, and a JPEG asked for as jpeg as it is', async () => {
+        const raw = AssetFactory.create({ originalFileName: 'DSC_1.CR3', originalPath: '/library/DSC_1.CR3' });
+        mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([raw.id]));
+        mocks.asset.getForOriginal.mockResolvedValue(raw);
+        mocks.downloadRepository.getConversionSources.mockResolvedValue([
+          source(raw, AssetType.Image, { fullsizePath: '/thumbs/fullsize.jpeg' }),
+        ] as never);
+        const file = await sut.downloadOriginal(authStub.admin, raw.id, { format: 'jpeg' });
+        await expect(readFile(file.path, 'utf8')).resolves.toBe('jpeg of /thumbs/fullsize.jpeg at full size');
+        await file.release?.();
+
+        const jpeg = AssetFactory.create({ originalFileName: 'IMG_2.jpg' });
+        mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([jpeg.id]));
+        mocks.asset.getForOriginal.mockResolvedValue(jpeg);
+        mocks.downloadRepository.getConversionSources.mockResolvedValue([source(jpeg)] as never);
+        await expect(sut.downloadOriginal(authStub.admin, jpeg.id, { format: 'jpeg' })).resolves.toMatchObject({
+          path: jpeg.originalPath,
+          fileName: 'IMG_2.jpg',
+        });
+      });
+
+      it('gives a web-size-only link a 2048 px JPEG of a photo whatever it asks, and a video as it is', async () => {
+        const auth = {
+          ...authStub.adminSharedLink,
+          sharedLink: { ...authStub.adminSharedLink.sharedLink, webSizeOnly: true },
+        };
+        const photo = AssetFactory.create({ originalFileName: 'IMG_3.jpg', originalPath: '/library/IMG_3.jpg' });
+        mocks.access.asset.checkSharedLinkAccess.mockResolvedValue(new Set([photo.id]));
+        mocks.asset.getForOriginal.mockResolvedValue({ ...photo, editedPath: null } as never);
+        mocks.downloadRepository.getConversionSources.mockResolvedValue([source(photo)] as never);
+
+        const file = await sut.downloadOriginal(auth, photo.id, {});
+        await expect(readFile(file.path, 'utf8')).resolves.toBe('jpeg of /library/IMG_3.jpg at 2048');
+        await file.release?.();
+
+        const video = AssetFactory.create({ originalFileName: 'IMG_4.MOV', originalPath: '/library/IMG_4.MOV' });
+        mocks.access.asset.checkSharedLinkAccess.mockResolvedValue(new Set([video.id]));
+        mocks.asset.getForOriginal.mockResolvedValue({ ...video, editedPath: null } as never);
+        mocks.downloadRepository.getConversionSources.mockResolvedValue([source(video, AssetType.Video)] as never);
+        await expect(sut.downloadOriginal(auth, video.id, {})).resolves.toMatchObject({ path: '/library/IMG_4.MOV' });
+      });
+    });
+
     it('opens a read-only PDF for an Office original and releases the temporary response', async () => {
       const folder = await mkdtemp(join(tmpdir(), 'office-review-test-'));
       try {
@@ -2141,6 +2228,18 @@ describe(AssetMediaService.name, () => {
   });
 
   describe('viewThumbnail', () => {
+    it('FL-826: shows the preview where a web-size-only link asks for the full-size copy', async () => {
+      const auth = {
+        ...authStub.adminSharedLink,
+        sharedLink: { ...authStub.adminSharedLink.sharedLink, webSizeOnly: true },
+      };
+      mocks.access.asset.checkSharedLinkAccess.mockResolvedValue(new Set(['asset-id']));
+      await expect(sut.viewThumbnail(auth, 'asset-id', { size: AssetMediaSize.FULLSIZE })).resolves.toEqual({
+        targetSize: AssetMediaSize.PREVIEW,
+      });
+      expect(mocks.asset.getForThumbnail).not.toHaveBeenCalled();
+    });
+
     it('serves a thumbnail as immutable only for its current thumbhash, and never a preview', async () => {
       const asset = AssetFactory.create();
       const thumbhash = Buffer.from('current');

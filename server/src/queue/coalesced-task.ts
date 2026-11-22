@@ -24,8 +24,9 @@ export function coalescedTask(action: () => Promise<void>): () => Promise<void> 
  * is never reused, so a page refreshed after an action, or a test, always sees the change. Activity's run counts recount an unfinished run's whole ledger: 3.5M rows took 12 s and spilled 2.2 GB of
  * temporary files per read, and every open tab polled it every 2.5 s.
  * `reusable` can turn a result down (an idle queue, which new work would not show in). `clear()` forgets every reuse; a read still in flight when it is called is not kept either.
- * ponytail: per-process memo, so each server process reads at most once per window; incremental counts for live
- * runs would remove the recount itself.
+ * FL-1656: a large unfinished run is now read from the tally the coordinator stores (`refreshRunCounts`), so this
+ * guards what is left: a large run not yet tallied, and Recent work's reads of left-over photos.
+ * ponytail: per-process memo, so each server process reads at most once per window.
  */
 export function costReusedRead<K, T>(
   load: (key: K) => Promise<T>,

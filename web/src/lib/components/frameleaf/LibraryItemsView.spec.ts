@@ -28,6 +28,16 @@ vi.mock('$app/navigation', async (original) => ({
   goto: vi.fn(() => Promise.resolve()),
 }));
 const socket = vi.hoisted(() => ({ listeners: new Map<string, () => void>() }));
+/** Uploads and processing elsewhere reload once they go quiet; the tests skip the wait. */
+const liveEvent = (name: string) => {
+  vi.useFakeTimers();
+  try {
+    socket.listeners.get(name)?.();
+    vi.advanceTimersByTime(5000);
+  } finally {
+    vi.useRealTimers();
+  }
+};
 vi.mock('$lib/stores/websocket', () => ({
   websocketEvents: {
     on: (name: string, callback: () => void) => {
@@ -143,7 +153,7 @@ it('does not adopt late private records after logout', async () => {
 it('refreshes the same mixed result set when an upload becomes ready', async () => {
   renderWithTooltips(LibraryItemsView, { title: 'Pro', query, onQueryChange: vi.fn() });
   await screen.findByRole('button', { name: 'Open saved link Packaging reference' });
-  socket.listeners.get('on_upload_success')?.();
+  liveEvent('on_upload_success');
   await waitFor(() => expect(sdkMock.searchLibraryItems).toHaveBeenCalledTimes(2));
 });
 
@@ -189,6 +199,20 @@ it('leads an empty Boards with the first-run actions', async () => {
   await fireEvent.click(screen.getByRole('button', { name: 'Save a link' }));
   expect(onSaveLink).toHaveBeenCalledOnce();
   expect(screen.getByRole('button', { name: 'Upload files' })).toBeInTheDocument();
+});
+
+it('keeps an empty Boards on screen while a live update reloads it (FL-1681)', async () => {
+  sdkMock.searchLibraryItems.mockResolvedValueOnce(empty);
+  renderWithTooltips(LibraryItemsView, { title: 'Boards', query, onQueryChange: vi.fn() });
+  const heading = await screen.findByRole('heading', { name: 'Collect what inspires your work' });
+  let answer!: (value: LibraryItemSearchResponseDto) => void;
+  sdkMock.searchLibraryItems.mockReturnValueOnce(new Promise((resolve) => (answer = resolve)));
+  liveEvent('on_asset_update');
+  await waitFor(() => expect(sdkMock.searchLibraryItems).toHaveBeenCalledTimes(2));
+  expect(heading).toBeInTheDocument();
+  expect(screen.queryByText('Loading')).not.toBeInTheDocument();
+  answer(empty);
+  expect(await screen.findByRole('heading', { name: 'Collect what inspires your work' })).toBeInTheDocument();
 });
 
 it('offers loose matches when nothing is close to the colour', async () => {

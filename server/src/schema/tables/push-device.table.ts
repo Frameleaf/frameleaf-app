@@ -6,7 +6,7 @@ import { UserTable } from 'src/schema/tables/user.table.js';
 
 /**
  * FL-228: a device that receives push notifications. Mirrors migrations 2100000000727-PushDevices and 2100000000728-PushDeviceApnsEnvironment,
- * and 1794720000000-PushDeviceUnifiedPush (FL-926: UnifiedPush delivery, so an Android device without
+ * and 1795357117000-PushDeviceUnifiedPush (FL-926: UnifiedPush delivery, so an Android device without
  * Google services can have no FCM token).
  *
  * One registration per signed-in device session: logging out, revoking the session or removing the

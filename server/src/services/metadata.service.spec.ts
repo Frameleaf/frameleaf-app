@@ -149,6 +149,15 @@ describe(MetadataService.name, () => {
       expect(mocks.map.setPlacesRestoring).toHaveBeenCalledWith(false);
     });
 
+    it('should resume the queue when the place data step fails', async () => {
+      mocks.map.init.mockRejectedValue(new Error('canceling statement due to statement timeout'));
+
+      await expect(sut.onBootstrap()).rejects.toThrow('Metadata service init failed');
+
+      expect(mocks.job.pause).toHaveBeenCalledTimes(1);
+      expect(mocks.job.resume).toHaveBeenCalledTimes(1);
+    });
+
     it('should re-match landmarks after a geodata import', async () => {
       mocks.map.init.mockResolvedValue(true);
 
@@ -2301,6 +2310,47 @@ describe(MetadataService.name, () => {
       },
     );
 
+    it('FL-936: writes the first day of a decade to the sidecar, and reading it back changes no date or accuracy', async () => {
+      // 1 January 1970 at midnight: the epoch itself, and a day a camera resets to
+      const start = new Date('1970-01-01T00:00:00.000Z');
+      const asset = AssetFactory.from({ fileCreatedAt: start, localDateTime: start })
+        .file({ type: AssetFileType.Sidecar })
+        .exif({ dateTimeOriginal: start, timeZone: 'UTC' })
+        .build();
+      mocks.assetJob.getLockedPropertiesForMetadataExtraction.mockResolvedValue(['dateTimeOriginal', 'timeZone']);
+      mocks.assetJob.getForSidecarWriteJob.mockResolvedValue(getForSidecarWrite(asset));
+      await expect(sut.handleSidecarWrite({ id: asset.id })).resolves.toBe(JobStatus.Success);
+      expect(mocks.metadata.writeTags).toHaveBeenCalledWith(
+        asset.files[0].path,
+        expect.objectContaining({
+          DateTimeOriginal: expect.stringMatching(/^1970-01-01T00:00:00(\.000)?(Z|\+00:00)$/),
+        }),
+      );
+
+      mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
+      mocks.asset.getForMetadataExtractionTags.mockResolvedValue({
+        ...noPlace,
+        tags: null,
+        updateId: 'revision',
+        timeZone: 'UTC',
+      });
+      mocks.job.isImportedMetadataJob.mockResolvedValue(false);
+      mockReadTags({ DateTimeOriginal: ExifDateTime.fromISO(start.toISOString()), zone: 'UTC' });
+      await sut.handleMetadataExtraction({ id: asset.id });
+
+      const written = mocks.asset.update.mock.calls[0][0];
+      expect(written).not.toHaveProperty('fileCreatedAt');
+      expect(written).not.toHaveProperty('localDateTime');
+      expect(written).not.toHaveProperty('dateAccuracy');
+      // the date read from the file is the epoch: a valid date, kept behind the lock rather than refused
+      expect(mocks.asset.upsertExif).toHaveBeenCalledWith(
+        expect.objectContaining({
+          exif: expect.objectContaining({ dateTimeOriginal: start, timeZone: 'UTC' }),
+          lockedPropertiesBehavior: 'skip',
+        }),
+      );
+    });
+
     it('does not publish capture clocks from a metadata revision changed while reading the file', async () => {
       const asset = AssetFactory.create();
       mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
@@ -3414,6 +3464,54 @@ describe(MetadataService.name, () => {
           height: 720,
         }),
       );
+    });
+
+    it.each([
+      { imported: true, expected: { width: 2160, height: 3840 } },
+      { imported: false, expected: { width: undefined, height: undefined } },
+    ])(
+      'takes an edited video’s size from its edited file only on import ($imported)',
+      async ({ imported, expected }) => {
+        const asset = AssetFactory.create({ type: AssetType.Video, width: 360, height: 640, isEdited: true });
+        mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
+        mocks.job.isImportedMetadataJob.mockResolvedValue(imported);
+        mocks.asset.getForVideo.mockResolvedValue({
+          originalPath: asset.originalPath,
+          ownerId: asset.ownerId,
+          encodedVideoPath: null,
+          editedVideoPath: '/edited.mp4',
+        });
+        // The edited file carries a 90° rotation flag: 3840×2160 stored, shown 2160×3840.
+        mocks.media.probe.mockImplementation((path: string) =>
+          Promise.resolve(
+            path === '/edited.mp4' ? videoInfoStub.videoStreamVertical2160p : videoInfoStub.videoStreamH264,
+          ),
+        );
+
+        await sut.handleMetadataExtraction({ id: asset.id });
+
+        expect(mocks.asset.update).toHaveBeenCalledWith(expect.objectContaining(expected));
+      },
+    );
+
+    it('keeps the size of a video edit published after the edited file was probed', async () => {
+      const asset = AssetFactory.create({ type: AssetType.Video, width: 360, height: 640, isEdited: true });
+      mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
+      mocks.job.isImportedMetadataJob.mockResolvedValue(true);
+      const video = { originalPath: asset.originalPath, ownerId: asset.ownerId, encodedVideoPath: null };
+      // Probed '/edited.mp4'; by publication a new edit has replaced it with its own file.
+      mocks.asset.getForVideo
+        .mockResolvedValueOnce({ ...video, editedVideoPath: '/edited.mp4' })
+        .mockResolvedValue({ ...video, editedVideoPath: '/edited-v2.mp4' });
+      mocks.media.probe.mockImplementation((path: string) =>
+        Promise.resolve(
+          path === '/edited.mp4' ? videoInfoStub.videoStreamVertical2160p : videoInfoStub.videoStreamH264,
+        ),
+      );
+
+      await sut.handleMetadataExtraction({ id: asset.id });
+
+      expect(mocks.asset.update).toHaveBeenCalledWith(expect.objectContaining({ width: undefined, height: undefined }));
     });
   });
 

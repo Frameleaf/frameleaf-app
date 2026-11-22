@@ -236,11 +236,12 @@ gap, as does Cloud's quarterly key publication fix. No production auth weakening
 changes. These are authored source tests pending hosted execution, not deployed identity/provider,
 quarterly rotation, native/store or complete product acceptance.
 
-- FL-376 / FC-156 managed backup v4: `backup/capability-upload.json`,
-  `backup/capability-restore.json`, and `backup/capability-prune.json` are the
-  independently authored Apache-2.0 Cloud contract fixtures from
-  `Frameleaf/frameleaf-cloud:packages/contracts/fixtures/backup/`. They retain
-  their synthetic values verbatim. Existing v2 fixtures remain unchanged.
+- FL-1676 / FC-284 backup repository: `backup/capability-repository-upload.json` and `backup/lease.json` are
+  byte-identical to `Frameleaf/frameleaf-cloud:packages/contracts/fixtures/backup/` on the FC-284 branch
+  (`aj/FC-284-backup-repository-foundation`, PR 707, at `26c48971`). They replace the FL-376 v4 capability
+  fixtures (`capability-upload.json`, `-restore.json`, `-prune.json`), which carried SSE-C and the removed object
+  formats. Specs make the restore and prune grants from the upload one by changing its operation. Existing v2
+  fixtures remain unchanged.
 
 - FL-362 / FC-149 run coverage: `backup/run-coverage-client.json` is byte-identical to the independently
   authored, synthetic Apache-2.0 client fixture `apps/api/test/fixtures/backup/run-coverage-client.json` on
@@ -267,3 +268,18 @@ them is a fixture value (`FIXTURE-ONLY`); no real Google or Microsoft app exists
 
 `ml/transcription/result.json` is byte-identical to `packages/contracts/fixtures/ml/transcription/result.json` on
 `Frameleaf/frameleaf-cloud` `origin/main` at `19226d12ab9e1a6f8270c43a1a3a0d004a46b45c` (`transcription-v1`, FC-48).
+- FL-1725 (video restoration and Smooth motion requests): `ml/restoration/` and `ml/interpolation/` are new here,
+  byte-identical to `origin/main` at `c440381322f3424f38466da246b0f65fc688c22d` (FC-289): `estimate-request.json`, `job-request.json`,
+  `restoration/estimate-request-preview.json` and every `rejected/request-*.json` of both. They were never copied
+  before, so nothing checked the two requests and the server sent `scale` and no clip (422 on every estimate since
+  the FC-47/FC-48 contracts, 2026-09-27). `server/src/utils/frameleaf-cloud.ts` (`restoration` and `interpolation`
+  of the request schemas) now matches `packages/contracts/src/ml/workloads.ts` (`RestorationRequest`,
+  `InterpolationRequest`), and `frameleaf-cloud.spec.ts` sends every request fixture as it is, refuses every
+  rejected one and fails when the folders hold a file it does not name. Not copied: the two workloads' `result*.json`
+  and `rejected/result-*.json` (this server reads no result document for them). What the server itself sends is
+  `mode`, `targetScale` and `items` (restoration) and `factor` and `items` (Smooth motion); `items` is measured from
+  the uploaded file as the cloud's worker checks it (`apps/ml-worker/src/flc_worker/runtime/restore/__init__.py`
+  `check_clip`: the stream's own size, the average rate within 0.01, the packet count).
+  The same worker decodes the clip after that check, so the server uploads a plain stream only (no rotation, no
+  packets an edit list hides: such a source is re-encoded, `isPlainVideoStream`), and sends Smooth motion only at the
+  factor `interpolationFactor` (`packages/contracts/src/ml/workloads.ts`) gives back unchanged.

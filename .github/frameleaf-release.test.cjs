@@ -1,4 +1,7 @@
 const assert = require("node:assert/strict");
+// FL-1683: these cases model GitHub; a CI runner's own GITHUB_SERVER_URL (a Forgejo address) must not
+// switch them to the Forgejo path. frameleaf-release-forgejo.test.cjs sets it explicitly per case.
+delete process.env.GITHUB_SERVER_URL;
 const test = require("node:test");
 const fs = require("node:fs/promises");
 const os = require("node:os");
@@ -855,6 +858,13 @@ test("install bundle keeps :latest in Compose and env and preserves data configu
           platforms: ["linux/amd64", "linux/arm64"],
           sourceCommit: sha,
         },
+        {
+          image: "ghcr.io/frameleaf/frameleaf-machine-learning",
+          suffix: "-cuda",
+          digest: digest(5),
+          platforms: ["linux/amd64", "linux/arm64"],
+          sourceCommit: sha,
+        },
       ],
     };
     const originalManifest = clone(manifest);
@@ -893,10 +903,17 @@ test("install bundle keeps :latest in Compose and env and preserves data configu
     ]);
     assert.deepEqual(Object.keys(nas.images).sort(), [
       "machineLearning",
+      "machineLearningVariantPlatforms",
       "machineLearningVariants",
       "postgres",
       "server",
     ]);
+    assert.deepEqual(nas.images.machineLearningVariants, {
+      cuda: `ghcr.io/frameleaf/frameleaf-machine-learning@${digest(5)}`,
+    });
+    assert.deepEqual(nas.images.machineLearningVariantPlatforms, {
+      cuda: ["linux/amd64", "linux/arm64"],
+    });
     assert.equal(nas.sourceCommit, sha);
     assert.equal(nas.buildRun, originalManifest.buildRun);
     assert.deepEqual(nas.platforms, ["linux/amd64", "linux/arm64"]);

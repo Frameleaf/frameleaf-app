@@ -1,5 +1,7 @@
 name: Frameleaf Cloud integration tests
 'on':
+  # FL-1683: Forgejo rejects `secrets:` under workflow_call; the caller still maps only
+  # PACKAGES_READ_TOKEN.
   workflow_call:
 permissions: {}
 concurrency:
@@ -20,14 +22,16 @@ jobs:
       - name: Retrieve and verify immutable registry archive
         id: fetch
         env:
-          NODE_AUTH_TOKEN: ${{ github.token }}
+          # FL-1684: on Forgejo the package lives in Forgejo's npm registry (GitHub Packages is billing-locked).
+          NODE_AUTH_TOKEN: ${{ github.server_url == 'https://github.com' && github.token || secrets.PACKAGES_READ_TOKEN }}
+          REGISTRY: ${{ github.server_url == 'https://github.com' && 'npm.pkg.github.com' || 'code.heroapps.ca/api/packages/Frameleaf/npm' }}
         run: |
           set -euo pipefail
           config="$RUNNER_TEMP/cloud-package.npmrc"
           trap 'rm -f "$config"' EXIT
           # npm expands the token at request time; keep its value out of the file.
           # shellcheck disable=SC2016
-          printf '%s\n' '@frameleaf:registry=https://npm.pkg.github.com' '//npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}' > "$config"
+          printf '%s\n' "@frameleaf:registry=https://${REGISTRY}/" "//${REGISTRY}/"':_authToken=${NODE_AUTH_TOKEN}' > "$config"
           mkdir -p "$RUNNER_TEMP/cloud-contracts"
           NPM_CONFIG_USERCONFIG="$config" npm pack @frameleaf/cloud-contracts@0.0.5 --ignore-scripts --pack-destination "$RUNNER_TEMP/cloud-contracts" --json > "$RUNNER_TEMP/cloud-contracts/pack.json"
           node --input-type=module <<'NODE'
@@ -43,12 +47,12 @@ jobs:
           console.log(JSON.stringify({ package: '@frameleaf/cloud-contracts', version: '0.0.5', bytes: bytes.length, sha256, integrity }));
           NODE
       - name: Transfer verified archive
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        uses: https://code.forgejo.org/forgejo/upload-artifact@cb8afe72b42edc798abfb8fcb556cf660d894245 # forgejo/upload-artifact v5 (FL-1683)
         with:
           name: cloud-contracts-0.0.5
           path: ${{ runner.temp }}/cloud-contracts/frameleaf-cloud-contracts-0.0.5.tgz
           if-no-files-found: error
-          retention-days: 1
+          retention-days: 2
       - name: Clean retrieval files
         if: ${{ always() }}
         run: rm -rf "$RUNNER_TEMP/cloud-contracts" "$RUNNER_TEMP/cloud-package.npmrc"
@@ -82,7 +86,7 @@ jobs:
           cp server/test/lifecycle/dependencies/package.json server/test/lifecycle/dependencies/package-lock.json "$RUNNER_TEMP/cloud-test-dependencies/"
           npm ci --prefix "$RUNNER_TEMP/cloud-test-dependencies" --ignore-scripts --no-audit --no-fund
       - name: Receive verified archive
-        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        uses: https://code.forgejo.org/forgejo/download-artifact@769f970437aa3291b13f35dc23fc87967d7fb19f # forgejo/download-artifact v7 (FL-1683)
         with:
           name: cloud-contracts-0.0.5
           path: ${{ runner.temp }}/cloud-contracts

@@ -25,6 +25,8 @@ export type TakeoutImport = {
   phase: TakeoutPhase;
   options: Record<string, unknown>;
   runOperationId: string | null;
+  /** FL-920: the import connection this is a run of; null for a Google Photos import. */
+  connectionId: string | null;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -137,7 +139,7 @@ const itemIsLocked = (alias: string) => sql<boolean>`(${sql.ref(`${alias}.locked
     select 1 from asset_lock where asset_lock."assetId" = ${sql.ref(`${alias}.assetId`)}
   ))`;
 /** Media operation statuses that still hold an import. */
-const ACTIVE = [
+export const TAKEOUT_ACTIVE_STATUSES = [
   MediaOperationStatus.Queued,
   MediaOperationStatus.Preparing,
   MediaOperationStatus.Rendering,
@@ -164,6 +166,7 @@ const mapImport = (row: Record<string, unknown>): TakeoutImport => ({
   phase: row.phase as TakeoutPhase,
   options: (row.options ?? {}) as Record<string, unknown>,
   runOperationId: (row.runOperationId as string | null) ?? null,
+  connectionId: (row.connectionId as string | null) ?? null,
   createdAt: new Date(row.createdAt as string),
   updatedAt: new Date(row.updatedAt as string),
 });
@@ -225,6 +228,11 @@ export class TakeoutConflict extends Error {}
 /** Thrown when an import, source or item is not the owner's or does not exist. */
 export class TakeoutNotFound extends Error {}
 /**
+ * A run of an import connection (FL-920) is a `takeout_import` row too, but the two are never read
+ * through each other's routes: a request names which kind it is asking for.
+ */
+const ofKind = (connector: boolean) => sql`("connectionId" is not null) = ${connector}`;
+/**
  * Google Photos imports (FL-65).
  *
  * Every read that answers a request is owner-scoped in the query, so somebody else's import and an
@@ -281,9 +289,9 @@ export class TakeoutRepository {
     const row = await tx.insertInto('media_operation').values(operation).returningAll().executeTakeFirstOrThrow();
     return row as unknown as MediaOperation;
   }
-  async get(ownerId: string, id: string): Promise<TakeoutImport | undefined> {
+  async get(ownerId: string, id: string, connector = false): Promise<TakeoutImport | undefined> {
     const { rows } = await sql<Record<string, unknown>>`
-      select * from takeout_import where id = ${id}::uuid and "ownerId" = ${ownerId}::uuid
+      select * from takeout_import where id = ${id}::uuid and "ownerId" = ${ownerId}::uuid and ${ofKind(connector)}
     `.execute(this.db);
     return rows[0] ? mapImport(rows[0]) : undefined;
   }
@@ -294,9 +302,26 @@ export class TakeoutRepository {
     );
     return rows[0] ? mapImport(rows[0]) : undefined;
   }
+  /** Which of these imports still exist, for sweeping staging folders nothing owns. */
+  async existingImports(ids: string[]): Promise<string[]> {
+    const { rows } = await sql<{ id: string }>`
+      select id from takeout_import where id = any(${`{${ids}}`}::uuid[])
+    `.execute(this.db);
+    return rows.map(({ id }) => id);
+  }
   async list(ownerId: string): Promise<TakeoutImport[]> {
     const { rows } = await sql<Record<string, unknown>>`
-      select * from takeout_import where "ownerId" = ${ownerId}::uuid order by "createdAt" desc, id desc limit 100
+      select * from takeout_import where "ownerId" = ${ownerId}::uuid and ${ofKind(false)}
+      order by "createdAt" desc, id desc limit 100
+    `.execute(this.db);
+    return rows.map((row) => mapImport(row));
+  }
+  /** FL-920: the runs of one import connection, newest first. */
+  async listForConnection(ownerId: string, connectionId: string): Promise<TakeoutImport[]> {
+    const { rows } = await sql<Record<string, unknown>>`
+      select * from takeout_import
+      where "ownerId" = ${ownerId}::uuid and "connectionId" = ${connectionId}::uuid
+      order by "createdAt" desc, id desc limit 50
     `.execute(this.db);
     return rows.map((row) => mapImport(row));
   }
@@ -313,6 +338,7 @@ export class TakeoutRepository {
       operation: TakeoutOperation | undefined,
       quota: { quotaSizeInBytes: number | null; quotaUsageInBytes: number },
     ) => Promise<T>,
+    connector = false,
   ): Promise<T> {
     // FL-44: every change made through `fn` is a write, so the whole transaction takes the guard.
     return this.db
@@ -328,7 +354,9 @@ export class TakeoutRepository {
           .executeTakeFirst();
         if (!quota) throw new TakeoutNotFound('Import not found');
         const { rows } = await sql<Record<string, unknown>>`
-        select * from takeout_import where id = ${id}::uuid and "ownerId" = ${ownerId}::uuid for update
+        select * from takeout_import
+        where id = ${id}::uuid and "ownerId" = ${ownerId}::uuid and ${ofKind(connector)}
+        for update
       `.execute(tx);
         if (!rows[0]) {
           throw new TakeoutNotFound('Import not found');
@@ -381,7 +409,7 @@ export class TakeoutRepository {
           or not exists (
             select 1 from media_operation
             where media_operation.id = takeout_import."runOperationId"
-              and media_operation.status in (${sql.join(ACTIVE.map((status) => sql.lit(status)))})
+              and media_operation.status in (${sql.join(TAKEOUT_ACTIVE_STATUSES.map((status) => sql.lit(status)))})
           )
         )
     `.execute(db),

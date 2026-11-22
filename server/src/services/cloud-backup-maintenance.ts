@@ -1,43 +1,36 @@
+import { type Repository, prune, verify } from '@frameleaf/backup-core';
 import type { CloudBackupIndexRepository } from 'src/repositories/cloud-backup-index.repository.js';
+import type { CloudBackupConnection } from 'src/repositories/cloud-backup-store.repository.js';
 import type { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { summarizeCatalog } from 'src/services/cloud-backup-run.js';
 import {
-  CloudBackupConnection,
-  CloudBackupObjectInfo,
-  CloudBackupStoreError,
-  CloudBackupStoreRepository,
-} from 'src/repositories/cloud-backup-store.repository.js';
-import { clientBackupContext } from 'src/utils/cloud-backup-crypto.js';
-import {
-  CloudBackupRetention,
+  type CloudBackupRetention,
   inVerifySlice,
-  manifestReferences,
-  manifestTime,
-  readManifest,
   retentionPlan,
-  unreferencedDumps,
-  unreferencedObjects,
   verifySliceOf,
 } from 'src/utils/cloud-backup-retention.js';
 import {
-  CLOUD_BACKUP_DB_DUMPS_KEPT,
-  CLOUD_BACKUP_DB_PREFIX,
-  CLOUD_BACKUP_MANIFEST_PREFIX,
-  CLOUD_BACKUP_OBJECT_PREFIX,
-  objectKey,
-} from 'src/utils/cloud-backup.js';
-import { compareCodeUnits } from 'src/utils/compare.js';
-import { advanceExecutionProgress } from 'src/utils/execution-signal.js';
-import { ManagedBackupAuthorizationError } from 'src/utils/managed-backup-session.js';
+  parseSnapshotObjectKey,
+  readVaultCatalog,
+  readVaultSnapshot,
+  snapshotObjectKey,
+} from 'src/utils/cloud-backup-vault.js';
 
-/** The claimed bucket an operation works on, opened with its key for this operation only. */
+/** The claimed bucket an operation works on, opened for this operation only. */
 export type CloudBackupBucket = {
   bucketRef: string;
+  /** Where the bucket is, with what this server knows of its own backups (vault, keys, signed history). */
   connection: CloudBackupConnection;
+  /**
+   * The bucket key: what the recovery kit holds and the claim is made with. It encrypts nothing in storage
+   * (the repository is opened with the keyring's root); operations still need it loaded, so that a server
+   * whose key is locked away does not touch its backups.
+   */
   bucketKey: Buffer;
 };
 
 /**
- * Written between batches: answers whether to carry on (no on a pause, a cancel or a lost claim). The
+ * Written between steps: answers whether to carry on (no on a pause, a cancel or a lost claim). The
  * command-line restore passes one that always carries on.
  */
 export type CloudBackupCheckpoint<T> = (result: T) => Promise<boolean>;
@@ -47,40 +40,40 @@ export type CloudBackupPruneResult = {
   task: 'prune';
   dryRun: boolean;
   done: boolean;
+  /** Backups kept, and backups past retention that were removed. */
   manifestsKept: number;
   manifestsRemoved: number;
+  /** Stored objects (packs) removed or rewritten without what nothing needs any more, and the bytes that frees. */
   objectsRemoved: number;
   bytesRemoved: number;
+  /** Always 0 now: a dump is part of its backup and goes with it. Kept for the API. */
   dumpsRemoved: number;
   /** Objects deleted so far, of `objectsRemoved`. */
   deleted: number;
 };
 
-/** What a verification has checked so far. Kept on the operation row, with its cursor, as its result. */
+/** What a verification found. Kept on the operation row as its result. */
 export type CloudBackupVerifyResult = {
   task: 'verify';
   depth: 'sample' | 'full';
   done: boolean;
-  /** The week slice a sampled verification checks, fixed when it starts so a resumed one checks the same. */
+  /** The week slice a sampled verification reads, fixed when it starts so a resumed one reads the same. */
   slice: number;
+  /** Pieces the kept backups need. */
   total: number;
+  /** A full check: the pieces looked for. A sample: the stored objects read byte for byte. */
   checked: number;
+  /** Pieces a backup needs that storage does not hold. */
   missing: number;
+  /** Stored objects whose content no longer matches what was written, and backups that cannot be opened. */
   mismatched: number;
   degradedManifests: number;
-  /** The manifests marked degraded so far (at most `VERIFY_BAD_KEPT`), so a resumed check counts each once. */
   degradedKeys: string[];
-  /** The last object checked, in SHA-256 order: a resumed verification carries on after it. */
   cursor: string | null;
-  dumpCursor?: string | null;
-  /** The objects found missing or damaged (at most `VERIFY_BAD_KEPT` of them). */
+  /** The pieces and objects found missing or damaged (at most `VERIFY_BAD_KEPT` of them). */
   bad: string[];
 };
 
-/** Objects checked, or deleted, between two checkpoints. */
-const MAINTENANCE_BATCH = 200;
-/** Objects forgotten in the index per query. */
-const FORGET_BATCH = 1000;
 /** How many bad objects a verification lists on its result; the counts cover all of them. */
 const VERIFY_BAD_KEPT = 1000;
 
@@ -111,342 +104,167 @@ export const emptyVerifyResult = (depth: 'sample' | 'full', now: Date): CloudBac
   bad: [],
 });
 
-const listAll = async (store: CloudBackupStoreRepository, bucket: CloudBackupBucket, prefix: string) => {
-  const objects: CloudBackupObjectInfo[] = [];
-  await store.listAll(bucket.connection, prefix, (page) => {
-    objects.push(...page);
-    return Promise.resolve();
-  });
-  return objects;
-};
-
 /**
- * Retention and verification of a claimed bucket (FL-164, CLD-302). Both read the manifests in the bucket
- * itself, never a copy on this server, so what they decide is what a restore would find.
+ * Retention and verification of a claimed bucket (FL-164, FL-1676). Both work on the repository in the
+ * bucket itself, never on a copy on this server, so what they decide is what a restore would find. The
+ * backup engine does the storage work; this class decides which backups to keep and keeps this server's
+ * own list of them in step.
  *
- * - **Retention** keeps the manifests the settings keep, reads every one of them in full, and removes
- *   only the objects and dumps that none of them names; if any kept manifest cannot be read, nothing is
- *   removed. Each object is forgotten by the index before it is deleted, so an interrupted clean-up can
- *   only cost a second upload, never a skipped one. A dry run counts and removes nothing.
- * - **Verification** reads every manifest, then either fetches this week's 1/52 of the objects and checks
- *   each against its SHA-256 (weekly), or HEADs every referenced object and dump (monthly). A missing or
- *   damaged object is forgotten by the index, so the next run uploads it again from this server's files,
- *   and every manifest that names it is marked `degraded`.
+ * - **Retention** keeps the backups the settings keep (by day, week and month) and always the newest and
+ *   the one the signed history ends in. The engine then removes the stored data only the others needed.
+ *   It stops before changing anything if a kept backup is missing a piece, never removes data stored less
+ *   than 90 days ago (storage is billed that long anyway), and is safe to stop at any point. A dry run
+ *   counts and removes nothing.
+ * - **Verification** walks every kept backup and checks that every piece it needs is stored (`full`), and
+ *   for a `sample` also reads this week's 1/52 of the stored objects and checks every piece in them
+ *   against its name, so each object is read once a year.
  */
 export class CloudBackupMaintenance {
   constructor(
-    private store: CloudBackupStoreRepository,
-    private index: CloudBackupIndexRepository,
+    private index: Pick<CloudBackupIndexRepository, 'getManifestKeys' | 'adoptManifests' | 'markManifests'>,
     private logger: LoggingRepository,
   ) {}
 
+  /**
+   * Backups in storage that this server has no record of (a bucket claimed again, or a database restored
+   * from before later runs) are recorded as kept, so they can be listed and restored from. One that
+   * cannot be read is left out and logged; the clean-up still decides about it from storage.
+   */
+  async adopt(bucket: CloudBackupBucket, repository: Repository, except: string | null = null): Promise<number> {
+    const vaultId = bucket.connection.vaultId!;
+    const stored = (await repository.listSnapshots()).map(({ key }) => ({
+      key,
+      name: snapshotObjectKey(vaultId, key),
+    }));
+    const known = await this.index.getManifestKeys(
+      bucket.bucketRef,
+      stored.map(({ name }) => name),
+    );
+    const adopted = [];
+    for (const { key, name } of stored) {
+      if (known.has(name) || name === except) {
+        continue;
+      }
+      try {
+        const snapshot = await readVaultSnapshot(repository, key, bucket.connection.trustedManifests?.[name]);
+        const summary = summarizeCatalog(await readVaultCatalog(repository, snapshot));
+        adopted.push({
+          key: name,
+          createdAt: new Date(snapshot.time),
+          databaseKey: summary.database?.key ?? null,
+          assetCount: summary.assets,
+          fileCount: summary.files,
+          bytes: summary.bytes,
+        });
+      } catch (error) {
+        this.logger.warn(`Cloud backup: the stored backup ${name} could not be read: ${String(error)}`);
+      }
+    }
+    return this.index.adoptManifests(bucket.bucketRef, adopted);
+  }
+
   async prune(
     bucket: CloudBackupBucket,
+    repository: Repository,
     retention: CloudBackupRetention,
     dryRun: boolean,
-    checkpoint: CloudBackupCheckpoint<CloudBackupPruneResult>,
-  ): Promise<CloudBackupPruneResult | null> {
-    const listed = await listAll(this.store, bucket, CLOUD_BACKUP_MANIFEST_PREFIX);
-    const trustedHead = bucket.connection.trustedManifestHead;
-    if (trustedHead && listed.every(({ key }) => key !== trustedHead))
+  ): Promise<CloudBackupPruneResult> {
+    const vaultId = bucket.connection.vaultId!;
+    const stored = await repository.listSnapshots();
+    const head = bucket.connection.trustedManifestHead
+      ? parseSnapshotObjectKey(bucket.connection.trustedManifestHead)?.key
+      : undefined;
+    if (bucket.connection.trustedManifestHead && stored.every(({ key }) => key !== head)) {
       throw new Error('The anchored backup head is missing from storage; clean-up is refused');
-    // a name that is not a manifest's is never a candidate for removal
-    const candidates = listed.flatMap(({ key }) => {
-      const createdAt = manifestTime(key);
-      return createdAt ? [{ key, createdAt }] : [];
-    });
-    const inventory = new Map(candidates.map((manifest) => [manifest.key, manifest]));
-    const kept = await this.index.listKeptManifests(bucket.bucketRef);
-    const signedKeys = Object.keys(bucket.connection.trustedManifests ?? {});
-    const pruned = await this.index.getManifestKeys(bucket.bucketRef, signedKeys, 'pruned');
-    // Only explicit pruning expires signed history, including receipts committed before an index crash.
-    for (const key of [...kept.map(({ key }) => key), ...signedKeys.filter((key) => !pruned.has(key))]) {
-      const createdAt = manifestTime(key);
-      if (!createdAt) throw new Error('Known backup history has an invalid manifest key; clean-up is refused');
-      inventory.set(key, { key, createdAt });
-    }
-    const plan = retentionPlan(inventory.values().toArray(), retention);
-    const anchored = plan.remove.find(({ key }) => key === trustedHead);
-    if (anchored) {
-      plan.keep.push(anchored);
-      plan.remove = plan.remove.filter(({ key }) => key !== trustedHead);
     }
 
-    // Every kept manifest is read in full before anything is removed; one that cannot be read stops the
-    // clean-up, so an object it might name is never removed.
-    const referenced = new Set<string>();
-    const referencedDumps = new Set<string>();
-    const listedKeys = new Set(listed.map(({ key }) => key));
-    for (const manifest of plan.keep) {
-      const trusted = bucket.connection.trustedManifests?.[manifest.key];
-      if (
-        !listedKeys.has(manifest.key) &&
-        (!clientBackupContext(bucket.connection.bucket, manifest.key, bucket.connection.vaultId) ||
-          !trusted?.versionId ||
-          trusted.versionId === 'null' ||
-          !/^[\da-f]{64}$/.test(trusted.ciphertextSha256))
-      )
-        throw new Error('A retained backup manifest has no trusted exact version; clean-up is refused');
-      const references = await this.readReferences(bucket, manifest.key);
-      for (const sha256 of references.objects.keys()) {
-        referenced.add(sha256);
-        for (const key of references.storageKeys.get(sha256)!) referenced.add(key);
-      }
-      if (references.database) {
-        referencedDumps.add(references.database);
+    // Each backup's time is the one sealed inside it, never the provider's. One that cannot be opened is kept.
+    const candidates: Array<{ key: string; createdAt: Date }> = [];
+    const keep = new Set<string>();
+    for (const { key } of stored) {
+      try {
+        const at = new Date((await repository.readSnapshot(key)).time);
+        if (Number.isNaN(at.getTime())) {
+          keep.add(key);
+        } else {
+          candidates.push({ key, createdAt: at });
+        }
+      } catch {
+        keep.add(key);
       }
     }
+    for (const { key } of retentionPlan(candidates, retention).keep) {
+      keep.add(key);
+    }
+    if (head) {
+      keep.add(head);
+    }
+    const remove = candidates.filter(({ key }) => !keep.has(key));
 
-    const objects = unreferencedObjects(await listAll(this.store, bucket, CLOUD_BACKUP_OBJECT_PREFIX), referenced);
-    // the newest dumps are kept whatever names them, as a run keeps them
-    const dumps = await listAll(this.store, bucket, CLOUD_BACKUP_DB_PREFIX);
-    const newestDumps = new Set(
-      dumps
-        .map(({ key }) => key)
-        .toSorted((a, b) => compareCodeUnits(b, a))
-        .slice(0, CLOUD_BACKUP_DB_DUMPS_KEPT),
-    );
-    const staleDumps = unreferencedDumps(dumps, referencedDumps).filter(({ key }) => !newestDumps.has(key));
-
-    const result: CloudBackupPruneResult = {
-      ...emptyPruneResult(dryRun),
-      manifestsKept: plan.keep.length,
-      manifestsRemoved: plan.remove.length,
-      objectsRemoved: objects.length,
-      bytesRemoved: objects.reduce((total, { size }) => total + size, 0),
-      dumpsRemoved: staleDumps.length,
-    };
+    // Marked pruned before anything is deleted, so nothing offers a restore from a backup that is going.
+    if (!dryRun) {
+      await this.index.adoptManifests(
+        bucket.bucketRef,
+        remove.map(({ key, createdAt }) => ({
+          key: snapshotObjectKey(vaultId, key),
+          createdAt,
+          databaseKey: null,
+          assetCount: 0,
+          fileCount: 0,
+          bytes: 0,
+        })),
+        'pruned',
+      );
+      await this.index.markManifests(
+        bucket.bucketRef,
+        remove.map(({ key }) => snapshotObjectKey(vaultId, key)),
+        'pruned',
+      );
+    }
+    const report = await prune(repository, { keep: () => keep, dryRun });
     this.logger.log(
-      `Cloud backup clean-up${dryRun ? ' (dry run)' : ''}: ${plan.keep.length} runs kept, ${plan.remove.length} past retention, ${objects.length} unreferenced files (${result.bytesRemoved} bytes), ${staleDumps.length} old database dumps`,
+      `Cloud backup clean-up${dryRun ? ' (dry run)' : ''}: ${report.keptSnapshots} backups kept, ${report.removedSnapshots.length} past retention, ${report.deletedPacks} stored objects (${report.freedBytes} bytes) no longer needed`,
     );
-    if (dryRun) {
-      return { ...result, done: true };
-    }
-
-    // The manifests go first, marked pruned before they are deleted so nothing offers a restore from one
-    // that is going; the objects only they named are unreferenced whichever way this is interrupted.
-    await this.index.adoptManifests(
-      bucket.bucketRef,
-      plan.remove.map(({ key, createdAt }) => ({
-        key,
-        createdAt,
-        databaseKey: null,
-        assetCount: 0,
-        fileCount: 0,
-        bytes: 0,
-      })),
-      'pruned',
-    );
-    await this.index.markManifests(
-      bucket.bucketRef,
-      plan.remove.map(({ key }) => key),
-      'pruned',
-    );
-    for (const manifest of plan.remove) {
-      await this.store.delete(bucket.connection, manifest.key);
-      advanceExecutionProgress(1);
-    }
-
-    let progress = result;
-    for (let start = 0; start < objects.length; start += MAINTENANCE_BATCH) {
-      const batch = objects.slice(start, start + MAINTENANCE_BATCH);
-      const hashes = batch.map(({ key }) => key.slice(CLOUD_BACKUP_OBJECT_PREFIX.length));
-      for (let at = 0; at < hashes.length; at += FORGET_BATCH) {
-        await this.index.forget(bucket.bucketRef, hashes.slice(at, at + FORGET_BATCH));
-      }
-      for (const { key } of batch) {
-        await this.store.delete(bucket.connection, key);
-        advanceExecutionProgress(1);
-      }
-      progress = { ...progress, deleted: progress.deleted + batch.length };
-      // a pause or cancel stops here; the next clean-up plans again from the bucket as it is then
-      if (!(await checkpoint(progress))) {
-        return null;
-      }
-    }
-    for (const { key } of staleDumps) {
-      await this.store.delete(bucket.connection, key);
-      advanceExecutionProgress(1);
-    }
-    return { ...progress, done: true };
+    return {
+      ...emptyPruneResult(dryRun),
+      done: true,
+      manifestsKept: report.keptSnapshots,
+      manifestsRemoved: report.removedSnapshots.length,
+      objectsRemoved: report.deletedPacks,
+      bytesRemoved: Math.max(0, report.freedBytes),
+      deleted: dryRun ? 0 : report.deletedPacks,
+    };
   }
 
   async verify(
     bucket: CloudBackupBucket,
+    repository: Repository,
     start: CloudBackupVerifyResult,
-    checkpoint: CloudBackupCheckpoint<CloudBackupVerifyResult>,
-    claim: { operationId: string; claimToken: string },
-  ): Promise<CloudBackupVerifyResult | null> {
-    // what every manifest names: object → its size and the manifests naming it, and each named dump
-    const named = new Map<string, { size: number; manifests: string[]; storageKeys: Set<string> }>();
-    const dumps = new Map<string, string[]>();
-    const unreadable: string[] = [];
-    const manifests = await listAll(this.store, bucket, CLOUD_BACKUP_MANIFEST_PREFIX);
-    if (
-      bucket.connection.trustedManifestHead &&
-      manifests.every(({ key }) => key !== bucket.connection.trustedManifestHead)
-    )
-      unreadable.push(bucket.connection.trustedManifestHead);
-    for (const { key } of manifests) {
-      if (!manifestTime(key)) {
-        continue;
-      }
-      let references: ReturnType<typeof manifestReferences>;
-      try {
-        references = await this.readReferences(bucket, key);
-      } catch (error) {
-        if (error instanceof ManagedBackupAuthorizationError) throw error;
-        if (error instanceof CloudBackupStoreError && error.status !== 404 && error.code !== 'ChecksumMismatch')
-          throw error;
-        this.logger.warn(`Cloud backup verification: manifest ${key} could not be read: ${String(error)}`);
-        unreadable.push(key);
-        continue;
-      }
-      for (const [sha256, size] of references.objects) {
-        const entry = named.get(sha256);
-        if (entry) {
-          entry.manifests.push(key);
-          for (const key of references.storageKeys.get(sha256)!) entry.storageKeys.add(key);
-        } else {
-          named.set(sha256, { size, manifests: [key], storageKeys: new Set(references.storageKeys.get(sha256)!) });
-        }
-      }
-      if (references.database) {
-        dumps.set(references.database, [...(dumps.get(references.database) ?? []), key]);
-      }
-    }
-
-    const hashes = named
-      .keys()
-      .filter((sha256) => start.depth === 'full' || inVerifySlice(sha256, start.slice))
-      .toArray()
-      .toSorted(compareCodeUnits);
-    let result: CloudBackupVerifyResult = {
+  ): Promise<CloudBackupVerifyResult> {
+    const vaultId = bucket.connection.vaultId!;
+    const sample = start.depth === 'sample';
+    const report = await verify(repository, {
+      // `p/<32 hex>`: a pack's random name puts it in one of the year's 52 slices
+      readPack: (pack) => sample && inVerifySlice(pack.slice(2).padEnd(64, '0'), start.slice),
+    });
+    const bad = [...report.damagedSnapshots, ...report.damagedPacks, ...report.missing];
+    // ponytail: the engine says which pieces are bad, not which backups need them, so every kept backup
+    // is marked when any piece is. Have the engine's verify name the backups to mark only those.
+    const degraded =
+      bad.length > 0
+        ? (await repository.listSnapshots()).map(({ key }) => snapshotObjectKey(vaultId, key))
+        : ([] as string[]);
+    const marked = await this.index.markManifests(bucket.bucketRef, degraded, 'degraded');
+    return {
       ...start,
-      total: hashes.length + (start.depth === 'full' ? dumps.size : 0),
+      done: true,
+      total: report.blobs,
+      checked: sample ? report.packsRead : report.blobs,
+      missing: report.missing.length,
+      mismatched: report.damagedPacks.length + report.damagedSnapshots.length,
+      degradedManifests: Math.max(start.degradedManifests, marked),
+      degradedKeys: degraded.slice(0, VERIFY_BAD_KEPT),
+      bad: bad.slice(0, VERIFY_BAD_KEPT),
     };
-    // manifests marked degraded, counted once each across a resumed verification's claims
-    const degraded = new Set<string>([...(start.degradedKeys ?? []), ...unreadable]);
-    const bad: string[] = [];
-    const degradedCount = () => Math.max(start.degradedManifests, degraded.size);
-
-    const record = (sha256: string, problem: 'missing' | 'mismatched') => {
-      bad.push(sha256);
-      for (const key of named.get(sha256)?.manifests ?? []) {
-        degraded.add(key);
-      }
-      result = {
-        ...result,
-        [problem]: result[problem] + 1,
-        bad: result.bad.length < VERIFY_BAD_KEPT ? [...result.bad, sha256] : result.bad,
-      };
-    };
-
-    const { cursor } = start;
-    const pending = cursor ? hashes.filter((sha256) => compareCodeUnits(sha256, cursor) > 0) : hashes;
-    for (let at = 0; at < pending.length; at += MAINTENANCE_BATCH) {
-      for (const sha256 of pending.slice(at, at + MAINTENANCE_BATCH)) {
-        let problem: 'missing' | 'mismatched' | null = null;
-        for (const key of named.get(sha256)!.storageKeys) {
-          const found = await this.checkObject(bucket, sha256, named.get(sha256)!.size, start.depth, key);
-          if (found) problem = found;
-        }
-        await this.index.recordObjectVerification({
-          bucket: bucket.bucketRef,
-          sha256,
-          ...claim,
-          method: start.depth === 'full' ? 'size-head' : 'sha256-get',
-          result: problem ?? 'passed',
-        });
-        advanceExecutionProgress(1);
-        if (problem) {
-          record(sha256, problem);
-        }
-        result = { ...result, checked: result.checked + 1, cursor: sha256 };
-      }
-      const settling = [...bad];
-      bad.length = 0;
-      await this.settleBad(bucket, settling, degraded);
-      result = {
-        ...result,
-        degradedManifests: degradedCount(),
-        degradedKeys: [...degraded].slice(0, VERIFY_BAD_KEPT),
-      };
-      if (!(await checkpoint(result))) {
-        return null;
-      }
-    }
-
-    if (start.depth === 'full') {
-      for (const [key, names] of [...dumps].sort(([a], [b]) => compareCodeUnits(a, b))) {
-        if (start.dumpCursor && compareCodeUnits(key, start.dumpCursor) <= 0) continue;
-        const found = await this.store.head(bucket.connection, key, bucket.bucketKey).catch((error: unknown) => {
-          // a damaged dump restores no better than a missing one
-          if (error instanceof CloudBackupStoreError && (error.status === 404 || error.code === 'ChecksumMismatch')) {
-            return null;
-          }
-          throw error;
-        });
-        if (!found) {
-          result = { ...result, missing: result.missing + 1 };
-          for (const manifest of names) {
-            degraded.add(manifest);
-          }
-          await this.settleBad(bucket, [], degraded);
-        }
-        result = {
-          ...result,
-          checked: result.checked + 1,
-          dumpCursor: key,
-          degradedManifests: degradedCount(),
-          degradedKeys: [...degraded].slice(0, VERIFY_BAD_KEPT),
-        };
-        advanceExecutionProgress(1);
-        if (!(await checkpoint(result))) return null;
-      }
-    }
-    await this.settleBad(bucket, [], degraded);
-    return { ...result, degradedManifests: degradedCount(), done: true };
-  }
-
-  private async readReferences(bucket: CloudBackupBucket, key: string) {
-    return manifestReferences(readManifest(await this.store.get(bucket.connection, key, bucket.bucketKey)));
-  }
-
-  /** One object: HEAD (monthly) or a full read hashed against its name (weekly). */
-  private async checkObject(
-    bucket: CloudBackupBucket,
-    sha256: string,
-    size: number,
-    depth: 'sample' | 'full',
-    key = objectKey(sha256),
-  ): Promise<'missing' | 'mismatched' | null> {
-    try {
-      if (depth === 'full') {
-        const found = await this.store.head(bucket.connection, key, bucket.bucketKey);
-        if (!found) {
-          return 'missing';
-        }
-        return found.size === size ? null : 'mismatched';
-      }
-      const read = await this.store.hashObject(bucket.connection, key, bucket.bucketKey);
-      return read.sha256 === sha256 && read.size === size ? null : 'mismatched';
-    } catch (error) {
-      if (error instanceof CloudBackupStoreError && error.status === 404) {
-        return 'missing';
-      }
-      if (error instanceof CloudBackupStoreError && error.code === 'ChecksumMismatch') {
-        return 'mismatched';
-      }
-      throw error;
-    }
-  }
-
-  /** Forget bad objects in the index, so the next run uploads them again, and mark the manifests naming them. */
-  private async settleBad(bucket: CloudBackupBucket, bad: string[], degraded: ReadonlySet<string>) {
-    for (let at = 0; at < bad.length; at += FORGET_BATCH) {
-      await this.index.forget(bucket.bucketRef, bad.slice(at, at + FORGET_BATCH));
-    }
-    await this.index.markManifests(bucket.bucketRef, [...degraded], 'degraded');
   }
 }

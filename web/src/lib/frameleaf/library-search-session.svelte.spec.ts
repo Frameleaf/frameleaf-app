@@ -235,6 +235,30 @@ it('pages mixed records through the same request boundary and preserves their ki
   expect(vi.mocked(searchLibraryItems).mock.calls[1][0].libraryItemSearchDto.cursor).toBe('next');
 });
 
+it('keeps what is shown through a live refresh until the new first page replaces it (FL-1681)', async () => {
+  const session = createSession();
+  const query = { kind: 'library', terms: { filter: { libraryScope: LibraryViewScope.Design } } } as const;
+  vi.mocked(searchLibraryItems).mockResolvedValueOnce(mixedResult('old', 'next'));
+  session.reset(query);
+  await session.loadNextPage(options);
+
+  const pending = deferred<LibraryItemSearchResponseDto>();
+  vi.mocked(searchLibraryItems).mockReturnValueOnce(pending.promise);
+  session.reset(query, { keepResults: true });
+  const load = session.loadNextPage(options);
+  expect(session.refreshing).toBe(true);
+  expect(session.items).toHaveLength(1);
+  expect(session.count).toBe(2);
+  expect(vi.mocked(searchLibraryItems).mock.calls[1][0].libraryItemSearchDto.cursor).toBeUndefined();
+
+  pending.resolve(mixedResult('new'));
+  await load;
+  expect(session.refreshing).toBe(false);
+  expect(session.items.map((item) => item.kind === LibraryBookmarkItemKind.Bookmark && item.bookmark.id)).toEqual([
+    'new',
+  ]);
+});
+
 it('discards a completed mixed response after an access reset', async () => {
   const session = createSession();
   const pending = deferred<LibraryItemSearchResponseDto>();

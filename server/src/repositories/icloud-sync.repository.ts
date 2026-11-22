@@ -1,5 +1,5 @@
 import { ConflictException, Injectable } from '@nestjs/common';
-import { Kysely, Transaction, sql } from 'kysely';
+import { Kysely, RawBuilder, Transaction, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { randomUUID } from 'node:crypto';
 import type { ICloudConfig } from 'src/dtos/icloud-sync.dto.js';
@@ -332,7 +332,15 @@ export class ICloudSyncRepository {
         WHERE NOT EXISTS (SELECT 1 FROM public.icloud_run WHERE "connectionId" = ${connection.id}::uuid AND status IN ('running','queued')) RETURNING id`.execute(
         db,
       );
-      if (created.rows.length > 0) {
+      // FL-1685: a fresh pass starts after a listing that finished. A run that stopped partway through listing
+      // (failed, cancelled, the server restarted) leaves its checkpoints, and the next run carries on from them,
+      // unless the listing has not moved for a day: its cursors may be stale by then.
+      // ponytail: one day is a guess at how long Apple's continuation markers stay usable; tune it if they don't.
+      const { rows: fresh } = await sql<{ fresh: boolean }>`SELECT
+          NOT EXISTS (SELECT 1 FROM public.icloud_checkpoint WHERE "connectionId"=${connection.id}::uuid AND scope='inventory-complete' AND complete)
+          AND EXISTS (SELECT 1 FROM public.icloud_checkpoint WHERE "connectionId"=${connection.id}::uuid AND "updatedAt" > now() - interval '1 day')
+          AS fresh`.execute(db);
+      if (created.rows.length > 0 && !fresh[0]?.fresh) {
         await sql`DELETE FROM public.icloud_checkpoint WHERE "connectionId"=${connection.id}::uuid AND scope NOT LIKE 'changes:%'`.execute(
           db,
         );
@@ -341,6 +349,8 @@ export class ICloudSyncRepository {
         );
         await sql`UPDATE public.icloud_resource SET status='pending',"expectedTarget"=NULL,"promotedPath"=NULL
           WHERE "connectionId"=${connection.id}::uuid AND status='finalized' AND "auditRequestId" IS NULL`.execute(db);
+      }
+      if (created.rows.length > 0) {
         // FL-1472: an item that failed or waits for review is tried again while its library photo is missing or
         // damaged; the run checks it as it did the first time
         await sql`UPDATE public.icloud_resource r SET status='pending',attempts=0,"nextAttemptAt"=NULL
@@ -471,7 +481,7 @@ export class ICloudSyncRepository {
           | undefined;
         await sql`INSERT INTO public.icloud_record ("connectionId", "libraryKey", "recordId", "recordType", revision, "masterId", fields, deleted)
           VALUES (${connectionId}::uuid, ${libraryKey}, ${record.recordName}, ${record.recordType ?? 'CPLAsset'}, ${record.recordChangeTag ?? null},
-            ${master?.value?.recordName ?? null}, ${sanitizeICloudFields({ ...record.fields, ...(scope.startsWith('assets:') && { __icloudSnapshot: snapshotId }) })}::jsonb, ${record.deleted ?? false})
+            ${master?.value?.recordName ?? null}, ${sanitizeICloudFields({ ...record.fields, ...((scope.startsWith('assets:') || scope === 'libraries') && { __icloudSnapshot: snapshotId }) })}::jsonb, ${record.deleted ?? false})
           ON CONFLICT ("connectionId", "libraryKey", "recordId") DO UPDATE SET revision = excluded.revision, "masterId" = excluded."masterId",
             "recordType" = CASE WHEN excluded.deleted THEN public.icloud_record."recordType" ELSE excluded."recordType" END, fields = excluded.fields, deleted = excluded.deleted, "updatedAt" = now()`.execute(
           db,
@@ -482,6 +492,12 @@ export class ICloudSyncRepository {
             db,
           );
         }
+      }
+      if (complete && scope === 'libraries') {
+        // FL-1685: a library this listing did not see is gone (another Apple Account signed in, a shared library
+        // left), so the run no longer lists it
+        await sql`UPDATE public.icloud_record SET deleted=true WHERE "connectionId"=${connectionId}::uuid AND "recordType"='Library'
+          AND fields->>'__icloudSnapshot' IS DISTINCT FROM ${snapshotId}`.execute(db);
       }
       if (complete && scope.startsWith('assets:')) {
         await sql`UPDATE public.icloud_record SET deleted=true WHERE "connectionId"=${connectionId}::uuid AND "libraryKey"=${libraryKey}
@@ -498,6 +514,12 @@ export class ICloudSyncRepository {
         ON CONFLICT ("connectionId", scope) DO UPDATE SET cursor = excluded.cursor, complete = excluded.complete, "updatedAt" = now()`.execute(
         db,
       );
+    }, transaction);
+  }
+  /** FL-1685: drop the listing's checkpoints, so the next run lists the library from the start. */
+  async forgetListing(connectionId: string, transaction?: Kysely<DB>): Promise<void> {
+    await this.active(async (db) => {
+      await sql`DELETE FROM public.icloud_checkpoint WHERE "connectionId" = ${connectionId}::uuid`.execute(db);
     }, transaction);
   }
   async resetInventory(connectionId: string, transaction?: Kysely<DB>): Promise<void> {
@@ -1003,75 +1025,14 @@ export class ICloudSyncRepository {
       if (checkpoint?.complete) {
         return true;
       }
-      const { rows } = await sql<{
-        recordName: string;
-        recordType: string;
-        recordChangeTag: string;
-        fields: Record<string, unknown>;
-        master: {
-          recordName: string;
-          recordType: string;
-          recordChangeTag: string;
-          fields: Record<string, unknown>;
-        } | null;
-        smartAlbums: string[] | null;
-      }>`
-        SELECT a."recordId" AS "recordName", a."recordType", a.revision AS "recordChangeTag", a.fields,
-          CASE WHEN m."recordId" IS NULL THEN NULL ELSE jsonb_build_object('recordName',m."recordId",'recordType',m."recordType",'recordChangeTag',m.revision,'fields',m.fields) END AS master,
-          (SELECT array_agg(substr(s."sourceAlbumId",7)) FROM public.icloud_membership s WHERE s."connectionId"=a."connectionId"
-            AND s."libraryKey"=a."libraryKey" AND s."sourceAssetId"=a."recordId" AND s."sourceAlbumId" LIKE 'smart:%' AND s."sourcePresent") AS "smartAlbums"
-        FROM (
-          SELECT * FROM public.icloud_record
-          WHERE "connectionId" = ${connection.id}::uuid AND "libraryKey" = ${libraryKey} AND "recordType" = 'CPLAsset'
-            AND NOT deleted AND "recordId" > ${checkpoint?.cursor ?? ''}
-          ORDER BY "recordId" LIMIT 100
-        ) a LEFT JOIN public.icloud_record m ON m."connectionId" = a."connectionId"
-          AND m."libraryKey" = a."libraryKey" AND m."recordId" = a."masterId" AND NOT m.deleted
-        ORDER BY a."recordId"`.execute(db);
-      for (const row of rows) {
-        await sql`UPDATE public.icloud_resource SET source=source || '{"current":false}'::jsonb
-          WHERE "connectionId"=${connection.id}::uuid AND "libraryKey"=${libraryKey} AND "sourceAssetId"=${row.recordName} AND "auditRequestId" IS NULL`.execute(
-          db,
-        );
-        const normalized = resourcesForICloudAsset(row, row.master ?? undefined);
-        // FL-1289: the kinds iCloud's smart albums give this photo, for the metadata reconciler to add
-        const mediaKinds = sortMediaKinds(
-          (row.smartAlbums ?? []).map((album) => ICLOUD_SMART_ALBUM_KINDS[album as ICloudSmartAlbum]),
-        );
-        if (normalized.length === 0) {
-          await sql`UPDATE public.icloud_record SET fields=fields || '{"__icloudUnsupported":"no_original_or_render_descriptor"}'::jsonb
-            WHERE "connectionId"=${connection.id}::uuid AND "libraryKey"=${libraryKey} AND "recordId"=${row.recordName}`.execute(
-            db,
-          );
-        }
-        for (const resource of normalized) {
-          if (
-            (!connection.config.includeHidden && resource.source.isHidden) ||
-            (!connection.config.includeEdits && resource.role.startsWith('edited-'))
-          ) {
-            continue;
-          }
-          if (connection.config.albums.length > 0) {
-            const member =
-              await sql`SELECT 1 FROM public.icloud_membership WHERE "connectionId" = ${connection.id}::uuid
-              AND "libraryKey" = ${libraryKey} AND "sourceAssetId" = ${row.recordName} AND "sourcePresent"
-              AND ("libraryKey" || ':' || "sourceAlbumId") = ANY(${connection.config.albums}::text[]) LIMIT 1`.execute(
-                db,
-              );
-            if (member.rows.length === 0) {
-              continue;
-            }
-          }
-          await sql`INSERT INTO public.icloud_resource ("connectionId","ownerId","libraryKey",library,"sourceAssetId","recordId","resourceKey",role,fingerprint,source,"expectedSize")
-            VALUES (${connection.id}::uuid,${connection.ownerId}::uuid,${libraryKey},${library}::jsonb,
-              ${resource.sourceAssetId},${resource.recordId},${resource.resourceKey},${resource.role},${resource.fingerprint},${{ ...resource.source, ...(mediaKinds.length > 0 && { mediaKinds }), current: true }}::jsonb,${resource.expectedSize})
-            ON CONFLICT ("connectionId","libraryKey","sourceAssetId","resourceKey",fingerprint) WHERE "auditRequestId" IS NULL
-            DO UPDATE SET source = excluded.source || CASE WHEN public.icloud_resource.source ? '_sync' THEN jsonb_build_object('_sync',public.icloud_resource.source->'_sync') ELSE '{}'::jsonb END
-              || CASE WHEN public.icloud_resource.source ? 'repairRequested' THEN jsonb_build_object('repairRequested',public.icloud_resource.source->'repairRequested') ELSE '{}'::jsonb END, "updatedAt" = now()`.execute(
-            db,
-          );
-        }
-      }
+      const rows = await this.materializeRows(
+        db,
+        connection,
+        libraryKey,
+        library,
+        sql`"recordId" > ${checkpoint?.cursor ?? ''} ORDER BY "recordId" LIMIT 100`,
+        false,
+      );
       const complete = rows.length < 100;
       await sql`INSERT INTO public.icloud_checkpoint ("connectionId",scope,cursor,complete,"snapshotId")
         VALUES (${connection.id}::uuid,${scope},to_jsonb(${rows.at(-1)?.recordName ?? ''}::text),${complete},gen_random_uuid())
@@ -1080,6 +1041,112 @@ export class ICloudSyncRepository {
       );
       return complete;
     }, transaction);
+  }
+  /**
+   * FL-1685: the photos of one inventory page, queued for download as the page lands, so a first sync of a large
+   * library downloads from its first step instead of after hours of listing. Only photos whose master is already
+   * here, and never under an album selection (membership is not known until the albums are listed). The keyset
+   * pass after the listing stays the one that decides: it gives every item its smart-album kinds and marks what
+   * has no original.
+   */
+  async materializeEarly(
+    connection: ICloudConnection,
+    libraryKey: string,
+    library: ICloudLibrary,
+    recordIds: string[],
+    transaction?: Kysely<DB>,
+  ): Promise<void> {
+    if (recordIds.length === 0 || connection.config.albums.length > 0) {
+      return;
+    }
+    await this.active(async (db) => {
+      await this.materializeRows(
+        db,
+        connection,
+        libraryKey,
+        library,
+        sql`"recordId" = ANY(${recordIds}::text[]) ORDER BY "recordId"`,
+        true,
+      );
+    }, transaction);
+  }
+  private async materializeRows(
+    db: Kysely<DB>,
+    connection: ICloudConnection,
+    libraryKey: string,
+    library: ICloudLibrary,
+    selection: RawBuilder<unknown>,
+    early: boolean,
+  ) {
+    const { rows } = await sql<{
+      recordName: string;
+      recordType: string;
+      recordChangeTag: string;
+      fields: Record<string, unknown>;
+      master: {
+        recordName: string;
+        recordType: string;
+        recordChangeTag: string;
+        fields: Record<string, unknown>;
+      } | null;
+      smartAlbums: string[] | null;
+    }>`
+        SELECT a."recordId" AS "recordName", a."recordType", a.revision AS "recordChangeTag", a.fields,
+          CASE WHEN m."recordId" IS NULL THEN NULL ELSE jsonb_build_object('recordName',m."recordId",'recordType',m."recordType",'recordChangeTag',m.revision,'fields',m.fields) END AS master,
+          (SELECT array_agg(substr(s."sourceAlbumId",7)) FROM public.icloud_membership s WHERE s."connectionId"=a."connectionId"
+            AND s."libraryKey"=a."libraryKey" AND s."sourceAssetId"=a."recordId" AND s."sourceAlbumId" LIKE 'smart:%' AND s."sourcePresent") AS "smartAlbums"
+        FROM (
+          SELECT * FROM public.icloud_record
+          WHERE "connectionId" = ${connection.id}::uuid AND "libraryKey" = ${libraryKey} AND "recordType" = 'CPLAsset'
+            AND NOT deleted AND ${selection}
+        ) a LEFT JOIN public.icloud_record m ON m."connectionId" = a."connectionId"
+          AND m."libraryKey" = a."libraryKey" AND m."recordId" = a."masterId" AND NOT m.deleted
+        ${early ? sql`WHERE m."recordId" IS NOT NULL` : sql``}
+        ORDER BY a."recordId"`.execute(db);
+    for (const row of rows) {
+      await sql`UPDATE public.icloud_resource SET source=source || '{"current":false}'::jsonb
+          WHERE "connectionId"=${connection.id}::uuid AND "libraryKey"=${libraryKey} AND "sourceAssetId"=${row.recordName} AND "auditRequestId" IS NULL`.execute(
+        db,
+      );
+      const normalized = resourcesForICloudAsset(row, row.master ?? undefined);
+      // FL-1289: the kinds iCloud's smart albums give this photo, for the metadata reconciler to add
+      const mediaKinds = sortMediaKinds(
+        (row.smartAlbums ?? []).map((album) => ICLOUD_SMART_ALBUM_KINDS[album as ICloudSmartAlbum]),
+      );
+      if (normalized.length === 0 && !early) {
+        await sql`UPDATE public.icloud_record SET fields=fields || '{"__icloudUnsupported":"no_original_or_render_descriptor"}'::jsonb
+            WHERE "connectionId"=${connection.id}::uuid AND "libraryKey"=${libraryKey} AND "recordId"=${row.recordName}`.execute(
+          db,
+        );
+      }
+      for (const resource of normalized) {
+        if (
+          (!connection.config.includeHidden && resource.source.isHidden) ||
+          (!connection.config.includeEdits && resource.role.startsWith('edited-'))
+        ) {
+          continue;
+        }
+        if (connection.config.albums.length > 0) {
+          const member = await sql`SELECT 1 FROM public.icloud_membership WHERE "connectionId" = ${connection.id}::uuid
+              AND "libraryKey" = ${libraryKey} AND "sourceAssetId" = ${row.recordName} AND "sourcePresent"
+              AND ("libraryKey" || ':' || "sourceAlbumId") = ANY(${connection.config.albums}::text[]) LIMIT 1`.execute(
+            db,
+          );
+          if (member.rows.length === 0) {
+            continue;
+          }
+        }
+        await sql`INSERT INTO public.icloud_resource ("connectionId","ownerId","libraryKey",library,"sourceAssetId","recordId","resourceKey",role,fingerprint,source,"expectedSize")
+            VALUES (${connection.id}::uuid,${connection.ownerId}::uuid,${libraryKey},${library}::jsonb,
+              ${resource.sourceAssetId},${resource.recordId},${resource.resourceKey},${resource.role},${resource.fingerprint},${{ ...resource.source, ...(mediaKinds.length > 0 && { mediaKinds }), current: true }}::jsonb,${resource.expectedSize})
+            ON CONFLICT ("connectionId","libraryKey","sourceAssetId","resourceKey",fingerprint) WHERE "auditRequestId" IS NULL
+            DO UPDATE SET source = excluded.source || CASE WHEN public.icloud_resource.source ? '_sync' THEN jsonb_build_object('_sync',public.icloud_resource.source->'_sync') ELSE '{}'::jsonb END
+              || CASE WHEN public.icloud_resource.source ? 'repairRequested' THEN jsonb_build_object('repairRequested',public.icloud_resource.source->'repairRequested') ELSE '{}'::jsonb END, "updatedAt" = now()`.execute(
+          db,
+        );
+      }
+    }
+    return rows;
   }
   async saveAlbums(
     connectionId: string,

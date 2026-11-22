@@ -48,6 +48,7 @@
     cancelLibraryScan,
     scanLibrary,
     scanLibraryEveryFile,
+    updateLibrary,
     type LibraryResponseDto,
     type UserAdminResponseDto,
   } from '@frameleaf/sdk';
@@ -397,6 +398,20 @@
             $t('frameleaf_libraries_error_scan'),
           )}
         onCancelScan={() => cancelScan(selected)}
+        onFolderAlbums={(on, removeAlbums) =>
+          run(
+            () =>
+              updateLibrary({
+                id: selected.id,
+                updateLibraryDto: { folderAlbums: on, removeFolderAlbums: on ? undefined : removeAlbums },
+              }),
+            on
+              ? $t('frameleaf_folder_albums_done_on')
+              : removeAlbums
+                ? $t('frameleaf_folder_albums_done_remove', { values: { name: selected.ownerName } })
+                : $t('frameleaf_folder_albums_done_keep'),
+            $t('frameleaf_libraries_error_save'),
+          )}
       />
     {/key}
   </div>

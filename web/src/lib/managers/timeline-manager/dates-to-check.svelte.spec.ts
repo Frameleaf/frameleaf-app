@@ -27,6 +27,17 @@ const toCheckPages = [
 ];
 const toCheck = { count: 3, years: [1970, 2031], timeBuckets: ['2031-06-01', '1970-01-01'], pages: toCheckPages };
 
+/** New live items reload the timeline once they go quiet; the tests skip the wait. */
+const liveAdd = (manager: TimelineManager, added: Parameters<TimelineManager['upsertAssetsFromLiveEvent']>[0]) => {
+  vi.useFakeTimers();
+  try {
+    manager.upsertAssetsFromLiveEvent(added);
+    vi.advanceTimersByTime(5000);
+  } finally {
+    vi.useRealTimers();
+  }
+};
+
 const seed = () => {
   sdkMock.getTimeBuckets.mockResolvedValue(dated);
   sdkMock.getTimelineDatesToCheck.mockResolvedValue(toCheck);
@@ -242,7 +253,7 @@ describe('dates to check (FL-1410)', () => {
     try {
       expect(manager.calendarPaged).toBe(true);
       const calls = sdkMock.getTimeBuckets.mock.calls.length;
-      manager.upsertAssetsFromLiveEvent([taken('2031-06-03T09:00:00.000Z')]);
+      liveAdd(manager, [taken('2031-06-03T09:00:00.000Z')]);
       expect(manager.months.some(({ yearMonth }) => yearMonth.year === 2031)).toBe(false);
       await vi.waitFor(() => expect(sdkMock.getTimeBuckets.mock.calls.length).toBeGreaterThan(calls));
     } finally {

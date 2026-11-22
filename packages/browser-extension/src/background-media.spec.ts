@@ -5,6 +5,7 @@ vi.mock('./delivery', () => ({
   wakeDelivery: vi.fn().mockResolvedValue(undefined),
   stopDelivery: vi.fn(),
   deliveryError: vi.fn().mockReturnValue(null),
+  onDeliverySettled: vi.fn(),
 }));
 
 /** FL-1427: the popup's media requests, end to end in the background, with the browser mocked. */
@@ -152,6 +153,12 @@ beforeEach(async () => {
       onClicked: event(),
     },
     alarms: { create: vi.fn().mockResolvedValue(undefined), onAlarm: event() },
+    commands: { onCommand: event() },
+    action: {
+      setBadgeText: vi.fn().mockResolvedValue(undefined),
+      setBadgeBackgroundColor: vi.fn().mockResolvedValue(undefined),
+      setTitle: vi.fn().mockResolvedValue(undefined),
+    },
   });
   media = {
     'GET /api/media-imports/capabilities': () =>

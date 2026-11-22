@@ -124,3 +124,45 @@ describe('album count filter (FL-976)', () => {
     expect(MetadataSearchDto.schema.safeParse({ filter: { albumCount } }).success).toBe(false);
   });
 });
+
+describe('person category filter (FL-874)', () => {
+  it('accepts any, all and none on its own, next to other conditions and inside or branches', () => {
+    const family = '00000000-0000-4000-8000-0000000000f1';
+    const work = '00000000-0000-4000-8000-0000000000f2';
+    const filter = {
+      personCategoryIds: { any: [family] },
+      isFavorite: { eq: true },
+      or: [
+        { personCategoryIds: { all: [family, work] } },
+        { personCategoryIds: { none: [work] }, city: { eq: 'Paris' } },
+      ],
+    };
+    expect(MetadataSearchDto.schema.parse({ filter }).filter).toEqual(filter);
+    expect(StatisticsSearchDto.schema.parse({ filter })).toEqual({ filter });
+  });
+
+  it.each([{}, { any: [] }, { any: ['family'] }, ['00000000-0000-4000-8000-0000000000f1']])(
+    'rejects an invalid category filter %j',
+    (personCategoryIds) => {
+      expect(MetadataSearchDto.schema.safeParse({ filter: { personCategoryIds } }).success).toBe(false);
+    },
+  );
+});
+
+describe('decade filter (FL-936)', () => {
+  it('takes the first year of a decade, on its own, next to other conditions and inside or branches', () => {
+    for (const filter of [
+      { takenDecade: { eq: 1970 } },
+      { takenDecade: { eq: 1800 }, isFavorite: { eq: true } },
+      { or: [{ takenDecade: { eq: 1970 } }, { takenDecade: { eq: 1980 } }] },
+    ]) {
+      expect(MetadataSearchDto.schema.safeParse({ filter }).success).toBe(true);
+      expect(SmartSearchDto.schema.safeParse({ filter, query: 'beach' }).success).toBe(true);
+      expect(StatisticsSearchDto.schema.safeParse({ filter }).success).toBe(true);
+    }
+  });
+
+  it.each([1975, 1790, 1970.5, '1970'])('refuses %s', (eq) => {
+    expect(MetadataSearchDto.schema.safeParse({ filter: { takenDecade: { eq } } }).success).toBe(false);
+  });
+});

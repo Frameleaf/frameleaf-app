@@ -1,0 +1,34 @@
+{
+  "workload": "restoration",
+  "modelSku": "ms_F1SSRED6",
+  "inputs": [
+    {
+      "inputId": "v1",
+      "contentType": "video/mp4",
+      "bytes": 734003200,
+      "sha256": "7d1e2c3b4a5f6e7d8c9b0a1f2e3d4c5b6a7f8e9d0c1b2a3f4e5d6c7b8a9f0e1d"
+    }
+  ],
+  "request": {
+    "mode": "creative",
+    "targetScale": 2,
+    "previewModelRev": "mr_C3J258SCKCR1",
+    "outputMax": {
+      "width": 3840,
+      "height": 2160
+    },
+    "chunkSec": 25,
+    "options": {
+      "codec": "hevc"
+    },
+    "items": [
+      {
+        "inputId": "v1",
+        "durationSec": 300,
+        "fps": 30,
+        "width": 1920,
+        "height": 1080
+      }
+    ]
+  }
+}

@@ -141,6 +141,16 @@
     "minimum": 0,
     "maximum": 6
   },
+  "ffmpeg.softwareFallback": {
+    "type": "array",
+    "itemEnum": [
+      "sdr-h264",
+      "hlg-hevc",
+      "dolby-vision-8.4",
+      "hdr10-pq",
+      "hev1-hevc"
+    ]
+  },
   "ffmpeg.targetAudioCodec": {
     "type": "string",
     "enum": [
@@ -256,6 +266,23 @@
       "managed",
       "byo-s3"
     ]
+  },
+  "frameleafCloud.cloudBackup.uploadHours.enabled": {
+    "type": "boolean"
+  },
+  "frameleafCloud.cloudBackup.uploadHours.start": {
+    "type": "string"
+  },
+  "frameleafCloud.cloudBackup.uploadHours.stop": {
+    "type": "string"
+  },
+  "frameleafCloud.cloudBackup.uploadLimit.enabled": {
+    "type": "boolean"
+  },
+  "frameleafCloud.cloudBackup.uploadLimit.mbps": {
+    "type": "integer",
+    "minimum": 1,
+    "maximum": 10000
   },
   "frameleafCloud.cloudBackup.verifyWeekly": {
     "type": "boolean"
@@ -760,6 +787,21 @@
   "machineLearning.enabled": {
     "type": "boolean"
   },
+  "machineLearning.eyeScores.closedBelow": {
+    "type": "number",
+    "format": "double",
+    "minimum": 0,
+    "maximum": 1
+  },
+  "machineLearning.eyeScores.enabled": {
+    "type": "boolean"
+  },
+  "machineLearning.eyeScores.softBelow": {
+    "type": "number",
+    "format": "double",
+    "minimum": 0,
+    "maximum": 1
+  },
   "machineLearning.facialRecognition.enabled": {
     "type": "boolean"
   },
@@ -1224,11 +1266,34 @@
     "minimum": 1,
     "maximum": 9007199254740991
   },
+  "preferences.download.defaultFormat": {
+    "type": "string",
+    "enum": [
+      "original",
+      "jpeg",
+      "web"
+    ]
+  },
   "preferences.download.includeEmbeddedVideos": {
     "type": "boolean"
   },
   "preferences.download.includeSidecar": {
     "type": "boolean"
+  },
+  "preferences.duplicates.keepRules": {
+    "type": "array",
+    "itemEnum": [
+      "raw",
+      "heic",
+      "largest",
+      "highestResolution",
+      "oldest",
+      "newest",
+      "inAlbum",
+      "hasEdits",
+      "favorite",
+      "mostMetadata"
+    ]
   },
   "preferences.emailNotifications.albumInvite": {
     "type": "boolean"
@@ -1375,6 +1440,12 @@
   "preferences.search.includeArchived": {
     "type": "boolean"
   },
+  "preferences.sharedLinks.defaultExpiryDays": {
+    "type": "integer",
+    "minimum": 1,
+    "maximum": 3650,
+    "nullable": true
+  },
   "preferences.sharedLinks.enabled": {
     "type": "boolean"
   },
@@ -1420,6 +1491,12 @@
   },
   "server.timeZone": {
     "type": "string"
+  },
+  "sharedLinks.defaultExpiryDays": {
+    "type": "integer",
+    "minimum": 1,
+    "maximum": 3650,
+    "nullable": true
   },
   "signInPolicy.applyToOlderApps": {
     "type": "boolean"

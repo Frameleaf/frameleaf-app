@@ -149,7 +149,7 @@ describe('admission follows the processing order (FL-456)', () => {
     mocks.job.pinnedDestination.mockResolvedValue(study.id);
     const selection = await run(() => sut.select({ workload: MlWorkload.Enrichment }));
     expect(selection.destinationId).toBe(study.id);
-    expect(mocks.mlDestination.resolveRoute).not.toHaveBeenCalled();
+    expect(mocks.job.pinDestination).toHaveBeenCalledWith(MlWorkload.Enrichment, study.id);
   });
 
   it('waits on the first place in the order when the stored state says none is available', async () => {
@@ -193,6 +193,89 @@ describe('admission follows the processing order (FL-456)', () => {
       const selection = await run(() => sut.select({ workload: MlWorkload.Ocr, jobId: 'asset' }));
       expect(selection.desktopOcr).toBeDefined();
       expect(mocks.machineLearning.selectBackgroundPool).toHaveBeenCalledWith(expect.anything(), 'asset', true);
+    });
+
+    describe('on a retry, the job stays inside the order as it is now', () => {
+      const none = () =>
+        mocks.machineLearning.selectBackgroundPool.mockImplementation((selection) => Promise.resolve(selection));
+      beforeEach(() => mocks.job.pinnedDestination.mockResolvedValue(local.id));
+      /** The destinations whose own AI was asked whether it can take the job. */
+      const probed = () => mocks.machineLearning.probe.mock.calls.map(([endpoint]) => endpoint.url);
+
+      it('waits when desktops are the only place in the order and none is ready', async () => {
+        none();
+        mocks.mlDestination.resolveRoute.mockResolvedValue([helpers]);
+        const error = await run(() => sut.select({ workload: MlWorkload.Ocr, jobId: 'asset' })).catch(
+          (error: unknown) => error,
+        );
+        expect(error).toBeInstanceOf(MlDestinationRefusedError);
+        expect((error as MlDestinationRefusedError).refusal).toBe(MlAdmissionRefusal.DestinationUnhealthy);
+        expect(context.dependencyReason).toBe('destination-unavailable');
+        // the destination the desktops stand in for is not asked to do the work itself
+        expect(mocks.machineLearning.probe).not.toHaveBeenCalled();
+        expect(mocks.machineLearning.selectBackgroundPool).toHaveBeenCalledWith(expect.anything(), 'asset', true);
+      });
+
+      it('takes the desktop again when one is ready', async () => {
+        mocks.machineLearning.selectBackgroundPool.mockImplementation((selection) =>
+          Promise.resolve(desktopSelection(selection)),
+        );
+        mocks.mlDestination.resolveRoute.mockResolvedValue([helpers]);
+        expect((await run(() => sut.select({ workload: MlWorkload.Ocr }))).desktopOcr).toBeDefined();
+      });
+
+      it('runs on the destination itself when the order names it too', async () => {
+        none();
+        order(helpers, candidate(local.id, MlProcessingSource.Local));
+        const selection = await run(() => sut.select({ workload: MlWorkload.Ocr }));
+        expect(selection.destinationId).toBe(local.id);
+        expect(selection.desktopOcr).toBeUndefined();
+        expect(mocks.machineLearning.probe).toHaveBeenCalled();
+      });
+
+      it('moves on to the next place in the order when no desktop is ready, instead of waiting for one', async () => {
+        none();
+        order(helpers, candidate(study.id, MlProcessingSource.Desktops));
+        const selection = await run(() => sut.select({ workload: MlWorkload.Ocr, jobId: 'asset' }));
+        expect(selection.destinationId).toBe(study.id);
+        expect(selection.desktopOcr).toBeUndefined();
+        expect(context.dependencyReason).toBeUndefined();
+        // the desktops were asked first, and the destination they stand in for was never asked itself
+        expect(mocks.machineLearning.selectBackgroundPool).toHaveBeenCalledWith(expect.anything(), 'asset', true);
+        expect(probed()).not.toContain(local.url);
+      });
+
+      it('follows the order when the place it ran on has left it', async () => {
+        none();
+        // this server is no longer in the order at all: neither its AI nor its desktops are asked
+        mocks.mlDestination.resolveRoute.mockResolvedValue([candidate(study.id, MlProcessingSource.Desktops)]);
+        const selection = await run(() => sut.select({ workload: MlWorkload.Ocr }));
+        expect(selection.destinationId).toBe(study.id);
+        expect(mocks.machineLearning.selectBackgroundPool).not.toHaveBeenCalled();
+        expect(probed()).not.toContain(local.url);
+        // and with nothing in the order, it is refused like a first run, not sent back where it was
+        mocks.mlDestination.resolveRoute.mockResolvedValue([]);
+        mocks.mlDestination.getRoute.mockResolvedValue(undefined);
+        const error = await run(() => sut.select({ workload: MlWorkload.Ocr })).catch((error: unknown) => error);
+        expect((error as MlDestinationRefusedError).refusal).toBe(MlAdmissionRefusal.WorkloadNotRouted);
+      });
+
+      it('leaves the desktops alone when the order no longer sends work to them', async () => {
+        mocks.mlDestination.resolveRoute.mockResolvedValue([candidate(local.id, MlProcessingSource.Local)]);
+        const selection = await run(() => sut.select({ workload: MlWorkload.Ocr }));
+        expect(selection.destinationId).toBe(local.id);
+        expect(mocks.machineLearning.selectBackgroundPool).not.toHaveBeenCalled();
+      });
+    });
+
+    it('waits on the desktops, not on the destination behind them, when they come first and none is ready', async () => {
+      mocks.machineLearning.selectBackgroundPool.mockImplementation((selection) => Promise.resolve(selection));
+      mocks.mlDestination.resolveRoute.mockResolvedValue([{ ...helpers, available: false }]);
+      await expect(run(() => sut.select({ workload: MlWorkload.Ocr }))).rejects.toBeInstanceOf(
+        MlDestinationRefusedError,
+      );
+      expect(mocks.machineLearning.probe).not.toHaveBeenCalled();
+      expect(mocks.job.pinDestination).toHaveBeenCalledWith(MlWorkload.Ocr, local.id);
     });
 
     it('hand the job to the next place when none is ready', async () => {

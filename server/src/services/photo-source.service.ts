@@ -34,6 +34,12 @@ import { fileIdentity, verifyStoredCopy } from 'src/utils/file-trash.js';
 import { stableServerId } from 'src/utils/frameleaf-server-identity.js';
 
 const iso = (value: Date | string | number) => new Date(value).toISOString();
+/** Only the owner's own photo session (never an API key, shared link or the system) may act on their sources. */
+export const photoSourceAuthority = (auth: AuthDto): SourceAuthority => {
+  if (!auth.session || auth.apiKey || auth.sharedLink || auth.system)
+    throw new ForbiddenException('photo_source_photo_session_required');
+  return { ownerId: auth.user.id, sessionId: auth.session.id };
+};
 @Injectable()
 export class PhotoSourceService {
   constructor(
@@ -46,14 +52,16 @@ export class PhotoSourceService {
     private logger: LoggingRepository,
   ) {}
   private authority(auth: AuthDto): SourceAuthority {
-    if (!auth.session || auth.apiKey || auth.sharedLink || auth.system)
-      throw new ForbiddenException('photo_source_photo_session_required');
-    return { ownerId: auth.user.id, sessionId: auth.session.id };
+    return photoSourceAuthority(auth);
   }
   async create(auth: AuthDto, input: PhotoSourceCreateInput): Promise<PhotoSourceCreateResult> {
-    const row = await this.repository.create(this.authority(auth), photoSourceCreateSchema.parse(input));
+    const { catalog, ...row } = await this.repository.create(
+      this.authority(auth),
+      photoSourceCreateSchema.parse(input),
+    );
     return photoSourceViewSchema.parse({
       ...row,
+      ...(catalog && { catalog }),
       createdAt: iso(row.createdAt),
       revokedAt: row.revokedAt ? iso(row.revokedAt) : null,
     });

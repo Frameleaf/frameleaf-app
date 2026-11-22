@@ -94,8 +94,24 @@ describe('/users/me/ledger', { timeout: process.env.CI ? 120_000 : 30_000 }, () 
           missing: expect.any(Number),
         },
         missingByOwner: expect.any(Array),
+        months: expect.any(Array),
+        byOwner: expect.any(Array),
       });
       expect(body.total).toBeGreaterThanOrEqual(1);
+      // FL-940: each account's totals and the months are counts only; no file is named.
+      expect(body.byOwner.find(({ ownerId }: { ownerId: string }) => ownerId === user.userId)).toMatchObject({
+        total: 1,
+      });
+      expect(JSON.stringify(body)).not.toContain('originalFileName');
+    });
+
+    it('FL-940: gives one account’s totals and months, and no other account', async () => {
+      const { status, body } = await get(`/admin/ledger/summary?userId=${user.userId}`, admin.accessToken);
+      expect(status).toBe(200);
+      expect(body).toMatchObject({ total: 1, byOwner: [] });
+      expect(body.months).toEqual([
+        expect.objectContaining({ month: expect.stringMatching(/^\d{4}-\d{2}$/), total: 1 }),
+      ]);
     });
   });
 });

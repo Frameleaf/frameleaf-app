@@ -17,8 +17,15 @@ const token = 'a'.repeat(64);
 const id = '445bc2b6-f4cd-439e-b8bb-7e84d7ee0550';
 const sessionId = '1117c1ca-0495-46e9-b579-f321520c2b1a';
 const grant = { deviceId: id, sessionId, authorizationEpoch: 2 };
-const repository = { session: vi.fn(), consume: vi.fn() };
-const broker = { claim: vi.fn(), input: vi.fn(), complete: vi.fn(), heartbeat: vi.fn(), fail: vi.fn() };
+const repository = { session: vi.fn(), consume: vi.fn(), policyOff: vi.fn() };
+const broker = {
+  claim: vi.fn(),
+  input: vi.fn(),
+  complete: vi.fn(),
+  heartbeat: vi.fn(),
+  fail: vi.fn(),
+  attemptModelKey: vi.fn(),
+};
 let ctx: ControllerContext;
 let app: Express;
 const proof = (operation: string, payload: string) => {
@@ -54,6 +61,7 @@ beforeEach(() => {
     publicKey: keys.publicKey.export({ type: 'spki', format: 'der' }).subarray(-32).toString('base64'),
     authorizationEpoch: 2,
   });
+  repository.policyOff.mockResolvedValue(undefined);
   repository.consume.mockResolvedValue(grant);
   broker.claim.mockResolvedValue(undefined);
 });

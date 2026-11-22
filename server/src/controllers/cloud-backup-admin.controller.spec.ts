@@ -97,7 +97,7 @@ describe(CloudBackupAdminController.name, () => {
 
   it('counts what a kept backup left out by its manifest key only (FL-362)', async () => {
     service.listManifestExclusions.mockResolvedValue({ totals: {} });
-    const key = 'm/20261016T120000Z.json.gz';
+    const key = `r/v1/8bfb42bc-4df2-41da-bb1f-1a3354ea60a2/s/000000000001-${'a'.repeat(16)}`;
 
     const { status } = await request(ctx.getHttpServer())
       .post('/admin/cloud/backup/manifests/exclusions')
@@ -160,7 +160,7 @@ describe(CloudBackupAdminController.name, () => {
   it('restores from a manifest key only, with a known scope and item ids', async () => {
     service.startRestore.mockResolvedValue({});
     const body = {
-      manifestKey: 'm/20260926T030000Z.json.gz',
+      manifestKey: `r/v1/8bfb42bc-4df2-41da-bb1f-1a3354ea60a2/s/000000000001-${'a'.repeat(16)}`,
       scope: 'asset',
       assetIds: ['8c5c3a24-2f65-4a8e-b3d4-3f1c3cb0c3e1'],
     };

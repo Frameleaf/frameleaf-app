@@ -122,7 +122,8 @@ for (const { count, width } of [1_000_000, 2_000_000].flatMap((count) =>
     });
     total++;
     socket.emit('on_upload_success', toAssetResponseDto(assetAt(count)));
-    await expect.poll(() => summaryRequests).toBeGreaterThan(requestsBeforeUpload);
+    // FL-1720: a new upload reloads the timeline once uploads go quiet (a 2.5 s batch, then 5 s), not at once.
+    await expect.poll(() => summaryRequests, { timeout: 20_000 }).toBeGreaterThan(requestsBeforeUpload);
     expect(await scroll.evaluate((element) => element.scrollTop)).toBeGreaterThan(beforeKey * 0.9);
     expect(await scroll.evaluate((element) => element.scrollHeight)).toBeGreaterThan(1_000_000);
     heldSummary = undefined;

@@ -127,8 +127,10 @@ import {
   FIX_WAIT_MS,
   MAX_BACKUP_WAITS,
   MAX_DRIVE_WAITS,
+  REPAIR_ENGINE,
   checkedStep,
   folderFacts,
+  isOldRepair,
   repairResult,
 } from 'src/utils/file-fix.js';
 import {
@@ -533,6 +535,42 @@ export class MediaHealthService {
       // FL-363: the overnight schedule's "Check files" step starts the health scans
       start: false,
     });
+    handlePromiseError(this.queueOldRepairs(), this.logger);
+  }
+
+  /**
+   * Repairs an older repair engine made are made again (`REPAIR_ENGINE`): each photo's fix undoes the old
+   * repair and treats the kept file afresh. Safe to ask at every start: a fix is one per photo, and a redone
+   * repair carries the current engine's number.
+   * ponytail: reads every settled damage finding at each start. Keep a flag in system metadata if that costs.
+   */
+  private async queueOldRepairs(): Promise<void> {
+    const size = 1000;
+    let queued = 0;
+    for (let offset = 0; ; offset += size) {
+      const page = await this.mediaHealthRepository.list({
+        category: MediaHealthCategory.Corrupt,
+        status: MediaHealthStatus.Resolved,
+        size,
+        offset,
+      });
+      for (const finding of page) {
+        if (!isOldRepair(finding)) {
+          continue;
+        }
+        await this.jobRepository.queue({
+          name: JobName.MediaHealthFixAsset,
+          data: { id: finding.assetId, from: 'check', redoRepair: true },
+        });
+        queued++;
+      }
+      if (page.length < size) {
+        break;
+      }
+    }
+    if (queued > 0) {
+      this.logger.log(`Library care is repairing ${queued} photos again that an older version repaired`);
+    }
   }
 
   @OnEvent({ name: 'ConfigUpdate', server: true })
@@ -1387,7 +1425,7 @@ export class MediaHealthService {
     const fixState = result.partSaved ? 'part-saved' : 'repaired';
     return {
       fixState,
-      evidence: { fixState, partSaved: result.partSaved },
+      evidence: { fixState, partSaved: result.partSaved, repairEngine: REPAIR_ENGINE },
       steps: [
         {
           step: 'repaired',
@@ -1650,6 +1688,9 @@ export class MediaHealthService {
       // Review Focus 1: on an unplugged drive every file looks lost. Wait for it, recording nothing.
       return this.waitForDrive(job, asset);
     }
+    if (job.redoRepair) {
+      return this.redoOldRepair(job, asset);
+    }
     const exists = await this.storageRepository.checkFileExists(asset.originalPath, constants.R_OK);
     const category = exists ? MediaHealthCategory.Corrupt : MediaHealthCategory.Missing;
     if (
@@ -1664,6 +1705,42 @@ export class MediaHealthService {
     const started: FixJob = { ...job, startedAt: job.startedAt ?? new Date().toISOString() };
     const settings = await this.careSettings();
     return exists ? this.fixDamaged(started, asset, open, settings) : this.fixMissing(started, asset, open, settings);
+  }
+
+  /**
+   * A repair an older engine made (`isOldRepair`) is undone, so the photo is the kept damaged file again, and
+   * that file is treated afresh: it may open whole now, or be repaired again by the current engine. Only where
+   * automatic repair would repair it again; otherwise, and when the Undo refuses (the photo changed since, it
+   * is in Locked, the kept file is gone), the old repair stays as it is and is asked about again at the next start.
+   */
+  private async redoOldRepair(job: FixJob, asset: MediaHealthAsset): Promise<JobStatus> {
+    const settings = await this.careSettings();
+    const findings = await this.mediaHealthRepository.getFindingsForAsset(asset.id);
+    const finding = findings.find((item) => isOldRepair(item));
+    const declined = (finding?.evidence as Record<string, unknown> | undefined)?.autoRepairDeclined === true;
+    // this job undid it and stopped before the fix (the server went down): carry on with the fix, never a second undo
+    const undone = findings.some(
+      (item) => isOpenFinding(item) && (item.evidence as Record<string, unknown> | null)?.redoRepair === true,
+    );
+    if (!undone) {
+      if (!finding || !settings.autoRepair || declined) {
+        return JobStatus.Skipped;
+      }
+      try {
+        await this.undoFix(finding, asset.ownerId, { redo: true });
+      } catch (error) {
+        this.logger.log(`Library care left the old repair of ${asset.id} as it is: ${getErrorMessage(error)}`);
+        return JobStatus.Skipped;
+      }
+    }
+    const [kept] = await this.mediaHealthRepository.getAssets([asset.id]);
+    if (!kept || kept.deletedAt) {
+      return JobStatus.Skipped;
+    }
+    const open = (await this.mediaHealthRepository.getFindingsForAsset(kept.id)).filter((item) => isOpenFinding(item));
+    // carried on as a fix that has begun: the Undo's own state is not a settled problem to leave alone
+    const started: FixJob = { ...job, redoRepair: undefined, startedAt: new Date().toISOString() };
+    return this.fixDamaged(started, kept, open, settings);
   }
 
   /**
@@ -2835,8 +2912,21 @@ export class MediaHealthService {
     if (record.dismissedAt || !record.resolvedAt || !fixState || !FIXED_FILE_STATES.has(fixState)) {
       throw new BadRequestException(NOTHING_TO_UNDO);
     }
+    await this.undoFix(record, auth.user.id, { by: auth.user.name });
+    return this.getFileProblem(auth, id);
+  }
+
+  /**
+   * The Undo itself, for the owner (`by`) and for a repair an older engine made (`redo`: repairs only, and
+   * automatic repair may repair the photo again).
+   */
+  private async undoFix(
+    record: MediaHealthFinding,
+    ownerId: string,
+    { by, redo = false }: { by?: string; redo?: boolean },
+  ): Promise<void> {
     const fix = this.fixToUndo(record, await this.mediaHealthRepository.listSteps(record.id));
-    if (!fix) {
+    if (!fix || (redo && fix.kind !== 'repair')) {
       throw new BadRequestException(NOTHING_TO_UNDO);
     }
     const others = await this.mediaHealthRepository.getFindingsForAsset(record.assetId);
@@ -2849,7 +2939,7 @@ export class MediaHealthService {
       throw new ConflictException(UNDO_LOCKED);
     }
     const keptPaths = [fix.previousPath, fix.retainedPath].filter((keptPath): keptPath is string => !!keptPath);
-    if (await this.keptFileSealed(asset?.ownerId ?? auth.user.id, keptPaths)) {
+    if (await this.keptFileSealed(asset?.ownerId ?? ownerId, keptPaths)) {
       // FL-1364: a kept file still sealed for Locked is never made the photo's file or put back as ciphertext
       throw new ConflictException(UNDO_KEPT_SEALED);
     }
@@ -2868,7 +2958,7 @@ export class MediaHealthService {
     if (
       !asset ||
       asset.deletedAt ||
-      asset.ownerId !== auth.user.id ||
+      asset.ownerId !== ownerId ||
       !expectedChecksum ||
       !asset.checksum.equals(expectedChecksum)
     ) {
@@ -2886,12 +2976,12 @@ export class MediaHealthService {
         record.category === MediaHealthCategory.Missing
           ? MediaHealthStatus.Missing
           : MediaHealthStatus.CorruptConfirmed,
-      steps: [{ step: 'undone', outcome: 'info', facts: { by: auth.user.name } }] satisfies FindingStep[],
+      steps: [{ step: 'undone', outcome: 'info', facts: by ? { by } : { redo } }] satisfies FindingStep[],
     };
     const result =
       fix.kind === 'restore'
         ? await this.undoRestore(record, asset, fix, base)
-        : await this.undoRelink(record, fix, base);
+        : await this.undoRelink(record, fix, base, redo);
     if (result === 'open') {
       throw new ConflictException(OTHER_PROBLEM_OPEN);
     }
@@ -2909,14 +2999,14 @@ export class MediaHealthService {
     }
     // the photo's file changed: its details and previews are read again, as after a relink
     await this.queueRelinkJobs(asset.id);
-    return this.getFileProblem(auth, id);
   }
 
   /** A repair or a relink is undone by pointing the photo back at the file it used; no file moves. */
   private async undoRelink(
-    record: FileProblemRecord,
+    record: MediaHealthFinding,
     fix: FixToUndo,
     base: Omit<UndoFileFix, 'evidence'>,
+    redo = false,
   ): Promise<UndoFileFixResult> {
     let relinkTo: NonNullable<UndoFileFix['relinkTo']> = { path: fix.previousPath, takeChecksum: false };
     let evidence: Record<string, unknown>;
@@ -2927,7 +3017,12 @@ export class MediaHealthService {
         throw new ConflictException("The damaged file Frameleaf kept isn't there any more, so this can't be undone.");
       }
       relinkTo = { path: fix.previousPath, digests, takeChecksum: true };
-      evidence = { fixState: 'cant-repair' satisfies FixState, partSaved: false, autoRepairDeclined: true };
+      // a person's Undo is a no to automatic repair; an old repair being made again is not
+      evidence = {
+        fixState: 'cant-repair' satisfies FixState,
+        partSaved: false,
+        ...(redo ? { redoRepair: true } : { autoRepairDeclined: true }),
+      };
     } else if (record.category === MediaHealthCategory.Missing) {
       // missing again where it was; the photo keeps its own checksum, which its copy matched
       evidence = { fixState: 'missing' satisfies FixState, partSaved: false };
@@ -2955,7 +3050,7 @@ export class MediaHealthService {
    * recorded. Never while the drive that keeps the copies is not there.
    */
   private async undoRestore(
-    record: FileProblemRecord,
+    record: MediaHealthFinding,
     asset: MediaHealthAsset,
     fix: FixToUndo,
     base: Omit<UndoFileFix, 'evidence'>,
@@ -3271,7 +3366,7 @@ export class MediaHealthService {
    * The fix Undo would undo: the newest step carrying what Undo needs, unless an Undo came after it. A repair
    * that stopped before it recorded its kept damaged file falls back on the file the problem still names.
    */
-  private fixToUndo(record: FileProblemRecord, steps: FileStep[]): FixToUndo | undefined {
+  private fixToUndo(record: MediaHealthFinding, steps: FileStep[]): FixToUndo | undefined {
     const last = steps.findLast(({ step, undo }) => !!undo || step === 'undone' || step === 'repaired');
     if (!last || last.step === 'undone') {
       return;
@@ -4147,8 +4242,13 @@ export class MediaHealthService {
     const changedSince = snapshot.slice && snapshot.changedSince ? new Date(snapshot.changedSince) : undefined;
     const damageChecked = config.integrityChecks.checksumFiles.enabled;
     const page: MediaHealthScanPage = { checked: 0, missing: 0, corrupt: 0, lastId: afterId };
+    // FL-1686: an original read and matched within the recheck period (by this scan or the damage check) is only
+    // looked for. A changed record (faces, tags, an edit) does not mean changed bytes; a moved or replaced file has
+    // a new path or checksum and is read again.
+    const verified = await this.mediaHealthRepository.getRecentlyVerified(assets.map(({ id }) => id));
     for (const asset of assets) {
-      const onlyLookFor = damageChecked && !!changedSince && new Date(asset.updatedAt) <= changedSince;
+      const onlyLookFor =
+        verified.has(asset.id) || (damageChecked && !!changedSince && new Date(asset.updatedAt) <= changedSince);
       const found = await this.scanAsset(asset, snapshot.missingRunId, onlyLookFor ? null : snapshot.corruptRunId, {
         checksumScan,
       });
@@ -5288,6 +5388,10 @@ export class MediaHealthService {
     });
     if (result.status === 'healthy') {
       await this.recordContentDigests(asset, result);
+      if (verifyChecksum && expectedDigest(asset)) {
+        // FL-1686: proved against its checksum, so neither this scan nor the damage check reads it again for a while
+        await this.mediaHealthRepository.recordVerified(asset, hex(result.sha256));
+      }
       return null;
     }
     if (result.status === 'encrypted') {

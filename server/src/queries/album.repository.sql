@@ -677,6 +677,100 @@ FROM
 WHERE
   "userId" = $1::uuid
 
+-- AlbumRepository.syncFolderMemberships
+begin
+select
+  "id"
+from
+  "album"
+where
+  "id" in ($1)
+order by
+  "id"
+for no key update
+WITH
+  seen AS (
+    INSERT INTO
+      library_folder_album_asset ("folderAlbumId", "assetId")
+    SELECT
+      link.id,
+      asset.id
+    FROM
+      asset
+      JOIN unnest($1::text[], $2::uuid[]) AS folder (path, "albumId") ON folder.path = coalesce(
+        nullif(
+          substring("asset"."originalPath", '^(.*)/[^/]*$'),
+          ''
+        ),
+        '/'
+      )
+      JOIN library_folder_album link ON link."albumId" = folder."albumId"
+      AND link."libraryId" = $3::uuid
+    WHERE
+      asset."libraryId" = $4::uuid
+      AND (
+        "asset"."isOffline" = false
+        AND "asset"."deletedAt" IS NULL
+        AND "asset"."visibility" IN ('timeline', 'archive')
+        AND "asset"."type" IN ('IMAGE', 'VIDEO')
+        AND not exists (
+          select
+            1
+          from
+            asset_lock
+          where
+            asset_lock."assetId" = "asset"."id"
+        )
+      )
+    ON CONFLICT DO NOTHING
+    RETURNING
+      "folderAlbumId",
+      "assetId"
+  )
+INSERT INTO
+  album_asset ("albumId", "assetId")
+SELECT
+  link."albumId",
+  seen."assetId"
+FROM
+  seen
+  JOIN library_folder_album link ON link.id = seen."folderAlbumId"
+ON CONFLICT DO NOTHING
+RETURNING
+  "albumId",
+  "assetId"
+DELETE FROM album_asset member USING asset,
+unnest($1::text[], $2::uuid[]) AS folder (path, "albumId")
+WHERE
+  member."assetId" = asset.id
+  AND member."albumId" = folder."albumId"
+  AND asset."libraryId" = $3::uuid
+  AND asset."isOffline" = true
+  AND folder.path = coalesce(
+    nullif(
+      substring("asset"."originalPath", '^(.*)/[^/]*$'),
+      ''
+    ),
+    '/'
+  )
+RETURNING
+  member."albumId",
+  member."assetId"
+commit
+
+-- AlbumRepository.getFolderAlbumSources
+select
+  "library_folder_album"."albumId",
+  "library_folder_album"."libraryId",
+  "library_folder_album"."folderPath"
+from
+  "library_folder_album"
+  inner join "library" on "library"."id" = "library_folder_album"."libraryId"
+where
+  "library_folder_album"."albumId" = any ($1::uuid[])
+  and "library"."ownerId" = $2::uuid
+  and "library"."deletedAt" is null
+
 -- AlbumRepository.isCoverFollowingNewest
 SELECT
   "albumId"

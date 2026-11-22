@@ -110,6 +110,8 @@ const REPEATABLE_JOBS = new Set<JobName>([
   // FL-1300: a scan rewrites its whole snapshot, and an apply resumes from the last change it committed.
   JobName.AlbumCleanupScan,
   JobName.AlbumCleanupApply,
+  // FL-838: a sync compares the library's folders with its albums afresh each time.
+  JobName.LibraryFolderAlbumSync,
   // FL-912: a scan rewrites its owner's findings
   JobName.DateDoctorScan,
   JobName.DateDoctorScanQueueAll,
@@ -138,6 +140,9 @@ const REPEATABLE_JOBS = new Set<JobName>([
   JobName.FacialRecognitionQueueAll,
   JobName.PersonGenerateThumbnail,
   JobName.AssetDetectFacesQueueAll,
+  // FL-863: a rerun writes the same scores over the same faces
+  JobName.FaceEyeScore,
+  JobName.FaceEyeScoreQueueAll,
   JobName.AssetDetectDuplicates,
   JobName.AssetGenerateVideoDuplicateFrames,
   JobName.AssetDetectDuplicatesQueueAll,
@@ -183,6 +188,13 @@ const REPEATABLE_JOBS = new Set<JobName>([
 const isRepeatableRequest = (item: JobItem) =>
   item.name === JobName.MediaHealthLocateMissing && item.data?.pending === true;
 /** Rows a selection producer inserts per fenced transaction. */
+/**
+ * One live job per edit row. The sweep re-sends a queued edit every 15 minutes; while its queue is paused
+ * the earlier job is still waiting, and without a key each pass added another.
+ */
+const editOperationJobOptions = (operationId?: string): QueueOptions | null =>
+  operationId ? { deduplication: { id: `edit-operation:${operationId}` } } : null;
+
 const SELECTION_PAGE = 2000;
 // A dependency that stays down defers every job behind it; say so once per queue and reason, not per job.
 const DEFERRAL_WARNING_INTERVAL_MS = 10 * 60_000;
@@ -974,6 +986,10 @@ export class JobRepository {
         : undefined,
       rootItemKey: context?.claim.rootItemKey ?? null,
       parentId: context?.buffering ? context.claim.id : undefined,
+      // A Boards download is a new arrival, as an upload is. It saves its file from inside its own job, so the file's
+      // work (metadata, then thumbnails) joins this job's run instead of an upload run; from the front, each next
+      // step keeps that place (`enqueueFollowups`) and does not wait behind a library-wide backlog.
+      ...(item.name === JobName.MediaImport && { front: true }),
     };
   }
 
@@ -1520,6 +1536,10 @@ export class JobRepository {
         // One scan per person: opening Albums again while one is waiting asks for nothing new.
         return { deduplication: { id: albumCleanupScanKey(item.data.userId), keepLastIfActive: true } };
       }
+      case JobName.LibraryFolderAlbumSync: {
+        // FL-838: one sync per library; a scan finishing while one waits asks for nothing new.
+        return { deduplication: { id: `${JobName.LibraryFolderAlbumSync}:${item.data.id}`, keepLastIfActive: true } };
+      }
       case JobName.DateDoctorScan: {
         // One scan per owner: asking again while one waits asks for nothing new.
         return { deduplication: { id: `${JobName.DateDoctorScan}:${item.data.userId}`, keepLastIfActive: true } };
@@ -1630,9 +1650,14 @@ export class JobRepository {
       case JobName.AssetPaletteQueueAll: {
         return { deduplication: { id: `${item.name}:${item.data.afterId ?? 'root'}:${!!item.data.force}` } };
       }
+      case JobName.AssetEditThumbnailGeneration:
+      case JobName.AssetVideoEditGeneration: {
+        return editOperationJobOptions(item.data.operationId);
+      }
       case JobName.AssetDevelopRender: {
         // The automatic retry of a failed render waits before it is claimed (FL-64).
-        return item.data.delay ? { delay: item.data.delay } : null;
+        const options = editOperationJobOptions(item.data.operationId);
+        return item.data.delay ? { ...options, delay: item.data.delay } : options;
       }
       case JobName.FacialRecognitionQueueAll: {
         return { deduplication: { id: JobName.FacialRecognitionQueueAll } };

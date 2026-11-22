@@ -13,6 +13,7 @@ import {
 import { recordProcessingFailure } from 'src/queue/processing-failure.js';
 import { SqlQueueStore } from 'src/queue/store.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
+import { IntegrityRepository } from 'src/repositories/integrity.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MediaHealthRepository, UpsertMediaHealthFinding } from 'src/repositories/media-health.repository.js';
 import { DB } from 'src/schema/index.js';
@@ -78,6 +79,67 @@ beforeAll(async () => {
 });
 
 describe(MediaHealthRepository.name, () => {
+  describe('originals verified recently (FL-1686)', () => {
+    const arrange = async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const { result: asset } = await ctx.newAsset({
+        ownerId: user.id,
+        checksum: Buffer.alloc(20, 7),
+        checksumAlgorithm: ChecksumAlgorithm.sha1File,
+      });
+      return { asset, sut };
+    };
+    const checksums = async (assetId: string) => {
+      const ids: string[] = [];
+      for await (const row of new IntegrityRepository(defaultDatabase).streamAssetChecksums()) {
+        ids.push(row.assetId);
+      }
+      return ids.includes(assetId);
+    };
+
+    it('counts an original read and matched within the recheck period, and the damage check skips it', async () => {
+      const { asset, sut } = await arrange();
+      expect(await sut.getRecentlyVerified([asset.id])).toEqual(new Set());
+      expect(await checksums(asset.id)).toBe(true);
+
+      await sut.recordVerified(asset, 'ab');
+      expect(await sut.getRecentlyVerified([asset.id])).toEqual(new Set([asset.id]));
+      expect(await checksums(asset.id)).toBe(false);
+
+      // once the period has passed it is read again
+      await sql`UPDATE asset_integrity_verification SET "checkedAt" = now() - interval '29 days'
+        WHERE "assetId" = ${asset.id}::uuid`.execute(defaultDatabase);
+      expect(await sut.getRecentlyVerified([asset.id])).toEqual(new Set());
+      expect(await checksums(asset.id)).toBe(true);
+    });
+
+    it('does not count a check of a file that has moved, or one that failed', async () => {
+      const { asset, sut } = await arrange();
+      await sut.recordVerified(asset, 'ab');
+      await sql`UPDATE asset SET "originalPath" = ${`${asset.originalPath}.moved`} WHERE id = ${asset.id}::uuid`.execute(
+        defaultDatabase,
+      );
+      expect(await sut.getRecentlyVerified([asset.id])).toEqual(new Set());
+
+      const other = await arrange();
+      await other.sut.recordVerified(other.asset, 'ab');
+      await sql`UPDATE asset_integrity_verification SET result = 'mismatched'
+        WHERE "assetId" = ${other.asset.id}::uuid`.execute(defaultDatabase);
+      expect(await other.sut.getRecentlyVerified([other.asset.id])).toEqual(new Set());
+    });
+
+    it('records nothing for a photo that moved since it was read', async () => {
+      const { asset, sut } = await arrange();
+      await sut.recordVerified({ ...asset, originalPath: '/elsewhere.jpg' }, 'ab');
+      const { rows } =
+        await sql`SELECT 1 FROM asset_integrity_verification WHERE "assetId" = ${asset.id}::uuid`.execute(
+          defaultDatabase,
+        );
+      expect(rows).toHaveLength(0);
+    });
+  });
+
   describe('a scheduled scan’s share of the library (FL-1534)', () => {
     it('finds where a share ends, and scans it together with what changed', async () => {
       const { ctx, sut } = setup();

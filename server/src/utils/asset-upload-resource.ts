@@ -67,9 +67,12 @@ export const ASSET_UPLOAD_LIMITS = {
   maxSize: Number.MAX_SAFE_INTEGER,
   maxAppendSize: 2 ** 30,
   maxAge: 86_400,
-  maxActive: 4,
+  /** FL-797: an upload that is receiving bytes stays resumable this long after its latest bytes (sliding). */
+  activeMaxAge: 7 * 86_400,
   maxParallelParts: 6,
 };
+/** FL-797: the expiry an upload gets each time bytes are committed; untouched uploads keep the 24-hour one. */
+export const activeUploadExpiry = (now = Date.now()) => new Date(now + ASSET_UPLOAD_LIMITS.activeMaxAge * 1000);
 export type AssetUploadPart = { path: string; size: number; interrupted: boolean };
 
 export function parseAssetUploadHeaders(headers: IncomingHttpHeaders) {

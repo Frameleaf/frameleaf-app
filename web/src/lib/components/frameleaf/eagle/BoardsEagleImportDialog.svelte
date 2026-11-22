@@ -31,6 +31,7 @@
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import InlineError from '$lib/components/frameleaf/InlineError.svelte';
   import EagleNamedList from '$lib/components/frameleaf/eagle/EagleNamedList.svelte';
+  import TakeoutFolderChooser from '$lib/components/frameleaf/settings/TakeoutFolderChooser.svelte';
   import { EAGLE_ANNOTATIONS_AVAILABLE } from '$lib/frameleaf/eagle/eagle-annotations';
   import {
     EAGLE_DEFAULT_COLLECTION,
@@ -73,9 +74,11 @@
     LibraryViewScope,
     checkBulkUpload,
     getAllAlbums,
+    getTakeoutRoots,
     type AlbumResponseDto,
     type EagleImportResponseDto,
     type EagleLibraryLocationDto,
+    type TakeoutRootDto,
   } from '@frameleaf/sdk';
   import { Icon, toastManager } from '@frameleaf/ui';
   import {
@@ -90,6 +93,7 @@
     mdiFolderMultipleOutline,
     mdiFolderOpenOutline,
     mdiFolderPlusOutline,
+    mdiFolderOutline,
     mdiFolderZipOutline,
     mdiImageMultipleOutline,
     mdiInboxOutline,
@@ -247,6 +251,8 @@
       return;
     }
     source = next;
+    browseRequest++;
+    browsing = false;
     library = undefined;
     plan = undefined;
     serverLocation = undefined;
@@ -270,7 +276,7 @@
     }
   };
 
-  const pickServer = async (entry: EagleLibraryLocationDto) => {
+  const pickServer = async (entry: EagleServerLocation) => {
     reading = true;
     readError = undefined;
     try {
@@ -285,6 +291,30 @@
       reading = false;
     }
   };
+
+  /** Browse the server's import folders for a library the list didn't find (deeper down, or the folder itself). */
+  let serverRootList = $state<TakeoutRootDto[] | undefined>();
+  let browsing = $state(false);
+  /** Changing where the library is drops a browse still waiting for the server's folders. */
+  let browseRequest = 0;
+  const browseServer = async () => {
+    readError = undefined;
+    const request = ++browseRequest;
+    try {
+      const { roots } = await getTakeoutRoots();
+      // Only the latest browse counts: an earlier one neither opens, closes nor fails anything.
+      if (request === browseRequest) {
+        serverRootList = roots;
+        browsing = true;
+      }
+    } catch {
+      serverListFailed ||= request === browseRequest;
+    }
+  };
+  const isLibraryName = (name: string) => name.toLowerCase().endsWith('.library');
+  /** The open folder is a library: the last folder opened, or the import folder itself. */
+  const isLibraryFolder = (root: TakeoutRootDto, parts: string[]) =>
+    isLibraryName(parts.at(-1) ?? root.path.replace(/[/\\]+$/, ''));
 
   /** The folder a server library is in, for the list: "Design › Eagle". */
   const folderOf = (path: string) => path.split(/[/\\]/).slice(0, -1).join(' › ');
@@ -857,9 +887,10 @@
           <p class="note-line" role="status">{$t('frameleaf_eagle_server_unavailable_here')}</p>
         {:else if serverRoots === 0}
           <p class="note-line" role="status">{$t('frameleaf_eagle_server_no_roots')}</p>
-        {:else if serverLibraries.length === 0}
-          <p class="note-line" role="status">{$t('frameleaf_eagle_server_none')}</p>
         {:else}
+          {#if serverLibraries.length === 0}
+            <p class="note-line" role="status">{$t('frameleaf_eagle_server_none')}</p>
+          {/if}
           <ul class="server-libraries" aria-label={$t('frameleaf_eagle_server_pick')} aria-busy={reading}>
             {#each serverLibraries as entry (`${entry.rootId}/${entry.path}`)}
               <li>
@@ -873,6 +904,13 @@
               </li>
             {/each}
           </ul>
+          <div class="library-empty">
+            <Button disabled={reading} onclick={() => void browseServer()}>
+              <Icon icon={mdiFolderOpenOutline} size="16" aria-hidden />{reading
+                ? $t('frameleaf_eagle_reading')
+                : $t('frameleaf_eagle_choose_folder')}
+            </Button>
+          </div>
         {/if}
       {:else}
         <div class="library-empty">
@@ -1333,6 +1371,21 @@
     {/if}
   {/snippet}
 </Dialog>
+
+{#if browsing && serverRootList}
+  <TakeoutFolderChooser
+    roots={serverRootList}
+    detail={() => ''}
+    folderIcon={(name) => (isLibraryName(name) ? mdiFolderZipOutline : mdiFolderOutline)}
+    canChoose={isLibraryFolder}
+    onClose={() => (browsing = false)}
+    onChoose={({ rootId, parts }) => {
+      browsing = false;
+      // An import folder that is itself the library is "." below it: the server's check needs a path.
+      void pickServer({ rootId, path: parts.join('/') || '.' });
+    }}
+  />
+{/if}
 
 <style>
   .server-libraries {

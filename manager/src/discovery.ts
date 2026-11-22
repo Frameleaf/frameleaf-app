@@ -2,6 +2,7 @@ import { isIP } from 'node:net';
 import { posix } from 'node:path';
 import { Docker, environment, mounts, type Container } from './docker.js';
 import { Refusal, digest, type Source, type SourceFence, type Mount } from './contracts.js';
+import { readGalleryPreview } from './gallery-preview.js';
 
 // Recognised by repository name on any registry or owner (forks, mirrors, Docker Hub). Compatibility is
 // decided by the version the running server reports, never by the image name.
@@ -234,13 +235,21 @@ export class Discovery {
     // DB volumes, secret files and host sockets are never carried across as media mounts.
     if (mappings.some((m) => mounts(dbContainer).some((d) => m.type === d.type && m.source === d.source)))
       throw new Refusal('database_and_media_overlap');
+    const product = facts.noodle || GALLERY.test(app.Config.Image) ? 'Noodle Gallery' : 'Immich';
+    // FL-1742: counted now, so the review shows what comes across before anything is stopped. A source these
+    // two read-only statements cannot answer is still importable; its review then shows no counts.
+    const gallery =
+      product === 'Noodle Gallery'
+        ? await readGalleryPreview((statement) => this.docker.sql(database, statement, 60_000)).catch(() => undefined)
+        : undefined;
     return {
       id: app.Id,
       app: app.Id,
       project,
       // Gallery reports its own release (5.x) only to clients sending x-gallery-app, as the version check does;
       // the importer reads its Immich base from the migration ledger.
-      product: facts.noodle || GALLERY.test(app.Config.Image) ? 'Noodle Gallery' : 'Immich',
+      product,
+      ...(gallery && { gallery }),
       version,
       image: app.Image,
       workers: workers.map((c) => c.Id),

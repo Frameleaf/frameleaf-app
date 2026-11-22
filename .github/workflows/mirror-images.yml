@@ -1,0 +1,65 @@
+name: Mirror images to Docker Hub and Forgejo
+
+# FL-1678: Docker Hub is the public pull location and Forgejo the internal copy; GHCR keeps every
+# image until Manager installs move off it. Copies keep their digests and are signed with the key
+# in cosign.pub. Runs only on Forgejo, on the runner that reaches its registry over the LAN.
+# FL-1683: no `secrets:` block, because Forgejo rejects it under workflow_call; callers map the
+# six secrets explicitly.
+on:
+  workflow_call:
+    inputs:
+      refs:
+        description: Space-separated <image>:<tag> references already on ghcr.io/frameleaf
+        type: string
+        default: ''
+      release-variants:
+        description: Also mirror every server and ML variant at the Latest release's tag, release and latest
+        type: boolean
+        default: false
+
+permissions: {}
+
+jobs:
+  mirror:
+    name: Mirror to Docker Hub and Forgejo
+    if: github.server_url != 'https://github.com' && github.repository == 'Frameleaf/frameleaf-app'
+    runs-on: lan
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install ORAS (checksum-pinned)
+        run: .github/install-oras.sh
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: v3.1.3
+      - name: Copy and sign
+        env:
+          REFS: ${{ inputs.refs }}
+          RELEASE_VARIANTS: ${{ inputs.release-variants }}
+          GHCR_USERNAME: ${{ vars.GHCR_USERNAME }}
+          GH_PUBLISH_TOKEN: ${{ secrets.GH_PUBLISH_TOKEN }}
+          GH_TOKEN: ${{ secrets.GH_PUBLISH_TOKEN }}
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+          FORGEJO_REGISTRY: ${{ vars.LAN_REGISTRY }}
+          FORGEJO_USERNAME: ${{ vars.REGISTRY_PUBLISH_USERNAME }}
+          FORGEJO_TOKEN: ${{ secrets.REGISTRY_PUBLISH_TOKEN }}
+          COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
+          COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
+        run: |
+          set -euo pipefail
+          read -r -a refs <<< "$REFS"
+          if [[ "$RELEASE_VARIANTS" == true ]]; then
+            # The release that is Latest now: the one just published, or the one a withdraw restored.
+            version=$(gh api repos/Frameleaf/frameleaf-app/releases/latest --jq .tag_name)
+            [[ "$version" =~ ^frameleaf-v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::Unexpected latest release $version"; exit 1; }
+            mapfile -t -O "${#refs[@]}" refs < <(node -e '
+              const { VARIANTS } = require("./.github/frameleaf-release.cjs");
+              for (const v of VARIANTS) for (const t of [process.argv[1], "release", "latest"]) console.log(`${v.image}:${t}${v.suffix}`);
+            ' "$version")
+          fi
+          .github/mirror-release-images.sh "${refs[@]}"

@@ -14,7 +14,7 @@ import { PartnerLockedEncryptionSchema, PartnerOriginSchema } from 'src/dtos/par
 import { PersonResponseDto, PersonResponseSchema, mapPerson } from 'src/dtos/person.dto.js';
 import { LocationInsightSchema } from 'src/dtos/photo-locations.dto.js';
 import { TagResponseSchema, mapTag } from 'src/dtos/tag.dto.js';
-import { UserResponseSchema, mapUser } from 'src/dtos/user.dto.js';
+import { UserResponseSchema, mapMember } from 'src/dtos/user.dto.js';
 import {
   AssetFileType,
   AssetStatus,
@@ -65,6 +65,13 @@ const SanitizedAssetResponseSchema = z
       .meta({ format: 'date-time' })
       .describe(
         'The local date and time when the photo/video was taken, derived from EXIF metadata. This represents the photographer\'s local time regardless of timezone, stored as a timezone-agnostic timestamp. Used for timeline grouping by "local" days and months.',
+      ),
+    // a plain string, not an enum: a response enum can never gain a value without breaking the native apps
+    dateAccuracy: z
+      .string()
+      .nullish()
+      .describe(
+        'Set when only the year (`year`) or the decade (`decade`) of the capture date is known; localDateTime is then the start of that period. Absent or null for an exact date. Other values may be added: treat an unknown one as approximate.',
       ),
     duration: z.int32().min(0).nullable().describe('Video/gif duration in milliseconds (null for static images)'),
     livePhotoVideoId: z.string().nullish().describe('Live photo video ID'),
@@ -204,6 +211,8 @@ export type MapAsset = {
   libraryId: string | null;
   livePhotoVideoId: string | null;
   localDateTime: Date;
+  /** FL-936: `year` or `decade` when that is all the capture date says */
+  dateAccuracy?: string | null;
   originalFileName: string;
   originalPath: string;
   /** FL-417: the photo's own path while it shares a file kept in another folder */
@@ -225,6 +234,8 @@ export type AssetMapOptions = {
   stripMetadata?: boolean;
   withStack?: boolean;
   auth?: AuthDto;
+  /** FL-786: the viewer's own heart on an item someone else owns (shared album or space). */
+  sharedFavorite?: boolean;
 };
 
 const mapImageRenditions = (entity: MaybeDehydrated<MapAsset>) => {
@@ -298,6 +309,7 @@ export function mapAsset(entity: MaybeDehydrated<MapAsset>, options: AssetMapOpt
       originalMimeType: mimeTypes.lookup(entity.originalFileName),
       thumbhash: entity.thumbhash ? hexOrBufferToBase64(entity.thumbhash) : null,
       localDateTime: asDateTimeString(entity.localDateTime),
+      dateAccuracy: entity.dateAccuracy ?? undefined,
       duration: entity.duration,
       livePhotoVideoId: entity.livePhotoVideoId,
       imageEncoding:
@@ -318,7 +330,7 @@ export function mapAsset(entity: MaybeDehydrated<MapAsset>, options: AssetMapOpt
     id: entity.id,
     createdAt: asDateTimeString(entity.createdAt),
     ownerId: entity.ownerId,
-    owner: entity.owner ? mapUser(entity.owner) : undefined,
+    owner: entity.owner ? mapMember(entity.owner) : undefined,
     libraryId: entity.libraryId,
     type: entity.type,
     // FL-417: the photo's own path, never the folder a shared file is kept in
@@ -329,9 +341,13 @@ export function mapAsset(entity: MaybeDehydrated<MapAsset>, options: AssetMapOpt
     fileCreatedAt: asDateTimeString(entity.fileCreatedAt),
     fileModifiedAt: asDateTimeString(entity.fileModifiedAt),
     localDateTime: asDateTimeString(entity.localDateTime),
+    dateAccuracy: entity.dateAccuracy ?? undefined,
     updatedAt: asDateTimeString(entity.updatedAt),
     // the viewer's own mark: a shared link acts as its owner, but a visitor never sees the owner's favorites
-    isFavorite: !options.auth?.sharedLink && options.auth?.user.id === entity.ownerId && entity.isFavorite,
+    // FL-786: anyone else's is the heart they gave it through a shared album or space
+    isFavorite:
+      !options.auth?.sharedLink &&
+      (options.auth?.user.id === entity.ownerId ? entity.isFavorite : !!options.sharedFavorite),
     isArchived: visibility === AssetVisibility.Archive,
     isTrashed: !!entity.deletedAt,
     visibility,

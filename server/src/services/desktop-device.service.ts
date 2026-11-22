@@ -30,7 +30,20 @@ export class DesktopDeviceService {
         !auth.user.isAdmin && (await this.policy.read(auth.user.id))?.memberApproved === true
           ? 'account-approved'
           : 'administrators',
-      features: { enrollment: true, worker: false, workerSession: true, sources: false, nativeHost: false },
+      // workerAutoSetup: desktops set themselves up from the machine-learning settings alone
+      // (docs/desktop-worker-setup-protocol.md in frameleaf-desktop).
+      features: {
+        enrollment: true,
+        worker: false,
+        workerSession: true,
+        workerAutoSetup: true,
+        // A claim may carry `reportWithdrawn: true` and is then told when a model was taken away from it.
+        workerWithdrawalNotice: true,
+        // A claim may carry `slots`, and a desktop may then hold several leases at once.
+        workerConcurrentLeases: true,
+        sources: false,
+        nativeHost: false,
+      },
     };
   }
 

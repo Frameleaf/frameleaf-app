@@ -57,6 +57,16 @@ const convertsOwnVideo = sql<boolean>`NOT EXISTS (
   WHERE origin."assetId" = asset.id AND source."deletedAt" IS NULL AND source.status = ${sql.lit(AssetStatus.Active)}
 )`;
 /**
+ * A partner copy takes its live source's search embedding and never reads the picture itself, so its job is
+ * only skipped until the source has one; the source's postprocessing then queues the copy.
+ */
+const waitsForSourceEmbedding = sql<boolean>`EXISTS (
+  SELECT 1 FROM public.asset_origin origin
+  JOIN asset source ON source.id = origin."sourceAssetId"
+  WHERE origin."assetId" = asset.id AND source."deletedAt" IS NULL AND source.status = ${sql.lit(AssetStatus.Active)}
+    AND NOT EXISTS (SELECT 1 FROM public.smart_search WHERE smart_search."assetId" = source.id)
+)`;
+/**
  * FL-1287: a partner copy that rendered its own thumbnail or preview before copies shared them, while its live
  * source has one at another path. Its job (the nightly "Missing" scan) links the source's and deletes its own.
  */
@@ -641,7 +651,9 @@ export class AssetJobRepository {
     return this.assetsWithPreviews()
       .select(['asset.id'])
       .$if(!force, (qb) =>
-        qb.where((eb) => eb.not((eb) => eb.exists(eb.selectFrom('smart_search').whereRef('assetId', '=', 'asset.id')))),
+        qb
+          .where((eb) => eb.not((eb) => eb.exists(eb.selectFrom('smart_search').whereRef('assetId', '=', 'asset.id'))))
+          .where(sql<boolean>`NOT ${waitsForSourceEmbedding}`),
       );
   }
 
@@ -751,6 +763,21 @@ export class AssetJobRepository {
           ),
         )
     );
+  }
+
+  /** FL-1597: photos read for Visual search whose Best Photos score was not made with `modelName`'s learned head. */
+  @GenerateSql({ params: ['ViT-B-32__openai'] })
+  async countBestPhotosWithoutLearnedScore(modelName: string): Promise<number> {
+    const { count } = await this.db
+      .selectFrom('asset_best_photo_score')
+      .innerJoin('asset', 'asset.id', 'asset_best_photo_score.assetId')
+      .innerJoin('smart_search', 'smart_search.assetId', 'asset_best_photo_score.assetId')
+      .select((eb) => eb.fn.countAll<number>().as('count'))
+      .where('asset.type', '=', sql.lit(AssetType.Image))
+      .where('asset.deletedAt', 'is', null)
+      .where(sql<string>`"asset_best_photo_score"."metadata"->>'aestheticModel'`, 'is distinct from', modelName)
+      .executeTakeFirstOrThrow();
+    return Number(count);
   }
 
   @GenerateSql({ params: [DummyValue.UUID] })
@@ -1068,6 +1095,37 @@ export class AssetJobRepository {
       .$if(force === false, (qb) => qb.where('job_status.facesRecognizedAt', 'is', null))
       .select(['asset.id'])
       .orderBy('asset.fileCreatedAt', 'desc');
+  }
+
+  /**
+   * FL-863: photos with a face whose eye scores are missing or from an older scoring (`force`: every photo
+   * with a face). `inShoot` picks the photos in a Clients shoot's album, or the rest, so shoots are queued first.
+   */
+  selectionForFaceEyeScores({ force, inShoot, version }: { force?: boolean; inShoot: boolean; version: number }) {
+    // photography_workflow is written with raw SQL (photography-workflow.repository.ts), not a typed table
+    const inAShoot = sql<boolean>`exists (
+      select 1 from album_asset
+      join album on album.id = album_asset."albumId" and album."deletedAt" is null
+      join photography_workflow workflow on workflow."albumId" = album.id
+      where album_asset."assetId" = asset.id
+    )`;
+    return this.assetsWithPreviews()
+      .where(libraryScopePredicate(LibraryScope.Personal))
+      .where((eb) =>
+        eb.exists(
+          eb
+            .selectFrom('asset_face')
+            .whereRef('asset_face.assetId', '=', 'asset.id')
+            .where('asset_face.deletedAt', 'is', null)
+            .$if(!force, (qb) =>
+              qb.where((eb) =>
+                eb.or([eb('asset_face.eyeScoreVersion', 'is', null), eb('asset_face.eyeScoreVersion', '<', version)]),
+              ),
+            ),
+        ),
+      )
+      .where(inShoot ? inAShoot : sql<boolean>`not ${inAShoot}`)
+      .select(['asset.id']);
   }
 
   /**

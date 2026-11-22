@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
-import { Insertable } from 'kysely';
+import { Insertable, Updateable } from 'kysely';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
 import picomatch from 'picomatch';
@@ -11,6 +11,7 @@ import { JOBS_LIBRARY_PAGINATION_SIZE } from 'src/constants.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
 import {
   CreateLibraryDto,
+  FOLDER_ESTIMATE_FOLDERS,
   LibraryFolderBrowseDto,
   LibraryFolderBrowseResponseDto,
   LibraryFolderEstimateDto,
@@ -37,7 +38,9 @@ import {
   UserStatus,
 } from 'src/enum.js';
 import { AssetTable } from 'src/schema/tables/asset.table.js';
+import { LibraryTable } from 'src/schema/tables/library.table.js';
 import { BaseService } from 'src/services/base.service.js';
+import { FolderAlbumService } from 'src/services/folder-album.service.js';
 import {
   DEFAULT_LIBRARY_EXCLUSION_PATTERNS,
   type ImportPathNeighbour,
@@ -83,6 +86,10 @@ export class LibraryService extends BaseService {
   private lock = false;
   private watchers = new Map<string, () => Promise<void>>();
   private watchRequests = new Map<string, symbol>();
+
+  private get folderAlbums() {
+    return BaseService.create(FolderAlbumService, this);
+  }
 
   @OnEvent({ name: 'ConfigInit', workers: [FrameleafWorker.Microservices] })
   async onConfigInit({
@@ -339,6 +346,7 @@ export class LibraryService extends BaseService {
       name: dto.name ?? 'New External Library',
       importPaths,
       exclusionPatterns,
+      folderAlbums: dto.folderAlbums ?? false,
     });
     await this.recordAdminEvents([libraryEvent(auth, library, AdminAuditAction.LibraryCreated)]);
     if (importPaths.length > 0) {
@@ -412,6 +420,7 @@ export class LibraryService extends BaseService {
     let count = 0;
     let bytes = 0;
     let complete = true;
+    const folders = new Map<string, number>();
     try {
       const batches = this.storageRepository.walkLibrary({
         pathsToCrawl: [folder],
@@ -422,6 +431,10 @@ export class LibraryService extends BaseService {
       for await (const batch of batches) {
         for (const file of batch) {
           count++;
+          const parent = path.posix.dirname(file);
+          if (folders.has(parent) || folders.size < FOLDER_ESTIMATE_FOLDERS) {
+            folders.set(parent, (folders.get(parent) ?? 0) + 1);
+          }
           bytes += await this.storageRepository
             .stat(file)
             .then((stats) => stats.size)
@@ -434,9 +447,16 @@ export class LibraryService extends BaseService {
       }
     } catch (error) {
       const found = !['ENOENT', 'ENOTDIR'].includes((error as NodeJS.ErrnoException).code ?? '');
-      return { readable: false, found, count: 0, bytes: 0, complete: true };
+      return { readable: false, found, count: 0, bytes: 0, complete: true, folders: [] };
     }
-    return { readable: true, found: true, count, bytes, complete };
+    return {
+      readable: true,
+      found: true,
+      count,
+      bytes,
+      complete,
+      folders: [...folders].map(([folderPath, folderCount]) => ({ path: folderPath, count: folderCount })),
+    };
   }
 
   /** Every account's managed uploads, for the Libraries list (FL-78). */
@@ -531,10 +551,11 @@ export class LibraryService extends BaseService {
     if (dto.importPaths) {
       await this.requireValidImportPaths(dto.importPaths, id);
     }
-    const update: UpdateLibraryDto = {
+    const update: Updateable<LibraryTable> = {
       name: dto.name,
       importPaths: dto.importPaths?.map((importPath) => normalizeImportPath(importPath)),
       exclusionPatterns: dto.exclusionPatterns,
+      folderAlbums: dto.folderAlbums,
     };
 
     if (update.exclusionPatterns) {
@@ -543,6 +564,14 @@ export class LibraryService extends BaseService {
 
     const library = await this.libraryRepository.update(id, update);
     await this.recordAdminEvents([libraryEvent(auth, library, AdminAuditAction.LibraryUpdated)]);
+
+    // FL-838: folder albums. Turned on, the albums are made in the background; turned off, they stay as ordinary
+    // albums, or are deleted when asked (never their photos). Nothing is written to the library's folders.
+    if (dto.folderAlbums === true && !existing.folderAlbums) {
+      await this.folderAlbums.queueSync(id);
+    } else if (dto.folderAlbums === false && existing.folderAlbums) {
+      await this.folderAlbums.removeAll(id, { removeAlbums: dto.removeFolderAlbums === true });
+    }
 
     const foldersChanged =
       libraryPathsFingerprint(existing) !==

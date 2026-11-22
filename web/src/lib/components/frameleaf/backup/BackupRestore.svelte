@@ -8,8 +8,12 @@
    * FL-900: with Cloud Backup set up, the restore drill card (FL-879) heads the page and replaces the
    * manual "Practice restore" record, as in the prototype; `&drill=<id>` opens a drill's report. Without
    * Cloud Backup there is nothing to drill, so the manual record stays.
+   *
+   * FL-1666: "Files or folders, as they were stored" and "Browse files" on a date with a Cloud Backup
+   * open the browse of that backup (`&browse=<backup>`), its three steps in place of this page.
    */
   import InlineError from '$lib/components/frameleaf/InlineError.svelte';
+  import BackupBrowse from '$lib/components/frameleaf/backup/BackupBrowse.svelte';
   import MaintenanceRestoreTest from '$lib/components/frameleaf/MaintenanceRestoreTest.svelte';
   import RestoreDrillCard from '$lib/components/frameleaf/backup/RestoreDrillCard.svelte';
   import RestoreDrillReport from '$lib/components/frameleaf/backup/RestoreDrillReport.svelte';
@@ -19,9 +23,12 @@
   import CloudBackupRestoreSection from '$lib/components/frameleaf/cloud/CloudBackupRestoreSection.svelte';
   import HistoryList from '$lib/components/frameleaf/settings/kit/HistoryList.svelte';
   import HistoryRow from '$lib/components/frameleaf/settings/kit/HistoryRow.svelte';
+  import Notice from '$lib/components/frameleaf/settings/kit/Notice.svelte';
+  import Button from '$lib/components/frameleaf/Button.svelte';
   import Links, { type LinkRow } from '$lib/components/frameleaf/settings/kit/Links.svelte';
   import Section from '$lib/components/frameleaf/settings/kit/Section.svelte';
   import { backupWhen, localSnapshots, type BackupPlaceId } from '$lib/frameleaf/backup-overview';
+  import { manifestOnDay } from '$lib/frameleaf/backup-browse';
   import { restoreDates } from '$lib/frameleaf/backup-restore';
   import { backupPageUrl } from '$lib/frameleaf/settings-areas';
   import { locale } from '$lib/stores/preferences.store';
@@ -32,16 +39,29 @@
     listBuddyBackupSnapshots,
     listDatabaseBackups,
     type BuddyStatusDto,
+    type CloudBackupManifestDto,
     type CloudBackupStatusResponseDto,
   } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
-  import { mdiDatabaseOutline, mdiHistory, mdiImageMultipleOutline, mdiServerOutline } from '@mdi/js';
+  import {
+    mdiCheckCircleOutline,
+    mdiDatabaseOutline,
+    mdiFolderOpenOutline,
+    mdiHistory,
+    mdiImageMultipleOutline,
+    mdiServerOutline,
+  } from '@mdi/js';
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';
+  import { goto } from '$app/navigation';
   import { page } from '$app/state';
 
   /** FL-520: "Restore from a backup" on Library care › File checks names the findings to restore. */
   const drillReport = $derived(page.url.searchParams.get('drill'));
+  /** FL-1666: the Cloud Backup being browsed, by its key; empty for the newest. */
+  const browsing = $derived(page.url.searchParams.get('browse'));
+  /** A restore of files or folders was just started from the browse. */
+  let started = $state(false);
   const findings = $derived.by(() => {
     const value = page.url.searchParams.get('files');
     return value === 'missing' || value === 'damaged' ? value : undefined;
@@ -50,6 +70,7 @@
   let cloud = $state<CloudBackupStatusResponseDto | null>(null);
   let buddy = $state<BuddyStatusDto | null>(null);
   let points = $state<{ place: BackupPlaceId; at: Date }[]>([]);
+  let cloudBackups = $state<CloudBackupManifestDto[]>([]);
   let loaded = $state(false);
   let failed = $state(false);
   let disposed = false;
@@ -85,6 +106,7 @@
     if (disposed) {
       return;
     }
+    cloudBackups = manifests.status === 'fulfilled' ? manifests.value.manifests : [];
     if (manifests.status === 'fulfilled') {
       found.push(
         ...manifests.value.manifests.map(({ createdAt }) => ({ place: 'cloud' as const, at: new Date(createdAt) })),
@@ -126,6 +148,8 @@
   const first = $derived(cloudOn ? PLACE_HREF.cloud : PLACE_HREF.buddy);
   const needs = $derived($t('frameleaf_backup_restore_needs_offsite'));
 
+  const browseUrl = (key?: string) => backupPageUrl('restore', { browse: key ?? '' });
+
   const choices = $derived<LinkRow[]>([
     {
       icon: mdiImageMultipleOutline,
@@ -133,6 +157,13 @@
       body: offsite ? $t('frameleaf_backup_restore_some_body') : needs,
       href: first,
       disabled: !offsite,
+    },
+    {
+      icon: mdiFolderOpenOutline,
+      title: $t('frameleaf_backup_restore_files'),
+      body: cloudOn ? $t('frameleaf_backup_restore_files_body') : $t('frameleaf_backup_restore_needs_cloud'),
+      href: browseUrl(),
+      disabled: !cloudOn,
     },
     {
       icon: mdiHistory,
@@ -161,7 +192,26 @@
 
 {#if drillReport}
   <RestoreDrillReport id={drillReport} />
+{:else if browsing !== null && !loaded}
+  <div class="pad" role="status" aria-busy="true">
+    <span class="sr-only">{$t('loading')}</span>
+    <Skeleton variant="text" lines={3} />
+  </div>
+{:else if browsing !== null && cloudOn && cloudBackups.length > 0}
+  {#key browsing}
+    <BackupBrowse
+      manifests={cloudBackups}
+      start={browsing}
+      onDone={() => {
+        started = true;
+        void goto(backupPageUrl('restore'));
+      }}
+    />
+  {/key}
 {:else}
+  {#if started}
+    <Notice icon={mdiCheckCircleOutline}>{$t('frameleaf_backup_browse_started')}</Notice>
+  {/if}
   {#if cloud?.configured}
     <RestoreDrillCard status={cloud} onStatus={(next) => (cloud = next)} />
   {/if}
@@ -183,6 +233,8 @@
       {#if dates.length > 0}
         <HistoryList>
           {#each dates as date (date.day)}
+            {@const cloudBackup =
+              cloudOn && date.places.includes('cloud') ? manifestOnDay(cloudBackups, date.day) : undefined}
             <HistoryRow when={when(date.newest)} datetime={date.newest.toISOString()}>
               {#snippet middle()}
                 <span class="chips">
@@ -199,6 +251,14 @@
                   {/each}
                 </span>
               {/snippet}
+              {#if cloudBackup}
+                <Button
+                  label={$t('frameleaf_backup_restore_browse_label', {
+                    values: { when: when(new Date(cloudBackup.createdAt)) },
+                  })}
+                  onclick={() => void goto(browseUrl(cloudBackup.key))}>{$t('frameleaf_backup_restore_browse')}</Button
+                >
+              {/if}
             </HistoryRow>
           {/each}
         </HistoryList>

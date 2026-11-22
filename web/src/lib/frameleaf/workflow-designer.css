@@ -29,9 +29,9 @@
   gap: 0.375rem;
   font-size: var(--fl-font-small);
 }
-.workflow-designer input:not([type='checkbox']),
-.workflow-designer select,
-.workflow-designer textarea {
+/* :where keeps this at class specificity so embedded components (the filter panel's radios and
+   colour picker) keep their own input styles. */
+.workflow-designer :where(input:not([type='checkbox'], [type='radio']), select, textarea) {
   width: 100%;
   max-width: 100%;
   padding: 0.5rem;
@@ -41,8 +41,7 @@
   color: var(--fl-text);
   font: inherit;
 }
-.workflow-designer input:not([type='checkbox']),
-.workflow-designer select {
+.workflow-designer :where(input:not([type='checkbox'], [type='radio']), select) {
   min-height: 2.125rem;
 }
 .workflow-designer textarea {

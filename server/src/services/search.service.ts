@@ -109,6 +109,8 @@ export class SearchService extends BaseService {
     const people = await this.personRepository.getByName(auth.user.id, dto.name, {
       ...getHiddenContentQueryOptions(auth),
       withHidden: dto.withHidden,
+      // FL-941: the People search box finds the caller's own people by their notes too
+      matchNotes: true,
     });
     return people.map((person) => mapPerson(person));
   }
@@ -461,13 +463,21 @@ export class SearchService extends BaseService {
     const userIds = this.getUserIdsToSearch(auth);
     const rows = await this.landmarkReads({ userIds, options: getHiddenContentQueryOptions(auth) });
     const icons = this.mapRepository.getLandmarkIcons();
-    return rows.map((row) => ({
-      ...row,
-      icon: icons.get(row.id),
-      assetCount: Number(row.assetCount),
-      firstTakenAt: new Date(row.firstTakenAt).toISOString(),
-      lastTakenAt: new Date(row.lastTakenAt).toISOString(),
-    }));
+    // Overlapping places (a resort and its park, the Eiffel Tower and Champ de Mars) share their best photo:
+    // in list order, each takes its best cover that an earlier card has not already shown.
+    const shown = new Set<string>();
+    return rows.map(({ coverAssetIds, ...row }) => {
+      const coverAssetId = coverAssetIds.find((id) => !shown.has(id)) ?? coverAssetIds[0];
+      shown.add(coverAssetId);
+      return {
+        ...row,
+        coverAssetId,
+        icon: icons.get(row.id),
+        assetCount: Number(row.assetCount),
+        firstTakenAt: new Date(row.firstTakenAt).toISOString(),
+        lastTakenAt: new Date(row.lastTakenAt).toISOString(),
+      };
+    });
   }
 
   /** A landmark's brand icon. The pack is the same for everyone, so any signed-in caller may read it. */
@@ -595,9 +605,11 @@ export class SearchService extends BaseService {
       this.resolveEmbedding(auth, dto, machineLearning),
     ]);
 
-    // no cursor until a rank-aware pagination strategy for smart search is decided
-    const { items } = await this.searchRepository.searchSmartV3(
-      { take: dto.size ?? 100 },
+    // FL-1655: the ranking is over a fixed set of candidates, so a page is an offset into it
+    const { offset } = decodeSearchCursor(dto.cursor);
+    const size = dto.size ?? 100;
+    const { hasNextPage, items } = await this.searchRepository.searchSmartV3(
+      { take: size, skip: offset },
       {
         filter,
         withExif: dto.withExif,
@@ -610,10 +622,17 @@ export class SearchService extends BaseService {
     );
 
     await read.assertCurrent();
+    // only a first page starts at the best result
+    const closeMatches =
+      offset === 0 ? await this.closeMatches(dto, embedding, scope.userIds, items, filter.libraryScope) : undefined;
     return this.mapResponse(
       items,
       { auth },
-      { closeMatches: await this.closeMatches(dto, embedding, scope.userIds, items, filter.libraryScope) },
+      {
+        nextCursor: hasNextPage ? encodeSearchCursor(offset + size) : null,
+        // as in `searchSmart`: a first page that is close all through does not say where the line falls
+        closeMatches: closeMatches === items.length && hasNextPage ? undefined : closeMatches,
+      },
     );
   }
 

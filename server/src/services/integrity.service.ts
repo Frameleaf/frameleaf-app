@@ -883,7 +883,7 @@ export class IntegrityService extends BaseService {
   }
 
   @OnJob({ name: JobName.IntegrityChecksumFiles, queue: QueueName.IntegrityCheck })
-  async handleChecksumFiles({ refreshOnly }: IIntegrityJob = {}): Promise<JobStatus> {
+  async handleChecksumFiles({ refreshOnly, manual }: IIntegrityJob = {}): Promise<JobStatus> {
     if (refreshOnly) {
       await this.queueRefreshAllChecksumFiles();
       return JobStatus.Success;
@@ -930,7 +930,8 @@ export class IntegrityService extends BaseService {
       batches: Math.max(0, Math.min(count, Math.ceil(count * percentageLimit))),
     });
 
-    const assets = this.integrityRepository.streamAssetChecksums(startMarker);
+    // Run now looks for damage since the last read too; only the scheduled pass skips recent reads.
+    const assets = this.integrityRepository.streamAssetChecksums(startMarker, { rereadRecent: !!manual });
 
     let encrypted = 0;
     for await (const { originalPath, checksum, checksumAlgorithm, createdAt, assetId, reportId } of assets) {

@@ -486,16 +486,24 @@ describe(LibraryService.name, () => {
     it('counts the photos and videos in a folder and their size, with its skips', async () => {
       mocks.storage.walkLibrary.mockImplementation(async function* () {
         // eslint-disable-next-line unicorn/no-useless-promise-resolve-reject
-        yield await Promise.resolve(['/photos/a.jpg', '/photos/b.mov']);
+        yield await Promise.resolve(['/photos/a.jpg', '/photos/b.mov', '/photos/2024/c.jpg']);
       });
-      mocks.storage.stat.mockResolvedValueOnce({ size: 1000 } as Stats).mockResolvedValueOnce({ size: 2000 } as Stats);
+      mocks.storage.stat
+        .mockResolvedValueOnce({ size: 1000 } as Stats)
+        .mockResolvedValueOnce({ size: 2000 } as Stats)
+        .mockResolvedValueOnce({ size: 500 } as Stats);
 
       await expect(sut.estimateFolder({ path: '/photos/', exclusionPatterns: ['**/@eaDir/**'] })).resolves.toEqual({
         readable: true,
         found: true,
-        count: 2,
-        bytes: 3000,
+        count: 3,
+        bytes: 3500,
         complete: true,
+        // FL-838: per folder, for the folder albums preview
+        folders: [
+          { path: '/photos', count: 2 },
+          { path: '/photos/2024', count: 1 },
+        ],
       });
       expect(mocks.storage.walkLibrary).toHaveBeenCalledWith(
         expect.objectContaining({ pathsToCrawl: ['/photos'], exclusionPatterns: ['**/@eaDir/**'] }),
@@ -524,6 +532,7 @@ describe(LibraryService.name, () => {
         count: 0,
         bytes: 0,
         complete: true,
+        folders: [],
       });
       await expect(sut.estimateFolder({ path: 'photos', exclusionPatterns: [] })).rejects.toThrow();
     });
@@ -538,6 +547,14 @@ describe(LibraryService.name, () => {
 
         await expect(sut.create(dto)).resolves.toMatchObject({ readOnly: true });
         expect(mocks.library.create).toHaveBeenCalledWith(expect.objectContaining({ readOnly: true }));
+      });
+
+      it('makes folder albums only when asked (FL-838)', async () => {
+        mocks.library.create.mockResolvedValue(factory.library());
+        await sut.create({ ownerId: authStub.admin.user.id });
+        expect(mocks.library.create).toHaveBeenLastCalledWith(expect.objectContaining({ folderAlbums: false }));
+        await sut.create({ ownerId: authStub.admin.user.id, folderAlbums: true });
+        expect(mocks.library.create).toHaveBeenLastCalledWith(expect.objectContaining({ folderAlbums: true }));
       });
 
       it('should create with default settings', async () => {

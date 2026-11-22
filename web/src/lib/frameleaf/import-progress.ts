@@ -12,6 +12,8 @@ import { runHeadline, type Headline } from '$lib/frameleaf/run-headline';
  *
  * - The thumbnails queue counts how many photos it has made ready and how many wait, whatever brought them in: an
  *   external-library scan, a large upload, a phone backup. That is "N of M ready", and its pace gives the time left.
+ *   The count is the queue's `items`, its photos: its jobs are more (each photo's colors, each person's face
+ *   thumbnail), and a line that counted them said 210,529 photos for a folder of 133,000.
  * - An external-library scan has a run (`library_scan`) with a state, the queues it waits on and the libraries it
  *   can't reach. When the photos are not getting ready, the line says why in the run's own words (`runHeadline`,
  *   as its Recent work card does) and offers the card's Resume or Release.
@@ -79,8 +81,11 @@ export const importProgress = (
     : [];
   const upload =
     uploads.length === 1 && (uploads[0].itemCount ?? uploads[0].total) >= LARGE_IMPORT ? uploads[0] : undefined;
-  const total = queue ? Math.max(queue.total, queue.processed + queue.active + queue.waiting) : 0;
-  const counted = !!queue && total >= LARGE_IMPORT;
+  const jobs = queue ? Math.max(queue.total, queue.processed + queue.active + queue.waiting) : 0;
+  const total = queue?.items?.total ?? jobs;
+  const done = Math.min(queue?.items?.done ?? queue?.processed ?? 0, total);
+  // Every photo ready, their colors still being read: nothing left for this line to count.
+  const counted = !!queue && total >= LARGE_IMPORT && (!queue.items || done < total);
   // Thumbnails done and the scan's folder read: what is left (search, faces) is Activity's to show.
   if (!counted && (!run || run.enumerationDone)) {
     return null;
@@ -89,7 +94,7 @@ export const importProgress = (
   const scan = run && {
     name: run.libraryName ?? summary.operations.find((operation) => operation.id === run.id)?.label ?? null,
   };
-  const ready = counted && queue ? { done: Math.min(queue.processed, total), total } : undefined;
+  const ready = counted ? { done, total } : undefined;
   const base: ImportProgress = {
     ...(scan && { scan }),
     ...(!scan && counted && upload && { upload: { name: upload.label ?? null } }),
@@ -107,7 +112,15 @@ export const importProgress = (
   const moving =
     counted && !!queue && !queue.isPaused && !held && (queue.active > 0 || (queue.waiting > 0 && !holding));
   if (moving) {
-    return { ...base, etaSeconds: workEtaSeconds({ ...summary, queues: [queue] }, now) };
+    // The pace of the photos since the first of them was queued, not of every job the queue runs.
+    const photos = queue.items && {
+      ...queue,
+      processed: done,
+      active: 0,
+      waiting: total - done,
+      startedAt: queue.items.startedAt ?? queue.startedAt,
+    };
+    return { ...base, etaSeconds: workEtaSeconds({ ...summary, queues: [photos ?? queue] }, now) };
   }
   if (run && headline && holding) {
     return {

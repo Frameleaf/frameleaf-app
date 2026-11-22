@@ -43,6 +43,8 @@ import {
   AssetVisibility,
   CacheControl,
   ChecksumAlgorithm,
+  DOWNLOAD_FORMATS,
+  type DownloadFormat,
   JobName,
   LibraryScope,
   Permission,
@@ -57,6 +59,13 @@ import { asUploadRequest, getAssetFiles } from 'src/utils/asset.util.js';
 import { hexOrBufferToBase64 } from 'src/utils/bytes.js';
 import { isAssetChecksumConstraint } from 'src/utils/database.js';
 import { hasPublishedDevelopRendition } from 'src/utils/develop-envelope.js';
+import {
+  conversionSourcesOf,
+  convertedFileName,
+  downloadConversionFor,
+  downloadFormatFor,
+  renderDownloadFile,
+} from 'src/utils/download-format.js';
 import { isPhoneSession, phoneName } from 'src/utils/file-steps.js';
 import { moveFileWithin, storedCopyChecks } from 'src/utils/file-trash.js';
 import {
@@ -986,7 +995,27 @@ export class AssetMediaService extends BaseService {
       dto.edited ?? false,
     );
 
-    const { format } = dto;
+    // FL-826: a photo as a JPEG or web-size JPEG; a link limited to web size always gets web for photos
+    const requested = (DOWNLOAD_FORMATS as readonly string[]).includes(dto.format ?? '')
+      ? (dto.format as DownloadFormat)
+      : undefined;
+    const downloadFormat = downloadFormatFor(auth, requested);
+    if (downloadFormat !== 'original') {
+      const converted = await this.downloadConverted(
+        auth,
+        { id, ownerId, originalPath: originalPath!, originalFileName, editedPath },
+        dto.edited ?? false,
+        downloadFormat,
+        signal,
+      );
+      if (converted) {
+        return converted;
+      }
+    }
+
+    const format = requested
+      ? undefined
+      : (dto.format as Exclude<AssetDownloadOriginalDto['format'], DownloadFormat> | undefined);
     if (format === 'document-pdf') {
       return this.reviewDocument(auth, id, ownerId, originalPath!, originalFileName, signal);
     }
@@ -1077,6 +1106,45 @@ export class AssetMediaService extends BaseService {
   }
 
   /**
+   * FL-826: a photo downloaded as a high-quality JPEG (full size) or a web-size JPEG, rendered from the
+   * version shown (`edited`) with the original's metadata copied in, without location for a shared link
+   * that hides metadata. Undefined when the file goes as it is: a video, or a JPEG that already is what
+   * was asked for.
+   */
+  private async downloadConverted(
+    auth: AuthDto,
+    asset: { id: string; ownerId: string; originalPath: string; originalFileName: string; editedPath?: string | null },
+    edited: boolean,
+    format: 'jpeg' | 'web',
+    signal?: AbortSignal,
+  ): Promise<FileDownloadResponse | undefined> {
+    const [source] = await this.downloadRepository.getConversionSources([asset.id]);
+    const shownEditedPath =
+      (edited ? await this.getShownDevelopMaster(auth, asset.id, asset.ownerId) : undefined) ??
+      asset.editedPath ??
+      null;
+    const conversion = source && downloadConversionFor(source, shownEditedPath ?? asset.originalPath, format);
+    if (!conversion) {
+      return;
+    }
+    const rendered = await renderDownloadFile(this.mediaRepository, {
+      sources: conversionSourcesOf({ ...source, originalPath: asset.originalPath, shownEditedPath }),
+      metadataSource: asset.originalPath,
+      maxEdge: conversion.maxEdge,
+      removeLocation: !!auth.sharedLink && !auth.sharedLink.showExif,
+      viewerId: lockedViewerOf(auth),
+      signal,
+    });
+    return new FileDownloadResponse({
+      path: rendered.path,
+      release: () => rendered.release(),
+      fileName: convertedFileName(asset.originalFileName),
+      contentType: 'image/jpeg',
+      cacheControl: CacheControl.PrivateWithoutCache,
+    });
+  }
+
+  /**
    * The rendered master of the owner's current develop version: the picture their viewer shows
    * (`viewThumbnail` serves it for an edited preview or full-size request), so a download of the asset
    * as it is shown is that file. Nobody else sees the working version; they are given the edited file
@@ -1152,6 +1220,10 @@ export class AssetMediaService extends BaseService {
 
     if (auth.sharedLink) {
       dto.edited = true;
+      // FL-826: a link limited to web size shows the preview where the full-size copy is asked for
+      if (auth.sharedLink.webSizeOnly && dto.size === AssetMediaSize.FULLSIZE) {
+        return { targetSize: AssetMediaSize.PREVIEW };
+      }
     }
 
     const size = (dto.size ?? AssetMediaSize.THUMBNAIL) as unknown as AssetFileType;

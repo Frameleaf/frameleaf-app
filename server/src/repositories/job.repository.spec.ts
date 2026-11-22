@@ -187,6 +187,22 @@ describe(JobRepository.name, () => {
     ]);
   });
 
+  it('keeps one live job per edit row, so a re-sent edit adds none while one waits', async () => {
+    await sut.queue({ name: JobName.AssetVideoEditGeneration, data: { id: 'asset', operationId: 'op-video' } });
+    await sut.queue({ name: JobName.AssetEditThumbnailGeneration, data: { id: 'asset', operationId: 'op-photo' } });
+    await sut.queue({
+      name: JobName.AssetDevelopRender,
+      data: { id: 'asset', operationId: 'op-develop', delay: 5000 },
+    });
+    await sut.queue({ name: JobName.AssetVideoEditGeneration, data: { id: 'asset' } });
+    expect(enqueue.mock.calls.map(([items]) => items[0].options)).toEqual([
+      { deduplication: { id: 'edit-operation:op-video' } },
+      { deduplication: { id: 'edit-operation:op-photo' } },
+      { deduplication: { id: 'edit-operation:op-develop' }, delay: 5000 },
+      undefined,
+    ]);
+  });
+
   it('coalesces full landmark backfills while retaining independent per-asset work', async () => {
     await sut.queue({ name: JobName.LandmarkInfer });
     await sut.queue({ name: JobName.LandmarkInfer, data: {} });

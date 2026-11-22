@@ -1,0 +1,23 @@
+{
+  "factor": 4,
+  "targetFps": 60,
+  "options": {
+    "codec": "h264"
+  },
+  "items": [
+    {
+      "inputId": "v1",
+      "durationSec": 95,
+      "fps": 24,
+      "width": 1920,
+      "height": 1080
+    },
+    {
+      "inputId": "v2",
+      "durationSec": 10,
+      "fps": 30,
+      "width": 1280,
+      "height": 720
+    }
+  ]
+}

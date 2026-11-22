@@ -194,10 +194,13 @@ export class MetadataService extends BaseService {
 
     try {
       await this.jobRepository.pause(QueueName.MetadataExtraction);
-      const imported = await this.databaseRepository.withLock(DatabaseLock.GeodataImport, () =>
-        this.mapRepository.init(),
-      );
-      await this.jobRepository.resume(QueueName.MetadataExtraction);
+      let imported: boolean;
+      try {
+        imported = await this.databaseRepository.withLock(DatabaseLock.GeodataImport, () => this.mapRepository.init());
+      } finally {
+        // The pause is stored in the database: a failed start must not leave details detection paused for good.
+        await this.jobRepository.resume(QueueName.MetadataExtraction);
+      }
       if (imported) {
         await this.jobRepository.queue({ name: JobName.LandmarkMatchAll });
       } else {
@@ -643,6 +646,13 @@ export class MetadataService extends BaseService {
     const assetWidth = stitchPlan ? stitchPlan.width : validate(isSidewards ? height : width);
     const assetHeight = stitchPlan ? stitchPlan.height : validate(isSidewards ? width : height);
 
+    // An imported edited video keeps the source's stored size, which older edits left at the pre-edit shape;
+    // the edited file it plays is the truth.
+    const editedVideoSize =
+      asset.type === AssetType.Video && asset.isEdited && (await this.jobRepository.isImportedMetadataJob())
+        ? await this.getEditedVideoSize(asset.id)
+        : undefined;
+
     if (this.isMotionPhoto(asset, exifTags) && !(await this.jobRepository.isImportedMetadataJob())) {
       await this.applyMotionPhotos(source, exifTags, dates, stats);
     }
@@ -659,6 +669,11 @@ export class MetadataService extends BaseService {
       }
       const currentMetadata = await this.assetRepository.getForMetadataExtractionTags(asset.id);
       const imported = await this.jobRepository.isImportedMetadataJob();
+      // A video edit published since the probe has its own file and has stored its own size.
+      const editedSize =
+        editedVideoSize && (await this.assetRepository.getForVideo(asset.id))?.editedVideoPath === editedVideoSize.path
+          ? editedVideoSize
+          : undefined;
       // EXIF locks and revisions also protect the capture clocks stored on the asset row.
       const preserveCaptureTime =
         imported || lockedProperties.includes('dateTimeOriginal') || currentMetadata?.updateId !== previous?.updateId;
@@ -674,8 +689,8 @@ export class MetadataService extends BaseService {
             fileModifiedAt: imported ? undefined : stats.mtime,
 
             // Keep unedited assets in sync with the file on disk, but don't overwrite edited dimensions.
-            width: !current.isEdited || current.width === null ? assetWidth : undefined,
-            height: !current.isEdited || current.height === null ? assetHeight : undefined,
+            width: editedSize?.width ?? (!current.isEdited || current.width === null ? assetWidth : undefined),
+            height: editedSize?.height ?? (!current.isEdited || current.height === null ? assetHeight : undefined),
           }),
         async () => {
           await this.assetRepository.upsertExif({
@@ -1841,6 +1856,27 @@ export class MetadataService extends BaseService {
     // An AVIF sequence that loops forever records an indefinite duration (ExifTool reads ~4.6e18 s).
     // asset.duration is an integer column, so a value past its range is no running time at all.
     return milliseconds <= POSTGRES_INT_MAX ? milliseconds : null;
+  }
+
+  /** The displayed size of a video's edited file and its path, or undefined when it has none or it cannot be read. */
+  private async getEditedVideoSize(id: string): Promise<{ path: string; width: number; height: number } | undefined> {
+    const path = (await this.assetRepository.getForVideo(id))?.editedVideoPath;
+    if (!path) {
+      return;
+    }
+    try {
+      const [video] = (await this.mediaRepository.probe(path)).videoStreams;
+      if (!video?.width || !video?.height) {
+        return;
+      }
+      const sidewards = Math.abs(video.rotation ?? 0) % 180 === 90;
+      return sidewards
+        ? { path, width: video.height, height: video.width }
+        : { path, width: video.width, height: video.height };
+    } catch (error) {
+      this.logger.warn(`Could not read the edited video of asset ${id}; keeping its stored size: ${error}`);
+      return;
+    }
   }
 
   private async getVideoTags(originalPath: string) {

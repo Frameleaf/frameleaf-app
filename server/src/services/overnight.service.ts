@@ -202,11 +202,16 @@ export class OvernightService {
    * remake playback copies). Each starts over every photo once, on its own queue, alongside the night.
    */
   private async startRequestedRedo() {
-    const queues = (await this.systemMetadataRepository.get(SystemMetadataKey.OvernightRedo))?.queues ?? [];
-    if (queues.length === 0) {
+    const { queues = [], bestPhotos = false } =
+      (await this.systemMetadataRepository.get(SystemMetadataKey.OvernightRedo)) ?? {};
+    if (queues.length === 0 && !bestPhotos) {
       return;
     }
     await this.systemMetadataRepository.set(SystemMetadataKey.OvernightRedo, { queues: [] });
+    if (bestPhotos) {
+      // FL-1597: "Recalculate tonight" on Visual search
+      await this.jobRepository.queue({ name: JobName.BestPhotosScoreQueueAll, data: { force: true } });
+    }
     for (const name of queues) {
       try {
         await this.queueService.runCommandLegacy(name as QueueName, { command: QueueCommand.Start, force: true });
@@ -365,13 +370,20 @@ export class OvernightService {
       case 'fileChecks': {
         const { untrackedFiles, missingFiles, checksumFiles } = config.integrityChecks;
         const audit = config.libraryCare.integrityAudit;
-        if (audit && untrackedFiles.enabled) {
+        // FL-1686: work last night's file checks queued is still waiting: it finishes first, and no second full pass
+        // is queued behind it.
+        const counts = await this.jobRepository.getJobCounts(QueueName.IntegrityCheck);
+        const leftover = counts.active + counts.waiting + counts.delayed > 0;
+        // FL-1686: looking for every stored file (and every file in storage that no photo tracks) touches each file
+        // on disk; it runs on the week's day. The health scan looks for each night's share of originals meanwhile.
+        if (!leftover && weekly && audit && untrackedFiles.enabled) {
           await this.jobRepository.queue({ name: JobName.IntegrityUntrackedFilesQueueAll, data: {} });
         }
-        if (audit && missingFiles.enabled) {
+        if (!leftover && weekly && audit && missingFiles.enabled) {
           await this.jobRepository.queue({ name: JobName.IntegrityMissingFilesQueueAll, data: {} });
         }
-        if (checksumFiles.enabled) {
+        // The damage check reads only originals not verified recently (VERIFIED_RECHECK_DAYS), so it stays nightly.
+        if (!leftover && checksumFiles.enabled) {
           await this.jobRepository.queue({ name: JobName.IntegrityChecksumFiles, data: {} });
         }
         if (config.libraryCare.healthScan) {

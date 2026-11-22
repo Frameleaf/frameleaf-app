@@ -1,7 +1,7 @@
 import { Kysely, sql } from 'kysely';
 import { createHash, randomUUID } from 'node:crypto';
 import { AssetEditAction } from 'src/dtos/editing.dto.js';
-import { AlbumUserRole, AssetFileType, AssetStatus, AssetVisibility, MediaOperationStatus } from 'src/enum.js';
+import { AlbumUserRole, AssetFileType, AssetStatus, AssetVisibility } from 'src/enum.js';
 import { CloudBackupIndexRepository } from 'src/repositories/cloud-backup-index.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { DB } from 'src/schema/index.js';
@@ -31,100 +31,6 @@ beforeAll(async () => {
 });
 
 describe(CloudBackupIndexRepository.name, () => {
-  const liveVerification = async () => {
-    const { ctx, sut } = setup();
-    const { user } = await ctx.newUser();
-    const bucket = `https://s3.test/${randomUUID()}`;
-    const claimToken = randomUUID();
-    const { rows } = await sql<{ id: string }>`INSERT INTO media_operation
-      ("ownerId", kind, destination, label, snapshot, settings, status, "claimToken", "claimExpiresAt")
-      VALUES (${user.id}::uuid, 'cloud_backup', 'local', 'Verify',
-        ${{ bucketRef: bucket, task: 'verify', depth: 'sample' }}::jsonb, '{}'::jsonb,
-        'rendering', ${claimToken}::uuid, clock_timestamp() + interval '1 hour') RETURNING id`.execute(defaultDatabase);
-    return {
-      sut,
-      proof: {
-        bucket,
-        sha256: sha('verified'),
-        operationId: rows[0].id,
-        claimToken,
-        method: 'sha256-get' as const,
-        result: 'passed' as const,
-      },
-    };
-  };
-
-  it.each([
-    ['expired', { claimExpiresAt: new Date(0) }],
-    ['cancel requested', { cancelRequestedAt: new Date() }],
-    ['pause requested', { pauseRequestedAt: new Date() }],
-    ['paused', { status: MediaOperationStatus.Paused }],
-    ['queued', { status: MediaOperationStatus.Queued }],
-  ] as const)('refuses verification proof from a %s worker', async (_reason, patch) => {
-    const { sut, proof } = await liveVerification();
-    await defaultDatabase.updateTable('media_operation').set(patch).where('id', '=', proof.operationId).execute();
-    await sut.recordObjectVerification(proof);
-    expect(
-      await defaultDatabase
-        .selectFrom('cloud_backup_object_verification')
-        .selectAll()
-        .where('operationId', '=', proof.operationId)
-        .execute(),
-    ).toEqual([]);
-  });
-
-  it('rechecks lease expiry after waiting for an operation row lock', async () => {
-    const { sut, proof } = await liveVerification();
-    const { promise: entered, resolve: signalEntered } = Promise.withResolvers<void>();
-    const { promise: held, resolve: release } = Promise.withResolvers<void>();
-    let blockerPid = 0;
-    await sql`UPDATE media_operation SET "claimExpiresAt" = clock_timestamp() + interval '2 seconds'
-      WHERE id = ${proof.operationId}::uuid`.execute(defaultDatabase);
-    const locking = defaultDatabase.transaction().execute(async (trx) => {
-      blockerPid = (await sql<{ pid: number }>`SELECT pg_backend_pid() AS pid`.execute(trx)).rows[0].pid;
-      await trx
-        .selectFrom('media_operation')
-        .select('id')
-        .where('id', '=', proof.operationId)
-        .forUpdate()
-        .executeTakeFirstOrThrow();
-      signalEntered();
-      await held;
-    });
-    let writing: Promise<void> | undefined;
-    try {
-      await Promise.race([entered, locking]);
-      writing = sut.recordObjectVerification(proof);
-      await vi.waitFor(
-        async () => {
-          const { rows } = await sql<{ waiting: number }>`SELECT count(*)::int AS waiting FROM pg_stat_activity
-          WHERE datname=current_database() AND ${blockerPid}=ANY(pg_blocking_pids(pid))`.execute(defaultDatabase);
-          expect(rows[0].waiting).toBeGreaterThan(0);
-        },
-        { timeout: 5000 },
-      );
-      const { rows } = await sql<{
-        remaining: number;
-      }>`SELECT extract(epoch FROM ("claimExpiresAt" - clock_timestamp()))::float8 AS remaining
-        FROM media_operation WHERE id = ${proof.operationId}::uuid`.execute(defaultDatabase);
-      expect(rows[0].remaining).toBeGreaterThan(0);
-      await sql`SELECT pg_sleep(${rows[0].remaining + 0.01})`.execute(defaultDatabase);
-      release();
-      await locking;
-      await writing;
-      expect(
-        await defaultDatabase
-          .selectFrom('cloud_backup_object_verification')
-          .selectAll()
-          .where('operationId', '=', proof.operationId)
-          .execute(),
-      ).toEqual([]);
-    } finally {
-      release();
-      await Promise.allSettled([locking, ...(writing ? [writing] : [])]);
-    }
-  });
-
   it('persists unknown expired receipts as pruned and never adopts them as retained again', async () => {
     const { sut } = setup();
     const bucket = `https://s3.example.test/${randomUUID()}`;
@@ -158,95 +64,7 @@ describe(CloudBackupIndexRepository.name, () => {
   });
 
   it('installs feature tables in the real canonical baseline', async () => {
-    await expectCanonicalTables(defaultDatabase, [
-      'cloud_backup_object',
-      'cloud_backup_manifest',
-      'cloud_backup_manifest_entry',
-    ]);
-  });
-
-  it('records each hash once per bucket, answers which are there and counts the usage', async () => {
-    const { sut } = setup();
-    const bucket = `https://s3.example.test/${randomUUID()}`;
-
-    await sut.record(bucket, [
-      { sha256: sha('a'), size: 100, etag: '"a"' },
-      { sha256: sha('a'), size: 100, etag: '"a"' },
-      { sha256: sha('b'), size: 50, etag: null },
-    ]);
-    await sut.record(bucket, [{ sha256: sha('b'), size: 50, etag: '"b"' }]);
-    await sut.touch(bucket, [sha('a')]);
-
-    await expect(sut.getExisting(bucket, [sha('a'), sha('c')])).resolves.toEqual(new Set([sha('a')]));
-    // another bucket starts from an empty index
-    await expect(sut.getExisting(`${bucket}-other`, [sha('a')])).resolves.toEqual(new Set());
-    await expect(sut.getUsage(bucket)).resolves.toEqual({ objects: 2, bytes: 150 });
-  });
-
-  it("keeps a running manifest's files, replacing a file recorded twice, until they are deleted", async () => {
-    const { sut } = setup();
-    const bucket = `https://s3.example.test/${randomUUID()}`;
-    const created = await sut.createManifest({ bucket, key: 'm/20260926T030000Z.json.gz', operationId: randomUUID() });
-    expect(created).toMatchObject({ bucket, key: 'm/20260926T030000Z.json.gz', status: 'running' });
-
-    const entry = {
-      fileKey: `${randomUUID()}:original`,
-      assetId: randomUUID(),
-      ownerId: randomUUID(),
-      role: 'original',
-      path: '/data/library/a.jpg',
-      sha256: sha('a'),
-      size: 100,
-      mtime: new Date('2026-09-01T00:00:00.000Z'),
-    };
-    await sut.upsertEntries(created.id, [entry]);
-    await sut.upsertEntries(created.id, [{ ...entry, sha256: sha('b') }]);
-
-    await expect(sut.getEntriesPage(created.id, null, 100)).resolves.toEqual([{ ...entry, sha256: sha('b') }]);
-    await expect(sut.getEntriesPage(created.id, entry.fileKey, 100)).resolves.toEqual([]);
-
-    await sut.finishManifest(created.id, { status: 'complete', assetCount: 1, fileCount: 1, bytes: 100 });
-    await sut.deleteEntries(created.id);
-    await expect(sut.getEntriesPage(created.id, null, 100)).resolves.toEqual([]);
-    await expect(sut.getManifest(created.id)).resolves.toMatchObject({ status: 'complete' });
-  });
-
-  it('forgets a bucket, and drops rows its listing did not touch since a point in time', async () => {
-    const { sut } = setup();
-    const bucket = `https://s3.example.test/${randomUUID()}`;
-    await sut.record(bucket, [
-      { sha256: sha('gone'), size: 1, etag: null },
-      { sha256: sha('kept'), size: 2, etag: null },
-    ]);
-
-    const since = await sut.currentTime();
-    await sut.record(bucket, [{ sha256: sha('kept'), size: 2, etag: '"k"' }]);
-    await expect(sut.pruneUnseen(bucket, since)).resolves.toBe(1);
-    await expect(sut.getExisting(bucket, [sha('gone'), sha('kept')])).resolves.toEqual(new Set([sha('kept')]));
-
-    await sut.deleteBucket(bucket);
-    await expect(sut.getUsage(bucket)).resolves.toEqual({ objects: 0, bytes: 0 });
-  });
-
-  it('keeps client upload receipts apart from the bucket, and forgets them with it', async () => {
-    const { sut } = setup();
-    const bucket = `https://s3.example.test/${randomUUID()}`;
-    const receipts = `${bucket}#client-v1`;
-    await sut.record(receipts, [
-      { sha256: sha('bad'), size: 1, etag: '"b"' },
-      { sha256: sha('good'), size: 2, etag: '"g"' },
-    ]);
-    await expect(sut.getUsage(bucket)).resolves.toEqual({ objects: 0, bytes: 0 });
-    await expect(sut.getRecorded(receipts, [sha('good'), sha('none')])).resolves.toEqual(
-      new Map([[sha('good'), { size: 2, etag: '"g"' }]]),
-    );
-
-    await sut.forget(bucket, [sha('bad')]);
-    await expect(sut.getRecorded(receipts, [sha('bad'), sha('good')])).resolves.toEqual(
-      new Map([[sha('good'), { size: 2, etag: '"g"' }]]),
-    );
-    await sut.deleteBucket(bucket);
-    await expect(sut.getRecorded(receipts, [sha('good')])).resolves.toEqual(new Map());
+    await expectCanonicalTables(defaultDatabase, ['cloud_backup_manifest', 'cloud_backup_manifest_original']);
   });
 
   it('forgets a bucket’s manifests too, so a fresh claim keeps no backup the bucket no longer holds', async () => {
@@ -280,21 +98,10 @@ describe(CloudBackupIndexRepository.name, () => {
     });
     const complete = async (key: string, assetId?: string) => {
       const manifest = await sut.createManifest({ bucket, key, operationId: randomUUID() });
-      if (assetId) {
-        await sut.upsertEntries(manifest.id, [
-          {
-            fileKey: `${assetId}:original`,
-            assetId,
-            ownerId: user.id,
-            role: 'original',
-            path: `/data/${assetId}.jpg`,
-            sha256: sha(assetId),
-            size: 1,
-            mtime: null,
-          },
-        ]);
-      }
-      await sut.finishManifest(manifest.id, { status: 'complete' });
+      await sut.finishManifest(manifest.id, {
+        status: 'complete',
+        originals: assetId ? [{ assetId, sha256: sha(assetId) }] : [],
+      });
     };
     await complete('m/20260920T030000Z.json.gz', active.id);
     await complete('m/20260921T030000Z.json.gz', trashed.id);
@@ -303,35 +110,6 @@ describe(CloudBackupIndexRepository.name, () => {
     await expect(sut.getOwnerBackupCandidates(bucket, user.id)).resolves.toEqual(
       new Set(['m/20260921T030000Z.json.gz', 'm/20260922T030000Z.json.gz']),
     );
-  });
-
-  it('finds and clears the transfer receipts of ended operations, and names the ones still going', async () => {
-    const { ctx, sut } = setup();
-    const { user } = await ctx.newUser();
-    const transfer = { kind: 'download', partial: '/data/.frameleaf-part-x' };
-    const insert = async (status: string) => {
-      const { rows } = await sql<{ id: string }>`INSERT INTO media_operation
-        ("ownerId", kind, destination, label, snapshot, settings, status, result)
-        VALUES (${user.id}::uuid, 'cloud_restore', 'local', 'Restore', '{}'::jsonb, '{}'::jsonb, ${status},
-          ${{ task: 'restore', backupTransfer: transfer }}::jsonb) RETURNING id`.execute(defaultDatabase);
-      return rows[0].id;
-    };
-    const ended = await insert('cancelled');
-    const queued = await insert('queued');
-
-    const found = (await sut.getEndedTransfers()).filter(({ id }) => id === ended || id === queued);
-    expect(found).toEqual([{ id: ended, transfer }]);
-    await expect(sut.getUnfinishedOperationIds([ended, queued, randomUUID()])).resolves.toEqual(new Set([queued]));
-
-    await sut.clearEndedTransfer(ended);
-    await sut.clearEndedTransfer(queued);
-    expect((await sut.getEndedTransfers()).some(({ id }) => id === ended)).toBe(false);
-    const { rows } = await sql<{ id: string; result: Record<string, unknown> }>`SELECT id, result FROM media_operation
-      WHERE id = any(${[ended, queued]}::uuid[])`.execute(defaultDatabase);
-    expect(Object.fromEntries(rows.map(({ id, result }) => [id, result]))).toEqual({
-      [ended]: { task: 'restore' },
-      [queued]: { task: 'restore', backupTransfer: transfer },
-    });
   });
 
   it('names the paths another asset holds now, as its original or one of its files', async () => {
@@ -390,19 +168,6 @@ describe(CloudBackupIndexRepository.name, () => {
     const paused = await sut.createManifest({ bucket, key: 'm/p.json.gz', operationId: await operation('paused') });
     const failed = await sut.createManifest({ bucket, key: 'm/f.json.gz', operationId: await operation('failed') });
     const gone = await sut.createManifest({ bucket, key: 'm/g.json.gz', operationId: randomUUID() });
-    const file = {
-      fileKey: 'x:original',
-      assetId: null,
-      ownerId: null,
-      role: 'original',
-      path: '/x',
-      sha256: sha('x'),
-      size: 1,
-      mtime: null,
-    };
-    for (const manifest of [active, failed]) {
-      await sut.upsertEntries(manifest.id, [file]);
-    }
 
     await expect(sut.endAbandonedManifests()).resolves.toBeGreaterThanOrEqual(2);
 
@@ -410,8 +175,6 @@ describe(CloudBackupIndexRepository.name, () => {
     await expect(sut.getManifest(paused.id)).resolves.toMatchObject({ status: 'running' });
     await expect(sut.getManifest(failed.id)).resolves.toMatchObject({ status: 'failed' });
     await expect(sut.getManifest(gone.id)).resolves.toMatchObject({ status: 'failed' });
-    await expect(sut.getEntriesPage(failed.id, null, 10)).resolves.toEqual([]);
-    await expect(sut.getEntriesPage(active.id, null, 10)).resolves.toHaveLength(1);
   });
 
   it('lists every asset with its checksum, Locked and trashed ones included, never deleted ones', async () => {
@@ -493,20 +256,10 @@ describe(CloudBackupIndexRepository.name, () => {
     });
     const backup = async (key: string, originals: Array<[string, string]>, status: 'complete' | 'failed') => {
       const manifest = await sut.createManifest({ bucket, key, operationId: randomUUID() });
-      await sut.upsertEntries(
-        manifest.id,
-        originals.map(([assetId, sha256]) => ({
-          fileKey: `${assetId}:original`,
-          assetId,
-          ownerId: user.id,
-          role: 'original',
-          path: `/data/${assetId}.jpg`,
-          sha256,
-          size: 1,
-          mtime: null,
-        })),
-      );
-      await sut.finishManifest(manifest.id, { status });
+      await sut.finishManifest(manifest.id, {
+        status,
+        originals: originals.map(([assetId, sha256]) => ({ assetId, sha256 })),
+      });
     };
     await backup('m/20261001T030000Z.json.gz', [[asset.id, sha('first')]], 'complete');
     await backup('m/20261002T030000Z.json.gz', [[other.id, sha('other')]], 'complete');
@@ -536,14 +289,13 @@ describe(CloudBackupIndexRepository.name, () => {
   });
 
   describe('FL-164', () => {
-    it('keeps the dump of every kept manifest, lists the kept ones newest first, and never revives a pruned one', async () => {
+    it('lists the kept backups with their dump newest first, and never revives a pruned one', async () => {
       const { sut } = setup();
       const bucket = `https://s3.example.test/${randomUUID()}`;
       const manifest = async (key: string, databaseKey: string, status: 'complete' | 'failed' | null) => {
         const row = await sut.createManifest({ bucket, key, operationId: randomUUID() });
-        await sut.setManifestDatabase(row.id, databaseKey);
         if (status) {
-          await sut.finishManifest(row.id, { status, assetCount: 1, fileCount: 2, bytes: 30 });
+          await sut.finishManifest(row.id, { status, assetCount: 1, fileCount: 2, bytes: 30, databaseKey });
         }
         return row;
       };
@@ -551,8 +303,6 @@ describe(CloudBackupIndexRepository.name, () => {
       await manifest('m/20260925T030000Z.json.gz', 'db/25.sql.gz', 'complete');
       await manifest('m/20260926T030000Z.json.gz', 'db/26.sql.gz', 'failed');
       await manifest('m/20260927T030000Z.json.gz', 'db/27.sql.gz', null);
-
-      await expect(sut.getKeptDatabaseKeys(bucket)).resolves.toEqual(new Set(['db/24.sql.gz', 'db/25.sql.gz']));
 
       await expect(sut.markManifests(bucket, ['m/20260925T030000Z.json.gz'], 'degraded')).resolves.toBe(1);
       await expect(sut.markManifests(bucket, ['m/20260924T030000Z.json.gz'], 'pruned')).resolves.toBe(1);
@@ -572,24 +322,6 @@ describe(CloudBackupIndexRepository.name, () => {
           bytes: 30,
         }),
       ]);
-      await expect(sut.getKeptDatabaseKeys(bucket)).resolves.toEqual(new Set(['db/25.sql.gz']));
-    });
-
-    it('forgets objects of one bucket only', async () => {
-      const { sut } = setup();
-      const bucket = `https://s3.example.test/${randomUUID()}`;
-      const other = `https://s3.example.test/${randomUUID()}`;
-      for (const name of [bucket, other]) {
-        await sut.record(name, [
-          { sha256: sha('a'), size: 1, etag: null },
-          { sha256: sha('b'), size: 1, etag: null },
-        ]);
-      }
-
-      await sut.forget(bucket, [sha('a')]);
-
-      await expect(sut.getExisting(bucket, [sha('a'), sha('b')])).resolves.toEqual(new Set([sha('b')]));
-      await expect(sut.getExisting(other, [sha('a'), sha('b')])).resolves.toEqual(new Set([sha('a'), sha('b')]));
     });
 
     it('tells which assets the library still has, in the trash or not, and names their owners', async () => {

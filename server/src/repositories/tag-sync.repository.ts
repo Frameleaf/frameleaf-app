@@ -647,21 +647,18 @@ export class TagSync {
         .where('delivered', '=', true)
         .executeTakeFirst();
       if (!exact || (orderedKinds.has(kind) && exact.deliveryOrder === null)) return;
-      const pending = tx
-        .selectFrom('session_tag_sync_state')
-        .select('key')
-        .where('sessionId', '=', sessionId)
-        .where('kind', '=', kind)
-        .$if(orderedKinds.has(kind), (qb) => qb.where('deliveryOrder', '<=', exact.deliveryOrder!))
-        .$if(!orderedKinds.has(kind), (qb) => qb.where('eventId', '<=', ack.updateId))
-        .where('action', '=', action)
-        .where('delivered', '=', true);
+      // (sessionId, kind, key) is the primary key, so this filters the rows directly. A `key IN (select key …)` of the
+      // same rows planned as a nested loop on a session the statistics hadn't seen yet: 55 s at 15,000 items, all of
+      // it holding the session lock the stream needs.
       if (action === 'delete') {
         await tx
           .deleteFrom('session_tag_sync_state')
           .where('sessionId', '=', sessionId)
           .where('kind', '=', kind)
-          .where('key', 'in', pending)
+          .$if(orderedKinds.has(kind), (qb) => qb.where('deliveryOrder', '<=', exact.deliveryOrder!))
+          .$if(!orderedKinds.has(kind), (qb) => qb.where('eventId', '<=', ack.updateId))
+          .where('action', '=', action)
+          .where('delivered', '=', true)
           .execute();
       } else {
         await tx
@@ -669,7 +666,10 @@ export class TagSync {
           .set({ acknowledged: true, confirmedVisible: true })
           .where('sessionId', '=', sessionId)
           .where('kind', '=', kind)
-          .where('key', 'in', pending)
+          .$if(orderedKinds.has(kind), (qb) => qb.where('deliveryOrder', '<=', exact.deliveryOrder!))
+          .$if(!orderedKinds.has(kind), (qb) => qb.where('eventId', '<=', ack.updateId))
+          .where('action', '=', action)
+          .where('delivered', '=', true)
           .execute();
       }
       await tx

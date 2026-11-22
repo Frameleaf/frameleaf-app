@@ -8,6 +8,25 @@ if [[ -n "${NSC_CONTAINER_REGISTRY:-}" ]]; then
   exit 0
 fi
 
+# A self-hosted runner that already routes Docker Hub through the public mirror needs no daemon restart.
+if docker info --format '{{json .RegistryConfig.Mirrors}}' 2>/dev/null | grep -q 'https://mirror.gcr.io'; then
+  exit 0
+fi
+
+mirror_active() {
+  docker info --format '{{json .RegistryConfig.Mirrors}}' |
+    python3 -c 'import json, sys; mirrors = json.load(sys.stdin) or []; sys.exit(0 if any(value.rstrip("/") == "https://mirror.gcr.io" for value in mirrors) else 1)'
+}
+
+# Self-hosted runners hand jobs a daemon that already has the mirror, or one this job cannot restart (no systemd).
+if mirror_active; then
+  exit 0
+fi
+if [[ ! -d ${FRAMELEAF_SYSTEMD_RUN_DIR:-/run/systemd/system} ]]; then
+  echo "::warning::Docker daemon is not managed here; continuing without the public Docker Hub mirror"
+  exit 0
+fi
+
 sudo python3 - /etc/docker/daemon.json <<'PY'
 import json
 import os
@@ -40,5 +59,4 @@ if not any(value.rstrip("/") == "https://mirror.gcr.io" for value in mirrors):
 PY
 
 sudo systemctl restart docker
-docker info --format '{{json .RegistryConfig.Mirrors}}' |
-  python3 -c 'import json, sys; mirrors = json.load(sys.stdin); assert isinstance(mirrors, list) and any(value.rstrip("/") == "https://mirror.gcr.io" for value in mirrors), "Public Docker Hub mirror is not active"'
+mirror_active || { echo "Public Docker Hub mirror is not active" >&2; exit 1; }

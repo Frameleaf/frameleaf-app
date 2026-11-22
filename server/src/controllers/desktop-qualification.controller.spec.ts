@@ -8,17 +8,22 @@ import request from 'supertest';
 import { defaults } from 'src/config.js';
 import { DesktopWorkerController } from 'src/controllers/desktop-worker.controller.js';
 import { desktopWorkerMessage } from 'src/dtos/desktop-worker.dto.js';
-import { MlWorkload } from 'src/enum.js';
 import { frameleafViaMiddleware } from 'src/middleware/frameleaf-via.middleware.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
+import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { DesktopQualificationService } from 'src/services/desktop-qualification.service.js';
 import { DesktopWorkerAuthService } from 'src/services/desktop-worker-auth.service.js';
 import { DesktopWorkerService } from 'src/services/desktop-worker.service.js';
 import { getConfig } from 'src/utils/config.js';
-import { createDesktopModelChallenge, parseDesktopModelCatalogue } from 'src/utils/desktop-model-catalogue.js';
+import { faceEntries } from 'src/utils/desktop-face.js';
+import {
+  createDesktopModelChallenge,
+  desktopImageModelKey,
+  parseDesktopModelCatalogue,
+} from 'src/utils/desktop-model-catalogue.js';
+import { ocrEntries } from 'src/utils/desktop-ocr.js';
 import { DesktopQualificationReceipt } from 'src/utils/desktop-qualification.js';
 import { canonicalJson } from 'src/utils/object.js';
-import { mlDestinationStub } from 'test/fixtures/ml-destination.stub.js';
 import { type ControllerContext, controllerSetup } from 'test/utils.js';
 
 const authority = vi.hoisted(() => ({ policy: '', spaces: undefined as string | undefined }));
@@ -150,13 +155,22 @@ const acceptedRow = () => ({
   runtimeFingerprint: report().runtimeFingerprint,
   reportSha256: createHash('sha256').update(canonicalJson(report())).digest('hex'),
 });
-const repository = { session: vi.fn(), consume: vi.fn(), owner: vi.fn() };
-const inventoryRoutes = { getRouteStates: vi.fn(), getAll: vi.fn(), assertRecoveryAuthority: vi.fn() };
+const repository = { session: vi.fn(), consume: vi.fn(), owner: vi.fn(), policyOff: vi.fn() };
+/** The saved settings with the search model changed; every other task as shipped. */
+const settings = (machineLearning: { enabled: boolean; clip: { enabled: boolean; modelName: string } }) =>
+  ({
+    machineLearning: {
+      ...structuredClone(defaults.machineLearning),
+      enabled: machineLearning.enabled,
+      clip: { ...defaults.machineLearning.clip, ...machineLearning.clip },
+    },
+  }) as never;
 const inventoryPolicies = { read: vi.fn() };
 const challenges = { issue: vi.fn(), read: vi.fn(), record: vi.fn(), readAccepted: vi.fn() };
+/** No model is being held back from this desktop unless a test says so. */
+const holds = { heldUntil: vi.fn(), clearWithdrawal: vi.fn(), workloadConcurrency: vi.fn() };
 let ctx: ControllerContext;
 let app: Express;
-const nasProducer = { verify: vi.fn() };
 const activation = { activate: vi.fn() };
 
 const proof = (operation: string, raw: string) => {
@@ -187,11 +201,10 @@ beforeAll(async () => {
         challenges as never,
         {} as never,
         metadata as never,
-        nasProducer as never,
         activation as never,
         repository as never,
-        inventoryRoutes as never,
         inventoryPolicies as never,
+        holds as never,
       ),
     },
   ]);
@@ -205,7 +218,6 @@ beforeEach(() => {
   vi.clearAllMocks();
   activation.activate.mockReset().mockResolvedValue(undefined);
   challenges.readAccepted.mockResolvedValue(acceptedRow());
-  nasProducer.verify.mockReset().mockResolvedValue({ assertCurrent: vi.fn().mockResolvedValue(undefined) });
   repository.session.mockResolvedValue({
     publicKey: keys.publicKey.export({ type: 'spki', format: 'der' }).subarray(-32).toString('base64'),
     authorizationEpoch: 2,
@@ -213,17 +225,13 @@ beforeEach(() => {
   repository.consume.mockResolvedValue(grant);
   repository.owner.mockResolvedValue(id);
   inventoryPolicies.read.mockResolvedValue({ revisionId: id });
-  inventoryRoutes.getRouteStates.mockResolvedValue([
-    { workload: MlWorkload.Clip, origin: 'default', destinationId: mlDestinationStub.local.id, revisionId: id },
-  ]);
-  inventoryRoutes.getAll.mockResolvedValue([mlDestinationStub.local]);
-  inventoryRoutes.assertRecoveryAuthority.mockResolvedValue(undefined);
   challenges.issue.mockResolvedValue(row());
   challenges.read.mockResolvedValue(row());
   challenges.record.mockResolvedValue(true);
-  vi.mocked(getConfig).mockResolvedValue({
-    machineLearning: { enabled: true, clip: { enabled: true, modelName: profile.modelName } },
-  } as never);
+  repository.policyOff.mockResolvedValue(undefined);
+  vi.mocked(getConfig).mockResolvedValue(
+    settings({ enabled: true, clip: { enabled: true, modelName: profile.modelName } }),
+  );
 });
 it('serves only a signed worker model inventory and rejects operation substitution, replay and revoked credentials', async () => {
   vi.mocked(getConfig).mockResolvedValue(structuredClone(defaults));
@@ -291,16 +299,16 @@ it('rejects photo credentials, altered signatures, caller specs/keys, disabled o
       )
     ).status,
   ).toBe(400);
-  vi.mocked(getConfig).mockResolvedValue({
-    machineLearning: { enabled: true, clip: { enabled: true, modelName: 'ViT-B-32__openai' } },
-  } as never);
+  vi.mocked(getConfig).mockResolvedValue(
+    settings({ enabled: true, clip: { enabled: true, modelName: 'ViT-B-32__openai' } }),
+  );
   expect((await post('/desktop/worker/challenges', 'challenge', payload())).status).toBe(409);
 
   for (const machineLearning of [
     { enabled: false, clip: { enabled: true, modelName: profile.modelName } },
     { enabled: true, clip: { enabled: false, modelName: profile.modelName } },
   ]) {
-    vi.mocked(getConfig).mockResolvedValue({ machineLearning } as never);
+    vi.mocked(getConfig).mockResolvedValue(settings(machineLearning));
     expect((await post('/desktop/worker/challenges', 'challenge', payload())).status).toBe(409);
   }
   expect(challenges.issue).not.toHaveBeenCalled();
@@ -426,11 +434,10 @@ it('refuses a catalogue-approved profile without a release-owned paired embeddin
       challenges as never,
       {} as never,
       {} as never,
-      nasProducer as never,
       activation as never,
       repository as never,
       {} as never,
-      {} as never,
+      holds as never,
     );
     await expect(service.issue(undefined, undefined, payload())).rejects.toThrow('desktop_model_profile_unavailable');
     expect(challenges.issue).not.toHaveBeenCalled();
@@ -439,10 +446,208 @@ it('refuses a catalogue-approved profile without a release-owned paired embeddin
   }
 });
 
-it('refuses a qualification challenge when the selected NAS producer cannot be verified', async () => {
-  nasProducer.verify.mockRejectedValue(new Error('producer offline'));
+it('serves protocol 2 inventory with the catalogue profiles through the response contract', async () => {
+  vi.mocked(getConfig).mockResolvedValue(structuredClone(defaults));
+  const raw = JSON.stringify({
+    provider: profile.spec.provider,
+    runtimeSourceRevision: profile.runtimeSourceRevision,
+    protocolVersion: 2,
+  });
+  const response = await post('/desktop/worker/models', 'models', raw);
+  expect(response.status).toBe(200);
+  expect(response.body.protocolVersion).toBe(2);
+  const clip = response.body.workloads.find((item: { workload: string }) => item.workload === 'clip');
+  expect(clip.profiles.map((item: { modelKey: string }) => item.modelKey)).toEqual(clip.modelKeys);
+  expect(clip.profiles[0].fixtureBase64).toEqual(expect.any(String));
+});
+
+it('issues a challenge from the catalogue without running anything on the server', async () => {
+  const response = await post('/desktop/worker/challenges', 'challenge', payload());
+  expect(response.status).toBe(200);
+  expect(challenges.issue).toHaveBeenCalledOnce();
+});
+
+it('refuses a task the settings turned off with a named code, and logs it', async () => {
+  vi.mocked(getConfig).mockResolvedValue(
+    settings({ enabled: true, clip: { enabled: false, modelName: profile.modelName } }),
+  );
+  const warn = vi.spyOn(LoggingRepository.prototype, 'warn');
   const response = await post('/desktop/worker/challenges', 'challenge', payload());
   expect(response.status).toBe(409);
-  expect(response.body.message).toBe('desktop_nas_producer_unavailable');
+  expect(response.body.message).toBe('desktop_model_profile_unavailable');
   expect(challenges.issue).not.toHaveBeenCalled();
+  expect(warn).toHaveBeenCalledWith(expect.stringContaining('desktop_model_profile_unavailable'));
+});
+
+it('accepts an explicit protocol 1 on the inventory and answers it as protocol 1', async () => {
+  vi.mocked(getConfig).mockResolvedValue(structuredClone(defaults));
+  const raw = JSON.stringify({
+    provider: profile.spec.provider,
+    runtimeSourceRevision: profile.runtimeSourceRevision,
+    protocolVersion: 1,
+  });
+  const response = await post('/desktop/worker/models', 'models', raw);
+  expect(response.status).toBe(200);
+  expect(response.body.protocolVersion).toBe(1);
+  expect(JSON.stringify(response.body)).not.toContain('profiles');
+  expect((await post('/desktop/worker/models', 'models', raw.replace(':1}', ':3}'))).status).toBe(400);
+});
+
+it('challenges only the keys the inventory lists: a face or OCR key no task will use is refused', async () => {
+  vi.mocked(getConfig).mockResolvedValue(structuredClone(defaults));
+  const catalogue = parseDesktopModelCatalogue(
+    JSON.parse(readFileSync(join(process.cwd(), 'resources/desktop/model-catalogue.json'), 'utf8')),
+  );
+  const service = new DesktopQualificationService(
+    { authenticate: vi.fn().mockResolvedValue(grant) } as never,
+    challenges as never,
+    {} as never,
+    {} as never,
+    activation as never,
+    repository as never,
+    {} as never,
+    holds as never,
+  );
+  const ask = (item: (typeof catalogue.profiles)[number]) =>
+    service.issue(
+      undefined,
+      undefined,
+      JSON.stringify({
+        ...JSON.parse(payload()),
+        modelKey: item.modelKey,
+        provider: item.spec.provider,
+        runtimeSourceRevision: item.runtimeSourceRevision,
+      }),
+    );
+  for (const [workload, entries, released] of [
+    ['face', faceEntries(defaults.machineLearning.facialRecognition), desktopImageModelKey('face', 'buffalo_l')],
+    ['ocr', ocrEntries(defaults.machineLearning.ocr), desktopImageModelKey('ocr', 'PP-OCRv5_mobile')],
+  ] as const) {
+    const configured = catalogue.profiles.filter(
+      (item) => item.workload === workload && canonicalJson(item.spec.entries) === canonicalJson(entries),
+    );
+    // an earlier runtime's key for the configured model and settings: nothing is ever leased under it
+    const unused = configured.find((item) => item.modelKey !== released)!;
+    expect(unused).toBeDefined();
+    await expect(ask(unused)).rejects.toMatchObject({ status: 409, message: 'desktop_model_profile_unavailable' });
+    // the released key gets past selection (and stops at the runtime attestation this request does not carry)
+    await expect(ask(configured.find((item) => item.modelKey === released)!)).rejects.toMatchObject({
+      message: 'desktop_runtime_attestation_invalid',
+    });
+  }
+  expect(challenges.issue).not.toHaveBeenCalled();
+});
+
+it('names and logs every refusal of a report, a challenge read and a qualification read', async () => {
+  const warn = vi.spyOn(LoggingRepository.prototype, 'warn');
+  const raw = JSON.stringify({ report: report() });
+  const submit = () => post(`/desktop/worker/challenges/${id}/report`, 'qualification:' + id, raw);
+  // the desktop holds its limit of qualifications: a conflict it can retry, not a server error
+  challenges.record.mockRejectedValue(new Error('desktop_qualification_capacity'));
+  const full = await submit();
+  expect([full.status, full.body.message]).toEqual([409, 'desktop_qualification_capacity']);
+  // the report no longer matches its challenge: still 200, and in the log
+  challenges.record.mockResolvedValue(false);
+  const stale = await submit();
+  expect([stale.status, stale.body]).toEqual([200, { accepted: false }]);
+  // Desktop AI processing was turned off for the account between the challenge and the report
+  const { ForbiddenException } = await import('@nestjs/common');
+  challenges.record.mockResolvedValue(true);
+  activation.activate.mockRejectedValue(new ForbiddenException('desktop_pool_policy_required'));
+  const off = await submit();
+  expect([off.status, off.body.message]).toEqual([403, 'desktop_pool_policy_required']);
+  challenges.read.mockResolvedValue(undefined);
+  challenges.readAccepted.mockResolvedValue(undefined);
+  const get = (path: string, operation: string) =>
+    request(app).get(path).auth(token, { type: 'bearer' }).set('x-frameleaf-desktop-proof', proof(operation, ''));
+  expect((await get('/desktop/worker/challenges/' + id, 'challenge:' + id)).status).toBe(401);
+  expect((await get('/desktop/worker/qualifications/' + id, 'accepted-qualification:' + id)).status).toBe(401);
+  const subject = `challenge ${id}, device ${id}, ${profile.modelKey}`;
+  expect(warn.mock.calls.map(([message]) => message)).toEqual([
+    `Desktop worker report refused (${subject}): 409 desktop_qualification_capacity`,
+    `Desktop worker report refused (${subject}): 200 accepted:false`,
+    `Desktop worker report refused (${subject}): 403 desktop_pool_policy_required`,
+    `Desktop worker challenge read refused (challenge ${id}, device ${id}): 401 desktop_challenge_invalid`,
+    `Desktop worker qualification read refused (qualification ${id}, device ${id}): 401 desktop_qualification_invalid`,
+  ]);
+});
+
+it('answers 403 desktop_pool_policy_required when the account turned Desktop AI processing off', async () => {
+  repository.session.mockResolvedValue(undefined);
+  repository.policyOff.mockResolvedValue({
+    deviceId: id,
+    publicKey: keys.publicKey.export({ type: 'spki', format: 'der' }).subarray(-32).toString('base64'),
+    authorizationEpoch: 2,
+  });
+  const response = await post('/desktop/worker/challenges', 'challenge', payload());
+  expect([response.status, response.body.message]).toEqual([403, 'desktop_pool_policy_required']);
+});
+
+it('holds back a desktop that lost a model for failing it: no new challenge and no grant until the hold ends', async () => {
+  const broker = { heldUntil: vi.fn().mockResolvedValue(new Date(Date.now() + 60_000)), clearWithdrawal: vi.fn() };
+  const service = new DesktopQualificationService(
+    { authenticate: vi.fn().mockResolvedValue(grant) } as never,
+    challenges as never,
+    {} as never,
+    {} as never,
+    activation as never,
+    repository as never,
+    {} as never,
+    broker as never,
+  );
+  // a conflict the desktop retries, like the rest of the challenge bookkeeping
+  await expect(service.issue(undefined, undefined, payload())).rejects.toMatchObject({
+    status: 409,
+    message: 'desktop_qualification_hold',
+  });
+  expect(broker.heldUntil).toHaveBeenCalledWith(id, expect.arrayContaining([profile.modelKey]));
+  await expect(service.record(undefined, undefined, id, JSON.stringify({ report: report() }))).rejects.toMatchObject({
+    status: 409,
+    message: 'desktop_qualification_hold',
+  });
+  expect(challenges.issue).not.toHaveBeenCalled();
+  expect(challenges.record).not.toHaveBeenCalled();
+  broker.heldUntil.mockResolvedValue(undefined);
+  await expect(service.issue(undefined, undefined, payload())).resolves.toMatchObject({ id });
+  // and once a report grants the model again, the withdrawal is over
+  await expect(service.record(undefined, undefined, id, JSON.stringify({ report: report() }))).resolves.toEqual({
+    accepted: true,
+  });
+  expect(broker.clearWithdrawal).toHaveBeenCalledExactlyOnceWith(id, profile.modelKey);
+});
+
+it('tells a desktop that can hold several leases how many of each kind of work the Jobs setting allows', async () => {
+  vi.mocked(getConfig).mockResolvedValue(structuredClone(defaults));
+  holds.workloadConcurrency.mockResolvedValue({ clip: 4, face: 2, ocr: 1 });
+  const ask = (extra: object) =>
+    post(
+      '/desktop/worker/models',
+      'models',
+      JSON.stringify({
+        provider: profile.spec.provider,
+        runtimeSourceRevision: profile.runtimeSourceRevision,
+        protocolVersion: 2,
+        ...extra,
+      }),
+    );
+  const response = await ask({ concurrentLeases: true });
+  expect(response.status).toBe(200);
+  const limits = Object.fromEntries(
+    response.body.workloads.map((item: { workload: string; state: string; concurrency?: number }) => [
+      item.workload,
+      item.state === 'eligible' ? item.concurrency : item.state,
+    ]),
+  );
+  // the limit of each task that has a model for this runtime; nothing for a task it cannot do
+  expect(limits.clip).toBe(4);
+  for (const [workload, limit] of [
+    ['face', 2],
+    ['ocr', 1],
+  ] as const)
+    expect([limit, 'unsupported']).toContain(limits[workload]);
+  expect(limits.enrichment).not.toEqual(expect.any(Number));
+  // a desktop that does not ask gets the reply it always got
+  const plain = await ask({});
+  expect(JSON.stringify(plain.body)).not.toContain('concurrency');
+  expect(holds.workloadConcurrency).toHaveBeenCalledOnce();
 });

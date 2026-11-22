@@ -179,6 +179,8 @@ await page.route('**/manager-api/**', async (route) => {
   requests.push({ path, body, headers: req.headers() });
   let value;
   if (path === 'status') value = { claimed: true };
+  // This Manager has nowhere to back up to, so the workspace switch stays hidden.
+  else if (path === 'server-backup') value = { state: 'unavailable' };
   else if (path === 'dashboard') {
     if (failDashboard) {
       failDashboard = false;
@@ -306,6 +308,20 @@ await page.route('**/manager-api/**', async (route) => {
     dashboard.operations[0].canCancel = true;
     dashboard.operations[0].canStop = false;
     value = { requested: true };
+  } else if (path === 'review-rollback')
+    value = {
+      id: '019aa111-1111-7111-8111-111111111120',
+      from: dashboard.rollback.from,
+      to: dashboard.rollback.to,
+      updatedAt: dashboard.rollback.updatedAt,
+      since: { uploads: 6, libraryFiles: 0, albums: 2, names: 1 },
+    };
+  else if (path === 'rollback') {
+    dashboard.rollback = null;
+    dashboard.operations = [
+      { id: 'rollback-operation', kind: 'rollback', state: 'running', step: 'restore-database', completed: ['download-images', 'stop-application'], error: null, createdAt: Date.now(), canCancel: false },
+    ];
+    value = { id: 'rollback-operation' };
   } else if (path === 'review-update')
     value = { id: 'update-review', from: installation.release, to: body.tag, recovery: 'Database only' };
   else if (path === 'review-restore' && restoreThumbnailsGone && !body.thumbnailFallback)
@@ -675,7 +691,7 @@ try {
     await nav('Containers');
     await mainButton('Edit as text').click();
     await page.getByLabel('Settings as text').fill('POSTGRES_DB=nope');
-    await nav('Backups');
+    await nav('Recovery points');
     await page.getByText('Last recovery point', { exact: true }).waitFor();
     await mainButton('Export key').click();
     await page.getByLabel('Current Manager password').fill('fixture proof password');
@@ -695,7 +711,7 @@ try {
     await page.getByText('Thumbnails go back in the photos folder', { exact: true }).waitFor();
     // Another recovery point's missing thumbnails folder is checked again, never kept with the photos unasked.
     snapshots = [snapshot, { id: 'e'.repeat(64), time: '2026-10-06T02:00:00Z' }];
-    await nav('Backups');
+    await nav('Recovery points');
     await mainButton('Restore…').first().click();
     await mainButton('Choose a recovery point').click();
     await page.getByRole('radio').last().check();
@@ -716,7 +732,32 @@ try {
     await page.getByRole('checkbox').check();
     assert.equal(await mainButton('Restore database').isEnabled(), true);
     await screenshot('restore-review');
-    assert.equal(await page.locator('.nav-item.active > span').first().innerText(), 'Backups');
+    assert.equal(await page.locator('.nav-item.active > span').first().innerText(), 'Recovery points');
+  });
+  await check('going back to the version before the last update reviews what is undone and asks to type go back', async () => {
+    // FL-973: offered for 14 days after an update.
+    dashboard.rollback = { from: installation.release, to: 'frameleaf-v3.1.9', updatedAt: Date.now() - 86_400_000, until: Date.now() + 13 * 86_400_000 };
+    await nav('Updates');
+    await page.getByText('Go back to 3.1.9', { exact: true }).waitFor();
+    await screenshot('rollback-offer');
+    await mainButton('Go back to 3.1.9…').click();
+    const sheet = page.locator('dialog.rollback-sheet');
+    await sheet.getByRole('heading', { name: 'Go back to Frameleaf 3.1.9?' }).waitFor();
+    const text = await sheet.innerText();
+    assert.ok(text.includes('6 photos and videos uploaded since the update'), text);
+    assert.ok(text.includes('2 albums made and 1 name given to a face since the update'), text);
+    assert.ok(!/immich/i.test(text));
+    const go = sheet.getByRole('button', { name: 'Go back to 3.1.9', exact: true });
+    assert.equal(await go.isDisabled(), true);
+    await page.waitForTimeout(500); // the sheet's opening animation
+    await screenshot('rollback-review');
+    await sheet.getByRole('textbox').fill('go back');
+    assert.equal(await go.isEnabled(), true);
+    await go.click();
+    await page.getByText('Put back the database from before the update').first().waitFor();
+    assert.ok(requests.some((r) => r.path === 'rollback' && r.body.id === '019aa111-1111-7111-8111-111111111120'));
+    await screenshot('rollback-running');
+    dashboard.operations = [];
   });
   await check('eligible update notes, confirmation, interrupted operation, resume and activity', async () => {
     await nav('Updates');
@@ -821,6 +862,79 @@ try {
       assert.deepEqual(errors, [], product + ': configuration rendering');
     }
     sources = [source];
+  });
+  await check('Noodle Gallery review shows what comes across, what stays behind, and stops at a release it cannot read', async () => {
+    // FL-1742: counted in the running source by Manager, in the FL-894 design.
+    const gallery = {
+      readable: true,
+      counts: { spaces: 4, members: 11, memberships: 18, spacePhotos: 6120, people: 23, favourites: 1284, pets: 3 },
+      spaces: [{ name: 'Family', members: 5, photos: 3410 }, { name: 'Soccer team', members: 6, photos: 250 }],
+      notImported: ['albums linked to Spaces', 'user groups', 'video trims'],
+    };
+    dashboard.installation = null;
+    dashboard.operations = [];
+    dashboard.onboardingFinished = false;
+    sources = [{ ...source, version: 'v5.11.1', gallery }];
+    await refresh();
+    await chooser();
+    await page.getByRole('heading', { name: 'Bring your Noodle Gallery library Beta' }).waitFor();
+    await mainButton('Review import').click();
+    await page.getByRole('heading', { name: 'What Noodle Gallery adds Beta' }).waitFor();
+    assert.match(await page.locator('.setup-eyebrow').innerText(), /^Import from Noodle Gallery · Step 1 of/iu);
+    assert.deepEqual(await page.locator('.gip-carried li').evaluateAll((items) => items.map((item) => item.innerText.replaceAll('\n', ' | '))), [
+      '4 | Spaces | 11 members · 6,120 photos',
+      '23 | People named in Spaces | Their names stay on each Space’s photos',
+      '3 | Pets | Named pets, with the photos they are in',
+      '1,284 | Favourites | Everyone keeps their own, on shared photos too',
+    ]);
+    assert.equal(await page.locator('.gip-spaces li').first().isVisible(), false);
+    await page.locator('.gip-spaces summary').click();
+    assert.deepEqual(await page.locator('.gip-spaces li strong').allInnerTexts(), ['Family', 'Soccer team']);
+    await page.getByText('And 2 more. Each Space becomes a shared space in Frameleaf', { exact: false }).waitFor();
+    assert.deepEqual(await page.locator('.gip-behind strong').allInnerTexts(), ['Albums and libraries linked to a Space', 'User groups', 'Edits made in Gallery']);
+    assert.equal(await page.getByText('Some Noodle Gallery features stay behind').count(), 0);
+    await screenshot('import-gallery-review');
+    assert.equal(await mainButton('Review library & settings').isDisabled(), false);
+    // A Gallery with nothing of its own.
+    sources = [{ ...source, version: 'v5.11.1', gallery: { readable: true, counts: Object.fromEntries(Object.keys(gallery.counts).map((name) => [name, 0])), spaces: [], notImported: [] } }];
+    await chooser();
+    await mainButton('Review import').click();
+    await page.getByText('Nothing extra to bring', { exact: true }).waitFor();
+    assert.equal(await page.locator('.gip-carried, .gip-behind').count(), 0);
+    // A release the importer refuses: the import cannot go on until Gallery is updated and checked again.
+    sources = [{ ...source, version: 'v5.9.0', gallery: { ...gallery, readable: false } }];
+    await chooser();
+    await mainButton('Review import').click();
+    await page.getByRole('heading', { name: 'Manager can’t read this Noodle Gallery release yet' }).waitFor();
+    await page.getByText('Release v5.9.0 keeps favourites in a way Manager doesn’t know.', { exact: false }).waitFor();
+    assert.equal(await mainButton('Review library & settings').isDisabled(), true);
+    await screenshot('import-gallery-unreadable');
+    sources = [{ ...source, version: 'v5.11.1', gallery }];
+    await mainButton('Check again').click();
+    await page.getByRole('heading', { name: 'What Noodle Gallery adds Beta' }).waitFor();
+    assert.equal(await mainButton('Review library & settings').isDisabled(), false);
+    // Without counts (a source Manager could not count) the earlier notice still says what stays behind.
+    sources = [source];
+    await chooser();
+    await mainButton('Review import').click();
+    await page.getByText('Some Noodle Gallery features stay behind', { exact: true }).waitFor();
+    // After the import: what the importer reported, with a part it could not read.
+    dashboard.installation = installation;
+    dashboard.importedGallery = { counts: { ...gallery.counts, pets: null }, notImported: [...gallery.notImported, 'pets'] };
+    await refresh();
+    await nav('Overview');
+    await mainButton('Continue setup').click();
+    // Setup resumes where it stopped; "Your server is ready" is its first page.
+    while (!(await page.getByRole('heading', { name: 'Your import is in Frameleaf' }).count())) await mainButton('Back').click();
+    await page.getByText('Came across from Noodle Gallery', { exact: true }).waitFor();
+    assert.deepEqual((await page.locator('.gip-chips li').allInnerTexts()).map((text) => text.replaceAll(/\s+/gu, ' ')), ['4 Spaces', '23 People named in Spaces', '1,284 Favourites']);
+    await page.getByText('Pets could not be read, so they were left out.', { exact: true }).waitFor();
+    await page.getByText('Nothing was deleted at the source. Your Noodle Gallery database is kept, stopped, for recovery.', { exact: true }).waitFor();
+    await screenshot('import-gallery-done');
+    delete dashboard.importedGallery;
+    dashboard.installation = null;
+    sources = [source];
+    await refresh();
   });
   await check('single and multiple source import, backup reuse, missing backup and refused source', async () => {
     dashboard.installation = null;

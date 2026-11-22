@@ -459,16 +459,16 @@ export class SharpOperations {
       throw new SharpResourceLimitError('palette source exceeds the decoded surface budget');
     }
     this.progress();
-    const { data, info } = await this.getImageDecodingPipeline(bytes, {
-      ...options,
-      size: undefined,
-      processInvalidImages: false,
-    })
-      .resize(256, 256, { fit: 'inside', withoutEnlargement: true })
-      .ensureAlpha()
-      .toColourspace('srgb')
-      .raw()
-      .toBuffer({ resolveWithObject: true });
+    const decode = (processInvalidImages: boolean) =>
+      this.getImageDecodingPipeline(bytes, { ...options, size: undefined, processInvalidImages })
+        .resize(256, 256, { fit: 'inside', withoutEnlargement: true })
+        .ensureAlpha()
+        .toColourspace('srgb')
+        .raw()
+        .toBuffer({ resolveWithObject: true });
+    // The thumbnail job reads a file leniently when the strict read complains (`decodeImage`), so a transparent
+    // PNG that is cut short has a preview. Its colours are read the same way, not failed as "libpng read error".
+    const { data, info } = await decode(false).catch(() => decode(true));
     this.progress();
     return {
       swatches: extractPalette(data, info.width, info.height),
@@ -580,9 +580,13 @@ export class SharpOperations {
   async repairJpeg(input: string, output: string, preview: string, metadataSource: string): Promise<JpegRepairResult> {
     const bytes = await imageHdrInput(input, this.maxBytes);
     const found = jpegRepairCandidates(bytes);
+    // libvips stops reading a JPEG after a few hundred decoder warnings unless told not to. Old cameras
+    // write files that warn at every restart marker and still show whole; stopped there, the picture
+    // reads as damaged past repair and only a cut-down half of it "decodes".
+    const whole = { limitInputPixels: this.maxPixels, unlimited: true };
     const decode = async (candidate: Buffer, strict: boolean) => {
       try {
-        const image = sharp(candidate, { failOn: strict ? 'warning' : 'none', limitInputPixels: this.maxPixels });
+        const image = sharp(candidate, { failOn: strict ? 'warning' : 'none', ...whole });
         const { width, height } = await image.metadata();
         // metadata reads the header only; the pixels must decode too (small, so memory stays low)
         await image.clone().resize(256, 256, { fit: 'inside' }).raw().toBuffer();
@@ -638,12 +642,12 @@ export class SharpOperations {
     if (lossless) {
       await writeFile(output, best.bytes, { flag: 'wx' });
     } else {
-      await sharp(best.bytes, { failOn: 'none', limitInputPixels: this.maxPixels })
+      await sharp(best.bytes, { failOn: 'none', ...whole })
         .keepMetadata()
         .jpeg({ quality: 95, chromaSubsampling: '4:4:4' })
         .toFile(output);
     }
-    await sharp(output, { failOn: 'none', limitInputPixels: this.maxPixels })
+    await sharp(output, { failOn: 'none', ...whole })
       .rotate()
       .resize(1440, 1440, { fit: 'inside', withoutEnlargement: true })
       .jpeg({ quality: 80 })
@@ -671,7 +675,7 @@ export class SharpOperations {
    * row in the file's own order, so a cut is always at the bottom.
    */
   async pictureSaved(bytes: string | Buffer): Promise<number> {
-    const { data, info } = await sharp(bytes, { failOn: 'none', limitInputPixels: this.maxPixels })
+    const { data, info } = await sharp(bytes, { failOn: 'none', limitInputPixels: this.maxPixels, unlimited: true })
       .resize(64, 400, { fit: 'fill', kernel: 'nearest' })
       .removeAlpha()
       .raw()
@@ -694,6 +698,25 @@ export class SharpOperations {
    * original ICC colour profile kept, and no EXIF, XMP, IPTC or GPS at all. A JPEG stays a JPEG at
    * quality 98 without chroma subsampling; anything else is written as a lossless PNG.
    */
+  /**
+   * FL-826: a photo as a download JPEG: upright, in sRGB, flattened onto white (JPEG has no transparency),
+   * at full size or fitted inside `maxEdge` without enlarging. Nothing of the source's metadata is kept;
+   * the caller copies what the download may carry.
+   */
+  async renderDownloadJpeg(input: string, output: string, maxEdge: number | null): Promise<void> {
+    if (resolve(input) === resolve(output) || (maxEdge !== null && (!Number.isSafeInteger(maxEdge) || maxEdge < 1)))
+      throw new Error('INVALID_DOWNLOAD_RENDER');
+    let image = sharp(input, { failOn: 'error', limitInputPixels: this.maxPixels }).rotate();
+    if (maxEdge !== null) {
+      image = image.resize(maxEdge, maxEdge, { fit: 'inside', withoutEnlargement: true });
+    }
+    await image
+      .withIccProfile('srgb')
+      .flatten({ background: '#ffffff' })
+      .jpeg({ quality: 92, chromaSubsampling: '4:4:4' })
+      .toFile(output);
+  }
+
   async writeStrippedStill(
     input: string | Buffer,
     output: string,

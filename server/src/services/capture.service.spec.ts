@@ -230,7 +230,7 @@ describe('capture application boundary', () => {
       maxSize: 1024,
       maxAppendSize: 1024,
       maxAge: 86_400,
-      maxActive: 4,
+      activeMaxAge: 7 * 86_400,
       maxParallelParts: 6,
     });
     expect(await service.capabilities(auth)).toEqual({

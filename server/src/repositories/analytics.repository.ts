@@ -1003,6 +1003,12 @@ export class AnalyticsRepository {
     return row?.observedAt ? new Date(row.observedAt as unknown as string) : null;
   }
 
+  /** The import folders of every external library that is not deleted. */
+  async getExternalImportPaths(): Promise<string[]> {
+    const rows = await this.db.selectFrom('library').select('importPaths').where('deletedAt', 'is', null).execute();
+    return rows.flatMap((row) => row.importPaths);
+  }
+
   /**
    * The size of this server's database on disk (`pg_database_size`). Read only for the whole-server
    * report an administrator opens.

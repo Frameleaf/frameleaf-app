@@ -1,7 +1,6 @@
 import {
   BadRequestException,
   ConflictException,
-  HttpException,
   Injectable,
   NotFoundException,
   ServiceUnavailableException,
@@ -92,17 +91,6 @@ export class AssetUploadResourceRepository {
           }
           return existing;
         }
-      }
-      const count = await tx
-        .selectFrom('asset_upload_resource')
-        .select((eb) => eb.fn.countAll<number>().as('count'))
-        .where('ownerId', '=', ownerId)
-        .where('expiresAt', '>', new Date())
-        .where('ingested', '=', false)
-        .where('state', 'not in', ['cancelled', 'rejected'])
-        .executeTakeFirstOrThrow();
-      if (Number(count.count) >= ASSET_UPLOAD_LIMITS.maxActive) {
-        throw new HttpException('Too many incomplete uploads', 429);
       }
       const created = await tx
         .insertInto('asset_upload_resource')
@@ -211,11 +199,17 @@ export class AssetUploadResourceRepository {
           rows.push(current);
         }
         // Media import authority locks the owner for update inside this transaction; a shared lock taken
-        // here would be upgraded, and two imports for one owner would then deadlock.
+        // here would be upgraded, and two imports for one owner would then deadlock. Publishing a verified
+        // upload charges the owner's quota (an update of this row) the same way, so two uploads by one
+        // owner finishing at once would deadlock too.
         const exclusive =
           ids.length > 1 ||
           hasEditConfiguration(tx) ||
-          rows.some((row) => ['media-import', 'connect'].includes(row.metadata.publication ?? ''));
+          rows.some(
+            (row) =>
+              ['verified', 'pair-verified'].includes(row.state) ||
+              ['media-import', 'connect'].includes(row.metadata.publication ?? ''),
+          );
         const owner = await tx
           .selectFrom('user')
           .select('id')

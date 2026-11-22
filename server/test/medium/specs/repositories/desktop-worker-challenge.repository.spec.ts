@@ -183,20 +183,27 @@ it('fences expiry, rotation, sign-out and cross-device attempts and prunes only 
     .execute();
   expect(await sut.read(grant, row.id)).toBeUndefined();
   expect(await sut.record(grant, row.id, receipt(row))).toBe(false);
-  for (let n = 0; n < 16; n++) expect(await sut.issue(grant, randomUUID(), profile, runtime)).toBeDefined();
+  const open = (await sut.issue(grant, randomUUID(), profile, runtime))!;
+  for (let n = 0; n < 15; n++) expect(await sut.issue(grant, randomUUID(), profile, runtime)).toBeDefined();
   await expect(sut.issue(grant, randomUUID(), profile, runtime)).rejects.toThrow('desktop_challenge_capacity');
   const nextHash = Buffer.alloc(32, 22);
   expect(await workers.rotate(grant, grant.credentialHash, nextHash)).toBeDefined();
+  // the token the renewal replaced is good for nothing
   expect(await sut.issue(grant, randomUUID(), profile, runtime)).toBeUndefined();
+  expect(await sut.read(grant, open.id)).toBeUndefined();
+  expect(await sut.record(grant, open.id, receipt(open))).toBe(false);
   const current = (await workers.consume(grant.sessionId, nextHash, 1))!;
-  const fresh = (await sut.issue(current, randomUUID(), profile, runtime))!;
+  // a challenge belongs to the session and its epoch: the desktop still answers it after renewing its token
+  expect((await sut.read(current, open.id))?.id).toBe(open.id);
+  expect(await sut.record(current, open.id, receipt(open))).toBe(true);
   expect(
     await challengeDb
       .selectFrom('desktop_worker_challenge')
       .select('id')
       .where('deviceId', '=', grant.deviceId)
       .execute(),
-  ).toHaveLength(1);
+  ).toHaveLength(16);
+  const fresh = open;
   await db.deleteFrom('session').where('id', '=', photo.id!).execute();
   expect(await sut.read(current, fresh.id)).toBeUndefined();
   expect(
@@ -317,7 +324,8 @@ it('accepted runtime evidence has an absolute lifetime across retries and renewa
       .executeTakeFirstOrThrow(),
   ).toEqual(accepted);
   expect(await sut.record(current, second.id, receipt(second))).toBe(true);
-  await expect(broker.assertAdoption(task.id, task)).rejects.toThrow('desktop_result_authority_lost');
+  // qualifying again for the same model replaces the evidence, and the work leased under the old one goes on
+  await expect(broker.assertAdoption(task.id, task)).resolves.toBeUndefined();
   expect(await sut.readAccepted(current, first.id)).toBeUndefined();
   expect(
     await proofDb.selectFrom('desktop_worker_qualification').select('id').where('id', '=', first.id).executeTakeFirst(),

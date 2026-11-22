@@ -19,7 +19,10 @@ const {
   trustedRun,
   ATTESTATION_TYPE,
   COSIGN_PUBLIC_KEY,
+  runFromUrl,
+  FORGEJO_SOURCE,
 } = require("./frameleaf-release.cjs");
+const FORGEJO_RUN = new RegExp(`^${FORGEJO_SOURCE}/actions/runs/[0-9]+$`);
 
 async function verifyBundle(
   directory,
@@ -130,11 +133,21 @@ async function verifyBundle(
     const id = new RegExp(`^${SOURCE}/actions/runs/([0-9]+)$`).exec(
       manifest.buildRun,
     )?.[1];
-    assert(
-      id &&
-        trustedRun(await request(`actions/runs/${id}`), manifest.sourceCommit),
-      "Build provenance is not trusted",
-    );
+    // FL-1678: a release built on Forgejo links its run there.
+    // FL-1722: that server is private, so an install (no Forgejo token) cannot read the run. The cosign
+    // signature and the signed attestation checked above already bind this manifest, its source commit
+    // and its build run to the Frameleaf key; CI, which has a token, still checks the run itself.
+    const unreadable =
+      !id && !process.env.FORGEJO_TOKEN && FORGEJO_RUN.test(manifest.buildRun);
+    if (!unreadable) {
+      const buildRun = id
+        ? await request(`actions/runs/${id}`)
+        : await runFromUrl(manifest.buildRun);
+      assert(
+        buildRun && trustedRun(buildRun, manifest.sourceCommit),
+        "Build provenance is not trusted",
+      );
+    }
   }
   return manifest;
 }

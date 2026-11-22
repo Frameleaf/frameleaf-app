@@ -42,7 +42,9 @@ export const newMediaRepositoryMock = (): Mocked<RepositoryInterface<MediaReposi
       .fn()
       .mockImplementation((fileName: string) => Promise.resolve(`/tmp/frameleaf-color-luts/${fileName}`)),
     probeEmbeddedSubtitles: vitest.fn(),
+    inspectPlaybackCopy: vitest.fn(),
     probeHdrMastering: vitest.fn().mockResolvedValue([]),
+    countPackets: vitest.fn().mockResolvedValue({ packets: 0, hidden: 0, uneven: false, unordered: false, keyGap: 1 }),
     probePackets: vitest.fn().mockResolvedValue({
       totalDuration: 0,
       packetCount: 0,
@@ -67,6 +69,8 @@ export const newMediaRepositoryMock = (): Mocked<RepositoryInterface<MediaReposi
     filmstripFrameGrids: vitest.fn().mockResolvedValue([]),
     writeCloudUpload: vitest.fn().mockImplementation(() => Promise.resolve()),
     writeStrippedStill: vitest.fn().mockImplementation(() => Promise.resolve()),
+    renderDownloadJpeg: vitest.fn().mockImplementation(() => Promise.resolve()),
+    copyDownloadMetadata: vitest.fn().mockResolvedValue(true),
     repairJpeg: vitest.fn(),
     pictureSaved: vitest.fn().mockResolvedValue(100),
     renderDevelopGeometry: vitest

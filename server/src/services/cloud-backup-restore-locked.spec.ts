@@ -67,7 +67,7 @@ describe('Locked key files in a cloud backup restore (FL-721)', () => {
         .update(await readFile(path))
         .digest(),
   };
-  const restorer = () => new CloudBackupRestorer(null, storage as never, crypto as never, logger as never);
+  const restorer = () => new CloudBackupRestorer(storage as never, crypto as never, logger as never);
   const read = async (_key: string, destination: string, expected: string) => {
     const bytes = objects.get(expected)!;
     await writeFile(destination, bytes);

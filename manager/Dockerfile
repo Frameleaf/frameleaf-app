@@ -2,8 +2,12 @@ ARG NODE_IMAGE=node:22.23.4-trixie-slim@sha256:8eb619e402eaede1748a3c8173bffab39
 FROM ${NODE_IMAGE} AS build
 RUN apt-get update --error-on=any && apt-get install -y --no-install-recommends gcc libc6-dev && rm -rf /var/lib/apt/lists/*
 WORKDIR /app/manager
-COPY manager/package*.json ./
-RUN npm ci --ignore-scripts
+# The backup engine is installed from the repository as a real copy (install-links in .npmrc), never a link:
+# node_modules moves to /app/node_modules below, and a link would point at a folder that isn't in the image.
+COPY packages/backup-core/package.json /app/packages/backup-core/package.json
+COPY packages/backup-core/dist /app/packages/backup-core/dist
+COPY manager/package*.json manager/.npmrc ./
+RUN npm ci --ignore-scripts && test ! -L node_modules/@frameleaf/backup-core && test -f node_modules/@frameleaf/backup-core/dist/index.js
 COPY manager/ ./
 RUN cc -std=c11 -O2 -Wall -Wextra -Werror -D_FORTIFY_SOURCE=3 -fPIE -pie -Wl,-z,relro,-z,now -o /usr/local/bin/frameleaf-import-rename import-rename.c \
     && npm run build && npm prune --omit=dev --ignore-scripts

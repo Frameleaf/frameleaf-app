@@ -1,7 +1,9 @@
 import { jwtVerify } from 'jose';
+import { generateKeyPairSync, sign, verify } from 'node:crypto';
 import { describe, it } from 'vitest';
 import { MaintenanceAction, SystemMetadataKey } from 'src/enum.js';
 import { CliService } from 'src/services/cli.service.js';
+import * as frameleafCloudGateway from 'src/utils/frameleaf-cloud-gateway.js';
 import { UserFactory } from 'test/factories/user.factory.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
 
@@ -16,6 +18,62 @@ describe(CliService.name, () => {
     mocks.systemMetadata.set.mockImplementation((key, value) => {
       metadata.set(key, value);
       return Promise.resolve();
+    });
+  });
+
+  describe('vouchForBackupMachine (FL-1673)', () => {
+    const CLOUD = 'https://api.frameleaf.cloud';
+    const machine = '0192f1a4-7c3e-7b21-9d4e-2a6f8c0b1e53';
+    const parent = '0192f1a4-7c3e-7b21-9d4e-2a6f8c0b1e99';
+    const { privateKey, publicKey } = generateKeyPairSync('ed25519');
+    const linked = (status = 'linked') => {
+      mocks.config.getEnv.mockReturnValue({ ...mocks.config.getEnv(), frameleafCloud: { url: CLOUD } } as never);
+      return mocks.systemMetadata.set(SystemMetadataKey.FrameleafCloudLink, {
+        status,
+        instanceId: parent,
+        cloudUrl: CLOUD,
+      } as never);
+    };
+
+    beforeEach(() => {
+      vi.spyOn(frameleafCloudGateway, 'loadInstanceIdentity').mockResolvedValue(undefined as never);
+      mocks.instanceIdentity.currentSigner.mockReturnValue({
+        kid: 'k'.repeat(43),
+        publicJwk: {} as never,
+        sign: () => '',
+        signBytes: (data) => sign(null, data, privateKey),
+      });
+    });
+    afterEach(() => vi.restoreAllMocks());
+
+    it('signs exactly what Frameleaf Cloud checks, with this server’s identity key', async () => {
+      await linked();
+      const now = new Date('2026-11-17T12:00:00.000Z');
+      const { statement, signature } = await sut.vouchForBackupMachine(machine, now);
+      expect(statement).toEqual({
+        version: 1,
+        parentInstanceId: parent,
+        machineInstanceId: machine,
+        issuedAt: '2026-11-17T12:00:00.000Z',
+        signerKid: 'k'.repeat(43),
+      });
+      // The domain line, then compact JSON in this field order, with no final newline.
+      const signed =
+        'frameleaf-backup-machine-attach-v1\n' +
+        `{"version":1,"parentInstanceId":"${parent}","machineInstanceId":"${machine}","issuedAt":"2026-11-17T12:00:00.000Z","signerKid":"${'k'.repeat(43)}"}`;
+      expect(signature).toMatch(/^[A-Za-z0-9_-]{86}$/);
+      expect(verify(null, Buffer.from(signed), publicKey, Buffer.from(signature, 'base64url'))).toBe(true);
+    });
+
+    it('vouches for nothing while this server is not linked', async () => {
+      await linked('unlinked');
+      await expect(sut.vouchForBackupMachine(machine)).rejects.toThrow('not linked');
+      expect(mocks.instanceIdentity.currentSigner).not.toHaveBeenCalled();
+    });
+
+    it('refuses anything that is not a backup machine id', async () => {
+      await linked();
+      await expect(sut.vouchForBackupMachine('../etc')).rejects.toThrow('not a backup machine id');
     });
   });
 

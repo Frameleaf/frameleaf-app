@@ -1186,7 +1186,7 @@ export class BuddyBackupRestoreService {
             throw new Error('A file in a read-only library is missing or changed. Put it back, then restore again.');
           await this.recordFile(operation.id, file, job.request.mode === 'keep');
         }
-        const restorer = new CloudBackupRestorer(null, this.storage, this.crypto, this.logger);
+        const restorer = new CloudBackupRestorer(this.storage, this.crypto, this.logger);
         const done = await restorer.restore({
           manifest: manifest.library,
           scope: 'asset',

@@ -1,9 +1,11 @@
+import { S3Error } from '@frameleaf/backup-core';
 import { dirname, extname, join } from 'node:path';
 import type { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import type { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { ChecksumAlgorithm, StorageFolder } from 'src/enum.js';
 import { CloudBackupStoreError } from 'src/repositories/cloud-backup-store.repository.js';
+import { VaultFileError } from 'src/utils/cloud-backup-vault.js';
 import { ManagedBackupAuthorizationError } from 'src/utils/managed-backup-session.js';
 import { LIBRARY_CARE_FOLDER, isPathWithin, publishVerifiedCopy, retainFile } from 'src/utils/media-health-roots.js';
 import { getErrorMessage } from 'src/utils/media-health.js';
@@ -83,9 +85,10 @@ export const lostOriginalCandidates = <T extends { sha256: string }>(rows: T[], 
  * that is gone is not this: no backup in it can be read.
  */
 export const backupLacksFile = (error: unknown) =>
-  error instanceof CloudBackupStoreError &&
-  error.code !== 'NoSuchBucket' &&
-  (error.status === 404 || error.code === 'NoSuchKey' || error.code === 'ChecksumMismatch');
+  error instanceof VaultFileError ||
+  ((error instanceof CloudBackupStoreError || error instanceof S3Error) &&
+    error.code !== 'NoSuchBucket' &&
+    (error.status === 404 || error.code === 'NoSuchKey' || error.code === 'ChecksumMismatch'));
 
 /**
  * What a bucket that could not be read means, never a verdict on a backup: `busy` when it may work later
@@ -97,7 +100,7 @@ export const bucketRefusal = (error: unknown): 'busy' | 'not-set-up' | undefined
   if (error instanceof ManagedBackupAuthorizationError) {
     return error.retryAfterMs === null ? 'not-set-up' : 'busy';
   }
-  if (!(error instanceof CloudBackupStoreError) || backupLacksFile(error)) {
+  if (!(error instanceof CloudBackupStoreError || error instanceof S3Error) || backupLacksFile(error)) {
     return undefined;
   }
   return error.status === null || error.status === 429 || error.status >= 500 ? 'busy' : 'not-set-up';

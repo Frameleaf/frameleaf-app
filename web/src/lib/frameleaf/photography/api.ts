@@ -45,6 +45,17 @@ export type Photo = {
   canRate: boolean;
   stackCount: number;
   currentRevisionId: string | null;
+  /** FL-863: the photo's faces for culling; absent when it has none. */
+  eyes?: PhotoEyes;
+};
+export type PhotoEyes = {
+  faceCount: number;
+  closedCount: number;
+  softCount: number;
+  unscoredCount: number;
+  /** The worst checked face's eye quality (0-1), null until one is checked. */
+  quality: number | null;
+  faces: Array<{ closed: boolean; soft: boolean; checked: boolean }>;
 };
 export type PhotoPage = { nextCursor: string | null; photos: Photo[] };
 

@@ -188,16 +188,22 @@ export const groupAlignedBatchSize = (
 /* How a group reads                                                            */
 /* -------------------------------------------------------------------------- */
 
-/** A suggestion never proves that edits or unrepresented motion can be discarded. */
+/**
+ * A suggestion never proves that edits or unrepresented motion can be discarded. Nor may a healthy
+ * copy go to the trash while every kept copy is damaged (FL-1660).
+ */
 export const duplicateDisposalReasons = (
   assets: readonly Pick<AssetResponseDto, 'id' | 'isEdited' | 'livePhotoVideoId'>[],
   keepIds: readonly string[],
   historyIds: ReadonlySet<string>,
+  damagedIds: ReadonlySet<string> = new Set(),
 ): string[] => {
   const keepers = assets.filter(({ id }) => keepIds.includes(id));
+  const onlyDamagedKept = keepers.length > 0 && keepers.every(({ id }) => damagedIds.has(id));
   const reasons = new Set<string>();
   for (const asset of assets) {
     if (keepIds.includes(asset.id)) continue;
+    if (onlyDamagedKept && !damagedIds.has(asset.id)) reasons.add('damaged-keeper');
     if (asset.isEdited) reasons.add('edited-copy');
     if (historyIds.has(asset.id)) reasons.add('develop-history');
     if (asset.livePhotoVideoId && keepers.every((keeper) => keeper.livePhotoVideoId !== asset.livePhotoVideoId))
@@ -207,7 +213,7 @@ export const duplicateDisposalReasons = (
 };
 
 type ReviewAsset = Pick<AssetResponseDto, 'id' | 'type' | 'localDateTime' | 'originalFileName' | 'exifInfo'> &
-  Partial<Pick<AssetResponseDto, 'checksum'>>;
+  Partial<Pick<AssetResponseDto, 'checksum' | 'dateAccuracy'>>;
 
 const captureTime = (asset: ReviewAsset): number | null => {
   const value = asset.exifInfo?.dateTimeOriginal ?? asset.localDateTime;
@@ -234,6 +240,10 @@ export const reviewKindOf = (assets: readonly ReviewAsset[]): DuplicateReviewKin
   const checksum = assets[0].checksum;
   if (checksum && assets.every((asset) => asset.checksum === checksum)) {
     return 'copies';
+  }
+  // FL-936: a year or a decade is not an instant: scans that share one are not copies or a burst for that
+  if (assets.some((asset) => asset.dateAccuracy)) {
+    return 'look-alike';
   }
   const times = assets.map((asset) => captureTime(asset));
   if (times.includes(null)) {

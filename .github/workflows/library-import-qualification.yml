@@ -235,6 +235,10 @@ jobs:
           pnpm --filter @frameleaf/plugin-sdk build
       - name: Verify imported metadata preservation
         working-directory: server
+        env:
+          # asset.service.spec needs more than 2 GB; V8 picks a 2 GB default heap below 16 GB of RAM
+          # (the Forgejo arm64 slot has ~15 GB), while GitHub's 16 GB arm64 runners got 4 GB.
+          NODE_OPTIONS: --max-old-space-size=4096
         run: |
           node ../studio/tools/prepare-server-subtitle-runtime.mjs
           node scripts/prepare-import-transfer-runtime.mjs

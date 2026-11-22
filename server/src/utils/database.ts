@@ -26,6 +26,7 @@ import { DummyValue, GenerateSqlQueries } from 'src/decorators.js';
 import { AssetEditActionItem } from 'src/dtos/editing.dto.js';
 import {
   DEFAULT_SEARCH_ORDER,
+  DateFilter,
   IdsFilter,
   LandmarkIdsFilter,
   MediaKindsFilter,
@@ -61,7 +62,9 @@ import { DB } from 'src/schema/index.js';
 import { AssetExifTable } from 'src/schema/tables/asset-exif.table.js';
 import { assetColorPredicate, assetTransparencyPredicate } from 'src/utils/asset-palette-query.js';
 import { assetSourcePredicate } from 'src/utils/asset-source-query.js';
+import { clipSpaceOf } from 'src/utils/desktop-model-equivalents.js';
 import { DATABASE_POOL_SIZE, boundExecutionReservations } from 'src/utils/execution-database.js';
+import { favoriteFor } from 'src/utils/favorite.js';
 import { displayPathSql } from 'src/utils/library-path.js';
 import { libraryScopePredicate } from 'src/utils/library-scope.js';
 import {
@@ -646,7 +649,7 @@ export function searchAssetBuilderLegacy(kysely: Kysely<DB>, options: AssetSearc
       .$if(!!options.trashedBefore, (qb) => qb.where('asset.deletedAt', '<=', options.trashedBefore!))
       .$if(!!options.trashedAfter, (qb) => qb.where('asset.deletedAt', '>=', options.trashedAfter!))
       .$if(!!options.takenBefore, (qb) => qb.where('asset.fileCreatedAt', '<=', options.takenBefore!))
-      .$if(!!options.takenAfter, (qb) => qb.where('asset.fileCreatedAt', '>=', options.takenAfter!))
+      .$if(!!options.takenAfter, (qb) => qb.where(takenFrom('asset.fileCreatedAt', options.takenAfter!)))
       .$if(options.city !== undefined, (qb) =>
         qb
           .innerJoin('asset_exif', 'asset.id', 'asset_exif.assetId')
@@ -737,7 +740,14 @@ export function searchAssetBuilderLegacy(kysely: Kysely<DB>, options: AssetSearc
       )
       .$if(!!options.imageEnrichment, (qb) => withImageEnrichmentFilter(qb, options.imageEnrichment!))
       .$if(!!options.type, (qb) => qb.where('asset.type', '=', options.type!))
-      .$if(options.isFavorite !== undefined, (qb) => qb.where('asset.isFavorite', '=', options.isFavorite!))
+      // FL-786: the viewer's own hearts, never an owner's on an item shared with the viewer
+      .$if(options.isFavorite !== undefined, (qb) =>
+        qb.where(
+          options.viewingUserId
+            ? sql<boolean>`(${favoriteFor(options.viewingUserId)}) = ${options.isFavorite!}`
+            : sql<boolean>`asset."isFavorite" = ${options.isFavorite!}`,
+        ),
+      )
       .$if(options.isOffline !== undefined, (qb) => qb.where('asset.isOffline', '=', options.isOffline!))
       .$if(options.isEncoded !== undefined, (qb) =>
         qb.where((eb) => {
@@ -884,6 +894,38 @@ function personIdsPredicates(eb: AssetExpressionBuilder, filter?: IdsFilter) {
   });
 }
 /**
+ * FL-874: items with a visible face of someone the viewer put in these categories. Categories are the viewer's own
+ * (`person_category_member` is keyed by its owner), and a person group is shared across a cluster's accounts, so a
+ * partner's photo of someone in the viewer's Family matches too. Without a viewer (a shared link) the positive
+ * groups match nothing and `none` excludes nothing.
+ */
+function personCategoryIdsPredicates(
+  eb: AssetExpressionBuilder,
+  filter: IdsFilter | undefined,
+  viewerId: string | null | undefined,
+) {
+  if (filter === undefined) {
+    return [];
+  }
+  const matching = (ids: string[]) =>
+    visibleFaces(eb)
+      .innerJoin('person_category_member', 'person_category_member.personId', 'asset_face.personGroupId')
+      .where('person_category_member.ownerId', '=', viewerId ?? '')
+      .where('person_category_member.categoryId', '=', anyUuid(ids));
+  return idsPredicates(eb, filter, {
+    matchesAny: (ids) => (viewerId ? eb.exists(matching(ids)) : eb.lit(false)),
+    matchesAll: (ids) =>
+      viewerId
+        ? eb.exists(
+            matching(ids)
+              .select('asset_face.assetId')
+              .groupBy('asset_face.assetId')
+              .having((eb) => eb.fn.count('person_category_member.categoryId').distinct(), '=', ids.length),
+          )
+        : eb.lit(false),
+  });
+}
+/**
  * FL-58: `petIds` reads the owner's durable decisions only — `confirmed` observations of the viewer's
  * own pets (see `hasPets`). Without a viewer the positive groups match nothing and `none` excludes
  * nothing, so a missing owner can never widen a result.
@@ -964,6 +1006,22 @@ function tagIdsPredicates(eb: AssetExpressionBuilder, filter?: IdsFilter) {
           .having((eb) => eb.fn.count('tag_closure.id_ancestor').distinct(), '=', ids.length),
       ),
   });
+}
+type CaptureDateColumn = 'asset.fileCreatedAt' | 'asset.localDateTime';
+/**
+ * FL-936: a photo dated to a year or a decade counts as taken throughout it. Its stored date is the day that
+ * period starts, so an upper bound needs nothing, and "from `from` on" also matches a period that began before
+ * `from` and has not ended by then. Photos with an exact date keep the plain comparison; the second arm reads
+ * only the ten years before `from`, so it is a range on the same date index.
+ */
+export function takenFrom(column: CaptureDateColumn, from: Date, strict = false) {
+  const date = sql.ref(column);
+  const earliest = new Date(from);
+  earliest.setUTCFullYear(earliest.getUTCFullYear() - 10);
+  return sql<SqlBool>`(${date} ${strict ? sql`>` : sql`>=`} ${from} or (
+    asset."dateAccuracy" is not null and ${date} > ${earliest}
+    and ${date} + case asset."dateAccuracy" when 'decade' then interval '10 years' else interval '1 year' end > ${from}
+  ))`;
 }
 type ComparisonFilter<T> = {
   eq?: T | null;
@@ -1158,6 +1216,18 @@ function boolPredicates(filter: { eq: boolean } | undefined, predicate: Expressi
   }
   return [filter.eq ? predicate : sql<SqlBool>`not coalesce(${predicate}, false)`];
 }
+/** A capture date filter, whose lower bounds also reach a year or decade still running then (`takenFrom`). */
+function captureDatePredicates(eb: AssetExpressionBuilder, column: CaptureDateColumn, filter?: DateFilter) {
+  if (!filter) {
+    return [];
+  }
+  const { gt, gte, ...rest } = filter;
+  return [
+    ...comparisonPredicates(eb, column, rest),
+    ...(gt === undefined ? [] : [takenFrom(column, gt, true)]),
+    ...(gte === undefined ? [] : [takenFrom(column, gte)]),
+  ];
+}
 // predicates are collected as expressions rather than chained `where` calls so the same
 // helpers can build each `or` branch, which must compose into eb.and/eb.or
 function branchPredicates(
@@ -1188,7 +1258,14 @@ function branchPredicates(
     ...comparisonPredicates(eb, 'asset.libraryId', branch.libraryId),
     ...comparisonPredicates(eb, 'asset.type', branch.type),
     ...visibilityPredicates(branch.visibility, revealOwnerId),
-    ...(branch.isFavorite ? [eb('asset.isFavorite', '=', branch.isFavorite.eq)] : []),
+    // FL-786: the viewer's own hearts, never an owner's on an item shared with the viewer
+    ...(branch.isFavorite
+      ? [
+          viewerId
+            ? sql<boolean>`(${favoriteFor(viewerId)}) = ${branch.isFavorite.eq}`
+            : eb('asset.isFavorite', '=', branch.isFavorite.eq),
+        ]
+      : []),
     ...(branch.isOffline ? [eb('asset.isOffline', '=', branch.isOffline.eq)] : []),
     ...(branch.isMotion ? [eb('asset.livePhotoVideoId', branch.isMotion.eq ? 'is not' : 'is', null)] : []),
     ...existsPredicates(eb, branch.isEncoded, encodedVideoFiles),
@@ -1237,8 +1314,17 @@ function branchPredicates(
       >`(select score."technicalScore" from asset_best_photo_score as score where score."assetId" = asset.id)`,
       branch.technicalScore,
     ),
-    ...comparisonPredicates(eb, 'asset.fileCreatedAt', branch.takenAt),
-    ...comparisonPredicates(eb, 'asset.localDateTime', branch.localDateTime),
+    ...captureDatePredicates(eb, 'asset.fileCreatedAt', branch.takenAt),
+    ...captureDatePredicates(eb, 'asset.localDateTime', branch.localDateTime),
+    // FL-936: the local date is in the decade; a year or decade is stored as the day it starts, so it is too
+    ...(branch.takenDecade
+      ? [
+          eb.and([
+            eb('asset.localDateTime', '>=', new Date(Date.UTC(branch.takenDecade.eq, 0, 1))),
+            eb('asset.localDateTime', '<', new Date(Date.UTC(branch.takenDecade.eq + 10, 0, 1))),
+          ]),
+        ]
+      : []),
     ...comparisonPredicates(eb, 'asset.createdAt', branch.createdAt),
     ...comparisonPredicates(eb, 'asset.updatedAt', branch.updatedAt),
     ...comparisonPredicates(eb, 'asset.deletedAt', branch.trashedAt),
@@ -1249,6 +1335,7 @@ function branchPredicates(
     ...(branch.color ? [assetColorPredicate(branch.color, paletteViewerId)] : []),
     ...(branch.hasTransparency ? [assetTransparencyPredicate(branch.hasTransparency.eq, paletteViewerId)] : []),
     ...personIdsPredicates(eb, branch.personIds),
+    ...personCategoryIdsPredicates(eb, branch.personCategoryIds, privateViewerId),
     ...petIdsPredicates(eb, branch.petIds, viewerId),
     ...tagIdsPredicates(eb, branch.tagIds),
     ...landmarkIdsPredicates(eb, branch.landmarkIds),
@@ -1882,7 +1969,7 @@ export const validLandmarkMatch = () => sql<boolean>`(asset_landmark.inference i
       else exists (
         select 1 from smart_search donor_embedding join smart_search target_embedding
           on target_embedding."assetId" = asset.id
-          and donor_embedding."producerModelKey" = target_embedding."producerModelKey"
+          and ${clipSpaceOf('donor_embedding.producerModelKey')} = ${clipSpaceOf('target_embedding.producerModelKey')}
         where donor_embedding."assetId" = donor.id and target_embedding."producerModelKey" is not null
           and (donor_embedding.embedding <=> target_embedding.embedding) <= 0.12
       ) end

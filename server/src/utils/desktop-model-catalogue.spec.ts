@@ -10,14 +10,15 @@ import {
   matchDesktopModelProfile,
   parseDesktopModelCatalogue,
 } from 'src/utils/desktop-model-catalogue.js';
+import { equivalentDesktopModelKeys } from 'src/utils/desktop-model-equivalents.js';
 import { canonicalJson } from 'src/utils/object.js';
 
 const raw = (): unknown =>
   JSON.parse(readFileSync(join(process.cwd(), 'resources/desktop/model-catalogue.json'), 'utf8'));
 it('preserves every prior binding and selects the qualified precision-corrected CPU profiles', () => {
   const catalogue = parseDesktopModelCatalogue(raw());
-  expect(catalogue.epoch).toBe(16);
-  expect(catalogue.profiles).toHaveLength(162);
+  expect(catalogue.epoch).toBe(17);
+  expect(catalogue.profiles).toHaveLength(171);
   expect(
     createHash('sha256')
       .update(canonicalJson(catalogue.profiles.slice(0, 27)))
@@ -37,7 +38,7 @@ it('preserves every prior binding and selects the qualified precision-corrected 
 });
 it('validates the approved default model and preserves exact config, source and provider identity', () => {
   const catalogue = parseDesktopModelCatalogue(raw());
-  expect(catalogue.profiles).toHaveLength(162);
+  expect(catalogue.profiles).toHaveLength(171);
   for (const profile of catalogue.profiles) {
     if (profile.workload !== 'clip') continue;
     expect(profile.embeddingDimensions).toBe(CLIP_MODEL_INFO[profile.modelName].dimSize);
@@ -236,6 +237,17 @@ it('binds a fresh canonical NAS nonce with the same digest as the native contrac
       .flatMap((profile, index) =>
         profile.runtimeSourceRevision === 'f2c451a6bf71ca3f3aec986e07f0852937268e2f' ? [expected[index]] : [],
       ),
+    // epoch 17: the server's own AI build (new preprocessing identity, so new keys and digests). These nine
+    // come from this implementation; the native contract has no runtime of that source to compare with yet.
+    'c874e4adcdbc4966193b696ec3c32d3d0119356a68d9df0653baa402b3971405',
+    '13535695814d90eb304133b33738927eab5a7bc5662b912cb2c645aff2bb76d0',
+    '5d2c6dd0f1a18f9c1057063600130e8ea2ecaac30a23ab9959fff1a07de9725e',
+    'd68dc2e65d263786966348b01f112b3665b62c046c48d4494ae279f0046e5b61',
+    'b42f1d0eb45ac822b609b271365f73ea384276bb3b0e2ece54a63909e5b209e9',
+    'e9acda688cab933ce7c7e7af81cffff8b7ff1f875e0e61b8dcbf3ef6a3c704d9',
+    '2a7fc13909ebdc438b570897ee84f3ef7419892148bab4253aaf48c577485874',
+    '0770368d333aab7224560477e59761af352d6f1c95ace1c38d58f499719eb923',
+    '914ee439d6cda5a79070fe9c190f38c0303fba567ad3be9767184e5169220e0c',
   );
   expect(catalogue.profiles).toHaveLength(expected.length);
   for (const [index, profile] of catalogue.profiles.entries()) {
@@ -376,7 +388,7 @@ it('preserves all CPU profiles while admitting only the proved CoreML CLIP sourc
 it('selects current-main CoreML profiles with distinct preprocessing while preserving prior bindings', () => {
   const catalogue = parseDesktopModelCatalogue(raw());
   expect(catalogue.epoch).toBeGreaterThanOrEqual(9);
-  expect(catalogue.profiles).toHaveLength(162);
+  expect(catalogue.profiles).toHaveLength(171);
   expect(
     createHash('sha256')
       .update(canonicalJson(catalogue.profiles.slice(0, 24)))
@@ -407,8 +419,8 @@ it('selects current-main CoreML profiles with distinct preprocessing while prese
 
 it('selects exact current CPU and CoreML profiles while preserving all historical bindings', () => {
   const catalogue = parseDesktopModelCatalogue(raw());
-  expect(catalogue.epoch).toBe(16);
-  expect(catalogue.profiles).toHaveLength(162);
+  expect(catalogue.epoch).toBe(17);
+  expect(catalogue.profiles).toHaveLength(171);
   expect(
     createHash('sha256')
       .update(canonicalJson(catalogue.profiles.slice(0, 32)))
@@ -444,8 +456,8 @@ it('selects exact current CPU and CoreML profiles while preserving all historica
 
 it('epoch 12 adds CUDA and OpenVINO twins of the current CPU profiles and keeps every prior binding', () => {
   const catalogue = parseDesktopModelCatalogue(raw());
-  expect(catalogue.epoch).toBe(16);
-  expect(catalogue.profiles).toHaveLength(162);
+  expect(catalogue.epoch).toBe(17);
+  expect(catalogue.profiles).toHaveLength(171);
   expect(
     createHash('sha256')
       .update(canonicalJson(catalogue.profiles.slice(0, 42)))
@@ -470,8 +482,8 @@ it('epoch 12 adds CUDA and OpenVINO twins of the current CPU profiles and keeps 
 
 it('epoch 13 qualifies every selectable model the desktop runtimes can run and keeps every prior binding', () => {
   const catalogue = parseDesktopModelCatalogue(raw());
-  expect(catalogue.epoch).toBe(16);
-  expect(catalogue.profiles).toHaveLength(162);
+  expect(catalogue.epoch).toBe(17);
+  expect(catalogue.profiles).toHaveLength(171);
   expect(
     createHash('sha256')
       .update(canonicalJson(catalogue.profiles.slice(0, 42)))
@@ -530,8 +542,8 @@ it('epoch 13 qualifies every selectable model the desktop runtimes can run and k
 
 it('epoch 14 appended a twin of every f2c451a6 profile; epoch 16 names the runtime source that works on every provider', () => {
   const catalogue = parseDesktopModelCatalogue(raw());
-  expect(catalogue.epoch).toBe(16);
-  expect(catalogue.profiles).toHaveLength(162);
+  expect(catalogue.epoch).toBe(17);
+  expect(catalogue.profiles).toHaveLength(171);
   expect(
     createHash('sha256')
       .update(canonicalJson(catalogue.profiles.slice(0, 102)))
@@ -540,7 +552,7 @@ it('epoch 14 appended a twin of every f2c451a6 profile; epoch 16 names the runti
   const previous = 'f2c451a6bf71ca3f3aec986e07f0852937268e2f';
   const source = 'b3905b4aebd22e48a1a3843c2831efcef543336e';
   const originals = catalogue.profiles.slice(0, 102).filter((p) => p.runtimeSourceRevision === previous);
-  const twins = catalogue.profiles.slice(102);
+  const twins = catalogue.profiles.slice(102, 162);
   expect(originals).toHaveLength(60);
   for (const [index, twin] of twins.entries()) {
     // the same model key, files, fixture, preprocessing and reference output: only the runtime source differs
@@ -561,4 +573,55 @@ it('epoch 14 appended a twin of every f2c451a6 profile; epoch 16 names the runti
   for (const workload of ['ocr', 'face'] as const)
     for (const key of Object.values(desktopImageModelKeys[workload]))
       expect(twins.some((p) => p.modelKey === key && p.spec.provider === 'CPUExecutionProvider')).toBe(true);
+});
+
+it("epoch 17 adds the server's own AI build as a smart-search revision and changes nothing before it", () => {
+  const raw = JSON.parse(readFileSync(join(process.cwd(), 'resources/desktop/model-catalogue.json'), 'utf8'));
+  const catalogue = parseDesktopModelCatalogue(raw);
+  const added = catalogue.profiles.slice(162);
+  const revision = '95593fc6887c74a705c85b0ab8c9685c79afb0e4';
+  // nine processor profiles: the image encoder and both text encoders of each of the three search models
+  expect(added).toHaveLength(9);
+  expect(new Set(added.map((profile) => profile.runtimeSourceRevision))).toEqual(new Set([revision]));
+  expect(new Set(added.map((profile) => profile.spec.provider))).toEqual(new Set(['CPUExecutionProvider']));
+  expect(new Set(added.map((profile) => profile.workload))).toEqual(new Set(['clip']));
+  expect(new Set(added.map((profile) => profile.spec.preprocessingSha256)).size).toBe(1);
+  expect(
+    Object.fromEntries(
+      [...new Set(added.map((profile) => profile.modelName))].map((name) => [
+        name,
+        added.filter((profile) => profile.modelName === name).map((profile) => profile.spec.fixtureKind),
+      ]),
+    ),
+  ).toEqual({
+    'ViT-B-16-SigLIP-384__webli': ['text', 'text', 'image'],
+    'ViT-B-32__openai': ['text', 'text', 'image'],
+    'ViT-SO400M-16-SigLIP2-384__webli': ['text', 'text', 'image'],
+  });
+  for (const profile of added) {
+    // a twin of the newest processor profile of the same request: the same files, fixture and reference
+    // output, under this build's preprocessing identity and so a key of its own
+    const original = catalogue.profiles
+      .slice(0, 162)
+      .findLast(
+        (item) =>
+          item.spec.provider === 'CPUExecutionProvider' &&
+          JSON.stringify(item.spec.entries) === JSON.stringify(profile.spec.entries),
+      )!;
+    expect(profile.modelKey).not.toBe(original.modelKey);
+    expect(profile.spec.preprocessingSha256).not.toBe(original.spec.preprocessingSha256);
+    expect({ ...profile, modelKey: 0, runtimeSourceRevision: 0, spec: 0 }).toEqual({
+      ...original,
+      modelKey: 0,
+      runtimeSourceRevision: 0,
+      spec: 0,
+    });
+    expect({ ...profile.spec, modelKey: 0, preprocessingSha256: 0 }).toEqual({
+      ...original.spec,
+      modelKey: 0,
+      preprocessingSha256: 0,
+    });
+    // every earlier revision of that encoder is still there, and is the same embedding space
+    expect(equivalentDesktopModelKeys(profile.modelKey)).toContain(original.modelKey);
+  }
 });

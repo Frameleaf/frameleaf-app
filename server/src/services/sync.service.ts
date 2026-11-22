@@ -114,7 +114,6 @@ export const SYNC_TYPES_ORDER = [
   SyncRequestType.AlbumAssetAccessV1,
   SyncRequestType.PartnerAssetAccessV1,
   SyncRequestType.PinnedCollectionEventsV1,
-  SyncRequestType.AssetTrashStatesV1,
   SyncRequestType.DuplicateGroupsV1,
   SyncRequestType.SharedSpacesV1,
   SyncRequestType.SharedSpaceMembersV1,
@@ -122,8 +121,6 @@ export const SYNC_TYPES_ORDER = [
   SyncRequestType.SharedSpacePeopleV1,
   SyncRequestType.PetsV1,
   SyncRequestType.PetObservationsV1,
-  SyncRequestType.TagsV1,
-  SyncRequestType.AssetTagsV1,
   SyncRequestType.AuthUsersV1,
   SyncRequestType.AuthUsersV2,
   SyncRequestType.UsersV1,
@@ -157,6 +154,12 @@ export const SYNC_TYPES_ORDER = [
   SyncRequestType.PinnedCollectionsV1,
   SyncRequestType.AssetMetadataV1,
   SyncRequestType.AssetEditsV1,
+  // Trash states and tags are sent one transaction per item (about 300 a second), and a library can carry a large
+  // trash or a million tags: last, so the photos and their details arrive first. Asset lines carry deletedAt, so a
+  // trashed photo never shows in the meantime.
+  SyncRequestType.AssetTrashStatesV1,
+  SyncRequestType.TagsV1,
+  SyncRequestType.AssetTagsV1,
 ];
 
 const throwSessionRequired = () => {

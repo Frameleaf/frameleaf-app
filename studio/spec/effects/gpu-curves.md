@@ -5,7 +5,7 @@
 | Category | color |
 | Temporal | no |
 | Pass | single fragment pass + data texture 256×1 (8-bit RGBA, CPU-baked) |
-| HDR | refused |
+| HDR | linear-display-bt709-v1 (grade on the encoding) [C4] |
 
 ## What it does
 Per-channel tone curves. A master curve is applied first, then a red, green or blue curve. Each curve is a monotone cubic through control points. The combined transfer per channel is baked into a 256-entry table that the shader looks up.
@@ -101,7 +101,7 @@ Passed through unchanged. The table's alpha is ignored.
 
 ## SDR and HDR
 - SDR: inputs are clamped to [0, 1] for the lookup. The output is in [0, 1] by construction. There is no further clamp.
-- HDR: refused [C4]. The shader contains an extended-range "domain offset" term (add back c − clamp01(c)), but it is unreachable because the engine refuses this effect in HDR.
+- HDR [C4], GRADE: for each channel v of the linear input, E = SRGB(v) (hdr.md H5, odd). The channel's table is looked up at clamp01(E) exactly as in SDR, giving T; the encoded excess E − clamp01(E) is added back; the output channel is SRGB⁻¹(T + E − clamp01(E)), limited to ±65504. Alpha is unchanged. So the table acts on [0, 1] of the encoding (up to reference white), light above reference white keeps its distance past the table's end in the encoding, and a negative component keeps its distance below the start. An SDR source in an HDR project (decoded with SRGB⁻¹ on ingest, H11) is graded exactly as in an SDR project, then stays in linear light.
 
 ## Notes
 - Implementation-defined: the table is 8-bit, so every curve is quantised to steps of 1/255 before interpolation.

@@ -110,7 +110,7 @@ describe(SearchService.name, () => {
         await ctx.newExif({ assetId: created.id, ...exif });
         return created;
       };
-      await at(user.id, inPark, { localDateTime: new Date('2024-06-03T10:00:00Z') });
+      const earlier = await at(user.id, inPark, { localDateTime: new Date('2024-06-03T10:00:00Z') });
       const latest = await at(user.id, inPark, { localDateTime: new Date('2024-06-05T10:00:00Z') });
       const paris = await at(user.id, atTower, { localDateTime: new Date('2023-01-01T10:00:00Z') });
       await at(user.id, inPark, { deletedAt: new Date() });
@@ -139,7 +139,8 @@ describe(SearchService.name, () => {
           assetCount: 2,
           firstTakenAt: '2024-06-03T10:00:00.000Z',
           lastTakenAt: '2024-06-05T10:00:00.000Z',
-          coverAssetId: latest.id,
+          // the resort already shows the latest photo, so the park, which shares it, takes its next best
+          coverAssetId: earlier.id,
           city: 'Anaheim',
           state: 'California',
           country: 'USA',
@@ -628,6 +629,65 @@ describe(SearchService.name, () => {
     });
   });
 
+  describe('personCategoryIds filter (FL-874)', () => {
+    it("matches items showing someone in the viewer's own categories, with any, all, none and or branches", async () => {
+      const { sut, ctx } = setup();
+      const people = ctx.get(PersonRepository);
+      const { user } = await ctx.newUser();
+      const { user: other } = await ctx.newUser();
+      const { person: mum } = await ctx.newPerson({ ownerId: user.id, name: 'Mum' });
+      const { person: boss } = await ctx.newPerson({ ownerId: user.id, name: 'Boss' });
+      const { person: stranger } = await ctx.newPerson({ ownerId: user.id, name: '' });
+
+      const { asset: withMum } = await ctx.newAsset({ ownerId: user.id });
+      const { asset: withBoss } = await ctx.newAsset({ ownerId: user.id });
+      const { asset: withBoth } = await ctx.newAsset({ ownerId: user.id });
+      const { asset: withStranger } = await ctx.newAsset({ ownerId: user.id, isFavorite: true });
+      const { asset: nobody } = await ctx.newAsset({ ownerId: user.id });
+      for (const [assetId, personGroupId] of [
+        [withMum.id, mum.personGroupId],
+        [withBoss.id, boss.personGroupId],
+        [withBoth.id, mum.personGroupId],
+        [withBoth.id, boss.personGroupId],
+        [withStranger.id, stranger.personGroupId],
+      ]) {
+        await ctx.newAssetFace({ assetId, personGroupId });
+      }
+
+      const family = await people.createCategory({ ownerId: user.id, name: 'Family', color: null });
+      const work = await people.createCategory({ ownerId: user.id, name: 'Work', color: null });
+      await people.setPersonCategories({ ownerId: user.id, personGroupId: mum.personGroupId }, [family.id]);
+      await people.setPersonCategories({ ownerId: user.id, personGroupId: boss.personGroupId }, [work.id]);
+      // another account's category, even one with the same person in it, is never the viewer's
+      const { person: othersMum } = await ctx.newPerson({ ownerId: other.id, personGroupId: mum.personGroupId });
+      const othersFamily = await people.createCategory({ ownerId: other.id, name: 'Family', color: null });
+      await people.setPersonCategories({ ownerId: other.id, personGroupId: othersMum.personGroupId }, [
+        othersFamily.id,
+      ]);
+
+      const auth = factory.auth({ user: { id: user.id } });
+      const ids = async (filter: object) => {
+        const response = await sut.searchMetadata(auth, { filter, size: 100 });
+        return response.assets.items.map(({ id }) => id).toSorted();
+      };
+
+      await expect(ids({ personCategoryIds: { any: [family.id] } })).resolves.toEqual(
+        [withMum.id, withBoth.id].toSorted(),
+      );
+      await expect(ids({ personCategoryIds: { any: [family.id, work.id] } })).resolves.toEqual(
+        [withMum.id, withBoss.id, withBoth.id].toSorted(),
+      );
+      await expect(ids({ personCategoryIds: { all: [family.id, work.id] } })).resolves.toEqual([withBoth.id]);
+      await expect(ids({ personCategoryIds: { none: [family.id] } })).resolves.toEqual(
+        [withBoss.id, withStranger.id, nobody.id].toSorted(),
+      );
+      await expect(
+        ids({ or: [{ personCategoryIds: { any: [work.id] } }, { isFavorite: { eq: true } }] }),
+      ).resolves.toEqual([withBoss.id, withBoth.id, withStranger.id].toSorted());
+      await expect(ids({ personCategoryIds: { any: [othersFamily.id] } })).resolves.toEqual([]);
+    });
+  });
+
   describe('albumCount filter (FL-976)', () => {
     it('counts only the non-deleted albums the viewer owns or is a member of, in every branch', async () => {
       const { sut, ctx } = setup();
@@ -1029,6 +1089,52 @@ describe(SearchService.name, () => {
       expect(histogram.total).toBe(1);
       const byUtc = await sut.searchMetadata(auth, { filter: { takenAt: localDateTime } });
       expect(byUtc.assets.items.map(({ id }) => id).sort()).toEqual([lateJuly.id, august.id].sort());
+    });
+
+    it('FL-936: a photo dated to a year or a decade is in every range that overlaps it, and in its decade', async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const at = async (iso: string, dateAccuracy?: 'year' | 'decade') => {
+        const { asset } = await ctx.newAsset({
+          ownerId: user.id,
+          fileCreatedAt: new Date(iso),
+          localDateTime: new Date(iso),
+          ...(dateAccuracy && { dateAccuracy }),
+        });
+        await ctx.newExif({ assetId: asset.id, make: 'Epson' });
+        return asset.id;
+      };
+      const seventies = await at('1970-01-01T00:00:00.000Z', 'decade');
+      const in1975 = await at('1975-01-01T00:00:00.000Z', 'year');
+      const in1969 = await at('1969-01-01T00:00:00.000Z', 'year');
+      const july1976 = await at('1976-07-04T12:00:00.000Z');
+      const march1982 = await at('1982-03-01T12:00:00.000Z');
+      const auth = factory.auth({ user });
+      const found = async (dto: Parameters<typeof sut.searchMetadata>[1]) =>
+        (await sut.searchMetadata(auth, dto)).assets.items.map(({ id }) => id).sort();
+      const day = (date: string) => new Date(`${date}T00:00:00.000Z`);
+
+      // the summer of 1975 is inside the year 1975 and the 1970s; no photo is dated in it
+      const summer = { gte: day('1975-06-01'), lt: day('1975-09-01') };
+      expect(await found({ filter: { takenAt: summer } })).toEqual([seventies, in1975].sort());
+      expect(await found({ filter: { localDateTime: summer } })).toEqual([seventies, in1975].sort());
+      expect(await found({ takenAfter: summer.gte, takenBefore: summer.lt })).toEqual([seventies, in1975].sort());
+      // 1976: the decade and the photo of that July, not the year before
+      expect(await found({ filter: { takenAt: { gte: day('1976-01-01'), lt: day('1977-01-01') } } })).toEqual(
+        [seventies, july1976].sort(),
+      );
+      // a year or a decade ends when the next one starts
+      expect(await found({ filter: { takenAt: { gte: day('1980-01-01') } } })).toEqual([march1982]);
+      expect(await found({ filter: { takenAt: { gt: new Date('1979-12-31T23:59:59.999Z') } } })).toEqual([march1982]);
+      expect(await found({ filter: { takenAt: { gte: new Date('1979-12-31T23:59:59.000Z') } } })).toEqual(
+        [seventies, march1982].sort(),
+      );
+      // and does not begin before its first day
+      expect(await found({ filter: { takenAt: { lt: day('1970-01-01') } } })).toEqual([in1969]);
+
+      expect(await found({ filter: { takenDecade: { eq: 1970 } } })).toEqual([seventies, in1975, july1976].sort());
+      expect(await found({ filter: { takenDecade: { eq: 1960 } } })).toEqual([in1969]);
+      expect(await found({ filter: { takenDecade: { eq: 1990 } } })).toEqual([]);
     });
   });
 

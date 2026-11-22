@@ -17,6 +17,21 @@ const {
 } = require('../../.github/frameleaf-release.cjs');
 
 const digest = (n) => `sha256:${String(n).repeat(64)}`;
+test('TrueNAS exposes shared memory and requires non-root IDs without a log-level field', () => {
+  const { load } = createRequire(path.resolve(__dirname, '../../server/package.json'))('js-yaml');
+  const questions = load(fs.readFileSync(path.join(__dirname, 'truenas/questions.yaml'), 'utf8')).questions;
+  const attrs = (name) => questions.find((q) => q.variable === name).schema.attrs;
+  const frameleaf = attrs('frameleaf');
+  assert(!frameleaf.some((q) => q.variable === 'log_level'));
+  const shm = frameleaf.find((q) => q.variable === 'shm_size_mb');
+  assert.equal(shm.schema.default, 2048);
+  assert.equal(shm.schema.min, 64);
+  assert(!('max' in shm.schema), 'Large videos must not be capped at 2 GiB');
+  for (const id of attrs('run_as')) {
+    assert.equal(id.schema.min, 1);
+    assert.equal(id.schema.default, 568);
+  }
+});
 test('Docker and NAS inference workers receive no server environment or private mounts', () => {
   const { load } = createRequire(path.resolve(__dirname, '../../server/package.json'))('js-yaml');
   for (const name of ['docker-compose.yml', 'docker-compose.prod.yml', 'docker-compose.rootless.yml']) {
@@ -129,7 +144,7 @@ test('authenticated TrueNAS and Unraid packaging refuses untrusted releases and 
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'frameleaf-nas-'));
   const tag = 'frameleaf-v1.0.0';
   const sha = 'a'.repeat(40);
-  const database = 'ghcr.io/frameleaf/frameleaf-postgres:19rc1-pgvector0.8.7';
+  const database = 'ghcr.io/frameleaf/frameleaf-postgres:19.0-pgvector0.8.7';
   const bundle = path.join(root, 'bundle');
   const output = path.join(root, 'output');
   const sourceRoot = path.join(root, 'source');
@@ -262,7 +277,7 @@ test('authenticated TrueNAS and Unraid packaging refuses untrusted releases and 
     assert(unraidServer.includes('<ExtraParams>--stop-timeout=10 --shm-size=2g</ExtraParams>'));
     const truenasCompose = read('truenas/ix-dev/community/frameleaf/templates/docker-compose.yaml');
     assert(truenasCompose.includes('server_container.set_grace_period(10)'));
-    assert(truenasCompose.includes('server_container.set_shm_size_mb(2048)'));
+    assert(truenasCompose.includes('server_container.set_shm_size_mb(values.frameleaf.shm_size_mb)'));
     // FL-300: Frameleaf serves no metrics, so the app neither asks for metrics ports nor sets their variables
     for (const name of ['questions.yaml', 'templates/docker-compose.yaml', 'templates/test_values/basic-values.yaml']) {
       assert(!/metrics/i.test(read(`truenas/ix-dev/community/frameleaf/${name}`)), `${name} still mentions metrics`);
@@ -283,7 +298,7 @@ test('authenticated TrueNAS and Unraid packaging refuses untrusted releases and 
     }
     const values = read('truenas/ix-dev/community/frameleaf/ix_values.yaml');
     assert(values.includes('repository: "ghcr.io/frameleaf/frameleaf-postgres"'));
-    assert(values.includes(`19rc1-pgvector0.8.7@${digest(8)}`));
+    assert(values.includes(`19.0-pgvector0.8.7@${digest(8)}`));
     assert(!values.includes('immich-app'));
     if (process.env.TRUENAS_LIBRARY) {
       const rendered = execFileSync('python3', [

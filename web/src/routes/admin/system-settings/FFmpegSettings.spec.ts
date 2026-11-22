@@ -3,6 +3,8 @@ import {
   CQMode,
   HardwareBackend,
   HlsVideoResolution,
+  PlaybackSelfTestCase,
+  PlaybackSelfTestStatus,
   QueueCommand,
   QueueName,
   ToneMapping,
@@ -134,6 +136,28 @@ describe('Video playback copies (FL-366)', () => {
 
     const status = within(screen.getByRole('region', { name: 'Playback copy status' }));
     expect(await status.findByText(/390 of your 3,350 videos have one, taking 52 GB/)).toBeInTheDocument();
+  });
+
+  it('says under Speed whether the graphics card plays HDR correctly, only while the card is on (FL-977)', async () => {
+    sdkMock.getPlaybackSelfTest.mockReset().mockResolvedValue({
+      status: PlaybackSelfTestStatus.Done,
+      startedAt: '2026-10-02T03:00:00.000Z',
+      finishedAt: '2026-10-02T03:00:20.000Z',
+      accel: TranscodeHWAccel.Qsv,
+      cases: [],
+      softwareFallback: [PlaybackSelfTestCase.Hdr10Pq],
+    });
+    draft.store = newStore({ accel: TranscodeHWAccel.Qsv });
+    const { unmount } = render(FFmpegSettings);
+
+    const speed = within(screen.getByRole('region', { name: 'Speed' }));
+    expect(await speed.findByText('Using software for HDR')).toBeInTheDocument();
+    expect(speed.getByText('HDR videos')).toBeInTheDocument();
+    unmount();
+
+    draft.store = newStore();
+    render(FFmpegSettings);
+    expect(screen.queryByText('HDR videos')).not.toBeInTheDocument();
   });
 
   describe('FL-537', () => {

@@ -339,7 +339,7 @@ export class TimelineMonth {
     }
     const { month, monthBottomViewportRatio, viewportTopRatioInMonth } = timelineManager.viewportTopMonthIntersection;
     const currentIndex = month ? timelineManager.months.indexOf(month) : -1;
-    if (!month || currentIndex <= 0 || index > currentIndex) {
+    if (!month || currentIndex < 0 || index > currentIndex) {
       return;
     }
     if (index < currentIndex || monthBottomViewportRatio < 1) {

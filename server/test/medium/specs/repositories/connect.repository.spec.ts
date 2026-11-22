@@ -43,6 +43,7 @@ const setup = async () => {
   const client = await oauth.createClient(
     { name: 'Test', redirectUris: ['https://app.example/callback'], logoUri: null },
     500,
+    7,
   );
   const grant = await oauth.createGrant({
     userId: user.id,

@@ -1,0 +1,32 @@
+{
+  "estimate": "est1.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+  "workload": "interpolation",
+  "modelSku": "ms_HQ70Q4XQ",
+  "modelRev": "mr_2HN8C4QW6T0P",
+  "clientRef": "smooth-77c1",
+  "deadlineSeconds": 7200,
+  "inputs": [
+    {
+      "inputId": "v1",
+      "contentType": "video/mp4",
+      "bytes": 245000000,
+      "sha256": "7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a"
+    }
+  ],
+  "request": {
+    "factor": 4,
+    "targetFps": 60,
+    "options": {
+      "codec": "h264"
+    },
+    "items": [
+      {
+        "inputId": "v1",
+        "durationSec": 95,
+        "fps": 24,
+        "width": 1920,
+        "height": 1080
+      }
+    ]
+  }
+}

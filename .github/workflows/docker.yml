@@ -39,11 +39,12 @@ jobs:
       - name: Prove unchanged verified image inputs
         id: filter
         env:
-          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_TOKEN: ${{ secrets.GH_PUBLISH_TOKEN || github.token }}
+          FORGEJO_TOKEN: ${{ github.token }}
         run: node .github/frameleaf-release.cjs plan-reuse
 
   integration:
-    if: github.repository == 'Frameleaf/frameleaf-app' && github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    if: github.repository == 'Frameleaf/frameleaf-app' && github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call')
     uses: ./.github/workflows/frameleaf-quality.yml
     permissions:
       contents: read
@@ -59,6 +60,10 @@ jobs:
     needs: [changes]
     if: needs.changes.outputs.server == 'true'
     uses: ./.github/workflows/local-multi-runner-build.yml
+    # FL-1683: Forgejo does not hand org secrets to a called workflow; pass the registry tokens it reads.
+    secrets:
+      GH_PUBLISH_TOKEN: ${{ secrets.GH_PUBLISH_TOKEN }}
+      GH_PACKAGES_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
     permissions:
       contents: read
       actions: read
@@ -78,6 +83,10 @@ jobs:
     needs: [changes]
     if: needs.changes.outputs['machine-learning'] == 'true'
     uses: ./.github/workflows/local-multi-runner-build.yml
+    # FL-1683: Forgejo does not hand org secrets to a called workflow; pass the registry tokens it reads.
+    secrets:
+      GH_PUBLISH_TOKEN: ${{ secrets.GH_PUBLISH_TOKEN }}
+      GH_PACKAGES_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
     permissions:
       contents: read
       actions: read
@@ -99,6 +108,10 @@ jobs:
     needs: [changes]
     if: needs.changes.outputs.assistant-variant == 'openvino'
     uses: ./.github/workflows/local-multi-runner-build.yml
+    # FL-1683: Forgejo does not hand org secrets to a called workflow; pass the registry tokens it reads.
+    secrets:
+      GH_PUBLISH_TOKEN: ${{ secrets.GH_PUBLISH_TOKEN }}
+      GH_PACKAGES_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
     permissions:
       contents: read
       actions: read
@@ -133,7 +146,7 @@ jobs:
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+      - uses: https://code.forgejo.org/forgejo/download-artifact@769f970437aa3291b13f35dc23fc87967d7fb19f # forgejo/download-artifact v7 (FL-1683)
         with:
           name: frameleaf-machine-learning${{ needs.changes.outputs.assistant-variant == 'openvino' && '-openvino' || '' }}-archive-amd64
           path: ${{ runner.temp }}/ml
@@ -154,7 +167,7 @@ jobs:
         id: qualify
         run: node .github/assistant-deploy-gate.mjs qualify
       - name: Retain verified Assistant qualification evidence
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        uses: https://code.forgejo.org/forgejo/upload-artifact@cb8afe72b42edc798abfb8fcb556cf660d894245 # forgejo/upload-artifact v5 (FL-1683)
         with:
           name: assistant-qualification-${{ github.sha }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/assistant-qualification-evidence.json
@@ -191,12 +204,12 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+      - uses: https://code.forgejo.org/forgejo/download-artifact@769f970437aa3291b13f35dc23fc87967d7fb19f # forgejo/download-artifact v7 (FL-1683)
         if: needs.changes.outputs.server == 'true'
         with:
           name: frameleaf-server-archive-${{ matrix.architecture }}
           path: ${{ runner.temp }}/server
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+      - uses: https://code.forgejo.org/forgejo/download-artifact@769f970437aa3291b13f35dc23fc87967d7fb19f # forgejo/download-artifact v7 (FL-1683)
         if: needs.changes.outputs['machine-learning'] == 'true'
         with:
           name: frameleaf-machine-learning-archive-${{ matrix.architecture }}
@@ -204,15 +217,16 @@ jobs:
       - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ github.token }}
+          username: ${{ vars.GHCR_USERNAME || github.actor }}
+          password: ${{ secrets.GH_PUBLISH_TOKEN || github.token }}
       - name: Resolve the images under test
         env:
           SERVER_BUILT: ${{ needs.changes.outputs.server }}
           ML_BUILT: ${{ needs.changes.outputs['machine-learning'] }}
           SERVER_RELEASE: ${{ needs.changes.outputs['server-release'] }}
           ML_RELEASE: ${{ needs.changes.outputs['machine-learning-release'] }}
-          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_TOKEN: ${{ secrets.GH_PUBLISH_TOKEN || github.token }}
+          FORGEJO_TOKEN: ${{ github.token }}
         run: node .github/frameleaf-release.cjs deploy-test-images
       - name: Install ORAS (checksum-pinned)
         run: .github/install-oras.sh
@@ -227,6 +241,10 @@ jobs:
     # !cancelled(): the other image's build may be skipped, which would otherwise skip this job too.
     if: ${{ !cancelled() && needs.changes.outputs.server == 'true' && needs.server.result == 'success' && needs['deploy-test'].result == 'success' }}
     uses: ./.github/workflows/local-multi-runner-build.yml
+    # FL-1683: Forgejo does not hand org secrets to a called workflow; pass the registry tokens it reads.
+    secrets:
+      GH_PUBLISH_TOKEN: ${{ secrets.GH_PUBLISH_TOKEN }}
+      GH_PACKAGES_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
     permissions:
       contents: read
       actions: read
@@ -246,6 +264,10 @@ jobs:
     needs: [changes, deploy-test, machine-learning, assistant-qualification]
     if: ${{ !cancelled() && needs.changes.outputs['machine-learning'] == 'true' && needs['machine-learning'].result == 'success' && needs['deploy-test'].result == 'success' }}
     uses: ./.github/workflows/local-multi-runner-build.yml
+    # FL-1683: Forgejo does not hand org secrets to a called workflow; pass the registry tokens it reads.
+    secrets:
+      GH_PUBLISH_TOKEN: ${{ secrets.GH_PUBLISH_TOKEN }}
+      GH_PACKAGES_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
     permissions:
       contents: read
       actions: read
@@ -273,7 +295,8 @@ jobs:
         include:
           - device: cuda
             suffix: '-cuda'
-            platforms: linux/amd64
+            # FL-997: arm64 for Grace and other arm64 CUDA servers (not Jetson, which needs L4T).
+            platforms: linux/amd64,linux/arm64
             target: prod
           - device: armnn
             suffix: '-armnn'
@@ -288,6 +311,10 @@ jobs:
             platforms: linux/amd64
             target: prod
     uses: ./.github/workflows/local-multi-runner-build.yml
+    # FL-1683: Forgejo does not hand org secrets to a called workflow; pass the registry tokens it reads.
+    secrets:
+      GH_PUBLISH_TOKEN: ${{ secrets.GH_PUBLISH_TOKEN }}
+      GH_PACKAGES_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
     permissions:
       contents: read
       actions: read
@@ -311,6 +338,10 @@ jobs:
       !cancelled() && needs['deploy-test'].result == 'success' &&
       (needs.changes.outputs['machine-learning'] == 'true' || needs.changes.outputs.assistant-variant == 'openvino')
     uses: ./.github/workflows/local-multi-runner-build.yml
+    # FL-1683: Forgejo does not hand org secrets to a called workflow; pass the registry tokens it reads.
+    secrets:
+      GH_PUBLISH_TOKEN: ${{ secrets.GH_PUBLISH_TOKEN }}
+      GH_PACKAGES_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
     permissions:
       contents: read
       actions: read
@@ -346,14 +377,15 @@ jobs:
       - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ github.token }}
+          username: ${{ vars.GHCR_USERNAME || github.actor }}
+          password: ${{ secrets.GH_PUBLISH_TOKEN || github.token }}
       - name: Publish verified unchanged candidate
         env:
           IMAGE: frameleaf-server
           SUFFIX: ''
           REUSE_RELEASE: ${{ needs.changes.outputs['server-release'] }}
-          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_TOKEN: ${{ secrets.GH_PUBLISH_TOKEN || github.token }}
+          FORGEJO_TOKEN: ${{ github.token }}
         run: node .github/frameleaf-release.cjs reuse-candidate
 
   retag-machine-learning:
@@ -379,14 +411,15 @@ jobs:
       - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ github.token }}
+          username: ${{ vars.GHCR_USERNAME || github.actor }}
+          password: ${{ secrets.GH_PUBLISH_TOKEN || github.token }}
       - name: Publish verified unchanged candidate
         env:
           IMAGE: frameleaf-machine-learning
           SUFFIX: ${{ matrix.suffix }}
           REUSE_RELEASE: ${{ needs.changes.outputs['machine-learning-release'] }}
-          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_TOKEN: ${{ secrets.GH_PUBLISH_TOKEN || github.token }}
+          FORGEJO_TOKEN: ${{ github.token }}
         run: node .github/frameleaf-release.cjs reuse-candidate
 
   success-check-server:

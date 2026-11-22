@@ -1,497 +1,199 @@
-import { createHash } from 'node:crypto';
-import { gunzipSync, gzipSync } from 'node:zlib';
-import { Mocked } from 'vitest';
-import { CloudBackupStoreError, CloudBackupStoreRepository } from 'src/repositories/cloud-backup-store.repository.js';
-import { CloudBackupBucket, CloudBackupMaintenance, emptyVerifyResult } from 'src/services/cloud-backup-maintenance.js';
-import { inVerifySlice } from 'src/utils/cloud-backup-retention.js';
-import { executionDelay } from 'src/utils/execution-signal.js';
-import { ManagedBackupAuthorizationError } from 'src/utils/managed-backup-session.js';
-import { OperationDeadlineError, withOperationExecution } from 'src/utils/operation-execution.js';
+import { type Repository, type Source, backup, memoryStore } from '@frameleaf/backup-core';
+import { randomBytes } from 'node:crypto';
+import type { CloudBackupBucket } from 'src/services/cloud-backup-maintenance.js';
+import { CloudBackupMaintenance, emptyVerifyResult } from 'src/services/cloud-backup-maintenance.js';
+import { CLOUD_BACKUP_CATALOG_VERSION } from 'src/utils/cloud-backup-catalog.js';
+import { openVault, snapshotObjectKey } from 'src/utils/cloud-backup-vault.js';
 
-const hex = (text: string) => createHash('sha256').update(text).digest('hex');
+const VAULT = '0195a1b2-0000-7000-8000-0000000000ff';
+const DAY = 86_400_000;
 
-const bucket: CloudBackupBucket = {
-  bucketRef: 'https://s3.test/family-backup',
-  connection: {
-    endpoint: 'https://s3.test',
-    region: 'us-east-1',
-    bucket: 'family-backup',
-    accessKeyId: 'a',
-    secretAccessKey: 'b',
-  },
-  bucketKey: Buffer.alloc(32, 7),
-};
-
-/** A manifest naming these hashes (and a dump), made at `iso` (`20260926T030000Z`). */
-const manifest = (hashes: string[], dump: string | null = null) =>
-  gzipSync(
+/** A tree with a catalog and one file: enough for the engine, and for adopting a backup from its catalog. */
+const source = (body: Buffer): Source => {
+  const catalog = Buffer.from(
     JSON.stringify({
       format: 'frameleaf-backup-manifest',
-      version: 1,
-      instanceId: 'instance-1',
-      createdAt: '2026-09-26T03:00:00.000Z',
-      database: dump ? { key: dump, sha256: hex(dump), size: 1 } : null,
-      assets: Object.fromEntries(
-        hashes.map((sha256, index) => [
-          `asset-${index}`,
-          {
-            owner: 'owner-1',
-            files: [{ role: 'original', path: `/data/${index}.jpg`, sha256, size: 10, mtime: null }],
-          },
-        ]),
-      ),
+      version: CLOUD_BACKUP_CATALOG_VERSION,
+      instanceId: VAULT,
+      createdAt: '2026-11-17T03:00:00.000Z',
+      database: null,
+      assets: {
+        'asset-1': {
+          owner: 'owner-1',
+          files: [
+            {
+              role: 'original',
+              path: '/x',
+              objectKey: 'files/x',
+              sha256: 'a'.repeat(64),
+              size: body.length,
+              mtime: null,
+            },
+          ],
+        },
+      },
       profiles: {},
+      albums: {},
+      people: {},
     }),
   );
-
-/** One run a night for `nights` nights before 2026-09-26, each naming its own object and the shared one. */
-const nightlyBucket = (nights: number) => {
-  const objects = new Map<string, Buffer>();
-  const shared = hex('shared');
-  objects.set(`o/${shared}`, Buffer.from('shared'));
-  for (let night = 0; night < nights; night++) {
-    const day = String(26 - night).padStart(2, '0');
-    const own = hex(`night-${night}`);
-    objects.set(`o/${own}`, Buffer.from(`night-${night}`));
-    objects.set(`m/202609${day}T030000Z.json.gz`, manifest([own, shared], `db/dump-202609${day}.sql.gz`));
-    objects.set(`db/dump-202609${day}.sql.gz`, Buffer.from('dump'));
-  }
-  return objects;
+  const files: Record<string, Buffer> = { 'catalog/catalog.json': catalog, 'files/x': body };
+  return {
+    // eslint-disable-next-line @typescript-eslint/require-await
+    list: async (path) => {
+      if (path.length === 0) {
+        return ['catalog', 'files'].map((name) => ({
+          name,
+          type: 'dir',
+          mode: 0o755,
+          uid: 0,
+          gid: 0,
+          mtime: 0,
+          size: 0,
+        }));
+      }
+      return Object.entries(files)
+        .filter(([key]) => key.startsWith(`${path[0]}/`))
+        .map(([key, value]) => ({
+          name: key.split('/', 2)[1],
+          type: 'file' as const,
+          mode: 0o644,
+          uid: 0,
+          gid: 0,
+          mtime: 0,
+          size: value.length,
+        }));
+    },
+    // eslint-disable-next-line @typescript-eslint/require-await
+    async *read(path) {
+      yield files[path.join('/')];
+    },
+  };
 };
 
 describe(CloudBackupMaintenance.name, () => {
-  let objects: Map<string, Buffer>;
-  let store: Mocked<Pick<CloudBackupStoreRepository, 'listAll' | 'get' | 'delete' | 'head' | 'hashObject'>>;
-  let index: Record<string, ReturnType<typeof vi.fn>>;
+  let repository: Repository;
+  let bucket: CloudBackupBucket;
+  let index: {
+    getManifestKeys: ReturnType<typeof vi.fn>;
+    adoptManifests: ReturnType<typeof vi.fn>;
+    markManifests: ReturnType<typeof vi.fn>;
+  };
   let sut: CloudBackupMaintenance;
-  const carryOn = () => Promise.resolve(true);
 
-  it('refuses retention when the locally anchored current head is hidden by a listing or delete marker', async () => {
-    const trusted = {
-      ...bucket,
-      connection: {
-        ...bucket.connection,
-        trustedManifestHead: 'm/v1/f0000000-0000-4000-8000-000000000001/1/20261011T000001Z.json.gz',
+  /** Backups made `ago` days back, oldest first; each holds a different file, so each holds its own data. */
+  const backups = async (...ago: number[]) => {
+    const keys: string[] = [];
+    for (const [at, days] of ago.entries()) {
+      const made = await backup(repository, source(randomBytes(4000)), {
+        sequence: at + 1,
+        time: new Date(Date.now() - days * DAY),
+      });
+      keys.push(made.key);
+    }
+    return keys;
+  };
+
+  beforeEach(async () => {
+    repository = await openVault(
+      memoryStore(),
+      { current: 1, keys: { 1: randomBytes(32).toString('base64') } },
+      {
+        create: true,
       },
-    };
-    objects.set('m/20260926T030000Z.json.gz', manifest([hex('legacy')]));
-    await expect(sut.prune(trusted, { keepDaily: 1, keepWeekly: 0, keepMonthly: 0 }, false, carryOn)).rejects.toThrow(
-      'anchored backup head',
     );
-    expect(store.delete).not.toHaveBeenCalled();
-  });
-
-  beforeEach(() => {
-    objects = new Map();
-    store = {
-      listAll: vi.fn<CloudBackupStoreRepository['listAll']>().mockImplementation((_connection, prefix, onPage) => {
-        const page = objects
-          .entries()
-          .filter(([key]) => key.startsWith(prefix))
-          .map(([key, body]) => ({ key, size: body.length, etag: null }))
-          .toArray();
-        return (page.length > 0 ? onPage(page) : Promise.resolve()).then(() => page.length);
-      }),
-      get: vi.fn().mockImplementation((_connection, key: string) => {
-        const body = objects.get(key);
-        return body
-          ? Promise.resolve(body)
-          : Promise.reject(new CloudBackupStoreError('The storage provider refused GET', 404, 'NoSuchKey'));
-      }),
-      delete: vi.fn().mockImplementation((_connection, key: string) => {
-        objects.delete(key);
-        return Promise.resolve();
-      }),
-      head: vi.fn().mockImplementation((_connection, key: string) => {
-        const body = objects.get(key);
-        return Promise.resolve(body ? { key, size: body.length, etag: '"e"' } : null);
-      }),
-      hashObject: vi.fn().mockImplementation((_connection, key: string) => {
-        const body = objects.get(key);
-        return body
-          ? Promise.resolve({ size: body.length, sha256: createHash('sha256').update(body).digest('hex') })
-          : Promise.reject(new CloudBackupStoreError('missing', 404, 'NoSuchKey'));
-      }),
-    };
+    bucket = { bucketRef: 'ref', bucketKey: Buffer.alloc(32), connection: { vaultId: VAULT } } as never;
     index = {
-      listKeptManifests: vi.fn().mockResolvedValue([]),
       getManifestKeys: vi.fn().mockResolvedValue(new Set()),
       adoptManifests: vi.fn().mockResolvedValue(0),
-      recordObjectVerification: vi.fn().mockResolvedValue(undefined),
-      forget: vi.fn().mockResolvedValue(undefined),
       markManifests: vi.fn().mockResolvedValue(0),
     };
-    const logger = { log: vi.fn(), warn: vi.fn(), error: vi.fn() };
-    sut = new CloudBackupMaintenance(store as never, index as never, logger as never);
-  });
-
-  describe('operation progress without response bodies', () => {
-    beforeEach(() => vi.useFakeTimers());
-    afterEach(() => vi.useRealTimers());
-
-    it('keeps full HEAD verification alive between batch checkpoints', async () => {
-      objects = nightlyBucket(2);
-      for (const key of objects.keys()) {
-        if (key.startsWith('o/')) objects.set(key, Buffer.alloc(10));
-      }
-      // Model completed storage requests on the fake clock; node:timers/promises uses real timers.
-      store.head.mockImplementation((_connection, key: string) =>
-        new Promise<void>((resolve) => setTimeout(resolve, 60)).then(() => ({
-          key,
-          size: objects.get(key)!.length,
-          etag: null,
-        })),
-      );
-      const checkpoint = vi.fn().mockResolvedValue(true);
-      const renew = vi.fn().mockResolvedValue(true);
-      const task = withOperationExecution({ renew, pollMs: 10, deadlineMs: 100, idleMs: 100 }, () =>
-        sut.verify(bucket, emptyVerifyResult('full', new Date()), checkpoint, {
-          operationId: 'verify-1',
-          claimToken: 'claim-1',
-        }),
-      );
-      const completion = expect(task).resolves.toMatchObject({ done: true, checked: 5, missing: 0, mismatched: 0 });
-      await vi.advanceTimersByTimeAsync(301);
-      await completion;
-      expect(store.head).toHaveBeenCalledTimes(5);
-      expect(store.hashObject).not.toHaveBeenCalled();
-      expect(checkpoint).toHaveBeenCalledTimes(3);
-      expect(renew).toHaveBeenCalled();
-      expect(vi.getTimerCount()).toBe(0);
-    });
-
-    it('keeps bodyless manifest, object and dump deletions alive before their checkpoint', async () => {
-      objects = nightlyBucket(5);
-      for (let day = 10; day <= 13; day++) {
-        objects.set(`db/dump-202609${day}.sql.gz`, Buffer.from('old unreferenced dump'));
-      }
-      store.delete.mockImplementation((_connection, key: string) =>
-        new Promise<void>((resolve) => setTimeout(resolve, 60)).then(() => {
-          objects.delete(key);
-        }),
-      );
-      const checkpoint = vi.fn().mockResolvedValue(true);
-      const task = withOperationExecution(
-        { renew: () => Promise.resolve(true), pollMs: 10, deadlineMs: 100, idleMs: 100 },
-        () => sut.prune(bucket, { keepDaily: 3, keepWeekly: 0, keepMonthly: 0 }, false, checkpoint),
-      );
-      const completion = expect(task).resolves.toMatchObject({ done: true, deleted: 2, dumpsRemoved: 2 });
-      await vi.advanceTimersByTimeAsync(361);
-      await completion;
-      expect(store.delete).toHaveBeenCalledTimes(6);
-      expect(checkpoint).toHaveBeenCalledTimes(1);
-      expect(objects.has(`o/${hex('shared')}`)).toBe(true);
-      expect(vi.getTimerCount()).toBe(0);
-    });
-
-    it('times out a HEAD that completes no item despite successful heartbeats', async () => {
-      objects = nightlyBucket(1);
-      let stopped = false;
-      store.head.mockImplementation(() =>
-        executionDelay(1000)
-          .then(() => null)
-          .finally(() => {
-            stopped = true;
-          }),
-      );
-      const renew = vi.fn().mockResolvedValue(true);
-      const task = withOperationExecution({ renew, pollMs: 10, deadlineMs: 100, idleMs: 100 }, () =>
-        sut.verify(bucket, emptyVerifyResult('full', new Date()), carryOn, {
-          operationId: 'verify-1',
-          claimToken: 'claim-1',
-        }),
-      );
-      const rejection = expect(task).rejects.toMatchObject({
-        name: 'AbortError',
-        cause: expect.any(OperationDeadlineError),
-      });
-      await vi.advanceTimersByTimeAsync(101);
-      await rejection;
-      expect(stopped).toBe(true);
-      expect(index.recordObjectVerification).not.toHaveBeenCalled();
-      expect(renew).toHaveBeenCalled();
-      expect(vi.getTimerCount()).toBe(0);
-    });
+    sut = new CloudBackupMaintenance(index as never, { log: vi.fn(), warn: vi.fn() } as never);
   });
 
   describe('prune', () => {
-    const retention = { keepDaily: 3, keepWeekly: 0, keepMonthly: 0 };
+    it('keeps what the retention settings keep and removes the rest, marking them first', async () => {
+      const keys = await backups(40, 20, 0);
+      const result = await sut.prune(bucket, repository, { keepDaily: 1, keepWeekly: 0, keepMonthly: 0 }, false);
 
-    it('keeps the runs retention keeps and removes only what none of them names', async () => {
-      objects = nightlyBucket(5);
-      objects.set('frameleaf-backup.json', Buffer.from('{}'));
-
-      const result = await sut.prune(bucket, retention, false, carryOn);
-
-      expect(result).toMatchObject({ done: true, manifestsKept: 3, manifestsRemoved: 2, objectsRemoved: 2 });
-      // the kept nights, their objects and the shared object stay; the claim is never touched
-      expect(objects.has('m/20260926T030000Z.json.gz')).toBe(true);
-      expect(objects.has('m/20260923T030000Z.json.gz')).toBe(false);
-      expect(objects.has(`o/${hex('shared')}`)).toBe(true);
-      expect(objects.has(`o/${hex('night-2')}`)).toBe(true);
-      expect(objects.has(`o/${hex('night-3')}`)).toBe(false);
-      expect(objects.has('frameleaf-backup.json')).toBe(true);
-      expect(index.markManifests).toHaveBeenCalledWith(
-        bucket.bucketRef,
-        ['m/20260923T030000Z.json.gz', 'm/20260922T030000Z.json.gz'],
-        'pruned',
+      expect(result).toMatchObject({ task: 'prune', done: true, manifestsKept: 1, manifestsRemoved: 2 });
+      expect((await repository.listSnapshots()).map(({ key }) => key)).toEqual([keys[2]]);
+      const gone = [keys[0], keys[1]].map((key) => snapshotObjectKey(VAULT, key));
+      expect(index.markManifests).toHaveBeenCalledWith('ref', gone, 'pruned');
+      // marked before anything was deleted
+      expect(index.adoptManifests.mock.invocationCallOrder[0]).toBeLessThan(
+        index.markManifests.mock.invocationCallOrder[0],
       );
     });
 
-    it('forgets each object in the index before it deletes it', async () => {
-      objects = nightlyBucket(4);
+    it('changes nothing in a dry run, and says what it would remove', async () => {
+      const keys = await backups(40, 20, 0);
+      const result = await sut.prune(bucket, repository, { keepDaily: 1, keepWeekly: 0, keepMonthly: 0 }, true);
 
-      await sut.prune(bucket, retention, false, carryOn);
-
-      const forgotten = index.forget.mock.invocationCallOrder[0];
-      const deletedObject = store.delete.mock.calls.findIndex(([, key]) => key.startsWith('o/'));
-      expect(index.forget).toHaveBeenCalledWith(bucket.bucketRef, [hex('night-3')]);
-      expect(forgotten).toBeLessThan(store.delete.mock.invocationCallOrder[deletedObject]);
+      expect(result).toMatchObject({ dryRun: true, manifestsRemoved: 2, deleted: 0 });
+      expect((await repository.listSnapshots()).map(({ key }) => key)).toEqual(keys);
+      expect(index.markManifests).not.toHaveBeenCalled();
     });
 
-    it('removes nothing in a dry run, and says what it would remove', async () => {
-      objects = nightlyBucket(5);
-      const before = objects.keys().toArray();
+    it('keeps the backup the signed history ends in, whatever the settings say', async () => {
+      const keys = await backups(40, 20, 0);
+      bucket.connection.trustedManifestHead = snapshotObjectKey(VAULT, keys[1]);
+      const result = await sut.prune(bucket, repository, { keepDaily: 1, keepWeekly: 0, keepMonthly: 0 }, false);
 
-      const result = await sut.prune(bucket, retention, true, carryOn);
-
-      expect(result).toMatchObject({ dryRun: true, done: true, manifestsRemoved: 2, objectsRemoved: 2 });
-      expect(objects.keys().toArray()).toEqual(before);
-      expect(store.delete).not.toHaveBeenCalled();
-      expect(index.forget).not.toHaveBeenCalled();
+      expect(result.manifestsKept).toBe(2);
+      expect((await repository.listSnapshots()).map(({ key }) => key)).toEqual([keys[1], keys[2]]);
     });
 
-    it('removes nothing when a kept manifest cannot be read', async () => {
-      objects = nightlyBucket(5);
-      objects.set('m/20260925T030000Z.json.gz', Buffer.from('damaged'));
-
-      await expect(sut.prune(bucket, retention, false, carryOn)).rejects.toThrow('could not be read');
-      expect(store.delete).not.toHaveBeenCalled();
-    });
-
-    it.each(['assets', 'profiles'])(
-      'removes nothing when a kept manifest has an array as its %s record',
-      async (field) => {
-        objects = nightlyBucket(5);
-        const key = 'm/20260926T030000Z.json.gz';
-        const malformed = JSON.parse(gunzipSync(objects.get(key)!).toString('utf8'));
-        malformed[field] = [];
-        objects.set(key, gzipSync(JSON.stringify(malformed)));
-        await expect(sut.prune(bucket, retention, false, carryOn)).rejects.toThrow();
-        expect(store.delete).not.toHaveBeenCalled();
-        expect(index.forget).not.toHaveBeenCalled();
-      },
-    );
-
-    it('never removes a file whose name is not a manifest’s, an object’s or a dump’s', async () => {
-      objects = nightlyBucket(5);
-      objects.set('m/notes.txt', Buffer.from('x'));
-      objects.set('m/20260230T030000Z.json.gz', Buffer.from('not a manifest'));
-      objects.set('o/readme', Buffer.from('x'));
-
-      await sut.prune(bucket, retention, false, carryOn);
-
-      expect(objects.has('m/notes.txt')).toBe(true);
-      expect(objects.has('m/20260230T030000Z.json.gz')).toBe(true);
-      expect(objects.has('o/readme')).toBe(true);
-    });
-
-    it('stops at a checkpoint that says so', async () => {
-      objects = nightlyBucket(5);
-
-      await expect(sut.prune(bucket, retention, false, () => Promise.resolve(false))).resolves.toBeNull();
+    it('refuses to clean up when the backup the signed history ends in is not in storage', async () => {
+      await backups(1);
+      bucket.connection.trustedManifestHead = snapshotObjectKey(VAULT, `s/000000000009-${'0'.repeat(16)}`);
+      await expect(
+        sut.prune(bucket, repository, { keepDaily: 1, keepWeekly: 0, keepMonthly: 0 }, false),
+      ).rejects.toThrow('clean-up is refused');
     });
   });
 
   describe('verify', () => {
-    it('fetches and checks only this week’s 1/52 of the objects', async () => {
-      // ten bytes each, as the manifest records every file
-      const bodies = Array.from({ length: 200 }, (_, index) => `file-${String(index).padStart(5, '0')}`);
-      const hashes = bodies.map((body) => hex(body));
-      for (const [index, sha256] of hashes.entries()) {
-        objects.set(`o/${sha256}`, Buffer.from(bodies[index]));
-      }
-      objects.set('m/20260926T030000Z.json.gz', manifest(hashes));
-      const start = emptyVerifyResult('sample', new Date('2026-09-26T04:00:00.000Z'));
-      const expected = hashes.filter((sha256) => inVerifySlice(sha256, start.slice));
+    it('passes a whole repository, sampling this week’s share of its packs', async () => {
+      await backups(1, 0);
+      const full = await sut.verify(bucket, repository, emptyVerifyResult('full', new Date()));
+      expect(full).toMatchObject({ done: true, missing: 0, mismatched: 0, degradedManifests: 0 });
+      expect(full.checked).toBe(full.total);
+      expect(full.total).toBeGreaterThan(0);
 
-      const result = await sut.verify(bucket, start, carryOn, { operationId: 'verify-1', claimToken: 'claim-1' });
-
-      expect(store.hashObject).toHaveBeenCalledTimes(expected.length);
-      expect(store.head).not.toHaveBeenCalled();
-      expect(index.recordObjectVerification).toHaveBeenCalledTimes(expected.length);
-      for (const sha256 of expected) {
-        expect(index.recordObjectVerification).toHaveBeenCalledWith({
-          bucket: bucket.bucketRef,
-          sha256,
-          operationId: 'verify-1',
-          claimToken: 'claim-1',
-          method: 'sha256-get',
-          result: 'passed',
-        });
-      }
-      expect(result).toMatchObject({
-        done: true,
-        total: expected.length,
-        checked: expected.length,
-        missing: 0,
-        mismatched: 0,
-      });
+      const sample = await sut.verify(bucket, repository, emptyVerifyResult('sample', new Date()));
+      expect(sample).toMatchObject({ missing: 0, mismatched: 0 });
+      expect(index.markManifests).toHaveBeenCalledWith('ref', [], 'degraded');
     });
 
-    it('HEADs every referenced object and dump in the monthly pass', async () => {
-      objects = nightlyBucket(2);
-      // make every object the size the manifest records
-      for (const key of objects.keys()) {
-        if (key.startsWith('o/')) {
-          objects.set(key, Buffer.alloc(10));
-        }
-      }
+    it('names a missing piece and marks the kept backups degraded', async () => {
+      const keys = await backups(0);
+      const [pack] = await repository.store.list('p/');
+      await repository.store.delete(pack.key);
+      index.markManifests.mockResolvedValue(1);
 
-      const result = await sut.verify(bucket, emptyVerifyResult('full', new Date()), carryOn, {
-        operationId: 'verify-1',
-        claimToken: 'claim-1',
-      });
+      const result = await sut.verify(bucket, repository, emptyVerifyResult('full', new Date()));
+      expect(result.missing).toBeGreaterThan(0);
+      expect(result.degradedManifests).toBe(1);
+      expect(index.markManifests).toHaveBeenCalledWith('ref', [snapshotObjectKey(VAULT, keys[0])], 'degraded');
+    });
+  });
 
-      // the shared object, one per night, and one dump per night
-      expect(store.head).toHaveBeenCalledTimes(3 + 2);
-      expect(index.recordObjectVerification).toHaveBeenCalledTimes(3);
-      expect(index.recordObjectVerification).toHaveBeenCalledWith(
-        expect.objectContaining({ method: 'size-head', result: 'passed' }),
-      );
-      expect(result).toMatchObject({ done: true, checked: 5, missing: 0, mismatched: 0, degradedManifests: 0 });
+  describe('adopt', () => {
+    it('records a stored backup this server has no record of, from its own catalog', async () => {
+      const [key] = await backups(0);
+      index.adoptManifests.mockResolvedValue(1);
+      await expect(sut.adopt(bucket, repository)).resolves.toBe(1);
+      expect(index.adoptManifests).toHaveBeenCalledWith('ref', [
+        expect.objectContaining({ key: snapshotObjectKey(VAULT, key), assetCount: 1, fileCount: 1, databaseKey: null }),
+      ]);
     });
 
-    it('marks every manifest naming a missing or damaged object degraded, and forgets the object', async () => {
-      objects = nightlyBucket(2);
-      for (const key of objects.keys()) {
-        if (key.startsWith('o/')) {
-          objects.set(key, Buffer.alloc(10));
-        }
-      }
-      objects.delete(`o/${hex('shared')}`);
-      objects.set(`o/${hex('night-0')}`, Buffer.alloc(3));
-
-      const result = await sut.verify(bucket, emptyVerifyResult('full', new Date()), carryOn, {
-        operationId: 'verify-1',
-        claimToken: 'claim-1',
-      });
-
-      expect(result).toMatchObject({ missing: 1, mismatched: 1, degradedManifests: 2 });
-      expect(index.recordObjectVerification).toHaveBeenCalledWith(
-        expect.objectContaining({ sha256: hex('shared'), result: 'missing' }),
-      );
-      expect(index.recordObjectVerification).toHaveBeenCalledWith(
-        expect.objectContaining({ sha256: hex('night-0'), result: 'mismatched' }),
-      );
-      expect(index.forget).toHaveBeenCalledWith(bucket.bucketRef, expect.arrayContaining([hex('shared')]));
-      expect(index.markManifests).toHaveBeenCalledWith(
-        bucket.bucketRef,
-        expect.arrayContaining(['m/20260926T030000Z.json.gz', 'm/20260925T030000Z.json.gz']),
-        'degraded',
-      );
-    });
-
-    it('carries on after its cursor when it resumes', async () => {
-      objects = nightlyBucket(2);
-      const start = { ...emptyVerifyResult('full', new Date()), cursor: 'f'.repeat(64) };
-
-      const result = await sut.verify(bucket, start, carryOn, { operationId: 'verify-1', claimToken: 'claim-1' });
-
-      // every object hash sorts before the cursor, so only the dumps are left
-      expect(store.head).toHaveBeenCalledTimes(2);
-      expect(result?.done).toBe(true);
-    });
-
-    it.each(['manifest', 'object', 'dump'])(
-      'stops on %s authorization failures without recording damaged media',
-      async (where) => {
-        objects = nightlyBucket(1);
-        const refusal = new ManagedBackupAuthorizationError();
-        if (where === 'manifest') store.get.mockRejectedValue(refusal);
-        else
-          store.head.mockImplementation((_connection, key) => {
-            if (where === 'object' || key.startsWith('db/')) return Promise.reject(refusal);
-            return Promise.resolve({ key, size: 10, etag: '"e"' });
-          });
-        await expect(
-          sut.verify(bucket, emptyVerifyResult('full', new Date()), carryOn, {
-            operationId: 'verify',
-            claimToken: 'claim',
-          }),
-        ).rejects.toBe(refusal);
-        expect(index.forget).not.toHaveBeenCalled();
-        expect(index.recordObjectVerification.mock.calls.every(([receipt]) => receipt.result === 'passed')).toBe(true);
-        expect(index.markManifests.mock.calls.every(([, keys]) => keys.length === 0)).toBe(true);
-      },
-    );
-
-    it('reports an object or dump with an impossible encrypted length as damaged and finishes the pass', async () => {
-      objects = nightlyBucket(1);
-      const damaged = new CloudBackupStoreError('The backup object is damaged.', null, 'ChecksumMismatch');
-      store.head.mockRejectedValue(damaged);
-
-      const result = await sut.verify(bucket, emptyVerifyResult('full', new Date()), carryOn, {
-        operationId: 'verify',
-        claimToken: 'claim',
-      });
-
-      expect(result).toMatchObject({ done: true, mismatched: 2, missing: 1, degradedManifests: 1 });
-    });
-
-    it('resumes after the last checked dump without counting it again', async () => {
-      objects = nightlyBucket(2);
-      const start = {
-        ...emptyVerifyResult('full', new Date()),
-        cursor: 'f'.repeat(64),
-        dumpCursor: 'db/dump-20260925.sql.gz',
-        checked: 4,
-      };
-      const result = await sut.verify(bucket, start, carryOn, { operationId: 'verify', claimToken: 'claim' });
-      expect(store.head).toHaveBeenCalledTimes(1);
-      expect(result).toMatchObject({ checked: 5, done: true, dumpCursor: 'db/dump-20260926.sql.gz' });
-    });
-
-    it('retains missing-dump degradation when paused at its checkpoint and resumed', async () => {
-      objects = nightlyBucket(2);
-      objects.delete('db/dump-20260925.sql.gz');
-      let saved = emptyVerifyResult('full', new Date());
-      saved.cursor = 'f'.repeat(64);
-      const stopped = await sut.verify(
-        bucket,
-        saved,
-        (value) => {
-          saved = value;
-          return Promise.resolve(false);
-        },
-        { operationId: 'verify', claimToken: 'claim-1' },
-      );
-      expect(stopped).toBeNull();
-      expect(saved).toMatchObject({
-        missing: 1,
-        degradedManifests: 1,
-        degradedKeys: ['m/20260925T030000Z.json.gz'],
-        dumpCursor: 'db/dump-20260925.sql.gz',
-      });
-      expect(index.markManifests).toHaveBeenCalledWith(bucket.bucketRef, ['m/20260925T030000Z.json.gz'], 'degraded');
-      store.head.mockClear();
-      const result = await sut.verify(bucket, saved, carryOn, { operationId: 'verify', claimToken: 'claim-2' });
-      expect(store.head).toHaveBeenCalledTimes(1);
-      expect(result).toMatchObject({ done: true, checked: 2, missing: 1, degradedManifests: 1 });
-    });
-
-    it.each([400, 403, 429, 500])('stops on HTTP %s without counting intact objects as damaged', async (status) => {
-      objects = nightlyBucket(1);
-      store.head.mockRejectedValue(new CloudBackupStoreError('Storage refused the request', status, null));
-      await expect(
-        sut.verify(bucket, emptyVerifyResult('full', new Date()), carryOn, {
-          operationId: 'verify',
-          claimToken: 'claim',
-        }),
-      ).rejects.toBeInstanceOf(CloudBackupStoreError);
-      expect(index.recordObjectVerification).not.toHaveBeenCalled();
-      expect(index.forget).not.toHaveBeenCalled();
-      expect(index.markManifests).not.toHaveBeenCalled();
+    it('leaves a backup it already knows alone', async () => {
+      const [key] = await backups(0);
+      index.getManifestKeys.mockResolvedValue(new Set([snapshotObjectKey(VAULT, key)]));
+      await sut.adopt(bucket, repository);
+      expect(index.adoptManifests).toHaveBeenCalledWith('ref', []);
     });
   });
 });

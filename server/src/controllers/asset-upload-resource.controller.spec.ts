@@ -25,7 +25,7 @@ describe('upload resource protocol headers over HTTP', () => {
     };
     const controller = new AssetUploadResourceController(
       {
-        limits: () => Promise.resolve({ maxSize: 10, maxAppendSize: 10, maxAge: 86_400, maxActive: 4 }),
+        limits: () => Promise.resolve({ maxSize: 10, maxAppendSize: 10, maxAge: 86_400 }),
         head: () => Promise.resolve(resource),
         create: (_auth: unknown, _headers: unknown, _input: unknown, resume: (row: AssetUploadResource) => void) => {
           resume(resource);

@@ -40,14 +40,18 @@ import { queueExecution } from 'src/queue/context.js';
 import { JobDependencyUnavailable, deferJobOnTransientFailure, deferJobUntilDependency } from 'src/queue/dependency.js';
 import { fetchJobText } from 'src/queue/http.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
-import { DesktopClipIndexRepository } from 'src/repositories/desktop-clip-index.repository.js';
+import {
+  type DesktopClipIndexBinding,
+  DesktopClipIndexRepository,
+} from 'src/repositories/desktop-clip-index.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MlDestinationRepository } from 'src/repositories/ml-destination.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { parseBoundClipResult } from 'src/utils/clip-embedding.js';
 import { readConfig } from 'src/utils/config.js';
-import { faceEntries } from 'src/utils/desktop-face.js';
-import { ocrEntries } from 'src/utils/desktop-ocr.js';
+import { desktopFaceProfile, faceEntries } from 'src/utils/desktop-face.js';
+import { equivalentDesktopModelKeys } from 'src/utils/desktop-model-equivalents.js';
+import { desktopOcrProfile, ocrEntries } from 'src/utils/desktop-ocr.js';
 import { parseBoundFaceResult } from 'src/utils/face-result.js';
 import { readPlainFile } from 'src/utils/locked-read.js';
 import { canonicalJson } from 'src/utils/object.js';
@@ -624,6 +628,9 @@ export const INPAINT_MODEL_NAME = 'frameleaf-inpaint';
 /** No local worker can fill an area: ML is off, remote-only, or its worker cannot get the inpainting model. */
 export class InpaintUnavailableError extends Error {}
 
+/** FL-863: the local worker can't score eyes now (an older worker without the route, or no landmark model). */
+export class EyeScoresUnavailableError extends Error {}
+
 export class RestorationWorkerError extends Error {
   constructor(
     readonly code: RestorationWorkerErrorCode | 'unreachable' | 'protocol-error',
@@ -641,6 +648,13 @@ export class MachineLearningModelRuntimeUnavailableError extends Error {}
 
 /** The worker refused a person's own Hugging Face search model; the message is written for them. */
 export class CustomClipModelRefusedError extends Error {}
+
+/**
+ * The worker would not produce under the model identity it was sent (`/predict-bound` → 409
+ * `model_identity_unavailable`): its own build is not the runtime revision that identity names, or it does
+ * not hold exactly those model files.
+ */
+export class MachineLearningBindingRefusedError extends Error {}
 
 /** No answer from the worker at all (refused, reset or dropped connection), as opposed to an error it returned. */
 export class MachineLearningTransportError extends Error {}
@@ -670,6 +684,8 @@ export const sameEndpoint = (a: MlEndpoint | null, b: MlEndpoint | null) =>
 export class MachineLearningRepository implements RestorationInference {
   private _config?: MachineLearningConfig;
   private desktopPoolSelector: DesktopPoolSelector | null = null;
+  /** Destination and admitted key → the equivalent key that destination's AI last answered under. */
+  private servedIdentity = new Map<string, string>();
   /** FL-159: the Frameleaf Cloud check, registered by the cloud processing service. */
   private cloudProber: CloudMlProber | null = null;
   private probeCache = new Map<
@@ -808,6 +824,47 @@ export class MachineLearningRepository implements RestorationInference {
       .parse(JSON.parse(Buffer.concat(chunks).toString()));
     await this.authorize({ url });
     return Buffer.from(result['semantic-mask'].png, 'base64');
+  }
+
+  /**
+   * FL-863: eyes open and eye sharpness for faces already found, from their boxes in `imagePath`'s pixels.
+   * Always the instance-local worker (`POST /face-eye-scores`): the landmark step takes a few milliseconds a
+   * face, and Desktop and Cloud face producers don't serve it. A worker without the route (404) or without
+   * the landmark model (503) surfaces as `EyeScoresUnavailableError`.
+   */
+  async faceEyeScoresLocal(
+    imagePath: string,
+    boxes: Array<[number, number, number, number]>,
+    signal?: AbortSignal,
+  ): Promise<Array<{ eyesOpen: number | null; eyeSharpness: number | null }>> {
+    if (!this.config.enabled) throw new EyeScoresUnavailableError('Local machine learning is disabled');
+    const url = this.getLocalUrls()[0];
+    if (!url || url === FRAMELEAF_CLOUD_ENDPOINT.url) throw new EyeScoresUnavailableError('No local worker');
+    await this.authorize({ url });
+    const endpoint = new URL('face-eye-scores', url.endsWith('/') ? url : `${url}/`);
+    if (!['http:', 'https:'].includes(endpoint.protocol) || /(^|\.)frameleaf\.(app|cloud)$/i.test(endpoint.hostname))
+      throw new EyeScoresUnavailableError('Eye scores require an instance-local worker');
+    const form = new FormData();
+    form.append('boxes', JSON.stringify(boxes));
+    form.append('image', await openAsBlob(imagePath));
+    const deadline = AbortSignal.timeout(60_000);
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      body: form,
+      redirect: 'error',
+      headers: this.authHeaders({ url, authToken: process.env.FRAMELEAF_ML_AUTH_TOKEN?.trim() }),
+      signal: signal ? AbortSignal.any([deadline, signal]) : deadline,
+    });
+    if (!response.ok) {
+      if ([404, 422, 501, 503].includes(response.status))
+        throw new EyeScoresUnavailableError(`Local eye scores unavailable (${response.status})`);
+      throw new Error(`Local eye scores failed (${response.status})`);
+    }
+    const score = z.number().min(0).max(1).nullable();
+    const { faces } = z
+      .object({ faces: z.array(z.object({ eyesOpen: score, eyeSharpness: score })).length(boxes.length) })
+      .parse(await response.json());
+    return faces;
   }
 
   /**
@@ -1864,6 +1921,13 @@ export class MachineLearningRepository implements RestorationInference {
           `Machine learning request '${this.redact(config)}' to ${target} names a model this worker can't run`,
         );
       }
+      if (bound && response.status === 409 && readDetail(body) === 'model_identity_unavailable') {
+        throw new MachineLearningBindingRefusedError(
+          `model_identity_unavailable: the AI at ${target} does not serve this model under any runtime revision ` +
+            `the model catalogue has for it (its build is not one of them, or its model files differ), so it ` +
+            `cannot do '${this.redact(config)}'. Its build and this server's catalogue must come from one release.`,
+        );
+      }
       if (response.status === 503) {
         let detail: unknown;
         try {
@@ -1962,6 +2026,26 @@ export class MachineLearningRepository implements RestorationInference {
 
   setDesktopPoolSelector(selector: DesktopPoolSelector | null) {
     this.desktopPoolSelector = selector;
+  }
+
+  /**
+   * The model keys a desktop can hold to take this workload's queued work under the saved settings: the
+   * configured model's key and, for smart search, the same encoder under other desktop runtime revisions.
+   * None while the task is off, the model has no catalogue profile or no desktop has been granted smart search.
+   */
+  async desktopModelKeys(workload: MlWorkload): Promise<string[]> {
+    const config = this._config;
+    if (!config?.enabled) return [];
+    try {
+      if (workload === MlWorkload.Face)
+        return config.facialRecognition.enabled ? [desktopFaceProfile(config.facialRecognition).modelKey] : [];
+      if (workload === MlWorkload.Ocr) return config.ocr.enabled ? [desktopOcrProfile(config.ocr).modelKey] : [];
+      if (workload !== MlWorkload.Clip || !config.clip.enabled) return [];
+      const selected = await this.clipIndex?.selectProfile(config.clip.modelName, 'image');
+      return selected ? [...equivalentDesktopModelKeys(selected.profile.modelKey)] : [];
+    } catch {
+      return [];
+    }
   }
 
   /** FL-1058: the owner's own Frameleaf Desktop helpers take a gallery guest's selfie, outside the queue. */
@@ -2093,8 +2177,31 @@ export class MachineLearningRepository implements RestorationInference {
     return selected ? `${selected.binding.revisionId}:${selected.profile.modelKey}` : 'legacy';
   }
 
+  /**
+   * A search model the admitted desktop index does not hold is still allowed: saving it empties the library's
+   * vectors, as any model change does, and returns the index to unadmitted for the new model's space
+   * (`DatabaseRepository.deleteAllSearchEmbeddings`). Only an index that cannot be read stops the save.
+   */
   async assertClipModel(modelName: string): Promise<void> {
-    await this.clipIndex?.selectProfile(modelName, 'image');
+    try {
+      await this.clipIndex?.selectProfile(modelName, 'image');
+    } catch (error) {
+      if (!(error instanceof Error) || error.message !== 'desktop_clip_profile_unavailable') throw error;
+    }
+  }
+
+  /** The desktop vector index is admitted for another model than the saved one, so its vectors must go. */
+  async clipIndexStale(modelName: string): Promise<boolean> {
+    const admitted = await this.clipIndex?.modelName();
+    return admitted !== undefined && admitted !== modelName;
+  }
+
+  /**
+   * The producer key a Frameleaf Cloud vector of the image encoder `modelKey` is stored under, so the library
+   * keeps one key (`DesktopClipIndexRepository.storageKey`); undefined when it must not be stored.
+   */
+  async cloudClipStorageKey(modelKey: string): Promise<string | undefined> {
+    return this.clipIndex ? this.clipIndex.storageKey(modelKey) : modelKey;
   }
 
   /**
@@ -2145,15 +2252,57 @@ export class MachineLearningRepository implements RestorationInference {
 
   async encodeImage(selection: MlSelection, imagePath: string, { modelName }: MachineLearningConfig['clip']) {
     const selected = await this.clipIndex?.selectProfile(modelName, 'image');
-    if (selected) {
-      const result = await this.encodeBoundClip(selection, { imagePath }, selected.profile);
-      await this.clipIndex!.assertCurrent(selected.binding);
-      return result;
-    }
+    if (selected) return this.encodeAdmittedClip(selection, { imagePath }, selected);
     const request = { [ModelTask.SEARCH]: { [ModelType.VISUAL]: { modelName } } };
     const response = await this.predictOrWait<ClipVisualResponse>(selection, { imagePath }, request);
     if (await this.clipIndex?.getActive()) throw new Error('desktop_clip_index_changed');
     return response[ModelTask.SEARCH];
+  }
+
+  /**
+   * Smart search once a desktop has been granted it: every vector is made under a catalogue identity of the
+   * admitted embedding space, by a desktop or by this server's own AI. There is no asking by model name.
+   *
+   * The index was admitted under the keys of the first desktop's runtime revision. This server's AI is one
+   * build and answers only under the key of its own revision, so it is asked under each revision's key of
+   * the same encoder until it serves one, and that one is remembered for the destination. The vector is
+   * stored under the admitted key either way: the keys name one embedding space, and the library keeps one
+   * producer key. When the AI serves none of them (its build is not a catalogue runtime revision, or its
+   * model files differ) the request fails, by name, and nothing is written.
+   */
+  private async encodeAdmittedClip(
+    selection: MlSelection,
+    payload: ModelPayload,
+    selected: { binding: DesktopClipIndexBinding; profile: DesktopModelProfile; equivalents?: DesktopModelProfile[] },
+  ) {
+    const finish = async <T>(result: T) => {
+      await this.clipIndex!.assertCurrent(selected.binding);
+      return result;
+    };
+    // A desktop is asked under the key its task was made for; the broker finds the desktop that holds it.
+    if (selection.desktopClip) return finish(await this.encodeBoundClip(selection, payload, selected.profile));
+    const memory = `${selection.endpoint.url}\u{0}${selected.profile.modelKey}`;
+    const served = this.servedIdentity.get(memory);
+    const profiles = [selected.profile, ...(selected.equivalents ?? [])].toSorted(
+      (a, b) => Number(b.modelKey === served) - Number(a.modelKey === served),
+    );
+    let refusal: MachineLearningBindingRefusedError | undefined;
+    for (const profile of profiles) {
+      try {
+        const result = await this.encodeBoundClip(selection, payload, profile);
+        if (this.servedIdentity.size > 256) this.servedIdentity.clear();
+        this.servedIdentity.set(memory, profile.modelKey);
+        return finish({ ...result, modelKey: selected.profile.modelKey });
+      } catch (error) {
+        if (!(error instanceof MachineLearningBindingRefusedError)) throw error;
+        refusal ??= error;
+      }
+    }
+    this.servedIdentity.delete(memory);
+    this.logger.warn(
+      `Smart search on ${selection.kind} destination ${selection.destinationId} failed: ${refusal!.message}`,
+    );
+    throw refusal!;
   }
 
   async encodeBoundClip(selection: MlSelection, payload: ModelPayload, profile: DesktopModelProfile) {
@@ -2210,11 +2359,7 @@ export class MachineLearningRepository implements RestorationInference {
       throw new CloudJobsUnavailableError('search text');
     }
     const selected = await this.clipIndex?.selectProfile(modelName, 'text', language);
-    if (selected) {
-      const result = await this.encodeBoundClip(selection, { text }, selected.profile);
-      await this.clipIndex!.assertCurrent(selected.binding);
-      return result;
-    }
+    if (selected) return this.encodeAdmittedClip(selection, { text }, selected);
     const request = { [ModelTask.SEARCH]: { [ModelType.TEXTUAL]: { modelName, options: { language } } } };
     const response = await this.predict<ClipTextualResponse>(selection, { text }, request);
     if (await this.clipIndex?.getActive()) throw new Error('desktop_clip_index_changed');

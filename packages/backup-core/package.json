@@ -1,0 +1,32 @@
+{
+  "name": "@frameleaf/backup-core",
+  "description": "Frameleaf's backup repository: chunked, deduplicated, encrypted backups with restore by file, folder or everything",
+  "version": "0.1.0",
+  "private": true,
+  "license": "GNU Affero General Public License version 3",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Frameleaf/frameleaf-app.git",
+    "directory": "packages/backup-core"
+  },
+  "type": "module",
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc6 -p tsconfig.json",
+    "check": "tsc6 -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "typescript": "npm:@typescript/typescript6@^6.0.2",
+    "vitest": "^5.0.4"
+  }
+}

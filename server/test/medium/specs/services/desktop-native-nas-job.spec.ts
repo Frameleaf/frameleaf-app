@@ -48,7 +48,6 @@ import { DesktopAssistanceActivationService } from 'src/services/desktop-assista
 import { DesktopAssistancePolicyService } from 'src/services/desktop-assistance-policy.service.js';
 import { DesktopDeviceService } from 'src/services/desktop-device.service.js';
 import { DesktopMlService } from 'src/services/desktop-ml.service.js';
-import { DesktopNasProducerService } from 'src/services/desktop-nas-producer.service.js';
 import { DesktopQualificationService } from 'src/services/desktop-qualification.service.js';
 import { DesktopWorkerAuthService } from 'src/services/desktop-worker-auth.service.js';
 import { DesktopWorkerService } from 'src/services/desktop-worker.service.js';
@@ -240,27 +239,17 @@ it.skipIf(!desktop || !pack || !cache)(
       const pool = new DesktopMlService(broker, index, policies, routes, ml);
       pool.onBootstrap();
       const workers = new DesktopWorkerRepository(db);
-      const producer = new DesktopNasProducerService(ml, routes, index, configRepo, metadata);
       const auth = new DesktopWorkerAuthService(workers, metadata);
-      const activation = new DesktopAssistanceActivationService(
-        workers,
-        index,
-        producer,
-        policies,
-        metadata,
-        routes,
-        ml,
-      );
+      const activation = new DesktopAssistanceActivationService(workers, index, policies, metadata);
       const qualification = new DesktopQualificationService(
         auth,
         new DesktopWorkerChallengeRepository(db),
         configRepo,
         metadata,
-        producer,
         activation,
         workers,
-        routes,
         policies,
+        new DesktopMlRepository(db!),
       );
       const { sut: authentication } = newMediumService(AuthService, {
         database: db,

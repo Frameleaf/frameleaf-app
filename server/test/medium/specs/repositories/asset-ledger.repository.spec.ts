@@ -278,6 +278,41 @@ describe(AssetLedgerRepository.name, () => {
     await expect(sut.counts(partner.id)).resolves.toMatchObject({ kept: 1 });
   });
 
+  it('FL-940: counts each account by month added and in total, never another account’s rows', async () => {
+    const { ctx, sut } = setup();
+    const { user: owner } = await ctx.newUser();
+    const { user: other } = await ctx.newUser();
+    const { asset: october } = await ctx.newAsset({ ownerId: owner.id });
+    const { asset: november } = await ctx.newAsset({ ownerId: owner.id });
+    await ctx.newAsset({ ownerId: other.id });
+    await defaultDatabase
+      .updateTable('asset_ledger')
+      .set({ addedAt: new Date('2026-10-15T12:00:00Z') })
+      .where('assetId', '=', october.id)
+      .execute();
+    await defaultDatabase
+      .updateTable('asset_ledger')
+      .set({ addedAt: new Date('2026-11-02T12:00:00Z') })
+      .where('assetId', '=', november.id)
+      .execute();
+    await setStatus(november.id, AssetStatus.Trashed);
+    await reconcileAll(sut);
+
+    await expect(sut.countsByMonth(owner.id)).resolves.toEqual([
+      { month: '2026-11', states: { kept: 0, trashed: 1, removed: 0, merged: 0, missing: 0 } },
+      { month: '2026-10', states: { kept: 1, trashed: 0, removed: 0, merged: 0, missing: 0 } },
+    ]);
+    const byOwner = await sut.countsByOwner();
+    expect(byOwner.find(({ ownerId }) => ownerId === owner.id)?.states).toEqual({
+      kept: 1,
+      trashed: 1,
+      removed: 0,
+      merged: 0,
+      missing: 0,
+    });
+    expect(byOwner.find(({ ownerId }) => ownerId === other.id)?.states).toMatchObject({ kept: 1 });
+  });
+
   it('pages newest change first, filters by state and hides locked photos from a session without them', async () => {
     const { ctx, sut } = setup();
     const { user } = await ctx.newUser();

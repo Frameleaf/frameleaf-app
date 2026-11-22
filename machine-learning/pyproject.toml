@@ -1,6 +1,6 @@
 [project]
 name = "frameleaf-ml"
-version = "1.2.24"
+version = "1.2.26"
 description = ""
 authors = [{ name = "Hau Tran", email = "alex.tran1502@gmail.com" }]
 requires-python = ">=3.12,<4.0"
@@ -63,7 +63,11 @@ cpu = [
 ]
 cuda = [
     # PyPI >=1.27 uses CUDA 13; the stable CUDA 12 feed ends at 1.29 (Pascal support).
-    "onnxruntime-gpu==1.29.0",
+    "onnxruntime-gpu==1.29.0 ; platform_machine == 'x86_64'",
+    # FL-997: the CUDA 12 feed has no aarch64 wheel, so arm64 NVIDIA servers take PyPI's CUDA 13 build
+    # with its CUDA and cuDNN libraries as wheels (loaded by preload_dlls in sessions/ort.py). Needs a
+    # host driver with CUDA 13 support; probed on an RTX 3060 next to the CUDA 12.6 Torch (11-19).
+    "onnxruntime-gpu[cuda,cudnn]==1.29.0 ; platform_machine == 'aarch64'",
     # TensorRT-RTX plugin provider for GeForce RTX cards (consumer GPUs); registered in sessions/ort.py.
     "onnxruntime-ep-nv-tensorrt-rtx-cu12>=0.4.0,<0.5 ; platform_machine == 'x86_64'",
     "qwen-vl-utils>=0.0.14,<1",
@@ -115,7 +119,7 @@ requires-dist = ["openvino-telemetry>=2023.2.1", "packaging"]
 
 [tool.uv.sources]
 onnxruntime-gpu = [
-    {index = "onnxruntime-cuda12", extra = "cuda"},
+    {index = "onnxruntime-cuda12", extra = "cuda", marker = "platform_machine == 'x86_64'"},
     {index = "onnxruntime-cuda12", extra = "desktop-cuda"},
 ]
 torch = [

@@ -1,3 +1,4 @@
+import { ConflictException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
@@ -13,6 +14,7 @@ import {
 } from 'src/dtos/media-import.dto.js';
 import { AssetType, JobStatus, Permission } from 'src/enum.js';
 import {
+  MediaDownloadError,
   type MediaDownloadInspection,
   MediaDownloaderRepository,
 } from 'src/repositories/media-downloader.repository.js';
@@ -107,6 +109,81 @@ it('limits combined previews and never starts an implicit feed download', async 
   expect(downloader.download).not.toHaveBeenCalled();
 });
 
+describe('a download the site or the Library refuses', () => {
+  const setup = () => {
+    const repository = automock(MediaImportRepository, { args: [{}, {}] });
+    const downloader = automock(MediaDownloaderRepository);
+    const service = new MediaImportService(
+      repository,
+      downloader,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      { warn: vi.fn() } as never,
+    );
+    const row = {
+      id: randomUUID(),
+      ownerId: authStub.user1.user.id,
+      state: 'inspecting',
+      generation: 1,
+      subscriptionGeneration: null,
+      connectionId: null,
+      subscriptionId: null,
+      urls: [entry.pageUrl],
+      retries: 0,
+      availableAt: new Date(0),
+    } as MediaImport;
+    const authority = {
+      ownerId: row.ownerId,
+      importId: row.id,
+      generation: 1,
+      subscriptionGeneration: null,
+      jobId: randomUUID(),
+      jobToken: randomUUID(),
+    };
+    repository.getWorker.mockResolvedValue(row);
+    repository.authority.mockReturnValue(authority);
+    repository.assertAuthority.mockResolvedValue({ row, user: UserFactory.create({ id: row.ownerId }) });
+    repository.withCapacity.mockImplementation(async (_row, _provider, action) => action());
+    repository.items.mockResolvedValue([]);
+    repository.failAttempt.mockResolvedValue(undefined);
+    return { repository, downloader, service, row, authority };
+  };
+
+  it('fails a private or age-restricted post on its own and leaves the site connection as it is', async () => {
+    const { repository, downloader, service, row, authority } = setup();
+    downloader.inspect.mockRejectedValue(new MediaDownloadError('restricted'));
+    expect(await service.handleImport({ id: row.id })).toBe(JobStatus.Failed);
+    // the last argument marks the connection as expired: a refused post never does
+    expect(repository.failAttempt).toHaveBeenCalledWith(
+      authority,
+      expect.stringContaining('private, blocked or age-restricted'),
+      'failed',
+      false,
+    );
+  });
+
+  it('still marks the connection expired when the site rejects the sign-in itself', async () => {
+    const { repository, downloader, service, row, authority } = setup();
+    downloader.inspect.mockRejectedValue(new MediaDownloadError('authentication_required'));
+    expect(await service.handleImport({ id: row.id })).toBe(JobStatus.Failed);
+    expect(repository.failAttempt).toHaveBeenCalledWith(authority, expect.any(String), 'failed', true);
+  });
+
+  it('says what stopped a download when its site connection was lost', async () => {
+    const { repository, service, row, authority } = setup();
+    repository.assertAuthority.mockRejectedValue(new ConflictException('Refresh site access before continuing'));
+    expect(await service.handleImport({ id: row.id })).toBe(JobStatus.Failed);
+    expect(repository.failAttempt).toHaveBeenCalledWith(
+      authority,
+      'Refresh site access before continuing',
+      'paused',
+      false,
+    );
+  });
+});
+
 it('returns source provenance without private media URLs', async () => {
   const repository = automock(MediaImportRepository, { args: [{}, {}] });
   const service = new MediaImportService(
@@ -153,7 +230,7 @@ it('stops a running extractor when its durable authority is revoked', async () =
       {} as never,
       {} as never,
       {} as never,
-      {} as never,
+      { warn: vi.fn() } as never,
     );
     const row = {
       id: randomUUID(),

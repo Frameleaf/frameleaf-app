@@ -1,30 +1,23 @@
-import { createHash } from 'node:crypto';
+import { parseRecoveryCode } from '@frameleaf/backup-core';
 import z from 'zod';
 import type { CloudBackupKeyMode } from 'src/types.js';
 import { ChecksumAlgorithm } from 'src/enum.js';
 
 /**
- * Cloud backup (FL-160): the bucket layout, the bucket key's formats and the checks every part of the
- * backup agent shares. Nothing here reads a file or talks to a provider.
+ * Cloud backup (FL-160): the bucket key's formats, the claim and the checks every part of the backup agent
+ * shares. Nothing here reads a file or talks to a provider.
  *
- * Bucket layout (cloud backup service contract): `frameleaf-backup.json` (the claim), `db/<file>`
- * database dumps, `o/<sha256>` one object per unique file, `m/<ISO>.json.gz` one manifest per run.
+ * Bucket layout (FL-1676): `frameleaf-backup.json` (the claim) and `r/v1/<vault id>/`, a repository of the
+ * backup engine that holds every backup (see `cloud-backup-catalog.ts` for what a backup holds).
  */
 
 /** The root marker that claims a bucket for one server. */
 export const CLOUD_BACKUP_MARKER = 'frameleaf-backup.json';
-export const CLOUD_BACKUP_DB_PREFIX = 'db/';
+/** What a file a catalog does not place is called in a restore plan: Buddy Backup's files are named by hash. */
 export const CLOUD_BACKUP_OBJECT_PREFIX = 'o/';
-export const CLOUD_BACKUP_MANIFEST_PREFIX = 'm/';
 /** Where the capability check writes its throwaway test file (and deletes it again). */
 export const CLOUD_BACKUP_PROBE_PREFIX = 'frameleaf-backup-probe/';
-/** Multipart part size; files up to this size go up in one PUT. */
-export const CLOUD_BACKUP_PART_BYTES = 8 * 1024 * 1024;
-/** Assets between two cursor writes. */
-export const CLOUD_BACKUP_BATCH = 25;
-/** Database dumps kept in the bucket; older ones are removed after a new one is uploaded. */
-export const CLOUD_BACKUP_DB_DUMPS_KEPT = 7;
-/** A bucket key is 256 bits (SSE-C AES256). */
+/** A bucket key is 256 bits. */
 export const CLOUD_BACKUP_KEY_BYTES = 32;
 /** The typed acknowledgement own-memory mode needs. */
 export const CLOUD_BACKUP_OWN_MEMORY_ACKNOWLEDGEMENT = 'i understand';
@@ -51,8 +44,6 @@ export const compactIso = (date: Date) =>
     .replaceAll(/[-:]/g, '')
     .replace(/\.\d{3}/, '');
 
-export const manifestKey = (date: Date) => `${CLOUD_BACKUP_MANIFEST_PREFIX}${compactIso(date)}.json.gz`;
-
 /** The value without trailing slashes; a loop, since `/\/+$/` backtracks on long runs of slashes. */
 export const withoutTrailingSlashes = (value: string) => {
   let end = value.length;
@@ -62,7 +53,7 @@ export const withoutTrailingSlashes = (value: string) => {
   return value.slice(0, end);
 };
 
-/** The claimed bucket's address, the index key in `cloud_backup_object`. */
+/** The claimed bucket's address, the index key in `cloud_backup_manifest`. */
 export const bucketRef = (endpoint: string, bucket: string) => `${withoutTrailingSlashes(endpoint)}/${bucket}`;
 
 /**
@@ -80,66 +71,8 @@ export const keyFingerprint = (key: Uint8Array) => {
   return `${hex.slice(0, 4)}-${hex.slice(4)}`;
 };
 
-/** The SSE-C headers every PUT, GET, HEAD, UploadPart and CompleteMultipartUpload carries. */
-export const sseCustomerHeaders = (key: Buffer): Record<string, string> => {
-  if (key.length !== CLOUD_BACKUP_KEY_BYTES) {
-    throw new Error('A bucket key is 256 bits');
-  }
-  return {
-    'x-amz-server-side-encryption-customer-algorithm': 'AES256',
-    'x-amz-server-side-encryption-customer-key': key.toString('base64'),
-    'x-amz-server-side-encryption-customer-key-md5': createHash('md5').update(key).digest('base64'),
-  };
-};
-
-// Crockford base32: no I, L, O or U, so a written-down code is hard to misread.
-const RECOVERY_ALPHABET = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
-const RECOVERY_PREFIX = 'FLRK';
-
 /** The bucket key as a recovery code for the recovery kit: `FLRK-XXXX-…` (52 symbols in 13 groups). */
-export const recoveryCode = (key: Buffer) => {
-  let bits = 0;
-  let value = 0;
-  let output = '';
-  for (const byte of key) {
-    value = (value << 8) | byte;
-    bits += 8;
-    while (bits >= 5) {
-      output += RECOVERY_ALPHABET[(value >>> (bits - 5)) & 31];
-      bits -= 5;
-    }
-    value &= (1 << bits) - 1;
-  }
-  if (bits > 0) {
-    output += RECOVERY_ALPHABET[(value << (5 - bits)) & 31];
-  }
-  return [RECOVERY_PREFIX, ...(output.match(/.{1,4}/g) ?? [])].join('-');
-};
-
-const decodeRecoveryCode = (code: string): Buffer | null => {
-  const symbols = code
-    .toUpperCase()
-    .replaceAll(/[\s-]/g, '')
-    .replace(/^FLRK/, '')
-    .replaceAll('O', '0')
-    .replaceAll(/[IL]/g, '1');
-  let bits = 0;
-  let value = 0;
-  const bytes: number[] = [];
-  for (const symbol of symbols) {
-    const index = RECOVERY_ALPHABET.indexOf(symbol);
-    if (index === -1) {
-      return null;
-    }
-    value = ((value << 5) | index) & 0xff_ff;
-    bits += 5;
-    if (bits >= 8) {
-      bytes.push((value >>> (bits - 8)) & 0xff);
-      bits -= 8;
-    }
-  }
-  return bytes.length === CLOUD_BACKUP_KEY_BYTES ? Buffer.from(bytes) : null;
-};
+export { recoveryCode } from '@frameleaf/backup-core';
 
 /**
  * A bucket key as an administrator can give it: the key file's JSON, the base64 key, or the recovery
@@ -162,7 +95,7 @@ export const parseBackupKey = (input: string): Buffer => {
   }
 
   if (/^flrk[\s-]/i.test(text)) {
-    const decoded = decodeRecoveryCode(text);
+    const decoded = parseRecoveryCode(text);
     if (!decoded) {
       throw new Error('This recovery code is not complete. Check it against the recovery kit.');
     }
@@ -179,7 +112,7 @@ export const parseBackupKey = (input: string): Buffer => {
 export type CloudBackupKeyFile = {
   format: typeof CLOUD_BACKUP_KEY_FILE_FORMAT;
   version: 1;
-  algorithm: 'AES256 (SSE-C)';
+  algorithm: 'AES-256-GCM';
   instanceId: string;
   bucket: string;
   mode: CloudBackupKeyMode;
@@ -197,7 +130,7 @@ export const backupKeyFile = (options: {
 }): CloudBackupKeyFile => ({
   format: CLOUD_BACKUP_KEY_FILE_FORMAT,
   version: 1,
-  algorithm: 'AES256 (SSE-C)',
+  algorithm: 'AES-256-GCM',
   instanceId: options.instanceId,
   bucket: options.bucket,
   mode: options.mode,
@@ -234,8 +167,8 @@ export const parseMarker = (body: Buffer): CloudBackupMarker | null => {
 };
 
 /**
- * The problem with your own bucket's settings, in plain words, or null. SSE-C needs HTTPS, so the
- * storage address must be an HTTPS URL without credentials in it.
+ * The problem with your own bucket's settings, in plain words, or null. The access key is sent with every
+ * request, so the storage address must be an HTTPS URL without credentials in it.
  */
 export const s3SettingsProblem = (s3: {
   endpoint: string;
@@ -250,7 +183,7 @@ export const s3SettingsProblem = (s3: {
     return 'Enter the storage address, for example https://s3.eu-central-2.storage.example.';
   }
   if (url.protocol !== 'https:') {
-    return 'Encrypted uploads with your key (SSE-C) need an HTTPS storage address.';
+    return 'Use an HTTPS storage address.';
   }
   if (url.username || url.password || url.search || url.hash) {
     return 'Keep credentials and options out of the storage address.';
@@ -292,7 +225,7 @@ export const signingRegion = (endpoint: string, configured: string) => {
 export type CloudBackupManifestFile = {
   role: string;
   path: string;
-  /** Exact client-encrypted object address; absent in legacy SSE-C histories. */
+  /** Where the file sits in its backup (a Cloud Backup catalog always says); absent in a Buddy Backup list. */
   objectKey?: string;
   sha256: string;
   size: number;
@@ -450,7 +383,7 @@ export const readManifestSection = <T>(section: unknown, schema: z.ZodType<T>): 
 /** The manifest written to `m/<ISO>.json.gz`: asset id → its files, plus profile images and the dump. */
 export type CloudBackupManifest = {
   format: typeof CLOUD_BACKUP_MANIFEST_FORMAT;
-  version: 1 | 2 | 3;
+  version: 1 | 2 | 3 | 4;
   instanceId: string;
   createdAt: string;
   database: { key: string; sha256: string; size: number } | null;
@@ -490,6 +423,8 @@ export type CloudBackupRunResult = {
   lockedKeyOwners: string[];
   lockedKeyIds: string[];
   sealedKeyIds: string[];
+  /** FL-1676: what storage answered for the stored backup, which its signed record names. */
+  stored?: { versionId: string | null; ciphertextSha256: string };
 };
 
 export const emptyRunResult = (): CloudBackupRunResult => ({
@@ -539,6 +474,11 @@ export const parseRunResult = (value: unknown): CloudBackupRunResult => {
     ? (result.phase as CloudBackupRunResult['phase'])
     : 'database';
   const database = result.database as Record<string, unknown> | null | undefined;
+  const receipt = result.stored as { versionId?: unknown; ciphertextSha256?: unknown } | null | undefined;
+  const stored =
+    receipt && typeof receipt.ciphertextSha256 === 'string' && /^[\da-f]{64}$/.test(receipt.ciphertextSha256)
+      ? { versionId: text(receipt.versionId), ciphertextSha256: receipt.ciphertextSha256 }
+      : undefined;
   const databaseKey = database ? text(database.key) : null;
   const databaseHash = database ? text(database.sha256) : null;
   return {
@@ -560,6 +500,7 @@ export const parseRunResult = (value: unknown): CloudBackupRunResult => {
     lockedKeyOwners: ids(result.lockedKeyOwners),
     lockedKeyIds: ids(result.lockedKeyIds),
     sealedKeyIds: ids(result.sealedKeyIds),
+    ...(stored && { stored }),
   };
 };
 

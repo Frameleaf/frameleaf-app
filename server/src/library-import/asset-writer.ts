@@ -244,11 +244,14 @@ export class CanonicalAssetWriter {
                 [this.binding.operationId, file.transferId, id, file.transferSha256],
               );
           }
+          // Clock parameters are sent as text: the production driver (postgres.js) re-serializes date-typed
+          // parameters through JavaScript Date, which reads an offset-less wall clock in the process time
+          // zone and drops microseconds. Reconciliation parses the same strings in SQL, so both must agree.
           await tx.query(
             `INSERT INTO public.asset(id,"ownerId",type,"originalPath","physicalOriginalFileId",checksum,"checksumAlgorithm",
           "fileCreatedAt","localDateTime","fileModifiedAt","originalFileName","isFavorite",visibility,status,"deletedAt","livePhotoVideoId")
-          VALUES($1::uuid,$2::uuid,$3,$4,$5::uuid,decode($6,'hex'),'sha256',$7::timestamptz,
-          COALESCE($16::timestamp AT TIME ZONE 'UTC',($7::timestamptz AT TIME ZONE $8) AT TIME ZONE 'UTC'),$9::timestamptz,$10,$11,$12::asset_visibility_enum,$13::assets_status_enum,$14::timestamptz,$15::uuid)`,
+          VALUES($1::uuid,$2::uuid,$3,$4,$5::uuid,decode($6,'hex'),'sha256',$7::text::timestamptz,
+          COALESCE($16::text::timestamp AT TIME ZONE 'UTC',($7::text::timestamptz AT TIME ZONE $8) AT TIME ZONE 'UTC'),$9::text::timestamptz,$10,$11,$12::asset_visibility_enum,$13::assets_status_enum,$14::text::timestamptz,$15::uuid)`,
             [
               destinationId,
               ownerId,
@@ -304,7 +307,7 @@ export class CanonicalAssetWriter {
           ];
           await tx.query(
             `INSERT INTO public.asset_exif("assetId","fileSizeInByte","dateTimeOriginal","timeZone",description,rating,latitude,longitude,tags,"lockedProperties")
-          VALUES($1::uuid,$2::bigint,$3::timestamptz,$4,$5,$6,$7,$8,$9::text[],$10::text[])`,
+          VALUES($1::uuid,$2::bigint,$3::text::timestamptz,$4,$5,$6,$7,$8,$9::text[],$10::text[])`,
             [
               destinationId,
               primary.bytes,

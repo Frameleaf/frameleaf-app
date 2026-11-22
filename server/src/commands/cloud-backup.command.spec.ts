@@ -92,10 +92,10 @@ describe('cloud-backup CLI (FL-164)', () => {
         createdAt: '2026-10-11T00:00:00.000Z',
         signerKid: kid,
         manifest: {
-          format: 'frameleaf-client-backup',
+          format: 'frameleaf-repository',
           formatVersion: 1,
           keyVersion: 1,
-          objectKey: `m/v1/${vaultId}/1/20261011T000001Z.json.gz`,
+          objectKey: `r/v1/${vaultId}/s/000000000001-${'b'.repeat(16)}`,
           versionId: 'provider-version',
           ciphertextSha256: 'a'.repeat(64),
         },

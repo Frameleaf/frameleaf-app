@@ -9,6 +9,7 @@
   import LocalSwitch from "./LocalSwitch.svelte";
   import { sendRequest } from "./platform";
   import { hostOf } from "./sign-in-words";
+  import { shortcutWords } from "./shortcuts";
   import type { ConnectionStatus } from "./settings";
 
   let {
@@ -30,6 +31,19 @@
   const server = $derived(hostOf(connection.binding.origin));
   const signedIn = $derived(connection.method === "sign-in");
   const browser = /\bEdg\//.test(navigator.userAgent) ? "Edge" : "Chrome";
+  /** FL-1729: the keys are set on the browser's own shortcuts page. */
+  let shortcuts = $state("");
+  $effect(() => {
+    void chrome.commands
+      .getAll()
+      .then((commands) => (shortcuts = shortcutWords(commands)))
+      .catch(() => {});
+  });
+  function changeShortcuts() {
+    void chrome.tabs.create({
+      url: `${browser === "Edge" ? "edge" : "chrome"}://extensions/shortcuts`,
+    });
+  }
 
   async function signOut(localOnly = false) {
     if (working) return;
@@ -88,6 +102,17 @@
         : "Refreshing…"}
     </dd>
   </dl>
+  <div class="setting">
+    <span class="label">Keyboard shortcuts</span>
+    <div class="setting-row">
+      <span class="setting-value"
+        ><Icon name="keyboardOutline" size={16} />{shortcuts}</span
+      >
+      <button type="button" class="small" onclick={changeShortcuts}
+        >Change</button
+      >
+    </div>
+  </div>
   <LocalSwitch bind:checked={allowLocalhost} disabled={working} />
   <p class="hint">
     {#if signedIn}

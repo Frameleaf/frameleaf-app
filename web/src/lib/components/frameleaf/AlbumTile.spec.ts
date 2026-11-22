@@ -67,4 +67,15 @@ describe('AlbumTile', () => {
     render(AlbumTile, { album, currentUserId: 'me' });
     expect(screen.queryByTestId('album-recovered-mark')).toBeNull();
   });
+  it('marks an album made from a folder "Folder album" on its cover (FL-838)', () => {
+    const album = albumFactory.build({
+      albumThumbnailAssetId: null,
+      folderAlbum: { libraryId: 'library-1', folderPath: '/mnt/photos/Banff' },
+    });
+    render(AlbumTile, { album, currentUserId: 'me' });
+
+    const mark = screen.getByTestId('album-folder-mark');
+    expect(mark).toHaveTextContent('Folder album');
+    expect(mark.getAttribute('title')).toBe('Made from a folder in your library');
+  });
 });

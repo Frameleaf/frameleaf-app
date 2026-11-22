@@ -45,7 +45,7 @@ const operation = async (ownerId: string, task: 'backup' | 'verify', depth = 'sa
     ("ownerId", kind, destination, label, snapshot, settings, status, result, "finishedAt")
     VALUES (${ownerId}::uuid, 'cloud_backup', 'local', 'Safety test',
       ${{ bucketRef: bucket, task, depth }}::jsonb, '{}'::jsonb, 'completed',
-      ${task === 'backup' ? { phase: 'done' } : { task, depth, done: true }}::jsonb, clock_timestamp()) RETURNING id`.execute(
+      ${task === 'backup' ? { phase: 'done' } : { task, depth, done: true, missing: 0, mismatched: 0 }}::jsonb, clock_timestamp()) RETURNING id`.execute(
     db,
   );
   return rows[0].id;
@@ -70,19 +70,13 @@ const recordSafetyProof = async (
     .where('id', '=', backup)
     .execute();
   const manifest = await index.createManifest({ bucket, key: `${assetId}.json`, operationId: backup });
-  await index.record(bucket, [{ sha256, size: 10, etag: null }]);
-  await db
-    .updateTable('cloud_backup_object')
-    .set({ uploadedAt: completedAt })
-    .where('sha256', '=', sha256)
-    .where('bucket', '=', bucket)
-    .execute();
   await db.insertInto('cloud_backup_manifest_original').values({ manifestId: manifest.id, assetId, sha256 }).execute();
   await db
     .updateTable('cloud_backup_manifest')
     .set({ status: 'complete', createdAt: new Date(completedAt.getTime() - 1000), finishedAt: completedAt })
     .where('id', '=', manifest.id)
     .execute();
+  // FL-1676: a whole-backup check that found nothing missing or damaged, after the backup
   const verify = await operation(ownerId, 'verify');
   await db
     .updateTable('media_operation')
@@ -92,17 +86,6 @@ const recordSafetyProof = async (
       finishedAt: new Date(completedAt.getTime() + 2000),
     })
     .where('id', '=', verify)
-    .execute();
-  await db
-    .insertInto('cloud_backup_object_verification')
-    .values({
-      bucket,
-      sha256,
-      operationId: verify,
-      method: 'sha256-get',
-      result: 'passed',
-      checkedAt: new Date(completedAt.getTime() + 1000),
-    })
     .execute();
 };
 
@@ -269,7 +252,7 @@ describe('own safety API PostgreSQL authorization and proof qualification', () =
     });
   });
 
-  it('aggregates positive mixed-library backup counts and dates without borrowing newer foreign proof', async () => {
+  it('aggregates positive mixed-library backup counts and dates without borrowing a newer foreign completion', async () => {
     const { ctx, sut, index } = setup();
     const { user: owner } = await ctx.newUser();
     const { user: foreign } = await ctx.newUser();
@@ -305,12 +288,13 @@ describe('own safety API PostgreSQL authorization and proof qualification', () =
       backedUp: 1,
       backedUpPercent: 50,
       lastCompletedRunAt: completedAt.toISOString(),
-      lastVerifiedRunAt: new Date(completedAt.getTime() + 2000).toISOString(),
+      // FL-1676: a check reads the whole backup, so the later one covers the owner's item too
+      lastVerifiedRunAt: '2026-09-25T12:00:02.000Z',
     });
     expect((await sut.summary(factory.auth({ user: foreign }))).lastCompletedRunAt).toBe('2026-09-25T12:00:00.000Z');
   });
 
-  it('requires current retained completion/object presence; HEAD, cancelled checks and deleted assets cannot invent verification', async () => {
+  it('requires current retained completion and a clean whole-backup check; open, failed and cancelled checks and deleted assets cannot invent verification', async () => {
     const { ctx, sut, index } = setup();
     const { user } = await ctx.newUser();
     const sha = hash('backed-current');
@@ -323,60 +307,44 @@ describe('own safety API PostgreSQL authorization and proof qualification', () =
     const lookup = async () => (await sut.lookup(auth, { hashes: [sha] })).assets[0];
     const backupOperation = await operation(user.id, 'backup');
     const manifest = await index.createManifest({ bucket, key: `${asset.id}.json`, operationId: backupOperation });
-    await index.record(bucket, [{ sha256: sha, size: 10, etag: null }]);
     await db
       .insertInto('cloud_backup_manifest_original')
       .values({ manifestId: manifest.id, assetId: asset.id, sha256: sha })
       .execute();
     await db
       .updateTable('cloud_backup_manifest')
-      .set({ status: 'complete', finishedAt: new Date() })
+      .set({ status: 'complete', finishedAt: new Date(Date.now() - 60_000) })
       .where('id', '=', manifest.id)
       .execute();
     expect((await lookup()).cloudBackup).toMatchObject({ state: 'completed', lastVerifiedRunAt: null });
     await db.updateTable('media_operation').set({ finishedAt: null }).where('id', '=', backupOperation).execute();
     expect((await lookup()).cloudBackup.state).toBe('not-backed-up');
     await db.updateTable('media_operation').set({ finishedAt: new Date() }).where('id', '=', backupOperation).execute();
-    const head = await operation(user.id, 'verify', 'full');
+    const check = await operation(user.id, 'verify');
+    expect((await lookup()).cloudBackup.lastVerifiedRunAt).not.toBeNull();
+    for (const result of [
+      { task: 'verify', depth: 'sample', done: false, missing: 0, mismatched: 0 },
+      { task: 'verify', depth: 'sample', done: true, missing: 1, mismatched: 0 },
+      { task: 'verify', depth: 'sample', done: true, missing: 0, mismatched: 2 },
+      { task: 'verify', depth: 'sample', done: true },
+    ]) {
+      await db.updateTable('media_operation').set({ result }).where('id', '=', check).execute();
+      expect((await lookup()).cloudBackup.lastVerifiedRunAt).toBeNull();
+    }
     await db
-      .insertInto('cloud_backup_object_verification')
-      .values({ bucket, sha256: sha, operationId: head, method: 'size-head', result: 'passed' })
-      .execute();
-    expect((await lookup()).cloudBackup.lastVerifiedRunAt).toBeNull();
-    const get = await operation(user.id, 'verify');
-    await db
-      .insertInto('cloud_backup_object_verification')
-      .values({ bucket, sha256: sha, operationId: get, method: 'sha256-get', result: 'passed' })
+      .updateTable('media_operation')
+      .set({ result: { task: 'verify', depth: 'full', done: true, missing: 0, mismatched: 0 } })
+      .where('id', '=', check)
       .execute();
     expect((await lookup()).cloudBackup.lastVerifiedRunAt).not.toBeNull();
-    await db
-      .updateTable('media_operation')
-      .set({ result: { task: 'verify', depth: 'sample', done: false } })
-      .where('id', '=', get)
-      .execute();
-    expect((await lookup()).cloudBackup.lastVerifiedRunAt).toBeNull();
-    await db
-      .updateTable('media_operation')
-      .set({ result: { task: 'verify', depth: 'sample', done: true } })
-      .where('id', '=', get)
-      .execute();
-    const failedGet = await operation(user.id, 'verify');
-    await db
-      .insertInto('cloud_backup_object_verification')
-      .values({ bucket, sha256: sha, operationId: failedGet, method: 'sha256-get', result: 'mismatched' })
-      .execute();
-    expect((await lookup()).cloudBackup.lastVerifiedRunAt).toBeNull();
-    await db.deleteFrom('media_operation').where('id', '=', failedGet).execute();
-    await db
-      .updateTable('media_operation')
-      .set({ status: MediaOperationStatus.Cancelled })
-      .where('id', '=', get)
-      .execute();
-    expect((await lookup()).cloudBackup.lastVerifiedRunAt).toBeNull();
+    for (const status of [MediaOperationStatus.Cancelled, MediaOperationStatus.Failed]) {
+      await db.updateTable('media_operation').set({ status }).where('id', '=', check).execute();
+      expect((await lookup()).cloudBackup.lastVerifiedRunAt).toBeNull();
+    }
     await db
       .updateTable('media_operation')
       .set({ status: MediaOperationStatus.Completed })
-      .where('id', '=', get)
+      .where('id', '=', check)
       .execute();
     for (const status of [
       MediaOperationStatus.Failed,
@@ -403,10 +371,7 @@ describe('own safety API PostgreSQL authorization and proof qualification', () =
       .set({ operationId: backupOperation })
       .where('id', '=', manifest.id)
       .execute();
-    await index.forget(bucket, [sha]);
-    expect((await lookup()).cloudBackup.state).toBe('not-backed-up');
-    await index.record(bucket, [{ sha256: sha, size: 10, etag: null }]);
-    expect((await lookup()).cloudBackup.lastVerifiedRunAt).toBeNull();
+    expect((await lookup()).cloudBackup.state).toBe('completed');
     await db.deleteFrom('asset').where('id', '=', asset.id).execute();
     expect((await sut.lookup(auth, { hashes: [sha] })).assets).toEqual([]);
     expect(await sut.summary(auth)).toMatchObject({

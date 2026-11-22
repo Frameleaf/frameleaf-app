@@ -39,6 +39,14 @@ const faceLooksSidewaysSql = sql<boolean>`(${faceBoxWidth} > ${sql.lit(FACE_SIDE
 const faceFrameShare = sql<number>`(greatest(${faceBoxWidth}, ${faceBoxHeight})::float8 / greatest(asset_face."imageWidth", asset_face."imageHeight", 1))`;
 /** FL-1385: a candidate the owner has not answered, or answered "later" long enough ago. */
 const splitCandidateIsOpen = sql<boolean>`(person_split_candidate."dismissedUntil" is null or person_split_candidate."dismissedUntil" < now())`;
+/** FL-874: the categories the row's owner put the row's person in (always the person's own owner's). */
+const personCategoryIds = sql<string[]>`array(
+  select "person_category_member"."categoryId"::text
+  from "person_category_member"
+  where "person_category_member"."ownerId" = "person"."ownerId"
+    and "person_category_member"."personId" = "person"."personGroupId"
+  order by "person_category_member"."categoryId"
+)`;
 /** FL-1384: how many of a person's faces their centre is read from when people are compared. */
 const MERGE_CENTRE_FACES = 10;
 /** Sideways, cut off by the frame, or tiny. */
@@ -57,7 +65,16 @@ export interface PersonSearchOptions extends HiddenContentQueryOptions {
 }
 export interface PersonNameSearchOptions extends HiddenContentQueryOptions {
   withHidden?: boolean;
+  /** FL-941: also match the owner's own notes about the person (the People search box only) */
+  matchNotes?: boolean;
 }
+/** FL-864, FL-941: what `person_profile` holds about one of an owner's people. */
+export type PersonProfile = {
+  deathDate: Date | string | null;
+  notes: string | null;
+};
+/** `\`, `%` and `_` stand for themselves in an ILIKE pattern. */
+const escapeLike = (value: string) => value.replaceAll(/[\\%_]/g, (character) => `\\${character}`);
 export interface PersonNameResponse {
   personGroupId: string;
   name: string;
@@ -322,12 +339,27 @@ export class PersonRepository {
     if (personGroupIds.length === 0) {
       return [];
     }
-    return this.db
+    const deleted = await this.db
       .deleteFrom('person')
       .$if(!!ownerId, (qb) => qb.where('ownerId', '=', ownerId!))
       .where('person.personGroupId', 'in', personGroupIds)
       .returning(['personGroupId', 'ownerId', 'thumbnailPath'])
       .execute();
+    // FL-864, FL-941: a deleted person's date of passing and notes go with them, so a person later made again
+    // in the same group starts without them
+    if (deleted.length > 0) {
+      await this.db
+        .deleteFrom('person_profile')
+        .where((eb) =>
+          eb.or(
+            deleted.map((person) =>
+              eb.and([eb('ownerId', '=', person.ownerId), eb('personId', '=', person.personGroupId)]),
+            ),
+          ),
+        )
+        .execute();
+    }
+    return deleted;
   }
   @GenerateSql({ params: [[DummyValue.UUID]] })
   @Chunked()
@@ -490,6 +522,13 @@ export class PersonRepository {
     const items = await this.db
       .selectFrom('person')
       .selectAll('person')
+      // FL-864, FL-941: the owner's date of passing and notes, read with the page rather than per person
+      .leftJoin('person_profile', (join) =>
+        join
+          .onRef('person_profile.ownerId', '=', 'person.ownerId')
+          .onRef('person_profile.personId', '=', 'person.personGroupId'),
+      )
+      .select(['person_profile.deathDate', 'person_profile.notes'])
       .innerJoin('asset_face', 'asset_face.personGroupId', 'person.personGroupId')
       .innerJoin('asset', (join) =>
         join
@@ -506,6 +545,8 @@ export class PersonRepository {
       .select((eb) => [
         eb.fn.count<number>('asset_face.assetId').distinct().as('assetCount'),
         eb.fn.max('asset.fileCreatedAt').as('lastSeenAt'),
+        // FL-874: the owner's categories for each person, read with the page rather than per person
+        personCategoryIds.as('categoryIds'),
       ])
       .$call((qb) => withHiddenContentFilter(qb, options))
       .where('person.ownerId', '=', userId)
@@ -530,7 +571,7 @@ export class PersonRepository {
           ),
         ]),
       )
-      .groupBy(['person.ownerId', 'person.personGroupId'])
+      .groupBy(['person.ownerId', 'person.personGroupId', 'person_profile.ownerId', 'person_profile.personId'])
       .$if(!!options?.closestFaceAssetId, (qb) =>
         qb.orderBy((eb) =>
           eb(
@@ -782,6 +823,29 @@ export class PersonRepository {
       .where('person.ownerId', '=', ownerId)
       .executeTakeFirst();
   }
+  /** FL-864, FL-941: the owner's date of passing and notes for one of their people, if any were kept. */
+  @GenerateSql({ params: [{ ownerId: DummyValue.UUID, personGroupId: DummyValue.UUID }] })
+  getProfile({ ownerId, personGroupId }: PersonId): Promise<PersonProfile | undefined> {
+    return this.db
+      .selectFrom('person_profile')
+      .select(['person_profile.deathDate', 'person_profile.notes'])
+      .where('person_profile.ownerId', '=', ownerId)
+      .where('person_profile.personId', '=', personGroupId)
+      .executeTakeFirst();
+  }
+  /** FL-864, FL-941: sets the given details of a person's profile, leaving the others as they are. */
+  async upsertProfile({ ownerId, personGroupId }: PersonId, values: Partial<PersonProfile>): Promise<PersonProfile> {
+    const changes = {
+      ...(values.deathDate !== undefined && { deathDate: values.deathDate }),
+      ...(values.notes !== undefined && { notes: values.notes }),
+    };
+    return this.db
+      .insertInto('person_profile')
+      .values({ ownerId, personId: personGroupId, ...changes })
+      .onConflict((oc) => oc.columns(['ownerId', 'personId']).doUpdateSet({ ...changes, updatedAt: sql<Date>`now()` }))
+      .returning(['person_profile.deathDate', 'person_profile.notes'])
+      .executeTakeFirstOrThrow();
+  }
   @GenerateSql({ params: [DummyValue.UUID, DummyValue.STRING, { withHidden: true }] })
   getByName(userId: string, personName: string, options: PersonNameSearchOptions) {
     return this.db
@@ -790,8 +854,22 @@ export class PersonRepository {
       )
       .selectFrom(['similarity_threshold', 'person'])
       .selectAll('person')
+      .leftJoin('person_profile', (join) =>
+        join
+          .onRef('person_profile.ownerId', '=', 'person.ownerId')
+          .onRef('person_profile.personId', '=', 'person.personGroupId'),
+      )
+      .select(['person_profile.deathDate', 'person_profile.notes'])
       .where('person.ownerId', '=', userId)
-      .where(() => sql`f_unaccent("person"."name") %> f_unaccent(${personName})`)
+      .where((eb) =>
+        options.matchNotes
+          ? // FL-941: the owner's own notes match too; `person.ownerId` above keeps them to the owner's people
+            eb.or([
+              sql<boolean>`f_unaccent("person"."name") %> f_unaccent(${personName})`,
+              sql<boolean>`f_unaccent("person_profile"."notes") ilike ('%' || f_unaccent(${escapeLike(personName)}) || '%')`,
+            ])
+          : sql<boolean>`f_unaccent("person"."name") %> f_unaccent(${personName})`,
+      )
       .orderBy(sql`f_unaccent("person"."name") <->>> f_unaccent(${personName})`)
       .limit(100)
       .$if(!options.withHidden, (qb) => qb.where('person.isHidden', '=', false))
@@ -1013,13 +1091,35 @@ export class PersonRepository {
    * Returns the people whose main photo is cut from this face.
    */
   async moveDetectedFace(id: string, box: FaceBoxPixels & { isVisible: boolean }): Promise<PersonId[]> {
-    await this.db.updateTable('asset_face').set(box).where('asset_face.id', '=', id).execute();
+    // FL-863: eye scores belong to the old box; the face is scored again
+    await this.db
+      .updateTable('asset_face')
+      .set({ ...box, eyesOpen: null, eyeSharpness: null, eyeScoreVersion: null })
+      .where('asset_face.id', '=', id)
+      .execute();
     return this.db
       .selectFrom('person')
       .select(['person.ownerId', 'person.personGroupId'])
       .where('person.faceAssetId', '=', id)
       .execute();
   }
+  /** FL-863: one asset's faces' eye scores. ponytail: one update a face; a photo has a handful of faces. */
+  @GenerateSql({ params: [[{ id: DummyValue.UUID, eyesOpen: 0.9, eyeSharpness: 0.8 }], 1] })
+  async updateEyeScores(
+    scores: Array<{ id: string; eyesOpen: number | null; eyeSharpness: number | null }>,
+    version: number,
+  ): Promise<void> {
+    await this.db.transaction().execute(async (tx) => {
+      for (const { id, eyesOpen, eyeSharpness } of scores) {
+        await tx
+          .updateTable('asset_face')
+          .set({ eyesOpen, eyeSharpness, eyeScoreVersion: version })
+          .where('asset_face.id', '=', id)
+          .execute();
+      }
+    });
+  }
+
   @GenerateSql({ params: [[], [], [{ faceId: DummyValue.UUID, embedding: DummyValue.VECTOR }]] })
   async refreshFaces(
     facesToAdd: (Insertable<AssetFaceTable> & {
@@ -2184,8 +2284,8 @@ export class PersonRepository {
   }
   /**
    * FL-326: copies faces onto a partner copy with no ML re-run: the exact boxes, detection source and
-   * visibility, the recognition embedding, and the person each maps to in the recipient's library. A box
-   * the target already has is left alone, so copying twice is harmless.
+   * visibility, the owner's eye scores (FL-863), the recognition embedding, and the person each maps to in
+   * the recipient's library. A box the target already has is left alone, so copying twice is harmless.
    */
   async copyFacesToAsset(
     targetAssetId: string,
@@ -2210,10 +2310,11 @@ export class PersonRepository {
       }>`
         WITH map ("sourceFaceId", "faceId", "personGroupId") AS (VALUES ${values})
         INSERT INTO asset_face (id, "assetId", "personGroupId", "imageWidth", "imageHeight", "boundingBoxX1",
-          "boundingBoxY1", "boundingBoxX2", "boundingBoxY2", "sourceType", "isVisible")
+          "boundingBoxY1", "boundingBoxX2", "boundingBoxY2", "sourceType", "isVisible", "eyesOpen", "eyeSharpness",
+          "eyeScoreVersion")
         SELECT map."faceId", ${targetAssetId}::uuid, map."personGroupId", face."imageWidth", face."imageHeight",
           face."boundingBoxX1", face."boundingBoxY1", face."boundingBoxX2", face."boundingBoxY2", face."sourceType",
-          face."isVisible"
+          face."isVisible", face."eyesOpen", face."eyeSharpness", face."eyeScoreVersion"
         FROM map JOIN asset_face face ON face.id = map."sourceFaceId"
         WHERE NOT EXISTS (
           SELECT 1 FROM asset_face existing
@@ -2310,6 +2411,179 @@ export class PersonRepository {
       .updateTable('asset_face')
       .set({ personGroupId, correctedAt: sql`clock_timestamp()` })
       .where('asset_face.id', '=', id)
+      .execute();
+  }
+
+  /** FL-874: the owner's categories for their people, in their order. */
+  @GenerateSql({ params: [DummyValue.UUID] })
+  getCategories(ownerId: string) {
+    return this.db
+      .selectFrom('person_category')
+      .selectAll('person_category')
+      .where('person_category.ownerId', '=', ownerId)
+      .orderBy('person_category.order', 'asc')
+      .orderBy('person_category.createdAt', 'asc')
+      .orderBy('person_category.id', 'asc')
+      .execute();
+  }
+
+  /**
+   * FL-874: makes the owner's starting categories, once. The `person_category_seed` row marks an account whose
+   * categories were made, so deleting them all never brings them back; two first reads at the same moment make
+   * them once, as the second waits on the first's marker. True when they were made now.
+   */
+  async seedCategories(ownerId: string, categories: { name: string; color: string | null }[]): Promise<boolean> {
+    return this.db.transaction().execute(async (tx) => {
+      const marker = await tx
+        .insertInto('person_category_seed')
+        .values({ ownerId })
+        .onConflict((oc) => oc.column('ownerId').doNothing())
+        .returning('person_category_seed.ownerId')
+        .executeTakeFirst();
+      if (!marker) {
+        return false;
+      }
+      if (categories.length > 0) {
+        await tx
+          .insertInto('person_category')
+          .values(categories.map(({ name, color }, order) => ({ ownerId, name, color, order })))
+          .execute();
+      }
+      return true;
+    });
+  }
+
+  /** FL-874: one of the owner's categories; undefined for one that is missing or someone else's. */
+  @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID] })
+  getCategory(ownerId: string, id: string) {
+    return this.db
+      .selectFrom('person_category')
+      .selectAll('person_category')
+      .where('person_category.ownerId', '=', ownerId)
+      .where('person_category.id', '=', id)
+      .executeTakeFirst();
+  }
+
+  /** FL-874: which of these categories are the owner's. */
+  @GenerateSql({ params: [DummyValue.UUID, [DummyValue.UUID]] })
+  async getOwnCategoryIds(ownerId: string, ids: string[]): Promise<string[]> {
+    if (ids.length === 0) {
+      return [];
+    }
+    const rows = await this.db
+      .selectFrom('person_category')
+      .select('person_category.id')
+      .where('person_category.ownerId', '=', ownerId)
+      .where('person_category.id', 'in', ids)
+      .execute();
+    return rows.map(({ id }) => id);
+  }
+
+  /** FL-874: a new category for the owner, after their others unless an order is given. */
+  @GenerateSql({ params: [{ ownerId: DummyValue.UUID, name: DummyValue.STRING, color: null }] })
+  createCategory({
+    ownerId,
+    name,
+    color,
+    order,
+  }: {
+    ownerId: string;
+    name: string;
+    color: string | null;
+    order?: number;
+  }) {
+    return this.db
+      .insertInto('person_category')
+      .values({
+        ownerId,
+        name,
+        color,
+        order:
+          order ??
+          sql<number>`(select coalesce(max("order") + 1, 0) from "person_category" where "ownerId" = ${ownerId})`,
+      })
+      .returningAll()
+      .executeTakeFirstOrThrow();
+  }
+
+  /** FL-874: changes one of the owner's categories; undefined when it is missing or someone else's. */
+  @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID, { name: DummyValue.STRING }] })
+  updateCategory(ownerId: string, id: string, changes: { name?: string; color?: string | null; order?: number }) {
+    return this.db
+      .updateTable('person_category')
+      .set({
+        ...(changes.name !== undefined && { name: changes.name }),
+        ...(changes.color !== undefined && { color: changes.color }),
+        ...(changes.order !== undefined && { order: changes.order }),
+        updatedAt: sql<Date>`now()`,
+      })
+      .where('person_category.ownerId', '=', ownerId)
+      .where('person_category.id', '=', id)
+      .returningAll()
+      .executeTakeFirst();
+  }
+
+  /** FL-874: deletes one of the owner's categories; its people stay, only their place in it goes. */
+  @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID] })
+  async deleteCategory(ownerId: string, id: string): Promise<boolean> {
+    const { numDeletedRows } = await this.db
+      .deleteFrom('person_category')
+      .where('person_category.ownerId', '=', ownerId)
+      .where('person_category.id', '=', id)
+      .executeTakeFirst();
+    return Number(numDeletedRows) > 0;
+  }
+
+  /** FL-874: the categories one of the owner's people is in. */
+  @GenerateSql({ params: [{ ownerId: DummyValue.UUID, personGroupId: DummyValue.UUID }] })
+  async getPersonCategoryIds({ ownerId, personGroupId }: PersonId): Promise<string[]> {
+    const rows = await this.db
+      .selectFrom('person_category_member')
+      .select('person_category_member.categoryId')
+      .where('person_category_member.ownerId', '=', ownerId)
+      .where('person_category_member.personId', '=', personGroupId)
+      .orderBy('person_category_member.categoryId')
+      .execute();
+    return rows.map(({ categoryId }) => categoryId);
+  }
+
+  /** FL-874: puts one of the owner's people in exactly these categories (the owner's own, checked by the caller). */
+  async setPersonCategories({ ownerId, personGroupId }: PersonId, categoryIds: string[]): Promise<void> {
+    await this.db.transaction().execute(async (tx) => {
+      await tx
+        .deleteFrom('person_category_member')
+        .where('person_category_member.ownerId', '=', ownerId)
+        .where('person_category_member.personId', '=', personGroupId)
+        .$if(categoryIds.length > 0, (qb) => qb.where('person_category_member.categoryId', 'not in', categoryIds))
+        .execute();
+      if (categoryIds.length > 0) {
+        await tx
+          .insertInto('person_category_member')
+          .values(categoryIds.map((categoryId) => ({ ownerId, personId: personGroupId, categoryId })))
+          .onConflict((oc) => oc.doNothing())
+          .execute();
+      }
+    });
+  }
+
+  /** FL-874: a merge keeps the merged-away person's categories on the person who stays. */
+  @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID, DummyValue.UUID] })
+  async copyCategoryMembers(ownerId: string, fromPersonGroupId: string, toPersonGroupId: string): Promise<void> {
+    await this.db
+      .insertInto('person_category_member')
+      .columns(['ownerId', 'personId', 'categoryId'])
+      .expression((eb) =>
+        eb
+          .selectFrom('person_category_member')
+          .select([
+            'person_category_member.ownerId',
+            sql<string>`${toPersonGroupId}::uuid`.as('personId'),
+            'person_category_member.categoryId',
+          ])
+          .where('person_category_member.ownerId', '=', ownerId)
+          .where('person_category_member.personId', '=', fromPersonGroupId),
+      )
+      .onConflict((oc) => oc.doNothing())
       .execute();
   }
 }

@@ -122,6 +122,7 @@ it('reports a failed shift-click range and clears its pending state', async () =
   const handleError = vi.fn();
   const select = closure('LibraryTimeline', 'const selectRange =', '\n  };', 'selectRange', {
     session: { revision: 1, session: { anchorId: 'a' } },
+    clickedId: undefined,
     rangePending: false,
     timelineManager: { retrieveRange: () => Promise.reject(error) },
     handleError,
@@ -129,6 +130,22 @@ it('reports a failed shift-click range and clears its pending state', async () =
   });
   await select({ id: 'b' });
   expect(handleError).toHaveBeenCalledWith(error, expect.any(String));
+});
+
+it('ranges a shift-click from the item clicked last when nothing was ticked first', async () => {
+  const session = { revision: 1, selection: [], session: { anchorId: null }, select: vi.fn(), dispatch: vi.fn() };
+  const retrieveRange = vi.fn().mockResolvedValue([{ id: 'a' }, { id: 'between' }, { id: 'b' }]);
+  const select = closure('LibraryTimeline', 'const selectRange =', '\n  };', 'selectRange', {
+    session,
+    clickedId: 'a',
+    rangePending: false,
+    timelineManager: { retrieveRange },
+    handleError: vi.fn(),
+    $t: (key: string) => key,
+  });
+  await select({ id: 'b' });
+  expect(retrieveRange).toHaveBeenCalledWith({ id: 'a' }, { id: 'b' });
+  expect(session.dispatch).toHaveBeenCalledWith({ type: 'selection', ids: ['a', 'between', 'b'] });
 });
 
 const editorClosure = (name: string, end: string, dependencies: Record<string, unknown>) => {

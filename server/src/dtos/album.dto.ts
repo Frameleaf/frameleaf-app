@@ -4,11 +4,12 @@ import z from 'zod';
 import { isValidAlbumIcon } from 'src/constants/album-icons.js';
 import { AlbumUser, AuthSharedLink } from 'src/database.js';
 import { HistoryBuilder } from 'src/decorators.js';
+import { AlbumTextCardResponseSchema } from 'src/dtos/album-order.dto.js';
 import { BulkIdErrorReasonSchema } from 'src/dtos/asset-ids.response.dto.js';
 import { MapAsset } from 'src/dtos/asset-response.dto.js';
 import { PartnerOriginSchema } from 'src/dtos/partner-origin.dto.js';
 import { SMART_ALBUM_BUILT_IN_KINDS } from 'src/dtos/system-config.dto.js';
-import { UserResponseSchema, mapUser } from 'src/dtos/user.dto.js';
+import { UserResponseSchema, mapMember } from 'src/dtos/user.dto.js';
 import {
   AlbumKind,
   AlbumKindSchema,
@@ -146,6 +147,12 @@ const UpdateAlbumSchema = z
         "Lock the album: the owner's items in it (photos, videos and any other files) are locked now, together with the rest of their stacks and Live Photo videos, even those outside the album. The owner's items added later through the album's add actions are locked as they are added (if that fails, the hourly check retries); any that arrive another way (smart-album rules, iCloud sync, capture) are locked by an hourly check, which can take more than one run for a very large backlog. Other members' items and links are not locked. Unlocking the album stops locking new items and leaves the locked ones locked. While the item, or any other part of its stack or Live Photo, is in a locked album its owner owns, unlocking that item alone does not last: the hourly check locks it again. To keep an item unlocked, remove it and its stack and Live Photo parts from every locked album of the item's owner, or unlock those albums, first. Locked albums of other people don't lock it. Only the album owner may send this field; other members must leave it out, or the whole update is refused (403).",
       ),
     order: AssetOrderSchema.optional(),
+    isCustomOrder: z
+      .boolean()
+      .optional()
+      .describe(
+        'Show the album in its own order instead of by date. Turning it on the first time orders the photos by the current date order; turning it off keeps the custom order for next time. Read the custom order with GET /timeline/ordered?sort=custom&albumId=…',
+      ),
     parentId: z
       .uuidv4()
       .nullable()
@@ -231,6 +238,14 @@ const ContributorCountResponseSchema = z
   })
   .meta({ id: 'ContributorCountResponseDto' });
 
+/** FL-838: the library folder an album is kept in sync with. */
+const AlbumFolderSourceSchema = z
+  .object({
+    libraryId: z.uuidv4().describe('External library ID'),
+    folderPath: z.string().describe('The folder on the server the album shows'),
+  })
+  .meta({ id: 'AlbumFolderSourceDto' });
+
 export const AlbumResponseSchema = z
   .object({
     libraryScope: LibraryScopeSchema.optional(),
@@ -285,6 +300,18 @@ export const AlbumResponseSchema = z
         'The owner chose to lock this album: their items in it are locked as they are added, or by the hourly check. Unlocking stops that; items already locked stay locked. It does not prove that every item is locked yet.',
       ),
     order: AssetOrderSchema.optional(),
+    isCustomOrder: z
+      .boolean()
+      .optional()
+      .describe(
+        'True when the album shows its own order (GET /timeline/ordered?sort=custom&albumId=…) instead of the date order in order',
+      ),
+    textCards: z
+      .array(AlbumTextCardResponseSchema)
+      .optional()
+      .describe(
+        'Text cards between the photos, in album order. Populated by GET /albums/{id} for a custom-order album.',
+      ),
     contributorCounts: z.array(ContributorCountResponseSchema).optional(),
     parentId: z.string().nullable().describe('Parent album or collection (null = top-level)'),
     // Deliberately tolerant on read: a value stored before validation existed
@@ -338,6 +365,10 @@ export const AlbumResponseSchema = z
     // FL-326
     origin: PartnerOriginSchema.optional().describe(
       'Present on your own album when partner sharing copied it from another library',
+    ),
+    // FL-838
+    folderAlbum: AlbumFolderSourceSchema.optional().describe(
+      "Present when the album was made for a folder of one of your external libraries and is kept in sync with it. Only the library's owner is told. Populated by GET /albums, GET /albums/tree, GET /albums/hierarchy and GET /albums/{id}.",
     ),
   })
   .meta({ id: 'AlbumResponseDto' });
@@ -496,6 +527,7 @@ export type MapAlbumDto = {
   isActivityEnabled: boolean;
   isLocked?: boolean;
   order: AssetOrder;
+  isCustomOrder?: boolean;
   parentId: string | null;
   icon: string | null;
   color?: string | null;
@@ -513,7 +545,7 @@ export const mapAlbum = (entity: MaybeDehydrated<MapAlbumDto>): AlbumResponseDto
 
   if (entity.albumUsers) {
     for (const albumUser of entity.albumUsers) {
-      const user = mapUser(albumUser.user);
+      const user = mapMember(albumUser.user);
       albumUsers.push({
         user,
         role: albumUser.role,
@@ -551,6 +583,7 @@ export const mapAlbum = (entity: MaybeDehydrated<MapAlbumDto>): AlbumResponseDto
     isActivityEnabled: entity.isActivityEnabled,
     isLocked: entity.isLocked ?? false,
     order: entity.order,
+    isCustomOrder: entity.isCustomOrder ?? false,
     parentId: entity.parentId,
     icon: entity.icon,
     color: entity.color ?? null,

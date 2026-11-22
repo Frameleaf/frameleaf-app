@@ -247,15 +247,16 @@ window.__vite_plugin_react_preamble_installed__=true;</script>`,
       );
       pipeline.setWorkingRange("hdr");
       const refusals = [];
+      // Stylised transitions stay refused; the mix and selection ones render since FL-1556.
       for (const id of [
-        "nonAdditiveDissolve",
+        "smoothCut",
         "lightLeakBurn",
         "filmGateSlip",
         "sparkles",
         "chromatic",
         "lensWarpZoom",
         "liquidDistort",
-        "dissolve",
+        "glitch",
       ]) {
         let error;
         try {
@@ -384,6 +385,51 @@ window.__vite_plugin_react_preamble_installed__=true;</script>`,
       } finally {
         renderer.dispose();
       }
+      // FL-1556: every linear transition passes the same caller admission; a stylised GPU
+      // transition and a Canvas 2D one are refused there with the shared typed error.
+      const admission = {};
+      for (const presentation of [
+        "dissolve",
+        "fade",
+        "nonAdditiveDissolve",
+        "dipToColorDissolve",
+        "blurDissolve",
+        "wipe",
+        "slide",
+        "iris",
+        "clockWipe",
+        "flip",
+        "pixelate",
+        "radialBlur",
+        "glitch",
+        "barnDoor",
+      ]) {
+        const admitted = new OffscreenCanvas(16, 16);
+        const admittedRenderer = await createCompositionRenderer(
+          {
+            ...composition,
+            transitions: [{ ...composition.transitions[0], presentation }],
+          },
+          admitted,
+          admitted.getContext("2d"),
+          { mode: "export" },
+        );
+        try {
+          await admittedRenderer.preload?.();
+          const frame = await admittedRenderer.renderFrameSignal(40, "pq");
+          admission[presentation] = {
+            pixel: Array.from(frame.rgba).slice(
+              (8 * 16 + 8) * 4,
+              (8 * 16 + 8) * 4 + 4,
+            ),
+          };
+        } catch (error) {
+          if (!(error instanceof HdrRenderUnavailableError)) throw error;
+          admission[presentation] = { errorType: error.name };
+        } finally {
+          admittedRenderer.dispose();
+        }
+      }
       // Inject a float-render failure at the production pipeline boundary. A fresh
       // composition renderer must propagate the typed refusal without Canvas output.
       const renderTextures =
@@ -479,6 +525,7 @@ window.__vite_plugin_react_preamble_installed__=true;</script>`,
         sdr,
         refusals,
         composed,
+        admission,
         failureRefusal,
         unavailableRefusal,
         injectedFailures,
@@ -518,6 +565,21 @@ window.__vite_plugin_react_preamble_installed__=true;</script>`,
     result.composed.slice(0, 3).every((v) => v > 0.6 && v < 0.64),
     `top-level HDR transition ${result.composed}`,
   );
+  for (const [presentation, outcome] of Object.entries(result.admission)) {
+    if (["glitch", "barnDoor"].includes(presentation))
+      assert.equal(outcome.errorType, "HdrRenderUnavailableError", presentation);
+    else
+      // White over white: every linear transition of two opaque clips keeps PQ 203 cd/m² (.5807)
+      // where it covers fully; iris and clock wipe ramp coverage over the black background, and
+      // the dip passes through its default black.
+      assert(
+        outcome.pixel
+          ?.slice(0, 3)
+          .every((v) => v > (presentation === "dipToColorDissolve" ? 0 : 0.5) && v < 0.5808) &&
+          outcome.pixel[3] === 1,
+        `HDR ${presentation} through the composition renderer: ${JSON.stringify(outcome)}`,
+      );
+  }
   assert.deepEqual(
     await testedSource(new URL(import.meta.url)),
     source,
@@ -529,7 +591,7 @@ window.__vite_plugin_react_preamble_installed__=true;</script>`,
     source,
     result,
     check:
-      "dedicated additive linear HDR GPU readback and real composition admission",
+      "dedicated additive linear HDR GPU readback and real composition admission of every linear HDR transition",
   };
   if (process.env.STUDIO_ADDITIVE_REPORT)
     await writeFile(process.env.STUDIO_ADDITIVE_REPORT, JSON.stringify(report));

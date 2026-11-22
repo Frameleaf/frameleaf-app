@@ -51,6 +51,7 @@ import {
 } from 'src/enum.js';
 import { AlbumAssetCount, AlbumInfoOptions, AlbumReadOptions } from 'src/repositories/album.repository.js';
 import { AlbumOriginField, AssetOriginField } from 'src/repositories/partner-origin.repository.js';
+import { mapTextCard } from 'src/services/album-order.service.js';
 import { BaseService } from 'src/services/base.service.js';
 import {
   getAlbumEditFields,
@@ -295,11 +296,11 @@ export class AlbumService extends BaseService {
       albums.map((album) => album.id),
       ownerId,
     );
-
     if (albums.length === 0) {
       return [];
     }
     const albumIds = albums.map((album) => album.id);
+    const folderSources = await this.folderSources(auth, albumIds);
     let albumMetadata: Record<string, AlbumAssetCount> = {};
     let pending = new Set<string>();
     if (privacyOptions.onlyHiddenContent) {
@@ -318,7 +319,8 @@ export class AlbumService extends BaseService {
       albums.map((album) => {
         const item = this.withReadableParent(this.toListItem(album, albumMetadata, pending), readable);
         const origin = origins.get(album.id);
-        return origin ? { ...item, origin } : item;
+        const folderAlbum = folderSources.get(album.id);
+        return { ...item, ...(origin && { origin }), ...(folderAlbum && { folderAlbum }) };
       }),
     );
   }
@@ -393,7 +395,7 @@ export class AlbumService extends BaseService {
     }
 
     const ids = albums.map((album) => album.id);
-    const [stored, smartBackedIds, ruleAlbumIds, rules, positions, recovered, bookmarkCounts, origins] =
+    const [stored, smartBackedIds, ruleAlbumIds, rules, positions, recovered, bookmarkCounts, origins, folderSources] =
       await Promise.all([
         this.readStoredMetadata(ids, privacyOptions),
         this.smartAlbumRepository.getSmartBackedAlbumKinds(ids),
@@ -403,6 +405,7 @@ export class AlbumService extends BaseService {
         this.recoveredAlbumIds(),
         this.albumRepository.getBookmarkCounts(auth, ids),
         this.partnerOriginRepository.getOriginLabels('album', ids, auth.user.id),
+        this.folderSources(auth, ids),
       ]);
     const ruleByAlbum = new Map(rules.map((rule) => [rule.albumId, rule.id]));
     const { metadata: albumMetadata, pending } = stored;
@@ -425,6 +428,7 @@ export class AlbumService extends BaseService {
           smartKind: (smartBackedIds.get(album.id) as SmartAlbumBuiltInKind | undefined) ?? null,
           ...(recovered.has(album.id) && { recovered: true }),
           ...(origins.has(album.id) && { origin: origins.get(album.id) }),
+          ...(folderSources.has(album.id) && { folderAlbum: folderSources.get(album.id) }),
         })),
       ),
       positions,
@@ -569,10 +573,27 @@ export class AlbumService extends BaseService {
         ? await this.albumRepository.getContributorCounts(album.id, privacyOptions)
         : undefined,
       coverFollowsNewest: (await this.albumRepository.isCoverFollowingNewest(album.id)) === true,
+      ...(album.isCustomOrder && {
+        textCards: (await this.albumRepository.order.getTextCards(album.id)).map((card) => mapTextCard(card)),
+      }),
       ...(await this.smartStateOf(auth, album.id)),
       ...(await this.originOf(auth, album.id)),
       ...((await this.recoveredAlbumIds()).has(album.id) && { recovered: true }),
+      ...(await this.folderSourceOf(auth, album.id)),
     };
+  }
+
+  /** FL-838: the library folder behind each album, told only to the library's owner (never through a shared link). */
+  private async folderSources(auth: AuthDto, albumIds: string[]) {
+    const none = new Map<string, { libraryId: string; folderPath: string }>();
+    return auth.sharedLink
+      ? none
+      : ((await this.albumRepository.getFolderAlbumSources(albumIds, auth.user.id)) ?? none);
+  }
+
+  private async folderSourceOf(auth: AuthDto, albumId: string) {
+    const folderAlbum = (await this.folderSources(auth, [albumId])).get(albumId);
+    return folderAlbum ? { folderAlbum } : {};
   }
 
   /**
@@ -763,6 +784,7 @@ export class AlbumService extends BaseService {
           isActivityEnabled: dto.isActivityEnabled,
           isLocked: dto.isLocked,
           order: dto.order,
+          isCustomOrder: dto.isCustomOrder,
           icon: dto.icon,
           color: dto.color,
           sortOrder: dto.sortOrder,
@@ -773,6 +795,12 @@ export class AlbumService extends BaseService {
 
     // FL-326: an album copy's edited fields are its own from now on; copies of this album follow it
     await recordAlbumEdit({ partnerOrigin: this.partnerOriginRepository, job: this.jobRepository }, [album.id], fields);
+
+    // FL-869: the first switch seeds the custom order from the date order shown until now; a later one appends
+    // only what arrived meanwhile, so switching back and forth keeps the arranged order.
+    if (dto.isCustomOrder) {
+      await this.albumRepository.order.placeUnplaced(album.id, dto.order ?? album.order);
+    }
 
     // Unlocking the album only stops new items locking; what it locked stays locked. While the album is
     // locked, the hourly sweep re-locks an item unlocked on its own (owner decision default, FL-1269).
@@ -1066,6 +1094,10 @@ export class AlbumService extends BaseService {
     );
 
     const newAssetIds = results.filter(({ success }) => success).map(({ id }) => id);
+    // FL-869: what is added to a custom-order album goes at the end of its order.
+    if (album.isCustomOrder && newAssetIds.length > 0) {
+      await this.albumRepository.order.placeUnplaced(id, album.order);
+    }
     // Reads the lock as it is after the write, so an add racing a lock still locks its items.
     await this.lockAddedItems(id, newAssetIds);
     await this.emitAssetsChanged(newAssetIds);
@@ -1165,6 +1197,9 @@ export class AlbumService extends BaseService {
     // notifications only ever come from items still shown to them.
     const events: { id: string; userIds: string[]; recipientIds: string[] }[] = [];
     for (const { albumId, album, assetIds } of added) {
+      if (album.isCustomOrder) {
+        await this.albumRepository.order.placeUnplaced(albumId, album.order);
+      }
       await this.lockAddedItems(albumId, assetIds);
       const shown = await this.shownToMembers(assetIds);
       if (shown.length > 0) {

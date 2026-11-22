@@ -5,6 +5,7 @@ import type { ArgOf } from 'src/repositories/event.repository.js';
 import type { IEntityJob } from 'src/types.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
 import {
+  ICLOUD_MAX_CONCURRENCY,
   ICloudAuthDto,
   ICloudConnectionCreateDto,
   ICloudConnectionResponseDto,
@@ -311,7 +312,7 @@ export class ICloudSyncService {
 
   private checkLimits(config: ICloudConnection['config']) {
     const limit = Number(readAliasedEnv('FRAMELEAF_ICLOUD_MAX_STAGING_BYTES') ?? 100 * 1024 ** 3);
-    const concurrency = Number(readAliasedEnv('FRAMELEAF_ICLOUD_MAX_CONCURRENCY') ?? 4);
+    const concurrency = Number(readAliasedEnv('FRAMELEAF_ICLOUD_MAX_CONCURRENCY') ?? ICLOUD_MAX_CONCURRENCY);
     if (
       !Number.isSafeInteger(limit) ||
       limit < config.stagingBytes ||
@@ -358,10 +359,15 @@ export class ICloudSyncService {
     }
     await this.repository.update(id, auth.user.id, { state: 'authenticating', lastError: null });
     try {
-      await this.repository.withSession(id, auth.user.id, async (connection) => {
+      await this.repository.withSession(id, auth.user.id, async (connection, db) => {
         const session =
           dto.action === 'login' ? undefined : await this.transport.decodeSession(id, connection.encryptedSession);
         const result = await this.transport.authenticate(dto, session);
+        if (dto.action === 'login') {
+          // FL-1685: a listing left unfinished is resumed by the next run; a new sign-in may be another Apple
+          // Account, so its listing starts again rather than carrying on from the last account's pages.
+          await this.repository.forgetListing(id, db);
+        }
         return {
           value: undefined,
           state: result.state,
@@ -742,7 +748,17 @@ export class ICloudSyncService {
 
     await this.repository.startRun(connection);
     const heartbeat = setInterval(() => {
-      void this.operations.heartbeat(id, claimToken, ICLOUD_LEASE_MS).catch(() => {});
+      // FL-1662: a heartbeat that did not renew the lease is the trace a later lapse needs.
+      void this.operations
+        .heartbeat(id, claimToken, ICLOUD_LEASE_MS)
+        .then((renewed) => {
+          if (!renewed) {
+            this.logger.warn(`iCloud sync run ${id}: heartbeat found no live claim, lease not renewed`);
+          }
+        })
+        .catch((error) =>
+          this.logger.warn(`iCloud sync run ${id}: heartbeat failed, lease not renewed: ${message(error)}`),
+        );
     }, ICLOUD_HEARTBEAT_MS);
     try {
       for (;;) {
@@ -792,7 +808,7 @@ export class ICloudSyncService {
         }
 
         idleWaits = 0;
-        const written = await this.record(claim, connectionId, outcome === 'done' ? 'complete' : 'syncing', 0);
+        const written = await this.record(claim, connectionId, outcome === 'done' ? 'complete' : 'syncing', 0, true);
         if (!(await this.proceed(claim, connectionId, written))) {
           return;
         }
@@ -821,7 +837,9 @@ export class ICloudSyncService {
     const { id } = connection;
     const inventoryComplete = await this.enumerate(connection);
     const resources: ICloudResource[] = [];
-    for (let i = 0; i < connection.config.concurrency; i++) {
+    // ponytail: FL-1728 rollback of the FL-1724 pool for 1.2.26: the old batch, at most 4 at a time, whatever the
+    // setting (1-100) says. The faster pool comes back in the next release.
+    for (let i = 0; i < Math.min(connection.config.concurrency, 4); i++) {
       const resource = await this.repository.claim(id, connection.config.stagingBytes);
       if (!resource) {
         break;
@@ -843,8 +861,11 @@ export class ICloudSyncService {
     return (await this.repository.hasPending(id)) ? 'idle' : 'done';
   }
 
-  /** Real counts onto the run's row, and the lease renewed. The answer says whether to carry on. */
-  private async record(claim: Claim, connectionId: string, phase: string, idleWaits: number) {
+  /**
+   * Real counts onto the run's row, and the lease renewed. The answer says whether to carry on.
+   * `progressed` is a step that did work: it gives back the automatic retry an earlier lost claim spent (FL-1662).
+   */
+  private async record(claim: Claim, connectionId: string, phase: string, idleWaits: number, progressed = false) {
     const counts = await this.repository.counts(connectionId);
     const total = counts.resources ?? 0;
     const open = OPEN_RESOURCE_STATUSES.reduce((sum, status) => sum + (counts[status] ?? 0), 0);
@@ -855,6 +876,7 @@ export class ICloudSyncService {
       totalUnits: total,
       progress: total > 0 ? (processed / total) * 100 : 0,
       leaseMs: ICLOUD_LEASE_MS,
+      resetAutoRetries: progressed,
     });
   }
 
@@ -927,7 +949,7 @@ export class ICloudSyncService {
     const outcome = await this.operations.fail(claim.operation.id, claim.claimToken, { error: code, errorCode: code });
     const connectionId = asObject(claim.operation.snapshot).connectionId;
     if (outcome === 'failed' && typeof connectionId === 'string') {
-      // The run record ends with the run; the next run starts a fresh inventory pass.
+      // The run record ends with the run; the next run carries on from a listing this one did not finish (FL-1685).
       await this.repository.endRun(connectionId, 'failed').catch(() => {});
     }
     // FL-538: a pause the administrator chose is not a failure to warn the owner about
@@ -1055,6 +1077,17 @@ export class ICloudSyncService {
           response.complete,
           db,
         );
+        if ((kind === 'assets' || kind === 'changes') && !smartAlbum && library) {
+          // FL-1685: this page's photos go in line for download now, not after the whole library is listed
+          const assets = records.filter((record) => record.recordType === 'CPLAsset' && !record.deleted);
+          await this.repository.materializeEarly(
+            current,
+            libraryKey,
+            library,
+            assets.map((record) => record.recordName),
+            db,
+          );
+        }
         return false;
       };
       if (!(await page('libraries', 'libraries', ''))) {

@@ -27,6 +27,7 @@ import type {
 } from 'src/types.js';
 import type { DevelopDetailPlan, DevelopGeometryPlan } from 'src/utils/develop-recipe.js';
 import type { FontFacts } from 'src/utils/font-file.js';
+import type { PlaybackCopyFacts } from 'src/utils/playback-self-test.js';
 import { Exif } from 'src/database.js';
 import {
   AacProfile,
@@ -48,6 +49,7 @@ import { superviseMediaProcess } from 'src/queue/process-lifetime.js';
 import { SharpOperationError, imageWorkerDiagnostics, sharpProcessPool } from 'src/queue/sharp-pool.js';
 import { SharpResourceLimitError } from 'src/queue/sharp-protocol.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { type PacketFacts, packetSummary } from 'src/utils/cloud-ml-job.js';
 import { renderDarktable } from 'src/utils/darktable-renderer.js';
 import {
   DESIGN_PREVIEW_TAGS,
@@ -57,7 +59,7 @@ import {
   isRenderedDesign,
 } from 'src/utils/design-preview.js';
 import { executionSignal } from 'src/utils/execution-signal.js';
-import { LOCATION_DELETE_ARGS } from 'src/utils/location-tags.js';
+import { LOCATION_DELETE_ARGS, LOCATION_TAG_SELECTORS } from 'src/utils/location-tags.js';
 import { ContainerLogSignals, readContainerLogSignals } from 'src/utils/log-video-container.js';
 import { parseFfprobeColorRange } from 'src/utils/media-policy.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
@@ -620,6 +622,50 @@ export class MediaRepository {
     return sharpProcessPool.run('writeStrippedStill', [input, output, format, colorspace], signal);
   }
 
+  /** FL-826: `input` as a download JPEG at full size (`maxEdge` null) or fitted inside `maxEdge` pixels. */
+  renderDownloadJpeg(input: string, output: string, maxEdge: number | null, signal?: AbortSignal): Promise<void> {
+    return sharpProcessPool.run('renderDownloadJpeg', [input, output, maxEdge], signal);
+  }
+
+  /**
+   * FL-826: copies the original's EXIF, XMP and IPTC into a rendered download JPEG, leaving out what no
+   * longer describes it (orientation, the embedded thumbnail, the colour profile) and, with
+   * `removeLocation`, every location tag. Returns false when exiftool fails; the render then goes out
+   * without metadata.
+   */
+  async copyDownloadMetadata(source: string, target: string, { removeLocation }: { removeLocation: boolean }) {
+    try {
+      await exiftool.write(
+        target,
+        {},
+        {
+          ignoreMinorErrors: true,
+          writeArgs: [
+            '-TagsFromFile',
+            source,
+            '-EXIF:all',
+            '-XMP:all',
+            '-IPTC:all',
+            '--Orientation',
+            '--IFD1:all',
+            '--ICC_Profile:all',
+            // `--` leaves a tag out of the copy
+            ...(removeLocation ? LOCATION_TAG_SELECTORS.map((selector) => `-${selector}`) : []),
+            '-overwrite_original',
+          ],
+        },
+      );
+    } catch (error: any) {
+      this.logger.warn(`Could not copy metadata into a download: ${error.message}`);
+      return false;
+    }
+    // a location that slipped through the copy is removed as well; a file that may still carry one is refused
+    if (removeLocation && !(await this.removeLocation(target))) {
+      throw new Error('DOWNLOAD_LOCATION_NOT_REMOVED');
+    }
+    return true;
+  }
+
   async repairJpeg(input: string, output: string, preview: string, metadataSource: string) {
     return sharpProcessPool.run('repairJpeg', [input, output, preview, metadataSource]);
   }
@@ -740,6 +786,7 @@ export class MediaRepository {
             index: stream.index,
             height,
             width: dar ? Math.round(height * dar) : this.parseInt(stream.width),
+            codedWidth: this.parseInt(stream.width),
             codecName: stream.codec_name === 'h265' ? 'hevc' : (stream.codec_name ?? null),
             profile: this.parseVideoProfile(stream.codec_name, stream.profile as string | undefined) ?? null,
             level: this.parseOptionalInt(stream.level),
@@ -795,6 +842,78 @@ export class MediaRepository {
           handlerName: typeof stream.tags?.handler_name === 'string' ? stream.tags.handler_name : null,
         })),
     };
+  }
+
+  /**
+   * FL-977: what the playback self-test checks in a copy: its format and sample-entry tag, its colour
+   * tags, and how bright it looks. The brightness is the mean Rec. 709 luma (0-255) of the frame at
+   * 0.5 s after it is scaled to 64x36 RGB, so it does not depend on the copy's range or matrix.
+   */
+  async inspectPlaybackCopy(input: string, signal?: AbortSignal): Promise<PlaybackCopyFacts> {
+    const { streams } = await probe(input, ['-select_streams', 'v:0'], signal);
+    const stream = streams.find((candidate) => candidate.codec_type === 'video');
+    if (!stream) {
+      throw new Error('The playback copy has no picture');
+    }
+    const pixels = await this.readFramePixels(input, signal);
+    let sum = 0;
+    for (let index = 0; index + 2 < pixels.length; index += 3) {
+      sum += 0.2126 * pixels[index] + 0.7152 * pixels[index + 1] + 0.0722 * pixels[index + 2];
+    }
+    const text = (value: unknown) => (typeof value === 'string' && value ? value : null);
+    return {
+      codecName: text(stream.codec_name),
+      codecTag: text(stream.codec_tag_string),
+      colorPrimaries: text(stream.color_primaries),
+      colorTransfer: text(stream.color_transfer),
+      meanLuma: Math.round((sum / (pixels.length / 3)) * 10) / 10,
+    };
+  }
+
+  private readFramePixels(input: string, signal?: AbortSignal): Promise<Buffer> {
+    signal?.throwIfAborted();
+    const child = spawn(
+      'ffmpeg',
+      [
+        '-hide_banner',
+        '-v',
+        'error',
+        '-ss',
+        '0.5',
+        '-i',
+        input,
+        '-frames:v',
+        '1',
+        '-vf',
+        'scale=64:36:flags=area,format=rgb24',
+        '-f',
+        'rawvideo',
+        'pipe:1',
+      ],
+      { stdio: ['ignore', 'pipe', 'pipe'] },
+    );
+    const lifetime = superviseMediaProcess(child, { signal, deadlineMs: 30_000 });
+    const chunks: Buffer[] = [];
+    let stderr = '';
+    let failure: Error | undefined;
+    child.stdout.on('data', (chunk: Buffer) => {
+      chunks.push(chunk);
+    });
+    child.stderr.on('data', (chunk: Buffer) => {
+      stderr = (stderr + chunk.toString()).slice(-4096);
+    });
+    child.on('error', (error) => {
+      failure = error;
+    });
+    return new Promise((resolve, reject) => {
+      child.once('close', (code) => {
+        const pixels = Buffer.concat(chunks);
+        if (lifetime.error() || failure || code !== 0 || pixels.length < 3) {
+          return reject(lifetime.error() ?? failure ?? new Error(`ffmpeg could not read a frame: ${stderr}`));
+        }
+        resolve(pixels);
+      });
+    });
   }
 
   /** Independently decode the canonical media's one timed-text track, with bounded subprocess output. */
@@ -857,6 +976,77 @@ export class MediaRepository {
    * Needed for accurate segments, especially when remuxing, seeking and/or VFR is involved.
    * Scanning packets for keyframes in JS is much faster than -skip_frame nokey since it avoids decoding the video.
    */
+  /**
+   * FL-1725: what a stream's packets say about copying it for Frameleaf Cloud (`packetSummary`): how many
+   * there are, how many its edit list hides, whether its shown frames sit on an even grid with real
+   * presentation times, and how far apart its keyframes are.
+   */
+  countPackets(
+    input: string,
+    streamIndex: number,
+    signal: AbortSignal | undefined = executionSignal(),
+  ): Promise<Required<PacketFacts>> {
+    signal?.throwIfAborted();
+    const ffprobe = spawn(
+      'ffprobe',
+      [
+        '-v',
+        'error',
+        '-select_streams',
+        String(streamIndex),
+        '-show_entries',
+        'stream=has_b_frames:packet=pts_time,dts_time,flags',
+        '-of',
+        'csv=p=1',
+        input,
+      ],
+      { stdio: ['ignore', 'pipe', 'pipe'] },
+    );
+    const lifetime = superviseMediaProcess(ffprobe, { signal });
+    const summary = packetSummary();
+    let stderr = '';
+    let remainder = '';
+    let failure: Error | undefined;
+    const count = (line: string) => {
+      if (line) {
+        summary.add(line);
+        lifetime.progress(1);
+      }
+    };
+    ffprobe.stderr.setEncoding('utf8');
+    ffprobe.stderr.on('data', (chunk: string) => {
+      stderr = (stderr + chunk).slice(-65_536);
+    });
+    ffprobe.stdout.setEncoding('utf8');
+    ffprobe.stdout.on('data', (chunk: string) => {
+      const lines = chunk.split('\n');
+      lines[0] = remainder + lines[0];
+      remainder = lines.pop() as string;
+      for (const line of lines) {
+        count(line);
+      }
+    });
+    return new Promise((resolve, reject) => {
+      ffprobe.on('error', (error) => {
+        failure = error;
+      });
+      ffprobe.on('close', (code) => {
+        if (lifetime.error() || failure) {
+          return reject(lifetime.error() ?? failure);
+        }
+        if (code !== 0) {
+          return reject(new Error(`ffprobe exited with code ${code}: ${stderr.trim()}`));
+        }
+        try {
+          count(remainder);
+          resolve(summary.done());
+        } catch (error) {
+          reject(error);
+        }
+      });
+    });
+  }
+
   probePackets(
     input: string,
     streamIndex: number,
@@ -1032,8 +1222,13 @@ export class MediaRepository {
     });
   }
 
-  async transcode(input: string, output: string | Writable, options: TranscodeCommand): Promise<void> {
-    const signal = jobSignal();
+  async transcode(
+    input: string,
+    output: string | Writable,
+    options: TranscodeCommand,
+    // FL-977: the playback self-test runs outside a job and stops its own encodes
+    signal: AbortSignal | undefined = jobSignal(),
+  ): Promise<void> {
     signal?.throwIfAborted();
     const run = (target: string | Writable, pass?: number) =>
       new Promise<void>((resolve, reject) => {

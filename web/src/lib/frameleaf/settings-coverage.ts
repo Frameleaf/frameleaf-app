@@ -161,6 +161,36 @@ export const SETTINGS_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.fr
     evidence: 'verifyWeekly',
   },
   {
+    pattern: 'frameleafCloud.cloudBackup.uploadHours.enabled',
+    kind: 'control',
+    file: 'src/lib/components/frameleaf/backup/BackupSchedule.svelte',
+    evidence: 'uploadHours.enabled',
+  },
+  {
+    pattern: 'frameleafCloud.cloudBackup.uploadHours.start',
+    kind: 'control',
+    file: 'src/lib/components/frameleaf/backup/BackupSchedule.svelte',
+    evidence: 'uploadHours.start',
+  },
+  {
+    pattern: 'frameleafCloud.cloudBackup.uploadHours.stop',
+    kind: 'control',
+    file: 'src/lib/components/frameleaf/backup/BackupSchedule.svelte',
+    evidence: 'uploadHours.stop',
+  },
+  {
+    pattern: 'frameleafCloud.cloudBackup.uploadLimit.enabled',
+    kind: 'control',
+    file: 'src/lib/components/frameleaf/backup/BackupSchedule.svelte',
+    evidence: 'uploadLimit.enabled',
+  },
+  {
+    pattern: 'frameleafCloud.cloudBackup.uploadLimit.mbps',
+    kind: 'control',
+    file: 'src/lib/components/frameleaf/backup/BackupSchedule.svelte',
+    evidence: 'uploadLimit.mbps',
+  },
+  {
     pattern: 'frameleafCloud.cloudMl.autoDescribe.dailyBudgetUsd',
     kind: 'control',
     file: 'src/lib/components/frameleaf/cloud/CloudMlSection.svelte',
@@ -482,6 +512,13 @@ export const SETTINGS_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.fr
     kind: 'control',
     file: 'src/routes/admin/system-settings/FFmpegSettings.svelte',
     evidence: 'ffmpeg.refs',
+  },
+  {
+    // FL-977: written by the playback self-test; Video playback copies › Speed says what it found
+    pattern: 'ffmpeg.softwareFallback',
+    kind: 'server-managed',
+    file: 'src/lib/frameleaf/system-config-draft.ts',
+    evidence: 'ffmpeg.softwareFallback',
   },
   {
     pattern: 'ffmpeg.targetAudioCodec',
@@ -852,6 +889,27 @@ export const SETTINGS_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.fr
     kind: 'control',
     file: 'src/lib/components/frameleaf/settings/intelligence/SearchLanding.svelte',
     evidence: 'machineLearning.enabled = value',
+  },
+  {
+    pattern: 'machineLearning.eyeScores.closedBelow',
+    // FL-863: the culling summary's thresholds; no settings control yet
+    kind: 'api-only',
+    file: '../server/src/repositories/photography-workspace.repository.ts',
+    evidence: 'closedBelow',
+  },
+  {
+    pattern: 'machineLearning.eyeScores.enabled',
+    // FL-863: on by default; no settings switch yet
+    kind: 'api-only',
+    file: '../server/src/services/person.service.ts',
+    evidence: 'eyeScores.enabled',
+  },
+  {
+    pattern: 'machineLearning.eyeScores.softBelow',
+    // FL-863: the culling summary's thresholds; no settings control yet
+    kind: 'api-only',
+    file: '../server/src/repositories/photography-workspace.repository.ts',
+    evidence: 'softBelow',
   },
   {
     pattern: 'machineLearning.facialRecognition.enabled',
@@ -1453,6 +1511,13 @@ export const SETTINGS_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.fr
     evidence: 'passwordLogin.enabled',
   },
   {
+    pattern: 'sharedLinks.defaultExpiryDays',
+    // FL-922: server default expiry for new links; the settings control follows the approved FL-886 mock
+    kind: 'api-only',
+    file: '../server/src/services/shared-link.service.ts',
+    evidence: '(await this.getConfig({ withCache: true })).sharedLinks.defaultExpiryDays',
+  },
+  {
     pattern: 'signInPolicy.applyToOlderApps',
     kind: 'control',
     file: 'src/routes/admin/system-settings/AuthSettings.svelte',
@@ -1717,6 +1782,13 @@ export const PREFERENCE_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.
     evidence: 'download.archiveSize',
   },
   {
+    pattern: 'download.defaultFormat',
+    // FL-826: the format downloads use unless one is chosen; the settings control follows the approved FL-886 mock
+    kind: 'api-only',
+    file: '../server/src/services/download.service.ts',
+    evidence: 'preferences.download.defaultFormat',
+  },
+  {
     pattern: 'download.includeEmbeddedVideos',
     kind: 'control',
     file: 'src/routes/(user)/user-settings/DownloadSettings.svelte',
@@ -1727,6 +1799,13 @@ export const PREFERENCE_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.
     kind: 'control',
     file: 'src/routes/(user)/user-settings/DownloadSettings.svelte',
     evidence: 'download.includeSidecar',
+  },
+  {
+    pattern: 'duplicates.keepRules',
+    // FL-832: the owner's rules for which duplicate is suggested as the keeper; the settings control follows the approved FL-886 mock
+    kind: 'api-only',
+    file: '../server/src/services/duplicate.service.ts',
+    evidence: '.duplicates.keepRules',
   },
   {
     pattern: 'emailNotifications.albumInvite',
@@ -2050,6 +2129,13 @@ export const PREFERENCE_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.
     kind: 'control',
     file: 'src/routes/(user)/user-settings/FeatureSettings.svelte',
     evidence: 'sharedLinks.sidebarWeb',
+  },
+  {
+    pattern: 'sharedLinks.defaultExpiryDays',
+    // FL-922: personal default expiry for new links; the settings control follows the approved FL-886 mock
+    kind: 'api-only',
+    file: '../server/src/services/shared-link.service.ts',
+    evidence: 'sharedLinks.defaultExpiryDays ??',
   },
   {
     pattern: 'tags.enabled',

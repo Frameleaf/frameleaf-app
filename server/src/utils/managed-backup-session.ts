@@ -87,34 +87,3 @@ export const managedBackupSession = (
     return pending;
   };
 };
-
-/** Exact-version reads use restore authority even while the operation uploads or prunes. */
-export const managedBackupReadSession = (
-  binding: BackupGrantResponse,
-  renew: () => Promise<BackupGrantResponse>,
-  now = () => performance.now(),
-) => {
-  let session: ReturnType<typeof managedBackupSession> | undefined;
-  let pending: Promise<BackupCredentials> | undefined;
-  let failure: ManagedBackupAuthorizationError | undefined;
-  let retryAt = 0;
-  return (failedAccessKeyId?: string): Promise<BackupCredentials> => {
-    if (pending) return pending;
-    if (failure && now() < retryAt) return Promise.reject(failure);
-    pending = tryPromise(async () => {
-      session ??= managedBackupSession(await renew(), 'restore', renew, now, binding);
-      const credentials = await session(failedAccessKeyId);
-      failure = undefined;
-      return credentials;
-    })
-      .catch((error: unknown) => {
-        failure = authorizationError(error);
-        retryAt = failure.retryAfterMs === null ? Infinity : now() + failure.retryAfterMs;
-        throw failure;
-      })
-      .finally(() => {
-        pending = undefined;
-      });
-    return pending;
-  };
-};

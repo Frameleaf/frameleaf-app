@@ -107,6 +107,11 @@ export interface VideoStreamInfo {
   index: number;
   height: number;
   width: number;
+  /**
+   * The stream's own pixel width as ffprobe reports it. `width` above is the display width (the height
+   * times the display aspect ratio), which differs for non-square pixels. Optional and additive.
+   */
+  codedWidth?: number;
   rotation: number;
   codecName: string | null;
   profile: H264Profile | HevcProfile | Av1Profile | null;
@@ -534,6 +539,8 @@ export interface IMediaHealthFixAssetJob extends IEntityJob {
   message?: string;
   /** How many busy checks it has had; it stops after three. */
   attempt?: number;
+  /** Undo a repair an older repair engine made, then fix the kept file again (`REPAIR_ENGINE`). */
+  redoRepair?: boolean;
   /** Milliseconds before it may run (an `availableAt` in the future). */
   delay?: number;
   /** How many times this fix has put itself back. Its key changes with it, so the store never drops it. */
@@ -599,6 +606,8 @@ export interface IPushDeliverJob extends IBaseJob {
 
 export interface IIntegrityJob {
   refreshOnly?: boolean;
+  /** Run now: read every original, including ones a recent pass already matched (FL-1686). */
+  manual?: boolean;
 }
 
 export interface IIntegrityDeleteReportTypeJob {
@@ -735,6 +744,9 @@ export type JobItem =
       /** `onThisServer` (FL-455): a Frameleaf Cloud result was refused, so this run never goes to the cloud. */
       data: IEntityJob & { preserveImportedFaces?: boolean; onThisServer?: boolean };
     }
+  // FL-863: eyes open and eye sharpness for faces already found
+  | { name: JobName.FaceEyeScoreQueueAll; data: IBaseJob }
+  | { name: JobName.FaceEyeScore; data: IEntityJob }
   | { name: JobName.FacialRecognitionQueueAll; data: INightlyJob }
   | { name: JobName.FacialRecognition; data: IDeferrableJob & { force?: boolean } }
   | { name: JobName.ProfileImageRepair; data: Record<string, never> }
@@ -812,6 +824,8 @@ export type JobItem =
   | { name: JobName.LibraryDelete; data: IEntityJob }
   | { name: JobName.LibraryScanQueueAll; data?: IBaseJob }
   | { name: JobName.LibraryScanRun; data?: IBaseJob }
+  // FL-838: `id` is the library
+  | { name: JobName.LibraryFolderAlbumSync; data: IEntityJob }
   | { name: JobName.LibraryDeleteCheck; data: IBaseJob }
 
   // Notification
@@ -1287,6 +1301,8 @@ export type FrameleafCloudBackup = {
   lastRestore?: FrameleafCloudBackupRestore;
   /** FL-164: a scheduled run found the bucket busy; it starts when the operation holding it ends. */
   scheduledRunDueAt?: string;
+  /** FL-1677: the backup run the upload hours paused; the hourly check carries it on when they open. */
+  uploadHoursPausedRunId?: string;
   /** FL-879: a scheduled restore drill found the bucket busy; it starts once the operation holding it ends. */
   drillDueAt?: string;
 };
@@ -1676,6 +1692,8 @@ export const CUSTOM_CLIP_MODELS_KEY = 'custom-clip-models' as SystemMetadataKey;
 
 export interface SystemMetadata extends Record<SystemMetadataKey, Record<string, any>> {
   [SystemMetadataKey.FrameleafDesktopAssistance]: import('src/services/desktop-assistance-policy.service.js').DesktopAssistancePolicyRegistry;
+  [SystemMetadataKey.FrameleafDesktopModelFailures]: import('src/repositories/desktop-ml.repository.js').DesktopModelFailures;
+  [SystemMetadataKey.FrameleafDesktopWorkerCapacity]: Record<string, { total: number; at: string }>;
   [SystemMetadataKey.AdminOnboarding]: { isOnboarded: boolean };
   [SystemMetadataKey.FacialRecognitionState]: { lastRun?: string };
   [SystemMetadataKey.FaceModelState]: { modelName: string };
@@ -1742,7 +1760,7 @@ export interface SystemMetadata extends Record<SystemMetadataKey, Record<string,
   [SystemMetadataKey.SystemConfigHistory]: ConfigHistory;
   [SystemMetadataKey.IntegrityCheckRuns]: IntegrityCheckRuns;
   [SystemMetadataKey.LibraryProgressSamples]: { samples: { at: string; done: Record<string, number> }[] };
-  [SystemMetadataKey.OvernightRedo]: { queues: string[] };
+  [SystemMetadataKey.OvernightRedo]: { queues: string[]; bestPhotos?: boolean };
   [SystemMetadataKey.VideoCardState]: VideoCardState;
   [SystemMetadataKey.IntegrityCheckHistory]: { entries: IntegrityCheckHistoryEntry[] };
   [SystemMetadataKey.IntegrityCheckStop]: { requestedAt: string };
@@ -1851,6 +1869,8 @@ export type UserPreferences = {
   sharedLinks: {
     enabled: boolean;
     sidebarWeb: boolean;
+    /** FL-922: days a new link lasts when its form asks for the default expiry; null falls back to the server's */
+    defaultExpiryDays: number | null;
   };
   tags: {
     enabled: boolean;
@@ -1867,6 +1887,8 @@ export type UserPreferences = {
     includeEmbeddedVideos: boolean;
     /** ACCOUNT-P5: put each photo's details file (XMP sidecar) beside it in a download */
     includeSidecar: boolean;
+    /** FL-826: the format downloads use unless one is chosen */
+    defaultFormat: import('src/enum.js').DownloadFormat;
   };
   /** ACCOUNT-P3: the search screens show archived photos; the client sends the visibility, the server stores it only */
   search: {
@@ -1937,6 +1959,13 @@ export type UserPreferences = {
   };
   /** FL-49: named searches from the search palette; `query` is the client's own search body */
   savedSearches: SavedSearch[];
+  /**
+   * FL-832: the person's ordered rules for which copy in a duplicate group is suggested as the keeper.
+   * Empty is Frameleaf's own order (RAW, HEIC, largest file, most details).
+   */
+  duplicates: {
+    keepRules: import('src/utils/duplicate-keep-rules.js').DuplicateKeepRule[];
+  };
 };
 
 export type SavedSearch = { name: string; query: Record<string, unknown> };

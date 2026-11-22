@@ -2599,3 +2599,75 @@
     grid-column: 1 / -1;
   }
 }
+
+/* FL-891: eye checks (the FL-821 culling mock) */
+.phw-eye-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--fl-space-3, 12px);
+  margin: var(--fl-space-3, 12px) 0 var(--fl-space-1, 4px);
+}
+.phw-eye-tools button svg {
+  vertical-align: -3px;
+  margin-inline-end: 6px;
+}
+.phw-eye-sort {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  background: var(--fl-panel);
+  border: 1px solid var(--fl-border);
+  border-radius: var(--fl-radius-control);
+}
+.phw-eye-sort select {
+  width: auto;
+  padding: 7px 4px;
+  border: 0;
+  background: transparent;
+  color: var(--fl-text);
+  font: inherit;
+}
+.phw-eye {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 1;
+  color: #fff;
+  font-size: var(--fl-font-xs, 11px);
+}
+.phw-eye > button {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: 7px;
+  background: #22221eeb;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.phw-eye > button:focus-visible {
+  outline: var(--fl-focus-ring);
+  outline-offset: var(--fl-focus-offset);
+}
+.phw-eye-faces {
+  display: none;
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  min-width: 150px;
+  padding: 8px 10px;
+  border-radius: 7px;
+  background: #22221e;
+}
+.phw-eye:is(:hover, :focus-within, [data-open='true']) .phw-eye-faces {
+  display: block;
+}
+.phw-eye-faces ol {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0;
+}

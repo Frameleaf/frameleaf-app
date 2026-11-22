@@ -139,7 +139,9 @@ export class SmartInfoService extends BaseService {
       const modelChange =
         oldConfig && oldConfig.machineLearning.clip.modelName !== newConfig.machineLearning.clip.modelName;
       const isDimSizeChange = smartSearchDimSize !== dimSize;
-      if (!modelChange && !isDimSizeChange) {
+      // A desktop vector index still admitted for another model (a change saved while this server was down).
+      const staleIndex = await this.machineLearningRepository.clipIndexStale(modelName);
+      if (!modelChange && !isDimSizeChange && !staleIndex) {
         return;
       }
 

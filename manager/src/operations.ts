@@ -3,6 +3,7 @@ import { lstat, mkdir, readFile, writeFile, stat, statfs, rename, open, realpath
 import { basename, isAbsolute, join, relative } from 'node:path';
 import { z } from 'zod';
 import { Store } from './store.js';
+import { importedGallery } from './gallery-preview.js';
 import { Docker, type ImportInspection } from './docker.js';
 import { Discovery, COMPATIBLE_SETTINGS, maskSettings, unmaskSettings, unsupportedSettings } from './discovery.js';
 import { Releases, type VerifiedRelease } from './releases.js';
@@ -47,6 +48,7 @@ import {
   type Source,
   type SourceFence,
   type Operation,
+  type OperationKind,
   type Database,
   type Backup,
   publicSource,
@@ -197,6 +199,31 @@ type RestoreReview = {
   /** The thumbnail folder was gone and the administrator chose the library's own `thumbs` folder instead. */
   thumbnailFallback?: { missing: string; folder: string };
 };
+/** FL-973: how long after an update Manager offers to go back to the release before it. */
+export const ROLLBACK_DAYS = 14;
+/** Operations after which the pre-update checkpoint no longer describes this library. */
+const ROLLBACK_INVALIDATING_KINDS: OperationKind[] = ['restore', 'import', 'move-library', 'move-thumbnails', 'thumbnails-home', 'move-database', 'rollback'];
+/** FL-973: recorded when an update finishes; going back restores `snapshot`, the checkpoint taken just before it. */
+type RollbackPoint = {
+  update: string;
+  /** The release the update replaced, and the release it installed. */
+  previous: string;
+  installed: string;
+  installationId: string;
+  snapshot: string;
+  at: number;
+};
+type RollbackReview = {
+  id: string;
+  expires: number;
+  point: RollbackPoint;
+  /** The checkpoint snapshot restored for review: compose.json, recovery.json and database.dump. */
+  checkpoint: string;
+  hash: string;
+  recovery: z.infer<typeof Recovery>;
+  platform: string;
+  current: Installation;
+};
 type UpdateReview = {
   expires: number;
   current: Installation;
@@ -311,6 +338,29 @@ export class Operations {
   /** FL-360: the server's machine-authenticated library move pause, called from inside its container. */
   private async libraryMovePause(method: 'GET' | 'POST', path: string, body?: unknown): Promise<ServerPauseStatus> {
     return this.serverRequest(method, `library-move/manager${path}`, body) as Promise<ServerPauseStatus>;
+  }
+  /**
+   * FL-1673: the photo server's signed word that the Manager with this Frameleaf Cloud id manages it, which
+   * lets Server Backup share its licence and plan. Null when it can't be had: no photo server running here,
+   * it isn't linked to Frameleaf Cloud, or it is from before it could be asked.
+   */
+  async backupMachineStatement(machineInstanceId: string): Promise<{ statement: unknown; signature: string } | null> {
+    const installation = this.installation();
+    if (!installation) return null;
+    const server = (await this.docker.inventory()).find(
+      (c) =>
+        c.Config.Labels?.['app.frameleaf.manager'] === installation.id &&
+        !c.Config.Labels?.['app.frameleaf.manager.import'] &&
+        c.Config.Labels?.['com.docker.compose.service'] === 'frameleaf-server',
+    );
+    if (!server?.State.Running) return null;
+    try {
+      const printed = await this.docker.admin(server.Id, ['backup-machine-statement', machineInstanceId]);
+      const answer = JSON.parse(printed.trim().split('\n').findLast((line) => line.startsWith('{')) ?? '');
+      return typeof answer?.signature === 'string' && answer.statement ? { statement: answer.statement, signature: answer.signature } : null;
+    } catch {
+      return null;
+    }
   }
   /**
    * Call a machine-authenticated `/api/server/...` endpoint from inside the server container, with the
@@ -1352,6 +1402,9 @@ export class Operations {
   /** Runs an operation in the background, journalling and logging how it ends. */
   private launch(operation: Operation, work: () => Promise<void>): void {
     this.executing.add(operation.id);
+    // FL-973: the checkpoint from before the last update no longer describes a library that is moved, restored or
+    // replaced, so going back stops being offered as soon as such an operation starts (even if it is cancelled).
+    if (operation.kind !== 'rollback' && ROLLBACK_INVALIDATING_KINDS.includes(operation.kind)) this.store.delete('rollback-point');
     const started = Date.now();
     log(`${operation.kind} ${operation.id}: started`);
     void work()
@@ -1422,6 +1475,11 @@ export class Operations {
         const review = this.store.get<UpdateReview>(`update:${operation.input.reviewId}`);
         if (!review) throw new Refusal('review_missing');
         return this.applyUpdate(operation, await this.retargetWithdrawnUpdate(operation, review));
+      }
+      if (operation.kind === 'rollback') {
+        const review = this.store.get<RollbackReview>(`rollback:${operation.input.reviewId}`);
+        if (!review) throw new Refusal('review_missing');
+        return this.applyRollback(operation, review);
       }
       if (['start', 'stop', 'restart', 'backup'].includes(operation.kind)) return this.runControl(operation);
       if (operation.kind === 'reconfigure') return this.applyReconfigure(operation);
@@ -1694,7 +1752,10 @@ export class Operations {
         if (state.status !== 'activated') {
           await this.runImport(operation, review, installation, state.status === 'fresh' ? 'run' : 'resume');
           await this.fencing.verify(source);
-          await this.runImport(operation, review, installation, 'verify');
+          const report = await this.runImport(operation, review, installation, 'verify');
+          // FL-1742: what the importer carried from Noodle Gallery and what stayed behind, for "Your server is ready".
+          const gallery = importedGallery(report);
+          if (gallery) this.store.set(`import-gallery:${installation.id}`, gallery);
         }
         return true;
       });
@@ -1706,8 +1767,10 @@ export class Operations {
         const result = JSON.parse(
           await this.docker.sql(
             db,
+            // A Noodle Gallery Space arrives as an album of kind "space"; the source counted its albums only.
             `SELECT json_build_object('users',(SELECT count(*) FROM public.user),
-          'assets',(SELECT count(*) FROM public.asset),'albums',(SELECT count(*) FROM public.album));`,
+          'assets',(SELECT count(*) FROM public.asset),'albums',(SELECT count(*) FROM public.album
+            WHERE kind IS DISTINCT FROM 'space'));`,
           ),
         );
         const receipt = operation.receipts['copy-current-database'] as { summary: Record<string, number> };
@@ -2410,6 +2473,16 @@ export class Operations {
     }
     try {
       await this.applyRelease(operation, review);
+      const snapshot = operation.receipts['database-checkpoint'];
+      if (typeof snapshot === 'string')
+        this.store.set('rollback-point', {
+          update: operation.id,
+          previous: review.current.release,
+          installed: review.release.nas.tag,
+          installationId: review.current.id,
+          snapshot,
+          at: Date.now(),
+        } satisfies RollbackPoint);
       const moved = operation.receipts['database-move'] as DatabaseMove | undefined;
       if (moved) {
         // The previous folder (and any interrupted attempt's) is no longer used; it is kept as it was.
@@ -2919,6 +2992,177 @@ export class Operations {
       move && !operation.completed.includes('database-move') ? 'database_move_failed_rolled_back' : 'update_failed_rolled_back';
   }
   /**
+   * FL-973: the update Manager can still undo, or null. Offered for ROLLBACK_DAYS after an update that finished,
+   * while the installation is still the one it left and nothing has moved or replaced the library since.
+   */
+  rollbackOffer(now = Date.now()): { from: string; to: string; updatedAt: number; until: number } | null {
+    const point = this.store.get<RollbackPoint>('rollback-point');
+    const current = this.installation();
+    if (!point || !current) return null;
+    const until = point.at + ROLLBACK_DAYS * 86_400_000;
+    if (now > until || current.id !== point.installationId || current.release !== point.installed) return null;
+    const changed = this.store
+      .history()
+      .some((o) => o.createdAt > point.at && ROLLBACK_INVALIDATING_KINDS.includes(o.kind) && o.state === 'complete' && !o.error);
+    return changed ? null : { from: point.installed, to: point.previous, updatedAt: point.at, until };
+  }
+  /**
+   * FL-973: review going back to the release before the last update, with the database as it was just before
+   * it. The checkpoint is restored from the recovery point and checked now, so a missing or damaged one is
+   * refused here, before anything stops. The counts say what was done since the update and will be undone.
+   */
+  async reviewRollback() {
+    const point = this.store.get<RollbackPoint>('rollback-point');
+    const current = this.installation();
+    if (!point || !current) throw new Refusal('rollback_unavailable', 409, 'Manager has no recovery point from before the last update.');
+    if (!this.rollbackOffer())
+      throw new Refusal('rollback_unavailable', 409, 'The last update is more than 14 days old, or the library was moved or restored since.');
+    if (this.store.locked()) throw new Refusal('operation_in_progress');
+    const id = randomUUID(),
+      checkpoint = join(this.store.directory, `rollback-${id}`);
+    try {
+      await this.backups.restore(point.snapshot, checkpoint);
+    } catch {
+      await rm(checkpoint, { recursive: true, force: true });
+      throw new Refusal('rollback_checkpoint_unreadable', 409, 'The recovery point from before the update could not be read.');
+    }
+    let recovery: z.infer<typeof Recovery>, hash: string;
+    try {
+      recovery = Recovery.parse(JSON.parse(await readFile(join(checkpoint, 'recovery.json'), 'utf8')));
+      hash = await fileHash(join(checkpoint, 'database.dump'));
+      const compose = JSON.parse(await readFile(join(checkpoint, 'compose.json'), 'utf8'));
+      const data = compose.services?.database?.volumes?.find((v: any) => v.target === '/var/lib/postgresql');
+      if (
+        recovery.databaseFormat !== 'frameleaf-canonical' ||
+        hash !== recovery.dumpSha256 ||
+        recovery.installation.id !== current.id ||
+        recovery.installation.release !== point.previous ||
+        data?.source !== recovery.installation.databasePath.replaceAll('$', () => '$$')
+      )
+        throw new Refusal('rollback_checkpoint_mismatch');
+    } catch (error) {
+      await rm(checkpoint, { recursive: true, force: true });
+      if (error instanceof Refusal) throw new Refusal(error.code, 409, 'The recovery point does not match the update it was taken for.');
+      throw new Refusal('rollback_checkpoint_unreadable', 409, 'The recovery point from before the update could not be read.');
+    }
+    // The checkpoint goes into a new folder beside the current one: refuse now, not after Frameleaf has stopped.
+    const databaseBytes = Math.max(1024 ** 3, (await stat(join(checkpoint, 'database.dump'))).size * 4);
+    try {
+      await this.databaseStorage.validate(recovery.installation.databaseRoot, databaseBytes, current.id);
+    } catch (error) {
+      await rm(checkpoint, { recursive: true, force: true });
+      throw error;
+    }
+    const compatibility = await this.docker.compatibility();
+    const since = await this.changesSince(point.at);
+    this.store.set(`rollback:${id}`, {
+      id,
+      expires: Date.now() + 900_000,
+      point,
+      checkpoint,
+      hash,
+      recovery,
+      platform: compatibility.platform,
+      current,
+    } satisfies RollbackReview);
+    return { id, from: point.installed, to: point.previous, updatedAt: point.at, since };
+  }
+  /** What was added since a moment, from the running database; null when it could not be read. */
+  private async changesSince(at: number): Promise<{ uploads: number; libraryFiles: number; albums: number; names: number } | null> {
+    const seconds = Math.floor(at / 1000);
+    try {
+      const value = JSON.parse(
+        await this.docker.sql(
+          await this.targetDatabase(),
+          `SELECT json_build_object(
+            'uploads',(SELECT count(*) FROM asset WHERE "createdAt" > to_timestamp(${seconds}) AND "libraryId" IS NULL),
+            'libraryFiles',(SELECT count(*) FROM asset WHERE "createdAt" > to_timestamp(${seconds}) AND "libraryId" IS NOT NULL),
+            'albums',(SELECT count(*) FROM album WHERE "createdAt" > to_timestamp(${seconds})),
+            'names',(SELECT count(*) FROM person WHERE "updatedAt" > to_timestamp(${seconds}) AND name <> ''));`,
+        ),
+      );
+      return { uploads: Number(value.uploads), libraryFiles: Number(value.libraryFiles), albums: Number(value.albums), names: Number(value.names) };
+    } catch {
+      return null;
+    }
+  }
+  rollback(id: string, key: string): Operation {
+    const prior = this.store.request('rollback', key, { reviewId: id });
+    if (prior) return prior;
+    const review = this.store.get<RollbackReview>(`rollback:${id}`);
+    if (!review || review.expires < Date.now() || digest(review.current) !== digest(this.installation()) || !this.rollbackOffer())
+      throw new Refusal('review_expired');
+    const { operation, created } = this.store.start('rollback', key, { reviewId: id });
+    if (created) this.launch(operation, () => this.applyRollback(operation, review));
+    return operation;
+  }
+  /**
+   * FL-973: every image is downloaded before anything stops; then the whole stack stops (one version at a time,
+   * never both), the checkpoint goes into a new, empty database folder beside the current one (kept as it is),
+   * and the checkpoint's own compose.json (the previous release's signed image digests) is put back and started.
+   * Each step is journaled: an interrupted rollback resumes from its step and stays stopped until it does.
+   */
+  private async applyRollback(operation: Operation, review: RollbackReview): Promise<void> {
+    const previous = { ...review.recovery.installation, mayHaveWrittenMedia: true } as Installation;
+    const composeFile = join(review.checkpoint, 'compose.json');
+    await this.step(operation, 'download-images', async () => {
+      const compose = JSON.parse(await readFile(composeFile, 'utf8'));
+      for (const service of Object.values<any>(compose.services))
+        if (typeof service.image === 'string') await this.docker.pull(service.image, review.platform);
+      return true;
+    });
+    await this.step(operation, 'stop-application', async () => {
+      if (!operation.receipts['stop-intent']) {
+        if (digest(this.installation()) !== digest(review.current)) throw new Refusal('installation_changed');
+        await assertMountSources(review.current.mounts);
+        const dump = join(review.checkpoint, 'database.dump');
+        await this.databaseStorage.validate(previous.databaseRoot, Math.max(1024 ** 3, (await stat(dump)).size * 4), previous.id);
+        // Journaled before anything stops: from here on going back can only be finished, not cancelled.
+        operation.receipts['stop-intent'] = true;
+        this.store.save(operation);
+      }
+      await this.docker.compose(this.directory(), review.current.project, 'stop');
+      return true;
+    });
+    const restored = await this.step(operation, 'restore-database', async () => {
+      const dump = join(review.checkpoint, 'database.dump');
+      if ((await fileHash(dump)) !== review.hash) throw new Refusal('rollback_checkpoint_changed');
+      // The folder the newer release used, and any half-restored folder of an attempt before this one, are kept.
+      const retained = this.store.get<string[]>('retained-database-directories') ?? [];
+      const using = this.installation()?.databasePath ?? review.current.databasePath;
+      this.store.set('retained-database-directories', [...new Set([...retained, using])]);
+      const databaseBytes = Math.max(1024 ** 3, (await stat(dump)).size * 4);
+      const installation: Installation = {
+        ...previous,
+        databasePath: await this.databaseStorage.allocate(previous.databaseRoot, previous.id, databaseBytes),
+      };
+      const compose = JSON.parse(await readFile(composeFile, 'utf8'));
+      const data = compose.services.database.volumes.find((v: any) => v.target === '/var/lib/postgresql');
+      data.source = installation.databasePath.replaceAll('$', () => '$$');
+      await atomicJson(join(this.directory(), 'compose.json'), compose);
+      this.store.set('database-password', review.recovery.databasePassword);
+      this.store.set('installation', installation);
+      await this.docker.compose(this.directory(), installation.project, 'up', ['database']);
+      const database = await this.targetDatabase();
+      await this.docker.verifyDump(database, dump);
+      await this.docker.restore(database, dump);
+      return installation;
+    });
+    await this.step(operation, 'start-previous', async () => {
+      await assertMountSources(restored.mounts);
+      await this.fencing.assertMedia(restored.mounts, restored);
+      await this.docker.compose(this.directory(), restored.project, 'up');
+      return true;
+    });
+    // Automatic updates never choose the undone release again; the administrator can still review it by hand,
+    // and the next approved update renders the stack from its signed release as usual (no lasting pin).
+    const rolledBack = this.store.get<string[]>('rolled-back-releases') ?? [];
+    this.store.set('rolled-back-releases', [...new Set([...rolledBack, review.point.installed])]);
+    this.store.delete('rollback-point');
+    operation.receipts['rolled-back'] = { from: review.point.installed, to: review.point.previous };
+    this.store.save(operation);
+  }
+  /**
    * `thumbnailFallback`: the administrator accepted keeping thumbnails in the library's own `thumbs` folder
    * because the thumbnail folder is gone (FL-1320). Without it a missing thumbnail folder is refused by name.
    */
@@ -3190,6 +3434,15 @@ export class Operations {
       throw new Refusal('database_move_reverse_required');
     // FL-1323: the thumbnail drive is gone, so there is nothing to go back to; Resume finishes putting them back.
     if (operation.kind === 'thumbnails-home') throw new Refusal('thumbnails_home_resume_required');
+    // FL-973: once the stack stopped, the way out is to finish going back (Resume); nothing runs until it does.
+    if (operation.kind === 'rollback' && operation.receipts['stop-intent']) throw new Refusal('rollback_resume_required');
+    if (operation.kind === 'rollback') {
+      // Nothing stopped yet: cancelling leaves the library as it is.
+      operation.state = 'complete';
+      operation.error = 'rollback_cancelled';
+      this.store.save(operation);
+      return;
+    }
     this.executing.add(id); // Claim synchronously, before any external effect or await.
     try {
       if (isMoveOperation(operation.kind)) {
@@ -3515,7 +3768,9 @@ export class Operations {
           ? !receipts['move-writes-intent']
           : operation.kind === 'move-database'
             ? !receipts['start-state']
-            : operation.kind === 'backup' ||
+            : operation.kind === 'rollback'
+              ? !receipts['stop-intent']
+              : operation.kind === 'backup' ||
             operation.kind === 'reconfigure' ||
             (operation.kind === 'update' && !updateStarted({ ...operation, receipts })) ||
             !this.installation()?.mayHaveWrittenMedia ||

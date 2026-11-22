@@ -149,6 +149,34 @@ export type RunSummary = {
   failureCauses?: RunFailureCauseCount[];
 };
 
+/**
+ * FL-1656: a run's jobs counted as they are stored, before its holds and the queues' switches are applied. Those are
+ * applied when the run is read (`aggregateRun`), so a pause, a release or a parked stage shows at once on stored counts.
+ */
+export type RunTally = {
+  /** photos (roots) by the top of their tasks that aren't waiting (null: none) and the names of the ones that are */
+  roots: Array<{ top: number | null; live: string[] | null; rooted: boolean; n: number }>;
+  tasks: Array<{ name: string; state: string; n: number }>;
+  /** pending tasks put off for a dependency */
+  deferred: Array<{ name: string; reason: string; n: number }>;
+  /** the queue of each task name */
+  queues: Record<string, string>;
+};
+/**
+ * FL-1656: a large unfinished run's tally, stored in `job_run.summary.live` by the coordinator (`refreshRunCounts`)
+ * so that reading the run never recounts its jobs. `failureCauses`: Activity's left-over photos by cause, when
+ * something failed.
+ */
+export type RunLive = RunTally & {
+  v: 1;
+  takenAt: string;
+  costMs: number;
+  failureCauses?: RunFailureCauseCount[];
+};
+/** A stored tally this version can read. */
+export const storedLive = (value: unknown): RunLive | undefined =>
+  value && typeof value === 'object' && (value as RunLive).v === 1 ? (value as RunLive) : undefined;
+
 type HoldReason = 'setup' | 'paused' | 'parked';
 type Holds = Record<string, HoldReason>;
 export type Header = {
@@ -160,6 +188,8 @@ export type Header = {
   holds: Holds | null;
   summary: RunSummary | null;
   summarized: boolean;
+  /** FL-1656: an unfinished run's stored tally, when the coordinator keeps one */
+  live?: RunLive | null;
   /** FL-1430: a folder scan's library name (null for another run, or a deleted library) */
   libraryName?: string | null;
   /** FL-1430: a folder scan the server refused because its folder is empty or can't be reached */
@@ -194,6 +224,9 @@ export type RunAggregate = {
   pausedQueues: string[];
   /** the run's tasks by name and state, when counted from its jobs */
   tasks?: Array<{ name: string; state: string; n: number }>;
+  /** with `tasks`: each task name's queue, and its pending tasks put off for a dependency */
+  queueOf?: Map<string, string>;
+  deferredOf?: Map<string, number>;
 };
 
 const LIVE = new Set(['pending', 'waiting', 'active']);
@@ -242,6 +275,9 @@ const PRIORITY: Record<RunOutcome, number> = {
 };
 export const STATE_TOP = sql<number>`max(case when state = 'active' then 10 when state in ('pending','waiting') then 8
   when state = 'needs_attention' then 4 when state in ('failed','blocked') then 3 when state = 'cancelled' then 2 else 1 end)`;
+/** The same, over the tasks that aren't waiting: null for a photo with nothing else. */
+const SETTLED_TOP = sql<number | null>`max(case when state = 'active' then 10 when state = 'needs_attention' then 4
+  when state in ('failed','blocked') then 3 when state = 'cancelled' then 2 when state = 'completed' then 1 end)`;
 const TOP_OUTCOME: Record<number, RunOutcome> = {
   10: 'active',
   4: 'needsAttention',
@@ -286,7 +322,7 @@ async function stageQueues(db: QueryExecutorProvider, runId: string, names: stri
  * back to the run's own jobs.
  * ponytail: a live run that finished nothing among the last 5000 jobs shows no last progress until it does.
  */
-async function lastProgress(db: QueryExecutorProvider, runId: string, exact: boolean) {
+export async function lastProgress(db: QueryExecutorProvider, runId: string, exact: boolean) {
   const {
     rows: [latest],
   } = await sql<{ name: string; at: Date }>`select name, at from (
@@ -334,37 +370,88 @@ async function retryingTasks(
 }
 
 /**
- * FL-1265: the counts of a run that has no valid summary. Two passes over `job_run_progress`
- * ("runId","rootItemKey",name,state), both answered from the index: one grouped by root in index order (a photo's
- * outcome is its most pressing task's), one by stage and state. Pending tasks of a parked stage are left out:
- * they don't keep the run open, and switching machine learning back on brings them back.
+ * FL-1656: a run's jobs counted (`RunTally`). Two passes over `job_run_progress` ("runId","rootItemKey",name,state),
+ * both answered from the index: one grouped by root in index order, one by stage and state; then the deferred tasks
+ * (their own index) and each stage's queue. Its cost grows with the run, so only the coordinator and a small run's
+ * reader call it.
+ */
+export async function tallyRun(db: QueryExecutorProvider, runId: string): Promise<RunTally> {
+  const { rows: roots } = await sql<RunTally['roots'][number]>`
+    select top, live, rooted, count(*)::int n from (
+      select "rootItemKey" is not null rooted, ${SETTLED_TOP} top,
+        array_agg(distinct name) filter (where state in ('pending','waiting')) live
+      from job where "runId" = ${runId}::uuid
+      group by "rootItemKey"
+    ) roots group by top, live, rooted`.execute(db);
+  const { rows: tasks } = await sql<{ name: string; state: string; n: number }>`select name, state, count(*)::int n
+    from job where "runId" = ${runId}::uuid group by name, state`.execute(db);
+  const { rows: deferred } = await sql<{ name: string; reason: string; n: number }>`select name,
+      "dependencyReason" reason, count(*)::int n
+    from job where "runId" = ${runId}::uuid and state = 'pending' and "dependencyReason" is not null
+    group by name, "dependencyReason"`.execute(db);
+  const queues = await stageQueues(db, runId, [...new Set(tasks.map((task) => task.name))]);
+  return { roots, tasks, deferred, queues: Object.fromEntries(queues) };
+}
+
+const waits = (state: string) => state === 'pending' || state === 'waiting';
+
+/**
+ * FL-1656: a stored tally with the run's running tasks as they are now (few, read through the lease index), so a run
+ * that started or stalled since it was counted reads as running or not. A task now running is taken from its stage's
+ * pending ones; one no longer running goes back to them until the next count says how it ended.
+ * ponytail: the photos (`roots`) keep the stored count of running ones; only the task totals and the state follow.
+ */
+async function withRunningNow(db: QueryExecutorProvider, runId: string, tally: RunTally): Promise<RunTally> {
+  const { rows } = await sql<{ name: string; n: number }>`select name, count(*)::int n from job
+    where state = 'active' and "runId" = ${runId}::uuid group by name`.execute(db);
+  const now = new Map(rows.map((row) => [row.name, row.n]));
+  const count = new Map(tally.tasks.map((task) => [`${task.state} ${task.name}`, task.n]));
+  for (const name of new Set([...now.keys(), ...tally.tasks.map((task) => task.name)])) {
+    const stored = count.get(`active ${name}`) ?? 0;
+    const pending = count.get(`pending ${name}`) ?? 0;
+    // no more start than were waiting: the rest are tasks added since the count
+    const running = Math.min(now.get(name) ?? 0, stored + pending);
+    if (running === stored) continue;
+    count.set(`active ${name}`, running);
+    count.set(`pending ${name}`, pending + stored - running);
+  }
+  const tasks = [...count].flatMap(([key, n]) => {
+    const [state, name] = [key.slice(0, key.indexOf(' ')), key.slice(key.indexOf(' ') + 1)];
+    return n > 0 ? [{ name, state, n }] : [];
+  });
+  return { ...tally, tasks };
+}
+
+/**
+ * FL-1265: the counts of a run that has no valid summary, from its tally: a photo's outcome is its most pressing
+ * task's. Pending tasks of a parked stage are left out: they don't keep the run open, and switching machine learning
+ * back on brings them back. FL-1656: a run with a stored tally (`run.live`) is read from it, without counting its
+ * jobs; `exact` always counts.
  * ponytail: per-task retry, delay and parent-wait outcomes aren't read here (they need the heap): pending work counts
  * as waiting unless its stage is held, or its queue (one per job name) is paused or closed; deferred work moves to
  * blocked in the task totals (and in the photos when nothing else waits). `listRunItems` reads each photo exactly.
  */
 export async function aggregateRun(
   db: QueryExecutorProvider,
-  run: { id: string; holds: unknown },
+  run: { id: string; holds: unknown; live?: unknown },
   around: Surroundings,
   exact = false,
   /** FL-1430 (Recent work only): count work waiting out a retry as retrying; Activity keeps it waiting, as before */
   retries = false,
 ): Promise<RunAggregate> {
   const holds = holdsOf(run.holds);
-  const parked = namesHeldAs(holds, 'parked');
-  const notParked = sql`not (state in ('pending','waiting') and name = any(${parked}::text[]))`;
-  const { rows: roots } = await sql<{ top: number; live: string[] | null; rooted: boolean; n: number }>`
-    select top, live, rooted, count(*)::int n from (
-      select "rootItemKey" is not null rooted, ${STATE_TOP} top,
-        array_agg(distinct name) filter (where state in ('pending','waiting')) live
-      from job where "runId" = ${run.id}::uuid and ${notParked}
-      group by "rootItemKey"
-    ) roots group by top, live, rooted`.execute(db);
-  const { rows: tasks } = await sql<{ name: string; state: string; n: number }>`select name, state, count(*)::int n
-    from job where "runId" = ${run.id}::uuid and ${notParked} group by name, state`.execute(db);
-  const { rows: deferred } = await sql<{ reason: string; n: number }>`select "dependencyReason" reason, count(*)::int n
-    from job where "runId" = ${run.id}::uuid and state = 'pending' and "dependencyReason" is not null
-    group by "dependencyReason"`.execute(db);
+  const parked = new Set(namesHeldAs(holds, 'parked'));
+  const stored = exact ? undefined : storedLive(run.live);
+  const tally = stored ? await withRunningNow(db, run.id, stored) : await tallyRun(db, run.id);
+  const tasks = tally.tasks.filter((task) => !(waits(task.state) && parked.has(task.name)));
+  const roots = tally.roots.flatMap((row) => {
+    const live = (row.live ?? []).filter((name) => !parked.has(name));
+    const top = Math.max(row.top ?? 0, live.length > 0 ? 8 : 0);
+    // a photo with nothing but a parked stage's pending tasks isn't counted
+    return top === 0 ? [] : [{ top, live, rooted: row.rooted, n: row.n }];
+  });
+  const deferred = tally.deferred;
+  const queueOf = new Map(Object.entries(tally.queues));
 
   const liveNames = [
     ...new Set(tasks.filter((task) => task.state === 'pending' || task.state === 'waiting').map((task) => task.name)),
@@ -374,9 +461,6 @@ export async function aggregateRun(
       tasks.filter((task) => task.state === 'failed' || task.state === 'needs_attention').map((task) => task.name),
     ),
   ];
-  const switched = around.paused.size + around.closed.size > 0;
-  const queueOf = await stageQueues(db, run.id, [...new Set([...(switched ? liveNames : []), ...failedNames])]);
-
   const stageTotals = zero();
   for (const { name, state, n } of tasks) {
     add(
@@ -400,13 +484,13 @@ export async function aggregateRun(
     let outcome = TOP_OUTCOME[top];
     if (top === 8) {
       outcome = 'blocked';
-      for (const name of live ?? []) {
+      for (const name of live) {
         const next = liveOutcome(name, holds, queueOf, around);
         if (PRIORITY[next] > PRIORITY[outcome]) outcome = next;
       }
     }
     add(photos, outcome, n);
-    const isHeld = (live ?? []).some(
+    const isHeld = live.some(
       (name) => name !== JobName.IdenticalFilesCheck && (holds[name] === 'setup' || holds[name] === 'paused'),
     );
     if (isHeld) held += n;
@@ -454,6 +538,13 @@ export async function aggregateRun(
       ),
     ].toSorted((a, b) => a.localeCompare(b)),
     tasks,
+    queueOf,
+    deferredOf: new Map(
+      [...new Set(deferred.map((row) => row.name))].map((name) => [
+        name,
+        deferred.filter((row) => row.name === name).reduce((sum, row) => sum + row.n, 0),
+      ]),
+    ),
   };
 }
 
@@ -569,7 +660,10 @@ export async function toRead(
     });
     failureCauses = finished && roots.length === 0 ? aggregate.failureCauses : causeCounts(groupRoots(roots));
   } else if (!options.live && !finished && failures > 0) {
-    failureCauses = causeCounts(await summarizeRunFailures(db, run.id, aggregate.countsPhotos, true));
+    // FL-1656: a run read from its stored tally reads the causes stored with it
+    failureCauses =
+      storedLive(run.live)?.failureCauses ??
+      causeCounts(await summarizeRunFailures(db, run.id, aggregate.countsPhotos, true));
   }
   // FL-1430: a scan refused because its folder is empty or gone couldn't reach its drive
   const unreachableLibraries = run.refused
@@ -609,7 +703,7 @@ export async function toRead(
       ...(run.ownerName && { ownerName: run.ownerName }),
       ...(run.label && { label: run.label }),
       ...(run.itemCount !== null && run.itemCount !== undefined && { itemCount: run.itemCount }),
-      ...(!finished && aggregate.tasks && { steps: await runSteps(db, run, aggregate.tasks, around) }),
+      ...(!finished && aggregate.tasks && { steps: runSteps(run, aggregate, around) }),
     }),
   };
 }
@@ -618,17 +712,9 @@ export async function toRead(
  * FL-1459: a live run's tasks by queue, for Activity's steps of what came in. Counted as tasks, not photos: Faces
  * counts a photo's faces. Live tasks are told apart as the run's own stage totals are (paused, saved for tonight).
  */
-async function runSteps(
-  db: QueryExecutorProvider,
-  run: Header,
-  tasks: NonNullable<RunAggregate['tasks']>,
-  around: Surroundings,
-): Promise<Array<RunCounts & { queue: string }>> {
-  const queueOf = await stageQueues(db, run.id, [...new Set(tasks.map((task) => task.name))]);
+function runSteps(run: Header, aggregate: RunAggregate, around: Surroundings): Array<RunCounts & { queue: string }> {
+  const { tasks = [], queueOf = new Map<string, string>(), deferredOf = new Map<string, number>() } = aggregate;
   // Pending tasks waiting out a dependency are blocked, as the run's own stage totals count them (`aggregateRun`)
-  const { rows: deferred } = await sql<{ name: string; n: number }>`select name, count(*)::int n from job
-    where "runId" = ${run.id}::uuid and state = 'pending' and "dependencyReason" is not null group by name`.execute(db);
-  const deferredOf = new Map(deferred.map((row) => [row.name, row.n]));
   const holds = holdsOf(run.holds);
   const steps = new Map<string, RunCounts & { queue: string }>();
   for (const { name, state, n } of tasks) {
@@ -933,6 +1019,17 @@ export async function rewriteFailureCauses(db: QueryExecutorProvider, runId: str
     where id = ${runId}::uuid and jsonb_typeof(summary) = 'object'`.execute(db);
 }
 
+/**
+ * FL-1656: after a change made by hand (Try again, Stop trying, Empty), the stored tallies of these unfinished runs
+ * (all of them without `runIds`) are from before it: the coordinator counts them again at its next visit.
+ * ponytail: until then the card shows the counts from before the change; a pause or a release needs no mark.
+ */
+export async function markRunCountsStale(db: QueryExecutorProvider, runIds?: string[]) {
+  await sql`update job_run set summary = jsonb_set(summary, '{staleAt}', to_jsonb(clock_timestamp()))
+    where "finishedAt" is null and summary->'live' is not null
+      ${runIds ? sql`and id = any(${runIds}::uuid[])` : sql``}`.execute(db);
+}
+
 /** What a run's card and summary keep: the causes with photos still needing a look. */
 export const causeCounts = (groups: RunFailureGroup[]): RunFailureCauseCount[] =>
   groups.filter((group) => group.count > 0).map(({ cause, count }) => ({ cause, count }));
@@ -941,20 +1038,24 @@ export const causeCounts = (groups: RunFailureGroup[]): RunFailureCauseCount[] =
 export const SUMMARIZED = sql<boolean>`coalesce(r."finishedAt" is not null and r.summary->>'complete' = 'true'
   and (r.summary->>'finishedAt')::timestamptz = r."finishedAt", false)`;
 
+/** FL-1656: the stored tally of an unfinished run `r` (`RunLive`); a finished run's is behind its summary. */
+export const LIVE_TALLY = sql<RunLive | null>`case when r."finishedAt" is null then r.summary->'live' end`;
+
 /** FL-1459: a run's origin and its owner's name, for a run `r` joined with its owner `u` (`RUN_OWNER`). */
 export const ORIGIN_COLUMNS = sql`r.origin, r."ownerId", u.name "ownerName", r.label, r."itemCount"`;
 export const RUN_OWNER = sql`left join "user" u on u.id = r."ownerId" and u."deletedAt" is null`;
 
 const headers = (where: ReturnType<typeof sql>, take: number, skip: number, unfinishedFirst = true) => sql<Header>`
   select r.id, r.kind, r."createdAt", r."finishedAt", r."enumerationDone", r.selection->'holds' holds, r.summary,
-    ${SUMMARIZED} summarized, ${ORIGIN_COLUMNS}
+    ${SUMMARIZED} summarized, ${LIVE_TALLY} live, ${ORIGIN_COLUMNS}
   from job_run r ${RUN_OWNER} ${where}
   order by ${unfinishedFirst ? sql`r."finishedAt" is not null,` : sql``} r."createdAt" desc, r.id desc
   limit ${take} offset ${skip}`;
 
 /**
- * Activity's runs, unfinished first. A finished run reads its stored summary; an unfinished one is counted from its
- * jobs (`aggregateRun`), one run at a time. The store shares a costly read between pollers (`costReusedRead`).
+ * Activity's runs, unfinished first. A finished run reads its stored summary; a large unfinished one its stored
+ * tally (FL-1656, kept by the coordinator); a small one, or a large one not yet tallied, is counted from its jobs
+ * (`aggregateRun`), one run at a time. The store shares a costly read between pollers (`costReusedRead`).
  * Recent work (`foldNightly`) reads through `listRecentWork` (`recent-work.ts`) instead.
  */
 export async function listRuns(db: QueryExecutorProvider, take: number, skip: number): Promise<RunRead[]> {
@@ -1075,7 +1176,7 @@ export async function listRunItems(
 const operationQueue = (name: string) => name === QueueName.Editor || name === QueueName.VideoConversion;
 
 const reportedJobsForRun = (name: string) => {
-  const columns = sql`j.id, j.queue, j."createdAt", j."progressAt", j."startedAt", j."finishedAt", j."runId", j."parentId",
+  const columns = sql`j.id, j.queue, j.name, j."createdAt", j."progressAt", j."startedAt", j."finishedAt", j."runId", j."parentId",
     j."dependencyReason", j.attempt, j."retryBaseAttempt", j."latestPending"`;
   return operationQueue(name)
     ? sql`select ${columns}, r.state, r."availableAt", r."operationPaused"
@@ -1083,18 +1184,36 @@ const reportedJobsForRun = (name: string) => {
     : sql`select ${columns}, j.state, j."availableAt", false "operationPaused" from job j where j.queue = ${name}`;
 };
 
-/** One queue's current work for Background work: its live jobs and the jobs of runs still open. */
-export async function observeQueueRun(db: QueryExecutorProvider, name: string) {
+/**
+ * The job a queue runs once for each photo or video, where it runs others for them too. Thumbnails share their queue
+ * with each photo's colors (queued as its thumbnail finishes) and each person's face thumbnail: the queue's job
+ * count is far more than its photos, and grows as they get ready.
+ */
+const QUEUE_ITEM_JOBS: Partial<Record<string, string>> = {
+  [QueueName.ThumbnailGeneration]: JobName.AssetGenerateThumbnails,
+};
+
+/**
+ * One queue's current work for Background work: its live jobs and the jobs of runs still open. `items` counts only
+ * the queue's once-a-photo job (`QUEUE_ITEM_JOBS`), for a line that says photos; null for a queue that has none.
+ * A photo whose job failed is done, as a failed job is `processed`: it is not coming, and Library care lists it.
+ * `items.startedAt` is when the oldest of those jobs was queued, so their pace is not measured from another job's
+ * start (a face thumbnail that has waited since before the import).
+ */
+export async function observeQueueRun(db: QueryExecutorProvider, name: string, itemJob = QUEUE_ITEM_JOBS[name]) {
   // Passed as values, not a subquery: the planner then reads each open run's own job count. A subquery is
   // planned for an average run, which after a large scan means a pass over the queue's whole history.
   const { rows: open } = await sql<{ id: string }>`select id from job_run where "finishedAt" is null`.execute(db);
   const openRuns = open.map(({ id }) => id);
   const {
-    rows: [row],
+    rows: [{ itemsDone, itemsLeft, itemsStartedAt, ...row }],
   } = await sql<{
     active: number;
     waiting: number;
     processed: number;
+    itemsDone: number;
+    itemsLeft: number;
+    itemsStartedAt: Date | null;
     startedAt: Date | null;
     lastProgressAt: Date | null;
     workerAvailable: boolean;
@@ -1116,17 +1235,24 @@ export async function observeQueueRun(db: QueryExecutorProvider, name: string) {
       where j.state not in ('pending','waiting','active') and j."runId" = any(${openRuns}::uuid[])
     ), loose_start as (
       select min("createdAt") at from current_jobs where "runId" is null
+    ), item_start as (
+      select min("createdAt") at from current_jobs where name = ${itemJob ?? null}
     ), loose_done as (
       -- Jobs outside a run (upload thumbnails, metadata…) leave the live set when they finish: count the ones
       -- finished since the oldest still waiting was queued, or Activity's percentage stays at 0 (FL-588).
       -- With none waiting there is nothing to count, so the kept history is not read at all.
-      select count(*)::int n from reported f where (select at from loose_start) is not null and f."runId" is null
+      select count(*)::int n, count(*) filter (where f.name = ${itemJob ?? null}
+        and f."finishedAt" >= (select at from item_start))::int items from reported f where (select at from loose_start) is not null and f."runId" is null
         and f.state in ('completed','failed','cancelled','blocked') and f."latestPending" is null
         and f."finishedAt" >= (select at from loose_start)
     ) select count(*) filter (where state = 'active')::int active,
       count(*) filter (where state in ('pending','waiting'))::int waiting,
       (count(*) filter (where state in ('completed','failed','needs_attention','blocked','cancelled'))
         + (select n from loose_done))::int processed,
+      (count(*) filter (where name = ${itemJob ?? null} and state in ('completed','failed','needs_attention','blocked','cancelled'))
+        + (select items from loose_done))::int "itemsDone",
+      count(*) filter (where name = ${itemJob ?? null} and state in ('pending','waiting','active'))::int "itemsLeft",
+      (select at from item_start) "itemsStartedAt",
       min("createdAt") "startedAt", max(greatest("progressAt", "startedAt", "finishedAt")) "lastProgressAt",
       ${workerAvailable} "workerAvailable",
       count(*) filter (where state in ('pending','waiting') and not paused
@@ -1141,7 +1267,8 @@ export async function observeQueueRun(db: QueryExecutorProvider, name: string) {
         and count(*) filter (where state = 'active') = 0
         and coalesce(max(greatest("progressAt", "startedAt", "finishedAt")), min("createdAt")) < now() - interval '2 minutes', false) "noDispatchBacklog"
       from current_jobs`.execute(db);
-  return row;
+  const items = { done: itemsDone, total: itemsDone + itemsLeft, startedAt: itemsStartedAt };
+  return { ...row, items: itemJob ? items : null };
 }
 
 /**

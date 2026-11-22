@@ -53,6 +53,28 @@ describe('importProgress (FL-1409)', () => {
     expect(Math.round(line!.etaSeconds! / 60)).toBe(13);
   });
 
+  it('counts photos, not the colors and face thumbnails their queue also makes', () => {
+    // 133,000 photos: the queue has run a colors job for each one ready, and holds more jobs than photos.
+    const queue = thumbnails({
+      active: 4,
+      waiting: 91_739,
+      processed: 118_786,
+      total: 210_529,
+      // A face thumbnail has waited in the queue since 09:00; the photos started coming at 10:00.
+      startedAt: '2026-11-10T09:00:00.000Z',
+      items: { done: 60_000, total: 133_000, startedAt: '2026-11-10T10:00:00.000Z' },
+    });
+    const line = importProgress(summary({ queues: [queue] }), NOW);
+    expect(line?.ready).toEqual({ done: 60_000, total: 133_000 });
+    // 60,000 photos in their own ten minutes: the 73,000 left take about twelve more, not eighty-five.
+    expect(Math.round(line!.etaSeconds! / 60)).toBe(12);
+  });
+
+  it('leaves once every photo is ready, though their colors are still being read', () => {
+    const queue = thumbnails({ active: 2, waiting: 900, items: { done: 16_317, total: 16_317, startedAt: null } });
+    expect(importProgress(summary({ queues: [queue] }), NOW)).toBeNull();
+  });
+
   it('says nothing for a handful of photos, or to anyone the server sends no queues', () => {
     const few = thumbnails({ waiting: 20, processed: 30, total: 54 });
     expect(importProgress(summary({ queues: [few] }), NOW)).toBeNull();

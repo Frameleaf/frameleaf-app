@@ -34,7 +34,8 @@ import {
 @Injectable()
 export class TimelineService extends BaseService {
   async getTimeBuckets(auth: AuthDto, dto: TimeBucketDto): Promise<TimeBucketsResponseDto[]> {
-    if (dto.sort && auth.sharedLink && !auth.sharedLink.showExif) {
+    // FL-869: an album's custom order reveals nothing about the files, so any link may use it
+    if (dto.sort && dto.sort !== 'custom' && auth.sharedLink && !auth.sharedLink.showExif) {
       throw new BadRequestException('This link does not allow sorting by file name or rating');
     }
     await this.timeBucketChecks(auth, dto);
@@ -95,6 +96,7 @@ export class TimelineService extends BaseService {
         rating: z.number().int().min(-1).max(5),
         // LIB-P3: the score itself (0 to 1), or -1 for an asset without one
         quality: z.number().min(-1).max(1),
+        custom: z.number(),
       };
       try {
         const [key, date, id] = z
@@ -106,7 +108,7 @@ export class TimelineService extends BaseService {
       }
     }
     // S-15: a shared link that hides EXIF may not sort by file name or rating; the order would reveal them
-    if (auth.sharedLink && !auth.sharedLink.showExif) {
+    if (sort !== 'custom' && auth.sharedLink && !auth.sharedLink.showExif) {
       throw new BadRequestException('This link does not allow sorting by file name or rating');
     }
     await this.timeBucketChecks(auth, bucketDto);
@@ -177,8 +179,10 @@ export class TimelineService extends BaseService {
       // September 22, 2026). The main timeline never does: the Locked view is its own view.
       ...(dto.albumId && getLockedVisibilityOptions(auth)),
       // FL-446: an album, or a person widened to shared albums, never shows another member's item that
-      // matches its owner's Locked rules. FL-425: so do the Filters panel's people, which widen alike.
-      ...((dto.albumId || dto.personId || filterNamesPeople(dto.filter)) && getOthersRulesQueryOptions(auth)),
+      // matches its owner's Locked rules. FL-425: so do the Filters panel's people, which widen alike, and
+      // FL-786: Favourites, which lists the viewer's hearts on items shared with them.
+      ...((dto.albumId || dto.personId || filterNamesPeople(dto.filter) || dto.isFavorite === true) &&
+        getOthersRulesQueryOptions(auth)),
       userIds,
       ...(lockReason && { lockReasons: [lockReason] }),
       // LIB-P3: the caller's own Best Photos, at the Best Photos page's threshold (checked in timeBucketChecks)

@@ -15,6 +15,7 @@ import {
   SearchOrderField,
   SearchOrderFieldSchema,
 } from 'src/enum.js';
+import { MIN_APPROXIMATE_YEAR } from 'src/utils/date.js';
 import { MEDIA_KINDS } from 'src/utils/media-kinds.js';
 import { isoDatetimeToDate, nonEmptyPartial, stringToBool } from 'src/validation.js';
 
@@ -125,7 +126,7 @@ const SearchPlacesSchema = z
 
 const SearchPeopleSchema = z
   .object({
-    name: z.string().describe('Person name to search for'),
+    name: z.string().describe("Person name to search for; the caller's own notes about a person match too (FL-941)"),
     withHidden: stringToBool.optional().describe('Include hidden people'),
   })
   .meta({ id: 'SearchPeopleDto' });
@@ -297,6 +298,13 @@ const DateFilterNullableSchema = nonEmptyPartial({
 
 const BoolFilterSchema = z.object({ eq: z.boolean() }).meta({ id: 'BoolFilter' });
 
+/** FL-936: a decade by its first year: 1970 is 1970 to 1979. */
+const DecadeFilterSchema = z
+  .object({
+    eq: z.int().min(MIN_APPROXIMATE_YEAR).max(9990).multipleOf(10).describe('The first year of the decade'),
+  })
+  .meta({ id: 'DecadeFilter' });
+
 const enumFilterSchema = <T extends z.core.util.EnumLike>(values: z.ZodEnum<T>, id: string) =>
   nonEmptyPartial({
     eq: values,
@@ -398,10 +406,18 @@ const searchFilterBranchShape = {
   // FL-49: the local capture date and time (the wall clock where the photo was taken, written as UTC), the
   // date the timeline and the search histogram bucket by; year:, month:, after: and before: narrow on it
   localDateTime: DateFilterSchema,
+  // FL-936: everything taken in a decade, by local date: photos dated to a day, to a year or to the decade itself.
+  // takenAt and localDateTime ranges also count a photo dated to a year or a decade as taken throughout it
+  takenDecade: DecadeFilterSchema.describe('Taken in this decade, whether dated to a day, a year or the decade'),
   createdAt: DateFilterSchema,
   updatedAt: DateFilterSchema,
   trashedAt: DateFilterNullableSchema,
   personIds: IdsFilterSchema,
+  // FL-874: items with a face of someone in any (all, none) of the viewer's own person categories; categories are
+  // per viewer, so another account's category matches nothing, and through a shared link none does
+  personCategoryIds: IdsFilterSchema.describe(
+    "The viewer's person categories (Family, Friends, Work …): items showing someone in any, all or none of them",
+  ),
   // FL-58: matches the caller's own confirmed pet observations; another account's pet id matches nothing
   petIds: IdsFilterSchema,
   tagIds: IdsFilterSchema,
@@ -536,6 +552,7 @@ const SmartSearchSchema = withShapeExclusivity(
     language: z.string().optional().describe('Search language code'),
     page: z.int().min(1).optional().describe('Page number').meta(DEPRECATED_FLAT_FIELD),
     filter: filterField,
+    cursor: cursorField,
   }),
 ).meta({ id: 'SmartSearchDto' });
 

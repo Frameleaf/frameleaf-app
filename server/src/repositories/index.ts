@@ -84,6 +84,7 @@ import { ICloudSyncRepository } from 'src/repositories/icloud-sync.repository.js
 import { ICloudTransportRepository } from 'src/repositories/icloud-transport.repository.js';
 import { ICloudWeeklyRepository } from 'src/repositories/icloud-weekly.repository.js';
 import { IdenticalFilesRepository } from 'src/repositories/identical-files.repository.js';
+import { ImportConnectorRepository } from 'src/repositories/import-connector.repository.js';
 import { InstanceIdentityRepository } from 'src/repositories/instance-identity.repository.js';
 import { IntegrityRepository } from 'src/repositories/integrity.repository.js';
 import { ItemShareRepository } from 'src/repositories/item-share.repository.js';
@@ -146,6 +147,7 @@ import { SourceResourceRepository } from 'src/repositories/source-resource.repos
 import { SpeechRepository } from 'src/repositories/speech.repository.js';
 import { StackRepository } from 'src/repositories/stack.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
+import { StudioEditorImportRepository } from 'src/repositories/studio-editor-import.repository.js';
 import { StudioExportRepository } from 'src/repositories/studio-export.repository.js';
 import { StudioImportFileRepository } from 'src/repositories/studio-import-file.repository.js';
 import { StudioImportPublicationRepository } from 'src/repositories/studio-import-publication.repository.js';
@@ -310,6 +312,7 @@ export const repositories = [
   StudioImportFileRepository,
   StudioReverseConformRepository,
   StudioMovieRepository,
+  StudioEditorImportRepository,
   StudioStabiliseRepository,
   StudioTranscriptionRepository,
   StudioExportRepository,
@@ -334,6 +337,7 @@ export const repositories = [
   TagRepository,
   TakeoutRepository,
   TakeoutStagingRepository,
+  ImportConnectorRepository,
   EagleImportRepository,
   EagleLibraryRepository,
   TrashRepository,

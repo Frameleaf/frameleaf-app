@@ -21,6 +21,7 @@ import {
   getRun,
   listRunItems,
   listRuns,
+  markRunCountsStale,
   observeQueueRun,
   ownerJobs,
   reportedQueueJobs,
@@ -172,6 +173,32 @@ const wakeClaimLoops = (db: Kysely<DB>) => {
  * All methods own short transactions. No connection escapes to a handler or an enumerator.
  * Bind serialized JSON as text before casting: postgres.js otherwise JSON-encodes it a second time.
  */
+
+/** The queues whose work desktop helpers can take, in the order a helper's free slots are counted for them. */
+export const DESKTOP_QUEUES: readonly string[] = [QueueName.SmartSearch, QueueName.FaceDetection, QueueName.Ocr];
+
+/**
+ * How many extra jobs a queue may start for desktop helpers now. The queue store knows nothing of models,
+ * routes or approvals, so the desktop service supplies the count (`DesktopMlService.queueCapacity`): one per
+ * task a helper holds for this queue, and one per task it can still take, up to this queue's own setting.
+ * Nothing registered means no extra jobs, so the administrator's own concurrency is the limit.
+ */
+let desktopQueueCapacity: ((queue: string) => Promise<number>) | null = null;
+export const setDesktopQueueCapacity = (capacity: ((queue: string) => Promise<number>) | null) => {
+  desktopQueueCapacity = capacity;
+};
+
+export const readyDesktopHelpers = async (queue: string): Promise<number> => {
+  if (!desktopQueueCapacity || !DESKTOP_QUEUES.includes(queue)) return 0;
+  try {
+    const ready = await desktopQueueCapacity(queue);
+    return Number.isSafeInteger(ready) && ready > 0 ? Math.min(ready, QUEUE_BATCH) : 0;
+  } catch {
+    // Counting helpers must never stop a queue: without a count it runs at its own concurrency.
+    return 0;
+  }
+};
+
 export class SqlQueueStore {
   constructor(readonly db: Kysely<DB>) {}
 
@@ -437,6 +464,8 @@ export class SqlQueueStore {
         queuedCancellation: true,
       });
     }
+    // Counted before the queue row is locked: it reads routes and approvals on other connections.
+    const helpers = await readyDesktopHelpers(queue);
     return this.db.transaction().execute(async (tx) => {
       const {
         rows: [config],
@@ -459,8 +488,14 @@ export class SqlQueueStore {
         rows: [{ active }],
       } = await sql<{ active: number }>`select count(*)::int active from job
         where queue = ${queue} and state = 'active'`.execute(tx);
-      // The ones started by hand already count as active.
-      const capacity = Math.min(QUEUE_BATCH - byHand.length, maxClaims - byHand.length, config.concurrency - active);
+      // The ones started by hand already count as active. Desktop helpers add one job for each task they hold
+      // or can still take for this queue: a job they let start becomes a desktop task one of them claims
+      // (docs/desktop-worker-setup-protocol.md).
+      const capacity = Math.min(
+        QUEUE_BATCH - byHand.length,
+        maxClaims - byHand.length,
+        config.concurrency + helpers - active,
+      );
       if (capacity <= 0) {
         return byHand;
       }
@@ -1099,7 +1134,7 @@ export class SqlQueueStore {
     return this.runReads({ take, skip, foldNightly });
   }
 
-  /** A run's page polls this; an unfinished run is recounted from its jobs, so it is shared like `listRuns`. */
+  /** A run's page polls this; a run not yet tallied (FL-1656) is counted from its jobs, so it is shared like `listRuns`. */
   private readonly singleRunReads = costReusedRead((runId: string) => getRun(this.db, runId));
 
   getRun(runId: string) {
@@ -1273,6 +1308,8 @@ export class SqlQueueStore {
         sql`and lower(j.data ->> 'id') collate "C" = any(${entityIds.map((id) => id.toLowerCase())}::text[])`
       : sql`and j."availableAt" <> ${HELD}`;
     await this.cancel(queue, states, about);
+    // a whole queue emptied by hand; removing single items leaves the stored tallies to their next turn
+    if (!entityIds) await markRunCountsStale(this.db);
     this.forgetRunReads();
   }
 
@@ -1388,6 +1425,7 @@ export class SqlQueueStore {
         countsPhotos ? { roots: items, exclude } : { jobIds: items, exclude },
       );
       await rewriteFailureCauses(tx, runId);
+      await markRunCountsStale(tx, [runId]);
       return countsPhotos ? photos : jobs;
     });
     if (photos !== undefined) this.forgetRunReads();
@@ -1432,6 +1470,7 @@ export class SqlQueueStore {
         tx,
       );
       await rewriteFailureCauses(tx, runId);
+      await markRunCountsStale(tx, [runId]);
       return stopped.photos;
     });
     if (photos !== undefined) this.forgetRunReads();
@@ -1457,6 +1496,7 @@ export class SqlQueueStore {
         returning 1
       ) select (select count(distinct coalesce(root, "assetId"::text)) from picked)::int photos,
         (select count(*) from written) "written"`.execute(this.db);
+    await markRunCountsStale(this.db);
     this.forgetRunReads();
     return stopped.photos;
   }
@@ -1502,6 +1542,7 @@ export class SqlQueueStore {
         const runIds = [...new Set(rows.flatMap(({ runId }) => (runId ? [runId] : [])))];
         if (runIds.length > 0) {
           await sql`update job_run set "finishedAt" = null where id = any(${runIds}::uuid[])`.execute(tx);
+          await markRunCountsStale(tx, runIds);
         }
         if (rows.length > 0) this.wake();
         return rows.length;

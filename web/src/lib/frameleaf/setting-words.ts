@@ -156,6 +156,12 @@ export const SERVER_WORDS: Readonly<Record<string, Words>> = Object.freeze({
   // Access & security › Sign in with Frameleaf
   'frameleafCloud.signIn.showOnLocalLogin': { label: 'frameleaf_signin_offer_home' },
   'frameleafCloud.signIn.buttonText': { label: 'frameleaf_signin_words' },
+  // Backup › Schedule › Cloud Backup uploads (FL-1677)
+  'frameleafCloud.cloudBackup.uploadHours.enabled': { label: 'frameleaf_backup_schedule_upload_hours_switch' },
+  'frameleafCloud.cloudBackup.uploadHours.start': { label: 'frameleaf_backup_schedule_upload_hours_start' },
+  'frameleafCloud.cloudBackup.uploadHours.stop': { label: 'frameleaf_backup_schedule_upload_hours_stop' },
+  'frameleafCloud.cloudBackup.uploadLimit.enabled': { label: 'frameleaf_backup_schedule_upload_limit_switch' },
+  'frameleafCloud.cloudBackup.uploadLimit.mbps': { label: 'frameleaf_backup_schedule_upload_limit' },
   // FL-422: Editing & playback › Edited masters and AI restoration
   'user.newUserStorageQuota': { label: 'frameleaf_userpage_space_for_new' },
   'oauth.defaultStorageQuota': { label: 'frameleaf_userpage_space_for_new' },

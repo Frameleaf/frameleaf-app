@@ -27,6 +27,7 @@
   import { mdiImageOutline } from '@mdi/js';
   import { DateTime } from 'luxon';
   import { debounce } from 'lodash-es';
+  import { LIVE_ADDITIONS_MAX_WAIT_MS, LIVE_ADDITIONS_QUIET_MS } from '$lib/constants';
   import { onDestroy, tick, untrack, type Snippet } from 'svelte';
   import { locale, t } from 'svelte-i18n';
 
@@ -60,6 +61,8 @@
   /** Bumped (debounced) by uploads, deletes, trash and restore, and edits such as a rating change. */
   let revision = $state(0);
   const refresh = debounce(() => revision++, REFRESH_DELAY_MS);
+  /** Uploads and processing elsewhere: one reload once they go quiet, not one per photo. */
+  const refreshLive = debounce(() => revision++, LIVE_ADDITIONS_QUIET_MS, { maxWait: LIVE_ADDITIONS_MAX_WAIT_MS });
   const localSequences = new Map<string, bigint>();
   const onLocalEffects = (bundle: AssetLocalEffectsV1) => {
     if (!/^[1-9][0-9]{0,18}$/.test(bundle.sequence)) {
@@ -75,11 +78,11 @@
   };
   const unsubscribers = [
     websocketEvents.on('AssetLocalEffectsV1', onLocalEffects),
-    websocketEvents.on('on_upload_success', refresh),
+    websocketEvents.on('on_upload_success', refreshLive),
     websocketEvents.on('on_asset_delete', refresh),
     websocketEvents.on('on_asset_trash', refresh),
     websocketEvents.on('on_asset_restore', refresh),
-    websocketEvents.on('on_asset_update', refresh),
+    websocketEvents.on('on_asset_update', refreshLive),
     eventManager.on({
       AssetUpdate: refresh,
       AssetsDelete: refresh,
@@ -101,6 +104,7 @@
   ];
   onDestroy(() => {
     refresh.cancel();
+    refreshLive.cancel();
     for (const unsubscribe of unsubscribers) {
       unsubscribe();
     }

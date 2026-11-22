@@ -18,7 +18,7 @@ Two further options, `FRAMELEAF_ICLOUD_IDENTITY_ADOPTION` and `FRAMELEAF_ICLOUD_
 
 ## Capacity and long-video validation
 
-Per-connection controls are limited to 1–4 concurrent downloads. The worker also applies server-wide limits:
+Per-connection controls accept 1–100 concurrent downloads (1 by default); the server downloads at most 4 at a time. The worker also applies server-wide limits:
 
 | Environment variable                 | Default                  | Purpose                                                    |
 | ------------------------------------ | ------------------------ | ---------------------------------------------------------- |

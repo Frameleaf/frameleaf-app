@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
+import type { GalleryPreview } from './gallery-preview.js';
 
 export class Refusal extends Error {
   constructor(
@@ -71,6 +72,8 @@ export type Source = {
     databaseBytes: number;
   };
   restart: Record<string, { Name: string; MaximumRetryCount: number }>;
+  /** FL-1742: what a Noodle Gallery import brings across, counted in the running source. Absent when it could not be read. */
+  gallery?: GalleryPreview;
 };
 /** Reviewed Docker identities only; schema, ownership and privacy qualification remain source-specific. */
 export type SourceFence = Pick<Source, 'id' | 'workers' | 'mounts' | 'fingerprint' | 'platform' | 'restart'> & {
@@ -107,6 +110,7 @@ export type OperationKind =
   | 'install'
   | 'import'
   | 'update'
+  | 'rollback'
   | 'backup'
   | 'restore'
   | 'start'
@@ -159,6 +163,8 @@ export type NasManifest = {
     server: string;
     machineLearning: string;
     machineLearningVariants: Record<string, string>;
+    /** FL-997: the platforms each variant was built for; absent from releases before arm64 CUDA. */
+    machineLearningVariantPlatforms?: Record<string, string[]>;
     postgres: string;
   };
   platforms: string[];

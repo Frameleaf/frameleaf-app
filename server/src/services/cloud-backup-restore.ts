@@ -7,14 +7,14 @@ import type { LoggingRepository } from 'src/repositories/logging.repository.js';
 import type { StorageRepository } from 'src/repositories/storage.repository.js';
 import type { RestoreDetailsMode } from 'src/utils/cloud-backup-details.js';
 import { StorageFolder } from 'src/enum.js';
-import { CloudBackupStoreError, CloudBackupStoreRepository } from 'src/repositories/cloud-backup-store.repository.js';
-import { CloudBackupBucket, CloudBackupCheckpoint } from 'src/services/cloud-backup-maintenance.js';
+import { CloudBackupCheckpoint } from 'src/services/cloud-backup-maintenance.js';
 import { flushBuddyDirectory } from 'src/utils/buddy-backup-vault.js';
 import {
   assertOwnerRestoreFile,
   assertOwnerRestorePublished,
   captureOwnerRestoreFile,
 } from 'src/utils/cloud-backup-owner-path.js';
+import { VaultFileError } from 'src/utils/cloud-backup-vault.js';
 import { CloudBackupManifest, manifestFileObjectKey } from 'src/utils/cloud-backup.js';
 import { compareCodeUnits } from 'src/utils/compare.js';
 import { isValidDatabaseBackupName } from 'src/utils/database-backups.js';
@@ -80,6 +80,10 @@ export type CloudBackupRestoreSnapshot = {
   albumId?: string | null;
   /** `asset` and `album`: how the details of items still in the library come back; `keep` when absent. */
   details?: RestoreDetailsMode;
+  /** FL-1677, `files`: files and folders by their storage paths when backed up, instead of items. */
+  paths?: string[];
+  /** FL-1677: with `paths`, the folder they go under; where they were when null. */
+  folder?: string | null;
 };
 
 /** Where a restore has got to, kept on the operation row as its result. */
@@ -217,8 +221,18 @@ export const restorePlan = (options: {
   currentOriginals: ReadonlyMap<string, string>;
   /** Per asset made again from this backup, its backed-up paths another asset holds now. */
   takenPaths?: ReadonlyMap<string, ReadonlySet<string>>;
+  /**
+   * FL-1677, files scope: the files and folders to restore, by their storage paths when backed up. Each goes
+   * back where it was (inside the media folder; else to the restore folder), or under `folder` keeping the
+   * shape below the chosen folder's parent.
+   */
+  paths?: string[] | null;
+  folder?: string | null;
 }): { files: CloudBackupRestoreFile[]; destination: string | null } => {
   const { manifest, scope, operationId, mediaLocation } = options;
+  const paths = options.paths?.map((path) => resolve(path)) ?? null;
+  const chosenPath = (path: string) =>
+    paths?.find((chosen) => resolve(path) === chosen || isInside(chosen, path)) ?? null;
   if (scope === 'database') {
     return { files: [], destination: null };
   }
@@ -236,6 +250,28 @@ export const restorePlan = (options: {
       const name = `${safeName(file.role, 'file')}-${safeName(file.path, file.sha256)}`;
       const inFolder = join(restoreRoot, safeName(assetId, 'asset'), name);
       let target = inFolder;
+      if (paths) {
+        const root = chosenPath(file.path);
+        if (!root) {
+          continue;
+        }
+        if (options.folder) {
+          target = join(options.folder, relative(dirname(root), resolve(file.path)));
+        } else if (isInside(mediaLocation, file.path)) {
+          target = file.path;
+        }
+        files.push({
+          fileKey,
+          assetId,
+          role: file.role,
+          sha256: file.sha256,
+          ...(file.objectKey && { objectKey: file.objectKey }),
+          size: file.size,
+          target,
+          inPlace: !options.folder && target !== inFolder,
+        });
+        continue;
+      }
       if (inPlace) {
         const current = file.role === 'original' ? options.currentOriginals.get(assetId) : undefined;
         const wanted =
@@ -254,7 +290,7 @@ export const restorePlan = (options: {
       });
     }
   }
-  if (!chosen) {
+  if (!chosen && !paths) {
     for (const [userId, file] of Object.entries(manifest.profiles)) {
       const inFolder = join(restoreRoot, 'profiles', `${safeName(userId, 'user')}-${safeName(file.path, file.sha256)}`);
       const target = inPlace && isInside(mediaLocation, file.path) ? file.path : inFolder;
@@ -291,28 +327,31 @@ export const restorePlan = (options: {
   }
   return {
     files: files.toSorted((a, b) => compareCodeUnits(a.fileKey, b.fileKey)),
-    destination: inPlace ? null : restoreRoot,
+    // chosen paths put back in place report no folder, unless one of them had to go to the restore folder
+    destination: inPlace
+      ? null
+      : (options.folder ?? (paths && files.every((file) => file.inPlace) ? null : restoreRoot)),
   };
 };
 
 /**
- * Restores from a manifest (FL-164). Every object is fetched with the bucket key (SSE-C), streamed to a
- * partial file and moved into place only when it hashes to its name; a missing or mismatched object stops
- * the restore, names the object, and leaves everything already restored as it is. A file that is already
- * in place with the backed-up content is left alone. Used by the `cloud_restore` worker and by the
- * `frameleaf-admin cloud-backup restore` command, which has no web app to report to.
+ * Restores from a backup's catalog (FL-164). Every file is read through `read` (Cloud Backup reads it out
+ * of the backup engine's snapshot, Buddy Backup from its vault), written to a partial file and moved into
+ * place only when it hashes to what the catalog says; a missing or mismatched file stops the restore, names
+ * it, and leaves everything already restored as it is. A file that is already in place with the backed-up
+ * content is left alone. Used by the `cloud_restore` worker and by the `frameleaf-admin cloud-backup restore`
+ * command, which has no web app to report to.
  */
 export class CloudBackupRestorer {
   constructor(
-    private store: Pick<CloudBackupStoreRepository, 'download'> | null,
     private storage: StorageRepository,
     private crypto: CryptoRepository,
     private logger: LoggingRepository,
   ) {}
 
   async restore(options: {
-    bucket?: CloudBackupBucket;
-    read?: BackupObjectReader;
+    /** Brings one backed-up file, named by its catalog key, to a path that does not exist yet. */
+    read: BackupObjectReader;
     /** Stage on the target volume so external-library publication remains an atomic rename. */
     stageBesideTarget?: boolean;
     manifest: CloudBackupManifest;
@@ -331,7 +370,7 @@ export class CloudBackupRestorer {
     /** Persist verified file evidence before advancing a destination-specific cursor. */
     completedFile?: (file: CloudBackupRestoreFile, outcome: 'written' | 'skipped' | 'replaced') => Promise<void>;
   }): Promise<CloudBackupRestoreResult | null> {
-    const { bucket, manifest, scope, files, checkpoint } = options;
+    const { manifest, scope, files, checkpoint } = options;
     const database = scope === 'database' || scope === 'library' ? manifest.database : null;
     if ((scope === 'database' || scope === 'library') && !database) {
       throw new Error('This backup has no database dump to restore.');
@@ -352,7 +391,7 @@ export class CloudBackupRestorer {
           const earlier = result.publishing?.fileKey === file.fileKey ? result.publishing.outcome : undefined;
           let outcome: 'written' | 'skipped' | 'replaced';
           try {
-            outcome = await this.restoreFile(bucket, manifestFileObjectKey(file), file, {
+            outcome = await this.restoreFile(manifestFileObjectKey(file), file, {
               ...options,
               publishedEarlier: earlier,
               // FL-1333: saved before an owner publication, so a resume knows this restore put the file there
@@ -406,7 +445,6 @@ export class CloudBackupRestorer {
       const name = restoredDumpName(database.key);
       const target = join(options.backupsFolder, name);
       const outcome = await this.restoreFile(
-        bucket,
         database.key,
         {
           fileKey: '~database',
@@ -466,14 +504,13 @@ export class CloudBackupRestorer {
    * is moved aside only after the object has been downloaded and verified beside the target.
    */
   private async restoreFile(
-    bucket: CloudBackupBucket | undefined,
     key: string,
     file: CloudBackupRestoreFile,
     options: {
       mediaLocation: string;
       operationId: string;
       publish?: OwnerRestorePublisher;
-      read?: BackupObjectReader;
+      read: BackupObjectReader;
       stageBesideTarget?: boolean;
       /** FL-1333: how an earlier attempt of this restore counted its publication of this file, if it began one. */
       publishedEarlier?: 'written' | 'replaced';
@@ -481,12 +518,7 @@ export class CloudBackupRestorer {
       beforePublish?: (outcome: 'written' | 'replaced') => Promise<void>;
     },
   ): Promise<'written' | 'skipped' | 'replaced'> {
-    const download: BackupObjectReader =
-      options.read ??
-      ((object, destination, sha256) => {
-        if (!this.store || !bucket) throw new Error('Backup reader unavailable');
-        return this.store.download(bucket.connection, object, bucket.bucketKey, destination, sha256);
-      });
+    const download = options.read;
     if (options.publish) {
       if (options.stageBesideTarget) await options.publish(file, '', () => Promise.resolve('skipped'), 'inspect');
       // FL-1320: the thumbnails folder can be a drive of its own, and a rename cannot cross drives, so a
@@ -589,12 +621,12 @@ export class CloudBackupRestorer {
         await chmod(file.target, 0o600);
       }
     } catch (error) {
-      if (error instanceof CloudBackupStoreError && error.status === 404) {
+      if (error instanceof VaultFileError && error.reason === 'missing') {
         throw new Error(`The backup copy of ${key} is missing from the bucket. The restore stopped before it.`, {
           cause: error,
         });
       }
-      if (error instanceof CloudBackupStoreError && error.code === 'ChecksumMismatch') {
+      if (error instanceof VaultFileError && error.reason === 'damaged') {
         throw new Error(`The backup copy of ${key} does not match its checksum. The restore stopped before it.`, {
           cause: error,
         });

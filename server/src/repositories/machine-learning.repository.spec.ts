@@ -26,6 +26,7 @@ import {
   CutoutUnavailableError,
   CutoutWorkerError,
   FRAMELEAF_CLOUD_ENDPOINT,
+  MachineLearningBindingRefusedError,
   MachineLearningRepository,
   MlSelection,
   MlUsage,
@@ -367,13 +368,13 @@ describe(MachineLearningRepository.name, () => {
       },
     );
 
-    it('does not fall back to legacy prediction after a bound producer refusal', async () => {
+    it('names a bound producer refusal, and sends nothing else for it', async () => {
       const fetch = vi.fn().mockResolvedValue(jsonResponse({ detail: 'model_identity_unavailable' }, 409));
       vi.stubGlobal('fetch', fetch);
       const chosen = selection(MlDestinationKind.Lan, lanUrl);
       chosen.workload = MlWorkload.Clip;
-      await expect(sut.encodeBoundClip(chosen, { text: 'fixture' }, boundProfile)).rejects.toThrow(
-        'failed with status 409',
+      await expect(sut.encodeBoundClip(chosen, { text: 'fixture' }, boundProfile)).rejects.toBeInstanceOf(
+        MachineLearningBindingRefusedError,
       );
       expect(fetch).toHaveBeenCalledTimes(1);
       expect(String(fetch.mock.calls[0][0])).toBe(`${lanUrl}/predict-bound`);

@@ -260,7 +260,18 @@ export class MetadataRepository {
   async readTags(path: string): Promise<ImmichTags> {
     const options: ReadTaskOptions | undefined = mimeTypes.isVideo(path) ? { readArgs: ['-ee'] } : undefined;
     try {
-      const tags = await this.exiftool.read(path, options);
+      const tags = await this.exiftool.read(path, options).catch((error) => {
+        // `-ee` walks every sample of a video's timed tracks (camera telemetry), which outlasts the task
+        // timeout on long clips. Without it the file's own tags still read in under a second, so the
+        // video keeps its date, camera and thumbnail instead of failing metadata extraction every time.
+        // ponytail: the timeout is spent first on each such read, and location kept only in a timed
+        // track is not read; skip `-ee` up front by the track's sample count if either matters.
+        if (!options || (error as Error)?.name !== 'TaskTimeoutError') {
+          throw error;
+        }
+        this.logger.warn(`Reading ${path} without its embedded tracks: that read timed out`);
+        return this.exiftool.read(path);
+      });
       // The vendored reader can resolve with errors rather than reject the promise.
       if (tags.errors?.length || tags.Error) {
         throw new Error([...(tags.errors ?? []), tags.Error].filter(Boolean).join('; '));

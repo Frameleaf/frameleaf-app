@@ -3,6 +3,7 @@ import {
   type DuplicateGroupDecision,
   classifyDuplicateGroup,
   duplicateDecisionProblem,
+  duplicateDisposalReasons,
   duplicateGroupIndex,
   duplicateQualityReasons,
   duplicateStackPrimary,
@@ -50,6 +51,16 @@ describe('duplicate review rules', () => {
       const retakes = [image('a', '2026-09-06T16:24:12.000Z'), image('b', '2026-09-06T16:30:12.000Z')];
       expect(reviewKindOf(retakes)).toBe('look-alike');
       expect(classifyDuplicateGroup(retakes)).toBe(DuplicateGroupKind.Duplicates);
+    });
+
+    it('FL-936: scans that share a year or a decade are look-alikes, not copies or a burst', () => {
+      const start = '1975-01-01T00:00:00.000Z';
+      const scans = [
+        { ...rawImage('a', start), dateAccuracy: 'year' },
+        { ...rawImage('b', start), dateAccuracy: 'year' },
+      ] as never;
+      expect(reviewKindOf(scans)).toBe('look-alike');
+      expect(reviewKindOf([image('a', start), image('b', start)])).toBe('copies');
     });
 
     it('reads a group as copies when two share an instant or a time is missing', () => {
@@ -214,6 +225,23 @@ describe('duplicate review rules', () => {
         { duplicateId: 'g1', decision: DuplicateDecisionKind.Keepers, memberIds: ['a', 'b'], keepAssetIds: ['a'] },
       ]);
       expect(parseDuplicateGroups(undefined)).toEqual([]);
+    });
+  });
+
+  describe('duplicateDisposalReasons (FL-1660)', () => {
+    const copies = ['a', 'b', 'c'].map((id) => ({ id, isEdited: false, livePhotoVideoId: null }));
+
+    it('refuses to trash a healthy copy while every kept copy is damaged', () => {
+      expect(duplicateDisposalReasons(copies, ['a'], new Set(), new Set(['a']))).toEqual(['damaged-keeper']);
+    });
+
+    it('allows a damaged copy to go when a healthy one is kept', () => {
+      expect(duplicateDisposalReasons(copies, ['a'], new Set(), new Set(['b']))).toEqual([]);
+      expect(duplicateDisposalReasons(copies, ['a', 'b'], new Set(), new Set(['b']))).toEqual([]);
+    });
+
+    it('allows damaged copies to go when every copy is damaged', () => {
+      expect(duplicateDisposalReasons(copies, ['a'], new Set(), new Set(['a', 'b', 'c']))).toEqual([]);
     });
   });
 

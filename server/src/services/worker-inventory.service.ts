@@ -153,6 +153,7 @@ export class WorkerInventoryService {
         lastSeenAt: iso(desktop.lastSeenAt),
         ownerName: desktop.ownerName,
         household: desktop.household,
+        withdrawn: desktop.withdrawn.map(({ workload, until }) => ({ workload, until: iso(until) })),
       })),
       libraryRoutes: Object.values(MlWorkload)
         .filter((workload) => LIBRARY_ML_WORKLOADS.includes(workload))

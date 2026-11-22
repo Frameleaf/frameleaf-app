@@ -10,6 +10,8 @@ import {
   AssetBulkDeleteDto,
   AssetBulkUpdateDto,
   AssetCopyDto,
+  AssetCopyToLibraryDto,
+  AssetCopyToLibraryResponseDto,
   AssetImageEnrichmentActionRequestDto,
   AssetImageEnrichmentResponseDto,
   AssetInfoBatchDto,
@@ -81,6 +83,22 @@ export class AssetController {
   })
   runAssetJobs(@Auth() auth: AuthDto, @Body() dto: AssetJobsDto): Promise<void> {
     return this.service.run(auth, dto);
+  }
+
+  @Post('copy-to-library')
+  @Authenticated({ permission: Permission.AssetUpload })
+  @HttpCode(HttpStatus.OK)
+  @Endpoint({
+    summary: 'Add shared items to your library',
+    description:
+      'Add items you can see through a shared album, space or link to your own library, as your own copies of the same stored files. A link must allow downloads. Locked items are never added (FL-837).',
+    history: new HistoryBuilder().added('v2'),
+  })
+  copyAssetsToLibrary(
+    @Auth() auth: AuthDto,
+    @Body() dto: AssetCopyToLibraryDto,
+  ): Promise<AssetCopyToLibraryResponseDto> {
+    return this.service.copyToLibrary(auth, dto);
   }
 
   @Put()

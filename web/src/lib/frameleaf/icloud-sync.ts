@@ -297,6 +297,9 @@ export const toggleAlbum = (draft: ICloudDraft, id: string): ICloudDraft => ({
   albums: draft.albums.includes(id) ? draft.albums.filter((value) => value !== id) : [...draft.albums, id],
 });
 
+/** FL-1724: matches the server's per-connection limit. */
+export const ICLOUD_MAX_CONCURRENCY = 100;
+
 const integerIn = (value: string, min: number, max: number) => {
   const number = Number(value);
   return value.trim() !== '' && Number.isSafeInteger(number) && number >= min && number <= max;
@@ -317,7 +320,7 @@ export const icloudDraftProblems = (draft: ICloudDraft): ICloudDraftProblem[] =>
   if (!integerIn(draft.intervalHours, 1, 8760)) {
     problems.push('interval');
   }
-  if (!integerIn(draft.concurrency, 1, 4)) {
+  if (!integerIn(draft.concurrency, 1, ICLOUD_MAX_CONCURRENCY)) {
     problems.push('concurrency');
   }
   const gb = Number(draft.stagingGb);

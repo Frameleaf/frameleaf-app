@@ -28,7 +28,10 @@ import { Docker, command } from './docker.js';
 import { adoptOwnMounts, tidyLocations, toHost } from './host-paths.js';
 import { findDrives, suggestFolders } from './drives.js';
 import { storageSuggestions } from './storage-suggestions.js';
-import { adoptMappedFolders, applyFolderDefaults, broadRoots, ensureChosenFolder, ensureManagerFolder, externalRoots, listFolders, newLibraryFolders } from './folders.js';
+import { adoptMappedFolders, applyFolderDefaults, broadRoots, ensureChosenFolder, ensureManagerFolder, externalRoots, insideMappedFolders, listFolders, newLibraryFolders } from './folders.js';
+import { Cloud } from './cloud-link.js';
+import { CloudBackup, reasonOf } from './server-backup-cloud.js';
+import { ServerBackup } from './server-backup.js';
 import { thumbnailMount } from './mounts.js';
 import { Security, trustedProxyList } from './security.js';
 import { Backups } from './backups.js';
@@ -133,6 +136,40 @@ if (autostartStat?.isDirectory()) console.error(`manager: ${autostart} is a dire
 if (autostartStat?.isFile()) process.env.MANAGER_UNRAID_AUTOSTART = autostart;
 else delete process.env.MANAGER_UNRAID_AUTOSTART;
 const databaseStorage = new PostgresStorage(docker, directory, defaults.roots, defaults.platform === 'unraid');
+// FL-1668: Server Backup stores to a folder until Manager can link to Frameleaf Cloud. The folder is named
+// only for testing before release; without it Server Backup reports nothing and its screens stay hidden.
+const serverBackupFolder = runtime === 'docker' ? process.env.MANAGER_SERVER_BACKUP_FOLDER : undefined;
+// FL-1672: backups go to Frameleaf Cloud. Before release this is shown only where Manager is started with
+// MANAGER_SERVER_BACKUP_CLOUD=1: the Cloud side is not deployed, and a product that cannot work is not shown.
+const serverBackupCloud =
+  runtime === 'docker' && process.env.MANAGER_SERVER_BACKUP_CLOUD === '1'
+    ? new CloudBackup(store, new Cloud(process.env.FRAMELEAF_CLOUD_URL ?? 'https://api.frameleaf.cloud'), {
+        version: JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8')).version,
+        platform: `manager/${process.platform}`,
+      }, (machineInstanceId) => operations.backupMachineStatement(machineInstanceId))
+    : null;
+/** Server Backup's link to Cloud, or a refusal where this Manager has none. Cloud's own refusals are passed on in words the screens know. */
+const cloudly = async <T>(work: (cloud: CloudBackup) => Promise<T>): Promise<T> => {
+  if (!serverBackupCloud) throw new Refusal('server_backup_unavailable');
+  try {
+    return await work(serverBackupCloud);
+  } catch (error) {
+    if (error instanceof Refusal) throw error;
+    throw new Refusal(reasonOf(error), 502);
+  }
+};
+const serverBackup = new ServerBackup(store, {
+  target: serverBackupFolder ? { kind: 'folder', path: serverBackupFolder } : null,
+  cloud: serverBackupCloud,
+  inside: insideMappedFolders,
+  always: [join(backupRoot, 'frameleaf-database')],
+  managerState: join(backupRoot, 'frameleaf-manager'),
+  // The photo server keeps its Cloud Backup keys in its library folder, unless told otherwise.
+  photoKeys: () => {
+    const media = operations.installation()?.mounts?.find((mount) => mount.target === '/data')?.source;
+    return media ? join(media, 'frameleaf', 'identity') : null;
+  },
+});
 const operations = new Operations(
   store,
   docker,
@@ -312,6 +349,8 @@ class Api {
       installation,
       operations: operations.history(),
       autoUpdate: store.get<boolean>('auto-update') !== false,
+      /** FL-973: the last update can be undone until `until`. */
+      rollback: operations.rollbackOffer(),
       /** Why the last automatic update check could not start an update, until a later check does. */
       autoUpdateFailure: store.get<{ code: string; at: string }>('auto-update-failure'),
       profile: store.get('profile'),
@@ -348,6 +387,8 @@ class Api {
         .filter(Boolean),
       databaseStorage: await databaseDefaults(),
       onboardingFinished: !!store.get('onboarding-finished'),
+      /** FL-1742: what a Noodle Gallery import carried and left behind, as the importer reported it. */
+      importedGallery: installation ? (store.get(`import-gallery:${installation.id}`) ?? null) : null,
       installations: hostInstallations(inventory, installation?.id, security.requestOrigin(request)),
       suggestedPort: suggestedPort(inventory, [Number(new URL(security.requestOrigin(request)).port || 443)]),
       appUrl: installation ? new URL(`http://${new URL(security.requestOrigin(request)).hostname}:${installation.port}`).origin : null,
@@ -479,6 +520,14 @@ class Api {
   @Post('update') update(@Body() input: unknown) {
     const { id, key } = z.object({ id: z.string().uuid(), key: RequestKey }).strict().parse(input);
     return { id: operations.update(id, key).id };
+  }
+  // FL-973: go back to the release before the last update, with the database as it was just before it.
+  @Post('review-rollback') reviewRollback() {
+    return operations.reviewRollback();
+  }
+  @Post('rollback') rollback(@Body() input: unknown) {
+    const { id, key } = z.object({ id: z.string().uuid(), key: RequestKey }).strict().parse(input);
+    return { id: operations.rollback(id, key).id };
   }
   @Post('auto-update') autoUpdate(@Body() input: unknown) {
     const { enabled } = z.object({ enabled: z.boolean() }).strict().parse(input);
@@ -697,6 +746,143 @@ class Api {
     z.object({}).strict().parse(input);
     return operations.libraryStatus(true);
   }
+  @Get('server-backup') serverBackupView() {
+    return serverBackup.view() ?? { state: 'unavailable' };
+  }
+  @Post('server-backup-turn-on') async serverBackupTurnOn(@Body() input: unknown) {
+    await serverBackup.turnOn(input);
+    return serverBackup.view();
+  }
+  @Post('server-backup-settings') serverBackupSettings(@Body() input: unknown) {
+    serverBackup.setSettings(input);
+    return serverBackup.view();
+  }
+  @Post('server-backup-turn-off') serverBackupTurnOff() {
+    serverBackup.turnOff();
+    return serverBackup.view();
+  }
+  @Post('server-backup-first-key') async serverBackupFirstKey() {
+    return serverBackup.firstKey();
+  }
+  @Post('server-backup-key') async serverBackupKey(@Body() input: unknown) {
+    const { password } = z
+      .object({ password: z.string().max(256) })
+      .strict()
+      .parse(input);
+    await security.confirm(password);
+    return serverBackup.key();
+  }
+  @Post('server-backup-key-saved') serverBackupKeySaved() {
+    serverBackup.confirmKeySaved();
+    return serverBackup.view();
+  }
+  @Post('server-backup-run') async serverBackupRun() {
+    await serverBackup.backUp().catch((error) => {
+      throw error instanceof Refusal ? error : new Refusal(reasonOf(error), 502);
+    });
+    return serverBackup.view();
+  }
+  @Post('server-backup-stop') serverBackupStop() {
+    serverBackup.stop();
+    return serverBackup.view();
+  }
+  @Post('server-backup-browse') serverBackupBrowse(@Body() input: unknown) {
+    return serverBackup.browse(input);
+  }
+  @Post('server-backup-contents') serverBackupContents(@Body() input: unknown) {
+    return serverBackup.contents(input);
+  }
+  @Post('server-backup-restore') async serverBackupRestore(@Body() input: unknown) {
+    await serverBackup.restore(input);
+    return serverBackup.view();
+  }
+  @Post('server-backup-cloud-link') async serverBackupCloudLink(@Req() request: Request) {
+    await cloudly((cloud) => cloud.startLink(new URL(security.requestOrigin(request)).hostname));
+    return serverBackup.view();
+  }
+  @Post('server-backup-cloud-check') async serverBackupCloudCheck() {
+    const state = await cloudly((cloud) => cloud.checkLink());
+    // With one place on offer there is nothing to ask; with several, the screen asks.
+    if (state === 'linked') await cloudly((cloud) => cloud.setLocation()).catch(() => undefined);
+    return { ...serverBackup.view(), linking: state };
+  }
+  @Post('server-backup-cloud-usage') async serverBackupCloudUsage() {
+    return cloudly((cloud) => cloud.usage());
+  }
+  @Post('server-backup-cloud-disconnect') async serverBackupCloudDisconnect() {
+    await serverBackup.disconnect().catch((error) => {
+      throw error instanceof Refusal ? error : new Refusal(reasonOf(error), 502);
+    });
+    return serverBackup.view();
+  }
+  @Post('server-backup-key-copy') async serverBackupKeyCopy(@Body() input: unknown) {
+    const { password, passphrase } = z.object({ password: z.string().max(256), passphrase: z.string().max(1024).nullable() }).strict().parse(input);
+    await security.confirm(password);
+    const work = passphrase === null ? serverBackup.dropKeyCopy() : serverBackup.keepKeyCopy(passphrase);
+    await work.catch((error) => {
+      throw error instanceof Refusal ? error : new Refusal(reasonOf(error), 502);
+    });
+    return serverBackup.view();
+  }
+  @Post('server-backup-adopt-key-copy') async serverBackupAdoptKeyCopy(@Body() input: unknown) {
+    const { passphrase } = z.object({ passphrase: z.string().max(1024) }).strict().parse(input);
+    await serverBackup.adoptKeyCopy(passphrase).catch((error) => {
+      throw error instanceof Refusal ? error : new Refusal(reasonOf(error), 502);
+    });
+    return serverBackup.view();
+  }
+  @Post('server-backup-restored-settings') serverBackupRestoredSettings() {
+    return { restored: serverBackup.restoredSettings() };
+  }
+  @Post('server-backup-apply-restored') async serverBackupApplyRestored() {
+    const { skipped } = await serverBackup.applyRestoredSettings();
+    return { ...serverBackup.view(), skipped };
+  }
+  @Post('server-backup-cloud-purge') async serverBackupCloudPurge() {
+    return { purge: await cloudly((cloud) => cloud.purge()) };
+  }
+  @Post('server-backup-delete') async serverBackupDelete(@Body() input: unknown) {
+    const { password } = z.object({ password: z.string().max(256) }).strict().parse(input);
+    await security.confirm(password);
+    const purge = await serverBackup.deleteBackups().catch((error) => {
+      throw error instanceof Refusal ? error : new Refusal(reasonOf(error), 502);
+    });
+    return { ...serverBackup.view(), purge };
+  }
+  @Post('server-backup-keep') async serverBackupKeep() {
+    await cloudly((cloud) => cloud.cancelPurge());
+    return { ...serverBackup.view(), purge: null };
+  }
+  @Post('server-backup-cloud-locations') async serverBackupCloudLocations() {
+    return { locations: await cloudly((cloud) => cloud.locations()) };
+  }
+  @Post('server-backup-cloud-location') async serverBackupCloudLocation(@Body() input: unknown) {
+    const { locationId } = z.object({ locationId: z.string().min(1).max(64) }).strict().parse(input);
+    await cloudly((cloud) => cloud.setLocation(locationId));
+    return serverBackup.view();
+  }
+  @Post('server-backup-cloud-machines') async serverBackupCloudMachines() {
+    return { machines: await cloudly((cloud) => cloud.takeoverCandidates()) };
+  }
+  @Post('server-backup-cloud-takeover') async serverBackupCloudTakeover(@Body() input: unknown) {
+    const { instanceId } = z.object({ instanceId: z.uuid() }).strict().parse(input);
+    await cloudly((cloud) => cloud.askTakeover(instanceId));
+    return serverBackup.view();
+  }
+  @Post('server-backup-cloud-takeover-check') async serverBackupCloudTakeoverCheck() {
+    const answer = await cloudly((cloud) => cloud.checkTakeover());
+    return { ...serverBackup.view(), takeover: answer.status };
+  }
+  @Post('server-backup-adopt-key') async serverBackupAdoptKey(@Body() input: unknown) {
+    const { key } = z.object({ key: z.string().max(200) }).strict().parse(input);
+    try {
+      await serverBackup.adoptKey(key);
+    } catch (error) {
+      if (error instanceof Refusal) throw error;
+      throw new Refusal(error instanceof z.ZodError ? 'server_backup_key_wrong' : reasonOf(error), error instanceof z.ZodError ? 409 : 502);
+    }
+    return serverBackup.view();
+  }
   @Post('export') async configuration(@Body() input: unknown, @Res() response: Response) {
     const { password } = z
       .object({ password: z.string().max(256) })
@@ -806,7 +992,10 @@ async function main() {
   log(`ready, listening on port ${native ? nativeAddress!.port : 9443} (${http ? 'http' : 'https'})`);
   if (native) process.stdout.write(JSON.stringify(native.ready(origin!)) + '\n');
   // ponytail: fixed 6-hour check; add quiet-hours scheduling if owners ask for updates at a set time.
-  else setInterval(() => operations.autoUpdate().catch((error) => console.error(`manager: automatic update skipped: ${error?.code ?? error}`)), 6 * 3_600_000).unref();
+  else {
+    setInterval(() => serverBackup.tick().catch((error) => console.error(`manager: scheduled server backup skipped: ${error?.code ?? error}`)), 60_000).unref();
+    setInterval(() => operations.autoUpdate().catch((error) => console.error(`manager: automatic update skipped: ${error?.code ?? error}`)), 6 * 3_600_000).unref();
+  }
 }
 main().catch(() => {
   process.stderr.write('Frameleaf Manager could not start; check its mounted configuration.\n');

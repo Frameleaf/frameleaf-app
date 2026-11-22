@@ -12,7 +12,7 @@ import {
   CLIP_TRANSITIONS, CURVED_CLIPS, STROKE_TRANSITIONS, renderClipTransition, renderStrokeTransition, outgoingCoverage,
 } from './clip-reference.mjs';
 import {
-  validateGoldens, compareCase, decodeBuffer, effectCases, transitionCases, GPU_TRANSITIONS, LINEAR_HDR_EFFECTS,
+  validateGoldens, compareCase, decodeBuffer, effectCases, transitionCases, GPU_TRANSITIONS, LINEAR_HDR_EFFECTS, LINEAR_HDR_TRANSITIONS,
   toHalfBits, fromHalfBits, encodeBuffer, buildIndex, renderIndexMarkdown, replaceIndexMarkdown,
   effectSdrInput, transitionInputs, EFFECT_SIZE, TRANSITION_SIZE, EFFECT_EXTRA_CASES, TRANSITION_EXTRA_CASES,
 } from './render-goldens.mjs';
@@ -25,8 +25,8 @@ const transitions = await readJson('spec/goldens/transitions.json');
 const index = await readJson('spec/index.json');
 
 test('goldens cover every catalogue case with the documented inputs', () => {
-  assert.equal(catalogue.effects.length, 54);
-  assert.equal(catalogue.transitions.length, 44);
+  assert.equal(catalogue.effects.length, 57);
+  assert.equal(catalogue.transitions.length, 48);
   const e = validateGoldens('effects', effects, catalogue);
   const t = validateGoldens('transitions', transitions, catalogue);
   assert(e.cases > 400 && t.cases > 300, 'golden case lists unexpectedly short');
@@ -39,6 +39,16 @@ test('HDR goldens: the linear effects render, every other effect is refused', ()
     assert.equal(c.outcome, LINEAR_HDR_EFFECTS.includes(c.id) ? 'rendered' : 'refused', c.name);
   }
   assert.equal(effects.cases.filter((c) => c.domain === 'hdr' && c.outcome === 'rendered').length > 0, true);
+});
+
+test('HDR goldens: the linear transitions render, every other GPU transition is refused', () => {
+  const hdr = transitions.cases.filter((x) => x.domain === 'hdr');
+  for (const c of hdr) assert.equal(c.outcome, LINEAR_HDR_TRANSITIONS.includes(c.id) ? 'rendered' : 'refused', c.name);
+  assert.deepEqual([...new Set(hdr.filter((c) => c.outcome === 'rendered').map((c) => c.id))].sort(), [...LINEAR_HDR_TRANSITIONS].sort());
+  assert.deepEqual(hdr.filter((c) => c.outcome === 'refused').map((c) => c.id).sort(),
+    GPU_TRANSITIONS.filter((id) => !LINEAR_HDR_TRANSITIONS.includes(id)).sort());
+  assert(LINEAR_HDR_TRANSITIONS.every((id) => GPU_TRANSITIONS.includes(id)), 'a Canvas 2D transition has no HDR route');
+  for (const entry of index.transitions) assert.equal(entry.hdr, LINEAR_HDR_TRANSITIONS.includes(entry.id) ? 'linear-display-bt709-v1' : 'refused', entry.id);
 });
 
 test('the GPU and Canvas 2D transition routes match the index and the catalogue', () => {
@@ -126,7 +136,7 @@ test('spec pages contain no engine source text', async () => {
       pages++;
     }
   }
-  assert.equal(pages, 98);
+  assert.equal(pages, 105);
 });
 
 test('comparison rule: identity, NaN, wrong size and gross error fail; the golden passes', () => {

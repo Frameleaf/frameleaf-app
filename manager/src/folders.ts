@@ -58,6 +58,8 @@ const volume = (path: string) => {
   const parts = path.split('/').slice(1);
   return `/${parts.slice(0, unraid() && ['disks', 'remotes', 'rootshare'].includes(parts[1]) ? 3 : 2).join('/')}`;
 };
+/** Whether Manager can reach `path`: it is inside one of the folders mapped into it. */
+export const insideMappedFolders = (path: string) => holders(resolve(path)).length > 0;
 
 /** The location variables a new install no longer sets. An install that sets its roots is left alone. */
 export function applyFolderDefaults(env: Record<string, string | undefined> = process.env): void {
