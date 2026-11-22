@@ -105,6 +105,8 @@ export const Route = {
   // map
   map: (point?: { zoom: number; lat: number; lng: number }) =>
     '/map' + (point ? `#${point.zoom}/${point.lat}/${point.lng}` : ''),
+  /** FL-1019: the Map, with the panel for naming a new place open. */
+  mapNaming: () => '/map?naming=1',
   /** The Map screen scoped to one album's located items (prototype `setMapScope("collection")`). */
   mapAlbum: ({ id }: { id: string }) => '/map' + asQueryString({ albumId: id }),
 
