@@ -26,9 +26,275 @@ type Member = {
   acceptedAt: Date | null;
   leftAt: Date | null;
 };
-type Change = { shareId: string; kind: string; entityId: string; seq: number };
+type Change = { shareId: string; kind: string; entityId: string; seq: number; assetId?: string | null };
 type PersonLink = { id: string; albumId: string; name: string; personOwnerId: string; personGroupId: string };
 type Face = { assetId: string; personGroupId: string };
+
+export type MemoryActivity = {
+  id: string;
+  albumId: string;
+  assetId: string | null;
+  userId: string | null;
+  remoteAuthorId: string | null;
+  isLiked: boolean;
+  comment: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+};
+type MemoryLink = {
+  inboundShareId: string;
+  remoteId: string;
+  activityId: string | null;
+  own: boolean;
+  pending: string | null;
+  revision: number;
+  attempts: number;
+  nextAttemptAt: Date | null;
+};
+type InboundStore = {
+  shares: Array<{
+    id: string;
+    albumId: string | null;
+    state: string;
+    linkId: string;
+    userId: string;
+    remoteShareId: string;
+  }>;
+  origins: Array<{
+    linkId: string;
+    userId: string;
+    kind: string;
+    remoteId: string;
+    localId: string;
+    shareIds: string[];
+  }>;
+  library?: { albums: Map<string, { items: Set<string> }> };
+};
+
+/** `HouseholdCommentRepository`, in memory: one server's `activity` rows. The medium spec covers the real SQL. */
+export class MemoryComments {
+  activities = new Map<string, MemoryActivity>();
+  authors: Array<{ id: string; linkId: string; remoteUserId: string; displayName: string }> = [];
+  links: MemoryLink[] = [];
+  events: Array<{ albumId: string; activityId: string; isLiked: boolean }> = [];
+  mentions = new Map<string, string[]>();
+  localUsers = new Map<string, string>();
+  albumMembers = new Map<string, Set<string>>();
+  inbound?: InboundStore;
+
+  /** A comment written by a local account, as the activity endpoints store it. */
+  addLocal(row: Partial<MemoryActivity> & { albumId: string; userId: string }) {
+    const activity: MemoryActivity = {
+      id: randomUUID(),
+      assetId: null,
+      remoteAuthorId: null,
+      isLiked: false,
+      comment: 'hello',
+      createdAt: new Date('2026-02-01T00:00:00Z'),
+      updatedAt: new Date('2026-02-01T00:00:00Z'),
+      ...row,
+    };
+    this.activities.set(activity.id, activity);
+    return activity;
+  }
+  remove(id: string) {
+    this.activities.delete(id);
+    for (const link of this.links) {
+      if (link.activityId === id) link.activityId = null;
+    }
+    return [id];
+  }
+  private link = (shareId: string, remoteId: string) =>
+    this.links.find((row) => row.inboundShareId === shareId && row.remoteId === remoteId);
+
+  upsertAuthor = (linkId: string, remoteUserId: string, displayName: string) => {
+    let row = this.authors.find((author) => author.linkId === linkId && author.remoteUserId === remoteUserId);
+    if (row) {
+      row.displayName = displayName;
+    } else {
+      row = { id: randomUUID(), linkId, remoteUserId, displayName };
+      this.authors.push(row);
+    }
+    return Promise.resolve(row.id);
+  };
+  getActivity = (id: string) => {
+    const row = this.activities.get(id);
+    const author = this.authors.find((candidate) => candidate.id === row?.remoteAuthorId);
+    return Promise.resolve(
+      row && { ...row, authorLinkId: author?.linkId ?? null, authorRemoteUserId: author?.remoteUserId ?? null },
+    );
+  };
+  createRemote = (comment: Partial<MemoryActivity> & { albumId: string; remoteAuthorId: string }) => {
+    const id = comment.id ?? randomUUID();
+    const liked = this.activities
+      .values()
+      .some(
+        (row) =>
+          comment.isLiked &&
+          row.isLiked &&
+          row.albumId === comment.albumId &&
+          row.assetId === (comment.assetId ?? null) &&
+          row.remoteAuthorId === comment.remoteAuthorId,
+      );
+    if (this.activities.has(id) || liked) {
+      return Promise.resolve(undefined);
+    }
+    const now = new Date();
+    this.activities.set(id, {
+      assetId: null,
+      isLiked: false,
+      comment: null,
+      createdAt: now,
+      ...comment,
+      id,
+      userId: null,
+      updatedAt: now,
+    });
+    return Promise.resolve({ id });
+  };
+  updateText = (id: string, comment: string) => {
+    Object.assign(this.activities.get(id)!, { comment, updatedAt: new Date() });
+    return Promise.resolve();
+  };
+  deleteActivity = (id: string) => {
+    this.remove(id);
+    return Promise.resolve();
+  };
+  addEvent = (albumId: string, activityId: string, isLiked: boolean) => {
+    this.events.push({ albumId, activityId, isLiked });
+    return Promise.resolve();
+  };
+  setMentions = (activityId: string, albumId: string, text: string) => {
+    const named = text
+      .matchAll(/@\{([\da-f-]{36})\}/g)
+      .map((match) => match[1])
+      .toArray();
+    const members = named.filter((id) => this.albumMembers.get(albumId)?.has(id));
+    const previous = this.mentions.get(activityId) ?? [];
+    this.mentions.set(activityId, members);
+    return Promise.resolve(members.filter((id) => !previous.includes(id)));
+  };
+  isLocalUser = (id: string) => Promise.resolve(this.localUsers.has(id));
+  getComments = (albumId: string, ids: string[]) =>
+    Promise.resolve(
+      ids.flatMap((id) => {
+        const row = this.activities.get(id);
+        if (row?.albumId !== albumId) return [];
+        const author = this.authors.find((candidate) => candidate.id === row.remoteAuthorId);
+        return [
+          {
+            ...row,
+            localId: row.userId,
+            localName: row.userId ? (this.localUsers.get(row.userId) ?? 'Local') : null,
+            remoteUserId: author?.remoteUserId ?? null,
+            remoteName: author?.displayName ?? null,
+          },
+        ];
+      }),
+    );
+  removeRemoteLikes = (albumId: string, assetId: string | null, remoteAuthorId: string) => {
+    const ids = this.activities
+      .values()
+      .filter(
+        (row) =>
+          row.isLiked && row.albumId === albumId && row.assetId === assetId && row.remoteAuthorId === remoteAuthorId,
+      )
+      .map(({ id }) => id)
+      .toArray();
+    for (const id of ids) this.remove(id);
+    return Promise.resolve(ids);
+  };
+
+  getLink = (shareId: string, remoteId: string) => {
+    const row = this.link(shareId, remoteId);
+    return Promise.resolve(row && { ...row });
+  };
+  deleteLink = (shareId: string, remoteId: string) => {
+    this.links = this.links.filter((row) => row.inboundShareId !== shareId || row.remoteId !== remoteId);
+    return Promise.resolve();
+  };
+  countLinks = (shareId: string) => Promise.resolve(this.links.filter((row) => row.inboundShareId === shareId).length);
+  createCopy = async (
+    inboundShareId: string,
+    remoteId: string,
+    comment: Partial<MemoryActivity> & { albumId: string; remoteAuthorId: string },
+  ) => {
+    const row = await this.createRemote(comment);
+    if (row) {
+      this.links.push({
+        inboundShareId,
+        remoteId,
+        activityId: row.id,
+        own: false,
+        pending: null,
+        revision: 0,
+        attempts: 0,
+        nextAttemptAt: null,
+      });
+    }
+    return row;
+  };
+  getAcceptedShareOfAlbum = (albumId: string) =>
+    Promise.resolve(this.inbound?.shares.find((share) => share.albumId === albumId && share.state === 'accepted'));
+  getLocalAsset = (linkId: string, userId: string, remoteId: string, albumId: string) => {
+    const origin = this.inbound?.origins.find(
+      (row) => row.linkId === linkId && row.userId === userId && row.kind === 'asset' && row.remoteId === remoteId,
+    );
+    return Promise.resolve(
+      origin && this.inbound?.library?.albums.get(albumId)?.items.has(origin.localId) ? origin.localId : undefined,
+    );
+  };
+  getRemoteAsset = (linkId: string, userId: string, shareId: string, localId: string) =>
+    Promise.resolve(
+      this.inbound?.origins.find(
+        (row) =>
+          row.linkId === linkId &&
+          row.userId === userId &&
+          row.kind === 'asset' &&
+          row.localId === localId &&
+          row.shareIds.includes(shareId),
+      )?.remoteId,
+    );
+  queue = (inboundShareId: string, remoteId: string, pending: string, activityId?: string) => {
+    const row = this.link(inboundShareId, remoteId);
+    if (row) {
+      Object.assign(row, { pending, revision: row.revision + 1, attempts: 0, nextAttemptAt: null });
+    } else {
+      this.links.push({
+        inboundShareId,
+        remoteId,
+        activityId: activityId ?? null,
+        own: true,
+        pending,
+        revision: 0,
+        attempts: 0,
+        nextAttemptAt: null,
+      });
+    }
+    return Promise.resolve();
+  };
+  getDue = (linkId: string, limit: number) =>
+    Promise.resolve(
+      this.links
+        .filter((row) => row.pending && (!row.nextAttemptAt || row.nextAttemptAt.getTime() <= Date.now()))
+        .flatMap((row) => {
+          const share = this.inbound?.shares.find(({ id }) => id === row.inboundShareId);
+          return share?.linkId === linkId && share.state === 'accepted'
+            ? [{ ...row, remoteShareId: share.remoteShareId, userId: share.userId, linkId: share.linkId }]
+            : [];
+        })
+        .slice(0, limit),
+    );
+  markSent = (shareId: string, remoteId: string, revision: number) => {
+    const row = this.link(shareId, remoteId);
+    if (row?.revision === revision) Object.assign(row, { pending: null, attempts: 0, nextAttemptAt: null });
+    return Promise.resolve();
+  };
+  retryLater = (shareId: string, remoteId: string, attempts: number, nextAttemptAt: Date) => {
+    Object.assign(this.link(shareId, remoteId)!, { attempts, nextAttemptAt });
+    return Promise.resolve();
+  };
+}
 
 /**
  * `HouseholdShareRepository` and the repositories around it, in memory. `isMemberVisible` stands in for the SQL of
@@ -64,12 +330,19 @@ export class ShareWorld {
   albumUsers = {
     filterVisibleSpaceAssetIds: (albumId: string, ids: string[]) =>
       Promise.resolve(new Set(ids.filter((id) => this.isMemberVisible(this.items.get(id), albumId)))),
+    deleteCommentWithReplies: (id: string) => Promise.resolve(this.comments.remove(id)),
   };
+  comments: MemoryComments = new MemoryComments();
   albums = {
     getById: (id: string) => {
       const space = this.spaces.get(id);
       return Promise.resolve(
-        space && { id, kind: 'space', albumUsers: [{ role: 'owner', user: { id: space.ownerId } }] },
+        space && {
+          id,
+          kind: 'space',
+          isActivityEnabled: true,
+          albumUsers: [{ role: 'owner', user: { id: space.ownerId } }],
+        },
       );
     },
   };
@@ -116,6 +389,12 @@ export class ShareWorld {
       for (const person of this.people) {
         if (person.albumId === albumId && !named('person', person.id)) {
           this.move(share.id, 'person', person.id);
+        }
+      }
+      for (const row of this.comments.activities.values()) {
+        if (row.albumId === albumId && !named('comment', row.id)) {
+          this.move(share.id, 'comment', row.id);
+          this.changes.at(-1)!.assetId = row.assetId;
         }
       }
     }
@@ -233,9 +512,29 @@ export class ShareWorld {
           this.move(share.id, 'person', person.id);
         }
       }
+      const onTheseItems = this.changes.filter(
+        (c) => c.shareId === share.id && c.kind === 'comment' && c.assetId && ids.includes(c.assetId),
+      );
+      for (const row of onTheseItems) {
+        row.seq = ++this.seq;
+      }
     }
     return Promise.resolve();
   };
+  touchComments = (albumId: string, ids: string[]) => {
+    const inAlbum = this.shares.filter((s) => s.albumId === albumId);
+    for (const share of inAlbum) {
+      for (const id of ids) {
+        const assetId = this.comments.activities.get(id)?.assetId;
+        this.move(share.id, 'comment', id);
+        const row = this.changes.find((c) => c.shareId === share.id && c.kind === 'comment' && c.entityId === id)!;
+        row.assetId ??= assetId ?? null;
+      }
+    }
+    return Promise.resolve();
+  };
+  getMember = (shareId: string, remoteUserId: string) =>
+    Promise.resolve(this.members.find((m) => m.shareId === shareId && m.remoteUserId === remoteUserId));
   touchPerson = (albumId: string, personLinkId: string) => {
     for (const share of this.shares) {
       if (share.albumId === albumId) {

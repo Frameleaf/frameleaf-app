@@ -3,6 +3,7 @@ import { type KeyObject, generateKeyPairSync, randomUUID, sign } from 'node:cryp
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { Readable } from 'node:stream';
 import { vi } from 'vitest';
 import type { Request } from 'express';
 import type { HouseholdLinkAddress } from 'src/schema/tables/household-link.table.js';
@@ -188,7 +189,12 @@ export const startHouseholdServer = async (
   households.servers.set(ed25519Thumbprint(identity.publicJwk), registered);
   const service = new HouseholdLinkService(links as never, peer, logger as never);
   const world = new ShareWorld();
-  const shares = new HouseholdShareService(
+  const events = {
+    emit: vi.fn((name: string, payload: never): Promise<unknown> =>
+      name === 'HouseholdFeedComments' ? shares.onComments(payload) : Promise.resolve(),
+    ),
+  };
+  const shares: HouseholdShareService = new HouseholdShareService(
     world as never,
     links as never,
     service,
@@ -200,6 +206,8 @@ export const startHouseholdServer = async (
     world.storage as never,
     rates as never,
     logger as never,
+    world.comments as never,
+    events as never,
   );
   return {
     name,
@@ -216,6 +224,7 @@ export const startHouseholdServer = async (
     service,
     world,
     shares,
+    events,
     leases,
     controller: new HouseholdPeerController(peer, shares, logger as never),
     close: () => rm(directory, { recursive: true, force: true }),
@@ -227,10 +236,12 @@ export type HouseholdServer = Awaited<ReturnType<typeof startHouseholdServer>>;
 export const householdRequest = (
   url: string,
   headers: Record<string, string> = {},
-  { method = 'GET', address = '203.0.113.10' } = {},
+  { method = 'GET', address = '203.0.113.10', body }: { method?: string; address?: string; body?: string } = {},
 ) => {
   const target = new URL(url);
   return {
+    // a request is a stream of its body
+    [Symbol.asyncIterator]: () => Readable.from(body === undefined ? [] : [Buffer.from(body)])[Symbol.asyncIterator](),
     headers: Object.fromEntries(Object.entries(headers).map(([name, value]) => [name.toLowerCase(), value])),
     method,
     protocol: target.protocol.slice(0, -1),
