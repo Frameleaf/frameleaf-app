@@ -93,6 +93,8 @@ Frameleaf is built on Immich (AGPL-3.0; see `/licenses/LICENSE.txt`). The compon
   Licence texts: licenses/texts/microsoft-mit.txt.
 - **NSFW image detection (ONNX)** — Falconsai; ONNX conversion by onnx-community. Licence: Apache-2.0. https://huggingface.co/Falconsai/nsfw_image_detection
   Licence texts: licenses/texts/apache-2.0.txt.
+- **llama.cpp** — The ggml authors. Licence: MIT. https://github.com/ggml-org/llama.cpp
+  Licence texts: licenses/texts/llama-cpp-mit.txt.
 
 ## Photo library place data
 
@@ -1494,6 +1496,34 @@ You may add Your own copyright statement to Your modifications and may provide a
 11. Termination. This License will terminate automatically and immediately if You fail to comply with any of its terms and conditions. Upon termination, You must cease all use of the Work and any Derivative Works and delete all copies in Your possession.
 
 END OF TERMS AND CONDITIONS
+```
+
+## licenses/texts/llama-cpp-mit.txt
+
+Source: https://github.com/ggml-org/llama.cpp/blob/054a1babf3f57074b0f63f415fc34bdf13435a64/LICENSE (retrieved 2026-09-25, SHA-256 94f29bbed6a22c35b992c5c6ebf0e7c92f13b836b90f36f461c9cf2f0f1d010d).
+
+```text
+MIT License
+
+Copyright (c) 2023-2026 The ggml authors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
 ```
 
 ## licenses/texts/microsoft-mit.txt
