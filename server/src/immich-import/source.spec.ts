@@ -26,6 +26,8 @@ const makeSource = (
     /** Gallery-only tables present in the source, and those holding rows. */
     noodleTables?: string[];
     noodleRows?: string[];
+    /** Gallery's own columns, by table, added to the catalog the source reports. */
+    galleryColumns?: Record<string, string[]>;
   } = {},
 ) => {
   const columns = Object.entries(fixture.structure.tables)
@@ -49,6 +51,19 @@ const makeSource = (
       generated: '',
     });
   }
+  for (const [table, names] of Object.entries(overrides.galleryColumns ?? {})) {
+    for (const name of names) {
+      columns.push({
+        table_name: table,
+        column_name: name,
+        type: 'uuid',
+        not_null: true,
+        default: null,
+        identity: '',
+        generated: '',
+      });
+    }
+  }
   const statements: string[] = [];
   const db: ImportDatabase = {
     query: async (statement): Promise<ImportRow[]> => {
@@ -66,7 +81,7 @@ const makeSource = (
       if (statement.includes('jsonb_array_elements_text')) {
         return [{ tables: overrides.noodleTables ?? [] }];
       }
-      if (statement.includes('asset_favorite f')) {
+      if (statement.startsWith('SELECT EXISTS (SELECT 1 FROM public.asset_favorite f')) {
         return [{ rows: overrides.noodleRows?.includes('asset_favorite') ?? false }];
       }
       const held = /^SELECT EXISTS \(SELECT 1 FROM public\."(\w+)"\)/u.exec(statement);
@@ -187,6 +202,31 @@ describe('source preflight', () => {
     const immich = makeSource({ noodleTables: ['shared_space'], noodleRows: ['shared_space'] }).source;
     await immich.preflight();
     expect(immich.notImported).toEqual([]);
+  });
+
+  it('stops listing Gallery data once the source has the columns its import reads', async () => {
+    const { source, statements } = makeSource({
+      noodle: true,
+      noodleTables: ['shared_space', 'shared_space_person', 'person_pet', 'user_group', 'asset_favorite'],
+      noodleRows: ['shared_space', 'shared_space_person', 'person_pet', 'user_group', 'asset_favorite'],
+      galleryColumns: {
+        shared_space: ['id', 'name', 'description', 'createdById', 'createdAt', 'updatedAt'],
+        shared_space_member: ['spaceId', 'userId', 'role', 'joinedAt'],
+        shared_space_asset: ['spaceId', 'assetId', 'addedAt'],
+        asset_favorite: ['userId', 'assetId', 'createdAt'],
+        person_pet: ['personGroupId', 'species'],
+      },
+    });
+    await source.preflight();
+    expect(source.gallery).toBe(true);
+    // Space people lack their tables here, so they still stay behind; user groups always do.
+    expect(source.notImported).toEqual(['people named in Spaces', 'user groups']);
+    // The carried reads are part of the source fingerprint.
+    for (const table of ['shared_space_asset', 'shared_space_member', 'asset_favorite', 'person_pet']) {
+      expect(
+        statements.some((statement) => statement.includes(`public.${table}`) && statement.includes('LIMIT 250')),
+      ).toBe(true);
+    }
   });
 
   it('reads a Gallery release without gallery_migrations as Gallery when Manager names it', async () => {

@@ -57,8 +57,9 @@ export class ImportImmichCommand extends CommandRunner {
       const importer = new ImmichImportService(target.db, source.db, config);
       switch (action) {
         case 'preflight': {
-          const { sourceVersion, sourceCommit, status, embeddings, notImported } = await importer.preflight();
-          console.log(JSON.stringify({ sourceVersion, sourceCommit, status, embeddings, notImported }));
+          const { sourceVersion, sourceCommit, sourceKind, status, embeddings, notImported } =
+            await importer.preflight();
+          console.log(JSON.stringify({ sourceVersion, sourceCommit, sourceKind, status, embeddings, notImported }));
           return;
         }
         case 'run': {
