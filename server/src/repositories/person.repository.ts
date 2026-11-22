@@ -30,6 +30,7 @@ import { libraryScopePredicate } from 'src/utils/library-scope.js';
 import { effectiveVisibility, revealedLockScope } from 'src/utils/locked.js';
 import { type PaginationOptions, paginationHelper } from 'src/utils/pagination.js';
 import { archivedAllowedInPeople, isPeopleVisible } from 'src/utils/people-visibility.js';
+import type { PersonRelationshipEdge } from 'src/utils/person-relationship.js';
 
 // FL-1383: a face's box as a main photo (see `face-quality.ts` for the measurements behind the numbers).
 const faceBoxWidth = sql<number>`(asset_face."boundingBoxX2" - asset_face."boundingBoxX1")`;
@@ -2584,6 +2585,79 @@ export class PersonRepository {
           .where('person_category_member.personId', '=', fromPersonGroupId),
       )
       .onConflict((oc) => oc.doNothing())
+      .execute();
+  }
+
+  /** FL-842: every relationship between the owner's people. A family is small, so the rules are applied in memory. */
+  @GenerateSql({ params: [DummyValue.UUID] })
+  getRelationships(ownerId: string): Promise<PersonRelationshipEdge[]> {
+    return this.db
+      .selectFrom('person_relationship')
+      .select([
+        'person_relationship.personGroupId',
+        'person_relationship.relatedPersonGroupId',
+        'person_relationship.kind',
+        'person_relationship.parentRole',
+      ])
+      .where('person_relationship.ownerId', '=', ownerId)
+      .orderBy('person_relationship.createdAt')
+      .orderBy('person_relationship.id')
+      .execute();
+  }
+
+  /** FL-842: records relationships between the owner's people; a pair that already has one keeps it. */
+  async createRelationships(ownerId: string, edges: PersonRelationshipEdge[]): Promise<void> {
+    if (edges.length === 0) {
+      return;
+    }
+    await this.db
+      .insertInto('person_relationship')
+      .values(
+        edges.map(({ personGroupId, relatedPersonGroupId, kind, parentRole }) => ({
+          ownerId,
+          personGroupId,
+          relatedPersonGroupId,
+          kind,
+          parentRole,
+        })),
+      )
+      .onConflict((oc) => oc.doNothing())
+      .execute();
+  }
+
+  /** FL-842: removes whatever relationship joins two of the owner's people, whichever way round it is stored. */
+  @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID, DummyValue.UUID] })
+  async deleteRelationship(ownerId: string, personGroupId: string, relatedPersonGroupId: string): Promise<boolean> {
+    const result = await this.db
+      .deleteFrom('person_relationship')
+      .where('person_relationship.ownerId', '=', ownerId)
+      .where((eb) =>
+        eb.or([
+          eb.and([
+            eb('person_relationship.personGroupId', '=', personGroupId),
+            eb('person_relationship.relatedPersonGroupId', '=', relatedPersonGroupId),
+          ]),
+          eb.and([
+            eb('person_relationship.personGroupId', '=', relatedPersonGroupId),
+            eb('person_relationship.relatedPersonGroupId', '=', personGroupId),
+          ]),
+        ]),
+      )
+      .executeTakeFirst();
+    return Number(result.numDeletedRows ?? 0) > 0;
+  }
+
+  /** FL-842: the owner's own people among these ids, for listing relatives. */
+  @GenerateSql({ params: [DummyValue.UUID, [DummyValue.UUID]] })
+  getOwnPeople(ownerId: string, personGroupIds: string[]) {
+    if (personGroupIds.length === 0) {
+      return Promise.resolve([]);
+    }
+    return this.db
+      .selectFrom('person')
+      .selectAll('person')
+      .where('person.ownerId', '=', ownerId)
+      .where('person.personGroupId', 'in', personGroupIds)
       .execute();
   }
 }

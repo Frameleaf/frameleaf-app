@@ -650,6 +650,18 @@ export class PartnerOriginRepository {
     `.execute(this.db);
     return rows;
   }
+  /** FL-842: every live person `ownerId` holds as a copy of one of `sourceOwnerId`'s people. */
+  async getPersonCopies(ownerId: string, sourceOwnerId: string): Promise<PersonOriginRow[]> {
+    const { rows } = await sql<PersonOriginRow>`
+      SELECT origin."ownerId", origin."personGroupId", origin."sourceOwnerId", origin."sourcePersonGroupId",
+        origin."rootOwnerId", origin."partnerSharedById", origin."overriddenFields", origin.following
+      FROM public.person_origin origin
+      JOIN person ON person."ownerId" = origin."ownerId" AND person."personGroupId" = origin."personGroupId"
+      WHERE origin."ownerId" = ${ownerId}::uuid AND origin."sourceOwnerId" = ${sourceOwnerId}::uuid
+      ORDER BY origin."personGroupId"
+    `.execute(this.db);
+    return rows;
+  }
   /** Owner edits and propagation share the live person's origin lock and writer transaction. */
   async withPersonOrigin<T>(
     ownerId: string,
