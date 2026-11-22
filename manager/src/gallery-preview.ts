@@ -6,6 +6,7 @@ import {
   galleryReads,
   type GalleryRead,
 } from './gallery-reads.js';
+import { GALLERY_REQUIRED_TABLES, galleryColumnType, galleryRequiredColumns } from './gallery-required.js';
 
 /** Rows each Gallery read yields; null where this release's tables cannot be read. */
 export type GalleryCounts = {
@@ -20,8 +21,10 @@ export type GalleryCounts = {
   pets: number | null;
 };
 export type GalleryPreview = {
-  /** False when the importer refuses this release (it dropped asset."isFavorite"); the import cannot start. */
+  /** False when the importer would refuse this source's ledger or required columns; the import cannot start. */
   readable: boolean;
+  /** Set when the structure was read but the count statement failed: the review has no numbers to show. */
+  uncounted?: true;
   counts: GalleryCounts;
   /** The first Spaces by name, each with its members and photos. */
   spaces: { name: string; members: number; photos: number }[];
@@ -41,12 +44,35 @@ const COUNTS: Record<Exclude<keyof GalleryCounts, 'members'>, GalleryRead> = {
   pets: 'gallery_pet',
 };
 
-/** The public tables the reads look at, with their columns. */
-export const GALLERY_STRUCTURE_SQL = `SELECT coalesce(json_object_agg(t.relname, t.columns), '{}') FROM (
-  SELECT c.relname, json_agg(a.attname) AS columns FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
-  JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum > 0 AND NOT a.attisdropped
-  WHERE n.nspname = 'public' AND c.relkind IN ('r','p') AND c.relname IN (${GALLERY_TABLES.map((table) => `'${table}'`).join(',')})
-  GROUP BY c.relname) t;`;
+/** Ends a statement inside Postgres before the 60 s client limit, so a slow count leaves no backend running. */
+const STATEMENT_TIMEOUT = `SET statement_timeout = '55s';`;
+const STRUCTURE_TABLES = [...new Set([...GALLERY_TABLES, ...GALLERY_REQUIRED_TABLES])];
+
+/** The public tables the reads and the importer look at, with column types, and the importer's migration ledgers. */
+export const GALLERY_STRUCTURE_SQL = `${STATEMENT_TIMEOUT}
+SELECT json_build_object(
+  'tables', (SELECT coalesce(json_object_agg(t.relname, t.columns), '{}') FROM (
+    SELECT c.relname, json_object_agg(a.attname, format_type(a.atttypid, a.atttypmod)) AS columns
+    FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+    JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum > 0 AND NOT a.attisdropped
+    WHERE n.nspname = 'public' AND c.relkind IN ('r','p') AND c.relname IN (${STRUCTURE_TABLES.map((table) => `'${table}'`).join(',')})
+    GROUP BY c.relname) t),
+  'migrations', (SELECT coalesce(json_agg(name), '[]') FROM public.kysely_migrations),
+  'frameleaf', to_regclass('public.frameleaf_migrations') IS NOT NULL);`;
+
+type GalleryStructure = { tables: Record<string, Record<string, string>>; migrations: string[]; frameleaf: boolean };
+
+/** The importer's preflight for a Gallery source: its ledger names a frozen release and every frozen column is there. */
+const importerAccepts = ({ tables, migrations, frameleaf }: GalleryStructure): boolean => {
+  const required = frameleaf ? undefined : galleryRequiredColumns(migrations);
+  if (!required) return false;
+  return Object.entries(required).every(([table, columns]) =>
+    Object.entries(columns).every(([column, type]) => {
+      const found = tables[table]?.[column];
+      return found !== undefined && galleryColumnType(table, column, found) === type;
+    }),
+  );
+};
 
 /** One read-only statement: a count over each read the source can answer, the first Spaces, and which Gallery-only tables hold rows. */
 export const galleryCountSql = (structure: Record<string, string[]>): string => {
@@ -64,7 +90,8 @@ export const galleryCountSql = (structure: Record<string, string[]>): string => 
       FROM (SELECT v.id, v.name FROM (${views.gallery_space}) v ORDER BY v.name, v.id LIMIT ${SPACE_LIST_LIMIT}) s)`
     : `'[]'::json`;
   // The session refuses every write, whatever the source's own database user may do.
-  return `SET default_transaction_read_only = on;
+  return `${STATEMENT_TIMEOUT}
+SET default_transaction_read_only = on;
 SELECT json_build_object(
   ${Object.entries(COUNTS)
     .map(([name, read]) => `'${name}', ${rows(read)}`)
@@ -77,18 +104,40 @@ SELECT json_build_object(
 /** psql prints the SET before the answer: the answer is the last line. */
 const lastLine = (output: string) => output.trim().split('\n').at(-1) ?? '';
 
-/** Two read-only statements against the running source. Nothing is written, stopped or copied. */
+const NO_COUNTS: GalleryCounts = {
+  spaces: null,
+  members: null,
+  memberships: null,
+  spacePhotos: null,
+  people: null,
+  favourites: null,
+  pets: null,
+};
+
+/**
+ * Up to two read-only statements against the running source. Nothing is written, stopped or copied. Rejects when
+ * the structure cannot be read. A failed count keeps the structure's verdict, because that is what guards the stop.
+ */
 export async function readGalleryPreview(sql: (statement: string) => Promise<string>): Promise<GalleryPreview> {
-  const structure = JSON.parse(lastLine(await sql(GALLERY_STRUCTURE_SQL))) as Record<string, string[]>;
+  const shape = JSON.parse(lastLine(await sql(GALLERY_STRUCTURE_SQL))) as GalleryStructure;
+  if (!importerAccepts(shape)) return { readable: false, counts: NO_COUNTS, spaces: [], notImported: [] };
+  const structure = Object.fromEntries(
+    Object.entries(shape.tables).map(([table, columns]) => [table, Object.keys(columns)]),
+  );
   const views = galleryReads((table, ...columns) => columns.every((column) => structure[table]?.includes(column)));
-  const answer = JSON.parse(lastLine(await sql(galleryCountSql(structure)))) as Record<string, any>;
+  let answer: Record<string, any>;
+  try {
+    answer = JSON.parse(lastLine(await sql(galleryCountSql(structure))));
+  } catch {
+    return { readable: true, uncounted: true, counts: NO_COUNTS, spaces: [], notImported: [] };
+  }
   const number = (value: unknown) => (value === null || value === undefined ? null : Number(value));
   const notImported = Object.entries(GALLERY_ONLY)
     .filter(([table, { carriedBy }]) => answer.held?.[table] && !(carriedBy && views[carriedBy]))
     .map(([, { name }]) => name);
   if (answer.held?.asset_favorite && !views.gallery_favorite) notImported.push(OTHERS_FAVOURITES_NAME);
   return {
-    readable: !!structure.asset?.includes('isFavorite'),
+    readable: true,
     counts: {
       spaces: number(answer.spaces),
       members: number(answer.members),
@@ -106,6 +155,10 @@ export async function readGalleryPreview(sql: (statement: string) => Promise<str
     notImported,
   };
 }
+
+/** A Gallery the importer is not confirmed to accept, including one whose structure could not be read, is never stopped. */
+export const galleryImportRefused = (source: { product: string; gallery?: Pick<GalleryPreview, 'readable'> }): boolean =>
+  source.product === 'Noodle Gallery' && source.gallery?.readable !== true;
 
 const count = (value: unknown): number | null =>
   typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : null;

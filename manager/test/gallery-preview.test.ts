@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { GALLERY_STRUCTURE_SQL, galleryCountSql, importedGallery, readGalleryPreview } from '../src/gallery-preview.js';
+import { publicSource, type Source } from '../src/contracts.js';
+import { GALLERY_STRUCTURE_SQL, galleryCountSql, importedGallery, readGalleryPreview, galleryImportRefused } from '../src/gallery-preview.js';
 import { galleryReads } from '../src/gallery-reads.js';
+import { GALLERY_SHAPES, galleryRequiredColumns } from '../src/gallery-required.js';
+import { readable } from '../ui/src/presentation.js';
 import { galleryReview, gallerySummary, type GalleryData } from '../ui/src/gallery-preview.js';
 
 // FL-1742. Gallery 5.11 on an Immich 3.2 base: every read is offered.
@@ -25,11 +28,21 @@ const answer = {
   spaceList: [{ name: 'Family', members: 5, photos: 3410 }, { name: 'Soccer team', members: 6, photos: 250 }],
   held: { shared_space: true, shared_space_person: true, person_pet: true, user_group: true, shared_space_album: true, asset_video_trim: false, asset_favorite: true },
 };
-const source = (tables = structure, counts: Record<string, unknown> = answer) => {
+const ledger = GALLERY_SHAPES.flatMap((step) => step.migrations);
+/** The newest frozen shape with these tables' columns on top, as the structure statement answers. */
+const shape = (tables: Record<string, string[]>, extra: Record<string, unknown> = {}) => {
+  const required = galleryRequiredColumns(ledger)!;
+  const typed: Record<string, Record<string, string>> = { ...required };
+  for (const [table, columns] of Object.entries(tables)) {
+    typed[table] = { ...required[table], ...Object.fromEntries(columns.map((name) => [name, required[table]?.[name] ?? 'uuid'])) };
+  }
+  return JSON.stringify({ tables: typed, migrations: ledger, frameleaf: false, ...extra });
+};
+const source = (tables = structure, counts: Record<string, unknown> = answer, answerStructure = shape(tables)) => {
   const statements: string[] = [];
   const sql = async (statement: string) => {
     statements.push(statement);
-    return statement === GALLERY_STRUCTURE_SQL ? JSON.stringify(tables) : `SET\n${JSON.stringify(counts)}\n`;
+    return statement === GALLERY_STRUCTURE_SQL ? `SET\n${answerStructure}\n` : `SET\nSET\n${JSON.stringify(counts)}\n`;
   };
   return { sql, statements };
 };
@@ -49,8 +62,8 @@ test('the review counts a running Noodle Gallery through the import’s own read
   assert.equal(Object.keys(views).length, 6);
   for (const view of Object.values(views)) assert.ok(statements[1].includes(`FROM (${view}) r`), view);
   // Each statement only reads, and the counting session refuses writes outright.
-  assert.match(statements[0], /^SELECT /u);
-  assert.match(statements[1], /^SET default_transaction_read_only = on;\nSELECT json_build_object\(/u);
+  assert.match(statements[0], /^SET statement_timeout = '55s';\nSELECT /u);
+  assert.match(statements[1], /^SET statement_timeout = '55s';\nSET default_transaction_read_only = on;\nSELECT json_build_object\(/u);
   for (const statement of statements)
     assert.doesNotMatch(statement, /\b(INSERT|UPDATE|DELETE|TRUNCATE|ALTER|CREATE|DROP|GRANT|COPY)\b/u);
 });
@@ -69,12 +82,65 @@ test('a read this release cannot answer is left uncounted and named as staying b
 });
 
 test('a release that dropped asset.isFavorite is one the importer refuses', async () => {
-  const preview = await readGalleryPreview(source({ ...structure, asset: ['id', 'ownerId'] }).sql);
+  const required = JSON.parse(shape(structure));
+  delete required.tables.asset.isFavorite;
+  const { sql, statements } = source(structure, answer, JSON.stringify(required));
+  const preview = await readGalleryPreview(sql);
   assert.equal(preview.readable, false);
+  // A refused release is not counted.
+  assert.equal(statements.length, 1);
   const review = galleryReview(preview, 'v5.9.0');
   assert.equal(review.state, 'unreadable');
   assert.match(review.state === 'unreadable' ? review.detail : '', /^Release v5\.9\.0 keeps favourites in a way Manager doesn’t know\./u);
   assert.equal(gallerySummary(preview), null);
+});
+
+test('readable follows the importer: any required column, its type, and the ledger', async () => {
+  const readable = async (change: (value: any) => void) => {
+    const value = JSON.parse(shape(structure));
+    change(value);
+    return (await readGalleryPreview(source(structure, answer, JSON.stringify(value)).sql)).readable;
+  };
+  assert.equal(await readable(() => {}), true);
+  assert.equal(await readable((value) => { value.tables.added_by_gallery = { id: 'uuid' }; value.tables.album.extra = 'text'; }), true);
+  assert.equal(await readable((value) => { delete value.tables.album.albumName; }), false);
+  assert.equal(await readable((value) => { value.tables.asset_face.assetId = 'text'; }), false);
+  assert.equal(await readable((value) => { value.migrations = value.migrations.slice(0, 3); }), false);
+  assert.equal(await readable((value) => { value.frameleaf = true; }), false);
+  // The CLIP dimension is a setting, not a shape.
+  assert.equal(await readable((value) => { value.tables.smart_search.embedding = 'public.vector(768)'; }), true);
+});
+
+test('a failed count keeps the verdict, and the review shows its no-preview notice', async () => {
+  const sql = async (statement: string) => {
+    if (statement === GALLERY_STRUCTURE_SQL) return `SET\n${shape(structure)}\n`;
+    throw new Error('canceling statement due to statement timeout');
+  };
+  const preview = await readGalleryPreview(sql);
+  assert.equal(preview.readable, true);
+  assert.equal(preview.uncounted, true);
+  assert.equal(preview.counts.spaces, null);
+  const base = { database: { name: 'g', user: 'u', host: 'h', port: 5432, password: 'p' }, environment: {}, settings: {}, restart: {}, postgres: { major: 16, extensions: [] }, settingsAuthority: 'database' };
+  assert.equal('gallery' in publicSource({ ...base, gallery: preview } as unknown as Source), false);
+  const counted = await readGalleryPreview(source().sql);
+  assert.deepEqual(publicSource({ ...base, gallery: counted } as unknown as Source).gallery, counted);
+  // A refused release still reaches the review, which explains the stop.
+  const refused = { readable: false, counts: preview.counts, spaces: [], notImported: [] };
+  assert.deepEqual(publicSource({ ...base, gallery: refused } as unknown as Source).gallery, refused);
+});
+
+test('a structure that cannot be read rejects, so the source has no preview', async () => {
+  await assert.rejects(readGalleryPreview(async () => { throw new Error('relation does not exist'); }));
+});
+
+test('the import stops only a Gallery the importer is confirmed to accept', () => {
+  const gallery = 'Noodle Gallery';
+  assert.equal(galleryImportRefused({ product: gallery }), true);
+  assert.equal(galleryImportRefused({ product: gallery, gallery: { readable: false } }), true);
+  assert.equal(galleryImportRefused({ product: gallery, gallery: { readable: true } }), false);
+  assert.equal(galleryImportRefused({ product: 'Immich' }), false);
+  // The refusal reuses a message the UI already words.
+  assert.notEqual(readable('source_database_dump_failed'), 'source database dump failed');
 });
 
 const full: GalleryData = {
