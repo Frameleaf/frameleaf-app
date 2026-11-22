@@ -135,6 +135,7 @@ describe(SearchService.name, () => {
         admin1: new Map([['DE.02', 2_951_839]]),
         countries: new Map([['DE', 2_921_044]]),
       });
+      mocks.search.searchPlacesByLocalName.mockResolvedValue([]);
       mocks.map.getPlaceNames.mockResolvedValue([
         { geonameId: 2_867_714, name: 'München' },
         { geonameId: 2_921_044, name: 'Deutschland' },

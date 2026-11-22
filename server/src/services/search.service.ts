@@ -48,6 +48,7 @@ import { FileDownloadResponse } from 'src/utils/file.js';
 import { getHiddenContentQueryOptions, getPrivacyQueryOptions } from 'src/utils/hidden-content.js';
 import { getLockedOwnerId, getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { isSmartSearchEnabled } from 'src/utils/misc.js';
+import { placeNameSpellings } from 'src/utils/place-names.js';
 import { fromChecksum } from 'src/utils/request.js';
 import { decodeSearchCursor, encodeSearchCursor } from 'src/utils/search-cursor.js';
 import {
@@ -116,7 +117,15 @@ export class SearchService extends BaseService {
   }
 
   async searchPlaces(auth: AuthDto, dto: SearchPlacesDto): Promise<PlacesResponseDto[]> {
-    const places = await this.searchRepository.searchPlaces(dto.name);
+    const english = await this.searchRepository.searchPlaces(dto.name);
+    // FL-1027: names in the viewer's language come first; a failure there leaves the English results
+    const inLanguage = await this.getPlaceNameLanguage(auth)
+      .then((lang) =>
+        lang ? this.searchRepository.searchPlacesByLocalName(lang, placeNameSpellings(dto.name, lang)) : [],
+      )
+      .catch(() => []);
+    const seen = new Set<number>();
+    const places = [...inLanguage, ...english].filter(({ id }) => !seen.has(id) && !!seen.add(id)).slice(0, 20);
     const localized = await this.getLocalizedPlaces(auth, places);
     return places.map((place) => {
       const placeNamesLocalized = localized.get(place.id);

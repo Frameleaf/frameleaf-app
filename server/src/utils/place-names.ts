@@ -20,6 +20,19 @@ export const placeNameLanguageOf = (locale: string | undefined): PlaceNameLangua
   return PLACE_NAME_LANGUAGES.find((known) => known === language);
 };
 
+/**
+ * FL-1027: what to search a typed place name as. German writes ü as ue on a keyboard without it, and accents are
+ * ignored when matching, so "Muenchen" is also tried as "Munchen". Only for German: "Bruel" or "Rafael" elsewhere are
+ * not spellings of anything else.
+ */
+export const placeNameSpellings = (typed: string, lang: string): string[] => {
+  if (lang !== 'de') {
+    return [typed];
+  }
+  const plain = typed.replaceAll(/([aou])e/gi, '$1').replaceAll('ß', 'ss');
+  return plain === typed ? [typed] : [typed, plain];
+};
+
 export interface EnglishPlaceNames {
   city?: string | null;
   state?: string | null;

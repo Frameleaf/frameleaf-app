@@ -479,6 +479,34 @@ describe('place names in the viewer’s language (FL-987)', () => {
       expect(exifInfo).toMatchObject({ city: 'Munich', placeNamesLocalized: null });
     });
 
+    it('finds a place by its name in the viewer’s language, however it is typed (FL-1027)', async () => {
+      const search = newMediumService(SearchService, {
+        database: db,
+        real: [ConfigRepository, MapRepository, SearchRepository, SystemMetadataRepository, UserRepository],
+        mock: [LoggingRepository],
+      });
+      withFixtureGeodata(search.ctx);
+      await db.deleteFrom('geodata_place_name').execute();
+      await db
+        .insertInto('geodata_place_name')
+        .values([
+          { geonameId: MUNICH, lang: 'de', name: 'München' },
+          { geonameId: TOKYO, lang: 'fr', name: 'Tôkyô-Ville' },
+        ])
+        .execute();
+      const german = factory.auth({ user: await newViewer(search.ctx, 'de') });
+      const french = factory.auth({ user: await newViewer(search.ctx, 'fr') });
+      const names = async (auth: typeof german, name: string) =>
+        (await search.sut.searchPlaces(auth, { name })).map((place) => place.name);
+
+      for (const typed of ['Muenchen', 'München', 'Munich']) {
+        await expect(names(german, typed)).resolves.toContain('Munich');
+      }
+      await expect(names(french, 'Tokyo-Ville')).resolves.toContain('Tokyo');
+      // another language's name is not searched
+      await expect(names(german, 'Tokyo-Ville')).resolves.not.toContain('Munich');
+    });
+
     it('names places the same way in Places, Explore, the place search and on the map', async () => {
       const search = newMediumService(SearchService, {
         database: db,
