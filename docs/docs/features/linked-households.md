@@ -49,16 +49,16 @@ Everything below reuses the server-to-server trust built for Buddy Backup: the E
 
 Cloud module `apps/api/src/modules/households/`, contracts `packages/contracts/src/households/` (`HOUSEHOLD_VERSION = 1`, every schema a `z.strictObject` carrying `version`, as Buddy's are).
 
-| Cloud endpoint (instance DPoP origin, `InstanceAuthGuard`) | Purpose                                                                                                     |
-| ---------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| `POST /v1/households/invitations`                          | Create an invitation for this server. Returns `invitationId`, a 43-character `token`, `expiresAt` (7 days). |
-| `GET /v1/households/invitations/:token`                    | Preview: the inviting server's name, instance id and public key. No account id, no email.                   |
-| `POST /v1/households/invitations/accept`                   | Accept for this server. Creates the link `active`. The inviter confirms nothing (same decision as FC-139).  |
-| `GET /v1/households/links`                                 | The caller's links with state, peer instance id, peer name and peer key.                                    |
-| `POST /v1/households/links/:id/end`                        | End the link. Either side may. Idempotent.                                                                  |
-| `POST /v1/households/grants`                               | Issue a grant for one link, with the peer's `connections`.                                                  |
-| `POST /v1/households/grants/verify`                        | The destination checks a presented grant is still honoured (link active, both servers still linked).        |
-| `GET /v1/households/jwks`                                  | Public keys that sign grants (`Cache-Control: public, max-age=300`).                                        |
+| Cloud endpoint (instance DPoP origin, `InstanceAuthGuard`) | Purpose                                                                                                                               |
+| ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `POST /v1/households/invitations`                          | Create an invitation for this server. Returns `invitationId`, a 43-character `token`, a 12-character `code` and `expiresAt` (7 days). |
+| `GET /v1/households/invitations/:token`                    | Preview, by token or short code: the inviting server's name, instance id and public key. No account id, no email.                     |
+| `POST /v1/households/invitations/accept`                   | Accept for this server, by token or short code. Creates the link `active`. The inviter confirms nothing (same decision as FC-139).    |
+| `GET /v1/households/links`                                 | The caller's links with state, peer instance id, peer name and peer key.                                                              |
+| `POST /v1/households/links/:id/end`                        | End the link. Either side may. Idempotent.                                                                                            |
+| `POST /v1/households/grants`                               | Issue a grant for one link, with the peer's `connections`.                                                                            |
+| `POST /v1/households/grants/verify`                        | The destination checks a presented grant is still honoured (link active, both servers still linked).                                  |
+| `GET /v1/households/jwks`                                  | Public keys that sign grants (`Cache-Control: public, max-age=300`).                                                                  |
 
 Rules Cloud enforces, each with a test in `apps/api`:
 
@@ -100,7 +100,8 @@ Server side (FL-952):
 - Table `household_link` (`id`, `cloudLinkId` unique, `peerInstanceId`, `peerName`, `peerPublicKey`, `addresses` jsonb, `state` text, `pausedReason` text null, `connectionPath` text null, `lastSeenAt`, `createdAt`, `endedAt`). `state` is `active`, `paused` or `ended`; it is a text column and the API reports it as text with one boolean per value (`active`, `paused`, `ended`), because new enum values break the native apps' strict decoders. An ended row is final: nothing changes it again.
 - `peerPublicKey` is the key Cloud introduced at pairing and is never replaced. If Cloud later names another key for the peer (the other server rotated or re-created its identity), the link pauses with reason `key` and the two households link again. Following the new key automatically would let whoever controls the introduction replace a linked household.
 - `pausedReason` is a short machine word, reported by the API as `reason`. On a paused link: `licence` (a Server licence is missing on either side), `unlinked` (this server is not linked to Cloud), `peer-unlinked` (the other server is not), `key`, `cloud` (Cloud did not answer, or refused for another reason). On an active link that did not answer: `home-network` (Cloud listed home addresses only, so the other household has no plan and can only be reached on its own network) or `unreachable`.
-- `HouseholdLinkService` and admin-only `HouseholdLinkController` at `/admin/household-links`: `POST invitations`, `GET invitations/:token` (preview), `POST invitations/accept`, `GET /`, `POST :id/refresh`, `DELETE :id`.
+- `HouseholdLinkService` and admin-only `HouseholdLinkController` at `/admin/household-links`: `POST invitations` (returns the token and the short code), `GET invitations/:code` (preview), `POST invitations/accept` (`code`, optional `householdName`), `GET /`, `PATCH :id` (rename), `POST :id/refresh`, `DELETE :id`. `code` is the token or the short code as the administrator typed it; spaces are removed and it is sent to Cloud as it is.
+- `household_link.householdName` (1 to 80 characters) is what this server's administrator calls the other household. It starts as the other server's name, each side renames its own copy, and it is never sent to Cloud or to the other server.
 - `HouseholdPeerService.authorize()` and `HouseholdPeerController` at `household/v1/*`, excluded from the OpenAPI document like `buddy/v1`. The `:linkId` in a peer path is the link's id at Cloud (`cloudLinkId`), the one id both servers share.
 - Table `household_peer_request` (`jti` primary key, `linkId`, `expiresAt`): every admitted proof, kept until its grant expires, so a request cannot be replayed even across a restart or on another API worker.
 - A timer on the microservices worker (the Buddy Backup pattern, no queue job): every five minutes it gets a grant for each active or paused link, tries its addresses in grant order (home, direct, relay) with `GET handshake` and records `addresses`, `connectionPath` and `lastSeenAt`; every hour it reconciles local rows with `GET /v1/households/links`, so a link ended on the other side ends here. The inviting server is told nothing when its invitation is accepted, so its row is created by that reconcile; `GET /admin/household-links` reconciles first for the same reason, and a new link can take until then to answer.
@@ -326,3 +327,6 @@ Decided by the owner on 2026-11-22 (FL-911):
 2. **What a remote "contributor" may do.** Comment and like only in version 1. Adding photos back to the sender's space comes later.
 3. **Largest file accepted from another household.** 20 GiB, with no setting in version 1.
 4. **First sync over the relay.** No extra pacing beyond the plan's caps.
+5. **Short invitation code.** An invitation has a 12-character code as well as its token, shown in groups of four (FERN-7Q4K-M2XD), so that it can be read out or typed. Preview and accept take either.
+6. **Naming the other household.** Each administrator names the other household on their own server. The name starts as the other server's name and never leaves this server.
+7. **Invitations to a space.** An invitation to a space from another household appears in Notifications, with Accept and Decline.
