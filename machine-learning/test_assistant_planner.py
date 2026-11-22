@@ -290,6 +290,31 @@ class TestHardening:
             pipeline.assert_not_called()
         download.assert_not_called()
 
+    @pytest.mark.parametrize(
+        ("listing", "usable"),
+        [
+            ("Available devices:\n  Vulkan0: NVIDIA GeForce RTX 3060 (12288 MiB, 12000 MiB free)\n", True),
+            ("Available devices:\n  Vulkan0: llvmpipe (LLVM 19.1.7, 256 bits) (8192 MiB, 8192 MiB free)\n", False),
+            ("Available devices:\n  (none)\n", False),
+        ],
+    )
+    def test_llamacpp_needs_a_real_gpu(self, mocker: MockerFixture, listing: str, usable: bool) -> None:
+        assistant_planner._llama_gpu_devices.cache_clear()
+        mocker.patch.object(assistant_planner.shutil, "which", return_value="/opt/llama.cpp/llama-server")
+        mocker.patch.object(
+            assistant_planner.subprocess, "run", return_value=SimpleNamespace(stdout=listing, stderr="")
+        )
+        try:
+            assert assistant_planner._runtime_installed("llamacpp") is usable
+        finally:
+            assistant_planner._llama_gpu_devices.cache_clear()
+
+    def test_llamacpp_never_inherits_worker_secrets(self, mocker: MockerFixture) -> None:
+        mocker.patch.dict(
+            "os.environ", {"PATH": "/bin", "VK_ICD_FILENAMES": "/icd", "DB_PASSWORD": "x", "LD_PRELOAD": "m"}
+        )
+        assert assistant_planner._llama_env() == {"PATH": "/bin", "VK_ICD_FILENAMES": "/icd"}
+
     def test_predict_cannot_pass_options_to_the_planner(self) -> None:
         from pydantic import ValidationError
 
