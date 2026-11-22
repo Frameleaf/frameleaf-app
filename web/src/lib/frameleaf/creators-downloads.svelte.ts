@@ -115,6 +115,8 @@ class CreatorsDownloads {
   private first = true;
   private timer: ReturnType<typeof setTimeout> | undefined;
   private generation = 0;
+  /** Bumped by `stop`: an action still waiting on the Library then leaves the cleared list alone. */
+  private life = 0;
   private controller = new AbortController();
 
   /** Files in each list, over every download. */
@@ -184,6 +186,7 @@ class CreatorsDownloads {
   };
 
   stop() {
+    this.life++;
     this.generation++;
     clearTimeout(this.timer);
     this.controller.abort();
@@ -204,7 +207,10 @@ class CreatorsDownloads {
           mediaRetryDto: { idempotencyKey: mediaReceiptKey(this.retryKeys, { id, updatedAt }) },
         })
       : await cancelMediaImport({ id });
-    this.jobs = this.jobs.map((value) => (value.id === id ? updated : value));
+    return updated;
+  }
+  private replace(updated: MediaImportResponseDto) {
+    this.jobs = this.jobs.map((value) => (value.id === updated.id ? updated : value));
   }
 
   /** Stop a download that is going, or try one again. */
@@ -212,16 +218,25 @@ class CreatorsDownloads {
     if (this.pending || (retry && !mediaImportRetryable(job.state))) {
       return;
     }
+    const { life } = this;
     this.pending = job.id;
     this.actionFailed = false;
+    let failed = false;
+    let updated: MediaImportResponseDto | undefined;
     try {
-      await this.send(job, retry);
+      updated = await this.send(job, retry);
     } catch {
-      this.actionFailed = true;
-    } finally {
-      this.pending = '';
-      void this.load();
+      failed = true;
     }
+    if (life !== this.life) {
+      return;
+    }
+    if (updated) {
+      this.replace(updated);
+    }
+    this.actionFailed = failed;
+    this.pending = '';
+    void this.load();
   }
 
   /** Try again every download that stopped short. Each is its own request: one refusal stops none of the others. */
@@ -229,9 +244,18 @@ class CreatorsDownloads {
     if (this.pending) {
       return;
     }
+    const { life } = this;
     this.pending = 'all';
     this.actionFailed = false;
     const results = await Promise.allSettled(this.retryable.map((job) => this.send(job, true)));
+    if (life !== this.life) {
+      return;
+    }
+    for (const result of results) {
+      if (result.status === 'fulfilled') {
+        this.replace(result.value);
+      }
+    }
     this.actionFailed = results.some(({ status }) => status === 'rejected');
     this.pending = '';
     void this.load();
