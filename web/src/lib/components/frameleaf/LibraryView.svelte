@@ -759,7 +759,7 @@
     unarchive: (asset) => void (asset.visibility = AssetVisibility.Timeline),
   };
 
-  const applyBulk = (action: BulkActionId, ids: string[]) => {
+  const applyBulk = (action: BulkActionId, ids: string[], payload?: BulkPayload) => {
     // A stack change moves the counts and which members the server hides, so the page reads it again.
     if (action === 'stack' || action === 'unstack') {
       void manager.refresh();
@@ -767,7 +767,12 @@
     }
     // FL-1410: a date set by hand is no longer one to check; the server says where each photo belongs now.
     // FL-943: a Date & Time Doctor fix moves photos on the timeline, which only the server can place.
-    if (action === 'fix-dates' || (action === 'change-date' && manager.datesToCheckCount > 0)) {
+    // FL-936: so does a year or a decade, and the undo of one.
+    if (
+      action === 'fix-dates' ||
+      (action === 'change-date' &&
+        (manager.datesToCheckCount > 0 || !!payload?.dateAccuracy || !!payload?.undoDateFixId))
+    ) {
       void manager.refresh();
       return;
     }
@@ -825,7 +830,11 @@
     isLocked: asset.visibility === AssetVisibility.Locked,
     stackId: asset.stack?.id ?? null,
     // In an Added-date view the bucket's dates are upload times, never offered as capture times.
-    ...(!addedDateSource && { localDateTime: plainDateTime(asset), utcOffsetMinutes: utcOffsetMinutes(asset) }),
+    ...(!addedDateSource && {
+      localDateTime: plainDateTime(asset),
+      utcOffsetMinutes: utcOffsetMinutes(asset),
+      dateAccuracy: asset.dateAccuracy ?? null,
+    }),
   });
 
   /** The time buckets date this view by upload (Recently added, "Added — newest"), not by capture. */

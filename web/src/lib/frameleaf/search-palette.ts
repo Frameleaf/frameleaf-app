@@ -21,6 +21,7 @@ import {
   type DiscoverySearchDto,
   type DiscoveryTextField,
 } from '$lib/components/discovery/query';
+import { decadeOf, parseApproximateYear } from '$lib/frameleaf/approximate-date';
 import { formatDate } from '$lib/frameleaf/date-format';
 import { mediaKindInfo } from '$lib/frameleaf/media-kinds';
 import type { FilterPanelOptions } from '$lib/frameleaf/search-options';
@@ -30,7 +31,7 @@ import type { FilterPanelOptions } from '$lib/frameleaf/search-options';
  * `design/frameleaf/template/src/search-palette.mjs` (September 24, 2026).
  *
  * Typed operators (`person:`, `place:`, `tag:`, `type:`, `camera:`, `lens:`, `rating:`, `is:`, `year:`,
- * `month:`, `after:`, `before:`, `file:`, `text:`, `path:`, each with a leading `-` to exclude) become
+ * `decade:`, `month:`, `after:`, `before:`, `file:`, `text:`, `path:`, each with a leading `-` to exclude) become
  * conditions on the server's structured `SearchFilter` — the same shape the results page sends
  * (`structuredSearchRequest`) — so every palette count and result still comes from the metadata-search
  * contract. Nothing is invented: an operator whose value cannot be resolved against the account's own
@@ -197,6 +198,7 @@ export type OperatorKey =
   | 'rating'
   | 'is'
   | 'year'
+  | 'decade'
   | 'month'
   | 'after'
   | 'before'
@@ -215,6 +217,7 @@ export const SEARCH_OPERATORS: readonly { key: OperatorKey; hint: string; labelK
   { key: 'rating', hint: 'rating:4', labelKey: 'frameleaf_search_operator_rating' },
   { key: 'is', hint: 'is:favorite', labelKey: 'frameleaf_search_operator_is' },
   { key: 'year', hint: 'year:2026', labelKey: 'frameleaf_search_operator_year' },
+  { key: 'decade', hint: 'decade:1970', labelKey: 'frameleaf_search_operator_decade' },
   { key: 'month', hint: 'month:2026-08', labelKey: 'frameleaf_search_operator_month' },
   { key: 'after', hint: 'after:2026-08-12', labelKey: 'frameleaf_search_operator_after' },
   { key: 'before', hint: 'before:2026-08-15', labelKey: 'frameleaf_search_operator_before' },
@@ -520,6 +523,16 @@ const resolveToken = (
       filter.isFavorite = { eq: !exclude };
       return { display: value, fields: ['isFavorite'] };
     }
+    case 'decade': {
+      // FL-936: any year of the decade reads as the decade; a year outside what can be dated stays free text
+      const year = parseApproximateYear(value);
+      if (year === null || exclude) {
+        return null;
+      }
+      const decade = decadeOf(year);
+      filter.takenDecade = { eq: decade };
+      return { display: String(decade), fields: ['takenDecade'] };
+    }
     case 'year':
     case 'month':
     case 'after':
@@ -576,6 +589,10 @@ export const tokenLabel = ($t: MessageFormatter, token: Pick<PaletteToken, 'key'
     case 'is': {
       const kind = mediaKindForWord(value);
       label = kind ? $t(mediaKindInfo(kind)!.labelKey) : $t('favorites');
+      break;
+    }
+    case 'decade': {
+      label = $t('frameleaf_search_token_decade', { values: { value } });
       break;
     }
     case 'after': {
@@ -1214,6 +1231,9 @@ const candidateTokens = (field: string, condition: Condition, catalog: PaletteCa
     }
     case 'isFavorite': {
       return [operatorToken('is', 'favorite', condition.eq === false)];
+    }
+    case 'takenDecade': {
+      return both('decade', values('eq'), []);
     }
     case 'localDateTime': {
       const { gte, lt } = condition;

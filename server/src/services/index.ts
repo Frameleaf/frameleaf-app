@@ -94,6 +94,7 @@ import { HelpService } from 'src/services/help.service.js';
 import { HlsService } from 'src/services/hls.service.js';
 import { HouseholdLinkService } from 'src/services/household-link.service.js';
 import { HouseholdPeerService } from 'src/services/household-peer.service.js';
+import { HouseholdShareService } from 'src/services/household-share.service.js';
 import { ICloudAlbumService } from 'src/services/icloud-album.service.js';
 import { ICloudAuditService } from 'src/services/icloud-audit.service.js';
 import { ICloudIdentityAdoptionService } from 'src/services/icloud-identity-adoption.service.js';
@@ -153,6 +154,7 @@ import { PartnerPeopleService } from 'src/services/partner-people.service.js';
 import { PartnerService } from 'src/services/partner.service.js';
 import { PasskeyService } from 'src/services/passkey.service.js';
 import { PersonCategoryService } from 'src/services/person-category.service.js';
+import { PersonRelationshipService } from 'src/services/person-relationship.service.js';
 import { PersonService } from 'src/services/person.service.js';
 import { PetRecognitionService } from 'src/services/pet-recognition.service.js';
 import { PetService } from 'src/services/pet.service.js';
@@ -321,6 +323,7 @@ export const services = [
   BuddyBackupRecoveryService,
   HouseholdLinkService,
   HouseholdPeerService,
+  HouseholdShareService,
   CloudMlBatchService,
   CloudLibraryBatchService,
   CloudMlJobService,
@@ -415,6 +418,7 @@ export const services = [
   PasskeyService,
   PartnerCopyService,
   PersonCategoryService,
+  PersonRelationshipService,
   PersonService,
   PinnedCollectionService,
   PetRecognitionService,

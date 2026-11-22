@@ -162,7 +162,7 @@ Sender tables:
 
 - `household_share` (`id`, `albumId` → `album`, `linkId` → `household_link`, `createdAt`), unique (`albumId`, `linkId`). The album has `kind = 'space'`.
 - `household_share_member` (`shareId`, `remoteUserId`, `displayName`, `role` text `viewer|contributor`, `invitedAt`, `acceptedAt`, `leftAt`), primary key (`shareId`, `remoteUserId`).
-- `household_share_change` (`seq` bigint identity, `shareId`, `kind` text `asset|person|comment|space`, `entityId` uuid, `changedAt`), unique (`shareId`, `kind`, `entityId`). This is the change feed.
+- `household_share_change` (`seq` integer identity, the type the schema tooling generates, `shareId`, `kind` text `asset|person|comment|space`, `entityId` uuid, `changedAt`), unique (`shareId`, `kind`, `entityId`). This is the change feed.
 
 Owner API (space owner only, under `/shared-spaces/:id/households`): list links with their directory, invite remote accounts, change a role, remove a member. Removing the last member removes the share. The directory answer is relayed, never cached longer than five minutes, and never stored beyond the invited member's `displayName`.
 
@@ -170,7 +170,9 @@ In version 1 both roles read the space and may comment and like. A remote contri
 
 **What a share exposes.** Exactly what a local member with the viewer role sees in that space, computed by the same queries (`AlbumRepository` and the FL-446 owner-rule filters in `server/src/utils/hidden-content.ts` and `utils/database.ts`), evaluated as "a member who is not the owner and whose session is locked":
 
-- Included: assets in the space (direct, through linked albums, through linked people) that are not trashed, not archived out of the space view, not Locked, not hidden by the owner's Locked rules; their metadata including GPS; people linked to the space with their face boxes on those assets; comments and likes on the space and its items (FL-1012).
+- Included: assets in the space that are not trashed, not Locked, not marked sensitive and not hidden by their owner's Locked rules, archived items included as the space timeline includes them; the video part of a live photo whose still is included and which passes the same tests; their metadata including GPS; people linked to the space with their face boxes on those assets; comments and likes on the space and its items (FL-1012).
+- A linked album or a linked person adds no item to a space: a link is a reference, and the space shows only its own `album_asset` rows, so an item that is only in a linked album is not shared.
+- `HouseholdShareService.visibleAssetIds` is the one decision, used by the manifest and the original route. It calls `AlbumUserRepository.filterVisibleSpaceAssetIds` with the space panels' options. Those exclude items marked sensitive for everyone, so this is stricter than the timeline of a member who has no Locked rules of their own, who would see an unlocked sensitive item.
 - Never included: Locked or rule-hidden items, trashed items, anything outside the space, other members' email addresses, storage paths, device ids, machine-learning embeddings, sensitive-content flags, Studio projects, the owner's favourites and private albums.
 
 ### 5. The manifest (FL-979)
@@ -203,9 +205,12 @@ In version 1 both roles read the space and may comment and like. A remote contri
 - **How the feed is read.** The row holds only ids. The entry is resolved when the page is built: if the item is visible in the space view at that moment the entry carries its current state, otherwise it is `"stop": true`. Visibility is therefore decided at read time by the one query in section 4, and a bug in a hook can delay a change but can never expose an item.
 - **Stop is not delete.** `stop` means "stop following this id". The receiver keeps the copy and never trashes it. The entry does not say why (locked, removed, deleted and trashed look the same).
 - **Stable and resumable.** Because a changed item moves to a new `seq`, a reader that resumes from any cursor sees every item at least once in its latest state. `complete: true` marks the last page. A first read uses no cursor; when a share is created the sender seeds one row per item.
-- **Full reconcile.** Once a week, and whenever the sender answers `410 Gone` to a cursor older than its retention, the receiver reads from the start and stops following every id it holds that the full read no longer lists.
+- **Retention.** Rows move and are never pruned, so no cursor is too old. `410 Gone` answers a cursor past the end of the feed, which means the sender's database was restored to an earlier state.
+- **Full reconcile.** Once a week, and whenever the sender answers `410 Gone`, the receiver reads from the start and stops following every id it holds that the full read no longer lists.
 
-An asset entry: `id`, `type`, `originalFileName` (≤ 255), `checksum` (SHA-1, as stored), `size`, `fileCreatedAt`, `localDateTime`, `timeZone`, `description` (≤ 10 000), `rating`, `latitude`, `longitude`, `city`, `state`, `country`, `width`, `height`, `duration`, `livePhotoVideoId`, `stackId` and `stackPrimary`, `updatedAt`, and `download: { token, expiresAt }`.
+An asset entry: `id`, `type`, `originalFileName` (≤ 255), `checksum` (hex, as stored: 40 characters for SHA-1 on older items, 64 for SHA-256), `size`, `fileCreatedAt`, `localDateTime`, `timeZone`, `description` (≤ 10 000), `rating`, `latitude`, `longitude`, `city`, `state`, `country`, `width`, `height`, `duration`, `livePhotoVideoId`, `stackId` and `stackPrimary`, `updatedAt`, and `download: { token, expiresAt }`. A live photo's video part is an entry of its own, so it has its own token. `livePhotoVideoId` is set only when that part is visible; `stackId` only when the stack's primary and at least one other member are visible.
+
+A person entry is listed only while at least one of their faces is on a visible item and no Locked rule of the person's publisher or the space owner names them; otherwise it is `stop`, because a name alone would say who is in the hidden photos. An entry lists at most 5 000 faces.
 
 **Download token.** A compact Ed25519 signature by the sender's instance key over `{ linkId, shareId, assetId, checksum, exp }`, valid 15 minutes. The original route needs both the normal signed request and this token, and rechecks that the item is still visible in the space before the first byte. An expired token is renewed by reading that entry again.
 

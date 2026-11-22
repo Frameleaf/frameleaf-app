@@ -25,7 +25,7 @@ export class HouseholdLinkRepository {
   async create(link: Insertable<HouseholdLinkTable>) {
     await this.db
       .insertInto('household_link')
-      .values({ ...link, addresses: sql`${JSON.stringify(link.addresses ?? [])}::jsonb` })
+      .values({ ...link, addresses: sql`${JSON.stringify(link.addresses ?? [])}::text::jsonb` })
       .onConflict((oc) => oc.column('cloudLinkId').doNothing())
       .execute();
     return this.db
@@ -39,7 +39,7 @@ export class HouseholdLinkRepository {
   update(id: string, { addresses, ...link }: Updateable<HouseholdLinkTable>) {
     return this.db
       .updateTable('household_link')
-      .set({ ...link, ...(addresses !== undefined && { addresses: sql`${JSON.stringify(addresses)}::jsonb` }) })
+      .set({ ...link, ...(addresses !== undefined && { addresses: sql`${JSON.stringify(addresses)}::text::jsonb` }) })
       .where('id', '=', id)
       .where('state', '<>', 'ended')
       .returningAll()
