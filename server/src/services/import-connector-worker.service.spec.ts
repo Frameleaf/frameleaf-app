@@ -596,6 +596,7 @@ describe(ImportConnectorWorkerService.name, () => {
   it('resumes an interrupted download by range instead of fetching the file again', async () => {
     const data = Buffer.alloc(300_000, 7).toString('base64');
     source.files = [remote({ path: 'Trips/big.jpg', data })];
+    const open = vi.spyOn(source, 'open');
     const importId = await startScan();
     await runQueued();
     source.failAfterBytes = 100_000;
@@ -613,6 +614,12 @@ describe(ImportConnectorWorkerService.name, () => {
       { remoteId: 'Trips/big.jpg', start: 0 },
       { remoteId: 'Trips/big.jpg', start: 100_000 },
     ]);
+    // FL-944: the source is told which version the scan saw, so it cannot splice a file that changed.
+    expect(open).toHaveBeenLastCalledWith(
+      'Trips/big.jpg',
+      { start: 100_000, contentHash: expect.any(String) },
+      expect.anything(),
+    );
     expect(library).toHaveLength(1);
     expect(library[0].checksum).toBe(sha256(data));
     expect(runs.get(importId)!.phase).toBe('completed');

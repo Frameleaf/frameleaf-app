@@ -238,7 +238,7 @@ export class ImportConnectorWorkerService {
         let digest: StagedDigest;
         try {
           digest = await this.staging.stageRemote(
-            (start) => source.open(item.remoteId, { start }, signal),
+            (start) => source.open(item.remoteId, { start, contentHash: item.contentHash ?? undefined }, signal),
             item.size,
             destination,
             signal,

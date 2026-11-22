@@ -144,10 +144,11 @@ describe(ImportConnectorService.name, () => {
       unregisterRemoteSource(FAKE_PROVIDER);
       sut.onBootstrap();
       expect(remoteSourceProviders()).not.toContain(FAKE_PROVIDER);
+      expect(remoteSourceProviders()).toContain('webdav');
 
       environment = FrameleafEnvironment.Testing;
       sut.onBootstrap();
-      expect(sut.providers()).toEqual({ providers: [FAKE_PROVIDER] });
+      expect(sut.providers()).toEqual({ providers: [FAKE_PROVIDER, 'webdav'] });
     });
   });
 
@@ -238,6 +239,22 @@ describe(ImportConnectorService.name, () => {
           dailyCheck: false,
         }),
       ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('lets only an administrator allow a home-network address, before anything is contacted', async () => {
+      const opened = vi.spyOn(fakeRemoteSourceProvider, 'open');
+      await expect(
+        sut.create(authStub.user1, {
+          provider: FAKE_PROVIDER,
+          displayName: 'NAS',
+          credentials: { allowPrivateAddress: true },
+          roots: [],
+          dailyCheck: false,
+        }),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(opened).not.toHaveBeenCalled();
+      expect(repository.create).not.toHaveBeenCalled();
+      opened.mockRestore();
     });
 
     it('makes a connection usable again when the owner signs in again', async () => {
