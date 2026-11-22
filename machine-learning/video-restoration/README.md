@@ -22,6 +22,9 @@ restoration workload.
 
 The mode names express intention, not a fidelity guarantee.
 
+It also serves two **photo workloads** for stills (FL-933), `photo-repair` and `colourise`.
+They are operations, not modes; see [Photo repair and colourise](#photo-repair-and-colourise).
+
 ## Files
 
 - `models.example.json` — the model manifest format. Copy it to the path in
@@ -117,6 +120,68 @@ from `machine-learning`. Also set `FRAMELEAF_TEST_OPENSSL` to an absolute OpenSS
 3 executable to exercise detached admission and preview-to-full binding with a
 disposable key. The tests exercise synthetic video, audio and the exact model.
 Installed resource limits and representative motion quality still need qualification.
+
+## Photo repair and colourise
+
+Two workloads for old prints (FL-933). Each takes one still and returns a PNG of **exactly the
+same pixel size**; neither enlarges.
+
+| Workload       | Operation   | Family       | What runs                                                                                                   |
+| -------------- | ----------- | ------------ | ----------------------------------------------------------------------------------------------------------- |
+| `photo-repair` | `repair`    | `codeformer` | `runtimes/photo_repair.py`: RetinaFace finds faces, LaMa fills scratches and dust, CodeFormer restores faces |
+| `colourise`    | `colourise` | `ddcolor`    | `runtimes/colourise.py`: DDColor (large) predicts colour, joined to the photo's own lightness               |
+
+**Photo repair.** Faces are found on a copy of at most 1536 pixels, aligned to 512 x 512,
+restored with CodeFormer at fidelity 0.7 (`--fidelity` in the manifest's argv) and blended
+back through the face's parsing mask, so nothing outside a face is touched by CodeFormer. A
+face with eyes under 10 pixels apart, or wider than about 2048 pixels, is left as it is and
+the result says so. Scratches and dust are found by a classical detector (top-hat and
+black-hat for thin bright and dark marks, a threshold, then a filter that keeps only specks
+and thin lines away from textured areas) and filled by LaMa in 512-pixel windows; only masked
+pixels change. The mask never covers a face (eyes, catchlights and teeth look like dust to
+it), and when it covers more than 3% of the photo the pass is skipped with a warning rather
+than repainting the picture. The detector's ceiling and its upgrade path (a learned scratch
+detector) are written beside it in the code. LaMa is the same ONNX file the machine-learning
+service uses for Clean Up (`frameleaf/frameleaf-inpaint`).
+
+**Colourise.** The model always sees a 512 x 512 copy and answers with two colour channels
+(Lab a and b). They are enlarged and joined to the lightness of the full-size photo, so a
+large scan keeps its detail and GPU memory does not grow with the scan. A photo that already
+has colour gets a warning in the result; refusing it is the server's decision.
+
+**Inputs.** 8-bit stills up to 8192 pixels on the long edge (67 megapixels; a 600 dpi scan of
+an 8 x 10 inch print is 4800 x 6000). Greyscale and colour files both arrive at the runtime
+as RGB. 16-bit files are refused (`unsupported-input`). A photo with an EXIF orientation is
+**not rotated**: the worker reads and returns the stored pixel grid and writes the same
+orientation tag into the PNG, so the result is shown the same way round as the source. The
+size the server declares is the stored size.
+
+**GPU only.** A photo model whose manifest says `requiresGpu: false` is refused, the gate
+reports `no-gpu` ("no NVIDIA GPU is visible to the worker") without one, and the runtimes
+themselves stop with "needs an NVIDIA GPU" when no CUDA device is available.
+
+**How the server sees them.** `GET /capabilities` lists `photo-repair` and `colourise`
+beside the mode workloads, only while a model for the operation is available. The models
+are reported under `photoModels` in `GET /restoration/models`, never under `models`: every
+entry there carries a restoration mode, and a mode is a value people's apps decode, so no
+mode was added. A server from before FL-933 drops the two workload names and ignores
+`photoModels`. A request names `operation` (`repair` or `colourise`) instead of `mode`, with
+`kind: "image"` and `scale: 1`; the output box does not apply. Routing these from the server
+is FL-955.
+
+**Evidence.** Both need `weights-hashed`, `resource-profile`, `output-size`, `orientation`,
+`hallucination`, `deterministic-repeat` and the five fault tests. Photo repair adds
+`compare-faces`, `face-identity-drift` (restored faces are still the same people),
+`scratch-mask` (the mask stays off faces and under its limit across the scan set) and
+`tile-seams`; colourise adds `colour-plausibility`.
+
+**Qualification run.** `qualification/qualify_photo.py` loads a runtime once, caps the
+process at 8 GB of GPU memory and, for every scan in `qualification/scan-set.json`
+(public-domain scanned prints, links and hashes only), records output size, orientation tag,
+seconds, megapixels and peak GPU memory, then a 42- and a 67-megapixel stress input, and
+writes before/after contact sheets. `qualification/upstream.json` pins where that run takes
+the runtimes and weights from; `.github/workflows/restoration-qualification.yml` runs it on
+the Forgejo Windows GPU runner. It measures; the comparison items still need a person.
 
 ## When a model is available
 

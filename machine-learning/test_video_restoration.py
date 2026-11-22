@@ -940,7 +940,9 @@ class TestWorkerApp:
         from frameleaf_ml.video_restoration.app import UPLOAD_BYTES_PER_PIXEL
 
         candidate = SimpleNamespace(maxFrames=240, maxInputLongEdge=3840)
-        registry = SimpleNamespace(report=lambda: SimpleNamespace(models=[]), candidate_limits=lambda: [candidate])
+        registry = SimpleNamespace(
+            report=lambda: SimpleNamespace(models=[], photoModels=[]), candidate_limits=lambda: [candidate]
+        )
         expected = 240 * 3840**2 * UPLOAD_BYTES_PER_PIXEL
         assert upload_limit(registry) == max(MIN_UPLOAD_BYTES, expected)  # type: ignore[arg-type]
         assert upload_limit(registry) > MIN_UPLOAD_BYTES  # type: ignore[arg-type]
