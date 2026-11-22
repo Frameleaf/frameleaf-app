@@ -50,6 +50,7 @@
   import { getAlbumAssetActions } from '$lib/services/album.service';
   import { getGlobalActions } from '$lib/services/app.service';
   import { explainOnlyPreview, getAssetActions, showsEdit } from '$lib/services/asset.service';
+  import { openScanSplit } from '$lib/services/scan-split.service.svelte';
   import { SlideshowState, slideshowStore } from '$lib/stores/slideshow.store';
   import { getSharedLink } from '$lib/utils';
   import { downloadAssetFile } from '$lib/utils/asset-utils';
@@ -76,6 +77,7 @@
     mdiFullscreenExit,
     mdiImageAlbum,
     mdiImageBrokenVariant,
+    mdiImageMultipleOutline,
     mdiMovieOpenOutline,
     mdiPause,
     mdiPlayCircleOutline,
@@ -201,6 +203,8 @@
     slideshowPlaying: $slideshowState === SlideshowState.PlaySlideshow,
     // the server checks the file when asked; the owner's own JPEGs only (FL-1273)
     canRepair: isOwner && isImageAsset(asset) && !asset.isTrashed && isJpegName(asset.originalFileName),
+    canSplitScan:
+      isOwner && !sharedLink && isImageAsset(asset) && !asset.duration && !asset.isTrashed && !asset.isOffline,
   });
 
   const repairPhoto = (source: AssetResponseDto) =>
@@ -449,6 +453,9 @@
   {/if}
   {#if has(group, 'repair-photo')}
     <MenuOption icon={mdiImageBrokenVariant} text={label('repair-photo')} onClick={() => repairPhoto(asset)} />
+  {/if}
+  {#if has(group, 'split-scan')}
+    <MenuOption icon={mdiImageMultipleOutline} text={label('split-scan')} onClick={() => openScanSplit(asset.id)} />
   {/if}
   {#if has(group, 'refresh-encoded')}
     <MenuOption

@@ -7,6 +7,7 @@
   import DetailPanelImageEnrichment from '$lib/components/asset-viewer/DetailPanelImageEnrichment.svelte';
   import DetailPanelLocation from '$lib/components/asset-viewer/DetailPanelLocation.svelte';
   import DetailPanelReplaceSidecar from '$lib/components/asset-viewer/DetailPanelReplaceSidecar.svelte';
+  import DetailPanelScanSplit from '$lib/components/asset-viewer/DetailPanelScanSplit.svelte';
   import DetailPanelRating from '$lib/components/asset-viewer/DetailPanelStarRating.svelte';
   import DetailPanelClassification from '$lib/components/asset-viewer/DetailPanelClassification.svelte';
   import DetailPanelTags from '$lib/components/asset-viewer/DetailPanelTags.svelte';
@@ -156,6 +157,10 @@
   <!-- A Boards item's Source (Saved with, Page, the saved note, Added), as the Boards inspector shows it. -->
   {#if asset.libraryScope === LibraryScope.Design || asset.libraryScope === LibraryScope.Both}
     <AssetSources assetId={asset.id} canRead={isOwner} added={asset.createdAt} headingClass="fl-info-heading" />
+  {/if}
+
+  {#if isOwner && !authManager.isSharedLink && asset.type === AssetTypeEnum.Image}
+    <DetailPanelScanSplit {asset} />
   {/if}
 
   <!--
