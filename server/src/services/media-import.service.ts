@@ -487,6 +487,11 @@ export class MediaImportService {
         await this.repository.defer(authority, 30, 'Waiting for download capacity', false);
         return JobStatus.Success;
       }
+      // The owner is shown a general message; the cause is kept here, or a paused import cannot be explained.
+      if (!(error instanceof MediaDownloadError))
+        this.logger.warn(
+          `Media import ${id} paused: ${error instanceof Error ? (error.stack ?? error.message) : error}`,
+        );
       const message =
         error instanceof MediaDownloadError
           ? error.message

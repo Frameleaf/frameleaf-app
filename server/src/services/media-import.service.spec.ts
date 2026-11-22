@@ -153,7 +153,7 @@ it('stops a running extractor when its durable authority is revoked', async () =
       {} as never,
       {} as never,
       {} as never,
-      {} as never,
+      { warn: vi.fn() } as never,
     );
     const row = {
       id: randomUUID(),
