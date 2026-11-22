@@ -45,7 +45,13 @@ import { DecimalSize } from 'src/utils/bytes.js';
 import { asDateTimeString } from 'src/utils/date.js';
 import { getLockedOwnerId } from 'src/utils/locked-visibility.js';
 import { findOrFail } from 'src/utils/misc.js';
-import { getPreferences, getPreferencesPartial, localeOf, mergePreferences } from 'src/utils/preferences.js';
+import {
+  changesSyncVisibility,
+  getPreferences,
+  getPreferencesPartial,
+  localeOf,
+  mergePreferences,
+} from 'src/utils/preferences.js';
 
 /** One entry for the administrator audit trail about an account (FL-76). */
 const accountEvent = (
@@ -581,6 +587,9 @@ export class UserAdminService extends BaseService {
     });
 
     await this.recordAdminEvents(this.getPreferencesEvents(auth, user, previous ?? newPreferences, newPreferences));
+    if (previous && changesSyncVisibility(previous, newPreferences)) {
+      await this.eventRepository.emit('LockedRulesChanged', { userId: id });
+    }
 
     // FL-146 (FL-77): the account's open sessions apply the change now rather than on their next load
     try {

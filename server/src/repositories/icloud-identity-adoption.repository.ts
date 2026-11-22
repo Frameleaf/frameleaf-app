@@ -351,7 +351,6 @@ export class ICloudIdentityAdoptionRepository {
       .then(({ rows }) => rows[0]);
     if (
       !resource ||
-      (resource.source.isHidden === true && !connection.config.includeHidden) ||
       (resource.role.startsWith('edited-') && !connection.config.includeEdits) ||
       resource.stagingPath ||
       resource.expectedTarget ||

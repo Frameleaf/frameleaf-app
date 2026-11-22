@@ -22,6 +22,7 @@ import type {
 import { PrimaryGeneratedUuidV7Column } from 'src/decorators.js';
 import { AlbumTable } from 'src/schema/tables/album.table.js';
 import { AssetTable } from 'src/schema/tables/asset.table.js';
+import { ImportConnectionTable } from 'src/schema/tables/import-connection.table.js';
 import { MediaOperationTable } from 'src/schema/tables/media-operation.table.js';
 import { UserTable } from 'src/schema/tables/user.table.js';
 
@@ -60,6 +61,15 @@ export class TakeoutImportTable {
 
   @ForeignKeyColumn(() => MediaOperationTable, { onDelete: 'SET NULL', onUpdate: 'CASCADE', nullable: true })
   runOperationId!: string | null;
+
+  /**
+   * FL-920: set when this is one run of an import connection rather than a Google Photos import. Such
+   * a row is only reached through `/import-connections`; its files are downloaded from the connection's
+   * source instead of read from staged archives. Removing the connection removes its runs, never the
+   * photos they brought in.
+   */
+  @ForeignKeyColumn(() => ImportConnectionTable, { onDelete: 'CASCADE', onUpdate: 'CASCADE', nullable: true })
+  connectionId!: string | null;
 
   @CreateDateColumn()
   createdAt!: Generated<Timestamp>;

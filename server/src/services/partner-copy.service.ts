@@ -84,6 +84,7 @@ export const getAssetEditFields = (dto: {
   state?: unknown;
   country?: unknown;
   dateTimeOriginal?: unknown;
+  dateAccuracy?: unknown;
   dateTimeRelative?: unknown;
   timeZone?: unknown;
   rating?: unknown;
@@ -96,7 +97,9 @@ export const getAssetEditFields = (dto: {
     ...(touched(dto.artist) ? [AssetOriginField.Artist] : []),
     ...(touched(dto.copyright) ? [AssetOriginField.Copyright] : []),
     ...(touched(dto.latitude, dto.longitude, dto.city, dto.state, dto.country) ? [AssetOriginField.Location] : []),
-    ...(touched(dto.dateTimeOriginal, dto.dateTimeRelative, dto.timeZone) ? [AssetOriginField.DateTimeOriginal] : []),
+    ...(touched(dto.dateTimeOriginal, dto.dateAccuracy, dto.dateTimeRelative, dto.timeZone)
+      ? [AssetOriginField.DateTimeOriginal]
+      : []),
     ...(touched(dto.rating) ? [AssetOriginField.Rating] : []),
     ...(touched(dto.visibility) ? [AssetOriginField.Visibility] : []),
   ];

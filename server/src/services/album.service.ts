@@ -785,6 +785,7 @@ export class AlbumService extends BaseService {
           isLocked: dto.isLocked,
           order: dto.order,
           isCustomOrder: dto.isCustomOrder,
+          holdsScans: dto.holdsScans,
           icon: dto.icon,
           color: dto.color,
           sortOrder: dto.sortOrder,

@@ -622,6 +622,68 @@ describe('Date & Time Doctor fixes (FL-930)', () => {
     expect(queued).toEqual(expect.arrayContaining(ids.map((id) => ({ name: JobName.SidecarWrite, data: { id } }))));
   }, 120_000);
 
+  it('FL-936: dates 100 scans to a decade in one batch, and undo puts back their dates and accuracies', async () => {
+    const { ctx, doctor } = fixSetup();
+    const { user } = await ctx.newUser();
+    const auth = factory.auth({ user });
+    const ids: string[] = [];
+    for (let i = 0; i < 100; i++) {
+      ids.push(await photo(ctx, user.id, i % 2 === 0 ? 'Europe/Paris' : null, i % 3 === 0 ? ['dateTimeOriginal'] : []));
+    }
+    // one of them was already dated to a year
+    const year = new Date('1975-01-01T00:00:00.000Z');
+    await db
+      .updateTable('asset')
+      .set({ dateAccuracy: 'year', fileCreatedAt: year, localDateTime: year })
+      .where('id', '=', ids[0])
+      .execute();
+    await db
+      .updateTable('asset_exif')
+      .set({ dateTimeOriginal: year, timeZone: 'UTC', lockedProperties: ['dateTimeOriginal', 'timeZone'] })
+      .where('assetId', '=', ids[0])
+      .execute();
+    const read = () =>
+      db
+        .selectFrom('asset')
+        .innerJoin('asset_exif', 'asset_exif.assetId', 'asset.id')
+        .select([
+          'asset.id',
+          'asset.fileCreatedAt',
+          'asset.localDateTime',
+          'asset.dateAccuracy',
+          'asset_exif.dateTimeOriginal',
+          'asset_exif.timeZone',
+        ])
+        .where('asset.id', 'in', ids)
+        .orderBy('asset.id')
+        .execute();
+    const before = await read();
+    expect(before.filter(({ dateAccuracy }) => dateAccuracy === 'year')).toHaveLength(1);
+
+    const { batch, skipped } = await doctor.apply(auth, { assetIds: ids, dateAccuracy: 'decade', year: 1975 });
+
+    expect(batch).toEqual(expect.objectContaining({ count: 100, dateAccuracy: 'decade', periodStart: 1970 }));
+    expect(skipped).toEqual([]);
+    const start = new Date('1970-01-01T00:00:00.000Z');
+    for (const row of await read()) {
+      expect(row).toEqual({
+        id: row.id,
+        fileCreatedAt: start,
+        localDateTime: start,
+        dateAccuracy: 'decade',
+        dateTimeOriginal: start,
+        timeZone: 'UTC',
+      });
+    }
+    // a shift or a zone has nothing to move in a decade
+    await expect(doctor.apply(auth, { assetIds: ids, shiftMinutes: 60 })).rejects.toThrow('Nothing to fix');
+    await expect(doctor.apply(auth, { assetIds: ids, timeZone: 'Asia/Tokyo' })).rejects.toThrow('Nothing to fix');
+
+    await expect(doctor.undo(auth, batch.id)).resolves.toEqual(expect.objectContaining({ restored: 100 }));
+
+    expect(await read()).toEqual(before);
+  }, 120_000);
+
   it('removes batches older than 30 days each night', async () => {
     const { ctx, doctor } = fixSetup();
     const { user } = await ctx.newUser();

@@ -35,6 +35,7 @@ import { UserRepository } from 'src/repositories/user.repository.js';
 import { AlbumService } from 'src/services/album.service.js';
 import { AssetMediaService } from 'src/services/asset-media.service.js';
 import { AssetService } from 'src/services/asset.service.js';
+import { ImportConnectorWorkerService } from 'src/services/import-connector-worker.service.js';
 import { LivePhotoService } from 'src/services/live-photo.service.js';
 import { UPLOADS_PAUSED_MESSAGE } from 'src/utils/access.js';
 import { MEDIA_OPERATION_AUTO_RETRY_DELAY_MS, mediaOperationProgress } from 'src/utils/media-operation.js';
@@ -45,6 +46,7 @@ import {
   TakeoutAction,
   TakeoutAssetPatch,
   TakeoutEntryRejected,
+  TakeoutJobError,
   TakeoutOptions,
   TakeoutPhase,
   createTakeoutSidecarIndex,
@@ -77,16 +79,6 @@ export const TAKEOUT_BATCH = 50;
 const MAX_PAIR_COMBINATIONS = 100;
 /** The owner is re-read this often while importing, so a changed quota applies to what follows. */
 const AUTH_REFRESH_ITEMS = 200;
-
-/** A job-level failure with a stable code; the job stops and its automatic retry resumes it. */
-class TakeoutJobError extends Error {
-  constructor(
-    readonly code: string,
-    message: string,
-  ) {
-    super(message);
-  }
-}
 
 /** One item cannot be imported; it is reported and the run carries on. */
 class TakeoutItemError extends Error {}
@@ -188,6 +180,7 @@ export class TakeoutWorkerService {
     private albums: AlbumService,
     private livePhoto: LivePhotoService,
     private config: ConfigRepository,
+    private connectors: ImportConnectorWorkerService,
   ) {
     this.logger.setContext(TakeoutWorkerService.name);
   }
@@ -369,7 +362,13 @@ export class TakeoutWorkerService {
       }
 
       this.throwIfStopped(run);
-      await (action === 'scan' ? this.scan(run) : this.importItems(run));
+      if (action === 'import') {
+        await this.importItems(run);
+      } else if (current.connectionId) {
+        await this.scanConnection(run);
+      } else {
+        await this.scan(run);
+      }
     } catch (error) {
       if (error instanceof TakeoutStop) {
         return;
@@ -389,7 +388,11 @@ export class TakeoutWorkerService {
       }
       const code = error instanceof TakeoutJobError ? error.code : 'takeout_failed';
       this.logger.error(`Google Photos import ${importId} (${action}) failed: ${errorMessage(error)}`);
-      await this.operations.fail(id, claimToken, { error: errorMessage(error), errorCode: code });
+      const failure = { error: errorMessage(error), errorCode: code };
+      // Retrying cannot help a job that says so (FL-920: the source wants a new sign-in).
+      await (error instanceof TakeoutJobError && !error.retry
+        ? this.operations.fail(id, claimToken, failure, { retry: false })
+        : this.operations.fail(id, claimToken, failure));
     } finally {
       clearInterval(heartbeat);
       await run.heartbeat;
@@ -449,6 +452,25 @@ export class TakeoutWorkerService {
     await this.repository.advancePhase(row.id, 'scanning', 'review');
     await this.finish(run.operation.id, run.claimToken);
     this.logger.log(`Google Photos import ${row.id}: scan finished`);
+  }
+
+  /**
+   * FL-920: the scan of an import connection's run. The source is listed, nothing is downloaded, and
+   * the run goes to review; the daily check's scan then imports what it found without waiting.
+   */
+  private async scanConnection(run: TakeoutRun): Promise<void> {
+    const { row } = run;
+    await this.connectors.scan(row, run.controller.signal, async (files) => {
+      run.processed += files;
+      run.total = run.processed;
+      await this.checkpoint(run);
+    });
+    await this.checkpoint(run, true);
+    await this.repository.advancePhase(row.id, 'scanning', 'review');
+    await this.finish(run.operation.id, run.claimToken);
+    if ((run.operation.snapshot as Record<string, unknown> | null)?.auto === true) {
+      await this.connectors.continueDailyCheck(row);
+    }
   }
 
   private async scanArchive(run: TakeoutRun, source: TakeoutSource, directory: string): Promise<number> {
@@ -756,7 +778,8 @@ export class TakeoutWorkerService {
     // Progress counts unique photos, as the check step does (FL-668): an album's copy of a photo is
     // the same photo, so it moves the count once, and linking Live Photos adds nothing to it.
     const pending = await this.repository.pendingPhotos(row.id);
-    run.total = pending.total;
+    // FL-920: a connection's run also counts the files it has yet to download.
+    run.total = pending.total + (row.connectionId ? await this.connectors.pendingCount(row.id) : 0);
     await this.checkpoint(run, true);
 
     const seen = new Set<string>();
@@ -765,8 +788,11 @@ export class TakeoutWorkerService {
     let sinceRefresh = 0;
     while (true) {
       this.throwIfStopped(run);
+      // FL-920: a connection's run downloads its next files just before they are imported, so staging
+      // only ever holds one batch of them.
+      const staged = row.connectionId ? await this.connectors.stage(row, run.controller.signal, TAKEOUT_BATCH) : 0;
       const items = await this.repository.pendingItems(row.id, TAKEOUT_BATCH);
-      if (items.length === 0) {
+      if (items.length === 0 && staged === 0) {
         break;
       }
       for (const item of items) {
@@ -828,7 +854,10 @@ export class TakeoutWorkerService {
     // Every item that failed gets one more attempt, after a pause, before it is reported (owner
     // decision, September 22, 2026). The job goes back to the queue and the retry runs from the rows.
     if (!run.result.itemRetryUsed) {
-      const retried = (await this.repository.retryFailed(row.id)) + (await this.repository.retryFailedPairs(row.id));
+      const retried =
+        (await this.repository.retryFailed(row.id)) +
+        (await this.repository.retryFailedPairs(row.id)) +
+        (row.connectionId ? await this.connectors.retryFailed(row.id) : 0);
       if (retried > 0) {
         run.result = { ...run.result, itemRetryUsed: true };
         await this.checkpoint(run, true);
@@ -1015,8 +1044,9 @@ export class TakeoutWorkerService {
       },
       undefined,
       undefined,
-      // FL-1478: Activity says these came from Google Photos, not from the owner's computer
-      TAKEOUT_RUN_ORIGIN,
+      // FL-1478: Activity says these came from Google Photos, not from the owner's computer; FL-920: or
+      // from the connection, by the name its owner gave it
+      row.connectionId ? { origin: 'import', label: row.name } : TAKEOUT_RUN_ORIGIN,
     );
     if (response.status === AssetMediaStatus.DUPLICATE && /^0{8}-(?:0{4}-){3}0{12}$/.test(response.id)) {
       throw new TakeoutItemError('A matching photo exists but could not be read');

@@ -13,6 +13,7 @@ import {
 } from 'src/enum.js';
 import { AssetStats } from 'src/repositories/asset.repository.js';
 import { PHOTOGRAPHY_INTAKE_CREDITS_KEY } from 'src/utils/capture-details.js';
+import { DATE_ACCURACIES, MIN_APPROXIMATE_YEAR, getCaptureYear, isApproximateYear } from 'src/utils/date.js';
 import { IsNotSiblingOf, isoDatetimeToDate, latitudeSchema, longitudeSchema, stringToBool } from 'src/validation.js';
 
 const UpdateAssetBaseSchema = z
@@ -39,6 +40,14 @@ const UpdateAssetBaseSchema = z
       )
       .optional()
       .describe('Original date and time'),
+    // FL-936: a plain string in responses (`AssetResponseDto.dateAccuracy`), so a later value breaks no client
+    dateAccuracy: z
+      .enum(DATE_ACCURACIES)
+      .nullable()
+      .optional()
+      .describe(
+        'With dateTimeOriginal: only its year (`year`) or its decade (`decade`) is known. The date is then stored as the start of that period, 1 January at midnight, and no time zone is applied. A dateTimeOriginal sent without it, or with null, is an exact date. Null on its own keeps the date and makes it exact.',
+      ),
     latitude: latitudeSchema
       .nullable()
       .optional()
@@ -74,6 +83,17 @@ const UpdateAssetBaseSchema = z
       (data.latitude === null && data.longitude === null) ||
       (typeof data.latitude === 'number' && typeof data.longitude === 'number'),
     { message: 'Latitude and longitude must be provided together, both as numbers or both as null' },
+  )
+  .refine((data) => !data.dateAccuracy || data.dateTimeOriginal !== undefined, {
+    message: 'dateAccuracy needs a dateTimeOriginal in that year or decade',
+    path: ['dateAccuracy'],
+  })
+  .refine(
+    (data) =>
+      !data.dateAccuracy ||
+      !data.dateTimeOriginal ||
+      isApproximateYear(getCaptureYear(data.dateTimeOriginal), data.dateAccuracy),
+    { message: `A year or decade is from ${MIN_APPROXIMATE_YEAR} to this year`, path: ['dateTimeOriginal'] },
   );
 
 const AssetBulkUpdateBaseSchema = UpdateAssetBaseSchema.extend({
@@ -84,7 +104,7 @@ const AssetBulkUpdateBaseSchema = UpdateAssetBaseSchema.extend({
 });
 
 const AssetBulkUpdateSchema = AssetBulkUpdateBaseSchema.pipe(
-  IsNotSiblingOf(AssetBulkUpdateBaseSchema, 'dateTimeRelative', ['dateTimeOriginal']),
+  IsNotSiblingOf(AssetBulkUpdateBaseSchema, 'dateTimeRelative', ['dateTimeOriginal', 'dateAccuracy']),
 ).meta({ id: 'AssetBulkUpdateDto' });
 
 /** FL-36 (V-24): a place name the owner types; an empty or null value clears it. */

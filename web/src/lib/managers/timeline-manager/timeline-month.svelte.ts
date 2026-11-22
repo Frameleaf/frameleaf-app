@@ -7,11 +7,13 @@ import {
 import { t } from 'svelte-i18n';
 import { SvelteSet } from 'svelte/reactivity';
 import { get } from 'svelte/store';
+import { dateAccuracyOf, formatApproximateDate, groupDayAccuracy } from '$lib/frameleaf/approximate-date';
 import {
   ViewportProximity,
   isInOrNearViewport as isInOrNearViewportUtil,
   isInViewport as isInViewportUtil,
 } from '$lib/managers/timeline-manager/internal/intersection-support.svelte';
+import { locale } from '$lib/stores/preferences.store';
 import { CancellableTask } from '$lib/utils/cancellable-task';
 import { handleError } from '$lib/utils/handle-error';
 import {
@@ -23,6 +25,7 @@ import {
   fromTimelinePlainYearMonth,
   getTimes,
   getOrderingDate,
+  getTimelineGroupDay,
 } from '$lib/utils/timeline-util';
 import { GroupInsertionCache } from './group-insertion-cache.svelte';
 import { leaveFlow } from './internal/flow-support.svelte';
@@ -270,14 +273,20 @@ export class TimelineMonth {
       return;
     }
 
-    let timelineDay = addContext.getTimelineDay(dateTime) || this.findTimelineDayByDay(dateTime.day);
+    // FL-936: a year or a decade is its own group, keyed apart from the real 1 January
+    const groupDay = getTimelineGroupDay(timelineAsset, this.#dateType);
+    const groupDate = groupDay === dateTime.day ? dateTime : { year, month, day: groupDay };
+    let timelineDay = addContext.getTimelineDay(groupDate) || this.findTimelineDayByDay(groupDay);
     if (timelineDay) {
-      addContext.setTimelineDay(timelineDay, dateTime);
+      addContext.setTimelineDay(timelineDay, groupDate);
     } else {
-      const groupTitle = formatGroupTitle(fromTimelinePlainDate(dateTime));
-      timelineDay = new TimelineDay(this, this.timelineDays.length, dateTime.day, groupTitle, this.#dateType);
+      const accuracy = groupDayAccuracy(groupDay);
+      const groupTitle = accuracy
+        ? (formatApproximateDate(year, accuracy, get(locale), { heading: true }) ?? '')
+        : formatGroupTitle(fromTimelinePlainDate(dateTime));
+      timelineDay = new TimelineDay(this, this.timelineDays.length, groupDay, groupTitle, this.#dateType);
       this.timelineDays.push(timelineDay);
-      addContext.setTimelineDay(timelineDay, dateTime);
+      addContext.setTimelineDay(timelineDay, groupDate);
       addContext.newTimelineDays.add(timelineDay);
     }
 
@@ -529,6 +538,11 @@ export function* bucketTimelineAssets(bucketAssets: TimeBucketAssetResponseDto):
     if (latitude !== undefined && latitude !== null && longitude !== undefined && longitude !== null) {
       timelineAsset.latitude = latitude;
       timelineAsset.longitude = longitude;
+    }
+    // FL-936: the column is null on nearly every page, and then nothing is added to the asset
+    const dateAccuracy = bucketAssets.dateAccuracy?.[i];
+    if (dateAccuracy) {
+      timelineAsset.dateAccuracy = dateAccuracyOf(dateAccuracy);
     }
     // The list view's columns (S-15), where the source sends them.
     if (bucketAssets.width) {

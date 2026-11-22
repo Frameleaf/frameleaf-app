@@ -444,7 +444,7 @@ export class JobService extends BaseService {
               this.websocketRepository.clientSend(
                 updatedAsset.libraryScope === LibraryScope.Design ? 'LibraryAssetUpdateV1' : 'on_asset_update',
                 updatedAsset.ownerId,
-                await this.withLandmarks(mapAsset(updatedAsset)),
+                await this.withNamedPlace(await this.withLandmarks(mapAsset(updatedAsset)), updatedAsset.ownerId),
               );
             }
           }

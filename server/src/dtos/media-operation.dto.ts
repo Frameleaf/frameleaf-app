@@ -129,6 +129,10 @@ const MediaOperationBulkPayloadSchema = z
     tagIds: z.array(z.uuidv4()).max(50).optional(),
     dateMode: z.enum(['set', 'shift']).optional(),
     dateTimeOriginal: z.string().optional(),
+    dateAccuracy: z
+      .string()
+      .optional()
+      .describe('With `dateTimeOriginal`: `year` or `decade` when only that much of the date is known'),
     timeZone: z.string().optional(),
     minutes: z.int().optional().describe('Relative shift in minutes, for `dateMode: shift`'),
     description: z.string().max(10_000).optional(),

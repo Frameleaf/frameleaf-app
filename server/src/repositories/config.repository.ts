@@ -152,6 +152,9 @@ export interface EnvData {
     trustDir: string;
   };
 
+  /** FL-974: Google's file picker (`FRAMELEAF_GOOGLE_PICKER_API_KEY`, `FRAMELEAF_GOOGLE_PICKER_APP_ID`); both or none. */
+  googleDrivePicker?: { apiKey: string; appId: string } | null;
+
   /** FL-159: Frameleaf Cloud deployment configuration. `url` null means not configured. */
   frameleafCloud: {
     url: string | null;
@@ -344,6 +347,14 @@ const getEnv = (): EnvData => {
       enabled: dto.FRAMELEAF_STUDIO_WORKER ?? true,
       trustDir: dto.FRAMELEAF_STUDIO_WORKER_TRUST_DIR ?? '/run/frameleaf/studio-worker',
     },
+
+    googleDrivePicker:
+      process.env.FRAMELEAF_GOOGLE_PICKER_API_KEY?.trim() && process.env.FRAMELEAF_GOOGLE_PICKER_APP_ID?.trim()
+        ? {
+            apiKey: process.env.FRAMELEAF_GOOGLE_PICKER_API_KEY.trim(),
+            appId: process.env.FRAMELEAF_GOOGLE_PICKER_APP_ID.trim(),
+          }
+        : null,
 
     frameleafCloud: {
       url: dto.FRAMELEAF_CLOUD_URL.replace(/\/+$/, ''),

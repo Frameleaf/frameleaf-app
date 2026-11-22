@@ -15,6 +15,7 @@ import {
   MemoryCreateDto,
   MemoryExportCreateDto,
   MemoryExportResponseDto,
+  MemoryOccasionsStatusDto,
   MemoryResponseDto,
   MemorySearchDto,
   MemoryShowLessDto,
@@ -75,6 +76,11 @@ import {
   suppressBursts,
 } from 'src/utils/memory-story.js';
 import { findOrFail } from 'src/utils/misc.js';
+import { dominantNamedPlace } from 'src/utils/named-place.js';
+import { notificationLocaleOf } from 'src/utils/notification-locale.js';
+import { type OccasionKind, occasionOn, resolveOccasionRegion } from 'src/utils/occasions.js';
+import { groupRelationships } from 'src/utils/person-relationship.js';
+import { getPreferences } from 'src/utils/preferences.js';
 
 const DAYS = 3;
 
@@ -238,6 +244,7 @@ export class MemoryService extends BaseService {
               const rules = await this.memoryRepository.getShowLess(owner.id);
               await this.createOnThisDayMemories(owner.id, target, rules);
               await this.createBirthdayMemories(owner.id, target, rules);
+              await this.createOccasionMemories(owner.id, target, rules);
             }),
           );
         } catch (error) {
@@ -368,12 +375,21 @@ export class MemoryService extends BaseService {
     );
     const taken = new Set(existing.map((date) => date.getTime()));
 
+    // FL-949: a story mostly taken at one of the owner's named places is titled with that name. The memory is the
+    // owner's own, as the name is.
+    const namedPlaces = await this.mapRepository.getUserPlaces(ownerId);
+    const located = new Map(candidates.map((candidate) => [candidate.id, candidate]));
+
     for (const story of stories) {
       if (taken.has(story.startAt.getTime())) {
         continue;
       }
 
-      const label = story.landmark?.name ?? placeLabel(story.place);
+      const namedPlace = dominantNamedPlace(
+        namedPlaces,
+        story.assetIds.map((id) => located.get(id) ?? { latitude: null, longitude: null }),
+      );
+      const label = namedPlace?.name ?? story.landmark?.name ?? placeLabel(story.place);
       await this.memoryRepository.create(
         {
           ownerId,
@@ -721,6 +737,108 @@ export class MemoryService extends BaseService {
       },
       new Set(kept.map(({ id }) => id)),
     );
+  }
+
+  /**
+   * FL-880: on the owner's regional Mother's Day or Father's Day, a memory with their mother or father and, when
+   * they are a mother or father themselves, one with each child. Without a self-person there is nothing to do.
+   * Stored as an ordinary person recap with `occasion` set, so a client that ignores it shows a normal recap.
+   */
+  private async createOccasionMemories(ownerId: string, target: DateTime, rules: MemoryShowLessRow[] = []) {
+    const selfId = await this.personRepository.getSelfPersonId(ownerId);
+    if (!selfId) {
+      return;
+    }
+    const preferences = getPreferences(await this.userRepository.getMetadata(ownerId));
+    if (!preferences.memories.occasions) {
+      return;
+    }
+    const date = target.toFormat('yyyy-MM-dd');
+    const region = resolveOccasionRegion(preferences.memories.occasionRegion, notificationLocaleOf(preferences));
+    const day = occasionOn(region, date);
+    const lessOfPerson = (id: string) =>
+      rules.some(({ kind, value }) => kind === MemoryShowLessKind.Person && value === id);
+    if (
+      !day ||
+      lessOfPerson(selfId) ||
+      rules.some(
+        ({ kind, value }) =>
+          (kind === MemoryShowLessKind.Type && value === MemoryType.PersonRecap) ||
+          (kind === MemoryShowLessKind.Date && value === target.toFormat('MM-dd')),
+      )
+    ) {
+      return;
+    }
+
+    const role = day === 'mothers_day' ? 'mother' : 'father';
+    const family = groupRelationships(await this.personRepository.getRelationships(ownerId), selfId);
+    const subjects: { personId: string; kind: OccasionKind }[] = [
+      ...family.parents
+        .filter(({ parentRole }) => parentRole === role)
+        .map(({ personId }) => ({ personId, kind: day as OccasionKind })),
+      ...family.children
+        .filter(({ parentRole }) => parentRole === role)
+        .map(({ personId }) => ({ personId, kind: `${day}_child` as OccasionKind })),
+    ].filter(({ personId }) => !lessOfPerson(personId));
+    if (subjects.length === 0) {
+      return;
+    }
+
+    const people = new Map(
+      (
+        await this.memoryRepository.getStoryPeople(
+          ownerId,
+          subjects.map(({ personId }) => personId),
+        )
+      ).map((person) => [person.id, person]),
+    );
+    const { tagIds, personIds, petIds, scope } = preferences.privacy.suppression;
+    const hiddenContent = { userId: ownerId, includeNsfw: false, tagIds, personIds, petIds, scope };
+    const selfAssets = await this.memoryRepository.getSubjectAssets(ownerId, 'person', selfId, undefined, true);
+    const withSelf = new Set(selfAssets.map(({ id }) => id));
+
+    for (const { personId, kind } of subjects) {
+      const person = people.get(personId);
+      if (!person?.name || person.isHidden) {
+        continue;
+      }
+      if (await this.memoryRepository.hasOccasionMemory(ownerId, kind, personId, target.year)) {
+        continue;
+      }
+      const assets = await this.memoryRepository.getSubjectAssets(ownerId, 'person', personId, undefined, true);
+      const hidden = await this.memoryRepository.getHiddenItemIds(
+        assets.map(({ id }) => id),
+        { hiddenContent },
+      );
+      const shown = suppressBursts(assets.filter(({ id }) => !hidden.has(id)));
+      // photos of the two of them together when there are enough; the owner is often the one holding the camera
+      const together = shown.filter(({ id }) => withSelf.has(id));
+      const candidates = together.length >= MIN_BIRTHDAY_ASSETS ? together : shown;
+      if (candidates.length < MIN_BIRTHDAY_ASSETS) {
+        continue;
+      }
+      const kept = diversifyByYear(candidates, MAX_SUBJECT_MEMORY_ASSETS);
+      const { showAt, hideAt } = calendarDayWindow(date);
+      await this.memoryRepository.create(
+        {
+          ownerId,
+          type: MemoryType.PersonRecap,
+          occasion: kind,
+          data: {
+            kind: 'person_recap',
+            year: target.year,
+            subject: 'person',
+            subjectId: personId,
+            name: person.name,
+            assetCount: candidates.length,
+          },
+          memoryAt: DateTime.fromISO(date, { zone: 'utc' }).toISO()!,
+          showAt: showAt.toISOString(),
+          hideAt: hideAt.toISOString(),
+        },
+        new Set(kept.map(({ id }) => id)),
+      );
+    }
   }
 
   /**
@@ -1394,6 +1512,12 @@ export class MemoryService extends BaseService {
     }
     const curations = await this.memoryRepository.getCurations(auth.user.id, [id]);
     return this.mapMemory(current, auth, curations.get(id));
+  }
+
+  /** FL-880: whether the Mother's Day and Father's Day setting has anyone to work from. */
+  async getOccasionsStatus(auth: AuthDto): Promise<MemoryOccasionsStatusDto> {
+    const edges = await this.personRepository.getRelationships(auth.user.id);
+    return { hasParent: edges.some(({ kind, parentRole }) => kind === 'parent' && parentRole !== 'parent') };
   }
 
   /** FL-62: the owner's "show less" rules, with the name of each person and pet they name. */

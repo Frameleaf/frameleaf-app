@@ -92,6 +92,10 @@ import { FrameleafServerSetupService } from 'src/services/frameleaf-server-setup
 import { HardwareCheckService } from 'src/services/hardware-check.service.js';
 import { HelpService } from 'src/services/help.service.js';
 import { HlsService } from 'src/services/hls.service.js';
+import { HouseholdLinkService } from 'src/services/household-link.service.js';
+import { HouseholdPeerService } from 'src/services/household-peer.service.js';
+import { HouseholdReceiveService } from 'src/services/household-receive.service.js';
+import { HouseholdShareService } from 'src/services/household-share.service.js';
 import { ICloudAlbumService } from 'src/services/icloud-album.service.js';
 import { ICloudAuditService } from 'src/services/icloud-audit.service.js';
 import { ICloudIdentityAdoptionService } from 'src/services/icloud-identity-adoption.service.js';
@@ -105,6 +109,9 @@ import { ICloudSyncService } from 'src/services/icloud-sync.service.js';
 import { ICloudWeeklyService } from 'src/services/icloud-weekly.service.js';
 import { IdenticalFilesService } from 'src/services/identical-files.service.js';
 import { ImageEnrichmentService } from 'src/services/image-enrichment.service.js';
+import { ImportConnectorWorkerService } from 'src/services/import-connector-worker.service.js';
+import { ImportConnectorService } from 'src/services/import-connector.service.js';
+import { ImportSignInService } from 'src/services/import-sign-in.service.js';
 import { IntegrityService } from 'src/services/integrity.service.js';
 import { ItemShareService } from 'src/services/item-share.service.js';
 import { JobService } from 'src/services/job.service.js';
@@ -114,6 +121,8 @@ import { LibraryProgressService } from 'src/services/library-progress.service.js
 import { LibraryScanService } from 'src/services/library-scan.service.js';
 import { LibraryService } from 'src/services/library.service.js';
 import { LivePhotoService } from 'src/services/live-photo.service.js';
+import { LocationFillService } from 'src/services/location-fill.service.js';
+import { LocationHistoryService } from 'src/services/location-history.service.js';
 import { LockedEncryptionService } from 'src/services/locked-encryption.service.js';
 import { LockedSealService } from 'src/services/locked-seal.service.js';
 import { MailConnectionService } from 'src/services/mail-connection.service.js';
@@ -146,6 +155,7 @@ import { PartnerPeopleService } from 'src/services/partner-people.service.js';
 import { PartnerService } from 'src/services/partner.service.js';
 import { PasskeyService } from 'src/services/passkey.service.js';
 import { PersonCategoryService } from 'src/services/person-category.service.js';
+import { PersonRelationshipService } from 'src/services/person-relationship.service.js';
 import { PersonService } from 'src/services/person.service.js';
 import { PetRecognitionService } from 'src/services/pet-recognition.service.js';
 import { PetService } from 'src/services/pet.service.js';
@@ -179,6 +189,7 @@ import { RenderWorkerService } from 'src/services/render-worker.service.js';
 import { RestorationWorkerService } from 'src/services/restoration-worker.service.js';
 import { RunningJobService } from 'src/services/running-job.service.js';
 import { SafetyService } from 'src/services/safety.service.js';
+import { ScanSplitService } from 'src/services/scan-split.service.js';
 import { SearchService } from 'src/services/search.service.js';
 import { SeenLabelsService } from 'src/services/seen-labels.service.js';
 import { ServerService } from 'src/services/server.service.js';
@@ -228,6 +239,7 @@ import { TranscodingService } from 'src/services/transcoding.service.js';
 import { TrashService } from 'src/services/trash.service.js';
 import { UpgradeCheckService } from 'src/services/upgrade-check.service.js';
 import { UserAdminService } from 'src/services/user-admin.service.js';
+import { UserPlaceService } from 'src/services/user-place.service.js';
 import { UserService } from 'src/services/user.service.js';
 import { UtilitiesService } from 'src/services/utilities.service.js';
 import { VersionService } from 'src/services/version.service.js';
@@ -250,6 +262,7 @@ export const services = [
   LibraryItemService,
   AssetAnnotationService,
   AssetPaletteService,
+  ScanSplitService,
   CaptureService,
   BrowserExtensionSignInService,
   McpService,
@@ -309,6 +322,10 @@ export const services = [
   BuddyBackupCaptureService,
   BuddyBackupRestoreService,
   BuddyBackupRecoveryService,
+  HouseholdLinkService,
+  HouseholdPeerService,
+  HouseholdReceiveService,
+  HouseholdShareService,
   CloudMlBatchService,
   CloudLibraryBatchService,
   CloudMlJobService,
@@ -403,6 +420,7 @@ export const services = [
   PasskeyService,
   PartnerCopyService,
   PersonCategoryService,
+  PersonRelationshipService,
   PersonService,
   PinnedCollectionService,
   PetRecognitionService,
@@ -426,6 +444,8 @@ export const services = [
   AlbumDateHealService,
   AlbumCleanupService,
   DateDoctorService,
+  LocationHistoryService,
+  LocationFillService,
   AssetLedgerService,
   FoundFilesService,
   AlbumMergeService,
@@ -466,11 +486,15 @@ export const services = [
   EagleImportWorkerService,
   TakeoutService,
   TakeoutWorkerService,
+  ImportConnectorService,
+  ImportConnectorWorkerService,
+  ImportSignInService,
   TidyUpService,
   TimelineService,
   TranscodingService,
   TrashService,
   UserAdminService,
+  UserPlaceService,
   UserService,
   VersionService,
   VideoMomentIndexService,

@@ -1,6 +1,7 @@
 import {
   addAssetsToAlbum,
   applyDateFix,
+  undoDateFix,
   AssetJobName,
   AssetVisibility,
   createBulkMediaOperation,
@@ -47,6 +48,7 @@ import {
   withSearchDefaults,
   withSpaceScope,
 } from '$lib/components/discovery/query';
+import type { DateAccuracy } from '$lib/frameleaf/approximate-date';
 import type { BulkActionId } from '$lib/frameleaf/bulk-actions';
 import type { LibraryViewState } from '$lib/frameleaf/library-session';
 import { handledLockedKeyError } from '$lib/frameleaf/locked-key-prompt';
@@ -119,6 +121,13 @@ export type BulkPayload = {
   untagIdsByTag?: Record<string, string[]>;
   /** 'set' writes the same instant to every item; 'shift' moves each item by `minutes`. */
   dateMode?: 'set' | 'shift';
+  /**
+   * FL-936: date the items to a year or a decade (`year` is that year, or any year of the decade). It runs as one
+   * Date & Time Doctor fix, the path with an undo; `undoDateFixId` is that undo.
+   */
+  dateAccuracy?: DateAccuracy;
+  year?: number;
+  undoDateFixId?: string;
   dateTimeOriginal?: string;
   timeZone?: string;
   /**
@@ -225,6 +234,7 @@ export type BulkGateway = {
   createBulkMediaOperation: typeof createBulkMediaOperation;
   /** FL-943: the Date & Time Doctor's fix (FL-930), one batch its owner can undo for 30 days. */
   applyDateFix: typeof applyDateFix;
+  undoDateFix: typeof undoDateFix;
   /** The web client's archive download flow, which already handles splitting and the manager. */
   downloadArchive: (fileName: string, options: { assetIds: string[] }) => Promise<unknown>;
 };
@@ -254,6 +264,7 @@ export const createBulkGateway = (downloadArchive: BulkGateway['downloadArchive'
   searchAssetStatistics,
   createBulkMediaOperation,
   applyDateFix,
+  undoDateFix,
   downloadArchive,
 });
 
@@ -711,6 +722,38 @@ export const runBulkAction = async (
       }
     }
     case 'change-date': {
+      if (payload?.undoDateFixId) {
+        try {
+          await gateway.undoDateFix({ id: payload.undoDateFixId });
+          return finish({ outcomes: ids.map((id) => ok(id)), cancelled: false });
+        } catch (error) {
+          return finish({ outcomes: ids.map((id) => failed(id, error)), cancelled: false });
+        }
+      }
+      // FL-936: one Doctor batch for the whole selection, so one Undo puts every date and accuracy back
+      if (payload?.dateAccuracy) {
+        if (signal?.aborted) {
+          return finish({ outcomes: [], cancelled: true });
+        }
+        const year = Number(requirePayload(payload, 'year'));
+        try {
+          const { batch, skipped: left } = await gateway.applyDateFix({
+            dateDoctorFixDto: { assetIds: ids, dateAccuracy: payload.dateAccuracy, year },
+          });
+          const unchanged = new Set(left);
+          return finish(
+            {
+              outcomes: ids.map((id) =>
+                unchanged.has(id) ? skipped(id, 'frameleaf_bulk_reason_date_unchanged') : ok(id),
+              ),
+              cancelled: false,
+            },
+            (succeeded) => ({ action: 'change-date', ids: succeeded, payload: { undoDateFixId: batch.id } }),
+          );
+        } catch (error) {
+          return finish({ outcomes: ids.map((id) => failed(id, error)), cancelled: false });
+        }
+      }
       const mode = payload?.dateMode ?? 'set';
       const offsets = payload?.offsetMinutesById;
       if (mode === 'set' && offsets) {
@@ -1210,6 +1253,9 @@ export const shouldRunDurably = (action: BulkActionId, count: number, payload?: 
   !!durableBulkAction(action) &&
   count > DURABLE_BULK_THRESHOLD &&
   !payload?.offsetMinutesById &&
+  // FL-936: a year or a decade, and its undo, are one Doctor batch; the durable date job knows neither
+  !payload?.dateAccuracy &&
+  !payload?.undoDateFixId &&
   // the durable change-location job only sets coordinates; removing them runs from here in chunks
   !payload?.clearLocation;
 

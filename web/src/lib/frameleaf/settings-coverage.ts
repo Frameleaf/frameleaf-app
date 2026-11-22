@@ -1854,6 +1854,18 @@ export const PREFERENCE_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.
     evidence: 'memories.enabled',
   },
   {
+    pattern: 'memories.occasionRegion',
+    kind: 'control',
+    file: 'src/routes/(user)/user-settings/FeatureSettings.svelte',
+    evidence: 'memories.occasionRegion',
+  },
+  {
+    pattern: 'memories.occasions',
+    kind: 'control',
+    file: 'src/routes/(user)/user-settings/FeatureSettings.svelte',
+    evidence: 'memories.occasions',
+  },
+  {
     pattern: 'memories.sidebarWeb',
     kind: 'control',
     file: 'src/routes/(user)/user-settings/FeatureSettings.svelte',

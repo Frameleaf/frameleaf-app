@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Patch, Post } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Patch, Post, Query } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { LoginDetails } from 'src/services/auth.service.js';
@@ -13,6 +13,10 @@ import {
   ICloudIdentityReuseAuthorityDto,
   ICloudIdentityReuseAuthorityStatusDto,
   ICloudInventoryResponseDto,
+  ICloudReviewAcceptDto,
+  ICloudReviewAcceptResponseDto,
+  ICloudReviewPageResponseDto,
+  ICloudReviewQueryDto,
   ICloudSyncActivityResponseDto,
 } from 'src/dtos/icloud-sync.dto.js';
 import { Auth, Authenticated, GetLoginDetails } from 'src/middleware/auth.guard.js';
@@ -98,6 +102,29 @@ export class ICloudSyncController {
   @Endpoint({ history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0') })
   getICloudInventory(@Auth() auth: AuthDto, @Param() { id }: UUIDParamDto): Promise<ICloudInventoryResponseDto> {
     return this.service.inventory(auth, id);
+  }
+
+  @Get(':id/review')
+  @Authenticated()
+  @Endpoint({ history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0') })
+  getICloudReview(
+    @Auth() auth: AuthDto,
+    @Param() { id }: UUIDParamDto,
+    @Query() dto: ICloudReviewQueryDto,
+  ): Promise<ICloudReviewPageResponseDto> {
+    return this.service.reviewPage(auth, id, dto);
+  }
+
+  @Post(':id/review/accept')
+  @HttpCode(HttpStatus.OK)
+  @Authenticated()
+  @Endpoint({ history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0') })
+  acceptICloudReview(
+    @Auth() auth: AuthDto,
+    @Param() { id }: UUIDParamDto,
+    @Body() dto: ICloudReviewAcceptDto,
+  ): Promise<ICloudReviewAcceptResponseDto> {
+    return this.service.acceptReview(auth, id, dto);
   }
 
   @Delete(':id')

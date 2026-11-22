@@ -113,6 +113,8 @@ export type Memory = {
   data: Record<string, unknown>;
   ownerId: string;
   isSaved: boolean;
+  /** FL-880: the occasion a person recap was made for, when it was */
+  occasion?: string | null;
   /** each item with the city it was taken in, which names an "on this day" memory (FL-1394) */
   assets: (ShallowDehydrateObject<MapAsset> & { city?: string | null })[];
 };
@@ -153,6 +155,7 @@ export type Asset = {
   libraryId: string | null;
   livePhotoVideoId: string | null;
   localDateTime: Date;
+  dateAccuracy?: string | null;
   originalFileName: string;
   originalPath: string;
   /** FL-417: the photo's own path while it shares a file kept elsewhere */
@@ -375,6 +378,7 @@ export const columns = {
     'asset.libraryScope',
     'asset.livePhotoVideoId',
     'asset.localDateTime',
+    'asset.dateAccuracy',
     'asset.originalFileName',
     'asset.originalPath',
     'asset.libraryPath',
@@ -407,6 +411,7 @@ export const columns = {
     'asset.libraryScope',
     'asset.livePhotoVideoId',
     'asset.localDateTime',
+    'asset.dateAccuracy',
     'asset.originalFileName',
     'asset.originalPath',
     'asset.libraryPath',

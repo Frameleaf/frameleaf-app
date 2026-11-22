@@ -141,6 +141,8 @@ const anyString: Check = (value) => typeof value === 'string' && value.length <=
 const nonEmptyString: Check = (value) => anyString(value) && (value as string).length > 0;
 const idValue: Check = (value) => typeof value === 'string' && value.length > 0 && value.length <= MAX_ID_LENGTH;
 const finite: Check = (value) => typeof value === 'number' && Number.isFinite(value);
+/** FL-936: a decade by its first year: a multiple of 10, from 1800. */
+const decade: Check = (value) => finite(value) && (value as number) % 10 === 0 && (value as number) >= 1800;
 const dateBound: Check = (value) => isCalendarDay(value) || isIsoDatetime(value);
 const nullable =
   (check: Check): Check =>
@@ -238,6 +240,7 @@ const FIELD_OPERATORS: Readonly<Record<string, Readonly<Record<string, Check>>>>
   rating: { eq: nullable(finite), ne: nullable(finite), ...numberRangeOperators },
   fileSizeInBytes: { eq: finite, ne: finite, ...numberRangeOperators },
   takenAt: { eq: dateBound, ne: isIsoDatetime, ...dateRangeOperators },
+  takenDecade: { eq: decade },
   localDateTime: { eq: dateBound, ne: isIsoDatetime, ...dateRangeOperators },
   createdAt: { eq: dateBound, ne: isIsoDatetime, ...dateRangeOperators },
   updatedAt: { eq: dateBound, ne: isIsoDatetime, ...dateRangeOperators },
@@ -985,7 +988,7 @@ const SECTION_FIELDS: Record<Exclude<DiscoveryFilterSection, 'all'>, readonly st
   people: ['personIds', 'hasPeople'],
   // FL-58: the owner's own pets, matched on confirmed observations only
   pets: ['petIds'],
-  date: ['takenAt', 'localDateTime', 'createdAt', 'updatedAt', 'trashedAt'],
+  date: ['takenAt', 'localDateTime', 'takenDecade', 'createdAt', 'updatedAt', 'trashedAt'],
   places: ['city', 'state', 'country', 'landmarkIds'],
   media: [
     'color',

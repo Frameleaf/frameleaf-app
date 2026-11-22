@@ -254,6 +254,12 @@ export class PartnerOriginRepository {
         WHERE origin.${sql.id(key)} = ANY(${ids}::uuid[])
         ORDER BY origin.${sql.id(key)} FOR UPDATE
       `.execute(tx);
+      // FL-994: a pull from a linked household takes these same rows before it writes a followed field
+      await sql`
+        SELECT 1 FROM public.household_origin origin
+        WHERE origin."localId" = ANY(${ids}::uuid[]) AND origin.kind = ${kind}
+        ORDER BY origin."linkId", origin."remoteId", origin.kind, origin."userId" FOR UPDATE
+      `.execute(tx);
       return publicationTransaction.run(tx, async () => {
         const value = await write(tx);
         await this.markOverridden(kind, ids, fields);
@@ -360,7 +366,8 @@ export class PartnerOriginRepository {
       ...(fields.includes(AssetOriginField.Rating) ? ['rating'] : []),
     ];
     const assetColumns = [
-      ...(fields.includes(AssetOriginField.DateTimeOriginal) ? ['fileCreatedAt', 'localDateTime'] : []),
+      // FL-936: a copy is dated to the same year or decade as its source
+      ...(fields.includes(AssetOriginField.DateTimeOriginal) ? ['fileCreatedAt', 'localDateTime', 'dateAccuracy'] : []),
       ...(fields.includes(AssetOriginField.Visibility) ? ['visibility'] : []),
     ];
     if (exifColumns.length === 0 && assetColumns.length === 0) {
@@ -512,6 +519,16 @@ export class PartnerOriginRepository {
         AND NOT (origin."overriddenFields" @> ${fields}::text[])
         ${ownerId ? sql`AND origin."ownerId" = ${ownerId}::uuid` : sql``}
     `.execute(kysely);
+    // FL-994: the same edit makes the field the recipient's own on a copy from a linked household
+    await sql`
+      UPDATE public.household_origin origin
+      SET "overriddenFields" = ARRAY(
+        SELECT DISTINCT field FROM unnest(origin."overriddenFields" || ${fields}::text[]) AS field ORDER BY field
+      )
+      WHERE origin."localId" = ANY(${list}::uuid[]) AND origin.kind = ${kind}
+        AND NOT (origin."overriddenFields" @> ${fields}::text[])
+        ${ownerId ? sql`AND origin."userId" = ${ownerId}::uuid` : sql``}
+    `.execute(kysely);
   }
   /**
    * A partnership ended (spec §4.7): every copy `ownerId` received through `partnerSharedById` stops
@@ -650,6 +667,18 @@ export class PartnerOriginRepository {
     `.execute(this.db);
     return rows;
   }
+  /** FL-842: every live person `ownerId` holds as a copy of one of `sourceOwnerId`'s people. */
+  async getPersonCopies(ownerId: string, sourceOwnerId: string): Promise<PersonOriginRow[]> {
+    const { rows } = await sql<PersonOriginRow>`
+      SELECT origin."ownerId", origin."personGroupId", origin."sourceOwnerId", origin."sourcePersonGroupId",
+        origin."rootOwnerId", origin."partnerSharedById", origin."overriddenFields", origin.following
+      FROM public.person_origin origin
+      JOIN person ON person."ownerId" = origin."ownerId" AND person."personGroupId" = origin."personGroupId"
+      WHERE origin."ownerId" = ${ownerId}::uuid AND origin."sourceOwnerId" = ${sourceOwnerId}::uuid
+      ORDER BY origin."personGroupId"
+    `.execute(this.db);
+    return rows;
+  }
   /** Owner edits and propagation share the live person's origin lock and writer transaction. */
   async withPersonOrigin<T>(
     ownerId: string,
@@ -676,6 +705,16 @@ export class PartnerOriginRepository {
         SELECT DISTINCT field FROM unnest(origin."overriddenFields" || ${fields}::text[]) AS field ORDER BY field
       )
       WHERE origin."ownerId" = ${ownerId}::uuid AND origin."personGroupId" = ANY(${personGroupIds}::uuid[])
+        AND NOT (origin."overriddenFields" @> ${fields}::text[])
+    `.execute(this.db);
+    // FL-994: a person received from a linked household follows the same rule
+    await sql`
+      UPDATE public.household_origin origin
+      SET "overriddenFields" = ARRAY(
+        SELECT DISTINCT field FROM unnest(origin."overriddenFields" || ${fields}::text[]) AS field ORDER BY field
+      )
+      WHERE origin."userId" = ${ownerId}::uuid AND origin.kind = 'person'
+        AND origin."localId" = ANY(${personGroupIds}::uuid[])
         AND NOT (origin."overriddenFields" @> ${fields}::text[])
     `.execute(this.db);
   }

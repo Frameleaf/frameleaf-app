@@ -122,6 +122,7 @@ import {
   routedMlDestinationId,
   selectMlDestination,
 } from 'src/utils/ml-destination.js';
+import { namedPlaceAt } from 'src/utils/named-place.js';
 import { replaceLockedProfileImages } from 'src/utils/profile-image.js';
 import { resolvePublicUrl } from 'src/utils/public-url.js';
 import { isServerOwner, requireServerOwner } from 'src/utils/server-owner.js';
@@ -833,6 +834,7 @@ export class BaseService {
    * queues their unseals, which remove the locks once the files are plain.
    */
   protected async afterAssetsUnlocked(assetIds: string[]): Promise<void> {
+    await this.eventRepository.emit('HouseholdFeedAssets', { assetIds });
     const owners = new Set(
       (await this.assetRepository.getLockedEncryptionItems(assetIds))
         .filter(({ pending }) => pending)
@@ -878,6 +880,19 @@ export class BaseService {
         const icons = this.mapRepository.getLandmarkIcons();
         data.landmarks = landmarks.map((landmark) => ({ ...landmark, icon: icons.get(landmark.id) }));
       }
+    }
+    return data;
+  }
+
+  /**
+   * FL-949: names the viewer's own place a located asset was taken in. `viewerId` is the signed-in person the response
+   * is for, whoever owns the asset: a partner's photo taken at the viewer's "Home" says Home, and the owner's own name
+   * for the spot is never read. Leave it out (a shared link) and nothing is named.
+   */
+  protected async withNamedPlace(data: AssetResponseDto, viewerId: string | undefined): Promise<AssetResponseDto> {
+    if (viewerId && typeof data.exifInfo?.latitude === 'number' && typeof data.exifInfo.longitude === 'number') {
+      const place = namedPlaceAt(await this.mapRepository.getUserPlaces(viewerId), data.exifInfo);
+      data.namedPlace = place ? { id: place.id, name: place.name } : null;
     }
     return data;
   }
