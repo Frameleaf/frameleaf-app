@@ -331,6 +331,81 @@ class TestGate:
         assert upload_limit(registry) >= 8192 * 8192 * 3
 
 
+class TestSignedOffRecords:
+    """The committed records from run 1296, through the real gate."""
+
+    RUNNER_GPU = GpuDescription(name="NVIDIA GeForce RTX 3060", memoryTotalBytes=12 * 1024**3, driverVersion="610.88")
+
+    def signed(self, tmp_path: Path) -> tuple[list[ModelSpec], list[QualificationRecord]]:
+        folder = EXAMPLES / "qualification"
+        manifest = Manifest.model_validate(json.loads((folder / "models.qualified.photo.json").read_text()))
+        records = QualificationFile.model_validate(json.loads((folder / "qualification.photo.json").read_text()))
+        specs = [
+            spec.model_copy(
+                update={
+                    "weights": [
+                        weight.model_copy(update={"path": Path(f"{weight.role}.bin")}) for weight in spec.weights
+                    ]
+                }
+            )
+            for spec in manifest.models
+        ]
+        return specs, records.records
+
+    @staticmethod
+    def with_open_items_closed(record: QualificationRecord) -> QualificationRecord:
+        """A test-only copy: what the record would need. The committed record does not claim this."""
+        evidence = [
+            entry.model_copy(update={"result": "pass", "artifact": "test-only"})
+            if entry.item == "hallucination"
+            else entry
+            for entry in record.evidence
+        ]
+        return record.model_copy(update={"evidence": evidence, "containerRevisions": [IMAGE_REVISION]})
+
+    def test_the_committed_records_are_refused_only_for_the_two_open_items(self, tmp_path: Path) -> None:
+        specs, records = self.signed(tmp_path)
+
+        report = make_registry(tmp_path, specs, records, gpus=[self.RUNNER_GPU]).refresh()
+
+        assert report.workloads == []
+        assert len(report.photoModels) == 2
+        for model in report.photoModels:
+            assert model.state == ModelState.UNQUALIFIED
+            assert sorted(model.reasons) == sorted(
+                ["evidence hallucination is pending", f"worker image {IMAGE_REVISION} is not a qualified revision"]
+            )
+
+    def test_with_those_items_closed_the_gate_lists_both_workloads(self, tmp_path: Path) -> None:
+        specs, records = self.signed(tmp_path)
+        closed = [self.with_open_items_closed(record) for record in records]
+
+        report = make_registry(tmp_path, specs, closed, gpus=[self.RUNNER_GPU]).refresh()
+
+        assert report.workloads == ["photo-repair", "colourise"]
+        assert [model.state for model in report.photoModels] == [ModelState.AVAILABLE, ModelState.AVAILABLE]
+
+    def test_a_record_without_a_reviewer_is_still_refused(self, tmp_path: Path) -> None:
+        specs, records = self.signed(tmp_path)
+        unsigned = [
+            self.with_open_items_closed(record).model_copy(update={"reviewedBy": None, "reviewedAt": None})
+            for record in records
+        ]
+
+        report = make_registry(tmp_path, specs, unsigned, gpus=[self.RUNNER_GPU]).refresh()
+
+        assert report.workloads == []
+        assert all(any("has not been reviewed" in reason for reason in model.reasons) for model in report.photoModels)
+
+    def test_accepted_limits_keep_their_measured_wording(self, tmp_path: Path) -> None:
+        _, records = self.signed(tmp_path)
+        notes = {entry.item: entry.notes for record in records for entry in record.evidence}
+
+        for item, limit in (("scratch-mask", "real detail marked"), ("colour-plausibility", "arbitrary")):
+            assert limit in notes[item]
+            assert notes[item].endswith("accepted by the owner for release on 2026-11-22, known limit")
+
+
 def request(**overrides: Any) -> RestorationRequest:
     payload: dict[str, Any] = {
         "protocol": "restoration-v1",
