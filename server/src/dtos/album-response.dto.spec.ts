@@ -15,6 +15,15 @@ describe('mapAlbum', () => {
     expect(dto.endDate).toEqual(endDate.toISOString());
   });
 
+  it('sends no member their email address, and keeps the avatar colour it gives (FL-1743)', () => {
+    const album = AlbumFactory.from().albumUser().build();
+    const dto = mapAlbum(getForAlbum(album));
+    expect(album.albumUsers.every(({ user }) => user.email !== '')).toBe(true);
+    expect(dto.albumUsers).toHaveLength(2);
+    expect(dto.albumUsers.map(({ user }) => user.email)).toEqual(['', '']);
+    expect(dto.albumUsers.every(({ user }) => !!user.avatarColor)).toBe(true);
+  });
+
   it('should not set start and end dates for empty assets', () => {
     const dto = mapAlbum(getForAlbum(AlbumFactory.create()));
     expect(dto.startDate).toBeUndefined();

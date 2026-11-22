@@ -64,6 +64,12 @@ const WorkflowStepResponseSchema = z
     storedSecrets: z
       .array(z.string())
       .describe('Configuration paths (keys joined with ".") holding a stored credential that is never returned'),
+    generatedSecret: z
+      .string()
+      .optional()
+      .describe(
+        'The signing secret this save made for a step that sends a Frameleaf event and had none. Returned once, by that save only',
+      ),
   })
   .meta({ id: 'WorkflowStepResponseDto' });
 

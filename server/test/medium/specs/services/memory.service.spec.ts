@@ -421,6 +421,49 @@ describe(MemoryService.name, () => {
       );
     });
 
+    it('FL-936: never looks back on the day a year or a decade starts when that is all the date says', async () => {
+      const { sut, ctx } = setup();
+      const assetRepo = ctx.get(AssetRepository);
+      const memoryRepo = ctx.get(MemoryRepository);
+      const now = DateTime.fromObject({ year: 2025, month: 1, day: 1 }, { zone: 'utc' }) as DateTime<true>;
+      const { user } = await ctx.newUser();
+      const { asset: newYearsDay } = await ctx.newAsset({
+        ownerId: user.id,
+        localDateTime: '1976-01-01T10:00:00.000Z',
+      });
+      const { asset: sometimeIn1975 } = await ctx.newAsset({
+        ownerId: user.id,
+        fileCreatedAt: '1975-01-01T00:00:00.000Z',
+        localDateTime: '1975-01-01T00:00:00.000Z',
+        dateAccuracy: 'year',
+      });
+      const { asset: seventies } = await ctx.newAsset({
+        ownerId: user.id,
+        fileCreatedAt: '1970-01-01T00:00:00.000Z',
+        localDateTime: '1970-01-01T00:00:00.000Z',
+        dateAccuracy: 'decade',
+      });
+      for (const asset of [newYearsDay, sometimeIn1975, seventies]) {
+        await Promise.all([
+          ctx.newExif({ assetId: asset.id, make: 'Epson', lockedProperties: ['dateTimeOriginal', 'timeZone'] }),
+          ctx.newJobStatus({ assetId: asset.id }),
+          assetRepo.upsertFiles([{ assetId: asset.id, type: AssetFileType.Preview, path: '/path/to/preview.jpg' }]),
+        ]);
+      }
+
+      await expect(assetRepo.getByDayOfYear([user.id], { year: 2025, month: 1, day: 1 })).resolves.toEqual([
+        expect.objectContaining({ year: 1976, assets: [expect.objectContaining({ id: newYearsDay.id })] }),
+      ]);
+
+      vi.setSystemTime(now.toJSDate());
+      await sut.onMemoriesCreate();
+
+      const used = (await memoryRepo.search(user.id, {})).flatMap(({ assets }) => assets.map(({ id }) => id));
+      expect(used).toContain(newYearsDay.id);
+      expect(used).not.toContain(sometimeIn1975.id);
+      expect(used).not.toContain(seventies.id);
+    });
+
     it('should create a memory from an asset - in advance', async () => {
       const { sut, ctx } = setup();
       const assetRepo = ctx.get(AssetRepository);

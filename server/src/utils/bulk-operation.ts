@@ -1,5 +1,6 @@
 import { AssetJobName } from 'src/dtos/asset.dto.js';
 import { AssetVisibility, MediaOperationBulkAction, MediaOperationItemStatus, Permission } from 'src/enum.js';
+import { DATE_ACCURACIES, MIN_APPROXIMATE_YEAR, getCaptureYear, isApproximateYear } from 'src/utils/date.js';
 import {
   type DuplicateGroupDecision,
   duplicateDecisionProblem,
@@ -47,6 +48,8 @@ export type BulkOperationPayload = {
   tagIds?: string[];
   dateMode?: 'set' | 'shift';
   dateTimeOriginal?: string;
+  /** FL-936: with `dateTimeOriginal`, only its year or its decade is known. */
+  dateAccuracy?: string;
   timeZone?: string;
   minutes?: number;
   description?: string;
@@ -697,7 +700,11 @@ export const bulkAssetUpdate = (
       // so repeating it would move items twice. The runner shifts from recorded starting dates.
       return payload.dateMode === 'shift'
         ? null
-        : { dateTimeOriginal: payload.dateTimeOriginal, ...(payload.timeZone && { timeZone: payload.timeZone }) };
+        : {
+            dateTimeOriginal: payload.dateTimeOriginal,
+            ...(payload.timeZone && { timeZone: payload.timeZone }),
+            ...(payload.dateAccuracy && { dateAccuracy: payload.dateAccuracy }),
+          };
     }
     case MediaOperationBulkAction.ChangeDescription: {
       return { description: payload.description ?? '' };
@@ -751,6 +758,12 @@ export const bulkPayloadProblem = (
       }
       if (!payload.dateTimeOriginal || Number.isNaN(Date.parse(payload.dateTimeOriginal))) {
         return 'A valid date is required for this action';
+      }
+      if (payload.dateAccuracy !== undefined) {
+        const accuracy = DATE_ACCURACIES.find((value) => value === payload.dateAccuracy);
+        if (!accuracy || !isApproximateYear(getCaptureYear(payload.dateTimeOriginal), accuracy)) {
+          return `A year or decade is from ${MIN_APPROXIMATE_YEAR} to this year`;
+        }
       }
       return !payload.timeZone || isTimeZone(payload.timeZone) ? null : 'The time zone is not recognised';
     }

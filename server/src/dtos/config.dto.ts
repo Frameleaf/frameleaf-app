@@ -1300,7 +1300,8 @@ const AdminConfigSchemaWithVisibility = z
         ),
       })
       .meta({ id: 'AdminConfigConnectedAppsDto' })
-      .default({ allowRegistration: true }),
+      // FL-1632 (TM-8): off until the administrator turns it on
+      .default({ allowRegistration: false }),
     // FL-71: the template's "Logs & diagnostics" local analytics rows. The nightly collector only
     // reads counts and sizes into this server's database; external telemetry stays off regardless.
     analytics: z
@@ -2010,7 +2011,8 @@ export const defaults = Object.freeze<SystemConfig>({
   },
   connectedApps: {
     allowMcp: true,
-    allowRegistration: true,
+    // FL-1632 (TM-8): apps register themselves only once the administrator allows it
+    allowRegistration: false,
   },
   analytics: {
     enabled: true,

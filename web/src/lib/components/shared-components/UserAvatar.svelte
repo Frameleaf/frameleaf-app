@@ -76,7 +76,8 @@
 
   let colorClass = $derived(colorClasses[user.avatarColor]);
   let sizeClass = $derived(sizeClasses[size]);
-  let title = $derived(label ?? `${user.name} (${user.email})`);
+  // FL-1743: another person who shares an album or a space comes without an address
+  let title = $derived(label ?? (user.email ? `${user.name} (${user.email})` : user.name));
 </script>
 
 <!--

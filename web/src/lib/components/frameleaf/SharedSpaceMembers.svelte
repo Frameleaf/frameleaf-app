@@ -264,7 +264,6 @@
             <strong>{member.user.name}</strong>
             {#if member.supporter}<SupporterTag />{/if}
           </span>
-          <small>{member.user.email}</small>
         </span>
 
         {#if member.pending}
@@ -514,13 +513,6 @@
     flex-wrap: wrap;
     gap: var(--fl-space-1) var(--fl-space-2);
     min-width: 0;
-  }
-  .name small {
-    color: var(--fl-muted);
-    font-size: 0.75rem;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
   }
   .tag {
     display: inline-flex;

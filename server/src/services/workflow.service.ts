@@ -1,8 +1,9 @@
-import { WorkflowTrigger } from '@frameleaf/plugin-sdk';
+import { FRAMELEAF_EVENT_TRIGGERS, WorkflowTrigger } from '@frameleaf/plugin-sdk';
 import { BadRequestException, Injectable } from '@nestjs/common';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { WorkflowBatch, WorkflowRepository, WorkflowStepUpsert } from 'src/repositories/workflow.repository.js';
 import type { WorkflowDefinitionDocument } from 'src/schema/tables/workflow-definition.table.js';
+import { OnEvent } from 'src/decorators.js';
 import { mapTemplate } from 'src/dtos/plugin.dto.js';
 import {
   LegacyWorkflowTriggerResponseDto,
@@ -21,7 +22,7 @@ import {
   mapWorkflow,
   mapWorkflowShare,
 } from 'src/dtos/workflow.dto.js';
-import { JobName, LegacyWorkflowTriggerSchema, Permission, WorkflowRunErrorCode } from 'src/enum.js';
+import { FrameleafWorker, JobName, LegacyWorkflowTriggerSchema, Permission, WorkflowRunErrorCode } from 'src/enum.js';
 import { BaseService } from 'src/services/base.service.js';
 import { getLockedOwnerId } from 'src/utils/locked-visibility.js';
 import { findOrFail, isSmartSearchEnabled } from 'src/utils/misc.js';
@@ -311,13 +312,14 @@ export class WorkflowService extends BaseService {
     const enabled = workflowDto.enabled ?? true;
     this.assertMayUseTrigger(auth, definition);
     this.assertCanEnable(enabled, definition, methods);
+    const generated = this.signEventSteps(definition, methods);
 
     const workflow = await this.workflowRepository.create(
       { ...workflowDto, enabled, trigger: this.storedTrigger(definition), ownerId: auth.user.id },
       definition,
       this.runnableSteps(definition, methods),
     );
-    return this.map(workflow, methods);
+    return this.map(workflow, methods, generated);
   }
 
   async update(auth: AuthDto, id: string, dto: WorkflowUpdateDto): Promise<WorkflowResponseDto> {
@@ -334,7 +336,7 @@ export class WorkflowService extends BaseService {
       trigger !== undefined ||
       source !== undefined ||
       schedule !== undefined;
-    const definition = changesDefinition
+    let definition = changesDefinition
       ? this.parseDefinition({
           trigger: trigger ?? stored.trigger,
           source: source === undefined ? stored.source : source,
@@ -347,13 +349,25 @@ export class WorkflowService extends BaseService {
       this.assertMayUseTrigger(auth, definition);
     }
     this.assertCanEnable(workflowDto.enabled ?? current.enabled, definition, methods);
+    let replaces = changesDefinition;
+    let generated = changesDefinition ? this.signEventSteps(definition, methods) : undefined;
+    if (!changesDefinition && workflowDto.enabled) {
+      // enabled as it is stored: a step that can sign and has no secret yet (its plugin was off at the last
+      // save and at start-up) gets one now, or its event messages would all be refused
+      const signed = structuredClone(stored);
+      generated = this.signEventSteps(signed, methods);
+      if (generated.size > 0) {
+        definition = signed;
+        replaces = true;
+      }
+    }
 
     const workflow = await this.workflowRepository.update(
       id,
       { ...workflowDto, ...(changesDefinition && { trigger: this.storedTrigger(definition) }) },
-      changesDefinition ? { definition, steps: this.runnableSteps(definition, methods) } : undefined,
+      replaces ? { definition, steps: this.runnableSteps(definition, methods) } : undefined,
     );
-    return this.map(workflow, methods);
+    return this.map(workflow, methods, generated);
   }
 
   async delete(auth: AuthDto, id: string): Promise<void> {
@@ -427,9 +441,70 @@ export class WorkflowService extends BaseService {
     });
   }
 
-  private async map(workflow: StoredWorkflow, methods: WorkflowMethodDefinition[]) {
+  /**
+   * FL-1631 (TM-7): every message about a Frameleaf event is signed. A step of an event workflow that
+   * can sign (its parameters have a `secret`) and has none gets a new one. Returns the secrets made, by
+   * step id, so the save that made them can show each once; afterwards they are never read back.
+   * Workflows on a photo keep the choice: a signed message follows the stricter event rules (https
+   * only, no redirects), which would stop webhooks that work today.
+   */
+  private signEventSteps(definition: WorkflowDefinitionDocument, methods: WorkflowMethodDefinition[]) {
+    const generated = new Map<string, string>();
+    if (!isFrameleafEventTrigger(definition.trigger)) {
+      return generated;
+    }
+    for (const step of definition.steps) {
+      const secret = step.config?.secret;
+      if (
+        resolveDefinitionMethod(methods, step.method)?.schema?.properties?.secret &&
+        !(typeof secret === 'string' && secret.trim())
+      ) {
+        const value = this.cryptoRepository.randomBytesAsText(32);
+        step.config = { ...step.config, secret: value };
+        generated.set(step.id, value);
+      }
+    }
+    return generated;
+  }
+
+  /**
+   * FL-1631: event webhooks saved before a secret was required get one, so their messages keep going
+   * out and are signed from now on. Nobody has seen that secret; a receiver that wants to check the
+   * signature has its administrator type a new one into the step.
+   */
+  @OnEvent({ name: 'AppBootstrap', workers: [FrameleafWorker.Microservices] })
+  async onBootstrap(): Promise<void> {
+    try {
+      const methods = await this.pluginRepository.getForValidation();
+      for (const trigger of FRAMELEAF_EVENT_TRIGGERS) {
+        for (const workflow of await this.workflowRepository.search({ trigger })) {
+          const definition = structuredClone(this.definitionOf(workflow));
+          if (this.signEventSteps(definition, methods).size > 0) {
+            // only if nobody saved it since it was read here: a save made meanwhile is never overwritten
+            await this.workflowRepository.update(
+              workflow.id,
+              {},
+              { definition, steps: this.runnableSteps(definition, methods) },
+              { unlessChangedFrom: workflow.definition ?? null },
+            );
+            this.logger.log(`Workflow ${workflow.id} sends a Frameleaf event: its webhook now signs each message`);
+          }
+        }
+      }
+    } catch (error) {
+      this.logger.warn(`Could not give event webhooks a signing secret: ${error}`);
+    }
+  }
+
+  private async map(workflow: StoredWorkflow, methods: WorkflowMethodDefinition[], generated?: Map<string, string>) {
     const definition = this.definitionOf(workflow);
     const response = mapWorkflow(workflow, definition, workflowIssues(definition, methods));
+    for (const step of response.steps) {
+      const generatedSecret = generated?.get(step.id);
+      if (generatedSecret) {
+        step.generatedSecret = generatedSecret;
+      }
+    }
     if (definition.schedule && workflow.enabled && response.issues.length === 0) {
       const { timezone } = await this.capabilities();
       response.nextRunAt =
