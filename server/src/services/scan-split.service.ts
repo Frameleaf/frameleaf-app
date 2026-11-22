@@ -4,7 +4,12 @@ import type { JobOf, ScanCropJobItem } from 'src/types.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { OnJob } from 'src/decorators.js';
 import { AuthDto } from 'src/dtos/auth.dto.js';
-import { ScanSplitDetectResponseDto, ScanSplitDto } from 'src/dtos/scan-split.dto.js';
+import {
+  ScanSplitDetectResponseDto,
+  ScanSplitDto,
+  ScanSplitInfoResponseDto,
+  ScanSplitOfferResponseDto,
+} from 'src/dtos/scan-split.dto.js';
 import {
   AssetType,
   AssetVisibility,
@@ -71,6 +76,68 @@ export class ScanSplitService {
     private trash: TrashRepository,
   ) {
     this.logger.setContext(ScanSplitService.name);
+  }
+
+  /**
+   * What the Information panel and the review sheet need. Locked stays out of an unlocked view: a Locked photo of
+   * an unlocked scan is only counted (a new split can replace it), and a Locked scan is not named on an unlocked photo.
+   */
+  async getInfo(auth: AuthDto, id: string): Promise<ScanSplitInfoResponseDto> {
+    await requireAccess(this.access, { auth, permission: Permission.AssetEditGet, ids: [id] });
+    const [scan, earlier, source] = await Promise.all([
+      this.repository.getScan(id),
+      this.repository.getCrops(id),
+      this.repository.getSource(id),
+    ]);
+    const live = earlier.filter((crop) => !crop.trashed);
+    const scanLocked = scan?.visibility === AssetVisibility.Locked;
+    const named =
+      source &&
+      source.ownerId === auth.user.id &&
+      (source.sourceVisibility !== AssetVisibility.Locked || source.cropVisibility === AssetVisibility.Locked);
+    const size = scan ? getDimensions(scan) : { width: 0, height: 0 };
+    return {
+      width: size.width || null,
+      height: size.height || null,
+      crops: live
+        .filter((crop) => scanLocked || crop.visibility !== AssetVisibility.Locked)
+        .map(({ assetId, quad, rotation, createdAt, edited }) => ({
+          assetId,
+          quad: quad.map(([x, y]) => ({ x, y })),
+          rotation,
+          createdAt: new Date(createdAt as unknown as string | Date).toISOString(),
+          edited,
+        })),
+      cropCount: live.length,
+      editedCount: live.filter((crop) => crop.edited).length,
+      sourceAssetId: named ? source.id : null,
+      sourceFileName: named ? source.originalFileName : null,
+    };
+  }
+
+  /**
+   * The upload offer. The album check comes first, so a photo outside an album that holds scans never reaches the
+   * ML worker. It only counts: the owner opens the review sheet and confirms before anything is split.
+   */
+  async offer(auth: AuthDto, id: string): Promise<ScanSplitOfferResponseDto> {
+    await requireAccess(this.access, { auth, permission: Permission.AssetEditGet, ids: [id] });
+    if (!(await this.repository.isInScanAlbum(id))) {
+      return { printCount: 0 };
+    }
+    const earlier = await this.repository.getCrops(id);
+    if (earlier.some((crop) => !crop.trashed)) {
+      return { printCount: 0 };
+    }
+    try {
+      const { prints } = await this.detect(auth, id);
+      return { printCount: prints.length };
+    } catch (error) {
+      // An offer is optional: no worker, or a file that cannot be read, is simply no offer.
+      if (error instanceof ServiceUnavailableException || error instanceof BadRequestException) {
+        return { printCount: 0 };
+      }
+      throw error;
+    }
   }
 
   async detect(auth: AuthDto, id: string): Promise<ScanSplitDetectResponseDto> {
