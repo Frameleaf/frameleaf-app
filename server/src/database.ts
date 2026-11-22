@@ -113,6 +113,8 @@ export type Memory = {
   data: Record<string, unknown>;
   ownerId: string;
   isSaved: boolean;
+  /** FL-880: the occasion a person recap was made for, when it was */
+  occasion?: string | null;
   /** each item with the city it was taken in, which names an "on this day" memory (FL-1394) */
   assets: (ShallowDehydrateObject<MapAsset> & { city?: string | null })[];
 };

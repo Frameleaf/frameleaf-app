@@ -130,13 +130,19 @@ describe(ImportConnectorService.name, () => {
       access as never,
       { randomUUID: () => connectionId, serverKeyedHash: vi.fn().mockResolvedValue('keyed-hash') } as never,
       { getEnv: () => ({ environment, frameleafCloud: { identityDir: '/identity' } }) } as never,
-      { dropbox: { ...fakeRemoteSourceProvider, provider: 'dropbox' } } as never,
+      {
+        dropbox: { ...fakeRemoteSourceProvider, provider: 'dropbox' },
+        onedrive: { ...fakeRemoteSourceProvider, provider: 'onedrive' },
+        googleDrive: { ...fakeRemoteSourceProvider, provider: 'google-drive' },
+      } as never,
     );
   });
 
   afterEach(() => {
     unregisterRemoteSource(FAKE_PROVIDER);
     unregisterRemoteSource('dropbox');
+    unregisterRemoteSource('onedrive');
+    unregisterRemoteSource('google-drive');
   });
 
   const everythingSaid = (...answers: unknown[]) =>
@@ -181,7 +187,7 @@ describe(ImportConnectorService.name, () => {
 
       environment = FrameleafEnvironment.Testing;
       sut.onBootstrap();
-      expect(sut.providers()).toEqual({ providers: ['dropbox', FAKE_PROVIDER, 'webdav'] });
+      expect(sut.providers()).toEqual({ providers: ['dropbox', FAKE_PROVIDER, 'google-drive', 'onedrive', 'webdav'] });
     });
   });
 

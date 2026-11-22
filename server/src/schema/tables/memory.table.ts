@@ -69,6 +69,10 @@ export class MemoryTable {
   @Column({ type: 'timestamp with time zone', nullable: true })
   hideAt!: Timestamp | null;
 
+  /** FL-880: the occasion a person recap was made for (`OccasionKind`); null for every other memory */
+  @Column({ type: 'text', nullable: true })
+  occasion!: string | null;
+
   @UpdateIdColumn({ index: true })
   updateId!: Generated<string>;
 }

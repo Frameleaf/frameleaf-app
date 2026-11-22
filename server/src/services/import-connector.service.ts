@@ -130,6 +130,8 @@ export class ImportConnectorService {
   onBootstrap() {
     registerRemoteSource(webdavRemoteSourceProvider);
     registerRemoteSource(this.signIn.dropbox);
+    registerRemoteSource(this.signIn.onedrive);
+    registerRemoteSource(this.signIn.googleDrive);
     if (this.config.getEnv().environment === FrameleafEnvironment.Testing) {
       registerRemoteSource(fakeRemoteSourceProvider);
     }

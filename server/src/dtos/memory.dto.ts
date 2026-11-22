@@ -213,6 +213,24 @@ const MemoryStatisticsResponseSchema = z
   })
   .meta({ id: 'MemoryStatisticsResponseDto' });
 
+/**
+ * FL-880: a person recap made for an occasion. The memory stays type `person_recap` with ordinary recap data, so
+ * a client that ignores this field shows a normal recap. `kind` is a plain string, not an enum, so a later
+ * occasion never breaks a strict decoder.
+ */
+const MemoryOccasionSchema = z
+  .object({
+    kind: z.string().describe("The occasion, for example 'mothers_day' or 'fathers_day'"),
+    personId: z.uuidv4().describe('The person the memory is about'),
+  })
+  .meta({ id: 'MemoryOccasionDto' });
+
+const MemoryOccasionsStatusSchema = z
+  .object({
+    hasParent: z.boolean().describe('Whether anyone has been added as a mother or father'),
+  })
+  .meta({ id: 'MemoryOccasionsStatusDto' });
+
 const MemoryResponseSchema = z
   .object({
     id: z.uuidv4().describe('Memory ID'),
@@ -235,6 +253,9 @@ const MemoryResponseSchema = z
       .string()
       .nullable()
       .describe("The owner's own title, when they set one")
+      .meta(new HistoryBuilder().added('v3').getExtensions()),
+    occasion: MemoryOccasionSchema.optional()
+      .describe("The occasion this memory was made for, such as Mother's Day")
       .meta(new HistoryBuilder().added('v3').getExtensions()),
     assets: z.array(AssetResponseSchema),
   })
@@ -421,6 +442,7 @@ export class MemoryUpdateDto extends createZodDto(MemoryUpdateSchema) {}
 export class MemoryCreateDto extends createZodDto(MemoryCreateSchema) {}
 export class MemoryStatisticsResponseDto extends createZodDto(MemoryStatisticsResponseSchema) {}
 export class MemoryResponseDto extends createZodDto(MemoryResponseSchema) {}
+export class MemoryOccasionsStatusDto extends createZodDto(MemoryOccasionsStatusSchema) {}
 
 /**
  * FL-1394: where an "on this day" memory was taken, so a client can title it "One year ago in Jasper".
@@ -442,6 +464,7 @@ export const memoryPlaces = (assets: { city?: string | null }[]): string[] => {
 
 export const mapMemory = (entity: Memory, auth: AuthDto, curation?: MemoryCuration | null): MemoryResponseDto => {
   const assets = applyMemoryAssetOrder('assets' in entity ? entity.assets : [], curation?.assetOrder);
+  const subjectId = entity.data?.subjectId;
   return {
     id: entity.id,
     createdAt: entity.createdAt,
@@ -459,6 +482,8 @@ export const mapMemory = (entity: Memory, auth: AuthDto, curation?: MemoryCurati
     isSaved: entity.isSaved,
     isHidden: !!curation?.hiddenAt,
     title: curation?.title ?? null,
+    ...(entity.occasion &&
+      typeof subjectId === 'string' && { occasion: { kind: entity.occasion, personId: subjectId } }),
     assets: assets.map((asset) => mapAsset(asset, { auth })),
   };
 };

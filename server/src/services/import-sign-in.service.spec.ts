@@ -58,6 +58,26 @@ describe(ImportSignInService.name, () => {
 
   afterEach(() => unregisterRemoteSource('dropbox'));
 
+  it('answers the picker settings of a provider that has them, and null otherwise', async () => {
+    broker.availability.mockResolvedValue({ available: true, reason: null });
+    await expect(sut.availability('dropbox')).resolves.toEqual({ available: true, reason: null, picker: null });
+    registerRemoteSource({
+      provider: 'google-drive',
+      credentials: () => ({}),
+      open: () => ({}) as never,
+      signIn: {
+        service: 'google-drive',
+        label: 'Google Drive',
+        account: () => Promise.resolve({ id: 'p', name: 'Sam' }),
+        picker: () => ({ apiKey: 'browser-key', appId: '123' }),
+      },
+    });
+    await expect(sut.availability('google-drive')).resolves.toMatchObject({
+      picker: { apiKey: 'browser-key', appId: '123' },
+    });
+    unregisterRemoteSource('google-drive');
+  });
+
   const complete = () => sut.complete(authStub.user1, 'dropbox', { signInToken: 't', roots: [], dailyCheck: false });
 
   it('refuses a provider that does not sign in', async () => {
