@@ -3,6 +3,7 @@ import { type Mock, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   AssetRestorationFileKind,
   AssetRestorationMode,
+  AssetRestorationOperation,
   AssetRestorationStatus,
   DEFAULT_RESTORATION_REGION,
 } from 'src/dtos/asset-restoration.dto.js';
@@ -13,6 +14,7 @@ import {
   MediaOperationKind,
   MlAdmissionRefusal,
   MlDestinationKind,
+  MlProcessingSource,
   MlWorkload,
 } from 'src/enum.js';
 import { AssetRestoration, AssetRestorationRepository } from 'src/repositories/asset-restoration.repository.js';
@@ -37,6 +39,7 @@ describe(AssetRestorationService.name, () => {
   let restorations: { [K in keyof AssetRestorationRepository]: AnyMock };
   let operations: Pick<{ [K in keyof MediaOperationRepository]: AnyMock }, 'create' | 'createWithin' | 'requestCancel'>;
   let recordedOperations: unknown[];
+  let cloudJobs: { quotePhotoBatch: AnyMock; startPhotoBatch: AnyMock };
 
   const asset = AssetFactory.from({ ownerId: authStub.user1.user.id, type: AssetType.Image })
     .exif({ exifImageWidth: 6000, exifImageHeight: 4000, orientation: '1', fileSizeInByte: 12_000_000 })
@@ -91,6 +94,10 @@ describe(AssetRestorationService.name, () => {
     vi.restoreAllMocks();
     mocks = getMocks();
     recordedOperations = [];
+    cloudJobs = {
+      quotePhotoBatch: vi.fn().mockResolvedValue({ refusal: "Frameleaf Cloud isn't available for this yet" }),
+      startPhotoBatch: vi.fn().mockResolvedValue(0),
+    };
     restorations = {
       create: vi
         .fn()
@@ -117,6 +124,7 @@ describe(AssetRestorationService.name, () => {
       getFilePaths: vi.fn().mockResolvedValue([]),
       deleteByAsset: vi.fn().mockResolvedValue(void 0),
       discard: vi.fn(),
+      hasBatchItem: vi.fn().mockResolvedValue(false),
     };
     operations = {
       create: vi.fn().mockImplementation((input) => {
@@ -170,6 +178,8 @@ describe(AssetRestorationService.name, () => {
       mocks.config as never,
       mocks.systemMetadata as never,
       mocks.notification as never,
+      mocks.media as never,
+      cloudJobs as never,
     );
   });
 
@@ -1093,6 +1103,323 @@ describe(AssetRestorationService.name, () => {
 
       await expect(sut.getPlaybackChoice(authStub.user1, asset.id, 'video')).rejects.toThrow();
       expect(restorations.listRestoredForPlayback).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('repair and colourise (FL-955)', () => {
+    const PHOTO_IDS = Array.from(
+      { length: 50 },
+      (_, index) => `00000000-0000-4000-8000-${String(index).padStart(12, '0')}`,
+    );
+    const BATCH_ID = '11111111-1111-4111-8111-111111111111';
+    /** A home worker that proved both photo operations at its last check, as a fake report would list them. */
+    const photoWorker = {
+      ...mlDestinationStub.lan,
+      lastProbeHardware: {
+        preferredAcceleration: null,
+        providers: [],
+        cudaDeviceCount: 1,
+        gpus: [],
+        photoOperations: ['repair', 'colourise'],
+      },
+    } as unknown as typeof mlDestinationStub.lan;
+    const preview = {
+      mode: AssetRestorationMode.Faithful,
+      operation: AssetRestorationOperation.Repair,
+      upscale: 2 as const,
+      keepGrain: false,
+      destinationId: photoWorker.id,
+      region: DEFAULT_RESTORATION_REGION,
+    };
+    const useWorkers = (...rows: (typeof mlDestinationStub.lan)[]) => {
+      mocks.mlDestination.getAll.mockResolvedValue(rows);
+      mocks.mlDestination.getById.mockImplementation((id: string) =>
+        Promise.resolve(rows.find((candidate) => candidate.id === id)),
+      );
+    };
+    const pixels = (rgb: [number, number, number]) =>
+      ({
+        data: new Uint8Array(Array.from({ length: 300 }, (_, index) => rgb[index % 3])),
+        info: { channels: 3 },
+      }) as never;
+    const withThumbnail = { ...asset, files: [{ type: 'thumbnail', path: '/data/thumbs/t.webp', isEdited: false }] };
+
+    beforeEach(() => {
+      useWorkers(mlDestinationStub.local, photoWorker, mlDestinationStub.frameleafCloud);
+      mocks.mlDestination.getProcessingOrder.mockResolvedValue({
+        order: [MlProcessingSource.Local, MlProcessingSource.Desktops, MlProcessingSource.Cloud],
+        overrides: {},
+      });
+      mocks.asset.getById.mockResolvedValue(withThumbnail as never);
+      mocks.media.decodeImage.mockResolvedValue(pixels([120, 120, 120]));
+      mocks.machineLearning.probe.mockResolvedValue({
+        ...mlProbeStub.healthy,
+        workloads: [],
+        photoOperations: ['repair', 'colourise'],
+      });
+      mocks.access.asset.checkOwnerAccess.mockImplementation((_userId, ids) => Promise.resolve(new Set(ids)));
+    });
+
+    it('previews a repair as a faithful, same-size revision on a worker that proved it', async () => {
+      restorations.transition.mockImplementation((id: string, _from: unknown, patch: Partial<AssetRestoration>) =>
+        Promise.resolve(row({ id, ...patch, provenance: { operation: 'repair' } })),
+      );
+      const created = await sut.requestPreview(authStub.user1, asset.id, preview);
+
+      expect(restorations.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          mode: AssetRestorationMode.Faithful,
+          upscale: 1,
+          provenance: expect.objectContaining({ operation: 'repair' }),
+        }),
+      );
+      expect(recordedOperations[0]).toMatchObject({ snapshot: { operation: 'repair', upscale: 1, stage: 'preview' } });
+      expect(created.mode).toBe(AssetRestorationMode.Faithful);
+      expect(created.operation).toBe(AssetRestorationOperation.Repair);
+    });
+
+    it('saves the accepted preview as a new revision at its own size, without writing the original', async () => {
+      restorations.getForOwner.mockResolvedValue(row({ upscale: 1, provenance: { operation: 'repair' } }));
+
+      await sut.accept(authStub.user1, asset.id, RESTORATION_ID);
+
+      expect(recordedOperations[0]).toMatchObject({
+        kind: MediaOperationKind.Restoration,
+        snapshot: { stage: 'full', operation: 'repair', output: { width: 6000, height: 4000 } },
+      });
+      expect(mocks.storage.unlink).not.toHaveBeenCalled();
+      expect(mocks.asset.update).not.toHaveBeenCalled();
+    });
+
+    it('queues nothing when no worker has proved the operation', async () => {
+      mocks.machineLearning.probe.mockResolvedValue({
+        ...mlProbeStub.healthy,
+        workloads: [MlWorkload.RestorationFaithful],
+      });
+
+      await expect(sut.requestPreview(authStub.user1, asset.id, preview)).rejects.toBeInstanceOf(
+        MlDestinationRefusedError,
+      );
+      expect(restorations.create).not.toHaveBeenCalled();
+      expect(recordedOperations).toHaveLength(0);
+    });
+
+    it('refuses to colourise a colour photo and says why', async () => {
+      mocks.media.decodeImage.mockResolvedValue({
+        data: new Uint8Array(Array.from({ length: 300 }, (_, index) => [200, 40, 40, 40, 180, 60][index % 6])),
+        info: { channels: 3 },
+      } as never);
+
+      await expect(
+        sut.requestPreview(authStub.user1, asset.id, { ...preview, operation: AssetRestorationOperation.Colourise }),
+      ).rejects.toThrow('This photo is already in colour');
+      expect(restorations.create).not.toHaveBeenCalled();
+    });
+
+    it('colourises a sepia photo', async () => {
+      mocks.media.decodeImage.mockResolvedValue(pixels([150, 123, 93]));
+
+      await sut.requestPreview(authStub.user1, asset.id, {
+        ...preview,
+        operation: AssetRestorationOperation.Colourise,
+      });
+
+      expect(recordedOperations[0]).toMatchObject({ snapshot: { operation: 'colourise' } });
+    });
+
+    it('leaves an enhance request and its response exactly as they were', async () => {
+      mocks.machineLearning.probe.mockResolvedValue({
+        ...mlProbeStub.healthy,
+        workloads: [MlWorkload.RestorationFaithful],
+      });
+      const { operation: _operation, ...enhance } = preview;
+
+      const created = await sut.requestPreview(authStub.user1, asset.id, enhance);
+
+      expect(created).not.toHaveProperty('operation');
+      expect(restorations.create).toHaveBeenCalledWith(expect.objectContaining({ upscale: 2 }));
+      expect((recordedOperations[0] as { snapshot: object }).snapshot).not.toHaveProperty('operation');
+      expect(mocks.media.decodeImage).not.toHaveBeenCalled();
+    });
+
+    it('never adds a new mode or workload to a repair response', async () => {
+      const created = await sut.requestPreview(authStub.user1, asset.id, preview);
+
+      expect(Object.values(AssetRestorationMode)).toContain(created.mode);
+      expect(Object.values(MlWorkload)).toContain(created.workload);
+    });
+
+    describe('batch', () => {
+      const estimate = { assetIds: PHOTO_IDS, operation: AssetRestorationOperation.Repair, confirm: false } as const;
+      const confirm = { ...estimate, confirm: true, destinationId: photoWorker.id, batchId: BATCH_ID } as const;
+
+      it('estimates in the processing order and queues nothing', async () => {
+        useWorkers(mlDestinationStub.frameleafCloud, photoWorker, mlDestinationStub.local);
+
+        const result = await sut.batch(authStub.user1, estimate);
+
+        expect(result.destinations.map(({ kind }) => kind)).toEqual([
+          MlDestinationKind.Local,
+          MlDestinationKind.Lan,
+          MlDestinationKind.FrameleafCloud,
+        ]);
+        expect(result).toMatchObject({ total: 50, eligible: 50, queued: 0 });
+        expect(restorations.create).not.toHaveBeenCalled();
+      });
+
+      it('follows a reordered processing order', async () => {
+        mocks.mlDestination.getProcessingOrder.mockResolvedValue({
+          order: [MlProcessingSource.Desktops, MlProcessingSource.Local, MlProcessingSource.Cloud],
+          overrides: {},
+        });
+
+        const result = await sut.batch(authStub.user1, estimate);
+
+        expect(result.destinations[0].kind).toBe(MlDestinationKind.Lan);
+      });
+
+      it('shows Frameleaf Cloud as unavailable with no invented price', async () => {
+        const result = await sut.batch(authStub.user1, estimate);
+        const cloud = result.destinations.find(({ kind }) => kind === MlDestinationKind.FrameleafCloud);
+
+        expect(cloud).toMatchObject({ available: false, costUsd: null, maxCostUsd: null });
+      });
+
+      describe('on Frameleaf Cloud (FL-961)', () => {
+        const upscaleCloud = {
+          ...mlDestinationStub.frameleafCloudConsented,
+          budgetLimitUsd: null,
+          workloads: [MlWorkload.Upscale],
+          lastProbeWorkloads: [MlWorkload.Upscale],
+          lastProbeCloud: {
+            ...mlDestinationStub.frameleafCloudConsented.lastProbeCloud!,
+            modelIds: ['ms_54S55W7C'],
+            modelWorkloads: { ms_54S55W7C: MlWorkload.Upscale },
+            defaultModels: { upscale: 'ms_54S55W7C' },
+            modelGroups: { ms_54S55W7C: 'upscale' },
+          },
+        } as unknown as typeof mlDestinationStub.lan;
+        const cloudConfirm = {
+          ...confirm,
+          destinationId: upscaleCloud.id,
+          maxCostUsd: 2,
+          consentVersion: '2026-09-26.1',
+          acknowledgeDataLeaves: true,
+        };
+
+        beforeEach(() => useWorkers(photoWorker, upscaleCloud));
+
+        it('shows no cost and queues nothing while Cloud answers that it has no price', async () => {
+          const result = await sut.batch(authStub.user1, estimate);
+          const row = result.destinations.find(({ id }) => id === upscaleCloud.id);
+
+          expect(cloudJobs.quotePhotoBatch).toHaveBeenCalledOnce();
+          expect(row).toMatchObject({
+            available: false,
+            costUsd: null,
+            maxCostUsd: null,
+            refusalDetail: "Frameleaf Cloud isn't available for this yet",
+          });
+          expect(cloudJobs.startPhotoBatch).not.toHaveBeenCalled();
+          expect(recordedOperations).toHaveLength(0);
+        });
+
+        it('shows the estimate Cloud gave once it has a price', async () => {
+          cloudJobs.quotePhotoBatch.mockResolvedValue({
+            p50Usd: 1.2,
+            p90Usd: 1.6,
+            consentVersion: '2026-09-26.1',
+            consentSummary: 'Photos leave this server.',
+          });
+
+          const result = await sut.batch(authStub.user1, estimate);
+
+          expect(result.destinations.find(({ id }) => id === upscaleCloud.id)).toMatchObject({
+            available: true,
+            costUsd: 1.2,
+            maxCostUsd: 1.6,
+            consentVersion: '2026-09-26.1',
+          });
+        });
+
+        it('starts only with the approved cost and terms', async () => {
+          await expect(
+            sut.batch(authStub.user1, { ...cloudConfirm, acknowledgeDataLeaves: false }),
+          ).rejects.toBeInstanceOf(BadRequestException);
+          expect(cloudJobs.startPhotoBatch).not.toHaveBeenCalled();
+
+          cloudJobs.startPhotoBatch.mockResolvedValue(50);
+          const result = await sut.batch(authStub.user1, cloudConfirm);
+
+          expect(result.queued).toBe(50);
+          expect(cloudJobs.startPhotoBatch).toHaveBeenCalledWith(
+            authStub.user1,
+            expect.objectContaining({ batchId: BATCH_ID, operation: 'repair', maxCostUsd: 2 }),
+          );
+        });
+      });
+
+      it('runs 50 photos on a home worker as 50 jobs with no AI Wallet charge', async () => {
+        const result = await sut.batch(authStub.user1, confirm);
+
+        expect(result.queued).toBe(50);
+        expect(recordedOperations).toHaveLength(50);
+        for (const operation of recordedOperations as { kind: string; estimate: unknown; destination: string }[]) {
+          expect(operation.kind).toBe(MediaOperationKind.Restoration);
+          expect(operation.destination).toBe(MediaOperationDestination.Lan);
+          expect((operation.estimate as { cloudCost?: unknown } | null)?.cloudCost ?? null).toBeNull();
+        }
+        expect(mocks.mlDestination.recordAccounting).not.toHaveBeenCalled();
+      });
+
+      it('queues nothing twice when the same estimate is confirmed again after a restart', async () => {
+        restorations.hasBatchItem.mockResolvedValue(true);
+
+        const result = await sut.batch(authStub.user1, confirm);
+
+        expect(result.queued).toBe(0);
+        expect(restorations.create).not.toHaveBeenCalled();
+        expect(recordedOperations).toHaveLength(0);
+      });
+
+      it('refuses a Frameleaf Cloud destination that cannot take it, and queues nothing', async () => {
+        await expect(
+          sut.batch(authStub.user1, { ...confirm, destinationId: mlDestinationStub.frameleafCloud.id }),
+        ).rejects.toBeInstanceOf(BadRequestException);
+        expect(cloudJobs.startPhotoBatch).not.toHaveBeenCalled();
+        expect(recordedOperations).toHaveLength(0);
+      });
+
+      it('says so plainly and queues nothing with nowhere to run it', async () => {
+        useWorkers({ ...photoWorker, lastProbeHardware: null } as typeof photoWorker);
+
+        const result = await sut.batch(authStub.user1, estimate);
+        expect(result.destinations.every(({ available }) => !available)).toBe(true);
+        await expect(sut.batch(authStub.user1, confirm)).rejects.toBeInstanceOf(BadRequestException);
+        expect(recordedOperations).toHaveLength(0);
+      });
+
+      it('skips colour photos when colourising, and says how many', async () => {
+        mocks.media.decodeImage.mockImplementation(() =>
+          Promise.resolve({
+            data: new Uint8Array(Array.from({ length: 300 }, (_, index) => [200, 40, 40, 40, 180, 60][index % 6])),
+            info: { channels: 3 },
+          } as never),
+        );
+
+        const result = await sut.batch(authStub.user1, { ...estimate, operation: AssetRestorationOperation.Colourise });
+
+        expect(result.eligible).toBe(0);
+        expect(result.skipped).toHaveLength(50);
+        expect(result.skipped[0].reason).toBe('already-in-colour');
+      });
+
+      it('needs edit access to every photo', async () => {
+        mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([PHOTO_IDS[0]]));
+
+        await expect(sut.batch(authStub.user1, estimate)).rejects.toThrow();
+        expect(recordedOperations).toHaveLength(0);
+      });
     });
   });
 });

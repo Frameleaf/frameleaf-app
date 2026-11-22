@@ -1,6 +1,10 @@
 import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
-import { AssetRestorationModeSchema, AssetRestorationRegionSchema } from 'src/dtos/asset-restoration.dto.js';
+import {
+  AssetRestorationModeSchema,
+  AssetRestorationOperationSchema,
+  AssetRestorationRegionSchema,
+} from 'src/dtos/asset-restoration.dto.js';
 import { MlWorkloadSchema } from 'src/enum.js';
 import {
   CLOUD_ML_JOB_ACTIVITY_STAGES,
@@ -66,6 +70,9 @@ const CloudMlJobEstimateRequestSchema = z
       .regex(MODEL_SKU_PATTERN)
       .optional()
       .describe('The model chosen on the slider; omitted, the chosen or recommended model for this work'),
+    operation: AssetRestorationOperationSchema.optional().describe(
+      'FL-955: repair or colourise a photo at its own size. A full render inherits it from its preview.',
+    ),
   })
   .meta({ id: 'CloudMlJobEstimateRequestDto' });
 

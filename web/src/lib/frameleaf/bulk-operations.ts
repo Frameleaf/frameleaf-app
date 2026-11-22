@@ -1093,6 +1093,9 @@ export const runBulkAction = async (
     }
 
     /* The preservation export dialog creates its own durable job (FL-74); like send-copy, never here. */
+    case 'repair-colourise': {
+      throw new Error('repair-colourise is not a bulk operation: start it from its batch sheet');
+    }
     case 'export-preservation': {
       throw new Error('export-preservation is not a bulk operation: export through the preservation dialog');
     }
