@@ -34781,6 +34781,154 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/icloud-sync/connections/{id}/review": {
+      "get": {
+        "operationId": "getICloudReview",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "group",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/ICloudReviewGroup"
+            }
+          },
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 9007199254740991,
+              "default": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "name": "size",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 200,
+              "default": 48,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ICloudReviewPageResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "tags": [
+          "ICloud Sync"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/icloud-sync/connections/{id}/review/accept": {
+      "post": {
+        "operationId": "acceptICloudReview",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ICloudReviewAcceptDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ICloudReviewAcceptResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "tags": [
+          "ICloud Sync"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
     "/icloud-sync/coverage": {
       "post": {
         "description": "Up to 200 sampled items from the device. For each of the caller's own connections: its state, scope and how many of the samples that existed before its last complete inventory it holds. A connection covers the library with at least 20 such samples and 95 % matched (corroborated or better). PhotoKit cannot tell which Apple Account is signed in, so overlap is the only proof.",
@@ -118445,6 +118593,85 @@
         ],
         "type": "string"
       },
+      "ICloudReviewAcceptDto": {
+        "properties": {
+          "all": {
+            "description": "Accept every photo in view instead of a list",
+            "enum": [
+              true
+            ],
+            "type": "boolean"
+          },
+          "exceptResourceIds": {
+            "description": "With all: photos left for later",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            },
+            "maxItems": 10000,
+            "type": "array"
+          },
+          "group": {
+            "$ref": "#/components/schemas/ICloudReviewGroup",
+            "description": "With all: only this reason"
+          },
+          "resourceIds": {
+            "description": "The photos to accept",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            },
+            "maxItems": 200,
+            "minItems": 1,
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "ICloudReviewAcceptResponseDto": {
+        "properties": {
+          "accepted": {
+            "description": "Photos settled",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "requeued": {
+            "description": "Of those, photos going back through a sync",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "accepted",
+          "requeued"
+        ],
+        "type": "object"
+      },
+      "ICloudReviewEffect": {
+        "description": "What accepting this photo does",
+        "enum": [
+          "use-existing",
+          "keep-current",
+          "try-again"
+        ],
+        "type": "string"
+      },
+      "ICloudReviewGroup": {
+        "enum": [
+          "match",
+          "live-photo",
+          "stack",
+          "details",
+          "edits",
+          "storage",
+          "other"
+        ],
+        "type": "string"
+      },
       "ICloudReviewKind": {
         "enum": [
           "review",
@@ -118454,6 +118681,146 @@
           "source-removed"
         ],
         "type": "string"
+      },
+      "ICloudReviewPageResponseDto": {
+        "properties": {
+          "effects": {
+            "properties": {
+              "keepCurrent": {
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "tryAgain": {
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "useExisting": {
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "keepCurrent",
+              "tryAgain",
+              "useExisting"
+            ],
+            "type": "object"
+          },
+          "groups": {
+            "items": {
+              "properties": {
+                "count": {
+                  "maximum": 9007199254740991,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "group": {
+                  "$ref": "#/components/schemas/ICloudReviewGroup"
+                }
+              },
+              "required": [
+                "count",
+                "group"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "hiddenLocked": {
+            "description": "Photos hidden in iCloud that are Locked here",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "items": {
+            "items": {
+              "properties": {
+                "effect": {
+                  "$ref": "#/components/schemas/ICloudReviewEffect"
+                },
+                "fileName": {
+                  "nullable": true,
+                  "type": "string"
+                },
+                "group": {
+                  "$ref": "#/components/schemas/ICloudReviewGroup"
+                },
+                "previewAssetId": {
+                  "description": "The library photo to show; null when there is none yet",
+                  "nullable": true,
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                  "type": "string"
+                },
+                "reason": {
+                  "type": "string"
+                },
+                "resourceId": {
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                  "type": "string"
+                },
+                "takenAt": {
+                  "nullable": true,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "effect",
+                "fileName",
+                "group",
+                "previewAssetId",
+                "reason",
+                "resourceId",
+                "takenAt"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "page": {
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "pages": {
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "privateWaiting": {
+            "description": "Locked or hidden photos in review that need an unlocked session",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "size": {
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "total": {
+            "description": "Photos in view, each counted once",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "effects",
+          "groups",
+          "hiddenLocked",
+          "items",
+          "page",
+          "pages",
+          "privateWaiting",
+          "size",
+          "total"
+        ],
+        "type": "object"
       },
       "ICloudSyncActivityResponseDto": {
         "properties": {
