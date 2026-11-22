@@ -139,6 +139,7 @@ import { QueueController } from 'src/controllers/queue.controller.js';
 import { RawSupportController } from 'src/controllers/raw-support.controller.js';
 import { RenderWorkerAdminController, RenderWorkerController } from 'src/controllers/render-worker.controller.js';
 import { SafetyController } from 'src/controllers/safety.controller.js';
+import { ScanSplitController } from 'src/controllers/scan-split.controller.js';
 import { SearchController } from 'src/controllers/search.controller.js';
 import { ServerController } from 'src/controllers/server.controller.js';
 import { SessionController } from 'src/controllers/session.controller.js';
@@ -200,6 +201,7 @@ export const controllers = [
   LibraryItemController,
   AssetAnnotationController,
   AssetPaletteController,
+  ScanSplitController,
   CaptureController,
   BrowserExtensionSignInController,
   McpController,

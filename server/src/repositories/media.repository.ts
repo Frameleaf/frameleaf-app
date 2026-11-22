@@ -627,6 +627,11 @@ export class MediaRepository {
     return sharpProcessPool.run('renderDownloadJpeg', [input, output, maxEdge], signal);
   }
 
+  /** FL-923: one straightened print of a flatbed scan as a full-resolution JPEG; answers the photo's size. */
+  renderScanCrop(...args: SharpArguments<'renderScanCrop'>): Promise<ImageDimensions> {
+    return sharpProcessPool.run('renderScanCrop', args, executionSignal());
+  }
+
   /**
    * FL-826: copies the original's EXIF, XMP and IPTC into a rendered download JPEG, leaving out what no
    * longer describes it (orientation, the embedded thumbnail, the colour profile) and, with
