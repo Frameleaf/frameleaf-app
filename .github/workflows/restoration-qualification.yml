@@ -29,7 +29,6 @@ jobs:
     timeout-minutes: 150
     permissions:
       contents: read
-      packages: read
     env:
       LIMIT: ${{ inputs.limit || '0' }}
       PYTHONDONTWRITEBYTECODE: '1'
@@ -59,7 +58,7 @@ jobs:
       - name: The job can read the scan package
         shell: pwsh
         env:
-          PACKAGE_TOKEN: ${{ github.token }}
+          PACKAGE_TOKEN: ${{ secrets.PACKAGES_READ_TOKEN }}
         run: |
           $q = Join-Path $env:GITHUB_WORKSPACE 'q'
           New-Item -ItemType Directory -Force -Path "$q\s" | Out-Null
@@ -104,7 +103,7 @@ jobs:
       - name: Scan set from the private package, every sha256 checked
         shell: pwsh
         env:
-          PACKAGE_TOKEN: ${{ github.token }}
+          PACKAGE_TOKEN: ${{ secrets.PACKAGES_READ_TOKEN }}
         run: |
           $q = Join-Path $env:GITHUB_WORKSPACE 'q'
           & "$q\v\Scripts\python.exe" -I machine-learning\video-restoration\qualification\fetch_inputs.py scans machine-learning\video-restoration\qualification\scan-set.json "$q\s" --limit $env:LIMIT
