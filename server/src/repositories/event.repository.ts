@@ -111,6 +111,8 @@ type EventMap = {
   HouseholdFeedAssets: [{ assetIds: string[] }];
   /** FL-979: a person was linked to or unlinked from a shared space. */
   HouseholdFeedPerson: [{ albumId: string; personLinkId: string }];
+  /** FL-1012: comments or likes of a shared space were written, edited or (`deleted`) removed here. */
+  HouseholdFeedComments: [{ albumId: string; activityIds: string[]; deleted: boolean }];
   /** FL-979: this account's Locked rules changed. */
   LockedRulesChanged: [{ userId: string }];
 

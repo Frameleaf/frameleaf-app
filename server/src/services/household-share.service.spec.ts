@@ -6,7 +6,12 @@ import { MetadataKey } from 'src/enum.js';
 import { HouseholdShareService } from 'src/services/household-share.service.js';
 import { createDpopProof } from 'src/utils/frameleaf-dpop.js';
 import { HouseholdGrantResponse } from 'src/utils/frameleaf-household.js';
-import { signHouseholdDownload } from 'src/utils/household-protocol.js';
+import {
+  HOUSEHOLD_BODY_CONTENT_TYPE,
+  HOUSEHOLD_BODY_HEADER,
+  signHouseholdBody,
+  signHouseholdDownload,
+} from 'src/utils/household-protocol.js';
 import {
   type HouseholdCloud,
   type HouseholdServer,
@@ -711,6 +716,275 @@ describe(HouseholdShareService.name, () => {
       vi.spyOn(anna.world, 'touchAssets').mockRejectedValue(new Error('database unavailable'));
       await expect(anna.shares.onAssetsLocked({ assetIds: [randomUUID()] })).resolves.toBeUndefined();
       expect(anna.logger.warn).toHaveBeenCalled();
+    });
+  });
+
+  describe('comments (FL-1012, T9, T16, T17)', () => {
+    const post = (change: Record<string, unknown> = {}) => ({
+      id: randomUUID(),
+      userId: benUser,
+      assetId: null,
+      isLiked: false,
+      comment: 'Lovely day',
+      ...change,
+    });
+    const commentEntry = (entries: Manifest['entries'], id: string) =>
+      entries.find((entry) => entry.kind === 'comment' && entry.id === id) as unknown as
+        { stop?: true; comment?: Record<string, any> } | undefined;
+    /** A POST through the real controller, with the body signature a peer must produce. */
+    const postRaw = async (
+      shareId: string,
+      raw: string,
+      tamper?: string,
+      contentType = HOUSEHOLD_BODY_CONTENT_TYPE,
+    ) => {
+      const { token } = await ben.peer.cloud(HouseholdGrantResponse, 'grants', { version: 1, linkId: link.ben });
+      const target = `https://${anna.host}/api/household/v1/links/${link.ben}/shares/${shareId}/comments`;
+      const proof = createDpopProof(ben.peer.signer(), { htm: 'POST', htu: target, accessToken: token });
+      const { jti } = JSON.parse(Buffer.from(proof.split('.', 2)[1], 'base64url').toString()) as { jti: string };
+      const request = householdRequest(
+        target,
+        {
+          Authorization: `DPoP ${token}`,
+          DPoP: proof,
+          'Content-Type': contentType,
+          [HOUSEHOLD_BODY_HEADER]: signHouseholdBody(ben.peer.signer(), jti, raw),
+        },
+        { method: 'POST', body: tamper ?? raw },
+      );
+      return anna.controller.postComment(link.ben, shareId, request, { setHeader: vi.fn() } as never);
+    };
+
+    it('lists a local comment with its author by name and no email (T9)', async () => {
+      anna.world.comments.localUsers.set(ownerId, 'anna@example.com');
+      const row = anna.world.comments.addLocal({ albumId: spaceId, userId: ownerId, comment: 'Hello Ben' });
+      const shareId = await offer();
+      const entries = await readAll(shareId);
+      expect(commentEntry(entries, row.id)?.comment).toMatchObject({
+        assetId: null,
+        isLiked: false,
+        comment: 'Hello Ben',
+        author: { household: 'local', id: ownerId, name: 'Member' },
+      });
+      expect(JSON.stringify(entries)).not.toContain('anna@example.com');
+    });
+
+    it('seeds existing comments when a share is created, after the items they are about', async () => {
+      const item = anna.world.addItem(spaceId);
+      const row = anna.world.comments.addLocal({ albumId: spaceId, userId: ownerId, assetId: item.id });
+      const shareId = await offer();
+      const entries = await readAll(shareId);
+      const position = (id: string) => entries.findIndex((entry) => entry.id === id);
+      expect(position(row.id)).toBeGreaterThan(position(item.id));
+    });
+
+    it('a comment on a Locked, trashed, hidden or removed item is stop, and comes back when the item does', async () => {
+      const cases: Array<Record<string, unknown>> = [
+        { locked: true },
+        { deleted: true },
+        { visibility: 'hidden' },
+        { albums: new Set() },
+      ];
+      for (const change of cases) {
+        const item = anna.world.addItem(spaceId);
+        const row = anna.world.comments.addLocal({ albumId: spaceId, userId: ownerId, assetId: item.id });
+        const shareId = await offer();
+        await anna.shares.onComments({ albumId: spaceId, activityIds: [row.id], deleted: false });
+        expect(commentEntry(await readAll(shareId), row.id)?.comment).toBeDefined();
+
+        Object.assign(item, change);
+        await anna.shares.onFeedAssets({ assetIds: [item.id] });
+        const hidden = commentEntry(await readAll(shareId), row.id);
+        expect(hidden).toMatchObject({ stop: true });
+        expect(hidden?.comment).toBeUndefined();
+
+        Object.assign(item, { locked: false, deleted: false, visibility: 'timeline', albums: new Set([spaceId]) });
+        await anna.shares.onFeedAssets({ assetIds: [item.id] });
+        expect(commentEntry(await readAll(shareId), row.id)?.comment).toBeDefined();
+      }
+    });
+
+    it('T16: comment as a non-member, an invited member or a member who left → 403', async () => {
+      const shareId = await offer();
+      await offer({ accepted: false, userId: benOther });
+      const access = await asBen();
+      expect(await status(anna.shares.postComment(access, shareId, post({ userId: randomUUID() })))).toBe(403);
+      expect(await status(anna.shares.postComment(access, shareId, post({ userId: benOther })))).toBe(403);
+      await anna.world.leave(shareId, benUser);
+      expect(await status(anna.shares.postComment(access, shareId, post()))).toBe(403);
+      expect(anna.world.comments.activities.size).toBe(0);
+    });
+
+    it('T6: a member of the share on another link cannot be named over this one', async () => {
+      const shareId = await offer();
+      const access = await accessAs(cara, link.cara);
+      expect(await status(anna.shares.postComment(access, shareId, post()))).toBe(403);
+    });
+
+    it('T16: a body naming one of the sender’s local users → 403, even if the directory listed that id', async () => {
+      const localUser = randomUUID();
+      anna.world.comments.localUsers.set(localUser, 'Anna');
+      const shareId = await offer({ userId: localUser });
+      await offer();
+      const access = await asBen();
+      expect(await status(anna.shares.postComment(access, shareId, post({ userId: localUser })))).toBe(403);
+      expect(anna.world.comments.activities.size).toBe(0);
+    });
+
+    it('T16: edit or delete another member’s comment, or a local one → 403', async () => {
+      const shareId = await offer();
+      await offer({ userId: benOther });
+      const access = await asBen();
+      const { id } = await anna.shares.postComment(access, shareId, post());
+      const local = anna.world.comments.addLocal({ albumId: spaceId, userId: ownerId });
+      const other = { userId: benOther, comment: 'Not yours' };
+      expect(await status(anna.shares.putComment(access, shareId, id, other))).toBe(403);
+      expect(await status(anna.shares.deleteComment(access, shareId, id, { userId: benOther }))).toBe(403);
+      const mine = { userId: benUser, comment: 'Mine now' };
+      expect(await status(anna.shares.putComment(access, shareId, local.id, mine))).toBe(403);
+      expect(await status(anna.shares.deleteComment(access, shareId, local.id, { userId: benUser }))).toBe(403);
+      expect(anna.world.comments.activities.get(id)?.comment).toBe('Lovely day');
+      expect(anna.world.comments.activities.get(local.id)?.comment).toBe('hello');
+    });
+
+    it('comment on a Locked or out-of-space item → 403, and nothing is stored', async () => {
+      const locked = anna.world.addItem(spaceId, { locked: true });
+      const elsewhere = anna.world.addItem(null);
+      const shareId = await offer();
+      const access = await asBen();
+      for (const assetId of [locked.id, elsewhere.id, randomUUID()]) {
+        expect(await status(anna.shares.postComment(access, shareId, post({ assetId })))).toBe(403);
+      }
+      expect(anna.world.comments.activities.size).toBe(0);
+    });
+
+    it('over-length, wrong-type and unknown-field bodies → 400', async () => {
+      const shareId = await offer();
+      const access = await asBen();
+      for (const body of [
+        post({ comment: 'x'.repeat(4001) }),
+        post({ comment: 42 }),
+        post({ comment: ' '.repeat(3) }),
+        post({ isLiked: 'yes' }),
+        post({ isLiked: true }),
+        post({ comment: null }),
+        post({ userId: 'ben' }),
+        post({ id: 'not-a-uuid' }),
+        post({ email: 'ben@example.com' }),
+        post({ remoteAuthorId: randomUUID() }),
+        null,
+        [],
+      ]) {
+        expect(await status(anna.shares.postComment(access, shareId, body))).toBe(400);
+      }
+      const { id } = await anna.shares.postComment(access, shareId, post());
+      const refusals = [
+        { userId: benUser, comment: 'x'.repeat(4001) },
+        { userId: benUser, comment: 'ok', isLiked: true },
+      ];
+      for (const body of refusals) {
+        expect(await status(anna.shares.putComment(access, shareId, id, body))).toBe(400);
+      }
+      expect(await status(anna.shares.deleteComment(access, shareId, id, { userId: benUser, x: 1 }))).toBe(400);
+    });
+
+    it('T17: markup is stored and sent as the same plain text', async () => {
+      const shareId = await offer();
+      const markup = '<img src=x onerror=alert(1)><script>alert(2)</script>';
+      const { id } = await anna.shares.postComment(await asBen(), shareId, post({ comment: markup }));
+      expect(anna.world.comments.activities.get(id)?.comment).toBe(markup);
+      expect(commentEntry(await readAll(shareId), id)?.comment?.comment).toBe(markup);
+    });
+
+    it('allows 30 writes per member per minute, then 429', async () => {
+      const shareId = await offer();
+      await offer({ userId: benOther });
+      const access = await asBen();
+      for (let index = 0; index < 30; index++) {
+        await anna.shares.postComment(access, shareId, post());
+      }
+      expect(await status(anna.shares.postComment(access, shareId, post()))).toBe(429);
+      expect(await status(anna.shares.postComment(access, shareId, post({ userId: benOther })))).toBe(200);
+      expect(anna.world.comments.activities.size).toBe(31);
+    });
+
+    it('a retried post with the same id does not post twice', async () => {
+      const shareId = await offer();
+      const access = await asBen();
+      const body = post();
+      const first = await anna.shares.postComment(access, shareId, body);
+      const second = await anna.shares.postComment(access, shareId, body);
+      expect(second).toEqual(first);
+      expect(anna.world.comments.activities.size).toBe(1);
+      expect(anna.world.comments.events).toHaveLength(1);
+    });
+
+    it('T16: a post reusing the id of someone else’s comment is refused and changes nothing', async () => {
+      const shareId = await offer();
+      await offer({ userId: benOther });
+      const local = anna.world.comments.addLocal({ albumId: spaceId, userId: ownerId });
+      const access = await asBen();
+      expect(await status(anna.shares.postComment(access, shareId, post({ id: local.id })))).toBe(403);
+      const { id } = await anna.shares.postComment(access, shareId, post());
+      expect(await status(anna.shares.postComment(access, shareId, post({ id, userId: benOther })))).toBe(403);
+      expect(anna.world.comments.activities.get(local.id)?.comment).toBe('hello');
+    });
+
+    it('a like is one per person and item, under the latest id', async () => {
+      const item = anna.world.addItem(spaceId);
+      const shareId = await offer();
+      const access = await asBen();
+      const like = { assetId: item.id, isLiked: true, comment: null };
+      const first = await anna.shares.postComment(access, shareId, post(like));
+      const second = await anna.shares.postComment(access, shareId, post(like));
+      expect(second.id).not.toBe(first.id);
+      expect(anna.world.comments.activities.keys().toArray()).toEqual([second.id]);
+      expect(commentEntry(await readAll(shareId), first.id)).toMatchObject({ stop: true });
+    });
+
+    it('a deleted comment reads as stop and touches no media', async () => {
+      const item = anna.world.addItem(spaceId);
+      const shareId = await offer();
+      const access = await asBen();
+      const { id } = await anna.shares.postComment(access, shareId, post({ assetId: item.id }));
+      await anna.shares.deleteComment(access, shareId, id, { userId: benUser });
+      expect(anna.world.comments.activities.has(id)).toBe(false);
+      expect(commentEntry(await readAll(shareId), id)).toMatchObject({ stop: true });
+      expect(anna.world.items.get(item.id)?.deleted).toBeFalsy();
+      expect(anna.world.items.get(item.id)?.locked).toBeFalsy();
+    });
+
+    it('a mention notifies only this server’s members of the space', async () => {
+      const member = randomUUID();
+      const outsider = randomUUID();
+      anna.world.comments.albumMembers.set(spaceId, new Set([member]));
+      const shareId = await offer();
+      const comment = `@{${member}} @{${outsider}} @{${benOther}}`;
+      await anna.shares.postComment(await asBen(), shareId, post({ comment }));
+      expect(anna.events.emit).toHaveBeenCalledWith(
+        'SharedSpaceMention',
+        expect.objectContaining({ userIds: [member], senderName: 'Ben' }),
+      );
+    });
+
+    it('a body must carry this request’s signature, the private type and at most 64 KiB', async () => {
+      const shareId = await offer();
+      const raw = JSON.stringify(post());
+      expect(await status(postRaw(shareId, raw))).toBe(200);
+      const forged = JSON.stringify(post({ comment: 'changed by a relay' }));
+      expect(await status(postRaw(shareId, JSON.stringify(post()), forged))).toBe(401);
+      expect(await status(postRaw(shareId, raw, undefined, 'application/json'))).toBe(415);
+      const huge = JSON.stringify(post({ comment: 'x'.repeat(70_000) }));
+      expect(await status(postRaw(shareId, huge))).toBe(413);
+      expect(anna.world.comments.activities.size).toBe(1);
+    });
+
+    it('an ended link refuses comments and keeps the history', async () => {
+      const shareId = await offer();
+      const { id } = await anna.shares.postComment(await asBen(), shareId, post());
+      Object.assign(localLink(link.ben), { state: 'ended' });
+      expect(await status(postRaw(shareId, JSON.stringify(post())))).toBe(403);
+      expect(anna.world.comments.activities.has(id)).toBe(true);
     });
   });
 

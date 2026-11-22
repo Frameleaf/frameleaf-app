@@ -95,6 +95,11 @@ export class ActivityService extends BaseService {
         comment: dto.comment,
       });
       await this.recordSpaceEvent(auth, dto.albumId, activity);
+      await this.eventRepository.emit('HouseholdFeedComments', {
+        albumId: dto.albumId,
+        activityIds: [activity.id],
+        deleted: false,
+      });
     }
 
     return { duplicate: isDuplicate, value: mapActivity(activity) };
@@ -109,7 +114,12 @@ export class ActivityService extends BaseService {
     const album = activity ? await this.albumRepository.getById(activity.albumId, { withAssets: false }) : undefined;
     if (album && isSharedSpace(album)) {
       requireSpaceMember(album, auth.user.id);
-      await this.albumUserRepository.deleteCommentWithReplies(id);
+      const removed = await this.albumUserRepository.deleteCommentWithReplies(id);
+      await this.eventRepository.emit('HouseholdFeedComments', {
+        albumId: album.id,
+        activityIds: removed,
+        deleted: true,
+      });
       return;
     }
 

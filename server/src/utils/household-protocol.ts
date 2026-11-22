@@ -89,6 +89,35 @@ export const isHouseholdDownloadValid = (
   }
 };
 
+const HOUSEHOLD_BODY_TYPE = 'household-body+jwt';
+export const HOUSEHOLD_BODY_HEADER = 'x-frameleaf-household-body';
+export const HOUSEHOLD_BODY_CONTENT_TYPE = 'application/vnd.frameleaf.household+json';
+const bodyDigest = (raw: string | Buffer) => createHash('sha256').update(raw).digest('hex');
+
+/**
+ * FL-1012: a request proof signs the method and address, not the body. This binds a body to that one request with
+ * the same key, so a relay between the two servers cannot change who a comment is from or what it says.
+ */
+export const signHouseholdBody = (signer: FrameleafKeySigner, requestId: string, raw: string) =>
+  signer.sign({ typ: HOUSEHOLD_BODY_TYPE, alg: 'EdDSA' }, { requestId, digest: bodyDigest(raw) });
+
+export const isHouseholdBodyValid = (token: string, peerPublicKey: string, requestId: string, raw: Buffer) => {
+  try {
+    const jwt = decode(token);
+    z.strictObject({ typ: z.literal(HOUSEHOLD_BODY_TYPE), alg: z.literal('EdDSA') }).parse(jwt.header);
+    const claims = z
+      .strictObject({ requestId: z.string().min(1).max(128), digest: z.string().regex(/^[a-f\d]{64}$/) })
+      .parse(jwt.payload);
+    return (
+      claims.requestId === requestId &&
+      claims.digest === bodyDigest(raw) &&
+      verify(null, jwt.input, ed25519(peerPublicKey), jwt.signature)
+    );
+  } catch {
+    return false;
+  }
+};
+
 type ReplyGrant = Pick<HouseholdGrantClaims, 'linkId' | 'jti' | 'exp'>;
 
 export const signHouseholdResponse = (

@@ -74,7 +74,9 @@ export type Activity = {
   createdAt: Date;
   updatedAt: Date;
   albumId: string;
-  userId: string;
+  /** Null on a comment from another household (FL-1012): `user` then describes that person by name only. */
+  userId: string | null;
+  remoteAuthorId?: string | null;
   user: ShallowDehydrateObject<User>;
   assetId: string | null;
   comment: string | null;
