@@ -307,17 +307,17 @@ Direct connections cost Frameleaf nothing. A share only uses the relay when the 
 - A 50 GB video-heavy space is a quarter of the allowance and about 14 hours at 8 Mbps.
 - Steady state (30 new items a week) is about 0.5 GB a month.
 
-So the caps hold for ordinary family spaces, and the pull job must: prefer home and direct paths every time it connects, download at most two files at once, back off when the relay answers `429` or the monthly allowance is spent, and show "waiting for the monthly relay allowance" rather than an error. Whether a first sync over the relay should be paced below the cap (so that it never starves the phone apps) is an open question for the owner, tracked on FL-911.
+So the caps hold for ordinary family spaces, and the pull job must: prefer home and direct paths every time it connects, download at most two files at once, back off when the relay answers `429` or the monthly allowance is spent, and show "waiting for the monthly relay allowance" rather than an error. A first sync over the relay is not paced below the plan's caps (decision 4 below).
 
 ### 12. Phone account switching (FL-937, FL-963)
 
 Independent of the protocol above: the apps key sessions, caches, mirrors and upload queues by server **and** user, so one person can keep an account on their own server and on the grandparents', or two accounts on one server, and switch from the library title. Backup stays bound to the account chosen as its target. A received space is an ordinary space to the apps; they need no household API.
 
-### 13. Open decisions
+### 13. Decisions
 
-Tracked on FL-911 with a recommendation each:
+Decided by the owner on 2026-11-22 (FL-911):
 
-1. **Who can be found.** Recommended: every active account on a linked server is listed by name to the other household's space owners; no per-person opt-out in version 1.
-2. **What a remote "contributor" may do.** Recommended: comment and like only in version 1; adding photos back comes later.
-3. **Largest file accepted from another household.** Recommended: 20 GiB by default, with no setting in version 1.
-4. **First sync over the relay.** Recommended: no extra pacing beyond the plan's caps.
+1. **Who can be found.** Every active account on a linked server is listed by name to the other household's space owners. There is no per-person opt-out in version 1. Email addresses are never listed.
+2. **What a remote "contributor" may do.** Comment and like only in version 1. Adding photos back to the sender's space comes later.
+3. **Largest file accepted from another household.** 20 GiB, with no setting in version 1.
+4. **First sync over the relay.** No extra pacing beyond the plan's caps.
