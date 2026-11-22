@@ -50,6 +50,61 @@ describe('MemoriesPanel', () => {
     vi.useRealTimers();
   });
 
+  describe("Mother's Day and Father's Day (FL-880)", () => {
+    const recap = (occasion?: { kind: string; personId: string }) =>
+      ({
+        ...memory('memory-occasion', [{ id: 'asset-1', visibility: 'timeline' }]),
+        type: 'person_recap',
+        data: { kind: 'person_recap', year: 2026, subject: 'person', subjectId: 'mum', name: 'Margaret', assetCount: 3 },
+        memoryAt: '2026-05-10T00:00:00.000Z',
+        // cast: the SDK gains `occasion` when it is regenerated
+        ...(occasion && { occasion }),
+      }) as unknown as MemoryResponseDto;
+
+    const onTheDay = () => {
+      vi.useFakeTimers({ toFake: ['Date'] });
+      vi.setSystemTime(new Date(2026, 4, 10, 12));
+    };
+
+    it('labels the card with the day, the person and who they are, under Today', () => {
+      onTheDay();
+      memoryManager.memories = [recap({ kind: 'mothers_day', personId: 'mum' })];
+
+      render(MemoriesPanel);
+
+      const today = screen.getByRole('region', { name: 'Today' });
+      expect(within(today).getByText("Mother's Day")).toBeInTheDocument();
+      expect(within(today).getByText('Margaret through the years')).toBeInTheDocument();
+      expect(within(today).getByText("For Mother's Day · your mother")).toBeInTheDocument();
+    });
+
+    it("says your father on Father's Day and your child on a parent's own day", () => {
+      onTheDay();
+      memoryManager.memories = [
+        { ...recap({ kind: 'fathers_day', personId: 'dad' }), id: 'father' },
+        { ...recap({ kind: 'mothers_day_child', personId: 'sam' }), id: 'child' },
+      ];
+
+      render(MemoriesPanel);
+
+      expect(screen.getByText("For Father's Day · your father")).toBeInTheDocument();
+      expect(screen.getByText("For Mother's Day · your child")).toBeInTheDocument();
+    });
+
+    it('shows an ordinary recap without an occasion, or with one it does not know', () => {
+      onTheDay();
+      memoryManager.memories = [
+        { ...recap(), id: 'plain' },
+        { ...recap({ kind: 'a_later_occasion', personId: 'mum' }), id: 'unknown' },
+      ];
+
+      render(MemoriesPanel);
+
+      expect(screen.getAllByText('2026 with Margaret')).toHaveLength(2);
+      expect(screen.queryByText('Margaret through the years')).toBeNull();
+    });
+  });
+
   // FL-83: an emptied memory is deleted when its Undo closes, but one the server still returns (a
   // reload inside the window) must not break the index.
   it('renders the index without throwing when a memory has no items', () => {

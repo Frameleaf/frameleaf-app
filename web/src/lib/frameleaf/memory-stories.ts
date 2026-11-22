@@ -52,6 +52,36 @@ export const isBirthday = (memory: MemoryResponseDto): memory is MemoryResponseD
 export const isPersonRecap = (memory: MemoryResponseDto): memory is MemoryResponseDto & { data: PersonRecapDto } =>
   memory.type === MemoryType.PersonRecap && (memory.data as Partial<PersonRecapDto>).kind === 'person_recap';
 
+export type MemoryOccasion = { day: 'mothers_day' | 'fathers_day'; relation: 'mother' | 'father' | 'child' };
+
+/**
+ * FL-880: the Mother's Day or Father's Day a person recap was made for. A kind this client does not know
+ * reads as an ordinary recap.
+ */
+export const memoryOccasion = (memory: MemoryResponseDto): MemoryOccasion | undefined => {
+  switch (isPersonRecap(memory) ? memory.occasion?.kind : undefined) {
+    case 'mothers_day': {
+      return { day: 'mothers_day', relation: 'mother' };
+    }
+    case 'fathers_day': {
+      return { day: 'fathers_day', relation: 'father' };
+    }
+    case 'mothers_day_child': {
+      return { day: 'mothers_day', relation: 'child' };
+    }
+    case 'fathers_day_child': {
+      return { day: 'fathers_day', relation: 'child' };
+    }
+    default: {
+      return undefined;
+    }
+  }
+};
+
+/** The card's overline for an occasion: "Mother's Day". */
+export const occasionOverlineKey = ({ day }: MemoryOccasion): Translations =>
+  day === 'mothers_day' ? 'frameleaf_memories_occasion_mothers_day' : 'frameleaf_memories_occasion_fathers_day';
+
 export const memoryStoryKind = (memory: MemoryResponseDto): MemoryStoryKind => {
   if (isEventStory(memory)) {
     return 'event_story';
@@ -131,6 +161,10 @@ export const dayDiff = (from: string, to: string): number =>
 export const memoryLocalDay = (memory: MemoryResponseDto): string | undefined => {
   if (isBirthday(memory)) {
     return isoDay.test(memory.data.date) ? memory.data.date : undefined;
+  }
+  // FL-880: an occasion's `memoryAt` is midnight UTC of its calendar day
+  if (memoryOccasion(memory)) {
+    return DateTime.fromISO(memory.memoryAt, { zone: 'utc' }).toISODate() ?? undefined;
   }
   if (memory.type !== MemoryType.OnThisDay || !memory.showAt) {
     return undefined;
@@ -282,6 +316,15 @@ const generatedHeadline = (
       ]
         .filter(Boolean)
         .join(' · '),
+    };
+  }
+  const occasion = memoryOccasion(memory);
+  if (occasion && isPersonRecap(memory)) {
+    return {
+      title: t('frameleaf_memories_occasion_title', { values: { name: memory.data.name } }),
+      subtitle: t('frameleaf_memories_occasion_line', {
+        values: { occasion: t(occasionOverlineKey(occasion)), relation: occasion.relation },
+      }),
     };
   }
   if (isPersonRecap(memory)) {

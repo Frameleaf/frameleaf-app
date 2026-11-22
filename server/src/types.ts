@@ -1859,6 +1859,10 @@ export type UserPreferences = {
     enabled: boolean;
     duration: number;
     sidebarWeb: boolean;
+    /** FL-880: Mother's Day and Father's Day memories */
+    occasions: boolean;
+    /** FL-880: a region from `OCCASION_REGIONS`, or `auto` to follow the account's locale */
+    occasionRegion: string;
   };
   people: {
     enabled: boolean;

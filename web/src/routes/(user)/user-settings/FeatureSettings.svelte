@@ -19,13 +19,22 @@
   import KitPage from '$lib/components/frameleaf/settings/kit/KitPage.svelte';
   import Row from '$lib/components/frameleaf/settings/kit/Row.svelte';
   import Section from '$lib/components/frameleaf/settings/kit/Section.svelte';
+  import Select from '$lib/components/frameleaf/settings/kit/Select.svelte';
   import Switch from '$lib/components/frameleaf/settings/kit/Switch.svelte';
   import Tell, { type TellRow } from '$lib/components/frameleaf/settings/kit/Tell.svelte';
   import OwnPreferencesForm from '$lib/components/frameleaf/settings/OwnPreferencesForm.svelte';
   import SpokenWordsSettings from '$lib/components/frameleaf/settings/intelligence/SpokenWordsSettings.svelte';
   import MySmartAlbums from '$lib/components/frameleaf/settings/intelligence/MySmartAlbums.svelte';
   import type { AccountPreferenceKey } from '$lib/frameleaf/account-preferences';
+  import {
+    OCCASION_REGIONS,
+    occasionRegionHelp,
+    occasionRegionLabel,
+    resolveOccasionRegion,
+  } from '$lib/frameleaf/occasions';
   import { createOwnPreferencesDraft } from '$lib/frameleaf/own-preferences-draft';
+  import { authManager } from '$lib/managers/auth-manager.svelte';
+  import { getMemoryOccasions } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
   import {
     mdiAccountOutline,
@@ -42,6 +51,7 @@
     mdiPawOutline,
     mdiTagMultipleOutline,
   } from '@mdi/js';
+  import { onMount } from 'svelte';
   import { locale, t, type Translations } from 'svelte-i18n';
 
   type SwitchKey =
@@ -99,6 +109,8 @@
     'memories.enabled',
     'memories.sidebarWeb',
     'memories.duration',
+    'memories.occasions',
+    'memories.occasionRegion',
     'people.enabled',
     'people.sidebarWeb',
     'people.minimumFaces',
@@ -144,6 +156,18 @@
   ];
   const SECONDS = [3, 5, 8];
   const PHOTOS = [1, 3, 5, 10];
+
+  // FL-880: the switch is held off until someone is added as a mother or father. If the answer cannot be
+  // read the setting stays usable: it changes nothing by itself.
+  let hasParent = $state(true);
+  onMount(() => {
+    getMemoryOccasions()
+      .then((status) => (hasParent = status.hasParent))
+      .catch(() => {});
+  });
+  const occasionRegion = $derived(
+    resolveOccasionRegion(draft['memories.occasionRegion'], authManager.preferences?.notifications?.locale),
+  );
 </script>
 
 <OwnPreferencesForm {store}>
@@ -176,6 +200,35 @@
                     onChange={(value) => store.set('memories.duration', Number(value))}
                   />
                 </Row>
+                <Row
+                  label={$t('frameleaf_prefs_tools_memories_occasions')}
+                  help={hasParent
+                    ? $t('frameleaf_prefs_tools_memories_occasions_help')
+                    : $t('frameleaf_prefs_tools_memories_occasions_needs_family')}
+                >
+                  <Switch
+                    label={$t('frameleaf_prefs_tools_memories_occasions')}
+                    checked={hasParent && draft['memories.occasions']}
+                    held={!hasParent}
+                    onChange={(value) => store.set('memories.occasions', value)}
+                  />
+                </Row>
+                {#if hasParent && draft['memories.occasions']}
+                  <Row
+                    label={$t('frameleaf_prefs_tools_memories_occasion_region')}
+                    help={$t(occasionRegionHelp(occasionRegion))}
+                  >
+                    <Select
+                      label={$t('frameleaf_prefs_tools_memories_occasion_region_label')}
+                      value={occasionRegion}
+                      options={OCCASION_REGIONS.map((region) => ({
+                        value: region,
+                        label: $t(occasionRegionLabel(region)),
+                      }))}
+                      onChange={(value) => store.set('memories.occasionRegion', value)}
+                    />
+                  </Row>
+                {/if}
               </details>
             {:else if row.id === 'people' && draft['people.enabled']}
               <details class="options">

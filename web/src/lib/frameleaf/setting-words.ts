@@ -206,6 +206,21 @@ export const PREFERENCE_WORDS: Readonly<Record<string, Words>> = Object.freeze({
     label: 'frameleaf_prefs_tools_memories_duration',
     values: count('frameleaf_prefs_tools_seconds'),
   },
+  'memories.occasions': { label: 'frameleaf_prefs_tools_memories_occasions' },
+  'memories.occasionRegion': {
+    label: 'frameleaf_prefs_tools_memories_occasion_region',
+    values: {
+      auto: 'frameleaf_prefs_tools_occasion_region_auto',
+      'us-ca': 'frameleaf_prefs_tools_occasion_region_us_ca',
+      'uk-ie': 'frameleaf_prefs_tools_occasion_region_uk_ie',
+      'au-nz': 'frameleaf_prefs_tools_occasion_region_au_nz',
+      de: 'frameleaf_prefs_tools_occasion_region_de',
+      fr: 'frameleaf_prefs_tools_occasion_region_fr',
+      'es-pt': 'frameleaf_prefs_tools_occasion_region_es_pt',
+      mx: 'frameleaf_prefs_tools_occasion_region_mx',
+      se: 'frameleaf_prefs_tools_occasion_region_se',
+    },
+  },
   'people.minimumFaces': {
     label: 'frameleaf_prefs_tools_people_minimum',
     values: count('frameleaf_prefs_tools_photos'),
