@@ -1,11 +1,13 @@
 import { createHash } from 'node:crypto';
 import path from 'node:path';
 import z from 'zod';
+import type { RestorationPhotoOperation } from 'src/dtos/restoration-inference.dto.js';
 import type { MlSelection } from 'src/repositories/machine-learning.repository.js';
 import type { MlThroughputSample } from 'src/repositories/ml-destination.repository.js';
 import {
   AssetRestorationMode,
   AssetRestorationModeSchema,
+  AssetRestorationOperation,
   AssetRestorationRegion,
   AssetRestorationRegionSchema,
   AssetRestorationSourceType,
@@ -134,6 +136,32 @@ export const workloadForMode = (mode: AssetRestorationMode): MlWorkload => {
 };
 
 /** What Activity shows for a mode under the job title. Customer words, not enum values. */
+/**
+ * FL-955: the photo operation a row was asked for. It lives in the row's provenance, which every stage
+ * keeps, so no column is needed and an enhance row reads exactly as it always has.
+ */
+export const photoOperationOf = (provenance: unknown): RestorationPhotoOperation | undefined =>
+  toPhotoOperation((provenance as { operation?: AssetRestorationOperation } | null | undefined)?.operation);
+
+/** FL-955: repair or colourise as the worker names them; undefined for an enhance. */
+export const toPhotoOperation = (
+  operation: AssetRestorationOperation | null | undefined,
+): RestorationPhotoOperation | undefined => {
+  if (operation === AssetRestorationOperation.Repair) {
+    return 'repair';
+  }
+  return operation === AssetRestorationOperation.Colourise ? 'colourise' : undefined;
+};
+
+/** FL-955: the batch a row was queued by, so confirming the same estimate twice queues nothing twice. */
+export const restorationBatchIdOf = (provenance: unknown): string | undefined => {
+  const batchId = (provenance as { batchId?: unknown } | null | undefined)?.batchId;
+  return typeof batchId === 'string' ? batchId : undefined;
+};
+
+export const photoOperationLabel = (operation: RestorationPhotoOperation): string =>
+  operation === 'repair' ? 'Repair' : 'Colourise';
+
 export const restorationModeLabel = (mode: AssetRestorationMode): string => {
   switch (mode) {
     case AssetRestorationMode.Creative: {
@@ -455,6 +483,8 @@ export const RestorationSnapshotSchema = z.object({
   modelId: z.string().min(1).max(64).optional(),
   /** Smooth motion (FL-162): frames per source frame; the upscale is then 1 and the size is kept. */
   interpolationFactor: z.union([z.literal(2), z.literal(4), z.literal(8)]).optional(),
+  /** FL-955: a photo operation, which the worker runs instead of the mode. Absent for an enhance. */
+  operation: z.enum(['repair', 'colourise']).optional(),
 });
 
 export type RestorationSnapshot = z.infer<typeof RestorationSnapshotSchema>;
@@ -631,6 +661,8 @@ export const restorationAdmissionOf = (selection: MlSelection): RestorationAdmis
 
 export type RestorationSelectionRequest = {
   mode: AssetRestorationMode;
+  /** FL-955: a photo operation, admitted on the worker having proved that operation. */
+  operation?: RestorationPhotoOperation;
   /** The destination the person chose, or null to use the administrator's route. */
   destinationId: string | null;
   /**
@@ -687,6 +719,7 @@ export const selectRestorationDestination = async (
     destinationId,
     jobId: request.jobId ?? null,
     jobName: request.jobName ?? null,
+    ...(request.operation && { photoOperation: request.operation }),
   });
   admissions.set(selection, { cloudUploadConfirmed: request.acknowledgeCloudUpload });
   return selection as RestorationSelection;
@@ -708,6 +741,8 @@ export const localRifeFingerprint = (version: string | null | undefined): string
 
 export type RestorationInferenceOptions = {
   mode: AssetRestorationMode;
+  /** FL-955: sent to the worker instead of the mode; the photo keeps its own size. */
+  operation?: RestorationPhotoOperation;
   /** FL-423: the worker's model to run, exactly; null or absent, the worker's own model for the mode. */
   modelId?: string | null;
   modelFingerprint?: string;

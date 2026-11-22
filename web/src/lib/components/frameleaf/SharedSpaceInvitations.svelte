@@ -6,9 +6,13 @@
   import {
     acceptSharedSpaceInvitation,
     declineSharedSpaceInvitation,
+    getHouseholdShares,
     AlbumUserRole,
+    type HouseholdInboundShareDto,
     type SharedSpacePreviewResponseDto,
   } from '@frameleaf/sdk';
+  import HouseholdInvitation from '$lib/components/frameleaf/households/HouseholdInvitation.svelte';
+  import { onMount } from 'svelte';
   import { Icon } from '@frameleaf/ui';
   import {
     mdiAccountMultipleOutline,
@@ -43,6 +47,18 @@
 
   const open = $derived(pendingInvitations(invitations));
 
+  // FL-998: invitations from linked households sit beside these, each with its own Accept and Decline.
+  let householdShares = $state<HouseholdInboundShareDto[]>([]);
+  const invitedShares = $derived(householdShares.filter((share) => share.state === 'invited'));
+  const loadHouseholdShares = async () => {
+    try {
+      householdShares = (await getHouseholdShares()) ?? [];
+    } catch {
+      householdShares = [];
+    }
+  };
+  onMount(() => void loadHouseholdShares());
+
   const roleLabel = (role: AlbumUserRole) =>
     role === AlbumUserRole.Viewer ? $t('frameleaf_album_role_viewer') : $t('frameleaf_album_role_editor');
 
@@ -65,7 +81,7 @@
   };
 </script>
 
-{#if open.length > 0}
+{#if open.length > 0 || invitedShares.length > 0}
   <section class="invitations" aria-label={$t('frameleaf_spaces_invitations')}>
     <h2>
       {$t('frameleaf_spaces_invitations')}
@@ -132,6 +148,17 @@
           </article>
         </li>
       {/each}
+      {#each invitedShares as share (share.id)}
+        <li class="household">
+          <HouseholdInvitation
+            {share}
+            onAnswered={async () => {
+              await loadHouseholdShares();
+              await onAnswered();
+            }}
+          />
+        </li>
+      {/each}
     </ul>
   </section>
 {/if}
@@ -163,6 +190,12 @@
     flex-direction: column;
     gap: 0.5rem;
     padding: 0.875rem;
+    border: 1px solid var(--fl-border);
+    border-radius: var(--fl-radius);
+    background: var(--fl-panel);
+  }
+  .household {
+    padding: 0.25rem;
     border: 1px solid var(--fl-border);
     border-radius: var(--fl-radius);
     background: var(--fl-panel);

@@ -12,6 +12,7 @@
   import BulkTagDialog from '$lib/components/frameleaf/BulkTagDialog.svelte';
   import { dockLift } from '$lib/frameleaf/panel-dock.svelte';
   import PreservationExportDialog from '$lib/components/frameleaf/PreservationExportDialog.svelte';
+  import RestorationBatchDialog from '$lib/components/frameleaf/RestorationBatchDialog.svelte';
   import SharedLinkForm from '$lib/components/frameleaf/SharedLinkForm.svelte';
   import {
     bulkActionById,
@@ -52,6 +53,7 @@
     mdiHeart,
     mdiHeartOutline,
     mdiImageAlbum,
+    mdiImageEditOutline,
     mdiImageMultipleOutline,
     mdiImageOutline,
     mdiLayersOutline,
@@ -94,6 +96,7 @@
     mdiHeart,
     mdiHeartOutline,
     mdiImageAlbum,
+    mdiImageEditOutline,
     mdiImageMultipleOutline,
     mdiImageOutline,
     mdiLayersOutline,
@@ -787,6 +790,17 @@
       onDialogSettled?.('export-preservation', true);
       toastManager.info($t('frameleaf_preservation_export_started'));
     }}
+  />
+{:else if dialog === 'repair-colourise'}
+  <!-- FL-955: the sheet starts its own background jobs, so nothing is dispatched to the bulk runner. -->
+  <RestorationBatchDialog
+    assetIds={assets.length === count
+      ? assets
+          .filter((asset) => !asset.isVideo && (!context.currentUserId || asset.ownerId === context.currentUserId))
+          .map((asset) => asset.id)
+      : [...selectedIds]}
+    bind:open={dialogOpen}
+    onStarted={() => onDialogSettled?.('repair-colourise', true)}
   />
 {:else if dialog === 'create-shared-link'}
   <!-- The form creates the link itself, so nothing is dispatched to the bulk runner. -->

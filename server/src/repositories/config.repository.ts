@@ -90,6 +90,8 @@ export interface EnvData {
       admin2: string;
       cities500: string;
       naturalEarthCountriesPath: string;
+      /** FL-987: GeoNames' country list, read for each country's geonameId. */
+      countries: string;
       landmarks: string;
       landmarkIcons: string;
     };
@@ -329,6 +331,7 @@ const getEnv = (): EnvData => {
         admin2: join(folders.geodata, 'admin2Codes.txt'),
         cities500: join(folders.geodata, citiesFile),
         naturalEarthCountriesPath: join(folders.geodata, 'ne_10m_admin_0_countries.geojson'),
+        countries: join(folders.geodata, 'countryInfo.txt'),
         landmarks: join(folders.geodata, 'landmarks.ndjson.gz'),
         landmarkIcons: join(folders.geodata, 'landmark-icons'),
       },

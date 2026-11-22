@@ -1,5 +1,6 @@
 import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
+import { PlaceNamesLocalizedSchema } from 'src/dtos/exif.dto.js';
 import { AssetTypeSchema } from 'src/enum.js';
 import { isoDatetimeToDate, latitudeSchema, longitudeSchema, stringToBool } from 'src/validation.js';
 
@@ -98,6 +99,9 @@ const MapMarkerResponseSchema = z
     city: z.string().nullable().describe('City name'),
     state: z.string().nullable().describe('State/Province name'),
     country: z.string().nullable().describe('Country name'),
+    placeNamesLocalized: PlaceNamesLocalizedSchema.optional().describe(
+      'FL-987: city, state and country in the language of the signed-in account, when it is not English and one of them has a translation. Absent otherwise: show `city`, `state` and `country`',
+    ),
     originalFileName: z.string().optional().describe('Original file name'),
     fileCreatedAt: z
       .string()
@@ -124,6 +128,9 @@ const MapClusterResponseSchema = z
     city: z.string().nullable().describe('City of the preview item'),
     state: z.string().nullable().describe('State/Province of the preview item'),
     country: z.string().nullable().describe('Country of the preview item'),
+    placeNamesLocalized: PlaceNamesLocalizedSchema.optional().describe(
+      'FL-987: city, state and country of the preview item in the language of the signed-in account, when it is not English and one of them has a translation. Absent otherwise',
+    ),
     west: z.number().meta({ format: 'double' }).describe('Westernmost longitude of the items'),
     south: z.number().meta({ format: 'double' }).describe('Southernmost latitude of the items'),
     east: z.number().meta({ format: 'double' }).describe('Easternmost longitude of the items'),

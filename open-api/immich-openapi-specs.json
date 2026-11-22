@@ -7267,6 +7267,385 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/admin/household-links": {
+      "get": {
+        "operationId": "getHouseholdLinks",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/HouseholdLinkDto"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List the households this server is linked with",
+        "tags": [
+          "Frameleaf Cloud (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminCloud.read",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/household-links/invitations": {
+      "post": {
+        "operationId": "createHouseholdInvitation",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HouseholdInvitationDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Create an invitation for another household to link its server",
+        "tags": [
+          "Frameleaf Cloud (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminCloud.update",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/household-links/invitations/accept": {
+      "post": {
+        "operationId": "acceptHouseholdInvitation",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HouseholdInvitationAcceptDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HouseholdLinkDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Accept a household invitation and link the two servers",
+        "tags": [
+          "Frameleaf Cloud (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminCloud.update",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/household-links/invitations/{code}": {
+      "get": {
+        "operationId": "previewHouseholdInvitation",
+        "parameters": [
+          {
+            "name": "code",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "maxLength": 100,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HouseholdInvitationPreviewDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Show which server sent a household invitation",
+        "tags": [
+          "Frameleaf Cloud (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminCloud.read",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/household-links/{id}": {
+      "delete": {
+        "operationId": "endHouseholdLink",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "End a household link. Nothing already received is deleted",
+        "tags": [
+          "Frameleaf Cloud (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminCloud.update",
+        "x-immich-state": "Alpha"
+      },
+      "patch": {
+        "operationId": "updateHouseholdLink",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HouseholdLinkUpdateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HouseholdLinkDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Rename the other household. The name stays on this server",
+        "tags": [
+          "Frameleaf Cloud (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminCloud.update",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/admin/household-links/{id}/refresh": {
+      "post": {
+        "operationId": "refreshHouseholdLink",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HouseholdLinkDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Check a household link with Frameleaf Cloud and the other server now",
+        "tags": [
+          "Frameleaf Cloud (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminCloud.update",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/admin/identical-files": {
       "get": {
         "description": "Where the latest identical-files run stands: its stage, what started it, the counts (files read, files stored once, photos merged, orphans recovered per owner, space moved to Unused files) and the first problems found.",
@@ -18024,6 +18403,62 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/assets/restorations/batch": {
+      "post": {
+        "description": "Without confirm, answers which photos would run and every destination in the processing order with its time or cost; nothing is queued. With confirm, the destinationId and the estimate batchId, queues one durable job per photo. Confirming the same batch again queues only what is missing.",
+        "operationId": "restoreAssetsBatch",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssetRestorationBatchRequestDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetRestorationBatchResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Estimate or start a batch of photo repairs or colourisations",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.edit.create",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/assets/safety/lookup": {
       "post": {
         "description": "Up to 2000 hashes. Current own accessible assets only, including for admins; shared and partner assets omitted. Completed membership and GET + SHA-256 verification are separate facts. No bucket credentials/settings.",
@@ -21977,6 +22412,118 @@
         "x-immich-permission": "asset.update"
       }
     },
+    "/assets/{id}/print-back": {
+      "get": {
+        "description": "The text on the back of this photo's print, with the owner's corrections, for anyone who can read the photo's own text. Only the owner is told which asset the back is. Shared links do not reach this.",
+        "operationId": "getPrintBack",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PrintBackResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Read the back of a print",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "asset.read"
+      },
+      "put": {
+        "description": "With a backAssetId, hides that scan behind this photo and reads its text. With null, removes the back and returns it to where it was (timeline, archive or Locked). Both must be your own photos. A Locked photo pairs only with another Locked photo.",
+        "operationId": "updatePrintBack",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PrintBackUpdateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PrintBackResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Pair or unpair the back of a print",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "asset.update"
+      }
+    },
     "/assets/{id}/restorations": {
       "get": {
         "description": "Every restoration of the asset, newest first, with its lifecycle state, the destination it was bound to and which result the owner chose as the playback version.",
@@ -22188,6 +22735,15 @@
             "schema": {
               "default": "faithful",
               "$ref": "#/components/schemas/AssetRestorationMode"
+            }
+          },
+          {
+            "name": "operation",
+            "required": false,
+            "in": "query",
+            "description": "FL-955: judge the destinations for repair or colourise. Left out, enhance.",
+            "schema": {
+              "$ref": "#/components/schemas/AssetRestorationOperation"
             }
           },
           {
@@ -22520,6 +23076,215 @@
         ],
         "x-immich-permission": "asset.edit.create",
         "x-immich-state": "Alpha"
+      }
+    },
+    "/assets/{id}/scan-split": {
+      "get": {
+        "description": "For a scan, the photos cut from it and which of them a new split would keep. For a photo cut from a scan, that scan. Owner only.",
+        "operationId": "getScanSplit",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanSplitInfoResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Read how a photo relates to a split scan",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "asset.edit.get"
+      },
+      "post": {
+        "description": "Queues the work that cuts each confirmed print out of the scan at full resolution, straightened and turned, as a new photo of the scan owner. The scan is kept and moved to the archive. Splitting a scan again replaces the photos of an earlier split that were not edited since (they go to the trash) and keeps the edited ones.",
+        "operationId": "splitScan",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScanSplitDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Split a flatbed scan into separate photos",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "asset.edit.create"
+      }
+    },
+    "/assets/{id}/scan-split/detect": {
+      "post": {
+        "description": "Looks for the prints lying on a scan and answers their corners in the pixels of the scan as it is displayed. Nothing is saved; the owner reviews the corners and sends them to the split endpoint.",
+        "operationId": "detectScanPrints",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanSplitDetectResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Find the separate prints on a flatbed scan",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "asset.edit.get"
+      }
+    },
+    "/assets/{id}/scan-split/offer": {
+      "post": {
+        "description": "Counts the prints on a photo that is in an album marked as holding scans and has not been split. Any other photo answers 0 without being looked at. Nothing is split or saved.",
+        "operationId": "offerScanSplit",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanSplitOfferResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Check an upload to an album that holds scans",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "asset.edit.get"
       }
     },
     "/assets/{id}/sidecar": {
@@ -34073,6 +34838,159 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/household-shares": {
+      "get": {
+        "operationId": "getHouseholdShares",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/HouseholdInboundShareDto"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List spaces offered by linked households, with their state",
+        "tags": [
+          "Shared spaces"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "album.read",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/household-shares/{id}/accept": {
+      "post": {
+        "operationId": "acceptHouseholdShare",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HouseholdInboundShareDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Accept a space from a linked household",
+        "tags": [
+          "Shared spaces"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "album.create",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/household-shares/{id}/decline": {
+      "post": {
+        "operationId": "declineHouseholdShare",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Decline or leave a space from a linked household; what was received stays",
+        "tags": [
+          "Shared spaces"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "albumUser.delete",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/icloud-sync/claims": {
       "post": {
         "description": "Up to 500 items. A claim covers the whole item (still, Live Photo motion, RAW and the current edit) for 10 minutes, renewable to 4 hours. An item a healthy sync connection covers is the sync's to fetch; one an unhealthy connection covers is the device's after 72 hours, or at once with takeOver. An upload naming an item someone else claimed is refused with 409 icloud_claimed. Send each item's filename and capture date: without them the server cannot confirm a sync covers it. The claim stays until it is released or runs out, so all of an item's roles come from one path. The device key must be one of the caller's backup devices.",
@@ -34786,6 +35704,14 @@
         "operationId": "getICloudReview",
         "parameters": [
           {
+            "name": "group",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/ICloudReviewGroup"
+            }
+          },
+          {
             "name": "id",
             "required": true,
             "in": "path",
@@ -34793,14 +35719,6 @@
               "format": "uuid",
               "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
               "type": "string"
-            }
-          },
-          {
-            "name": "group",
-            "required": false,
-            "in": "query",
-            "schema": {
-              "$ref": "#/components/schemas/ICloudReviewGroup"
             }
           },
           {
@@ -35319,6 +36237,1118 @@
           }
         ],
         "x-immich-permission": "asset.read",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/import-connections": {
+      "get": {
+        "operationId": "getImportConnections",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ImportConnectionResponseDto"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List import connections",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.upload",
+        "x-immich-state": "Alpha"
+      },
+      "post": {
+        "description": "The source is asked for its folders once, so a wrong sign-in is refused. The sign-in details are sealed on the server and are never returned.",
+        "operationId": "createImportConnection",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ImportConnectionCreateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportConnectionResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Connect a remote source",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.upload",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/import-connections/providers": {
+      "get": {
+        "operationId": "getImportConnectionProviders",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportConnectionProvidersResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List the kinds of source this server can connect to",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.upload",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/import-connections/statistics": {
+      "get": {
+        "description": "For administrators: how many connections exist, by kind. Nothing about whose they are.",
+        "operationId": "getImportConnectionStatistics",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportConnectionStatisticsResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Count import connections",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/import-connections/{id}": {
+      "delete": {
+        "description": "Removes the connection and its runs. Everything it brought into the library stays there, and nothing changes at the source.",
+        "operationId": "deleteImportConnection",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Remove an import connection",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.upload",
+        "x-immich-state": "Alpha"
+      },
+      "get": {
+        "operationId": "getImportConnection",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportConnectionResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get an import connection",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.upload",
+        "x-immich-state": "Alpha"
+      },
+      "patch": {
+        "operationId": "updateImportConnection",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ImportConnectionUpdateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportConnectionResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Rename an import connection, change its daily check, or sign in again",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.upload",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/import-connections/{id}/folders": {
+      "get": {
+        "operationId": "getImportConnectionFolders",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "path",
+            "required": false,
+            "in": "query",
+            "description": "The folder to look inside; empty for the top",
+            "schema": {
+              "maxLength": 4096,
+              "default": "",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportConnectionFoldersResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List the folders inside a folder at the source",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.upload",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/import-connections/{id}/roots": {
+      "put": {
+        "operationId": "setImportConnectionRoots",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ImportConnectionRootsDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportConnectionResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Choose the folders an import connection reads",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.upload",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/import-connections/{id}/runs": {
+      "get": {
+        "operationId": "getImportConnectionRuns",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/TakeoutResponseDto"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List the runs of an import connection",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.upload",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/import-connections/{id}/runs/{runId}": {
+      "get": {
+        "operationId": "getImportConnectionRun",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "runId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TakeoutResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get a run of an import connection",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.upload",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/import-connections/{id}/runs/{runId}/control": {
+      "post": {
+        "operationId": "controlImportConnectionRun",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "runId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TakeoutControlDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TakeoutResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Pause, resume or cancel the job working on a run",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.upload",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/import-connections/{id}/runs/{runId}/import": {
+      "post": {
+        "description": "Downloads and imports the run’s files with the given choices. Files already in the library are matched, not added again.",
+        "operationId": "startImportConnectionRun",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "runId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TakeoutOptionsDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TakeoutResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Import what a run found",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.upload",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/import-connections/{id}/runs/{runId}/items": {
+      "get": {
+        "operationId": "getImportConnectionRunItems",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "description": "Items to return",
+            "schema": {
+              "minimum": 1,
+              "maximum": 200,
+              "default": 100,
+              "type": "integer"
+            }
+          },
+          {
+            "name": "offset",
+            "required": false,
+            "in": "query",
+            "description": "Items to skip",
+            "schema": {
+              "minimum": 0,
+              "maximum": 9007199254740991,
+              "default": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "name": "runId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "state",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/TakeoutItemState"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TakeoutItemsResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List what a run found",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.upload",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/import-connections/{id}/scan": {
+      "post": {
+        "description": "Starts a run that lists the chosen folders and offers every file the connection has not seen, or that changed. Nothing is downloaded until the run is imported.",
+        "operationId": "scanImportConnection",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TakeoutResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Scan the source for what is new",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.upload",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/import-connections/{provider}/sign-in": {
+      "get": {
+        "operationId": "getImportSignIn",
+        "parameters": [
+          {
+            "name": "provider",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "pattern": "^[a-z0-9-]{1,64}$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportSignInAvailabilityResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Check whether signing in to a provider is possible",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.upload",
+        "x-immich-state": "Alpha"
+      },
+      "post": {
+        "description": "A server that is not linked to a Frameleaf account is told to link it first.",
+        "operationId": "startImportSignIn",
+        "parameters": [
+          {
+            "name": "provider",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "pattern": "^[a-z0-9-]{1,64}$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ImportSignInStartDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportSignInStartResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Start signing in to a provider",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.upload",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/import-connections/{provider}/sign-in/complete": {
+      "post": {
+        "description": "Ask until the state is no longer `pending`. Creates the connection, or renews the one named at the start.",
+        "operationId": "completeImportSignIn",
+        "parameters": [
+          {
+            "name": "provider",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "pattern": "^[a-z0-9-]{1,64}$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ImportSignInCompleteDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportSignInCompleteResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Finish signing in to a provider",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.0.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.0.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "asset.upload",
         "x-immich-state": "Alpha"
       }
     },
@@ -41546,6 +43576,47 @@
         "x-immich-permission": "memory.update"
       }
     },
+    "/memories/occasions": {
+      "get": {
+        "description": "Say whether the caller has added anyone as a mother or father, which these memories need.",
+        "operationId": "getMemoryOccasions",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemoryOccasionsStatusDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Check whether Mother's Day and Father's Day memories can be made",
+        "tags": [
+          "Memories"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "memory.read"
+      }
+    },
     "/memories/show-less": {
       "delete": {
         "description": "Remove one of the caller's show-less rules, so its memories are generated and shown again, and return every rule.",
@@ -46542,6 +48613,190 @@
         ],
         "x-immich-permission": "person.reassign",
         "x-immich-state": "Stable"
+      }
+    },
+    "/people/{id}/relationships": {
+      "get": {
+        "description": "The parents, children, partners and siblings recorded for one of the caller's own people. Siblings include everyone who shares a parent with them; those are also listed in `inferredSiblingIds`.",
+        "operationId": "getPersonRelationships",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PersonRelationshipsResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get a person's family",
+        "tags": [
+          "People"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.1",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.1",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "person.read",
+        "x-immich-state": "Alpha"
+      },
+      "post": {
+        "description": "Record how another of the caller's people is related to this person. Answers 400 with a message and a `reason` when it would repeat or contradict what is recorded, make someone their own ancestor, or give a person a second mother, a second father or a third parent.",
+        "operationId": "createPersonRelationship",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PersonRelationshipCreateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PersonRelationshipsResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Add a relationship",
+        "tags": [
+          "People"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.1",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.1",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "person.update",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/people/{id}/relationships/{relatedPersonId}": {
+      "delete": {
+        "description": "Remove whatever relationship is recorded between two of the caller's people. Photos are not changed.",
+        "operationId": "deletePersonRelationship",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Person ID",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "relatedPersonId",
+            "required": true,
+            "in": "path",
+            "description": "The other person in the relationship",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Remove a relationship",
+        "tags": [
+          "People"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.1",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.1",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "person.update",
+        "x-immich-state": "Alpha"
       }
     },
     "/people/{id}/statistics": {
@@ -62253,6 +64508,277 @@
           }
         ],
         "x-immich-permission": "activity.update"
+      }
+    },
+    "/shared-spaces/{id}/households": {
+      "get": {
+        "operationId": "getSharedSpaceHouseholds",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/HouseholdShareLinkDto"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List linked households and who can be invited from each",
+        "tags": [
+          "Shared spaces"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "album.read",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/shared-spaces/{id}/households/members": {
+      "post": {
+        "operationId": "inviteSharedSpaceHouseholdMember",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HouseholdShareInviteDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HouseholdShareMemberDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Invite an account of a linked household",
+        "tags": [
+          "Shared spaces"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "albumUser.create",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/shared-spaces/{id}/households/{shareId}/members/{remoteUserId}": {
+      "delete": {
+        "operationId": "removeSharedSpaceHouseholdMember",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "remoteUserId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "shareId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Remove a household member; removing the last one ends the share",
+        "tags": [
+          "Shared spaces"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "albumUser.delete",
+        "x-immich-state": "Alpha"
+      },
+      "put": {
+        "operationId": "updateSharedSpaceHouseholdMember",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "remoteUserId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "shareId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HouseholdShareRoleDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Change a household member’s role",
+        "tags": [
+          "Shared spaces"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "albumUser.update",
+        "x-immich-state": "Alpha"
       }
     },
     "/shared-spaces/{id}/invitation": {
@@ -84860,6 +87386,10 @@
             "description": "Has shared link",
             "type": "boolean"
           },
+          "holdsScans": {
+            "description": "Uploads into this album are checked for several photos on one scan",
+            "type": "boolean"
+          },
           "icon": {
             "description": "Icon: a Material Design Icons name or legacy key (null = default icon)",
             "nullable": true,
@@ -89641,6 +92171,16 @@
             "nullable": true,
             "type": "string"
           },
+          "dateAccuracy": {
+            "description": "With dateTimeOriginal: only its year (`year`) or its decade (`decade`) is known. The date is then stored as the start of that period, 1 January at midnight, and no time zone is applied. A dateTimeOriginal sent without it, or with null, is an exact date. Null on its own keeps the date and makes it exact.",
+            "enum": [
+              "year",
+              "decade",
+              null
+            ],
+            "nullable": true,
+            "type": "string"
+          },
           "dateTimeOriginal": {
             "description": "Original date and time",
             "type": "string"
@@ -93303,6 +95843,11 @@
             "format": "date-time",
             "type": "string"
           },
+          "dateAccuracy": {
+            "description": "Set when only the year (`year`) or the decade (`decade`) of the capture date is known; localDateTime is then the start of that period. Absent or null for an exact date. Other values may be added: treat an unknown one as approximate.",
+            "nullable": true,
+            "type": "string"
+          },
           "duplicateId": {
             "description": "Duplicate group ID",
             "format": "uuid",
@@ -93583,6 +96128,220 @@
         ],
         "type": "object"
       },
+      "AssetRestorationBatchDestinationDto": {
+        "properties": {
+          "available": {
+            "description": "The server would admit this operation here right now",
+            "type": "boolean"
+          },
+          "consentSummary": {
+            "description": "Frameleaf Cloud: what leaves this server, in its own words",
+            "nullable": true,
+            "type": "string"
+          },
+          "consentVersion": {
+            "description": "Frameleaf Cloud: the terms this estimate is confirmed under",
+            "nullable": true,
+            "type": "string"
+          },
+          "costUsd": {
+            "description": "AI Wallet cost of the batch. Null at home, where it is free, and while Cloud has no price.",
+            "format": "double",
+            "nullable": true,
+            "type": "number"
+          },
+          "estimateSeconds": {
+            "description": "Measured time for the whole batch, or null when nothing is measured yet",
+            "format": "double",
+            "nullable": true,
+            "type": "number"
+          },
+          "id": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/MlDestinationKind"
+          },
+          "leavesNetwork": {
+            "description": "Photos sent here leave the network",
+            "type": "boolean"
+          },
+          "maxCostUsd": {
+            "description": "Frameleaf Cloud: the most the batch may charge; send it back to confirm. Null otherwise.",
+            "format": "double",
+            "nullable": true,
+            "type": "number"
+          },
+          "name": {
+            "type": "string"
+          },
+          "refusal": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MlAdmissionRefusal"
+              }
+            ],
+            "description": "Why it cannot be chosen, or null",
+            "nullable": true
+          },
+          "refusalDetail": {
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "available",
+          "consentSummary",
+          "consentVersion",
+          "costUsd",
+          "estimateSeconds",
+          "id",
+          "kind",
+          "leavesNetwork",
+          "maxCostUsd",
+          "name",
+          "refusal",
+          "refusalDetail"
+        ],
+        "type": "object"
+      },
+      "AssetRestorationBatchOperation": {
+        "description": "What to do to each photo",
+        "enum": [
+          "repair",
+          "colourise"
+        ],
+        "type": "string"
+      },
+      "AssetRestorationBatchRequestDto": {
+        "properties": {
+          "acknowledgeDataLeaves": {
+            "description": "Frameleaf Cloud: the person agreed the photos leave",
+            "type": "boolean"
+          },
+          "assetIds": {
+            "description": "The photos to repair or colourise",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "maxItems": 500,
+            "minItems": 1,
+            "type": "array"
+          },
+          "batchId": {
+            "description": "The batchId of the estimate being confirmed. Confirming it again queues nothing twice.",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "confirm": {
+            "default": false,
+            "description": "False: estimate only, nothing is queued. True: queue the batch on destinationId.",
+            "type": "boolean"
+          },
+          "consentVersion": {
+            "description": "Frameleaf Cloud: the consentVersion of the estimate shown",
+            "type": "string"
+          },
+          "destinationId": {
+            "description": "Where the batch runs. Required to confirm; never inferred.",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "maxCostUsd": {
+            "description": "Frameleaf Cloud: the maxCostUsd of the estimate shown. The batch stops rather than go over it.",
+            "exclusiveMinimum": true,
+            "format": "double",
+            "minimum": 0,
+            "type": "number"
+          },
+          "operation": {
+            "$ref": "#/components/schemas/AssetRestorationBatchOperation"
+          }
+        },
+        "required": [
+          "assetIds",
+          "operation"
+        ],
+        "type": "object"
+      },
+      "AssetRestorationBatchResponseDto": {
+        "properties": {
+          "batchId": {
+            "description": "Send this back to confirm the estimate",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "destinations": {
+            "description": "Every destination in the processing order, those that cannot take it included",
+            "items": {
+              "$ref": "#/components/schemas/AssetRestorationBatchDestinationDto"
+            },
+            "type": "array"
+          },
+          "eligible": {
+            "description": "Photos that would be, or were, queued",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "operation": {
+            "$ref": "#/components/schemas/AssetRestorationOperation"
+          },
+          "queued": {
+            "description": "Photos queued by this request; 0 for an estimate",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "skipped": {
+            "items": {
+              "$ref": "#/components/schemas/AssetRestorationBatchSkipDto"
+            },
+            "type": "array"
+          },
+          "total": {
+            "description": "Photos asked for",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "batchId",
+          "destinations",
+          "eligible",
+          "operation",
+          "queued",
+          "skipped",
+          "total"
+        ],
+        "type": "object"
+      },
+      "AssetRestorationBatchSkipDto": {
+        "properties": {
+          "assetId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "reason": {
+            "description": "already-in-colour, colour-unknown, not-a-photo or unavailable",
+            "type": "string"
+          }
+        },
+        "required": [
+          "assetId",
+          "reason"
+        ],
+        "type": "object"
+      },
       "AssetRestorationDestinationDto": {
         "properties": {
           "available": {
@@ -93815,6 +96574,15 @@
         ],
         "type": "object"
       },
+      "AssetRestorationOperation": {
+        "description": "What the restoration does; left out, enhance",
+        "enum": [
+          "enhance",
+          "repair",
+          "colourise"
+        ],
+        "type": "string"
+      },
       "AssetRestorationOptionsDto": {
         "properties": {
           "adapterInstalled": {
@@ -93824,6 +96592,10 @@
           "assetId": {
             "format": "uuid",
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "colourRefusal": {
+            "description": "FL-955: colourise only: why this photo cannot be colourised, in words for the owner",
             "type": "string"
           },
           "destinations": {
@@ -93840,6 +96612,10 @@
           },
           "mode": {
             "$ref": "#/components/schemas/AssetRestorationMode"
+          },
+          "operation": {
+            "$ref": "#/components/schemas/AssetRestorationOperation",
+            "description": "FL-955: present only when the options were asked for repair or colourise"
           },
           "outputHeight": {
             "description": "Height the full render would produce after the 4K cap",
@@ -93908,6 +96684,10 @@
           "mode": {
             "$ref": "#/components/schemas/AssetRestorationMode",
             "default": "faithful"
+          },
+          "operation": {
+            "$ref": "#/components/schemas/AssetRestorationOperation",
+            "description": "FL-955: judge the destinations for repair or colourise. Left out, enhance."
           },
           "upscale": {
             "default": 2,
@@ -94004,6 +96784,10 @@
             "description": "FL-423: the restoration model to use, one of the destination's `models` for this mode. Left out, the destination uses its own model for the mode. Never substituted: a model the destination cannot run is refused.",
             "pattern": "^[a-z0-9][a-z0-9-]{1,63}$",
             "type": "string"
+          },
+          "operation": {
+            "$ref": "#/components/schemas/AssetRestorationOperation",
+            "description": "FL-955: enhance (the default), repair or colourise. Repair and colourise need mode faithful, keep the photo at its own size and name no model."
           },
           "region": {
             "$ref": "#/components/schemas/AssetRestorationRegionDto",
@@ -94156,6 +96940,10 @@
           "modelVersion": {
             "nullable": true,
             "type": "string"
+          },
+          "operation": {
+            "$ref": "#/components/schemas/AssetRestorationOperation",
+            "description": "FL-955: repair or colourise. Absent on every enhance restoration, so existing responses are unchanged."
           },
           "outputHeight": {
             "maximum": 9007199254740991,
@@ -96528,6 +99316,11 @@
           "createdAt": {
             "description": "The UTC timestamp when the asset was originally uploaded to Frameleaf.",
             "format": "date-time",
+            "type": "string"
+          },
+          "dateAccuracy": {
+            "description": "Set when only the year (`year`) or the decade (`decade`) of the capture date is known; localDateTime is then the start of that period. Absent or null for an exact date. Other values may be added: treat an unknown one as approximate.",
+            "nullable": true,
             "type": "string"
           },
           "duplicateId": {
@@ -103891,6 +106684,10 @@
             "pattern": "^ms_[\\dA-HJKMNP-TV-Z]{8}$",
             "type": "string"
           },
+          "operation": {
+            "$ref": "#/components/schemas/AssetRestorationOperation",
+            "description": "FL-955: repair or colourise a photo at its own size. A full render inherits it from its preview."
+          },
           "purpose": {
             "$ref": "#/components/schemas/CloudMlJobPurpose"
           },
@@ -107294,6 +110091,11 @@
             "description": "When the fix was applied",
             "type": "string"
           },
+          "dateAccuracy": {
+            "description": "`year` or `decade` when the fix dated the photos to one; other values may be added",
+            "nullable": true,
+            "type": "string"
+          },
           "expiresAt": {
             "description": "Undo is possible until then",
             "type": "string"
@@ -107303,6 +110105,13 @@
             "format": "uuid",
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
             "type": "string"
+          },
+          "periodStart": {
+            "description": "With dateAccuracy: the year that year or decade starts in",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "nullable": true,
+            "type": "integer"
           },
           "restored": {
             "description": "After undo: photos put back. A photo dated again since keeps that date",
@@ -107416,7 +110225,7 @@
         "type": "object"
       },
       "DateDoctorFixDto": {
-        "description": "Send `useProposal: true` alone, or a `timeZone` and/or a non-zero `shiftMinutes`; `keepWallTime` only with `timeZone`. Any other combination is refused (400).",
+        "description": "Send `useProposal: true` alone, or a `timeZone` and/or a non-zero `shiftMinutes` (`keepWallTime` only with `timeZone`), or a `dateAccuracy` with its `year`. Any other combination is refused (400). A zone or shift leaves photos dated to a year or a decade as they are.",
         "properties": {
           "assetIds": {
             "description": "The photos to fix",
@@ -107428,6 +110237,14 @@
             "maxItems": 5000,
             "minItems": 1,
             "type": "array"
+          },
+          "dateAccuracy": {
+            "description": "Date them to a year (`year`) or a decade (`decade`): only that much is known. Sent with `year` alone",
+            "enum": [
+              "year",
+              "decade"
+            ],
+            "type": "string"
           },
           "keepWallTime": {
             "description": "With timeZone: keep the clock time shown and read it in the new zone; otherwise the moment stays",
@@ -107446,6 +110263,12 @@
           "useProposal": {
             "description": "Give each photo the date and zone the Doctor proposes for it; photos without a proposal are left alone",
             "type": "boolean"
+          },
+          "year": {
+            "description": "With dateAccuracy: the year, or any year of the decade; not after this year",
+            "maximum": 9007199254740991,
+            "minimum": 1800,
+            "type": "integer"
           }
         },
         "required": [
@@ -107639,6 +110462,21 @@
           "epoch-date"
         ],
         "type": "string"
+      },
+      "DecadeFilter": {
+        "properties": {
+          "eq": {
+            "description": "The first year of the decade",
+            "maximum": 9990,
+            "minimum": 1800,
+            "multipleOf": 10,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "eq"
+        ],
+        "type": "object"
       },
       "DecodeRefusal": {
         "description": "Why this server cannot decode a video source",
@@ -112370,6 +115208,16 @@
             "nullable": true,
             "type": "string"
           },
+          "placeNamesLocalized": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PlaceNamesLocalizedDto"
+              }
+            ],
+            "default": null,
+            "description": "City, state and country in the language of the signed-in account, when it is not English and at least one of the three has a translation. Null otherwise: show `city`, `state` and `country`",
+            "nullable": true
+          },
           "profileDescription": {
             "default": null,
             "description": "Color profile description",
@@ -116725,6 +119573,302 @@
         ],
         "type": "integer"
       },
+      "HouseholdDirectoryEntryDto": {
+        "properties": {
+          "hasAvatar": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "hasAvatar",
+          "id",
+          "name"
+        ],
+        "type": "object"
+      },
+      "HouseholdInboundShareDto": {
+        "properties": {
+          "albumId": {
+            "description": "The local space, once accepted",
+            "nullable": true,
+            "type": "string"
+          },
+          "householdName": {
+            "description": "What this server calls the other household",
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "lastError": {
+            "description": "A short machine word, such as over-quota, bad-page, file-too-large or unreachable",
+            "nullable": true,
+            "type": "string"
+          },
+          "lastPulledAt": {
+            "nullable": true,
+            "type": "string"
+          },
+          "ownerName": {
+            "type": "string"
+          },
+          "spaceName": {
+            "type": "string"
+          },
+          "state": {
+            "description": "invited, accepted or left",
+            "type": "string"
+          }
+        },
+        "required": [
+          "albumId",
+          "householdName",
+          "id",
+          "lastError",
+          "lastPulledAt",
+          "ownerName",
+          "spaceName",
+          "state"
+        ],
+        "type": "object"
+      },
+      "HouseholdInvitationAcceptDto": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "maxLength": 100,
+            "type": "string"
+          },
+          "householdName": {
+            "maxLength": 80,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "code"
+        ],
+        "type": "object"
+      },
+      "HouseholdInvitationDto": {
+        "properties": {
+          "code": {
+            "description": "The short form of the invitation, easier to read out or type",
+            "type": "string"
+          },
+          "expiresAt": {
+            "type": "string"
+          },
+          "invitationId": {
+            "type": "string"
+          },
+          "token": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "expiresAt",
+          "invitationId",
+          "token"
+        ],
+        "type": "object"
+      },
+      "HouseholdInvitationPreviewDto": {
+        "properties": {
+          "name": {
+            "description": "The inviting household’s server name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "type": "object"
+      },
+      "HouseholdLinkDto": {
+        "properties": {
+          "active": {
+            "type": "boolean"
+          },
+          "connectionPath": {
+            "description": "The kind of address that last answered: local, wan, ipv6, relay",
+            "nullable": true,
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "ended": {
+            "type": "boolean"
+          },
+          "endedAt": {
+            "nullable": true,
+            "type": "string"
+          },
+          "householdName": {
+            "description": "What this server’s administrator calls the other household",
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "lastSeenAt": {
+            "nullable": true,
+            "type": "string"
+          },
+          "paused": {
+            "type": "boolean"
+          },
+          "peerName": {
+            "description": "The other household’s server name",
+            "type": "string"
+          },
+          "reason": {
+            "description": "Why a link is paused (licence, unlinked, peer-unlinked, key, cloud) or why an active link was not reached (home-network, unreachable)",
+            "nullable": true,
+            "type": "string"
+          },
+          "state": {
+            "description": "active, paused or ended",
+            "type": "string"
+          }
+        },
+        "required": [
+          "active",
+          "connectionPath",
+          "createdAt",
+          "ended",
+          "endedAt",
+          "householdName",
+          "id",
+          "lastSeenAt",
+          "paused",
+          "peerName",
+          "reason",
+          "state"
+        ],
+        "type": "object"
+      },
+      "HouseholdLinkUpdateDto": {
+        "additionalProperties": false,
+        "properties": {
+          "householdName": {
+            "maxLength": 80,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "householdName"
+        ],
+        "type": "object"
+      },
+      "HouseholdShareInviteDto": {
+        "additionalProperties": false,
+        "properties": {
+          "linkId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "remoteUserId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "linkId",
+          "remoteUserId",
+          "role"
+        ],
+        "type": "object"
+      },
+      "HouseholdShareLinkDto": {
+        "properties": {
+          "directory": {
+            "items": {
+              "$ref": "#/components/schemas/HouseholdDirectoryEntryDto"
+            },
+            "type": "array"
+          },
+          "householdName": {
+            "type": "string"
+          },
+          "linkId": {
+            "type": "string"
+          },
+          "members": {
+            "items": {
+              "$ref": "#/components/schemas/HouseholdShareMemberDto"
+            },
+            "type": "array"
+          },
+          "reachable": {
+            "description": "Whether the other household answered with its directory",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "directory",
+          "householdName",
+          "linkId",
+          "members",
+          "reachable"
+        ],
+        "type": "object"
+      },
+      "HouseholdShareMemberDto": {
+        "properties": {
+          "displayName": {
+            "type": "string"
+          },
+          "remoteUserId": {
+            "type": "string"
+          },
+          "role": {
+            "description": "viewer or contributor",
+            "type": "string"
+          },
+          "shareId": {
+            "type": "string"
+          },
+          "state": {
+            "description": "invited, accepted or left",
+            "type": "string"
+          }
+        },
+        "required": [
+          "displayName",
+          "remoteUserId",
+          "role",
+          "shareId",
+          "state"
+        ],
+        "type": "object"
+      },
+      "HouseholdShareRoleDto": {
+        "additionalProperties": false,
+        "properties": {
+          "role": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "role"
+        ],
+        "type": "object"
+      },
       "ICloudAttachAnswerDto": {
         "properties": {
           "id": {
@@ -118664,6 +121808,7 @@
         "type": "string"
       },
       "ICloudReviewAcceptDto": {
+        "additionalProperties": false,
         "properties": {
           "all": {
             "description": "Accept every photo in view instead of a list",
@@ -118773,9 +121918,9 @@
               }
             },
             "required": [
+              "useExisting",
               "keepCurrent",
-              "tryAgain",
-              "useExisting"
+              "tryAgain"
             ],
             "type": "object"
           },
@@ -118792,8 +121937,8 @@
                 }
               },
               "required": [
-                "count",
-                "group"
+                "group",
+                "count"
               ],
               "type": "object"
             },
@@ -118820,8 +121965,8 @@
                 },
                 "previewAssetId": {
                   "description": "The library photo to show; null when there is none yet",
-                  "nullable": true,
                   "format": "uuid",
+                  "nullable": true,
                   "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
                   "type": "string"
                 },
@@ -118839,13 +121984,13 @@
                 }
               },
               "required": [
-                "effect",
-                "fileName",
-                "group",
-                "previewAssetId",
-                "reason",
                 "resourceId",
-                "takenAt"
+                "group",
+                "effect",
+                "reason",
+                "fileName",
+                "takenAt",
+                "previewAssetId"
               ],
               "type": "object"
             },
@@ -118890,6 +122035,27 @@
           "size",
           "total"
         ],
+        "type": "object"
+      },
+      "ICloudReviewQueryDto": {
+        "additionalProperties": false,
+        "properties": {
+          "group": {
+            "$ref": "#/components/schemas/ICloudReviewGroup"
+          },
+          "page": {
+            "default": 1,
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "size": {
+            "default": 48,
+            "maximum": 200,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
         "type": "object"
       },
       "ICloudSyncActivityResponseDto": {
@@ -119959,6 +123125,358 @@
           "webp"
         ],
         "type": "string"
+      },
+      "ImportConnectionCreateDto": {
+        "properties": {
+          "credentials": {
+            "additionalProperties": {},
+            "description": "What the source needs to sign in. Sealed on the server and never returned",
+            "type": "object"
+          },
+          "dailyCheck": {
+            "default": false,
+            "description": "Look for new photos once a day and import them",
+            "type": "boolean"
+          },
+          "displayName": {
+            "description": "What the owner calls this connection",
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "provider": {
+            "description": "The kind of source, one of the providers this server lists",
+            "maxLength": 64,
+            "minLength": 1,
+            "type": "string"
+          },
+          "roots": {
+            "default": [],
+            "description": "The folders to import from, as the source names them; empty means everything it offers",
+            "items": {
+              "maxLength": 4096,
+              "type": "string"
+            },
+            "maxItems": 1000,
+            "type": "array"
+          }
+        },
+        "required": [
+          "credentials",
+          "displayName",
+          "provider"
+        ],
+        "type": "object"
+      },
+      "ImportConnectionFolderDto": {
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "path": {
+            "description": "Passed back to list inside it, or kept as a root",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "path"
+        ],
+        "type": "object"
+      },
+      "ImportConnectionFoldersResponseDto": {
+        "properties": {
+          "folders": {
+            "items": {
+              "$ref": "#/components/schemas/ImportConnectionFolderDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "folders"
+        ],
+        "type": "object"
+      },
+      "ImportConnectionProviderStatisticsDto": {
+        "properties": {
+          "connections": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "dailyCheck": {
+            "description": "Of those, how many check daily",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "provider": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "connections",
+          "dailyCheck",
+          "provider"
+        ],
+        "type": "object"
+      },
+      "ImportConnectionProvidersResponseDto": {
+        "properties": {
+          "providers": {
+            "description": "The kinds of source this server can connect to",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "providers"
+        ],
+        "type": "object"
+      },
+      "ImportConnectionResponseDto": {
+        "properties": {
+          "createdAt": {
+            "type": "string"
+          },
+          "dailyCheck": {
+            "type": "boolean"
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "importedItems": {
+            "description": "Photos and videos this connection brought in or found already in the library",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "lastScanAt": {
+            "description": "When the latest scan started (ISO 8601)",
+            "nullable": true,
+            "type": "string"
+          },
+          "provider": {
+            "description": "The kind of source",
+            "type": "string"
+          },
+          "roots": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "status": {
+            "description": "`active`, or `sign_in_required` once the source refused the saved sign-in",
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "createdAt",
+          "dailyCheck",
+          "displayName",
+          "id",
+          "importedItems",
+          "lastScanAt",
+          "provider",
+          "roots",
+          "status",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "ImportConnectionRootsDto": {
+        "properties": {
+          "roots": {
+            "description": "The folders to import from, as the source names them; empty means everything it offers",
+            "items": {
+              "maxLength": 4096,
+              "type": "string"
+            },
+            "maxItems": 1000,
+            "type": "array"
+          }
+        },
+        "required": [
+          "roots"
+        ],
+        "type": "object"
+      },
+      "ImportConnectionStatisticsResponseDto": {
+        "properties": {
+          "providers": {
+            "items": {
+              "$ref": "#/components/schemas/ImportConnectionProviderStatisticsDto"
+            },
+            "type": "array"
+          },
+          "total": {
+            "description": "Connections on this server, across every account",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "providers",
+          "total"
+        ],
+        "type": "object"
+      },
+      "ImportConnectionUpdateDto": {
+        "properties": {
+          "credentials": {
+            "additionalProperties": {},
+            "description": "New sign-in details; a connection waiting for a new sign-in becomes usable again",
+            "type": "object"
+          },
+          "dailyCheck": {
+            "type": "boolean"
+          },
+          "displayName": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "ImportSignInAvailabilityResponseDto": {
+        "properties": {
+          "available": {
+            "description": "Whether signing in can be started from this server now",
+            "type": "boolean"
+          },
+          "picker": {
+            "description": "What a browser needs to open the provider's own file picker; null when it has none or it is not set up",
+            "nullable": true,
+            "properties": {
+              "apiKey": {
+                "description": "The browser API key for the provider's file picker",
+                "type": "string"
+              },
+              "appId": {
+                "description": "The app id the picker grants access to (for Google, the Cloud project number)",
+                "type": "string"
+              }
+            },
+            "required": [
+              "apiKey",
+              "appId"
+            ],
+            "type": "object"
+          },
+          "reason": {
+            "description": "Why not: `not-linked`, `not-configured`, `not-offered` or `cloud-unreachable`",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "available",
+          "picker",
+          "reason"
+        ],
+        "type": "object"
+      },
+      "ImportSignInCompleteDto": {
+        "properties": {
+          "dailyCheck": {
+            "default": false,
+            "description": "Look for new photos once a day, for a new connection",
+            "type": "boolean"
+          },
+          "displayName": {
+            "description": "What to call a new connection",
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "roots": {
+            "default": [],
+            "description": "Folders for a new connection",
+            "items": {
+              "maxLength": 4096,
+              "type": "string"
+            },
+            "maxItems": 1000,
+            "type": "array"
+          },
+          "signInToken": {
+            "description": "The value the start of this sign-in returned",
+            "maxLength": 4096,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "signInToken"
+        ],
+        "type": "object"
+      },
+      "ImportSignInCompleteResponseDto": {
+        "properties": {
+          "connectionId": {
+            "description": "The connection, once `connected`",
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "state": {
+            "description": "`pending` (ask again), `connected`, `denied` or `expired`",
+            "type": "string"
+          }
+        },
+        "required": [
+          "connectionId",
+          "state"
+        ],
+        "type": "object"
+      },
+      "ImportSignInStartDto": {
+        "properties": {
+          "connectionId": {
+            "description": "The connection to sign in to again; leave out for a new one",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "ImportSignInStartResponseDto": {
+        "properties": {
+          "authorizationUrl": {
+            "description": "The provider's sign-in page, to open in the browser",
+            "type": "string"
+          },
+          "expiresAt": {
+            "description": "When this sign-in stops working (ISO 8601)",
+            "type": "string"
+          },
+          "signInToken": {
+            "description": "Send this back to finish the sign-in",
+            "type": "string"
+          }
+        },
+        "required": [
+          "authorizationUrl",
+          "expiresAt",
+          "signInToken"
+        ],
+        "type": "object"
       },
       "IntegrityCheckHistoryEntryDto": {
         "properties": {
@@ -127024,6 +130542,10 @@
             "format": "double",
             "type": "number"
           },
+          "placeNamesLocalized": {
+            "$ref": "#/components/schemas/PlaceNamesLocalizedDto",
+            "description": "FL-987: city, state and country of the preview item in the language of the signed-in account, when it is not English and one of them has a translation. Absent otherwise"
+          },
           "south": {
             "description": "Southernmost latitude of the items",
             "format": "double",
@@ -127197,6 +130719,10 @@
           "originalFileName": {
             "description": "Original file name",
             "type": "string"
+          },
+          "placeNamesLocalized": {
+            "$ref": "#/components/schemas/PlaceNamesLocalizedDto",
+            "description": "FL-987: city, state and country in the language of the signed-in account, when it is not English and one of them has a translation. Absent otherwise: show `city`, `state` and `country`"
           },
           "state": {
             "description": "State/Province name",
@@ -129849,6 +133375,10 @@
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
             "type": "string"
           },
+          "dateAccuracy": {
+            "description": "With `dateTimeOriginal`: `year` or `decade` when only that much of the date is known",
+            "type": "string"
+          },
           "dateMode": {
             "enum": [
               "set",
@@ -131376,6 +134906,14 @@
             "description": "Whether memories are enabled",
             "type": "boolean"
           },
+          "occasionRegion": {
+            "description": "Whose Mother's Day and Father's Day dates to use; auto follows the account's language and country",
+            "type": "string"
+          },
+          "occasions": {
+            "description": "Whether to make Mother's Day and Father's Day memories",
+            "type": "boolean"
+          },
           "sidebarWeb": {
             "description": "Whether memories appear in web sidebar",
             "type": "boolean"
@@ -131384,6 +134922,8 @@
         "required": [
           "duration",
           "enabled",
+          "occasionRegion",
+          "occasions",
           "sidebarWeb"
         ],
         "type": "object"
@@ -131398,6 +134938,25 @@
           },
           "enabled": {
             "description": "Whether memories are enabled",
+            "type": "boolean"
+          },
+          "occasionRegion": {
+            "description": "Whose Mother's Day and Father's Day dates to use; auto follows the account's language and country",
+            "enum": [
+              "auto",
+              "us-ca",
+              "uk-ie",
+              "au-nz",
+              "de",
+              "fr",
+              "es-pt",
+              "mx",
+              "se"
+            ],
+            "type": "string"
+          },
+          "occasions": {
+            "description": "Whether to make Mother's Day and Father's Day memories",
             "type": "boolean"
           },
           "sidebarWeb": {
@@ -131772,6 +135331,37 @@
         ],
         "type": "object"
       },
+      "MemoryOccasionDto": {
+        "properties": {
+          "kind": {
+            "description": "The occasion, for example 'mothers_day' or 'fathers_day'",
+            "type": "string"
+          },
+          "personId": {
+            "description": "The person the memory is about",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "personId"
+        ],
+        "type": "object"
+      },
+      "MemoryOccasionsStatusDto": {
+        "properties": {
+          "hasParent": {
+            "description": "Whether anyone has been added as a mother or father",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "hasParent"
+        ],
+        "type": "object"
+      },
       "MemoryResponseDto": {
         "properties": {
           "assets": {
@@ -131830,6 +135420,16 @@
             "format": "date-time",
             "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
             "type": "string"
+          },
+          "occasion": {
+            "$ref": "#/components/schemas/MemoryOccasionDto",
+            "description": "The occasion this memory was made for, such as Mother's Day",
+            "x-immich-history": [
+              {
+                "version": "v3",
+                "state": "Added"
+              }
+            ]
           },
           "ownerId": {
             "description": "Owner user ID",
@@ -136412,6 +140012,21 @@
             "nullable": true,
             "type": "string"
           },
+          "relationships": {
+            "$ref": "#/components/schemas/PersonRelationshipsResponseDto",
+            "description": "The person's family (FL-842). Returned only to the person's owner, and only by GET /people/:id; never in a list",
+            "x-immich-history": [
+              {
+                "version": "v3.2.1",
+                "state": "Added"
+              },
+              {
+                "version": "v3.2.1",
+                "state": "Alpha"
+              }
+            ],
+            "x-immich-state": "Alpha"
+          },
           "thumbnailPath": {
             "description": "Thumbnail path",
             "type": "string"
@@ -137278,6 +140893,22 @@
         ],
         "type": "object"
       },
+      "PersonParentRelativeDto": {
+        "properties": {
+          "parentRole": {
+            "description": "Which parent the parent is to the child: mother, father or parent. Unknown values may be added",
+            "type": "string"
+          },
+          "person": {
+            "$ref": "#/components/schemas/PersonRelativeDto"
+          }
+        },
+        "required": [
+          "parentRole",
+          "person"
+        ],
+        "type": "object"
+      },
       "PersonRecapDto": {
         "properties": {
           "assetCount": {
@@ -137325,6 +140956,126 @@
           "subject",
           "subjectId",
           "year"
+        ],
+        "type": "object"
+      },
+      "PersonRelationshipCreateDto": {
+        "properties": {
+          "relatedPersonId": {
+            "description": "The other person; one of the caller's own people",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "relation": {
+            "$ref": "#/components/schemas/PersonRelationshipRelation"
+          }
+        },
+        "required": [
+          "relatedPersonId",
+          "relation"
+        ],
+        "type": "object"
+      },
+      "PersonRelationshipRelation": {
+        "description": "What the other person is to the person in the path: \"mother\" records that the other person is their mother, \"child\" that the other person is their child",
+        "enum": [
+          "mother",
+          "father",
+          "parent",
+          "child",
+          "partner",
+          "sibling"
+        ],
+        "type": "string"
+      },
+      "PersonRelationshipsResponseDto": {
+        "properties": {
+          "children": {
+            "description": "The person's children; `parentRole` is which parent the person is to that child",
+            "items": {
+              "$ref": "#/components/schemas/PersonParentRelativeDto"
+            },
+            "type": "array"
+          },
+          "inferredSiblingIds": {
+            "description": "The siblings listed only because they share a parent. There is no recorded relationship with them to remove",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "parents": {
+            "description": "The person's parents, each with which parent they are",
+            "items": {
+              "$ref": "#/components/schemas/PersonParentRelativeDto"
+            },
+            "type": "array"
+          },
+          "partners": {
+            "description": "The person's partners",
+            "items": {
+              "$ref": "#/components/schemas/PersonRelativeDto"
+            },
+            "type": "array"
+          },
+          "siblings": {
+            "description": "The person's siblings: the ones recorded, and everyone who shares a parent with them",
+            "items": {
+              "$ref": "#/components/schemas/PersonRelativeDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "children",
+          "inferredSiblingIds",
+          "parents",
+          "partners",
+          "siblings"
+        ],
+        "type": "object"
+      },
+      "PersonRelativeDto": {
+        "properties": {
+          "birthDate": {
+            "description": "Person date of birth",
+            "format": "date",
+            "nullable": true,
+            "type": "string"
+          },
+          "id": {
+            "description": "Person ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "isHidden": {
+            "description": "Is hidden",
+            "type": "boolean"
+          },
+          "name": {
+            "description": "Person name",
+            "type": "string"
+          },
+          "thumbnailPath": {
+            "description": "Thumbnail path",
+            "type": "string"
+          },
+          "updatedAt": {
+            "description": "Last update date",
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "birthDate",
+          "id",
+          "isHidden",
+          "name",
+          "thumbnailPath"
         ],
         "type": "object"
       },
@@ -137428,6 +141179,21 @@
             "description": "The owner's private notes about the person (FL-941); null when there are none. Only ever returned to the person's owner",
             "nullable": true,
             "type": "string"
+          },
+          "relationships": {
+            "$ref": "#/components/schemas/PersonRelationshipsResponseDto",
+            "description": "The person's family (FL-842). Returned only to the person's owner, and only by GET /people/:id; never in a list",
+            "x-immich-history": [
+              {
+                "version": "v3.2.1",
+                "state": "Added"
+              },
+              {
+                "version": "v3.2.1",
+                "state": "Alpha"
+              }
+            ],
+            "x-immich-state": "Alpha"
           },
           "thumbnailPath": {
             "description": "Thumbnail path",
@@ -157749,6 +161515,37 @@
         ],
         "type": "object"
       },
+      "PlaceNamesLocalizedDto": {
+        "description": "Place names in the viewer’s language",
+        "properties": {
+          "city": {
+            "description": "City name in `lang`, or the English `city` where it has no translation",
+            "nullable": true,
+            "type": "string"
+          },
+          "country": {
+            "description": "Country name in `lang`, or the English `country` where it has no translation",
+            "nullable": true,
+            "type": "string"
+          },
+          "lang": {
+            "description": "Language of the translated names: fr, es, de, it, pt, nl, pl, sv, da or nb (Norwegian Bokmål)",
+            "type": "string"
+          },
+          "state": {
+            "description": "State/province name in `lang`, or the English `state` where it has no translation",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "city",
+          "country",
+          "lang",
+          "state"
+        ],
+        "type": "object"
+      },
       "PlacesResponseDto": {
         "properties": {
           "admin1name": {
@@ -157772,6 +161569,10 @@
           "name": {
             "description": "Place name",
             "type": "string"
+          },
+          "placeNamesLocalized": {
+            "$ref": "#/components/schemas/PlaceNamesLocalizedDto",
+            "description": "FL-987: the place (as `city`), its state/province and its country in the language of the signed-in account, when it is not English and one of them has a translation. Absent otherwise: show `name` and `admin1name`"
           }
         },
         "required": [
@@ -159328,6 +163129,54 @@
           "changed"
         ],
         "type": "string"
+      },
+      "PrintBackResponseDto": {
+        "properties": {
+          "backAssetId": {
+            "description": "The back's asset. Only its owner is told; null for anyone else",
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "canEdit": {
+            "description": "Whether this viewer can pair, unpair and correct the text",
+            "type": "boolean"
+          },
+          "frontAssetId": {
+            "description": "The photo of the front",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "text": {
+            "description": "The back's text with the owner's corrections, or null when there is none",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "backAssetId",
+          "canEdit",
+          "frontAssetId",
+          "text"
+        ],
+        "type": "object"
+      },
+      "PrintBackUpdateDto": {
+        "properties": {
+          "backAssetId": {
+            "description": "The scan of the back of this print, or null to remove the back",
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "backAssetId"
+        ],
+        "type": "object"
       },
       "PrivacyResponse": {
         "description": "Privacy preferences",
@@ -165821,6 +169670,11 @@
       },
       "SanitizedAssetResponseDto": {
         "properties": {
+          "dateAccuracy": {
+            "description": "Set when only the year (`year`) or the decade (`decade`) of the capture date is known; localDateTime is then the start of that period. Absent or null for an exact date. Other values may be added: treat an unknown one as approximate.",
+            "nullable": true,
+            "type": "string"
+          },
           "duration": {
             "description": "Video/gif duration in milliseconds (null for static images)",
             "maximum": 2147483647,
@@ -165936,6 +169790,254 @@
         "required": [
           "name",
           "query"
+        ],
+        "type": "object"
+      },
+      "ScanSplitCropDto": {
+        "properties": {
+          "quad": {
+            "description": "The print's corners on the scan: top-left, top-right, bottom-right, bottom-left",
+            "items": {
+              "$ref": "#/components/schemas/ScanSplitPointDto"
+            },
+            "maxItems": 4,
+            "minItems": 4,
+            "type": "array"
+          },
+          "rotation": {
+            "default": 0,
+            "description": "Degrees to turn the straightened print clockwise so it is upright: 0, 90, 180 or 270",
+            "maximum": 270,
+            "minimum": 0,
+            "multipleOf": 90,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "quad"
+        ],
+        "type": "object"
+      },
+      "ScanSplitDetectResponseDto": {
+        "properties": {
+          "height": {
+            "description": "Height of the scan as it is displayed, in pixels",
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "prints": {
+            "description": "The prints found, in reading order. Nothing is saved.",
+            "items": {
+              "$ref": "#/components/schemas/ScanSplitPrintDto"
+            },
+            "type": "array"
+          },
+          "width": {
+            "description": "Width of the scan as it is displayed, in pixels: the space the corners are in",
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "height",
+          "prints",
+          "width"
+        ],
+        "type": "object"
+      },
+      "ScanSplitDto": {
+        "properties": {
+          "crops": {
+            "description": "The prints to cut out, as confirmed by the owner",
+            "items": {
+              "$ref": "#/components/schemas/ScanSplitCropDto"
+            },
+            "maxItems": 50,
+            "minItems": 1,
+            "type": "array"
+          }
+        },
+        "required": [
+          "crops"
+        ],
+        "type": "object"
+      },
+      "ScanSplitExistingCropDto": {
+        "properties": {
+          "assetId": {
+            "description": "The photo cut from this scan",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "createdAt": {
+            "description": "When the photo was cut out",
+            "format": "date-time",
+            "type": "string"
+          },
+          "edited": {
+            "description": "The owner has worked on this photo, so splitting again keeps it",
+            "type": "boolean"
+          },
+          "quad": {
+            "description": "The print's corners on the scan: top-left, top-right, bottom-right, bottom-left",
+            "items": {
+              "$ref": "#/components/schemas/ScanSplitPointDto"
+            },
+            "maxItems": 4,
+            "minItems": 4,
+            "type": "array"
+          },
+          "rotation": {
+            "description": "Degrees to turn the straightened print clockwise so it is upright: 0, 90, 180 or 270",
+            "maximum": 270,
+            "minimum": 0,
+            "multipleOf": 90,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "assetId",
+          "createdAt",
+          "edited",
+          "quad",
+          "rotation"
+        ],
+        "type": "object"
+      },
+      "ScanSplitInfoResponseDto": {
+        "properties": {
+          "cropCount": {
+            "description": "All photos cut from this scan and not in the trash, shown here or not",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "crops": {
+            "description": "Photos cut from this scan that can be shown here",
+            "items": {
+              "$ref": "#/components/schemas/ScanSplitExistingCropDto"
+            },
+            "type": "array"
+          },
+          "editedCount": {
+            "description": "How many of cropCount are kept if the scan is split again",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "height": {
+            "description": "Height of the scan as it is displayed, when its metadata has been read",
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "nullable": true,
+            "type": "integer"
+          },
+          "sourceAssetId": {
+            "description": "The scan this photo was cut from, when it can be shown",
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "sourceFileName": {
+            "description": "The file name of that scan",
+            "nullable": true,
+            "type": "string"
+          },
+          "width": {
+            "description": "Width of the scan as it is displayed, when its metadata has been read",
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "nullable": true,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "cropCount",
+          "crops",
+          "editedCount",
+          "height",
+          "sourceAssetId",
+          "sourceFileName",
+          "width"
+        ],
+        "type": "object"
+      },
+      "ScanSplitOfferResponseDto": {
+        "properties": {
+          "inScanAlbum": {
+            "description": "Whether this photo is in an album marked as holding scans",
+            "type": "boolean"
+          },
+          "printCount": {
+            "description": "Prints found on an upload to an album that holds scans; 0 means no offer",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "inScanAlbum",
+          "printCount"
+        ],
+        "type": "object"
+      },
+      "ScanSplitPointDto": {
+        "properties": {
+          "x": {
+            "description": "Pixels from the left edge of the scan as it is displayed",
+            "format": "double",
+            "maximum": 1000000,
+            "minimum": 0,
+            "type": "number"
+          },
+          "y": {
+            "description": "Pixels from the top edge of the scan as it is displayed",
+            "format": "double",
+            "maximum": 1000000,
+            "minimum": 0,
+            "type": "number"
+          }
+        },
+        "required": [
+          "x",
+          "y"
+        ],
+        "type": "object"
+      },
+      "ScanSplitPrintDto": {
+        "properties": {
+          "confidence": {
+            "description": "How sure the detection is that this is one whole print, from 0 to 1",
+            "format": "double",
+            "maximum": 1,
+            "minimum": 0,
+            "type": "number"
+          },
+          "quad": {
+            "description": "The print's corners on the scan: top-left, top-right, bottom-right, bottom-left",
+            "items": {
+              "$ref": "#/components/schemas/ScanSplitPointDto"
+            },
+            "maxItems": 4,
+            "minItems": 4,
+            "type": "array"
+          },
+          "rotation": {
+            "description": "Degrees to turn the straightened print clockwise so it is upright: 0, 90, 180 or 270",
+            "maximum": 270,
+            "minimum": 0,
+            "multipleOf": 90,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "confidence",
+          "quad",
+          "rotation"
         ],
         "type": "object"
       },
@@ -167061,6 +171163,10 @@
           "takenAt": {
             "$ref": "#/components/schemas/DateFilter"
           },
+          "takenDecade": {
+            "$ref": "#/components/schemas/DecadeFilter",
+            "description": "Taken in this decade, whether dated to a day, a year or the decade"
+          },
           "technicalScore": {
             "$ref": "#/components/schemas/NumberFilterNullable",
             "description": "Technical quality from the best-photo check (0 to 1); null when the photo has not been scored"
@@ -167233,6 +171339,10 @@
           },
           "takenAt": {
             "$ref": "#/components/schemas/DateFilter"
+          },
+          "takenDecade": {
+            "$ref": "#/components/schemas/DecadeFilter",
+            "description": "Taken in this decade, whether dated to a day, a year or the decade"
           },
           "technicalScore": {
             "$ref": "#/components/schemas/NumberFilterNullable",
@@ -184531,6 +188641,15 @@
             },
             "type": "array"
           },
+          "dateAccuracy": {
+            "description": "For each asset, `year` or `decade` when only that much of its capture date is known, else null. The whole array is null or absent when no asset here has one",
+            "items": {
+              "nullable": true,
+              "type": "string"
+            },
+            "nullable": true,
+            "type": "array"
+          },
           "duration": {
             "description": "Array of video/gif durations in milliseconds (null for static images)",
             "items": {
@@ -186136,6 +190255,10 @@
               }
             ]
           },
+          "holdsScans": {
+            "description": "Check uploads into this album for several photos on one scan and offer to split them. Nothing is split without the owner confirming.",
+            "type": "boolean"
+          },
           "icon": {
             "description": "Icon: any Material Design Icons name (null = clear / use default icon)",
             "maxLength": 80,
@@ -186209,6 +190332,16 @@
           "country": {
             "description": "Country name; kept over reverse geocoding until the item is moved again",
             "maxLength": 255,
+            "nullable": true,
+            "type": "string"
+          },
+          "dateAccuracy": {
+            "description": "With dateTimeOriginal: only its year (`year`) or its decade (`decade`) is known. The date is then stored as the start of that period, 1 January at midnight, and no time zone is applied. A dateTimeOriginal sent without it, or with null, is an exact date. Null on its own keeps the date and makes it exact.",
+            "enum": [
+              "year",
+              "decade",
+              null
+            ],
             "nullable": true,
             "type": "string"
           },

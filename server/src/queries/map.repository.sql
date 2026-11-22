@@ -162,3 +162,34 @@ from
       )
   ) as "cell"
   left join "asset_exif" on "asset_exif"."assetId" = "cell"."id"
+
+-- MapRepository.getUserPlaces
+select
+  "id",
+  "name",
+  "latitude",
+  "longitude",
+  "radiusMeters",
+  "createdAt",
+  "updatedAt"
+from
+  "user_place"
+where
+  "ownerId" = $1
+order by
+  lower(name),
+  "id"
+
+-- MapRepository.countUserPlaces
+select
+  count(*) as "count"
+from
+  "user_place"
+where
+  "ownerId" = $1
+
+-- MapRepository.deleteUserPlace
+delete from "user_place"
+where
+  "ownerId" = $1
+  and "id" = $2

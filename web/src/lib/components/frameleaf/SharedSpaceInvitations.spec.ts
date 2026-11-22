@@ -15,6 +15,7 @@ vi.mock('@frameleaf/sdk', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@frameleaf/sdk')>()),
   acceptSharedSpaceInvitation: vi.fn(),
   declineSharedSpaceInvitation: vi.fn(),
+  getHouseholdShares: vi.fn(),
 }));
 
 const user = (id: string, name: string): UserResponseDto =>
