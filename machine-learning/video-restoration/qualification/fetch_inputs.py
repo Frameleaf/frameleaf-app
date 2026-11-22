@@ -3,17 +3,22 @@
     python fetch_inputs.py weights <upstream.json> <dir>
     python fetch_inputs.py scans <scan-set.json> <dir> [--limit N]
 
-Every file is kept only when it hashes to its pinned sha256. Scans are fetched one at a time
-with a pause; one that is gone or changed is reported and left out. Standard library only.
+Every file is kept only when it hashes to its pinned sha256. Scans come as one tar from the
+private Forgejo package named in the scan set, read with the token in ``PACKAGE_TOKEN``; only
+members the scan set names are extracted, by name, and each is checked. Standard library only.
 """
 
 import argparse
 import hashlib
 import json
+import os
 import shutil
 import subprocess
 import sys
+import tarfile
 import time
+import urllib.error
+import urllib.request
 from pathlib import Path
 
 # Generic on purpose: no personal details.
@@ -54,6 +59,7 @@ def main() -> int:
     parser.add_argument("manifest", type=Path)
     parser.add_argument("directory", type=Path)
     parser.add_argument("--limit", type=int, default=0)
+    parser.add_argument("--check-only", action="store_true", help="only confirm the scan package is readable")
     args = parser.parse_args()
     args.directory.mkdir(parents=True, exist_ok=True)
     manifest = json.loads(args.manifest.read_text(encoding="utf-8"))
@@ -67,20 +73,58 @@ def main() -> int:
         return 0
 
     scans = manifest["scans"][: args.limit or None]
-    missing = []
-    failed_in_a_row = 0
-    for index, scan in enumerate(scans):
-        if fetch(scan["url"], args.directory / f"{scan['id']}.jpg", scan["sha256"]):
-            failed_in_a_row = 0
-        else:
-            missing.append(scan["id"])
-            failed_in_a_row += 1
-        if failed_in_a_row == 2:  # the host is refusing us: stop asking
-            missing.extend(later["id"] for later in scans[index + 1 :])
-            break
-        time.sleep(3.0)
-    print(json.dumps({"scans": len(scans), "fetched": len(scans) - len(missing), "missing": missing}))
-    return 0 if len(missing) <= len(scans) // 10 else 1
+    package = manifest["package"]
+    token = os.environ.get("PACKAGE_TOKEN", "")
+    if not token:
+        print("PACKAGE_TOKEN is not set", file=sys.stderr)
+        return 1
+    archive = args.directory / package["file"]
+    request = urllib.request.Request(
+        f"{package['registry']}/{package['file']}",
+        headers={"Authorization": f"token {token}", "User-Agent": USER_AGENT},
+        method="HEAD" if args.check_only else "GET",
+    )
+    if args.check_only:  # proves the job can read the package before the long setup steps
+        try:
+            with urllib.request.urlopen(request, timeout=30) as response:
+                print(f"scan package readable: HTTP {response.status}")
+            return 0
+        except (urllib.error.URLError, TimeoutError) as error:
+            print(f"the scan package could not be read: {getattr(error, 'code', error)}", file=sys.stderr)
+            return 1
+    try:
+        with urllib.request.urlopen(request, timeout=120) as response, archive.open("wb") as out:
+            shutil.copyfileobj(response, out, 8 * 1024 * 1024)
+    except urllib.error.HTTPError as error:
+        print(f"the scan package could not be read: HTTP {error.code}", file=sys.stderr)
+        return 1
+    if sha256(archive) != package["sha256"]:
+        print("the scan package does not match its pinned sha256", file=sys.stderr)
+        return 1
+
+    wanted = {f"{scan['id']}.jpg": scan["sha256"] for scan in scans}
+    with tarfile.open(archive, "r:") as tar:
+        for member in tar:
+            if member.isfile() and member.name in wanted:
+                source = tar.extractfile(member)
+                with (args.directory / member.name).open("wb") as out:
+                    shutil.copyfileobj(source, out, 8 * 1024 * 1024)
+    archive.unlink()
+    missing = [name for name, digest in wanted.items() if not (args.directory / name).is_file()]
+    wrong = [name for name, digest in wanted.items() if name not in missing and sha256(args.directory / name) != digest]
+    for name in wrong:
+        (args.directory / name).unlink()
+    print(
+        json.dumps(
+            {
+                "scans": len(scans),
+                "verified": len(scans) - len(missing) - len(wrong),
+                "missing": missing,
+                "wrong": wrong,
+            }
+        )
+    )
+    return 0 if not missing and not wrong else 1
 
 
 if __name__ == "__main__":

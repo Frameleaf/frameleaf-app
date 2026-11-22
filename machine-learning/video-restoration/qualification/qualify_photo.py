@@ -32,6 +32,7 @@ FILL_BYTES = 2 * GIB
 SHEET_EVERY = 8
 STRIP_HEIGHT = 300
 STRESS_SIZES = ((6000, 7000), (8192, 8192))  # a 600 dpi scan of a large print, and the limit
+OUTPUT_CAP = (3840, 2160)  # the worker's output box today; scans are measured at full size regardless
 
 
 class DeviceSampler:
@@ -179,6 +180,7 @@ def main() -> int:
             "width": width,
             "height": height,
             "megapixels": round(width * height / 1e6, 3),
+            "exceedsOutputCap": max(width, height) > OUTPUT_CAP[0] or min(width, height) > OUTPUT_CAP[1],
         }
         torch.cuda.empty_cache()
         torch.cuda.reset_peak_memory_stats()
@@ -289,6 +291,16 @@ def main() -> int:
         "peakTorchAllocatedBytes": max((e["torchPeakAllocatedBytes"] for e in measured), default=0),
         "peakTorchReservedBytes": max((e["torchPeakReservedBytes"] for e in measured), default=0),
         "peakDeviceMiB": max((e["devicePeakMiB"] for e in measured), default=0),
+        "aboveOutputCap": {
+            "box": list(OUTPUT_CAP),
+            "scans": sum(1 for entry in results if entry.get("exceedsOutputCap")),
+            "succeeded": sum(1 for entry in done if entry["exceedsOutputCap"]),
+            "failed": [e["id"] for e in results if e.get("exceedsOutputCap") and "failure" in e],
+            "peakDeviceMiB": max((e["devicePeakMiB"] for e in done if e["exceedsOutputCap"]), default=0),
+            "peakTorchReservedBytes": max(
+                (e["torchPeakReservedBytes"] for e in done if e["exceedsOutputCap"]), default=0
+            ),
+        },
         "stress": stress,
         "sheets": write_sheets(strips, args.out, args.workload),
     }

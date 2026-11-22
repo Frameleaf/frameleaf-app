@@ -2,7 +2,7 @@ name: Restoration qualification (photo repair and colourise)
 
 # FL-933: runs the photo repair and colourise runtimes on a real NVIDIA GPU and records the
 # measurements the qualification gate asks for. Forgejo only, on the Windows GPU runner, started
-# by hand or by a push to the one qualification branch. The runner is a personal computer: every
+# by hand only, so a push never starts a run on it. The runner is a personal computer: every
 # step stays inside the job's own work directory, installs nothing system-wide and the last step
 # removes everything the job fetched. Weights and runtimes come from their upstream pins here
 # (machine-learning/video-restoration/qualification/upstream.json); a worker only ever uses the
@@ -14,8 +14,6 @@ on:
         description: Scans to run (0 for the whole set)
         type: string
         default: '0'
-  push:
-    branches: [aj/FL-933-qualify]
 
 permissions: {}
 
@@ -31,6 +29,7 @@ jobs:
     timeout-minutes: 150
     permissions:
       contents: read
+      packages: read
     env:
       LIMIT: ${{ inputs.limit || '0' }}
       PYTHONDONTWRITEBYTECODE: '1'
@@ -55,6 +54,17 @@ jobs:
         with:
           persist-credentials: false
           sparse-checkout: machine-learning/video-restoration
+
+      # Fails in seconds, before anything is installed, if the job cannot read the private package.
+      - name: The job can read the scan package
+        shell: pwsh
+        env:
+          PACKAGE_TOKEN: ${{ github.token }}
+        run: |
+          $q = Join-Path $env:GITHUB_WORKSPACE 'q'
+          New-Item -ItemType Directory -Force -Path "$q\s" | Out-Null
+          python -I machine-learning\video-restoration\qualification\fetch_inputs.py scans machine-learning\video-restoration\qualification\scan-set.json "$q\s" --check-only
+          exit $LASTEXITCODE
 
       - name: Environment with a CUDA build of torch
         shell: pwsh
@@ -91,8 +101,10 @@ jobs:
           & "$q\v\Scripts\python.exe" -I machine-learning\video-restoration\qualification\fetch_inputs.py weights machine-learning\video-restoration\qualification\upstream.json "$q\w"
           if ($LASTEXITCODE -ne 0) { exit 1 }
 
-      - name: Scan set
+      - name: Scan set from the private package, every sha256 checked
         shell: pwsh
+        env:
+          PACKAGE_TOKEN: ${{ github.token }}
         run: |
           $q = Join-Path $env:GITHUB_WORKSPACE 'q'
           & "$q\v\Scripts\python.exe" -I machine-learning\video-restoration\qualification\fetch_inputs.py scans machine-learning\video-restoration\qualification\scan-set.json "$q\s" --limit $env:LIMIT
@@ -150,10 +162,11 @@ jobs:
         if: always()
         shell: pwsh
         run: |
-          $q = Join-Path $env:GITHUB_WORKSPACE 'q'
-          if (Test-Path $q) { Remove-Item -Recurse -Force $q }
-          Write-Output "left in the work directory:"
-          Get-ChildItem $env:GITHUB_WORKSPACE -Force | Select-Object -ExpandProperty Name
+          Set-Location $env:RUNNER_TEMP
+          Get-ChildItem $env:GITHUB_WORKSPACE -Force | Remove-Item -Recurse -Force -ErrorAction Continue
+          $left = @(Get-ChildItem $env:GITHUB_WORKSPACE -Force -ErrorAction SilentlyContinue)
+          Write-Output "CLEANUP items left in the work directory: $($left.Count)"
+          $left | Select-Object -ExpandProperty Name
           exit 0
 
       - name: Result
