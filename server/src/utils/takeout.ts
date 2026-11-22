@@ -544,3 +544,17 @@ export const TAKEOUT_BUSY_STATES: readonly TakeoutState[] = ['queued', 'scanning
 
 /** States in which the owner may change review decisions and import choices. */
 export const TAKEOUT_REVIEWABLE_STATES: readonly TakeoutState[] = ['review', 'completed', 'failed', 'cancelled'];
+
+/**
+ * A job-level failure with a stable code; the job stops and its automatic retry resumes it. `retry`
+ * false reports it at once: trying again cannot help (FL-920: a source that wants a new sign-in).
+ */
+export class TakeoutJobError extends Error {
+  constructor(
+    readonly code: string,
+    message: string,
+    readonly retry = true,
+  ) {
+    super(message);
+  }
+}

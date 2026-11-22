@@ -166,6 +166,7 @@ import {
   ICloudEditVersionTable,
 } from 'src/schema/tables/icloud-edit-authority.table.js';
 import { IdenticalFileChangeTable } from 'src/schema/tables/identical-file-change.table.js';
+import { ImportConnectionItemTable, ImportConnectionTable } from 'src/schema/tables/import-connection.table.js';
 import { IntegrityReportTable } from 'src/schema/tables/integrity-report.table.js';
 import { AssetLandmarkTable, LandmarkAreaTable, LandmarkTable } from 'src/schema/tables/landmark.table.js';
 import { LibraryFolderAlbumAssetTable } from 'src/schema/tables/library-folder-album-asset.table.js';
@@ -600,6 +601,8 @@ export class ImmichDatabase {
     TakeoutItemTable,
     TakeoutPairTable,
     TakeoutAlbumTable,
+    ImportConnectionTable,
+    ImportConnectionItemTable,
     DevelopPresetTable,
     DevelopExportTable,
     SessionSyncCheckpointTable,
@@ -812,6 +815,8 @@ export interface DB extends QueueDatabase {
   date_fix_item: DateFixItemTable;
   asset_ledger: AssetLedgerTable;
   found_file: FoundFileTable;
+  import_connection: ImportConnectionTable;
+  import_connection_item: ImportConnectionItemTable;
   ocr_search: OcrSearchTable;
 
   duplicate_decision: DuplicateDecisionTable;
