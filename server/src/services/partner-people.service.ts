@@ -1,11 +1,17 @@
 import { ConflictException, Injectable } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
-import type { PersonCopyUndo } from 'src/repositories/partner-origin.repository.js';
+import type { PersonCopyUndo, PersonOriginRow } from 'src/repositories/partner-origin.repository.js';
 import type { FaceCorrection, PartnerPersonLink } from 'src/repositories/person.repository.js';
 import { JobName } from 'src/enum.js';
 import { BaseService } from 'src/services/base.service.js';
 import { asDateString } from 'src/utils/date.js';
+import {
+  mapRelationship,
+  refuseRelationship,
+  relationshipBetween,
+  sameRelationship,
+} from 'src/utils/person-relationship.js';
 
 export type PartnerFaceCopyInput = {
   /** The asset the copy was made from (the partner's own, or their copy: A to B to C). */
@@ -37,6 +43,15 @@ export type PersonEdit = {
  * the birth date (FL-864); the owner's notes never leave their own person (FL-941).
  */
 const FOLLOWED_PERSON_FIELDS = ['name', 'birthDate', 'deathDate', 'hidden'] as const;
+
+/**
+ * FL-842: the mark (in `person_origin.overriddenFields`) that the owner of a person copy changed one of that
+ * person's relationships. From then on the copy's relationships are the recipient's own.
+ */
+export const RELATIONSHIPS_FIELD = 'relationships';
+
+const followsRelationships = (origin: PersonOriginRow) =>
+  origin.following && !origin.overriddenFields.includes(RELATIONSHIPS_FIELD);
 
 const conflict = (reason: 'already-undone' | 'person-gone', message: string) =>
   new ConflictException({ statusCode: 409, error: 'Conflict', message, reason });
@@ -232,6 +247,82 @@ export class PartnerPeopleService extends BaseService {
     await this.partnerOriginRepository.markPersonOverridden(ownerId, [personGroupId], fields);
   }
 
+  /** FL-842: the owner of these people changed a relationship of theirs; as copies they stop following it. */
+  async noteRelationshipEdit(ownerId: string, personGroupIds: string[]): Promise<void> {
+    await this.partnerOriginRepository.markPersonOverridden(ownerId, personGroupIds, [RELATIONSHIPS_FIELD]);
+  }
+
+  /**
+   * FL-842: brings the relationships of every copy of a person in line with the person's own, then onward to the
+   * copies of those copies (A to B to C). See `syncCopiedRelationships` for what a copy follows.
+   */
+  async propagateRelationships(sourceOwnerId: string, sourcePersonGroupId: string): Promise<void> {
+    const seen = new Set<string>([`${sourceOwnerId}/${sourcePersonGroupId}`]);
+    const queue = [{ ownerId: sourceOwnerId, personGroupId: sourcePersonGroupId }];
+    while (queue.length > 0) {
+      const current = queue.shift()!;
+      const followers = await this.partnerOriginRepository.getPersonFollowers(current.ownerId, current.personGroupId);
+      for (const follower of followers) {
+        const key = `${follower.ownerId}/${follower.personGroupId}`;
+        if (seen.has(key)) {
+          continue;
+        }
+        seen.add(key);
+        if (await this.syncCopiedRelationships(current, follower)) {
+          queue.push({ ownerId: follower.ownerId, personGroupId: follower.personGroupId });
+        }
+      }
+    }
+  }
+
+  /**
+   * FL-842: makes one person copy's relationships match the partner's person it was copied from. Only pairs of
+   * copies are touched: for each other person the recipient holds as a copy from the same partner, the recipient's
+   * relationship between the two becomes the partner's (added, changed or removed). A copy whose relationships the
+   * recipient has edited (`RELATIONSHIPS_FIELD`) or that no longer follows is left alone, at either end, and so is
+   * every relationship with the recipient's own people. A relationship the recipient's own family rules refuse (it
+   * would make a loop with theirs, or a second mother) is not copied. Returns whether anything changed.
+   */
+  private async syncCopiedRelationships(
+    source: { ownerId: string; personGroupId: string },
+    copy: { ownerId: string; personGroupId: string },
+  ): Promise<boolean> {
+    const copies = await this.partnerOriginRepository.getPersonCopies(copy.ownerId, source.ownerId);
+    const following = copies.filter((origin) => followsRelationships(origin));
+    const own = following.find(
+      (origin) => origin.personGroupId === copy.personGroupId && origin.sourcePersonGroupId === source.personGroupId,
+    );
+    if (!own || following.length < 2) {
+      return false;
+    }
+    const sourceEdges = await this.personRepository.getRelationships(source.ownerId);
+    let edges = await this.personRepository.getRelationships(copy.ownerId);
+    const copyOf = new Map(following.map((origin) => [origin.sourcePersonGroupId, origin.personGroupId]));
+    let changed = false;
+    for (const other of following) {
+      if (other === own) {
+        continue;
+      }
+      const theirs = relationshipBetween(sourceEdges, source.personGroupId, other.sourcePersonGroupId);
+      const wanted = theirs && mapRelationship(theirs, (id) => copyOf.get(id) ?? id);
+      const current = relationshipBetween(edges, copy.personGroupId, other.personGroupId);
+      if (wanted ? sameRelationship(wanted, current) : !current) {
+        continue;
+      }
+      if (current) {
+        await this.personRepository.deleteRelationship(copy.ownerId, copy.personGroupId, other.personGroupId);
+        edges = edges.filter((edge) => edge !== current);
+        changed = true;
+      }
+      if (wanted && !refuseRelationship(edges, wanted)) {
+        await this.personRepository.createRelationships(copy.ownerId, [wanted]);
+        edges = [...edges, wanted];
+        changed = true;
+      }
+    }
+    return changed;
+  }
+
   /** Whether a person edit touched a detail its copies follow. */
   static touchesFollowedFields(edit: PersonEdit): boolean {
     return FOLLOWED_PERSON_FIELDS.some((field) => edit[field === 'hidden' ? 'isHidden' : field] !== undefined);
@@ -403,6 +494,13 @@ export class PartnerPeopleService extends BaseService {
       await this.personRepository.upsertProfile(
         { ownerId: targetOwnerId, personGroupId: result.personGroupId },
         { deathDate: asDateString(sourceProfile.deathDate) },
+      );
+    }
+    // FL-842: the copy starts with the partner's relationships between this person and the others already copied
+    if (source) {
+      await this.syncCopiedRelationships(
+        { ownerId: sourceOwnerId, personGroupId: sourcePersonGroupId },
+        { ownerId: targetOwnerId, personGroupId: result.personGroupId },
       );
     }
     return result.personGroupId;

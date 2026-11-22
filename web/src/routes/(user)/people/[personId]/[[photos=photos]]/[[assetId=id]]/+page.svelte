@@ -4,6 +4,7 @@
   import { scrollMemoryClearer } from '$lib/actions/scroll-memory';
   import OnEvents from '$lib/components/OnEvents.svelte';
   import LibraryView from '$lib/components/frameleaf/LibraryView.svelte';
+  import FamilySection from '$lib/components/frameleaf/people/FamilySection.svelte';
   import PersonHero from '$lib/components/frameleaf/people/PersonHero.svelte';
   import UserPageLayout from '$lib/components/layouts/UserPageLayout.svelte';
   import TimelineAssetViewer from '$lib/components/timeline/TimelineAssetViewer.svelte';
@@ -177,6 +178,7 @@
         onOpenAsset={(assetId) => void navigate({ targetRoute: 'current', assetId })}
         onOpenRecognitionGroups={() => goto(Route.userSettings({ isOpen: OpenQueryParam.SHARING }))}
       />
+      <FamilySection {person} />
 
       {#snippet viewer()}
         <Portal target="body">
