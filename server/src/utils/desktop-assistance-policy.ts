@@ -10,7 +10,17 @@ export const desktopAssistancePolicySchema = z.strictObject({
    * account signed in on them. `revisionId` changes whenever the list does, so work authorized under an old list
    * is refused.
    */
-  household: z.strictObject({ revisionId: z.uuid(), devices: z.array(z.uuid()).max(64) }).optional(),
+  household: z
+    .strictObject({
+      revisionId: z.uuid(),
+      devices: z.array(z.uuid()).max(64),
+      /**
+       * FL-1758: the household computers also allowed to convert everyone's videos. Separate because this copies
+       * full originals to the computer for a while, where household AI work sends only previews. Off when absent.
+       */
+      transcodeDevices: z.array(z.uuid()).max(64).optional(),
+    })
+    .optional(),
 });
 export type DesktopAssistancePolicyRegistry = z.infer<typeof desktopAssistancePolicySchema>;
 

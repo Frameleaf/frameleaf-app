@@ -5963,9 +5963,10 @@ describe(MediaService.name, () => {
     it('should transcode the highest bitrate video stream', async () => {
       mocks.logger.isLevelEnabled.mockReturnValue(false);
       mocks.assetJob.getForVideoConversion.mockResolvedValue({ ...asset, ...probeStub.multipleVideoStreams });
+      mocks.mediaOperation.getLatestBySubject.mockResolvedValue([]);
 
       const context = {
-        claim: { id: 'job', token: 'attempt', name: JobName.AssetEncodeVideo },
+        claim: { id: 'job', token: 'attempt', name: JobName.AssetEncodeVideo, data: {} },
         signal: new AbortController().signal,
         adoptions: [],
         followups: [],
