@@ -15,18 +15,21 @@ import type { MlContainerReport } from 'src/utils/hardware-check.js';
 import { CUSTOM_CLIP_DIM_SIZE } from 'src/constants.js';
 import { MachineLearningConfig } from 'src/dtos/config.dto.js';
 import {
+  PHOTO_OPERATION_WORKLOADS,
   RESTORATION_MAX_OUTPUT_EDGE,
   RESTORATION_PROTOCOL,
   RESTORATION_RESULT_HEADER,
   RestorationCapabilityReport,
   RestorationCapabilityReportSchema,
   RestorationModelState,
+  type RestorationPhotoOperation,
   RestorationWorkerErrorCode,
   RestorationWorkerErrorSchema,
   RestorationWorkerRequest,
   RestorationWorkerRequestSchema,
   RestorationWorkerResult,
   RestorationWorkerResultSchema,
+  verifiedPhotoOperations,
 } from 'src/dtos/restoration-inference.dto.js';
 import { MachineLearningHardwareResponseDto } from 'src/dtos/system-config.dto.js';
 import {
@@ -339,6 +342,11 @@ export type MlEndpointProbe = {
   error: string | null;
   /** FL-159: what a Frameleaf Cloud check learned; absent for local and LAN workers. */
   cloud?: CloudProbeFacts | null;
+  /**
+   * FL-955: the photo operations this worker can run, proved like a restoration workload. Kept apart
+   * from `workloads`, whose values reach API responses that installed native apps decode strictly.
+   */
+  photoOperations?: RestorationPhotoOperation[];
 };
 
 type CapabilitiesResponse = { workloads?: unknown };
@@ -1803,6 +1811,7 @@ export class MachineLearningRepository implements RestorationInference {
     }
 
     let workloads: MlWorkload[];
+    let claimsPhotoOperation = false;
     try {
       await this.authorize(endpoint);
       const response = await fetch(new URL('capabilities', endpoint.url), {
@@ -1813,6 +1822,9 @@ export class MachineLearningRepository implements RestorationInference {
       if (response.ok) {
         const body = (await this.readDiagnosticJson(response)) as CapabilitiesResponse;
         workloads = Array.isArray(body.workloads) ? body.workloads.filter(isMlWorkload) : [];
+        claimsPhotoOperation =
+          Array.isArray(body.workloads) &&
+          Object.values(PHOTO_OPERATION_WORKLOADS).some((name) => (body.workloads as unknown[]).includes(name));
       } else if (response.status === 404) {
         await response.body?.cancel();
         workloads = [...LIBRARY_ML_WORKLOADS];
@@ -1856,8 +1868,16 @@ export class MachineLearningRepository implements RestorationInference {
       const verified = await this.verifiedRestorationWorkloads(endpoint);
       workloads = workloads.filter((workload) => !RESTORATION_WORKLOAD_SET.has(workload) || verified.has(workload));
     }
+    // FL-955: the same rule for the photo operations, which never join `workloads`.
+    const photoOperations = claimsPhotoOperation ? await this.verifiedPhotoOperationsOf(endpoint) : [];
 
-    return finish({ reachable: true, workloads, hardware, error: null });
+    return finish({
+      reachable: true,
+      workloads,
+      hardware,
+      error: null,
+      ...(photoOperations.length > 0 && { photoOperations }),
+    });
   }
 
   /** Restoration workloads backed by an available, weight-verified and qualified model (FL-42). */
@@ -1874,6 +1894,14 @@ export class MachineLearningRepository implements RestorationInference {
       );
     } catch {
       return new Set();
+    }
+  }
+
+  private async verifiedPhotoOperationsOf(endpoint: MlEndpoint): Promise<RestorationPhotoOperation[]> {
+    try {
+      return (await this.getRestorationModels(endpoint)).photoOperations ?? [];
+    } catch {
+      return [];
     }
   }
 
@@ -2617,7 +2645,13 @@ export class MachineLearningRepository implements RestorationInference {
     }
     const report = RestorationCapabilityReportSchema.parse(await response.json());
     await this.authorize(endpoint);
-    return { ...report, workloads: report.workloads.filter(isMlWorkload) };
+    const { photoModels, ...rest } = report;
+    const photoOperations = verifiedPhotoOperations({ workloads: report.workloads, photoModels });
+    return {
+      ...rest,
+      workloads: report.workloads.filter(isMlWorkload),
+      ...(photoOperations.length > 0 && { photoOperations }),
+    };
   }
 
   /**
@@ -2662,14 +2696,16 @@ export class MachineLearningRepository implements RestorationInference {
     const payload = RestorationWorkerRequestSchema.parse({
       protocol: RESTORATION_PROTOCOL,
       requestId: `${options.jobId}:${basename(outputPath)}`.slice(0, 200),
-      mode: options.mode,
+      // FL-933: a photo operation is named instead of a mode, never beside one
+      ...(options.operation ? { operation: options.operation } : { mode: options.mode }),
       // FL-423: the chosen model, which the worker runs exactly or refuses; left out, the worker chooses
       ...(options.modelId && { modelId: options.modelId }),
       ...(options.modelFingerprint && { modelFingerprint: options.modelFingerprint }),
       kind: input.kind,
-      scale: options.upscale,
-      maxWidth: Math.min(options.maxWidth, RESTORATION_MAX_OUTPUT_EDGE),
-      maxHeight: Math.min(options.maxHeight, RESTORATION_MAX_OUTPUT_EDGE),
+      scale: options.operation ? 1 : options.upscale,
+      // A photo operation returns its own pixel grid and ignores this box, whatever the photo's size.
+      maxWidth: Math.max(options.operation ? 16 : 0, Math.min(options.maxWidth, RESTORATION_MAX_OUTPUT_EDGE)),
+      maxHeight: Math.max(options.operation ? 16 : 0, Math.min(options.maxHeight, RESTORATION_MAX_OUTPUT_EDGE)),
       keepGrain: options.keepGrain,
       seed: 0,
       source: {
@@ -2844,8 +2880,10 @@ export class MachineLearningRepository implements RestorationInference {
     const namedModel = payload.modelId ?? null;
     if (
       result.requestId !== payload.requestId ||
-      result.mode !== payload.mode ||
-      result.model.mode !== payload.mode ||
+      (result.mode ?? undefined) !== payload.mode ||
+      (result.model.mode ?? undefined) !== payload.mode ||
+      (result.operation ?? undefined) !== payload.operation ||
+      (result.model.operation ?? undefined) !== payload.operation ||
       (pinnedFingerprint !== null && result.model.fingerprint !== pinnedFingerprint) ||
       (namedModel !== null && result.model.id !== namedModel)
     ) {

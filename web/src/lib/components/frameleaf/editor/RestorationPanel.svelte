@@ -32,6 +32,7 @@
    */
   import CloudJobDialog from '$lib/components/frameleaf/cloud/CloudJobDialog.svelte';
   import ModelSlider from '$lib/components/frameleaf/cloud/ModelSlider.svelte';
+  import RepairColouriseCard from '$lib/components/frameleaf/editor/RepairColouriseCard.svelte';
   import RestorationModelSlider from '$lib/components/frameleaf/editor/RestorationModelSlider.svelte';
   import { ladderStates, liveStartStop, withLiveCloudStops, type DetectedGpu } from '$lib/frameleaf/gpu-model-catalog';
   import { cloudStopSku, liveCloudStops, loadCloudModelData } from '$lib/frameleaf/cloud-models';
@@ -1015,6 +1016,34 @@
         <p class="rs-help">{$t('frameleaf_enhance_preview_help')}</p>
       </div>
     </div>
+    {#if !isVideo}
+      <!-- FL-955: under Enhance & upscale, photos only. -->
+      <RepairColouriseCard
+        assetId={asset.id}
+        {items}
+        {busyId}
+        {compareId}
+        onCreated={(created) => {
+          list = {
+            assetId: asset.id,
+            currentRestorationId: list?.currentRestorationId ?? null,
+            items: [created, ...items],
+          };
+          void activitySession.refresh();
+          schedulePoll();
+        }}
+        onSave={accept}
+        onDiscard={reject}
+        onCancel={cancel}
+        onCompare={compare}
+        onCloudPreview={(request) =>
+          openCloudJob({
+            title: $t('frameleaf_cloud_job_title_restoration_preview'),
+            summary: $t('frameleaf_repair_title'),
+            request,
+          })}
+      />
+    {/if}
   {:else}
     <p class="rs-lead">{$t('frameleaf_restoration_lead')}</p>
 
