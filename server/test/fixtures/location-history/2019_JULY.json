@@ -1,0 +1,25 @@
+{
+  "timelineObjects": [
+    {
+      "placeVisit": {
+        "location": { "latitudeE7": 511784000, "longitudeE7": -1155708000, "placeId": "synthetic-3", "name": "Synthetic cabin" },
+        "duration": { "startTimestamp": "2019-07-05T15:00:00Z", "endTimestamp": "2019-07-05T16:00:00Z" },
+        "placeConfidence": "HIGH_CONFIDENCE"
+      }
+    },
+    {
+      "activitySegment": {
+        "startLocation": { "latitudeE7": 511784000, "longitudeE7": -1155708000 },
+        "endLocation": { "latitudeE7": 511645000, "longitudeE7": -1155617000 },
+        "duration": { "startTimestamp": "2019-07-05T16:00:00Z", "endTimestamp": "2019-07-05T16:30:00Z" },
+        "activityType": "WALKING",
+        "simplifiedRawPath": {
+          "points": [
+            { "latE7": 511730000, "lngE7": -1155680000, "accuracyMeters": 10, "timestamp": "2019-07-05T16:10:00Z" },
+            { "latE7": 511690000, "lngE7": -1155650000, "accuracyMeters": 10, "timestamp": "2019-07-05T16:20:00Z" }
+          ]
+        }
+      }
+    }
+  ]
+}

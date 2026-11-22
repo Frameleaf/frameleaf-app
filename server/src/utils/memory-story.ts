@@ -50,6 +50,9 @@ export type StoryCandidate = {
   country: string | null;
   /** every landmark the asset was taken at, in any order */
   landmarks?: StoryLandmark[];
+  /** FL-949: where the asset was taken, when it says */
+  latitude?: number | null;
+  longitude?: number | null;
 };
 
 export type StoryPlace = {

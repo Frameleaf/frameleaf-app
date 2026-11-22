@@ -265,7 +265,10 @@ export class NotificationService extends BaseService {
       this.websocketRepository.clientSend(
         asset.libraryScope === LibraryScope.Design ? 'LibraryAssetUpdateV1' : 'on_asset_update',
         userId,
-        await this.withLandmarks(mapAsset(asset, { auth: { user: { id: userId } } as AuthDto })),
+        await this.withNamedPlace(
+          await this.withLandmarks(mapAsset(asset, { auth: { user: { id: userId } } as AuthDto })),
+          userId,
+        ),
       );
     }
   }

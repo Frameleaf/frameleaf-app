@@ -688,6 +688,68 @@ describe(SearchService.name, () => {
     });
   });
 
+  describe('namedPlaceIds filter (FL-949)', () => {
+    it("matches items taken inside the viewer's own places, a partner's shared copy among them, with any, all, none and or branches", async () => {
+      const { sut, ctx } = setup();
+      const map = ctx.get(MapRepository);
+      const { user } = await ctx.newUser();
+      const { user: partner } = await ctx.newUser();
+      const { user: stranger } = await ctx.newUser();
+      const at = async (ownerId: string, latitude: number | null, longitude: number | null, isFavorite = false) => {
+        const { asset } = await ctx.newAsset({ ownerId, isFavorite });
+        await ctx.newExif({ assetId: asset.id, latitude, longitude });
+        return asset.id;
+      };
+      // Home reaches 200 m, the garden 60 m from a centre 111 m north of home's
+      const inHouse = await at(user.id, 51.0502, -114.0701);
+      const inGarden = await at(user.id, 51.0508, -114.07);
+      // what a partner shares arrives as the viewer's own copy (FL-326), with where it was taken
+      const partnerAtHome = await at(user.id, 51.0501, -114.0699);
+      await at(partner.id, 51.0501, -114.0699);
+      const downtown = await at(user.id, 51.0443, -114.0631, true);
+      const noLocation = await at(user.id, null, null);
+      // just outside: 250 m north of home's centre
+      const nextDoor = await at(user.id, 51.05225, -114.07);
+      await at(stranger.id, 51.05, -114.07);
+
+      const place = { latitude: 51.05, longitude: -114.07, radiusMeters: 200 };
+      const home = await map.createUserPlace({ ...place, ownerId: user.id, name: 'Home' });
+      const garden = await map.createUserPlace({
+        ownerId: user.id,
+        name: 'Garden',
+        latitude: 51.051,
+        longitude: -114.07,
+        radiusMeters: 60,
+      });
+      // the partner's own name for the same spot is never the viewer's
+      const partnersHome = await map.createUserPlace({ ...place, ownerId: partner.id, name: 'Home' });
+
+      const auth = factory.auth({ user: { id: user.id } });
+      const ids = async (filter: object) => {
+        const response = await sut.searchMetadata(auth, { filter, size: 100 });
+        return response.assets.items.map(({ id }) => id).toSorted();
+      };
+
+      await expect(ids({ namedPlaceIds: { any: [home.id] } })).resolves.toEqual(
+        [inHouse, inGarden, partnerAtHome].toSorted(),
+      );
+      await expect(ids({ namedPlaceIds: { any: [garden.id] } })).resolves.toEqual([inGarden]);
+      await expect(ids({ namedPlaceIds: { all: [home.id, garden.id] } })).resolves.toEqual([inGarden]);
+      await expect(ids({ namedPlaceIds: { none: [home.id] } })).resolves.toEqual(
+        [downtown, noLocation, nextDoor].toSorted(),
+      );
+      await expect(
+        ids({ or: [{ namedPlaceIds: { any: [garden.id] } }, { isFavorite: { eq: true } }] }),
+      ).resolves.toEqual([inGarden, downtown].toSorted());
+      await expect(ids({ namedPlaceIds: { any: [partnersHome.id] } })).resolves.toEqual([]);
+
+      // removing the place takes it out of search at once; the photos keep where they were taken
+      await map.deleteUserPlace(user.id, home.id);
+      await expect(ids({ namedPlaceIds: { any: [home.id] } })).resolves.toEqual([]);
+      await expect(ids({ namedPlaceIds: { any: [garden.id] } })).resolves.toEqual([inGarden]);
+    });
+  });
+
   describe('albumCount filter (FL-976)', () => {
     it('counts only the non-deleted albums the viewer owns or is a member of, in every branch', async () => {
       const { sut, ctx } = setup();

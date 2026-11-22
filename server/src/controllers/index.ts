@@ -87,6 +87,8 @@ import { LibraryProgressController } from 'src/controllers/library-progress.cont
 import { LibraryAdminController, LibraryController } from 'src/controllers/library.controller.js';
 import { LicenseAdminController, LicenseController } from 'src/controllers/license-admin.controller.js';
 import { LivePhotoController } from 'src/controllers/live-photo.controller.js';
+import { LocationFillController } from 'src/controllers/location-fill.controller.js';
+import { LocationHistoryController } from 'src/controllers/location-history.controller.js';
 import { LockedEncryptionController } from 'src/controllers/locked-encryption.controller.js';
 import { MailConnectionController } from 'src/controllers/mail-connection.controller.js';
 import { MaintenanceController } from 'src/controllers/maintenance.controller.js';
@@ -179,6 +181,7 @@ import { TimelineController } from 'src/controllers/timeline.controller.js';
 import { TrashAdminController, TrashController } from 'src/controllers/trash.controller.js';
 import { UpgradeCheckController } from 'src/controllers/upgrade-check.controller.js';
 import { UserAdminController } from 'src/controllers/user-admin.controller.js';
+import { UserPlaceController } from 'src/controllers/user-place.controller.js';
 import { UserController } from 'src/controllers/user.controller.js';
 import { UtilitiesController } from 'src/controllers/utilities.controller.js';
 import { VideoStreamController } from 'src/controllers/video-stream.controller.js';
@@ -335,6 +338,8 @@ export const controllers = [
   AlbumSourceController,
   AlbumCleanupController,
   DateDoctorController,
+  LocationHistoryController,
+  LocationFillController,
   AssetLedgerController,
   AssetLedgerAdminController,
   AlbumMergeController,
@@ -369,6 +374,7 @@ export const controllers = [
   TrashController,
   TrashAdminController,
   UserAdminController,
+  UserPlaceController,
   UserController,
   VideoStreamController,
   ViewController,
