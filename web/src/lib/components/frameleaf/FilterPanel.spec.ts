@@ -51,6 +51,27 @@ describe('FilterPanel', () => {
     return { onChange, panel: screen.getByRole('complementary', { name: 'Library filters' }) };
   };
 
+  it('FL-976: the quick chip filters to more than one album and clears again', async () => {
+    const { onChange, panel } = setup();
+    await fireEvent.click(within(panel).getByRole('button', { name: 'In more than one album' }));
+    expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({ filter: { albumCount: { gte: 2 } } }));
+  });
+
+  it('FL-976: the pressed chip clears the condition', async () => {
+    const { onChange, panel } = setup({ ...emptyDiscoveryQuery(), filter: { albumCount: { gte: 2 } } });
+    await fireEvent.click(within(panel).getByRole('button', { name: 'In more than one album' }));
+    expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({ filter: {} }));
+  });
+
+  it('FL-976: Advanced takes any number and opens for one other than two', async () => {
+    const { onChange, panel } = setup({ ...emptyDiscoveryQuery(), filter: { albumCount: { gte: 4 } } });
+    expect(panel.querySelector('details.advanced')).toHaveProperty('open', true);
+    const field = within(panel).getByRole('spinbutton', { name: 'Album count: at least' });
+    expect(field).toHaveValue(4);
+    await fireEvent.input(field, { target: { value: '7' } });
+    expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({ filter: { albumCount: { gte: 7 } } }));
+  });
+
   it('edits the shared color filter without changing workspace scope', async () => {
     const { onChange, panel } = setup({ ...emptyDiscoveryQuery(), filter: { libraryScope: LibraryViewScope.Design } });
     await fireEvent.input(within(panel).getByRole('textbox', { name: 'Hex colour' }), { target: { value: '#609060' } });

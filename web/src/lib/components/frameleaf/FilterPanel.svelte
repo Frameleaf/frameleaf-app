@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from 'svelte';
   import { locale } from '$lib/stores/preferences.store';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import ColorFilter from '$lib/components/frameleaf/ColorFilter.svelte';
@@ -15,11 +16,14 @@
     type DiscoveryQuery,
   } from '$lib/components/discovery/query';
   import {
+    albumCountAtLeast,
+    albumCountConditionForValue,
     captureDateControlValue,
     captureDateHasCustomCondition,
     CUSTOM_CONDITION,
     equalityControlValue,
     flagToggleActive,
+    MAX_ALBUM_COUNT_CONTROL,
     ratingConditionForValue,
     ratingControlValue,
     toggleFlagCondition,
@@ -38,7 +42,7 @@
   import '$lib/frameleaf/tokens.css';
   import { AssetTypeEnum, AssetVisibility, ImageEnrichmentFilter, SearchFacetField } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
-  import { mdiClose, mdiContentSaveOutline } from '@mdi/js';
+  import { mdiClose, mdiContentSaveOutline, mdiImageMultipleOutline } from '@mdi/js';
   import type { Translations } from 'svelte-i18n';
   import { t } from 'svelte-i18n';
 
@@ -234,6 +238,15 @@
     { field: 'isMotion', label: $t('motion') },
     { field: 'isOffline', label: $t('offline') },
   ]);
+
+  // FL-976: the quick chip is "at least 2"; any other number lives under Advanced, which opens for it
+  const albumLeast = $derived(albumCountAtLeast(filter.albumCount));
+  const albumCountIsCustom = $derived(
+    !!filter.albumCount && (albumLeast === null || albumLeast > MAX_ALBUM_COUNT_CONTROL),
+  );
+  let advancedOpen = $state(
+    untrack(() => !!query.filter.albumCount && albumCountAtLeast(query.filter.albumCount) !== 2),
+  );
 
   const dateBounds = $derived([
     { operator: 'gte' as const, label: $t('frameleaf_search_date_from'), aria: $t('frameleaf_search_captured_from') },
@@ -518,6 +531,14 @@
         >
           {$t('untagged')}
         </Button>
+        <Button
+          pressed={albumLeast === 2}
+          disabled={albumCountIsCustom}
+          onclick={() => setCondition('albumCount', albumLeast === 2 ? null : { gte: 2 })}
+        >
+          <Icon icon={mdiImageMultipleOutline} size="16" aria-hidden />
+          {$t('frameleaf_search_in_more_than_one_album')}
+        </Button>
       </div>
 
       <Picker
@@ -535,6 +556,34 @@
           onSelect={onFlag(flag.field)}
         />
       {/each}
+
+      <details class="advanced" open={advancedOpen} ontoggle={(event) => (advancedOpen = event.currentTarget.open)}>
+        <summary>{$t('frameleaf_search_advanced')}</summary>
+        <label class="number">
+          {$t('frameleaf_search_album_count_at_least')}
+          <span>
+            <input
+              type="number"
+              min="1"
+              max={MAX_ALBUM_COUNT_CONTROL}
+              inputmode="numeric"
+              aria-label={$t('frameleaf_search_album_count_at_least')}
+              placeholder={$t('frameleaf_search_any')}
+              readonly={albumCountIsCustom}
+              value={albumLeast ?? ''}
+              oninput={(event) => {
+                if (!albumCountIsCustom) {
+                  setCondition('albumCount', albumCountConditionForValue(event.currentTarget.value));
+                }
+              }}
+            />
+            {$t('frameleaf_search_album_count_unit')}
+          </span>
+        </label>
+        {#if albumCountIsCustom}
+          <p class="muted">{$t('frameleaf_search_custom_condition')}</p>
+        {/if}
+      </details>
     </section>
   </div>
 
@@ -615,6 +664,38 @@
     display: flex;
     flex-wrap: wrap;
     gap: 0.5rem;
+  }
+  .advanced {
+    margin-top: 0.75rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid var(--fl-border);
+  }
+  .advanced summary {
+    min-height: 32px;
+    font-size: var(--fl-font-small);
+    color: var(--fl-muted);
+    cursor: pointer;
+  }
+  .number {
+    display: flex;
+    flex-direction: column;
+    gap: var(--fl-space-2);
+    font-size: var(--fl-font-small);
+    color: var(--fl-muted);
+  }
+  .number span {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  .number input {
+    width: 96px;
+    min-height: 36px;
+    padding: 0.375rem 0.5rem;
+    color: var(--fl-text);
+    background: var(--fl-raised);
+    border: 1px solid var(--fl-border);
+    border-radius: var(--fl-radius-control);
   }
   .status-options {
     display: flex;
