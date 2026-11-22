@@ -123,6 +123,16 @@ export type SharedSpaceCommentThread = {
   activityId: string;
   parentActivityId: string;
 };
+/**
+ * Not the viewer's own addition. A copy received from a linked household is owned by its recipient, but somebody
+ * else brought it; an item the recipient already held (`isCopy` false) stays theirs.
+ */
+const broughtByOthers = (viewerId: string) =>
+  sql<boolean>`(asset."ownerId" <> ${asUuid(viewerId)} or exists (
+    select 1 from household_origin origin
+    where origin."localId" = asset.id and origin.kind = 'asset' and origin."userId" = ${asUuid(viewerId)} and origin."isCopy"
+  ))`;
+
 @Injectable()
 export class AlbumUserRepository {
   constructor(
@@ -697,7 +707,7 @@ export class AlbumUserRepository {
       .innerJoin('album_asset', 'album_asset.assetId', 'asset.id')
       .where('album_asset.albumId', '=', spaceId)
       .where('asset.deletedAt', 'is', null)
-      .where('asset.ownerId', '!=', viewerId)
+      .where(broughtByOthers(viewerId))
       .$if(since !== undefined, (qb) => qb.where('album_asset.createdAt', '>', since!));
   }
   async getSpaceNewAssetCount(
@@ -753,7 +763,7 @@ export class AlbumUserRepository {
       .where('album.kind', '=', AlbumKind.Space)
       .where('album.deletedAt', 'is', null)
       .where('asset.deletedAt', 'is', null)
-      .where('asset.ownerId', '!=', viewerId)
+      .where(broughtByOthers(viewerId))
       .where(sql<boolean>`(visit."lastSeenAt" is null or album_asset."createdAt" > visit."lastSeenAt")`)
       .select(sql<number>`count(*)`.as('count'));
 

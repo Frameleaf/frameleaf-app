@@ -316,20 +316,43 @@ describe('AlbumUserRepository.getUnseenCount (FL-1748)', () => {
     await expect(count(authOf(me.id))).resolves.toBe(0);
   });
 
-  it("agrees with the space for a received household space: the recipient's copies are not new, remote comments are", async () => {
-    const { ctx, count, addItem, perSpace, remoteComment } = setup();
+  it("counts a received household copy as somebody else's, but not an item the recipient already held", async () => {
+    const { ctx, count, addItem, perSpace, visit, remoteComment } = setup();
     const { user: recipient } = await ctx.newUser();
     const albums = newMediumService(AlbumService, options());
     albums.ctx.getMock(EventRepository).emit.mockResolvedValue();
     const received = await albums.sut.create(authOf(recipient.id), { albumName: 'From Ben', kind: AlbumKind.Space });
+    const { id: linkId } = await database
+      .insertInto('household_link')
+      .values({
+        cloudLinkId: factory.uuid(),
+        peerInstanceId: factory.uuid(),
+        peerName: 'Ben',
+        householdName: 'Ben',
+        peerPublicKey: factory.uuid(),
+      })
+      .returning('id')
+      .executeTakeFirstOrThrow();
+    const origin = (localId: string, isCopy: boolean) =>
+      database
+        .insertInto('household_origin')
+        .values({ linkId, remoteId: factory.uuid(), kind: 'asset', userId: recipient.id, localId, isCopy })
+        .execute();
 
     // the sync creates each copy as the recipient's own asset
     const copy = await addItem(received.id, recipient.id);
-    await expect(perSpace(authOf(recipient.id), received.id)).resolves.toBe(0);
-    await expect(count(authOf(recipient.id))).resolves.toBe(0);
-
-    await remoteComment(received.id, copy.id);
+    await origin(copy.id, true);
+    const alreadyHeld = await addItem(received.id, recipient.id);
+    await origin(alreadyHeld.id, false);
+    await addItem(received.id, recipient.id); // their own upload
     await expect(perSpace(authOf(recipient.id), received.id)).resolves.toBe(1);
     await expect(count(authOf(recipient.id))).resolves.toBe(1);
+
+    await remoteComment(received.id, copy.id);
+    await expect(perSpace(authOf(recipient.id), received.id)).resolves.toBe(2);
+    await expect(count(authOf(recipient.id))).resolves.toBe(2);
+
+    await visit(received.id, recipient.id);
+    await expect(count(authOf(recipient.id))).resolves.toBe(0);
   });
 });
