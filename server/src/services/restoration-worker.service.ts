@@ -1511,6 +1511,7 @@ export class RestorationWorkerService {
     return {
       mode: ctx.snapshot.mode,
       ...(ctx.snapshot.operation && { operation: ctx.snapshot.operation }),
+      ...(ctx.snapshot.allowHandTinted && { allowHandTinted: true }),
       // FL-423: the model the person chose for the preview; a full render names the model its reviewed
       // preview ran, so the worker runs exactly that one or refuses (never another)
       modelId,

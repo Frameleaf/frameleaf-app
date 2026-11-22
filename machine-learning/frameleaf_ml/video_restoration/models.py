@@ -62,7 +62,7 @@ import threading
 import time
 from abc import ABC, abstractmethod
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date, datetime, timezone
 from enum import StrEnum
 from pathlib import Path
@@ -124,6 +124,8 @@ PHOTO_WEIGHT_ROLES: dict[str, frozenset[str]] = {
 }
 # A runtime exits with this when it refuses its input for a reason the person should read.
 RUNTIME_REFUSED_INPUT_EXIT = 65
+# FL-955: tells the colourise runtime the owner chose to replace a hand-tinted print's colours.
+ALLOW_HAND_TINTED_ENV = "FRAMELEAF_ALLOW_HAND_TINTED"
 # What a photo runtime may leave beside its frame: counts and plain-language warnings.
 PHOTO_REPORT = "report.json"
 PHOTO_REPORT_MAX_BYTES = 16 * 1024
@@ -971,6 +973,8 @@ class RuntimeJob:
     # SeedVR2 consumes the validated video segment without a PNG/re-encode round trip.
     source_video: Path | None = None
     kind: Literal["image", "video"] = "video"
+    # Colourise only (FL-955): the owner's explicit override for a hand-tinted print.
+    allow_hand_tinted: bool = False
 
 
 @dataclass(frozen=True)
@@ -1195,7 +1199,10 @@ class PhotoAdapter(RestorationAdapter):
         output_dir = job.work_dir / "runtime-output"
         output_dir.mkdir()
         values = {**self.base_values(job), "input_dir": str(job.source_frames), "output_dir": str(output_dir)}
-        outcome = self.runner(self.invocation(values))
+        invocation = self.invocation(values)
+        if job.allow_hand_tinted and self.family == "ddcolor":
+            invocation = replace(invocation, env={**invocation.env, ALLOW_HAND_TINTED_ENV: "1"})
+        outcome = self.runner(invocation)
         return AdapterRun(
             frames_dir=output_dir,
             expected_size=job.source_size,

@@ -1,6 +1,6 @@
 <script lang="ts">
   /**
-   * FL-955: the Repair & colourise card of a photo's Enhance panel. One operation at a time, previewed
+   * FL-955: the Repair & suggested colours card of a photo's Enhance panel. One operation at a time, previewed
    * first; saving makes a new version and the original is never changed. The server says where it can
    * run: with no worker that has a ready model the card says so and nothing can be queued.
    */
@@ -59,7 +59,21 @@
   let savedId = $state<string | null>(null);
 
   const options = $derived(operation === AssetRestorationOperation.Repair ? repairOptions : colourOptions);
-  const colourRefusal = $derived(colourOptions?.colourRefusal ?? null);
+  /** "Suggest colours anyway": the owner's choice for a hand-tinted print. Choosing Repair takes it back. */
+  let anyway = $state(false);
+  const refusalReason = $derived(colourOptions?.colourRefusalReason ?? null);
+  const handTinted = $derived(refusalReason === 'hand-tinted');
+  const colourRefusal = $derived(
+    colourOptions?.colourRefusal && !(handTinted && anyway) ? (refusalReason ?? 'colour-unknown') : null,
+  );
+  const refusalText = $derived.by(() => {
+    if (refusalReason === 'hand-tinted') {
+      return $t('frameleaf_repair_refused_hand_tinted');
+    }
+    return refusalReason === 'already-in-colour'
+      ? $t('frameleaf_repair_refused_in_colour')
+      : $t('frameleaf_repair_refused_unknown');
+  });
   /** The first home destination that can take it, in the processing order the server answered with. */
   const homeDestination = (current: AssetRestorationOptionsDto | null): AssetRestorationDestinationDto | null =>
     current?.destinations.find((row) => row.available && row.kind !== MlDestinationKind.FrameleafCloud) ?? null;
@@ -123,6 +137,7 @@
           keepGrain: false,
           destinationId: destination.id,
           region: WHOLE_PHOTO,
+          ...(operation === AssetRestorationOperation.Colourise && handTinted && anyway && { allowHandTinted: true }),
         },
       });
       currentId = created.id;
@@ -171,6 +186,11 @@
     currentId = null;
     return preview();
   };
+
+  const suggestAnyway = () => {
+    anyway = true;
+    operation = AssetRestorationOperation.Colourise;
+  };
 </script>
 
 <section class="ed-toggle rc-card" data-testid="repair-colourise" aria-labelledby="repair-colourise-title">
@@ -182,7 +202,14 @@
 
   <div class="rc-choices" role="radiogroup" aria-label={$t('frameleaf_repair_title')}>
     <label class="rc-choice" class:is-on={operation === AssetRestorationOperation.Repair}>
-      <input type="radio" name="repair-operation" value="repair" bind:group={operation} disabled={running || ready} />
+      <input
+        type="radio"
+        name="repair-operation"
+        value="repair"
+        bind:group={operation}
+        disabled={running || ready}
+        onchange={() => (anyway = false)}
+      />
       <Icon icon={mdiAutoFix} size="18" />
       <span><b>{$t('frameleaf_repair_repair')}</b><small>{$t('frameleaf_repair_repair_help')}</small></span>
     </label>
@@ -201,9 +228,22 @@
       <Icon icon={mdiPaletteOutline} size="18" />
       <span>
         <b>{$t('frameleaf_repair_colourise')}</b>
-        <small>{colourRefusal ?? $t('frameleaf_repair_colourise_help')}</small>
+        <small>
+          {#if colourRefusal}
+            {refusalText}
+          {:else if handTinted && anyway}
+            {$t('frameleaf_repair_anyway_help')}
+          {:else}
+            {$t('frameleaf_repair_colourise_help')}
+          {/if}
+        </small>
       </span>
     </label>
+    {#if handTinted && !anyway}
+      <button type="button" class="ed-button" disabled={running || ready} onclick={suggestAnyway}>
+        {$t('frameleaf_repair_anyway')}
+      </button>
+    {/if}
   </div>
 
   {#if loadFailed}
@@ -221,7 +261,9 @@
       </button>
     </div>
   {:else if ready && current}
-    <p class="rs-help" role="status">{$t('frameleaf_repair_ready')}</p>
+    <p class="rs-help" role="status">
+      {isRepair ? $t('frameleaf_repair_ready') : $t('frameleaf_repair_ready_colourise')}
+    </p>
     <div class="rc-actions">
       <button type="button" class="ed-chip" aria-pressed={compareId === current.id} onclick={() => onCompare(current)}>
         <Icon icon={mdiCompare} size="16" />
@@ -257,7 +299,7 @@
           {$t('frameleaf_repair_cloud_unavailable')}
         {/if}
       </div>
-      {#if cloudRow && !cloudRefused}
+      {#if cloudRow && !cloudRefused && !(handTinted && anyway)}
         <div class="rc-actions">
           <button type="button" class="ed-button" disabled={askingCloud || blocked} onclick={previewOnCloud}>
             {$t('frameleaf_repair_try_cloud')}
