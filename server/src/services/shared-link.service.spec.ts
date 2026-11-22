@@ -569,19 +569,35 @@ describe(SharedLinkService.name, () => {
     });
   });
 
+  describe('the back of a print (FL-967)', () => {
+    it('refuses a new link that names it', async () => {
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['back']));
+      mocks.access.asset.checkPrintBacks.mockResolvedValue(new Set(['back']));
+
+      await expect(
+        sut.create(authStub.admin, { type: SharedLinkType.Individual, assetIds: ['back'] }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+
+      expect(mocks.sharedLink.create).not.toHaveBeenCalled();
+    });
+  });
+
   describe('addAssets', () => {
     it('reports the back of a print as not addable (FL-967)', async () => {
-      const sharedLink = SharedLinkFactory.from().build();
+      const sharedLink = SharedLinkFactory.from()
+        .asset(AssetFactory.create(), (builder) => builder.exif())
+        .build();
       const back = AssetFactory.create();
       mocks.sharedLink.get.mockResolvedValue(getForSharedLink(sharedLink));
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([back.id]));
       mocks.access.asset.checkPrintBacks.mockResolvedValue(new Set([back.id]));
+      mocks.sharedLink.addAssets.mockResolvedValue([]);
 
       await expect(sut.addAssets(authStub.admin, sharedLink.id, { assetIds: [back.id] })).resolves.toEqual([
         { assetId: back.id, success: false, error: AssetIdErrorReason.NO_PERMISSION },
       ]);
 
-      expect(mocks.sharedLink.addAssets).not.toHaveBeenCalled();
+      expect(mocks.sharedLink.addAssets).toHaveBeenCalledWith(sharedLink.id, []);
     });
 
     it('should not work on album shared links', async () => {

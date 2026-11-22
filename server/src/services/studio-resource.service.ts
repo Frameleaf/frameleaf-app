@@ -1808,9 +1808,11 @@ export class StudioResourceService extends BaseService {
       const asset = byId.get(id);
       const isOwner = asset?.ownerId === auth.user.id;
       const isLocked = !!asset && isLockedAssetRow(asset);
-      if (printBacks.has(id)) {
-        decisions.set(id, notFound);
-      } else if (!asset || (isLocked && !(isOwner && (backgroundRunner || elevatedOwnerId === auth.user.id)))) {
+      if (
+        !asset ||
+        printBacks.has(id) ||
+        (isLocked && !(isOwner && (backgroundRunner || elevatedOwnerId === auth.user.id)))
+      ) {
         // missing, or someone else's Locked asset, or the owner's own in an ordinary session: a Locked
         // asset is indistinguishable from a missing one, whatever the access query answered
         decisions.set(id, notFound);
