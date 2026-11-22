@@ -73,6 +73,7 @@ import { FrameleafConsentRepository } from 'src/repositories/frameleaf-consent.r
 import { FrameleafUserLicenseRepository } from 'src/repositories/frameleaf-user-license.repository.js';
 import { HardwareProbeRepository } from 'src/repositories/hardware-probe.repository.js';
 import { HouseholdLinkRepository } from 'src/repositories/household-link.repository.js';
+import { HouseholdReceiveRepository } from 'src/repositories/household-receive.repository.js';
 import { HouseholdShareRepository } from 'src/repositories/household-share.repository.js';
 import { ICloudAlbumRepository } from 'src/repositories/icloud-album.repository.js';
 import { ICloudAuditRepository } from 'src/repositories/icloud-audit.repository.js';
@@ -285,6 +286,7 @@ export const repositories = [
   CloudBackupSelectionRepository,
   BuddyBackupRepository,
   HouseholdLinkRepository,
+  HouseholdReceiveRepository,
   HouseholdShareRepository,
   CloudBackupKeyRepository,
   MediaRepository,

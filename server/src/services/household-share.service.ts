@@ -252,10 +252,17 @@ export class HouseholdShareService {
     });
   }
 
-  /** "Something changed". The route answers 204 either way; past the limit a poke is dropped. Nothing acts on it yet. */
+  /**
+   * "Something changed". The route answers 204 either way; past the limit a poke is dropped. FL-994: the receiving
+   * worker runs elsewhere, so a poke only marks the link for its next tick and carries no data.
+   */
   async poke({ link }: HouseholdPeerAccess) {
     const { count } = await this.rates.hit(`household:poke:${link.id}`, 60);
-    return count <= POKES_PER_MINUTE;
+    const admitted = count <= POKES_PER_MINUTE;
+    if (admitted) {
+      await this.links.update(link.id, { pollRequestedAt: new Date() });
+    }
+    return admitted;
   }
 
   async offered({ link }: HouseholdPeerAccess) {
