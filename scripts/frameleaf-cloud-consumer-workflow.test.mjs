@@ -67,7 +67,7 @@ test("package credentials never reach repository checkout or consumer execution"
   );
   const call = entry.jobs["cloud-consumer-tests"];
   assert.match(call.if, /github\.repository == 'Frameleaf\/frameleaf-app'/);
-  assert.match(call.if, /!inputs\.development_validation/);
+  assert.match(call.if, /inputs\.development_validation != true && inputs\.development_validation != 'true'/);
   for (const repository of ["Frameleaf/frameleaf-app", "immich-app/immich"]) {
     for (const event_name of ["pull_request", "push", "workflow_dispatch"]) {
       for (const development_validation of [false, true]) {

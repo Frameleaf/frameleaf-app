@@ -1546,6 +1546,55 @@ test("a superseded Test run skips the E2E gate instead of failing it", () => {
   assert.match(w.jobs["success-check-e2e"].if, /&& !cancelled\(\) }}$/);
 });
 
+test("FL-1733: a dispatched release candidate has its own concurrency group per commit", () => {
+  const group = workflow("test.yml").concurrency.group;
+  const expression = /-\$\{\{ (.+) \}\}$/.exec(group)[1];
+  const evaluate = (event_name, ref, sha) =>
+    runInNewContext(expression, {
+      github: { event_name, ref, sha },
+      format: (text, value) => text.replace("{0}", value),
+    });
+  const push = evaluate("push", "refs/heads/main", "a".repeat(40));
+  const candidate = evaluate(
+    "workflow_dispatch",
+    "refs/heads/main",
+    "a".repeat(40),
+  );
+  assert.equal(push, "refs/heads/main");
+  assert.equal(candidate, `candidate-${"a".repeat(40)}`);
+  assert.notEqual(
+    candidate,
+    evaluate("workflow_dispatch", "refs/heads/main", "b".repeat(40)),
+  );
+});
+
+test("FL-1733: Forgejo's string dispatch inputs cannot skip a candidate or start diagnostics", () => {
+  const { jobs } = workflow("test.yml");
+  for (const [id, job] of Object.entries(jobs)) {
+    if (!job.if) continue;
+    const admitted = (development_validation) =>
+      runInNewContext(job.if.replace(/^\$\{\{\s*|\s*\}\}$/g, ""), {
+        github: {
+          repository: "Frameleaf/frameleaf-app",
+          event_name: "workflow_dispatch",
+          server_url: "https://code.heroapps.ca",
+          event: {},
+        },
+        inputs: { development_validation },
+        needs: {},
+        always: () => true,
+        cancelled: () => false,
+        success: () => true,
+      });
+    if (id === "cli-unit-tests-win") continue;
+    const expected = id !== "development-validation";
+    assert.equal(!!admitted("false"), expected, `${id} with "false"`);
+    assert.equal(!!admitted(false), expected, `${id} with false`);
+    assert.equal(!!admitted("true"), !expected, `${id} with "true"`);
+    assert.equal(!!admitted(true), !expected, `${id} with true`);
+  }
+});
+
 test("integration image is a guarded manual pre-release that never writes release-pipeline tags", () => {
   const w = workflow("integration-image.yml");
   // Pushes to main build it; a manual dispatch on main rebuilds the current head.
@@ -2421,9 +2470,11 @@ test("isolated test lanes cover every shard and keep required gates fail-closed"
     "cloud",
     "accounting",
   ]);
-  assert.deepEqual(api.strategy.matrix.exclude, [
-    { runner: "ubuntu-24.04-arm", suite: "buddy" },
-  ]);
+  // FL-1733: the scope job decides Arm; its outputs are pinned in frameleaf-release.test.cjs.
+  assert.equal(
+    api.strategy.matrix.exclude,
+    "${{ fromJSON(needs.e2e-scope.outputs.server-exclude) }}",
+  );
   assert.ok(
     api.steps
       .find((s) => s.name === "Archive Docker logs")
