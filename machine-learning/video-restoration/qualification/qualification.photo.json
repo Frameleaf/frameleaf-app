@@ -1,0 +1,311 @@
+{
+  "schemaVersion": 1,
+  "records": [
+    {
+      "id": "codeformer-photo-repair-not-qualified-run-1293",
+      "modelId": "codeformer-photo-repair",
+      "revision": "b33cc7d639d6545bfcccc7e0bc6ae51f24e79c2b",
+      "weights": [
+        {
+          "role": "codeformer",
+          "sha256": "1009e537e0c2a07d4cabce6355f53cb66767cd4b4297ec7a4a64ca4b8a5684b7"
+        },
+        {
+          "role": "detection",
+          "sha256": "6d1de9c2944f2ccddca5f5e010ea5ae64a39845a86311af6fdf30841b0a5a16d"
+        },
+        {
+          "role": "parsing",
+          "sha256": "3d558d8d0e42c20224f13cf5a29c79eba2d59913419f945545d8cf7b72920de2"
+        },
+        {
+          "role": "lama",
+          "sha256": "1faef5301d78db7dda502fe59966957ec4b79dd64e16f03ed96913c7a4eb68d6"
+        }
+      ],
+      "containerRevisions": [],
+      "hardware": [
+        {
+          "gpu": "NVIDIA GeForce RTX 3060",
+          "driverVersion": "610.88",
+          "cudaVersion": "12.4"
+        }
+      ],
+      "measurements": [
+        {
+          "gpu": "NVIDIA GeForce RTX 3060",
+          "inputWidth": 3296,
+          "inputHeight": 2512,
+          "frames": 1,
+          "framesPerSecond": 0.0804,
+          "peakVramBytes": 3385851904
+        },
+        {
+          "gpu": "NVIDIA GeForce RTX 3060",
+          "inputWidth": 3635,
+          "inputHeight": 3951,
+          "frames": 1,
+          "framesPerSecond": 0.0584,
+          "peakVramBytes": 3090153472
+        },
+        {
+          "gpu": "NVIDIA GeForce RTX 3060",
+          "inputWidth": 6000,
+          "inputHeight": 7000,
+          "frames": 1,
+          "framesPerSecond": 0.0368,
+          "peakVramBytes": 3448766464
+        },
+        {
+          "gpu": "NVIDIA GeForce RTX 3060",
+          "inputWidth": 8192,
+          "inputHeight": 8192,
+          "frames": 1,
+          "framesPerSecond": 0.0253,
+          "peakVramBytes": 3136290816
+        }
+      ],
+      "evidence": [
+        {
+          "item": "weights-hashed",
+          "result": "pass",
+          "artifact": "Forgejo Frameleaf/frameleaf-app run 1293, artifact photo-qualification (id 2072)",
+          "notes": "Every weight matched its pinned sha256 before the run and was hashed again after it."
+        },
+        {
+          "item": "resource-profile",
+          "result": "pass",
+          "artifact": "Forgejo Frameleaf/frameleaf-app run 1293, artifact photo-qualification (id 2072)",
+          "notes": "200 of 200 scans under an 8 GiB cap. Device peak 3355 MiB including 671 MiB already in use; median 1.154 s/MP, max 2.377 s/MP. 42 and 67 MP stress inputs also completed."
+        },
+        {
+          "item": "output-size",
+          "result": "pass",
+          "artifact": "Forgejo Frameleaf/frameleaf-app run 1293, artifact photo-qualification (id 2072)",
+          "notes": "200 of 200 outputs equal their input size."
+        },
+        {
+          "item": "orientation",
+          "result": "pending",
+          "artifact": "",
+          "notes": "No scan in the set carries an EXIF orientation tag, so a tagged source was never exercised."
+        },
+        {
+          "item": "deterministic-repeat",
+          "result": "pass",
+          "artifact": "Forgejo Frameleaf/frameleaf-app run 1293, artifact photo-qualification (id 2072)",
+          "notes": "The first 3 scans were run twice with byte-identical output."
+        },
+        {
+          "item": "fault-out-of-memory",
+          "result": "pending",
+          "artifact": "",
+          "notes": "Not exercised by this run."
+        },
+        {
+          "item": "fault-nan",
+          "result": "pending",
+          "artifact": "",
+          "notes": "Not exercised by this run."
+        },
+        {
+          "item": "fault-changed-weights",
+          "result": "pending",
+          "artifact": "",
+          "notes": "Not exercised by this run."
+        },
+        {
+          "item": "fault-dirty-checkout",
+          "result": "pending",
+          "artifact": "",
+          "notes": "Not exercised by this run."
+        },
+        {
+          "item": "fault-unsupported-input",
+          "result": "pending",
+          "artifact": "",
+          "notes": "Not exercised by this run."
+        },
+        {
+          "item": "hallucination",
+          "result": "fail",
+          "artifact": "Forgejo Frameleaf/frameleaf-app run 1293, artifact photo-qualification (id 2072)",
+          "notes": "Judged from the run's before/after contact sheets by the qualification agent; the owner has not reviewed it. Invents detail that is not in the print: individual hair strands, skin texture and sharp eyes, including blue or grey irises on toned prints and stubble on a faded woman's face."
+        },
+        {
+          "item": "compare-faces",
+          "result": "fail",
+          "artifact": "Forgejo Frameleaf/frameleaf-app run 1293, artifact photo-qualification (id 2072)",
+          "notes": "Judged from the run's before/after contact sheets by the qualification agent; the owner has not reviewed it. Faces are sharper but visibly different from the source on most sampled scans."
+        },
+        {
+          "item": "face-identity-drift",
+          "result": "fail",
+          "artifact": "Forgejo Frameleaf/frameleaf-app run 1293, artifact photo-qualification (id 2072)",
+          "notes": "Judged from the run's before/after contact sheets by the qualification agent; the owner has not reviewed it. Several restored faces no longer read as the same person, worst on faded or soft originals and on a young child."
+        },
+        {
+          "item": "scratch-mask",
+          "result": "pending",
+          "artifact": "",
+          "notes": "Measured only: the pass ran on 180 of 200 scans and was skipped on 20 over the 3% limit; median mask 1.21%, max 9.07%. Whether real scratches are removed and real detail kept still needs review."
+        },
+        {
+          "item": "tile-seams",
+          "result": "pending",
+          "artifact": "",
+          "notes": "Not measured."
+        }
+      ],
+      "license": {
+        "approved": true,
+        "code": "NTU S-Lab License 1.0",
+        "weights": "NTU S-Lab License 1.0 (CodeFormer); MIT (RetinaFace detection, ParseNet parsing); Apache-2.0 (LaMa)",
+        "reviewedBy": "Frameleaf legal review",
+        "reviewedAt": "2026-10-17"
+      },
+      "hdrQualified": false,
+      "reviewedBy": null,
+      "reviewedAt": null,
+      "notes": "NOT QUALIFIED. Runs reliably within 8 GiB, but quality failed review and the orientation and fault items are open. Unreviewed, so the gate refuses this model."
+    },
+    {
+      "id": "ddcolor-colourise-not-qualified-run-1293",
+      "modelId": "ddcolor-colourise",
+      "revision": "2adb63f2656ac41cbdf7b894cddd94121a3faf13",
+      "weights": [
+        {
+          "role": "ddcolor",
+          "sha256": "17c460d7e55b32a598370621d77173be59e03c24b0823f06821db23a50c263ce"
+        }
+      ],
+      "containerRevisions": [],
+      "hardware": [
+        {
+          "gpu": "NVIDIA GeForce RTX 3060",
+          "driverVersion": "610.88",
+          "cudaVersion": "12.4"
+        }
+      ],
+      "measurements": [
+        {
+          "gpu": "NVIDIA GeForce RTX 3060",
+          "inputWidth": 3296,
+          "inputHeight": 2512,
+          "frames": 1,
+          "framesPerSecond": 2.2075,
+          "peakVramBytes": 3071279104
+        },
+        {
+          "gpu": "NVIDIA GeForce RTX 3060",
+          "inputWidth": 3635,
+          "inputHeight": 3951,
+          "frames": 1,
+          "framesPerSecond": 1.3908,
+          "peakVramBytes": 3058696192
+        },
+        {
+          "gpu": "NVIDIA GeForce RTX 3060",
+          "inputWidth": 6000,
+          "inputHeight": 7000,
+          "frames": 1,
+          "framesPerSecond": 0.496,
+          "peakVramBytes": 3058696192
+        },
+        {
+          "gpu": "NVIDIA GeForce RTX 3060",
+          "inputWidth": 8192,
+          "inputHeight": 8192,
+          "frames": 1,
+          "framesPerSecond": 0.3122,
+          "peakVramBytes": 3050307584
+        }
+      ],
+      "evidence": [
+        {
+          "item": "weights-hashed",
+          "result": "pass",
+          "artifact": "Forgejo Frameleaf/frameleaf-app run 1293, artifact photo-qualification (id 2072)",
+          "notes": "Every weight matched its pinned sha256 before the run and was hashed again after it."
+        },
+        {
+          "item": "resource-profile",
+          "result": "pass",
+          "artifact": "Forgejo Frameleaf/frameleaf-app run 1293, artifact photo-qualification (id 2072)",
+          "notes": "200 of 200 scans under an 8 GiB cap. Device peak 2977 MiB including 671 MiB already in use; median 0.058 s/MP, max 0.133 s/MP. 42 and 67 MP stress inputs also completed."
+        },
+        {
+          "item": "output-size",
+          "result": "pass",
+          "artifact": "Forgejo Frameleaf/frameleaf-app run 1293, artifact photo-qualification (id 2072)",
+          "notes": "200 of 200 outputs equal their input size."
+        },
+        {
+          "item": "orientation",
+          "result": "pending",
+          "artifact": "",
+          "notes": "No scan in the set carries an EXIF orientation tag, so a tagged source was never exercised."
+        },
+        {
+          "item": "deterministic-repeat",
+          "result": "pass",
+          "artifact": "Forgejo Frameleaf/frameleaf-app run 1293, artifact photo-qualification (id 2072)",
+          "notes": "The first 3 scans were run twice with byte-identical output."
+        },
+        {
+          "item": "fault-out-of-memory",
+          "result": "pending",
+          "artifact": "",
+          "notes": "Not exercised by this run."
+        },
+        {
+          "item": "fault-nan",
+          "result": "pending",
+          "artifact": "",
+          "notes": "Not exercised by this run."
+        },
+        {
+          "item": "fault-changed-weights",
+          "result": "pending",
+          "artifact": "",
+          "notes": "Not exercised by this run."
+        },
+        {
+          "item": "fault-dirty-checkout",
+          "result": "pending",
+          "artifact": "",
+          "notes": "Not exercised by this run."
+        },
+        {
+          "item": "fault-unsupported-input",
+          "result": "pending",
+          "artifact": "",
+          "notes": "Not exercised by this run."
+        },
+        {
+          "item": "hallucination",
+          "result": "pending",
+          "artifact": "",
+          "notes": "Needs a reviewer's judgement alongside colour plausibility."
+        },
+        {
+          "item": "colour-plausibility",
+          "result": "fail",
+          "artifact": "Forgejo Frameleaf/frameleaf-app run 1293, artifact photo-qualification (id 2072)",
+          "notes": "Judged from the run's before/after contact sheets by the qualification agent; the owner has not reviewed it. Skin is often believable, but backgrounds and objects take arbitrary colours (a saturated pink hat, teal and orange backdrops, colour bleeding across edges), and original hand-tinting is replaced. All 200 toned scans were also reported as already having colour."
+        }
+      ],
+      "license": {
+        "approved": true,
+        "code": "Apache-2.0",
+        "weights": "Apache-2.0",
+        "reviewedBy": "Frameleaf legal review",
+        "reviewedAt": "2026-10-17"
+      },
+      "hdrQualified": false,
+      "reviewedBy": null,
+      "reviewedAt": null,
+      "notes": "NOT QUALIFIED. Runs reliably within 8 GiB, but quality failed review and the orientation and fault items are open. Unreviewed, so the gate refuses this model."
+    }
+  ]
+}
