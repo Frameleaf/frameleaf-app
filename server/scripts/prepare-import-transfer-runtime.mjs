@@ -10,6 +10,8 @@ const repository = resolve(server, '..');
 const destination = resolve(server, 'resources/library-import');
 const modules = [
   'contracts',
+  'gallery-preview',
+  'gallery-reads',
   'import-plan',
   'import-source-authority',
   'import-sqlite',
