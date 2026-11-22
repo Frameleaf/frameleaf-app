@@ -273,6 +273,19 @@ const UserMeResponseSchema = UserAdminResponseSchema.extend({
 
 export class UserMeResponseDto extends createZodDto(UserMeResponseSchema) {}
 
+const UnseenCountResponseSchema = z
+  .object({
+    count: z
+      .int()
+      .min(0)
+      .describe(
+        'Photos, videos and comments other people added to your shared spaces since you last marked each one visited',
+      ),
+  })
+  .meta({ id: 'UnseenCountResponseDto' });
+
+export class UnseenCountResponseDto extends createZodDto(UnseenCountResponseSchema) {}
+
 export function mapUserAdmin(entity: UserAdmin): UserAdminResponseDto {
   const metadata = entity.metadata || [];
   const stored = metadata.find(
