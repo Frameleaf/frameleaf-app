@@ -1,6 +1,6 @@
+import type { SourceStructure } from 'src/immich-import/schema.js';
 import { frozenSource } from 'src/immich-import/adapters.js';
 import { withGalleryContent } from 'src/immich-import/gallery.js';
-import type { SourceStructure } from 'src/immich-import/schema.js';
 
 const column = { type: 'uuid', not_null: true, default: null, identity: '', generated: '' };
 const GALLERY: Record<string, string[]> = {

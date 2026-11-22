@@ -223,8 +223,9 @@ describe('source preflight', () => {
     expect(source.notImported).toEqual(['people named in Spaces', 'user groups']);
     // The carried reads are part of the source fingerprint.
     for (const table of ['shared_space_asset', 'shared_space_member', 'asset_favorite', 'person_pet']) {
-      expect(statements.some((statement) => statement.includes(`public.${table}`) && statement.includes('LIMIT 250')))
-        .toBe(true);
+      expect(
+        statements.some((statement) => statement.includes(`public.${table}`) && statement.includes('LIMIT 250')),
+      ).toBe(true);
     }
   });
 

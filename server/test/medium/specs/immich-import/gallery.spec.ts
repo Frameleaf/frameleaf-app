@@ -37,9 +37,12 @@ describe('offline import of a Noodle Gallery library', () => {
     }
     await f.mutateSource(async (db) => {
       await db.query(
-        await readFile(new URL('../../../../src/immich-import/fixtures/structure/gallery-5.11.1.sql', import.meta.url), {
-          encoding: 'utf8',
-        }),
+        await readFile(
+          new URL('../../../../src/immich-import/fixtures/structure/gallery-5.11.1.sql', import.meta.url),
+          {
+            encoding: 'utf8',
+          },
+        ),
       );
       await db.query(`GRANT SELECT ON ALL TABLES IN SCHEMA public TO "${f.role}"`);
       await db.query(
@@ -100,7 +103,9 @@ describe('offline import of a Noodle Gallery library', () => {
         ids.readerAsset,
       ]);
       await db.query(`INSERT INTO public.user_group(name,"createdById") VALUES ('Cousins',$1)`, [f.owner]);
-      await db.query(`INSERT INTO public.gallery_migrations(name,"timestamp") VALUES ('1798700000000-AddPersonPetTable','x')`);
+      await db.query(
+        `INSERT INTO public.gallery_migrations(name,"timestamp") VALUES ('1798700000000-AddPersonPetTable','x')`,
+      );
     });
     return f;
   };
@@ -133,7 +138,13 @@ describe('offline import of a Noodle Gallery library', () => {
         FROM public.album a WHERE kind='space' ORDER BY "albumName"`,
       ),
     ).toEqual([
-      { id: ids.family, albumName: 'Family', description: 'Everyone', albumThumbnailAssetId: ids.readerAsset, closed: true },
+      {
+        id: ids.family,
+        albumName: 'Family',
+        description: 'Everyone',
+        albumThumbnailAssetId: ids.readerAsset,
+        closed: true,
+      },
       { id: ids.readers, albumName: 'Readers', description: null, albumThumbnailAssetId: null, closed: true },
     ]);
     expect(await query(`SELECT 1 FROM public.asset_lock WHERE "assetId"=$1`, [f.asset])).toHaveLength(1);
@@ -151,16 +162,16 @@ describe('offline import of a Noodle Gallery library', () => {
       ]),
     );
     expect(
-      (await query(`SELECT "assetId" FROM public.album_asset WHERE "albumId"=$1`, [ids.family]))
-        .map((row) => row.assetId)
-        .toSorted(),
-    ).toEqual([f.asset, ids.readerAsset].toSorted());
+      await query(`SELECT "assetId" FROM public.album_asset WHERE "albumId"=$1 ORDER BY "createdAt"`, [ids.family]),
+    ).toEqual([{ assetId: f.asset }, { assetId: ids.readerAsset }]);
     // The fixture's ordinary shared album is still an album.
     expect(await query('SELECT kind FROM public.album WHERE id=$1', [f.album])).toEqual([{ kind: 'album' }]);
 
     // One link: the named, visible person, under the member whose own name for them matches the Space's.
     expect(
-      await query('SELECT "albumId","personOwnerId","personGroupId",name,"coverAssetId" FROM public.shared_space_person'),
+      await query(
+        'SELECT "albumId","personOwnerId","personGroupId",name,"coverAssetId" FROM public.shared_space_person',
+      ),
     ).toEqual([
       {
         albumId: ids.family,
@@ -209,9 +220,7 @@ describe('offline import of a Noodle Gallery library', () => {
         imageWidth: 4000,
       },
     ]);
-    expect(
-      await query('SELECT "ownerId",name,"isHidden" FROM public.person ORDER BY name'),
-    ).toEqual([
+    expect(await query('SELECT "ownerId",name,"isHidden" FROM public.person ORDER BY name')).toEqual([
       { ownerId: f.owner, name: 'Ada', isHidden: false },
       { ownerId: f.reader, name: 'Grandma', isHidden: false },
       { ownerId: f.owner, name: 'Rex', isHidden: true },
@@ -233,6 +242,8 @@ describe('offline import of a Noodle Gallery library', () => {
       ids.family,
       ids.readerAsset,
     ]);
-    await expect(f.importer(config).verify(() => Promise.resolve())).rejects.toThrow('DESTINATION_CARDINALITY_MISMATCH');
+    await expect(f.importer(config).verify(() => Promise.resolve())).rejects.toThrow(
+      'DESTINATION_CARDINALITY_MISMATCH',
+    );
   }, 180_000);
 });
