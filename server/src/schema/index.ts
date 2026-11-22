@@ -160,6 +160,11 @@ import { FoundFileTable } from 'src/schema/tables/found-file.table.js';
 import { GeodataPlacesTable } from 'src/schema/tables/geodata-places.table.js';
 import { HouseholdLinkTable, HouseholdPeerRequestTable } from 'src/schema/tables/household-link.table.js';
 import {
+  HouseholdShareChangeTable,
+  HouseholdShareMemberTable,
+  HouseholdShareTable,
+} from 'src/schema/tables/household-share.table.js';
+import {
   ICloudEditAliasTable,
   ICloudEditAuthorityTable,
   ICloudEditDecisionTable,
@@ -512,6 +517,9 @@ export class ImmichDatabase {
     LibraryFolderAlbumAssetTable,
     HouseholdLinkTable,
     HouseholdPeerRequestTable,
+    HouseholdShareTable,
+    HouseholdShareMemberTable,
+    HouseholdShareChangeTable,
     MediaOperationTable,
     MediaOperationCheckpointTable,
     RenderWorkerTable,
@@ -835,6 +843,9 @@ export interface DB extends QueueDatabase {
 
   household_link: HouseholdLinkTable;
   household_peer_request: HouseholdPeerRequestTable;
+  household_share: HouseholdShareTable;
+  household_share_change: HouseholdShareChangeTable;
+  household_share_member: HouseholdShareMemberTable;
 
   media_operation: MediaOperationTable;
   media_operation_checkpoint: MediaOperationCheckpointTable;
