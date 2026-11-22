@@ -7,6 +7,7 @@ import { pipeline } from 'node:stream/promises';
 import type { Insertable, Selectable } from 'kysely';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { HouseholdInboundShareDto } from 'src/dtos/household-receive.dto.js';
+import type { ArgOf } from 'src/repositories/event.repository.js';
 import type {
   HouseholdInboundShare,
   HouseholdLocalFace,
@@ -17,7 +18,11 @@ import type { AssetExifTable } from 'src/schema/tables/asset-exif.table.js';
 import type { HouseholdLinkTable } from 'src/schema/tables/household-link.table.js';
 import type { HouseholdFaceBox } from 'src/schema/tables/household-receive.table.js';
 import type { HouseholdClient } from 'src/utils/household-client.js';
-import type { HouseholdManifestAsset, HouseholdManifestEntry } from 'src/utils/household-manifest.js';
+import type {
+  HouseholdManifestAsset,
+  HouseholdManifestComment,
+  HouseholdManifestEntry,
+} from 'src/utils/household-manifest.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { OnEvent } from 'src/decorators.js';
 import { AssetMediaStatus } from 'src/dtos/asset-media-response.dto.js';
@@ -38,6 +43,7 @@ import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { EventRepository } from 'src/repositories/event.repository.js';
+import { HouseholdCommentRepository } from 'src/repositories/household-comment.repository.js';
 import { HouseholdLinkRepository } from 'src/repositories/household-link.repository.js';
 import { HouseholdReceiveRepository } from 'src/repositories/household-receive.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
@@ -53,9 +59,10 @@ import { WebsocketRepository } from 'src/repositories/websocket.repository.js';
 import { AssetMediaService } from 'src/services/asset-media.service.js';
 import { HouseholdLinkService } from 'src/services/household-link.service.js';
 import { getConfig } from 'src/utils/config.js';
-import { HouseholdPeerError } from 'src/utils/household-client.js';
+import { HouseholdKeyChanged, HouseholdPeerError } from 'src/utils/household-client.js';
 import {
   HouseholdBadPage,
+  HouseholdCommentReply,
   HouseholdHandshake,
   HouseholdOffered,
   cleanHouseholdLine,
@@ -75,6 +82,10 @@ type Pull = {
   signal: AbortSignal;
   /** The last item this pull refused, reported in the share's status. */
   refusal?: string;
+  /** Comment rows this share holds, read once per pull. */
+  commentCount?: number;
+  /** Mention notifications raised by this pull. */
+  mentions: number;
 };
 
 const TICK_MS = 60_000;
@@ -97,6 +108,15 @@ const INVITE_NOTICE_MS = 24 * 60 * 60_000;
 const BOX_OVERLAP = 0.5;
 /** People waiting for local face detection, per account and link: a peer cannot grow this table without end. */
 const MAX_PENDING_PEOPLE = 500;
+/** Comments kept per inbound share: another server cannot grow this database without end. */
+const MAX_COMMENTS_PER_SHARE = 50_000;
+/** Mention notifications per pull: a peer cannot flood someone's notifications. */
+const MAX_MENTIONS_PER_PULL = 10;
+const COMMENTS_PER_TICK = 50;
+const COMMENT_RETRY_MS = 60_000;
+const COMMENT_RETRY_MAX_MS = 60 * 60_000;
+/** A 403 can be a link paused for a moment, so it is believed only after this many tries (about an hour). */
+const COMMENT_REFUSALS = 6;
 const NIL_UUID = '00000000-0000-0000-0000-000000000000';
 const RUN_ORIGIN = { origin: 'import', label: 'Linked household' } as const;
 
@@ -192,6 +212,7 @@ export class HouseholdReceiveService {
     private configRepo: ConfigRepository,
     private metadataRepo: SystemMetadataRepository,
     private logger: LoggingRepository,
+    private comments: HouseholdCommentRepository,
   ) {
     this.logger.setContext(HouseholdReceiveService.name);
   }
@@ -240,6 +261,7 @@ export class HouseholdReceiveService {
       if (link.state === 'ended') {
         await this.endLink(link);
       } else if (link.state === 'active') {
+        await this.flushComments(link);
         const poked = !!link.pollRequestedAt;
         // the list is read before any pull, so someone removed from a share gets nothing more; a failed read
         // throws, and nothing is pulled for this link until the sender says who is still a member
@@ -568,6 +590,7 @@ export class HouseholdReceiveService {
         client,
         cap: Math.min(maxOriginalBytes, HOUSEHOLD_MAX_ORIGINAL_BYTES),
         signal: this.stopping.signal,
+        mentions: 0,
       };
       let complete = false;
       let refreshes = 0;
@@ -635,8 +658,12 @@ export class HouseholdReceiveService {
   }
 
   private async applyEntry(pull: Pull, entry: HouseholdManifestEntry) {
+    if (entry.kind === 'comment') {
+      await this.applyComment(pull, entry);
+      return;
+    }
     if (entry.kind !== 'asset' && entry.kind !== 'person') {
-      return; // comments arrive with FL-1012
+      return;
     }
     const key: HouseholdOriginKey = {
       linkId: pull.link.id,
@@ -1072,6 +1099,211 @@ export class HouseholdReceiveService {
       throw new ItemRefused('checksum-mismatch');
     }
     return digest;
+  }
+
+  /* -------------------------------------- comments -------------------------------------- */
+
+  /**
+   * A comment from the sender, on the recipient's own space. The manifest can name any author, so nothing it says
+   * ever acts as a local account: every author is a name on a `household_remote_author` row, even one whose id is
+   * an account here. What this server wrote itself is recognised by its id and never overwritten or removed.
+   */
+  private async applyComment(
+    pull: Pull,
+    entry: { id: string } & ({ stop: true } | { comment: HouseholdManifestComment }),
+  ) {
+    const shareId = pull.share.id;
+    const known = await this.comments.getLink(shareId, entry.id);
+    if ('stop' in entry) {
+      // only the copy goes: never media, a reply written here, or the recipient's own words
+      if (known && !known.own) {
+        if (known.activityId) {
+          await this.comments.deleteActivity(known.activityId);
+        }
+        await this.comments.deleteLink(shareId, entry.id);
+      }
+      return;
+    }
+    if (known?.own || (known && !known.activityId)) {
+      return; // written here, or removed here by the recipient: it does not come back
+    }
+
+    const body = entry.comment;
+    const name = cleanHouseholdLine(body.author.name, 100);
+    const senderName = !name || name.includes('@') ? 'Member' : name;
+    if (known) {
+      const current = await this.comments.getActivity(known.activityId!);
+      // a comment cannot turn into a like, or the reverse; an unchanged one is not written again
+      if (current && body.comment !== null && !current.isLiked && current.comment !== body.comment) {
+        await this.comments.updateText(current.id, body.comment);
+        await this.notifyCommentMentions(pull, current.assetId, current.id, body.comment, senderName);
+      }
+      return;
+    }
+
+    pull.commentCount ??= await this.comments.countLinks(shareId);
+    if (pull.commentCount >= MAX_COMMENTS_PER_SHARE) {
+      pull.refusal = 'too-many-comments';
+      return;
+    }
+    let assetId: string | null = null;
+    if (body.assetId) {
+      const local = await this.comments.getLocalAsset(pull.link.id, pull.share.userId, body.assetId, pull.albumId);
+      if (!local) {
+        return; // the item is not in this space (refused, or removed here); a full read tries again
+      }
+      assetId = local;
+    }
+    const remoteAuthorId = await this.comments.upsertAuthor(pull.link.id, body.author.id, senderName);
+    const sentAt = new Date(body.createdAt);
+    const created = await this.comments.createCopy(shareId, entry.id, {
+      albumId: pull.albumId,
+      assetId,
+      remoteAuthorId,
+      isLiked: body.isLiked,
+      comment: body.comment,
+      // a peer's clock cannot pin a comment to the end of the conversation
+      createdAt: sentAt.getTime() > Date.now() ? new Date() : sentAt,
+    });
+    if (!created) {
+      return; // this author already likes that
+    }
+    pull.commentCount++;
+    await this.comments.addEvent(pull.albumId, created.id, body.isLiked);
+    if (body.comment !== null) {
+      await this.notifyCommentMentions(pull, assetId, created.id, body.comment, senderName);
+    }
+  }
+
+  /** Each server tells only its own accounts, and only members of the local space. */
+  private async notifyCommentMentions(
+    pull: Pull,
+    assetId: string | null,
+    activityId: string,
+    text: string,
+    senderName: string,
+  ) {
+    const userIds = await this.comments.setMentions(activityId, pull.albumId, text);
+    if (userIds.length > 0 && pull.mentions < MAX_MENTIONS_PER_PULL) {
+      pull.mentions++;
+      await this.events.emit('SharedSpaceMention', { id: pull.albumId, assetId, activityId, userIds, senderName });
+    }
+  }
+
+  /** A comment written on a received space goes to the sender. It runs on any worker, so it only queues. */
+  @OnEvent({ name: 'HouseholdFeedComments' })
+  async onLocalComments({ albumId, activityIds, deleted }: ArgOf<'HouseholdFeedComments'>) {
+    try {
+      const share = await this.comments.getAcceptedShareOfAlbum(albumId);
+      if (!share) {
+        return;
+      }
+      for (const id of activityIds) {
+        await this.queueComment(share, id, deleted);
+      }
+    } catch (error) {
+      this.logger.warn(`A comment could not be queued for the other household: ${error}`);
+    }
+  }
+
+  private async queueComment(share: HouseholdInboundShare, id: string, deleted: boolean) {
+    const known = await this.comments.getLink(share.id, id);
+    if (deleted) {
+      if (known?.own) {
+        await this.comments.queue(share.id, id, 'delete');
+      }
+      return;
+    }
+    if (known && !known.own) {
+      return;
+    }
+    const activity = await this.comments.getActivity(id);
+    // ponytail: only the invited account speaks to the sender; another local member's comment stays on this server
+    if (activity?.userId !== share.userId) {
+      return;
+    }
+    if (
+      activity.assetId &&
+      !(await this.comments.getRemoteAsset(share.linkId, share.userId, share.id, activity.assetId))
+    ) {
+      return; // an item the recipient added here: the sender has never heard of it
+    }
+    await this.comments.queue(share.id, id, known?.pending === 'post' || !known ? 'post' : 'put', id);
+  }
+
+  /** Sends what is queued, oldest first. A refusal is final; anything else is tried again with a backoff. */
+  async flushComments(link: Link) {
+    const client = this.linkService.peerClient(link);
+    for (const row of await this.comments.getDue(link.id, COMMENTS_PER_TICK)) {
+      if (this.stopped) {
+        return;
+      }
+      try {
+        await this.sendComment(client, row);
+        await this.comments.markSent(row.inboundShareId, row.remoteId, row.revision);
+      } catch (error) {
+        const refused =
+          error instanceof HouseholdPeerError &&
+          !(error instanceof HouseholdKeyChanged) &&
+          ([400, 404, 413, 415].includes(error.status) ||
+            (error.status === 403 && row.attempts + 1 >= COMMENT_REFUSALS));
+        if (refused) {
+          // the comment stays here; the other side will not take it (member removed, item locked)
+          this.logger.warn(`Household link ${link.id} refused comment ${row.remoteId} (${error.status})`);
+          await this.comments.markSent(row.inboundShareId, row.remoteId, row.revision);
+        } else {
+          const wait = Math.min(COMMENT_RETRY_MS * 2 ** Math.min(row.attempts, 8), COMMENT_RETRY_MAX_MS);
+          await this.comments.retryLater(
+            row.inboundShareId,
+            row.remoteId,
+            row.attempts + 1,
+            new Date(Date.now() + wait),
+          );
+          // the peer is not answering: one timeout per tick, so it cannot hold up the other households
+          return;
+        }
+      }
+    }
+  }
+
+  private async sendComment(
+    client: HouseholdClient,
+    row: Awaited<ReturnType<HouseholdCommentRepository['getDue']>>[number],
+  ) {
+    const route = `shares/${row.remoteShareId}/comments`;
+    let reply: unknown;
+    if (row.pending === 'delete') {
+      reply = await client.send('DELETE', `${route}/${row.remoteId}`, { userId: row.userId });
+    } else {
+      const activity = row.activityId ? await this.comments.getActivity(row.activityId) : undefined;
+      if (!activity) {
+        return; // removed meanwhile: its delete is queued by the same change
+      }
+      if (row.pending === 'put') {
+        reply = await client.send('PUT', `${route}/${row.remoteId}`, {
+          userId: row.userId,
+          comment: activity.comment,
+        });
+      } else {
+        const assetId = activity.assetId
+          ? await this.comments.getRemoteAsset(row.linkId, row.userId, row.inboundShareId, activity.assetId)
+          : null;
+        if (assetId === undefined) {
+          return;
+        }
+        reply = await client.send('POST', route, {
+          id: row.remoteId,
+          userId: row.userId,
+          assetId,
+          isLiked: activity.isLiked,
+          comment: activity.isLiked ? null : activity.comment,
+        });
+      }
+    }
+    const parsed = HouseholdCommentReply.safeParse(reply);
+    if (!parsed.success || parsed.data.id !== row.remoteId) {
+      throw new HouseholdPeerError(502, 'The other household sent a reply that breaks the protocol');
+    }
   }
 
   /* --------------------------------------- people --------------------------------------- */

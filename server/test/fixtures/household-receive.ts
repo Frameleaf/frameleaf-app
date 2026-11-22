@@ -412,6 +412,9 @@ export const startReceiver = (server: HouseholdServer) => {
     getQueueHolds: vi.fn(() => Promise.resolve([] as Array<{ closedUntil: Date | null }>)),
     queueAll: vi.fn(),
   };
+  const comments = server.world.comments;
+  comments.inbound = receive as never;
+  const events = { emit: vi.fn((_name: string, _payload: unknown) => Promise.resolve()) };
   const service = new HouseholdReceiveService(
     receive as never,
     server.links as never,
@@ -425,12 +428,13 @@ export const startReceiver = (server: HouseholdServer) => {
     jobs as never,
     notifications as never,
     { clientSend: vi.fn() } as never,
-    { emit: vi.fn(() => Promise.resolve()) } as never,
+    events as never,
     storage as never,
     new CryptoRepository(),
     { getEnv: () => ({}) } as never,
     {} as never,
     server.logger as never,
+    comments as never,
   );
-  return { service, receive, library, notifications, sent, jobs };
+  return { service, receive, library, notifications, sent, jobs, comments, events };
 };

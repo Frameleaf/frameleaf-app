@@ -45,6 +45,7 @@ describe(HouseholdReceiveService.name, () => {
   let serve: Serve | undefined;
   let ranges: Array<string | null>;
   let originalCalls: string[];
+  let dropCommentReply = false;
   const originals = new Map<string, Buffer>();
   const benUser = randomUUID();
   const benOther = randomUUID();
@@ -60,6 +61,13 @@ describe(HouseholdReceiveService.name, () => {
         throw error;
       });
 
+  const annaComment = (method: string | undefined, parts: string[], request: never, response: never) =>
+    method === 'POST'
+      ? anna.controller.postComment(cloudLink, parts[1], request, response)
+      : method === 'PUT'
+        ? anna.controller.putComment(cloudLink, parts[1], parts[3], request, response)
+        : anna.controller.deleteComment(cloudLink, parts[1], parts[3], request, response);
+
   /** Carries Ben's calls to Anna's real controller, and serves originals after her real token and visibility checks. */
   const connect = () => {
     const real = fetch;
@@ -72,7 +80,10 @@ describe(HouseholdReceiveService.name, () => {
         throw new TypeError('fetch failed');
       }
       const headers = init?.headers as Record<string, string>;
-      const request = householdRequest(url.href, headers, { method: init?.method ?? 'GET' });
+      const request = householdRequest(url.href, headers, {
+        method: init?.method ?? 'GET',
+        body: init?.body as string | undefined,
+      });
       const response = { setHeader: vi.fn() } as never;
       const path = url.pathname.replace(`/api/household/v1/links/${cloudLink}/`, '');
       const parts = path.split('/');
@@ -97,6 +108,14 @@ describe(HouseholdReceiveService.name, () => {
         }
         if (parts[4] === 'leave') {
           return Response.json(await anna.controller.leave(cloudLink, parts[1], parts[3], request, response));
+        }
+        if (parts[2] === 'comments') {
+          if (dropCommentReply) {
+            dropCommentReply = false;
+            await annaComment(init?.method, parts, request, response);
+            throw new TypeError('fetch failed');
+          }
+          return Response.json(await annaComment(init?.method, parts, request, response));
         }
         if (parts[2] === 'originals') {
           const access = await anna.peer.authorize(request, cloudLink);
@@ -1320,6 +1339,363 @@ describe(HouseholdReceiveService.name, () => {
     it('T19: the service has no call that deletes or trashes media', () => {
       const source = readFileSync(join(import.meta.dirname, 'household-receive.service.ts'), 'utf8');
       expect(source).not.toMatch(/assets\.(remove|delete|updateAll|trash)|trashRepository|AssetDelete|AssetTrash/);
+    });
+  });
+  describe('comments (FL-1012)', () => {
+    const anyEmail = /[\w.+-]+@[\w-]+\.[\w.]+/;
+    const benComments = () => receiver.comments.activities.values().toArray();
+    const annaComments = () => anna.world.comments.activities.values().toArray();
+    const flush = async () => receiver.service.flushComments(await linkRow());
+    const benWrites = async (change: { comment?: string | null; assetId?: string | null; isLiked?: boolean } = {}) => {
+      const albumId = inbound().albumId!;
+      const row = receiver.comments.addLocal({ albumId, userId: benUser, comment: 'From Ben', ...change });
+      await receiver.service.onLocalComments({ albumId, activityIds: [row.id], deleted: false });
+      return row;
+    };
+    const annaWrites = async (change: { comment?: string; assetId?: string | null } = {}) => {
+      const row = anna.world.comments.addLocal({ albumId: spaceId, userId: ownerId, comment: 'From Anna', ...change });
+      await anna.shares.onComments({ albumId: spaceId, activityIds: [row.id], deleted: false });
+      return row;
+    };
+    const copyFor = (remoteId: string, userId = benUser) => {
+      const link = receiver.comments.links.find(
+        (row) => row.remoteId === remoteId && row.inboundShareId === inbound(userId).id,
+      );
+      return link?.activityId ? receiver.comments.activities.get(link.activityId) : undefined;
+    };
+    const authorOf = (row?: { remoteAuthorId: string | null }) =>
+      receiver.comments.authors.find(({ id }) => id === row?.remoteAuthorId);
+    const tamperComment = (change: (comment: Record<string, any>) => void) =>
+      tamper((page) => {
+        for (const entry of page.entries) {
+          if (entry.comment) change(entry.comment);
+        }
+        return page;
+      });
+
+    it('acceptance: a sender comment appears on the receiver within one pull, on the local copy, by name', async () => {
+      anna.world.comments.localUsers.set(ownerId, 'Anna');
+      const item = addItem({ originalFileName: 'a.jpg' });
+      await accept();
+      const row = await annaWrites({ assetId: item.id, comment: 'Nice one' });
+      await pull();
+      const copy = copyFor(row.id)!;
+      expect(copy).toMatchObject({
+        albumId: inbound().albumId,
+        assetId: originOf(item.id)!.localId,
+        userId: null,
+        comment: 'Nice one',
+      });
+      expect(authorOf(copy)).toMatchObject({ remoteUserId: ownerId, displayName: 'Anna' });
+      expect(receiver.library.users.has(authorOf(copy)!.id)).toBe(false);
+    });
+
+    it('acceptance: a receiver comment reaches the sender at the next flush, attributed to its author', async () => {
+      const item = addItem({ originalFileName: 'a.jpg' });
+      await accept();
+      await pull();
+      const row = await benWrites({ assetId: originOf(item.id)!.localId });
+      await flush();
+      const sent = anna.world.comments.activities.get(row.id)!;
+      expect(sent).toMatchObject({ albumId: spaceId, assetId: item.id, userId: null, comment: 'From Ben' });
+      expect(anna.world.comments.authors.find(({ id }) => id === sent.remoteAuthorId)).toMatchObject({
+        remoteUserId: benUser,
+        displayName: 'Ben',
+      });
+      expect(receiver.comments.links.find(({ remoteId }) => remoteId === row.id)?.pending).toBeNull();
+    });
+
+    it('a comment posted here is not applied twice when it comes back through the manifest', async () => {
+      await accept();
+      const row = await benWrites();
+      await flush();
+      await pull();
+      await pull();
+      expect(benComments().map(({ id }) => id)).toEqual([row.id]);
+    });
+
+    it('a second recipient on this server sees it by name, as a remote author', async () => {
+      addItem({ originalFileName: 'a.jpg' });
+      await accept();
+      await accept(benOther);
+      const row = await benWrites();
+      await flush();
+      await pull(benOther);
+      const copy = copyFor(row.id, benOther)!;
+      expect(copy).toMatchObject({ userId: null, comment: 'From Ben', albumId: inbound(benOther).albumId });
+      expect(authorOf(copy)).toMatchObject({ remoteUserId: benUser, displayName: 'Ben' });
+    });
+
+    it('retries after a lost reply without posting twice', async () => {
+      await accept();
+      const row = await benWrites();
+      dropCommentReply = true;
+      await flush();
+      expect(anna.world.comments.activities.has(row.id)).toBe(true);
+      const queued = receiver.comments.links.find(({ remoteId }) => remoteId === row.id)!;
+      expect(queued.pending).toBe('post');
+      queued.nextAttemptAt = null;
+      await flush();
+      expect(annaComments()).toHaveLength(1);
+      expect(queued.pending).toBeNull();
+    });
+
+    it('keeps a change for later while the sender is unreachable', async () => {
+      await accept();
+      const row = await benWrites();
+      vi.mocked(fetch).mockRejectedValueOnce(new TypeError('fetch failed'));
+      await flush();
+      const queued = receiver.comments.links.find(({ remoteId }) => remoteId === row.id)!;
+      expect(queued).toMatchObject({ pending: 'post', attempts: 1 });
+      expect(queued.nextAttemptAt!.getTime()).toBeGreaterThan(Date.now());
+    });
+
+    it('an edit made while a send is on its way is not lost', async () => {
+      await accept();
+      const row = await benWrites();
+      await flush();
+      row.comment = 'First edit';
+      await receiver.service.onLocalComments({ albumId: row.albumId, activityIds: [row.id], deleted: false });
+      const queued = receiver.comments.links.find(({ remoteId }) => remoteId === row.id)!;
+      const { revision } = queued;
+      row.comment = 'Second edit';
+      await receiver.service.onLocalComments({ albumId: row.albumId, activityIds: [row.id], deleted: false });
+      await receiver.comments.markSent(queued.inboundShareId, row.id, revision);
+      expect(queued.pending).toBe('put');
+      await flush();
+      expect(anna.world.comments.activities.get(row.id)?.comment).toBe('Second edit');
+    });
+
+    it('edits and deletions by their author propagate both ways, and no media is touched', async () => {
+      const item = addItem({ originalFileName: 'a.jpg' });
+      await accept();
+      await pull();
+      const local = originOf(item.id)!.localId;
+      const mine = await benWrites({ assetId: local });
+      await flush();
+      mine.comment = 'Edited by Ben';
+      await receiver.service.onLocalComments({ albumId: mine.albumId, activityIds: [mine.id], deleted: false });
+      await flush();
+      expect(anna.world.comments.activities.get(mine.id)?.comment).toBe('Edited by Ben');
+      receiver.comments.remove(mine.id);
+      await receiver.service.onLocalComments({ albumId: mine.albumId, activityIds: [mine.id], deleted: true });
+      await flush();
+      expect(anna.world.comments.activities.has(mine.id)).toBe(false);
+
+      const theirs = await annaWrites({ assetId: item.id });
+      await pull();
+      anna.world.comments.activities.get(theirs.id)!.comment = 'Edited by Anna';
+      await anna.shares.onComments({ albumId: spaceId, activityIds: [theirs.id], deleted: false });
+      await pull();
+      expect(copyFor(theirs.id)?.comment).toBe('Edited by Anna');
+      anna.world.comments.remove(theirs.id);
+      await anna.shares.onComments({ albumId: spaceId, activityIds: [theirs.id], deleted: true });
+      await pull();
+      expect(copyFor(theirs.id)).toBeUndefined();
+      expect(benComments()).toHaveLength(0);
+      expect(copies()).toHaveLength(1);
+      expect(copyOf(item.id).deletedAt).toBeNull();
+      expect(receiver.library.assetRepo.remove).not.toHaveBeenCalled();
+      expect(receiver.library.assetRepo.updateAll).not.toHaveBeenCalled();
+    });
+
+    it('T16: a manifest naming a local account never writes as that account', async () => {
+      await accept();
+      const row = await annaWrites();
+      tamperComment((comment) => {
+        comment.author = { household: 'remote', id: benUser, name: 'Ben' };
+      });
+      await pull();
+      const copy = copyFor(row.id)!;
+      expect(copy.userId).toBeNull();
+      expect(authorOf(copy)?.remoteUserId).toBe(benUser);
+    });
+
+    it('a stop cannot remove what the recipient wrote, and a page cannot rewrite it', async () => {
+      await accept();
+      const mine = await benWrites();
+      await flush();
+      tamper((page) => ({
+        ...page,
+        entries: page.entries.map((entry) =>
+          entry.id === mine.id ? { seq: entry.seq, kind: 'comment', id: entry.id, stop: true } : entry,
+        ),
+      }));
+      await pull();
+      expect(receiver.comments.activities.get(mine.id)?.comment).toBe('From Ben');
+      vi.mocked(anna.shares.manifest).mockRestore();
+      anna.world.comments.activities.get(mine.id)!.comment = 'Rewritten by the sender';
+      await anna.shares.onComments({ albumId: spaceId, activityIds: [mine.id], deleted: false });
+      await pull();
+      expect(receiver.comments.activities.get(mine.id)?.comment).toBe('From Ben');
+    });
+
+    it('a comment the recipient removed here does not come back', async () => {
+      await accept();
+      const row = await annaWrites();
+      await pull();
+      receiver.comments.remove(copyFor(row.id)!.id);
+      await anna.shares.onComments({ albumId: spaceId, activityIds: [row.id], deleted: false });
+      await pull();
+      expect(benComments()).toHaveLength(0);
+    });
+
+    it('T10: over-length, wrong-type and unknown-field comment entries refuse the page, nothing is written', async () => {
+      const cases: Array<(comment: Record<string, any>) => void> = [
+        (comment) => (comment.comment = 'x'.repeat(4001)),
+        (comment) => (comment.comment = 7),
+        (comment) => (comment.isLiked = true),
+        (comment) => (comment.email = 'someone@example.com'),
+        (comment) => (comment.author.email = 'someone@example.com'),
+        (comment) => (comment.author.id = 'ben'),
+        (comment) => (comment.author.name = 'x'.repeat(101)),
+        (comment) => (comment.createdAt = 'yesterday'),
+      ];
+      await accept();
+      await annaWrites();
+      for (const change of cases) {
+        vi.spyOn(anna.shares, 'manifest').mockRestore();
+        tamperComment(change);
+        inbound().cursor = 0;
+        expect((await pull()).lastError).toBe('bad-page');
+        expect(benComments()).toHaveLength(0);
+        inbound().failures = 0;
+      }
+    });
+
+    it('T17: markup is stored as the same plain text; a name with an address never lands', async () => {
+      await accept();
+      const markup = '<script>alert(1)</script>';
+      const row = await annaWrites({ comment: markup });
+      tamperComment((comment) => {
+        comment.author.name = 'someone@example.com';
+      });
+      await pull();
+      const copy = copyFor(row.id)!;
+      expect(copy.comment).toBe(markup);
+      expect(authorOf(copy)?.displayName).toBe('Member');
+    });
+
+    it('a comment on an item this space does not hold is skipped', async () => {
+      await accept();
+      const row = await annaWrites();
+      tamperComment((comment) => {
+        comment.assetId = randomUUID();
+      });
+      await pull();
+      expect(copyFor(row.id)).toBeUndefined();
+      expect(benComments()).toHaveLength(0);
+    });
+
+    it('a future timestamp cannot pin a comment to the end of the conversation', async () => {
+      await accept();
+      const row = await annaWrites();
+      tamperComment((comment) => {
+        comment.createdAt = '2999-01-01T00:00:00.000Z';
+      });
+      await pull();
+      expect(copyFor(row.id)!.createdAt.getTime()).toBeLessThanOrEqual(Date.now());
+    });
+
+    it('mentions notify only members of the local space, at most ten per pull', async () => {
+      await accept();
+      receiver.comments.albumMembers.set(inbound().albumId!, new Set([benUser]));
+      for (let index = 0; index < 12; index++) {
+        await annaWrites({ comment: `@{${benUser}} @{${benOther}} ${index}` });
+      }
+      await pull();
+      const mentions = receiver.events.emit.mock.calls.filter(([name]) => name === 'SharedSpaceMention');
+      expect(mentions).toHaveLength(10);
+      expect(mentions[0][1]).toMatchObject({ userIds: [benUser] });
+    });
+
+    it('a comment by another local member of the space, or on an item not from the sender, stays here', async () => {
+      await accept();
+      const albumId = inbound().albumId!;
+      const other = receiver.comments.addLocal({ albumId, userId: benOther });
+      await receiver.service.onLocalComments({ albumId, activityIds: [other.id], deleted: false });
+      await benWrites({ assetId: randomUUID() });
+      await flush();
+      expect(annaComments()).toHaveLength(0);
+    });
+
+    it('acceptance: no email address crosses in either direction', async () => {
+      anna.world.comments.localUsers.set(ownerId, 'anna@example.com');
+      const item = addItem({ originalFileName: 'a.jpg' });
+      await accept();
+      await pull();
+      await annaWrites({ assetId: item.id });
+      const row = await benWrites({ assetId: originOf(item.id)!.localId });
+      const bodies: string[] = [];
+      const carried = vi.mocked(fetch).getMockImplementation()!;
+      vi.mocked(fetch).mockImplementation(async (input, init) => {
+        if (typeof init?.body === 'string') bodies.push(init.body);
+        const response = await carried(input, init);
+        bodies.push(await response.clone().text());
+        return response;
+      });
+      await flush();
+      await pull();
+      expect(anna.world.comments.activities.has(row.id)).toBe(true);
+      expect(bodies.length).toBeGreaterThan(0);
+      for (const body of bodies) {
+        expect(body).not.toMatch(anyEmail);
+      }
+    });
+
+    it('acceptance: an unlinked share stops comment sync both ways and keeps the history', async () => {
+      await accept();
+      const theirs = await annaWrites();
+      await pull();
+      const mine = await benWrites();
+      await flush();
+      const queued = await benWrites({ comment: 'Never sent' });
+      const calls = vi.mocked(fetch).mock.calls.length;
+
+      Object.assign(benLink(), { state: 'ended' });
+      Object.assign(annaLink(), { state: 'ended' });
+      await receiver.service.run();
+      await flush();
+      await annaWrites({ comment: 'Never received' });
+
+      expect(inbound().state).toBe('left');
+      expect(anna.world.comments.activities.has(queued.id)).toBe(false);
+      expect(
+        vi
+          .mocked(fetch)
+          .mock.calls.slice(calls)
+          .filter(([url]) => String(url).includes('/comments')),
+      ).toEqual([]);
+      expect(copyFor(theirs.id)?.comment).toBe('From Anna');
+      expect(receiver.comments.activities.has(mine.id)).toBe(true);
+      expect(anna.world.comments.activities.has(mine.id)).toBe(true);
+      expect(benComments()).toHaveLength(3);
+    });
+
+    it('after leaving, nothing more is sent and the history stays', async () => {
+      await accept();
+      const mine = await benWrites();
+      await flush();
+      await receiver.service.decline(auth(), inbound().id);
+      const later = receiver.comments.addLocal({ albumId: mine.albumId, userId: benUser, comment: 'After leaving' });
+      await receiver.service.onLocalComments({ albumId: mine.albumId, activityIds: [later.id], deleted: false });
+      await flush();
+      expect(anna.world.comments.activities.has(later.id)).toBe(false);
+      expect(anna.world.comments.activities.has(mine.id)).toBe(true);
+      expect(receiver.comments.activities.has(mine.id)).toBe(true);
+    });
+
+    it('a member the sender removed gets a final refusal after the retries, and the comment stays here', async () => {
+      await accept();
+      const row = await benWrites();
+      await anna.world.leave(inbound().remoteShareId, benUser);
+      const queued = receiver.comments.links.find(({ remoteId }) => remoteId === row.id)!;
+      for (let attempt = 0; attempt < 6; attempt++) {
+        queued.nextAttemptAt = null;
+        await flush();
+      }
+      expect(queued.pending).toBeNull();
+      expect(receiver.comments.activities.has(row.id)).toBe(true);
     });
   });
 });
