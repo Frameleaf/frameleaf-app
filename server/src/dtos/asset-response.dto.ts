@@ -106,6 +106,15 @@ export const AssetResponseSchema = SanitizedAssetResponseSchema.extend(
       .describe(
         'Recorded and inferred landmarks, with recorded locations first. Included in single and batch asset-info responses.',
       ),
+    // FL-949
+    namedPlace: z
+      .object({ id: z.uuidv4().describe('Place ID'), name: z.string().describe('The name you gave the place') })
+      .meta({ id: 'AssetNamedPlaceDto' })
+      .nullable()
+      .optional()
+      .describe(
+        'Your own named place the item was taken in (the nearest centre where several hold it); null when none does. Only in single asset-info responses, only for the signed-in person, never through a shared link.',
+      ),
     // FL-326
     origin: PartnerOriginSchema.optional().describe(
       'Present on your own asset when partner sharing copied it from another library (GET /assets/{id})',

@@ -338,6 +338,7 @@ import {
   UserPasskeyTable,
 } from 'src/schema/tables/user-passkey.table.js';
 import { UserRecoveryCodeTable, UserTwoFactorTable } from 'src/schema/tables/user-two-factor.table.js';
+import { UserPlaceTable } from 'src/schema/tables/user-place.table.js';
 import { UserTable } from 'src/schema/tables/user.table.js';
 import { VersionHistoryTable } from 'src/schema/tables/version-history.table.js';
 import {
@@ -448,6 +449,7 @@ export class ImmichDatabase {
     LocationPointTable,
     LocationFillRunTable,
     LocationFillProposalTable,
+    UserPlaceTable,
     AssetLedgerTable,
     FoundFileTable,
     BookmarkTagTable,
@@ -826,6 +828,7 @@ export interface DB extends QueueDatabase {
   location_point: LocationPointTable;
   location_fill_run: LocationFillRunTable;
   location_fill_proposal: LocationFillProposalTable;
+  user_place: UserPlaceTable;
   asset_ledger: AssetLedgerTable;
   found_file: FoundFileTable;
   import_connection: ImportConnectionTable;

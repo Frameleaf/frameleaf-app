@@ -235,6 +235,7 @@ import { TranscodingService } from 'src/services/transcoding.service.js';
 import { TrashService } from 'src/services/trash.service.js';
 import { UpgradeCheckService } from 'src/services/upgrade-check.service.js';
 import { UserAdminService } from 'src/services/user-admin.service.js';
+import { UserPlaceService } from 'src/services/user-place.service.js';
 import { UserService } from 'src/services/user.service.js';
 import { UtilitiesService } from 'src/services/utilities.service.js';
 import { VersionService } from 'src/services/version.service.js';
@@ -485,6 +486,7 @@ export const services = [
   TranscodingService,
   TrashService,
   UserAdminService,
+  UserPlaceService,
   UserService,
   VersionService,
   VideoMomentIndexService,
