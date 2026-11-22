@@ -338,13 +338,14 @@ export class PersonService extends BaseService {
    * A stale "later" never replaces a stored "different".
    */
   async setMergeVerdict(auth: AuthDto, dto: PersonMergeVerdictCreateDto): Promise<PersonMergeVerdictResponseDto> {
-    const [personId, suggestionId] = await this.requireMergePair(auth, dto);
+    const [first, second] =
+      dto.verdict === 'ignore'
+        ? await this.requireIgnoredPerson(auth, dto.personId)
+        : await this.requireMergePair(auth, dto);
     if (dto.verdict === 'same') {
       return this.acceptMergeSuggestion(auth, dto.personId.toLowerCase(), dto.suggestionId.toLowerCase());
     }
 
-    const [first, second] =
-      dto.verdict === 'ignore' ? [dto.personId.toLowerCase(), dto.personId.toLowerCase()] : [personId, suggestionId];
     const { verdict, createdAt } = await this.personRepository.setMergeVerdict(
       auth.user.id,
       first,

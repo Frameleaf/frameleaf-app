@@ -251,6 +251,20 @@ describe(PersonService.name, () => {
         sut.setMergeVerdict(auth, { personId: low, suggestionId: low, verdict: 'different' }),
       ).rejects.toBeInstanceOf(BadRequestException);
     });
+
+    it('should store "ignore" as the person paired with itself', async () => {
+      const auth = AuthFactory.create();
+      mocks.access.person.checkOwnerAccess.mockResolvedValueOnce(new Set([low]));
+      mocks.person.setMergeVerdict.mockResolvedValue({
+        verdict: 'ignore',
+        createdAt: new Date('2026-09-24T00:00:00Z'),
+      });
+
+      await expect(sut.setMergeVerdict(auth, { personId: low, suggestionId: low, verdict: 'ignore' })).resolves.toEqual(
+        { personId: low, suggestionId: low, verdict: 'ignore', createdAt: '2026-09-24T00:00:00.000Z' },
+      );
+      expect(mocks.person.setMergeVerdict).toHaveBeenCalledWith(auth.user.id, low, low, 'ignore');
+    });
   });
 
   describe('deleteMergeVerdict', () => {
