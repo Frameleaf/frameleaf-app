@@ -116,7 +116,9 @@ export const refuseRelationship = (
   if (isAncestor(edges, relatedPersonGroupId, personGroupId)) {
     return 'cycle';
   }
-  const parents = edges.filter((other) => other.kind === 'parent' && other.relatedPersonGroupId === relatedPersonGroupId);
+  const parents = edges.filter(
+    (other) => other.kind === 'parent' && other.relatedPersonGroupId === relatedPersonGroupId,
+  );
   if (edge.parentRole === 'mother' && parents.some((other) => other.parentRole === 'mother')) {
     return 'mother-exists';
   }
@@ -156,13 +158,20 @@ export const groupRelationships = (edges: PersonRelationshipEdge[], personId: st
     if (!other) {
       continue;
     }
-    if (edge.kind === 'parent') {
-      const entry = { personId: other, parentRole: edge.parentRole ?? 'parent' };
-      (edge.relatedPersonGroupId === personId ? groups.parents : groups.children).push(entry);
-    } else if (edge.kind === 'partner') {
-      groups.partners.push(other);
-    } else if (edge.kind === 'sibling') {
-      groups.siblings.push(other);
+    switch (edge.kind) {
+      case 'parent': {
+        const entry = { personId: other, parentRole: edge.parentRole ?? 'parent' };
+        (edge.relatedPersonGroupId === personId ? groups.parents : groups.children).push(entry);
+        break;
+      }
+      case 'partner': {
+        groups.partners.push(other);
+        break;
+      }
+      case 'sibling': {
+        groups.siblings.push(other);
+        break;
+      }
     }
   }
   const parentIds = new Set(groups.parents.map((parent) => parent.personId));

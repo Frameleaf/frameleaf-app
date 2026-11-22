@@ -290,8 +290,7 @@ export class PartnerPeopleService extends BaseService {
     const copies = await this.partnerOriginRepository.getPersonCopies(copy.ownerId, source.ownerId);
     const following = copies.filter((origin) => followsRelationships(origin));
     const own = following.find(
-      (origin) =>
-        origin.personGroupId === copy.personGroupId && origin.sourcePersonGroupId === source.personGroupId,
+      (origin) => origin.personGroupId === copy.personGroupId && origin.sourcePersonGroupId === source.personGroupId,
     );
     if (!own || following.length < 2) {
       return false;

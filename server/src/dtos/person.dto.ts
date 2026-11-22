@@ -124,9 +124,15 @@ const PersonRelationshipCreateSchema = z
       .enum(PERSON_RELATIONS)
       .describe(
         'What the other person is to the person in the path: "mother" records that the other person is their mother, "child" that the other person is their child',
-      ),
+      )
+      .meta({ id: 'PersonRelationshipRelation' }),
   })
   .meta({ id: 'PersonRelationshipCreateDto' });
+
+const PersonRelationshipParamSchema = z.object({
+  id: z.uuidv4().describe('Person ID'),
+  relatedPersonId: z.uuidv4().describe('The other person in the relationship'),
+});
 
 export const PersonResponseSchema = z
   .object({
@@ -203,6 +209,7 @@ export class PersonResponseDto extends createZodDto(PersonResponseSchema) {}
 export class PersonRelativeDto extends createZodDto(PersonRelativeSchema) {}
 export class PersonRelationshipsResponseDto extends createZodDto(PersonRelationshipsResponseSchema) {}
 export class PersonRelationshipCreateDto extends createZodDto(PersonRelationshipCreateSchema) {}
+export class PersonRelationshipParamDto extends createZodDto(PersonRelationshipParamSchema) {}
 
 // FL-57: a face shown as evidence: the photo (always one the viewer may see: their own, not trashed,
 // not Locked, not hidden by their suppression rules) and where the face is in it, as fractions of the

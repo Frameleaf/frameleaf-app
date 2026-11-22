@@ -4,6 +4,7 @@ import { jsonObjectFrom } from 'kysely/helpers/postgres';
 import { InjectKysely } from 'nestjs-kysely';
 import { validate as isUuid } from 'uuid';
 import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
+import type { PersonRelationshipEdge } from 'src/utils/person-relationship.js';
 import { AssetFace } from 'src/database.js';
 import { Chunked, ChunkedArray, DummyValue, GenerateSql } from 'src/decorators.js';
 import { AssetFileType, AssetType, AssetVisibility, LibraryScope, SourceType, UserMetadataKey } from 'src/enum.js';
@@ -30,7 +31,6 @@ import { libraryScopePredicate } from 'src/utils/library-scope.js';
 import { effectiveVisibility, revealedLockScope } from 'src/utils/locked.js';
 import { type PaginationOptions, paginationHelper } from 'src/utils/pagination.js';
 import { archivedAllowedInPeople, isPeopleVisible } from 'src/utils/people-visibility.js';
-import type { PersonRelationshipEdge } from 'src/utils/person-relationship.js';
 
 // FL-1383: a face's box as a main photo (see `face-quality.ts` for the measurements behind the numbers).
 const faceBoxWidth = sql<number>`(asset_face."boundingBoxX2" - asset_face."boundingBoxX1")`;

@@ -134,14 +134,23 @@ export class PersonRelationshipService extends BaseService {
 
   /**
    * A merge keeps the union of both people's relationships: the person who stays gains the merged-away person's,
-   * before that person (and their rows) is deleted. Runs inside the merge's write.
+   * before that person (and their rows) is deleted. Runs inside the merge's write. Returns whether the person who
+   * stays gained any; as a partner's copy they then stop following, or the next update would take these away.
    */
-  async onMerge(ownerId: string, fromPersonGroupId: string, toPersonGroupId: string): Promise<void> {
+  async onMerge(ownerId: string, fromPersonGroupId: string, toPersonGroupId: string): Promise<boolean> {
     const edges = await this.personRepository.getRelationships(ownerId);
-    await this.personRepository.createRelationships(
-      ownerId,
-      mergedRelationships(edges, fromPersonGroupId, toPersonGroupId),
-    );
+    const gained = mergedRelationships(edges, fromPersonGroupId, toPersonGroupId);
+    if (gained.length === 0) {
+      return false;
+    }
+    await this.personRepository.createRelationships(ownerId, gained);
+    await BaseService.create(PartnerPeopleService, this).noteRelationshipEdit(ownerId, [toPersonGroupId]);
+    return true;
+  }
+
+  /** After a merge has committed: the copies of the person who stays follow what they gained. */
+  async afterMerge(ownerId: string, personGroupId: string): Promise<void> {
+    await BaseService.create(PartnerPeopleService, this).propagateRelationships(ownerId, personGroupId);
   }
 
   /**
