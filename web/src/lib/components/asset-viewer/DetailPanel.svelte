@@ -6,6 +6,7 @@
   import DetailPanelDescription from '$lib/components/asset-viewer/DetailPanelDescription.svelte';
   import DetailPanelImageEnrichment from '$lib/components/asset-viewer/DetailPanelImageEnrichment.svelte';
   import DetailPanelLocation from '$lib/components/asset-viewer/DetailPanelLocation.svelte';
+  import DetailPanelPrintBack from '$lib/components/asset-viewer/DetailPanelPrintBack.svelte';
   import DetailPanelReplaceSidecar from '$lib/components/asset-viewer/DetailPanelReplaceSidecar.svelte';
   import DetailPanelScanSplit from '$lib/components/asset-viewer/DetailPanelScanSplit.svelte';
   import DetailPanelRating from '$lib/components/asset-viewer/DetailPanelStarRating.svelte';
@@ -161,6 +162,9 @@
 
   {#if isOwner && !authManager.isSharedLink && asset.type === AssetTypeEnum.Image}
     <DetailPanelScanSplit {asset} />
+  {/if}
+  {#if !authManager.isSharedLink && asset.type === AssetTypeEnum.Image}
+    <DetailPanelPrintBack {asset} {isOwner} />
   {/if}
 
   <!--

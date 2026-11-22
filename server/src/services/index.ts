@@ -179,6 +179,7 @@ import { PlaybackSelfTestService } from 'src/services/playback-self-test.service
 import { PluginService } from 'src/services/plugin.service.js';
 import { PreservationWorkerService } from 'src/services/preservation-worker.service.js';
 import { PreservationService } from 'src/services/preservation.service.js';
+import { PrintBackService } from 'src/services/print-back.service.js';
 import { PrivateLogsService } from 'src/services/private-logs.service.js';
 import { PrivateMlLogsService } from 'src/services/private-ml-logs.service.js';
 import { PushService } from 'src/services/push.service.js';
@@ -261,6 +262,7 @@ export const services = [
   LibraryItemService,
   AssetAnnotationService,
   AssetPaletteService,
+  PrintBackService,
   ScanSplitService,
   CaptureService,
   BrowserExtensionSignInService,

@@ -550,6 +550,36 @@ export const media_import_asset_removed = registerFunction({
     END;
   `,
 });
+export const asset_print_back_released = registerFunction({
+  name: 'asset_print_back_released',
+  returnType: 'TRIGGER',
+  language: 'PLPGSQL',
+  body: `
+    BEGIN
+      UPDATE asset SET visibility = OLD."backPreviousVisibility"
+        WHERE id = OLD."backAssetId" AND visibility = 'hidden';
+      IF OLD."frontLockReason" IS NOT NULL THEN
+        INSERT INTO asset_lock ("assetId", reason)
+          SELECT id, OLD."frontLockReason" FROM asset WHERE id = OLD."backAssetId"
+          ON CONFLICT DO NOTHING;
+      END IF;
+      RETURN NULL;
+    END;
+  `,
+});
+export const asset_print_back_front_deleting = registerFunction({
+  name: 'asset_print_back_front_deleting',
+  returnType: 'TRIGGER',
+  language: 'PLPGSQL',
+  body: `
+    BEGIN
+      UPDATE asset_print_back pair SET "frontLockReason" = lock.reason
+        FROM asset_lock lock
+        WHERE pair."frontAssetId" = OLD.id AND lock."assetId" = OLD.id;
+      RETURN OLD;
+    END;
+  `,
+});
 export const media_import_collection_removed = registerFunction({
   name: 'media_import_collection_removed',
   returnType: 'TRIGGER',

@@ -139,6 +139,7 @@ import { PhysicalFileTrashController } from 'src/controllers/physical-file-trash
 import { PlaybackSelfTestController } from 'src/controllers/playback-self-test.controller.js';
 import { PluginController } from 'src/controllers/plugin.controller.js';
 import { PreservationController } from 'src/controllers/preservation.controller.js';
+import { PrintBackController } from 'src/controllers/print-back.controller.js';
 import { PrivateLogsController } from 'src/controllers/private-logs.controller.js';
 import { PushController } from 'src/controllers/push.controller.js';
 import { QueueController } from 'src/controllers/queue.controller.js';
@@ -208,6 +209,7 @@ export const controllers = [
   LibraryItemController,
   AssetAnnotationController,
   AssetPaletteController,
+  PrintBackController,
   ScanSplitController,
   CaptureController,
   BrowserExtensionSignInController,

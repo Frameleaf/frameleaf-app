@@ -25,6 +25,7 @@ import {
   asset_backup_deletion_capture,
   asset_delete_audit,
   asset_library_scope_refresh,
+  asset_print_back_front_deleting,
   media_import_asset_removed,
 } from 'src/schema/functions.js';
 import { LibraryTable } from 'src/schema/tables/library.table.js';
@@ -51,6 +52,14 @@ import { ASSET_CHECKSUM_CONSTRAINT } from 'src/utils/database.js';
   actions: ['delete'],
   scope: 'row',
   functionName: asset_backup_deletion_capture.name,
+})
+// FL-967: notes a Locked front's lock on its pair before the cascade removes both rows
+@Trigger({
+  name: 'asset_print_back_front_deleting_trigger',
+  timing: 'before',
+  actions: ['delete'],
+  scope: 'row',
+  functionName: asset_print_back_front_deleting.name,
 })
 @Trigger({
   name: 'media_import_asset_deleted',

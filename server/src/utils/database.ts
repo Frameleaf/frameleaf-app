@@ -219,6 +219,17 @@ export function lockedOwnerScope<QDB, TB extends keyof QDB>(
   return notLockedOrOwnedBy(lockedOwnerId, alias);
 }
 /**
+ * FL-967: the scan of the back of a print. It is `hidden`, and only its owner reaches it, through its front.
+ * The `hidden` test comes first so the lookup stays off every ordinary row.
+ */
+export const isPrintBack = (assetAlias = 'asset') =>
+  sql<boolean>`(${sql.ref(`${assetAlias}.visibility`)} = ${sql.lit(AssetVisibility.Hidden)} and exists (select 1 from asset_print_back where asset_print_back."backAssetId" = ${sql.ref(`${assetAlias}.id`)}))`;
+
+/** FL-967: a word on the back of a print finds its front, through the back's text filed on the pair. */
+export const printBackTextMatches = (tokens: string) =>
+  sql<string>`select asset_print_back."frontAssetId" from asset_print_back where f_unaccent(asset_print_back."searchText") %>> f_unaccent(${tokens})`;
+
+/**
  * FL-34: the video part of a live photo keeps visibility `hidden` and locks with its still (stacks and
  * live photos lock as a whole). This matches such a motion part whose still is locked, unless the
  * still belongs to `lockedOwnerId` (the viewer, when their session is elevated). Filters apply it
@@ -228,14 +239,26 @@ export function lockedOwnerScope<QDB, TB extends keyof QDB>(
 export function isMotionOfLockedStill(eb: ExpressionBuilder<DB, 'asset'>, lockedOwnerId?: string) {
   return eb.and([
     eb('asset.visibility', '=', sql.lit(AssetVisibility.Hidden)),
-    eb.exists(
-      eb
-        .selectFrom('asset as lockedStill')
-        .select(sql.lit(1).as('exists'))
-        .whereRef('lockedStill.livePhotoVideoId', '=', 'asset.id')
-        .where((eb) => isLockedAsset(eb, 'lockedStill'))
-        .$if(!!lockedOwnerId, (qb) => qb.where('lockedStill.ownerId', '!=', lockedOwnerId!)),
-    ),
+    eb.or([
+      eb.exists(
+        eb
+          .selectFrom('asset as lockedStill')
+          .select(sql.lit(1).as('exists'))
+          .whereRef('lockedStill.livePhotoVideoId', '=', 'asset.id')
+          .where((eb) => isLockedAsset(eb, 'lockedStill'))
+          .$if(!!lockedOwnerId, (qb) => qb.where('lockedStill.ownerId', '!=', lockedOwnerId!)),
+      ),
+      // FL-967: the back of a Locked print is as private as its front
+      eb.exists(
+        eb
+          .selectFrom('asset_print_back')
+          .innerJoin('asset as lockedFront', 'lockedFront.id', 'asset_print_back.frontAssetId')
+          .select(sql.lit(1).as('exists'))
+          .whereRef('asset_print_back.backAssetId', '=', 'asset.id')
+          .where((eb) => isLockedAsset(eb, 'lockedFront'))
+          .$if(!!lockedOwnerId, (qb) => qb.where('lockedFront.ownerId', '!=', lockedOwnerId!)),
+      ),
+    ]),
   ]);
 }
 /**
@@ -635,6 +658,8 @@ export function searchAssetBuilderLegacy(kysely: Kysely<DB>, options: AssetSearc
       .$if(!!options.hideLockedMotion && mayMatchHidden(options.visibility), (qb) =>
         qb.where((eb) => eb.not(isMotionOfLockedStill(eb, options.lockedOwnerId))),
       )
+      // FL-967: the back of a print is found through its front, never as a result of its own
+      .$if(mayMatchHidden(options.visibility), (qb) => qb.where(sql<SqlBool>`not ${isPrintBack('asset')}`))
       .$if(!!options.albumIds && options.albumIds.length > 0, (qb) => inAlbums(qb, options.albumIds!))
       .$if(!!options.tagIds && options.tagIds.length > 0, (qb) => hasTags(qb, options.tagIds!))
       .$if(options.tagIds === null, (qb) =>
@@ -734,9 +759,9 @@ export function searchAssetBuilderLegacy(kysely: Kysely<DB>, options: AssetSearc
           ),
       )
       .$if(!!options.ocr, (qb) =>
-        qb
-          .innerJoin('ocr_search', 'asset.id', 'ocr_search.assetId')
-          .where(() => sql`f_unaccent(ocr_search.text) %>> f_unaccent(${tokenizeForSearch(options.ocr!).join(' ')})`),
+        qb.where(
+          sql<SqlBool>`asset.id in (select ocr_search."assetId" from ocr_search where f_unaccent(ocr_search.text) %>> f_unaccent(${tokenizeForSearch(options.ocr!).join(' ')}) union all ${printBackTextMatches(tokenizeForSearch(options.ocr!).join(' '))})`,
+        ),
       )
       .$if(!!options.imageEnrichment, (qb) => withImageEnrichmentFilter(qb, options.imageEnrichment!))
       .$if(!!options.type, (qb) => qb.where('asset.type', '=', options.type!))
@@ -1327,14 +1352,24 @@ function branchPredicates(
     ...stringPatternPredicates(eb, 'asset.originalPath', branch.originalPath),
     ...(branch.ocr
       ? [
-          eb.exists(
-            eb
-              .selectFrom('ocr_search')
-              .whereRef('ocr_search.assetId', '=', 'asset.id')
-              .where(
-                sql<SqlBool>`f_unaccent(ocr_search.text) %>> f_unaccent(${tokenizeForSearch(branch.ocr.matches).join(' ')})`,
-              ),
-          ),
+          eb.or([
+            eb.exists(
+              eb
+                .selectFrom('ocr_search')
+                .whereRef('ocr_search.assetId', '=', 'asset.id')
+                .where(
+                  sql<SqlBool>`f_unaccent(ocr_search.text) %>> f_unaccent(${tokenizeForSearch(branch.ocr.matches).join(' ')})`,
+                ),
+            ),
+            eb.exists(
+              eb
+                .selectFrom('asset_print_back')
+                .whereRef('asset_print_back.frontAssetId', '=', 'asset.id')
+                .where(
+                  sql<SqlBool>`f_unaccent(asset_print_back."searchText") %>> f_unaccent(${tokenizeForSearch(branch.ocr.matches).join(' ')})`,
+                ),
+            ),
+          ]),
         ]
       : []),
     ...comparisonPredicates(eb, 'asset_exif.rating', branch.rating),
@@ -1469,6 +1504,7 @@ export function searchAssetBuilder(kysely: Kysely<DB>, options: AssetSearchBuild
       .$if(!!scope.lockedMotion, (qb) =>
         qb.where((eb) => eb.not(isMotionOfLockedStill(eb, scope.lockedMotion!.lockedOwnerId))),
       )
+      .where(sql<SqlBool>`not ${isPrintBack('asset')}`)
       .$if(!!(options.withFaces || options.withPeople), (qb) =>
         qb.select(withFacesAndPeople({ viewingUserId: scope.viewingUserId! })),
       )

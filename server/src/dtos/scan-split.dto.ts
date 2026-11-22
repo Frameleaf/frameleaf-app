@@ -81,6 +81,7 @@ export const ScanSplitInfoResponseSchema = z
 export const ScanSplitOfferResponseSchema = z
   .object({
     printCount: z.int().min(0).describe('Prints found on an upload to an album that holds scans; 0 means no offer'),
+    inScanAlbum: z.boolean().describe('Whether this photo is in an album marked as holding scans'),
   })
   .meta({ id: 'ScanSplitOfferResponseDto' });
 

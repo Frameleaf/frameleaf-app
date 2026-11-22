@@ -1739,6 +1739,20 @@ export class AssetRepository {
       .execute();
     return count;
   }
+  /** FL-967: which of these are the paired back of a print. */
+  @GenerateSql({ params: [[DummyValue.UUID]] })
+  async getPrintBackIds(ids: string[]): Promise<string[]> {
+    if (ids.length === 0) {
+      return [];
+    }
+    const rows = await this.db
+      .selectFrom('asset_print_back')
+      .select('backAssetId')
+      .where('backAssetId', 'in', ids)
+      .execute();
+    return rows.map(({ backAssetId }) => backAssetId);
+  }
+
   @GenerateSql()
   getFileSamples() {
     return this.db.selectFrom('asset_file').select(['assetId', 'path']).limit(sql.lit(3)).execute();

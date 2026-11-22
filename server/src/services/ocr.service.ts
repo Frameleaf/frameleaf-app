@@ -9,7 +9,7 @@ import { OCR } from 'src/repositories/machine-learning.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { getDimensions } from 'src/utils/asset.util.js';
 import { tokenizeForSearch } from 'src/utils/database.js';
-import { DocumentRegion, cropBoxOf, isRegionInsideCrop } from 'src/utils/documents.js';
+import { DocumentRegion, cropBoxOf, isRegionInsideCrop, printBackSearchText } from 'src/utils/documents.js';
 import { isOcrEnabled } from 'src/utils/misc.js';
 
 @Injectable()
@@ -45,7 +45,7 @@ export class OcrService extends BaseService {
       return JobStatus.Failed;
     }
     // Hidden first: a Live Photo's motion part never gets a preview, so waiting for one would never end
-    if (asset.visibility === AssetVisibility.Hidden) {
+    if (asset.visibility === AssetVisibility.Hidden && !asset.isPrintBack) {
       return JobStatus.Skipped;
     }
     if (!asset.previewFile) {
@@ -64,7 +64,15 @@ export class OcrService extends BaseService {
     const ocrResults = await this.machineLearningRepository.ocr(selection, asset.previewFile, machineLearning.ocr);
     await publishJobResult(async () => {
       const { ocrDataList, searchText } = this.parseOcrResults(id, ocrResults, await this.getCropVisibility(id));
-      await this.ocrRepository.upsert(id, ocrDataList, searchText);
+      // FL-967: a back's text is filed under its front, with the owner's corrections, and never under the back
+      await this.ocrRepository.upsert(id, ocrDataList, asset.isPrintBack ? '' : searchText);
+      if (asset.isPrintBack) {
+        const lines = ocrDataList
+          .filter((line) => line.isVisible !== false)
+          .map((line, index) => ({ ...line, id: `read-${index}` }));
+        const edits = await this.ocrRepository.getDocumentEdits(id);
+        await this.ocrRepository.setPrintBackSearchText(id, printBackSearchText(lines, edits));
+      }
       await this.assetRepository.upsertJobStatus({ assetId: id, ocrAt: new Date() });
     });
 
