@@ -18,6 +18,7 @@ import {
   buildPaletteCatalog,
   commitCompletedTokens,
   compilePaletteQuery,
+  emptyPaletteCatalog,
   facetsByField,
   formatScopeCount,
   fromSavedSearch,
@@ -202,6 +203,36 @@ describe('parseSearchInput', () => {
       'frameleaf_search_token_rating({"count":4})',
       'videos',
     ]);
+  });
+});
+
+describe('albums: operator (FL-976)', () => {
+  it('becomes an at-least album count', () => {
+    expect(parseSearchInput('albums:2 lake').filter).toEqual({ albumCount: { gte: 2 } });
+    expect(parseSearchInput('albums:3+').filter).toEqual({ albumCount: { gte: 3 } });
+  });
+
+  it('stays as text when it cannot be a count or is excluded', () => {
+    for (const input of ['albums:0', 'albums:many', 'albums:100', '-albums:2']) {
+      expect(parseSearchInput(input)).toMatchObject({ text: input, filter: {} });
+    }
+  });
+
+  it('reads back from a query as the same chip', () => {
+    const query = { ...emptyDiscoveryQuery(), filter: { albumCount: { gte: 2 } } };
+    expect(typedTokensFromQuery(query, emptyPaletteCatalog()).tokens).toEqual(['albums:2']);
+  });
+
+  it('leaves a range it cannot type in the filter', () => {
+    const query = { ...emptyDiscoveryQuery(), filter: { albumCount: { gte: 2, lte: 4 } } };
+    const { tokens, base } = typedTokensFromQuery(query, emptyPaletteCatalog());
+    expect(tokens).toEqual([]);
+    expect(base.filter.albumCount).toEqual({ gte: 2, lte: 4 });
+  });
+
+  it('is accepted by the query validator', () => {
+    expect(isDiscoveryFilter({ albumCount: { gte: 2 } })).toBe(true);
+    expect(isDiscoveryFilter({ albumCount: { like: 'x' } })).toBe(false);
   });
 });
 

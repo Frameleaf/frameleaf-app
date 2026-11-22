@@ -24,6 +24,7 @@ import {
 import { decadeOf, parseApproximateYear } from '$lib/frameleaf/approximate-date';
 import { formatDate } from '$lib/frameleaf/date-format';
 import { mediaKindInfo } from '$lib/frameleaf/media-kinds';
+import { albumCountText } from '$lib/frameleaf/search-filters';
 import type { FilterPanelOptions } from '$lib/frameleaf/search-options';
 
 /**
@@ -31,7 +32,7 @@ import type { FilterPanelOptions } from '$lib/frameleaf/search-options';
  * `design/frameleaf/template/src/search-palette.mjs` (September 24, 2026).
  *
  * Typed operators (`person:`, `place:`, `tag:`, `type:`, `camera:`, `lens:`, `rating:`, `is:`, `year:`,
- * `decade:`, `month:`, `after:`, `before:`, `file:`, `text:`, `path:`, each with a leading `-` to exclude) become
+ * `decade:`, `month:`, `after:`, `before:`, `file:`, `text:`, `path:`, `albums:`, each with a leading `-` to exclude) become
  * conditions on the server's structured `SearchFilter` — the same shape the results page sends
  * (`structuredSearchRequest`) — so every palette count and result still comes from the metadata-search
  * contract. Nothing is invented: an operator whose value cannot be resolved against the account's own
@@ -204,7 +205,8 @@ export type OperatorKey =
   | 'before'
   | 'file'
   | 'text'
-  | 'path';
+  | 'path'
+  | 'albums';
 
 /** The operators the palette understands; `hint` is shown in the syntax help, as in the prototype. */
 export const SEARCH_OPERATORS: readonly { key: OperatorKey; hint: string; labelKey: Translations }[] = [
@@ -224,6 +226,7 @@ export const SEARCH_OPERATORS: readonly { key: OperatorKey; hint: string; labelK
   { key: 'file', hint: 'file:IMG_', labelKey: 'frameleaf_search_operator_file' },
   { key: 'text', hint: 'text:"lake agnes"', labelKey: 'frameleaf_search_operator_text' },
   { key: 'path', hint: 'path:2026/', labelKey: 'frameleaf_search_operator_path' },
+  { key: 'albums', hint: 'albums:2', labelKey: 'frameleaf_search_operator_albums' },
 ];
 
 const OPERATOR_KEYS: ReadonlySet<string> = new Set(SEARCH_OPERATORS.map((operator) => operator.key));
@@ -517,6 +520,15 @@ const resolveToken = (
       filter.rating = { gte: Number(value) };
       return { display: value, fields: ['rating'] };
     }
+    case 'albums': {
+      // FL-976: at least this many albums; a count cannot be excluded
+      if (!/^[1-9]\d?\+?$/.test(value) || exclude) {
+        return null;
+      }
+      const least = Number(value.replace('+', ''));
+      filter.albumCount = { gte: least };
+      return { display: String(least), fields: ['albumCount'] };
+    }
     case 'is': {
       // FL-1284: is:slomo, is:panorama, is:burst … name a capture kind
       const kind = mediaKindForWord(value);
@@ -598,6 +610,11 @@ export const tokenLabel = ($t: MessageFormatter, token: Pick<PaletteToken, 'key'
     case 'is': {
       const kind = mediaKindForWord(value);
       label = kind ? $t(mediaKindInfo(kind)!.labelKey) : $t('favorites');
+      break;
+    }
+    case 'albums': {
+      const text = albumCountText(Number(value));
+      label = $t(text.key, { values: text.values });
       break;
     }
     case 'decade': {
@@ -694,7 +711,7 @@ export const withoutTokensForFields = (tokens: string[], fields: Iterable<string
 /* Typeahead                                                                    */
 /* -------------------------------------------------------------------------- */
 
-export type SuggestionKind = 'person' | 'place' | 'tag' | 'camera' | 'year' | 'type' | 'is' | 'operator';
+export type SuggestionKind = 'person' | 'place' | 'tag' | 'camera' | 'year' | 'type' | 'is' | 'albums' | 'operator';
 
 export type PaletteSuggestion = {
   kind: SuggestionKind;
@@ -797,6 +814,9 @@ export const suggestSearchTokens = (
   push('type', 'type', 'photo', 'photo', catalog.typeCounts?.[AssetTypeEnum.Image], { labelKey: 'photos' });
   push('type', 'type', 'video', 'video', catalog.typeCounts?.[AssetTypeEnum.Video], { labelKey: 'videos' });
   push('is', 'is', 'favorite', 'favorite', catalog.favoriteCount, { labelKey: 'favorites' });
+  push('albums', 'albums', '2', 'In more than one album', undefined, {
+    labelKey: 'frameleaf_search_in_more_than_one_album',
+  });
   if (!hasOperator && typedKey.length >= 2) {
     for (const operator of operators) {
       if (operator.key.startsWith(typedKey)) {
@@ -1251,6 +1271,9 @@ const candidateTokens = (field: string, condition: Condition, catalog: PaletteCa
     }
     case 'rating': {
       return both('rating', values('gte'), []);
+    }
+    case 'albumCount': {
+      return both('albums', values('gte'), []);
     }
     case 'isFavorite': {
       return [operatorToken('is', 'favorite', condition.eq === false)];
