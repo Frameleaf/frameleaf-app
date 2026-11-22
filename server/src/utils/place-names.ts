@@ -15,7 +15,7 @@ export type PlaceNameLanguage = (typeof PLACE_NAME_LANGUAGES)[number];
  * the locale says `nb` or `no`.
  */
 export const placeNameLanguageOf = (locale: string | undefined): PlaceNameLanguage | undefined => {
-  const primary = (locale ?? '').toLowerCase().split(/[-_]/)[0];
+  const primary = (locale ?? '').toLowerCase().split(/[-_]/, 1)[0];
   const language = primary === 'no' ? 'nb' : primary;
   return PLACE_NAME_LANGUAGES.find((known) => known === language);
 };

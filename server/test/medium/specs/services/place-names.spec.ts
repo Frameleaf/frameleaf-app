@@ -2,11 +2,11 @@ import { Kysely } from 'kysely';
 import { createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import { type Server, createServer } from 'node:http';
-import type { AddressInfo } from 'node:net';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
 import { pathToFileURL } from 'node:url';
 import { gzipSync } from 'node:zlib';
+import type { AddressInfo } from 'node:net';
 import { SharedLinkType, SystemMetadataKey, UserMetadataKey } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AlbumRepository } from 'src/repositories/album.repository.js';
@@ -54,8 +54,8 @@ const places = [
   {
     id: MUNICH,
     name: 'Munich',
-    latitude: 48.137_43,
-    longitude: 11.575_49,
+    latitude: 48.13743,
+    longitude: 11.57549,
     countryCode: 'DE',
     admin1Code: '02',
     admin2Code: '091',
@@ -68,7 +68,7 @@ const places = [
     id: TOKYO,
     name: 'Tokyo',
     latitude: 35.6895,
-    longitude: 139.691_71,
+    longitude: 139.69171,
     countryCode: 'JP',
     admin1Code: '40',
     admin2Code: null,
