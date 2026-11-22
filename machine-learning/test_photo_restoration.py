@@ -1,0 +1,770 @@
+"""FL-933: the photo repair and colourise workloads of the restoration worker.
+
+The models are faked: these tests cover the adapters, the qualification gate, the wire contract,
+the still pipeline (size and orientation) and the image maths of the two runtimes. What they
+cannot show (model quality, GPU memory, speed) is qualification evidence recorded on hardware.
+"""
+
+import json
+import runpy
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+from typing import Any
+
+import cv2
+import numpy as np
+import pytest
+from PIL import Image
+from pydantic import ValidationError
+
+from frameleaf_ml.video_restoration import media
+from frameleaf_ml.video_restoration.app import upload_limit
+from frameleaf_ml.video_restoration.models import (
+    PHOTO_REPORT,
+    REQUIRED_EVIDENCE,
+    CodeFormerAdapter,
+    DdColorAdapter,
+    Manifest,
+    ModelSpec,
+    QualificationFile,
+    QualificationRecord,
+    RestorationFailure,
+    RestorationRegistry,
+    RuntimeInvocation,
+    RuntimeJob,
+    RuntimeOutcome,
+    RuntimeStatus,
+    SelectedModel,
+    WeightStatus,
+    evaluate_model,
+)
+from frameleaf_ml.video_restoration.pipeline import restore
+from frameleaf_ml.video_restoration.schemas import (
+    WORKLOAD_BY_MODE,
+    GpuDescription,
+    ModelState,
+    PhotoOperation,
+    RestorationErrorCode,
+    RestorationRequest,
+)
+
+HERE = Path(__file__).parent
+EXAMPLES = HERE / "video-restoration"
+REPAIR = runpy.run_path(str(EXAMPLES / "runtimes" / "photo_repair.py"))
+COLOURISE = runpy.run_path(str(EXAMPLES / "runtimes" / "colourise.py"))
+COMMIT = "0123456789abcdef0123456789abcdef01234567"
+IMAGE_REVISION = "image-rev-1"
+GPU = GpuDescription(name="Qualified GPU", memoryTotalBytes=12 * 1024**3, driverVersion="550.0")
+CLEAN = RuntimeStatus(present=True, clean=True)
+FRAME = "00000001.png"
+ROLES = {"codeformer": ["codeformer", "detection", "parsing", "lama"], "ddcolor": ["ddcolor"]}
+OPERATIONS = {"codeformer": "repair", "ddcolor": "colourise"}
+needs_ffmpeg = pytest.mark.skipif(
+    shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None, reason="ffmpeg is not installed"
+)
+
+
+def photo_spec(tmp_path: Path, family: str = "codeformer", **overrides: Any) -> ModelSpec:
+    payload: dict[str, Any] = {
+        "id": f"{family}-test",
+        "family": family,
+        "operation": OPERATIONS[family],
+        "displayName": "Test photo model",
+        "repository": "https://example.invalid/model",
+        "revision": COMMIT,
+        "runtime": {
+            "root": str(tmp_path / "runtime"),
+            "python": str(tmp_path / "runtime" / "python"),
+            "argv": ["{python}", "-I", "run.py", "--input-dir", "{input_dir}", "--output-dir", "{output_dir}"],
+        },
+        "weights": [
+            {"role": role, "path": f"{role}.bin", "sha256": f"{index + 1:x}" * 64}
+            for index, role in enumerate(ROLES[family])
+        ],
+        "limits": {"maxInputLongEdge": 8192, "maxFrames": 1, "maxFramesPerChunk": 1, "minVramBytes": 8 * 1024**3},
+    }
+    payload.update(overrides)
+    return ModelSpec.model_validate(payload)
+
+
+def passing_record(spec: ModelSpec, **overrides: Any) -> QualificationRecord:
+    payload: dict[str, Any] = {
+        "id": f"{spec.id}-qualified",
+        "modelId": spec.id,
+        "revision": spec.revision,
+        "weights": [{"role": weight.role, "sha256": weight.sha256} for weight in spec.weights],
+        "containerRevisions": [IMAGE_REVISION],
+        "hardware": [{"gpu": GPU.name, "driverVersion": "550.0", "cudaVersion": "12.4"}],
+        "measurements": [
+            {
+                "gpu": GPU.name,
+                "inputWidth": 4800,
+                "inputHeight": 6000,
+                "frames": 1,
+                "framesPerSecond": 0.1,
+                "peakVramBytes": 5 * 1024**3,
+            }
+        ],
+        "evidence": [
+            {"item": item, "result": "pass", "artifact": f"reports/{item}.md"}
+            for item in REQUIRED_EVIDENCE[spec.family]
+        ],
+        "license": {
+            "approved": True,
+            "code": "Apache-2.0",
+            "weights": "Apache-2.0",
+            "reviewedBy": "reviewer",
+            "reviewedAt": "2026-10-17",
+        },
+        "reviewedBy": "qualifier",
+        "reviewedAt": "2026-11-22",
+    }
+    payload.update(overrides)
+    return QualificationRecord.model_validate(payload)
+
+
+def make_registry(
+    tmp_path: Path, specs: list[ModelSpec], records: list[QualificationRecord], gpus: list[GpuDescription] | None = None
+) -> RestorationRegistry:
+    for spec in specs:
+        for weight in spec.weights:
+            (tmp_path / weight.path).write_bytes(weight.role.encode())
+    manifest = {
+        "schemaVersion": 1,
+        "weightsRoot": str(tmp_path),
+        "models": [spec.model_dump(mode="json") for spec in specs],
+    }
+    (tmp_path / "models.json").write_text(json.dumps(manifest))
+    (tmp_path / "qualification.json").write_text(
+        json.dumps({"schemaVersion": 1, "records": [record.model_dump(mode="json") for record in records]})
+    )
+
+    class Verified:
+        def verify(self, spec: ModelSpec, weights_root: Path) -> WeightStatus:
+            return WeightStatus()
+
+    return RestorationRegistry(
+        tmp_path / "models.json",
+        tmp_path / "qualification.json",
+        gpu_query=lambda: [GPU] if gpus is None else gpus,
+        runtime_inspector=lambda _: CLEAN,
+        verifier=Verified(),  # type: ignore[arg-type]
+        container_revision=IMAGE_REVISION,
+    )
+
+
+class TestManifest:
+    def test_example_entries_load_and_serve_nothing(self) -> None:
+        registry = RestorationRegistry(
+            EXAMPLES / "models.example.json",
+            EXAMPLES / "qualification.example.json",
+            gpu_query=lambda: [GPU],
+            container_revision=IMAGE_REVISION,
+        )
+
+        report = registry.refresh()
+
+        assert report.configurationProblems == []
+        assert {model.id: model.operation for model in report.photoModels} == {
+            "codeformer-photo-repair": PhotoOperation.REPAIR,
+            "ddcolor-colourise": PhotoOperation.COLOURISE,
+        }
+        assert all(model.state == ModelState.NOT_PINNED for model in report.photoModels)
+        assert all(model.operation is None for model in report.models)
+        assert report.workloads == []
+
+    def test_example_records_ask_for_exactly_the_required_evidence(self) -> None:
+        manifest = Manifest.model_validate(json.loads((EXAMPLES / "models.example.json").read_text()))
+        records = QualificationFile.model_validate(json.loads((EXAMPLES / "qualification.example.json").read_text()))
+        by_model = {record.modelId: record for record in records.records}
+
+        for spec in manifest.models:
+            if spec.operation is None:
+                continue
+            record = by_model[spec.id]
+            assert {evidence.item for evidence in record.evidence} == REQUIRED_EVIDENCE[spec.family]
+            assert [weight.role for weight in record.weights] == [weight.role for weight in spec.weights]
+            assert all(weight.source is not None for weight in spec.weights)
+            assert spec.limits.maxInputLongEdge == 8192 and spec.requiresGpu
+
+    def test_weights_come_from_the_frameleaf_model_source_only(self) -> None:
+        text = (EXAMPLES / "models.example.json").read_text()
+        photo = text[text.index('"codeformer-photo-repair"') :]
+
+        assert "huggingface" not in photo and "modelscope.cn" not in photo and "releases/download" not in photo
+
+    @pytest.mark.parametrize(
+        "overrides",
+        [
+            {"requiresGpu": False},
+            {"mode": "faithful"},
+            {"operation": "colourise"},
+            {"operation": None, "mode": "faithful"},
+            {"nativeScale": 2},
+            {"limits": {"maxInputLongEdge": 8192, "maxFrames": 2, "maxFramesPerChunk": 1, "minVramBytes": 0}},
+            {"weights": [{"role": "codeformer", "path": "codeformer.bin", "sha256": "1" * 64}]},
+        ],
+    )
+    def test_refuses_a_photo_model_that_is_not_gpu_only_stills(self, tmp_path: Path, overrides: dict[str, Any]) -> None:
+        with pytest.raises(ValidationError):
+            photo_spec(tmp_path, **overrides)
+
+    def test_refuses_the_cpu_switch_in_a_manifest(self, tmp_path: Path) -> None:
+        runtime = {"root": "/r", "python": "/r/python", "argv": ["{python}", "run.py", "--allow-cpu"]}
+
+        with pytest.raises(ValidationError, match="invalid photo runtime"):
+            photo_spec(tmp_path, runtime=runtime)
+
+    def test_a_restoration_family_cannot_claim_an_operation(self, tmp_path: Path) -> None:
+        with pytest.raises(ValidationError, match="does not serve"):
+            ModelSpec.model_validate({**photo_spec(tmp_path).model_dump(mode="json"), "family": "rife"})
+
+
+class TestGate:
+    @pytest.mark.parametrize(("family", "workload"), [("codeformer", "photo-repair"), ("ddcolor", "colourise")])
+    def test_lists_the_workload_only_with_a_passing_record(self, tmp_path: Path, family: str, workload: str) -> None:
+        spec = photo_spec(tmp_path, family)
+
+        qualified = make_registry(tmp_path, [spec], [passing_record(spec)]).refresh()
+        assert qualified.workloads == [workload]
+        assert [model.state for model in qualified.photoModels] == [ModelState.AVAILABLE]
+        # A server that predates the photo workloads reads only ``models``: nothing there may change.
+        assert qualified.models == []
+
+        for record in ([], [passing_record(spec, reviewedBy=None)], [passing_record(spec, revision="f" * 40)]):
+            unqualified = make_registry(tmp_path, [spec], record).refresh()
+            assert unqualified.workloads == []
+            assert [model.state for model in unqualified.photoModels] == [ModelState.UNQUALIFIED]
+
+    def test_one_pending_evidence_item_keeps_the_workload_out(self, tmp_path: Path) -> None:
+        spec = photo_spec(tmp_path, "ddcolor")
+        evidence = [
+            {"item": item, "result": "pending" if item == "colour-plausibility" else "pass", "artifact": "run 1"}
+            for item in REQUIRED_EVIDENCE["ddcolor"]
+        ]
+
+        report = make_registry(tmp_path, [spec], [passing_record(spec, evidence=evidence)]).refresh()
+
+        assert report.workloads == []
+        assert "evidence colour-plausibility is pending" in report.photoModels[0].reasons
+
+    def test_without_a_gpu_the_workload_is_refused_with_the_reason(self, tmp_path: Path) -> None:
+        spec = photo_spec(tmp_path)
+        registry = make_registry(tmp_path, [spec], [passing_record(spec)], gpus=[])
+
+        report = registry.refresh()
+        assert report.workloads == []
+        assert report.photoModels[0].state == ModelState.NO_GPU
+        assert report.photoModels[0].reasons == ["no NVIDIA GPU is visible to the worker"]
+        with pytest.raises(RestorationFailure) as error:
+            registry.select(None, None, None, kind="image", operation=PhotoOperation.REPAIR)
+        assert error.value.code == RestorationErrorCode.MODEL_UNAVAILABLE
+        assert "no NVIDIA GPU is visible to the worker" in error.value.message
+
+    def test_an_unqualified_gpu_or_too_little_memory_is_refused(self, tmp_path: Path) -> None:
+        spec = photo_spec(tmp_path)
+        other = GpuDescription(name="Another GPU", memoryTotalBytes=12 * 1024**3, driverVersion="550.0")
+        small = GpuDescription(name=GPU.name, memoryTotalBytes=6 * 1024**3, driverVersion="550.0")
+
+        for gpu, state in ((other, ModelState.GPU_UNQUALIFIED), (small, ModelState.INSUFFICIENT_VRAM)):
+            capability = evaluate_model(
+                spec,
+                runtime=CLEAN,
+                weights=WeightStatus(),
+                records=[passing_record(spec)],
+                gpus=[gpu],
+                container_revision=IMAGE_REVISION,
+            )
+            assert capability.state == state
+
+    def test_modes_and_operations_never_answer_for_each_other(self, tmp_path: Path) -> None:
+        repair, colour = photo_spec(tmp_path), photo_spec(tmp_path, "ddcolor")
+        registry = make_registry(tmp_path, [repair, colour], [passing_record(repair), passing_record(colour)])
+
+        assert registry.refresh().workloads == ["photo-repair", "colourise"]
+        assert not set(registry.report().workloads) & set(WORKLOAD_BY_MODE.values())
+        assert registry.select(None, None, None, kind="image", operation=PhotoOperation.COLOURISE).spec.id == colour.id
+        for mode in WORKLOAD_BY_MODE:
+            with pytest.raises(RestorationFailure):
+                registry.select(mode, None, None, kind="image")
+        assert upload_limit(registry) >= 8192 * 8192 * 3
+
+
+def request(**overrides: Any) -> RestorationRequest:
+    payload: dict[str, Any] = {
+        "protocol": "restoration-v1",
+        "requestId": "request-1",
+        "operation": "repair",
+        "kind": "image",
+        "scale": 1,
+        "source": {"width": 41, "height": 23},
+    }
+    payload.update(overrides)
+    return RestorationRequest.model_validate(payload)
+
+
+class TestWire:
+    @pytest.mark.parametrize(
+        "overrides",
+        [{"scale": 2}, {"kind": "video"}, {"mode": "faithful"}, {"operation": None}, {"interpolationFactor": 2}],
+    )
+    def test_refuses_a_request_that_is_not_a_same_size_still(self, overrides: dict[str, Any]) -> None:
+        with pytest.raises(ValidationError):
+            request(**overrides)
+
+    def test_a_mode_request_still_parses_without_an_operation(self) -> None:
+        parsed = request(operation=None, mode="faithful", scale=2)
+
+        assert parsed.operation is None and parsed.mode == "faithful"
+
+
+def copying_runner(report: dict[str, Any] | str | None = None, *, transform: Any = None) -> Any:
+    """A runtime that copies its frame (optionally changed) and leaves a report."""
+
+    def run(invocation: RuntimeInvocation) -> RuntimeOutcome:
+        arguments = invocation.argv
+        source = Path(arguments[arguments.index("--input-dir") + 1]) / FRAME
+        output = Path(arguments[arguments.index("--output-dir") + 1])
+        with Image.open(source) as image:
+            (transform(image) if transform else image).save(output / FRAME)
+        if report is not None:
+            (output / PHOTO_REPORT).write_text(report if isinstance(report, str) else json.dumps(report))
+        return RuntimeOutcome(duration_ms=1200, peak_vram_bytes=3 * 1024**3)
+
+    return run
+
+
+def job(tmp_path: Path, **overrides: Any) -> RuntimeJob:
+    frames = tmp_path / "source-frames"
+    frames.mkdir()
+    Image.new("RGB", (41, 23), (120, 110, 100)).save(frames / FRAME)
+    values: dict[str, Any] = {
+        "work_dir": tmp_path,
+        "source_frames": frames,
+        "frame_count": 1,
+        "frame_rate": "1/1",
+        "source_size": (41, 23),
+        "target_size": (41, 23),
+        "seed": 0,
+        "kind": "image",
+    }
+    values.update(overrides)
+    return RuntimeJob(**values)
+
+
+class TestAdapters:
+    @pytest.mark.parametrize(("adapter", "family"), [(CodeFormerAdapter, "codeformer"), (DdColorAdapter, "ddcolor")])
+    def test_expects_the_source_size_and_passes_the_runtime_warnings_on(
+        self, tmp_path: Path, adapter: Any, family: str
+    ) -> None:
+        runner = copying_runner({"warnings": ["1 face(s) were too small to restore", 7], "facesFound": 1})
+
+        run = adapter(photo_spec(tmp_path, family), tmp_path, runner).run(job(tmp_path))
+
+        assert run.expected_size == (41, 23)
+        assert run.warnings == ["1 face(s) were too small to restore"]
+        assert run.peak_vram_bytes == 3 * 1024**3
+        assert media.list_frames(run.frames_dir) == [run.frames_dir / FRAME]
+
+    @pytest.mark.parametrize("report", ["not json", "[]", json.dumps({"warnings": "none"}), "x" * 20000])
+    def test_ignores_a_report_it_does_not_understand(self, tmp_path: Path, report: str) -> None:
+        run = CodeFormerAdapter(photo_spec(tmp_path), tmp_path, copying_runner(report)).run(job(tmp_path))
+
+        assert run.warnings == []
+
+    def test_refuses_a_video(self, tmp_path: Path) -> None:
+        for overrides in ({"kind": "video"}, {"frame_count": 2}):
+            with pytest.raises(RestorationFailure) as error:
+                DdColorAdapter(photo_spec(tmp_path, "ddcolor"), tmp_path, copying_runner()).run(
+                    job(tmp_path, **overrides)
+                )
+            assert error.value.code == RestorationErrorCode.UNSUPPORTED_INPUT
+            shutil.rmtree(tmp_path / "source-frames")
+
+    def test_the_runtime_gets_only_the_manifest_command(self, tmp_path: Path) -> None:
+        seen: list[RuntimeInvocation] = []
+
+        def runner(invocation: RuntimeInvocation) -> RuntimeOutcome:
+            seen.append(invocation)
+            return copying_runner()(invocation)
+
+        CodeFormerAdapter(photo_spec(tmp_path), tmp_path, runner).run(job(tmp_path))
+
+        assert seen[0].argv[:3] == [str(tmp_path / "runtime" / "python"), "-I", "run.py"]
+        assert "--allow-cpu" not in seen[0].argv and seen[0].payload is None
+
+
+@pytest.fixture
+def ffmpeg_timing(monkeypatch: pytest.MonkeyPatch) -> None:
+    # The image pins Ubuntu's ffmpeg 4.4; ffmpeg 9 dropped the -vsync spelling of the same mode.
+    version = subprocess.run(["ffmpeg", "-version"], capture_output=True, text=True, check=True).stdout
+    if int(version.split()[2].split(".")[0]) >= 9:
+        monkeypatch.setattr(media, "PASSTHROUGH_TIMING", ["-fps_mode", "passthrough"])
+
+
+@needs_ffmpeg
+@pytest.mark.usefixtures("ffmpeg_timing")
+class TestPipeline:
+    def run(
+        self, tmp_path: Path, upload: Path, size: tuple[int, int], family: str = "codeformer", transform: Any = None
+    ) -> Any:
+        spec = photo_spec(tmp_path, family)
+        registry = make_registry(tmp_path, [spec], [passing_record(spec)])
+        work = tmp_path / "work"
+        work.mkdir()
+
+        def factory(selected: SelectedModel) -> Any:
+            adapter = CodeFormerAdapter if family == "codeformer" else DdColorAdapter
+            return adapter(selected.spec, selected.weights_root, copying_runner({"warnings": []}, transform=transform))
+
+        parsed = request(operation=OPERATIONS[family], source={"width": size[0], "height": size[1]})
+        return restore(registry, parsed, upload, work, adapter_factory=factory)
+
+    def test_keeps_the_exact_size_and_the_orientation_tag(self, tmp_path: Path) -> None:
+        # Orientation 6: the stored grid is 41 x 23 and a viewer turns it a quarter turn. Odd sizes on
+        # purpose: a restoration rounds to even numbers, a photo operation must not.
+        pixels = np.repeat(np.tile(np.linspace(10, 240, 41, dtype=np.uint8), (23, 1))[..., None], 3, axis=2)
+        exif = Image.Exif()
+        exif[media.EXIF_ORIENTATION] = 6
+        upload = tmp_path / "upload"
+        Image.fromarray(pixels).save(upload, format="JPEG", quality=95, exif=exif)
+
+        result, output = self.run(tmp_path, upload, (41, 23))
+
+        assert (result.output.width, result.output.height) == (41, 23)
+        assert result.operation == PhotoOperation.REPAIR and result.mode is None
+        assert result.model.operation == PhotoOperation.REPAIR and result.model.mode is None
+        assert result.output.container == "png" and result.output.frameCount == 1
+        with Image.open(output) as restored:
+            assert restored.size == (41, 23)
+            assert restored.getexif().get(media.EXIF_ORIENTATION) == 6
+            # The stored pixels are the source's, not a rotated copy of them.
+            assert np.abs(np.asarray(restored.convert("RGB"), dtype=np.int16) - pixels).mean() < 12
+
+    def test_a_photo_without_a_tag_gets_none(self, tmp_path: Path) -> None:
+        upload = tmp_path / "upload"
+        Image.new("RGB", (64, 48), (90, 120, 150)).save(upload, format="PNG")
+
+        _, output = self.run(tmp_path, upload, (64, 48), family="ddcolor")
+
+        with Image.open(output) as restored:
+            assert restored.size == (64, 48) and media.EXIF_ORIENTATION not in restored.getexif()
+
+    def test_a_greyscale_photo_comes_back_as_rgb_of_the_same_size(self, tmp_path: Path) -> None:
+        upload = tmp_path / "upload"
+        gradient = np.tile(np.linspace(20, 230, 57, dtype=np.uint8), (33, 1))
+        Image.fromarray(gradient, mode="L").save(upload, format="JPEG", quality=95)
+
+        result, output = self.run(tmp_path, upload, (57, 33), family="ddcolor")
+
+        with Image.open(output) as restored:
+            assert restored.size == (57, 33) and restored.mode == "RGB"
+        assert result.output.bitDepth == 8
+
+    def test_refuses_sixteen_bit_input_clearly(self, tmp_path: Path) -> None:
+        upload = tmp_path / "upload"
+        cv2.imwrite(str(tmp_path / "deep.png"), np.full((32, 32, 3), 40000, dtype=np.uint16))
+        (tmp_path / "deep.png").rename(upload)
+
+        with pytest.raises(RestorationFailure) as error:
+            self.run(tmp_path, upload, (32, 32))
+
+        assert error.value.code == RestorationErrorCode.UNSUPPORTED_INPUT
+        assert "16-bit sources are not qualified" in error.value.message
+
+    def test_refuses_a_runtime_that_changes_the_size(self, tmp_path: Path) -> None:
+        upload = tmp_path / "upload"
+        Image.new("RGB", (64, 48), (90, 120, 150)).save(upload, format="PNG")
+
+        with pytest.raises(RestorationFailure) as error:
+            self.run(tmp_path, upload, (64, 48), transform=lambda image: image.resize((128, 96)))
+
+        assert error.value.code == RestorationErrorCode.INVALID_OUTPUT
+
+    def test_refuses_a_scan_over_the_long_edge_limit(self, tmp_path: Path) -> None:
+        upload = tmp_path / "upload"
+        Image.new("L", (8200, 16), 128).save(upload, format="PNG")
+
+        with pytest.raises(RestorationFailure) as error:
+            self.run(tmp_path, upload, (8200, 16))
+
+        assert error.value.code == RestorationErrorCode.UNSUPPORTED_INPUT and "8192" in error.value.message
+
+
+# ---------------------------------------------------------------------------------------
+# The runtimes' image maths, with the models faked.
+# ---------------------------------------------------------------------------------------
+
+
+def old_print(height: int = 600, width: int = 800) -> np.ndarray:
+    """A soft, slightly grainy picture: smooth tones like a studio backdrop."""
+    rng = np.random.default_rng(933)
+    ramp = (
+        np.linspace(70, 170, width, dtype=np.float32)[None, :] + np.linspace(-20, 20, height, dtype=np.float32)[:, None]
+    )
+    grain = rng.normal(0, 3, (height, width)).astype(np.float32)
+    return np.repeat(np.clip(ramp + grain, 0, 255).astype(np.uint8)[..., None], 3, axis=2)
+
+
+class TestScratchMask:
+    def test_finds_a_hairline_scratch_and_dust_but_not_the_picture(self) -> None:
+        photo = old_print()
+        cv2.line(photo, (100, 80), (520, 300), (250, 250, 250), 2)
+        for x, y in ((650, 100), (700, 420), (60, 500)):
+            cv2.circle(photo, (x, y), 2, (5, 5, 5), -1)
+
+        mask = REPAIR["scratch_mask"](photo, [])
+
+        assert mask.shape == photo.shape[:2] and mask.dtype == np.uint8
+        assert mask[190, 310] == 255 and mask[100, 650] == 255 and mask[500, 60] == 255
+        assert 0 < np.count_nonzero(mask) / mask.size < 0.01
+        assert not REPAIR["scratch_mask"](old_print(), []).any()
+
+    def test_never_marks_anything_inside_a_face(self) -> None:
+        photo = old_print()
+        cv2.circle(photo, (400, 300), 2, (255, 255, 255), -1)  # a catchlight in an eye
+        cv2.line(photo, (300, 250), (500, 350), (250, 250, 250), 2)
+
+        mask = REPAIR["scratch_mask"](photo, [(340, 240, 460, 360)])
+
+        margin = int(120 * REPAIR["FACE_MARGIN"])
+        assert not mask[240 - margin : 360 + margin, 340 - margin : 460 + margin].any()
+
+    def test_leaves_texture_alone(self) -> None:
+        rng = np.random.default_rng(1)
+        texture = np.repeat(rng.integers(0, 255, (400, 400, 1), dtype=np.uint8), 3, axis=2)
+
+        assert np.count_nonzero(REPAIR["scratch_mask"](texture, [])) / texture[..., 0].size < 0.001
+
+    def test_keeps_a_wide_bright_shape(self) -> None:
+        photo = old_print()
+        cv2.rectangle(photo, (200, 200), (260, 420), (250, 250, 250), -1)  # a white collar, not a scratch
+
+        assert not REPAIR["scratch_mask"](photo, [])[230:400, 215:245].any()
+
+
+def box_fill(window: np.ndarray, window_mask: np.ndarray) -> np.ndarray:
+    """A stand-in for the inpainting model: a local average, so its answer depends on its context."""
+    return cv2.blur(window, (31, 31), borderType=cv2.BORDER_REFLECT_101)
+
+
+class TestInpaintTiles:
+    @pytest.mark.parametrize("size", [(300, 420), (512, 512), (900, 1300), (385, 1025)])
+    def test_windows_match_one_whole_pass_at_seams_and_edges(self, size: tuple[int, int]) -> None:
+        height, width = size
+        rng = np.random.default_rng(height)
+        photo = rng.integers(0, 255, (height, width, 3), dtype=np.uint8)
+        mask = np.zeros((height, width), dtype=np.uint8)
+        cv2.line(mask, (0, 3), (width - 1, height - 4), 255, 3)  # crosses every window seam
+        cv2.line(mask, (width - 1, 0), (0, height - 1), 255, 3)
+        whole = cv2.blur(photo, (31, 31), borderType=cv2.BORDER_REFLECT_101)
+
+        output, tiles = REPAIR["inpaint_tiled"](photo, mask, box_fill)
+
+        assert output.shape == photo.shape and tiles >= 1
+        assert np.array_equal(output[mask == 0], photo[mask == 0])
+        inner = np.zeros_like(mask, dtype=bool)
+        inner[16:-16, 16:-16] = True  # the stand-in's own border handling differs only at the photo's edge
+        assert np.array_equal(output[(mask > 0) & inner], whole[(mask > 0) & inner])
+
+    def test_an_empty_mask_runs_no_window(self) -> None:
+        photo = old_print(200, 300)
+
+        output, tiles = REPAIR["inpaint_tiled"](photo, np.zeros((200, 300), np.uint8), box_fill)
+
+        assert tiles == 0 and np.array_equal(output, photo)
+
+    def test_refuses_a_model_answer_of_the_wrong_shape(self) -> None:
+        mask = np.zeros((200, 300), np.uint8)
+        mask[50, 50] = 255
+
+        with pytest.raises(ValueError, match="invalid window"):
+            REPAIR["inpaint_tiled"](old_print(200, 300), mask, lambda window, _: window[:100])
+
+
+def face_row(centre: tuple[float, float], eye_distance: float) -> np.ndarray:
+    """A detection whose landmarks are the trained layout, scaled and moved."""
+    template = REPAIR["FACE_TEMPLATE"]
+    scale = eye_distance / float(np.linalg.norm(template[0] - template[1]))
+    landmarks = (template - 256.0) * scale + np.array(centre, dtype=np.float32)
+    box = [centre[0] - 100 * scale, centre[1] - 130 * scale, centre[0] + 100 * scale, centre[1] + 130 * scale, 0.99]
+    return np.concatenate((np.array(box, dtype=np.float32), landmarks.reshape(-1)))
+
+
+def fake_models(faces: list[np.ndarray], *, fill: Any = box_fill) -> Any:
+    def parse(face: np.ndarray) -> np.ndarray:
+        classes = np.zeros((512, 512), dtype=np.int64)
+        classes[96:416, 96:416] = 1
+        return REPAIR["face_blend_mask"](classes)
+
+    return REPAIR["Models"](
+        detect=lambda bgr: np.stack(faces) if faces else np.zeros((0, 15), np.float32),
+        restore=lambda face: np.full_like(face, 200),
+        parse=parse,
+        fill=fill,
+    )
+
+
+class TestRepair:
+    def test_restores_the_face_and_leaves_the_rest_untouched(self) -> None:
+        photo = old_print(701, 933)
+
+        output, report = REPAIR["repair"](photo, fake_models([face_row((460.0, 350.0), 60.0)]))
+
+        assert output.shape == photo.shape and output.dtype == np.uint8
+        assert (report.facesFound, report.facesRestored) == (1, 1)
+        assert abs(int(output[350, 460, 0]) - 200) <= 2
+        changed = np.argwhere(np.abs(output.astype(np.int16) - photo).max(axis=2) > 0)
+        reach = 256 * 60.0 / 125.92 + 2  # half the 512 px crop, in source pixels
+        assert np.abs(changed - np.array([350, 460])).max() <= reach
+        assert not np.array_equal(output, photo) and np.array_equal(photo, old_print(701, 933))
+
+    def test_leaves_tiny_and_oversized_faces_alone_and_says_so(self) -> None:
+        photo = old_print(600, 800)
+        faces = [face_row((200.0, 200.0), 6.0), face_row((400.0, 300.0), 600.0)]
+
+        output, report = REPAIR["repair"](photo, fake_models(faces))
+
+        assert np.array_equal(output, photo)
+        assert (report.facesRestored, report.facesSkippedSmall, report.facesSkippedLarge) == (0, 1, 1)
+        assert len(report.warnings) == 2
+
+    def test_skips_the_scratch_pass_over_the_mask_limit(self) -> None:
+        photo = old_print(400, 400)
+        for offset in range(0, 400, 12):  # scratched all over
+            cv2.line(photo, (offset, 0), (offset, 399), (250, 250, 250), 1)
+
+        def refuse(window: np.ndarray, window_mask: np.ndarray) -> np.ndarray:
+            raise AssertionError("the inpainting model must not run")
+
+        output, report = REPAIR["repair"](photo, fake_models([], fill=refuse))
+
+        assert report.scratchPass == "skipped-over-cap" and report.scratchMaskFraction > REPAIR["MASK_CAP"]
+        assert "skipped" in report.warnings[0] and np.array_equal(output, photo)
+
+    def test_fills_scratches_outside_the_face_only(self) -> None:
+        photo = old_print(600, 800)
+        cv2.line(photo, (40, 40), (300, 90), (250, 250, 250), 2)
+        cv2.line(photo, (540, 280), (660, 320), (250, 250, 250), 2)  # across the face
+
+        seen: list[np.ndarray] = []
+
+        def fill(window: np.ndarray, window_mask: np.ndarray) -> np.ndarray:
+            seen.append(window_mask)
+            return box_fill(window, window_mask)
+
+        output, report = REPAIR["repair"](photo, fake_models([face_row((600.0, 300.0), 50.0)], fill=fill))
+
+        assert report.scratchPass == "applied" and report.scratchTiles == len(seen) >= 1
+        assert output[65, 170, 0] < 200  # the scratch outside the face is gone
+        assert 0 < report.scratchMaskFraction <= REPAIR["MASK_CAP"]
+
+    def test_detection_runs_on_a_bounded_copy_and_maps_back(self) -> None:
+        sizes: list[tuple[int, ...]] = []
+
+        def detect(bgr: np.ndarray) -> np.ndarray:
+            sizes.append(bgr.shape)
+            return face_row((100.0, 100.0), 20.0)[None]
+
+        faces = REPAIR["detect_faces"](np.zeros((3000, 6144, 3), np.uint8), detect)
+
+        assert sizes == [(750, 1536, 3)]
+        assert np.allclose(faces[0, :2] * 0.25, face_row((100.0, 100.0), 20.0)[:2])
+        assert faces[0, 4] == pytest.approx(0.99)
+
+
+class TestColourise:
+    def test_keeps_the_size_and_the_lightness_of_the_photo(self) -> None:
+        photo = old_print(333, 517)
+        colour = np.zeros((512, 512, 2), dtype=np.float32)
+        colour[..., 0], colour[..., 1] = 12.0, 18.0  # a warm cast
+
+        output = COLOURISE["colourise"](photo, lambda grey: colour)
+
+        assert output.shape == photo.shape and output.dtype == np.uint8
+        before = cv2.cvtColor(photo.astype(np.float32) / 255, cv2.COLOR_RGB2Lab)
+        after = cv2.cvtColor(output.astype(np.float32) / 255, cv2.COLOR_RGB2Lab)
+        assert np.abs(after[..., 0] - before[..., 0]).max() < 1.5
+        assert after[..., 1].mean() == pytest.approx(12.0, abs=1.0) and after[..., 2].mean() == pytest.approx(
+            18.0, abs=1.0
+        )
+
+    def test_no_colour_from_the_model_returns_the_photo(self) -> None:
+        photo = old_print(250, 190)
+
+        output = COLOURISE["colourise"](photo, lambda grey: np.zeros((512, 512, 2), np.float32))
+
+        assert np.abs(output.astype(np.int16) - photo).max() <= 1
+
+    def test_strips_join_without_a_seam(self) -> None:
+        rows = COLOURISE["STRIP_ROWS"]
+        photo = old_print(rows + 37, 64)
+        colour = np.zeros((512, 512, 2), dtype=np.float32)
+        colour[..., 1] = np.linspace(-30, 30, 512, dtype=np.float32)[:, None]
+
+        output = COLOURISE["merge_colour"](photo, colour).astype(np.int16)
+
+        step = np.abs(np.diff(output, axis=0)).max(axis=(1, 2))
+        assert step[rows - 1] <= step[rows - 20 : rows + 20].max() and step[rows - 1] < 40
+
+    def test_the_model_sees_a_grey_square_of_its_own_size(self) -> None:
+        rng = np.random.default_rng(3)
+        grey = COLOURISE["model_input"](rng.integers(0, 255, (300, 700, 3), dtype=np.uint8))
+
+        assert grey.shape == (3, 512, 512) and grey.dtype == np.float32
+        assert np.abs(grey[0] - grey[1]).max() < 0.02 and np.abs(grey[1] - grey[2]).max() < 0.02
+
+    def test_refuses_model_output_of_the_wrong_shape_or_with_nan(self) -> None:
+        photo = old_print(64, 64)
+        broken = np.full((512, 512, 2), np.nan, dtype=np.float32)
+
+        for answer in (np.zeros((256, 256, 2), np.float32), broken):
+            with pytest.raises(ValueError, match="invalid output"):
+                COLOURISE["colourise"](photo, lambda grey, answer=answer: answer)
+
+    def test_tells_a_toned_scan_from_a_colour_photo(self) -> None:
+        sepia = old_print(128, 128).astype(np.float32) * np.array([1.0, 0.99, 0.985])
+        colour = old_print(128, 128)
+        colour[..., 2] //= 2
+
+        assert COLOURISE["is_greyscale"](old_print(128, 128))
+        assert COLOURISE["is_greyscale"](sepia.astype(np.uint8))
+        assert not COLOURISE["is_greyscale"](colour)
+
+
+@pytest.mark.parametrize(
+    ("script", "weights", "reason"),
+    [
+        ("photo_repair.py", ["--codeformer", "--detection", "--parsing", "--lama"], "photo repair needs an NVIDIA GPU"),
+        ("colourise.py", ["--checkpoint"], "colourise needs an NVIDIA GPU"),
+    ],
+)
+def test_a_runtime_without_a_gpu_refuses_with_the_reason(
+    tmp_path: Path, script: str, weights: list[str], reason: str
+) -> None:
+    import torch
+
+    if torch.cuda.is_available():
+        pytest.skip("this machine has a CUDA device")
+    (tmp_path / "in").mkdir()
+    (tmp_path / "out").mkdir()
+    Image.new("RGB", (32, 32), (128, 128, 128)).save(tmp_path / "in" / FRAME)
+    arguments = [sys.executable, "-I", str(EXAMPLES / "runtimes" / script)]
+    arguments += [
+        "--input-dir",
+        str(tmp_path / "in"),
+        "--output-dir",
+        str(tmp_path / "out"),
+        "--runtime-root",
+        str(tmp_path),
+    ]
+    for name in weights:
+        arguments += [name, str(tmp_path / "missing.bin")]
+
+    completed = subprocess.run(arguments, capture_output=True, text=True, timeout=120, check=False)
+
+    assert completed.returncode == 1
+    assert reason in completed.stderr and "no CUDA device is available" in completed.stderr
+    assert list((tmp_path / "out").iterdir()) == []
