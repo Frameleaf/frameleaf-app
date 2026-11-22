@@ -43,6 +43,7 @@
     showDeleteModal,
   } from '$lib/stores/preferences.store';
   import { reduceMotion } from '$lib/stores/reduce-motion.store';
+  import { systemFont } from '$lib/stores/system-font.store';
   import { createDateFormatter, findLocale } from '$lib/utils';
   import { handleError } from '$lib/utils/handle-error';
   import { convertBCP47, languageChoices, languageCodeFor } from '$lib/utils/i18n';
@@ -216,6 +217,25 @@
           onChange={(value) => albums.set('display.hourCycle', value as DisplayFormat['hourCycle'])}
         />
       </Row>
+      <Row label={$t('frameleaf_prefs_look_system_font')} help={$t('frameleaf_prefs_look_system_font_help')}>
+        {#snippet details()}
+          <span class="font-samples" aria-hidden="true">
+            <span class="font-sample is-frameleaf" class:is-on={!$systemFont}>
+              <small>{$t('frameleaf_prefs_look_system_font_frameleaf')}</small>
+              {$t('frameleaf_prefs_look_system_font_sample')}
+            </span>
+            <span class="font-sample is-system" class:is-on={$systemFont}>
+              <small>{$t('frameleaf_prefs_look_system_font_system')}</small>
+              {$t('frameleaf_prefs_look_system_font_sample')}
+            </span>
+          </span>
+        {/snippet}
+        <Switch
+          label={$t('frameleaf_prefs_look_system_font')}
+          checked={$systemFont}
+          onChange={(value) => ($systemFont = value)}
+        />
+      </Row>
       <Row label={$t('frameleaf_prefs_look_motion')} help={$t('frameleaf_prefs_look_motion_help')}>
         <Switch
           label={$t('frameleaf_prefs_look_motion')}
@@ -356,3 +376,37 @@
     </Section>
   </KitPage>
 </OwnPreferencesForm>
+
+<style>
+  .font-samples {
+    display: grid;
+    gap: 8px;
+    margin-top: 12px;
+  }
+  .font-sample {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 4px 12px;
+    padding: 8px 12px;
+    color: var(--fl-text);
+    font-size: var(--fl-font-base);
+    border: 1px solid var(--fl-border);
+    border-radius: var(--fl-radius-control);
+  }
+  .font-sample.is-on {
+    border-color: var(--fl-accent);
+  }
+  .font-sample small {
+    min-width: 72px;
+    color: var(--fl-muted);
+    font-family: var(--fl-family-ui);
+    font-size: var(--fl-font-small);
+  }
+  .font-sample.is-frameleaf {
+    font-family: 'Inter', sans-serif;
+  }
+  .font-sample.is-system {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, system-ui, sans-serif;
+  }
+</style>

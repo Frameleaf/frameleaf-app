@@ -16,6 +16,7 @@
     helpId,
     lead,
     link,
+    details,
     children,
   }: {
     label: string;
@@ -25,6 +26,8 @@
     /** The chosen value the help starts with, drawn bold. */
     lead?: string;
     link?: { text: string; href: string; external?: boolean };
+    /** Drawn under the help, for a preview that belongs to the setting. */
+    details?: Snippet;
     children?: Snippet;
   } = $props();
 
@@ -50,6 +53,7 @@
     {#if link}
       <span class="link"><TextLink href={link.href} external={link.external}>{link.text}</TextLink></span>
     {/if}
+    {@render details?.()}
   </div>
   {#if children}<div class="control">{@render children()}</div>{/if}
 </div>

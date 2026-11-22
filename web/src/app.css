@@ -560,3 +560,11 @@ body:not(.asset-viewer-open) {
     transform: var(--kb-to);
   }
 }
+
+/* FL-983 "Use system font": `.frameleaf` and the viewer set the stack again, so it is overridden there too. */
+:root[data-font='system'],
+:root[data-font='system'] .fl-media-viewer,
+:root[data-font='system'] .frameleaf {
+  --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, system-ui, sans-serif;
+  --fl-family-ui: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, system-ui, sans-serif;
+}
