@@ -1,0 +1,103 @@
+{
+  "schemaVersion": 1,
+  "description": "Public-domain scanned prints for qualifying the photo repair and colourise workloads (FL-933). Links only: no image is kept in this repository. Each file was fetched once from Wikimedia Commons and hashed; licenceTag is the public-domain tag its Commons page carries.",
+  "source": "Wikimedia Commons",
+  "scans": [
+    {
+      "id": "scan-001",
+      "group": "group",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/b/bc/Andr%C3%A9_Waroquy_-_Le_Petit_D%C3%A9jeuner.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+      "sha256": "54395651138a57a6f89ae9061b5cafadf5427a79cc3c35e89ef4998b3d110738",
+      "bytes": 497449,
+      "width": 1210,
+      "height": 1535,
+      "licence": "public domain",
+      "licenceTag": "Public domain",
+      "sourcePage": "https://commons.wikimedia.org/wiki/File:Andr%C3%A9_Waroquy_-_Le_Petit_D%C3%A9jeuner.jpg"
+    },
+    {
+      "id": "scan-002",
+      "group": "group",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/f/f3/Anton_Wilhelm_Tischbein_Familie_Michael_Fellner_1770.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+      "sha256": "5ed3a341d75bea9ce21394bc42c35f4af5470c2f9cf717553d84f91a0678e038",
+      "bytes": 335025,
+      "width": 1520,
+      "height": 1234,
+      "licence": "public domain",
+      "licenceTag": "Public domain",
+      "sourcePage": "https://commons.wikimedia.org/wiki/File:Anton_Wilhelm_Tischbein_Familie_Michael_Fellner_1770.jpg"
+    },
+    {
+      "id": "scan-003",
+      "group": "group",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/3/3f/Ashgill_%28Page_455%29_BHL21131367.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+      "sha256": "b6319e285296eb3e8a447606a8c250654a9ebc6d4f54b1ba56cb9353156ab217",
+      "bytes": 641807,
+      "width": 3072,
+      "height": 1987,
+      "licence": "public domain",
+      "licenceTag": "Public domain",
+      "sourcePage": "https://commons.wikimedia.org/wiki/File:Ashgill_(Page_455)_BHL21131367.jpg"
+    },
+    {
+      "id": "scan-004",
+      "group": "group",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/7/76/Baptista_Family_in_Venezuela.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+      "sha256": "0bf13956d7e4da83a461340311fa35f55dd88b69f4b85ffc22d01dda7b6b9718",
+      "bytes": 191565,
+      "width": 1024,
+      "height": 726,
+      "licence": "public domain",
+      "licenceTag": "Public domain",
+      "sourcePage": "https://commons.wikimedia.org/wiki/File:Baptista_Family_in_Venezuela.jpg"
+    },
+    {
+      "id": "scan-005",
+      "group": "group",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/e/ee/Blanche_Bonde_med_sonen_Thord.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+      "sha256": "9ac1d31a41f033f6c3140783c16da3a16917763a1994db9128b840da5fba4aaa",
+      "bytes": 676804,
+      "width": 803,
+      "height": 1506,
+      "licence": "public domain",
+      "licenceTag": "Public domain",
+      "sourcePage": "https://commons.wikimedia.org/wiki/File:Blanche_Bonde_med_sonen_Thord.jpg"
+    },
+    {
+      "id": "scan-006",
+      "group": "group",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/b/b9/Camanchee_Chief%2C_His_Wife%2C_and_a_Warrior_C16494.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+      "sha256": "35edc10f494eba2d119e097e9ebdf1841a8fd89b5e049c7322f693ac6dd35208",
+      "bytes": 10989422,
+      "width": 4000,
+      "height": 3117,
+      "licence": "public domain",
+      "licenceTag": "Public domain",
+      "sourcePage": "https://commons.wikimedia.org/wiki/File:Camanchee_Chief,_His_Wife,_and_a_Warrior_C16494.jpg"
+    },
+    {
+      "id": "scan-007",
+      "group": "group",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/3/3c/Charles_Emmanuel_Biset_-_A_Family_Seated_at_a_Table_in_an_Elegant_Garden_Exterior.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+      "sha256": "7d5430487b7ba6097395ca800b1e9c3bccb165535050ffcc72fc9c54c4546fd4",
+      "bytes": 614394,
+      "width": 946,
+      "height": 692,
+      "licence": "public domain",
+      "licenceTag": "Public domain",
+      "sourcePage": "https://commons.wikimedia.org/wiki/File:Charles_Emmanuel_Biset_-_A_Family_Seated_at_a_Table_in_an_Elegant_Garden_Exterior.jpg"
+    },
+    {
+      "id": "scan-008",
+      "group": "group",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/4/4e/D.W._Davis_%26_family%2C_9-8-23_LCCN2016847902.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+      "sha256": "29c36dbb22e2ac03e9f572c59632bf5fae23c6b862ac3083aab81f6912a89ef2",
+      "bytes": 3238843,
+      "width": 6059,
+      "height": 4402,
+      "licence": "public domain",
+      "licenceTag": "Public domain",
+      "sourcePage": "https://commons.wikimedia.org/wiki/File:D.W._Davis_%26_family,_9-8-23_LCCN2016847902.jpg"
+    }
+  ]
+}

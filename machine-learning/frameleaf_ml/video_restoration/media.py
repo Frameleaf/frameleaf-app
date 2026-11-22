@@ -220,11 +220,13 @@ def extract_frames(
     yuv_matrix: str,
     timeout: float,
     max_frames: int | None = None,
+    autorotate: bool = True,
 ) -> int:
     """Decode the video frames of ``source`` (optionally one segment) to RGB PNG files.
 
     With ``max_frames`` the decoder stops one frame past it: the caller refuses a longer clip from the
-    count, without every frame of it having been written first.
+    count, without every frame of it having been written first. ``autorotate`` off keeps the stored
+    pixel grid of a source that carries a rotation or orientation tag.
     """
     frames_dir.mkdir(parents=True, exist_ok=False)
     _run(
@@ -234,6 +236,7 @@ def extract_frames(
             "-v",
             "error",
             *_segment_args(start_ms, end_ms),
+            *([] if autorotate else ["-noautorotate"]),
             "-i",
             str(source),
             "-map",
@@ -665,3 +668,29 @@ def encode_still_output(frames_dir: Path, output: Path, *, target: tuple[int, in
         ],
         timeout=timeout,
     )
+
+
+EXIF_ORIENTATION = 0x0112
+
+
+def exif_orientation(path: Path) -> int:
+    """The EXIF orientation of a still (1 to 8), or 1 when it has none or cannot be read."""
+    try:
+        with Image.open(path) as image:
+            value = image.getexif().get(EXIF_ORIENTATION, 1)
+    except (OSError, ValueError, SyntaxError, Image.DecompressionBombError):
+        return 1
+    return value if isinstance(value, int) and 1 <= value <= 8 else 1
+
+
+def write_photo_output(frame: Path, output: Path, *, orientation: int) -> None:
+    """Write a photo operation's frame as the result PNG (FL-933): the same stored pixels, carrying the
+    source's orientation tag so it is shown the same way round as the source."""
+    try:
+        with Image.open(frame) as image:
+            exif = Image.Exif()
+            if orientation != 1:
+                exif[EXIF_ORIENTATION] = orientation
+            image.convert("RGB").save(output, format="PNG", exif=exif)
+    except (OSError, ValueError, Image.DecompressionBombError) as error:
+        raise MediaError(f"the restored photo could not be written: {error}")
