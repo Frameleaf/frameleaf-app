@@ -1397,7 +1397,10 @@ export class SearchRepository {
       ? sql<number>`
         ${blendedClipDistance}
         - ${OCR_FUSION_WEIGHT} * coalesce(
-            1 - (f_unaccent((select text from ocr_search where "assetId" = candidate.id)) <->>> f_unaccent(${fusionText})),
+            1 - least(
+              f_unaccent((select text from ocr_search where "assetId" = candidate.id)) <->>> f_unaccent(${fusionText}),
+              f_unaccent((select "searchText" from asset_print_back where "frontAssetId" = candidate.id)) <->>> f_unaccent(${fusionText})
+            ),
             0
           )
         - ${DESCRIPTION_FUSION_WEIGHT} * coalesce(

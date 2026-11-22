@@ -163,7 +163,9 @@ def restore(
     """Run one request. Returns the result and the path of the new restored file inside
     ``work_dir``; the caller streams it and then removes ``work_dir``."""
     started = time.monotonic()
-    selected = registry.select(request.mode, request.modelId, request.modelFingerprint, kind=request.kind)
+    selected = registry.select(
+        request.mode, request.modelId, request.modelFingerprint, kind=request.kind, operation=request.operation
+    )
     model_id = selected.spec.id
     budget = frame_budget(selected)
 
@@ -174,7 +176,14 @@ def restore(
         code = RestorationErrorCode.UNSUPPORTED_INPUT if error.unsupported else RestorationErrorCode.RUNTIME_FAILED
         raise RestorationFailure(code, str(error), model_id=model_id)
     start_ms, end_ms, _ = check_source(request, source, selected)
-    target = media.target_geometry(source.width, source.height, request.scale, request.maxWidth, request.maxHeight)
+    # A photo operation (FL-933) returns exactly the stored pixel grid it was given: no output box,
+    # no even-size rounding and no rotation. An orientation tag travels with the file instead.
+    photo = request.operation is not None
+    target = (
+        (source.width, source.height)
+        if photo
+        else media.target_geometry(source.width, source.height, request.scale, request.maxWidth, request.maxHeight)
+    )
     smooth = request.mode == RestorationMode.SMOOTH_MOTION
     factor = request.interpolationFactor or 1
     if smooth and target != (source.width, source.height):
@@ -210,6 +219,7 @@ def restore(
                 yuv_matrix=source.yuv_matrix,
                 timeout=MEDIA_TIMEOUT_S,
                 max_frames=budget,
+                autorotate=not photo,
             )
     except media.MediaError as error:
         code = RestorationErrorCode.UNSUPPORTED_INPUT if error.unsupported else RestorationErrorCode.RUNTIME_FAILED
@@ -280,7 +290,11 @@ def restore(
     output_path = work_dir / ("restored.png" if still else "restored.mp4")
     audio: Literal["copied", "transcoded", "none"] = "none"
     try:
-        if still:
+        if photo:
+            media.write_photo_output(
+                run.frames_dir / (media.FRAME_PATTERN % 1), output_path, orientation=media.exif_orientation(media_path)
+            )
+        elif still:
             media.encode_still_output(run.frames_dir, output_path, target=target, timeout=MEDIA_TIMEOUT_S)
         else:
             audio = media.encode_output(
@@ -323,10 +337,12 @@ def restore(
         protocol=RESTORATION_PROTOCOL,
         requestId=request.requestId,
         mode=request.mode,
+        operation=request.operation,
         model=ModelIdentity(
             id=selected.spec.id,
             family=selected.spec.family,
             mode=selected.spec.mode,
+            operation=selected.spec.operation,
             revision=selected.spec.revision,
             fingerprint=capability.fingerprint,
             weights=[WeightIdentity(role=weight.role, sha256=weight.sha256) for weight in selected.spec.weights],

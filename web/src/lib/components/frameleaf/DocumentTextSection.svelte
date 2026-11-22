@@ -75,9 +75,11 @@
 
   type Props = {
     asset: AssetResponseDto;
+    /** FL-967: only the line review, open, for the back of a print (which is not on screen to draw regions on). */
+    reviewOnly?: boolean;
   };
 
-  let { asset }: Props = $props();
+  let { asset, reviewOnly = false }: Props = $props();
 
   type Editing = { kind: 'line'; id: string } | { kind: 'field'; field: DocumentFieldResponseDto['field'] };
   type CandidateChoice = Pick<DocumentFieldCandidateDto, 'value' | 'lineId'>;
@@ -120,15 +122,20 @@
     editing = null;
     actionFailure = null;
     pinned = null;
-    ocrManager.setDocumentText(null);
-    ocrManager.setHighlight(null);
+    // the back of a print is not the photo on screen: its overlay belongs to the front's own section
+    if (!reviewOnly) {
+      ocrManager.setDocumentText(null);
+      ocrManager.setHighlight(null);
+    }
   };
 
   const apply = (next: DocumentResponseDto) => {
     shown = next;
     pinned = null;
-    ocrManager.setHighlight(null);
-    ocrManager.setDocumentText({ assetId: next.assetId, overrides: overlayOverrides(next) });
+    if (!reviewOnly) {
+      ocrManager.setHighlight(null);
+      ocrManager.setDocumentText({ assetId: next.assetId, overrides: overlayOverrides(next) });
+    }
   };
 
   const load = async (assetId: string): Promise<DocumentResponseDto | undefined> => {
@@ -188,12 +195,16 @@
   });
 
   const point = (region: OcrRegion | null | undefined) => {
-    if (region) {
+    if (region && !reviewOnly) {
       ocrManager.setHighlight(asset.id, region);
     }
   };
 
-  const unpoint = () => ocrManager.setHighlight(pinned ? asset.id : null, pinned);
+  const unpoint = () => {
+    if (!reviewOnly) {
+      ocrManager.setHighlight(pinned ? asset.id : null, pinned);
+    }
+  };
 
   const togglePin = (region: OcrRegion | null | undefined) => {
     pinned = region && pinned !== region ? region : null;
@@ -461,65 +472,67 @@
   </section>
 {:else if shown && hasContent}
   <section class="text-sm" data-testid="frameleaf-document-text">
-    <div class="fl-info-heading-row flex-wrap">
-      <h3 class="fl-info-heading">{$t('frameleaf_documents_text_in_photo')}</h3>
-      <Button
-        size="small"
-        color="secondary"
-        variant="ghost"
-        leadingIcon={mdiTextRecognition}
-        aria-pressed={ocrManager.showOverlay}
-        onclick={() => ocrManager.toggleOcrBoundingBox()}
-      >
-        {ocrManager.showOverlay ? $t('frameleaf_documents_hide_regions') : $t('frameleaf_documents_show_regions')}
-      </Button>
-    </div>
-
-    <p
-      class="rounded-md bg-(--fl-raised) px-3 py-2 wrap-break-word whitespace-pre-wrap select-text"
-      bind:this={textElement}
-      data-testid="frameleaf-document-text-body"
-    >
-      {readable}
-    </p>
-
-    <div class="mt-2 flex flex-wrap gap-2">
-      <Button size="small" color="secondary" variant="ghost" leadingIcon={mdiSelectAll} onclick={selectText}>
-        {$t('frameleaf_documents_select_text')}
-      </Button>
-      <Button
-        size="small"
-        color="secondary"
-        variant="ghost"
-        leadingIcon={mdiContentCopy}
-        onclick={() => void copyText()}
-      >
-        {$t('frameleaf_documents_copy_text')}
-      </Button>
-      {#if canEdit}
+    {#if !reviewOnly}
+      <div class="fl-info-heading-row flex-wrap">
+        <h3 class="fl-info-heading">{$t('frameleaf_documents_text_in_photo')}</h3>
         <Button
           size="small"
           color="secondary"
           variant="ghost"
-          leadingIcon={mdiRefresh}
-          disabled={!canReadAgain || rereadPending}
-          loading={busy === 'read-again' || rereadPending}
-          onclick={() => void readAgain()}
+          leadingIcon={mdiTextRecognition}
+          aria-pressed={ocrManager.showOverlay}
+          onclick={() => ocrManager.toggleOcrBoundingBox()}
         >
-          {$t('frameleaf_documents_read_again')}
+          {ocrManager.showOverlay ? $t('frameleaf_documents_hide_regions') : $t('frameleaf_documents_show_regions')}
         </Button>
-      {/if}
-    </div>
-    {#if canEdit && recognition && !canReadAgain}
-      <p class="mt-1 text-xs text-(--fl-muted)">
-        {#if !recognition.enabled}
-          {$t('frameleaf_documents_read_again_disabled')}
-        {:else if authManager.authenticated && authManager.user.isAdmin}
-          {$t('frameleaf_documents_read_again_unrouted_admin')}
-        {:else}
-          {$t('frameleaf_documents_read_again_unrouted')}
-        {/if}
+      </div>
+
+      <p
+        class="rounded-md bg-(--fl-raised) px-3 py-2 wrap-break-word whitespace-pre-wrap select-text"
+        bind:this={textElement}
+        data-testid="frameleaf-document-text-body"
+      >
+        {readable}
       </p>
+
+      <div class="mt-2 flex flex-wrap gap-2">
+        <Button size="small" color="secondary" variant="ghost" leadingIcon={mdiSelectAll} onclick={selectText}>
+          {$t('frameleaf_documents_select_text')}
+        </Button>
+        <Button
+          size="small"
+          color="secondary"
+          variant="ghost"
+          leadingIcon={mdiContentCopy}
+          onclick={() => void copyText()}
+        >
+          {$t('frameleaf_documents_copy_text')}
+        </Button>
+        {#if canEdit}
+          <Button
+            size="small"
+            color="secondary"
+            variant="ghost"
+            leadingIcon={mdiRefresh}
+            disabled={!canReadAgain || rereadPending}
+            loading={busy === 'read-again' || rereadPending}
+            onclick={() => void readAgain()}
+          >
+            {$t('frameleaf_documents_read_again')}
+          </Button>
+        {/if}
+      </div>
+      {#if canEdit && recognition && !canReadAgain}
+        <p class="mt-1 text-xs text-(--fl-muted)">
+          {#if !recognition.enabled}
+            {$t('frameleaf_documents_read_again_disabled')}
+          {:else if authManager.authenticated && authManager.user.isAdmin}
+            {$t('frameleaf_documents_read_again_unrouted_admin')}
+          {:else}
+            {$t('frameleaf_documents_read_again_unrouted')}
+          {/if}
+        </p>
+      {/if}
     {/if}
 
     {#if actionFailure && actionFailure !== 'stale'}
@@ -527,7 +540,7 @@
     {/if}
 
     {#if canEdit}
-      <details class="mt-3" data-testid="frameleaf-document-lines">
+      <details class="mt-3" open={reviewOnly} data-testid="frameleaf-document-lines">
         <summary class="cursor-pointer py-1 text-xs text-(--fl-muted)">
           {$t('frameleaf_documents_review_lines', { values: { count: lines.length } })}
         </summary>
@@ -627,7 +640,7 @@
                         : $t('frameleaf_documents_restore')}
                     </Button>
                   {/if}
-                  {#if line.region}
+                  {#if line.region && !reviewOnly}
                     <Button
                       size="small"
                       color="secondary"

@@ -106,6 +106,14 @@
     await openScanSplit(assetId);
   };
 
+  // FL-967: scans of one batch that may alternate front, back.
+  const reviewPairs = async () => {
+    const pairs = $state.snapshot(scanOffers.pairs);
+    scanOffers.dismissPairs();
+    const { openPrintPairs } = await import('$lib/services/print-back.service.svelte');
+    await openPrintPairs(pairs);
+  };
+
   $effect(() => {
     if (active) {
       void acquireWakeLock();
@@ -355,6 +363,24 @@
                   {$t('frameleaf_scan_split_offer_review')}
                 </button>
                 <button type="button" class="fl-button" onclick={() => scanOffers.dismiss(offer.assetId)}>
+                  {$t('frameleaf_scan_split_offer_later')}
+                </button>
+              </div>
+            </div>
+          </div>
+        {/if}
+
+        {#if !scanOffers.current && scanOffers.pairs.length > 0}
+          <div class="fl-scan-offer" role="status">
+            <Icon icon={mdiImageMultipleOutline} size="20" aria-hidden="true" />
+            <div>
+              <strong>{$t('frameleaf_print_back_offer_title')}</strong>
+              <p>{$t('frameleaf_print_back_offer_body', { values: { count: scanOffers.pairs.length } })}</p>
+              <div class="fl-scan-offer-actions">
+                <button type="button" class="fl-button fl-button-primary" onclick={() => void reviewPairs()}>
+                  {$t('frameleaf_print_back_offer_review')}
+                </button>
+                <button type="button" class="fl-button" onclick={() => scanOffers.dismissPairs()}>
                   {$t('frameleaf_scan_split_offer_later')}
                 </button>
               </div>

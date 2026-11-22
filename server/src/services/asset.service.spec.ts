@@ -2505,6 +2505,24 @@ describe(AssetService.name, () => {
   });
 
   describe('deleteAll', () => {
+    it('refuses to trash the back of a print on its own (FL-967)', async () => {
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['back']));
+      mocks.asset.getPrintBackIds.mockResolvedValue(['back']);
+
+      await expect(sut.deleteAll(authStub.user1, { ids: ['back'] })).rejects.toBeInstanceOf(BadRequestException);
+
+      expect(mocks.trash.applyReviewed).not.toHaveBeenCalled();
+    });
+
+    it('refuses to move the back of a print to another visibility (FL-967)', async () => {
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['back']));
+      mocks.asset.getPrintBackIds.mockResolvedValue(['back']);
+
+      await expect(
+        sut.updateAll(authStub.user1, { ids: ['back'], visibility: AssetVisibility.Timeline }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
     it('announces only ordinary changes, preserving their order and duplicates after sequenced effects', async () => {
       const ids = ['ordinary-2', 'sequenced', 'ordinary-1', 'ordinary-2'];
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(ids));
@@ -3060,6 +3078,17 @@ describe(AssetService.name, () => {
       await expect(sut.handleAssetDeletion({ id: motion.id, deleteOnDisk: true })).resolves.toBe(JobStatus.Success);
 
       expect(mocks.asset.remove).toHaveBeenCalled();
+    });
+
+    it('never deletes the back of a print as an orphaned motion part (FL-967)', async () => {
+      const back = AssetFactory.from({ type: AssetType.Image, visibility: AssetVisibility.Hidden }).build();
+      mocks.assetJob.getForAssetDeletion.mockResolvedValue({ ...getForAssetDeletion(back), deletedAt: null });
+      mocks.asset.getLivePhotoCount.mockResolvedValue(0);
+      mocks.asset.getPrintBackIds.mockResolvedValue([back.id]);
+
+      await expect(sut.handleAssetDeletion({ id: back.id, deleteOnDisk: true })).resolves.toBe(JobStatus.Skipped);
+
+      expect(mocks.asset.remove).not.toHaveBeenCalled();
     });
 
     describe('when a step fails (FL-169)', () => {

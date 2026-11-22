@@ -55,10 +55,13 @@ beforeAll(async () => {
     .find(
       (nic) => nic?.family === 'IPv4' && !nic.internal && /^(10|192\.168|172\.(1[6-9]|2\d|3[01]))\./.test(nic.address),
     );
-  base =
-    process.platform !== 'linux' && lan
-      ? `http://${lan.address}:${ntfy.getMappedPort(80)}`
-      : `http://${ntfy.getIpAddress(ntfy.getNetworkNames()[0])}:80`;
+  if (process.platform === 'linux') {
+    base = `http://${ntfy.getIpAddress(ntfy.getNetworkNames()[0])}:80`;
+  } else if (lan) {
+    base = `http://${lan.address}:${ntfy.getMappedPort(80)}`;
+  } else {
+    throw new Error('This suite needs a private IPv4 address on this machine to reach the published ntfy port');
+  }
 }, 180_000);
 
 afterAll(async () => {

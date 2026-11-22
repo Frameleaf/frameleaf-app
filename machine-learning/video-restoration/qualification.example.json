@@ -133,6 +133,84 @@
       "reviewedBy": null,
       "reviewedAt": null,
       "notes": "Not qualified. No weights have been run for this record."
+    },
+    {
+      "id": "codeformer-photo-repair-unqualified",
+      "modelId": "codeformer-photo-repair",
+      "revision": "REPLACE-with-the-exact-40-character-commit-that-was-qualified",
+      "weights": [
+        { "role": "codeformer", "sha256": "REPLACE-with-the-sha256-measured-during-qualification" },
+        { "role": "detection", "sha256": "REPLACE-with-the-sha256-measured-during-qualification" },
+        { "role": "parsing", "sha256": "REPLACE-with-the-sha256-measured-during-qualification" },
+        { "role": "lama", "sha256": "REPLACE-with-the-sha256-measured-during-qualification" }
+      ],
+      "containerRevisions": [],
+      "hardware": [],
+      "measurements": [],
+      "evidence": [
+        { "item": "weights-hashed", "result": "pending" },
+        { "item": "resource-profile", "result": "pending" },
+        { "item": "output-size", "result": "pending" },
+        { "item": "orientation", "result": "pending" },
+        { "item": "hallucination", "result": "pending" },
+        { "item": "deterministic-repeat", "result": "pending" },
+        { "item": "fault-out-of-memory", "result": "pending" },
+        { "item": "fault-nan", "result": "pending" },
+        { "item": "fault-changed-weights", "result": "pending" },
+        { "item": "fault-dirty-checkout", "result": "pending" },
+        { "item": "fault-unsupported-input", "result": "pending" },
+        { "item": "compare-faces", "result": "pending" },
+        { "item": "face-identity-drift", "result": "pending" },
+        { "item": "scratch-mask", "result": "pending" },
+        { "item": "tile-seams", "result": "pending" }
+      ],
+      "license": {
+        "approved": true,
+        "code": "NTU S-Lab License 1.0",
+        "weights": "NTU S-Lab License 1.0 (CodeFormer); MIT (RetinaFace detection, ParseNet parsing); Apache-2.0 (LaMa)",
+        "reviewedBy": "Frameleaf legal review",
+        "reviewedAt": "2026-10-17"
+      },
+      "hdrQualified": false,
+      "reviewedBy": null,
+      "reviewedAt": null,
+      "notes": "Not qualified. No weights have been run for this record."
+    },
+    {
+      "id": "ddcolor-colourise-unqualified",
+      "modelId": "ddcolor-colourise",
+      "revision": "REPLACE-with-the-exact-40-character-commit-that-was-qualified",
+      "weights": [
+        { "role": "ddcolor", "sha256": "REPLACE-with-the-sha256-measured-during-qualification" }
+      ],
+      "containerRevisions": [],
+      "hardware": [],
+      "measurements": [],
+      "evidence": [
+        { "item": "weights-hashed", "result": "pending" },
+        { "item": "resource-profile", "result": "pending" },
+        { "item": "output-size", "result": "pending" },
+        { "item": "orientation", "result": "pending" },
+        { "item": "hallucination", "result": "pending" },
+        { "item": "deterministic-repeat", "result": "pending" },
+        { "item": "fault-out-of-memory", "result": "pending" },
+        { "item": "fault-nan", "result": "pending" },
+        { "item": "fault-changed-weights", "result": "pending" },
+        { "item": "fault-dirty-checkout", "result": "pending" },
+        { "item": "fault-unsupported-input", "result": "pending" },
+        { "item": "colour-plausibility", "result": "pending" }
+      ],
+      "license": {
+        "approved": true,
+        "code": "Apache-2.0",
+        "weights": "Apache-2.0",
+        "reviewedBy": "Frameleaf legal review",
+        "reviewedAt": "2026-10-17"
+      },
+      "hdrQualified": false,
+      "reviewedBy": null,
+      "reviewedAt": null,
+      "notes": "Not qualified. No weights have been run for this record."
     }
   ]
 }

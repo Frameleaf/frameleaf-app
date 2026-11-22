@@ -14,6 +14,7 @@ import {
   hiddenFromOthers,
   isMotionOfLockedStill,
   isNotLockedAsset,
+  isPrintBack,
   memoryHasNoHiddenItem,
   tagHasVisibleAssetOrNoAssets,
   tagIsSuppressed,
@@ -194,6 +195,8 @@ class AssetAccess {
         .where(isNotLocked('asset'))
         // FL-446: another member's item that matches its owner's Locked rules reaches partners only
         .where(sql<boolean>`not ${hiddenFromOthers(userId, 'asset')}`)
+        // FL-967: the back of a print is its owner's alone, even if it was added to an album afterwards
+        .where(sql<boolean>`not ${isPrintBack('asset')}`)
         .$call((qb) => withHiddenContentFilter(qb, options))
         .execute()
         .then((assets) => {
@@ -238,6 +241,20 @@ class AssetAccess {
         .execute()
         .then((assets) => new Set(assets.map((asset) => asset.id)))
     );
+  }
+  /** FL-967: which of these are the paired back of a print, which is never shared by any path. */
+  @GenerateSql({ params: [DummyValue.UUID_SET] })
+  @ChunkedSet({ paramIndex: 0 })
+  async checkPrintBacks(assetIds: Set<string>) {
+    if (assetIds.size === 0) {
+      return new Set<string>();
+    }
+    const rows = await this.db
+      .selectFrom('asset_print_back')
+      .select('backAssetId')
+      .where('backAssetId', 'in', [...assetIds])
+      .execute();
+    return new Set(rows.map(({ backAssetId }) => backAssetId));
   }
   /**
    * FL-83 (AL-30b): items the owner shared with this person (`public.asset_user_share`). A
@@ -340,6 +357,7 @@ class AssetAccess {
             .onRef('asset.id', '=', 'shared_link_asset.assetId')
             .on('asset.deletedAt', 'is', null)
             .on(isNotLocked('asset'))
+            .on(sql<boolean>`not ${isPrintBack('asset')}`)
             .on(sql<boolean>`not ${hiddenByOwnerRules('asset')}`),
         )
         .leftJoin('album_asset', 'album_asset.albumId', 'album.id')
@@ -348,6 +366,7 @@ class AssetAccess {
             .onRef('albumAssets.id', '=', 'album_asset.assetId')
             .on('albumAssets.deletedAt', 'is', null)
             .on(isNotLocked('albumAssets'))
+            .on(sql<boolean>`not ${isPrintBack('albumAssets')}`)
             .on(sql<boolean>`not ${hiddenByOwnerRules('albumAssets')}`),
         )
         .select([
