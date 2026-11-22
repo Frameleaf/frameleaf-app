@@ -9,6 +9,7 @@ import {
 } from 'src/dtos/import-sign-in.dto.js';
 import { type BrokerService, ProviderSignInBroker, isBrokerService } from 'src/import-connectors/broker-sign-in.js';
 import { dropboxRemoteSourceProvider } from 'src/import-connectors/dropbox.source.js';
+import { onedriveRemoteSourceProvider } from 'src/import-connectors/onedrive.source.js';
 import {
   RemoteSourceError,
   type RemoteSourceProvider,
@@ -57,6 +58,10 @@ export class ImportSignInService {
   /** Registered beside the other sources by `ImportConnectorService`. */
   get dropbox(): RemoteSourceProvider {
     return dropboxRemoteSourceProvider(this.broker);
+  }
+
+  get onedrive(): RemoteSourceProvider {
+    return onedriveRemoteSourceProvider(this.broker);
   }
 
   async availability(provider: string): Promise<ImportSignInAvailabilityResponseDto> {
