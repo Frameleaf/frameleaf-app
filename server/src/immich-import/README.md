@@ -320,7 +320,12 @@ canonical bootstrap; never clear the journal to reuse partial content.
 
 A source with a `gallery_migrations` table, or one Manager names as Noodle Gallery, is read through
 the Immich base its upstream migration ledger contains; Gallery's own release number is not used.
-`preflight` then reports `sourceKind: "gallery"`. After the standard library is copied and Locked
+`preflight` then reports `sourceKind: "gallery"` and `gallery`: how many rows each read below will carry
+(`spaces`, `members` as people in at least one Space, `memberships`, `spacePhotos`, `people`, `favourites`,
+`pets`), counted through the read's own SELECT, with `null` for a read this release does not offer (FL-1742).
+`run`, `resume` and `verify` end with the same three fields beside the import's status. Manager's review
+counts the running source with its copy of these reads (`manager/src/gallery-reads.ts`, held equal by
+`gallery.spec.ts`). After the standard library is copied and Locked
 media converted, `gallery.ts` reads what Gallery adds (FL-995), each through one read-only SELECT
 that is part of the source fingerprint and has its own checkpoint:
 
