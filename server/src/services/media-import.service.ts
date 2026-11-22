@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, HttpException, Injectable, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { mkdir, mkdtemp, readdir, rename, rm } from 'node:fs/promises';
 import { extname, join } from 'node:path';
@@ -492,8 +492,10 @@ export class MediaImportService {
         this.logger.warn(
           `Media import ${id} paused: ${error instanceof Error ? (error.stack ?? error.message) : error}`,
         );
+      // What stopped it, in the words the owner would get from the same refusal anywhere else (a lost connection,
+      // a collection that is gone, no room); only an unexpected failure gets the general message.
       const message =
-        error instanceof MediaDownloadError
+        error instanceof MediaDownloadError || error instanceof HttpException
           ? error.message
           : 'Media import could not continue; check access, destination and storage';
       const retryable =
