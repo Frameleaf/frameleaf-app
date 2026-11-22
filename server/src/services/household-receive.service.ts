@@ -227,29 +227,33 @@ export class HouseholdReceiveService {
 
   async run() {
     const quiet = (await this.jobs.getQueueHolds()).some(({ closedUntil }) => !!closedUntil);
-    for (const link of await this.links.getAll()) {
-      if (this.stopped) {
-        return;
-      }
-      try {
-        if (link.state === 'ended') {
-          await this.endLink(link);
-        } else if (link.state === 'active') {
-          const poked = !!link.pollRequestedAt;
-          // the list is read before any pull, so someone removed from a share gets nothing more; a failed read
-          // throws, and nothing is pulled for this link until the sender says who is still a member
-          const due = quiet ? [] : await this.receive.getDue(link.id);
-          if (poked || due.length > 0 || Date.now() - (this.polledAt.get(link.id) ?? 0) >= POLL_EVERY_MS) {
-            await this.poll(link);
-          }
-          if (!quiet) {
-            await this.pullDue(link);
-          }
+    // Each household runs on its own, so one that trickles a download cannot hold up the others.
+    // ponytail: at most 10 links run at once (Cloud's cap); a share within a link still waits its turn.
+    await Promise.all((await this.links.getAll()).map((link) => this.runLink(link, quiet)));
+  }
+
+  private async runLink(link: Link, quiet: boolean) {
+    if (this.stopped) {
+      return;
+    }
+    try {
+      if (link.state === 'ended') {
+        await this.endLink(link);
+      } else if (link.state === 'active') {
+        const poked = !!link.pollRequestedAt;
+        // the list is read before any pull, so someone removed from a share gets nothing more; a failed read
+        // throws, and nothing is pulled for this link until the sender says who is still a member
+        const due = quiet ? [] : await this.receive.getDue(link.id);
+        if (poked || due.length > 0 || Date.now() - (this.polledAt.get(link.id) ?? 0) >= POLL_EVERY_MS) {
+          await this.poll(link);
         }
-      } catch (error) {
-        // one household's failure never holds up another's
-        this.logger.warn(`Household link ${link.id} could not be read: ${error}`);
+        if (!quiet) {
+          await this.pullDue(link);
+        }
       }
+    } catch (error) {
+      // one household's failure never holds up another's
+      this.logger.warn(`Household link ${link.id} could not be read: ${error}`);
     }
   }
 

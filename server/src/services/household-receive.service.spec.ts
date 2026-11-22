@@ -1258,6 +1258,30 @@ describe(HouseholdReceiveService.name, () => {
   });
 
   describe('status and scheduling', () => {
+    it('a household that stalls does not hold up another household', async () => {
+      const slow = { ...(await linkRow()), id: randomUUID() };
+      const fast = { ...(await linkRow()), id: randomUUID() };
+      vi.spyOn(ben.links, 'getAll').mockResolvedValue([slow, fast]);
+      let release!: () => void;
+      const stalled = new Promise<void>((resolve) => (release = resolve));
+      const reached: string[] = [];
+      const runLink = vi
+        .spyOn(receiver.service as never as { pullDue: (link: { id: string }) => Promise<void> }, 'pullDue')
+        .mockImplementation(async ({ id }) => {
+          reached.push(id);
+          if (id === slow.id) {
+            await stalled;
+          }
+        });
+      vi.spyOn(receiver.service, 'poll').mockResolvedValue();
+
+      const running = receiver.service.run();
+      await vi.waitFor(() => expect(reached).toEqual([slow.id, fast.id]));
+      release();
+      await running;
+      runLink.mockRestore();
+    });
+
     it('reports per share: state, last pulled and last error', async () => {
       await ben.service.rename(benLink().id, 'The Grandparents');
       addItem({ originalFileName: 'a.exe' });
