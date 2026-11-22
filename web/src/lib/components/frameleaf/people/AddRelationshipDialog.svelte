@@ -54,7 +54,11 @@
       onAdded(
         family,
         $t('frameleaf_people_family_added', {
-          values: { name: chosen.name, person: person.name, relation: labelOf(relation).toLocaleLowerCase() },
+          values: {
+            name: chosen.name,
+            person: person.name,
+            relation: $t(`frameleaf_people_family_relation_inline_${relation}`),
+          },
         }),
       );
       open = false;
