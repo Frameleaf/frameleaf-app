@@ -190,12 +190,13 @@ pins where that run takes the runtimes and weights from;
 `.github/workflows/restoration-qualification.yml` runs it, when started by hand, on the
 Forgejo Windows GPU runner. It measures; the comparison items still need a person.
 
-**Result: neither photo model is qualified.** On an RTX 3060 (run 1293) both completed all
-200 scans and both stress inputs inside the 8 GB cap, at full scan size. Photo repair fails
-on faces (invented detail and eye colour, identity drift) and colourise fails on colour
-plausibility. Orientation, the fault tests and tile seams are still open. The evidence is in
-`qualification/qualification.photo.json` and `qualification/models.qualified.photo.json`;
-that record is unreviewed and carries `fail` entries, so the gate refuses both models.
+**Result: neither photo model is qualified.** On an RTX 3060 (run 1296) repair processed all
+200 scans and colourise 166, refusing 34 as already coloured, with no failures, inside the
+8 GB cap at full scan size. Every detected face and every unmasked pixel came back
+byte-identical. The scratch mask still marks some real detail (a garment fold, parts of ruled
+mount lines) and colourise still picks arbitrary colours, so both records carry a `fail`. They
+are in `qualification/qualification.photo.json` and `qualification/models.qualified.photo.json`,
+unreviewed, so the gate refuses both models until the owner signs off.
 
 ## When a model is available
 
