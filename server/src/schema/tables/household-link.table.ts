@@ -9,7 +9,7 @@ export type HouseholdLinkAddress = { kind: string; uri: string };
  * FL-952: this server's side of a link with another household's server (Linked Households, FL-755).
  * `cloudLinkId` is the link's id at Frameleaf Cloud and the id both servers use on the peer API.
  * `peerPublicKey` is the other server's Ed25519 key (`x`) as Cloud introduced it at pairing; it is never
- * replaced afterwards. `state` is text so that a later state needs no enum change.
+ * replaced afterwards. `peerName` is the other server's own name, as Cloud reports it. `state` is text so that a later state needs no enum change.
  */
 @Table('household_link')
 @Check({
@@ -28,6 +28,10 @@ export class HouseholdLinkTable {
 
   @Column({ type: 'text' })
   peerName!: string;
+
+  /** What this server's administrator calls the other household. It never leaves this server. */
+  @Column({ type: 'text' })
+  householdName!: string;
 
   @Column({ type: 'text' })
   peerPublicKey!: string;
