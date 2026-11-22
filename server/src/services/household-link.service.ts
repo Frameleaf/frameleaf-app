@@ -194,6 +194,11 @@ export class HouseholdLinkService {
     return this.client(link).get<unknown>(path);
   }
 
+  /** FL-994: this link's client, for the receiving side's manifest, original and member calls. */
+  peerClient(link: Link) {
+    return this.client(link);
+  }
+
   /** One grant and one handshake: the link's state, its addresses and the path that answered. */
   async check(link: Link): Promise<Link> {
     const client = this.client(link);
