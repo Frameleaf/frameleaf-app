@@ -77,7 +77,7 @@ describe('createClient at the cap (FL-1636 TM-13)', () => {
 });
 
 describe('a used code (FL-1635 TM-12)', () => {
-  it('is taken once, and is then kept with what the grant it made has spent', async () => {
+  it('makes one grant, and is then kept with what that grant has spent', async () => {
     const { user, session } = await newUser();
     const client = await newClient();
     const codeHash = randomBytes(32);
@@ -94,13 +94,57 @@ describe('a used code (FL-1635 TM-12)', () => {
       expiresAt: new Date(Date.now() + 5 * 60 * 1000),
     });
 
-    await expect(sut.takeCode(codeHash)).resolves.toMatchObject({ clientId: client.id, userId: user.id });
-    await expect(sut.takeCode(codeHash)).resolves.toBeUndefined();
-    await expect(sut.getBySpentRefreshToken(codeHash)).resolves.toBeUndefined();
+    const values = {
+      userId: user.id,
+      clientId: client.id,
+      scopes: ['library:read'],
+      resource: null,
+      frameleafAccountId: null,
+      refreshTokenHash: randomBytes(32),
+      accessTokenHash: randomBytes(32),
+      accessExpiresAt: new Date(Date.now() + 60 * 60 * 1000),
+    };
 
-    const grant = await newGrant(user.id, client.id);
-    await sut.keepSpentCode(codeHash, grant.id);
-    await expect(sut.getBySpentRefreshToken(codeHash)).resolves.toMatchObject({ id: grant.id, clientName: 'App' });
+    // two requests with the same code at once: one makes the grant, the other finds the code spent
+    const results = await Promise.all([
+      sut.redeemCode(codeHash, () => Promise.resolve(values)),
+      sut.redeemCode(codeHash, () => Promise.resolve({ ...values, refreshTokenHash: randomBytes(32) })),
+    ]);
+    const made = results.filter(({ grant }) => grant);
+    expect(made).toHaveLength(1);
+    expect(results.filter(({ code }) => !code)).toHaveLength(1);
+    await expect(sut.getBySpentRefreshToken(codeHash)).resolves.toMatchObject({
+      id: made[0].grant!.id,
+      clientName: 'App',
+    });
+  });
+
+  it('is used up by a refused try, which makes no grant', async () => {
+    const { user, session } = await newUser();
+    const client = await newClient();
+    const codeHash = randomBytes(32);
+    await sut.createCode({
+      codeHash,
+      clientId: client.id,
+      userId: user.id,
+      sessionId: session.id,
+      redirectUri: 'https://app.example/cb',
+      codeChallenge: 'challenge',
+      scopes: ['library:read'],
+      resource: null,
+      frameleafAccountId: null,
+      expiresAt: new Date(Date.now() + 5 * 60 * 1000),
+    });
+
+    await expect(sut.redeemCode(codeHash, () => Promise.resolve(undefined))).resolves.toMatchObject({
+      code: { clientId: client.id },
+      grant: undefined,
+    });
+    await expect(sut.redeemCode(codeHash, () => Promise.reject(new Error('not asked')))).resolves.toEqual({
+      code: undefined,
+      grant: undefined,
+    });
+    await expect(sut.getBySpentRefreshToken(codeHash)).resolves.toBeUndefined();
   });
 });
 

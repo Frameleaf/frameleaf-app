@@ -142,26 +142,39 @@ export class OAuthAppRepository {
     });
   }
 
-  /** Take a code once: it is removed whether or not it is still valid, so it can never be tried twice. */
-  @GenerateSql({ params: [DummyValue.BUFFER] })
-  takeCode(codeHash: Buffer): Promise<OAuthAuthorizationCode | undefined> {
-    return this.db
-      .deleteFrom('oauth_authorization_code')
-      .where('codeHash', '=', codeHash)
-      .returningAll()
-      .executeTakeFirst();
-  }
-
   /**
-   * FL-1635 (TM-12): keeps the code a grant was made from with the refresh tokens it has spent, so
-   * the code coming back is found by `getBySpentRefreshToken` and revokes the grant like they do.
+   * Takes a code once and, when `makeGrant` returns one, makes its grant, all in one transaction.
+   * The code is removed whether or not it is still valid, so it can never be tried twice.
+   *
+   * FL-1635 (TM-12): the code's hash is kept with the refresh tokens the grant has spent, so the code
+   * coming back is found by `getBySpentRefreshToken` and revokes the grant like they do. A second
+   * request with the same code waits on the row this one is deleting, then finds the code gone and
+   * the grant already recorded: there is no moment when a replay goes unseen.
+   *
+   * `makeGrant` must not throw for a refused code (return undefined), or the code would be put back.
    */
-  @GenerateSql({ params: [DummyValue.BUFFER, DummyValue.UUID] })
-  async keepSpentCode(codeHash: Buffer, grantId: string) {
-    await this.db
-      .insertInto('oauth_spent_refresh_token')
-      .values({ tokenHash: codeHash, grantId: asUuid(grantId) })
-      .execute();
+  async redeemCode(
+    codeHash: Buffer,
+    makeGrant: (code: OAuthAuthorizationCode) => Promise<Insertable<OAuthGrantTable> | undefined>,
+  ) {
+    return this.db.transaction().execute(async (trx) => {
+      const code = await trx
+        .deleteFrom('oauth_authorization_code')
+        .where('codeHash', '=', codeHash)
+        .returningAll()
+        .executeTakeFirst();
+      const values = code && (await makeGrant(code));
+      if (!values) {
+        return { code, grant: undefined };
+      }
+      const grant = await trx
+        .insertInto('oauth_grant')
+        .values(values)
+        .returning(grantColumns)
+        .executeTakeFirstOrThrow();
+      await trx.insertInto('oauth_spent_refresh_token').values({ tokenHash: codeHash, grantId: grant.id }).execute();
+      return { code, grant };
+    });
   }
 
   /**

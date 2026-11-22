@@ -145,9 +145,10 @@ export const checkRegisteredRedirectUri = (value: unknown, { allowLocalhost = fa
   if (!url || typeof value !== 'string') {
     return null;
   }
-  const loopback =
-    url.protocol === 'http:' && LOOPBACK_HOSTS.has(url.hostname) && (allowLocalhost || url.hostname !== 'localhost');
+  const loopback = url.protocol === 'http:' && LOOPBACK_HOSTS.has(url.hostname);
   if (
+    // whatever the scheme: `https://localhost` is the same name
+    (url.hostname === 'localhost' && !allowLocalhost) ||
     !(url.protocol === 'https:' || loopback) ||
     !url.hostname ||
     url.username ||

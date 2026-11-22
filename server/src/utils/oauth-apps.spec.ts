@@ -104,6 +104,10 @@ describe('oauth-apps', () => {
       const uri = 'http://localhost:6274/oauth/callback';
       expect(checkRegisteredRedirectUri(uri)).toBeNull();
       expect(checkRegisteredRedirectUri(uri, { allowLocalhost: true })).toBe(uri);
+      expect(checkRegisteredRedirectUri('https://localhost/callback')).toBeNull();
+      expect(checkRegisteredRedirectUri('https://localhost/callback', { allowLocalhost: true })).toBe(
+        'https://localhost/callback',
+      );
       // an app registered with localhost before FL-1635 still gets its code, on any port
       expect(matchRedirectUri([uri], 'http://localhost:51234/oauth/callback')).toBe(
         'http://localhost:51234/oauth/callback',

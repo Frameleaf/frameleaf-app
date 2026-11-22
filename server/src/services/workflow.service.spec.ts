@@ -827,6 +827,51 @@ describe('Frameleaf event workflows (FL-819)', () => {
       expect(mocks.workflow.create.mock.calls[0][1].steps[0].config).toEqual({ url: 'https://example.com/hook' });
     });
 
+    it('gives a stored event webhook its secret when the workflow is only enabled', async () => {
+      const { sut, mocks } = signed();
+      const id = newUuid();
+      const stepId = newUuid();
+      const definition = {
+        version: 1,
+        trigger: WorkflowTrigger.CloudBackupFailed,
+        extra: {},
+        steps: [
+          { id: stepId, method: unsigned.steps[0].method, config: unsigned.steps[0].config, enabled: true, extra: {} },
+        ],
+      };
+      const row = {
+        id,
+        name: null,
+        description: null,
+        trigger: WorkflowTrigger.CloudBackupFailed,
+        enabled: false,
+        logging: true,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        steps: [],
+        definition,
+      };
+      mocks.access.workflow.checkOwnerAccess.mockResolvedValue(new Set([id]));
+      mocks.workflow.get.mockResolvedValue(row as never);
+      mocks.workflow.update.mockImplementation((_, dto, replacement) =>
+        Promise.resolve({ ...row, ...dto, definition: replacement?.definition ?? definition } as never),
+      );
+
+      const response = await sut.update(admin, id, { enabled: true });
+
+      const replacement = mocks.workflow.update.mock.calls[0][2];
+      expect(replacement!.definition.steps[0].config).toMatchObject({ secret: 'generated-secret' });
+      expect(replacement!.steps[0].config).toMatchObject({ secret: 'generated-secret' });
+      expect(response.steps[0]).toMatchObject({ generatedSecret: 'generated-secret' });
+      expect(definition.steps[0].config).not.toHaveProperty('secret');
+
+      // already signed: enabling replaces nothing
+      mocks.workflow.update.mockClear();
+      mocks.workflow.get.mockResolvedValue({ ...row, definition: replacement!.definition } as never);
+      await sut.update(admin, id, { enabled: true });
+      expect(mocks.workflow.update.mock.calls[0][2]).toBeUndefined();
+    });
+
     it('gives event webhooks saved before this a secret when the server starts, once', async () => {
       const { sut, mocks } = signed();
       const id = newUuid();
@@ -849,8 +894,10 @@ describe('Frameleaf event workflows (FL-819)', () => {
       await sut.onBootstrap();
 
       expect(mocks.workflow.update).toHaveBeenCalledTimes(1);
-      const [updatedId, dto, replacement] = mocks.workflow.update.mock.calls[0];
+      const [updatedId, dto, replacement, options] = mocks.workflow.update.mock.calls[0];
       expect([updatedId, dto]).toEqual([id, {}]);
+      // a save made since the workflow was read is never overwritten
+      expect(options).toEqual({ unlessChangedFrom: definition });
       expect(replacement!.definition.steps[0]).toMatchObject({ id: stepId, config: { secret: 'generated-secret' } });
       expect(replacement!.steps[0]).toMatchObject({ id: stepId, config: { secret: 'generated-secret' } });
 

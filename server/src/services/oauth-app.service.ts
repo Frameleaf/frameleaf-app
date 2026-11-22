@@ -26,7 +26,7 @@ import {
 import { AccountEventAction, SystemMetadataKey } from 'src/enum.js';
 import { toAccountEventVia } from 'src/repositories/account-event.repository.js';
 import { ConnectRepository } from 'src/repositories/connect.repository.js';
-import { OAuthAppRepository, OAuthClient } from 'src/repositories/oauth-app.repository.js';
+import { OAuthAppRepository, type OAuthAuthorizationCode, OAuthClient } from 'src/repositories/oauth-app.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { isCodeChallenge, verifierMatches } from 'src/utils/browser-extension-sign-in.js';
 import {
@@ -607,8 +607,20 @@ export class OAuthAppService extends BaseService {
       throw oauthError('invalid_request', 'The code is missing');
     }
     const codeHash = this.cryptoRepository.hashSha256(code);
-    const found = await this.oauthAppRepository.takeCode(codeHash);
     const invalid = oauthError('invalid_grant', 'This code can’t be used. Connect the app again.');
+    const tokens = this.newTokens();
+    let refusal: HttpException | undefined;
+    // the code is taken, and its grant made, in one transaction: see `redeemCode`
+    const { code: found, grant } = await this.oauthAppRepository.redeemCode(codeHash, async (found) => {
+      try {
+        return await this.grantForCode(found, body, issuer, tokens, invalid);
+      } catch (error) {
+        if (!(error instanceof HttpException)) {
+          throw error;
+        }
+        refusal = error;
+      }
+    });
     if (!found) {
       // FL-1635 (TM-12): a code that comes back was copied, so the grant made from it ends (OAuth 2.1 §4.1.3)
       const replayed = await this.oauthAppRepository.getBySpentRefreshToken(codeHash);
@@ -623,6 +635,24 @@ export class OAuthAppService extends BaseService {
       }
       throw invalid;
     }
+    if (!grant) {
+      throw refusal ?? invalid;
+    }
+    return {
+      ...this.tokenResponse(tokens, found.scopes),
+      ...(found.frameleafAccountId && { frameleaf_account_id: found.frameleafAccountId }),
+      account_ref: this.cryptoRepository.hashSha256(`frameleaf-app-account:${grant.userId}`).toString('base64url'),
+    };
+  }
+
+  /** The grant a taken code may become; throws the OAuth error when the request does not match the code. */
+  private async grantForCode(
+    found: OAuthAuthorizationCode,
+    body: Record<string, unknown>,
+    issuer: string | undefined,
+    tokens: ReturnType<OAuthAppService['newTokens']>,
+    invalid: HttpException,
+  ) {
     if (new Date(found.expiresAt).getTime() <= Date.now()) {
       throw oauthError('invalid_grant', 'This code has expired. Connect the app again.');
     }
@@ -649,8 +679,7 @@ export class OAuthAppService extends BaseService {
     ) {
       throw invalid;
     }
-    const tokens = this.newTokens();
-    const grant = await this.oauthAppRepository.createGrant({
+    return {
       userId: user.id,
       clientId: client.id,
       scopes: found.scopes,
@@ -661,12 +690,6 @@ export class OAuthAppService extends BaseService {
       refreshTokenHash: this.cryptoRepository.hashSha256(tokens.refresh_token),
       accessTokenHash: this.cryptoRepository.hashSha256(tokens.access_token),
       accessExpiresAt: tokens.expiresAt,
-    });
-    await this.oauthAppRepository.keepSpentCode(codeHash, grant.id);
-    return {
-      ...this.tokenResponse(tokens, found.scopes),
-      ...(found.frameleafAccountId && { frameleaf_account_id: found.frameleafAccountId }),
-      account_ref: this.cryptoRepository.hashSha256(`frameleaf-app-account:${user.id}`).toString('base64url'),
     };
   }
 

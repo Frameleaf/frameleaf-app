@@ -84,14 +84,16 @@ class FakeOAuthAppRepository {
     this.codes.set(key(code.codeHash), { ...code, createdAt: new Date() } as OAuthAuthorizationCode);
     return Promise.resolve();
   });
-  takeCode = vi.fn((hash: Buffer) => {
-    const found = this.codes.get(key(hash));
+  redeemCode = vi.fn(async (hash: Buffer, makeGrant: (code: OAuthAuthorizationCode) => Promise<Grant | undefined>) => {
+    const code = this.codes.get(key(hash));
     this.codes.delete(key(hash));
-    return Promise.resolve(found);
-  });
-  keepSpentCode = vi.fn((hash: Buffer, grantId: string) => {
-    this.spent.set(key(hash), grantId);
-    return Promise.resolve();
+    const values = code && (await makeGrant(code));
+    if (!values) {
+      return { code, grant: undefined };
+    }
+    const grant = await this.createGrant(values);
+    this.spent.set(key(hash), grant.id);
+    return { code, grant };
   });
   purge = vi.fn(() => Promise.resolve({ idle: 1, grants: 2, spentTokens: 3 }));
   createGrant = vi.fn((values: Grant) => {

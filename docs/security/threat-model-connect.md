@@ -83,7 +83,7 @@ Boundaries:
 | R: app signs out / reuse detected                  | Mitigated          | Account events `app-signed-out`, `token-reused` (`:300`, `:658`)                                                                                          | "lets an app sign itself out with either token", "never writes a token, code or verifier to the account activity" |
 | D: token endpoint flooding                         | Mitigated          | 120 per 10 min per address and 60 per `client_id` (`rate-limit.guard.ts:199-205`)                                                                         | `rate-limit.guard.spec.ts`                                                                                        |
 | E: long-lived access | Mitigated (**TM-9, FL-1633**) | Access token 1 h (`oauth-apps.ts:12`); a refresh token unused for 90 days after its access token ran out is refused (`OAUTH_REFRESH_IDLE_DAYS`, `oauth-app.service.ts` `refresh`); each night idle grants end and revoked grants and spent tokens older than 30 days are deleted (`onNightlyDatabaseCleanup`, `OAuthAppRepository.purge`) | "refuses a refresh after 91 idle days and writes no event", "rotates at 89 idle days"; medium `oauth-app.repository.spec.ts` "purge" |
-| E: code replay revokes tokens already issued | Mitigated (**TM-12, FL-1635**) | Code is single-use (`OAuthAppRepository.takeCode`); its hash is kept with the grant's spent tokens (`keepSpentCode`), so a second use revokes the grant and records `token-reused` (`oauth-app.service.ts` `exchangeCode`) | "revokes the grant a code made when the code comes back (FL-1635 TM-12)" |
+| E: code replay revokes tokens already issued | Mitigated (**TM-12, FL-1635**) | Code is single-use (`OAuthAppRepository.takeCode`); its hash is kept with the grant's spent tokens (`keepSpentCode`), in the same transaction that takes the code (`redeemCode`), so a second use revokes the grant and records `token-reused` (`oauth-app.service.ts` `exchangeCode`). The link is kept 30 days, like spent refresh tokens; the code itself is good for five minutes | "revokes the grant a code made when the code comes back (FL-1635 TM-12)" |
 
 ### 4.3 Dynamic client registration
 
@@ -193,7 +193,7 @@ Fixed afterwards, under FL-752 (Library 1.2.8):
 | TM-9 | Medium | Refresh tokens never expired; spent tokens and revoked grants were never purged | 90-day idle limit on refresh; nightly purge of idle grants, and of revoked grants and spent tokens after 30 days | FL-1633 |
 | TM-10 | Low | MCP write journal did not name what changed | The outcome row of `create_album`, `add_to_album` and `tag_assets` carries `albumId`/`tagId` and the asset ids that changed (at most 100 a call) | FL-1634 |
 | TM-11 | Low | `localhost` accepted as a loopback redirect host | Refused when an app registers itself; apps already registered keep working, and an administrator may still register one | FL-1635 |
-| TM-12 | Low | A replayed authorization code did not revoke its grant | The code's hash is kept with the grant's spent tokens; a second use revokes the grant and records `token-reused` | FL-1635 |
+| TM-12 | Low | A replayed authorization code did not revoke its grant | The code's hash is kept with the grant's spent tokens (for 30 days), written in the transaction that takes the code; a second use revokes the grant and records `token-reused` | FL-1635 |
 | TM-13 | Low | At the 500-app cap, new registrations evicted day-old unused ones | Only apps nobody allowed for 7 days make room; otherwise the new registration is refused | FL-1636 |
 
 ## 7. Not verified here

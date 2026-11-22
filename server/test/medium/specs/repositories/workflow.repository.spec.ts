@@ -44,6 +44,41 @@ beforeAll(async () => {
 });
 
 describe(WorkflowRepository.name, () => {
+  it('replaces a definition only while it is still the one that was read (FL-1631)', async () => {
+    const { ctx, sut } = setup();
+    const { user } = await ctx.newUser();
+    const workflowId = randomUUID();
+    await sql`
+      INSERT INTO public.workflow (id, "ownerId", trigger, name, "updateId")
+      VALUES (${workflowId}::uuid, ${user.id}::uuid, 'asset.uploaded', 'Guarded write', ${randomUUID()}::uuid)
+    `.execute(ctx.database);
+    const definition = (url: string) =>
+      ({ version: 1, trigger: 'asset.uploaded', extra: {}, steps: [], marker: url }) as never;
+
+    // nothing stored yet, and that is what was read: the write goes in
+    await sut.update(workflowId, {}, { definition: definition('first'), steps: [] }, { unlessChangedFrom: null });
+    expect((await sut.get(workflowId))?.definition).toMatchObject({ marker: 'first' });
+
+    // someone saved 'second' after 'first' was read: a write based on 'first' still applies, one based on older state does not
+    await sut.update(workflowId, {}, { definition: definition('second'), steps: [] });
+    await sut.update(
+      workflowId,
+      {},
+      { definition: definition('stale') as never, steps: [] },
+      { unlessChangedFrom: definition('first') },
+    );
+    expect((await sut.get(workflowId))?.definition).toMatchObject({ marker: 'second' });
+
+    await sut.update(
+      workflowId,
+      {},
+      { definition: definition('third'), steps: [] },
+      { unlessChangedFrom: definition('second') },
+    );
+    expect((await sut.get(workflowId))?.definition).toMatchObject({ marker: 'third' });
+    await ctx.database.deleteFrom('workflow').where('id', '=', workflowId).execute();
+  });
+
   it('persists and reads workflow logs with generated defaults and ownership constraints after fresh migrations', async () => {
     const { ctx, sut } = setup();
     const { user } = await ctx.newUser();

@@ -336,7 +336,7 @@ export class WorkflowService extends BaseService {
       trigger !== undefined ||
       source !== undefined ||
       schedule !== undefined;
-    const definition = changesDefinition
+    let definition = changesDefinition
       ? this.parseDefinition({
           trigger: trigger ?? stored.trigger,
           source: source === undefined ? stored.source : source,
@@ -349,12 +349,23 @@ export class WorkflowService extends BaseService {
       this.assertMayUseTrigger(auth, definition);
     }
     this.assertCanEnable(workflowDto.enabled ?? current.enabled, definition, methods);
-    const generated = changesDefinition ? this.signEventSteps(definition, methods) : undefined;
+    let replaces = changesDefinition;
+    let generated = changesDefinition ? this.signEventSteps(definition, methods) : undefined;
+    if (!changesDefinition && workflowDto.enabled) {
+      // enabled as it is stored: a step that can sign and has no secret yet (its plugin was off at the last
+      // save and at start-up) gets one now, or its event messages would all be refused
+      const signed = structuredClone(stored);
+      generated = this.signEventSteps(signed, methods);
+      if (generated.size > 0) {
+        definition = signed;
+        replaces = true;
+      }
+    }
 
     const workflow = await this.workflowRepository.update(
       id,
       { ...workflowDto, ...(changesDefinition && { trigger: this.storedTrigger(definition) }) },
-      changesDefinition ? { definition, steps: this.runnableSteps(definition, methods) } : undefined,
+      replaces ? { definition, steps: this.runnableSteps(definition, methods) } : undefined,
     );
     return this.map(workflow, methods, generated);
   }
@@ -469,10 +480,12 @@ export class WorkflowService extends BaseService {
         for (const workflow of await this.workflowRepository.search({ trigger })) {
           const definition = structuredClone(this.definitionOf(workflow));
           if (this.signEventSteps(definition, methods).size > 0) {
+            // only if nobody saved it since it was read here: a save made meanwhile is never overwritten
             await this.workflowRepository.update(
               workflow.id,
               {},
               { definition, steps: this.runnableSteps(definition, methods) },
+              { unlessChangedFrom: workflow.definition ?? null },
             );
             this.logger.log(`Workflow ${workflow.id} sends a Frameleaf event: its webhook now signs each message`);
           }
