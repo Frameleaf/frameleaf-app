@@ -24,6 +24,7 @@ import { DB } from 'src/schema/index.js';
 import { GeodataPlacesTable } from 'src/schema/tables/geodata-places.table.js';
 import { LandmarkAreaTable, LandmarkTable } from 'src/schema/tables/landmark.table.js';
 import { NaturalEarthCountriesTable } from 'src/schema/tables/natural-earth-countries.table.js';
+import { UserPlaceTable } from 'src/schema/tables/user-place.table.js';
 import { withAlbumVisibility, withHiddenContentFilter } from 'src/utils/database.js';
 import { favoriteFor } from 'src/utils/favorite.js';
 import { libraryScopePredicate } from 'src/utils/library-scope.js';
@@ -133,6 +134,8 @@ const GEODATA_INDEXES = [
   ['idx_geodata_places_admin1_name', 'gin', sql`f_unaccent("admin1Name") gin_trgm_ops`],
   ['idx_geodata_places_admin2_name', 'gin', sql`f_unaccent("admin2Name") gin_trgm_ops`],
 ] as const;
+
+const USER_PLACE_COLUMNS = ['id', 'name', 'latitude', 'longitude', 'radiusMeters', 'createdAt', 'updatedAt'] as const;
 
 @Injectable()
 export class MapRepository {
@@ -918,6 +921,56 @@ export class MapRepository {
     }
 
     return adminMap;
+  }
+
+  /** FL-949: a person's named places, by name. Only ever read for that person. */
+  @GenerateSql({ params: [DummyValue.UUID] })
+  getUserPlaces(ownerId: string) {
+    return this.db
+      .selectFrom('user_place')
+      .select(USER_PLACE_COLUMNS)
+      .where('ownerId', '=', ownerId)
+      .orderBy(sql`lower(name)`)
+      .orderBy('id')
+      .execute();
+  }
+
+  @GenerateSql({ params: [DummyValue.UUID] })
+  async countUserPlaces(ownerId: string): Promise<number> {
+    const { count } = await this.db
+      .selectFrom('user_place')
+      .select((eb) => eb.fn.countAll<string>().as('count'))
+      .where('ownerId', '=', ownerId)
+      .executeTakeFirstOrThrow();
+    return Number(count);
+  }
+
+  createUserPlace(place: Insertable<UserPlaceTable>) {
+    return this.db.insertInto('user_place').values(place).returning(USER_PLACE_COLUMNS).executeTakeFirstOrThrow();
+  }
+
+  updateUserPlace(
+    ownerId: string,
+    id: string,
+    changes: Partial<Pick<Insertable<UserPlaceTable>, 'name' | 'latitude' | 'longitude' | 'radiusMeters'>>,
+  ) {
+    return this.db
+      .updateTable('user_place')
+      .set({ ...changes, updatedAt: new Date() })
+      .where('ownerId', '=', ownerId)
+      .where('id', '=', id)
+      .returning(USER_PLACE_COLUMNS)
+      .executeTakeFirst();
+  }
+
+  @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID] })
+  async deleteUserPlace(ownerId: string, id: string): Promise<boolean> {
+    const result = await this.db
+      .deleteFrom('user_place')
+      .where('ownerId', '=', ownerId)
+      .where('id', '=', id)
+      .executeTakeFirst();
+    return result.numDeletedRows > 0n;
   }
 
   /**

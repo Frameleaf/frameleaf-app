@@ -1,0 +1,39 @@
+{
+  "semanticSegments": [
+    {
+      "startTime": "2024-07-01T09:00:00.000-06:00",
+      "endTime": "2024-07-01T10:00:00.000-06:00",
+      "startTimeTimezoneUtcOffsetMinutes": -360,
+      "visit": {
+        "hierarchyLevel": 0,
+        "probability": 0.92,
+        "topCandidate": { "placeId": "synthetic-1", "semanticType": "HOME", "probability": 0.98, "placeLocation": { "latLng": "51.1784°, -115.5708°" } }
+      }
+    },
+    {
+      "startTime": "2024-07-01T10:00:00.000-06:00",
+      "endTime": "2024-07-01T10:30:00.000-06:00",
+      "activity": {
+        "start": { "latLng": "51.1784°, -115.5708°" },
+        "end": { "latLng": "51.1645°, -115.5617°" },
+        "distanceMeters": 1700.5,
+        "topCandidate": { "type": "WALKING", "probability": 0.8 }
+      }
+    },
+    {
+      "startTime": "2024-07-01T10:00:00.000-06:00",
+      "endTime": "2024-07-01T12:00:00.000-06:00",
+      "timelinePath": [
+        { "point": "51.1760°, -115.5700°", "time": "2024-07-01T10:05:00.000-06:00" },
+        { "point": "51.1720°, -115.5680°", "time": "2024-07-01T10:12:00.000-06:00" },
+        { "point": "51.1690°, -115.5650°", "time": "2024-07-01T10:20:00.000-06:00" }
+      ]
+    }
+  ],
+  "rawSignals": [
+    { "position": { "LatLng": "51.1701°, -115.5661°", "accuracyMeters": 12, "altitudeMeters": 1390.0, "source": "GPS", "timestamp": "2024-07-01T10:17:30.000-06:00", "speedMetersPerSecond": 1.2 } },
+    { "position": { "LatLng": "51.1650°, -115.5620°", "accuracyMeters": 1800, "source": "CELL", "timestamp": "2024-07-01T10:28:00.000-06:00" } },
+    { "wifiScan": { "deliveryTime": "2024-07-01T10:29:00.000-06:00", "devicesRecords": [{ "mac": 1, "rawRssi": -60 }] } }
+  ],
+  "userLocationProfile": { "frequentPlaces": [{ "placeId": "synthetic-1", "placeLocation": "51.1784°, -115.5708°", "label": "HOME" }] }
+}

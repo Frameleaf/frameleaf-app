@@ -75,6 +75,7 @@ import {
   suppressBursts,
 } from 'src/utils/memory-story.js';
 import { findOrFail } from 'src/utils/misc.js';
+import { dominantNamedPlace } from 'src/utils/named-place.js';
 
 const DAYS = 3;
 
@@ -368,12 +369,21 @@ export class MemoryService extends BaseService {
     );
     const taken = new Set(existing.map((date) => date.getTime()));
 
+    // FL-949: a story mostly taken at one of the owner's named places is titled with that name. The memory is the
+    // owner's own, as the name is.
+    const namedPlaces = await this.mapRepository.getUserPlaces(ownerId);
+    const located = new Map(candidates.map((candidate) => [candidate.id, candidate]));
+
     for (const story of stories) {
       if (taken.has(story.startAt.getTime())) {
         continue;
       }
 
-      const label = story.landmark?.name ?? placeLabel(story.place);
+      const namedPlace = dominantNamedPlace(
+        namedPlaces,
+        story.assetIds.map((id) => located.get(id) ?? { latitude: null, longitude: null }),
+      );
+      const label = namedPlace?.name ?? story.landmark?.name ?? placeLabel(story.place);
       await this.memoryRepository.create(
         {
           ownerId,

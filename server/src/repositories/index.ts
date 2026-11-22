@@ -92,6 +92,8 @@ import { ItemShareRepository } from 'src/repositories/item-share.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LibraryRepository } from 'src/repositories/library.repository.js';
 import { LivePhotoRepository } from 'src/repositories/live-photo.repository.js';
+import { LocationFillRepository } from 'src/repositories/location-fill.repository.js';
+import { LocationHistoryRepository } from 'src/repositories/location-history.repository.js';
 import { LockedEncryptionRepository } from 'src/repositories/locked-encryption.repository.js';
 import { LockedFileRepository } from 'src/repositories/locked-file.repository.js';
 import { LockedKeyRepository } from 'src/repositories/locked-key.repository.js';
@@ -328,6 +330,8 @@ export const repositories = [
   AlbumChangeRunRepository,
   AlbumCleanupRepository,
   DateDoctorRepository,
+  LocationHistoryRepository,
+  LocationFillRepository,
   AssetLedgerRepository,
   FoundFileRepository,
   AlbumMergeRepository,

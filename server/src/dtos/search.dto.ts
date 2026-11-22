@@ -423,6 +423,11 @@ const searchFilterBranchShape = {
   tagIds: IdsFilterSchema,
   // FL-353: photos and videos taken at any of (or none of) these landmarks
   landmarkIds: LandmarkIdsFilterSchema,
+  // FL-949: taken inside any (all, none) of the viewer's own named places; places are per viewer, so another
+  // account's place matches nothing, and through a shared link none does
+  namedPlaceIds: IdsFilterSchema.describe(
+    "The viewer's named places (Home, Grandma's …): items taken inside any, all or none of them",
+  ),
   // FL-1284: slow motion, panoramas, bursts, portraits … as the file's metadata records them
   mediaKinds: MediaKindsFilterSchema,
   albumIds: IdsFilterSchema,
