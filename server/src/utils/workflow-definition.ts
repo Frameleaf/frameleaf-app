@@ -231,7 +231,7 @@ export function workflowIssues(
 
 /** Parameter names whose text values are credentials: kept on the server, never read back. */
 const CREDENTIAL_KEY =
-  /^(headerValue|password|passphrase|token|accessToken|refreshToken|bearerToken|secret|authorization|api[_-]?key|privateKey|clientSecret)$/i;
+  /^(headerValue|password|passphrase|token|accessToken|refreshToken|bearerToken|secret|generatedSecret|authorization|api[_-]?key|privateKey|clientSecret)$/i;
 
 /** The key path of every non-empty credential value in a step's parameters. */
 export function credentialPaths(value: unknown, path: string[] = []): string[][] {

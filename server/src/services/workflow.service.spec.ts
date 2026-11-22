@@ -774,6 +774,100 @@ describe('Frameleaf event workflows (FL-819)', () => {
     expect(JSON.stringify(response)).not.toContain('shh');
   });
 
+  describe('signing secret (FL-1631 TM-7)', () => {
+    const signing = {
+      ...eventMethods[0],
+      schema: { ...webhookSchema, properties: { ...webhookSchema.properties, secret: { type: 'string' } } },
+    };
+    const admin = factory.auth({ user: { isAdmin: true } });
+    const unsigned = {
+      ...backupAlert,
+      steps: [{ method: backupAlert.steps[0].method, config: { url: 'https://example.com/hook' } }],
+    };
+    const signed = () => {
+      const { sut, mocks } = setup();
+      mocks.plugin.getForValidation.mockResolvedValue([signing, eventMethods[1]] as never);
+      mocks.crypto.randomBytesAsText.mockReturnValue('generated-secret');
+      return { sut, mocks };
+    };
+
+    it('generates a secret when an event webhook is saved without one, and shows it once', async () => {
+      const { sut, mocks } = signed();
+      const response = await sut.create(admin, unsigned as never);
+
+      const [, definition, steps] = mocks.workflow.create.mock.calls[0];
+      expect(definition.steps[0].config).toEqual({ url: 'https://example.com/hook', secret: 'generated-secret' });
+      expect(steps[0].config).toEqual({ url: 'https://example.com/hook', secret: 'generated-secret' });
+      expect(response.steps[0]).toMatchObject({ generatedSecret: 'generated-secret', storedSecrets: ['secret'] });
+      expect(response.steps[0].config).toEqual({ url: 'https://example.com/hook' });
+
+      // read back, it is a stored credential like any other
+      mocks.access.workflow.checkOwnerAccess.mockResolvedValue(new Set([response.id]));
+      mocks.workflow.get.mockResolvedValue({
+        ...response,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        steps: [],
+        definition,
+      } as never);
+      expect(JSON.stringify(await sut.get(admin, response.id))).not.toContain('generated-secret');
+    });
+
+    it('keeps the secret the administrator typed', async () => {
+      const { sut, mocks } = signed();
+      const response = await sut.create(admin, backupAlert as never);
+      expect(mocks.workflow.create.mock.calls[0][1].steps[0].config).toMatchObject({ secret: 'shh' });
+      expect(mocks.crypto.randomBytesAsText).not.toHaveBeenCalled();
+      expect(response.steps[0]).not.toHaveProperty('generatedSecret');
+    });
+
+    it('leaves a webhook on a photo unsigned unless its owner adds a secret', async () => {
+      const { sut, mocks } = signed();
+      await sut.create(admin, { ...unsigned, trigger: WorkflowTrigger.AssetCreate } as never);
+      expect(mocks.workflow.create.mock.calls[0][1].steps[0].config).toEqual({ url: 'https://example.com/hook' });
+    });
+
+    it('gives event webhooks saved before this a secret when the server starts, once', async () => {
+      const { sut, mocks } = signed();
+      const id = newUuid();
+      const stepId = newUuid();
+      const definition = {
+        version: 1,
+        trigger: WorkflowTrigger.CloudBackupFailed,
+        extra: {},
+        steps: [
+          { id: stepId, method: unsigned.steps[0].method, config: unsigned.steps[0].config, enabled: true, extra: {} },
+        ],
+      };
+      mocks.workflow.search.mockImplementation(
+        ({ trigger }) =>
+          Promise.resolve(
+            trigger === WorkflowTrigger.CloudBackupFailed ? [{ id, trigger, steps: [], definition }] : [],
+          ) as never,
+      );
+
+      await sut.onBootstrap();
+
+      expect(mocks.workflow.update).toHaveBeenCalledTimes(1);
+      const [updatedId, dto, replacement] = mocks.workflow.update.mock.calls[0];
+      expect([updatedId, dto]).toEqual([id, {}]);
+      expect(replacement!.definition.steps[0]).toMatchObject({ id: stepId, config: { secret: 'generated-secret' } });
+      expect(replacement!.steps[0]).toMatchObject({ id: stepId, config: { secret: 'generated-secret' } });
+
+      mocks.workflow.update.mockClear();
+      mocks.workflow.search.mockImplementation(
+        ({ trigger }) =>
+          Promise.resolve(
+            trigger === WorkflowTrigger.CloudBackupFailed
+              ? [{ id, trigger, steps: [], definition: replacement!.definition }]
+              : [],
+          ) as never,
+      );
+      await sut.onBootstrap();
+      expect(mocks.workflow.update).not.toHaveBeenCalled();
+    });
+  });
+
   it('refuses an event workflow to an account that is not an administrator', async () => {
     const { sut, mocks } = setup();
     await expect(sut.create(factory.auth(), backupAlert as never)).rejects.toBeInstanceOf(BadRequestException);

@@ -44,6 +44,12 @@ where
 returning
   *
 
+-- OAuthAppRepository.keepSpentCode
+insert into
+  "oauth_spent_refresh_token" ("tokenHash", "grantId")
+values
+  ($1, $2::uuid)
+
 -- OAuthAppRepository.getByAccessToken
 select
   "oauth_grant"."id",
