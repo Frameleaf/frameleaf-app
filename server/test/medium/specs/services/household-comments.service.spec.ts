@@ -86,7 +86,7 @@ describe('Household comments (medium)', () => {
         linkId,
         remoteUserId,
         displayName: 'Ben',
-        role: 'viewer',
+        role: 'contributor',
       })) as string;
       await shares.accept(shareId, remoteUserId);
       return shareId;

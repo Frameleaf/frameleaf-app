@@ -166,7 +166,7 @@ Sender tables:
 
 Owner API (space owner only, under `/shared-spaces/:id/households`): list links with their directory, invite remote accounts, change a role, remove a member. Removing the last member removes the share. The directory answer is relayed, never cached longer than five minutes, and never stored beyond the invited member's `displayName`.
 
-In version 1 both roles read the space and may comment and like. A remote contributor adding photos back to the sender's space is out of scope; the role is stored and sent so that it can mean more later without a schema change.
+In version 1 both roles read the space; only a Contributor may comment and like, as on the approved share sheet. A member later made a Viewer can still delete their own comments. A remote contributor adding photos back to the sender's space is out of scope; the role is stored and sent so that it can mean more later without a schema change.
 
 **What a share exposes.** Exactly what a local member with the viewer role sees in that space, computed by the same queries (`AlbumRepository` and the FL-446 owner-rule filters in `server/src/utils/hidden-content.ts` and `utils/database.ts`), evaluated as "a member who is not the owner and whose session is locked":
 
