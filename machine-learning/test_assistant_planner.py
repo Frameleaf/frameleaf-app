@@ -135,6 +135,35 @@ class TestPrompt:
         assert question not in messages[0]["content"]
         assert json.loads(messages[1]["content"])["question"] == question
 
+    def test_states_the_conventions_the_search_expects(self) -> None:
+        prompt = assistant_planner.SYSTEM_PROMPT
+        # FL-806: without these the measured models missed the media type and the end of a period
+        assert f"`{assistant_planner.TOOL_NAME}`" in prompt
+        assert '"IMAGE"' in prompt and '"VIDEO"' in prompt
+        assert "T23:59:59.999Z" in prompt
+
+    def test_transformers_turns_template_thinking_off(self) -> None:
+        import torch
+
+        asked: dict[str, Any] = {}
+
+        class Inputs(dict[str, Any]):
+            def to(self, _device: str) -> "Inputs":
+                return self
+
+        class Tokenizer:
+            def apply_chat_template(self, _messages: Any, **kwargs: Any) -> Inputs:
+                asked.update(kwargs)
+                return Inputs(input_ids=torch.zeros((1, 3), dtype=torch.long))
+
+            def decode(self, _ids: Any, **_: Any) -> str:
+                return "{}"
+
+        model = SimpleNamespace(generate=lambda **_: torch.zeros((1, 5), dtype=torch.long))
+        session = {"tokenizer": Tokenizer(), "model": model, "device": "cpu"}
+        assert assistant_planner._generate_transformers(session, []) == "{}"
+        assert asked["enable_thinking"] is False
+
 
 class FakePlanner:
     """Stands in for the planner model: answers each call with the next scripted output."""
