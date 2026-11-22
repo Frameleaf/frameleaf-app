@@ -354,29 +354,102 @@ class TestSignedOffRecords:
 
     @staticmethod
     def with_open_items_closed(record: QualificationRecord) -> QualificationRecord:
-        """A test-only copy: what the record would need. The committed record does not claim this."""
-        evidence = [
-            entry.model_copy(update={"result": "pass", "artifact": "test-only"})
-            if entry.item == "hallucination"
-            else entry
-            for entry in record.evidence
-        ]
-        return record.model_copy(update={"evidence": evidence, "containerRevisions": [IMAGE_REVISION]})
+        """A test-only copy naming an image revision. The committed record names none: none has run."""
+        return record.model_copy(update={"containerRevisions": [IMAGE_REVISION]})
 
-    def test_the_committed_records_are_refused_only_for_the_two_open_items(self, tmp_path: Path) -> None:
+    def test_the_committed_records_are_refused_only_because_no_image_has_run(self, tmp_path: Path) -> None:
         specs, records = self.signed(tmp_path)
 
         report = make_registry(tmp_path, specs, records, gpus=[self.RUNNER_GPU]).refresh()
 
         assert report.workloads == []
         assert len(report.photoModels) == 2
+        assert all(record.containerRevisions == [] for record in records)
         for model in report.photoModels:
             assert model.state == ModelState.UNQUALIFIED
-            assert sorted(model.reasons) == sorted(
-                ["evidence hallucination is pending", f"worker image {IMAGE_REVISION} is not a qualified revision"]
-            )
+            assert model.reasons == [f"worker image {IMAGE_REVISION} is not a qualified revision"]
 
-    def test_with_those_items_closed_the_gate_lists_both_workloads(self, tmp_path: Path) -> None:
+    def test_only_the_branch_a_run_used_is_recorded(self, tmp_path: Path) -> None:
+        _, records = self.signed(tmp_path)
+
+        assert all(record.anyNvidiaGpu for record in records)
+        assert {entry.driverVersion for record in records for entry in record.hardware} == {"610.88"}
+
+    @pytest.mark.parametrize(
+        ("gpu", "state", "reason"),
+        [
+            (None, ModelState.NO_GPU, "no NVIDIA GPU is visible"),
+            (("AMD Radeon RX 7900", 16384, "610.88"), ModelState.GPU_UNQUALIFIED, "is not an NVIDIA GPU"),
+            (("NVIDIA GeForce RTX 3060", 6144, "610.88"), ModelState.INSUFFICIENT_VRAM, "needs 8000000000 bytes"),
+            (("NVIDIA GeForce RTX 4070", 12288, "550.54.14"), ModelState.GPU_UNQUALIFIED, "(tested: 610)"),
+        ],
+    )
+    def test_the_gpu_policy_still_refuses(
+        self, tmp_path: Path, gpu: tuple[str, int, str] | None, state: ModelState, reason: str
+    ) -> None:
+        specs, records = self.signed(tmp_path)
+        closed = [self.with_open_items_closed(record) for record in records]
+        gpus = [GpuDescription(name=gpu[0], memoryTotalBytes=gpu[1] * 1024**2, driverVersion=gpu[2])] if gpu else []
+
+        report = make_registry(tmp_path, specs, closed, gpus=gpus).refresh()
+
+        assert report.workloads == []
+        for model in report.photoModels:
+            assert model.state == state and reason in model.reasons[0]
+
+    @pytest.mark.parametrize(("name", "mib"), [("NVIDIA GeForce RTX 4060", 8188), ("NVIDIA GeForce RTX 4090", 24576)])
+    def test_the_gpu_policy_accepts_an_untested_card_on_a_tested_branch(
+        self, tmp_path: Path, name: str, mib: int
+    ) -> None:
+        specs, records = self.signed(tmp_path)
+        closed = [self.with_open_items_closed(record) for record in records]
+        gpu = GpuDescription(name=name, memoryTotalBytes=mib * 1024**2, driverVersion="610.12")
+
+        assert make_registry(tmp_path, specs, closed, gpus=[gpu]).refresh().workloads == ["photo-repair", "colourise"]
+
+    def test_a_record_without_the_policy_keeps_the_exact_model_match(self, tmp_path: Path) -> None:
+        specs, records = self.signed(tmp_path)
+        exact = [self.with_open_items_closed(record).model_copy(update={"anyNvidiaGpu": False}) for record in records]
+        other = GpuDescription(name="NVIDIA GeForce RTX 4090", memoryTotalBytes=24 * 1024**3, driverVersion="610.88")
+
+        assert make_registry(tmp_path, specs, exact, gpus=[other]).refresh().workloads == []
+        assert make_registry(tmp_path, specs, exact, gpus=[self.RUNNER_GPU]).refresh().workloads == [
+            "photo-repair",
+            "colourise",
+        ]
+
+    def test_the_policy_cannot_widen_a_workload_that_is_not_a_photo_model(self) -> None:
+        spec = ModelSpec.model_validate(
+            next(
+                model
+                for model in json.loads((EXAMPLES / "models.example.json").read_text())["models"]
+                if model["family"] == "rife"
+            )
+            | {"revision": COMMIT}
+        ).model_copy(update={"requiresGpu": True})
+        spec = spec.model_copy(
+            update={
+                "weights": [
+                    weight.model_copy(update={"sha256": f"{index + 1:x}" * 64})
+                    for index, weight in enumerate(spec.weights)
+                ]
+            }
+        )
+        record = passing_record(spec, anyNvidiaGpu=True)
+        other = GpuDescription(name="NVIDIA GeForce RTX 4090", memoryTotalBytes=24 * 1024**3, driverVersion="550.1")
+
+        capability = evaluate_model(
+            spec,
+            runtime=CLEAN,
+            weights=WeightStatus(),
+            records=[record],
+            gpus=[other],
+            container_revision=IMAGE_REVISION,
+        )
+
+        assert capability.state == ModelState.GPU_UNQUALIFIED
+
+    def test_with_an_image_revision_the_gate_lists_both_workloads(self, tmp_path: Path) -> None:
         specs, records = self.signed(tmp_path)
         closed = [self.with_open_items_closed(record) for record in records]
 

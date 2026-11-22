@@ -195,9 +195,11 @@ repair processed all 200 scans and colourise 166, refusing 34 as already coloure
 failures, inside the 8 GB cap at full scan size. Every detected face and every unmasked pixel
 came back byte-identical. The owner accepted two known limits for release: the scratch mask
 still marks some real detail (a garment fold, parts of ruled mount lines), and colourise still
-picks arbitrary colours. The gate still refuses both models for two reasons: `hallucination`
-has no measured evidence, and no worker image revision is listed in `containerRevisions`. The
-records are in `qualification/qualification.photo.json` and
+picks arbitrary colours, and that the output can contain invented pixels. The records accept
+any NVIDIA GPU of at least 8 GB on a tested driver branch (`anyNvidiaGpu`); the only tested
+branch is 610, on one RTX 3060 under Windows, so a Linux worker on another branch is refused.
+The gate still refuses both models because no worker image has run them: `containerRevisions`
+is empty. The records are in `qualification/qualification.photo.json` and
 `qualification/models.qualified.photo.json`.
 
 ## When a model is available

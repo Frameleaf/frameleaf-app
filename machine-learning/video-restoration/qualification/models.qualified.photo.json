@@ -60,13 +60,13 @@
         "maxInputLongEdge": 8192,
         "maxFrames": 1,
         "maxFramesPerChunk": 1,
-        "minVramBytes": 8589934592
+        "minVramBytes": 8000000000
       },
       "dynamicRanges": [
         "sdr"
       ],
       "requiresGpu": true,
-      "notes": "Owner sign-off 2026-11-22 on run 1296. Revision and sha256 values are those measured; minVramBytes is the cap the run was held to. The weights came from their upstream pins and are not on the Frameleaf model source."
+      "notes": "Owner sign-off 2026-11-22 on run 1296. Revision and sha256 values are those measured. minVramBytes is the owner's 8 GB rule; run 1296 was capped at 8 GiB and peaked under 3 GiB. The weights came from their upstream pins and are not on the Frameleaf model source."
     },
     {
       "id": "ddcolor-colourise",
@@ -115,13 +115,13 @@
         "maxInputLongEdge": 8192,
         "maxFrames": 1,
         "maxFramesPerChunk": 1,
-        "minVramBytes": 8589934592
+        "minVramBytes": 8000000000
       },
       "dynamicRanges": [
         "sdr"
       ],
       "requiresGpu": true,
-      "notes": "Owner sign-off 2026-11-22 on run 1296. Revision and sha256 values are those measured; minVramBytes is the cap the run was held to. The weights came from their upstream pins and are not on the Frameleaf model source."
+      "notes": "Owner sign-off 2026-11-22 on run 1296. Revision and sha256 values are those measured. minVramBytes is the owner's 8 GB rule; run 1296 was capped at 8 GiB and peaked under 3 GiB. The weights came from their upstream pins and are not on the Frameleaf model source."
     }
   ]
 }
