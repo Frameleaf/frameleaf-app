@@ -1716,3 +1716,41 @@ where
   "person_category_member"."ownerId" = $2
   and "person_category_member"."personId" = $3
 on conflict do nothing
+
+-- PersonRepository.getRelationships
+select
+  "person_relationship"."personGroupId",
+  "person_relationship"."relatedPersonGroupId",
+  "person_relationship"."kind",
+  "person_relationship"."parentRole"
+from
+  "person_relationship"
+where
+  "person_relationship"."ownerId" = $1
+order by
+  "person_relationship"."createdAt",
+  "person_relationship"."id"
+
+-- PersonRepository.deleteRelationship
+delete from "person_relationship"
+where
+  "person_relationship"."ownerId" = $1
+  and (
+    (
+      "person_relationship"."personGroupId" = $2
+      and "person_relationship"."relatedPersonGroupId" = $3
+    )
+    or (
+      "person_relationship"."personGroupId" = $4
+      and "person_relationship"."relatedPersonGroupId" = $5
+    )
+  )
+
+-- PersonRepository.getOwnPeople
+select
+  "person".*
+from
+  "person"
+where
+  "person"."ownerId" = $1
+  and "person"."personGroupId" in ($2)

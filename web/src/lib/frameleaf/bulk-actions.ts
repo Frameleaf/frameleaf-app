@@ -87,7 +87,9 @@ export type BulkActionId =
    * own durable job; nothing is dispatched to the bulk runner. Only the signed-in account's own items
    * are exported, and the dialog says how many were left out.
    */
-  | 'export-preservation';
+  | 'export-preservation'
+  /** FL-955: "Repair or colourise" opens its batch sheet, which starts its own background jobs. */
+  | 'repair-colourise';
 
 /**
  * The part of an asset a descriptor reads. The production list DTO is a superset; `toBulkAsset`
@@ -503,6 +505,19 @@ export const bulkActions = (context: BulkActionContext = {}): BulkAction[] => {
       icon: 'mdiMovieEditOutline',
       group: 'jobs',
       available: !readOnly && !locked && has && (unknown || assets.some((asset) => asset.isVideo)),
+    },
+    {
+      id: 'repair-colourise',
+      labelKey: 'frameleaf_bulk_repair_colourise',
+      icon: 'mdiImageEditOutline',
+      group: 'jobs',
+      dialog: true,
+      // Photos of the viewer's own; a matching-set snapshot has no list of ids to estimate.
+      available:
+        !readOnly &&
+        !trash &&
+        resolved &&
+        (unknown || ownedAssets(assets, context.currentUserId).some((asset) => !asset.isVideo)),
     },
     {
       id: 'export-preservation',
