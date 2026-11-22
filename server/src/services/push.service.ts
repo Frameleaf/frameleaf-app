@@ -47,7 +47,7 @@ import { UserRepository } from 'src/repositories/user.repository.js';
 import { getConfig } from 'src/utils/config.js';
 import { loadInstanceIdentity, readCloudLink } from 'src/utils/frameleaf-cloud-gateway.js';
 import { FrameleafCloudError } from 'src/utils/frameleaf-cloud.js';
-import { isLicensed } from 'src/utils/frameleaf-license.js';
+import { entitlementFlags, isLicensed } from 'src/utils/frameleaf-license.js';
 import {
   PUSH_GATEWAY_CONCURRENCY,
   PUSH_GATEWAY_MAX_ATTEMPTS,
@@ -101,6 +101,10 @@ const disabledEventsOf = (preferences: PushPreferencesDto | undefined, current: 
 
 /** FL-926: whether this server delivers to UnifiedPush now, and the administrator's address rule. */
 type UnifiedPushAccess = { available: boolean; reason: string | null; allowLocalTargets: boolean };
+
+/** Whether the Cloud gateway may be used now: linked, and with a plan when the plan switch (FL-908) is on. */
+const cloudReadyOf = ({ reason, needsPlan }: { reason: PushUnavailableReason | null; needsPlan?: boolean }) =>
+  reason === null && !needsPlan;
 
 /** How a device is reached: `unifiedpush` when it registered an endpoint, else `cloud` (the gateway). */
 type PushTransport = 'cloud' | 'unifiedpush';
@@ -221,11 +225,12 @@ export class PushService {
   /* ------------------------------------------------------------------ */
 
   async getStatus(auth: AuthDto): Promise<PushStatusResponseDto> {
-    const { reason } = await this.availability();
+    const availability = await this.availability();
+    const { reason } = availability;
     const registered = auth.session ? !!(await this.devices.getBySession(auth.session.id)) : false;
     const unifiedPush = await this.unifiedPushAccess();
     return {
-      available: reason === null,
+      available: cloudReadyOf(availability),
       reason,
       encryption: { scheme: 'frameleaf-push-v1', keyAgreement: 'X25519', kdf: 'HKDF-SHA256', cipher: 'AES-256-GCM' },
       events: Object.values(PushEventType),
@@ -352,7 +357,7 @@ export class PushService {
     const registered: PushTransport = device.unifiedPushEndpoint ? 'unifiedpush' : 'cloud';
     const availability = await this.availability();
     const access = device.unifiedPushEndpoint ? await this.unifiedPushAccess() : undefined;
-    const transport = this.transportOf(device, availability.reason === null, access);
+    const transport = this.transportOf(device, cloudReadyOf(availability), access);
     if (!transport) {
       return {
         transport: registered,
@@ -360,7 +365,7 @@ export class PushService {
         message:
           access && !access.available
             ? 'UnifiedPush needs a licensed server'
-            : `Push through Frameleaf Cloud is unavailable (${availability.reason ?? 'the device has no push token'})`,
+            : `Push through Frameleaf Cloud is unavailable (${availability.reason ?? (availability.needsPlan ? 'it needs a plan' : 'the device has no push token')})`,
       };
     }
     const locale = notificationLocaleOf(
@@ -601,10 +606,12 @@ export class PushService {
   @OnJob({ name: JobName.PushDeliver, queue: QueueName.Notification })
   async handleDeliver({ notice }: JobOf<JobName.PushDeliver>): Promise<JobStatus> {
     const availability = await this.availability();
-    const cloudReady = availability.reason === null;
+    const cloudReady = cloudReadyOf(availability);
     // FL-926: an unlinked server still delivers to devices that registered a UnifiedPush endpoint
     if (!cloudReady && !(await this.devices.hasUnifiedPushDevices())) {
-      this.logger.debug(`Push ${notice.type} not delivered: push is unavailable (${availability.reason})`);
+      this.logger.debug(
+        `Push ${notice.type} not delivered: push is unavailable (${availability.reason ?? 'it needs a plan'})`,
+      );
       return JobStatus.Skipped;
     }
 
@@ -630,7 +637,9 @@ export class PushService {
     });
     if (routed.length === 0) {
       if (!cloudReady) {
-        this.logger.debug(`Push ${notice.type} not delivered: push is unavailable (${availability.reason})`);
+        this.logger.debug(
+          `Push ${notice.type} not delivered: push is unavailable (${availability.reason ?? 'it needs a plan'})`,
+        );
       }
       return JobStatus.Skipped;
     }
@@ -1093,6 +1102,7 @@ export class PushService {
     reason: PushUnavailableReason | null;
     cloudUrl?: string;
     instanceId?: string;
+    needsPlan?: boolean;
   }> {
     const { cloudUrl, link, linked } = await readCloudLink(this.gatewayDeps());
     if (!cloudUrl) {
@@ -1104,11 +1114,18 @@ export class PushService {
     if (link.heartbeat?.cloneSuspected) {
       return { reason: PushUnavailableReason.CloneSuspected };
     }
+    // FL-908 is open: off by default, so Cloud push is unchanged. `reason` stays null as its enum is closed to new values.
+    if (this.configRepository.getEnv().frameleafCloud.pushRequiresPlan) {
+      const store = await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafLicense);
+      if (!entitlementFlags([store?.key, store?.plan]).frameleafCloud) {
+        return { reason: null, needsPlan: true };
+      }
+    }
     return { reason: null, cloudUrl, instanceId: link.instanceId };
   }
 
   private async isLinked() {
-    return (await this.availability()).reason === null;
+    return cloudReadyOf(await this.availability());
   }
 
   private async gatewayTarget(instanceId: string, cloudUrl: string) {

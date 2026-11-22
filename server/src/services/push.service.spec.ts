@@ -74,6 +74,7 @@ const newHarness = (
     cloudUrl?: string | null;
     cloneSuspected?: boolean;
     unifiedPush?: { allowLocalTargets?: boolean; availability?: string };
+    cloudPushRequiresPlan?: boolean;
     /** FL-926: the real UnifiedPush client (its address checks), instead of a mock. */
     realUnifiedPush?: boolean;
   } = {},
@@ -137,7 +138,15 @@ const newHarness = (
   };
   const sut = new PushService(
     LoggingRepository.create(),
-    { getEnv: () => ({ frameleafCloud: { url: cloudUrl, identityDir: '/tmp/identity' } }) } as never,
+    {
+      getEnv: () => ({
+        frameleafCloud: {
+          url: cloudUrl,
+          identityDir: '/tmp/identity',
+          pushRequiresPlan: options.cloudPushRequiresPlan,
+        },
+      }),
+    } as never,
     {
       get: vi.fn((key: string) => Promise.resolve(metadata.get(key) ?? null)),
       set: vi.fn((key: string, value: unknown) => {
@@ -1434,6 +1443,43 @@ describe(PushService.name, () => {
         await expect(sut.register(auth, registration)).resolves.toMatchObject({ transport: 'unifiedpush' });
         await sut.handleDeliver({ notice: notice() });
         expect(unifiedPush.send).toHaveBeenCalledTimes(2);
+      });
+    });
+
+    describe('Cloud push plan switch (FL-908 pending)', () => {
+      const cloudPlan = () => ({
+        key: null,
+        plan: { kind: 'plan', claims: { exp: Math.floor(Date.now() / 1000) + 86_400, lic_exp: null, ent: ['CLOUD'] } },
+      });
+
+      it('leaves Cloud push alone when off, with or without a plan', async () => {
+        const { sut, devices, gateway } = newHarness();
+        devices.getDeliveryTargets.mockResolvedValue([device(newDeviceKey())]);
+        await expect(sut.getStatus(factory.auth({ session: {} }))).resolves.toMatchObject({ available: true });
+        await sut.handleDeliver({ notice: notice() });
+        expect(gateway.send).toHaveBeenCalledTimes(1);
+      });
+
+      it('holds Cloud push without a plan when on, and never UnifiedPush', async () => {
+        const { sut, devices, gateway, unifiedPush, metadata } = newHarness({ cloudPushRequiresPlan: true });
+        const cloudDevice = device(newDeviceKey());
+        const ntfyDevice = unifiedPushDevice(newDeviceKey());
+        devices.getDeliveryTargets.mockResolvedValue([cloudDevice, ntfyDevice]);
+        devices.hasUnifiedPushDevices.mockResolvedValue(true);
+
+        await expect(sut.getStatus(factory.auth({ session: {} }))).resolves.toMatchObject({
+          available: false,
+          reason: null,
+          unifiedPush: { available: true },
+        });
+        await sut.handleDeliver({ notice: notice() });
+        expect(gateway.send).not.toHaveBeenCalled();
+        expect(unifiedPush.send).toHaveBeenCalledTimes(1);
+
+        metadata.set(SystemMetadataKey.FrameleafLicense, cloudPlan());
+        await expect(sut.getStatus(factory.auth({ session: {} }))).resolves.toMatchObject({ available: true });
+        await sut.handleDeliver({ notice: notice() });
+        expect(gateway.send).toHaveBeenCalledTimes(1);
       });
     });
 

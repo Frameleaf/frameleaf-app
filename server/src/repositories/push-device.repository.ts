@@ -180,19 +180,30 @@ export class PushDeviceRepository {
       .executeTakeFirst();
     return !!row;
   }
-  /** FL-926: unregister devices whose UnifiedPush endpoint is gone, unless the device has since replaced it. */
+  /**
+   * FL-926: forget a UnifiedPush endpoint that is gone, unless the device has since replaced it. A device
+   * with an FCM token stays registered and goes back to the Cloud gateway; one without is removed.
+   */
   async deleteGoneUnifiedPush(refs: UnifiedPushEndpointRef[]): Promise<void> {
     if (refs.length === 0) {
       return;
     }
-    await this.db.transaction().execute((tx) =>
-      tx
+    await this.db.transaction().execute(async (tx) => {
+      await tx
         .deleteFrom('push_device')
+        .where('pushToken', 'is', null)
         .where((eb) =>
           eb.or(refs.map(({ id, endpoint }) => eb.and([eb('id', '=', id), eb('unifiedPushEndpoint', '=', endpoint)]))),
         )
-        .execute(),
-    );
+        .execute();
+      await tx
+        .updateTable('push_device')
+        .set({ unifiedPushEndpoint: null, unifiedPushPublicKey: null, unifiedPushAuth: null })
+        .where((eb) =>
+          eb.or(refs.map(({ id, endpoint }) => eb.and([eb('id', '=', id), eb('unifiedPushEndpoint', '=', endpoint)]))),
+        )
+        .execute();
+    });
   }
   async getBySession(sessionId: string): Promise<PushDeviceWithActivities | undefined> {
     const device = await this.devices().where('push_device.sessionId', '=', sessionId).executeTakeFirst();

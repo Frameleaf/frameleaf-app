@@ -168,6 +168,8 @@ export interface EnvData {
     trustedLanCidrs: string[];
     /** Integration builds only: the extra licence JWKS file (`FRAMELEAF_LICENSE_EXTRA_JWKS_FILE`), or null. */
     licenseExtraJwksFile: string | null;
+    /** FL-926: Cloud push needs a plan (`FRAMELEAF_CLOUD_PUSH_REQUIRES_PLAN`, off by default), pending FL-908. */
+    pushRequiresPlan?: boolean;
   };
 
   noColor: boolean;
@@ -359,6 +361,8 @@ const getEnv = (): EnvData => {
       localUrl: dto.FRAMELEAF_LOCAL_URL ? new URL(dto.FRAMELEAF_LOCAL_URL).origin : null,
       trustedLanCidrs: parseTrustedLanCidrs(dto.FRAMELEAF_TRUSTED_LAN_CIDRS),
       licenseExtraJwksFile: dto.FRAMELEAF_LICENSE_EXTRA_JWKS_FILE?.trim() || null,
+      // Read directly: every EnvSchema key is published as a response enum, and a new value breaks native apps.
+      pushRequiresPlan: /^(?:true|1|yes|on)$/i.test(process.env.FRAMELEAF_CLOUD_PUSH_REQUIRES_PLAN?.trim() ?? ''),
     },
 
     storage: {

@@ -188,6 +188,17 @@ describe('push device registry (FL-228)', () => {
     await sut.upsert(registration(user.id, third.id, unifiedPush));
     const cleared = await sut.upsert(registration(user.id, third.id));
     expect(cleared).toMatchObject({ unifiedPushEndpoint: null, unifiedPushPublicKey: null, unifiedPushAuth: null });
+
+    // a device that also has an FCM token keeps it and goes back to the Cloud gateway
+    const { session: fourth } = await ctx.newSession({ userId: user.id });
+    const both = await sut.upsert(registration(user.id, fourth.id, { ...unifiedPush, pushToken: 'fcm-both' }));
+    await sut.deleteGoneUnifiedPush([{ id: both.id, endpoint }]);
+    expect(await sut.getById(both.id)).toMatchObject({
+      pushToken: 'fcm-both',
+      unifiedPushEndpoint: null,
+      unifiedPushPublicKey: null,
+      unifiedPushAuth: null,
+    });
   });
 
   it('removes the registration and its Live Activity tokens when the session is deleted (logout, revoke)', async () => {
