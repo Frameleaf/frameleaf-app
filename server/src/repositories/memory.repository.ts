@@ -534,6 +534,8 @@ export class MemoryRepository implements IBulkAsset {
         .where(isOnTimelineWhateverLock('asset'))
         .where(libraryScopePredicate(LibraryScope.Personal))
         .where('asset.deletedAt', 'is', null)
+        // FL-936: a story is of a month; a photo dated to a year or a decade is of none
+        .where('asset.dateAccuracy', 'is', null)
         .where('asset.localDateTime', '>=', from)
         .where('asset.localDateTime', '<=', to)
         .orderBy('asset.localDateTime', 'asc')
