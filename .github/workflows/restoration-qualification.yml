@@ -1,0 +1,46 @@
+name: Restoration qualification (photo repair and colourise)
+
+# FL-933: runs the photo repair and colourise runtimes on a real NVIDIA GPU and records the
+# evidence the qualification gate asks for. Forgejo only, on the Windows GPU runner, started by
+# hand or by a push to the one qualification branch. The runner is a personal computer: every
+# step stays inside the job's work directory and the last step removes all of it.
+on:
+  workflow_dispatch:
+  push:
+    branches: [aj/FL-933-qualify]
+
+permissions: {}
+
+concurrency:
+  group: restoration-qualification
+  cancel-in-progress: false
+
+jobs:
+  probe:
+    name: Probe the GPU runner
+    if: github.server_url != 'https://github.com' && github.repository == 'Frameleaf/frameleaf-app'
+    runs-on: windows-gpu
+    timeout-minutes: 10
+    steps:
+      - name: What the runner has
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Continue'
+          Write-Output "cwd: $(Get-Location)"
+          Write-Output "workspace: $env:GITHUB_WORKSPACE"
+          Write-Output "runner temp: $env:RUNNER_TEMP"
+          Write-Output "powershell: $($PSVersionTable.PSVersion)"
+          foreach ($tool in 'nvidia-smi', 'python', 'py', 'uv', 'git', 'bash', 'pwsh', 'ffmpeg', 'curl', 'tar', 'node') {
+            $found = Get-Command $tool -ErrorAction SilentlyContinue
+            if ($found) { Write-Output "${tool}: $($found.Source)" } else { Write-Output "${tool}: not found" }
+          }
+          nvidia-smi
+          nvidia-smi --query-gpu=name,driver_version,memory.total,memory.used --format=csv
+          python --version
+          py -0p
+          uv --version
+          git --version
+          Get-PSDrive -PSProvider FileSystem | Format-Table Name, @{n='FreeGB';e={[math]::Round($_.Free/1GB,1)}}, @{n='UsedGB';e={[math]::Round($_.Used/1GB,1)}}
+          Write-Output "long paths: $((Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem' -Name LongPathsEnabled -ErrorAction SilentlyContinue).LongPathsEnabled)"
+          Write-Output "memory GB: $([math]::Round((Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory/1GB,1))"
+          exit 0
