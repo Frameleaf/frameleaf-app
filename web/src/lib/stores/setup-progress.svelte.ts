@@ -1,4 +1,5 @@
 import type { LibrarySetupProgressDto, LibrarySetupStageId } from '@frameleaf/sdk';
+import { eventManager } from '$lib/managers/event-manager.svelte';
 
 /**
  * FL-1178: the setup bar's last answer, kept across pages. TopBar mounts on each page, and a bar that started empty
@@ -13,13 +14,17 @@ class SetupProgressStore {
   requested = 0;
   applied = 0;
 
-  /** The next bar starts from nothing. */
+  constructor() {
+    // Signing out keeps this document: the next account must not start from this one's progress.
+    eventManager.on({ AuthLogout: () => this.reset() });
+  }
+
+  /** The next bar starts from nothing; an answer still on its way from before this is never shown. */
   reset() {
     this.progress = null;
     this.height = 0;
     this.since = null;
-    this.requested = 0;
-    this.applied = 0;
+    this.applied = this.requested;
   }
 }
 

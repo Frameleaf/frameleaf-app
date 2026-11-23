@@ -372,7 +372,7 @@ class Api {
         // ponytail: probed once per Manager start; a new GPU or driver shows after Manager restarts.
         acceleration: runtime === 'docker' ? await (acceleration ??= detectAcceleration()) : 'cpu',
       },
-      summary: installation ? await operations.librarySummary().catch(() => null) : null,
+      summary: installation ? await operations.dashboardSummary().catch(() => null) : null,
       services: containers.map((c) => ({
         id: c.Id,
         service: c.Config.Labels['com.docker.compose.service'],

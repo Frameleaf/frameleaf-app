@@ -25,7 +25,7 @@ from frameleaf_ml.sessions import runtime_cache_dir
 from frameleaf_ml.sessions.ort import OrtSession
 
 from ._ops import align_face
-from .landmarks import FaceLandmarker, eye_scores
+from .landmarks import FaceLandmarker, eye_scores, grey_image
 
 
 class FaceRecognizer(InferenceModel):
@@ -82,8 +82,9 @@ class FaceRecognizer(InferenceModel):
             # The faces still count; their eye scores stay empty until the landmark model can be fetched.
             log.warning("Eye scores skipped: the face landmark model isn't available")
             return
+        grey = grey_image(image)
         for face, box, face_points in zip(output, faces["boxes"], points):
-            face["eyesOpen"], face["eyeSharpness"] = eye_scores(image, box, face_points)
+            face["eyesOpen"], face["eyeSharpness"] = eye_scores(grey, box, face_points)
 
     def _predict_batch(self, crops: NDArray[np.float32]) -> NDArray[np.float32]:
         input_name = self.session.get_inputs()[0].name

@@ -1325,6 +1325,19 @@ describe(LibraryService.name, () => {
     beforeEach(() => {
       mocks.library.get.mockResolvedValue(library);
       mocks.storage.stat.mockResolvedValue({ isDirectory: () => true } as Stats);
+      mocks.storage.walkLibrary.mockImplementation(async function* () {
+        yield ['/mnt/photos/still-here.jpg'];
+      });
+    });
+
+    it('changes nothing when the folder is an empty mount point (an unmounted share)', async () => {
+      mocks.storage.walkLibrary.mockImplementation(async function* () {});
+
+      await sut.handleAssetRemoval({ libraryId: library.id, paths: ['/mnt/photos/a.jpg', '/mnt/photos/b.jpg'] });
+
+      expect(mocks.storage.walkLibrary).toHaveBeenCalledTimes(1);
+      expect(mocks.asset.getByLibraryIdAndOriginalPath).not.toHaveBeenCalled();
+      expect(mocks.asset.updateAll).not.toHaveBeenCalled();
     });
 
     it('marks an item offline, in the trash, when its file is gone and its folder is there', async () => {

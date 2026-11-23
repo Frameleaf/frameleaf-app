@@ -203,18 +203,33 @@
 
   /* Choose ------------------------------------------------------------ */
 
-  const load = async (name: string, entries: LibraryEntry[]) => {
+  /** Only the latest read counts: switching source or library drops one still running. */
+  let readRequest = 0;
+  const startRead = () => {
+    controller?.abort();
     reading = true;
+    return ++readRequest;
+  };
+
+  const load = async (name: string, entries: LibraryEntry[]) => {
+    const request = startRead();
     readError = undefined;
     library = undefined;
     plan = undefined;
     try {
-      library = await readEagleLibrary(name, entries);
-      supported = supportedExtensions(uploadManager.getBoardsExtensions());
+      const read = await readEagleLibrary(name, entries);
+      if (request === readRequest) {
+        library = read;
+        supported = supportedExtensions(uploadManager.getBoardsExtensions());
+      }
     } catch (error) {
-      readError = error instanceof EagleLibraryError ? error.reason : 'unreadable';
+      if (request === readRequest) {
+        readError = error instanceof EagleLibraryError ? error.reason : 'unreadable';
+      }
     } finally {
-      reading = false;
+      if (request === readRequest) {
+        reading = false;
+      }
     }
   };
 
@@ -224,15 +239,20 @@
       picker?.click();
       return;
     }
+    let request: number | undefined;
     try {
       const handle = await pick({ id: 'frameleaf-eagle', mode: 'read' });
-      reading = true;
+      request = startRead();
       const { name, entries } = await entriesFromDirectory(handle);
-      await load(name, entries);
+      if (request === readRequest) {
+        await load(name, entries);
+      }
     } catch (error) {
-      reading = false;
-      if ((error as DOMException)?.name !== 'AbortError') {
-        readError = 'unreadable';
+      if (request === undefined || request === readRequest) {
+        reading = false;
+        if ((error as DOMException)?.name !== 'AbortError') {
+          readError = 'unreadable';
+        }
       }
     }
   };
@@ -251,6 +271,9 @@
       return;
     }
     source = next;
+    controller?.abort();
+    readRequest++;
+    reading = false;
     browseRequest++;
     browsing = false;
     library = undefined;
@@ -277,18 +300,24 @@
   };
 
   const pickServer = async (entry: EagleServerLocation) => {
-    reading = true;
+    const request = startRead();
     readError = undefined;
     try {
       const read = await readServerLibrary({ rootId: entry.rootId, path: entry.path });
-      library = read.library;
-      supported = read.supported;
-      serverEarlier = read.earlier;
-      serverLocation = { rootId: entry.rootId, path: entry.path };
+      if (request === readRequest) {
+        library = read.library;
+        supported = read.supported;
+        serverEarlier = read.earlier;
+        serverLocation = { rootId: entry.rootId, path: entry.path };
+      }
     } catch {
-      readError = 'unreadable';
+      if (request === readRequest) {
+        readError = 'unreadable';
+      }
     } finally {
-      reading = false;
+      if (request === readRequest) {
+        reading = false;
+      }
     }
   };
 
@@ -364,22 +393,29 @@
         (item) => isComing(item, supported) && !(saved && Object.hasOwn(saved.outcomes, item.id)),
       );
       checking = { done: 0, total: toCheck.length };
-      checksums = new Map();
+      // This run's own map: a stopped run's last hash never lands in a newer run's.
+      const hashes = new Map<string, UploadChecksums>();
+      checksums = hashes;
       let next = 0;
       await Promise.all(
         Array.from({ length: HASH_CONCURRENCY }, async () => {
-          while (next < toCheck.length) {
+          while (next < toCheck.length && !signal.aborted) {
             const item = toCheck[next++];
-            checksums.set(item.id, await hashUploadFile(item.file!, signal));
-            checking = { done: checksums.size, total: toCheck.length };
+            const hash = await hashUploadFile(item.file!, signal);
+            if (signal.aborted) {
+              return;
+            }
+            hashes.set(item.id, hash);
+            checking = { done: hashes.size, total: toCheck.length };
           }
         }),
       );
+      signal.throwIfAborted();
       // A file that appears twice in the library is stored once, so its later copies count as already here.
-      const existing = repeatedContents(toCheck, checksums);
+      const existing = repeatedContents(toCheck, hashes);
       for (let index = 0; index < toCheck.length; index += CHECK_BATCH) {
         const assets = toCheck.slice(index, index + CHECK_BATCH).flatMap(({ id }) => {
-          const { sha256, sha1 } = checksums.get(id)!;
+          const { sha256, sha1 } = hashes.get(id)!;
           return [
             { id, checksum: sha256 },
             { id, checksum: sha1 },
@@ -392,6 +428,7 @@
           }
         }
       }
+      signal.throwIfAborted();
       plan = planEagleImport(current, {
         supported,
         existing,
@@ -402,9 +439,14 @@
     } catch {
       if (!signal.aborted) {
         checkFailed = true;
+        // One unreadable file ends the check: the other worker stops hashing the library too.
+        controller?.abort();
       }
     } finally {
-      checking = undefined;
+      // A newer check owns the progress once it has started.
+      if (controller?.signal === signal) {
+        checking = undefined;
+      }
     }
   };
 
@@ -488,6 +530,10 @@
         return;
       }
       const read = await readServerLibrary(live.location);
+      // The person started their own import while this was being read.
+      if (run) {
+        return;
+      }
       source = 'server';
       serverLocation = live.location;
       library = read.library;
@@ -552,7 +598,7 @@
   };
 
   const carryOnAfterStop = async () => {
-    if (!run) {
+    if (!run || starting) {
       return;
     }
     if (run instanceof ServerRun) {
@@ -560,8 +606,11 @@
       await beginOnServer(true);
       return;
     }
+    // A second press while the record is read must not start a second import.
+    starting = true;
     // Without the record (storage unavailable) the files already sent are still recognised by the upload.
     const from = await store.get(run.key).catch(() => undefined);
+    starting = false;
     toastManager.info($t('frameleaf_eagle_carrying_on'));
     begin(from);
   };

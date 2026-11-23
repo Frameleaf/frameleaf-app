@@ -6,6 +6,7 @@ import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { InterchangeProject, MediaReference } from 'src/utils/studio-interchange/model.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { OnEvent } from 'src/decorators.js';
+import { AssetMediaStatus } from 'src/dtos/asset-media-response.dto.js';
 import {
   StudioEditorImportBuild,
   StudioEditorImportBuildSchema,
@@ -496,10 +497,14 @@ export class StudioEditorImportService {
       const files = interchangeMediaFiles(project);
       // Tier 1: the exact bytes of media carried inside the archive.
       const digests = new Map<string, string>();
+      // Many spellings of a path can name one entry; a large entry is inflated once.
+      const entryDigests = new Map<ZipEntry, string>();
       for (const file of files) {
         const entry = carriedEntry(carried, file.key);
         if (entry) {
-          digests.set(file.key, (await digestZipEntry(source, entry)).sha256);
+          const digest = entryDigests.get(entry) ?? (await digestZipEntry(source, entry)).sha256;
+          entryDigests.set(entry, digest);
+          digests.set(file.key, digest);
         }
       }
       const exact = await this.repository.getByChecksums(
@@ -598,13 +603,17 @@ export class StudioEditorImportService {
       const resolved = new Map<string, string>();
       const counts = { found: 0, matched: 0, added: 0, placeholders: 0, total: files.length };
       const added: string[] = [];
+      const addedEntries = new Map<ZipEntry, string | null>();
       for (const file of files) {
         const choice = choices.get(file.key);
         let assetId = choice?.assetId ?? null;
         let how = choice?.how ?? 'none';
         const entry = carriedEntry(carried, file.key);
         if (!assetId && entry) {
-          assetId = await this.addCarried(auth, source, entry, file.name);
+          if (!addedEntries.has(entry)) {
+            addedEntries.set(entry, await this.addCarried(auth, source, entry, file.name));
+          }
+          assetId = addedEntries.get(entry) ?? null;
           how = 'carried';
         }
         if (!assetId) {
@@ -623,17 +632,11 @@ export class StudioEditorImportService {
       }
       const usable = await this.repository.getUsableFacts(auth.user.id, [...new Set(resolved.values())]);
       const facts = new Map<string, InterchangeMedia>();
+      const fileByKey = new Map(files.map((file) => [file.key, file]));
       for (const [key, assetId] of resolved) {
         const known = usable.get(assetId);
         if (known) {
-          facts.set(
-            key,
-            await this.factsOf(
-              auth,
-              known,
-              files.find((file) => file.key === key),
-            ),
-          );
+          facts.set(key, await this.factsOf(auth, known, fileByKey.get(key)));
         }
       }
       // A file chosen earlier that has since gone from the library becomes a placeholder.
@@ -744,6 +747,16 @@ export class StudioEditorImportService {
     entry: ZipEntry,
     name: string,
   ): Promise<string | null> {
+    // Checked before writing: an entry can inflate far past the archive, and the upload's own check comes after.
+    const { quotaSizeInBytes, quotaUsageInBytes } = auth.user;
+    if (
+      quotaSizeInBytes !== null &&
+      quotaSizeInBytes !== undefined &&
+      quotaUsageInBytes + entry.uncompressedSize > quotaSizeInBytes
+    ) {
+      this.logger.warn(`Editor import: ${name} from the archive would go over the storage limit`);
+      return null;
+    }
     const destination = StorageCore.getNestedPath(
       StorageFolder.Upload,
       auth.user.id,
@@ -752,18 +765,19 @@ export class StudioEditorImportService {
     this.storage.mkdirSync(StorageCore.getNestedFolder(StorageFolder.Upload, auth.user.id, destination));
     const sha1 = createHash('sha1');
     const output = this.storage.createWriteStream(destination);
+    // A full disk fails the stream: without a listener that is an uncaught error, and a wait for `drain` never ends.
+    const failed = new Promise<never>((_resolve, reject) => output.once('error', reject));
+    failed.catch(() => {});
     try {
       const { sha256, bytes } = await digestZipEntry(source, entry, {
         onData: async (chunk) => {
           sha1.update(chunk);
           if (!output.write(chunk)) {
-            await new Promise<void>((resolve) => output.once('drain', () => resolve()));
+            await Promise.race([new Promise<void>((resolve) => output.once('drain', () => resolve())), failed]);
           }
         },
       });
-      await new Promise<void>((resolve, reject) =>
-        output.end((error?: Error | null) => (error ? reject(error) : resolve())),
-      );
+      await Promise.race([new Promise<void>((resolve) => output.end(() => resolve())), failed]);
       const now = new Date();
       const response = await this.assetMedia.uploadAsset(
         auth,
@@ -777,6 +791,10 @@ export class StudioEditorImportService {
           size: bytes,
         },
       );
+      if (response.status === AssetMediaStatus.CREATED) {
+        // Counted now, so the account's storage limit applies to the rest of this archive.
+        auth.user.quotaUsageInBytes += bytes;
+      }
       return response.id;
     } catch (error) {
       output.destroy();

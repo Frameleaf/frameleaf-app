@@ -721,6 +721,11 @@ describe(NotificationService.name, () => {
         vi.advanceTimersByTime(500);
 
         expect(mocks.websocket.clientSend).toHaveBeenCalledWith('on_session_delete', 'id', 'id');
+        expect(mocks.websocket.clientDisconnect).not.toHaveBeenCalled();
+
+        vi.advanceTimersByTime(1000);
+
+        expect(mocks.websocket.clientDisconnect).toHaveBeenCalledWith('id');
       } finally {
         vi.useRealTimers();
       }

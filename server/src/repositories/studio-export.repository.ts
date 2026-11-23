@@ -382,13 +382,6 @@ export class StudioExportRepository {
       .where('renderOperationId', '=', operationId)
       .executeTakeFirst() as Promise<StudioExportVersion | undefined>;
   }
-  getByPublishOperation(operationId: string): Promise<StudioExportVersion | undefined> {
-    return this.db
-      .selectFrom('studio_export_version')
-      .selectAll()
-      .where('publishOperationId', '=', operationId)
-      .executeTakeFirst() as Promise<StudioExportVersion | undefined>;
-  }
   /** Newest first. Published versions by number, then everything still on its way or stopped. */
   async listForProject(
     projectId: string,

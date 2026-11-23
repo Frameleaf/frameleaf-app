@@ -1,14 +1,29 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Next, NotFoundException, Param, Post, Res } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  ForbiddenException,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Next,
+  NotFoundException,
+  Param,
+  Post,
+  Req,
+  Res,
+} from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
-import { type NextFunction, type Response } from 'express';
+import { type NextFunction, type Request, type Response } from 'express';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import { AssetMediaSize } from 'src/dtos/asset-media.dto.js';
 import { CastMediaTokenParamDto, CastMediaUrlCreateDto, CastMediaUrlResponseDto } from 'src/dtos/cast.dto.js';
 import { ApiTag, Permission } from 'src/enum.js';
 import { Auth, Authenticated, FileResponse } from 'src/middleware/auth.guard.js';
+import { requestVia } from 'src/middleware/frameleaf-via.middleware.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { AssetMediaService } from 'src/services/asset-media.service.js';
+import { RELAY_ORIGINALS_REFUSED, RELAY_ORIGINALS_REFUSED_MESSAGE } from 'src/services/auth.service.js';
 import { CastService } from 'src/services/cast.service.js';
 import { CastMediaKind } from 'src/utils/cast-media.js';
 import { FileDownloadResponse, sendFile } from 'src/utils/file.js';
@@ -57,7 +72,12 @@ export class CastController {
       'Streams the rendition a signed Cast URL names, without a session token or cookies (byte ranges supported for video). Answers 401 for an invalid, tampered or expired URL and 403 when casting is no longer allowed.',
     history: history(),
   })
-  async readCastMedia(@Param() { token }: CastMediaTokenParamDto, @Res() res: Response, @Next() next: NextFunction) {
+  async readCastMedia(
+    @Param() { token }: CastMediaTokenParamDto,
+    @Req() request: Request,
+    @Res() res: Response,
+    @Next() next: NextFunction,
+  ) {
     await sendFile(
       res,
       next,
@@ -65,6 +85,15 @@ export class CastController {
         const { auth, assetId, kind } = await this.service.resolveMediaUrl(token);
         switch (kind) {
           case CastMediaKind.Original: {
+            // FL-161: a public route skips the guard's `@OriginalTransfer` check, so the relay rule is applied here
+            if (!(await this.media.fullSizeAllowed(requestVia(request)))) {
+              throw new ForbiddenException({
+                message: RELAY_ORIGINALS_REFUSED_MESSAGE,
+                error: 'Forbidden',
+                statusCode: 403,
+                code: RELAY_ORIGINALS_REFUSED,
+              });
+            }
             return this.media.downloadOriginal(auth, assetId, { edited: true });
           }
           case CastMediaKind.Video: {

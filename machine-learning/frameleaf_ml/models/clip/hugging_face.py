@@ -17,7 +17,7 @@ from huggingface_hub import HfApi, snapshot_download
 from frameleaf_ml.config import log, settings
 from frameleaf_ml.models.base import InferenceModel, ModelUnavailableError, _is_missing_model
 from frameleaf_ml.models.constants import is_custom_clip_model
-from frameleaf_ml.schemas import ModelFormat
+from frameleaf_ml.schemas import ModelFormat, ModelSession
 
 HUGGING_FACE_URL = "https://huggingface.co"
 
@@ -158,6 +158,18 @@ class HubClipModel(InferenceModel):
         _fetch(self.custom_repository, self.cache_dir, ALLOWED_FILES)
         present = {name for name in REQUIRED_FILES if (self.cache_dir / name).is_file()}
         _require_files(self.custom_repository, present)
+
+    def _make_session(self, model_path: Path) -> ModelSession:
+        if self.custom_repository is not None and model_path.is_file():
+            # An ONNX file names its own external weights: only the sidecar this class fetched may be read.
+            from frameleaf_ml.native_qualification import validate_external_weights
+
+            sidecar = model_path.with_name("model.onnx_data").relative_to(self.cache_dir).as_posix()
+            try:
+                validate_external_weights(model_path, self.cache_dir, {sidecar: ""})
+            except Exception as error:
+                raise _cannot_use(self.custom_repository, "its ONNX file reads weights from another file.") from error
+        return super()._make_session(model_path)
 
     @property
     def cached(self) -> bool:

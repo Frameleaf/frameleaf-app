@@ -657,6 +657,22 @@ export class Operations {
       ),
     );
   }
+  private summaryCache: { installation: string; until: number; value: Promise<unknown> } | null = null;
+  /** The dashboard polls every 10 seconds per tab; counting a large library that often is wasted work. */
+  dashboardSummary(): Promise<unknown> {
+    const installation = this.installation()?.id ?? '';
+    const held = this.summaryCache;
+    if (held?.installation === installation && held.until > Date.now()) return held.value;
+    const value = this.librarySummary();
+    const entry = { installation, until: Date.now() + 60_000, value };
+    this.summaryCache = entry;
+    // A failure, or a library not migrated yet, is asked again on the next poll.
+    const forget = () => {
+      if (this.summaryCache === entry) this.summaryCache = null;
+    };
+    value.then((summary) => summary ?? forget(), forget);
+    return value;
+  }
   private async reviewedSource(id: string, requireCompatible = true) {
     const stored = this.store.get<Source>(`source:${id}`);
     if (!stored) throw new Refusal('select_source_installation');
@@ -886,6 +902,9 @@ export class Operations {
       this.store.save(operation);
       const image = await this.preparationImage(tag);
       await this.fencing.verify(capture.fence);
+      // The folder comes from the app's own settings: a link there would hand this container another host folder.
+      if ((await realpath(capture.originalsPath).catch(() => null)) !== capture.originalsPath)
+        throw new Refusal('import_runtime_media_invalid');
       const path = await stageCommonImportPreparation(this.directory(), operationId, request);
       const preparationSha256 = await fileHash(path);
       const inspection = await this.docker.inspectImportSource(
@@ -2108,6 +2127,10 @@ export class Operations {
     if (kind === 'backup') {
       await this.step(operation, 'database-backup', async () => {
         await this.backups.initialize();
+        // The library keeps running while this backup is retried: a dump from the failed try would be an old
+        // database recorded as a recovery point from now.
+        delete operation.receipts['checkpoint-dump'];
+        await rm(join(this.store.directory, 'checkpoints', operation.id, 'database.dump'), { force: true });
         const checkpoint = await this.checkpoint(operation);
         return this.backups.snapshot(checkpoint, operation.id);
       });
@@ -3143,6 +3166,8 @@ export class Operations {
       data.source = installation.databasePath.replaceAll('$', () => '$$');
       await atomicJson(join(this.directory(), 'compose.json'), compose);
       this.store.set('database-password', review.recovery.databasePassword);
+      // The compose.json above carries these settings; the next render must not bring newer ones back.
+      this.store.set('application-config', review.recovery.application);
       this.store.set('installation', installation);
       await this.docker.compose(this.directory(), installation.project, 'up', ['database']);
       const database = await this.targetDatabase();
@@ -3169,9 +3194,25 @@ export class Operations {
    * because the thumbnail folder is gone (FL-1320). Without it a missing thumbnail folder is refused by name.
    */
   async reviewRestore(snapshot: string, databaseRoot: string, managerPort?: number, thumbnailFallback = false) {
-    const current = this.installation();
     const id = randomUUID(),
       checkpoint = join(this.store.directory, `restore-${id}`);
+    try {
+      return await this.prepareRestoreReview(id, checkpoint, snapshot, databaseRoot, managerPort, thumbnailFallback);
+    } catch (error) {
+      // A refused review must not leave a plaintext copy of the database on the disk.
+      await rm(checkpoint, { recursive: true, force: true });
+      throw error;
+    }
+  }
+  private async prepareRestoreReview(
+    id: string,
+    checkpoint: string,
+    snapshot: string,
+    databaseRoot: string,
+    managerPort: number | undefined,
+    thumbnailFallback: boolean,
+  ) {
+    const current = this.installation();
     await this.backups.restore(snapshot, checkpoint);
     const recovery = Recovery.parse(JSON.parse(await readFile(join(checkpoint, 'recovery.json'), 'utf8')));
     if (recovery.databaseFormat !== 'frameleaf-canonical')

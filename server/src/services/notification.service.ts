@@ -589,6 +589,8 @@ export class NotificationService extends BaseService {
   onSessionDelete({ sessionId }: ArgOf<'SessionDelete'>) {
     // after the response is sent
     setTimeout(() => this.websocketRepository.clientSend('on_session_delete', sessionId, sessionId), 500);
+    // a moment later, so the client hears why; its reconnect then fails, the session being gone
+    setTimeout(() => this.websocketRepository.clientDisconnect(sessionId), 1500);
   }
 
   async sendTestEmail(id: string, dto: SystemConfigSmtpDto, tempTemplate?: string) {

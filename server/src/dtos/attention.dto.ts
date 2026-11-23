@@ -198,7 +198,6 @@ const AttentionDismissSchema = z
   .meta({ id: 'AttentionDismissDto' });
 
 export type AttentionItem = z.infer<typeof AttentionItemSchema>;
-export type AttentionCheck = z.infer<typeof AttentionCheckSchema>;
 
 export class AttentionResponseDto extends createZodDto(AttentionResponseSchema) {}
 export class AttentionDismissDto extends createZodDto(AttentionDismissSchema) {}

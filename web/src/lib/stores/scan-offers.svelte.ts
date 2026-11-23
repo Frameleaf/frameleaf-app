@@ -1,5 +1,6 @@
 import { offerScanSplit } from '@frameleaf/sdk';
 import { alternatingPairs, type PrintPair, type PrintScan } from '$lib/frameleaf/print-pairs';
+import { eventManager } from '$lib/managers/event-manager.svelte';
 
 export type ScanOffer = { assetId: string; name: string; count: number };
 
@@ -16,6 +17,11 @@ class ScanOffers {
   #queue: { assetId: string; name: string }[] = [];
   #running = false;
   #generation = 0;
+
+  constructor() {
+    // Signing out keeps this document: the next account must not be offered this one's file names.
+    eventManager.on({ AuthLogout: () => this.reset() });
+  }
 
   get current() {
     return this.offers[0];

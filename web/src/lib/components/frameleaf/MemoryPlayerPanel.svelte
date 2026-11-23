@@ -162,12 +162,15 @@
   const landmark = $derived(current ? eventStoryLandmark(current.memory) : undefined);
   let albumSavedFor = $state<string>();
   const albumSaved = $derived(!!current && albumSavedFor === current.memory.id);
+  let savingAlbum = false;
   const saveAsAlbum = async () => {
     const memory = current?.memory;
-    if (!memory || !landmark || !headline || !isEventStory(memory)) {
+    if (savingAlbum || !memory || !landmark || !headline || !isEventStory(memory)) {
       return;
     }
     const { startDate, endDate } = memory.data;
+    // The button only turns off once saved, so a second click meanwhile would make a second album.
+    savingAlbum = true;
     try {
       const albumId = await createLandmarkAlbum({
         landmarkId: landmark.id,
@@ -182,6 +185,8 @@
       status = albumId ? $t('frameleaf_memories_saved_to_albums') : $t('frameleaf_search_save_snapshot_empty');
     } catch (error) {
       handleError(error, $t('errors.something_went_wrong'));
+    } finally {
+      savingAlbum = false;
     }
   };
   const currentAssetId = $derived(current?.asset.id);
@@ -350,19 +355,27 @@
     if (!progressBarController) {
       return;
     }
+    // Each item has its own controller. A play still pending when the item changes is about the old one.
+    const controller = progressBarController;
 
     switch (action) {
       case 'play': {
         try {
           paused = false;
           await videoPlayer?.play();
-          await progressBarController.set(1);
+          if (progressBarController === controller) {
+            await controller.set(1);
+          }
         } catch (error) {
+          // Moving on removes the old video, which rejects its play(): that must not pause the new item.
+          if (progressBarController !== controller) {
+            return;
+          }
           // this may happen if browser blocks auto-play of the video on first page load. This can either be a setting
           // or just default in certain browsers on page load without any DOM interaction by user.
           console.error(`handleAction[${callingContext}] videoPlayer play problem: ${error}`);
           paused = true;
-          await progressBarController.set(0);
+          await controller.set(0);
         }
         break;
       }
@@ -668,14 +681,17 @@
       return;
     }
     const asked = exportGeneration;
+    const runId = exportRun.id;
+    // Cancel then a new export can replace the run while this answer is on its way.
+    const superseded = () => asked !== exportGeneration || exportRun?.id !== runId;
     try {
-      const next = await getMemoryExport({ id: exportRun.id });
-      if (asked !== exportGeneration) {
+      const next = await getMemoryExport({ id: runId });
+      if (superseded()) {
         return;
       }
       exportRun = next;
     } catch (error) {
-      if (asked !== exportGeneration) {
+      if (superseded()) {
         return;
       }
       // the run is gone (deleted, or its memory was), so there is nothing left to follow
@@ -1020,8 +1036,16 @@
 
   let reordering = $state(false);
   let galleryGrid: HTMLElement | undefined = $state();
-  const moveItem = async (assetId: string, offset: -1 | 1) => {
-    if (!current) {
+  // One at a time, each from the order the last one saved: two quick moves would otherwise start from
+  // the same order, and the second would undo the first.
+  let moveQueue: Promise<void> = Promise.resolve();
+  const moveItem = (assetId: string, offset: -1 | 1) => {
+    const memoryId = current?.memory.id;
+    moveQueue = moveQueue.then(() => applyItemMove(memoryId, assetId, offset));
+    return moveQueue;
+  };
+  const applyItemMove = async (memoryId: string | undefined, assetId: string, offset: -1 | 1) => {
+    if (!current || current.memory.id !== memoryId) {
       return;
     }
     const ids = current.memory.assets.map((asset) => asset.id);

@@ -253,11 +253,20 @@
    * (`processing` is only "ready" once the preview exists, and the thumbnail is made in the same
    * job), so a RAW the server cannot develop shows the placeholder without a failed request.
    */
+  const captureByAsset = $derived.by(() => {
+    const byAsset = new Map<string, Capture>();
+    for (const capture of draft?.captures ?? []) {
+      if (capture.assetId && !byAsset.has(capture.assetId)) {
+        byAsset.set(capture.assetId, capture);
+      }
+    }
+    return byAsset;
+  });
   const mediaUrl = (id: string | null | undefined, size: AssetMediaSize = AssetMediaSize.Thumbnail) => {
     if (!id) {
       return null;
     }
-    const capture = draft?.captures.find((row) => row.assetId === id);
+    const capture = captureByAsset.get(id);
     return capture && capture.processing !== 'ready' ? null : getAssetMediaUrl({ id, size });
   };
   const photoUrl = (capture: Capture) => (capture.eligible ? mediaUrl(capture.assetId) : null);

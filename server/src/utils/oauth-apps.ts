@@ -46,7 +46,6 @@ export const assistantBrokerName = (redirectUri: string) =>
 export const isAssistantResource = (resource: string | null) =>
   resource !== null && new URL(resource).pathname === ASSISTANT_MCP_PATH;
 
-export const MCP_RESOURCE_METADATA_PATH = `/.well-known/oauth-protected-resource${MCP_PATH}`;
 export const OAUTH_ACCESS_TOKEN_PREFIX = 'fla_';
 export const OAUTH_REFRESH_TOKEN_PREFIX = 'flr_';
 

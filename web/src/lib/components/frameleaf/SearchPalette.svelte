@@ -1045,8 +1045,10 @@
     const item = deletedSaved;
     clearTimeout(undoTimer);
     deletedSaved = null;
-    if (item) {
-      await savedSearchesStore.save(item.name, $state.snapshot(item.query) as DiscoveryQuery);
+    if (item && !(await savedSearchesStore.save(item.name, $state.snapshot(item.query) as DiscoveryQuery))) {
+      // Not saved back: keep Undo on offer instead of losing the search without a word.
+      deletedSaved = item;
+      undoTimer = setTimeout(() => (deletedSaved = null), UNDO_MS);
     }
     input?.focus();
   };

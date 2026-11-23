@@ -16,7 +16,6 @@ export const HDR_GOLDENS_VERSION = 1;
 export const IMAGE_SIZE = EFFECT_SIZE;
 
 // ---- buffers: the render-goldens encodings plus binary32 for signal frames ----
-export const HDR_ENCODINGS = ['f16le-deflate-base64', 'rgba8-deflate-base64', 'f32le-deflate-base64'];
 export function encodeBuffer(values, encoding) {
   if (encoding !== 'f32le-deflate-base64') return encodeRenderBuffer(values, encoding);
   const buf = Buffer.alloc(values.length * 4);

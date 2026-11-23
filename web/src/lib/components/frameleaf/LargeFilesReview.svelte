@@ -85,12 +85,19 @@
    */
   let activity = $state<UtilityActivityEntryDto[]>([]);
   let activityError = $state(false);
+  let activityRequest = 0;
   const loadActivity = async () => {
+    const request = ++activityRequest;
     try {
-      ({ entries: activity } = await getUtilityActivity({ tool: UtilityActivityTool.LargeFiles }));
-      activityError = false;
+      const { entries } = await getUtilityActivity({ tool: UtilityActivityTool.LargeFiles });
+      if (request === activityRequest) {
+        activity = entries;
+        activityError = false;
+      }
     } catch {
-      activityError = true;
+      if (request === activityRequest) {
+        activityError = true;
+      }
     }
   };
 

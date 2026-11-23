@@ -185,6 +185,10 @@ export class WebsocketRepository implements OnGatewayConnection, OnGatewayDiscon
       if (auth.session) {
         await client.join(auth.session.id);
       }
+      // its own room too, so revoking the key can close the sockets it opened (`clientDisconnect`)
+      if (auth.apiKey) {
+        await client.join(auth.apiKey.id);
+      }
       await this.eventRepository.emit('WebsocketConnect', { userId: auth.user.id });
     } catch (error: any) {
       this.logger.error(`Websocket connection error: ${error}`, error?.stack);
@@ -200,6 +204,14 @@ export class WebsocketRepository implements OnGatewayConnection, OnGatewayDiscon
 
   clientSend<T extends keyof ClientEventMap>(event: T, room: string, ...data: ClientEventMap[T]) {
     this.server?.to(room).emit(event, ...data);
+  }
+
+  /**
+   * Closes the sockets of a revoked session or API key. A socket is authenticated once, at its handshake, so
+   * without this it would keep receiving the account's events after the credential is gone.
+   */
+  clientDisconnect(room: string) {
+    this.server?.in(room).disconnectSockets(true);
   }
 
   clientBroadcast<T extends keyof ClientEventMap>(event: T, ...data: ClientEventMap[T]) {

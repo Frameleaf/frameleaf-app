@@ -171,11 +171,6 @@ export class DatabaseRepository {
     await sql`CREATE EXTENSION IF NOT EXISTS ${sql.id(extension)} CASCADE`.execute(this.db);
   }
 
-  async dropExtension(extension: DatabaseExtension): Promise<void> {
-    this.logger.log(`Dropping ${EXTENSION_NAMES[extension]} extension`);
-    await sql`DROP EXTENSION IF EXISTS ${sql.raw(extension)}`.execute(this.db);
-  }
-
   async updateVectorExtension(extension: VectorExtension, targetVersion?: string): Promise<void> {
     const [{ availableVersion, installedVersion }] = await this.getExtensionVersions([extension]);
     if (!installedVersion) {

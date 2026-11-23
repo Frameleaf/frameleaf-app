@@ -598,15 +598,21 @@
       draftError = $t('frameleaf_named_places_error_limit', { values: { count: PLACES_MAX } });
       return;
     }
+    const saving = draft;
     draftSaving = true;
     draftError = undefined;
     try {
       const dto = { name, radiusMeters: radius, latitude, longitude };
       await (id ? namedPlaces.update(id, dto) : namedPlaces.create(dto));
       status = $t('frameleaf_named_places_saved', { values: { name } });
-      closeDraft();
+      // The panel may have been closed and opened on another place while this saved.
+      if (draft === saving) {
+        closeDraft();
+      }
     } catch {
-      draftError = $t('frameleaf_named_places_error_save');
+      if (draft === saving) {
+        draftError = $t('frameleaf_named_places_error_save');
+      }
     } finally {
       draftSaving = false;
     }
@@ -814,7 +820,7 @@
 
   const retryTiles = () => {
     tilesFailed = false;
-    map?.setStyle(styleUrl);
+    applyStyle(styleUrl);
   };
 
   /* ------------------------------------------------------------------ */
@@ -895,9 +901,9 @@
     untrack(updateInView);
   });
 
-  // Keeps the markers when the theme swaps the style (svelte-maplibre#146).
-  $effect(() => {
-    map?.setStyle(styleUrl, {
+  // Keeps the markers when the style is set again: a theme change or Try again (svelte-maplibre#146).
+  const applyStyle = (url: string) => {
+    map?.setStyle(url, {
       transformStyle: (previous, next) => {
         if (!previous) {
           return next;
@@ -915,7 +921,8 @@
         return { ...next, sources, layers: [...next.layers, ...markerLayers] };
       },
     });
-  });
+  };
+  $effect(() => applyStyle(styleUrl));
 
   const zoomBy = (delta: number) => {
     if (!map) {
@@ -942,7 +949,8 @@
     const expansion =
       clusterId === undefined
         ? map.getZoom() + 2
-        : await (map.getSource('geojson') as GeoJSONSource).getClusterExpansionZoom(clusterId);
+        : // The bubble can regroup under the click, and then its id is gone: zoom in anyway.
+          await (map.getSource('geojson') as GeoJSONSource).getClusterExpansionZoom(clusterId).catch(() => 0);
     map.easeTo({ center: [lng, lat], zoom: Math.min(MAX_ZOOM, Math.max(expansion, map.getZoom() + 2)) });
     changed = true;
     status = $t('frameleaf_map_status_zoomed', { values: { count } });

@@ -155,7 +155,7 @@ def binary_sha256() -> str:
 
 async def predict_qwen(cache: Path, image: bytes, expected_binary: str) -> tuple[dict[str, Any], str]:
     body = request_body(image)
-    if binary_sha256() != expected_binary:
+    if await asyncio.to_thread(binary_sha256) != expected_binary:
         raise ValueError("native_qwen_binary_changed")
     model, projector = (model_directory(cache) / item for item in ARTIFACTS)
     windows = os.name == "nt"

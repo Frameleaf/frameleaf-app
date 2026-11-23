@@ -57,6 +57,7 @@ import {
   VideoContainer,
 } from 'src/enum.js';
 import {
+  advanceJobProgress,
   afterJobCommit,
   attemptOutputPath,
   deferJobAdoption,
@@ -351,6 +352,7 @@ export class MediaService extends BaseService {
       await this.jobRepository.queueAll(
         assets.map((asset) => ({ name: JobName.AssetFileMigration, data: { id: asset.id } })),
       );
+      advanceJobProgress(assets.length);
     }
 
     for await (const people of batched(this.personRepository.getAll())) {
@@ -360,6 +362,7 @@ export class MediaService extends BaseService {
           data: { ownerId, personGroupId },
         })),
       );
+      advanceJobProgress(people.length);
     }
 
     return JobStatus.Success;
@@ -1831,8 +1834,11 @@ export class MediaService extends BaseService {
       const encodedVideo = getAssetFile(asset.files, AssetFileType.EncodedVideo, { isEdited: false });
       if (encodedVideo) {
         this.logger.log(`Transcoded video exists for asset ${asset.id}, but is no longer required. Deleting...`);
-        await this.jobRepository.queue({ name: JobName.FileDelete, data: { files: [encodedVideo.path] } });
-        await this.assetRepository.deleteFiles([encodedVideo]);
+        // The row goes first and with the delete request: FileDelete keeps any path a row still names.
+        await publishJobResult(async () => {
+          await this.assetRepository.deleteFiles([encodedVideo]);
+          await this.jobRepository.queue({ name: JobName.FileDelete, data: { files: [encodedVideo.path] } });
+        });
       } else {
         this.logger.verbose(`Asset ${asset.id} does not require transcoding based on current policy, skipping`);
       }

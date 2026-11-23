@@ -79,6 +79,8 @@ interface Saved {
 }
 
 const KEY = 'server-backup';
+/** The longest gap between schedule checks that still counts as Manager having been running: covers a daylight-saving jump. */
+const TICK_CATCH_UP = 2 * 3_600_000;
 /** A moment as the owner's wall clock shows it, in their time zone (or the container's when there is none). */
 function wall(date: Date, timeZone?: string) {
   const parts = Object.fromEntries(
@@ -119,6 +121,8 @@ export class ServerBackup {
   private repository: Repository | null = null;
   /** For the speed shown while a backup runs. */
   private pace: { at: number; bytes: number; perSecond: number } | null = null;
+  /** When the schedule was last checked, so a minute the timer skipped is not a day without a backup. */
+  private lastTick: number | null = null;
 
   constructor(
     private store: Store,
@@ -282,9 +286,15 @@ export class ServerBackup {
   async deleteBackups() {
     if (this.child || this.starting) throw new Refusal('server_backup_busy');
     if (!this.options.cloud?.linked) throw new Refusal('server_backup_cloud_not_linked');
-    const purge = await this.options.cloud.requestPurge();
-    this.save({ on: false });
-    return purge;
+    // Holds off any run, by hand or on schedule, while Cloud is asked; released if Cloud can't be reached.
+    this.starting = true;
+    try {
+      const purge = await this.options.cloud.requestPurge();
+      this.save({ on: false });
+      return purge;
+    } finally {
+      this.starting = false;
+    }
   }
 
   /**
@@ -364,7 +374,7 @@ export class ServerBackup {
       const done = run.outcome?.kind === 'backup' ? run.outcome : null;
       void session?.end(
         kind === 'backup'
-          ? { startedAt: run.startedAt, state: run.state === 'running' ? 'failed' : run.state, bytes: done?.storedBytes ?? 0, files: done?.files ?? 0, snapshot: done?.snapshot ?? null, error: run.error }
+          ? { startedAt: run.startedAt, state: run.state === 'running' ? 'failed' : run.state, bytes: done?.storedBytes ?? 0, files: done?.files ?? 0, problems: done?.problems ?? 0, snapshot: done?.snapshot ?? null, error: run.error }
           : undefined,
       );
     };
@@ -402,6 +412,12 @@ export class ServerBackup {
       } else settle(failure(message.message));
     });
     child.on('exit', () => settle(failure('worker_exited')));
+    // A worker that could not start never exits, and an 'error' nobody listens for would end Manager mid-operation.
+    child.on('error', () => {
+      if (this.current !== run) return;
+      settle(failure('worker_exited'));
+      child.kill('SIGKILL');
+    });
     child.send(job);
     return run;
   }
@@ -500,12 +516,23 @@ export class ServerBackup {
   /** Called every minute. Starts the day's backup at its time, and stops a scheduled one when its window closes. */
   async tick(now = new Date()): Promise<void> {
     const saved = this.saved();
+    const previous = this.lastTick;
+    this.lastTick = now.getTime();
     if (!saved.on || (!this.options.target && !this.options.cloud?.linked)) return;
     const { time, stop } = saved.settings.schedule;
     const here = wall(now, saved.settings.timeZone);
-    if (this.current?.trigger === 'schedule' && this.current.kind === 'backup' && stop && here.clock === stop) return this.stop();
-    if (this.child || here.clock !== time || saved.scheduledOn === here.day) return;
-    this.save({ scheduledOn: here.day });
+    // The timer drifts past whole minutes and daylight saving skips an hour: a time passed since the last tick counts.
+    const gap = previous === null ? 0 : now.getTime() - previous;
+    const before = gap > 0 && gap <= TICK_CATCH_UP ? wall(new Date(previous!), saved.settings.timeZone) : null;
+    const reached = (at: string) =>
+      here.clock === at ||
+      (!!before && (before.day === here.day ? before.clock < at && at <= here.clock : at > before.clock || at <= here.clock));
+    if (this.current?.trigger === 'schedule' && this.current.kind === 'backup' && stop && reached(stop)) return this.stop();
+    if (this.child || !reached(time)) return;
+    // A time passed just before midnight belongs to the day it was passed on.
+    const day = before && before.day !== here.day && time > before.clock ? before.day : here.day;
+    if (saved.scheduledOn === day) return;
+    this.save({ scheduledOn: day });
     // A backup that could not even start is still part of the history, with its reason.
     await this.backUp('schedule', now).catch((error) => {
       const value: Omit<Run, 'id'> = { kind: 'backup', trigger: 'schedule', state: 'failed', startedAt: now.getTime(), finishedAt: Date.now(), progress: null, outcome: null, error: reasonOf(error) };

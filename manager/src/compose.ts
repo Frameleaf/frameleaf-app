@@ -223,7 +223,8 @@ function deniedMountSource(source: string, managerData = process.env.MANAGER_DAT
   const path = resolve(source);
   if (path === '/') return true;
   return (
-    DENIED_MOUNT_SOURCES.filter((denied) => denied !== '/').some((denied) => under(path, denied)) ||
+    // A folder above a denied path (/var holds /var/lib/docker) hands over everything inside it too.
+    DENIED_MOUNT_SOURCES.filter((denied) => denied !== '/').some((denied) => under(path, denied) || under(denied, path)) ||
     (!!managerData && under(path, resolve(managerData)))
   );
 }

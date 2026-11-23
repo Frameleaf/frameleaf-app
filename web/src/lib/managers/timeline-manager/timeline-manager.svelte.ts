@@ -244,7 +244,9 @@ export class TimelineManager extends VirtualScrollManager {
           this.initTask.cancel();
           this.disconnect();
           this.isInitialized = false;
+          this.#cancelMonthLoads();
           this.months = [];
+          this.#loadedPages.clear();
           this.albumAssets.clear();
         },
         SessionAccessChanged: () => void trackSessionLockRefresh(this.refresh()),
@@ -695,7 +697,9 @@ export class TimelineManager extends VirtualScrollManager {
       this.initTask.cancel();
       this.disconnect();
       this.isInitialized = false;
+      this.#cancelMonthLoads();
       this.months = [];
+      this.#loadedPages.clear();
       this.albumAssets.clear();
     }
     if (!this.isInitialized) {
@@ -749,9 +753,19 @@ export class TimelineManager extends VirtualScrollManager {
     return this.#refreshPromise;
   }
 
+  /** Months about to be replaced stop reading: their answers are discarded anyway. A waited-on load keeps going. */
+  #cancelMonthLoads() {
+    for (const month of this.months) {
+      if (month.loader?.loading) {
+        month.cancel();
+      }
+    }
+  }
+
   async #init(options: TimelineManagerOptions) {
     this.disconnect();
     this.isInitialized = false;
+    this.#cancelMonthLoads();
     this.months = [];
     this.#loadedPages.clear();
     this.albumAssets.clear();
@@ -1491,10 +1505,15 @@ export class TimelineManager extends VirtualScrollManager {
   }
 
   protected postCreateSegments(): void {
+    // An oldest-first album keeps its order when a live change adds a month.
+    const direction = this.getAssetOrder() === AssetOrder.Asc ? -1 : 1;
     this.months.sort((a, b) => {
-      return a.yearMonth.year === b.yearMonth.year
-        ? b.yearMonth.month - a.yearMonth.month
-        : b.yearMonth.year - a.yearMonth.year;
+      return (
+        direction *
+        (a.yearMonth.year === b.yearMonth.year
+          ? b.yearMonth.month - a.yearMonth.month
+          : b.yearMonth.year - a.yearMonth.year)
+      );
     });
   }
 

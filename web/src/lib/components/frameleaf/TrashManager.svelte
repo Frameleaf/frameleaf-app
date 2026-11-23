@@ -125,6 +125,8 @@
 
   /** Discards answers to requests a newer one has replaced. */
   let generation = 0;
+  /** Bumped only when the view starts over (filters, lock): background reloads do not cancel a review. */
+  let viewGeneration = 0;
   const localSequences = new Map<string, bigint>();
   let queryTimer: ReturnType<typeof setTimeout> | undefined;
   let reloadTimer: ReturnType<typeof setTimeout> | undefined;
@@ -298,6 +300,7 @@
 
   /** A filter change starts over: new list, no selection, no open review (as in the template). */
   const resetView = () => {
+    viewGeneration++;
     selected = [];
     review = null;
     reviewOpen = false;
@@ -465,10 +468,12 @@
     }
     busy = true;
     error = '';
-    const run = generation;
+    // Not `generation`: any trash event bumps that, and the person's Delete would then do nothing. The
+    // reviewed set is frozen by the server, and its token is refused if the items changed.
+    const run = viewGeneration;
     try {
       const reviewed = await reviewTrash({ trashReviewDto: { action, ids } });
-      if (run !== generation) {
+      if (run !== viewGeneration) {
         return;
       }
       review = { ...reviewed, ids };

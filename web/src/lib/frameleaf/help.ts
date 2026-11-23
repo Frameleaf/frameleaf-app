@@ -260,17 +260,30 @@ export const renderHelpArticle = (markdown: string, origin: string, ids: Readonl
   for (const heading of root.querySelectorAll('h2, h3')) {
     heading.id = headingAnchor(heading.textContent ?? '');
   }
+  // One malformed address costs that image or link, never the whole article.
+  const parse = (value: string) => {
+    try {
+      return new URL(value, origin);
+    } catch {
+      return null;
+    }
+  };
   for (const image of root.querySelectorAll('img')) {
-    const source = image.getAttribute('src');
+    const value = image.getAttribute('src');
+    const source = value ? parse(value) : null;
     if (source) {
-      image.setAttribute('src', new URL(source, origin).href);
+      image.setAttribute('src', source.href);
       image.setAttribute('loading', 'lazy');
     } else {
       image.remove();
     }
   }
   for (const link of root.querySelectorAll('a')) {
-    const target = new URL(link.getAttribute('href') ?? '', origin);
+    const target = parse(link.getAttribute('href') ?? '');
+    if (!target) {
+      link.replaceWith(...link.childNodes);
+      continue;
+    }
     const id =
       target.origin === new URL(origin).origin
         ? /^\/docs\/([a-z0-9-]+\/[a-z0-9-]+)\/$/.exec(target.pathname)?.[1]

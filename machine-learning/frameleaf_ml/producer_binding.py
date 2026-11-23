@@ -13,6 +13,7 @@ from typing import Any
 
 import orjson
 from PIL import Image as PillowImage
+from PIL import UnidentifiedImageError
 from PIL.Image import Image
 
 from .config import settings
@@ -48,6 +49,9 @@ class BoundPredictor:
             result = None
             try:
                 result = self._predict(raw, image, text)
+            except UnidentifiedImageError:
+                # Refused from its header, before any model was touched: one bad file keeps the warm models.
+                raise ValueError("producer_input_invalid") from None
             except Exception as error:
                 # Retained exception chains must release sessions before derived files are removed.
                 pending: list[BaseException] = [error]

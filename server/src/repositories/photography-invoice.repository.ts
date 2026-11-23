@@ -169,6 +169,9 @@ export class PhotographyInvoiceRepository {
         .where('invoiceId', '=', id)
         .where('status', '=', 'pending')
         .where('createdAt', '>', sql<Date>`now() - make_interval(mins => ${holdMinutes})`)
+        // An attempt for another amount or currency (the invoice was edited or part-paid since) is not this payment.
+        .where('amount', '=', next.amount)
+        .where('currency', '=', invoice.currency)
         .orderBy('createdAt', 'desc')
         .executeTakeFirst();
       if (held) return { invoice, payment: held, reused: true };
@@ -220,7 +223,8 @@ export class PhotographyInvoiceRepository {
         to === 'paid' ? payment.amount : to === 'refunded' && payment.status === 'paid' ? -payment.amount : 0;
       const paid = invoice.paid + delta;
       await this.settle(trx, invoice, paid);
-      return { moved: true, overpaid: to === 'paid' && paid > invoice.total };
+      // Money landing on a voided invoice is owed back just like money past the total.
+      return { moved: true, overpaid: to === 'paid' && (paid > invoice.total || invoice.status === 'void') };
     });
   }
   /** Sent or part-paid invoices with reminders on, not yet reminded today. */

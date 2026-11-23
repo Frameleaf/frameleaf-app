@@ -314,8 +314,6 @@ export const CLOUD_BACKUP_TICK_MS = 5000;
 export const CLOUD_BACKUP_LEASE_MS = 10 * 60_000;
 /** How long a run waits before it looks for an own-memory key again. */
 export const CLOUD_BACKUP_KEY_WAIT_MS = 60_000;
-/** Manifest entries read per page while the manifest is streamed to the bucket. */
-export const CLOUD_BACKUP_MANIFEST_PAGE = 1000;
 /** How often a worker ends the manifests of runs that are over. */
 const ABANDONED_SWEEP_INTERVAL_MS = 60_000;
 /** A worker asks the others for an own-memory key at most this often. */
@@ -2022,11 +2020,12 @@ export class CloudBackupService {
     await this.recordRun(operation, progress.result, 'running');
     await this.decide(run, opened.licence);
 
-    if (
-      (progress.result.phase === 'database' || progress.result.phase === 'assets') &&
-      !(await this.backUpToVault(run, repository, settings))
-    ) {
-      return;
+    // A pause withdrawn while the engine was stopping answers "carry on" with nothing stored: back up again, so a
+    // run can never finish without its snapshot.
+    while (progress.result.phase === 'database' || progress.result.phase === 'assets') {
+      if (!(await this.backUpToVault(run, repository, settings))) {
+        return;
+      }
     }
     if (progress.result.phase === 'manifest' && !(await this.recordStoredBackup(run, repository))) {
       return;

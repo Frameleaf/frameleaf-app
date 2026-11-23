@@ -1,3 +1,4 @@
+import asyncio
 import time
 from asyncio import Lock
 from collections import OrderedDict
@@ -9,7 +10,7 @@ from aiocache.plugins import TimingPlugin
 from frameleaf_ml.models import from_model_type
 from frameleaf_ml.models.base import InferenceModel
 
-from ..schemas import ModelTask, ModelType, has_profiling
+from ..schemas import ImageDescriptionAcceleration, ModelTask, ModelType, has_profiling
 
 ModelCacheKey = tuple[str, str, str, str, str]
 
@@ -22,6 +23,13 @@ DEFAULT_MAX_ENTRIES = 32
 def normalize_identity(value: Any) -> str:
     """A cache identity field as the caller supplied it, less case and whitespace: "CPU" and " cpu " are one device."""
     return str(value or "").strip().lower()
+
+
+def acceleration_identity(value: Any) -> str:
+    """Models read anything but CUDA and OpenVINO as automatic, so those values must share one loaded instance."""
+    acceleration = normalize_identity(value)
+    explicit = (ImageDescriptionAcceleration.CUDA, ImageDescriptionAcceleration.OPENVINO)
+    return acceleration if acceleration in explicit else ""
 
 
 class ModelCache:
@@ -63,7 +71,7 @@ class ModelCache:
             str(model_type),
             str(model_task),
             normalize_identity(model_kwargs.get("device")),
-            normalize_identity(model_kwargs.get("acceleration")),
+            acceleration_identity(model_kwargs.get("acceleration")),
         )
         ttl = model_kwargs.get("ttl")
         model: InferenceModel | None = await self.cache.get(key)
@@ -78,7 +86,8 @@ class ModelCache:
             async with self._create_lock:
                 model = await self.cache.get(key)
                 if model is None:
-                    model = from_model_type(model_name, model_type, model_task, **model_kwargs)
+                    # Constructors can import torch or a native runtime, which would stall the event loop.
+                    model = await asyncio.to_thread(from_model_type, model_name, model_type, model_task, **model_kwargs)
                     await self.cache.set(key, model, ttl=ttl)
                     self._touch(key)
                     await self._evict_surplus()

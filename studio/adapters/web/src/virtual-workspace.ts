@@ -334,6 +334,15 @@ export class VirtualWorkspace {
           : new Uint8Array(0)
         let position = 0
         let closed = false
+        const truncateTo = (size: number) => {
+          const kept = bytes.slice(0, size)
+          bytes = kept
+          if (kept.byteLength < size) {
+            bytes = new Uint8Array(size)
+            bytes.set(kept)
+          }
+          position = Math.min(position, size)
+        }
         const writeAt = (chunk: Uint8Array, at: number) => {
           const end = at + chunk.byteLength
           if (end > bytes.byteLength) {
@@ -353,13 +362,7 @@ export class VirtualWorkspace {
                 return
               }
               if (chunk.type === 'truncate') {
-                bytes = bytes.slice(0, chunk.size)
-                if (bytes.byteLength < chunk.size) {
-                  const grown = new Uint8Array(chunk.size)
-                  grown.set(bytes)
-                  bytes = grown
-                }
-                position = Math.min(position, chunk.size)
+                truncateTo(chunk.size)
                 return
               }
               writeAt(await toBytes(chunk.data), chunk.position ?? position)
@@ -371,7 +374,7 @@ export class VirtualWorkspace {
             position = at
           },
           async truncate(size: number) {
-            bytes = bytes.slice(0, size)
+            truncateTo(size)
           },
           async abort() {
             closed = true

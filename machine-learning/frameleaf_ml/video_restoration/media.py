@@ -44,6 +44,8 @@ MP4_COPYABLE_AUDIO = frozenset({"aac", "mp3", "alac", "ac3", "eac3"})
 # ``-vsync`` is spelled ``-fps_mode`` from ffmpeg 5.1, but the old spelling still works there
 # and is the only one ffmpeg 4.4 (Ubuntu 22.04, the worker image) understands.
 PASSTHROUGH_TIMING = ["-vsync", "passthrough"]
+# ffprobe ``format_name`` values whose content names other files to read.
+PLAYLIST_FORMATS = frozenset({"hls", "applehttp", "concat", "dash", "imf"})
 
 
 class MediaError(Exception):
@@ -113,6 +115,10 @@ def bit_depth_of(pix_fmt: str | None, bits_per_raw_sample: str | None) -> int:
 def parse_probe(payload: dict[str, Any], *, still: bool = False) -> SourceProbe:
     """Interpret ``ffprobe -show_streams -show_format -of json`` output. A still has no
     meaningful frame rate or duration; it is treated as one frame at 1/1 lasting 0 ms."""
+    # A playlist makes the decoder open other files on this worker, and their frames would come back as the result.
+    format_names = str((payload.get("format") or {}).get("format_name") or "").split(",")
+    if PLAYLIST_FORMATS.intersection(format_names):
+        raise MediaError("the upload is a playlist, not a media file", unsupported=True)
     streams: list[dict[str, Any]] = payload.get("streams") or []
     video = next((stream for stream in streams if stream.get("codec_type") == "video"), None)
     if video is None:
@@ -283,7 +289,14 @@ def encode_near_lossless_clip(
 
 
 def cut_video_segment(
-    source: Path, output: Path, source_probe: SourceProbe, *, start_ms: int, end_ms: int, timeout: float
+    source: Path,
+    output: Path,
+    source_probe: SourceProbe,
+    *,
+    start_ms: int,
+    end_ms: int,
+    timeout: float,
+    max_frames: int | None = None,
 ) -> None:
     """Cut exact frames, without PNGs or exposing frames outside the requested segment.
 
@@ -321,6 +334,9 @@ def cut_video_segment(
             "-qp",
             "0",
             *colour,
+            # One past the budget: a container that understates its frames is refused by the count, not after
+            # its lossless copy has filled the work directory.
+            *(["-frames:v", str(max_frames + 1)] if max_frames is not None else []),
             str(output),
         ],
         timeout=timeout,

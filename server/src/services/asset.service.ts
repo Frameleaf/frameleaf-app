@@ -65,7 +65,7 @@ import {
   QueueName,
   StorageFolder,
 } from 'src/enum.js';
-import { deferJobAdoption, queueExecution } from 'src/queue/context.js';
+import { advanceJobProgress, deferJobAdoption, queueExecution } from 'src/queue/context.js';
 import { isProcessingFailureStep } from 'src/queue/processing-failure.js';
 import { MediaHealthRepository } from 'src/repositories/media-health.repository.js';
 import { AssetOriginField } from 'src/repositories/partner-origin.repository.js';
@@ -684,7 +684,8 @@ export class AssetService extends BaseService {
         throw new BadRequestException('This link is no longer shared');
       }
       // a link with a password proves it through its own session, never by its key alone
-      if (!link.allowDownload || link.password) {
+      // FL-826: the copy shares the stored original, which a link limited to web size never hands out
+      if (!link.allowDownload || link.password || link.webSizeOnly) {
         throw new ForbiddenException('This link does not allow saving its items');
       }
       allowed = await this.accessRepository.asset.checkSharedLinkAccess(link.id, new Set(ids));
@@ -1236,6 +1237,7 @@ export class AssetService extends BaseService {
       await this.jobRepository.queueAll(
         assets.map(({ id, isOffline }) => ({ name: JobName.AssetDelete, data: { id, deleteOnDisk: !isOffline } })),
       );
+      advanceJobProgress(assets.length);
     }
 
     // FL-39: video versions whose asset is gone (left behind while fork writes were disabled, or

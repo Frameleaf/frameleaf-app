@@ -6,6 +6,7 @@ import { nativeStopped, type NativeRuntime } from './native.js';
 import { z } from 'zod';
 import { createNativeRecovery, NativeRecovery } from './native-recovery.js';
 import { completeNativeDatabaseBackup } from './native-backup-journal.js';
+import { nativeActiveMediaIdentity } from './native-media-cutover.js';
 import { stageNativeRestoreInput } from './native-restore-input.js';
 import { NativeRestoreContextSchema } from './native-restore-review.js';
 import {
@@ -647,8 +648,11 @@ export async function runNativeRestore(
   store.save(operation);
   const ready = await runtime.start();
   owned();
+  // After a recorded media move the reply also names the media it opened, which must be the recorded one.
+  const { activeMediaIdentity, ...reported } = ready;
   if (
-    !isDeepStrictEqual(ready, {
+    activeMediaIdentity !== nativeActiveMediaIdentity(store, context.installation) ||
+    !isDeepStrictEqual(reported, {
       protocolVersion: 1,
       state: 'running',
       secureInstallationId: context.installation.secureInstallationId,

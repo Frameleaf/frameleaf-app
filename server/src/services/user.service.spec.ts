@@ -245,7 +245,7 @@ describe(UserService.name, () => {
     it('should get a user by id', async () => {
       mocks.user.get.mockResolvedValue(userStub.admin);
 
-      await sut.get(authStub.admin.user.id);
+      await sut.get(authStub.admin, authStub.admin.user.id);
 
       expect(mocks.user.get).toHaveBeenCalledWith(authStub.admin.user.id, { withDeleted: false });
     });
@@ -253,9 +253,19 @@ describe(UserService.name, () => {
     it('should throw an error if a user is not found', async () => {
       mocks.user.get.mockResolvedValue(void 0);
 
-      await expect(sut.get(authStub.admin.user.id)).rejects.toBeInstanceOf(BadRequestException);
+      await expect(sut.get(authStub.admin, authStub.admin.user.id)).rejects.toBeInstanceOf(BadRequestException);
 
       expect(mocks.user.get).toHaveBeenCalledWith(authStub.admin.user.id, { withDeleted: false });
+    });
+
+    it("keeps another person's email from a non-admin while users are not public (FL-1743)", async () => {
+      mocks.user.get.mockResolvedValue(userStub.admin);
+      mocks.systemMetadata.get.mockResolvedValue({ server: { publicUsers: false } });
+
+      await expect(sut.get(authStub.user1, userStub.admin.id)).resolves.toMatchObject({
+        id: userStub.admin.id,
+        email: '',
+      });
     });
   });
 

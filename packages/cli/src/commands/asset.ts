@@ -11,6 +11,7 @@ import {
   ResumableUploadLimits,
   addAssetsToAlbum,
   attachAssetUploadSidecar,
+  cancelResumableUpload,
   checkBulkUpload,
   createAlbum,
   defaults,
@@ -584,12 +585,23 @@ const uploadFile = async (
       return buffer.subarray(0, bytesRead);
     },
     onResource: async (url) => {
-      state.set(key, url);
-      // The XMP goes with the photo, before any of its bytes.
+      // The XMP goes with the photo, before any of its bytes. The upload is remembered only once it
+      // has it: resuming one without would publish the photo alone, and --delete would then remove
+      // the only copy of the XMP.
       if (sidecarPath) {
-        const sidecarData = new Blob([await readFile(sidecarPath)]);
-        await attachAssetUploadSidecar({ id: url.slice(url.lastIndexOf('/') + 1), body: { sidecarData } });
+        try {
+          const sidecarData = new Blob([await readFile(sidecarPath)]);
+          await attachAssetUploadSidecar({ id: url.slice(url.lastIndexOf('/') + 1), body: { sidecarData } });
+        } catch (error) {
+          try {
+            await cancelResumableUpload(url, { baseUrl, headers: headers as Record<string, string> });
+          } catch {
+            // the server lets an abandoned upload expire
+          }
+          throw error;
+        }
       }
+      state.set(key, url);
     },
     onProgress: (bytes) => {
       state.touch(key);

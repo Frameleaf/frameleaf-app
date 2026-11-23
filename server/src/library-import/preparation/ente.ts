@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';
-import { readFile, readdir } from 'node:fs/promises';
+import { readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { ENTE_EXPORT_SCHEMA_SHA256, readEnteManifest } from 'src/library-import/ente-files.js';
 import fixture from 'src/library-import/fixtures/ente/0.4.2-media.json' with { type: 'json' };
@@ -8,6 +8,7 @@ import { PLACEHOLDER_SHA256 } from 'src/library-import/preparation/prepare.js';
 import {
   type OpenedPreparationSource,
   type PreparationAdapter,
+  readSourceFile,
   unrestrictedLogin,
 } from 'src/library-import/preparation/types.js';
 
@@ -24,9 +25,9 @@ const refuse = (code: string): never => {
 };
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
-const readJSON = async (path: string, code: string) => {
+const readJSON = async (root: string, path: string, code: string) => {
   try {
-    return JSON.parse(await readFile(path, 'utf8')) as unknown;
+    return JSON.parse((await readSourceFile(root, path)).toString('utf8')) as unknown;
   } catch {
     return refuse(code);
   }
@@ -110,7 +111,7 @@ async function readAlbums(root: string) {
     const folder = join(root, entry.name);
     let record: unknown;
     try {
-      record = JSON.parse(await readFile(join(folder, 'metadata.json'), 'utf8'));
+      record = JSON.parse((await readSourceFile(root, join(entry.name, 'metadata.json'))).toString('utf8'));
     } catch (error) {
       if (missing(error)) continue;
       return refuse('ENTE_EXPORT_INVALID');
@@ -125,7 +126,7 @@ async function readAlbums(root: string) {
       throw error;
     }
     for (const name of sidecars.filter((name) => name.endsWith('.json')).toSorted()) {
-      const sidecar = await readJSON(join(folder, 'metadata', name), 'ENTE_EXPORT_INVALID');
+      const sidecar = await readJSON(root, join(entry.name, 'metadata', name), 'ENTE_EXPORT_INVALID');
       const ente = isRecord(sidecar) && isRecord(sidecar.ente) ? sidecar.ente : {};
       const component = Array.isArray(ente.components)
         ? (ente.components as unknown[]).find((item) => isRecord(item) && item.role === ente.component)
@@ -154,8 +155,8 @@ export const adapter: PreparationAdapter = {
   kind: 'ente',
   databases: ['export'],
   async open(input) {
-    const root = await readJSON(join(input.originalsRoot, ENTE_EXPORT_FILE), 'ENTE_EXPORT_INVALID');
-    const inventory = await readJSON(join(input.originalsRoot, ENTE_INVENTORY_FILE), 'ENTE_INVENTORY_REQUIRED');
+    const root = await readJSON(input.originalsRoot, ENTE_EXPORT_FILE, 'ENTE_EXPORT_INVALID');
+    const inventory = await readJSON(input.originalsRoot, ENTE_INVENTORY_FILE, 'ENTE_INVENTORY_REQUIRED');
     if (!isRecord(root) || typeof root.userID !== 'string') return refuse('ENTE_EXPORT_INVALID');
     if (!Array.isArray(inventory)) return refuse('ENTE_INVENTORY_REQUIRED');
     const account = root.userID;

@@ -261,6 +261,27 @@ describe('Google Drive source', () => {
     expect(calls[1].url).toContain('/changes/startPageToken');
   });
 
+  it('does not count a picked item it could not see as covered, so it is listed when it comes back', async () => {
+    const first = setup(
+      () => json(folder('trips', 'Trips')),
+      () => json({}, 404),
+      startToken,
+      () => listing([file('a', 'a.jpg')]),
+    );
+    const { cursor } = await collect(first.source, ['trips', 'family']);
+    expect(cursor.roots).toEqual(['trips']);
+
+    const second = setup(
+      () => json(folder('trips', 'Trips')),
+      () => json(folder('family', 'Family')),
+      startToken,
+      () => listing([file('a', 'a.jpg')]),
+      () => listing([file('f', 'f.jpg', 'family')]),
+    );
+    const { items } = await collect(second.source, ['trips', 'family'], cursor);
+    expect(items.map((item) => item.remoteId)).toEqual(['a', 'f']);
+  });
+
   it('lists again when Google refuses the saved position', async () => {
     const { source, calls } = setup(
       () => json(folder('trips', 'Trips')),

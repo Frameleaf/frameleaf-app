@@ -123,17 +123,44 @@ class AafReader {
   private loaded = 0;
   readonly mobs = new Map<string, AafObject>();
   readonly operations = new Map<string, { name: string; timeWarp: boolean }>();
+  private readonly objects = new Map<number, AafObject>();
+  private readonly streams = new Map<number, Buffer>();
+  private streamBytes = 0;
 
-  constructor(private readonly file: CompoundFile) {}
+  constructor(
+    private readonly file: CompoundFile,
+    private readonly fileBytes: number,
+  ) {}
+
+  /**
+   * A stream's bytes, read once. Directory entries may share sectors, so a small file can name the same
+   * large stream many times; what is read in total cannot honestly exceed the file.
+   */
+  private stream(entry: CfbEntry) {
+    let data = this.streams.get(entry.id);
+    if (!data) {
+      this.streamBytes += entry.size;
+      if (this.streamBytes > this.fileBytes * 2) {
+        throw new InterchangeReadError('too-complex', 'This AAF file repeats its contents too many times to read');
+      }
+      data = this.file.read(entry);
+      this.streams.set(entry.id, data);
+    }
+    return data;
+  }
 
   load(entry: CfbEntry): AafObject {
     if (++this.loaded > MAX_OBJECTS) {
       throw new InterchangeReadError('too-complex', 'This AAF file has too many objects to read');
     }
+    const known = this.objects.get(entry.id);
+    if (known) {
+      return known;
+    }
     const props = new Map<number, Property>();
     const stream = this.file.children(entry).get('properties');
     if (stream) {
-      const data = this.file.read(stream);
+      const data = this.stream(stream);
       if (data.length >= 4 && data[0] === 0x4c) {
         const count = data.readUInt16LE(2);
         let offset = 4 + count * 6;
@@ -147,7 +174,9 @@ class AafReader {
         }
       }
     }
-    return { entry, clsid: entry.clsid, props };
+    const object = { entry, clsid: entry.clsid, props };
+    this.objects.set(entry.id, object);
+    return object;
   }
 
   has(object: AafObject | undefined, pid: number) {
@@ -232,7 +261,7 @@ class AafReader {
     if (!index) {
       return [];
     }
-    const data = this.file.read(index);
+    const data = this.stream(index);
     const count = data.length >= 4 ? data.readUInt32LE(0) : 0;
     const keys: number[] = [];
     if (value.form === SF_STRONG_VECTOR) {
@@ -535,7 +564,7 @@ const toSecondsTransitions = (transitions: PlacedTransition[], fps: number): Pla
 
 export const readAaf = (bytes: Buffer): InterchangeProject => {
   const file = new CompoundFile(bytes);
-  const aaf = new AafReader(file);
+  const aaf = new AafReader(file, bytes.length);
   const headerEntry = file
     .children(file.root)
     .values()

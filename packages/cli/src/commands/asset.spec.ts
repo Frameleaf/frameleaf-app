@@ -8,6 +8,8 @@ import {
   AssetRejectReason,
   AssetUploadAction,
   AssetVisibility,
+  attachAssetUploadSidecar,
+  cancelResumableUpload,
   checkBulkUpload,
   defaults,
   getSupportedMediaTypes,
@@ -203,6 +205,24 @@ describe('uploadFiles with resumable uploads (FL-849)', () => {
       expect(savedUrls()).toEqual([]);
     },
   );
+
+  it.skipIf(os.platform() === 'win32')('never resumes an upload whose XMP was not attached', async () => {
+    const sidecar = `${testFilePath}.xmp`;
+    fs.writeFileSync(sidecar, '<x:xmpmeta/>');
+    vi.mocked(attachAssetUploadSidecar).mockRejectedValueOnce(new Error('socket hang up'));
+    vi.mocked(startResumableUpload).mockImplementation(async (input) => {
+      await input.onResource?.(url);
+      return done;
+    });
+
+    await expect(run()).resolves.toEqual([{ id: done.id, filepath: testFilePath }]);
+
+    expect(cancelResumableUpload).toHaveBeenCalledWith(url, expect.anything());
+    expect(attachAssetUploadSidecar).toHaveBeenCalledTimes(2);
+    expect(startResumableUpload).toHaveBeenCalledTimes(2);
+    expect(resumeResumableUpload).not.toHaveBeenCalled();
+    fs.rmSync(sidecar);
+  });
 
   it.skipIf(os.platform() === 'win32')('--no-resume starts again even when an upload was saved', async () => {
     vi.mocked(startResumableUpload).mockImplementationOnce(async (input) => {

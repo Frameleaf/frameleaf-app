@@ -23,6 +23,7 @@ import {
   UtilityActivityTool,
 } from 'src/dtos/trash.dto.js';
 import { AssetStatus, JobName, JobStatus, Permission, QueueName } from 'src/enum.js';
+import { advanceJobProgress } from 'src/queue/context.js';
 import { AlbumOriginField } from 'src/repositories/partner-origin.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
@@ -438,6 +439,7 @@ export class TrashService extends BaseService {
         assets.map(({ id }) => ({ name: JobName.AssetDelete, data: { id, deleteOnDisk: true } })),
       );
       count += assets.length;
+      advanceJobProgress(assets.length);
     }
 
     this.logger.log(`Queued ${count} asset(s) for deletion from the trash`);

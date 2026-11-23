@@ -103,7 +103,12 @@
           proposed = value;
         }
       })
-      .catch(() => {});
+      .catch(() => {
+        // The last answer was for another length: its count must not be shown against this one.
+        if (!cancelled) {
+          proposed = null;
+        }
+      });
     return () => {
       cancelled = true;
     };

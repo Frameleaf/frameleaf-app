@@ -224,8 +224,6 @@ const RestorationMeasuredThroughputSchema = z
   })
   .meta({ id: 'RestorationMeasuredThroughputDto' });
 
-export type RestorationMeasuredThroughput = z.infer<typeof RestorationMeasuredThroughputSchema>;
-
 const RestorationModelCapabilitySchema = z
   .object({
     id: z.string(),

@@ -208,7 +208,10 @@ export class ClientsPaymentsService {
         body: { returnUrl: dto.returnUrl, refreshUrl: dto.returnUrl },
       });
       const parsed = new URL(url);
-      if (parsed.protocol !== 'https:' || !parsed.hostname.endsWith('stripe.com'))
+      if (
+        parsed.protocol !== 'https:' ||
+        !(parsed.hostname === 'stripe.com' || parsed.hostname.endsWith('.stripe.com'))
+      )
         throw new ServiceUnavailableException('Unexpected payment account link');
       const state = await this.state();
       if (!state.accounts[ownerId])

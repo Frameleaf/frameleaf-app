@@ -593,6 +593,41 @@ describe('host commands and editor drafts (FL-174)', () => {
     expect(frame.hostGraph).toBe('c2')
   })
 
+  it('stores an undo back to the old graph that landed while the edit was still being sent', async () => {
+    const state: DraftSendState = {
+      hostContent: 'r3',
+      mount: { generation: 0, projectId: 'p', revision: 3, graphVersion: 0, loaded: true },
+      pendingSend: false,
+      pendingSuperseded: false,
+      writePending: true,
+      writeVersion: 1,
+      disposed: false,
+    }
+    const sent: string[] = []
+    const answer = deferred<StageAnswer>()
+    let file = 'e1'
+    const io = {
+      read: async () => JSON.stringify(file),
+      contentOf: String,
+      stage: (graph: unknown) => {
+        sent.push(String(graph))
+        return sent.length === 1 ? answer.promise : Promise.resolve({ status: 'staged' })
+      },
+      dirty: () => undefined,
+    }
+    const first = sendEditorDraft(state, state.mount, io)
+    await settle()
+    // The undo's own send finds the file equal to the host content the first send has not replaced.
+    file = 'r3'
+    state.writeVersion = 2
+    state.writePending = true
+    await sendEditorDraft(state, state.mount, io)
+    answer.resolve({ status: 'staged' })
+    await first
+    expect(sent).toEqual(['e1', 'r3'])
+    expect(state).toMatchObject({ hostContent: 'r3', writePending: false })
+  })
+
   it('sends again at once when the mount took the host’s newer graph while the refusal travelled', async () => {
     const state: DraftSendState = {
       hostContent: 'r3',

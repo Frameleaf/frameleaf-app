@@ -1,4 +1,4 @@
-import { chmod, chown, lstat, mkdir, open, rename, symlink, utimes } from 'node:fs/promises';
+import { chmod, chown, lstat, mkdir, open, rename, rm, symlink, utimes } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { fileChunks, readTree, safeName } from './tree.js';
 const stamp = (milliseconds) => String((milliseconds + 0.5) / 1000);
@@ -43,6 +43,7 @@ export async function restore(repository, snapshot, path, target, options = {}) 
     const started = new Date().toISOString().replaceAll(/[:.]/g, '-');
     const aside = options.aside ?? ((existing) => `${existing}.before-restore-${started}`);
     const result = { files: 0, bytes: 0, movedAside: [] };
+    let written = 0;
     const start = await find(repository, snapshot, path);
     if (!start) {
         throw new Error('No such file or folder in this backup');
@@ -83,24 +84,33 @@ export async function restore(repository, snapshot, path, target, options = {}) 
             await utimes(place, stamp(entry.mtime), stamp(entry.mtime)).catch(() => undefined);
             return;
         }
-        await clear(place);
         if (entry.type === 'symlink') {
+            await clear(place);
             await symlink(entry.target ?? '', place);
             return;
         }
-        const file = await open(place, 'wx', 0o600);
+        const temporary = join(dirname(place), `.frameleaf-restoring-${started}-${++written}`);
+        const file = await open(temporary, 'wx', 0o600);
         try {
-            for await (const chunk of readFile(repository, entry)) {
-                await file.writeFile(chunk);
-                result.bytes += chunk.length;
+            try {
+                for await (const chunk of readFile(repository, entry)) {
+                    await file.writeFile(chunk);
+                    result.bytes += chunk.length;
+                }
             }
+            finally {
+                await file.close();
+            }
+            await own(temporary, entry);
+            await chmod(temporary, entry.mode);
+            await utimes(temporary, stamp(entry.mtime), stamp(entry.mtime));
+            await clear(place);
+            await rename(temporary, place);
         }
-        finally {
-            await file.close();
+        catch (error) {
+            await rm(temporary, { force: true });
+            throw error;
         }
-        await own(place, entry);
-        await chmod(place, entry.mode);
-        await utimes(place, stamp(entry.mtime), stamp(entry.mtime));
         result.files++;
     };
     if (path.length > 0 && !safeName(start.name)) {

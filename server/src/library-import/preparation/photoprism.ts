@@ -224,11 +224,16 @@ export const adapter: PreparationAdapter = {
       },
       manifest(files) {
         const losses: ImportManifest['losses'] = [];
+        const recorded = new Set<string>();
         const loss = (code: string, entityId: string) => {
-          if (losses.every((entry) => entry.code !== code || entry.entityId !== entityId))
-            losses.push({ code, entityId, acknowledged: false });
+          const key = JSON.stringify([code, entityId]);
+          if (recorded.has(key)) return;
+          recorded.add(key);
+          losses.push({ code, entityId, acknowledged: false });
         };
         const rawPhotos = new Map(archived('photos').map((row) => [row.photo_uid, row]));
+        // PhotoPrism keeps one album per folder, so each album must not walk the whole library.
+        const inFolder = Map.groupBy(photos, (photo) => rawPhotos.get(photo.id)?.photo_path);
         const rawAlbums = new Map(archived('albums').map((row) => [row.album_uid, row]));
         const materializedAlbums: Record<string, string[]> = {};
         const dropped = new Set<string>();
@@ -244,7 +249,7 @@ export const adapter: PreparationAdapter = {
             continue;
           }
           // Folder search: photos in this folder that are public, not archived and not hidden.
-          const members = photos.filter((photo) => {
+          const members = (inFolder.get(path) ?? []).filter((photo) => {
             const row = rawPhotos.get(photo.id);
             return (
               row?.photo_path === path &&

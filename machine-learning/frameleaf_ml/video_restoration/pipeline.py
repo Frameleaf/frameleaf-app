@@ -204,7 +204,13 @@ def restore(
             if start_ms is not None and end_ms is not None:
                 source_video = work_dir / "segment.mp4"
                 media.cut_video_segment(
-                    media_path, source_video, source, start_ms=start_ms, end_ms=end_ms, timeout=MEDIA_TIMEOUT_S
+                    media_path,
+                    source_video,
+                    source,
+                    start_ms=start_ms,
+                    end_ms=end_ms,
+                    timeout=MEDIA_TIMEOUT_S,
+                    max_frames=budget,
                 )
             source_statistics = media.video_frame_statistics(
                 source_video, source, max_frames=budget, timeout=MEDIA_TIMEOUT_S

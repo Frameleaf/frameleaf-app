@@ -25,6 +25,22 @@ from frameleaf_ml.models.nsfw_detection import NsfwDetectionModel
 from frameleaf_ml.schemas import ModelFormat, ModelSource
 
 
+def test_custom_clip_refuses_external_weights_outside_its_files(tmp_path: Path) -> None:
+    import onnx
+
+    tensor = onnx.TensorProto(name="w", data_type=onnx.TensorProto.FLOAT, dims=[1])
+    tensor.data_location = onnx.TensorProto.EXTERNAL
+    location = tensor.external_data.add()
+    location.key, location.value = "location", "../../secret"
+    graph = onnx.helper.make_graph([], "graph", [], [], initializer=[tensor])
+    (tmp_path / "visual").mkdir()
+    (tmp_path / "visual" / "model.onnx").write_bytes(onnx.helper.make_model(graph).SerializeToString())
+    model = OpenClipVisualEncoder("someone/own-model", cache_dir=tmp_path)
+
+    with pytest.raises(ModelUnavailableError):
+        model._make_session(model.model_path)
+
+
 @pytest.fixture(autouse=True)
 def public_source(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "model_source_url", None)

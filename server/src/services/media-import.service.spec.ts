@@ -443,8 +443,10 @@ describe('subscription options', () => {
       subscriptionRow(),
       subscriptionRow({ history: { mode: 'since', since: '2026-01-01T00:00:00Z' } }),
     ]);
-    repository.subscriptionCounts.mockResolvedValue({ discovered: 0, saved: 0, skipped: 0, failed: 0 });
+    repository.subscriptionCountsFor.mockResolvedValue(new Map());
     const { subscriptions } = await service.subscriptions(authStub.user1);
+    expect(repository.subscriptionCountsFor).toHaveBeenCalledTimes(1);
+    expect(repository.subscriptionCounts).not.toHaveBeenCalled();
     expect(subscriptions[0]).toMatchObject({
       history: { mode: 'new' },
       reach: { mode: 'recent', count: 30 },

@@ -25,7 +25,6 @@ export const releaseTag = z
 export const imageDigest = z
   .string()
   .regex(/^[a-z0-9./:_-]+@sha256:[a-f0-9]{64}$/);
-export const secureToken = z.string().regex(/^[a-f0-9]{64}$/);
 
 export type Mount = {
   type: 'bind' | 'volume';

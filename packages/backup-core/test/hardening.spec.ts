@@ -364,6 +364,24 @@ describe('restore', () => {
     expect((await readDisk(join(target, 'notes.txt.kept-2'))).toString()).toBe('mine, second');
     expect((await readDisk(join(target, 'notes.txt'))).toString()).toBe('from the backup');
   });
+
+  it('leaves the file in its place when the backup of it cannot be read', async () => {
+    const { repository } = await fresh();
+    const { snapshot } = await backup(repository, made({ 'notes.txt': Buffer.from('from the backup') }), {
+      packTarget,
+    });
+    const target = join(work, 'out');
+    await mkdir(target);
+    await writeFile(join(target, 'notes.txt'), 'mine');
+    // The folder listing still reads; only the file's own content is damaged.
+    const read = repository.readBlob.bind(repository);
+    repository.readBlob = (id) => (id === snapshot.tree ? read(id) : Promise.reject(new Error('damaged')));
+
+    await expect(restore(repository, snapshot, ['notes.txt'], target)).rejects.toThrow('damaged');
+
+    expect((await readDisk(join(target, 'notes.txt'))).toString()).toBe('mine');
+    expect(await readdir(target)).toEqual(['notes.txt']);
+  });
 });
 
 describe('index', () => {

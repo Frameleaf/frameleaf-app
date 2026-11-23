@@ -311,6 +311,7 @@ export class BrokerAccessToken {
     // Resolved before the row is locked: it takes the identity lock itself.
     const target = await this.broker.target();
     let accessToken: string | undefined;
+    let expiresAt = 0;
     try {
       await this.session.renewCredentials(async (current) => {
         if (typeof current.refreshToken !== 'string') {
@@ -318,7 +319,7 @@ export class BrokerAccessToken {
         }
         const answer = await this.broker.refresh(this.service, current.refreshToken, target);
         accessToken = answer.accessToken;
-        this.expiresAt = this.now() + answer.expiresInSec * 1000;
+        expiresAt = this.now() + answer.expiresInSec * 1000;
         return answer.refreshToken && answer.refreshToken !== current.refreshToken
           ? { ...current, refreshToken: answer.refreshToken }
           : null;
@@ -330,8 +331,10 @@ export class BrokerAccessToken {
     if (!accessToken) {
       throw new RemoteSourceUnavailableError(CLOUD_DOWN);
     }
+    // Set together, once saved: an old token must never be read as good until the new expiry.
     this.token = accessToken;
-    this.session.accessToken?.write({ token: accessToken, expiresAt: this.expiresAt });
+    this.expiresAt = expiresAt;
+    this.session.accessToken?.write({ token: accessToken, expiresAt });
     return accessToken;
   }
 }

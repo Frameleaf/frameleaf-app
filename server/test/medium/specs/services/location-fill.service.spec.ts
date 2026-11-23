@@ -3,7 +3,7 @@ import { Kysely } from 'kysely';
 import { vi } from 'vitest';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { JobRepository } from 'src/repositories/job.repository.js';
-import { AssetVisibility, JobName, JobStatus } from 'src/enum.js';
+import { AssetLockReason, AssetVisibility, JobName, JobStatus } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AlbumRepository } from 'src/repositories/album.repository.js';
 import { AssetEditRepository } from 'src/repositories/asset-edit.repository.js';
@@ -332,6 +332,23 @@ describe(LocationFillService.name, () => {
     // the filled location is an ordinary edit, so the partner's copy follows it as any location does (FL-326);
     // the owner's own row, like the history, is never read by the partner
     await expect(assets.get(partnerAuth, filled)).rejects.toThrow();
+  });
+
+  it('stops listing a proposal once its photo is locked', async () => {
+    const { sut, ctx } = setup();
+    const { user } = await ctx.newUser();
+    const auth = factory.auth({ user });
+    await history(user.id);
+    const kept = await photo(ctx, user.id, '2024-07-01T15:04:00Z');
+    const lockedSince = await photo(ctx, user.id, '2024-07-01T14:56:00Z');
+    const run = await sut.create(auth, { maxGapMinutes: 15 });
+    await sut.handlePropose({ id: run.id });
+
+    await db.insertInto('asset_lock').values({ assetId: lockedSince, reason: AssetLockReason.Marked }).execute();
+
+    const proposals = await proposalsOf(sut, auth, run.id);
+    expect(proposals.has(kept)).toBe(true);
+    expect(proposals.has(lockedSince)).toBe(false);
   });
 
   it('has nothing to propose without history in reach, and says so by an empty run', async () => {

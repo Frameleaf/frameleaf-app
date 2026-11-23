@@ -146,6 +146,57 @@ describe('location history files', () => {
     expect(report.kind).toBeNull();
   });
 
+  it('reads a GeoJSON point with null properties and passes over malformed paths', async () => {
+    const report: HistoryReport = { kind: null, skipped: 0 };
+    const bytes = Buffer.from(
+      JSON.stringify({
+        features: [{ type: 'Feature', properties: null, geometry: { type: 'Point', coordinates: [1, 2] } }],
+        timelineObjects: [{ activitySegment: { simplifiedRawPath: { points: 5 } } }],
+        semanticSegments: [{ startTime: '2024-01-01T00:00:00Z', timelinePath: [null, 3] }],
+      }),
+    );
+    await expect(read(parseHistoryStream(drip(bytes, 7), report))).resolves.toMatchObject({ count: 0 });
+    expect(report.skipped).toBe(1);
+  });
+
+  it('does not keep leading white space in memory', async () => {
+    const report: HistoryReport = { kind: null, skipped: 0 };
+    const bytes = Buffer.concat([Buffer.alloc(1024, ' '), Buffer.from('[]')]);
+    await expect(read(parseHistoryStream(drip(bytes, 16), report))).resolves.toMatchObject({ count: 0 });
+  });
+
+  it('refuses GPX text that never ends', async () => {
+    const report: HistoryReport = { kind: null, skipped: 0 };
+    // eslint-disable-next-line @typescript-eslint/require-await
+    const endless = (async function* () {
+      yield Buffer.from('<gpx><trk>');
+      for (let index = 0; index < 20; index++) {
+        yield Buffer.alloc(1024 * 1024, 'a');
+      }
+    })();
+    await expect(read(parseHistoryStream(endless, report))).rejects.toBeInstanceOf(HistoryFormatError);
+  });
+
+  it('passes over a ZIP entry that unpacks to more than it declared', async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), 'history-zip-'));
+    try {
+      const file = path.join(directory, 'history.zip');
+      const archive = new ZipArchive({});
+      const output = createWriteStream(file);
+      archive.append(Buffer.alloc(4096, ' '), { name: 'Records.json' });
+      void archive.finalize();
+      await pipeline(archive, output);
+      const bytes = await readFile(file);
+      const central = bytes.indexOf(Buffer.from([0x50, 0x4b, 0x01, 0x02]));
+      bytes.writeUInt32LE(16, central + 24);
+      await writeFile(file, bytes);
+      const report: HistoryReport = { kind: null, skipped: 0 };
+      await expect(read(parseHistoryFile(file, report))).resolves.toMatchObject({ count: 0 });
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
   it('gives each list entry with its key, whatever sits in strings', async () => {
     const text = String.raw`{"a":"x[{","b":[{"n":1,"s":"}]\"{"},{"n":[{"deep":2}]}],"c":{"d":[{"n":3}]},"e":[1,[{"n":4}],{"n":5}]}`;
     const seen = [];

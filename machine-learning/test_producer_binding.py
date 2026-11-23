@@ -5,10 +5,12 @@ from unittest.mock import Mock
 
 import pytest
 from fastapi.testclient import TestClient
+from PIL import UnidentifiedImageError
 
 from frameleaf_ml.config import settings
 from frameleaf_ml.models.clip.textual import OpenClipTextualEncoder
 from frameleaf_ml.native_qualification import preprocessing_identity
+from frameleaf_ml.producer_binding import BoundPredictor
 
 
 @pytest.fixture
@@ -26,6 +28,16 @@ def binding(synthetic_clip_cache, monkeypatch):
     }
     encoded = json.dumps(identity, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
     return {**identity, "modelKey": "clip:" + hashlib.sha256(encoded).hexdigest()}
+
+
+def test_an_unreadable_image_keeps_the_warm_models(monkeypatch):
+    predictor = BoundPredictor()
+    clear = Mock()
+    monkeypatch.setattr(predictor, "_clear", clear)
+    monkeypatch.setattr(predictor, "_predict", Mock(side_effect=UnidentifiedImageError("not an image")))
+    with pytest.raises(ValueError, match="producer_input_invalid"):
+        predictor.predict("{}", b"junk", None)
+    clear.assert_not_called()
 
 
 def test_offline_load_never_downloads_or_clears_a_verified_cache(synthetic_clip_cache, monkeypatch):

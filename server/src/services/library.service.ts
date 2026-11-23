@@ -769,11 +769,20 @@ export class LibraryService extends BaseService {
     const roots = library.importPaths.map((importPath) => normalizeImportPath(importPath));
     const offline: string[] = [];
     const trashedOffline: string[] = [];
+    const holdsFiles = new Map<string, boolean>();
 
     for (const assetPath of job.paths) {
       const root = roots.find((candidate) => isSameOrInside(assetPath, candidate));
       if (!root || !(await checkImportPathOnDisk(this.storageRepository, root)).isValid) {
         this.logger.warn(`Ignoring removal of ${assetPath} in library ${library.id}: its import folder is unavailable`);
+        continue;
+      }
+      // An unmounted share leaves a readable, empty mount point. As in a scan, that is not every file being deleted.
+      if (!holdsFiles.has(root)) {
+        holdsFiles.set(root, await this.rootHoldsFiles(root));
+      }
+      if (!holdsFiles.get(root)) {
+        this.logger.warn(`Ignoring removal of ${assetPath} in library ${library.id}: its import folder is empty`);
         continue;
       }
 
@@ -797,6 +806,20 @@ export class LibraryService extends BaseService {
     }
 
     return JobStatus.Success;
+  }
+
+  private async rootHoldsFiles(root: string) {
+    for await (const batch of this.storageRepository.walkLibrary({
+      pathsToCrawl: [root],
+      includeHidden: false,
+      exclusionPatterns: [],
+      take: 1,
+    })) {
+      if (batch.length > 0) {
+        return true;
+      }
+    }
+    return false;
   }
 
   private findOrFail(id: string) {

@@ -193,7 +193,10 @@ export class BuddyBackupPeerService {
         dpop: target.token,
       });
       keys = { issuer: target.api, jwks };
-      await this.state.locked('cloud-keys', () => writeBuddyFile(keysPath, JSON.stringify(keys)));
+      // Every peer request lands here: the fsynced write is only for keys that actually changed.
+      const encoded = JSON.stringify(keys);
+      if ((await readFile(keysPath, 'utf8').catch(() => null)) !== encoded)
+        await this.state.locked('cloud-keys', () => writeBuddyFile(keysPath, encoded));
     } catch (error) {
       if (!this.outage(error)) throw error;
       keys = JSON.parse(await readFile(keysPath, 'utf8'));

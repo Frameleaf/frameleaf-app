@@ -440,7 +440,7 @@ export class SharedLinkService extends BaseService {
       contentType: mimeTypes.lookup(file.path),
       // the caller sets the public, hour-long cache header itself (see the controller)
       cacheControl: CacheControl.None,
-      viewerId: null,
+      // no viewer: `null` would let an anonymous request use any loaded key on an item sealed since the check above
     });
   }
 
