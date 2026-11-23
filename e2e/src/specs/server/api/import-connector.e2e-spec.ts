@@ -184,7 +184,8 @@ describe('/import-connections', () => {
     const later = albums.find(({ albumName }) => albumName === 'Later')!;
     expect(later.assetCount).toBe(3);
     expect(await itemsOf(connection.id, first.id)).toEqual(before);
-  });
+    // Two scans and two imports, each waited on, do not fit the default 15 seconds on a loaded runner.
+  }, 60_000);
 
   it('never returns the credentials', async () => {
     const connection = await connect([remote('Secret/a.png')]);

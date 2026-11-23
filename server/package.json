@@ -21,7 +21,7 @@
     "nest": "nest",
     "start:dev": "node ../studio/tools/prepare-server-subtitle-runtime.mjs && node scripts/prepare-import-transfer-runtime.mjs && nest start --watch --",
     "start:debug": "node ../studio/tools/prepare-server-subtitle-runtime.mjs && node scripts/prepare-import-transfer-runtime.mjs && nest start --debug 0.0.0.0:9230 --watch --",
-    "lint": "node ../studio/tools/prepare-server-subtitle-runtime.mjs && node scripts/prepare-import-transfer-runtime.mjs && NODE_OPTIONS=\"--max-old-space-size=12288 ${NODE_OPTIONS:-}\" node scripts/lint.mjs",
+    "lint": "node ../studio/tools/prepare-server-subtitle-runtime.mjs && node scripts/prepare-import-transfer-runtime.mjs && NODE_OPTIONS=\"${NODE_OPTIONS:-} --max-old-space-size=12288\" node scripts/lint.mjs",
     "lint:fix": "pnpm run lint --fix",
     "test:lint": "node --test test/lint-batches.test.mjs",
     "check": "node ../studio/tools/prepare-server-subtitle-runtime.mjs && node scripts/prepare-import-transfer-runtime.mjs && pnpm --filter @frameleaf/plugin-sdk build && NODE_OPTIONS=\"--max-old-space-size=12288 ${NODE_OPTIONS:-}\" tsc --noEmit",
