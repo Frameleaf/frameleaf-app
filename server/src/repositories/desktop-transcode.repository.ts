@@ -23,6 +23,8 @@ import { CLAIMED_MEDIA_OPERATION_STATUSES, TERMINAL_MEDIA_OPERATION_STATUSES } f
 const claimant = ({ deviceId, authorizationEpoch }: DesktopWorkerGrant) =>
   desktopTranscodeClaimant(deviceId, authorizationEpoch);
 const kind = MediaOperationKind.PlaybackTranscode;
+/** Through `text`: postgres.js encodes a parameter cast straight to jsonb again, storing a JSON string. */
+const jsonb = (value: unknown) => sql<any>`${JSON.stringify(value)}::text::jsonb`;
 
 export type DesktopTranscodeResult = { outputPath: string; checksum: string; sizeInBytes: number };
 export type DesktopTranscodeUpload = { tokenHash: string; checksum: string; sizeInBytes: string };
@@ -79,6 +81,8 @@ export class DesktopTranscodeRepository {
         .where('claimToken', 'is', null)
         .where('cancelRequestedAt', 'is', null)
         .where('pauseRequestedAt', 'is', null)
+        // FL-1761: moved to Locked after it was offered; its job takes the offer back and encodes it here
+        .where(sql<boolean>`not ${lockedAssetIdExists(sql.ref('media_operation.assetId'))}`)
         .$if(!everyone, (query) => query.where('ownerId', '=', worker.ownerId))
         .orderBy('createdAt', 'asc')
         .limit(1)
@@ -136,7 +140,7 @@ export class DesktopTranscodeRepository {
   async setUploadGrant(id: string, claimToken: string, upload: DesktopTranscodeUpload) {
     const row = await this.db
       .updateTable('media_operation')
-      .set({ settings: sql`${JSON.stringify({ upload })}::jsonb` })
+      .set({ settings: jsonb({ upload }) })
       .where('id', '=', id)
       .where('kind', '=', kind)
       .where('claimToken', '=', claimToken)
@@ -212,7 +216,7 @@ export class DesktopTranscodeRepository {
       .updateTable('media_operation')
       .set({
         status: MediaOperationStatus.Validating,
-        result: sql`${JSON.stringify(staged)}::jsonb`,
+        result: jsonb(staged),
         outputBytes: staged.sizeInBytes,
         heartbeatAt: sql<Date>`now()`,
         claimExpiresAt: sql<Date>`now() + ${sql.lit(DESKTOP_TRANSCODE_VALIDATION_MS)} * interval '1 millisecond'`,

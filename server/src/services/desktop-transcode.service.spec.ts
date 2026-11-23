@@ -189,6 +189,7 @@ describe('waitForDesktopTranscode', () => {
     getLatestBySubject: vi.fn(),
     createUnlessActive: vi.fn(),
     failUnclaimedDesktopTranscode: vi.fn(),
+    isAssetLocked: vi.fn(),
   };
   const storageRepository = { stat: vi.fn(), unlinkDir: vi.fn() };
   const systemMetadataRepository = { get: vi.fn() };
@@ -240,6 +241,22 @@ describe('waitForDesktopTranscode', () => {
     withPresence(present);
     await expect(run({ ...source, locked: true })).resolves.toBe(false);
     expect(mediaOperationRepository.createUnlessActive).not.toHaveBeenCalled();
+  });
+
+  it('never offers a video with a lock record whose file is not sealed yet (FL-1761)', async () => {
+    withPresence(present);
+    mediaOperationRepository.isAssetLocked.mockResolvedValue(true);
+    await expect(run()).resolves.toBe(false);
+    expect(mediaOperationRepository.createUnlessActive).not.toHaveBeenCalled();
+  });
+
+  it('takes back a queued offer when the video became Locked (FL-1761)', async () => {
+    withPresence(present);
+    mediaOperationRepository.isAssetLocked.mockResolvedValue(true);
+    mediaOperationRepository.getLatestBySubject.mockResolvedValue([{ id, status: MediaOperationStatus.Queued }]);
+    mediaOperationRepository.failUnclaimedDesktopTranscode.mockResolvedValue(true);
+    await expect(run()).resolves.toBe(false);
+    expect(mediaOperationRepository.failUnclaimedDesktopTranscode).toHaveBeenCalledWith(id);
   });
 
   it('keeps waiting while a desktop holds the video', async () => {

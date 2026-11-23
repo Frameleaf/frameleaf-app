@@ -2069,12 +2069,14 @@ export class MediaService extends BaseService {
       policy.success ? policy.data : null,
       asset.ownerId,
     );
+    // FL-1761: an item is Locked from its lock record; its file is only sealed later, by its own job.
+    const locked = source.locked || (await this.mediaOperationRepository.isAssetLocked(asset.id));
 
     if (latest && !finished) {
       // A desktop that holds it still has its lease; one that went away is recovered by the lease sweep.
       if (
         latest.status === MediaOperationStatus.Queued &&
-        !available &&
+        (!available || locked) &&
         (await this.mediaOperationRepository.failUnclaimedDesktopTranscode(latest.id))
       ) {
         return false;
@@ -2083,7 +2085,7 @@ export class MediaService extends BaseService {
       return false;
     }
 
-    if (!available || desktopTranscodeRefusal(source)) return false;
+    if (!available || desktopTranscodeRefusal({ ...source, locked })) return false;
     const {
       command: { inputOptions, outputOptions, twoPass, progress },
       expected,

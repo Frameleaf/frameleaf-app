@@ -28,6 +28,7 @@ import { assertCloudProcessingAllowed } from 'src/utils/cloud-processing-choice.
 import { anyUuid, isLockedAsset } from 'src/utils/database.js';
 import { JOB_QUEUE_CLAIMANT, JOB_QUEUE_EXECUTOR, notJobQueueExecuted } from 'src/utils/edit-operation.js';
 import { ICLOUD_NON_SYNC_SNAPSHOT_KEYS } from 'src/utils/icloud-weekly.js';
+import { lockedAssetIdExists } from 'src/utils/locked.js';
 import {
   CLAIMED_MEDIA_OPERATION_STATUSES,
   MEDIA_OPERATION_AUTO_RETRIES,
@@ -1499,6 +1500,13 @@ export class MediaOperationRepository {
     );
     this.changed(result, options.executor);
     return result ? 'failed' : false;
+  }
+  /** FL-1761: the lock record, which exists before the Locked seal job has encrypted the file. */
+  async isAssetLocked(assetId: string): Promise<boolean> {
+    const { rows } = await sql<{
+      locked: boolean;
+    }>`SELECT ${lockedAssetIdExists(sql`${assetId}::uuid`)} AS locked`.execute(this.db);
+    return !!rows[0]?.locked;
   }
   /** FL-1758: nobody is left to take this waiting desktop conversion; the server encodes the video instead. */
   async failUnclaimedDesktopTranscode(id: string): Promise<boolean> {
