@@ -1,5 +1,5 @@
 import { BadRequestException, ForbiddenException } from '@nestjs/common';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -189,6 +189,7 @@ describe('waitForDesktopTranscode', () => {
     getLatestBySubject: vi.fn(),
     createUnlessActive: vi.fn(),
     failUnclaimedDesktopTranscode: vi.fn(),
+    isAssetLocked: vi.fn(),
   };
   const storageRepository = { stat: vi.fn(), unlinkDir: vi.fn() };
   const systemMetadataRepository = { get: vi.fn() };
@@ -242,6 +243,22 @@ describe('waitForDesktopTranscode', () => {
     expect(mediaOperationRepository.createUnlessActive).not.toHaveBeenCalled();
   });
 
+  it('never offers a video with a lock record whose file is not sealed yet (FL-1761)', async () => {
+    withPresence(present);
+    mediaOperationRepository.isAssetLocked.mockResolvedValue(true);
+    await expect(run()).resolves.toBe(false);
+    expect(mediaOperationRepository.createUnlessActive).not.toHaveBeenCalled();
+  });
+
+  it('takes back a queued offer when the video became Locked (FL-1761)', async () => {
+    withPresence(present);
+    mediaOperationRepository.isAssetLocked.mockResolvedValue(true);
+    mediaOperationRepository.getLatestBySubject.mockResolvedValue([{ id, status: MediaOperationStatus.Queued }]);
+    mediaOperationRepository.failUnclaimedDesktopTranscode.mockResolvedValue(true);
+    await expect(run()).resolves.toBe(false);
+    expect(mediaOperationRepository.failUnclaimedDesktopTranscode).toHaveBeenCalledWith(id);
+  });
+
   it('keeps waiting while a desktop holds the video', async () => {
     withPresence(null);
     mediaOperationRepository.getLatestBySubject.mockResolvedValue([{ id, status: MediaOperationStatus.Rendering }]);
@@ -286,8 +303,14 @@ describe('waitForDesktopTranscode', () => {
       },
     };
     const self = () => ({
-      mediaOperationRepository: { ...mediaOperationRepository, fail: vi.fn(), complete: vi.fn() },
-      storageRepository: { ...storageRepository, copyFile: vi.fn() },
+      mediaOperationRepository: {
+        ...mediaOperationRepository,
+        fail: vi.fn(),
+        complete: vi.fn(),
+        isAssetLocked: vi.fn().mockResolvedValue(false),
+        isAssetLockedForPublication: vi.fn().mockResolvedValue(false),
+      },
+      storageRepository: { ...storageRepository, copyFile: vi.fn(), unlink: vi.fn().mockResolvedValue(undefined) },
       mediaRepository: { probe: vi.fn() },
       storageCore: { ensureFolders: vi.fn() },
       logger: { warn: vi.fn() },
@@ -312,6 +335,54 @@ describe('waitForDesktopTranscode', () => {
       );
       expect(service.storageRepository.copyFile).not.toHaveBeenCalled();
       expect(service.storageRepository.unlinkDir).toHaveBeenCalled();
+    });
+
+    it('refuses a result for a video moved to Locked while the desktop worked', async () => {
+      const service = self();
+      service.mediaOperationRepository.isAssetLocked.mockResolvedValue(true);
+      await expect(adopt(service, validating)).resolves.toBe(false);
+      expect(service.mediaOperationRepository.fail).toHaveBeenCalledWith(
+        id,
+        claimToken,
+        expect.objectContaining({ errorCode: 'desktop_transcode_locked' }),
+        { retry: false, requireActiveClaim: true },
+      );
+      expect(service.storageRepository.copyFile).not.toHaveBeenCalled();
+      expect(service.storageRepository.unlinkDir).toHaveBeenCalled();
+    });
+
+    it('does not publish a video locked after validation, and removes the copy', async () => {
+      const root = await mkdtemp(join(tmpdir(), 'desktop-transcode-'));
+      vi.mocked(StorageCore.getMediaLocation).mockReturnValue(root);
+      const folder = desktopTranscodeStagingFolder(ownerId, id);
+      await mkdir(folder, { recursive: true });
+      const stagedPath = join(folder, `${randomUUID()}.artifact`);
+      await writeFile(stagedPath, 'video');
+      const service = self();
+      service.mediaRepository.probe.mockResolvedValue({
+        format: { duration: 10, bitrate: 1 },
+        videoStreams: [{ width: 1280, height: 720, codecName: 'h264' }],
+        audioStreams: [],
+      });
+      service.mediaOperationRepository.isAssetLockedForPublication.mockResolvedValue(true);
+      const adoptions: Array<(tx: unknown) => Promise<void>> = [];
+      const operation = {
+        ...validating,
+        result: {
+          outputPath: stagedPath,
+          checksum: createHash('sha256').update('video').digest('hex'),
+          sizeInBytes: 5,
+        },
+      };
+      await expect(
+        queueExecution.run({ claim: { data: {} }, signal: new AbortController().signal, adoptions } as never, () =>
+          (MediaService.prototype as any).adoptDesktopTranscode.call(service, asset, operation, '/encoded/video.mp4'),
+        ),
+      ).resolves.toBe(true);
+      await expect(adoptions[0]({})).rejects.toThrow('locked');
+      await rm(root, { recursive: true, force: true });
+      expect(service.mediaOperationRepository.complete).not.toHaveBeenCalled();
+      expect(service.storageRepository.unlink).toHaveBeenCalledWith('/encoded/video.mp4');
     });
 
     it('refuses a staged file whose checksum does not match without publishing it', async () => {
