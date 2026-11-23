@@ -69,9 +69,17 @@ describe('/import-connections', () => {
     const { body } = await request(app).get(`/assets/${id}`).set(as(owner));
     return body;
   };
+  /** The album list counts in the background (FL-1297): an album not counted yet says `statsPending`. */
   const albumsOf = async () => {
-    const { body } = await request(app).get('/albums').set(as(owner));
-    return body as Array<{ id: string; albumName: string; assetCount: number }>;
+    for (let attempt = 0; attempt < 120; attempt++) {
+      const { body } = await request(app).get('/albums').set(as(owner));
+      const albums = body as Array<{ id: string; albumName: string; assetCount: number; statsPending?: boolean }>;
+      if (albums.every(({ statsPending }) => !statsPending)) {
+        return albums;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+    throw new Error('The album counts did not settle');
   };
 
   beforeAll(async () => {

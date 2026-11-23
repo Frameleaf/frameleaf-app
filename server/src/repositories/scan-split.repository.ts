@@ -100,7 +100,13 @@ export class ScanSplitRepository {
       .orderBy('asset_scan_crop.createdAt')
       .orderBy('asset_scan_crop.assetId')
       .execute();
-    return rows.map((row) => ({ ...row, trashed: !!row.trashed, edited: !!row.edited }));
+    return rows.map((row) => ({
+      ...row,
+      // crops saved before the write was fixed hold the array as a JSON string
+      quad: (typeof row.quad === 'string' ? JSON.parse(row.quad) : row.quad) as ScanPoint[],
+      trashed: !!row.trashed,
+      edited: !!row.edited,
+    }));
   }
 
   /** The scan a photo was cut from, if it still exists and is not in the trash. */
@@ -190,7 +196,7 @@ export class ScanSplitRepository {
           .values({
             assetId: crop.asset.id,
             sourceAssetId: scanId,
-            quad: JSON.stringify(crop.quad) as unknown as ScanPoint[],
+            quad: sql<ScanPoint[]>`${JSON.stringify(crop.quad)}::text::jsonb`,
             rotation: crop.rotation,
           })
           .execute();

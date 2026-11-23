@@ -6,6 +6,7 @@ import { ActivityRepository } from 'src/repositories/activity.repository.js';
 import { AlbumUserRepository } from 'src/repositories/album-user.repository.js';
 import { AlbumRepository } from 'src/repositories/album.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
+import { EventRepository } from 'src/repositories/event.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
 import { DB } from 'src/schema/index.js';
@@ -17,11 +18,14 @@ import { getKyselyDB } from 'test/utils.js';
 let defaultDatabase: Kysely<DB>;
 
 const setup = (db?: Kysely<DB>) => {
-  return newMediumService(ActivityService, {
+  const service = newMediumService(ActivityService, {
     database: db || defaultDatabase,
     real: [AccessRepository, ActivityRepository, AlbumRepository, AlbumUserRepository, AssetRepository, UserRepository],
-    mock: [LoggingRepository],
+    mock: [EventRepository, LoggingRepository],
   });
+  // FL-1012: a new reaction is announced to linked households
+  service.ctx.getMock(EventRepository).emit.mockResolvedValue();
+  return service;
 };
 
 beforeAll(async () => {

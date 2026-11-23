@@ -1,5 +1,5 @@
-import type { Mock } from 'vitest';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
+import type { Mock } from 'vitest';
 import {
   RemoteSourceError,
   registerRemoteSource,

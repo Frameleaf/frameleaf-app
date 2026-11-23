@@ -37,7 +37,7 @@ import {
   withHiddenContentFilter,
 } from 'src/utils/database.js';
 import { libraryScopePredicate } from 'src/utils/library-scope.js';
-import { isOnTimelineWhateverLock, isTimelineVisible, revealedLockScope } from 'src/utils/locked.js';
+import { isNotLocked, isOnTimelineWhateverLock, isTimelineVisible, revealedLockScope } from 'src/utils/locked.js';
 /**
  * FL-62: the owner's own curation narrows what a search returns — memories they hid, and their
  * "show less" rules. Every field is optional and only changes the query when it is set.
@@ -908,7 +908,7 @@ export class MemoryRepository implements IBulkAsset {
       from: Date;
       to: Date;
     },
-    /** FL-880: only items on the open timeline, never Locked ones */
+    /** FL-880: only items on the open timeline, never Locked ones (a Locked item still stores `timeline`) */
     timelineOnly = false,
   ): Promise<
     {
@@ -921,7 +921,7 @@ export class MemoryRepository implements IBulkAsset {
       .select(['asset.id', 'asset.localDateTime'])
       .where('asset.ownerId', '=', ownerId)
       .where(isOnTimelineWhateverLock('asset'))
-      .$if(timelineOnly, (qb) => qb.where('asset.visibility', '=', AssetVisibility.Timeline))
+      .$if(timelineOnly, (qb) => qb.where(isNotLocked('asset')))
       .where(libraryScopePredicate(LibraryScope.Personal))
       .where('asset.deletedAt', 'is', null)
       .where((eb) =>

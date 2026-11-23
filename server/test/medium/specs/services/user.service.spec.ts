@@ -25,7 +25,7 @@ let defaultDatabase: Kysely<DB>;
 const setup = (db?: Kysely<DB>) => {
   process.env.FRAMELEAF_ENV = FrameleafEnvironment.Testing;
 
-  return newMediumService(UserService, {
+  const service = newMediumService(UserService, {
     database: db || defaultDatabase,
     real: [
       ClusterGroupRepository,
@@ -41,6 +41,9 @@ const setup = (db?: Kysely<DB>) => {
     ],
     mock: [LoggingRepository, JobRepository, EventRepository, WebsocketRepository],
   });
+  // a change to the Locked rules is announced (`LockedRulesChanged`)
+  service.ctx.getMock(EventRepository).emit.mockResolvedValue();
+  return service;
 };
 
 beforeAll(async () => {

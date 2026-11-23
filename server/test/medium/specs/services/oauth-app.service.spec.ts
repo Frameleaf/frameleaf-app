@@ -1,6 +1,6 @@
 import { Kysely } from 'kysely';
 import { createHash } from 'node:crypto';
-import { AccountEventAction } from 'src/enum.js';
+import { AccountEventAction, SystemMetadataKey } from 'src/enum.js';
 import { AccountEventRepository } from 'src/repositories/account-event.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
@@ -67,6 +67,11 @@ const setup = () => {
 
 beforeAll(async () => {
   database = await getKyselyDB();
+  // FL-1632: apps register themselves only where the administrator allows it
+  await database
+    .insertInto('system_metadata')
+    .values({ key: SystemMetadataKey.SystemConfig, value: { connectedApps: { allowRegistration: true } } } as never)
+    .execute();
 });
 
 describe(`${OAuthAppService.name} (database)`, () => {
@@ -81,6 +86,11 @@ describe(`${OAuthAppService.name} (database)`, () => {
     expect(
       await database.selectFrom('oauth_authorization_code').where('clientId', '=', client.client_id).execute(),
     ).toEqual([]);
+
+    const app = await sut.validateAccessToken(tokens.access_token, 'lan');
+    expect(app.user.id).toBe(auth.user.id);
+    expect(app.session).toBeUndefined();
+
     await expect(
       sut.token({
         grant_type: 'authorization_code',
@@ -90,10 +100,8 @@ describe(`${OAuthAppService.name} (database)`, () => {
         code_verifier: verifier,
       }),
     ).rejects.toThrow();
-
-    const app = await sut.validateAccessToken(tokens.access_token, 'lan');
-    expect(app.user.id).toBe(auth.user.id);
-    expect(app.session).toBeUndefined();
+    // a used code coming back means it leaked, so the grant it made ends
+    await expect(sut.validateAccessToken(tokens.access_token, 'lan')).rejects.toThrow();
   });
 
   it('rotates refresh tokens and revokes the grant when a used one comes back', async () => {

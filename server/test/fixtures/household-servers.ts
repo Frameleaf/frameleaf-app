@@ -25,7 +25,6 @@ import {
 } from 'test/fake-frameleaf-cloud.js';
 import { ShareWorld } from 'test/fixtures/household-shares.js';
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- a named shape keeps exported fixture types portable
 type AnyMock = (...args: any[]) => any;
 
 /** A real Ed25519 signer, as `InstanceIdentityRepository.currentSigner()` returns. */

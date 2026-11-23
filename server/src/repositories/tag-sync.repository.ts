@@ -143,7 +143,8 @@ export class TagSync {
           .selectAll('memory')
           .$if(!!key, (qb) => qb.where('memory.id', '=', key!))
           .execute();
-        return rows.map(({ updateId, ...data }) => ({
+        // `occasion` is not part of SyncMemoryV1
+        return rows.map(({ updateId, occasion: _occasion, ...data }) => ({
           key: data.id,
           entityId: data.id,
           assetId: null,

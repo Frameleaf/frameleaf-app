@@ -15,7 +15,6 @@ import { AssetType } from 'src/enum.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { HouseholdReceiveService } from 'src/services/household-receive.service.js';
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- a named shape keeps exported fixture types portable
 type AnyMock = (...args: any[]) => any;
 
 type Row = Record<string, any>;

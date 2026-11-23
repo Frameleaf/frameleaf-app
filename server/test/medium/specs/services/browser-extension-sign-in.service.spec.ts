@@ -9,6 +9,7 @@ import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { SessionRepository } from 'src/repositories/session.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
+import { WebsocketRepository } from 'src/repositories/websocket.repository.js';
 import { DB } from 'src/schema/index.js';
 import { ApiKeyService } from 'src/services/api-key.service.js';
 import { BrowserExtensionSignInService } from 'src/services/browser-extension-sign-in.service.js';
@@ -38,7 +39,7 @@ const setup = () => {
   const { sut: keys, ctx } = newMediumService(ApiKeyService, {
     database,
     real: [ApiKeyRepository, CryptoRepository, SessionRepository, SystemMetadataRepository, UserRepository],
-    mock: [LoggingRepository],
+    mock: [LoggingRepository, WebsocketRepository],
   });
   const sut = new BrowserExtensionSignInService(
     new BrowserExtensionSignInRepository(database),

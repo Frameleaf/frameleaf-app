@@ -575,6 +575,7 @@ describe('/albums', () => {
         // the supporter tag comes with GET /albums and GET /albums/{id} only
         albumUsers: [{ role: AlbumUserRole.Owner, user: expect.objectContaining({ id: user1.userId }) }],
         hasSharedLink: false,
+        holdsScans: false,
         assetCount: 0,
         isActivityEnabled: true,
         isCustomOrder: false,

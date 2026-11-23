@@ -133,6 +133,7 @@ describe(TimelineService.name, () => {
         city: [],
         country: [],
         createdAt: [],
+        dateAccuracy: null,
         duration: [],
         fileSizeInByte: [],
         height: [],
