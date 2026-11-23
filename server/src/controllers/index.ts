@@ -52,6 +52,7 @@ import { DatabaseBackupController } from 'src/controllers/database-backup.contro
 import { DateDoctorController } from 'src/controllers/date-doctor.controller.js';
 import { DesktopDeviceController } from 'src/controllers/desktop-device.controller.js';
 import { DesktopOfflineAlbumController } from 'src/controllers/desktop-offline-album.controller.js';
+import { DesktopTranscodeController } from 'src/controllers/desktop-transcode.controller.js';
 import { DesktopWorkerController } from 'src/controllers/desktop-worker.controller.js';
 import { DevelopBatchController } from 'src/controllers/develop-batch.controller.js';
 import { DevelopStyleController } from 'src/controllers/develop-style.controller.js';
@@ -233,6 +234,7 @@ export const controllers = [
   PhotoSourceController,
   PhotoSourceCatalogController,
   SourceResourceController,
+  DesktopTranscodeController,
   DesktopWorkerController,
   FrameleafLibraryMoveAdminController,
   FrameleafLibraryMoveController,

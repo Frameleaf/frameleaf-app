@@ -95,7 +95,13 @@ export class DesktopAssistancePolicyService {
         if (devices.size >= 64) throw new ConflictException('desktop_household_capacity');
         devices.add(deviceId);
       }
-      policy.household = { revisionId: randomUUID(), devices: [...devices] };
+      // FL-1758: a computer that leaves the household loses its video permission with it
+      const transcodeDevices = policy.household?.transcodeDevices?.filter((id) => devices.has(id));
+      policy.household = {
+        revisionId: randomUUID(),
+        devices: [...devices],
+        ...(transcodeDevices?.length ? { transcodeDevices } : {}),
+      };
       await metadata.set(SystemMetadataKey.FrameleafDesktopAssistance, policy);
       if (device) {
         await tx

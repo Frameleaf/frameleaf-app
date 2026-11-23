@@ -39,11 +39,15 @@ import {
   ChecksumAlgorithm,
   ColorMatrix,
   Colorspace,
+  DatabaseLock,
   DvProfile,
   FrameleafWorker,
   ImageFormat,
   JobName,
   JobStatus,
+  MediaOperationDestination,
+  MediaOperationKind,
+  MediaOperationStatus,
   MlWorkload,
   PhysicalFileType,
   QueueName,
@@ -75,6 +79,16 @@ import { lockFilePath } from 'src/repositories/physical-file.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { getAssetFile, getDimensions } from 'src/utils/asset.util.js';
 import { DesignPreviewUnavailableError } from 'src/utils/design-preview.js';
+import { desktopAssistancePolicySchema } from 'src/utils/desktop-assistance-policy.js';
+import {
+  DESKTOP_TRANSCODE_FALLBACK_MS,
+  DESKTOP_TRANSCODE_PRESENCE_KEY,
+  type DesktopTranscodePresence,
+  type DesktopTranscodeSource,
+  desktopTranscodeRefusal,
+  desktopTranscodeStagingFolder,
+  hasDesktopForTranscode,
+} from 'src/utils/desktop-transcode.js';
 import { straightenScale } from 'src/utils/develop-recipe.js';
 import { EditOperationRun, EditOperationTracker } from 'src/utils/edit-operation-tracker.js';
 import { checkFaceVisibility, checkOcrVisibility } from 'src/utils/editor.js';
@@ -112,6 +126,7 @@ import {
   requiresFloatIntermediate,
   selectEncoderPixelFormat,
 } from 'src/utils/media-encode.js';
+import { TERMINAL_MEDIA_OPERATION_STATUSES } from 'src/utils/media-operation.js';
 import {
   EditedMasterColorDecision,
   EditedMasterColorPolicy,
@@ -1848,6 +1863,23 @@ export class MediaService extends BaseService {
       return JobStatus.Skipped;
     }
 
+    // FL-1758: throws to wait, without a job slot, while a desktop has this video; returns to encode here.
+    await this.waitForDesktopTranscode(
+      asset,
+      () =>
+        BaseConfig.create(
+          { ...ffmpeg, accel: TranscodeHardwareAcceleration.Disabled, accelDecode: false },
+          this.videoInterfaces,
+        ).getCommand(target, stream, audioStream),
+      {
+        locked: lockedOriginal,
+        spherical: !!asset.projectionType,
+        cinemaRaw,
+        dolbyVision: videoStream.dvProfile !== null && videoStream.dvProfile !== undefined,
+        logConversion: !!stream.logConversion,
+      },
+    );
+
     this.storageCore.ensureFolders(output);
 
     const getCommand = (config: ConfigFFmpegDto) =>
@@ -1971,6 +2003,79 @@ export class MediaService extends BaseService {
     await this.queueLockedSeal([asset.id]);
 
     return JobStatus.Success;
+  }
+
+  /**
+   * FL-1758: offers a video to a desktop and keeps its job waiting while one has it. Returning means the server
+   * encodes: no desktop can take it, or the last attempt ended. A software command, since the desktop's
+   * hardware is not this server's.
+   */
+  private async waitForDesktopTranscode(
+    asset: { id: string; ownerId: string; originalPath: string; checksum: Buffer },
+    command: () => TranscodeCommand,
+    source: DesktopTranscodeSource,
+  ) {
+    const context = queueExecution.getStore();
+    if (!context || context.claim.data.operationId) return;
+
+    const kind = MediaOperationKind.PlaybackTranscode;
+    const [latest] = await this.mediaOperationRepository.getLatestBySubject(kind, 'assetId', [asset.id]);
+    const finished = !!latest && TERMINAL_MEDIA_OPERATION_STATUSES.includes(latest.status);
+    if (finished) {
+      await this.storageRepository.unlinkDir(desktopTranscodeStagingFolder(asset.ownerId, latest.id), {
+        recursive: true,
+        force: true,
+      });
+      // ponytail: a fixed window, so a video a desktop just failed is not offered straight back to it
+      const endedAt = latest.finishedAt ? new Date(latest.finishedAt as unknown as string).getTime() : 0;
+      if (Date.now() - endedAt < DESKTOP_TRANSCODE_FALLBACK_MS) return;
+    }
+
+    const [presence, stored] = await Promise.all([
+      this.systemMetadataRepository.get(DESKTOP_TRANSCODE_PRESENCE_KEY),
+      this.systemMetadataRepository.get(SystemMetadataKey.FrameleafDesktopAssistance),
+    ]);
+    const policy = desktopAssistancePolicySchema.safeParse(stored ?? { version: 1, accounts: {} });
+    const available = hasDesktopForTranscode(
+      presence as DesktopTranscodePresence | null,
+      policy.success ? policy.data : null,
+      asset.ownerId,
+    );
+
+    if (latest && !finished) {
+      // A desktop that holds it still has its lease; one that went away is recovered by the lease sweep.
+      if (
+        latest.status === MediaOperationStatus.Queued &&
+        !available &&
+        (await this.mediaOperationRepository.failUnclaimedDesktopTranscode(latest.id))
+      ) {
+        return;
+      }
+      deferJobUntilDependency('destination-capacity');
+      return;
+    }
+
+    if (!available || desktopTranscodeRefusal(source)) return;
+    const { inputOptions, outputOptions, twoPass, progress } = command();
+    const { size } = await this.storageRepository.stat(asset.originalPath);
+    await this.mediaOperationRepository.createUnlessActive(
+      {
+        ownerId: asset.ownerId,
+        kind,
+        destination: MediaOperationDestination.Lan,
+        label: 'Playback copy',
+        assetId: asset.id,
+        snapshot: {
+          assetId: asset.id,
+          checksum: asset.checksum.toString('hex'),
+          sourceBytes: size,
+          command: { inputOptions, outputOptions, twoPass, frameCount: progress.frameCount },
+        },
+        settings: {},
+      },
+      { key: 'assetId', value: asset.id, lock: DatabaseLock.DesktopTranscode },
+    );
+    deferJobUntilDependency('destination-capacity');
   }
 
   @OnJob({ name: JobName.AssetVideoEditGeneration, queue: QueueName.VideoConversion })

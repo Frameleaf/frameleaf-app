@@ -1500,6 +1500,27 @@ export class MediaOperationRepository {
     this.changed(result, options.executor);
     return result ? 'failed' : false;
   }
+  /** FL-1758: nobody is left to take this waiting desktop conversion; the server encodes the video instead. */
+  async failUnclaimedDesktopTranscode(id: string): Promise<boolean> {
+    const row = await this.write((db) =>
+      db
+        .updateTable('media_operation')
+        .set({
+          status: MediaOperationStatus.Failed,
+          error: 'No desktop is available to convert this video',
+          errorCode: 'desktop_transcode_unavailable',
+          finishedAt: sql<Date>`now()`,
+        })
+        .where('id', '=', id)
+        .where('kind', '=', MediaOperationKind.PlaybackTranscode)
+        .where('status', '=', MediaOperationStatus.Queued)
+        .where('claimToken', 'is', null)
+        .returning(['id', 'ownerId'])
+        .executeTakeFirst(),
+    );
+    this.changed(row);
+    return !!row;
+  }
   /**
    * Hand a claimed job back to the queue on purpose, keeping everything it has recorded (FL-32).
    *

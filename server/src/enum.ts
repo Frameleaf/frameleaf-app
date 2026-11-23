@@ -1459,6 +1459,8 @@ export enum MediaOperationKind {
   StudioTranscription = 'studio_transcription',
   /** Internal library indexing. Its live status and controls use the dedicated speech API. */
   SpeechTranscription = 'speech_transcription',
+  /** FL-1758: one video's playback copy, made on a Frameleaf Desktop. Internal, never an Activity row. */
+  PlaybackTranscode = 'playback_transcode',
   /**
    * Make a movie (FL-561): the best moments of an album, a memory or a selection, cut on the beat of
    * music made for it or a song from the library, saved as a Studio project.
@@ -1590,7 +1592,7 @@ export enum MediaOperationKind {
 export const MediaOperationKindSchema = z
   .enum(MediaOperationKind)
   // Legacy clients decode a closed enum. Internal indexing is never a generic Activity/render response.
-  .exclude(['SpeechTranscription'])
+  .exclude(['SpeechTranscription', 'PlaybackTranscode'])
   .describe('Media operation kind')
   .meta({ id: 'MediaOperationKind' });
 
@@ -2751,6 +2753,8 @@ export enum DatabaseLock {
   ClientsPaymentEvents = 982,
   /** FL-838: a library's folder albums are synced, or removed, by one worker at a time. */
   LibraryFolderAlbums = 988,
+  /** FL-1758: one desktop conversion at a time per video (taken with the asset id as the second key). */
+  DesktopTranscode = 989,
 }
 
 export enum MaintenanceAction {
