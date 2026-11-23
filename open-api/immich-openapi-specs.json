@@ -30845,6 +30845,73 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/desktop/devices/{id}/transcode": {
+      "put": {
+        "operationId": "setDesktopTranscode",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DesktopTranscodeSettingsDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DesktopTranscodeSettingsDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Turn playback copies of videos on or off for a computer, and whether it takes other people's videos",
+        "tags": [
+          "Server"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "adminUser.update",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/desktop/tasks/{id}/fail": {
       "post": {
         "operationId": "failDesktopTask",
@@ -31024,6 +31091,405 @@
           }
         ],
         "summary": "Stage an idempotent desktop inference result for NAS validation",
+        "tags": [
+          "Server"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/desktop/transcodes/claim": {
+      "post": {
+        "operationId": "claimDesktopTranscode",
+        "parameters": [
+          {
+            "name": "x-frameleaf-desktop-proof",
+            "in": "header",
+            "description": "Canonical base64 installation-signed worker request proof. Photo sessions are not accepted.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DesktopTranscodeClaimDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Claim one video playback conversion",
+        "tags": [
+          "Server"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/desktop/transcodes/{id}/fail": {
+      "post": {
+        "operationId": "failDesktopTranscode",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "x-frameleaf-desktop-proof",
+            "in": "header",
+            "description": "Canonical base64 installation-signed worker request proof. Photo sessions are not accepted.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DesktopWorkerPayloadDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DesktopWorkerAckDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Hand a video conversion back to the server",
+        "tags": [
+          "Server"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/desktop/transcodes/{id}/heartbeat": {
+      "post": {
+        "operationId": "heartbeatDesktopTranscode",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "x-frameleaf-desktop-proof",
+            "in": "header",
+            "description": "Canonical base64 installation-signed worker request proof. Photo sessions are not accepted.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DesktopWorkerPayloadDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DesktopWorkerHeartbeatDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Renew the lease of a video conversion",
+        "tags": [
+          "Server"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/desktop/transcodes/{id}/input": {
+      "get": {
+        "operationId": "readDesktopTranscodeInput",
+        "parameters": [
+          {
+            "name": "claimToken",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "x-frameleaf-desktop-proof",
+            "in": "header",
+            "description": "Canonical base64 installation-signed worker request proof. Photo sessions are not accepted.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Read the original of a claimed video conversion",
+        "tags": [
+          "Server"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/desktop/transcodes/{id}/output": {
+      "put": {
+        "operationId": "uploadDesktopTranscode",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "x-frameleaf-desktop-proof",
+            "in": "header",
+            "description": "Canonical base64 installation-signed worker request proof. Photo sessions are not accepted.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "x-frameleaf-transcode-upload",
+            "in": "header",
+            "description": "Token from the upload grant, bound to this conversion and its current claim.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "format": "binary",
+                "type": "string"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DesktopWorkerAckDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Not a signed request: those go one at a time, and a long upload would hold up its own heartbeats.",
+        "tags": [
+          "Server"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/desktop/transcodes/{id}/upload-grant": {
+      "post": {
+        "operationId": "grantDesktopTranscodeUpload",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "x-frameleaf-desktop-proof",
+            "in": "header",
+            "description": "Canonical base64 installation-signed worker request proof. Photo sessions are not accepted.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DesktopWorkerPayloadDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DesktopTranscodeUploadGrantDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Get the token for uploading a converted video",
         "tags": [
           "Server"
         ],
@@ -111238,6 +111704,107 @@
           "requestId",
           "signature",
           "timestamp"
+        ],
+        "type": "object"
+      },
+      "DesktopTranscodeClaimDto": {
+        "properties": {
+          "task": {
+            "nullable": true,
+            "properties": {
+              "claimToken": {
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                "type": "string"
+              },
+              "expiresAt": {
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                "type": "string"
+              },
+              "frameCount": {
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "id": {
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                "type": "string"
+              },
+              "inputOptions": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "maxOutputBytes": {
+                "exclusiveMinimum": true,
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "outputOptions": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "sourceBytes": {
+                "exclusiveMinimum": true,
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "twoPass": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "id",
+              "claimToken",
+              "inputOptions",
+              "outputOptions",
+              "twoPass",
+              "frameCount",
+              "sourceBytes",
+              "maxOutputBytes",
+              "expiresAt"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "task"
+        ],
+        "type": "object"
+      },
+      "DesktopTranscodeSettingsDto": {
+        "additionalProperties": false,
+        "properties": {
+          "enabled": {
+            "description": "Makes playback copies of videos on this computer",
+            "type": "boolean"
+          },
+          "everyone": {
+            "description": "Also takes other people's videos. Needs enabled, and a computer that works on everyone's photos",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "enabled",
+          "everyone"
+        ],
+        "type": "object"
+      },
+      "DesktopTranscodeUploadGrantDto": {
+        "properties": {
+          "uploadToken": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "uploadToken"
         ],
         "type": "object"
       },
@@ -193757,6 +194324,23 @@
             "description": "Online now (seen within the last few minutes) with a current qualification, so it can take AI work now",
             "type": "boolean"
           },
+          "transcodeEnabled": {
+            "description": "Makes playback copies of videos",
+            "type": "boolean"
+          },
+          "transcodeEveryone": {
+            "description": "Its playback copies include other people's videos",
+            "type": "boolean"
+          },
+          "transcoding": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/WorkerDesktopTranscodingDto"
+              }
+            ],
+            "description": "The playback copy it is making now, or null",
+            "nullable": true
+          },
           "withdrawn": {
             "description": "Work taken away from it after it failed that work three times in a row",
             "items": {
@@ -193786,6 +194370,25 @@
           "name",
           "platform",
           "ready"
+        ],
+        "type": "object"
+      },
+      "WorkerDesktopTranscodingDto": {
+        "properties": {
+          "fileName": {
+            "description": "Null for a Locked video or one hidden by its owner",
+            "nullable": true,
+            "type": "string"
+          },
+          "progress": {
+            "maximum": 100,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "fileName",
+          "progress"
         ],
         "type": "object"
       },
