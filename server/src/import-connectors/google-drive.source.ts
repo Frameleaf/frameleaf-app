@@ -208,11 +208,13 @@ export class GoogleDriveSource implements RemoteSource {
 
     // The change list cannot place a file reached through a shortcut, so such a tree is always walked.
     const shortcuts = { found: false };
+    // Only what was read counts as covered: a picked item that comes back later is then listed in full.
+    const readRoots = picked.filter((root) => known.has(root));
     const position = (pageToken: string) =>
-      shortcuts.found ? null : { version: CURSOR_VERSION, pageToken, roots: picked };
+      shortcuts.found ? null : { version: CURSOR_VERSION, pageToken, roots: readRoots };
 
     const saved = savedCursor(cursor);
-    if (saved && picked.every((root) => saved.roots.includes(root))) {
+    if (saved && readRoots.every((root) => saved.roots.includes(root))) {
       const next = yield* this.changes(saved.pageToken, picked, known, shortcuts, signal);
       if (next) {
         yield { items: [], cursor: position(next) };
@@ -499,6 +501,10 @@ export class GoogleDriveSource implements RemoteSource {
         // A folder moved in brings files the change list will not name, so it is read whole.
         for await (const batch of this.walkEntry(file, place.folder, seen, 0, shortcuts, signal)) {
           items.push(...batch.items);
+          // A large folder moved in is handed on as it is read, not held until the page ends.
+          if (items.length >= PAGE_SIZE) {
+            yield { items: items.splice(0) };
+          }
         }
       }
       yield { items };

@@ -3,6 +3,7 @@
  * of its period (1 January, midnight, UTC) with `dateAccuracy` beside it; everything that shows the date
  * reads it through `formatApproximateDate`, so it says "1975" or "circa 1970s" and never a day or a time.
  */
+import type { DateAccuracy as SdkDateAccuracy } from '@frameleaf/sdk';
 import type { MessageFormatter } from 'svelte-i18n';
 import { t } from 'svelte-i18n';
 import { get } from 'svelte/store';
@@ -21,6 +22,9 @@ export const DECADE_GROUP_DAY = -1;
 /** The accuracy the server sent, or null for an exact date and for a value this version does not know. */
 export const dateAccuracyOf = (value: unknown): DateAccuracy | null =>
   value === 'year' || value === 'decade' ? value : null;
+
+/** The same two words as the SDK's request enum, which TypeScript treats as a different type. */
+export const toSdkDateAccuracy = (accuracy: DateAccuracy) => accuracy as SdkDateAccuracy;
 
 export const decadeOf = (year: number) => Math.floor(year / 10) * 10;
 

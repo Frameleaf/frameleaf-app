@@ -504,6 +504,80 @@
   };
 </script>
 
+{#snippet addButton()}
+  <Button onclick={() => input?.click()}
+    ><Icon icon={mdiTrayArrowUp} size="1.125rem" aria-hidden />{$t('frameleaf_location_history_add_files')}</Button
+  >
+{/snippet}
+
+{#snippet gapSection()}
+  <Section title={$t('frameleaf_location_history_gap_title')}>
+    <Row label={$t('frameleaf_location_history_gap_row')} help={$t('frameleaf_location_history_gap_help')}>
+      <SegmentedControl
+        label={$t('frameleaf_location_history_gap_label')}
+        value={String(gap)}
+        disabled={working || submitting}
+        options={FILL_GAPS.map((value) => ({
+          value: String(value),
+          label: $t('frameleaf_location_history_gap_option', { values: { count: value } }),
+        }))}
+        onChange={(value) => {
+          if (Number(value) !== gap) {
+            void start(Number(value) as FillGap);
+          }
+        }}
+      />
+    </Row>
+  </Section>
+{/snippet}
+
+{#snippet leftOutRows()}
+  {#each refused as upload (upload.key)}
+    <Item
+      icon={mdiFileAlertOutline}
+      quiet
+      name={upload.file.name}
+      detail={`${formatBytes(upload.file.size, $locale)} · ${$t('frameleaf_location_history_status_not_added')}`}
+      tone="bad"
+      status={upload.status === 'not-history'
+        ? $t('frameleaf_location_history_not_history')
+        : $t('frameleaf_location_history_status_not_added')}
+      note={upload.status === 'not-history'
+        ? $t('frameleaf_location_history_not_history_note')
+        : $t('frameleaf_location_history_failed_note')}
+    >
+      {#snippet action()}
+        <Button
+          label={$t('frameleaf_location_history_dismiss_file', { values: { name: upload.file.name } })}
+          onclick={() => dropUpload(upload.key)}>{$t('dismiss')}</Button
+        >
+      {/snippet}
+    </Item>
+  {/each}
+  {#each failed as source (source.id)}
+    <Item
+      icon={mdiFileAlertOutline}
+      quiet
+      name={source.fileName}
+      detail={$t('frameleaf_location_history_status_not_added')}
+      tone="bad"
+      status={isLostUpload(source)
+        ? $t('frameleaf_location_history_status_not_added')
+        : $t('frameleaf_location_history_not_history')}
+      note={isLostUpload(source)
+        ? $t('frameleaf_location_history_lost_note')
+        : $t('frameleaf_location_history_not_history_note')}
+    >
+      {#snippet action()}
+        <Button
+          label={$t('frameleaf_location_history_dismiss_file', { values: { name: source.fileName } })}
+          onclick={() => void discard(source)}>{$t('dismiss')}</Button
+        >
+      {/snippet}
+    </Item>
+  {/each}
+{/snippet}
+
 <KitPage>
   <BackLink href={Route.geolocationUtility()} label={$t('library_care_tool_geolocation')} />
   <div class="sr-only" role="status">{announcement}</div>
@@ -518,80 +592,6 @@
   />
   <Said message={said} onDismiss={() => (said = '')} />
   {#if actionFailed}<InlineError compact message={$t('frameleaf_location_history_action_error')} />{/if}
-
-  {#snippet addButton()}
-    <Button onclick={() => input?.click()}
-      ><Icon icon={mdiTrayArrowUp} size="1.125rem" aria-hidden />{$t('frameleaf_location_history_add_files')}</Button
-    >
-  {/snippet}
-
-  {#snippet gapSection()}
-    <Section title={$t('frameleaf_location_history_gap_title')}>
-      <Row label={$t('frameleaf_location_history_gap_row')} help={$t('frameleaf_location_history_gap_help')}>
-        <SegmentedControl
-          label={$t('frameleaf_location_history_gap_label')}
-          value={String(gap)}
-          disabled={working || submitting}
-          options={FILL_GAPS.map((value) => ({
-            value: String(value),
-            label: $t('frameleaf_location_history_gap_option', { values: { count: value } }),
-          }))}
-          onChange={(value) => {
-            if (Number(value) !== gap) {
-              void start(Number(value) as FillGap);
-            }
-          }}
-        />
-      </Row>
-    </Section>
-  {/snippet}
-
-  {#snippet leftOutRows()}
-    {#each refused as upload (upload.key)}
-      <Item
-        icon={mdiFileAlertOutline}
-        quiet
-        name={upload.file.name}
-        detail={`${formatBytes(upload.file.size, $locale)} · ${$t('frameleaf_location_history_status_not_added')}`}
-        tone="bad"
-        status={upload.status === 'not-history'
-          ? $t('frameleaf_location_history_not_history')
-          : $t('frameleaf_location_history_status_not_added')}
-        note={upload.status === 'not-history'
-          ? $t('frameleaf_location_history_not_history_note')
-          : $t('frameleaf_location_history_failed_note')}
-      >
-        {#snippet action()}
-          <Button
-            label={$t('frameleaf_location_history_dismiss_file', { values: { name: upload.file.name } })}
-            onclick={() => dropUpload(upload.key)}>{$t('dismiss')}</Button
-          >
-        {/snippet}
-      </Item>
-    {/each}
-    {#each failed as source (source.id)}
-      <Item
-        icon={mdiFileAlertOutline}
-        quiet
-        name={source.fileName}
-        detail={$t('frameleaf_location_history_status_not_added')}
-        tone="bad"
-        status={isLostUpload(source)
-          ? $t('frameleaf_location_history_status_not_added')
-          : $t('frameleaf_location_history_not_history')}
-        note={isLostUpload(source)
-          ? $t('frameleaf_location_history_lost_note')
-          : $t('frameleaf_location_history_not_history_note')}
-      >
-        {#snippet action()}
-          <Button
-            label={$t('frameleaf_location_history_dismiss_file', { values: { name: source.fileName } })}
-            onclick={() => void discard(source)}>{$t('dismiss')}</Button
-          >
-        {/snippet}
-      </Item>
-    {/each}
-  {/snippet}
 
   {#if !loaded}
     <div role="status" aria-busy="true">

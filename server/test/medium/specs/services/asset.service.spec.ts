@@ -1890,11 +1890,12 @@ describe(AssetService.name, () => {
       }
 
       // an exact date for all of them is exact again
-      await sut.updateAll(auth, { ids, dateTimeOriginal: '1984-05-05T12:00:00', timeZone: 'Pacific/Auckland' });
+      await sut.updateAll(auth, { ids, dateTimeOriginal: '1984-05-05T12:00:00+12:00', timeZone: 'Pacific/Auckland' });
       for (const id of ids) {
         await expect(read(ctx, id)).resolves.toEqual(
           expect.objectContaining({
             dateAccuracy: null,
+            fileCreatedAt: new Date('1984-05-05T00:00:00.000Z'),
             localDateTime: new Date('1984-05-05T12:00:00.000Z'),
             timeZone: 'Pacific/Auckland',
           }),

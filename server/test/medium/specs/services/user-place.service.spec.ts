@@ -1,5 +1,6 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { Kysely } from 'kysely';
+import type { AssetResponseDto } from 'src/dtos/asset-response.dto.js';
 import { SharedLinkType } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AlbumRepository } from 'src/repositories/album.repository.js';
@@ -174,8 +175,8 @@ describe(UserPlaceService.name, () => {
         namedPlace: { id: garden.id, name: 'Garden' },
       });
       await expect(assets.get(auth, inHouse)).resolves.toMatchObject({ namedPlace: { id: home.id, name: 'Home' } });
-      expect((await assets.get(auth, downtown)).namedPlace).toBeNull();
-      expect((await assets.get(auth, nowhere)).namedPlace).toBeUndefined();
+      expect(((await assets.get(auth, downtown)) as AssetResponseDto).namedPlace).toBeNull();
+      expect(((await assets.get(auth, nowhere)) as AssetResponseDto).namedPlace).toBeUndefined();
 
       // a change shows at once: no cache stands between a place and the info line
       await sut.update(auth, garden.id, { name: 'Veg patch' });
@@ -183,7 +184,7 @@ describe(UserPlaceService.name, () => {
       await sut.delete(auth, garden.id);
       await expect(assets.get(auth, inGarden)).resolves.toMatchObject({ namedPlace: { name: 'Home' } });
       await sut.delete(auth, home.id);
-      const after = await assets.get(auth, inGarden);
+      const after = (await assets.get(auth, inGarden)) as AssetResponseDto;
       expect(after.namedPlace).toBeNull();
       // the photo keeps where it was taken
       expect(after.exifInfo).toMatchObject({ latitude: 51.0508, longitude: -114.07 });
@@ -207,7 +208,7 @@ describe(UserPlaceService.name, () => {
       // the owner's own row is never read by the partner, name or no name
       await expect(assets.get(partnerAuth, asset.id)).rejects.toThrow();
 
-      const seenByPartner = await assets.get(partnerAuth, copy.id);
+      const seenByPartner = (await assets.get(partnerAuth, copy.id)) as AssetResponseDto;
       expect(seenByPartner.exifInfo).toMatchObject({ latitude: HOME.latitude, longitude: HOME.longitude });
       expect(seenByPartner.namedPlace).toBeNull();
       // the partner's own name for the same spot is what the partner sees

@@ -22,7 +22,6 @@ RESULT_HEADER = "x-restoration-result"
 # Output is capped at 4K: the server passes the exact box (3840 on the long edge, 2160 on
 # the short one for the orientation at hand) and the worker never exceeds it.
 MAX_OUTPUT_EDGE = 3840
-SUPPORTED_SCALES = (1, 2, 4)
 
 SHA256_PATTERN = r"^[0-9a-f]{64}$"
 RATIONAL_PATTERN = r"^[1-9][0-9]{0,8}/[1-9][0-9]{0,8}$"
@@ -63,9 +62,6 @@ WORKLOAD_BY_OPERATION: dict[PhotoOperation, str] = {
     PhotoOperation.REPAIR: "photo-repair",
     PhotoOperation.COLOURISE: "colourise",
 }
-
-# How many frames each source frame becomes with Smooth motion.
-SUPPORTED_INTERPOLATION_FACTORS = (2, 4, 8)
 
 
 class DynamicRange(StrEnum):

@@ -7,6 +7,7 @@ import { createInterface } from 'node:readline';
 import { pathToFileURL } from 'node:url';
 import { gzipSync } from 'node:zlib';
 import type { AddressInfo } from 'node:net';
+import type { AssetResponseDto } from 'src/dtos/asset-response.dto.js';
 import { SharedLinkType, SystemMetadataKey, UserMetadataKey } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AlbumRepository } from 'src/repositories/album.repository.js';
@@ -382,7 +383,7 @@ describe('place names in the viewer’s language (FL-987)', () => {
       const { sut, ctx } = assetService();
       const { owner, munich } = await seed(ctx);
 
-      const { exifInfo } = await sut.get(factory.auth({ user: owner }), munich.id);
+      const { exifInfo } = (await sut.get(factory.auth({ user: owner }), munich.id)) as AssetResponseDto;
 
       expect(exifInfo).toMatchObject({
         city: 'Munich',
@@ -397,7 +398,7 @@ describe('place names in the viewer’s language (FL-987)', () => {
       const { owner, munich } = await seed(ctx);
       await setLanguage(ctx, owner.id, 'en');
 
-      const { exifInfo } = await sut.get(factory.auth({ user: owner }), munich.id);
+      const { exifInfo } = (await sut.get(factory.auth({ user: owner }), munich.id)) as AssetResponseDto;
 
       expect(exifInfo).toMatchObject({
         city: 'Munich',
@@ -471,10 +472,10 @@ describe('place names in the viewer’s language (FL-987)', () => {
         assetIds: [munich.id],
       });
 
-      const { exifInfo } = await sut.get(
+      const { exifInfo } = (await sut.get(
         factory.auth({ user: owner, sharedLink: { id: sharedLink.id, showExif: true } }),
         munich.id,
-      );
+      )) as AssetResponseDto;
 
       expect(exifInfo).toMatchObject({ city: 'Munich', placeNamesLocalized: null });
     });

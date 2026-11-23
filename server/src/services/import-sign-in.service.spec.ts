@@ -1,4 +1,5 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
+import type { Mock } from 'vitest';
 import {
   RemoteSourceError,
   registerRemoteSource,
@@ -24,12 +25,12 @@ describe(ImportSignInService.name, () => {
   let sut: ImportSignInService;
   let repository: Record<string, any>;
   let broker: Record<string, any>;
-  let revoke: ReturnType<typeof vi.fn>;
+  let revoke: Mock<(credentials: Record<string, unknown>) => Promise<void>>;
 
   beforeEach(() => {
     repository = { create: vi.fn(), update: vi.fn(), get: vi.fn() };
     broker = { availability: vi.fn(), start: vi.fn(), finish: vi.fn() };
-    revoke = vi.fn().mockResolvedValue(undefined);
+    revoke = vi.fn<(credentials: Record<string, unknown>) => Promise<void>>().mockResolvedValue(undefined);
     sut = new ImportSignInService(
       { setContext: vi.fn(), log: vi.fn(), warn: vi.fn() } as never,
       repository as never,

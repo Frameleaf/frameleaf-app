@@ -34,7 +34,7 @@
   import { groupSelectionState } from '$lib/frameleaf/library-session';
   import { selectGroupAfterLoading, type GroupLoadOutcome } from '$lib/frameleaf/timeline-group-load';
   import { isMacPlatform } from '$lib/frameleaf/library-shortcuts';
-  import { animateFlip } from '$lib/frameleaf/motion';
+  import { animateFlip, motionScrollBehavior } from '$lib/frameleaf/motion';
   import { slidingPlate } from '$lib/components/timeline/sliding-plate';
   import { dissolveView } from '$lib/components/timeline/view-dissolve';
   import type { TimelineCardTarget } from '$lib/frameleaf/timeline-cards';
@@ -1141,7 +1141,12 @@
     timelineManager.scrollTo(alignedEdge === 'top' ? alignTop : alignBottom);
   };
 
-  const scrollToAssetId = async (assetId: string, load = true, keepEdge = false) => {
+  const scrollToAssetId = async (
+    assetId: string,
+    load = true,
+    keepEdge = false,
+    current: () => boolean = () => true,
+  ) => {
     const known = timelineManager.getTimelineMonthByAssetId(assetId);
     if (known) {
       scrollToAssetPosition(assetId, known, keepEdge);
@@ -1154,7 +1159,8 @@
       // Disabling layout deferral keeps the scroll height in step with the position we compute.
       timelineManager.isScrollingOnLoad = true;
       const month = await timelineManager.findTimelineMonthForAsset({ id: assetId });
-      if (!month) {
+      // A late answer must not move a grid the person has since moved themselves.
+      if (!month || !current()) {
         return false;
       }
       scrollToAssetPosition(assetId, month);
@@ -1199,11 +1205,17 @@
     }
   };
 
+  /** The newest placement after a navigation; an older one still waiting stops. */
+  let navigationPlacement = 0;
   const scrollAfterNavigate = async () => {
     // Opening the viewer hides the grid; there is nothing to place until it shows again.
-    if (assetViewerManager.isViewing) {
+    if (!mounted || assetViewerManager.isViewing) {
       return;
     }
+    const placement = ++navigationPlacement;
+    const moves = scrubberMoves;
+    const current = () =>
+      mounted && placement === navigationPlacement && moves === scrubberMoves && !assetViewerManager.isViewing;
     if (timelineManager.viewportHeight === 0 || timelineManager.viewportWidth === 0) {
       const rect = scrollable?.getBoundingClientRect();
       if (rect) {
@@ -1218,10 +1230,16 @@
     }
     // The URL's asset wins; otherwise the session's own scroll anchor decides where we land.
     const target = assetViewerManager.gridScrollTarget?.at ?? session.session.scrollAnchor;
-    const scrolled = target ? await scrollToAssetId(target) : false;
+    const scrolled = target ? await scrollToAssetId(target, true, false, current) : false;
+    if (!current()) {
+      return;
+    }
     if (scrolled && target) {
       // Months measured as the grid shows again can still move the asset: keep it in view meanwhile.
-      await holdWhileSettling(() => scrollToAssetId(target, false, true));
+      await holdWhileSettling(() => scrollToAssetId(target, false, true), current);
+      if (!current()) {
+        return;
+      }
     }
     if (scrolled && assetViewerManager.gridScrollTarget?.at) {
       await tick();
@@ -1397,7 +1415,7 @@
     // ponytail: a glide only from nearby. From years down it would load every month it passes, so
     // that jumps, as the scrubber does.
     if (!mediaQueryManager.reducedMotion && timelineManager.scrollTop <= timelineManager.viewportHeight * 4) {
-      scrollable.scrollTo({ top: 0, behavior: 'smooth' });
+      scrollable.scrollTo({ top: 0, behavior: motionScrollBehavior() });
     } else {
       timelineManager.scrollTo(0);
     }

@@ -1157,25 +1157,30 @@ async function update(context: StudioHostContext): Promise<void> {
   if ((state.relinkCommitting || state.relinkGuarded) && !changedOrigin) return
   if (changedOrigin) { state.relinkGuarded = false; state.relinkGuardStop?.(); state.relinkGuardStop = undefined }
   if ((context.generatedMedia?.length ?? 0) > 0) {
-    await state.media.seed(context.generatedMedia ?? [])
+    await state.media.seed(context.generatedMedia ?? [], { background: true })
     if (state.disposed) return
   }
   // The graph is settled first, so the echo of a save is not held up behind video probing; the
   // mount rules keep this correct whatever the order.
   const incoming = contentOf(context.project.graph)
   const current = contentOf(await currentGraph(state))
-  const outcome = context.project.graph
-    ? reconcileHostGraph(state, {
-        incoming,
-        current,
-        draftHeld: context.draftHeld === true,
-        graphVersion: graphVersionOf(context),
-      })
-    : 'hold'
-  if (outcome !== 'remount' && !context.draftHeld) reconcileVectors(state)
+  if (state.disposed) return
+  // Updates are not queued: a newer one that overtook this one during the awaits has judged the
+  // newer graph, and judging this older one now would remount the editor back onto it.
+  const superseded = state.context !== context
+  const outcome =
+    context.project.graph && !superseded
+      ? reconcileHostGraph(state, {
+          incoming,
+          current,
+          draftHeld: context.draftHeld === true,
+          graphVersion: graphVersionOf(context),
+        })
+      : 'hold'
+  if (outcome !== 'remount' && !state.context.draftHeld) reconcileVectors(state)
   // FL-638: the instance on screen keeps editing this context's project (a save as a copy can echo
   // without a remount), so Stabilise follows it; a remount records its own project when it renders.
-  if (outcome !== 'remount') state.stabiliseProjectId = studioProjectUuidOf(context)
+  if (outcome !== 'remount' && !superseded) state.stabiliseProjectId = studioProjectUuidOf(context)
   if (outcome === 'remount') {
     // A revision this editor did not write: a restore, a reload after a conflict, or a canonical
     // command applied by the host. A fresh editor instance loads it.

@@ -656,6 +656,14 @@ describe(AssetMediaService.name, () => {
     beforeEach(() => {
       mocks.asset.getByChecksums.mockResolvedValue([lost]);
       mocks.storage.checkFileExists.mockResolvedValue(false);
+      mocks.storage.stat.mockRejectedValue(Object.assign(new Error('gone'), { code: 'ENOENT' }));
+    });
+
+    it('does not take an original on a drive that cannot answer for lost', async () => {
+      mocks.storage.stat.mockRejectedValue(Object.assign(new Error('offline'), { code: 'EIO' }));
+      await expect(
+        sut.bulkUploadCheck(authStub.admin, { assets: [{ id: '1', checksum: file1.toString('hex') }] }),
+      ).resolves.toMatchObject({ results: [{ id: '1', action: AssetUploadAction.REJECT }] });
     });
 
     it('does not answer a checksum preflight with a duplicate', async () => {
@@ -840,6 +848,7 @@ describe(AssetMediaService.name, () => {
       it('also puts the upload back as its file when the photo had lost it', async () => {
         open();
         mocks.storage.checkFileExists.mockResolvedValue(false);
+        mocks.storage.stat.mockRejectedValue(Object.assign(new Error('gone'), { code: 'ENOENT' }));
         mocks.physicalFile.restoreLostOriginal.mockResolvedValue(true);
         await expect(sut.uploadAsset(authStub.admin, createDto, upload)).resolves.toEqual({
           id: trashed.id,
@@ -2974,6 +2983,7 @@ describe(AssetMediaService.name, () => {
           Promise.resolve(options?.lockedOwnerId ? [locked] : []),
         );
         mocks.storage.checkFileExists.mockResolvedValue(false);
+        mocks.storage.stat.mockRejectedValue(Object.assign(new Error('gone'), { code: 'ENOENT' }));
 
         await expect(check()).resolves.toEqual({ results: [{ id: '1', action: AssetUploadAction.ACCEPT }] });
       });
@@ -3319,6 +3329,11 @@ describe(AssetMediaService.name, () => {
       expect(mocks.asset.allowUploadSkips).toHaveBeenCalledWith(authStub.user1.user.id, [sha256], new Date(since), {
         includeLocked: true,
       });
+      // FileDelete keeps a path a row still names, so the row must be gone before it is queued
+      const fileDelete = mocks.job.queue.mock.calls.findIndex(([job]) => job.name === JobName.FileDelete);
+      expect(mocks.asset.remove.mock.invocationCallOrder[0]).toBeLessThan(
+        mocks.job.queue.mock.invocationCallOrder[fileDelete],
+      );
     });
   });
 

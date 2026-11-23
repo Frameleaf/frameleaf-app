@@ -34,6 +34,7 @@ import {
   UserMeResponseDto,
   UserResponseDto,
   UserUpdateMeDto,
+  mapMember,
   mapUser,
   mapUserAdmin,
 } from 'src/dtos/user.dto.js';
@@ -339,9 +340,17 @@ export class UserService extends BaseService {
     }
   }
 
-  async get(id: string): Promise<UserResponseDto> {
+  /**
+   * FL-1743: an id from an album or space member list must not turn into that person's address. Their email
+   * goes only to themselves, an administrator, or where the server lists its users to everyone anyway.
+   */
+  async get(auth: AuthDto, id: string): Promise<UserResponseDto> {
     const user = await this.findOrFail(id, { withDeleted: false });
-    return mapUser(user);
+    if (auth.user.isAdmin || auth.user.id === user.id) {
+      return mapUser(user);
+    }
+    const { server } = await this.getConfig({ withCache: false });
+    return server.publicUsers ? mapUser(user) : mapMember(user);
   }
 
   async createProfileImage(

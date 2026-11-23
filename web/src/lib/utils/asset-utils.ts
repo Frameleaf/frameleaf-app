@@ -365,19 +365,6 @@ export const downloadAssetFile = ({
     ),
   );
 
-function isRotated90CW(orientation: number) {
-  return [5, 6, 90].includes(orientation);
-}
-
-function isRotated270CW(orientation: number) {
-  return [7, 8, -90].includes(orientation);
-}
-
-export function isFlipped(orientation?: string | null) {
-  const value = Number(orientation);
-  return value && (isRotated270CW(value) || isRotated90CW(value));
-}
-
 export function getFileSize(asset: AssetResponseDto, maxPrecision = 4): string {
   const size = asset.exifInfo?.fileSizeInByte || 0;
   return size > 0 ? getByteUnitString(size, undefined, maxPrecision) : get(t)('invalid_data');

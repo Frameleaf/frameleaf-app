@@ -416,7 +416,9 @@ describe('webdav requests', () => {
 
   it('refuses a listing that is about another address instead of reading it as empty', async () => {
     const { fetcher } = seam(() => listing(folder('/somewhere/else/'), file('/somewhere/else/a.jpg')));
-    await expect(new WebDavSource(credentials, fetcher).listFolders('')).rejects.toThrow('The folder listing could not be read');
+    await expect(new WebDavSource(credentials, fetcher).listFolders('')).rejects.toThrow(
+      'The folder listing could not be read',
+    );
   });
 
   it('sends the sign-in to its own origin', async () => {

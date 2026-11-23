@@ -7,7 +7,7 @@
   } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
   import { mdiChevronDown, mdiChevronRight, mdiDownloadOutline, mdiRefresh } from '@mdi/js';
-  import { locale, t } from 'svelte-i18n';
+  import { locale, t, type Translations } from 'svelte-i18n';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import InlineError from '$lib/components/frameleaf/InlineError.svelte';
   import { mediaImportActive, mediaImportRetryable } from '$lib/components/frameleaf/media/boards-media';
@@ -36,7 +36,7 @@
   /** Files listed under an open download; the rest are counted. */
   const FILES_SHOWN = 20;
   const FILE_ORDER: (DownloadKind | undefined)[] = ['running', 'needs', 'waiting', 'saved', undefined];
-  const KIND_NAMES: Record<DownloadKind, string> = {
+  const KIND_NAMES: Record<DownloadKind, Translations> = {
     running: 'frameleaf_creators_downloads_running',
     waiting: 'frameleaf_creators_tray_waiting',
     needs: 'frameleaf_creators_downloads_needs',

@@ -4,7 +4,6 @@ import { pinCodeRegex } from 'src/dtos/auth.dto.js';
 
 /** FL-721 (spec §2): ask for the passphrase again after this many hours; null means only after a restart. */
 export const LOCKED_ASK_AGAIN_HOURS = [8, 24, 72] as const;
-export type LockedAskAgainHours = (typeof LOCKED_ASK_AGAIN_HOURS)[number] | null;
 export const LOCKED_ASK_AGAIN_DEFAULT = 72;
 
 const ModeSchema = z

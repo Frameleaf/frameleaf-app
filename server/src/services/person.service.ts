@@ -71,7 +71,7 @@ import {
   SystemMetadataKey,
   VectorIndex,
 } from 'src/enum.js';
-import { deferJobAdoption, publishJobResult } from 'src/queue/context.js';
+import { advanceJobProgress, deferJobAdoption, publishJobResult } from 'src/queue/context.js';
 import { deferJobUntilDependency } from 'src/queue/dependency.js';
 import { processingSetAsideOverride } from 'src/queue/processing-failure.js';
 import { assertPublicationSource, publicationTransaction } from 'src/queue/transaction.js';
@@ -1292,6 +1292,7 @@ export class PersonService extends BaseService {
     let pairs = 0;
     for (const ownerId of await this.personRepository.getPersonOwnerIds()) {
       pairs += (await this.personRepository.refreshMergeCandidates(ownerId, maxDistance)) ?? 0;
+      advanceJobProgress(1);
     }
     // read again: the main photo pass above may have set its own date meanwhile
     const latest = await this.systemMetadataRepository.get(SystemMetadataKey.PeopleCareState);
@@ -1350,6 +1351,8 @@ export class PersonService extends BaseService {
       } else {
         await this.personRepository.deleteSplitCandidate(ownerId, personGroupId, { keepAnswered: true });
       }
+      // Without this a first pass over many people hits the job's limit, saves nothing and restarts every night
+      advanceJobProgress(1);
     }
     const latest = await this.systemMetadataRepository.get(SystemMetadataKey.PeopleCareState);
     await this.systemMetadataRepository.set(SystemMetadataKey.PeopleCareState, {
@@ -1387,6 +1390,7 @@ export class PersonService extends BaseService {
       } else if (sideways && firstPass) {
         jobs.push({ name: JobName.PersonGenerateThumbnail, data: { ownerId, personGroupId } });
       }
+      advanceJobProgress(1);
     }
     await this.jobRepository.queueAll(jobs);
     if (firstPass) {

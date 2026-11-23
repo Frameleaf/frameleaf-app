@@ -376,12 +376,14 @@ describe('Date & Time Doctor fixes (FL-930)', () => {
           previousTakenAt: row.takenAt,
           previousLocalDateTime: row.localDateTime,
           previousLocks: [],
+          previousDateAccuracy: null,
           newDate: new Date(row.takenAt.getTime() + 60_000),
           newZone: row.timeZone,
           newLocalDateTime: new Date(row.localDateTime.getTime() + 60_000),
+          newDateAccuracy: null,
         },
       ],
-      { cause: null, shiftMinutes: 1, timeZone: null },
+      { cause: null, shiftMinutes: 1, timeZone: null, dateAccuracy: null, periodStart: null },
       () => Promise.resolve(),
     );
 
@@ -520,12 +522,14 @@ describe('Date & Time Doctor fixes (FL-930)', () => {
           previousTakenAt: row.takenAt,
           previousLocalDateTime: row.localDateTime,
           previousLocks: [],
+          previousDateAccuracy: null,
           newDate: row.takenAt,
           newZone: 'Asia/Tokyo',
           newLocalDateTime: new Date(row.takenAt.getTime() + 9 * 3_600_000),
+          newDateAccuracy: null,
         },
       ],
-      { cause: null, shiftMinutes: null, timeZone: 'Asia/Tokyo' },
+      { cause: null, shiftMinutes: null, timeZone: 'Asia/Tokyo', dateAccuracy: null, periodStart: null },
       () => Promise.resolve(),
     );
     // let the edit commit only once the fix is waiting for the EXIF row lock

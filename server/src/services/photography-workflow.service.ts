@@ -56,7 +56,7 @@ import { PhotographyWorkspaceRepository } from 'src/repositories/photography-wor
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { AlbumService } from 'src/services/album.service.js';
 import { type ClientsPaymentEvent, ClientsPaymentsService } from 'src/services/clients-payments.service.js';
-import { legacyStripeEnv, legacyStripeOwner } from 'src/utils/clients-payments.js';
+import { isOwnAddress, legacyStripeEnv, legacyStripeOwner } from 'src/utils/clients-payments.js';
 import { FileDownloadResponse } from 'src/utils/file.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import { preparePhotographyLogo, renderPhotographyRendition } from 'src/utils/photography-rendition.js';
@@ -2417,7 +2417,7 @@ export class PhotographyWorkflowService {
     if (!response.ok) throw new ServiceUnavailableException('Payment provider could not reconcile this order');
     return response.json() as Promise<Record<string, any>>;
   }
-  async checkout(id: string, token: string | undefined, orderId: string, returnUrl?: string) {
+  async checkout(id: string, token: string | undefined, orderId: string, returnUrl?: string, hostname = '') {
     const { row, recipient } = await this.guest(id, token);
     const order = row.value.orders.find((o) => o.id === orderId && o.recipientId === recipient.id);
     if (!order || order.status !== 'accepted' || order.total <= 0)
@@ -2432,7 +2432,7 @@ export class PhotographyWorkflowService {
       throw new ServiceUnavailableException('No studio-owned checkout account is configured for this photographer');
     if (!recipient.canDownload) throw new ForbiddenException('This recipient cannot purchase downloads');
     await this.selection(row, recipient, order.captureIds, false);
-    if (connected) return this.connectedCheckout(row, order, returnUrl);
+    if (connected) return this.connectedCheckout(row, order, returnUrl, hostname);
     const success = legacyStripeEnv('CHECKOUT_SUCCESS_URL');
     const cancel = legacyStripeEnv('CHECKOUT_CANCEL_URL');
     if (!success || !cancel || !/^https:\/\//.test(success) || !/^https:\/\//.test(cancel))
@@ -2544,9 +2544,19 @@ export class PhotographyWorkflowService {
     return { received: true };
   }
   /** FL-1037: checkout on the studio's own Stripe account, through Frameleaf Cloud. */
-  private async connectedCheckout(row: WorkflowRow, order: WorkflowRow['value']['orders'][number], returnUrl?: string) {
-    const base = await this.payments!.publicUrl();
-    const back = returnUrl ?? (base ? `${base}/photography/gallery/${row.id}` : null);
+  private async connectedCheckout(
+    row: WorkflowRow,
+    order: WorkflowRow['value']['orders'][number],
+    returnUrl: string | undefined,
+    hostname: string,
+  ) {
+    const base = (await this.payments!.publicUrl()) ?? null;
+    // The return address comes from the browser; Stripe only ever sends a payer back to this server.
+    const back = isOwnAddress(returnUrl, base, hostname)
+      ? returnUrl
+      : base
+        ? `${base}/photography/gallery/${row.id}`
+        : null;
     if (!back) throw new ServiceUnavailableException('Set this server’s public address to take payments');
     const session = await this.payments!.checkout(row.ownerId, {
       reference: `order:${order.id}`,

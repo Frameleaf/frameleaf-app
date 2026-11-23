@@ -123,14 +123,12 @@ describe('offline import of a Noodle Gallery library', () => {
     const counts = { spaces: 2, members: 2, memberships: 4, spacePhotos: 2, people: 1, favourites: 2, pets: 1 };
     expect(report.gallery).toEqual(counts);
     // Manager's review asks the running source the same questions (manager/src/gallery-preview.ts) and must
-    // get the same answers. Its statement is read here without the session setting, through the read-only role.
+    // get the same answers. Its statement is read here without the session settings, through the read-only role.
     const manager: {
       readGalleryPreview: (sql: (statement: string) => Promise<string>) => Promise<Record<string, unknown>>;
     } = await import(new URL('../../../../../manager/src/gallery-preview.ts', import.meta.url).href);
     const preview = await manager.readGalleryPreview(async (statement) => {
-      const [row] = await importer.source.db.query(
-        statement.replace(/^SET default_transaction_read_only = on;\n/u, '').replace(/;$/u, ''),
-      );
+      const [row] = await importer.source.db.query(statement.replace(/^(?:SET [^;]+;\n)+/u, '').replace(/;$/u, ''));
       return JSON.stringify(Object.values(row)[0]);
     });
     expect(preview).toEqual({

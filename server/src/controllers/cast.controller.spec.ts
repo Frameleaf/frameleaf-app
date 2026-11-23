@@ -18,7 +18,7 @@ const reflector = new Reflector();
 describe(CastController.name, () => {
   let ctx: ControllerContext;
   const service = { createMediaUrl: vi.fn(), resolveMediaUrl: vi.fn() };
-  const media = { downloadOriginal: vi.fn(), playbackVideo: vi.fn(), viewThumbnail: vi.fn() };
+  const media = { downloadOriginal: vi.fn(), fullSizeAllowed: vi.fn(), playbackVideo: vi.fn(), viewThumbnail: vi.fn() };
 
   beforeAll(async () => {
     ctx = await controllerSetup(CastController, [
@@ -32,6 +32,7 @@ describe(CastController.name, () => {
     for (const mock of [...Object.values(service), ...Object.values(media)]) {
       mock.mockReset();
     }
+    media.fullSizeAllowed.mockResolvedValue(true);
     ctx.reset();
   });
 
@@ -58,6 +59,20 @@ describe(CastController.name, () => {
   });
 
   describe('GET /cast/:token', () => {
+    it('refuses an original where full-resolution files may not go (FL-161)', async () => {
+      service.resolveMediaUrl.mockResolvedValue({
+        auth: factory.auth({ session: {} }),
+        assetId: factory.uuid(),
+        kind: CastMediaKind.Original,
+      });
+      media.fullSizeAllowed.mockResolvedValue(false);
+
+      const { status } = await request(ctx.getHttpServer()).get('/cast/payload.signature');
+
+      expect(status).toBe(403);
+      expect(media.downloadOriginal).not.toHaveBeenCalled();
+    });
+
     it('serves preview bytes and video byte ranges through the media route without original fallback', async () => {
       const folder = await mkdtemp(join(tmpdir(), 'frameleaf-cast-route-'));
       try {

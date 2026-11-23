@@ -28,6 +28,8 @@ export class InterchangeReadError extends Error {
 export type InterchangeNotice = InterchangeProject['notices'] extends (infer T)[] | undefined ? T : never;
 
 const EPSILON = 1e-6;
+const MAX_LANES = 1024;
+const MAX_TRANSITION_CHECKS = 200_000_000;
 
 export const rational = (secondsValue: number, rate: number): RationalTime => ({
   value: Math.round(secondsValue * rate * 1e6) / 1e6,
@@ -103,6 +105,10 @@ export const placeTracks = (
   transitions: readonly PlacedTransition[],
   rate: number,
 ): Track[] => {
+  // Each clip looks through the lanes and each cut through the transitions: bounded, or a crafted file holds the worker.
+  if (placed.length * transitions.length > MAX_TRANSITION_CHECKS) {
+    throw new InterchangeReadError('too-complex', 'A track has too many clips and transitions to read');
+  }
   const lanes: Placed[][] = [];
   for (const entry of [...placed].toSorted((a, b) => a.start - b.start)) {
     const lane = lanes.find((items) => {
@@ -111,6 +117,8 @@ export const placeTracks = (
     });
     if (lane) {
       lane.push(entry);
+    } else if (lanes.length >= MAX_LANES) {
+      throw new InterchangeReadError('too-complex', 'A track has too many clips on top of each other to read');
     } else {
       lanes.push([entry]);
     }

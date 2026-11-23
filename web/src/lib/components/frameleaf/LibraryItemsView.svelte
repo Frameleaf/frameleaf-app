@@ -214,6 +214,8 @@
   const preferences = workspace === 'design' ? designLibraryGridPreferences : libraryGridPreferences;
   let mounted = $state(false);
   let generation = $state(0);
+  /** Counts changes of what this account may see, apart from ordinary reloads. */
+  let accessVersion = 0;
   let failed = $state(false);
   let organizationFailed = $state(false);
   /** Says which albums took the items, when an add to several albums partly failed. */
@@ -254,7 +256,8 @@
   const mixedSelected = $derived(session.selection.some((id) => id.startsWith('bookmark:')));
   /** Boards acts on every selection with its own bar; elsewhere it takes over only for saved links. */
   const boardsBar = $derived(session.selection.length > 0 && (workspace === 'design' || mixedSelected));
-  const selectedAssetIds = $derived(assets.filter((asset) => session.selection.includes(asset.id)).map(({ id }) => id));
+  const selectionKeys = $derived(new Set(session.selection));
+  const selectedAssetIds = $derived(assets.filter((asset) => selectionKeys.has(asset.id)).map(({ id }) => id));
   const ownsSelection = $derived(
     authManager.authenticated && ownsLibrarySelection(results.items, session.selection, authManager.user.id),
   );
@@ -316,7 +319,7 @@
   const selectedAsset = $derived(
     isBoards
       ? (timelineAssets.find((asset) => asset.id === activeAsset) ?? null)
-      : (timelineAssets.find((asset) => session.selection.includes(asset.id)) ?? null),
+      : (timelineAssets.find((asset) => selectionKeys.has(asset.id)) ?? null),
   );
   const orderedKeys = $derived(
     results.items.map((item) =>
@@ -328,7 +331,7 @@
       results.items.every(
         (item) =>
           item.kind === LibraryAssetItemKind.Asset ||
-          !session.selection.includes(`bookmark:${item.bookmark.id}`) ||
+          !selectionKeys.has(`bookmark:${item.bookmark.id}`) ||
           item.bookmark.ownerId === authManager.user.id,
       ),
   );
@@ -480,6 +483,7 @@
   });
   onDestroy(
     onLibraryAccessChange(() => {
+      accessVersion++;
       clearOnReload = true;
       results.reset();
       session.clearSelection();
@@ -707,7 +711,10 @@
       saveLink(text);
     }
   };
-  /** Runs one change over the selection; it stops quietly if the account or the page changed under it. */
+  /**
+   * Runs one change over the selection; it stops quietly if access to the library changed under it.
+   * A live refresh does not stop it: the change's own first batch sets one off.
+   */
   const runSelection = async (
     change: (keys: string[], owner: string, current: () => boolean) => Promise<void>,
     done?: (count: number) => void,
@@ -715,20 +722,21 @@
     const keys = [...session.selection];
     const owner = authManager.user.id;
     const current = authManager.captureSession();
-    const version = generation;
+    const version = accessVersion;
+    const stillAllowed = () => current() && accessVersion === version;
     dialog = null;
     organizing = true;
     organizationFailed = false;
     organizationMessage = null;
     try {
-      await change(keys, owner, () => current() && generation === version);
-      if (current() && generation === version) {
+      await change(keys, owner, stillAllowed);
+      if (stillAllowed()) {
         session.clearSelection();
         done?.(keys.length);
         reload();
       }
     } catch {
-      if (current() && generation === version) {
+      if (stillAllowed()) {
         organizationFailed = true;
       }
     } finally {

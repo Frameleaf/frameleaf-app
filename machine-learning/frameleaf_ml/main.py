@@ -32,7 +32,7 @@ from frameleaf_ml.models import assistant_planner, get_model_deps
 from frameleaf_ml.models.base import InferenceModel, ModelRuntimeUnavailable, ModelUnavailableError
 from frameleaf_ml.models.clip.hugging_face import inspect_custom_clip_model
 from frameleaf_ml.models.constants import SUPPORTED_PROVIDERS, get_model_source, is_custom_clip_model
-from frameleaf_ml.models.facial_recognition.landmarks import FaceLandmarker, eye_scores
+from frameleaf_ml.models.facial_recognition.landmarks import FaceLandmarker, eye_scores, grey_image
 from frameleaf_ml.models.musicgen import MusicGenModel
 from frameleaf_ml.models.subject_matte import MAX_FRAME_BYTES as SUBJECT_MATTE_MAX_FRAME_BYTES
 from frameleaf_ml.models.subject_matte import MAX_FRAMES as SUBJECT_MATTE_MAX_FRAMES
@@ -249,6 +249,16 @@ async def update_state() -> AsyncGenerator[None, None]:
             release = asyncio.get_running_loop().call_later(5, allocator.release)
 
 
+# Longer than any Hub `owner/name` (96 characters a side) or published model name.
+MAX_MODEL_NAME_LENGTH = 256
+
+
+def mark_called() -> None:
+    """Hold off the idle shutdown for a request whose work has started but is not counted as active yet."""
+    global last_called
+    last_called = time.time()
+
+
 def get_entries(entries: str = Form()) -> InferenceEntries:
     try:
         request: PipelineRequest = orjson.loads(entries)
@@ -266,8 +276,11 @@ def get_entries(entries: str = Form()) -> InferenceEntries:
                 if not isinstance(raw_options, dict):
                     raise HTTPException(422, "Invalid request format: options must be an object.")
                 validated_options = validate_options(task, type, raw_options)
+                model_name = entry["modelName"]
+                if not isinstance(model_name, str) or not 0 < len(model_name) <= MAX_MODEL_NAME_LENGTH:
+                    raise HTTPException(422, "Invalid request format: modelName must be a short string.")
                 parsed: InferenceEntry = {
-                    "name": entry["modelName"],
+                    "name": model_name,
                     "task": task,
                     "type": type,
                     "options": validated_options,
@@ -615,6 +628,7 @@ async def predict_bound(
 
 
 eye_landmarker: FaceLandmarker | None = None
+MAX_EYE_BOX_COORDINATE = 1_000_000
 
 
 def _eye_scores_for_boxes(image: bytes, boxes: list[list[float]]) -> list[dict[str, float | None]]:
@@ -624,7 +638,8 @@ def _eye_scores_for_boxes(image: bytes, boxes: list[list[float]]) -> list[dict[s
     pixels = np.asarray(decode_pil(image), dtype=np.uint8)
     array = np.asarray(boxes, dtype=np.float32).reshape(-1, 4)
     points = eye_landmarker.predict(pixels, array)
-    scores = [eye_scores(pixels, box, face) for box, face in zip(array, points)]
+    grey = grey_image(pixels)
+    scores = [eye_scores(grey, box, face) for box, face in zip(array, points)]
     return [{"eyesOpen": open_, "eyeSharpness": sharp} for open_, sharp in scores]
 
 
@@ -642,7 +657,9 @@ async def face_eye_scores(image: bytes = File(), boxes: str = Form()) -> ORJSONR
             not isinstance(box, list)
             or len(box) != 4
             or any(type(v) not in (int, float) or not math.isfinite(v) for v in box)
-            or not (box[0] < box[2] and box[1] < box[3])
+            # Beyond these, the 32-bit box the landmarker reads turns infinite or loses its size.
+            or any(abs(v) > MAX_EYE_BOX_COORDINATE for v in box)
+            or not (box[2] - box[0] >= 1 and box[3] - box[1] >= 1)
             for box in parsed
         )
     ):
@@ -804,6 +821,7 @@ async def music(entries: InferenceEntries = Depends(get_entries)) -> StreamingRe
         raise HTTPException(400, "A music request names exactly one music entry")
     entry = without_deps[0]
     options = dict(entry["options"])
+    mark_called()
     model = await model_cache.get(entry["name"], entry["type"], entry["task"], ttl=settings.model_ttl)
     model = await load(model)
     assert isinstance(model, MusicGenModel)
@@ -1006,7 +1024,8 @@ async def assistant_plan(body: AssistantPlanRequest) -> ORJSONResponse:
         assistant_planner.check_schema(body.tool_schema)
     except assistant_planner.SchemaError as error:
         raise HTTPException(400, str(error)) from error
-    status = assistant_planner.planner_status(body.model_name)
+    # The first check runs `llama-server --list-devices`, which can take seconds.
+    status = await asyncio.to_thread(assistant_planner.planner_status, body.model_name)
     if not status["available"]:
         return ORJSONResponse({"detail": "assistant_planner_unavailable", "reason": status["reason"]}, status_code=503)
     question = assistant_planner.clean_text(body.question, assistant_planner.MAX_QUESTION_CHARS)
@@ -1069,6 +1088,7 @@ async def subject_matte(
     images: list[Image] = []
     try:
         for frame in frames:
+            mark_called()
             if frame.size is not None and frame.size > SUBJECT_MATTE_MAX_FRAME_BYTES:
                 raise ValueError(f"A cut-out frame is at most {SUBJECT_MATTE_MAX_FRAME_BYTES // (1024 * 1024)} MiB")
             data = await frame.read()
@@ -1080,6 +1100,7 @@ async def subject_matte(
     sizes = {image.size for image in images}
     if len(sizes) != 1 or min(next(iter(sizes))) <= 0:
         raise HTTPException(400, "Every cut-out frame must be the same, non-empty size")
+    mark_called()
     model = await model_cache.get(
         entry["name"], entry["type"], entry["task"], ttl=settings.model_ttl, **({"device": device} if device else {})
     )

@@ -25,6 +25,8 @@ import {
 } from 'test/fake-frameleaf-cloud.js';
 import { ShareWorld } from 'test/fixtures/household-shares.js';
 
+type AnyMock = (...args: any[]) => any;
+
 /** A real Ed25519 signer, as `InstanceIdentityRepository.currentSigner()` returns. */
 export const householdSigner = (
   privateKey: KeyObject = generateKeyPairSync('ed25519').privateKey,
@@ -53,6 +55,7 @@ type LinkRow = {
   pausedReason: string | null;
   connectionPath: string | null;
   lastSeenAt: Date | null;
+  pollRequestedAt?: Date | null;
   createdAt: Date;
   endedAt: Date | null;
 };
@@ -134,7 +137,13 @@ export const startHouseholdServer = async (
   const counts = new Map<string, number>();
   const leases = new Map<string, string>();
   const links = new MemoryHouseholdLinks();
-  const logger = { setContext: vi.fn(), warn: vi.fn(), log: vi.fn(), debug: vi.fn(), error: vi.fn() };
+  const logger = {
+    setContext: vi.fn<AnyMock>(),
+    warn: vi.fn<AnyMock>(),
+    log: vi.fn<AnyMock>(),
+    debug: vi.fn<AnyMock>(),
+    error: vi.fn<AnyMock>(),
+  };
   const rates = {
     hit: vi.fn((key: string) => {
       counts.set(key, (counts.get(key) ?? 0) + 1);
@@ -275,7 +284,7 @@ export const connectHouseholds = (hosts: Record<string, HouseholdServer>) => {
     const request = householdRequest(url.href, init?.headers as Record<string, string>, { method: init?.method });
     try {
       const body = await server.controller[route as 'handshake' | 'directory'](linkId, request, {
-        setHeader: vi.fn(),
+        setHeader: vi.fn<AnyMock>(),
       } as never);
       calls.push({ url: url.href, status: 200, redirect: init?.redirect });
       return Response.json(body);

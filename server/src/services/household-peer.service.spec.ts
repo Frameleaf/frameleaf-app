@@ -148,7 +148,9 @@ describe(HouseholdPeerService.name, () => {
       { DPoP: proofBy(ben.peer.signer(), token, url(link.ben)) },
       { Authorization: `Bearer ${token}`, DPoP: proofBy(ben.peer.signer(), token, url(link.ben)) },
     ])
-      await expect(status(send(ben, link.ben, { token, headers }))).resolves.toBe(401);
+      await expect(status(send(ben, link.ben, { token, headers: headers as Record<string, string> }))).resolves.toBe(
+        401,
+      );
     expect(cloudCalls()).toBe(before);
   });
 

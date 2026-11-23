@@ -245,8 +245,11 @@ async function fetchBlob(url: string, signal?: AbortSignal): Promise<Blob> {
 }
 
 export interface LibraryMediaSeeder {
-  /** Make these assets available to the project; already-seeded ids are left alone. */
-  seed(assets: readonly StudioAssetRef[]): Promise<void>
+  /**
+   * Make these assets available to the project; already-seeded ids are left alone. Resolves after
+   * their probes too, unless `background` is set.
+   */
+  seed(assets: readonly StudioAssetRef[], options?: { background?: boolean }): Promise<void>
   /**
    * FL-103 / FL-105: offer the files kept with the project under the media ids their clips use. A
    * file this document already holds (imported here, then kept) is left as the editor made it.
@@ -421,12 +424,12 @@ export function createLibraryMediaSeeder(options: {
   }
 
   return {
-    async seed(assets) {
+    async seed(assets, seedOptions) {
       const run = seeding.then(() => seedNow(assets))
       seeding = run.catch(() => {})
       await run
       // Probing runs in the background, outside the queue, so it never holds up the next seed.
-      await probing
+      if (!seedOptions?.background) await probing
     },
     async associate(target, from) {
       const ids = new Set(seeded)

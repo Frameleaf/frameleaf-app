@@ -14,6 +14,7 @@ Files come only from the Frameleaf model source, pinned by SHA-256, like every o
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import importlib.util
 import json
@@ -466,6 +467,16 @@ class AssistantPlannerModel(InferenceModel):
 def _stop_llama_server(process: subprocess.Popen[bytes]) -> None:
     if process.stdin is not None:
         process.stdin.close()
+    # The cache's expiry timer drops the last reference on the event loop: never wait for the exit there.
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        _reap_llama_server(process)
+    else:
+        threading.Thread(target=_reap_llama_server, args=(process,), daemon=True).start()
+
+
+def _reap_llama_server(process: subprocess.Popen[bytes]) -> None:
     try:
         process.wait(timeout=10)
     except subprocess.TimeoutExpired:

@@ -1124,9 +1124,18 @@ export class EdgeStateService {
     if (needed && !waiting) {
       try {
         const issued = await this.issue(input);
+        // Checked before it replaces anything: a bad answer must not take down a certificate that still works.
+        const issuedFacts = certificateFacts(issued.certificate);
+        const byName = (a: string, b: string) => a.localeCompare(b);
+        if (
+          !certificateMatchesKey(issued.certificate, issued.key) ||
+          !isEqual(issuedFacts.names.toSorted(byName), names.toSorted(byName))
+        ) {
+          throw new Error('the issued certificate does not match this server’s key and names');
+        }
         await this.certificates.write(identityDir, kind, issued);
         pair = { certificate: issued.certificate, key: issued.key };
-        facts = { ...certificateFacts(issued.certificate), reported: false };
+        facts = { ...issuedFacts, reported: false };
         accountPinned = issued.accountPinned;
         this.reportAttempts.delete(kind);
         issuance = { failures: 0, lastAttemptAt: new Date(now).toISOString(), nextCheckAt: nextRenewalCheck(now) };

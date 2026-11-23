@@ -10,6 +10,7 @@ import { AlbumUserRole } from 'src/enum.js';
 import { AlbumRepository } from 'src/repositories/album.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
+import { HouseholdCommentRepository } from 'src/repositories/household-comment.repository.js';
 import { HouseholdLinkRepository } from 'src/repositories/household-link.repository.js';
 import { HouseholdReceiveRepository } from 'src/repositories/household-receive.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -140,7 +141,7 @@ describe('HouseholdReceiveService (medium)', () => {
       post: vi.fn(() => Promise.resolve({})),
       original: vi.fn((path: string) => {
         const id = path.split('/').at(-1)!;
-        return Promise.resolve(new Response(items.get(id)!.bytes));
+        return Promise.resolve(new Response(new Uint8Array(items.get(id)!.bytes)));
       }),
     };
 
@@ -194,6 +195,7 @@ describe('HouseholdReceiveService (medium)', () => {
       { getEnv: () => ({}) } as never,
       {} as never,
       { setContext: vi.fn(), warn: vi.fn(), log: vi.fn(), debug: vi.fn(), error: vi.fn() } as never,
+      new HouseholdCommentRepository(database),
     );
 
     const addItem = (description = 'First') => {

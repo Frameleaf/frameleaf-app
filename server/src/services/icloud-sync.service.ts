@@ -107,6 +107,9 @@ const SIGN_IN_CODES = new Set([
   'icloud_disconnected',
 ]);
 
+/** A sign-in step that got no answer from Apple. */
+const TRANSIENT_AUTH_CODES = new Set(['rate_limited', 'icloud_transport_failed', 'icloud_transport_timeout']);
+
 type StepOutcome = 'more' | 'idle' | 'done';
 type Claim = { operation: MediaOperation; claimToken: string };
 
@@ -348,7 +351,7 @@ export class ICloudSyncService {
     dto: ICloudAuthDto,
     secure: boolean,
   ): Promise<ICloudConnectionResponseDto> {
-    await this.owned(auth, id);
+    const before = await this.owned(auth, id);
     if (!secure) {
       throw new BadRequestException('icloud_requires_https');
     }
@@ -386,7 +389,19 @@ export class ICloudSyncService {
         );
       }
     } catch (error) {
-      await this.failure(id, auth.user.id, error);
+      if (error instanceof ICloudTransportError && TRANSIENT_AUTH_CODES.has(error.code)) {
+        // The step never got an answer, so the sign-in stands where it was: a waiting code or approval is not
+        // "connected", which is what the run back-off would make it.
+        const current = await this.repository.get(id, auth.user.id);
+        if (current?.state === 'authenticating') {
+          await this.repository.update(id, auth.user.id, {
+            state: before.state === 'authenticating' ? 'reauthentication-required' : before.state,
+            lastError: error.code,
+          });
+        }
+      } else {
+        await this.failure(id, auth.user.id, error);
+      }
     }
     return this.response((await this.repository.get(id, auth.user.id))!);
   }

@@ -46,7 +46,10 @@ const SYNTHETIC_IMPORTER = '42008e7a-de6f-4270-96de-7e287abb9b4b';
 /** Components every clip has; anything else is an effect the person added. */
 const INTRINSIC = /^(?:AE\.)?ADBE (?:Motion|Opacity|Time Remapping)$|^Internal (?:Channel )?Volume/;
 
-type Graph = { byId: Map<string, XmlNode>; byUid: Map<string, XmlNode>; depth: number };
+/** Clips read across every sequence. A sequence nested many times over is read each time, so this is counted. */
+const MAX_CLIPS = 1_000_000;
+
+type Graph = { byId: Map<string, XmlNode>; byUid: Map<string, XmlNode>; depth: number; clips: { count: number } };
 
 const ticks = (value: string | undefined) => {
   const number = Number(value ?? 0);
@@ -255,6 +258,9 @@ const mediaOf = (graph: Graph, media: XmlNode | undefined, fallback: string): Me
 /** One clip on a track: media, a generated clip, or a nested sequence. */
 const clipOf = (context: Context, item: XmlNode, sound: boolean): Placed | null => {
   const { graph } = context;
+  if (++graph.clips.count > MAX_CLIPS) {
+    throw new InterchangeReadError('too-complex', 'The project nests too many clips to read');
+  }
   const position = at(item, 'ClipTrackItem', 'TrackItem');
   const start = seconds(childText(position, 'Start'));
   const end = seconds(childText(position, 'End'));
@@ -372,7 +378,7 @@ export const readPrproj = (bytes: Buffer, maxXmlBytes = MAX_XML_BYTES): Intercha
   if (root.name !== 'PremiereData') {
     throw new InterchangeReadError('unsupported', 'This is not a Premiere Pro project');
   }
-  const graph: Graph = { byId: new Map(), byUid: new Map(), depth: 0 };
+  const graph: Graph = { byId: new Map(), byUid: new Map(), depth: 0, clips: { count: 0 } };
   for (const node of root.children) {
     if (node.attributes.ObjectID) {
       graph.byId.set(node.attributes.ObjectID, node);

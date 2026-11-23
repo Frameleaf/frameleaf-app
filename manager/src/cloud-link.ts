@@ -180,13 +180,19 @@ export class Cloud {
   private async send(url: string, init: RequestInit): Promise<Sent> {
     let response: Response;
     try {
-      response = await (this.options.fetch ?? fetch)(url, { ...init, redirect: 'manual' });
+      response = await (this.options.fetch ?? fetch)(url, { ...init, redirect: 'manual', signal: AbortSignal.timeout(60_000) });
     } catch {
       throw new CloudError('cloud_unreachable', null);
     }
     const nonce = response.headers.get('dpop-nonce');
     if (nonce) this.nonces.set(new URL(url).origin, nonce);
-    const text = await response.text();
+    let text: string;
+    try {
+      text = await response.text();
+    } catch {
+      // A connection dropped mid-answer is not a refusal: an approved link must survive it.
+      throw new CloudError('cloud_unreachable', null);
+    }
     let body: unknown = null;
     try {
       body = text ? JSON.parse(text) : null;
@@ -368,8 +374,14 @@ export class Cloud {
     throw this.refusal(answer);
   }
 
-  unlink(identity: Identity) {
-    return this.call(identity, 'DELETE', '/v1/instance');
+  async unlink(identity: Identity) {
+    try {
+      return await this.call(identity, 'DELETE', '/v1/instance');
+    } catch (error) {
+      // A stale token says nothing about the machine: `call` dropped it, so this signs in again and gets a real answer.
+      if (!(error instanceof CloudError) || error.status !== 401 || error.code === 'invalid_client') throw error;
+      return this.call(identity, 'DELETE', '/v1/instance');
+    }
   }
 
   /**

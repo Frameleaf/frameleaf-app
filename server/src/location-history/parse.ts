@@ -2,7 +2,7 @@ import { createReadStream } from 'node:fs';
 import { open } from 'node:fs/promises';
 import { createInflateRaw } from 'node:zlib';
 import { SaxesParser } from 'saxes';
-import { readTakeoutZipDirectory, takeoutZipDataOffset } from 'src/utils/takeout-zip.js';
+import { TakeoutZipError, readTakeoutZipDirectory, takeoutZipDataOffset } from 'src/utils/takeout-zip.js';
 
 /**
  * FL-925: readers for the location history files people already have: Google Timeline (the phone's `Timeline.json`,
@@ -30,6 +30,7 @@ export const HISTORY_MAX_ACCURACY_M = 500;
 const MAX_ELEMENT_CHARS = 16 * 1024 * 1024;
 /** A ZIP entry that unpacks to more than this is not read. */
 const MAX_ZIP_ENTRY_BYTES = 8 * 1024 * 1024 * 1024;
+const MAX_LAT_LNG_CHARS = 128;
 const HISTORY_FILE = /\.(json|gpx|rec|geojson)$/i;
 const EARLIEST = Date.UTC(1990, 0, 1);
 
@@ -48,9 +49,17 @@ const toDate = (value: unknown): Date | null => {
 
 /** `geo:51.05,-114.07` (iPhone export) or `51.05°, -114.07°` (Android export). */
 const latLng = (value: unknown): [number, number] | null => {
-  const match = typeof value === 'string' && /(-?\d+(?:\.\d+)?)[^\d-]+(-?\d+(?:\.\d+)?)/.exec(value);
+  // Bounded first: on a long run of digits this pattern backtracks in quadratic time.
+  const match =
+    typeof value === 'string' &&
+    value.length <= MAX_LAT_LNG_CHARS &&
+    /(-?\d+(?:\.\d+)?)[^\d-]+(-?\d+(?:\.\d+)?)/.exec(value);
   return match ? [Number(match[1]), Number(match[2])] : null;
 };
+
+/** The objects of a list in a file; anything else there is not a place. */
+const objects = (value: unknown): Json[] =>
+  Array.isArray(value) ? value.filter((item): item is Json => typeof item === 'object' && item !== null) : [];
 
 /** Old Takeout files wrote some coordinates as unsigned 32-bit numbers. */
 const e7 = (value: unknown) => {
@@ -114,7 +123,7 @@ export const pointsOfJson = (key: string | null, entry: Json): Raw[] => {
     const kind = 'google-timeline';
     const visit = entry.placeVisit;
     const move = entry.activitySegment;
-    const path: Json[] = move?.simplifiedRawPath?.points ?? [];
+    const path = objects(move?.simplifiedRawPath?.points);
     return [
       ...e7Place(kind, visit?.duration?.startTimestamp, visit?.location),
       ...e7Place(kind, visit?.duration?.endTimestamp, visit?.location),
@@ -130,7 +139,7 @@ export const pointsOfJson = (key: string | null, entry: Json): Raw[] => {
     const kind = 'google-timeline';
     const start = toDate(entry.startTime);
     const visit = entry.visit?.topCandidate?.placeLocation;
-    const path: Json[] = Array.isArray(entry.timelinePath) ? entry.timelinePath : [];
+    const path = objects(entry.timelinePath);
     return [
       ...at(kind, entry.startTime, latLng(visit?.latLng ?? visit)),
       ...at(kind, entry.startTime, latLng(entry.activity?.start?.latLng ?? entry.activity?.start)),
@@ -150,7 +159,9 @@ export const pointsOfJson = (key: string | null, entry: Json): Raw[] => {
   }
   if (entry.type === 'Feature') {
     // GeoJSON points, as Dawarich exports them
-    const { geometry, properties = {} } = entry;
+    const { geometry } = entry;
+    // GeoJSON allows `"properties": null`.
+    const properties: Json = entry.properties ?? {};
     return geometry?.type === 'Point' && Array.isArray(geometry.coordinates)
       ? [
           {
@@ -278,8 +289,19 @@ async function* gpxPoints(text: AsyncIterable<string>, report: HistoryReport): A
   let current: { latitude: number; longitude: number; time: string } | null = null;
   let inTime = false;
   let failure: Error | null = null;
+  // saxes holds text, comments and tags whole until they end, so how far it has read past the last one is capped.
+  let emittedAt = 0;
+  let tooLong = false;
+  const emitted = () => {
+    emittedAt = parser.position;
+  };
   parser.on('error', (error) => (failure ??= error));
+  parser.on('comment', emitted);
+  parser.on('cdata', emitted);
+  parser.on('processinginstruction', emitted);
+  parser.on('doctype', emitted);
   parser.on('opentag', ({ name, attributes }) => {
+    emitted();
     if (GPX_POINTS.has(name)) {
       current = { latitude: Number(attributes.lat), longitude: Number(attributes.lon), time: '' };
     } else if (name === 'time' && current) {
@@ -287,11 +309,14 @@ async function* gpxPoints(text: AsyncIterable<string>, report: HistoryReport): A
     }
   });
   parser.on('text', (value) => {
+    emitted();
     if (inTime && current) {
       current.time += value;
+      tooLong ||= current.time.length > MAX_ELEMENT_CHARS;
     }
   });
   parser.on('closetag', ({ name }) => {
+    emitted();
     if (name === 'time') {
       inTime = false;
     } else if (GPX_POINTS.has(name) && current) {
@@ -306,6 +331,9 @@ async function* gpxPoints(text: AsyncIterable<string>, report: HistoryReport): A
     parser.write(chunk);
     if (failure) {
       throw new HistoryFormatError('This file is damaged and could not be read');
+    }
+    if (tooLong || parser.position - emittedAt > MAX_ELEMENT_CHARS) {
+      throw new HistoryFormatError('This file is not a location history');
     }
     const points = found;
     found = [];
@@ -367,33 +395,55 @@ export async function* parseHistoryStream(
   report: HistoryReport,
 ): AsyncGenerator<HistoryPoint> {
   const text = decode(bytes)[Symbol.asyncIterator]();
-  let head = '';
-  // the first character that is not white space says what the file is
-  while (head.trimStart() === '') {
-    const next = await text.next();
-    if (next.done) {
-      throw new HistoryFormatError('This file is empty');
+  try {
+    let head = '';
+    // the first character that is not white space says what the file is; the white space before it is not kept
+    while (head === '') {
+      const next = await text.next();
+      if (next.done) {
+        throw new HistoryFormatError('This file is empty');
+      }
+      head = next.value.trimStart();
     }
-    head += next.value;
-  }
-  head = head.trimStart();
-  const rest = (async function* () {
-    yield head;
-    for (let next = await text.next(); !next.done; next = await text.next()) {
-      yield next.value;
+    const rest = (async function* () {
+      yield head;
+      for (let next = await text.next(); !next.done; next = await text.next()) {
+        yield next.value;
+      }
+    })();
+    const first = head[0];
+    if (first === '<') {
+      yield* gpxPoints(rest, report);
+    } else if (first === '{' || first === '[') {
+      yield* jsonPoints(rest, report);
+    } else if (/\d/.test(first)) {
+      yield* recPoints(rest, report);
+    } else {
+      throw new HistoryFormatError('This file is not a location history');
     }
-  })();
-  const first = head[0];
-  if (first === '<') {
-    yield* gpxPoints(rest, report);
-  } else if (first === '{' || first === '[') {
-    yield* jsonPoints(rest, report);
-  } else if (/\d/.test(first)) {
-    yield* recPoints(rest, report);
-  } else {
-    throw new HistoryFormatError('This file is not a location history');
+  } finally {
+    // Closes the file or inflate stream underneath, however reading ended.
+    await text.return?.(undefined);
   }
 }
+
+/** Refuses a ZIP entry that unpacks to more than its directory declared. */
+async function* withinDeclared(bytes: AsyncIterable<Uint8Array>, declared: number): AsyncGenerator<Uint8Array> {
+  let size = 0;
+  for await (const chunk of bytes) {
+    size += chunk.length;
+    if (size > declared) {
+      throw new HistoryFormatError('This ZIP file is damaged and could not be read');
+    }
+    yield chunk;
+  }
+}
+
+/** The entry itself is damaged: a bad header or bad compressed data, not trouble on the server. */
+const isDamagedEntry = (error: unknown) =>
+  error instanceof HistoryFormatError ||
+  error instanceof TakeoutZipError ||
+  !!(error as NodeJS.ErrnoException)?.code?.startsWith('Z_');
 
 /**
  * Read a staged history file, or every history file inside a staged ZIP (a Takeout export). Throws
@@ -424,22 +474,31 @@ export async function* parseHistoryFile(filePath: string, report: HistoryReport)
       if (entry.refused || !HISTORY_FILE.test(entry.name) || entry.uncompressedSize > MAX_ZIP_ENTRY_BYTES) {
         continue;
       }
-      const start = await takeoutZipDataOffset(source, entry);
       if (entry.compressedSize === 0) {
         continue;
       }
-      const stored = createReadStream(filePath, { start, end: start + entry.compressedSize - 1 });
-      const stream = entry.compression === 'deflate' ? stored.pipe(createInflateRaw()) : stored;
       const inner: HistoryReport = { kind: null, skipped: 0 };
+      let stored: ReturnType<typeof createReadStream> | undefined;
+      let inflate: ReturnType<typeof createInflateRaw> | undefined;
       try {
-        yield* parseHistoryStream(stream, inner);
+        const start = await takeoutZipDataOffset(source, entry);
+        stored = createReadStream(filePath, { start, end: start + entry.compressedSize - 1 });
+        if (entry.compression === 'deflate') {
+          const output = createInflateRaw();
+          inflate = output;
+          // `pipe` does not pass a read failure on, which would leave the reader waiting for ever.
+          stored.on('error', (error) => output.destroy(error));
+          stored.pipe(output);
+        }
+        yield* parseHistoryStream(withinDeclared(inflate ?? stored, entry.uncompressedSize), inner);
       } catch (error) {
         // a ZIP holds other things too (settings, notes); a file that is not a history is passed over
-        if (!(error instanceof HistoryFormatError)) {
+        if (!isDamagedEntry(error)) {
           throw error;
         }
       } finally {
-        stored.destroy();
+        inflate?.destroy();
+        stored?.destroy();
       }
       report.kind ??= inner.kind;
       report.skipped += inner.skipped;

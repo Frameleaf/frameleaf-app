@@ -278,7 +278,13 @@
   const busyRevision = $derived(revisions.find((revision) => isRevisionBusy(revision.status)));
   const currentRevision = $derived(revisions.find((revision) => revision.id === develop?.currentRevisionId));
 
+  /** The editor has closed: an answer still on its way must not start a poller nothing would stop. */
+  let destroyed = false;
   const follow = () => {
+    // While Studio waits on a version, its own poller is the one running and must not be replaced.
+    if (destroyed || studioAfter) {
+      return;
+    }
     stopFollowing?.();
     stopFollowing = followDevelop(
       asset.id,
@@ -310,11 +316,15 @@
       return;
     }
     try {
-      develop = await getAssetDevelop({ id: asset.id });
-      baseCurrentRevisionId = develop.currentRevisionId ?? null;
-      sourceRevisionId = develop.currentRevisionId ?? undefined;
+      const loaded = await getAssetDevelop({ id: asset.id });
+      if (destroyed) {
+        return;
+      }
+      develop = loaded;
+      baseCurrentRevisionId = loaded.currentRevisionId ?? null;
+      sourceRevisionId = loaded.currentRevisionId ?? undefined;
       const start = openingRecipe(
-        develop,
+        loaded,
         asset.imageEncoding?.dynamicRange === 'hdr' && !isRawName(asset.originalFileName),
       );
       draft = rebaseDraft(draft, start, false);
@@ -337,10 +347,13 @@
         toastManager.primary($t('frameleaf_editor_continuity_stale'));
       }
       draftReady = true;
-      if (anyRevisionBusy(develop.revisions)) {
+      if (anyRevisionBusy(loaded.revisions)) {
         follow();
       }
     } catch (error) {
+      if (destroyed) {
+        return;
+      }
       const message = $t('frameleaf_editor_versions_error');
       developError = message;
       handleError(error, message);
@@ -348,6 +361,7 @@
   });
 
   onDestroy(() => {
+    destroyed = true;
     stopFollowing?.();
     previewAbort?.abort();
     clearTimeout(previewTimer);
@@ -390,6 +404,7 @@
     }
     if (untrack(() => serverPreview?.key) === key) {
       previewPending = false;
+      previewFailed = false;
       return;
     }
     previewPending = true;
@@ -401,7 +416,12 @@
         void (async () => {
           try {
             const result = await requestDevelopPreview(asset.id, request, 1280, controller.signal, dynamicRange);
-            if (!result || controller.signal.aborted) {
+            if (!result) {
+              return;
+            }
+            if (controller.signal.aborted) {
+              // Superseded just as it arrived: nothing will show this image, so free it.
+              result.revoke();
               return;
             }
             serverPreview?.revoke();
@@ -428,14 +448,7 @@
       return;
     }
     if (dirty || draft.undo.length > 0 || draft.redo.length > 0) {
-      saveEditorContinuity({
-        assetId: asset.id,
-        kind: 'photo',
-        draft: $state.snapshot(draft),
-        base: continuityBase({ ownerId: asset.ownerId, edit: opened }),
-        tool,
-        playhead: { num: 0, den: 1 },
-      });
+      saveEditorContinuity(draftRecord());
     } else {
       clearEditorContinuity(asset.id);
     }
@@ -764,13 +777,16 @@
       return;
     }
     saving = true;
+    // What this save holds: an edit made while it is on its way stays unsaved, and shows as unsaved.
+    const savedRecipe = $state.snapshot(recipe) as EditorRecipe;
+    const assetId = asset.id;
     try {
       // The editor sends its complete lossless snapshot. Replacement makes deliberate mask
       // removal and Original reset explicit; the named source is independently owner-checked.
       const request = {
-        id: asset.id,
+        id: assetId,
         assetDevelopSaveDto: {
-          recipe: toServerRecipe(recipe),
+          recipe: toServerRecipe(savedRecipe),
           render: true,
           replaceRecipe: true,
           ...(sourceRevisionId && { sourceRevisionId }),
@@ -796,13 +812,21 @@
         });
         saveOnly = true;
       }
+      if (destroyed) {
+        // Closed while saving: the version exists, so its render is still reported, but this closed
+        // editor must not close whatever is open now or take the person to Studio.
+        if (!saveOnly) {
+          followAfterClose(revision.id, assetId);
+        }
+        return;
+      }
       ownRevisionIds.add(revision.id);
       develop = {
-        assetId: asset.id,
+        assetId,
         currentRevisionId: develop?.currentRevisionId ?? null,
         revisions: [revision, ...(develop?.revisions ?? []).filter((item) => item.id !== revision.id)],
       };
-      opened = normalizeRecipe(recipe, false);
+      opened = normalizeRecipe(savedRecipe, false);
       draftReady = false;
       clearEditorContinuity(asset.id);
       announce = saveOnly
@@ -817,7 +841,7 @@
       }
       toastManager.primary(announce);
       if (!saveOnly) {
-        followAfterClose(revision.id);
+        followAfterClose(revision.id, assetId);
       }
       onClose(saveChangedCurrent);
     } catch (error) {
@@ -859,29 +883,37 @@
         develop = next;
         const after = next.revisions.find((revision) => revision.id === revisionId);
         if (
-          !after ||
-          isRevisionBusy(after.status) ||
-          (nativePublicationState(next, revisionId).awaitingPublication && ++waits < 10)
+          after &&
+          (isRevisionBusy(after.status) ||
+            (nativePublicationState(next, revisionId).awaitingPublication && ++waits < 10))
         ) {
           return;
         }
         stopFollowing?.();
         studioAfter = null;
-        if (after.status === AssetDevelopRevisionStatus.Rendered && next.currentRevisionId === revisionId) {
+        if (after?.status === AssetDevelopRevisionStatus.Rendered && next.currentRevisionId === revisionId) {
           saveChangedCurrent = true;
           onClose(true);
           void goto(Route.studio({ assetIds: [asset.id], returnTo: asset.id }));
-        } else if (after.status === AssetDevelopRevisionStatus.Failed) {
+          return;
+        }
+        // The editor stays open: later edits are recoverable again, and other renders stay followed.
+        draftReady = true;
+        if (after?.status === AssetDevelopRevisionStatus.Failed) {
           toastManager.danger(
             $t('frameleaf_editor_version_failed', { values: { revision: after.revision, error: after.error ?? '' } }),
           );
-        } else if (after.status === AssetDevelopRevisionStatus.Rendered) {
+        } else if (!after || after.status === AssetDevelopRevisionStatus.Rendered) {
           toastManager.danger($t('frameleaf_editor_versions_error'));
+        }
+        if (anyRevisionBusy(next.revisions)) {
+          follow();
         }
       },
       {
         onError: (error) => {
           studioAfter = null;
+          draftReady = true;
           handleError(error, $t('frameleaf_editor_versions_error'));
         },
         continueWhile: (next) => nativePublicationState(next, revisionId).awaitingPublication && waits < 10,
@@ -893,15 +925,14 @@
    * outside the component: this poller is not stopped on destroy, and it only announces the
    * outcome of that one revision. The formatter is captured while still mounted.
    */
-  const followAfterClose = (revisionId: string) => {
+  const followAfterClose = (revisionId: string, assetId: string) => {
     const translate = $t;
-    const assetId = asset.id;
     let stop = () => {};
     let renderedBeforeCurrent = 0;
     // The viewer shows this on the photo while the edit is on its way (pending-render.svelte.ts).
     setRenderProgress(assetId, null);
     stop = followDevelop(
-      asset.id,
+      assetId,
       (next) => {
         const after = next.revisions.find((revision) => revision.id === revisionId);
         if (!after) {
@@ -931,7 +962,8 @@
           toastManager.primary(
             translate('frameleaf_editor_version_rendered', { values: { revision: after.revision } }),
           );
-          onRendered?.(asset.id);
+          // This poller outlives the editor; `asset` may by now be the next photo.
+          onRendered?.(assetId);
           return;
         }
         clearRender(assetId);

@@ -1861,11 +1861,12 @@ describe(AssetService.name, () => {
       expect(mocks.asset.getOriginalBytes).not.toHaveBeenCalled();
     });
 
-    it('refuses a link that does not allow downloads, or that has a password', async () => {
+    it('refuses a link that does not allow downloads, has a password, or is limited to web size', async () => {
       const asset = AssetFactory.create();
       for (const link of [
         { allowDownload: false, password: null },
         { allowDownload: true, password: 'secret' },
+        { allowDownload: true, password: null, webSizeOnly: true },
       ]) {
         mocks.sharedLink.getBySlug.mockResolvedValue({ id: 'link-1', expiresAt: null, ...link } as never);
         await expect(

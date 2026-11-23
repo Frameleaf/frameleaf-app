@@ -19,6 +19,10 @@ type PendingRequest = {
    */
   settled?: boolean;
   /**
+  The access this request was sent under: a request after an access change never joins it.
+  */
+  generation: number;
+  /**
   Callers handed this request's response, each of which may later cancel it by URL.
   */
   callers: number;
@@ -67,13 +71,14 @@ export const handleFetch = async (request: URL | Request): Promise<Response> => 
   const requestKey = getRequestKey(request);
   const existing = pendingRequests.get(requestKey);
 
-  if (existing && !existing.settled && existing.promise) {
+  if (existing && !existing.settled && existing.promise && existing.generation === access.generation) {
     existing.callers++;
     return clone(existing.promise);
   }
 
   const pendingRequest: PendingRequest = {
     controller: new AbortController(),
+    generation: access.generation,
     callers: 1,
     // bounded: callers that never cancel must not disable cancelling for this URL indefinitely
     staleCancels: existing ? Math.min(existing.callers + existing.staleCancels, MAX_STALE_CANCELS) : 0,

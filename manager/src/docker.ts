@@ -146,7 +146,8 @@ export async function command(
     env: { PATH: process.env.PATH, HOME: process.env.HOME, DOCKER_CONFIG: process.env.DOCKER_CONFIG, ...options.env },
   });
   const timer = setTimeout(() => child.kill('SIGKILL'), options.timeout ?? 120_000);
-  let result = Buffer.alloc(0),
+  const output: Buffer[] = [];
+  let outputBytes = 0,
     tooLarge = false,
     exit = 'not started',
     stderr = '';
@@ -168,10 +169,13 @@ export async function command(
     );
   else {
     const keep = (chunk: Buffer) => {
-      if (result.length + chunk.length > 8 * 1024 * 1024) {
+      if (outputBytes + chunk.length > 8 * 1024 * 1024) {
         tooLarge = true;
         child.kill('SIGKILL');
-      } else result = Buffer.concat([result, chunk]);
+      } else {
+        output.push(chunk);
+        outputBytes += chunk.length;
+      }
     };
     if (!options.mergeStderr) child.stdout.on('data', keep);
     else
@@ -235,7 +239,7 @@ export async function command(
     if (options.outputFile) {
       await publishFile(`${options.outputFile}.partial`, options.outputFile);
     }
-    return result.toString('utf8');
+    return Buffer.concat(output).toString('utf8');
   } catch (error) {
     child.kill('SIGKILL');
     await Promise.allSettled([exited, ...transfers]);
@@ -719,7 +723,7 @@ export class Docker {
    */
   async dumpSourceDatabase(login: SourceDatabaseLogin, destination: string): Promise<void> {
     containerId.parse(login.container);
-    if (!/^[A-Za-z0-9_$-]{1,64}$/u.test(login.name) || !/^[A-Za-z0-9_.@-]{1,64}$/u.test(login.user) || !isAbsolute(destination))
+    if (!/^[A-Za-z0-9_$][A-Za-z0-9_$-]{0,63}$/u.test(login.name) || !/^[A-Za-z0-9_.@-]{1,64}$/u.test(login.user) || !isAbsolute(destination))
       throw new Refusal('invalid_source_database');
     try {
       if (login.engine === 'mysql') {
@@ -746,7 +750,7 @@ export class Docker {
   async startSourceRestore(restore: SourceRestore, operationId: string): Promise<string> {
     if (
       restore.name !== sourceRestoreName(operationId) || !restoreName.test(restore.name) ||
-      !/^sha256:[a-f0-9]{64}$/u.test(restore.image) || !/^[A-Za-z0-9_$-]{1,64}$/u.test(restore.database) ||
+      !/^sha256:[a-f0-9]{64}$/u.test(restore.image) || !/^[A-Za-z0-9_$][A-Za-z0-9_$-]{0,63}$/u.test(restore.database) ||
       !/^[a-f0-9]{64}$/u.test(restore.password)
     ) throw new Refusal('invalid_source_database');
     const environment = restore.engine === 'mysql'
@@ -820,7 +824,7 @@ export class Docker {
    * SHOW VIEW and, where the engine has it, SHOW CREATE ROUTINE / SHOW_ROUTINE; PostgreSQL: SELECT on public).
    */
   async secureSourceRestore(restore: SourceRestore, readerPassword: string): Promise<void> {
-    if (!restoreName.test(restore.name) || !/^[a-f0-9]{64}$/u.test(readerPassword) || !/^[A-Za-z0-9_$-]{1,64}$/u.test(restore.database))
+    if (!restoreName.test(restore.name) || !/^[a-f0-9]{64}$/u.test(readerPassword) || !/^[A-Za-z0-9_$][A-Za-z0-9_$-]{0,63}$/u.test(restore.database))
       throw new Refusal('invalid_source_database');
     const reader = SOURCE_RESTORE_READER;
     try {

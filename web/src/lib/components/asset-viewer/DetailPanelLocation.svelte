@@ -132,7 +132,7 @@
     }
     void namedPlaces.load();
     void modalManager.show(NamedPlaceDialog, {
-      point: { latitude: point.latitude, longitude: point.longitude },
+      point: { latitude: point.lat, longitude: point.lng },
       where: asset.exifInfo?.city ?? undefined,
     });
   };

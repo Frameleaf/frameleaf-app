@@ -107,10 +107,24 @@
       invited = [];
       return;
     }
+    const id = album.id;
     try {
-      invited = (await getSharedSpaceMembers({ id: album.id })).members.filter(({ pending }) => pending);
+      const { members } = await getSharedSpaceMembers({ id });
+      if (id === album.id) {
+        invited = members.filter(({ pending }) => pending);
+      }
     } catch {
-      invited = [];
+      if (id === album.id) {
+        invited = [];
+      }
+    }
+  };
+  /** The change is already saved: a failed re-read must not be reported as the change failing. */
+  const reread = async () => {
+    try {
+      await onChanged();
+    } catch {
+      // the next read of the album shows it
     }
   };
   const withdraw = async (member: SharedSpaceMemberResponseDto) => {
@@ -118,7 +132,7 @@
     try {
       await removeSharedSpaceInvitation({ id: album.id, userId: member.user.id });
       invited = invited.filter(({ user }) => user.id !== member.user.id);
-      await onChanged();
+      await reread();
     } catch (error) {
       handleError(error, $t('errors.something_went_wrong'));
     } finally {
@@ -172,26 +186,37 @@
     }
   };
 
+  // Values, not the album object: every re-read gives a new object, and restarting on it would wipe the
+  // people ticked, the search and the role, and reload everything after each change made here.
+  const albumId = $derived(album.id);
+  const albumKind = $derived(album.kind);
+  // Also a value: a prop left at its default signals on every change to the props object.
+  const openingSection = $derived(section);
   $effect(() => {
     if (!open) {
       return;
     }
+    void albumId;
+    void albumKind;
+    void isOwner;
+    const opening = openingSection;
 
-    invitees = [];
-    query = '';
-    inviteRole = AlbumUserRole.Editor;
-    void loadCandidates();
-    void loadLinks();
-    void loadInvited();
-    // FL-998: a space's owner can also add people from linked households.
-    const nextHousehold = untrack(() =>
-      album.kind === AlbumKind.Space && isOwner ? new HouseholdShareState(album.id, onChanged) : undefined,
-    );
-    household = nextHousehold;
-    void nextHousehold?.load();
-    if (section === 'links') {
-      void tick().then(() => linksSection?.scrollIntoView({ block: 'nearest' }));
-    }
+    untrack(() => {
+      invitees = [];
+      query = '';
+      inviteRole = AlbumUserRole.Editor;
+      void loadCandidates();
+      void loadLinks();
+      void loadInvited();
+      // FL-998: a space's owner can also add people from linked households.
+      const nextHousehold =
+        album.kind === AlbumKind.Space && isOwner ? new HouseholdShareState(album.id, onChanged) : undefined;
+      household = nextHousehold;
+      void nextHousehold?.load();
+      if (opening === 'links') {
+        void tick().then(() => linksSection?.scrollIntoView({ block: 'nearest' }));
+      }
+    });
   });
 
   /** Only people who can still be invited count; a member added elsewhere drops out of the choice. */
@@ -214,7 +239,7 @@
         invitees = [];
         query = '';
         await loadInvited();
-        await onChanged();
+        await reread();
       }
     } finally {
       busy = false;
@@ -232,11 +257,18 @@
       return;
     }
     linksState = 'loading';
+    const id = album.id;
     try {
-      links = (await getAllSharedLinks({ albumId: album.id })) ?? [];
-      linksState = 'ready';
+      const answer = (await getAllSharedLinks({ albumId: id })) ?? [];
+      // Another album's links must never be listed here, with their delete buttons.
+      if (id === album.id) {
+        links = answer;
+        linksState = 'ready';
+      }
     } catch {
-      linksState = 'failed';
+      if (id === album.id) {
+        linksState = 'failed';
+      }
     }
   };
 
@@ -246,7 +278,7 @@
       return;
     }
     links = [link, ...links];
-    void onChanged();
+    void reread();
   };
   const onSharedLinkUpdate = (link: SharedLinkResponseDto) => {
     links = links.map((entry) => (entry.id === link.id ? link : entry));
@@ -281,7 +313,7 @@
       await removeSharedLink({ id: link.id });
       eventManager.emit('SharedLinkDelete', link);
       toastManager.primary($t('deleted_shared_link'));
-      await onChanged();
+      await reread();
     } catch (error) {
       handleError(error, $t('errors.unable_to_delete_shared_link'));
     }
@@ -291,7 +323,7 @@
     busy = true;
     try {
       await handleUpdateUserAlbumRole({ albumId: album.id, userId, role });
-      await onChanged();
+      await reread();
     } finally {
       busy = false;
     }
@@ -308,7 +340,7 @@
     busy = true;
     try {
       await handleRemoveUserFromAlbum(album, user);
-      await onChanged();
+      await reread();
     } finally {
       busy = false;
     }

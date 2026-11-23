@@ -223,6 +223,20 @@ test('the schedule keeps the owner’s time zone, not the container’s', async 
   await assert.rejects(Promise.resolve().then(() => zoned.setSettings({ ...settings(), timeZone: 'Not/AZone' })));
 });
 
+test('a scheduled minute the timer skipped still starts that day’s backup', async () => {
+  const skipped = new ServerBackup(new Store(at('skipped-state')), {
+    target: { kind: 'folder', path: at('skipped-repository') },
+    inside: (path) => path === at('server') || path.startsWith(at('server') + sep),
+    always: [],
+  });
+  await skipped.turnOn({ ...settings(), schedule: { time: '02:00', stop: null } });
+  await skipped.tick(new Date(2026, 10, 19, 1, 59, 59));
+  assert.equal(skipped.view()!.running, null);
+  await skipped.tick(new Date(2026, 10, 19, 2, 1, 0));
+  assert.equal(skipped.view()!.running?.trigger, 'schedule');
+  skipped.stop();
+});
+
 test('the schedule starts one backup a day at its time', async () => {
   const two = new Date(2026, 10, 18, 2, 0, 30);
   await service.tick(new Date(2026, 10, 18, 1, 59, 0));

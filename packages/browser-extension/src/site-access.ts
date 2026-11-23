@@ -84,13 +84,16 @@ export function scopeCookies(
   origins: string[],
 ): { cookies: SiteCookie[]; domains: string[] } {
   const hosts = origins.map((origin) => new URL(origin).hostname.toLowerCase());
-  const kept = cookies.filter((cookie) => {
-    const domain = cookie.domain.replace(/^\./, '').toLowerCase();
-    return (
-      domain.includes('.') &&
-      hosts.some((host) => host === domain || host.endsWith(`.${domain}`))
-    );
-  });
+  // Capped before the domains are listed: a domain with no cookie sent gets no access.
+  const kept = cookies
+    .filter((cookie) => {
+      const domain = cookie.domain.replace(/^\./, '').toLowerCase();
+      return (
+        domain.includes('.') &&
+        hosts.some((host) => host === domain || host.endsWith(`.${domain}`))
+      );
+    })
+    .slice(0, 500);
   const all = [
     ...new Set(
       kept.map((cookie) => cookie.domain.replace(/^\./, '').toLowerCase()),
@@ -100,7 +103,7 @@ export function scopeCookies(
   const domains = all
     .filter((domain) => !all.some((other) => domain.endsWith(`.${other}`)))
     .sort();
-  return { cookies: kept.slice(0, 500), domains };
+  return { cookies: kept, domains };
 }
 
 export type SiteAccess =

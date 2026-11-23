@@ -15,6 +15,8 @@ import { AssetType } from 'src/enum.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { HouseholdReceiveService } from 'src/services/household-receive.service.js';
 
+type AnyMock = (...args: any[]) => any;
+
 type Row = Record<string, any>;
 const sameKey = (origin: HouseholdOrigin, key: HouseholdOriginKey) =>
   origin.linkId === key.linkId &&
@@ -321,7 +323,7 @@ export class ReceiverLibrary {
       return { id: asset.id, status: AssetMediaStatus.CREATED };
     }),
   };
-  assetRepo = {
+  assetRepo: Record<string, AnyMock> = {
     getById: (id: string) => Promise.resolve(this.assets.get(id)),
     upsertExif: ({ exif }: { exif: Row }) => {
       const { assetId, lockedProperties: _locked, ...values } = exif;
@@ -333,8 +335,8 @@ export class ReceiverLibrary {
       return Promise.resolve();
     },
     // no protocol path may reach these (T19)
-    remove: vi.fn(),
-    updateAll: vi.fn(),
+    remove: vi.fn<AnyMock>(),
+    updateAll: vi.fn<AnyMock>(),
   };
   albumRepo = {
     getById: (id: string) => Promise.resolve(this.albums.get(id)),
@@ -358,7 +360,7 @@ export class ReceiverLibrary {
       return Promise.resolve();
     },
   };
-  peopleRepo = {
+  peopleRepo: Record<string, AnyMock> = {
     getByGroupId: ({ personGroupId }: { personGroupId: string }) => Promise.resolve(this.people.get(personGroupId)),
     update: ({ personGroupId, ...change }: Row) => {
       Object.assign(this.people.get(personGroupId as string)!, change);
@@ -410,7 +412,7 @@ export const startReceiver = (server: HouseholdServer) => {
   };
   const jobs = {
     getQueueHolds: vi.fn(() => Promise.resolve([] as Array<{ closedUntil: Date | null }>)),
-    queueAll: vi.fn(),
+    queueAll: vi.fn<AnyMock>(),
   };
   const comments = server.world.comments;
   comments.inbound = receive as never;
@@ -427,7 +429,7 @@ export const startReceiver = (server: HouseholdServer) => {
     library.search as never,
     jobs as never,
     notifications as never,
-    { clientSend: vi.fn() } as never,
+    { clientSend: vi.fn<AnyMock>() } as never,
     events as never,
     storage as never,
     new CryptoRepository(),

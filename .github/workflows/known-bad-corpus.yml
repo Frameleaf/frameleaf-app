@@ -34,7 +34,8 @@ jobs:
     name: Known-bad corpus
     if: ${{ github.repository == 'Frameleaf/frameleaf-app' }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    # A Forgejo pull request gets no GHCR token, so the runner image builds without main's cache (about 15 minutes).
+    timeout-minutes: 45
     permissions:
       contents: read
       packages: read
@@ -61,7 +62,7 @@ jobs:
             [registry."docker.io"]
               mirrors = ["mirror.gcr.io"]
       - name: Login to owned GHCR namespace for the build cache
-        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+        if: github.event_name != 'pull_request' || (github.server_url == 'https://github.com' && github.event.pull_request.head.repo.full_name == github.repository)
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ghcr.io

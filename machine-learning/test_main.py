@@ -2607,6 +2607,19 @@ class TestCache:
         assert await model_cache.get("test", ModelType.VISUAL, ModelTask.IMAGE_DESCRIPTION, device="GPU") is not one
         assert mock_get_model.call_count == 2
 
+    async def test_unknown_accelerations_share_the_automatic_instance(self, mock_get_model: mock.Mock) -> None:
+        model_cache = ModelCache()
+        mock_get_model.side_effect = lambda *args, **kwargs: SimpleNamespace()
+
+        async def get(**kwargs: Any) -> Any:
+            return await model_cache.get("test", ModelType.VISUAL, ModelTask.IMAGE_DESCRIPTION, **kwargs)
+
+        automatic = await get(acceleration="auto")
+        assert await get(acceleration="made-up") is automatic
+        assert await get() is automatic
+        assert await get(acceleration="cuda") is not automatic
+        assert mock_get_model.call_count == 2
+
     async def test_loads_mclip(self) -> None:
         model_cache = ModelCache()
 
@@ -3169,8 +3182,9 @@ def test_refuses_a_model_this_container_cannot_run_without_loading_it(
 
     download.assert_not_called()
     assert warning.call_count == 1
-    assert to_thread.await_count == 2
-    assert all(call.args[0].__name__ == "missing_runtime" for call in to_thread.await_args_list)
+    # Building the model also runs off the event loop, once; the runtime is probed on each request.
+    probes = [call for call in to_thread.await_args_list if call.args[0].__name__ == "missing_runtime"]
+    assert len(probes) == 2
 
 
 def test_unknown_task_or_type_is_a_malformed_request(deployed_app: TestClient) -> None:

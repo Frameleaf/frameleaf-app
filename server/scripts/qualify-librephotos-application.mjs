@@ -52,7 +52,17 @@ const command = (arguments_, options = {}) =>
   });
 const run = (arguments_, options) => {
   const result = command(arguments_, options);
-  if (result.status !== 0) throw new Error(`Fixture Docker operation failed: ${arguments_[0]}`);
+  if (result.status !== 0) {
+    // Docker's own reason, with this run's generated secrets removed, so a failed start can be diagnosed from CI.
+    const reason = Object.values(secrets).reduce(
+      (text, secret) => text.replaceAll(secret, '[secret]'),
+      String(result.stderr || result.error?.message || '')
+        .trim()
+        .split('\n')
+        .at(-1),
+    );
+    throw new Error(`Fixture Docker operation failed: ${arguments_[0]}: ${reason}`);
+  }
   return result.stdout.trim();
 };
 const state = (container) =>

@@ -156,6 +156,15 @@ describe('renderHelpArticle', () => {
     expect(link.dataset.helpHeading).toBe('100%-sure');
   });
 
+  it('keeps the article when a link or image address is malformed', () => {
+    const element = render('Before [broken](http://) after.\n\n![broken](http://)\n\n[Fine](https://tailscale.com)');
+    expect(element.textContent).toContain('Before broken after.');
+    expect(element.querySelector('img')).toBeNull();
+    expect([...element.querySelectorAll('a')].map((link) => link.getAttribute('href'))).toEqual([
+      'https://tailscale.com/',
+    ]);
+  });
+
   it('turns asides into asides and never lets markup through', () => {
     const element = render(
       ':::caution[Nothing falls back silently]\nA job is **refused**.\n:::\n\n<script>alert(1)</script><img src="/shots/a.jpg" onerror="alert(1)"><img src="javascript:alert(1)">\n\n[x](javascript:alert(1))',

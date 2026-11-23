@@ -49,12 +49,14 @@ class FrameleafApi:
                 json=json,
                 headers=headers,
                 timeout=TIMEOUT,
+                # a followed redirect would carry the x-api-key header to wherever it points
+                allow_redirects=False,
             ) as response:
                 if response.status == 401:
                     raise FrameleafAuthError("Frameleaf asked to sign in again")
                 if response.status == 403:
                     raise FrameleafForbidden(f"Frameleaf does not allow {method} {path} for this sign-in")
-                if response.status >= 400:
+                if response.status >= 300:
                     raise FrameleafError(f"Frameleaf answered {response.status} to {method} {path}")
                 if expect == "bytes":
                     return await response.read()
@@ -121,7 +123,9 @@ class FrameleafApi:
 async def check_server(session: ClientSession, url: str) -> None:
     """Raises FrameleafError unless `url` is a Frameleaf server that answers."""
     try:
-        async with session.get(f"{url.rstrip('/')}/api/server/ping", timeout=TIMEOUT) as response:
+        # not followed, so an address that redirects is refused here rather than failing after setup
+        ping = f"{url.rstrip('/')}/api/server/ping"
+        async with session.get(ping, timeout=TIMEOUT, allow_redirects=False) as response:
             if response.status != 200 or (await response.json()).get("res") != "pong":
                 raise FrameleafError("This address is not a Frameleaf server")
     except (ClientError, TimeoutError, ValueError) as error:

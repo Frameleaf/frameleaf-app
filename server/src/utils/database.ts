@@ -1083,9 +1083,11 @@ export function takenFrom(column: CaptureDateColumn, from: Date, strict = false)
   const date = sql.ref(column);
   const earliest = new Date(from);
   earliest.setUTCFullYear(earliest.getUTCFullYear() - 10);
+  // API dates stop at the millisecond: "after" a period's last millisecond is already past its end
+  const periodEndsAfter = strict ? new Date(from.getTime() + 1) : from;
   return sql<SqlBool>`(${date} ${strict ? sql`>` : sql`>=`} ${from} or (
     asset."dateAccuracy" is not null and ${date} > ${earliest}
-    and ${date} + case asset."dateAccuracy" when 'decade' then interval '10 years' else interval '1 year' end > ${from}
+    and ${date} + case asset."dateAccuracy" when 'decade' then interval '10 years' else interval '1 year' end > ${periodEndsAfter}
   ))`;
 }
 type ComparisonFilter<T> = {
@@ -1283,7 +1285,7 @@ function boolPredicates(filter: { eq: boolean } | undefined, predicate: Expressi
 }
 /** A capture date filter, whose lower bounds also reach a year or decade still running then (`takenFrom`). */
 function captureDatePredicates(eb: AssetExpressionBuilder, column: CaptureDateColumn, filter?: DateFilter) {
-  if (!filter) {
+  if (filter === undefined) {
     return [];
   }
   const { gt, gte, ...rest } = filter;

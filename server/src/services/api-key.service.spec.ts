@@ -262,6 +262,7 @@ describe(ApiKeyService.name, () => {
       await sut.delete(auth, apiKey.id);
 
       expect(mocks.apiKey.delete).toHaveBeenCalledWith(auth.user.id, apiKey.id);
+      expect(mocks.websocket.clientDisconnect).toHaveBeenCalledWith(apiKey.id);
       expect(mocks.accountEvent.create).toHaveBeenCalledWith(
         expect.objectContaining({ action: 'api-key-deleted', subject: apiKey.name }),
       );

@@ -791,21 +791,6 @@ export class MediaHealthRepository {
         .execute();
     });
   }
-  async markResolvedMany(category: MediaHealthCategory, assetIds: string[]): Promise<void> {
-    if (assetIds.length === 0) {
-      return;
-    }
-    const resolvedAt = new Date();
-    await this.db.transaction().execute(async (trx) => {
-      await trx
-        .withSchema('public')
-        .updateTable('asset_health')
-        .set({ status: MediaHealthStatus.Resolved, severity: MediaHealthSeverity.Info, resolvedAt })
-        .where('category', '=', category)
-        .where('assetId', '=', anyUuid(assetIds))
-        .execute();
-    });
-  }
   async markResolvedCategories(categories: MediaHealthCategory[], assetId: string): Promise<void> {
     if (categories.length === 0) {
       return;

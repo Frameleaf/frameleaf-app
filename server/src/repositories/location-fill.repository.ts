@@ -222,26 +222,30 @@ export class LocationFillRepository {
 
   /** A run's proposals in the order the photos were taken, with one more than `size` when there is a next page. */
   getProposals(runId: string, offset: number, size: number) {
-    return this.db
-      .selectFrom('location_fill_proposal as proposal')
-      .innerJoin('asset', 'asset.id', 'proposal.assetId')
-      .select([
-        'proposal.assetId',
-        'proposal.latitude',
-        'proposal.longitude',
-        'proposal.method',
-        'proposal.gapSeconds',
-        'proposal.appliedAt',
-        'proposal.undoneAt',
-        'asset.localDateTime',
-      ])
-      .where('proposal.runId', '=', runId)
-      .where('asset.deletedAt', 'is', null)
-      .orderBy('asset.localDateTime')
-      .orderBy('proposal.assetId')
-      .offset(offset)
-      .limit(size + 1)
-      .execute();
+    return (
+      this.db
+        .selectFrom('location_fill_proposal as proposal')
+        .innerJoin('asset', 'asset.id', 'proposal.assetId')
+        .select([
+          'proposal.assetId',
+          'proposal.latitude',
+          'proposal.longitude',
+          'proposal.method',
+          'proposal.gapSeconds',
+          'proposal.appliedAt',
+          'proposal.undoneAt',
+          'asset.localDateTime',
+        ])
+        .where('proposal.runId', '=', runId)
+        .where('asset.deletedAt', 'is', null)
+        // a photo locked or hidden since the run looked is no longer listed, with its place and time
+        .where(isDefaultVisible('asset'))
+        .orderBy('asset.localDateTime')
+        .orderBy('proposal.assetId')
+        .offset(offset)
+        .limit(size + 1)
+        .execute()
+    );
   }
 
   /** Mark proposals to apply: all that are not on their photo now, or those of `assetIds`. Returns how many. */

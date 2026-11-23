@@ -70,6 +70,11 @@ test('move configuration changes exactly the reviewed media mapping and preserve
     '/new',
   );
   assert.equal(changed.services['frameleaf-server'].volumes[0].source, '/new');
+  // Compose reads a bare `$` as a variable, so both sides of the mapping carry it doubled.
+  const dollars = structuredClone(original);
+  dollars.services['frameleaf-server'].volumes[0].source = '/o$$ld';
+  const moved = LibraryMove.configuration(dollars, { type: 'bind', source: '/o$ld', target: '/data', readOnly: false }, '/n$w');
+  assert.equal(moved.services['frameleaf-server'].volumes[0].source, '/n$$w');
   assert.deepEqual(changed.services.database, original.services.database);
   assert.deepEqual(changed.services['frameleaf-server'].environment, original.services['frameleaf-server'].environment);
   assert.deepEqual(changed.services['frameleaf-server'].volumes[1], original.services['frameleaf-server'].volumes[1]);

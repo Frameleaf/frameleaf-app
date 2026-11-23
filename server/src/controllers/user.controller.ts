@@ -331,8 +331,8 @@ export class UserController {
     description: 'Retrieve a specific user by their ID.',
     history: new HistoryBuilder().added('v1').beta('v1').stable('v2'),
   })
-  getUser(@Param() { id }: UUIDParamDto): Promise<UserResponseDto> {
-    return this.service.get(id);
+  getUser(@Auth() auth: AuthDto, @Param() { id }: UUIDParamDto): Promise<UserResponseDto> {
+    return this.service.get(auth, id);
   }
 
   @Post('profile-image')

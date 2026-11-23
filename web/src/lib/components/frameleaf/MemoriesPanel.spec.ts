@@ -55,7 +55,14 @@ describe('MemoriesPanel', () => {
       ({
         ...memory('memory-occasion', [{ id: 'asset-1', visibility: 'timeline' }]),
         type: 'person_recap',
-        data: { kind: 'person_recap', year: 2026, subject: 'person', subjectId: 'mum', name: 'Margaret', assetCount: 3 },
+        data: {
+          kind: 'person_recap',
+          year: 2026,
+          subject: 'person',
+          subjectId: 'mum',
+          name: 'Margaret',
+          assetCount: 3,
+        },
         memoryAt: '2026-05-10T00:00:00.000Z',
         // cast: the SDK gains `occasion` when it is regenerated
         ...(occasion && { occasion }),

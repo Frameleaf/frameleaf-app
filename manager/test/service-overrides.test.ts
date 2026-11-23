@@ -116,6 +116,7 @@ test('host system paths, Manager state and folders outside the allowed roots are
     for (const source of [
       ...DENIED_MOUNT_SOURCES,
       '/etc/passwd', '/proc/1', '/sys/class', '/dev/sda', '/var/lib/docker/volumes', '/boot/config', '/run/docker.sock', '/root/.ssh',
+      '/var', '/var/lib',
       '/mnt/user/appdata/frameleaf-manager', '/mnt/user/appdata/frameleaf-manager/stack', '/mnt/user/../../etc', '/mnt/user/archive/',
     ])
       assert.throws(

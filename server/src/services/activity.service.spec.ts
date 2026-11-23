@@ -362,7 +362,7 @@ describe(ActivityService.name, () => {
         mocks.access.activity.checkOwnerAccess.mockResolvedValue(new Set([activity.id]));
         mocks.activity.getById.mockResolvedValue(getForActivity(activity));
         mocks.album.getById.mockResolvedValue(getForAlbum(space));
-        mocks.albumUser.deleteCommentWithReplies.mockResolvedValue();
+        mocks.albumUser.deleteCommentWithReplies.mockResolvedValue([]);
 
         await sut.delete(auth, activity.id);
 

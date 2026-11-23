@@ -67,14 +67,6 @@ export const selectionHash = (selection: CloudBackupSelection): string | null =>
         .digest('hex')
     : null;
 
-/** Whether a choice chooses anything at all. */
-export const choosesAnything = (chosen: CloudBackupChosen) =>
-  chosen.favorites ||
-  chosen.dateRanges.length > 0 ||
-  [chosen.albumIds, chosen.collectionIds, chosen.personIds, chosen.tagIds, chosen.folders].some(
-    (ids) => ids.length > 0,
-  );
-
 /**
  * The opaque per-server account reference Frameleaf Cloud knows an account by (`fingerprint.user`, the
  * binding a personal licence is activated with): SHA-256 of the instance id followed by the account id.

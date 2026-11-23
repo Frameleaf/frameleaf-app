@@ -409,6 +409,8 @@ describe(MemoryService.name, () => {
         city: 'Anaheim',
         state: 'California',
         country: 'United States',
+        latitude: null,
+        longitude: null,
         landmarks: [park],
       }));
     const eventStory = expect.objectContaining({ type: MemoryType.EventStory });

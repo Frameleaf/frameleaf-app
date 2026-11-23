@@ -1053,8 +1053,8 @@ export class AlbumService extends BaseService {
   }
 
   async addAssets(auth: AuthDto, id: string, dto: BulkIdsDto, sourceLinkId?: string): Promise<BulkIdResponseDto[]> {
-    const album = await this.findOrFail(id, auth, { withAssets: false });
     await this.requireAccess({ auth, permission: Permission.AlbumAssetCreate, ids: [id] });
+    const album = await this.findOrFail(id, auth, { withAssets: false });
     this.requireAppMayAddTo(auth, album);
 
     const { results, response } = await this.partnerOriginRepository.withOriginEdit('album', [id], [], () =>
@@ -1412,6 +1412,12 @@ export class AlbumService extends BaseService {
       userId = auth.user.id;
     }
 
+    // Anyone can leave; removing somebody else needs share rights, checked before the answer can say
+    // anything about who is in an album the caller has no access to.
+    if (auth.user.id !== userId) {
+      await this.requireAccess({ auth, permission: Permission.AlbumShare, ids: [id] });
+    }
+
     const album = await this.findOrFail(id, auth, { withAssets: false });
     const space = isSharedSpace(album);
 
@@ -1429,13 +1435,9 @@ export class AlbumService extends BaseService {
       throw new BadRequestException('Cannot remove the last album owner');
     }
 
-    // Anyone can leave; removing somebody else needs share rights, and for a
-    // shared space that means its owner.
-    if (auth.user.id !== userId) {
-      await this.requireAccess({ auth, permission: Permission.AlbumShare, ids: [id] });
-      if (space) {
-        requireSpaceOwner(album, auth.user.id);
-      }
+    // In a shared space, removing somebody else is its owner's alone.
+    if (auth.user.id !== userId && space) {
+      requireSpaceOwner(album, auth.user.id);
     }
 
     await this.albumUserRepository.delete({ albumId: id, userId });
@@ -1474,10 +1476,14 @@ export class AlbumService extends BaseService {
     await this.requireAccess({ auth, permission: Permission.AlbumShare, ids: [id] });
 
     const album = await this.findOrFail(id, auth, { withAssets: false });
-    const owner = album.albumUsers[0];
 
-    if (owner.user.id === userId) {
+    if (album.albumUsers.some(({ role, user }) => role === AlbumUserRole.Owner && user.id === userId)) {
       throw new BadRequestException('User is owner');
+    }
+
+    // Ownership only changes hands through `AlbumActionsService.transfer`, which applies its rules.
+    if (dto.role === AlbumUserRole.Owner) {
+      throw new BadRequestException('Cannot add another owner');
     }
 
     const space = isSharedSpace(album);

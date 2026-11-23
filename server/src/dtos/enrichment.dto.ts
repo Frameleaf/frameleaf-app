@@ -317,6 +317,3 @@ export class VideoMomentSearchDto extends createZodDto(VideoMomentSearchSchema) 
 export class VideoMomentSimilarDto extends createZodDto(VideoMomentSimilarSchema) {}
 export class VideoMomentSearchResponseDto extends createZodDto(VideoMomentSearchResponseSchema) {}
 export class VideoMomentParamDto extends createZodDto(VideoMomentParamSchema) {}
-
-export type EnrichmentPlanItemView = z.infer<typeof EnrichmentPlanItemSchema>;
-export type VideoMomentFrameView = z.infer<typeof VideoMomentFrameSchema>;

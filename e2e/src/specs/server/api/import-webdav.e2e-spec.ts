@@ -67,13 +67,15 @@ describe.skipIf(!process.env.FRAMELEAF_E2E_WEBDAV)('import from WebDAV', () => {
       for (let start = 0; start < PER_FOLDER; start += 20) {
         await Promise.all(
           Array.from({ length: 20 }, (_, index) =>
-            dav('PUT', `${encodeURI(path)}/photo-${start + index}.png`, { body: makeRandomImage(16, 16) }),
+            dav('PUT', `${encodeURI(path)}/photo-${start + index}.png`, {
+              body: new Uint8Array(makeRandomImage(16, 16)),
+            }),
           ),
         );
       }
     }
     await dav('MKCOL', '.trash/');
-    await dav('PUT', '.trash/deleted.png', { body: makeRandomImage(16, 16) });
+    await dav('PUT', '.trash/deleted.png', { body: new Uint8Array(makeRandomImage(16, 16)) });
   }, 300_000);
 
   it('refuses a wrong password when connecting, and stores nothing', async () => {

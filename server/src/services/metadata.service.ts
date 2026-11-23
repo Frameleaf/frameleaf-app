@@ -907,7 +907,8 @@ export class MetadataService extends BaseService {
     }
 
     let sidecarPath = null;
-    for (const candidate of await this.getSidecarCandidates(asset)) {
+    const candidates = await this.getSidecarCandidates(asset);
+    for (const candidate of candidates) {
       const isExists = await this.storageRepository.checkFileExists(candidate, constants.R_OK);
       if (!isExists) {
         continue;
@@ -920,6 +921,19 @@ export class MetadataService extends BaseService {
     const { sidecarFile } = getAssetFiles(asset.files);
 
     const isChanged = sidecarPath !== sidecarFile?.path;
+
+    // A sidecar that cannot be read right now (a drive offline, EIO, EACCES) is not gone: forgetting it would
+    // lose the only record of a replaced sidecar's path. Only "no such file" lets it go.
+    if (isChanged && sidecarFile?.path && candidates.includes(sidecarFile.path)) {
+      const isGone = await this.storageRepository
+        .stat(sidecarFile.path)
+        .then(() => false)
+        .catch((error: NodeJS.ErrnoException) => error?.code === 'ENOENT' || error?.code === 'ENOTDIR');
+      if (!isGone) {
+        this.logger.warn(`Keeping sidecar ${sidecarFile.path} of asset ${asset.id}: it cannot be read right now`);
+        return JobStatus.Skipped;
+      }
+    }
 
     if (sidecarFile?.path || sidecarPath) {
       this.logger.debug(

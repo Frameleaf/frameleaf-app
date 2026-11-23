@@ -382,7 +382,7 @@ def create_app(
             done, _ = await asyncio.wait((inference, disconnected), return_when=asyncio.FIRST_COMPLETED)
             if disconnected in done:
                 await cancel_inference()
-                remove_work_dir(work_dir)
+                await asyncio.to_thread(remove_work_dir, work_dir)
                 return Response(status_code=499)
             result, output_path = inference.result()
         except asyncio.CancelledError:
@@ -390,18 +390,18 @@ def create_app(
             # Shield cleanup and keep admission until that work and its child have closed.
             await asyncio.shield(cancel_inference())
             if work_dir is not None:
-                remove_work_dir(work_dir)
+                await asyncio.shield(asyncio.to_thread(remove_work_dir, work_dir))
             raise
         except RestorationFailure as failure:
             await asyncio.to_thread(runtimes.close)
             if work_dir is not None:
-                remove_work_dir(work_dir)
+                await asyncio.to_thread(remove_work_dir, work_dir)
             log.warning("Restoration %s refused or failed: %s (%s)", parsed.requestId, failure.code, failure.message)
             return error_response(failure)
         except Exception:
             await cancel_inference()
             if work_dir is not None:
-                remove_work_dir(work_dir)
+                await asyncio.to_thread(remove_work_dir, work_dir)
             log.exception("Restoration %s failed unexpectedly", parsed.requestId)
             return error_response(
                 RestorationFailure(RestorationErrorCode.RUNTIME_FAILED, "the restoration failed unexpectedly")

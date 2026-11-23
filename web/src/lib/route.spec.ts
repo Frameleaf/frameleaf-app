@@ -140,19 +140,45 @@ describe('Route', () => {
       expect(Route.continue(String.raw`\/malicious.com`, '/fallback')).toBe('/fallback');
     });
 
-    it.each(['/auth/logout', '/auth/logout/', '/auth', '/auth/change-password?x=1', '/auth/login#top'])(
-      'should return fallback for the sign-in page %s',
-      (target) => {
-        expect(Route.continue(target, '/fallback')).toBe('/fallback');
-        expect(Route.continue(`https://photos.example.com${target}`, '/fallback')).toBe('/fallback');
-      },
-    );
+    it.each([
+      '/auth/logout',
+      '/auth/logout/',
+      '/auth',
+      '/auth/change-password?x=1',
+      '/auth/login#top',
+      '/%61uth/logout',
+      '/auth/%6Cogout',
+      '/auth/%E0%A4%A',
+    ])('should return fallback for the sign-in page %s', (target) => {
+      expect(Route.continue(target, '/fallback')).toBe('/fallback');
+      expect(Route.continue(`https://photos.example.com${target}`, '/fallback')).toBe('/fallback');
+    });
+
+    it('should return fallback for an address that cannot be parsed', () => {
+      expect(Route.continue('http://', '/fallback')).toBe('/fallback');
+    });
 
     it('should keep the extension allow page (FL-655)', () => {
       expect(Route.continue('/auth/allow-extension?client=chrome', '/fallback')).property(
         'href',
         'https://photos.example.com/auth/allow-extension?client=chrome',
       );
+    });
+
+    it('should keep the connected app allow page (FL-860)', () => {
+      expect(Route.continue('/auth/allow-app?client_id=app', '/fallback')).property(
+        'href',
+        'https://photos.example.com/auth/allow-app?client_id=app',
+      );
+    });
+
+    it('should keep an asset id from a link inside the asset route', () => {
+      expect(Route.viewAsset({ id: '../auth/logout' })).toBe('/photos/..%2Fauth%2Flogout');
+    });
+
+    it('should not land first-time setup on an encoded sign-in page', () => {
+      expect(Route.setupContinue('/%61uth/logout', 'https://photos.example.com/')).toBe('/photos');
+      expect(Route.setupContinue('/albums?x=1#y', 'https://photos.example.com/')).toBe('/albums?x=1#y');
     });
 
     it('should keep paths that only start with auth', () => {

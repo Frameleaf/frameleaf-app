@@ -1145,7 +1145,12 @@ describe(AssetRestorationService.name, () => {
         info: { width: 10, height: 10, channels: 3 },
       }) as never;
     /** A picture from the vectors the colourise runtime answered, so these use the worker's own verdict. */
+    const decodedVectors = new Map<string, never>();
     const vector = (name: string) => {
+      const cached = decodedVectors.get(name);
+      if (cached) {
+        return cached;
+      }
       const { vectors } = JSON.parse(
         readFileSync(
           new URL('../../../machine-learning/video-restoration/qualification/tint-vectors.json', import.meta.url),
@@ -1153,10 +1158,12 @@ describe(AssetRestorationService.name, () => {
         ),
       ) as { vectors: { name: string; width: number; height: number; rgb: string }[] };
       const found = vectors.find((candidate) => candidate.name === name)!;
-      return {
+      const decoded = {
         data: new Uint8Array(inflateSync(Buffer.from(found.rgb, 'base64'))),
         info: { width: found.width, height: found.height, channels: 3 },
       } as never;
+      decodedVectors.set(name, decoded);
+      return decoded;
     };
     const withThumbnail = { ...asset, files: [{ type: 'thumbnail', path: '/data/thumbs/t.webp', isEdited: false }] };
 
@@ -1272,7 +1279,7 @@ describe(AssetRestorationService.name, () => {
       });
 
       expect(recordedOperations[0]).toMatchObject({ snapshot: { operation: 'colourise' } });
-      expect(recordedOperations[0].snapshot).not.toHaveProperty('allowHandTinted');
+      expect((recordedOperations[0] as { snapshot: unknown }).snapshot).not.toHaveProperty('allowHandTinted');
     });
 
     it('names a colourise job Suggested colours', async () => {

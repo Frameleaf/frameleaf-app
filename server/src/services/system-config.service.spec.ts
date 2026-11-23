@@ -1387,6 +1387,7 @@ describe(SystemConfigService.name, () => {
       await sut.updateAdminConfig({
         ...redacted,
         notifications: {
+          ...redacted.notifications,
           smtp: {
             ...redacted.notifications.smtp,
             transport: { ...redacted.notifications.smtp.transport, host: 'mail.elsewhere.example' },

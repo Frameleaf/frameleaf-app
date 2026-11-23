@@ -800,19 +800,6 @@ export class PhysicalFileRepository {
     }
   }
   /**
-   * Active assets whose original is backed by this physical file, including the canonical
-   * asset itself. Used by the deduplication preview for its reference counts.
-   */
-  async countOriginalReferences(physicalFileId: string): Promise<number> {
-    const { count } = await this.db
-      .selectFrom('asset')
-      .select((eb) => eb.fn.countAll<number>().as('count'))
-      .where('asset.physicalOriginalFileId', '=', asUuid(physicalFileId))
-      .where('asset.deletedAt', 'is', null)
-      .executeTakeFirstOrThrow();
-    return Number(count);
-  }
-  /**
    * FL-412: whether another asset, live or in the trash, uses `assetId`'s original (the same stored file,
    * or the same path). Read before the asset is removed.
    */
@@ -1695,49 +1682,6 @@ export class PhysicalFileRepository {
           execute,
         )
       : this.withPathLock(path, execute);
-  }
-  getGeneratedFile(assetId: string, type: AssetFileType) {
-    return this.db
-      .selectFrom('asset_file')
-      .innerJoin('asset', 'asset.id', 'asset_file.assetId')
-      .select([
-        'asset_file.id',
-        'asset_file.assetId',
-        'asset_file.type',
-        'asset_file.path',
-        'asset_file.physicalFileId',
-        'asset_file.renditionIdentity',
-        'asset.type as assetType',
-      ])
-      .where('asset_file.assetId', '=', asUuid(assetId))
-      .where('asset_file.type', '=', type)
-      .where('asset_file.isEdited', '=', false)
-      .executeTakeFirst();
-  }
-  getGeneratedFiles(assetId: string) {
-    return this.db
-      .selectFrom('asset_file')
-      .innerJoin('asset', 'asset.id', 'asset_file.assetId')
-      .select([
-        'asset_file.id',
-        'asset_file.assetId',
-        'asset_file.type',
-        'asset_file.path',
-        'asset_file.physicalFileId',
-        'asset_file.renditionIdentity',
-        'asset.type as assetType',
-      ])
-      .where('asset_file.assetId', '=', asUuid(assetId))
-      .where('asset_file.type', 'in', [
-        AssetFileType.Thumbnail,
-        AssetFileType.Preview,
-        AssetFileType.FullSize,
-        AssetFileType.HdrPreview,
-        AssetFileType.HdrFullSize,
-        AssetFileType.EncodedVideo,
-      ])
-      .where('asset_file.isEdited', '=', false)
-      .execute();
   }
   private toPhysicalFileType(type: AssetFileType) {
     switch (type) {

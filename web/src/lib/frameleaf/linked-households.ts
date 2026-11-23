@@ -4,7 +4,9 @@
  * native apps), so an unknown one falls through to a calm default instead of an error.
  */
 import type { HouseholdInboundShareDto, HouseholdLinkDto } from '@frameleaf/sdk';
-import type { KitTone } from '$lib/components/frameleaf/settings/kit/Pill.svelte';
+
+/** The kit Pill's tones (`Pill.svelte` `KitTone`; plain tsc can't read a type out of a .svelte module). */
+type KitTone = 'good' | 'warn' | 'bad' | 'off';
 
 /** The link's own limit on the Cloud side, repeated in the page's help line. */
 export const HOUSEHOLD_LINK_LIMIT = 10;

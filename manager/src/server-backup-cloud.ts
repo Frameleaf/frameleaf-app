@@ -36,7 +36,7 @@ export interface Session {
   /** Adds the finished backup to the signed history Cloud keeps. */
   record(stored: Stored): Promise<void>;
   /** Lets the lease go, and tells Cloud how the run went when given a report. */
-  end(report?: { startedAt: number; state: 'done' | 'failed' | 'stopped'; bytes: number; files: number; snapshot: string | null; error: string | null }): Promise<void>;
+  end(report?: { startedAt: number; state: 'done' | 'failed' | 'stopped'; bytes: number; files: number; problems?: number; snapshot: string | null; error: string | null }): Promise<void>;
 }
 
 interface Saved {
@@ -197,7 +197,7 @@ export class CloudBackup {
     await this.cloud.unlink(identity).catch((error) => {
       // Already gone from Cloud (unlinked on the account site, taken over, or an earlier disconnect whose
       // answer was lost): it can no longer sign in, so there is nothing left to undo there.
-      const gone = error instanceof CloudError && (error.status === 401 || error.status === 404 || error.code === 'invalid_client');
+      const gone = error instanceof CloudError && (error.status === 404 || error.code === 'invalid_client');
       if (!gone) throw error;
     });
     await rm(this.file(), { force: true });
@@ -293,7 +293,8 @@ export class CloudBackup {
         // Only Cloud saying so ends the run. A dropped connection is tried again at the next beat; if it
         // lasts past the lease's life, Cloud says the lease is lost.
         this.cloud.heartbeat(identity, taken.leaseId).catch((error) => {
-          if (error instanceof CloudError && error.code === 'lease-lost' && lease === taken) onLost();
+          // `invalid_client`: another machine took this identity over, so this run no longer owns the backups.
+          if (error instanceof CloudError && (error.code === 'lease-lost' || error.code === 'invalid_client') && lease === taken) onLost();
         });
       }, taken.heartbeatAfterSec * 1000);
       beat.unref();
@@ -357,7 +358,7 @@ export class CloudBackup {
           await this.cloud
             .reportRun(identity, {
               runId: randomUUID(),
-              status: report.state === 'done' ? 'succeeded' : report.state === 'stopped' ? 'cancelled' : 'failed',
+              status: report.state === 'done' ? (report.problems ? 'partial' : 'succeeded') : report.state === 'stopped' ? 'cancelled' : 'failed',
               startedAt: new Date(report.startedAt).toISOString(),
               finishedAt: new Date().toISOString(),
               bytesUploaded: report.bytes,

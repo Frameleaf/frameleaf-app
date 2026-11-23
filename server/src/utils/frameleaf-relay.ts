@@ -25,7 +25,6 @@ export const TUNNEL_HEADER_CLIENT_IP = 'x-fl-client-ip';
 export const TUNNEL_HEADER_SNI = 'x-fl-sni';
 /** The whole handshake (TLS, AUTH, CHALLENGE, PROOF, READY) is bounded to 10 seconds. */
 export const TUNNEL_HANDSHAKE_TIMEOUT_MS = 10 * 1000;
-export const TUNNEL_KEEPALIVE_SEC = 30;
 /** Three unanswered PINGs close the tunnel, which then reconnects. */
 export const TUNNEL_PING_MISSES = 3;
 /** Reconnects wait a full-jitter backoff from 1 second up to 5 minutes. */

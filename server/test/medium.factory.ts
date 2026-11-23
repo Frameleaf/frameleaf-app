@@ -249,6 +249,8 @@ export class MediumTestContext<S extends ClassConstructor<typeof BaseService> = 
     if (this.options.mock.includes(WebsocketRepository)) {
       // an asset change is pushed to the owner's other sessions (FL-53)
       this.getMock(WebsocketRepository).clientSend.mockReturnValue();
+      // a changed or removed API key drops its open sockets
+      this.getMock(WebsocketRepository).clientDisconnect.mockReturnValue();
     }
     if (this.options.mock.includes(MachineLearningRepository)) {
       const machineLearning = this.getMock(MachineLearningRepository);

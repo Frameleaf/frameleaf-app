@@ -554,7 +554,7 @@ jobs:
             [registry."docker.io"]
               mirrors = ["mirror.gcr.io"]
       - name: Login to owned GHCR namespace for the build cache
-        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+        if: github.event_name != 'pull_request' || (github.server_url == 'https://github.com' && github.event.pull_request.head.repo.full_name == github.repository)
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ghcr.io
@@ -879,7 +879,7 @@ jobs:
       - name: Configure public Docker Hub mirror
         run: bash scripts/configure-dockerhub-mirror.sh
       - name: Login to owned GHCR namespace for the build cache
-        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+        if: github.event_name != 'pull_request' || (github.server_url == 'https://github.com' && github.event.pull_request.head.repo.full_name == github.repository)
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ghcr.io
@@ -969,7 +969,7 @@ jobs:
       # Read-only login so the Compose build can import Frameleaf's registry build cache (written by the
       # Deploy workflow on main); without it the server base compiles from source on every run.
       - name: Login to owned GHCR namespace for the build cache
-        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+        if: github.event_name != 'pull_request' || (github.server_url == 'https://github.com' && github.event.pull_request.head.repo.full_name == github.repository)
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ghcr.io
@@ -1305,7 +1305,7 @@ jobs:
       # Read-only login so the Compose build can import Frameleaf's registry build cache (written by the
       # Deploy workflow on main); without it the server base compiles from source on every run.
       - name: Login to owned GHCR namespace for the build cache
-        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+        if: github.event_name != 'pull_request' || (github.server_url == 'https://github.com' && github.event.pull_request.head.repo.full_name == github.repository)
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ghcr.io

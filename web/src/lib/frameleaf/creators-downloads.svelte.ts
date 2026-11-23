@@ -7,6 +7,7 @@ import {
   type MediaImportItemResponse,
   type MediaImportResponseDto,
 } from '@frameleaf/sdk';
+import type { Translations } from 'svelte-i18n';
 import { mediaImportActive, mediaImportRetryable, mediaReceiptKey } from '$lib/components/frameleaf/media/boards-media';
 import { relativeTime } from '$lib/frameleaf/creators';
 import { creatorsStore } from '$lib/frameleaf/creators-store.svelte';
@@ -63,7 +64,7 @@ export const downloadPercent = (job: MediaImportResponseDto) =>
 export const downloadStatus = (
   job: MediaImportResponseDto,
   locale: string | null | undefined,
-): { key: string; values?: Record<string, string | number> } => {
+): { key: Translations; values?: Record<string, string | number> } => {
   switch (job.state) {
     case MediaImportState.Assembling: {
       return { key: 'frameleaf_creators_tray_assembling' };

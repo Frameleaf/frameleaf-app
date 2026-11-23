@@ -78,7 +78,9 @@ describe('FeatureSettings: Tools & sidebar (ACCOUNT-P4)', () => {
         screen.getByText('A memory of your mother or father on the day, from the people you have added as family.'),
       ).toBeInTheDocument();
       expect(dates()).toHaveValue('us-ca');
-      expect(screen.getByText("Mother's Day: second Sunday of May. Father's Day: third Sunday of June.")).toBeInTheDocument();
+      expect(
+        screen.getByText("Mother's Day: second Sunday of May. Father's Day: third Sunday of June."),
+      ).toBeInTheDocument();
       expect(within(dates()).getAllByRole('option')).toHaveLength(8);
 
       await fireEvent.change(dates(), { target: { value: 'uk-ie' } });
@@ -112,7 +114,9 @@ describe('FeatureSettings: Tools & sidebar (ACCOUNT-P4)', () => {
       render(FeatureSettings);
       await fireEvent.click(screen.getByText('Memories options'));
 
-      expect(await screen.findByText("Needs a mother or father. Add one under Family on a person's page.")).toBeVisible();
+      expect(
+        await screen.findByText("Needs a mother or father. Add one under Family on a person's page."),
+      ).toBeVisible();
       const held = screen.getByRole('switch', { name: "Mother's Day and Father's Day" });
       expect(held).toBeDisabled();
       expect(held).not.toBeChecked();
