@@ -10,7 +10,7 @@ import {
   DesktopTranscodeUploadRequestSchema,
 } from 'src/dtos/desktop-transcode.dto.js';
 import { DesktopWorkerAckDto, DesktopWorkerHeartbeatDto } from 'src/dtos/desktop-worker-job.dto.js';
-import { CacheControl, FrameleafWorker } from 'src/enum.js';
+import { CacheControl, FrameleafWorker, MediaOperationStatus } from 'src/enum.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { DesktopTranscodeRepository, DesktopTranscodeUpload } from 'src/repositories/desktop-transcode.repository.js';
 import { MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
@@ -133,11 +133,20 @@ export class DesktopTranscodeService {
     payload: string,
   ): Promise<DesktopWorkerHeartbeatDto> {
     const grant = await this.auth.authenticate(authorization, proof, `transcode-heartbeat:${id}`, payload);
-    const { claimToken } = this.parse(DesktopTranscodeLeaseSchema, payload);
+    const { claimToken, progress } = this.parse(DesktopTranscodeLeaseSchema, payload);
     const operation = await this.repository.getClaimed(grant, id, claimToken);
     const accepted =
       !!operation &&
       (await this.operations.heartbeat(id, claimToken, DESKTOP_TRANSCODE_LEASE_MS, { requireActiveClaim: true }));
+    if (accepted && progress !== undefined) {
+      // Stages only move forward: a late report on a file already uploaded changes nothing.
+      await this.operations.reportProgress(id, claimToken, {
+        status: MediaOperationStatus.Rendering,
+        processedUnits: progress,
+        totalUnits: 100,
+        progress,
+      });
+    }
     return {
       accepted,
       expiresAt: accepted ? new Date(Date.now() + DESKTOP_TRANSCODE_LEASE_MS).toISOString() : null,

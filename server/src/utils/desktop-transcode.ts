@@ -37,18 +37,35 @@ export const desktopTranscodeRefusal = (source: DesktopTranscodeSource) => {
   if (source.logConversion) return 'log-conversion';
 };
 
-/** On the separate household video list, and still in the household. */
+const CLAIMANT_PREFIX = 'desktop:';
+/** How a desktop is named on what it holds. The epoch means a claim never survives its authorization changing. */
+export const desktopTranscodeClaimant = (deviceId: string, authorizationEpoch: number) =>
+  `${CLAIMANT_PREFIX}${deviceId}:${authorizationEpoch}`;
+export const desktopTranscodeClaimantDevice = (claimedBy: string | null | undefined) =>
+  claimedBy?.startsWith(CLAIMANT_PREFIX) ? claimedBy.slice(CLAIMANT_PREFIX.length).split(':', 1)[0] : undefined;
+
+/** FL-1761: an administrator turned playback copies on for this computer. Off until then. */
+export const desktopTranscodeEnabled = (policy: DesktopAssistancePolicyRegistry | null | undefined, deviceId: string) =>
+  !!policy?.transcodeEnabledDevices?.includes(deviceId);
+
+/** Turned on, on the separate household video list, and still in the household. */
 export const desktopTranscodesEveryone = (
   policy: DesktopAssistancePolicyRegistry | null | undefined,
   deviceId: string,
-) => !!policy && householdDevices(policy).has(deviceId) && !!policy.household?.transcodeDevices?.includes(deviceId);
+) =>
+  !!policy &&
+  desktopTranscodeEnabled(policy, deviceId) &&
+  householdDevices(policy).has(deviceId) &&
+  !!policy.household?.transcodeDevices?.includes(deviceId);
 
-/** A desktop converts its own account's videos; everyone's only on the separate household video list. */
+/** Only a computer turned on: its own account's videos, and everyone's only on the household video list. */
 export const desktopMayTranscode = (
   policy: DesktopAssistancePolicyRegistry | null | undefined,
   device: { id: string; ownerId: string },
   videoOwnerId: string,
-) => device.ownerId === videoOwnerId || desktopTranscodesEveryone(policy, device.id);
+) =>
+  desktopTranscodeEnabled(policy, device.id) &&
+  (device.ownerId === videoOwnerId || desktopTranscodesEveryone(policy, device.id));
 
 export const hasDesktopForTranscode = (
   presence: DesktopTranscodePresence | null | undefined,

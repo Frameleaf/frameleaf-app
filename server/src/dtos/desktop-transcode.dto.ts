@@ -3,7 +3,11 @@ import z from 'zod';
 
 const digest = z.string().regex(/^[a-f0-9]{64}$/);
 
-export const DesktopTranscodeLeaseSchema = z.strictObject({ claimToken: z.uuid() });
+export const DesktopTranscodeLeaseSchema = z.strictObject({
+  claimToken: z.uuid(),
+  // FL-1761: optional, so desktops that do not report it keep renewing their lease
+  progress: z.number().int().min(0).max(100).optional(),
+});
 export const DesktopTranscodeFailureSchema = z.strictObject({
   claimToken: z.uuid(),
   code: z

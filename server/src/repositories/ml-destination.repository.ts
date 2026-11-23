@@ -7,7 +7,16 @@ import type { DesktopEnrollmentDto } from 'src/dtos/desktop.dto.js';
 import type { MlEndpoint, MlSelection } from 'src/repositories/machine-learning.repository.js';
 import type { CloudProbeFacts } from 'src/utils/frameleaf-cloud.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
-import { MlDestinationHealth, MlDestinationKind, MlProcessingSource, MlWorkload, SystemMetadataKey } from 'src/enum.js';
+import {
+  AssetVisibility,
+  MediaOperationKind,
+  MediaOperationStatus,
+  MlDestinationHealth,
+  MlDestinationKind,
+  MlProcessingSource,
+  MlWorkload,
+  SystemMetadataKey,
+} from 'src/enum.js';
 import { currentAuth } from 'src/repositories/icloud-audit.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { DB } from 'src/schema/index.js';
@@ -18,11 +27,17 @@ import {
   MlWorkloadAccountingTable,
   MlWorkloadRouteTable,
 } from 'src/schema/tables/ml-destination.table.js';
+import { hiddenFromOthers } from 'src/utils/database.js';
 import {
   desktopAccountPermitted,
   desktopAssistancePolicySchema,
   householdDevices,
 } from 'src/utils/desktop-assistance-policy.js';
+import {
+  desktopTranscodeClaimantDevice,
+  desktopTranscodeEnabled,
+  desktopTranscodesEveryone,
+} from 'src/utils/desktop-transcode.js';
 import { DESKTOP_PRESENCE_SECONDS } from 'src/utils/desktop-worker-timing.js';
 import { ML_BUDGET_WINDOW_DAYS } from 'src/utils/ml-destination.js';
 import {
@@ -58,6 +73,11 @@ export type DesktopHelperRow = {
   ownerName: string;
   /** FL-1484: it works on everyone's photos at home */
   household: boolean;
+  /** FL-1761: it makes playback copies, and whether of other people's videos too */
+  transcodeEnabled?: boolean;
+  transcodeEveryone?: boolean;
+  /** FL-1761: the copy it is making now. No file name for a Locked video or one hidden from this viewer. */
+  transcoding?: { fileName: string | null; progress: number } | null;
   /**
    * Work taken away from it after it failed that work three times in a row, and until when it is held back
    * from qualifying again (null once the hold is over and it only has to qualify again).
@@ -514,13 +534,15 @@ export class MlDestinationRepository {
    * now (online within `DESKTOP_PRESENCE_SECONDS` with a current qualification) and when it last checked in. The
    * Computers page lists these and the processing order counts them, so both read the same helpers.
    */
-  async getDesktopHelpers(): Promise<DesktopHelperRow[]> {
+  async getDesktopHelpers(viewerId?: string): Promise<DesktopHelperRow[]> {
     const metadata = await new SystemMetadataRepository(this.db).get(SystemMetadataKey.FrameleafDesktopAssistance);
     const policy = desktopAssistancePolicySchema.safeParse(metadata ?? { version: 1, accounts: {} });
     if (!policy.success || Object.keys(policy.data.accounts).length === 0) {
       return [];
     }
-    const { rows } = await sql<Omit<DesktopHelperRow, 'household'> & { userId: string; isAdmin: boolean }>`
+    const { rows } = await sql<
+      Omit<DesktopHelperRow, 'household' | 'withdrawn'> & { userId: string; isAdmin: boolean }
+    >`
       SELECT d.id, d.name, d.platform, d."userId", u."isAdmin", u.name AS "ownerName", EXISTS (
         SELECT 1 FROM desktop_worker_session w
         JOIN session p ON p.id = w."photoSessionId" AND p."userId" = d."userId"
@@ -555,6 +577,7 @@ export class MlDestinationRepository {
       }
       return [...workloads].map(([workload, until]) => ({ workload, until }));
     };
+    const transcoding = await this.getDesktopConversions(policy.data.transcodeEnabledDevices ?? [], viewerId);
     return rows
       .filter((row) => desktopAccountPermitted(policy.data, row.userId, row.isAdmin))
       .map(({ id, name, platform, ready, lastSeenAt, ownerName }) => ({
@@ -565,8 +588,50 @@ export class MlDestinationRepository {
         lastSeenAt,
         ownerName,
         household: household.has(id),
+        transcodeEnabled: desktopTranscodeEnabled(policy.data, id),
+        transcodeEveryone: desktopTranscodesEveryone(policy.data, id),
+        transcoding: transcoding.get(id) ?? null,
         withdrawn: withdrawn(id),
       }));
+  }
+
+  /** FL-1761: the playback copy each computer that is turned on holds a live lease for. */
+  private async getDesktopConversions(deviceIds: string[], viewerId?: string) {
+    const conversions = new Map<string, { fileName: string | null; progress: number }>();
+    if (deviceIds.length === 0) return conversions;
+    const rows = await this.db
+      .selectFrom('media_operation as operation')
+      .innerJoin('asset', 'asset.id', 'operation.assetId')
+      .select(['operation.claimedBy', 'operation.progress', 'asset.originalFileName'])
+      .select(
+        sql<boolean>`("asset"."visibility" = ${AssetVisibility.Locked} or ${hiddenFromOthers(viewerId, 'asset')})`.as(
+          'withheld',
+        ),
+      )
+      .where('operation.kind', '=', MediaOperationKind.PlaybackTranscode)
+      .where('operation.status', 'in', [
+        MediaOperationStatus.Preparing,
+        MediaOperationStatus.Rendering,
+        MediaOperationStatus.Validating,
+      ])
+      // Only a claim under the computer's current authorization is live work.
+      .where(
+        sql<boolean>`exists (select 1 from desktop_device d where d.id = any(${deviceIds}::uuid[])
+          and operation."claimedBy" = 'desktop:' || d.id::text || ':' || d."authorizationEpoch"::text)`,
+      )
+      .where('operation.claimExpiresAt', '>', sql<Date>`clock_timestamp()`)
+      .where('operation.cancelRequestedAt', 'is', null)
+      .where('asset.deletedAt', 'is', null)
+      .execute();
+    for (const row of rows) {
+      const deviceId = desktopTranscodeClaimantDevice(row.claimedBy);
+      if (!deviceId) continue;
+      conversions.set(deviceId, {
+        fileName: row.withheld ? null : row.originalFileName,
+        progress: Math.min(100, Math.max(0, Math.round(Number(row.progress)))),
+      });
+    }
+    return conversions;
   }
 
   /**
