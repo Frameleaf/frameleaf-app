@@ -24,8 +24,11 @@
 import {
   CloudRouteMode,
   MlDestinationKind,
+  MlProcessingSource,
+  MlRouteOrigin,
   MlWorkload,
   type MlDestinationResponseDto,
+  type MlWorkloadProcessingOrderDto,
   type MlWorkloadRouteDto,
 } from '@frameleaf/sdk';
 import { isIndexWork, isRoutedWorkload, mlWorkloads, type RoutedWorkload } from '$lib/frameleaf/cloud-ml';
@@ -57,8 +60,13 @@ export const NONE = 'none';
 export const SAME = 'same';
 /** FL-456: the row follows the processing order. */
 export const FOLLOW = 'order';
+/** FL-1762: the row runs on the person's computers, which is how Frameleaf Desktop helpers take work. */
+export const DESKTOPS = 'desktops';
 /** A row's choice: the id of a computer at home, or one of the words above. */
 export type RouteChoice = string;
+
+/** The work a Frameleaf Desktop helper can take (the server's `DESKTOP_POOL_WORKLOADS`). */
+const DESKTOP_WORKLOADS: ReadonlySet<MlWorkload> = new Set([MlWorkload.Clip, MlWorkload.Face, MlWorkload.Ocr]);
 
 export type RouteFacts = {
   destinations: readonly MlDestinationResponseDto[];
@@ -67,6 +75,10 @@ export type RouteFacts = {
   cloudRouting: Partial<Record<RoutedWorkload, CloudRouteMode>> | undefined;
   /** This server is linked and cloud processing is turned on. */
   cloudOn: boolean;
+  /** FL-1762: workloads with an order of their own; undefined when the order could not be read. */
+  ownOrders?: readonly MlWorkloadProcessingOrderDto[];
+  /** FL-1762: how many approved Frameleaf Desktop helpers there are, ready or not. */
+  desktopHelpers?: number;
 };
 
 const isHome = (destination: MlDestinationResponseDto) => destination.kind !== MlDestinationKind.FrameleafCloud;
@@ -116,6 +128,30 @@ const followsOrder = (workload: MlWorkload, { routes }: Pick<RouteFacts, 'routes
 /** FL-456: the server keeps a processing order (it says whether each row follows it). */
 const keepsOrder = ({ routes }: Pick<RouteFacts, 'routes'>) => routes.some((route) => route.followsOrder !== undefined);
 
+/**
+ * FL-1762: the workload's own order is the person's computers alone. A route pinned to one computer added
+ * by address saves the same order, but that row names the computer.
+ */
+const onDesktops = (workload: MlWorkload, { ownOrders, routes }: Pick<RouteFacts, 'ownOrders' | 'routes'>) => {
+  const sources = ownOrders?.find((own) => own.workload === workload)?.sources;
+  return (
+    sources?.length === 1 &&
+    sources[0] === MlProcessingSource.Desktops &&
+    routes.find((route) => route.workload === workload)?.origin !== MlRouteOrigin.Pinned
+  );
+};
+
+/**
+ * Desktops take work through this server's own route, so they need this server allowed to do it. A row
+ * already set to them keeps the choice after its last helper is removed, so the page stays true.
+ */
+const canUseDesktops = (workload: MlWorkload, facts: RouteFacts) =>
+  facts.ownOrders !== undefined &&
+  DESKTOP_WORKLOADS.has(workload) &&
+  (onDesktops(workload, facts) ||
+    (!!facts.desktopHelpers &&
+      homePlaces(workload, facts).some((destination) => destination.kind === MlDestinationKind.Local)));
+
 /** What a row is set to now, from both records. */
 export const currentChoice = (kind: Exclude<WorkKind, 'render'>, facts: RouteFacts): RouteChoice => {
   if (canGoToCloud(kind, facts) && isRoutedWorkload(kind)) {
@@ -126,6 +162,9 @@ export const currentChoice = (kind: Exclude<WorkKind, 'render'>, facts: RouteFac
     if (mode === CloudRouteMode.Both) {
       return ASK;
     }
+  }
+  if (onDesktops(ROW_WORKLOAD[kind], facts)) {
+    return DESKTOPS;
   }
   if (followsOrder(ROW_WORKLOAD[kind], facts)) {
     return FOLLOW;
@@ -157,7 +196,13 @@ export const choicesFor = (kind: Exclude<WorkKind, 'render'>, facts: RouteFacts)
   const cloud = canGoToCloud(kind, facts);
   // Search and faces: one place only, so Frameleaf Cloud is a place of its own and never "ask".
   const index = isIndexWork(kind) && (!!cloudPlace(kind, facts) || indexOnCloud(kind, facts));
-  const places = [...home, ...(cloud ? [...(home.length > 0 ? [ASK] : []), CLOUD] : []), ...(index ? [CLOUD] : [])];
+  const desktops = canUseDesktops(ROW_WORKLOAD[kind], facts) ? [DESKTOPS] : [];
+  const places = [
+    ...home,
+    ...desktops,
+    ...(cloud ? [...(home.length > 0 ? [ASK] : []), CLOUD] : []),
+    ...(index ? [CLOUD] : []),
+  ];
   if (places.length === 0) {
     return [];
   }
@@ -183,6 +228,8 @@ export type RouteWrites = {
   cloud: Partial<Record<RoutedWorkload, CloudRouteMode>>;
   /** FL-456: workloads that follow the processing order again. */
   follow: MlWorkload[];
+  /** FL-1762: workloads that move to the person's computers. */
+  desktops: MlWorkload[];
 };
 
 /**
@@ -195,7 +242,7 @@ export const routeWrites = (
   followers: Partial<Record<Follower, RouteChoice>>,
   facts: RouteFacts,
 ): RouteWrites => {
-  const writes: RouteWrites = { routes: [], cloud: {}, follow: [] };
+  const writes: RouteWrites = { routes: [], cloud: {}, follow: [], desktops: [] };
   const setHome = (workload: MlWorkload, choice: RouteChoice) => {
     if (choice === FOLLOW) {
       if (!followsOrder(workload, facts)) {
@@ -203,9 +250,16 @@ export const routeWrites = (
       }
       return;
     }
-    // A row that follows the order may already run there; picking it pins it there.
+    if (choice === DESKTOPS) {
+      if (!onDesktops(workload, facts)) {
+        writes.desktops.push(workload);
+      }
+      return;
+    }
+    // A row that follows the order, or is on the desktops, may already name this place; picking it pins it there.
     if (
       followsOrder(workload, facts) ||
+      onDesktops(workload, facts) ||
       homeRoute(workload, facts) !== choice ||
       (choice === NONE && onCloud(workload, facts))
     ) {
@@ -281,4 +335,7 @@ export const routeWrites = (
 };
 
 export const hasWrites = (writes: RouteWrites) =>
-  writes.routes.length > 0 || Object.keys(writes.cloud).length > 0 || writes.follow.length > 0;
+  writes.routes.length > 0 ||
+  Object.keys(writes.cloud).length > 0 ||
+  writes.follow.length > 0 ||
+  writes.desktops.length > 0;
