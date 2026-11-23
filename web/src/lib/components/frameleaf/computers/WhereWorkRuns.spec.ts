@@ -315,6 +315,48 @@ describe('Where work runs (FL-364)', () => {
     expect(checked(await choices('Descriptions & tags'))).toBe('Office PC');
   });
 
+  it('offers a ready Frameleaf Desktop computer and saves work to it (FL-1762)', async () => {
+    const sources = [{ source: MlProcessingSource.Desktops, state: MlProcessingSourceState.Ready, ready: 1, total: 1 }];
+    const orderReply = (workloads: object[]) => ({
+      order: [MlProcessingSource.Local, MlProcessingSource.Desktops, MlProcessingSource.Cloud],
+      workloads,
+      sources,
+      whenUnavailable: MlWhenUnavailable.Wait,
+    });
+    sdkMock.getWorkerInventory.mockResolvedValue({
+      entries: [entry({})],
+      desktopHelpers: [{ id: 'mac', name: 'Taylor’s Mac', ready: true, withdrawn: [] }],
+      machineLearningEnabled: true,
+    } as never);
+    sdkMock.getMlProcessingOrder.mockResolvedValue(orderReply([]) as never);
+    sdkMock.setMlWorkloadProcessingOrder.mockImplementation(({ workload, mlWorkloadProcessingOrderUpdateDto }) =>
+      Promise.resolve(
+        orderReply(
+          mlWorkloadProcessingOrderUpdateDto.sources
+            ? [{ workload, sources: mlWorkloadProcessingOrderUpdateDto.sources }]
+            : [],
+        ) as never,
+      ),
+    );
+    render(WhereWorkRuns);
+
+    await waitFor(async () => expect(enabled(await choices('Visual search'))).toContain('Taylor’s Mac'));
+    await fireEvent.click(within(await choices('Visual search')).getByRole('radio', { name: 'Taylor’s Mac' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+
+    await waitFor(() =>
+      expect(sdkMock.setMlWorkloadProcessingOrder).toHaveBeenLastCalledWith({
+        workload: MlWorkload.Clip,
+        mlWorkloadProcessingOrderUpdateDto: { sources: [MlProcessingSource.Desktops] },
+      }),
+    );
+    expect(sdkMock.setMlWorkloadProcessingOrder).toHaveBeenCalledWith({
+      workload: MlWorkload.Clip,
+      mlWorkloadProcessingOrderUpdateDto: { sources: null },
+    });
+    await waitFor(async () => expect(checked(await choices('Visual search'))).toBe('Taylor’s Mac'));
+  });
+
   describe('the order to try (FL-456)', () => {
     const sources = [
       { source: MlProcessingSource.Local, state: MlProcessingSourceState.Ready, ready: 1, total: 1 },

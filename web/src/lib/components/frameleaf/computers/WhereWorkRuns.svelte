@@ -39,6 +39,7 @@
     choicesFor,
     CLOUD,
     currentChoice,
+    DESKTOPS,
     FOLLOW,
     followerChoice,
     followerChoices,
@@ -66,6 +67,8 @@
     getWorkerInventory,
     listMlDestinations,
     MlDestinationKind,
+    MlProcessingSource,
+    MlProcessingSourceState,
     setMlProcessingOrder,
     MlWhenUnavailable,
     setMlWorkloadProcessingOrder,
@@ -76,7 +79,6 @@
     type HardwareCheckResponseDto,
     type MlDestinationResponseDto,
     type MlProcessingOrderResponseDto,
-    type MlProcessingSource,
     type MlWorkloadRouteDto,
     type RenderWorkerCompatibilityResponseDto,
     type WorkerInventoryResponseDto,
@@ -158,6 +160,8 @@
     routes,
     cloudRouting: savedCloudMl?.routing,
     cloudOn,
+    ownOrders: processing?.workloads,
+    desktopHelpers: inventory?.desktopHelpers?.length ?? 0,
   });
 
   /**
@@ -256,7 +260,15 @@
           mlWorkloadProcessingOrderUpdateDto: { sources: null },
         });
       }
-      if (orderChanged || writes.follow.length > 0) {
+      for (const workload of writes.desktops) {
+        // Following the order first brings back this server's own route, which the desktops take work through.
+        await setMlWorkloadProcessingOrder({ workload, mlWorkloadProcessingOrderUpdateDto: { sources: null } });
+        processing = await setMlWorkloadProcessingOrder({
+          workload,
+          mlWorkloadProcessingOrderUpdateDto: { sources: [MlProcessingSource.Desktops] },
+        });
+      }
+      if (orderChanged || writes.follow.length > 0 || writes.desktops.length > 0) {
         // where each row runs now depends on the order: read it back
         ({ routes } = await getMlWorkloadRoutes());
       }
@@ -328,10 +340,25 @@
   };
   const place = (id: string) => destinations?.find((destination) => destination.id === id);
   const isServer = (id: string) => place(id)?.kind === MlDestinationKind.Local;
+  /** One Frameleaf Desktop helper goes by its name; several, or one beside an added computer, share one place. */
+  const desktopsName = () => {
+    const desktops = inventory?.desktopHelpers ?? [];
+    const added = destinations?.some((item) => item.kind === MlDestinationKind.Lan && item.enabled);
+    return desktops.length === 1 && !added ? desktops[0].name : $t('frameleaf_order_desktops');
+  };
   const placeName = (id: string) =>
-    isServer(id) ? $t('frameleaf_computers_this_server') : (place(id)?.name ?? $t('frameleaf_workruns_home_computer'));
+    id === DESKTOPS
+      ? desktopsName()
+      : isServer(id)
+        ? $t('frameleaf_computers_this_server')
+        : (place(id)?.name ?? $t('frameleaf_workruns_home_computer'));
   /** A helper that is switched on and did not answer when it was last asked. */
   const silent = (id: string) => {
+    if (id === DESKTOPS) {
+      return (
+        statusOf(processing?.sources ?? [], MlProcessingSource.Desktops).state === MlProcessingSourceState.NotAnswering
+      );
+    }
     const entry = inventory?.entries.find((item) => item.id === id);
     return !!entry && !isServer(id) && entryState(entry) === 'not-answering';
   };
