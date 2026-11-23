@@ -1,6 +1,7 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { createHash, randomBytes } from 'node:crypto';
 import { Readable } from 'node:stream';
+import { OnEvent } from 'src/decorators.js';
 import {
   DesktopTranscodeClaimDto,
   DesktopTranscodeFailureSchema,
@@ -9,10 +10,11 @@ import {
   DesktopTranscodeUploadRequestSchema,
 } from 'src/dtos/desktop-transcode.dto.js';
 import { DesktopWorkerAckDto, DesktopWorkerHeartbeatDto } from 'src/dtos/desktop-worker-job.dto.js';
-import { CacheControl } from 'src/enum.js';
+import { CacheControl, FrameleafWorker } from 'src/enum.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { DesktopTranscodeRepository, DesktopTranscodeUpload } from 'src/repositories/desktop-transcode.repository.js';
 import { MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
+import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { DesktopWorkerAuthService } from 'src/services/desktop-worker-auth.service.js';
 import {
@@ -27,6 +29,7 @@ import { mimeTypes } from 'src/utils/mime-types.js';
 import { receiveRenderArtifact } from 'src/utils/render-artifact.js';
 
 const PRESENCE_WRITE_MS = 30_000;
+const STAGING_SWEEP_MS = 60 * 60 * 1000;
 
 type TranscodeSnapshot = {
   assetId: string;
@@ -41,6 +44,7 @@ const leaseLost = () => new ForbiddenException('desktop_lease_invalid');
 @Injectable()
 export class DesktopTranscodeService {
   private presence = new Map<string, number>();
+  private timer?: ReturnType<typeof setInterval>;
 
   constructor(
     private auth: DesktopWorkerAuthService,
@@ -48,7 +52,31 @@ export class DesktopTranscodeService {
     private operations: MediaOperationRepository,
     private assets: AssetRepository,
     private metadata: SystemMetadataRepository,
+    private storage: StorageRepository,
   ) {}
+
+  @OnEvent({ name: 'AppBootstrap', workers: [FrameleafWorker.Microservices] })
+  onBootstrap() {
+    this.timer ??= setInterval(() => void this.sweepStaged().catch(() => {}), STAGING_SWEEP_MS);
+  }
+
+  @OnEvent({ name: 'AppShutdown' })
+  onShutdown() {
+    clearInterval(this.timer);
+    this.timer = undefined;
+  }
+
+  /** Removes uploaded files whose conversion ended without its job cleaning up. */
+  async sweepStaged() {
+    for (const { id, ownerId } of await this.repository.listFinishedStaged(100)) {
+      try {
+        await this.storage.unlinkDir(desktopTranscodeStagingFolder(ownerId, id), { recursive: true, force: true });
+        await this.repository.clearStaged(id);
+      } catch {
+        // Kept for the next sweep; one folder that cannot be removed does not hold up the others.
+      }
+    }
+  }
 
   async claim(authorization: string | undefined, proof: string | undefined): Promise<DesktopTranscodeClaimDto> {
     const grant = await this.auth.authenticate(authorization, proof, 'transcode-claim', '');

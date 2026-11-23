@@ -1,4 +1,8 @@
 import { BadRequestException, ForbiddenException } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { Readable } from 'node:stream';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { StorageCore } from 'src/cores/storage.core.js';
@@ -7,7 +11,7 @@ import { queueExecution } from 'src/queue/context.js';
 import { JobDependencyUnavailable } from 'src/queue/dependency.js';
 import { DesktopTranscodeService } from 'src/services/desktop-transcode.service.js';
 import { MediaService } from 'src/services/media.service.js';
-import { DESKTOP_TRANSCODE_PRESENCE_KEY } from 'src/utils/desktop-transcode.js';
+import { DESKTOP_TRANSCODE_PRESENCE_KEY, desktopTranscodeStagingFolder } from 'src/utils/desktop-transcode.js';
 
 const id = '11111111-1111-4111-8111-111111111111';
 const claimToken = '22222222-2222-4222-8222-222222222222';
@@ -31,11 +35,14 @@ describe(DesktopTranscodeService.name, () => {
     ownerOf: vi.fn(),
     setUploadGrant: vi.fn(),
     getByUploadToken: vi.fn(),
+    listFinishedStaged: vi.fn(),
+    clearStaged: vi.fn(),
     isLockedAsset: vi.fn(),
   };
   const operations = { heartbeat: vi.fn(), fail: vi.fn() };
   const assets = { getById: vi.fn() };
   const metadata = { setEntry: vi.fn() };
+  const storage = { unlinkDir: vi.fn() };
   let sut: DesktopTranscodeService;
 
   beforeEach(() => {
@@ -47,6 +54,7 @@ describe(DesktopTranscodeService.name, () => {
       operations as never,
       assets as never,
       metadata as never,
+      storage as never,
     );
   });
 
@@ -100,6 +108,17 @@ describe(DesktopTranscodeService.name, () => {
     expect(repository.stageResult).not.toHaveBeenCalled();
   });
 
+  it('keeps sweeping after one staged folder cannot be removed', async () => {
+    repository.listFinishedStaged.mockResolvedValue([
+      { id, ownerId },
+      { id: claimToken, ownerId },
+    ]);
+    vi.spyOn(StorageCore, 'getMediaLocation').mockReturnValue('/data');
+    storage.unlinkDir.mockRejectedValueOnce(new Error('EBUSY')).mockResolvedValueOnce(undefined);
+    await sut.sweepStaged();
+    expect(repository.clearStaged).toHaveBeenCalledExactlyOnceWith(claimToken);
+  });
+
   it('fails without a retry, so the waiting job encodes on the server', async () => {
     repository.getClaimed.mockResolvedValue({ ownerId, snapshot });
     operations.fail.mockResolvedValue('failed');
@@ -121,11 +140,16 @@ describe('waitForDesktopTranscode', () => {
     dolbyVision: false,
     logConversion: false,
   };
-  const command = () => ({
-    inputOptions: [],
-    outputOptions: [],
-    twoPass: false,
-    progress: { frameCount: 1, percentInterval: 5 },
+  const plan = () => ({
+    command: { inputOptions: [], outputOptions: [], twoPass: false, progress: { frameCount: 1, percentInterval: 5 } },
+    expected: {
+      durationSeconds: 10,
+      videoCodec: 'h264',
+      shortSide: 720,
+      aspect: 16 / 9,
+      hasAudio: true,
+      audioCodec: 'aac',
+    },
   });
   const mediaOperationRepository = {
     getLatestBySubject: vi.fn(),
@@ -140,7 +164,8 @@ describe('waitForDesktopTranscode', () => {
       (MediaService.prototype as any).waitForDesktopTranscode.call(
         { mediaOperationRepository, storageRepository, systemMetadataRepository },
         asset,
-        command,
+        '/encoded/video.mp4',
+        plan,
         input,
       ),
     );
@@ -157,7 +182,7 @@ describe('waitForDesktopTranscode', () => {
 
   it('encodes here when no desktop is present', async () => {
     withPresence(null);
-    await expect(run()).resolves.toBeUndefined();
+    await expect(run()).resolves.toBe(false);
     expect(mediaOperationRepository.createUnlessActive).not.toHaveBeenCalled();
   });
 
@@ -172,7 +197,7 @@ describe('waitForDesktopTranscode', () => {
 
   it('never offers a Locked video', async () => {
     withPresence(present);
-    await expect(run({ ...source, locked: true })).resolves.toBeUndefined();
+    await expect(run({ ...source, locked: true })).resolves.toBe(false);
     expect(mediaOperationRepository.createUnlessActive).not.toHaveBeenCalled();
   });
 
@@ -186,7 +211,7 @@ describe('waitForDesktopTranscode', () => {
     withPresence(null);
     mediaOperationRepository.getLatestBySubject.mockResolvedValue([{ id, status: MediaOperationStatus.Queued }]);
     mediaOperationRepository.failUnclaimedDesktopTranscode.mockResolvedValue(true);
-    await expect(run()).resolves.toBeUndefined();
+    await expect(run()).resolves.toBe(false);
   });
 
   it('encodes here right after a failed attempt and removes its staged file', async () => {
@@ -195,8 +220,81 @@ describe('waitForDesktopTranscode', () => {
     mediaOperationRepository.getLatestBySubject.mockResolvedValue([
       { id, status: MediaOperationStatus.Failed, finishedAt: new Date() },
     ]);
-    await expect(run()).resolves.toBeUndefined();
+    await expect(run()).resolves.toBe(false);
     expect(storageRepository.unlinkDir).toHaveBeenCalled();
     expect(mediaOperationRepository.createUnlessActive).not.toHaveBeenCalled();
+  });
+
+  describe('a desktop upload', () => {
+    const outputPath = '/data/exports/owner/desktop-transcodes/op/file.artifact';
+    const validating = {
+      id,
+      status: MediaOperationStatus.Validating,
+      claimToken,
+      result: { outputPath, checksum: 'ab'.repeat(32), sizeInBytes: 10 },
+      snapshot: {
+        checksum: 'abcd',
+        expected: {
+          durationSeconds: 10,
+          videoCodec: 'h264',
+          shortSide: 720,
+          aspect: 16 / 9,
+          hasAudio: false,
+          audioCodec: null,
+        },
+      },
+    };
+    const self = () => ({
+      mediaOperationRepository: { ...mediaOperationRepository, fail: vi.fn(), complete: vi.fn() },
+      storageRepository: { ...storageRepository, copyFile: vi.fn() },
+      mediaRepository: { probe: vi.fn() },
+      storageCore: { ensureFolders: vi.fn() },
+      logger: { warn: vi.fn() },
+    });
+    const adopt = (service: ReturnType<typeof self>, operation: unknown, target = asset) =>
+      queueExecution.run({ claim: { data: {} }, signal: new AbortController().signal, adoptions: [] } as never, () =>
+        (MediaService.prototype as any).adoptDesktopTranscode.call(service, target, operation, '/encoded/video.mp4'),
+      );
+
+    beforeEach(() => {
+      vi.spyOn(StorageCore, 'getMediaLocation').mockReturnValue('/data');
+    });
+
+    it('refuses a file made from an original that changed since', async () => {
+      const service = self();
+      await expect(adopt(service, validating, { ...asset, checksum: Buffer.from('ffff', 'hex') })).resolves.toBe(false);
+      expect(service.mediaOperationRepository.fail).toHaveBeenCalledWith(
+        id,
+        claimToken,
+        expect.objectContaining({ errorCode: 'desktop_transcode_source-changed' }),
+        { retry: false, requireActiveClaim: true },
+      );
+      expect(service.storageRepository.copyFile).not.toHaveBeenCalled();
+      expect(service.storageRepository.unlinkDir).toHaveBeenCalled();
+    });
+
+    it('refuses a staged file whose checksum does not match without publishing it', async () => {
+      const root = await mkdtemp(join(tmpdir(), 'desktop-transcode-'));
+      vi.mocked(StorageCore.getMediaLocation).mockReturnValue(root);
+      const folder = desktopTranscodeStagingFolder(ownerId, id);
+      await mkdir(folder, { recursive: true });
+      const stagedPath = join(folder, `${randomUUID()}.artifact`);
+      await writeFile(stagedPath, 'not the uploaded bytes');
+      const service = self();
+      const operation = {
+        ...validating,
+        result: { outputPath: stagedPath, checksum: 'ab'.repeat(32), sizeInBytes: 22 },
+      };
+      await expect(adopt(service, operation)).resolves.toBe(false);
+      await rm(root, { recursive: true, force: true });
+      expect(service.mediaRepository.probe).not.toHaveBeenCalled();
+      expect(service.mediaOperationRepository.fail).toHaveBeenCalledWith(
+        id,
+        claimToken,
+        expect.objectContaining({ errorCode: 'desktop_transcode_unreadable' }),
+        expect.anything(),
+      );
+      expect(service.storageRepository.copyFile).not.toHaveBeenCalled();
+    });
   });
 });
