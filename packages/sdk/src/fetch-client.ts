@@ -33546,9 +33546,8 @@ export function readDesktopTranscodeInput({ claimToken, id, xFrameleafDesktopPro
 /**
  * Not a signed request: those go one at a time, and a long upload would hold up its own heartbeats.
  */
-export function uploadDesktopTranscode({ id, xFrameleafDesktopProof, xFrameleafTranscodeUpload, body }: {
+export function uploadDesktopTranscode({ id, xFrameleafTranscodeUpload, body }: {
     id: string;
-    xFrameleafDesktopProof: string;
     xFrameleafTranscodeUpload: string;
     body: Blob;
 }, opts?: Oazapfts.RequestOpts) {
@@ -33560,7 +33559,6 @@ export function uploadDesktopTranscode({ id, xFrameleafDesktopProof, xFrameleafT
         method: "PUT",
         body,
         headers: oazapfts.mergeHeaders(opts?.headers, {
-            "x-frameleaf-desktop-proof": xFrameleafDesktopProof,
             "x-frameleaf-transcode-upload": xFrameleafTranscodeUpload
         })
     }));
