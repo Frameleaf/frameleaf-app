@@ -2701,6 +2701,20 @@ test("FL-1764: Test skips app suites only when none of them can see the change",
     false,
   );
   assert.equal(alreadyCovered([run(1)], 2, sha), false);
+  const dispatch = (event_payload) =>
+    run(1, { event: "", trigger_event: "workflow_dispatch", event_payload });
+  for (const [payload, covered] of [
+    ['{"inputs":{"development_validation":"false"}}', true],
+    ['{"inputs":{"development_validation":false}}', true],
+    ['{"inputs":{"development_validation":"true"}}', false],
+    ['{"inputs":{"development_validation":true}}', false],
+    ["not json", false],
+  ])
+    assert.equal(
+      alreadyCovered([dispatch(payload), run(2)], 2, sha),
+      covered,
+      payload,
+    );
 
   const all = { checks: true, app: true };
   const decide = async (

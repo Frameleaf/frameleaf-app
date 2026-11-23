@@ -13,6 +13,20 @@ const NO_APP_SUITE =
 export const needsAppSuites = (files) =>
   files.length === 0 || files.some((file) => !NO_APP_SUITE.test(file));
 
+// A development-validation dispatch skips every suite, so it says nothing about this commit.
+const ranSuites = (run) => {
+  if (run.trigger_event !== "workflow_dispatch") {
+    return true;
+  }
+  try {
+    const selected = JSON.parse(run.event_payload).inputs
+      ?.development_validation;
+    return selected !== true && selected !== "true";
+  } catch {
+    return false;
+  }
+};
+
 // Only earlier runs count: a later hourly run queued behind this one must not make it stand down.
 export const alreadyCovered = (runs, runId, sha) => {
   const self = runs.find((run) => String(run.id) === String(runId));
@@ -24,7 +38,8 @@ export const alreadyCovered = (runs, runId, sha) => {
         run.commit_sha === sha &&
         run.workflow_id === "test.yml" &&
         run.status !== "cancelled" &&
-        !String(run.event).startsWith("pull_request"),
+        !String(run.event).startsWith("pull_request") &&
+        ranSuites(run),
     )
   );
 };
