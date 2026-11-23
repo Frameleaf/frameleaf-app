@@ -8,6 +8,10 @@ including Namespace (`nscloud-*`) and self-hosted runners.
 The private FL103 Linux intake runs only in `Frameleaf/frameleaf-qualification`
 on `ubuntu-24.04`, because it needs systemd.
 
+The one exception to the label list is the `qualify` job of
+`restoration-qualification.yml` (FL-933). It runs on the Forgejo `windows-gpu`
+runner, started by hand and guarded so it never runs on GitHub.
+
 Repository admission guards, immutable action pins, release ancestry checks,
 and container-cache publication restrictions remain in place. Only the fork
 `Frameleaf/frameleaf-app` is in scope.

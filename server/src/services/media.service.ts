@@ -6,6 +6,7 @@ import { availableParallelism, tmpdir } from 'node:os';
 import path from 'node:path';
 import type { ThumbnailOutput } from 'src/queue/sharp-operations.js';
 import type { AssetEditRepository, VideoEditVersion } from 'src/repositories/asset-edit.repository.js';
+import type { DesktopTranscodeResult } from 'src/repositories/desktop-transcode.repository.js';
 import type { BoundingBox } from 'src/repositories/machine-learning.repository.js';
 import type {
   AudioStreamInfo,
@@ -39,11 +40,15 @@ import {
   ChecksumAlgorithm,
   ColorMatrix,
   Colorspace,
+  DatabaseLock,
   DvProfile,
   FrameleafWorker,
   ImageFormat,
   JobName,
   JobStatus,
+  MediaOperationDestination,
+  MediaOperationKind,
+  MediaOperationStatus,
   MlWorkload,
   PhysicalFileType,
   QueueName,
@@ -76,6 +81,18 @@ import { lockFilePath } from 'src/repositories/physical-file.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { getAssetFile, getDimensions } from 'src/utils/asset.util.js';
 import { DesignPreviewUnavailableError } from 'src/utils/design-preview.js';
+import { desktopAssistancePolicySchema } from 'src/utils/desktop-assistance-policy.js';
+import {
+  DESKTOP_TRANSCODE_FALLBACK_MS,
+  DESKTOP_TRANSCODE_PRESENCE_KEY,
+  type DesktopTranscodeExpectation,
+  type DesktopTranscodePresence,
+  type DesktopTranscodeSource,
+  desktopTranscodeOutputProblem,
+  desktopTranscodeRefusal,
+  desktopTranscodeStagingFolder,
+  hasDesktopForTranscode,
+} from 'src/utils/desktop-transcode.js';
 import { straightenScale } from 'src/utils/develop-recipe.js';
 import { EditOperationRun, EditOperationTracker } from 'src/utils/edit-operation-tracker.js';
 import { checkFaceVisibility, checkOcrVisibility } from 'src/utils/editor.js';
@@ -113,6 +130,7 @@ import {
   requiresFloatIntermediate,
   selectEncoderPixelFormat,
 } from 'src/utils/media-encode.js';
+import { TERMINAL_MEDIA_OPERATION_STATUSES } from 'src/utils/media-operation.js';
 import {
   EditedMasterColorDecision,
   EditedMasterColorPolicy,
@@ -144,6 +162,7 @@ import { isOfficePreviewFile, withOfficePreview } from 'src/utils/office-preview
 import { withSoftwareFallback } from 'src/utils/playback-self-test.js';
 import { rational, toDisplaySeconds } from 'src/utils/rational-time.js';
 import { RawRenderError, type RawRenderFailure } from 'src/utils/raw-renderer.js';
+import { openRenderArtifact } from 'src/utils/render-artifact.js';
 import { getStudioHdrProxyCommand, planStudioHdrProxy } from 'src/utils/studio-hdr-proxy.js';
 import { getOutputDimensions } from 'src/utils/transform.js';
 import {
@@ -1854,6 +1873,41 @@ export class MediaService extends BaseService {
       return JobStatus.Skipped;
     }
 
+    // FL-1758: throws to wait, without a job slot, while a desktop has this video. True: its file is at `output`.
+    const madeOnDesktop = await this.waitForDesktopTranscode(
+      asset,
+      output,
+      () => {
+        const software = BaseConfig.create(
+          { ...ffmpeg, accel: TranscodeHardwareAcceleration.Disabled, accelDecode: false },
+          this.videoInterfaces,
+        ) as BaseConfig;
+        const videoChanges = target === TranscodeTarget.All || target === TranscodeTarget.Video;
+        const audioChanges = target === TranscodeTarget.All || target === TranscodeTarget.Audio;
+        const short = Math.min(stream.width, stream.height);
+        return {
+          command: software.getCommand(target, stream, audioStream),
+          expected: {
+            durationSeconds: format.duration,
+            videoCodec: videoChanges ? ffmpeg.targetVideoCodec : stream.codecName,
+            shortSide: videoChanges && software.shouldScale(stream) ? software.getTargetResolution(stream) : short,
+            aspect: Math.max(stream.width, stream.height) / short,
+            hasAudio: !!audioStream,
+            audioCodec: audioChanges
+              ? ffmpeg.targetAudioCodec.replace(/^libopus$/, 'opus')
+              : (audioStream?.codecName ?? null),
+          },
+        };
+      },
+      {
+        locked: lockedOriginal,
+        spherical: !!asset.projectionType,
+        cinemaRaw,
+        dolbyVision: videoStream.dvProfile !== null && videoStream.dvProfile !== undefined,
+        logConversion: !!stream.logConversion,
+      },
+    );
+
     this.storageCore.ensureFolders(output);
 
     const getCommand = (config: ConfigFFmpegDto) =>
@@ -1870,65 +1924,69 @@ export class MediaService extends BaseService {
 
     const accel = ffmpeg.accel;
     // FL-721 (spec §8.2): a sealed original is read from a plain copy for the whole encode
-    const encoded = await withPlainCopy(asset.originalPath, async (input) => {
-      if (checkLog && lockedOriginal && [TranscodeTarget.All, TranscodeTarget.Video].includes(target)) {
-        stream = await this.attachLogConversion(input, stream, asset.originalPath);
-        if (stream.logConversion) {
-          ffmpeg = this.withSoftwareDecodeForLog(ffmpeg, asset.id);
-        }
-      }
-      // FL-968: planned from the original's own tracks; tracks that no longer fit encode as ordinary video
-      const command =
-        (stitched && (await this.getStitchedVideoCommand(input, asset, ffmpeg, target, stream, audioStream))) ||
-        getCommand(ffmpeg);
-      try {
-        await this.mediaRepository.transcode(input, output, command);
-        if (accel !== TranscodeHardwareAcceleration.Disabled) {
-          await this.noteVideoCard(true, accel);
-        }
-      } catch (error: any) {
-        // a cancelled encode is not a failed one, and no fallback encode should start after it
-        executionSignal()?.throwIfAborted();
-        this.logger.error(`Error occurred during transcoding: ${error.message}`);
-        if (ffmpeg.accel === TranscodeHardwareAcceleration.Disabled) {
-          if (cinemaRaw && !isUndecodableError(error)) {
-            // a full drive or a read error is not a missing decoder: fail, so the copy is tried again
-            throw error;
+    const encodeHere = () =>
+      withPlainCopy(asset.originalPath, async (input) => {
+        if (checkLog && lockedOriginal && [TranscodeTarget.All, TranscodeTarget.Video].includes(target)) {
+          stream = await this.attachLogConversion(input, stream, asset.originalPath);
+          if (stream.logConversion) {
+            ffmpeg = this.withSoftwareDecodeForLog(ffmpeg, asset.id);
           }
-          return false;
         }
+        // FL-968: planned from the original's own tracks; tracks that no longer fit encode as ordinary video
+        const command =
+          (stitched && (await this.getStitchedVideoCommand(input, asset, ffmpeg, target, stream, audioStream))) ||
+          getCommand(ffmpeg);
+        try {
+          await this.mediaRepository.transcode(input, output, command);
+          if (accel !== TranscodeHardwareAcceleration.Disabled) {
+            await this.noteVideoCard(true, accel);
+          }
+        } catch (error: any) {
+          // a cancelled encode is not a failed one, and no fallback encode should start after it
+          executionSignal()?.throwIfAborted();
+          this.logger.error(`Error occurred during transcoding: ${error.message}`);
+          if (ffmpeg.accel === TranscodeHardwareAcceleration.Disabled) {
+            if (cinemaRaw && !isUndecodableError(error)) {
+              // a full drive or a read error is not a missing decoder: fail, so the copy is tried again
+              throw error;
+            }
+            return false;
+          }
 
-        let isPartialFallbackSuccess = false;
-        if (ffmpeg.accelDecode) {
-          try {
-            this.logger.error(`Retrying with ${ffmpeg.accel.toUpperCase()}-accelerated encoding and software decoding`);
-            ffmpeg = { ...ffmpeg, accelDecode: false };
+          let isPartialFallbackSuccess = false;
+          if (ffmpeg.accelDecode) {
+            try {
+              this.logger.error(
+                `Retrying with ${ffmpeg.accel.toUpperCase()}-accelerated encoding and software decoding`,
+              );
+              ffmpeg = { ...ffmpeg, accelDecode: false };
+              await this.mediaRepository.transcode(input, output, getCommand(ffmpeg));
+              isPartialFallbackSuccess = true;
+            } catch (error: any) {
+              this.logger.error(`Error occurred during transcoding: ${error.message}`);
+            }
+          }
+
+          if (isPartialFallbackSuccess) {
+            await this.noteVideoCard(true, accel);
+          } else {
+            this.logger.error(`Retrying with ${ffmpeg.accel.toUpperCase()} acceleration disabled`);
+            ffmpeg = { ...ffmpeg, accel: TranscodeHardwareAcceleration.Disabled };
             await this.mediaRepository.transcode(input, output, getCommand(ffmpeg));
-            isPartialFallbackSuccess = true;
-          } catch (error: any) {
-            this.logger.error(`Error occurred during transcoding: ${error.message}`);
+            // FL-537: the copy was made on the processor because the card failed; Video playback copies says so
+            await this.noteVideoCard(false, accel);
           }
         }
-
-        if (isPartialFallbackSuccess) {
-          await this.noteVideoCard(true, accel);
-        } else {
-          this.logger.error(`Retrying with ${ffmpeg.accel.toUpperCase()} acceleration disabled`);
-          ffmpeg = { ...ffmpeg, accel: TranscodeHardwareAcceleration.Disabled };
-          await this.mediaRepository.transcode(input, output, getCommand(ffmpeg));
-          // FL-537: the copy was made on the processor because the card failed; Video playback copies says so
-          await this.noteVideoCard(false, accel);
+        return true;
+      }).catch(async (error) => {
+        await discardOutput();
+        executionSignal()?.throwIfAborted();
+        if (!cinemaRaw || isLockedKeyUnavailable(error) || !isUndecodableError(error)) {
+          throw error;
         }
-      }
-      return true;
-    }).catch(async (error) => {
-      await discardOutput();
-      executionSignal()?.throwIfAborted();
-      if (!cinemaRaw || isLockedKeyUnavailable(error) || !isUndecodableError(error)) {
-        throw error;
-      }
-      return false;
-    });
+        return false;
+      });
+    const encoded = madeOnDesktop || (await encodeHere());
     if (!encoded) {
       await discardOutput();
       if (cinemaRaw) {
@@ -1977,6 +2035,161 @@ export class MediaService extends BaseService {
     await this.queueLockedSeal([asset.id]);
 
     return JobStatus.Success;
+  }
+
+  /**
+   * FL-1758: offers a video to a desktop and keeps its job waiting while one has it. True means a validated
+   * desktop file is at `output`; false means the server encodes: no desktop can take it, or the last attempt
+   * ended. A software command, since the desktop's hardware is not this server's.
+   */
+  private async waitForDesktopTranscode(
+    asset: { id: string; ownerId: string; originalPath: string; checksum: Buffer },
+    output: string,
+    plan: () => { command: TranscodeCommand; expected: DesktopTranscodeExpectation },
+    source: DesktopTranscodeSource,
+  ): Promise<boolean> {
+    const context = queueExecution.getStore();
+    if (!context || context.claim.data.operationId) return false;
+
+    const kind = MediaOperationKind.PlaybackTranscode;
+    const [latest] = await this.mediaOperationRepository.getLatestBySubject(kind, 'assetId', [asset.id]);
+    if (latest?.status === MediaOperationStatus.Validating) return this.adoptDesktopTranscode(asset, latest, output);
+    const finished = !!latest && TERMINAL_MEDIA_OPERATION_STATUSES.includes(latest.status);
+    if (finished) {
+      await this.storageRepository.unlinkDir(desktopTranscodeStagingFolder(asset.ownerId, latest.id), {
+        recursive: true,
+        force: true,
+      });
+      // ponytail: a fixed window, so a video a desktop just failed is not offered straight back to it
+      const endedAt = latest.finishedAt ? new Date(latest.finishedAt as unknown as string).getTime() : 0;
+      if (Date.now() - endedAt < DESKTOP_TRANSCODE_FALLBACK_MS) return false;
+    }
+
+    const [presence, stored] = await Promise.all([
+      this.systemMetadataRepository.get(DESKTOP_TRANSCODE_PRESENCE_KEY),
+      this.systemMetadataRepository.get(SystemMetadataKey.FrameleafDesktopAssistance),
+    ]);
+    const policy = desktopAssistancePolicySchema.safeParse(stored ?? { version: 1, accounts: {} });
+    const available = hasDesktopForTranscode(
+      presence as DesktopTranscodePresence | null,
+      policy.success ? policy.data : null,
+      asset.ownerId,
+    );
+
+    if (latest && !finished) {
+      // A desktop that holds it still has its lease; one that went away is recovered by the lease sweep.
+      if (
+        latest.status === MediaOperationStatus.Queued &&
+        !available &&
+        (await this.mediaOperationRepository.failUnclaimedDesktopTranscode(latest.id))
+      ) {
+        return false;
+      }
+      deferJobUntilDependency('destination-capacity');
+      return false;
+    }
+
+    if (!available || desktopTranscodeRefusal(source)) return false;
+    const {
+      command: { inputOptions, outputOptions, twoPass, progress },
+      expected,
+    } = plan();
+    const { size } = await this.storageRepository.stat(asset.originalPath);
+    await this.mediaOperationRepository.createUnlessActive(
+      {
+        ownerId: asset.ownerId,
+        kind,
+        destination: MediaOperationDestination.Lan,
+        label: 'Playback copy',
+        assetId: asset.id,
+        snapshot: {
+          assetId: asset.id,
+          checksum: asset.checksum.toString('hex'),
+          sourceBytes: size,
+          command: { inputOptions, outputOptions, twoPass, frameCount: progress.frameCount },
+          expected,
+        },
+        settings: {},
+      },
+      { key: 'assetId', value: asset.id, lock: DatabaseLock.DesktopTranscode },
+    );
+    deferJobUntilDependency('destination-capacity');
+    return false;
+  }
+
+  /**
+   * FL-1759: a desktop's upload becomes the playback copy only if it is intact, was made from this exact original
+   * and matches the plan. Anything else is failed and removed, and the server encodes the video itself.
+   */
+  private async adoptDesktopTranscode(
+    asset: { id: string; ownerId: string; checksum: Buffer },
+    operation: { id: string; claimToken: string | null; result: unknown; snapshot: unknown },
+    output: string,
+  ): Promise<boolean> {
+    const folder = desktopTranscodeStagingFolder(asset.ownerId, operation.id);
+    const staged = operation.result as DesktopTranscodeResult | null;
+    const snapshot = operation.snapshot as { checksum: string; expected: DesktopTranscodeExpectation };
+    const removeStaged = () => this.storageRepository.unlinkDir(folder, { recursive: true, force: true });
+    const claimToken = operation.claimToken;
+    if (!claimToken) return false;
+
+    let problem: string | undefined;
+    if (!staged) {
+      problem = 'missing';
+    } else if (snapshot.checksum !== asset.checksum.toString('hex')) {
+      problem = 'source-changed';
+    } else {
+      try {
+        const verified = await openRenderArtifact(
+          folder,
+          {
+            outputPath: staged.outputPath,
+            outputChecksum: Buffer.from(staged.checksum, 'hex'),
+            sizeInBytes: staged.sizeInBytes,
+          },
+          () => Promise.resolve(),
+        );
+        verified.destroy();
+        problem = desktopTranscodeOutputProblem(await this.mediaRepository.probe(staged.outputPath), snapshot.expected);
+      } catch (error) {
+        executionSignal()?.throwIfAborted();
+        this.logger.warn(`Could not read the desktop conversion of ${asset.id}: ${error}`);
+        problem = 'unreadable';
+      }
+    }
+    if (problem || !staged) {
+      this.logger.warn(`Refused the desktop conversion of ${asset.id} (${problem}); encoding it here`);
+      await this.mediaOperationRepository.fail(
+        operation.id,
+        claimToken,
+        { error: `The converted video was refused (${problem})`, errorCode: `desktop_transcode_${problem}` },
+        { retry: false, requireActiveClaim: true },
+      );
+      await removeStaged();
+      return false;
+    }
+
+    this.storageCore.ensureFolders(output);
+    // A copy: the staging and playback folders can be on different drives.
+    await this.storageRepository.copyFile(staged.outputPath, output);
+    try {
+      deferJobAdoption(async (tx) => {
+        const completed = await this.mediaOperationRepository.complete(
+          operation.id,
+          claimToken,
+          { resultAssetId: null },
+          tx,
+          true,
+        );
+        if (!completed) throw new Error('Desktop conversion ended before it was published');
+      });
+    } catch (error) {
+      // The job was cancelled: nothing will publish this video-sized copy.
+      await this.storageRepository.unlink(output).catch(() => {});
+      throw error;
+    }
+    await afterJobCommit(removeStaged);
+    return true;
   }
 
   @OnJob({ name: JobName.AssetVideoEditGeneration, queue: QueueName.VideoConversion })

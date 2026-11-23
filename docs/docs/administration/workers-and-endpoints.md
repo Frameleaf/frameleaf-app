@@ -77,6 +77,15 @@ Smart search (image embeddings) and face detection and recognition can run on Fr
 - **Spending.** Each batch is estimated first and held against the AI Wallet. It waits for tomorrow when today's AI Wallet limit is reached, and stops at the destination's spending limit.
 - **Turning it off.** Turning Frameleaf Cloud processing off, or routing the work elsewhere, stops every batch that has not finished; its photos are processed where they are routed then.
 
+## Playback copies on a computer at home
+
+A computer running Frameleaf Desktop can make the versions of your videos that play smoothly on every device, so your server has less to do. It is off until an administrator turns on **Playback copies of videos** for that computer in **Settings → Computers & background work**. Turn it off and the computer stops at its next check-in, even partway through a video or an upload, and the server makes that copy instead.
+
+- **Whose videos.** A computer makes copies of the videos of the person signed in on it. If it also works on everyone's photos, **Include other people's videos** lets it take everyone's. That copies full original videos to the computer for a while, and anyone who can use the computer could reach them during that time. Each original is removed when the work ends.
+- **What can run on a computer.** Ordinary playback copies of videos.
+- **What always stays on the server.** Locked videos, 360° videos, Dolby Vision videos, Cinema RAW and Log videos, video edits, HDR proxies and seek-bar previews.
+- **Checked before it is used.** The server checks every finished file against what it asked for. If a file doesn't match, it is thrown away and the server makes the copy itself.
+
 ## API
 
-`GET /api/admin/workers` returns the inventory for administrators. It reads stored state only: loads are counts, runner identities are process names, and no owner, asset or credential is returned. Destinations, routes and checks use the `/api/ml-destinations` endpoints.
+`GET /api/admin/workers` returns the inventory for administrators. It reads stored state only: loads are counts, runner identities are process names, and no owner or credential is returned. The only media it names is the file a desktop is converting, and that name is left out for a Locked video or one its owner's rules hide from you. Destinations, routes and checks use the `/api/ml-destinations` endpoints.

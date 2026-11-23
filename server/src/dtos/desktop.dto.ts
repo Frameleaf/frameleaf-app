@@ -75,6 +75,17 @@ export class DesktopHouseholdDto extends createZodDto(
     .meta({ id: 'DesktopHouseholdDto' }),
 ) {}
 
+export class DesktopTranscodeSettingsDto extends createZodDto(
+  z
+    .strictObject({
+      enabled: z.boolean().describe('Makes playback copies of videos on this computer'),
+      everyone: z
+        .boolean()
+        .describe("Also takes other people's videos. Needs enabled, and a computer that works on everyone's photos"),
+    })
+    .meta({ id: 'DesktopTranscodeSettingsDto' }),
+) {}
+
 /** A fixed, language-independent proof binds enrollment to this server and authenticated account. */
 export const enrollmentMessage = (serverId: string, accountId: string, dto: DesktopEnrollmentDto): string =>
   [

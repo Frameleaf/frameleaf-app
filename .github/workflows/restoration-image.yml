@@ -1,0 +1,93 @@
+name: Restoration photo worker image
+
+# FL-933: builds the photo worker image on a Linux runner to prove the Dockerfile works and report
+# its content-hashed revision. Started by hand only. Nothing is pushed to any registry: the image
+# exists only on the runner for the checks below, and the last step removes it, its private builder
+# and that builder's cache. Needs no GPU or weights.
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: restoration-image
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build and check the photo image
+    if: github.server_url != 'https://github.com' && github.repository == 'Frameleaf/frameleaf-app'
+    runs-on: lan
+    timeout-minutes: 120
+    permissions:
+      contents: read
+    outputs:
+      revision: ${{ steps.check.outputs.revision }}
+    env:
+      IMAGE: frameleaf-restoration-photo-check:${{ github.run_id }}
+      BUILDER: fl933-photo-${{ github.run_id }}
+      BUILDKIT: mirror.gcr.io/moby/buildkit@sha256:b059f8d7226d0b326bc871af489a5dddf65e36af4d20d14251b072974d9ee87c
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: machine-learning
+
+      - name: Build the photo target, loaded only into this runner
+        run: |
+          df -h /var/lib/docker "$RUNNER_TEMP" || true
+          if docker image inspect "$BUILDKIT" >/dev/null 2>&1; then
+            echo "BUILDKIT_WAS_PRESENT=1" >> "$GITHUB_ENV"
+          fi
+          printf '[registry."docker.io"]\n  mirrors = ["mirror.gcr.io"]\n' > "$RUNNER_TEMP/buildkitd.toml"
+          docker buildx create --name "$BUILDER" --driver docker-container \
+            --driver-opt "image=$BUILDKIT" --buildkitd-config "$RUNNER_TEMP/buildkitd.toml"
+          pins=machine-learning/video-restoration/qualification/upstream.json
+          docker buildx build --builder "$BUILDER" --progress plain \
+            --file machine-learning/Dockerfile.video-restoration \
+            --target photo --platform linux/amd64 --load --tag "$IMAGE" \
+            --build-arg "FACEXLIB_REVISION=$(jq -r .checkouts.facexlib.revision "$pins")" \
+            --build-arg "DDCOLOR_REVISION=$(jq -r .checkouts.ddcolor.revision "$pins")" \
+            --build-arg PHOTO_PYTHON=3.12.11 \
+            machine-learning
+
+      - name: Check the image as the worker's own user
+        id: check
+        run: |
+          run() { docker run --rm --network none --user 10001:10001 --entrypoint "$1" "$IMAGE" "${@:2}"; }
+          revision=$(run python -m frameleaf_ml.video_restoration.image_revision verify \
+            /opt/restoration/image-revision.json --root /usr/src)
+          echo "IMAGE-REVISION $revision"
+          echo "revision=$revision" >> "$GITHUB_OUTPUT"
+
+          seen=$(run python -c "from frameleaf_ml.video_restoration.app import WorkerSettings; print(WorkerSettings.from_env().image_revision)" | tail -n 1)
+          test "$seen" = "$revision"
+          echo "the worker reads the same revision"
+
+          run /opt/restoration/photo/.venv/bin/python -I /usr/src/video-restoration/qualification/image_smoke.py
+
+          for checkout in facexlib ddcolor; do
+            run git -C "/opt/restoration/$checkout" rev-parse HEAD
+            test -z "$(run git -C "/opt/restoration/$checkout" status --porcelain --untracked-files=no)"
+          done
+          echo "both checkouts are clean for the worker's user"
+
+          # A changed runtime must lose the revision: the integrity check, proved on the real image.
+          if docker run --rm --network none --user 0:0 --entrypoint sh "$IMAGE" -c \
+            'echo "# changed" >> /usr/src/video-restoration/runtimes/photo_repair.py && python -m frameleaf_ml.video_restoration.image_revision verify /opt/restoration/image-revision.json --root /usr/src'; then
+            echo "a changed runtime kept its revision" >&2
+            exit 1
+          fi
+          echo "a changed runtime is refused"
+
+          docker image inspect "$IMAGE" --format 'IMAGE-SIZE-BYTES {{.Size}}'
+
+      - name: Remove the image, the builder and its cache
+        if: always()
+        run: |
+          docker image rm -f "$IMAGE" || true
+          docker buildx rm --force "$BUILDER" || true
+          if [ -z "${BUILDKIT_WAS_PRESENT:-}" ]; then docker image rm "$BUILDKIT" || true; fi
+          echo "CLEANUP images left: $(docker images -q "${IMAGE%%:*}" | wc -l)"
+          echo "CLEANUP builders left: $(docker buildx ls | grep -c "$BUILDER" || true)"
+          echo "CLEANUP builder volumes left: $(docker volume ls -q | grep -c "$BUILDER" || true)"

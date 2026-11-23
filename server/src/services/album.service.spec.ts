@@ -57,6 +57,31 @@ describe(AlbumService.name, () => {
     expect(sut).toBeDefined();
   });
 
+  describe('getRecentlyAdded', () => {
+    it('returns the albums in the order the repository ranks them', async () => {
+      mocks.album.getRecentlyAddedIds.mockResolvedValue(['album-2', 'album-1']);
+
+      await expect(sut.getRecentlyAdded(authStub.admin)).resolves.toEqual({ albumIds: ['album-2', 'album-1'] });
+      expect(mocks.album.getRecentlyAddedIds).toHaveBeenCalledWith(
+        authStub.admin.user.id,
+        expect.objectContaining({ libraryScope: LibraryScope.Personal }),
+      );
+    });
+
+    it('never tells a connected app about a Locked album', async () => {
+      mocks.album.getRecentlyAddedIds.mockResolvedValue([]);
+
+      await sut.getRecentlyAdded({ ...authStub.admin, oauthApp: { id: 'app' } } as AuthDto, {
+        libraryScope: LibraryScope.Design,
+      });
+
+      expect(mocks.album.getRecentlyAddedIds).toHaveBeenCalledWith(
+        authStub.admin.user.id,
+        expect.objectContaining({ excludeLocked: true, libraryScope: LibraryScope.Design }),
+      );
+    });
+  });
+
   describe('getStatistics', () => {
     it('should get the album count', async () => {
       mocks.album.getAll.mockResolvedValue([]);

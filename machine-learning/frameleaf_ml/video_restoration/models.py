@@ -62,7 +62,7 @@ import threading
 import time
 from abc import ABC, abstractmethod
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date, datetime, timezone
 from enum import StrEnum
 from pathlib import Path
@@ -122,8 +122,12 @@ PHOTO_WEIGHT_ROLES: dict[str, frozenset[str]] = {
     "lama-repair": frozenset({"detection", "lama"}),
     "ddcolor": frozenset({"ddcolor"}),
 }
+# Decimal on purpose: cards sold as 8 GB report slightly under 8 GiB (8188 MiB, for example).
+ANY_NVIDIA_MIN_VRAM_BYTES = 8_000_000_000
 # A runtime exits with this when it refuses its input for a reason the person should read.
 RUNTIME_REFUSED_INPUT_EXIT = 65
+# FL-955: tells the colourise runtime the owner chose to replace a hand-tinted print's colours.
+ALLOW_HAND_TINTED_ENV = "FRAMELEAF_ALLOW_HAND_TINTED"
 # What a photo runtime may leave beside its frame: counts and plain-language warnings.
 PHOTO_REPORT = "report.json"
 PHOTO_REPORT_MAX_BYTES = 16 * 1024
@@ -531,6 +535,8 @@ class QualificationRecord(ConfigModel):
     # Worker image revisions (``FRAMELEAF_RESTORATION_IMAGE_REVISION``) the evidence covers.
     containerRevisions: list[str] = Field(default_factory=list)
     hardware: list[QualifiedHardware] = Field(default_factory=list)
+    # Photo models only: accept any NVIDIA GPU of at least 8 GB on a driver branch in ``hardware``.
+    anyNvidiaGpu: bool = False
     measurements: list[MeasuredThroughput] = Field(default_factory=list)
     evidence: list[EvidenceRecord] = Field(default_factory=list)
     license: LicenseApproval = Field(default_factory=LicenseApproval)
@@ -749,6 +755,32 @@ def allowed_dynamic_ranges(spec: ModelSpec, record: QualificationRecord | None) 
     return ranges
 
 
+def any_nvidia_gpu_findings(
+    spec: ModelSpec, gpus: list[GpuDescription], tested_branches: set[str]
+) -> list[tuple[ModelState, str]]:
+    """A photo record's ``anyNvidiaGpu`` policy: any NVIDIA GPU with at least 8 GB on a tested driver
+    branch. The card itself may never have been tested; the owner accepted that on 2026-11-22."""
+    if not gpus:
+        return [(ModelState.NO_GPU, "no NVIDIA GPU is visible to the worker")]
+    present = ", ".join(f"{gpu.name} (driver {gpu.driverVersion})" for gpu in gpus)
+    nvidia = [gpu for gpu in gpus if gpu.name.upper().startswith("NVIDIA")]
+    if not nvidia:
+        return [(ModelState.GPU_UNQUALIFIED, f"{present} is not an NVIDIA GPU")]
+    tested = [gpu for gpu in nvidia if driver_branch(gpu.driverVersion) in tested_branches]
+    if not tested:
+        branches = ", ".join(sorted(tested_branches)) or "none"
+        return [
+            (
+                ModelState.GPU_UNQUALIFIED,
+                f"{present} is not on a driver branch tested for {spec.id} (tested: {branches})",
+            )
+        ]
+    needed = max(spec.limits.minVramBytes, ANY_NVIDIA_MIN_VRAM_BYTES)
+    if max(gpu.memoryTotalBytes for gpu in tested) < needed:
+        return [(ModelState.INSUFFICIENT_VRAM, f"{spec.id} needs {needed} bytes of GPU memory")]
+    return []
+
+
 def gpu_findings(
     spec: ModelSpec, gpus: list[GpuDescription], qualified: set[tuple[str, str]]
 ) -> list[tuple[ModelState, str]]:
@@ -801,7 +833,11 @@ def evaluate_model(
     hardware = record.hardware if record else []
     qualified = {(entry.gpu, driver_branch(entry.driverVersion)) for entry in hardware}
     if spec.requiresGpu:
-        findings += gpu_findings(spec, gpus, qualified)
+        # Only a photo model's record can widen the rule; every other workload keeps the exact match.
+        if record is not None and record.anyNvidiaGpu and spec.operation is not None:
+            findings += any_nvidia_gpu_findings(spec, gpus, {branch for _, branch in qualified})
+        else:
+            findings += gpu_findings(spec, gpus, qualified)
 
     verified = weights.verified and not is_pinned(spec)
     return ModelCapability(
@@ -971,6 +1007,8 @@ class RuntimeJob:
     # SeedVR2 consumes the validated video segment without a PNG/re-encode round trip.
     source_video: Path | None = None
     kind: Literal["image", "video"] = "video"
+    # Colourise only (FL-955): the owner's explicit override for a hand-tinted print.
+    allow_hand_tinted: bool = False
 
 
 @dataclass(frozen=True)
@@ -1195,7 +1233,10 @@ class PhotoAdapter(RestorationAdapter):
         output_dir = job.work_dir / "runtime-output"
         output_dir.mkdir()
         values = {**self.base_values(job), "input_dir": str(job.source_frames), "output_dir": str(output_dir)}
-        outcome = self.runner(self.invocation(values))
+        invocation = self.invocation(values)
+        if job.allow_hand_tinted and self.family == "ddcolor":
+            invocation = replace(invocation, env={**invocation.env, ALLOW_HAND_TINTED_ENV: "1"})
+        outcome = self.runner(invocation)
         return AdapterRun(
             frames_dir=output_dir,
             expected_size=job.source_size,

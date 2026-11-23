@@ -67,6 +67,7 @@ import { DesktopDeviceService } from 'src/services/desktop-device.service.js';
 import { DesktopMlService } from 'src/services/desktop-ml.service.js';
 import { DesktopOfflineAlbumService } from 'src/services/desktop-offline-album.service.js';
 import { DesktopQualificationService } from 'src/services/desktop-qualification.service.js';
+import { DesktopTranscodeService } from 'src/services/desktop-transcode.service.js';
 import { DesktopWorkerAuthService } from 'src/services/desktop-worker-auth.service.js';
 import { DesktopWorkerService } from 'src/services/desktop-worker.service.js';
 import { DevelopBatchService } from 'src/services/develop-batch.service.js';
@@ -290,6 +291,7 @@ export const services = [
   SourceResourceAuthService,
   DesktopMlService,
   DesktopQualificationService,
+  DesktopTranscodeService,
   DesktopWorkerAuthService,
   DesktopWorkerService,
   FrameleafLibraryMoveService,

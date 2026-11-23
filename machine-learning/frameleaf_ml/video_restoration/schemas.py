@@ -167,11 +167,16 @@ class RestorationRequest(WireModel):
     # Smooth motion only: the last uploaded frame is the first frame of the next chunk, sent so the
     # frames between the two chunks are made too. It is used as context and not returned.
     trailingContextFrame: bool = False
+    # Colourise only (FL-955): the owner chose "Suggest colours anyway" for a hand-tinted print. A
+    # colour photo is still refused.
+    allowHandTinted: bool = False
 
     @model_validator(mode="after")
     def _kind_fields(self) -> "RestorationRequest":
         if (self.mode is None) == (self.operation is None):
             raise ValueError("a request names either a mode or an operation")
+        if self.allowHandTinted and self.operation != PhotoOperation.COLOURISE:
+            raise ValueError("allowHandTinted is only for colourise")
         if self.operation is not None and (self.kind != "image" or self.scale != 1):
             raise ValueError("a photo operation needs a still and keeps its size; kind must be image and scale 1")
         if self.kind == "video" and self.source.durationMs is None:

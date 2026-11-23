@@ -21,6 +21,7 @@ import {
   AlbumIconCatalogueResponseDto,
   AlbumOrderDto,
   AlbumPersonResponseDto,
+  AlbumRecentlyAddedResponseDto,
   AlbumResponseDto,
   AlbumStatisticsResponseDto,
   AlbumTreeResponseDto,
@@ -252,6 +253,17 @@ export class AlbumService extends BaseService {
       shared: shared.length,
       notShared: notShared.length,
     };
+  }
+
+  /** The add-to-album picker's Recent group. Counts only items this session may see. */
+  async getRecentlyAdded(auth: AuthDto, dto: AlbumViewDto = {}): Promise<AlbumRecentlyAddedResponseDto> {
+    const albumIds = await this.albumRepository.getRecentlyAddedIds(auth.user.id, {
+      ...this.nsfwOptions(auth),
+      libraryScope: dto.libraryScope ?? LibraryScope.Personal,
+      // FL-780 (TM-5): a connected app is never told a Locked album exists
+      ...(auth.oauthApp ? { excludeLocked: true } : {}),
+    });
+    return { albumIds };
   }
 
   async getAll(

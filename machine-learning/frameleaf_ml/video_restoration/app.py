@@ -41,6 +41,7 @@ from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoin
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from ..env_aliases import read_env
+from .image_revision import verified_revision
 from .models import RIFE_CANDIDATE_ID, RestorationFailure, RestorationRegistry, adapter_for
 from .pipeline import AdapterFactory, frame_budget, restore
 from .runtime_pool import RuntimePool
@@ -103,12 +104,25 @@ class WorkerSettings:
             ),
             work_root=Path(env.get("FRAMELEAF_RESTORATION_WORKDIR", tempfile.gettempdir())),
             auth_token=read_env(env, "FRAMELEAF_ML_AUTH_TOKEN").strip() or None,
-            image_revision=env.get("FRAMELEAF_RESTORATION_IMAGE_REVISION", "").strip() or None,
+            image_revision=image_revision_from_env(env),
             host=env.get("FRAMELEAF_RESTORATION_HOST", "0.0.0.0"),
             port=_int_env(env, "FRAMELEAF_RESTORATION_PORT", 3004),
             refresh_s=_int_env(env, "FRAMELEAF_RESTORATION_REFRESH_S", DEFAULT_REFRESH_S),
             max_upload_bytes=_int_env(env, "FRAMELEAF_RESTORATION_MAX_UPLOAD_BYTES", 0),
         )
+
+
+def image_revision_from_env(env: Mapping[str, str]) -> str | None:
+    """The image's revision. A content-hashed image names its record file, and that file is the only
+    source: when the container no longer measures to it there is no revision and the gate refuses."""
+    record = env.get("FRAMELEAF_RESTORATION_IMAGE_REVISION_FILE", "").strip()
+    if record:
+        root = Path(env.get("FRAMELEAF_RESTORATION_IMAGE_ROOT", "/usr/src"))
+        revision = verified_revision(Path(record), root)
+        if revision is None:
+            log.error("The restoration image revision does not match this container; no model will be served")
+        return revision
+    return env.get("FRAMELEAF_RESTORATION_IMAGE_REVISION", "").strip() or None
 
 
 class BearerAuthMiddleware(BaseHTTPMiddleware):

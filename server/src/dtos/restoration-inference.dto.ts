@@ -130,9 +130,14 @@ export const RestorationWorkerRequestSchema = z
       .optional(),
     /** Smooth motion: the last uploaded frame is the next chunk's first, sent as context and not returned. */
     trailingContextFrame: z.boolean().optional(),
+    /** FL-955: colourise only. The owner's override for a hand-tinted print; a colour photo is still refused. */
+    allowHandTinted: z.boolean().optional(),
   })
   .refine((request) => (request.mode === undefined) !== (request.operation === undefined), {
     message: 'A request names either a mode or an operation',
+  })
+  .refine((request) => !request.allowHandTinted || request.operation === 'colourise', {
+    message: 'allowHandTinted is only for colourise',
   })
   .refine((request) => !request.operation || (request.kind === 'image' && request.scale === 1), {
     message: 'A photo operation needs a still and keeps its size',

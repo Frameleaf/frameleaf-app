@@ -51,6 +51,7 @@ import { DerivativePrivacyRepository } from 'src/repositories/derivative-privacy
 import { DesktopClipIndexRepository } from 'src/repositories/desktop-clip-index.repository.js';
 import { DesktopDeviceRepository } from 'src/repositories/desktop-device.repository.js';
 import { DesktopMlRepository } from 'src/repositories/desktop-ml.repository.js';
+import { DesktopTranscodeRepository } from 'src/repositories/desktop-transcode.repository.js';
 import { DesktopWorkerChallengeRepository } from 'src/repositories/desktop-worker-challenge.repository.js';
 import { DesktopWorkerRepository } from 'src/repositories/desktop-worker.repository.js';
 import { DevelopBatchRepository } from 'src/repositories/develop-batch.repository.js';
@@ -212,6 +213,7 @@ export const repositories = [
   PhotoSourceRepository,
   SourceResourceRepository,
   DesktopMlRepository,
+  DesktopTranscodeRepository,
   DesktopWorkerRepository,
   DesktopWorkerChallengeRepository,
   ICloudAuditRepository,
