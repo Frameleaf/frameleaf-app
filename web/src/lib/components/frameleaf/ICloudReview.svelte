@@ -630,7 +630,7 @@
     color: #fff;
     font-size: var(--fl-font-xs);
     font-weight: var(--fl-weight-medium);
-    text-align: left;
+    text-align: start;
   }
   .later .icr-photo {
     opacity: 0.45;
@@ -712,8 +712,8 @@
   .icr-summary strong {
     display: inline-block;
     min-width: 48px;
-    margin-right: 8px;
-    text-align: right;
+    margin-inline-end: 8px;
+    text-align: end;
   }
   .icr-dialog-note {
     margin: 0 0 20px;
@@ -786,7 +786,7 @@
     display: grid;
     grid-template-rows: minmax(0, 1fr) auto;
     min-height: 0;
-    border-left: 1px solid rgb(255 255 255 / 0.14);
+    border-inline-start: 1px solid rgb(255 255 255 / 0.14);
     background: rgb(24 24 27);
   }
   .icr-side {
@@ -827,7 +827,7 @@
   .icr-side dd {
     margin: 0;
     overflow-wrap: anywhere;
-    text-align: right;
+    text-align: end;
   }
   .icr-actions {
     display: grid;
@@ -837,7 +837,7 @@
     border-top: 1px solid rgb(255 255 255 / 0.14);
   }
   .icr-actions kbd {
-    margin-left: 6px;
+    margin-inline-start: 6px;
     padding: 0 6px;
     border: 1px solid currentColor;
     border-radius: 4px;
@@ -898,7 +898,7 @@
     }
     .icr-viewer aside {
       border-top: 1px solid rgb(255 255 255 / 0.14);
-      border-left: 0;
+      border-inline-start: 0;
     }
     .icr-side {
       padding: 16px;

@@ -294,7 +294,7 @@
     justify-content: center;
     width: 32px;
     height: 32px;
-    margin-right: 8px;
+    margin-inline-end: 8px;
     color: var(--fl-muted);
     background: none;
     border: 0;

@@ -1,7 +1,8 @@
+import { locale } from 'svelte-i18n';
+import { get } from 'svelte/store';
+
 export type PrintScan = { assetId: string; name: string };
 export type PrintPair = { front: PrintScan; back: PrintScan };
-
-const byScanOrder = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
 
 /**
  * FL-967: reads a batch of scans as front, back, front, back, in file-name order (scanners number their files).
@@ -12,6 +13,7 @@ export const alternatingPairs = (scans: PrintScan[]): PrintPair[] => {
   if (scans.length < 2 || scans.length % 2 !== 0) {
     return [];
   }
+  const byScanOrder = new Intl.Collator(get(locale) ?? undefined, { numeric: true, sensitivity: 'base' });
   const ordered = [...scans].sort((a, b) => byScanOrder.compare(a.name, b.name));
   const pairs: PrintPair[] = [];
   for (let index = 0; index < ordered.length; index += 2) {

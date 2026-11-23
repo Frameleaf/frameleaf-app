@@ -190,6 +190,8 @@
   // people ticked, the search and the role, and reload everything after each change made here.
   const albumId = $derived(album.id);
   const albumKind = $derived(album.kind);
+  // Also a value: a prop left at its default signals on every change to the props object.
+  const openingSection = $derived(section);
   $effect(() => {
     if (!open) {
       return;
@@ -197,7 +199,7 @@
     void albumId;
     void albumKind;
     void isOwner;
-    const opening = section;
+    const opening = openingSection;
 
     untrack(() => {
       invitees = [];

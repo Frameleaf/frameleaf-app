@@ -48,7 +48,7 @@ import {
   withSearchDefaults,
   withSpaceScope,
 } from '$lib/components/discovery/query';
-import type { DateAccuracy } from '$lib/frameleaf/approximate-date';
+import { toSdkDateAccuracy, type DateAccuracy } from '$lib/frameleaf/approximate-date';
 import type { BulkActionId } from '$lib/frameleaf/bulk-actions';
 import type { LibraryViewState } from '$lib/frameleaf/library-session';
 import { handledLockedKeyError } from '$lib/frameleaf/locked-key-prompt';
@@ -746,7 +746,7 @@ export const runBulkAction = async (
         const year = Number(requirePayload(payload, 'year'));
         try {
           const { batch, skipped: left } = await gateway.applyDateFix({
-            dateDoctorFixDto: { assetIds: ids, dateAccuracy: payload.dateAccuracy, year },
+            dateDoctorFixDto: { assetIds: ids, dateAccuracy: toSdkDateAccuracy(payload.dateAccuracy), year },
           });
           const unchanged = new Set(left);
           return finish(

@@ -70,8 +70,10 @@
   const sharedRecord = $derived(
     bookmark && authManager.authenticated && bookmark.ownerId !== authManager.user.id ? bookmark : undefined,
   );
+  // A value, so a parent re-render passing the same id does not restart the read and wipe the form.
+  const selectedId = $derived(id);
   $effect(() => {
-    const selected = id;
+    const selected = selectedId;
     const shared = sharedRecord;
     const version = generation;
     const controller = new AbortController();

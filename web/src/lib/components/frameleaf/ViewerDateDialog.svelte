@@ -21,6 +21,7 @@
     parseApproximateYear,
     periodStartIso,
     type DatePrecision,
+    toSdkDateAccuracy,
   } from '$lib/frameleaf/approximate-date';
   import { joinDateTime, splitDateTime, timezoneChoices } from '$lib/frameleaf/viewer-date';
   import {
@@ -133,7 +134,7 @@
         assetBulkUpdateDto: {
           ids: [asset.id],
           dateTimeOriginal: periodStartIso(start, accuracy),
-          dateAccuracy: accuracy,
+          dateAccuracy: toSdkDateAccuracy(accuracy),
         },
       });
       saved = true;

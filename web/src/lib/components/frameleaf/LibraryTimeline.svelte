@@ -34,7 +34,7 @@
   import { groupSelectionState } from '$lib/frameleaf/library-session';
   import { selectGroupAfterLoading, type GroupLoadOutcome } from '$lib/frameleaf/timeline-group-load';
   import { isMacPlatform } from '$lib/frameleaf/library-shortcuts';
-  import { animateFlip } from '$lib/frameleaf/motion';
+  import { animateFlip, motionScrollBehavior } from '$lib/frameleaf/motion';
   import { slidingPlate } from '$lib/components/timeline/sliding-plate';
   import { dissolveView } from '$lib/components/timeline/view-dissolve';
   import type { TimelineCardTarget } from '$lib/frameleaf/timeline-cards';
@@ -1415,7 +1415,7 @@
     // ponytail: a glide only from nearby. From years down it would load every month it passes, so
     // that jumps, as the scrubber does.
     if (!mediaQueryManager.reducedMotion && timelineManager.scrollTop <= timelineManager.viewportHeight * 4) {
-      scrollable.scrollTo({ top: 0, behavior: 'smooth' });
+      scrollable.scrollTo({ top: 0, behavior: motionScrollBehavior() });
     } else {
       timelineManager.scrollTo(0);
     }

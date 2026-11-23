@@ -259,7 +259,9 @@
         {#if size}
           <svg viewBox={`0 0 ${size.width} ${size.height}`} preserveAspectRatio="none" aria-hidden="true">
             {#each prints as print (print.id)}
+              <!-- Pointer-only shortcut: the numbered and corner buttons do the same from the keyboard. -->
               <polygon
+                role="presentation"
                 class:selected={print.id === selected}
                 points={print.quad.map(({ x, y }) => `${x},${y}`).join(' ')}
                 onpointerdown={(event) => startMove(event, print.id)}

@@ -62,14 +62,17 @@ describe('/import-connections', () => {
     return settle(connectionId, runId);
   };
   const itemsOf = async (connectionId: string, runId: string) => {
-    const { body } = await request(app)
-      .get(`/import-connections/${connectionId}/runs/${runId}/items`)
-      .set(as(owner));
+    const { body } = await request(app).get(`/import-connections/${connectionId}/runs/${runId}/items`).set(as(owner));
     return body.items as Array<{ path: string; state: string; assetId: string | null }>;
   };
-  const assetOf = async (id: string) => (await request(app).get(`/assets/${id}`).set(as(owner))).body;
-  const albumsOf = async () =>
-    (await request(app).get('/albums').set(as(owner))).body as Array<{ id: string; albumName: string; assetCount: number }>;
+  const assetOf = async (id: string) => {
+    const { body } = await request(app).get(`/assets/${id}`).set(as(owner));
+    return body;
+  };
+  const albumsOf = async () => {
+    const { body } = await request(app).get('/albums').set(as(owner));
+    return body as Array<{ id: string; albumName: string; assetCount: number }>;
+  };
 
   beforeAll(async () => {
     await utils.resetDatabase();
@@ -137,7 +140,8 @@ describe('/import-connections', () => {
     expect(pisa.isFavorite).toBe(false);
 
     const albums = await albumsOf();
-    expect(albums.map(({ albumName, assetCount }) => [albumName, assetCount]).toSorted()).toEqual([
+    const byName = albums.toSorted((a, b) => a.albumName.localeCompare(b.albumName));
+    expect(byName.map(({ albumName, assetCount }) => [albumName, assetCount])).toEqual([
       ['Camera', 1],
       ['Italy', 2],
     ]);
@@ -168,7 +172,8 @@ describe('/import-connections', () => {
 
     const still = await assetOf(removedAssetId);
     expect(still).toMatchObject({ id: removedAssetId, isTrashed: false });
-    const later = (await albumsOf()).find(({ albumName }) => albumName === 'Later')!;
+    const albums = await albumsOf();
+    const later = albums.find(({ albumName }) => albumName === 'Later')!;
     expect(later.assetCount).toBe(3);
     expect(await itemsOf(connection.id, first.id)).toEqual(before);
   });
@@ -225,7 +230,7 @@ describe('/import-connections', () => {
     expect(forbidden.status).toBe(403);
     const statistics = await request(app).get('/import-connections/statistics').set(as(admin));
     expect(statistics.status).toBe(200);
-    expect(Object.keys(statistics.body).toSorted()).toEqual(['providers', 'total']);
+    expect(Object.keys(statistics.body).toSorted((a, b) => a.localeCompare(b))).toEqual(['providers', 'total']);
     expect(statistics.body.providers).toEqual([
       { provider: 'fake', connections: statistics.body.total, dailyCheck: expect.any(Number) },
     ]);
@@ -240,7 +245,8 @@ describe('/import-connections', () => {
     const { status } = await request(app).delete(`/import-connections/${connection.id}`).set(as(owner));
     expect(status).toBe(204);
 
-    expect((await request(app).get(`/import-connections/${connection.id}`).set(as(owner))).status).toBe(404);
+    const { status: afterDelete } = await request(app).get(`/import-connections/${connection.id}`).set(as(owner));
+    expect(afterDelete).toBe(404);
     expect(await assetOf(assetId!)).toMatchObject({ id: assetId, isTrashed: false });
   });
 });

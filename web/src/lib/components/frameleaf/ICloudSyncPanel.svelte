@@ -451,7 +451,7 @@
     });
 
   const openReview = () => {
-    const url = new URL(page.url);
+    const url = new URL(page.url.href);
     url.searchParams.set('review', selectedId);
     return goto(url);
   };
