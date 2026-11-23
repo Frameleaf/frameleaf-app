@@ -925,10 +925,10 @@ export class MetadataService extends BaseService {
     // A sidecar that cannot be read right now (a drive offline, EIO, EACCES) is not gone: forgetting it would
     // lose the only record of a replaced sidecar's path. Only "no such file" lets it go.
     if (isChanged && sidecarFile?.path && candidates.includes(sidecarFile.path)) {
-      const isGone = await this.storageRepository.stat(sidecarFile.path).then(
-        () => false,
-        (error: NodeJS.ErrnoException) => error?.code === 'ENOENT' || error?.code === 'ENOTDIR',
-      );
+      const isGone = await this.storageRepository
+        .stat(sidecarFile.path)
+        .then(() => false)
+        .catch((error: NodeJS.ErrnoException) => error?.code === 'ENOENT' || error?.code === 'ENOTDIR');
       if (!isGone) {
         this.logger.warn(`Keeping sidecar ${sidecarFile.path} of asset ${asset.id}: it cannot be read right now`);
         return JobStatus.Skipped;

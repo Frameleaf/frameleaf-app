@@ -186,10 +186,10 @@ export class AssetMediaService extends BaseService {
     if (await this.storageRepository.checkFileExists(originalPath)) {
       return true;
     }
-    return this.storageRepository.stat(originalPath).then(
-      () => true,
-      (error: NodeJS.ErrnoException) => error?.code !== 'ENOENT' && error?.code !== 'ENOTDIR',
-    );
+    return this.storageRepository
+      .stat(originalPath)
+      .then(() => true)
+      .catch((error: NodeJS.ErrnoException) => error?.code !== 'ENOENT' && error?.code !== 'ENOTDIR');
   }
 
   /**

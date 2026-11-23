@@ -1326,6 +1326,7 @@ describe(LibraryService.name, () => {
       mocks.library.get.mockResolvedValue(library);
       mocks.storage.stat.mockResolvedValue({ isDirectory: () => true } as Stats);
       mocks.storage.walkLibrary.mockImplementation(async function* () {
+        await Promise.resolve();
         yield ['/mnt/photos/still-here.jpg'];
       });
     });
