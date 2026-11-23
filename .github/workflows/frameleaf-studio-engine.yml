@@ -296,7 +296,8 @@ jobs:
         env:
           NODE_OPTIONS: --no-experimental-webstorage
         run: |
-          npm --prefix studio/engine run test:run
+          # A shared CI slot can take over 5 s on the heaviest tracking and rendering tests.
+          npm --prefix studio/engine run test:run -- --testTimeout=30000
           npm --prefix studio/engine run headless:test:node
       - name: Build and attest the isolated engine
         run: |

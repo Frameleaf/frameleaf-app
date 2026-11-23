@@ -63,9 +63,11 @@ test('Manager relies on the independent PR integration gate without running it a
   const mediumSteps = tests.jobs['server-medium-image'].steps;
   const mediumShard = tests.jobs['server-medium-core-tests'];
   assert.equal(mediumShard.needs, 'server-medium-image');
-  assert.equal(
-    tests.jobs['server-medium-tests'].needs,
-    'server-medium-core-tests',
+  assert.ok(
+    [tests.jobs['server-medium-tests'].needs]
+      .flat()
+      .includes('server-medium-core-tests'),
+    'The medium result must wait for every medium shard',
   );
   const mediumImage = 'frameleaf-medium:${{ github.sha }}';
   assert.ok(
