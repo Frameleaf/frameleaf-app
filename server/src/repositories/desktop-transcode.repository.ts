@@ -104,6 +104,8 @@ export class DesktopTranscodeRepository {
           // a new attempt never shows the percentage of the one before it
           progress: 0,
           processedUnits: '0',
+          // an upload grant belongs to the claim that asked for it
+          settings: sql`'{}'::jsonb`,
         })
         .where('id', '=', next.id)
         .returningAll()

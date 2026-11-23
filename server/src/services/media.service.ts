@@ -2173,6 +2173,11 @@ export class MediaService extends BaseService {
     await this.storageRepository.copyFile(staged.outputPath, output);
     try {
       deferJobAdoption(async (tx) => {
+        if (await this.mediaOperationRepository.isAssetLockedForPublication(asset.id, tx)) {
+          // Locked since the check above. The retried job refuses this result and encodes under Locked rules.
+          await this.storageRepository.unlink(output).catch(() => {});
+          throw new Error('Video was locked before the desktop conversion was published');
+        }
         const completed = await this.mediaOperationRepository.complete(
           operation.id,
           claimToken,
