@@ -31,6 +31,7 @@ describe(DesktopTranscodeService.name, () => {
     ownerOf: vi.fn(),
     setUploadGrant: vi.fn(),
     getByUploadToken: vi.fn(),
+    isLockedAsset: vi.fn(),
   };
   const operations = { heartbeat: vi.fn(), fail: vi.fn() };
   const assets = { getById: vi.fn() };
@@ -59,6 +60,13 @@ describe(DesktopTranscodeService.name, () => {
       deviceId,
       expect.objectContaining({ ownerId }),
     );
+  });
+
+  it('refuses an original with a lock record before its Locked seal has run', async () => {
+    repository.getClaimed.mockResolvedValue({ ownerId, snapshot });
+    assets.getById.mockResolvedValue({ id, ownerId, checksum, originalPath: '/library/video.mov', deletedAt: null });
+    repository.isLockedAsset.mockResolvedValue(true);
+    await expect(sut.input('Bearer x', 'proof', id, claimToken)).rejects.toBeInstanceOf(ForbiddenException);
   });
 
   it('never serves an original without the live claim', async () => {
@@ -108,10 +116,9 @@ describe('waitForDesktopTranscode', () => {
   const asset = { id, ownerId, originalPath: '/library/video.mov', checksum };
   const source = {
     locked: false,
-    stitched: false,
+    spherical: false,
     cinemaRaw: false,
-    dolbyVisionProfile5: false,
-    dolbyVisionReshape: false,
+    dolbyVision: false,
     logConversion: false,
   };
   const command = () => ({

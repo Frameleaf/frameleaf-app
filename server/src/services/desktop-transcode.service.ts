@@ -90,7 +90,7 @@ export class DesktopTranscodeService {
       throw new NotFoundException('Input not available');
     }
     // Moved to Locked after the job was offered
-    if (await isLockedPath(asset.originalPath)) throw leaseLost();
+    if ((await this.repository.isLockedAsset(asset.id)) || (await isLockedPath(asset.originalPath))) throw leaseLost();
     return new FileDownloadResponse({
       path: asset.originalPath,
       contentType: mimeTypes.lookup(asset.originalPath),
@@ -157,7 +157,7 @@ export class DesktopTranscodeService {
         if (!(await this.repository.getByUploadToken(id, hash))) throw leaseLost();
       },
       (artifact) =>
-        this.repository.stageResult(id, claimToken, {
+        this.repository.stageResult(id, claimToken, hash, {
           outputPath: artifact.outputPath,
           checksum: artifact.outputChecksum.toString('hex'),
           sizeInBytes: artifact.sizeInBytes,

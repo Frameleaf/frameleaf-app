@@ -10,9 +10,11 @@ import {
 } from 'src/repositories/desktop-worker.repository.js';
 import { DB } from 'src/schema/index.js';
 import { desktopMayTranscode, desktopTranscodesEveryone } from 'src/utils/desktop-transcode.js';
+import { lockedAssetIdExists } from 'src/utils/locked.js';
 import { CLAIMED_MEDIA_OPERATION_STATUSES } from 'src/utils/media-operation.js';
 
-const claimant = (deviceId: string) => `desktop:${deviceId}`;
+/** Names the authorization epoch too: a claim never survives the computer's authorization changing. */
+const claimant = ({ deviceId, authorizationEpoch }: DesktopWorkerGrant) => `desktop:${deviceId}:${authorizationEpoch}`;
 const kind = MediaOperationKind.PlaybackTranscode;
 
 export type DesktopTranscodeResult = { outputPath: string; checksum: string; sizeInBytes: number };
@@ -23,6 +25,14 @@ export type DesktopTranscodeUpload = { tokenHash: string; checksum: string; size
 export class DesktopTranscodeRepository {
   constructor(@InjectKysely() private db: Kysely<DB>) {}
 
+  /** The lock record, which exists before the Locked seal job has encrypted the file. */
+  async isLockedAsset(assetId: string) {
+    const { rows } = await sql<{
+      locked: boolean;
+    }>`SELECT ${lockedAssetIdExists(sql`${assetId}::uuid`)} AS locked`.execute(this.db);
+    return !!rows[0]?.locked;
+  }
+
   ownerOf(grant: DesktopWorkerGrant) {
     return this.db.transaction().execute(async (tx) => (await lockDesktopWorker(tx, grant))?.ownerId);
   }
@@ -32,7 +42,7 @@ export class DesktopTranscodeRepository {
     return this.db.transaction().execute(async (tx) => {
       const worker = await lockDesktopWorker(tx, grant);
       if (!worker) return;
-      const claimedBy = claimant(grant.deviceId);
+      const claimedBy = claimant(grant);
       const held = await tx
         .selectFrom('media_operation')
         .selectAll()
@@ -91,7 +101,7 @@ export class DesktopTranscodeRepository {
         .where('id', '=', id)
         .where('kind', '=', kind)
         .where('claimToken', '=', claimToken)
-        .where('claimedBy', '=', claimant(grant.deviceId))
+        .where('claimedBy', '=', claimant(grant))
         .where('status', 'in', [...CLAIMED_MEDIA_OPERATION_STATUSES])
         .where('claimExpiresAt', '>', sql<Date>`clock_timestamp()`)
         .where('cancelRequestedAt', 'is', null)
@@ -136,7 +146,12 @@ export class DesktopTranscodeRepository {
   }
 
   /** Records the uploaded file for validation. An identical repeat of a lost answer is `duplicate`. */
-  async stageResult(id: string, claimToken: string, staged: DesktopTranscodeResult): Promise<boolean | 'duplicate'> {
+  async stageResult(
+    id: string,
+    claimToken: string,
+    tokenHash: string,
+    staged: DesktopTranscodeResult,
+  ): Promise<boolean | 'duplicate'> {
     const row = await this.db
       .updateTable('media_operation')
       .set({
@@ -148,6 +163,7 @@ export class DesktopTranscodeRepository {
       .where('id', '=', id)
       .where('kind', '=', kind)
       .where('claimToken', '=', claimToken)
+      .where(sql<boolean>`"settings"->'upload'->>'tokenHash' = ${tokenHash}`)
       .where('status', 'in', [MediaOperationStatus.Preparing, MediaOperationStatus.Rendering])
       .where('claimExpiresAt', '>', sql<Date>`clock_timestamp()`)
       .where('cancelRequestedAt', 'is', null)

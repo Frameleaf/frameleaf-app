@@ -14,10 +14,9 @@ const deviceId = '33333333-3333-4333-8333-333333333333';
 const revisionId = '44444444-4444-4444-8444-444444444444';
 const plain = {
   locked: false,
-  stitched: false,
+  spherical: false,
   cinemaRaw: false,
-  dolbyVisionProfile5: false,
-  dolbyVisionReshape: false,
+  dolbyVision: false,
   logConversion: false,
 };
 const policy = (household: { devices: string[]; transcodeDevices?: string[] }) => ({
@@ -33,10 +32,9 @@ describe('desktopTranscodeRefusal', () => {
 
   it.each([
     ['locked', 'locked'],
-    ['stitched', 'stitched'],
+    ['spherical', 'spherical'],
     ['cinemaRaw', 'cinema-raw'],
-    ['dolbyVisionProfile5', 'dolby-vision'],
-    ['dolbyVisionReshape', 'dolby-vision'],
+    ['dolbyVision', 'dolby-vision'],
     ['logConversion', 'log-conversion'],
   ])('keeps %s on the server', (field, reason) => {
     expect(desktopTranscodeRefusal({ ...plain, [field]: true })).toBe(reason);

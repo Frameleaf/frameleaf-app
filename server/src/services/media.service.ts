@@ -1873,10 +1873,9 @@ export class MediaService extends BaseService {
         ).getCommand(target, stream, audioStream),
       {
         locked: lockedOriginal,
-        stitched,
+        spherical: !!asset.projectionType,
         cinemaRaw,
-        dolbyVisionProfile5: videoStream.dvProfile === DvProfile.Dvhe05,
-        dolbyVisionReshape: !!stream.dolbyVisionReshape,
+        dolbyVision: videoStream.dvProfile !== null && videoStream.dvProfile !== undefined,
         logConversion: !!stream.logConversion,
       },
     );

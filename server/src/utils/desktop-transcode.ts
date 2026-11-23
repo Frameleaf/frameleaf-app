@@ -17,19 +17,19 @@ export type DesktopTranscodePresence = { devices?: Record<string, { ownerId: str
 
 export type DesktopTranscodeSource = {
   locked: boolean;
-  stitched: boolean;
+  /** Any 360° projection, stitched or already equirectangular. */
+  spherical: boolean;
   cinemaRaw: boolean;
-  dolbyVisionProfile5: boolean;
-  dolbyVisionReshape: boolean;
+  dolbyVision: boolean;
   logConversion: boolean;
 };
 
 /** Why this video stays on the server; undefined when a desktop may convert it. */
 export const desktopTranscodeRefusal = (source: DesktopTranscodeSource) => {
   if (source.locked) return 'locked';
-  if (source.stitched) return 'stitched';
+  if (source.spherical) return 'spherical';
   if (source.cinemaRaw) return 'cinema-raw';
-  if (source.dolbyVisionProfile5 || source.dolbyVisionReshape) return 'dolby-vision';
+  if (source.dolbyVision) return 'dolby-vision';
   // The conversion's filter names a colour file on this server.
   if (source.logConversion) return 'log-conversion';
 };
