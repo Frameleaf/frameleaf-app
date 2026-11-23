@@ -1875,7 +1875,7 @@ export class MediaService extends BaseService {
         const software = BaseConfig.create(
           { ...ffmpeg, accel: TranscodeHardwareAcceleration.Disabled, accelDecode: false },
           this.videoInterfaces,
-        );
+        ) as BaseConfig;
         const videoChanges = target === TranscodeTarget.All || target === TranscodeTarget.Video;
         const audioChanges = target === TranscodeTarget.All || target === TranscodeTarget.Audio;
         const short = Math.min(stream.width, stream.height);
