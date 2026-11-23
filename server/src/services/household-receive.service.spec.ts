@@ -112,10 +112,10 @@ describe(HouseholdReceiveService.name, () => {
         if (parts[2] === 'comments') {
           if (dropCommentReply) {
             dropCommentReply = false;
-            await annaComment(init?.method, parts, request, response);
+            await annaComment(init?.method, parts, request as never, response);
             throw new TypeError('fetch failed');
           }
-          return Response.json(await annaComment(init?.method, parts, request, response));
+          return Response.json(await annaComment(init?.method, parts, request as never, response));
         }
         if (parts[2] === 'originals') {
           const access = await anna.peer.authorize(request, cloudLink);
@@ -129,12 +129,12 @@ describe(HouseholdReceiveService.name, () => {
           if (custom) return custom;
           if (range) {
             const start = Number(/bytes=(\d+)-/.exec(range)![1]);
-            return new Response(bytes.subarray(start), {
+            return new Response(new Uint8Array(bytes.subarray(start)), {
               status: 206,
               headers: { 'content-range': `bytes ${start}-${bytes.length - 1}/${bytes.length}` },
             });
           }
-          return new Response(bytes);
+          return new Response(new Uint8Array(bytes));
         }
       } catch (error) {
         if (error instanceof HttpException) {
@@ -741,7 +741,7 @@ describe(HouseholdReceiveService.name, () => {
         // by the time the body streams, the client has cleared its timer on the headers
         const timer = timeouts.mock.results.findLast((_, index) => timeouts.mock.calls[index][1] === 30_000);
         expect(cleared.mock.calls.some(([id]) => id === timer?.value)).toBe(false);
-        return new Response(bytes);
+        return new Response(new Uint8Array(bytes));
       };
       await pull();
       const timers = timeouts.mock.results.filter((_, index) => timeouts.mock.calls[index][1] === 30_000);
@@ -755,7 +755,7 @@ describe(HouseholdReceiveService.name, () => {
       await accept();
       serve = (_id, bytes) => cutAt400(bytes);
       await pull();
-      serve = (_id, bytes) => new Response(bytes); // 200, whole file
+      serve = (_id, bytes) => new Response(new Uint8Array(bytes)); // 200, whole file
       await pull();
       expect(readFileSync(copyOf(item.id).originalPath).equals(originals.get(item.id)!)).toBe(true);
     });
@@ -766,7 +766,7 @@ describe(HouseholdReceiveService.name, () => {
       serve = (_id, bytes) => cutAt400(bytes);
       await pull();
       serve = (_id, bytes) =>
-        new Response(bytes.subarray(100), {
+        new Response(new Uint8Array(bytes.subarray(100)), {
           status: 206,
           headers: { 'content-range': `bytes 100-999/1000` },
         });
@@ -1278,9 +1278,9 @@ describe(HouseholdReceiveService.name, () => {
 
   describe('status and scheduling', () => {
     it('a household that stalls does not hold up another household', async () => {
-      const slow = { ...(await linkRow()), id: randomUUID() };
-      const fast = { ...(await linkRow()), id: randomUUID() };
-      vi.spyOn(ben.links, 'getAll').mockResolvedValue([slow, fast]);
+      const slow = { ...((await linkRow()) as object), id: randomUUID() };
+      const fast = { ...((await linkRow()) as object), id: randomUUID() };
+      vi.spyOn(ben.links, 'getAll').mockResolvedValue([slow, fast] as never);
       let release!: () => void;
       const stalled = new Promise<void>((resolve) => (release = resolve));
       const reached: string[] = [];

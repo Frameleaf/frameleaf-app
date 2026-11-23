@@ -392,6 +392,12 @@ type Constructor<Type, Args extends Array<any>> = {
   new (...deps: Args): Type;
 };
 
+/** Every located asset response reads the viewer's named places; none unless a test sets some. */
+const withNoUserPlaces = <T extends { getUserPlaces: { mockResolvedValue: (places: never[]) => unknown } }>(map: T) => {
+  map.getUserPlaces.mockResolvedValue([]);
+  return map;
+};
+
 export const getMocks = () => {
   const loggerMock = { setContext: () => {} };
   const configMock = { getEnv: () => ({}) };
@@ -455,7 +461,7 @@ export const getMocks = () => {
     oauthApp: automock(OAuthAppRepository, { args: [database], strict: false }),
     lockedFile: automock(LockedFileRepository, { args: [database], strict: false }),
     machineLearning: automock(MachineLearningRepository, { args: [loggerMock], strict: false }),
-    map: automock(MapRepository, { args: [undefined, undefined, { setContext: () => {} }] }),
+    map: withNoUserPlaces(automock(MapRepository, { args: [undefined, undefined, { setContext: () => {} }] })),
     media: newMediaRepositoryMock(),
     mediaOperation: automock(MediaOperationRepository, { strict: false }),
     memory: automock(MemoryRepository),

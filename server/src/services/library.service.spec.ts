@@ -1332,6 +1332,7 @@ describe(LibraryService.name, () => {
 
     it('changes nothing when the folder is an empty mount point (an unmounted share)', async () => {
       mocks.storage.walkLibrary.mockImplementation(async function* () {});
+      mocks.storage.checkFileExists.mockImplementation((path) => Promise.resolve(path === '/mnt/photos'));
 
       await sut.handleAssetRemoval({ libraryId: library.id, paths: ['/mnt/photos/a.jpg', '/mnt/photos/b.jpg'] });
 

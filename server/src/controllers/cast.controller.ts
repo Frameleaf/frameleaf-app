@@ -78,22 +78,23 @@ export class CastController {
     @Res() res: Response,
     @Next() next: NextFunction,
   ) {
+    // Outside `sendFile`, which answers every failure with 404: these are the documented 401 and 403.
+    const { auth, assetId, kind } = await this.service.resolveMediaUrl(token);
+    // FL-161: a public route skips the guard's `@OriginalTransfer` check, so the relay rule is applied here
+    if (kind === CastMediaKind.Original && !(await this.media.fullSizeAllowed(requestVia(request)))) {
+      throw new ForbiddenException({
+        message: RELAY_ORIGINALS_REFUSED_MESSAGE,
+        error: 'Forbidden',
+        statusCode: 403,
+        code: RELAY_ORIGINALS_REFUSED,
+      });
+    }
     await sendFile(
       res,
       next,
       async () => {
-        const { auth, assetId, kind } = await this.service.resolveMediaUrl(token);
         switch (kind) {
           case CastMediaKind.Original: {
-            // FL-161: a public route skips the guard's `@OriginalTransfer` check, so the relay rule is applied here
-            if (!(await this.media.fullSizeAllowed(requestVia(request)))) {
-              throw new ForbiddenException({
-                message: RELAY_ORIGINALS_REFUSED_MESSAGE,
-                error: 'Forbidden',
-                statusCode: 403,
-                code: RELAY_ORIGINALS_REFUSED,
-              });
-            }
             return this.media.downloadOriginal(auth, assetId, { edited: true });
           }
           case CastMediaKind.Video: {

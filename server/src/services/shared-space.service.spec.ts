@@ -35,7 +35,7 @@ describe(SharedSpaceService.name, () => {
     mocks.albumUser.createCommentThread.mockResolvedValue();
     mocks.albumUser.getCommentParents.mockResolvedValue([]);
     mocks.albumUser.getCommentReplies.mockResolvedValue([]);
-    mocks.albumUser.deleteCommentWithReplies.mockResolvedValue();
+    mocks.albumUser.deleteCommentWithReplies.mockResolvedValue([]);
   });
 
   it('should work', () => {

@@ -13,6 +13,7 @@ describe(OcrService.name, () => {
 
     mocks.config.getWorker.mockReturnValue(FrameleafWorker.Microservices);
     mocks.assetJob.getForOcr.mockResolvedValue({
+      isPrintBack: false,
       visibility: AssetVisibility.Timeline,
       previewFile: '/uploads/user-id/thumbs/path.jpg',
     });
@@ -126,7 +127,11 @@ describe(OcrService.name, () => {
 
     it('should skip assets without a resize path', async () => {
       const asset = AssetFactory.create();
-      mocks.assetJob.getForOcr.mockResolvedValue({ visibility: AssetVisibility.Timeline, previewFile: null });
+      mocks.assetJob.getForOcr.mockResolvedValue({
+        isPrintBack: false,
+        visibility: AssetVisibility.Timeline,
+        previewFile: null,
+      });
 
       expect(await sut.handleOcr({ id: asset.id })).toEqual(JobStatus.Skipped);
 
@@ -135,7 +140,11 @@ describe(OcrService.name, () => {
     });
 
     it('skips a hidden motion part without waiting for a preview it never gets', async () => {
-      mocks.assetJob.getForOcr.mockResolvedValue({ visibility: AssetVisibility.Hidden, previewFile: null });
+      mocks.assetJob.getForOcr.mockResolvedValue({
+        isPrintBack: false,
+        visibility: AssetVisibility.Hidden,
+        previewFile: null,
+      });
 
       expect(await sut.handleOcr({ id: 'motion-part' })).toEqual(JobStatus.Skipped);
 
@@ -260,6 +269,7 @@ describe(OcrService.name, () => {
     it('should skip invisible assets', async () => {
       const asset = AssetFactory.from().file({ type: AssetFileType.Preview }).build();
       mocks.assetJob.getForOcr.mockResolvedValue({
+        isPrintBack: false,
         visibility: AssetVisibility.Hidden,
         previewFile: asset.files[0].path,
       });

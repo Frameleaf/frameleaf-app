@@ -136,7 +136,7 @@ export class DesktopTranscodeRepository {
   async setUploadGrant(id: string, claimToken: string, upload: DesktopTranscodeUpload) {
     const row = await this.db
       .updateTable('media_operation')
-      .set({ settings: sql`${JSON.stringify({ upload })}::jsonb` })
+      .set({ settings: sql`${JSON.stringify({ upload })}::text::jsonb` })
       .where('id', '=', id)
       .where('kind', '=', kind)
       .where('claimToken', '=', claimToken)
@@ -212,7 +212,7 @@ export class DesktopTranscodeRepository {
       .updateTable('media_operation')
       .set({
         status: MediaOperationStatus.Validating,
-        result: sql`${JSON.stringify(staged)}::jsonb`,
+        result: sql`${JSON.stringify(staged)}::text::jsonb`,
         outputBytes: staged.sizeInBytes,
         heartbeatAt: sql<Date>`now()`,
         claimExpiresAt: sql<Date>`now() + ${sql.lit(DESKTOP_TRANSCODE_VALIDATION_MS)} * interval '1 millisecond'`,

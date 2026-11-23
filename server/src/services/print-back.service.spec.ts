@@ -19,6 +19,8 @@ const line = (id: string, text: string) => ({
   boxScore: 0.9,
   textScore: 0.9,
   isVisible: true,
+  updateId: 'update',
+  updatedAt: new Date(0),
   ...box,
 });
 

@@ -1283,7 +1283,7 @@ function boolPredicates(filter: { eq: boolean } | undefined, predicate: Expressi
 }
 /** A capture date filter, whose lower bounds also reach a year or decade still running then (`takenFrom`). */
 function captureDatePredicates(eb: AssetExpressionBuilder, column: CaptureDateColumn, filter?: DateFilter) {
-  if (!filter) {
+  if (filter === undefined) {
     return [];
   }
   const { gt, gte, ...rest } = filter;

@@ -4,6 +4,7 @@ import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AlbumUserRepository } from 'src/repositories/album-user.repository.js';
 import { AlbumRepository } from 'src/repositories/album.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
+import { HouseholdCommentRepository } from 'src/repositories/household-comment.repository.js';
 import { HouseholdShareRepository } from 'src/repositories/household-share.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { PersonRepository } from 'src/repositories/person.repository.js';
@@ -59,6 +60,8 @@ describe('HouseholdShareService (medium)', () => {
       undefined as never,
       undefined as never,
       { setContext: vi.fn(), warn: vi.fn() } as never,
+      new HouseholdCommentRepository(database),
+      { emit: () => Promise.resolve() } as never,
     );
     const { user: owner } = await ctx.newUser();
     const { user: viewer } = await ctx.newUser();

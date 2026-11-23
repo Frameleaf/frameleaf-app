@@ -1,3 +1,4 @@
+import type { AssetResponseDto } from 'src/dtos/asset-response.dto.js';
 import { Kysely } from 'kysely';
 import { createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';
@@ -382,7 +383,7 @@ describe('place names in the viewer’s language (FL-987)', () => {
       const { sut, ctx } = assetService();
       const { owner, munich } = await seed(ctx);
 
-      const { exifInfo } = await sut.get(factory.auth({ user: owner }), munich.id);
+      const { exifInfo } = (await sut.get(factory.auth({ user: owner }), munich.id)) as AssetResponseDto;
 
       expect(exifInfo).toMatchObject({
         city: 'Munich',
@@ -397,7 +398,7 @@ describe('place names in the viewer’s language (FL-987)', () => {
       const { owner, munich } = await seed(ctx);
       await setLanguage(ctx, owner.id, 'en');
 
-      const { exifInfo } = await sut.get(factory.auth({ user: owner }), munich.id);
+      const { exifInfo } = (await sut.get(factory.auth({ user: owner }), munich.id)) as AssetResponseDto;
 
       expect(exifInfo).toMatchObject({
         city: 'Munich',
@@ -471,10 +472,10 @@ describe('place names in the viewer’s language (FL-987)', () => {
         assetIds: [munich.id],
       });
 
-      const { exifInfo } = await sut.get(
+      const { exifInfo } = (await sut.get(
         factory.auth({ user: owner, sharedLink: { id: sharedLink.id, showExif: true } }),
         munich.id,
-      );
+      )) as AssetResponseDto;
 
       expect(exifInfo).toMatchObject({ city: 'Munich', placeNamesLocalized: null });
     });

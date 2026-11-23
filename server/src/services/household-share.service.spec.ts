@@ -583,7 +583,7 @@ describe(HouseholdShareService.name, () => {
 
     it('refuses anyone but the space owner', async () => {
       useDirectory(remote());
-      const dto = { linkId: localLink(link.ben).id, remoteUserId: benUser, role: 'viewer' };
+      const dto = { linkId: localLink(link.ben).id, remoteUserId: benUser, role: 'viewer' as const };
       await expect(status(anna.shares.listLinks(auth(randomUUID()), spaceId))).resolves.toBe(400);
       await expect(status(anna.shares.invite(auth(randomUUID()), spaceId, dto))).resolves.toBe(400);
     });
@@ -591,7 +591,7 @@ describe(HouseholdShareService.name, () => {
     it('stores the name the directory gave, seeds the feed, and caches the directory', async () => {
       const read = useDirectory(remote());
       const item = anna.world.addItem(spaceId);
-      const dto = { linkId: localLink(link.ben).id, remoteUserId: benUser, role: 'contributor' };
+      const dto = { linkId: localLink(link.ben).id, remoteUserId: benUser, role: 'contributor' as const };
       const member = await anna.shares.invite(auth(), spaceId, dto);
       expect(member).toMatchObject({ displayName: 'Ben Remote', role: 'contributor', state: 'invited' });
       expect(anna.world.changes.map(({ entityId }) => entityId)).toEqual([item.id]);
@@ -614,14 +614,14 @@ describe(HouseholdShareService.name, () => {
 
     it('refuses an account the directory does not list, or a directory with an extra field', async () => {
       useDirectory(remote(randomUUID()));
-      const dto = { linkId: localLink(link.ben).id, remoteUserId: benUser, role: 'viewer' };
+      const dto = { linkId: localLink(link.ben).id, remoteUserId: benUser, role: 'viewer' as const };
       await expect(status(anna.shares.invite(auth(), spaceId, dto))).resolves.toBe(400);
       expect(anna.world.shares).toHaveLength(0);
     });
 
     it('keeps to 200 shares a link and 50 members a share', async () => {
       useDirectory(remote());
-      const dto = { linkId: localLink(link.ben).id, remoteUserId: benUser, role: 'viewer' };
+      const dto = { linkId: localLink(link.ben).id, remoteUserId: benUser, role: 'viewer' as const };
       anna.world.shares = Array.from({ length: 200 }, () => ({
         id: randomUUID(),
         albumId: randomUUID(),

@@ -94,8 +94,8 @@ const resizeArea = (rgb: Float32Array, width: number, height: number, outWidth: 
       const { index, weight } = across[x];
       for (let channel = 0; channel < 3; channel++) {
         let sum = 0;
-        for (const [position, at] of index.entries()) {
-          sum += rgb[(y * width + at) * 3 + channel] * weight[position];
+        for (let position = 0; position < index.length; position++) {
+          sum += rgb[(y * width + index[position]) * 3 + channel] * weight[position];
         }
         wide[(y * outWidth + x) * 3 + channel] = sum;
       }
@@ -106,8 +106,8 @@ const resizeArea = (rgb: Float32Array, width: number, height: number, outWidth: 
     const { index, weight } = down[y];
     for (let cell = 0; cell < outWidth * 3; cell++) {
       let sum = 0;
-      for (const [position, at] of index.entries()) {
-        sum += wide[at * outWidth * 3 + cell] * weight[position];
+      for (let position = 0; position < index.length; position++) {
+        sum += wide[index[position] * outWidth * 3 + cell] * weight[position];
       }
       out[y * outWidth * 3 + cell] = Math.round(sum);
     }
@@ -126,13 +126,20 @@ const reflect = (at: number, size: number) => {
 };
 
 const blur = (rgb: Float32Array, width: number, height: number) => {
+  const taps = BLUR_RADIUS * 2 + 1;
+  const across = Int32Array.from({ length: width * taps }, (_, at) =>
+    reflect(Math.trunc(at / taps) + (at % taps) - BLUR_RADIUS, width),
+  );
+  const down = Int32Array.from({ length: height * taps }, (_, at) =>
+    reflect(Math.trunc(at / taps) + (at % taps) - BLUR_RADIUS, height),
+  );
   const wide = new Float32Array(rgb.length);
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
       for (let channel = 0; channel < 3; channel++) {
         let sum = 0;
-        for (let tap = -BLUR_RADIUS; tap <= BLUR_RADIUS; tap++) {
-          sum += rgb[(y * width + reflect(x + tap, width)) * 3 + channel] * BLUR_KERNEL[tap + BLUR_RADIUS];
+        for (let tap = 0; tap < taps; tap++) {
+          sum += rgb[(y * width + across[x * taps + tap]) * 3 + channel] * BLUR_KERNEL[tap];
         }
         wide[(y * width + x) * 3 + channel] = sum;
       }
@@ -142,8 +149,8 @@ const blur = (rgb: Float32Array, width: number, height: number) => {
   for (let y = 0; y < height; y++) {
     for (let cell = 0; cell < width * 3; cell++) {
       let sum = 0;
-      for (let tap = -BLUR_RADIUS; tap <= BLUR_RADIUS; tap++) {
-        sum += wide[reflect(y + tap, height) * width * 3 + cell] * BLUR_KERNEL[tap + BLUR_RADIUS];
+      for (let tap = 0; tap < taps; tap++) {
+        sum += wide[down[y * taps + tap] * width * 3 + cell] * BLUR_KERNEL[tap];
       }
       out[y * width * 3 + cell] = Math.max(0, Math.min(255, Math.round(sum)));
     }
@@ -172,7 +179,10 @@ export const offToneShare = ({ data, width, height, channels }: RgbImage, inset:
   for (let y = 0; y < cropHeight; y++) {
     for (let x = 0; x < cropWidth; x++) {
       const from = ((y + top) * width + x + left) * channels;
-      crop.set([data[from], data[from + 1], data[from + 2]], (y * cropWidth + x) * 3);
+      const to = (y * cropWidth + x) * 3;
+      crop[to] = data[from];
+      crop[to + 1] = data[from + 1];
+      crop[to + 2] = data[from + 2];
     }
   }
   const scale = TINT_WORK_EDGE / Math.max(cropWidth, cropHeight);
@@ -203,21 +213,19 @@ export const offToneShare = ({ data, width, height, channels }: RgbImage, inset:
 
   const usualA = new Float32Array(TINT_LEVELS);
   const usualB = new Float32Array(TINT_LEVELS);
+  const valuesA = Array.from(inLevel, (size) => new Float32Array(size));
+  const valuesB = Array.from(inLevel, (size) => new Float32Array(size));
+  const filled = new Uint32Array(TINT_LEVELS);
+  for (let pixel = 0; pixel < count; pixel++) {
+    const level = levels[pixel];
+    valuesA[level][filled[level]] = labA[pixel];
+    valuesB[level][filled[level]++] = labB[pixel];
+  }
   for (let level = 0; level < TINT_LEVELS; level++) {
-    if (inLevel[level] === 0) {
-      continue;
+    if (inLevel[level] > 0) {
+      usualA[level] = median(valuesA[level]);
+      usualB[level] = median(valuesB[level]);
     }
-    const valuesA = new Float32Array(inLevel[level]);
-    const valuesB = new Float32Array(inLevel[level]);
-    let filled = 0;
-    for (let pixel = 0; pixel < count; pixel++) {
-      if (levels[pixel] === level) {
-        valuesA[filled] = labA[pixel];
-        valuesB[filled++] = labB[pixel];
-      }
-    }
-    usualA[level] = median(valuesA);
-    usualB[level] = median(valuesB);
   }
 
   let off = 0;

@@ -71,7 +71,7 @@ describe(AlbumService.name, () => {
     it('never tells a connected app about a Locked album', async () => {
       mocks.album.getRecentlyAddedIds.mockResolvedValue([]);
 
-      await sut.getRecentlyAdded({ ...authStub.admin, oauthApp: { id: 'app' } } as AuthDto, {
+      await sut.getRecentlyAdded({ ...authStub.admin, oauthApp: { id: 'app' } } as unknown as AuthDto, {
         libraryScope: LibraryScope.Design,
       });
 

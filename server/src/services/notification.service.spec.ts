@@ -32,6 +32,7 @@ const configs = {
   smtpDisabled: Object.freeze<SystemConfig>({
     ...defaults,
     notifications: {
+      ...defaults.notifications,
       smtp: {
         ...defaults.notifications.smtp,
         enabled: false,
@@ -41,6 +42,7 @@ const configs = {
   smtpEnabled: Object.freeze<SystemConfig>({
     ...defaults,
     notifications: {
+      ...defaults.notifications,
       smtp: {
         ...defaults.notifications.smtp,
         enabled: true,
@@ -50,6 +52,7 @@ const configs = {
   smtpTransport: Object.freeze<SystemConfig>({
     ...defaults,
     notifications: {
+      ...defaults.notifications,
       smtp: {
         ...defaults.notifications.smtp,
         enabled: true,

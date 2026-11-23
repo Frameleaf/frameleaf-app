@@ -143,7 +143,7 @@ describe('approximate dates (FL-936)', () => {
       dateAccuracy: null,
     });
     expect(withApproximateDate({ dateAccuracy: null })).toEqual({ dateAccuracy: null });
-    const untouched = { isFavorite: true };
+    const untouched: { dateTimeOriginal?: string; isFavorite: boolean } = { isFavorite: true };
     expect(withApproximateDate(untouched)).toBe(untouched);
   });
 

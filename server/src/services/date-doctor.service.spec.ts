@@ -256,6 +256,7 @@ describe('DateDoctorService fixes (FL-930)', () => {
     localDateTime: new Date('2022-07-01T10:03:00Z'),
     dateTimeOriginal: new Date('2022-07-01T10:03:00Z'),
     timeZone: null,
+    dateAccuracy: null,
     locks: [],
     earlier: null,
     ...overrides,
@@ -390,6 +391,7 @@ describe('DateDoctorService fixes (FL-930)', () => {
       previousTakenAt: new Date('2000-01-01T00:00:00Z'),
       previousLocalDateTime: new Date('2000-01-01T00:00:00Z'),
       previousLocks: [],
+      previousDateAccuracy: null,
     };
     repository.getCurrent.mockResolvedValue([
       current('a', { timeZone: 'Europe/Paris', locks: ['dateTimeOriginal', 'timeZone'], earlier }),
@@ -596,6 +598,7 @@ describe('DateDoctorService fixes (FL-930)', () => {
     localDateTime: new Date('2022-07-01T10:03:00Z'),
     dateTimeOriginal: new Date('2022-07-01T10:03:00Z'),
     timeZone: null,
+    dateAccuracy: null,
     locks: [],
     earlier: null,
     ...overrides,
@@ -730,6 +733,7 @@ describe('DateDoctorService fixes (FL-930)', () => {
       previousTakenAt: new Date('2000-01-01T00:00:00Z'),
       previousLocalDateTime: new Date('2000-01-01T00:00:00Z'),
       previousLocks: [],
+      previousDateAccuracy: null,
     };
     repository.getCurrent.mockResolvedValue([
       current('a', { timeZone: 'Europe/Paris', locks: ['dateTimeOriginal', 'timeZone'], earlier }),
