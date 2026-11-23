@@ -193,14 +193,15 @@ test("Dockerfile override seams preserve all original customer default identitie
     /^FROM \$\{STUDIO_NODE_IMAGE\} AS studio-engine$/m,
   );
   const ml = read("machine-learning/Dockerfile");
-  for (const [argument, key] of [
-    ["CPU_IMAGE", "python"],
-    ["CUDA_IMAGE", "cuda"],
+  // FL-806: the CPU base also builds the Assistant's llama-server stage
+  for (const [argument, key, stages] of [
+    ["CPU_IMAGE", "python", 3],
+    ["CUDA_IMAGE", "cuda", 2],
   ]) {
     assert.ok(ml.includes(`ARG ${argument}=${defaults[key]}\n`));
     assert.equal(
       [...ml.matchAll(new RegExp(`^FROM \\$\\{${argument}\\}`, "gm"))].length,
-      2,
+      stages,
     );
   }
   assert.doesNotMatch(ml, /mirror\.gcr\.io/);
