@@ -346,7 +346,12 @@ const admission = (
     },
     vars: extra.vars ?? {},
     inputs: extra.inputs ?? {},
+    needs: {
+      plan: { outputs: { app: "true", checks: "true" } },
+      gate: { result: "success" },
+    },
     always: () => true,
+    cancelled: () => false,
   });
 
 // FL-1442: the web lint runs in two halves (web-lint-shards) that together cover every file; Lint Web
@@ -420,8 +425,11 @@ test("all nine protected checks execute on Frameleaf main PRs", () => {
       undefined,
       `${name} must not remain pending due to path filters`,
     );
+    const shards = [j.needs ?? []]
+      .flat()
+      .filter((need) => need !== "plan" && need !== "gate");
     assert.equal(
-      j.needs,
+      shards[0],
       {
         "server-medium-tests": "server-medium-core-tests",
         "server-unit-tests": "server-unit-lanes",
@@ -1541,8 +1549,16 @@ const assertIntegrationMlArchives = (w) => {
 
 test("a superseded Test run skips the E2E gate instead of failing it", () => {
   const w = workflow("test.yml");
-  // A newer commit cancels the running one; that run must not leave a red check behind.
-  assert.equal(w.concurrency["cancel-in-progress"], true);
+  // A newer PR commit cancels the running one; that run must not leave a red check behind.
+  const cancels = (event_name) =>
+    runInNewContext(
+      w.concurrency["cancel-in-progress"].replace(/^\$\{\{\s*|\s*\}\}$/g, ""),
+      {
+        github: { event_name },
+      },
+    );
+  assert.equal(cancels("pull_request"), true);
+  assert.equal(cancels("schedule"), false);
   assert.match(w.jobs["success-check-e2e"].if, /&& !cancelled\(\) }}$/);
 });
 
@@ -1581,7 +1597,10 @@ test("FL-1733: Forgejo's string dispatch inputs cannot skip a candidate or start
           event: {},
         },
         inputs: { development_validation },
-        needs: {},
+        needs: {
+          plan: { outputs: { app: "true", checks: "true" } },
+          gate: { result: "success" },
+        },
         always: () => true,
         cancelled: () => false,
         success: () => true,
@@ -2439,7 +2458,7 @@ test("isolated test lanes cover every shard and keep required gates fail-closed"
   ]) {
     const gate = jobs[id];
     assert.equal(gate.name, name);
-    assert.equal(gate.needs, dependency);
+    assert.deepEqual(gate.needs, ["plan", "gate", dependency]);
     assert.match(gate.if, /always\(\)/);
     const run = gate.steps[0];
     for (const result of ["success", "failure", "cancelled", "skipped"]) {
@@ -2631,5 +2650,132 @@ test("E2E matrix lanes execute each intended suite once per architecture", () =>
     browser.strategy.matrix.shard.filter((shard) => /^ui-/.test(shard)),
     ["ui-1", "ui-2"],
     "e2e/playwright.config.ts selects files for exactly ui-1 and ui-2",
+  );
+});
+
+test("FL-1764: Test skips app suites only when none of them can see the change", async () => {
+  const { alreadyCovered, needsAppSuites, planRun } =
+    await import("./ci-plan.mjs");
+  for (const files of [
+    ["README.md"],
+    ["docs/docs/guide.md", ".github/workflows/docker.yml"],
+    [".github/release-notes/1.2.26.md"],
+  ])
+    assert.equal(needsAppSuites(files), false, files.join());
+  for (const files of [
+    [],
+    ["server/src/a.ts"],
+    ["README.md", "web/src/a.ts"],
+    ["design/frameleaf/README.md"],
+    ["docs/package.json"],
+    ["pnpm-lock.yaml"],
+    ["a-new-folder/file.ts"],
+    ["scripts/ci-plan.mjs"],
+    [".github/actions/setup/action.yml"],
+    [".github/workflows/test.yml"],
+    [".github/workflows/frameleaf-cloud-consumers.yml"],
+    [".github/workflows/development-validation.yml"],
+  ])
+    assert.equal(needsAppSuites(files), true, files.join());
+
+  const sha = "a".repeat(40);
+  const run = (id, extra = {}) => ({
+    id,
+    commit_sha: sha,
+    workflow_id: "test.yml",
+    status: "success",
+    event: "schedule",
+    ...extra,
+  });
+  assert.equal(alreadyCovered([run(1), run(2)], 2, sha), true);
+  assert.equal(
+    alreadyCovered([run(2), run(3, { status: "waiting" })], 2, sha),
+    false,
+  );
+  assert.equal(
+    alreadyCovered([run(1, { status: "cancelled" }), run(2)], 2, sha),
+    false,
+  );
+  assert.equal(
+    alreadyCovered([run(1, { event: "pull_request" }), run(2)], 2, sha),
+    false,
+  );
+  assert.equal(alreadyCovered([run(1)], 2, sha), false);
+  const dispatch = (event_payload) =>
+    run(1, { event: "", trigger_event: "workflow_dispatch", event_payload });
+  for (const [payload, covered] of [
+    ['{"inputs":{"development_validation":"false"}}', true],
+    ['{"inputs":{"development_validation":false}}', true],
+    ['{"inputs":{"development_validation":"true"}}', false],
+    ['{"inputs":{"development_validation":true}}', false],
+    ["not json", false],
+  ])
+    assert.equal(
+      alreadyCovered([dispatch(payload), run(2)], 2, sha),
+      covered,
+      payload,
+    );
+
+  const all = { checks: true, app: true };
+  const decide = async (
+    env,
+    files = () => {
+      throw new Error("no git");
+    },
+  ) => {
+    const { checks, app } = await planRun(env, files);
+    return { checks, app };
+  };
+  assert.deepEqual(await decide({ EVENT_NAME: "workflow_dispatch" }), all);
+  assert.deepEqual(await decide({ EVENT_NAME: "pull_request" }), all);
+  assert.deepEqual(
+    await decide({ EVENT_NAME: "pull_request", BASE_SHA: sha }),
+    all,
+  );
+  assert.deepEqual(
+    await decide({ EVENT_NAME: "pull_request", BASE_SHA: sha }, () => [
+      "README.md",
+    ]),
+    { checks: true, app: false },
+  );
+  assert.deepEqual(
+    await decide({
+      EVENT_NAME: "schedule",
+      GITHUB_SERVER_URL: "http://127.0.0.1:1",
+      GITHUB_REPOSITORY: "o/r",
+    }),
+    all,
+  );
+});
+
+test("FL-1764: heavy Test jobs wait for every fast check, and main is tested on a schedule", () => {
+  const w = workflow("test.yml");
+  assert.equal(w.on.push, undefined);
+  assert.equal(w.on.schedule.length, 1);
+  assert.equal(
+    w.concurrency["cancel-in-progress"],
+    "${{ github.event_name != 'schedule' }}",
+  );
+  for (const id of ["server-medium-image", "e2e-image"]) {
+    assert.ok(w.jobs[id].needs.includes("gate"), id);
+    assert.match(w.jobs[id].if, /needs\.gate\.result == 'success'/);
+  }
+  const aggregated = {
+    "server-unit-lanes": "server-unit-tests",
+    "web-lint-shards": "web-lint",
+  };
+  const fast = Object.entries(w.jobs)
+    .filter(
+      ([id, job]) =>
+        id !== "gate" &&
+        id !== "cloud-consumer-tests" &&
+        [job.needs ?? []].flat().includes("plan"),
+    )
+    .filter(([, job]) => ![job.needs].flat().includes("gate"))
+    .map(([id]) => id)
+    .filter((id) => !aggregated[id]);
+  assert.deepEqual(
+    [...w.jobs.gate.needs].sort(),
+    ["plan", ...fast.filter((id) => id !== "plan")].sort(),
   );
 });

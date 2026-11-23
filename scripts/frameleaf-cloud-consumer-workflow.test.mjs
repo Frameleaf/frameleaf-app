@@ -69,12 +69,13 @@ test("package credentials never reach repository checkout or consumer execution"
   assert.match(call.if, /github\.repository == 'Frameleaf\/frameleaf-app'/);
   assert.match(call.if, /inputs\.development_validation != true && inputs\.development_validation != 'true'/);
   for (const repository of ["Frameleaf/frameleaf-app", "immich-app/immich"]) {
-    for (const event_name of ["pull_request", "push", "workflow_dispatch"]) {
+    for (const event_name of ["pull_request", "schedule", "workflow_dispatch"]) {
       for (const development_validation of [false, true]) {
         assert.equal(
           runInNewContext(call.if.replace(/^\$\{\{\s*|\s*\}\}$/g, ""), {
             github: { repository, event_name },
             inputs: { development_validation },
+            needs: { plan: { outputs: { app: "true" } } },
           }),
           repository === "Frameleaf/frameleaf-app" &&
             (event_name !== "workflow_dispatch" || !development_validation),
