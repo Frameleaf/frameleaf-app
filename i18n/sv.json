@@ -4980,6 +4980,8 @@
   "frameleaf_bgwork_working_body": "{work}. Du kan fortsätta använda Frameleaf.",
   "frameleaf_bgwork_working_everyday_body": "Du kan fortsätta använda Frameleaf. Aktivitet visar vad varje nytt tillskott väntar på.",
   "frameleaf_boards_add_to_collection": "Lägg till i samling",
+  "frameleaf_boards_albums_all_failed": "Allt kunde inte läggas till i {failed}. Lägg till i de albumen igen för att slutföra. Objekt som redan finns där hoppas över.",
+  "frameleaf_boards_albums_some_failed": "Lades till i {added}. Allt kunde inte läggas till i {failed}. Lägg till i de albumen igen för att slutföra. Objekt som redan finns där hoppas över.",
   "frameleaf_boards_all_items": "Alla objekt",
   "frameleaf_boards_annotate": "Kommentera",
   "frameleaf_boards_annotate_arrow": "Pil",

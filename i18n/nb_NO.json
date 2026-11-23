@@ -4984,6 +4984,8 @@
   "frameleaf_bgwork_working_body": "{work}. Du kan fortsette å bruke Frameleaf.",
   "frameleaf_bgwork_working_everyday_body": "Du kan fortsette å bruke Frameleaf. Aktivitet viser hva hver nye ankomst venter på.",
   "frameleaf_boards_add_to_collection": "Legg til i samling",
+  "frameleaf_boards_albums_all_failed": "Ikke alt kunne legges til i {failed}. Legg til i disse albumene på nytt for å fullføre. Elementer som allerede er der, hoppes over.",
+  "frameleaf_boards_albums_some_failed": "Lagt til i {added}. Ikke alt kunne legges til i {failed}. Legg til i disse albumene på nytt for å fullføre. Elementer som allerede er der, hoppes over.",
   "frameleaf_boards_all_items": "Alle elementer",
   "frameleaf_boards_annotate": "Merk opp",
   "frameleaf_boards_annotate_arrow": "Pil",

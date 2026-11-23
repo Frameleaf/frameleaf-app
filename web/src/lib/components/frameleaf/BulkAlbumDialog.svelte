@@ -185,7 +185,18 @@
     }
   };
 
-  const send = () => onSubmit(chosen.length === 1 ? { albumId: chosen[0] } : { albumId: chosen[0], albumIds: chosen });
+  /** Albums made by this dialog, whose rows may not have loaded yet. */
+  const createdNames: Record<string, string> = {};
+  const send = () =>
+    onSubmit(
+      chosen.length === 1
+        ? { albumId: chosen[0] }
+        : {
+            albumId: chosen[0],
+            albumIds: chosen,
+            albumNames: { ...Object.fromEntries(targets.map(({ id, name }) => [id, name])), ...createdNames },
+          },
+    );
 
   /** Makes the new albums, then adds. A failure keeps the dialog open, and a retry won't remake any album. */
   const createThenSend = async () => {
@@ -204,6 +215,7 @@
         }
         eventManager.emit('AlbumCreate', album);
         drafts = drafts.filter((name) => name !== albumName);
+        createdNames[album.id] = albumName;
         chosen = [...chosen, album.id];
       }
     } catch (error) {

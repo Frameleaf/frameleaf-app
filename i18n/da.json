@@ -4978,6 +4978,8 @@
   "frameleaf_bgwork_working_body": "{work}. Du kan blive ved med at bruge Frameleaf.",
   "frameleaf_bgwork_working_everyday_body": "Du kan blive ved med at bruge Frameleaf. Aktivitet viser, hvad hver ny ankomst venter på.",
   "frameleaf_boards_add_to_collection": "Føj til samling",
+  "frameleaf_boards_albums_all_failed": "Ikke alt kunne føjes til {failed}. Føj til de albums igen for at afslutte. Elementer, der allerede er der, springes over.",
+  "frameleaf_boards_albums_some_failed": "Føjet til {added}. Ikke alt kunne føjes til {failed}. Føj til de albums igen for at afslutte. Elementer, der allerede er der, springes over.",
   "frameleaf_boards_all_items": "Alle elementer",
   "frameleaf_boards_annotate": "Annotér",
   "frameleaf_boards_annotate_arrow": "Pil",

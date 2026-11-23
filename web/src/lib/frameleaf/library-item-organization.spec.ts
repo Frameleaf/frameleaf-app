@@ -1,6 +1,7 @@
 import { LibraryAssetItemKind, LibraryBookmarkItemKind, LibraryScope, type LibraryItemDto } from '@frameleaf/sdk';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import {
+  organizeIntoAlbums,
   organizeLibraryItems,
   ownsLibrarySelection,
   rateLibraryItems,
@@ -19,6 +20,22 @@ it('sends each kind to its own album endpoint and accepts existing memberships',
   await organizeLibraryItems(items, ['same', 'bookmark:same'], 'owner', { albumId: 'album' }, () => true);
   expect(sdkMock.addAssetsToAlbum).toHaveBeenCalledWith({ id: 'album', bulkIdsDto: { ids: ['same'] } });
   expect(sdkMock.addBookmarksToAlbum).toHaveBeenCalledWith({ id: 'album', bookmarkIdsDto: { ids: ['same'] } });
+});
+it('keeps trying after one album refuses, and says which albums took the items', async () => {
+  sdkMock.addAssetsToAlbum.mockImplementation(({ id }) =>
+    Promise.resolve([
+      { id: 'same', success: id !== 'refuses', error: id === 'refuses' ? ('no_permission' as never) : undefined },
+    ]),
+  );
+  await expect(organizeIntoAlbums(items, ['same'], 'owner', ['refuses', 'takes'], () => true)).resolves.toEqual({
+    added: ['takes'],
+    failed: ['refuses'],
+  });
+  expect(sdkMock.addAssetsToAlbum).toHaveBeenCalledTimes(2);
+});
+it('stops at once when the page changes during a several-album add', async () => {
+  await expect(organizeIntoAlbums(items, ['same'], 'owner', ['one', 'two'], () => false)).rejects.toThrow();
+  expect(sdkMock.addAssetsToAlbum).not.toHaveBeenCalled();
 });
 it('adds bookmark tags without replacing existing tags', async () => {
   await organizeLibraryItems(items, ['bookmark:same'], 'owner', { tagIds: ['new'] }, () => true);
