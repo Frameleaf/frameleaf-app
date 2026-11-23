@@ -248,6 +248,16 @@ it('binds a fresh canonical NAS nonce with the same digest as the native contrac
     '2a7fc13909ebdc438b570897ee84f3ef7419892148bab4253aaf48c577485874',
     '0770368d333aab7224560477e59761af352d6f1c95ace1c38d58f499719eb923',
     '914ee439d6cda5a79070fe9c190f38c0303fba567ad3be9767184e5169220e0c',
+    // epoch 18: this build's nine processor twins, recut from the mirror; also from this implementation.
+    '9727ae4c69b647fe54bd6f5c62d1f8fd3cf8b23a67b0e138fbb7e16233a3a360',
+    '431720899411f11cebecc3f1eeea650c7081225c002b38f122b208d7ae4f449b',
+    '1d7362d547f21516ffac164a1de3674d13d99d574d944f590a784d8a733a028a',
+    '6d2fa9dc3233d1aad10981a89a58b237898ed7e30da92ed02678bf9d90025f06',
+    '78c23e89948d9dce37cb66781cb4edae112aac8c6658bd873276150760b268d0',
+    'c9045f88dc9e7615deb8f4c5d60ed01fd9fdd38594e93ec19b79d4df8884ee0c',
+    'f0624a3782b5280773034cca3ba26bd0171c45ceb04aa0ecc3b27533d3dc2861',
+    '4d5a1e4e1192bb502184798545abe84979285ce3c8a650d72c5dcea347723e54',
+    'cee93fadec7e8bdfa1d73180ae06e6d1209127cb18dcb4979a143a8dafe61a17',
   );
   expect(catalogue.profiles).toHaveLength(expected.length);
   for (const [index, profile] of catalogue.profiles.entries()) {
