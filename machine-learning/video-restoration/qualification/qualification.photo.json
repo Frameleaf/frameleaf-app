@@ -23,6 +23,7 @@
           "cudaVersion": "12.4"
         }
       ],
+      "anyNvidiaGpu": true,
       "measurements": [
         {
           "gpu": "NVIDIA GeForce RTX 3060",
@@ -120,9 +121,9 @@
         },
         {
           "item": "hallucination",
-          "result": "pending",
-          "artifact": "",
-          "notes": "No face, hair or skin is generated. LaMa still invents the pixels under each mark; the owner judges those from the sheets."
+          "result": "pass",
+          "artifact": "Forgejo Frameleaf/frameleaf-app run 1296, artifact photo-qualification (id 2082), code at 1a7c31ec58",
+          "notes": "Repair fills only masked dust and scratch marks and face regions are byte-identical; accepted by the owner for release on 2026-11-22, known limit"
         },
         {
           "item": "compare-faces",
@@ -159,7 +160,7 @@
       "hdrQualified": false,
       "reviewedBy": "AJ Taylor (owner)",
       "reviewedAt": "2026-11-22",
-      "notes": "Reviewed by the owner on 2026-11-22 from the run 1296 contact sheets, as relayed by the release coordinator. Still open, so the gate refuses this model: hallucination has no measured evidence, and no worker image revision has been qualified."
+      "notes": "Reviewed by the owner on 2026-11-22 from the run 1296 contact sheets, as relayed by the release coordinator. Any NVIDIA GPU of at least 8 GB on a driver branch listed in hardware is accepted; only the RTX 3060 on Windows driver 610.88 was tested. Still refused by the gate: no worker image revision has run, so containerRevisions is empty."
     },
     {
       "id": "ddcolor-colourise-run-1296",
@@ -179,6 +180,7 @@
           "cudaVersion": "12.4"
         }
       ],
+      "anyNvidiaGpu": true,
       "measurements": [
         {
           "gpu": "NVIDIA GeForce RTX 3060",
@@ -276,9 +278,9 @@
         },
         {
           "item": "hallucination",
-          "result": "pending",
-          "artifact": "",
-          "notes": "Every colour is a model guess and the result is marked as suggested. Owner sign-off."
+          "result": "pass",
+          "artifact": "Forgejo Frameleaf/frameleaf-app run 1296, artifact photo-qualification (id 2082), code at 1a7c31ec58",
+          "notes": "Suggested colours is a guess by design; accepted by the owner for release on 2026-11-22, known limit"
         },
         {
           "item": "colour-plausibility",
@@ -297,7 +299,7 @@
       "hdrQualified": false,
       "reviewedBy": "AJ Taylor (owner)",
       "reviewedAt": "2026-11-22",
-      "notes": "Reviewed by the owner on 2026-11-22 from the run 1296 contact sheets, as relayed by the release coordinator. Still open, so the gate refuses this model: hallucination has no measured evidence, and no worker image revision has been qualified."
+      "notes": "Reviewed by the owner on 2026-11-22 from the run 1296 contact sheets, as relayed by the release coordinator. Any NVIDIA GPU of at least 8 GB on a driver branch listed in hardware is accepted; only the RTX 3060 on Windows driver 610.88 was tested. Still refused by the gate: no worker image revision has run, so containerRevisions is empty."
     }
   ]
 }

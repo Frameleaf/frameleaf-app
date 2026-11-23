@@ -36,21 +36,36 @@ def sha256(path: Path) -> str:
 def fetch(url: str, target: Path, expected: str) -> bool:
     if target.is_file() and sha256(target) == expected:
         return True
-    curl = shutil.which("curl") or "curl"
+    curl = shutil.which("curl")
     partial = target.with_name(target.name + ".part")
     for wait in (0, 20):
         time.sleep(wait)
-        # With no --retry-delay, curl waits as long as a 429's Retry-After header asks.
-        done = subprocess.run(
-            [curl, "-sS", "--fail", "-L", "-A", USER_AGENT, "--retry", "2", "--max-time", "1800"]
-            + ["-o", str(partial), url],
-            check=False,
-        )
-        if done.returncode == 0 and sha256(partial) == expected:
+        if curl:
+            # With no --retry-delay, curl waits as long as a 429's Retry-After header asks.
+            done = subprocess.run(
+                [curl, "-sS", "--fail", "-L", "-A", USER_AGENT, "--retry", "2", "--max-time", "1800"]
+                + ["-o", str(partial), url],
+                check=False,
+            )
+            fetched = done.returncode == 0
+        else:  # the worker image has no curl
+            fetched = download(url, partial)
+        if fetched and sha256(partial) == expected:
             partial.replace(target)
             return True
     partial.unlink(missing_ok=True)
     return False
+
+
+def download(url: str, target: Path) -> bool:
+    request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+    try:
+        with urllib.request.urlopen(request, timeout=120) as response, target.open("wb") as out:
+            shutil.copyfileobj(response, out, 8 * 1024 * 1024)
+    except (urllib.error.URLError, TimeoutError, OSError) as error:
+        print(f"download failed: {error}", file=sys.stderr)
+        return False
+    return True
 
 
 def main() -> int:
@@ -60,6 +75,7 @@ def main() -> int:
     parser.add_argument("directory", type=Path)
     parser.add_argument("--limit", type=int, default=0)
     parser.add_argument("--check-only", action="store_true", help="only confirm the scan package is readable")
+    parser.add_argument("--from-tar", type=Path, help="read the scans from this copy of the package")
     args = parser.parse_args()
     args.directory.mkdir(parents=True, exist_ok=True)
     manifest = json.loads(args.manifest.read_text(encoding="utf-8"))
@@ -74,30 +90,33 @@ def main() -> int:
 
     scans = manifest["scans"][: args.limit or None]
     package = manifest["package"]
-    token = os.environ.get("PACKAGE_TOKEN", "")
-    if not token:
-        print("PACKAGE_TOKEN is not set", file=sys.stderr)
-        return 1
-    archive = args.directory / package["file"]
-    request = urllib.request.Request(
-        f"{package['registry']}/{package['file']}",
-        headers={"Authorization": f"token {token}", "User-Agent": USER_AGENT},
-        method="HEAD" if args.check_only else "GET",
-    )
-    if args.check_only:  # proves the job can read the package before the long setup steps
-        try:
-            with urllib.request.urlopen(request, timeout=30) as response:
-                print(f"scan package readable: HTTP {response.status}")
-            return 0
-        except (urllib.error.URLError, TimeoutError) as error:
-            print(f"the scan package could not be read: {getattr(error, 'code', error)}", file=sys.stderr)
+    if args.from_tar:  # a copy of the package already on this machine: same pinned hash
+        archive = args.from_tar
+    else:
+        token = os.environ.get("PACKAGE_TOKEN", "")
+        if not token:
+            print("PACKAGE_TOKEN is not set", file=sys.stderr)
             return 1
-    try:
-        with urllib.request.urlopen(request, timeout=120) as response, archive.open("wb") as out:
-            shutil.copyfileobj(response, out, 8 * 1024 * 1024)
-    except urllib.error.HTTPError as error:
-        print(f"the scan package could not be read: HTTP {error.code}", file=sys.stderr)
-        return 1
+        archive = args.directory / package["file"]
+        request = urllib.request.Request(
+            f"{package['registry']}/{package['file']}",
+            headers={"Authorization": f"token {token}", "User-Agent": USER_AGENT},
+            method="HEAD" if args.check_only else "GET",
+        )
+        if args.check_only:  # proves the job can read the package before the long setup steps
+            try:
+                with urllib.request.urlopen(request, timeout=30) as response:
+                    print(f"scan package readable: HTTP {response.status}")
+                return 0
+            except (urllib.error.URLError, TimeoutError) as error:
+                print(f"the scan package could not be read: {getattr(error, 'code', error)}", file=sys.stderr)
+                return 1
+        try:
+            with urllib.request.urlopen(request, timeout=120) as response, archive.open("wb") as out:
+                shutil.copyfileobj(response, out, 8 * 1024 * 1024)
+        except urllib.error.HTTPError as error:
+            print(f"the scan package could not be read: HTTP {error.code}", file=sys.stderr)
+            return 1
     if sha256(archive) != package["sha256"]:
         print("the scan package does not match its pinned sha256", file=sys.stderr)
         return 1
@@ -109,7 +128,8 @@ def main() -> int:
                 source = tar.extractfile(member)
                 with (args.directory / member.name).open("wb") as out:
                     shutil.copyfileobj(source, out, 8 * 1024 * 1024)
-    archive.unlink()
+    if not args.from_tar:
+        archive.unlink()
     missing = [name for name, digest in wanted.items() if not (args.directory / name).is_file()]
     wrong = [name for name, digest in wanted.items() if name not in missing and sha256(args.directory / name) != digest]
     for name in wrong:

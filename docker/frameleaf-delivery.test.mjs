@@ -208,7 +208,14 @@ test("the restoration overlay adds a separate worker and leaves library analysis
   assert.equal(worker.container_name, "frameleaf_restoration");
   // Built from source: no restoration image is published until a model is qualified.
   assert.equal(worker.build.dockerfile, "Dockerfile.video-restoration");
-  assert.equal(worker.build.target, "worker");
+  assert.equal(worker.build.target, "photo");
+  // FL-933: the same runtime pins qualification used, so the content-hashed revision can match.
+  const pins = JSON.parse(
+    read("machine-learning/video-restoration/qualification/upstream.json"),
+  ).checkouts;
+  assert.equal(worker.build.args.FACEXLIB_REVISION, pins.facexlib.revision);
+  assert.equal(worker.build.args.DDCOLOR_REVISION, pins.ddcolor.revision);
+  assert.match(String(worker.build.args.PHOTO_PYTHON), /^3\.12\.\d+$/);
   assert.doesNotMatch(worker.image, /^ghcr\.io\//);
   // Reached on the Compose network only, with its own bearer and read-only model inputs.
   assert.equal(worker.ports, undefined);

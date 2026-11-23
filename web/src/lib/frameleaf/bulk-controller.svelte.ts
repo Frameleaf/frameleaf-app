@@ -302,6 +302,13 @@ export class BulkController {
       requestId?: string;
     } = {},
   ): Promise<void> {
+    // A durable job takes one album, so several albums are one job each, shown separately in Activity.
+    if (payload?.albumIds && payload.albumIds.length > 1) {
+      for (const albumId of payload.albumIds) {
+        await this.runMatching(action, scope, { payload: { albumId }, submittedTotal });
+      }
+      return;
+    }
     const controller = new AbortController();
     this.#running.set(requestId, controller);
     this.#dispatch({ type: 'operation-start', requestId, action, scope, payload, submittedTotal });

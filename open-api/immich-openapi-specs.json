@@ -14266,6 +14266,61 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/albums/recently-added": {
+      "get": {
+        "description": "Returns the albums the user may add to, the one that most recently received an item first.",
+        "operationId": "getRecentlyAddedAlbums",
+        "parameters": [
+          {
+            "name": "libraryScope",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/LibraryViewScope"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AlbumRecentlyAddedResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "List albums that recently received items",
+        "tags": [
+          "Albums"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v2",
+            "state": "Added"
+          },
+          {
+            "version": "v2",
+            "state": "Beta"
+          }
+        ],
+        "x-immich-permission": "album.read",
+        "x-immich-state": "Beta"
+      }
+    },
     "/albums/statistics": {
       "get": {
         "description": "Returns statistics about the albums available to the authenticated user.",
@@ -87343,6 +87398,23 @@
           "id",
           "name",
           "updatedAt"
+        ],
+        "type": "object"
+      },
+      "AlbumRecentlyAddedResponseDto": {
+        "properties": {
+          "albumIds": {
+            "description": "Albums the user may add to, the one that most recently received an item first",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "albumIds"
         ],
         "type": "object"
       },
