@@ -120,6 +120,12 @@ describe('desktopTranscodeOutputProblem', () => {
     expect(desktopTranscodeOutputProblem(output, expected)).toBe(problem);
   });
 
+  it('refuses audio the plan does not include, and accepts a matching silent file', () => {
+    const silent = { ...expected, hasAudio: false, audioCodec: null };
+    expect(desktopTranscodeOutputProblem(info(), silent)).toBe('audio-unexpected');
+    expect(desktopTranscodeOutputProblem(info({}, 100, []), silent)).toBeUndefined();
+  });
+
   it('refuses a file with no picture', () => {
     expect(
       desktopTranscodeOutputProblem(

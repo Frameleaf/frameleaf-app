@@ -1,4 +1,8 @@
 import { BadRequestException, ForbiddenException } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { Readable } from 'node:stream';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { StorageCore } from 'src/cores/storage.core.js';
@@ -7,7 +11,7 @@ import { queueExecution } from 'src/queue/context.js';
 import { JobDependencyUnavailable } from 'src/queue/dependency.js';
 import { DesktopTranscodeService } from 'src/services/desktop-transcode.service.js';
 import { MediaService } from 'src/services/media.service.js';
-import { DESKTOP_TRANSCODE_PRESENCE_KEY } from 'src/utils/desktop-transcode.js';
+import { DESKTOP_TRANSCODE_PRESENCE_KEY, desktopTranscodeStagingFolder } from 'src/utils/desktop-transcode.js';
 
 const id = '11111111-1111-4111-8111-111111111111';
 const claimToken = '22222222-2222-4222-8222-222222222222';
@@ -31,6 +35,8 @@ describe(DesktopTranscodeService.name, () => {
     ownerOf: vi.fn(),
     setUploadGrant: vi.fn(),
     getByUploadToken: vi.fn(),
+    listFinishedStaged: vi.fn(),
+    clearStaged: vi.fn(),
     isLockedAsset: vi.fn(),
   };
   const operations = { heartbeat: vi.fn(), fail: vi.fn() };
@@ -100,6 +106,17 @@ describe(DesktopTranscodeService.name, () => {
     await expect(sut.upload('stale', id, Readable.from([]))).rejects.toBeInstanceOf(ForbiddenException);
     await expect(sut.upload(undefined, id, Readable.from([]))).rejects.toBeInstanceOf(ForbiddenException);
     expect(repository.stageResult).not.toHaveBeenCalled();
+  });
+
+  it('keeps sweeping after one staged folder cannot be removed', async () => {
+    repository.listFinishedStaged.mockResolvedValue([
+      { id, ownerId },
+      { id: claimToken, ownerId },
+    ]);
+    vi.spyOn(StorageCore, 'getMediaLocation').mockReturnValue('/data');
+    storage.unlinkDir.mockRejectedValueOnce(new Error('EBUSY')).mockResolvedValueOnce(undefined);
+    await sut.sweepStaged();
+    expect(repository.clearStaged).toHaveBeenCalledExactlyOnceWith(claimToken);
   });
 
   it('fails without a retry, so the waiting job encodes on the server', async () => {
@@ -256,9 +273,21 @@ describe('waitForDesktopTranscode', () => {
       expect(service.storageRepository.unlinkDir).toHaveBeenCalled();
     });
 
-    it('refuses a file that is not intact without publishing it', async () => {
+    it('refuses a staged file whose checksum does not match without publishing it', async () => {
+      const root = await mkdtemp(join(tmpdir(), 'desktop-transcode-'));
+      vi.mocked(StorageCore.getMediaLocation).mockReturnValue(root);
+      const folder = desktopTranscodeStagingFolder(ownerId, id);
+      await mkdir(folder, { recursive: true });
+      const stagedPath = join(folder, `${randomUUID()}.artifact`);
+      await writeFile(stagedPath, 'not the uploaded bytes');
       const service = self();
-      await expect(adopt(service, validating)).resolves.toBe(false);
+      const operation = {
+        ...validating,
+        result: { outputPath: stagedPath, checksum: 'ab'.repeat(32), sizeInBytes: 22 },
+      };
+      await expect(adopt(service, operation)).resolves.toBe(false);
+      await rm(root, { recursive: true, force: true });
+      expect(service.mediaRepository.probe).not.toHaveBeenCalled();
       expect(service.mediaOperationRepository.fail).toHaveBeenCalledWith(
         id,
         claimToken,

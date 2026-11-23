@@ -2166,16 +2166,22 @@ export class MediaService extends BaseService {
     this.storageCore.ensureFolders(output);
     // A copy: the staging and playback folders can be on different drives.
     await this.storageRepository.copyFile(staged.outputPath, output);
-    deferJobAdoption(async (tx) => {
-      const completed = await this.mediaOperationRepository.complete(
-        operation.id,
-        claimToken,
-        { resultAssetId: null },
-        tx,
-        true,
-      );
-      if (!completed) throw new Error('Desktop conversion ended before it was published');
-    });
+    try {
+      deferJobAdoption(async (tx) => {
+        const completed = await this.mediaOperationRepository.complete(
+          operation.id,
+          claimToken,
+          { resultAssetId: null },
+          tx,
+          true,
+        );
+        if (!completed) throw new Error('Desktop conversion ended before it was published');
+      });
+    } catch (error) {
+      // The job was cancelled: nothing will publish this video-sized copy.
+      await this.storageRepository.unlink(output).catch(() => {});
+      throw error;
+    }
     await afterJobCommit(removeStaged);
     return true;
   }

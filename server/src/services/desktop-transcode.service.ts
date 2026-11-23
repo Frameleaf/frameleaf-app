@@ -69,8 +69,12 @@ export class DesktopTranscodeService {
   /** Removes uploaded files whose conversion ended without its job cleaning up. */
   async sweepStaged() {
     for (const { id, ownerId } of await this.repository.listFinishedStaged(100)) {
-      await this.storage.unlinkDir(desktopTranscodeStagingFolder(ownerId, id), { recursive: true, force: true });
-      await this.repository.clearStaged(id);
+      try {
+        await this.storage.unlinkDir(desktopTranscodeStagingFolder(ownerId, id), { recursive: true, force: true });
+        await this.repository.clearStaged(id);
+      } catch {
+        // Kept for the next sweep; one folder that cannot be removed does not hold up the others.
+      }
     }
   }
 

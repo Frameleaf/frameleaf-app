@@ -87,6 +87,7 @@ export const desktopTranscodeOutputProblem = (info: VideoInfo, expected: Desktop
   if (Math.abs(info.format.duration - expected.durationSeconds) > allowance) return 'duration';
   const [audio] = info.audioStreams;
   if (expected.hasAudio && !audio) return 'audio-missing';
+  if (!expected.hasAudio && audio) return 'audio-unexpected';
   if (expected.hasAudio && expected.audioCodec && audio.codecName !== expected.audioCodec) return 'audio-codec';
 };
 
