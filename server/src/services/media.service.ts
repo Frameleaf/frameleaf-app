@@ -2134,6 +2134,9 @@ export class MediaService extends BaseService {
       problem = 'missing';
     } else if (snapshot.checksum !== asset.checksum.toString('hex')) {
       problem = 'source-changed';
+    } else if (await this.mediaOperationRepository.isAssetLocked(asset.id)) {
+      // Moved to Locked while the desktop worked: its copy is not published.
+      problem = 'locked';
     } else {
       try {
         const verified = await openRenderArtifact(

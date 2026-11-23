@@ -303,7 +303,12 @@ describe('waitForDesktopTranscode', () => {
       },
     };
     const self = () => ({
-      mediaOperationRepository: { ...mediaOperationRepository, fail: vi.fn(), complete: vi.fn() },
+      mediaOperationRepository: {
+        ...mediaOperationRepository,
+        fail: vi.fn(),
+        complete: vi.fn(),
+        isAssetLocked: vi.fn().mockResolvedValue(false),
+      },
       storageRepository: { ...storageRepository, copyFile: vi.fn() },
       mediaRepository: { probe: vi.fn() },
       storageCore: { ensureFolders: vi.fn() },
@@ -325,6 +330,20 @@ describe('waitForDesktopTranscode', () => {
         id,
         claimToken,
         expect.objectContaining({ errorCode: 'desktop_transcode_source-changed' }),
+        { retry: false, requireActiveClaim: true },
+      );
+      expect(service.storageRepository.copyFile).not.toHaveBeenCalled();
+      expect(service.storageRepository.unlinkDir).toHaveBeenCalled();
+    });
+
+    it('refuses a result for a video moved to Locked while the desktop worked', async () => {
+      const service = self();
+      service.mediaOperationRepository.isAssetLocked.mockResolvedValue(true);
+      await expect(adopt(service, validating)).resolves.toBe(false);
+      expect(service.mediaOperationRepository.fail).toHaveBeenCalledWith(
+        id,
+        claimToken,
+        expect.objectContaining({ errorCode: 'desktop_transcode_locked' }),
         { retry: false, requireActiveClaim: true },
       );
       expect(service.storageRepository.copyFile).not.toHaveBeenCalled();
