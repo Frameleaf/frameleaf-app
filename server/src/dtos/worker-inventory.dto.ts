@@ -107,6 +107,17 @@ const WorkerDesktopHelperSchema = z
     // optional in the schema so clients built before FL-1484 keep compiling; always sent
     ownerName: z.string().optional().describe('Name of the account signed in on it'),
     household: z.boolean().optional().describe("Works on everyone's photos at home, not only its own account's"),
+    transcodeEnabled: z.boolean().optional().describe('Makes playback copies of videos'),
+    transcodeEveryone: z.boolean().optional().describe("Its playback copies include other people's videos"),
+    transcoding: z
+      .object({
+        fileName: z.string().nullable().describe('Null for a Locked video or one hidden by its owner'),
+        progress: z.int().min(0).max(100),
+      })
+      .meta({ id: 'WorkerDesktopTranscodingDto' })
+      .nullable()
+      .optional()
+      .describe('The playback copy it is making now, or null'),
     withdrawn: z
       .array(
         z.object({

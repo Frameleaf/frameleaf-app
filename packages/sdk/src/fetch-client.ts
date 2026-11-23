@@ -4966,6 +4966,11 @@ export type AssetStatsResponseDto = {
     /** Number of videos */
     videos: number;
 };
+export type WorkerDesktopTranscodingDto = {
+    /** Null for a Locked video or one hidden by its owner */
+    fileName: string | null;
+    progress: number;
+};
 export type WorkerDesktopHelperDto = {
     /** Works on everyone's photos at home, not only its own account's */
     household?: boolean;
@@ -4979,6 +4984,12 @@ export type WorkerDesktopHelperDto = {
     platform: DesktopPlatform;
     /** Online now (seen within the last few minutes) with a current qualification, so it can take AI work now */
     ready: boolean;
+    /** Makes playback copies of videos */
+    transcodeEnabled?: boolean;
+    /** Its playback copies include other people's videos */
+    transcodeEveryone?: boolean;
+    /** The playback copy it is making now, or null */
+    transcoding?: (WorkerDesktopTranscodingDto) | null;
     /** Work taken away from it after it failed that work three times in a row */
     withdrawn?: {
         /** Held back from qualifying again until then; null once it only has to qualify again */
@@ -10006,11 +10017,37 @@ export type DesktopHouseholdDto = {
     /** Works on everyone's photos at home */
     enabled: boolean;
 };
+export type DesktopTranscodeSettingsDto = {
+    /** Makes playback copies of videos on this computer */
+    enabled: boolean;
+    /** Also takes other people's videos. Needs enabled, and a computer that works on everyone's photos */
+    everyone: boolean;
+};
 export type DesktopWorkerPayloadDto = {
     payload: string;
 };
 export type DesktopWorkerAckDto = {
     accepted: boolean;
+};
+export type DesktopTranscodeClaimDto = {
+    task: {
+        claimToken: string;
+        expiresAt: string;
+        frameCount: number;
+        id: string;
+        inputOptions: string[];
+        maxOutputBytes: number;
+        outputOptions: string[];
+        sourceBytes: number;
+        twoPass: boolean;
+    } | null;
+};
+export type DesktopWorkerHeartbeatDto = {
+    accepted: boolean;
+    expiresAt: string | null;
+};
+export type DesktopTranscodeUploadGrantDto = {
+    uploadToken: string;
 };
 export type DesktopQualificationChallengeDto = {
     bindingSha256: string;
@@ -10041,10 +10078,6 @@ export type DesktopWorkerClaimDto = {
         sessionId: string;
         taskId: string;
     } | null;
-};
-export type DesktopWorkerHeartbeatDto = {
-    accepted: boolean;
-    expiresAt: string | null;
 };
 export type DesktopModelInventoryDto = {
     protocolVersion: number;
@@ -33361,6 +33394,22 @@ export function endDesktopSession({ id }: {
     }));
 }
 /**
+ * Turn playback copies of videos on or off for a computer, and whether it takes other people's videos
+ */
+export function setDesktopTranscode({ id, desktopTranscodeSettingsDto }: {
+    id: string;
+    desktopTranscodeSettingsDto: DesktopTranscodeSettingsDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: DesktopTranscodeSettingsDto;
+    }>(`/desktop/devices/${encodeURIComponent(id)}/transcode`, oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: desktopTranscodeSettingsDto
+    })));
+}
+/**
  * Report a bounded desktop attempt failure
  */
 export function failDesktopTask({ id, xFrameleafDesktopProof, desktopWorkerPayloadDto }: {
@@ -33409,6 +33458,123 @@ export function completeDesktopTask({ id, xFrameleafDesktopProof, desktopWorkerP
         status: 200;
         data: DesktopWorkerAckDto;
     }>(`/desktop/tasks/${encodeURIComponent(id)}/result`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: desktopWorkerPayloadDto,
+        headers: oazapfts.mergeHeaders(opts?.headers, {
+            "x-frameleaf-desktop-proof": xFrameleafDesktopProof
+        })
+    })));
+}
+/**
+ * Claim one video playback conversion
+ */
+export function claimDesktopTranscode({ xFrameleafDesktopProof }: {
+    xFrameleafDesktopProof: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: DesktopTranscodeClaimDto;
+    }>("/desktop/transcodes/claim", {
+        ...opts,
+        method: "POST",
+        headers: oazapfts.mergeHeaders(opts?.headers, {
+            "x-frameleaf-desktop-proof": xFrameleafDesktopProof
+        })
+    }));
+}
+/**
+ * Hand a video conversion back to the server
+ */
+export function failDesktopTranscode({ id, xFrameleafDesktopProof, desktopWorkerPayloadDto }: {
+    id: string;
+    xFrameleafDesktopProof: string;
+    desktopWorkerPayloadDto: DesktopWorkerPayloadDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: DesktopWorkerAckDto;
+    }>(`/desktop/transcodes/${encodeURIComponent(id)}/fail`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: desktopWorkerPayloadDto,
+        headers: oazapfts.mergeHeaders(opts?.headers, {
+            "x-frameleaf-desktop-proof": xFrameleafDesktopProof
+        })
+    })));
+}
+/**
+ * Renew the lease of a video conversion
+ */
+export function heartbeatDesktopTranscode({ id, xFrameleafDesktopProof, desktopWorkerPayloadDto }: {
+    id: string;
+    xFrameleafDesktopProof: string;
+    desktopWorkerPayloadDto: DesktopWorkerPayloadDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: DesktopWorkerHeartbeatDto;
+    }>(`/desktop/transcodes/${encodeURIComponent(id)}/heartbeat`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: desktopWorkerPayloadDto,
+        headers: oazapfts.mergeHeaders(opts?.headers, {
+            "x-frameleaf-desktop-proof": xFrameleafDesktopProof
+        })
+    })));
+}
+/**
+ * Read the original of a claimed video conversion
+ */
+export function readDesktopTranscodeInput({ claimToken, id, xFrameleafDesktopProof }: {
+    claimToken: string;
+    id: string;
+    xFrameleafDesktopProof: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchBlob<{
+        status: 200;
+        data: Blob;
+    }>(`/desktop/transcodes/${encodeURIComponent(id)}/input${QS.query(QS.explode({
+        claimToken
+    }))}`, {
+        ...opts,
+        headers: oazapfts.mergeHeaders(opts?.headers, {
+            "x-frameleaf-desktop-proof": xFrameleafDesktopProof
+        })
+    }));
+}
+/**
+ * Not a signed request: those go one at a time, and a long upload would hold up its own heartbeats.
+ */
+export function uploadDesktopTranscode({ id, xFrameleafTranscodeUpload, body }: {
+    id: string;
+    xFrameleafTranscodeUpload: string;
+    body: Blob;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: DesktopWorkerAckDto;
+    }>(`/desktop/transcodes/${encodeURIComponent(id)}/output`, {
+        ...opts,
+        method: "PUT",
+        body,
+        headers: oazapfts.mergeHeaders(opts?.headers, {
+            "x-frameleaf-transcode-upload": xFrameleafTranscodeUpload
+        })
+    }));
+}
+/**
+ * Get the token for uploading a converted video
+ */
+export function grantDesktopTranscodeUpload({ id, xFrameleafDesktopProof, desktopWorkerPayloadDto }: {
+    id: string;
+    xFrameleafDesktopProof: string;
+    desktopWorkerPayloadDto: DesktopWorkerPayloadDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: DesktopTranscodeUploadGrantDto;
+    }>(`/desktop/transcodes/${encodeURIComponent(id)}/upload-grant`, oazapfts.json({
         ...opts,
         method: "POST",
         body: desktopWorkerPayloadDto,

@@ -20,10 +20,11 @@ const plain = {
   dolbyVision: false,
   logConversion: false,
 };
-const policy = (household: { devices: string[]; transcodeDevices?: string[] }) => ({
+const policy = (household: { devices: string[]; transcodeDevices?: string[] }, enabled = [deviceId]) => ({
   version: 1 as const,
   accounts: {},
   household: { revisionId, ...household },
+  transcodeEnabledDevices: enabled,
 });
 
 describe('desktopTranscodeRefusal', () => {
@@ -46,7 +47,14 @@ describe('desktopMayTranscode', () => {
   const device = { id: deviceId, ownerId };
 
   it("takes its own account's video", () => {
-    expect(desktopMayTranscode(null, device, ownerId)).toBe(true);
+    expect(desktopMayTranscode(policy({ devices: [] }), device, ownerId)).toBe(true);
+  });
+
+  it('takes nothing while the computer is off, even its own account or an old household entry', () => {
+    const off = policy({ devices: [deviceId], transcodeDevices: [deviceId] }, []);
+    expect(desktopMayTranscode(null, device, ownerId)).toBe(false);
+    expect(desktopMayTranscode(off, device, ownerId)).toBe(false);
+    expect(desktopMayTranscode(off, device, otherId)).toBe(false);
   });
 
   it("does not take another account's video as a household AI computer alone", () => {
@@ -69,15 +77,22 @@ describe('hasDesktopForTranscode', () => {
   const seen = (age: number) => ({ devices: { [deviceId]: { ownerId, at: new Date(now - age).toISOString() } } });
 
   it('finds a desktop that asked recently', () => {
-    expect(hasDesktopForTranscode(seen(1000), null, ownerId, now)).toBe(true);
+    expect(hasDesktopForTranscode(seen(1000), policy({ devices: [] }), ownerId, now)).toBe(true);
+  });
+
+  it('does not count a computer that is off', () => {
+    expect(hasDesktopForTranscode(seen(1000), null, ownerId, now)).toBe(false);
+    expect(hasDesktopForTranscode(seen(1000), policy({ devices: [] }, []), ownerId, now)).toBe(false);
   });
 
   it('does not wait for a desktop that went away', () => {
-    expect(hasDesktopForTranscode(seen(DESKTOP_TRANSCODE_PRESENCE_MS), null, ownerId, now)).toBe(false);
+    expect(hasDesktopForTranscode(seen(DESKTOP_TRANSCODE_PRESENCE_MS), policy({ devices: [] }), ownerId, now)).toBe(
+      false,
+    );
   });
 
   it("does not count a desktop that may not take this owner's video", () => {
-    expect(hasDesktopForTranscode(seen(1000), null, otherId, now)).toBe(false);
+    expect(hasDesktopForTranscode(seen(1000), policy({ devices: [] }), otherId, now)).toBe(false);
   });
 });
 

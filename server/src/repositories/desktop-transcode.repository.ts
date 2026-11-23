@@ -12,13 +12,16 @@ import { DB } from 'src/schema/index.js';
 import {
   DESKTOP_TRANSCODE_VALIDATION_MS,
   desktopMayTranscode,
+  desktopTranscodeClaimant,
+  desktopTranscodeClaimantDevice,
+  desktopTranscodeEnabled,
   desktopTranscodesEveryone,
 } from 'src/utils/desktop-transcode.js';
 import { lockedAssetIdExists } from 'src/utils/locked.js';
 import { CLAIMED_MEDIA_OPERATION_STATUSES, TERMINAL_MEDIA_OPERATION_STATUSES } from 'src/utils/media-operation.js';
 
-/** Names the authorization epoch too: a claim never survives the computer's authorization changing. */
-const claimant = ({ deviceId, authorizationEpoch }: DesktopWorkerGrant) => `desktop:${deviceId}:${authorizationEpoch}`;
+const claimant = ({ deviceId, authorizationEpoch }: DesktopWorkerGrant) =>
+  desktopTranscodeClaimant(deviceId, authorizationEpoch);
 const kind = MediaOperationKind.PlaybackTranscode;
 
 export type DesktopTranscodeResult = { outputPath: string; checksum: string; sizeInBytes: number };
@@ -46,6 +49,9 @@ export class DesktopTranscodeRepository {
     return this.db.transaction().execute(async (tx) => {
       const worker = await lockDesktopWorker(tx, grant);
       if (!worker) return;
+      const policy = await readDesktopAssistancePolicy(tx);
+      // FL-1761: a computer that is off gets nothing, not even the lease it already holds
+      if (!desktopTranscodeEnabled(policy, grant.deviceId)) return;
       const claimedBy = claimant(grant);
       const held = await tx
         .selectFrom('media_operation')
@@ -57,9 +63,14 @@ export class DesktopTranscodeRepository {
         .where('cancelRequestedAt', 'is', null)
         .limit(1)
         .executeTakeFirst();
-      if (held) return { ...held, workerOwnerId: worker.ownerId };
+      if (held) {
+        const device = { id: grant.deviceId, ownerId: worker.ownerId };
+        return desktopMayTranscode(policy, device, held.ownerId)
+          ? { ...held, workerOwnerId: worker.ownerId }
+          : undefined;
+      }
 
-      const everyone = desktopTranscodesEveryone(await readDesktopAssistancePolicy(tx), grant.deviceId);
+      const everyone = desktopTranscodesEveryone(policy, grant.deviceId);
       const next = await tx
         .selectFrom('media_operation')
         .select('id')
@@ -86,6 +97,9 @@ export class DesktopTranscodeRepository {
           attemptStartedAt: sql<Date>`now()`,
           startedAt: sql<Date>`coalesce("startedAt", now())`,
           attempt: sql<number>`"attempt" + 1`,
+          // a new attempt never shows the percentage of the one before it
+          progress: 0,
+          processedUnits: '0',
         })
         .where('id', '=', next.id)
         .returningAll()
@@ -134,9 +148,12 @@ export class DesktopTranscodeRepository {
     return !!row;
   }
 
-  /** The operation an upload token opens, while its claim is live. */
-  getByUploadToken(id: string, tokenHash: string) {
-    return this.db
+  /**
+   * The operation an upload token opens, while its claim is live and its computer may still work on this video.
+   * FL-1761: read at the start of an upload and about once a second during it, so turning a computer off stops it.
+   */
+  async getByUploadToken(id: string, tokenHash: string) {
+    const operation = await this.db
       .selectFrom('media_operation')
       .selectAll()
       .where('id', '=', id)
@@ -147,6 +164,19 @@ export class DesktopTranscodeRepository {
       .where('claimExpiresAt', '>', sql<Date>`clock_timestamp()`)
       .where('cancelRequestedAt', 'is', null)
       .executeTakeFirst();
+    const deviceId = desktopTranscodeClaimantDevice(operation?.claimedBy);
+    if (!operation || !deviceId) return;
+    const device = await this.db
+      .selectFrom('desktop_device')
+      .select('userId')
+      .where('id', '=', deviceId)
+      .where('revokedAt', 'is', null)
+      .executeTakeFirst();
+    if (!device) return;
+    const policy = await readDesktopAssistancePolicy(this.db);
+    return desktopMayTranscode(policy, { id: deviceId, ownerId: device.userId }, operation.ownerId)
+      ? operation
+      : undefined;
   }
 
   /** Finished conversions that still name a staged file, such as one whose job was cancelled. */

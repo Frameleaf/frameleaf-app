@@ -39,7 +39,7 @@ describe(DesktopTranscodeService.name, () => {
     clearStaged: vi.fn(),
     isLockedAsset: vi.fn(),
   };
-  const operations = { heartbeat: vi.fn(), fail: vi.fn() };
+  const operations = { heartbeat: vi.fn(), fail: vi.fn(), reportProgress: vi.fn() };
   const assets = { getById: vi.fn() };
   const metadata = { setEntry: vi.fn() };
   const storage = { unlinkDir: vi.fn() };
@@ -119,6 +119,40 @@ describe(DesktopTranscodeService.name, () => {
     expect(repository.clearStaged).toHaveBeenCalledExactlyOnceWith(claimToken);
   });
 
+  it('stores the progress of an accepted heartbeat through the operation (FL-1761)', async () => {
+    repository.getClaimed.mockResolvedValue({ ownerId, snapshot });
+    operations.heartbeat.mockResolvedValue(true);
+    await sut.heartbeat('Bearer x', 'proof', id, JSON.stringify({ claimToken, progress: 42 }));
+    expect(operations.reportProgress).toHaveBeenCalledWith(id, claimToken, {
+      status: MediaOperationStatus.Rendering,
+      processedUnits: 42,
+      totalUnits: 100,
+      progress: 42,
+    });
+  });
+
+  it('still accepts a heartbeat without progress (FL-1761)', async () => {
+    repository.getClaimed.mockResolvedValue({ ownerId, snapshot });
+    operations.heartbeat.mockResolvedValue(true);
+    const answer = await sut.heartbeat('Bearer x', 'proof', id, JSON.stringify({ claimToken }));
+    expect(answer.accepted).toBe(true);
+    expect(operations.reportProgress).not.toHaveBeenCalled();
+  });
+
+  it('stops a computer that was turned off at its next heartbeat (FL-1761)', async () => {
+    repository.getClaimed.mockResolvedValue(undefined);
+    const answer = await sut.heartbeat('Bearer x', 'proof', id, JSON.stringify({ claimToken, progress: 50 }));
+    expect(answer).toEqual({ accepted: false, expiresAt: null });
+    expect(operations.heartbeat).not.toHaveBeenCalled();
+    expect(operations.reportProgress).not.toHaveBeenCalled();
+  });
+
+  it.each([-1, 101, 4.5, '42'])('refuses a progress of %s (FL-1761)', async (progress) => {
+    await expect(
+      sut.heartbeat('Bearer x', 'proof', id, JSON.stringify({ claimToken, progress })),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
   it('fails without a retry, so the waiting job encodes on the server', async () => {
     repository.getClaimed.mockResolvedValue({ ownerId, snapshot });
     operations.fail.mockResolvedValue('failed');
@@ -169,9 +203,10 @@ describe('waitForDesktopTranscode', () => {
         input,
       ),
     );
-  const withPresence = (value: unknown) =>
+  const turnedOn = { version: 1, accounts: {}, transcodeEnabledDevices: [deviceId] };
+  const withPresence = (value: unknown, policy: unknown = turnedOn) =>
     systemMetadataRepository.get.mockImplementation((key: SystemMetadataKey) =>
-      Promise.resolve(key === DESKTOP_TRANSCODE_PRESENCE_KEY ? value : null),
+      Promise.resolve(key === DESKTOP_TRANSCODE_PRESENCE_KEY ? value : policy),
     );
 
   beforeEach(() => {
@@ -182,6 +217,12 @@ describe('waitForDesktopTranscode', () => {
 
   it('encodes here when no desktop is present', async () => {
     withPresence(null);
+    await expect(run()).resolves.toBe(false);
+    expect(mediaOperationRepository.createUnlessActive).not.toHaveBeenCalled();
+  });
+
+  it('never offers a video to a computer that is off (FL-1761)', async () => {
+    withPresence(present, null);
     await expect(run()).resolves.toBe(false);
     expect(mediaOperationRepository.createUnlessActive).not.toHaveBeenCalled();
   });
