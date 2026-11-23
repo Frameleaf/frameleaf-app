@@ -5,6 +5,7 @@ import type {
   WorkerInventoryResponseDto,
   WorkerRunnerDto,
 } from 'src/dtos/worker-inventory.dto.js';
+import type { HiddenContentFilter } from 'src/utils/hidden-content.js';
 import {
   LIBRARY_ML_WORKLOADS,
   MediaOperationDestination,
@@ -98,7 +99,7 @@ export class WorkerInventoryService {
     this.logger.setContext(WorkerInventoryService.name);
   }
 
-  async getInventory(viewerId?: string): Promise<WorkerInventoryResponseDto> {
+  async getInventory(viewerId?: string, hiddenContent?: HiddenContentFilter): Promise<WorkerInventoryResponseDto> {
     const config = await getConfig(
       { configRepo: this.configRepository, metadataRepo: this.systemMetadataRepository, logger: this.logger },
       { withCache: true },
@@ -110,7 +111,7 @@ export class WorkerInventoryService {
       this.mediaOperationRepository.getDestinationLoad(RESTORATION_OPERATION_KINDS),
       this.mediaOperationRepository.getClaimants(RESTORATION_OPERATION_KINDS),
       readQueueBacklogs(this.jobRepository, ALL_LIBRARY_ANALYSIS_QUEUES),
-      this.mlDestinationRepository.getDesktopHelpers(viewerId),
+      this.mlDestinationRepository.getDesktopHelpers(viewerId, hiddenContent),
     ]);
 
     const backlog = libraryAnalysisBacklog(queues);

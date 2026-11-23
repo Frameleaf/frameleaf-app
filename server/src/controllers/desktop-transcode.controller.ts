@@ -30,17 +30,18 @@ import { DesktopWorkerLanGuard } from 'src/middleware/desktop-worker-lan.guard.j
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { DesktopTranscodeService } from 'src/services/desktop-transcode.service.js';
 import { sendFile } from 'src/utils/file.js';
-import { UUIDParamDto } from 'src/validation.js';
+import { UUIDv7ParamDto } from 'src/validation.js';
 
 const history = () => new HistoryBuilder().added('v3.2.0').alpha('v3.2.0');
+const WorkerProof = () =>
+  ApiHeader({
+    name: 'x-frameleaf-desktop-proof',
+    required: true,
+    description: 'Canonical base64 installation-signed worker request proof. Photo sessions are not accepted.',
+  });
 
 @ApiTags(ApiTag.Server)
 @ApiBearerAuth()
-@ApiHeader({
-  name: 'x-frameleaf-desktop-proof',
-  required: true,
-  description: 'Canonical base64 installation-signed worker request proof. Photo sessions are not accepted.',
-})
 @UseGuards(DesktopWorkerLanGuard)
 @Controller('desktop/transcodes')
 export class DesktopTranscodeController {
@@ -52,6 +53,7 @@ export class DesktopTranscodeController {
   }
 
   @Post('claim')
+  @WorkerProof()
   @HttpCode(HttpStatus.OK)
   @Authenticated({ public: true })
   @Endpoint({ summary: 'Claim one video playback conversion', history: history() })
@@ -65,13 +67,14 @@ export class DesktopTranscodeController {
   }
 
   @Get(':id/input')
+  @WorkerProof()
   @Authenticated({ public: true })
   @FileResponse()
   @Endpoint({ summary: 'Read the original of a claimed video conversion', history: history() })
   async readDesktopTranscodeInput(
     @Headers('authorization') authorization: string | undefined,
     @Headers('x-frameleaf-desktop-proof') proof: string | undefined,
-    @Param() { id }: UUIDParamDto,
+    @Param() { id }: UUIDv7ParamDto,
     @Query() { claimToken }: DesktopTranscodeInputQueryDto,
     @Res() response: Response,
     @Next() next: NextFunction,
@@ -80,26 +83,28 @@ export class DesktopTranscodeController {
   }
 
   @Post(':id/heartbeat')
+  @WorkerProof()
   @HttpCode(HttpStatus.OK)
   @Authenticated({ public: true })
   @Endpoint({ summary: 'Renew the lease of a video conversion', history: history() })
   heartbeatDesktopTranscode(
     @Headers('authorization') authorization: string | undefined,
     @Headers('x-frameleaf-desktop-proof') proof: string | undefined,
-    @Param() { id }: UUIDParamDto,
+    @Param() { id }: UUIDv7ParamDto,
     @Body() dto: DesktopWorkerPayloadDto,
   ): Promise<DesktopWorkerHeartbeatDto> {
     return this.service.heartbeat(authorization, proof, id, dto.payload);
   }
 
   @Post(':id/upload-grant')
+  @WorkerProof()
   @HttpCode(HttpStatus.OK)
   @Authenticated({ public: true })
   @Endpoint({ summary: 'Get the token for uploading a converted video', history: history() })
   grantDesktopTranscodeUpload(
     @Headers('authorization') authorization: string | undefined,
     @Headers('x-frameleaf-desktop-proof') proof: string | undefined,
-    @Param() { id }: UUIDParamDto,
+    @Param() { id }: UUIDv7ParamDto,
     @Body() dto: DesktopWorkerPayloadDto,
     @Res({ passthrough: true }) response: Response,
   ): Promise<DesktopTranscodeUploadGrantDto> {
@@ -120,20 +125,21 @@ export class DesktopTranscodeController {
   @Endpoint({ summary: 'Upload a converted video for server validation', history: history() })
   uploadDesktopTranscode(
     @Headers('x-frameleaf-transcode-upload') uploadToken: string | undefined,
-    @Param() { id }: UUIDParamDto,
+    @Param() { id }: UUIDv7ParamDto,
     @Req() request: Request,
   ): Promise<DesktopWorkerAckDto> {
     return this.service.upload(uploadToken, id, request);
   }
 
   @Post(':id/fail')
+  @WorkerProof()
   @HttpCode(HttpStatus.OK)
   @Authenticated({ public: true })
   @Endpoint({ summary: 'Hand a video conversion back to the server', history: history() })
   failDesktopTranscode(
     @Headers('authorization') authorization: string | undefined,
     @Headers('x-frameleaf-desktop-proof') proof: string | undefined,
-    @Param() { id }: UUIDParamDto,
+    @Param() { id }: UUIDv7ParamDto,
     @Body() dto: DesktopWorkerPayloadDto,
   ): Promise<DesktopWorkerAckDto> {
     return this.service.fail(authorization, proof, id, dto.payload);

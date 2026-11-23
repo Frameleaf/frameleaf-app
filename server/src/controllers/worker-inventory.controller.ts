@@ -6,6 +6,8 @@ import { WorkerInventoryResponseDto } from 'src/dtos/worker-inventory.dto.js';
 import { ApiTag, Permission } from 'src/enum.js';
 import { Auth, Authenticated } from 'src/middleware/auth.guard.js';
 import { WorkerInventoryService } from 'src/services/worker-inventory.service.js';
+import { getHiddenContentFilter } from 'src/utils/database.js';
+import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 
 /**
  * The worker inventory (FL-72). Administrators only: it names every endpoint and how busy it is. Of the media
@@ -26,6 +28,6 @@ export class WorkerInventoryController {
     history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
   })
   getWorkerInventory(@Auth() auth: AuthDto): Promise<WorkerInventoryResponseDto> {
-    return this.service.getInventory(auth.user.id);
+    return this.service.getInventory(auth.user.id, getHiddenContentFilter(getHiddenContentQueryOptions(auth)));
   }
 }

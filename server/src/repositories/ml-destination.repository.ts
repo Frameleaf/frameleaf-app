@@ -27,7 +27,7 @@ import {
   MlWorkloadAccountingTable,
   MlWorkloadRouteTable,
 } from 'src/schema/tables/ml-destination.table.js';
-import { hiddenFromOthers } from 'src/utils/database.js';
+import { hiddenContentAssetIdExists, hiddenFromOthers } from 'src/utils/database.js';
 import {
   desktopAccountPermitted,
   desktopAssistancePolicySchema,
@@ -39,6 +39,7 @@ import {
   desktopTranscodesEveryone,
 } from 'src/utils/desktop-transcode.js';
 import { DESKTOP_PRESENCE_SECONDS } from 'src/utils/desktop-worker-timing.js';
+import { type HiddenContentFilter, hasHiddenContentFilter } from 'src/utils/hidden-content.js';
 import { ML_BUDGET_WINDOW_DAYS } from 'src/utils/ml-destination.js';
 import {
   ML_PROCESSING_ORDER_DEFAULT_SCOPE,
@@ -534,7 +535,7 @@ export class MlDestinationRepository {
    * now (online within `DESKTOP_PRESENCE_SECONDS` with a current qualification) and when it last checked in. The
    * Computers page lists these and the processing order counts them, so both read the same helpers.
    */
-  async getDesktopHelpers(viewerId?: string): Promise<DesktopHelperRow[]> {
+  async getDesktopHelpers(viewerId?: string, hiddenContent?: HiddenContentFilter): Promise<DesktopHelperRow[]> {
     const metadata = await new SystemMetadataRepository(this.db).get(SystemMetadataKey.FrameleafDesktopAssistance);
     const policy = desktopAssistancePolicySchema.safeParse(metadata ?? { version: 1, accounts: {} });
     if (!policy.success || Object.keys(policy.data.accounts).length === 0) {
@@ -577,7 +578,11 @@ export class MlDestinationRepository {
       }
       return [...workloads].map(([workload, until]) => ({ workload, until }));
     };
-    const transcoding = await this.getDesktopConversions(policy.data.transcodeEnabledDevices ?? [], viewerId);
+    const transcoding = await this.getDesktopConversions(
+      policy.data.transcodeEnabledDevices ?? [],
+      viewerId,
+      hiddenContent,
+    );
     return rows
       .filter((row) => desktopAccountPermitted(policy.data, row.userId, row.isAdmin))
       .map(({ id, name, platform, ready, lastSeenAt, ownerName }) => ({
@@ -596,7 +601,7 @@ export class MlDestinationRepository {
   }
 
   /** FL-1761: the playback copy each computer that is turned on holds a live lease for. */
-  private async getDesktopConversions(deviceIds: string[], viewerId?: string) {
+  private async getDesktopConversions(deviceIds: string[], viewerId?: string, hiddenContent?: HiddenContentFilter) {
     const conversions = new Map<string, { fileName: string | null; progress: number }>();
     if (deviceIds.length === 0) return conversions;
     const rows = await this.db
@@ -604,7 +609,8 @@ export class MlDestinationRepository {
       .innerJoin('asset', 'asset.id', 'operation.assetId')
       .select(['operation.claimedBy', 'operation.progress', 'asset.originalFileName'])
       .select(
-        sql<boolean>`("asset"."visibility" = ${AssetVisibility.Locked} or ${hiddenFromOthers(viewerId, 'asset')})`.as(
+        sql<boolean>`("asset"."visibility" = ${AssetVisibility.Locked} or ${hiddenFromOthers(viewerId, 'asset')}
+          or ${hasHiddenContentFilter(hiddenContent) ? hiddenContentAssetIdExists(sql.ref('asset.id'), hiddenContent) : sql.lit(false)})`.as(
           'withheld',
         ),
       )
