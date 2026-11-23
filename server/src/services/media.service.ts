@@ -2075,12 +2075,14 @@ export class MediaService extends BaseService {
       policy.success ? policy.data : null,
       asset.ownerId,
     );
+    // FL-1761: an item is Locked from its lock record; its file is only sealed later, by its own job.
+    const locked = source.locked || (await this.mediaOperationRepository.isAssetLocked(asset.id));
 
     if (latest && !finished) {
       // A desktop that holds it still has its lease; one that went away is recovered by the lease sweep.
       if (
         latest.status === MediaOperationStatus.Queued &&
-        !available &&
+        (!available || locked) &&
         (await this.mediaOperationRepository.failUnclaimedDesktopTranscode(latest.id))
       ) {
         return false;
@@ -2089,7 +2091,7 @@ export class MediaService extends BaseService {
       return false;
     }
 
-    if (!available || desktopTranscodeRefusal(source)) return false;
+    if (!available || desktopTranscodeRefusal({ ...source, locked })) return false;
     const {
       command: { inputOptions, outputOptions, twoPass, progress },
       expected,
@@ -2138,6 +2140,9 @@ export class MediaService extends BaseService {
       problem = 'missing';
     } else if (snapshot.checksum !== asset.checksum.toString('hex')) {
       problem = 'source-changed';
+    } else if (await this.mediaOperationRepository.isAssetLocked(asset.id)) {
+      // Moved to Locked while the desktop worked: its copy is not published.
+      problem = 'locked';
     } else {
       try {
         const verified = await openRenderArtifact(
@@ -2174,6 +2179,11 @@ export class MediaService extends BaseService {
     await this.storageRepository.copyFile(staged.outputPath, output);
     try {
       deferJobAdoption(async (tx) => {
+        if (await this.mediaOperationRepository.isAssetLockedForPublication(asset.id, tx)) {
+          // Locked since the check above. The retried job refuses this result and encodes under Locked rules.
+          await this.storageRepository.unlink(output).catch(() => {});
+          throw new Error('Video was locked before the desktop conversion was published');
+        }
         const completed = await this.mediaOperationRepository.complete(
           operation.id,
           claimToken,

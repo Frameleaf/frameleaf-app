@@ -1,6 +1,8 @@
+import { DummyDriver, Kysely, PostgresAdapter, PostgresIntrospector, PostgresQueryCompiler } from 'kysely';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { DesktopTranscodeRepository } from 'src/repositories/desktop-transcode.repository.js';
 import { lockDesktopWorker, readDesktopAssistancePolicy } from 'src/repositories/desktop-worker.repository.js';
+import { DB } from 'src/schema/index.js';
 
 vi.mock('src/repositories/desktop-worker.repository.js', () => ({
   lockDesktopWorker: vi.fn(),
@@ -80,6 +82,44 @@ describe(DesktopTranscodeRepository.name, () => {
       await expect(
         new DesktopTranscodeRepository(db as never).getClaimed(grant, id, claimToken),
       ).resolves.toMatchObject({ id });
+    });
+  });
+
+  // A parameter cast straight to jsonb is stored by postgres.js as a JSON string, so no upload token was ever found.
+  describe('JSON columns (FL-1761)', () => {
+    const compiled = () => {
+      const queries: string[] = [];
+      const db = new Kysely<DB>({
+        dialect: {
+          createAdapter: () => new PostgresAdapter(),
+          createDriver: () => new DummyDriver(),
+          createIntrospector: (kysely) => new PostgresIntrospector(kysely),
+          createQueryCompiler: () => new PostgresQueryCompiler(),
+        },
+        log: (event) => void queries.push(event.query.sql),
+      });
+      return { queries, repository: new DesktopTranscodeRepository(db) };
+    };
+
+    it('stores the upload grant as an object', async () => {
+      const { queries, repository } = compiled();
+      await repository.setUploadGrant(id, claimToken, { tokenHash: 'hash', checksum: 'sum', sizeInBytes: '1' });
+      expect(queries[0]).toContain('"settings" = $1::text::jsonb');
+    });
+
+    it('stores the staged result as an object', async () => {
+      const { queries, repository } = compiled();
+      await repository.stageResult(id, claimToken, 'hash', { outputPath: '/file', checksum: 'sum', sizeInBytes: 1 });
+      expect(queries[0]).toContain('"result" = $2::text::jsonb');
+    });
+
+    it('never claims an offer whose video has a lock record', async () => {
+      vi.mocked(readDesktopAssistancePolicy).mockResolvedValue(on as never);
+      const { queries, repository } = compiled();
+      await repository.claim(grant, 1000);
+      expect(queries.find((query) => query.includes('skip locked'))).toContain(
+        'not exists (select 1 from asset_lock where asset_lock."assetId" = "media_operation"."assetId")',
+      );
     });
   });
 
