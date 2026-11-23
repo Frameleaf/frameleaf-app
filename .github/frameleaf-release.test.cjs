@@ -547,8 +547,8 @@ test("the qualification job catalog covers every Test workflow axis, shard and e
     resolvedFor("workflow_dispatch").sort(),
     [...testJobNames].sort(),
   );
-  // Pull requests and pushes run the same lanes minus every Arm e2e lane.
-  for (const event of ["pull_request", "push"])
+  // Pull requests and hourly main runs use the same lanes minus every Arm e2e lane.
+  for (const event of ["pull_request", "schedule"])
     assert.deepEqual(
       resolvedFor(event).sort(),
       testJobNames.filter((name) => !name.includes("ubuntu-24.04-arm")).sort(),
