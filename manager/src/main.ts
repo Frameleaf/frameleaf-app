@@ -85,7 +85,7 @@ const nativeAddress = runtime === 'native' ? nativeListener(origin!) : null;
 if (!['docker', 'native'].includes(runtime)) throw new Refusal('manager_runtime_invalid');
 // A new install maps one broad folder, so Docker no longer creates Manager's own folder.
 if (runtime === 'docker' && broadRoots([process.env.MANAGER_STORAGE_ROOTS ?? ''])) await ensureManagerFolder(directory);
-const store = new Store(directory);
+const store = new Store(directory, { releaseFailedControl: runtime === 'docker' });
 if (runtime === 'docker' && store.get('native-installation')) throw new Refusal('manager_runtime_changed');
 if (runtime === 'native') {
   const bootstrapPipe = fstatSync(0);
@@ -535,7 +535,7 @@ class Api {
     return { enabled };
   }
   @Post('unlock-backups') async unlockBackups(@Body() input: unknown) {
-    if (store.history().some((operation) => operation.state !== 'complete')) throw new Refusal('operation_in_progress');
+    if (store.locked()) throw new Refusal('operation_in_progress');
     const { key } = z
       .object({ key: z.string().max(128) })
       .strict()
