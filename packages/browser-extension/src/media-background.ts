@@ -470,8 +470,7 @@ export async function handleMedia(
           'Reading this site’s sign-in wasn’t allowed, so nothing was shared.',
         );
       const store = await cookieStore(tabId);
-      if (store === undefined)
-        throw new QueueFailure(SITE_REASONS.partitioned);
+      if (store === undefined) throw new QueueFailure(SITE_REASONS.partitioned);
       // Read now and handed straight to the Library; it is not kept anywhere here.
       const access = await readSiteAccess(view.origins, store);
       if (!access.ok) throw new QueueFailure(SITE_REASONS[access.reason]);

@@ -513,7 +513,10 @@ describe('media downloads from the popup (FL-1427)', () => {
     await expect(handleMessage({ type: 'media-site' }, popup)).resolves.toEqual(
       expect.objectContaining({
         media: {
-          site: expect.objectContaining({ allowed: true, reason: 'partitioned' }),
+          site: expect.objectContaining({
+            allowed: true,
+            reason: 'partitioned',
+          }),
         },
       }),
     );

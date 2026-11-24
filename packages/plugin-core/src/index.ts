@@ -54,10 +54,18 @@ const ambiguousAlternation = (alternatives: string[], caseInsensitive: boolean):
     }
     literals.push(text);
   }
-  return literals.some((text, index) => literals.some((other, otherIndex) => otherIndex !== index && other.startsWith(text)));
+  return literals.some((text, index) =>
+    literals.some((other, otherIndex) => otherIndex !== index && other.startsWith(text)),
+  );
 };
 
-type GroupScan = { quantifierInside: boolean; ambiguous: boolean; bodyStart: number; bars: number[]; assertion: boolean };
+type GroupScan = {
+  quantifierInside: boolean;
+  ambiguous: boolean;
+  bodyStart: number;
+  bars: number[];
+  assertion: boolean;
+};
 
 const newGroupScan = (bodyStart: number): GroupScan => ({
   quantifierInside: false,
