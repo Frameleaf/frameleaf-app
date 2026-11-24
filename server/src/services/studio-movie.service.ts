@@ -39,6 +39,7 @@ import {
 } from 'src/services/studio-project-import.service.js';
 import { StudioProjectService } from 'src/services/studio-project.service.js';
 import { requireAccess } from 'src/utils/access.js';
+import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { selectMlDestination } from 'src/utils/ml-destination.js';
 import { STUDIO_ENGINE_REVISION } from 'src/utils/studio-commands.generated.js';
 import {
@@ -154,7 +155,9 @@ export class StudioMovieService {
       throw new NotFoundException('Not found');
     }
     const assetIds = await this.sourceIds(auth, dto);
-    const usable = await this.movies.getMovieAssets(assetIds, auth.user.id);
+    // Only what this session shows: a session that is not unlocked never puts the owner's own items hidden by
+    // their Locked rules, or sensitive items, in a movie. The job renders exactly these (`snapshot.assetIds`).
+    const usable = await this.movies.getMovieAssets(assetIds, auth.user.id, getHiddenContentQueryOptions(auth));
     if (usable.length === 0) {
       throw new BadRequestException('There are no photos or videos here to make a movie from');
     }

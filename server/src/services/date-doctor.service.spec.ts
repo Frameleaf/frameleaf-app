@@ -10,7 +10,13 @@ import type { PartnerOriginRepository } from 'src/repositories/partner-origin.re
 import { DateDoctorFixDto } from 'src/dtos/date-doctor.dto.js';
 import { AccountEventAction, JobName } from 'src/enum.js';
 import { DateDoctorService } from 'src/services/date-doctor.service.js';
-import { DateFindingCause, type DateScanRow, dateFromFileName, detectDateFindings } from 'src/utils/date-doctor.js';
+import {
+  type DateFinding,
+  DateFindingCause,
+  type DateScanRow,
+  dateFromFileName,
+  detectDateFindings,
+} from 'src/utils/date-doctor.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
 import { FIXTURE_NOW, buildDateDoctorFixture, scoreFindings } from 'test/fixtures/date-doctor.fixture.js';
 
@@ -154,10 +160,19 @@ describe(DateDoctorService.name, () => {
   const setup = () => {
     const repository = {
       getOwnerIds: vi.fn(),
+      getScanMonths: vi.fn(),
       getScanRows: vi.fn(),
       replaceFindings: vi.fn(),
       getFindings: vi.fn(),
       isScanning: vi.fn().mockResolvedValue(false),
+    };
+    /** The repository's month reads, over `photos` in memory. */
+    const holds = (photos: DateScanRow[]) => {
+      const months = new Set(photos.map(({ localDateTime: at }) => Date.UTC(at.getUTCFullYear(), at.getUTCMonth(), 1)));
+      repository.getScanMonths.mockResolvedValue([...months].toSorted((a, b) => a - b).map((at) => new Date(at)));
+      repository.getScanRows.mockImplementation((_ownerId: string, window: { from: Date; to: Date }) =>
+        Promise.resolve(photos.filter(({ localDateTime: at }) => at >= window.from && at < window.to)),
+      );
     };
     const jobs = { queue: vi.fn(), queueAll: vi.fn() };
     const logger = { setContext: vi.fn(), log: vi.fn() };
@@ -167,7 +182,7 @@ describe(DateDoctorService.name, () => {
       repository as unknown as DateDoctorRepository,
       ...([{}, {}, {}, {}] as unknown as FixDeps),
     );
-    return { sut, repository, jobs };
+    return { sut, repository, jobs, holds };
   };
 
   it('queues a scan of the signed-in owner', async () => {
@@ -187,17 +202,42 @@ describe(DateDoctorService.name, () => {
   });
 
   it('replaces the owner’s findings with what the scan found', async () => {
-    const { sut, repository } = setup();
+    const { sut, repository, holds } = setup();
     const photos = buildDateDoctorFixture().slice(0, 40); // the future dates
-    repository.getScanRows.mockResolvedValue(photos);
+    holds(photos);
     await sut.handleScan({ userId: 'owner' });
-    expect(repository.getScanRows).toHaveBeenCalledWith('owner');
+    expect(repository.getScanMonths).toHaveBeenCalledWith('owner');
+    expect(repository.getScanRows).toHaveBeenCalledWith('owner', expect.objectContaining({ from: expect.any(Date) }));
     const [ownerId, findings] = repository.replaceFindings.mock.calls[0];
     expect(ownerId).toBe('owner');
     expect(findings).toHaveLength(40);
     expect(new Set(findings.map(({ cause }: { cause: string }) => cause))).toEqual(
       new Set([DateFindingCause.FutureDate]),
     );
+  });
+
+  it('finds month by month exactly what a scan of the whole library finds', async () => {
+    vi.useFakeTimers({ now: FIXTURE_NOW, toFake: ['Date'] });
+    try {
+      const { sut, repository, holds } = setup();
+      const photos = buildDateDoctorFixture();
+      holds(photos);
+      await sut.handleScan({ userId: 'owner' });
+      expect(repository.getScanRows.mock.calls.length).toBeGreaterThan(1);
+      const key = ({ assetId, cause }: { assetId: string; cause: string }) => `${assetId}|${cause}`;
+      const [, monthly] = repository.replaceFindings.mock.calls[0];
+      const whole = detectDateFindings(photos, FIXTURE_NOW);
+      expect(whole.length).toBeGreaterThan(0);
+      expect(monthly.map((found: DateFinding) => key(found)).toSorted()).toEqual(
+        whole.map((found) => key(found)).toSorted(),
+      );
+      const byKey = new Map(whole.map((found) => [key(found), found]));
+      for (const found of monthly) {
+        expect(found).toEqual(byKey.get(key(found)));
+      }
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('groups findings by camera and day', async () => {

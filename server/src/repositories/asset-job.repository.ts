@@ -588,6 +588,16 @@ export class AssetJobRepository {
     );
   }
 
+  /**
+   * Whether no asset has this id any more. A job for an asset deleted after it was queued has nothing left to do:
+   * it is skipped, not failed and retried.
+   */
+  @GenerateSql({ params: [DummyValue.UUID] })
+  async isGone(id: string): Promise<boolean> {
+    const row = await this.db.selectFrom('asset').select('asset.id').where('asset.id', '=', id).executeTakeFirst();
+    return !row;
+  }
+
   @GenerateSql({ params: [], stream: true })
   streamForSearchDuplicates(force?: boolean) {
     return this.selectionForSearchDuplicates(force).stream();

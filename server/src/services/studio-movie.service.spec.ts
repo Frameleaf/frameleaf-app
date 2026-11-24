@@ -239,6 +239,20 @@ describe(StudioMovieService.name, () => {
       });
     });
 
+    it('leaves out the owner’s own items their session does not show', async () => {
+      const { sut, movies } = setup();
+      const hiddenContent = {
+        userId: owner.user.id,
+        includeNsfw: true,
+        tagIds: [],
+        personIds: ['0195e2a0-0000-7000-8000-0000000000ff'],
+        petIds: [],
+        scope: 'owned' as const,
+      };
+      await sut.create({ ...owner, hiddenContent }, { albumId, lengthSeconds: 60, music: 'generated', mood: 'warm' });
+      expect(movies.getMovieAssets).toHaveBeenCalledWith(assetIds, owner.user.id, { hiddenContent });
+    });
+
     it('checks every selected item and refuses a source with nothing to use', async () => {
       const { sut, movies } = setup();
       movies.getMovieAssets.mockResolvedValue([]);

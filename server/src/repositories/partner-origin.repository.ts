@@ -102,10 +102,6 @@ export type AssetCopyInput = {
   lockReason?: AssetLockReason;
 };
 /** Why a source may not be copied yet (Task 13 lifts the Locked and sensitive skip). */
-export type AssetCopyBlockers = {
-  locked: boolean;
-  sensitive: boolean;
-};
 const GENERATED_FILE_TYPES = [
   AssetFileType.Thumbnail,
   AssetFileType.Preview,
@@ -748,17 +744,6 @@ export class PartnerOriginRepository {
       ) AS present
     `.execute(kysely);
     return rows[0]?.present ?? false;
-  }
-  /** Locked or sensitive evidence on a source, from either store (positive evidence anywhere counts). */
-  async getCopyBlockers(assetId: string): Promise<AssetCopyBlockers> {
-    const { rows } = await sql<AssetCopyBlockers>`
-      SELECT
-        (asset.visibility = 'locked' OR EXISTS (SELECT 1 FROM asset_lock WHERE asset_lock."assetId" = asset.id)) AS locked,
-        (asset.is_nsfw OR asset.is_nsfw) AS sensitive
-      FROM asset
-      WHERE asset.id = ${assetId}::uuid
-    `.execute(this.db);
-    return rows[0] ?? { locked: false, sensitive: false };
   }
   /**
    * Create `ownerId`'s copy of one asset (spec §4.3): a new asset row of theirs linked to the source's

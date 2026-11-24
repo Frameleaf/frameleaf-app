@@ -32,6 +32,7 @@ import { WebsocketRepository } from 'src/repositories/websocket.repository.js';
 import { DB } from 'src/schema/index.js';
 import { AssetService } from 'src/services/asset.service.js';
 import { LocationFillService } from 'src/services/location-fill.service.js';
+import { emptyHiddenContentFilter } from 'src/utils/hidden-content.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { factory } from 'test/small.factory.js';
 import { getKyselyDB } from 'test/utils.js';
@@ -349,6 +350,36 @@ describe(LocationFillService.name, () => {
     const proposals = await proposalsOf(sut, auth, run.id);
     expect(proposals.has(kept)).toBe(true);
     expect(proposals.has(lockedSince)).toBe(false);
+  });
+
+  it('does not list, count or apply a proposal hidden from the session by a Locked rule', async () => {
+    const { sut, ctx } = setup();
+    const { user } = await ctx.newUser();
+    const auth = factory.auth({ user });
+    await history(user.id);
+    const kept = await photo(ctx, user.id, '2024-07-01T15:04:00Z');
+    const hidden = await photo(ctx, user.id, '2024-07-01T14:56:00Z');
+    const { person } = await ctx.newPerson({ ownerId: user.id });
+    await ctx.newAssetFace({ assetId: hidden, personGroupId: person.personGroupId });
+    const run = await sut.create(auth, { maxGapMinutes: 15 });
+    await sut.handlePropose({ id: run.id });
+    await expect(sut.get(auth, run.id)).resolves.toMatchObject({ proposalCount: 2 });
+
+    const lockedSession = {
+      ...auth,
+      hiddenContent: { ...emptyHiddenContentFilter(user.id), personIds: [person.personGroupId] },
+    };
+    const listed = await sut.getProposals(lockedSession, run.id, { page: 1, size: 100 });
+    expect(listed.total).toBe(1);
+    expect(listed.days.flatMap(({ proposals }) => proposals).map(({ assetId }) => assetId)).toEqual([kept]);
+
+    await sut.apply(lockedSession, run.id, {});
+    await sut.handleApply({ id: run.id });
+    await expect(exifOf(kept)).resolves.toMatchObject({ latitude: expect.any(Number) });
+    await expect(exifOf(hidden)).resolves.toMatchObject({ latitude: null, longitude: null });
+
+    // the unlocked session sees both again
+    await expect(sut.getProposals(auth, run.id, { page: 1, size: 100 })).resolves.toMatchObject({ total: 2 });
   });
 
   it('has nothing to propose without history in reach, and says so by an empty run', async () => {

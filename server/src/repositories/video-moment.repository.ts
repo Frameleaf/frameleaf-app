@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { Insertable, Kysely, Selectable, Updateable, sql } from 'kysely';
+import { Insertable, Kysely, Selectable, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
@@ -29,8 +29,6 @@ export type VideoMomentFrameInsert = Pick<
   Insertable<VideoMomentFrameTable>,
   'frameIndex' | 'timestampMs' | 'path' | 'width' | 'height' | 'score' | 'rank'
 > & { id?: string };
-
-export type VideoMomentIndexPatch = Omit<Updateable<VideoMomentIndexTable>, 'assetId' | 'createdAt' | 'updatedAt'>;
 
 /** What the frame cutter and the fingerprint need to know about a video. */
 export type VideoMomentSourceRow = NonNullable<Awaited<ReturnType<VideoMomentRepository['getVideoSource']>>>;
@@ -184,10 +182,6 @@ export class VideoMomentRepository {
       .selectAll()
       .where('assetId', '=', asUuid(assetId))
       .executeTakeFirst() as Promise<VideoMomentIndex | undefined>;
-  }
-
-  async updateIndex(assetId: string, patch: VideoMomentIndexPatch): Promise<void> {
-    await this.db.updateTable('video_moment_index').set(patch).where('assetId', '=', asUuid(assetId)).execute();
   }
 
   getFrames(assetId: string): Promise<VideoMomentFrame[]> {
