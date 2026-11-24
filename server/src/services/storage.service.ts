@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { ConflictException, Injectable } from '@nestjs/common';
 import { dirname, join, relative, sep } from 'node:path';
 import type { JobOf, SystemFlags } from 'src/types.js';
 import { ErrorMessages } from 'src/constants.js';
@@ -174,6 +174,8 @@ export class StorageService extends BaseService {
       await this.eventRepository.emit('AssetDelete', { assetId: removedAssetId, userId: removedAssetOwnerId });
     }
     const move = (from: string, to: string) => moveFileWithin(this.storageRepository, from, to);
+    // a file whose original registration changed while it was being trashed is still on disk: the job retries it
+    let retry: ConflictException | undefined;
 
     // TODO: one job per file
     for (const file of files) {
@@ -217,6 +219,10 @@ export class StorageService extends BaseService {
       } catch (error: any) {
         // a cancelled job stops here and its retry deletes the rest; only a file's own failure is skipped
         executionSignal()?.throwIfAborted();
+        if (error instanceof ConflictException) {
+          retry = error;
+          continue;
+        }
         this.logger.warn('Unable to remove file from disk', error);
       }
     }
@@ -225,6 +231,10 @@ export class StorageService extends BaseService {
     await this.removeEmptyFolders(files).catch((error) =>
       this.logger.warn(`Unable to remove the folders the deleted files left empty: ${error}`),
     );
+    if (retry) {
+      // the files already gone are no-ops on the retry; nothing is reported as removed that is not
+      throw retry;
+    }
     return JobStatus.Success;
   }
 

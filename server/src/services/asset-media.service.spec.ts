@@ -66,6 +66,12 @@ vi.mock('src/utils/office-preview.js', async (original) => ({
   withOfficePreview,
 }));
 
+/** A file that is gone from a media folder that is still mounted: only its `.frameleaf` mount file answers. */
+const goneButMounted = (path: string) =>
+  path.endsWith('/.frameleaf')
+    ? Promise.resolve({} as never)
+    : Promise.reject(Object.assign(new Error('gone'), { code: 'ENOENT' }));
+
 const file1 = Buffer.from('d2947b871a706081be194569951b7db246907957', 'hex');
 
 const uploadFile = {
@@ -656,11 +662,19 @@ describe(AssetMediaService.name, () => {
     beforeEach(() => {
       mocks.asset.getByChecksums.mockResolvedValue([lost]);
       mocks.storage.checkFileExists.mockResolvedValue(false);
-      mocks.storage.stat.mockRejectedValue(Object.assign(new Error('gone'), { code: 'ENOENT' }));
+      mocks.storage.stat.mockImplementation(goneButMounted);
     });
 
     it('does not take an original on a drive that cannot answer for lost', async () => {
       mocks.storage.stat.mockRejectedValue(Object.assign(new Error('offline'), { code: 'EIO' }));
+      await expect(
+        sut.bulkUploadCheck(authStub.admin, { assets: [{ id: '1', checksum: file1.toString('hex') }] }),
+      ).resolves.toMatchObject({ results: [{ id: '1', action: AssetUploadAction.REJECT }] });
+    });
+
+    it('does not take an original on a media folder that is not mounted for lost', async () => {
+      // Unmounted: the original and the folder's `.frameleaf` mount file both answer "no such file".
+      mocks.storage.stat.mockRejectedValue(Object.assign(new Error('gone'), { code: 'ENOENT' }));
       await expect(
         sut.bulkUploadCheck(authStub.admin, { assets: [{ id: '1', checksum: file1.toString('hex') }] }),
       ).resolves.toMatchObject({ results: [{ id: '1', action: AssetUploadAction.REJECT }] });
@@ -848,7 +862,7 @@ describe(AssetMediaService.name, () => {
       it('also puts the upload back as its file when the photo had lost it', async () => {
         open();
         mocks.storage.checkFileExists.mockResolvedValue(false);
-        mocks.storage.stat.mockRejectedValue(Object.assign(new Error('gone'), { code: 'ENOENT' }));
+        mocks.storage.stat.mockImplementation(goneButMounted);
         mocks.physicalFile.restoreLostOriginal.mockResolvedValue(true);
         await expect(sut.uploadAsset(authStub.admin, createDto, upload)).resolves.toEqual({
           id: trashed.id,
@@ -938,6 +952,14 @@ describe(AssetMediaService.name, () => {
         expect(mocks.asset.create).not.toHaveBeenCalled();
         // the job owns the upload now: it is not deleted here
         expect(mocks.job.queue).not.toHaveBeenCalledWith(expect.objectContaining({ name: JobName.FileDelete }));
+      });
+
+      it('moves the upload back out of the Library care folder when its job cannot be queued', async () => {
+        mocks.job.queue.mockRejectedValueOnce(new Error('queue unavailable'));
+        await expect(sut.uploadAsset(authStub.admin, createDto, upload)).rejects.toThrow();
+        const [moved, back] = vi.mocked(mocks.storage.rename).mock.calls;
+        expect(moved[0]).toBe(upload.originalPath);
+        expect(back).toEqual([moved[1], upload.originalPath]);
       });
 
       it('still rejects the file when the damaged file is not asked to be replaced', async () => {

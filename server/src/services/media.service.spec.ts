@@ -567,10 +567,19 @@ describe(MediaService.name, () => {
 
     it('should skip thumbnail generation if asset not found', async () => {
       mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(void 0);
-      await sut.handleGenerateThumbnails({ id: 'non-existent' });
+      mocks.assetJob.isGone.mockResolvedValue(false);
+      await expect(sut.handleGenerateThumbnails({ id: 'non-existent' })).resolves.toBe(JobStatus.Failed);
 
       expect(mocks.media.generateThumbnail).not.toHaveBeenCalled();
       expect(mocks.asset.update).not.toHaveBeenCalled();
+    });
+
+    it('skips, without a retry, thumbnails for an asset deleted since the job was queued', async () => {
+      mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(void 0);
+      mocks.assetJob.isGone.mockResolvedValue(true);
+      await expect(sut.handleGenerateThumbnails({ id: 'deleted' })).resolves.toBe(JobStatus.Skipped);
+      expect(mocks.assetJob.isGone).toHaveBeenCalledWith('deleted');
+      expect(mocks.media.generateThumbnail).not.toHaveBeenCalled();
     });
 
     it('should skip thumbnail generation if asset type is unknown', async () => {
@@ -5630,6 +5639,7 @@ describe(MediaService.name, () => {
 
     it('fails when the asset is missing', async () => {
       mocks.assetJob.getForVideoConversion.mockResolvedValue(void 0);
+      mocks.assetJob.isGone.mockResolvedValue(false);
       await expect(sut.handleStudioHdrProxy({ id: 'video-id' })).resolves.toBe(JobStatus.Failed);
       expect(mocks.media.transcode).not.toHaveBeenCalled();
     });
@@ -5956,7 +5966,15 @@ describe(MediaService.name, () => {
 
     it('should skip transcoding if asset not found', async () => {
       mocks.assetJob.getForVideoConversion.mockResolvedValue(void 0);
+      mocks.assetJob.isGone.mockResolvedValue(false);
       await expect(sut.handleVideoConversion({ id: 'video-id' })).resolves.toBe(JobStatus.Failed);
+      expect(mocks.media.transcode).not.toHaveBeenCalled();
+    });
+
+    it('skips transcoding for a video deleted since the job was queued', async () => {
+      mocks.assetJob.getForVideoConversion.mockResolvedValue(void 0);
+      mocks.assetJob.isGone.mockResolvedValue(true);
+      await expect(sut.handleVideoConversion({ id: 'video-id' })).resolves.toBe(JobStatus.Skipped);
       expect(mocks.media.transcode).not.toHaveBeenCalled();
     });
 

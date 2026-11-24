@@ -15,8 +15,10 @@ import { JobRepository } from 'src/repositories/job.repository.js';
 import { type FillCandidate, LocationFillRepository } from 'src/repositories/location-fill.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { AssetService } from 'src/services/asset.service.js';
+import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import {
   FILL_ZONE_SEARCH_HOURS,
+  type FillPoint,
   type FillProposal,
   ZoneLookup,
   proposeForLocalTime,
@@ -106,7 +108,12 @@ export class LocationFillService {
     { page, size }: LocationFillProposalsQueryDto,
   ): Promise<LocationFillProposalsResponseDto> {
     const run = await this.findRun(auth, id);
-    const rows = await this.repository.getProposals(run.id, (page - 1) * size, size);
+    // a photo hidden from this session (Locked rules, sensitive content) is not listed, nor counted
+    const options = getHiddenContentQueryOptions(auth);
+    const [rows, total] = await Promise.all([
+      this.repository.getProposals(run.id, (page - 1) * size, size, options),
+      this.repository.countProposals(run.id, options),
+    ]);
     const days: LocationFillProposalsResponseDto['days'] = [];
     for (const row of rows.slice(0, size)) {
       const localDateTime = new Date(row.localDateTime).toISOString();
@@ -124,7 +131,7 @@ export class LocationFillService {
         applied: row.appliedAt !== null && row.undoneAt === null,
       });
     }
-    return { total: run.proposalCount, hasNextPage: rows.length > size, days };
+    return { total, hasNextPage: rows.length > size, days };
   }
 
   /** Give the run's proposals, or the chosen ones, to their photos. The work continues after the browser closes. */
@@ -134,7 +141,7 @@ export class LocationFillService {
       await this.findRun(auth, id);
       throw new ConflictException('This run is busy; try again when it has finished');
     }
-    if ((await this.repository.requestApply(id, dto.assetIds)) === 0) {
+    if ((await this.repository.requestApply(id, dto.assetIds, getHiddenContentQueryOptions(auth))) === 0) {
       await this.repository.updateRun(id, { status: run.appliedCount > 0 ? 'applied' : 'ready' });
       throw new BadRequestException('Nothing to apply');
     }
@@ -175,8 +182,16 @@ export class LocationFillService {
           break;
         }
         const proposals = [];
+        // photos whose moment is known are looked up together, one query for the page
+        const known = await this.repository.getAroundMany(
+          run.ownerId,
+          candidates
+            .filter((candidate) => candidate.timeZone)
+            .map((candidate) => ({ id: candidate.id, at: new Date(candidate.takenAt) })),
+          maxGapSeconds,
+        );
         for (const candidate of candidates) {
-          const proposal = await this.propose(run.ownerId, candidate, maxGapSeconds, zones);
+          const proposal = await this.propose(run.ownerId, candidate, maxGapSeconds, zones, known.get(candidate.id));
           if (proposal) {
             proposals.push({ runId: id, assetId: candidate.id, ...proposal });
           }
@@ -294,10 +309,14 @@ export class LocationFillService {
     candidate: FillCandidate,
     maxGapSeconds: number,
     zones: ZoneLookup,
+    known?: { before: FillPoint | null; after: FillPoint | null },
   ): Promise<FillProposal | null> {
     const around = (at: Date) => this.repository.getAround(ownerId, at, maxGapSeconds);
     if (candidate.timeZone) {
       const at = new Date(candidate.takenAt);
+      if (known) {
+        return Promise.resolve(proposeLocation(at, known.before, known.after, maxGapSeconds));
+      }
       return around(at).then(({ before, after }) => proposeLocation(at, before, after, maxGapSeconds));
     }
     const local = new Date(candidate.localDateTime);

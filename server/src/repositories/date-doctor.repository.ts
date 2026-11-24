@@ -80,6 +80,9 @@ export type DateFixEffects = (tx: Transaction<DB>, assetIds: string[]) => Promis
 
 const asJson = (rows: unknown[]) => JSON.stringify(rows);
 
+/** The month of a photo's clock time, exactly as `asset_owner_taken_page_idx` keys it. */
+const TAKEN_MONTH = sql<Date>`(date_trunc('MONTH', asset."localDateTime" AT TIME ZONE 'UTC') AT TIME ZONE 'UTC')`;
+
 /** FL-912: the Date & Time Doctor's reads and its findings. */
 @Injectable()
 export class DateDoctorRepository {
@@ -96,12 +99,30 @@ export class DateDoctorRepository {
   }
 
   /**
+   * The months (by clock time, as the timeline groups them) the owner has photos in, oldest first: a scan reads one
+   * month at a time (`getScanRows` with a window) rather than the whole library at once.
+   */
+  @GenerateSql({ params: [DummyValue.UUID] })
+  async getScanMonths(ownerId: string): Promise<Date[]> {
+    const rows = await this.db
+      .selectFrom('asset')
+      .select(TAKEN_MONTH.as('month'))
+      .distinct()
+      .where('asset.ownerId', '=', ownerId)
+      .where('asset.deletedAt', 'is', null)
+      .orderBy('month')
+      .execute();
+    return rows.map(({ month }) => new Date(month));
+  }
+
+  /**
    * One owner's photos as the Doctor reads them, and as the timeline counts them: with an EXIF row, their own, not in
    * Trash, on the timeline or in the archive and not locked (`isDefaultVisible`; the hidden halves of Live Photos are
    * left out too). A partner's copy that still follows its source's date is left out: its date is the source's.
+   * With `window`, only photos whose clock time is in `[from, to)`.
    */
-  @GenerateSql({ params: [DummyValue.UUID] })
-  getScanRows(ownerId: string): Promise<DateScanRow[]> {
+  @GenerateSql({ params: [DummyValue.UUID, { from: DummyValue.DATE, to: DummyValue.DATE }] })
+  getScanRows(ownerId: string, window?: { from: Date; to: Date }): Promise<DateScanRow[]> {
     return (
       this.db
         .selectFrom('asset')
@@ -130,6 +151,22 @@ export class DateDoctorRepository {
         .where(
           sql<boolean>`not exists (select 1 from public.asset_origin o where o."assetId" = asset.id and o.following
           and o."sourceAssetId" is not null and not ('dateTimeOriginal' = any(o."overriddenFields")))`,
+        )
+        .$if(!!window, (qb) =>
+          qb
+            // the months the window touches, as `asset_owner_taken_page_idx` holds them, then the window itself
+            .where(
+              TAKEN_MONTH,
+              '>=',
+              sql<Date>`date_trunc('MONTH', ${window!.from}::timestamptz at time zone 'UTC') at time zone 'UTC'`,
+            )
+            .where(
+              TAKEN_MONTH,
+              '<=',
+              sql<Date>`date_trunc('MONTH', ${window!.to}::timestamptz at time zone 'UTC') at time zone 'UTC'`,
+            )
+            .where('asset.localDateTime', '>=', window!.from)
+            .where('asset.localDateTime', '<', window!.to),
         )
         .execute() as Promise<DateScanRow[]>
     );

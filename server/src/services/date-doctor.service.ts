@@ -15,7 +15,7 @@ import type { DateFixBatchTable, DateLock } from 'src/schema/tables/date-fix.tab
 import type { JobOf } from 'src/types.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
 import { AccountEventAction, JobName, JobStatus, Permission, QueueName } from 'src/enum.js';
-import { publishJobResult } from 'src/queue/context.js';
+import { publishJobResult, reportJobProgress } from 'src/queue/context.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AccountEventRepository } from 'src/repositories/account-event.repository.js';
 import { DateDoctorRepository, type DateFixWrite } from 'src/repositories/date-doctor.repository.js';
@@ -24,7 +24,13 @@ import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { AssetOriginField, PartnerOriginRepository } from 'src/repositories/partner-origin.repository.js';
 import { requireAccess } from 'src/utils/access.js';
-import { type DateFindingCause, detectDateFindings, wallToInstant } from 'src/utils/date-doctor.js';
+import {
+  DATE_SCAN_MARGIN,
+  type DateFinding,
+  type DateFindingCause,
+  detectDateFindings,
+  wallToInstant,
+} from 'src/utils/date-doctor.js';
 import { getAssetDateTimeUpdates, getPeriodStart, getPeriodStartYear } from 'src/utils/date.js';
 
 /** FL-930: how long an Apply can be undone; older batches are removed nightly. */
@@ -102,11 +108,35 @@ export class DateDoctorService {
   @OnJob({ name: JobName.DateDoctorScan, queue: QueueName.IntegrityCheck })
   async handleScan({ userId }: JobOf<JobName.DateDoctorScan>): Promise<JobStatus> {
     const started = Date.now();
-    const rows = await this.dateDoctorRepository.getScanRows(userId);
-    const findings = detectDateFindings(rows);
+    const now = new Date();
+    // one month at a time, with the margin the checks look across, so a large library is never all in memory
+    const findings: DateFinding[] = [];
+    let scanned = 0;
+    for (const month of await this.dateDoctorRepository.getScanMonths(userId)) {
+      const start = month.getTime();
+      const end = Date.UTC(month.getUTCFullYear(), month.getUTCMonth() + 1, 1);
+      const rows = await this.dateDoctorRepository.getScanRows(userId, {
+        from: new Date(start - DATE_SCAN_MARGIN),
+        to: new Date(end + DATE_SCAN_MARGIN),
+      });
+      const inMonth = new Set<string>();
+      for (const row of rows) {
+        const at = row.localDateTime.getTime();
+        if (at >= start && at < end) {
+          inMonth.add(row.id);
+        }
+      }
+      for (const found of detectDateFindings(rows, now)) {
+        if (inMonth.has(found.assetId)) {
+          findings.push(found);
+        }
+      }
+      scanned += inMonth.size;
+      reportJobProgress(scanned);
+    }
     await publishJobResult(() => this.dateDoctorRepository.replaceFindings(userId, findings));
     this.logger.log(
-      `Date & Time Doctor: ${findings.length} findings in ${rows.length} photos of ${userId} (${Date.now() - started} ms)`,
+      `Date & Time Doctor: ${findings.length} findings in ${scanned} photos of ${userId} (${Date.now() - started} ms)`,
     );
     return JobStatus.Success;
   }

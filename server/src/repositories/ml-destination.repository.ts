@@ -411,16 +411,6 @@ export class MlDestinationRepository {
       .execute();
   }
 
-  /**
-   * The route rows this server recorded: for each workload, the destination it was routed to on its own
-   * or by an administrator. Since FL-456 they are the anchor the desktop assistance pool hangs off, not
-   * where work goes; `getRoute` and `getRoutes` answer that.
-   */
-  @GenerateSql()
-  getStoredRoutes(): Promise<MlWorkloadRouteRow[]> {
-    return this.db.selectFrom('ml_workload_route').selectAll().orderBy('workload', 'asc').execute();
-  }
-
   @GenerateSql({ params: [DummyValue.STRING] })
   getStoredRoute(workload: MlWorkload): Promise<MlWorkloadRouteRow | undefined> {
     return this.db.selectFrom('ml_workload_route').selectAll().where('workload', '=', workload).executeTakeFirst();

@@ -90,6 +90,7 @@ import {
 } from 'src/utils/partner-location.js';
 import { getPreferences, isTrashReuploadOpen, uploadSkipSince } from 'src/utils/preferences.js';
 import { fromChecksum } from 'src/utils/request.js';
+import { isFileRootReachable, pathState } from 'src/utils/storage-reach.js';
 import { MAX_XMP_BYTES, validateXmp } from 'src/utils/xmp-sidecar.js';
 
 /** How long a finished document PDF may take to download before the response is ended. */
@@ -181,15 +182,20 @@ export class AssetMediaService extends BaseService {
     return matches.map(({ id }, index) => (exists[index] ? (wanted.has(id) ? 'damaged' : 'good') : 'gone'));
   }
 
-  /** Only "no such file" makes an original lost: a drive that cannot answer right now has not lost it. */
+  /**
+   * Only "no such file" makes an original lost: a drive that cannot answer right now has not lost it, and
+   * neither has a media folder that is not mounted at all (its `.frameleaf` mount file is missing too),
+   * which also answers "no such file" for everything under it.
+   */
   private async originalMayExist(originalPath: string) {
     if (await this.storageRepository.checkFileExists(originalPath)) {
       return true;
     }
-    return this.storageRepository
-      .stat(originalPath)
-      .then(() => true)
-      .catch((error: NodeJS.ErrnoException) => error?.code !== 'ENOENT' && error?.code !== 'ENOTDIR');
+    const state = await pathState(this.storageRepository, originalPath);
+    if (state !== 'missing') {
+      return true;
+    }
+    return !(await isFileRootReachable(this.storageRepository, originalPath, []));
   }
 
   /**
@@ -363,11 +369,19 @@ export class AssetMediaService extends BaseService {
     );
     this.storageRepository.mkdirSync(path.dirname(pending));
     await this.storageRepository.rename(file.originalPath, pending);
-    const device = await this.uploadingDevice(auth);
-    await this.jobRepository.queue({
-      name: JobName.MediaHealthPutBackUpload,
-      data: { id, path: pending, ...(device && { device }) },
-    });
+    try {
+      const device = await this.uploadingDevice(auth);
+      await this.jobRepository.queue({
+        name: JobName.MediaHealthPutBackUpload,
+        data: { id, path: pending, ...(device && { device }) },
+      });
+    } catch (error) {
+      // no job owns it, so the upload goes back where the upload's own clean-up finds it
+      await this.storageRepository
+        .rename(pending, file.originalPath)
+        .catch((moveError) => this.logger.warn(`Could not move ${pending} back after queueing failed: ${moveError}`));
+      throw error;
+    }
     this.logger.log(`Upload for asset ${id} queued to take its damaged or repaired file's place`);
   }
 

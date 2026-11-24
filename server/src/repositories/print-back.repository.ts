@@ -54,20 +54,6 @@ export class PrintBackRepository {
       .executeTakeFirst();
   }
 
-  /** Which of these assets are the paired back of a print. */
-  @GenerateSql({ params: [[DummyValue.UUID]] })
-  async getBackIds(assetIds: string[]): Promise<string[]> {
-    if (assetIds.length === 0) {
-      return [];
-    }
-    const rows = await this.db
-      .selectFrom('asset_print_back')
-      .select('backAssetId')
-      .where('backAssetId', 'in', assetIds)
-      .execute();
-    return rows.map(({ backAssetId }) => backAssetId);
-  }
-
   /**
    * Pairs in one transaction, with both rows locked in id order so two pairings sharing a photo run one after the
    * other and `validate` sees the truth. The back leaves everything that shows it to someone else (albums, links,
