@@ -20,21 +20,29 @@ if TYPE_CHECKING:
     from .native_qualification import QualificationSpec
 
 TASK = "image-description-tagging"
-MODEL = "Qwen3.5-4B"
+# FD-31 (owner, 2026-11-24): the compact model and the larger 7B, each as its own pinned GGUF pair.
+# Seconds a single description may take on four processor threads.
+MODELS = {"Qwen3.5-4B": 30, "Qwen2.5-VL-7B-Instruct": 90}
 BUILD = r"b[0-9]+-7fe450e19[a-f0-9]{0,31}"
 ARTIFACTS = ("visual/model.gguf", "visual/mmproj.gguf")
 BINARY = Path(__file__).parent / "native-bin" / ("llama-server.exe" if os.name == "nt" else "llama-server")
 LIMIT = 64 * 1024
 
 
-def model_directory(cache: Path) -> Path:
-    return cache / TASK / MODEL
+def model_directory(cache: Path, model: str) -> Path:
+    if model not in MODELS:
+        raise ValueError("native_qwen_inventory_invalid")
+    return cache / TASK / model
 
 
-def verify_qwen(spec: "QualificationSpec", cache: Path) -> None:
+def verify_qwen(spec: "QualificationSpec", cache: Path) -> str:
+    """The model the spec binds, once its staged files are the approved ones."""
     from .staging import verify_staged
 
-    entries = {TASK: {"visual": {"modelName": MODEL, "options": {}}}}
+    if len(spec.models) != 1 or spec.models[0].name not in MODELS:
+        raise ValueError("native_qwen_inventory_invalid")
+    model = spec.models[0].name
+    entries = {TASK: {"visual": {"modelName": model, "options": {}}}}
     if (
         spec.entries != entries
         or spec.fixture_kind != "image"
@@ -43,9 +51,11 @@ def verify_qwen(spec: "QualificationSpec", cache: Path) -> None:
     ):
         raise ValueError("native_qwen_binding_invalid")
     item = spec.models[0]
-    if (item.name, item.task, item.type) != (MODEL, TASK, "visual") or set(item.artifacts) != set(ARTIFACTS):
+    # Beside the GGUF pair: the mirror's ref (the snapshot every catalogue profile names) and its licence.
+    allowed = {*ARTIFACTS, f"models--frameleaf--{model}/refs/main", "LICENSE"}
+    if (item.task, item.type) != (TASK, "visual") or not set(ARTIFACTS) <= set(item.artifacts) <= allowed:
         raise ValueError("native_qwen_inventory_invalid")
-    directory = model_directory(cache)
+    directory = model_directory(cache, model)
     if directory.is_symlink() or directory.parent.is_symlink():
         raise ValueError("native_qwen_directory_invalid")
     if verify_staged(directory) != item.artifacts:
@@ -54,6 +64,7 @@ def verify_qwen(spec: "QualificationSpec", cache: Path) -> None:
         with (directory / artifact).open("rb") as stream:
             if stream.read(4) != b"GGUF":
                 raise ValueError("native_qwen_artifact_invalid")
+    return model
 
 
 def worker_output(raw: bytes) -> dict[str, Any]:
@@ -153,11 +164,12 @@ def binary_sha256() -> str:
         return hashlib.file_digest(stream, "sha256").hexdigest()
 
 
-async def predict_qwen(cache: Path, image: bytes, expected_binary: str) -> tuple[dict[str, Any], str]:
+async def predict_qwen(cache: Path, model_name: str, image: bytes, expected_binary: str) -> tuple[dict[str, Any], str]:
     body = request_body(image)
-    if binary_sha256() != expected_binary:
+    if await asyncio.to_thread(binary_sha256) != expected_binary:
         raise ValueError("native_qwen_binary_changed")
-    model, projector = (model_directory(cache) / item for item in ARTIFACTS)
+    seconds = MODELS[model_name] if model_name in MODELS else 0
+    model, projector = (model_directory(cache, model_name) / item for item in ARTIFACTS)
     windows = os.name == "nt"
     # Windows inherits the ACL of the supervisor-owned work directory.
     # Unix needs a short private path for the socket.
@@ -279,8 +291,8 @@ async def predict_qwen(cache: Path, image: bytes, expected_binary: str) -> tuple
                         break
                     else:
                         raise ValueError("native_qwen_process_exited")
-                async with asyncio.timeout(30):
-                    raw = await response("POST", "/v1/chat/completions", payload=body, timeout=30)
+                async with asyncio.timeout(seconds):
+                    raw = await response("POST", "/v1/chat/completions", payload=body, timeout=seconds)
                     if process.returncode is not None:
                         raise ValueError("native_qwen_process_exited")
                     return worker_output(raw), build

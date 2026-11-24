@@ -139,7 +139,7 @@ def create_native_app(binding: "NativeBinding | NativeBindingSet | None") -> Fas
                 from .native_qwen import predict_qwen
 
                 assert image is not None and qwen.qwen_binary is not None
-                output, _ = await predict_qwen(qwen.cache, image, qwen.qwen_binary)
+                output, _ = await predict_qwen(qwen.cache, qwen.spec.models[0].name, image, qwen.qwen_binary)
                 response = JSONResponse(output)
             else:
                 response = await main.predict(entries=selected, image=image, text=text, mask=None)
