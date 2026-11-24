@@ -30,6 +30,8 @@ describe('authManager.logout', () => {
     vi.spyOn(console, 'error').mockImplementation(() => {});
     authManager.reset();
     authManager.setUser(user as never);
+    // signed in means a user and their preferences
+    authManager.setPreferences({} as never);
   });
 
   it('signs out and goes to the sign-in page when the server ends the session', async () => {

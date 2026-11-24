@@ -212,7 +212,7 @@ def test_custom_model_downloads_send_no_credentials(monkeypatch: pytest.MonkeyPa
 
     from frameleaf_ml.config import settings
     from frameleaf_ml.models.base import ModelUnavailableError
-    from frameleaf_ml.models.clip.hugging_face import HubClipModel
+    from frameleaf_ml.models.clip.hugging_face import REQUIRED_FILES, HubClipModel
     from frameleaf_ml.models.clip.visual import OpenClipVisualEncoder
 
     assert issubclass(OpenClipVisualEncoder, HubClipModel)
@@ -220,9 +220,16 @@ def test_custom_model_downloads_send_no_credentials(monkeypatch: pytest.MonkeyPa
     monkeypatch.setenv("HF_ENDPOINT", "https://hub-mirror.example.com")
     monkeypatch.setattr(settings, "model_source_url", "https://hub-mirror.example.com")
     monkeypatch.setattr(settings, "model_source_token", SecretStr("mirror-token"))
-    with patch("frameleaf_ml.models.clip.hugging_face.snapshot_download") as download:
+    # The size check reads the repository's file list first (FL-1773); it is answered here, not by the internet.
+    files = [Mock(rfilename=name, size=1) for name in REQUIRED_FILES]
+    with (
+        patch("frameleaf_ml.models.clip.hugging_face.HfApi") as api,
+        patch("frameleaf_ml.models.clip.hugging_face.snapshot_download") as download,
+    ):
+        api.return_value.model_info.return_value = Mock(siblings=files, sha="abc123")
         with pytest.raises(ModelUnavailableError):  # the mocked snapshot wrote no files, so the layout is refused
             OpenClipVisualEncoder("someone/my-search-model", cache_dir="/path/to/cache").download()
 
-    assert download.call_args.kwargs["token"] is False
-    assert download.call_args.kwargs["endpoint"] == "https://huggingface.co"
+    for call in (api.call_args, download.call_args):
+        assert call.kwargs["token"] is False
+        assert call.kwargs["endpoint"] == "https://huggingface.co"

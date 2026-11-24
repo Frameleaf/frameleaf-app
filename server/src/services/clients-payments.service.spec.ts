@@ -47,7 +47,7 @@ const setup = (answers: Record<string, unknown>) => {
     { withLock: (_lock: unknown, fn: () => unknown) => fn() } as never,
     metadata as never,
     { loadOrCreate: vi.fn(), currentSigner: vi.fn() } as never,
-    { setContext: vi.fn(), warn: vi.fn() } as never,
+    { setContext: vi.fn(), log: vi.fn(), warn: vi.fn(), error: vi.fn() } as never,
   );
   return { service, requests, state: () => state, cloud };
 };

@@ -249,6 +249,8 @@ export class MediumTestContext<S extends ClassConstructor<typeof BaseService> = 
     if (this.options.mock.includes(WebsocketRepository)) {
       // an asset change is pushed to the owner's other sessions (FL-53)
       this.getMock(WebsocketRepository).clientSend.mockReturnValue();
+      // a Locked change tells the owner's other sessions only that the asset is hidden (FL-1767)
+      this.getMock(WebsocketRepository).clientSendExcept.mockReturnValue();
       // a changed or removed API key drops its open sockets
       this.getMock(WebsocketRepository).clientDisconnect.mockReturnValue();
     }

@@ -3005,7 +3005,7 @@ describe(AssetMediaService.name, () => {
           Promise.resolve(options?.lockedOwnerId ? [locked] : []),
         );
         mocks.storage.checkFileExists.mockResolvedValue(false);
-        mocks.storage.stat.mockRejectedValue(Object.assign(new Error('gone'), { code: 'ENOENT' }));
+        mocks.storage.stat.mockImplementation(goneButMounted);
 
         await expect(check()).resolves.toEqual({ results: [{ id: '1', action: AssetUploadAction.ACCEPT }] });
       });
