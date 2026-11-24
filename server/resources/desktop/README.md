@@ -124,3 +124,16 @@ The NAS ML service exposes `POST /predict-bound` for producer evidence. The serv
 Bound prediction verifies current artifacts and preprocessing before and after inference, loads without downloading or clearing the model cache, and writes accelerator-derived files only into an owned temporary directory. Failed inference detaches retained exception frames before removing derived files. The initial contract permits one CLIP text/image model, at most 16 MiB input, 16 Mi pixels, and a 4 MiB result. Sessions currently reload per request; practical NAS performance and a protected immutable-session cache still need qualification.
 
 Changing the producer implementation changes preprocessing identity. The existing signed CPU runtime and catalogue remain pinned to their independently qualified fc1a632 bytes; this endpoint does not qualify a replacement runtime or authorize model scope. A freshly signed runtime/catalogue, producer-pair/index admission, explicit pool/LAN authority and automatic orchestration remain required. Never relabel existing unknown vectors or reindex on sign-in.
+
+## Epoch 19: photo descriptions on Frameleaf Desktop (FD-31)
+
+Epoch 19 appends 16 profiles for the desktop runtime source `35ba35dd` (`35ba35dda671b99eb9c027e9168e185c31ebabf1`, branch `aj/fd-31-runtime-source`: `b3905b4a` plus the native Qwen binding of FL-1424 and FD-31). Nothing before them changes.
+
+- Fifteen processor twins of the `b3905b4a` profiles (smart search, faces and text recognition). The source changes no file of the ONNX preprocessing identity (`8d9fc77d…`), so each has its original's model key, files, fixture and reference output.
+- The `description` profile of Qwen3.5-4B (owner decision 2026-11-24: Qwen3.5-4B and Qwen2.5-VL-7B-Instruct). It runs in the runtime's own llama.cpp process (engine `qwen-gguf`, processor only, the pinned llama.cpp `b11146-7fe450e19`) with the model mirror's `frameleaf/Qwen3.5-4B` at revision `90ad97bb`. That is the unsloth Q4_K_M export with its F16 projector and Qwen's LICENSE. Its fixture is a red square on white, and its reference is the binding's description of it: "A solid red square centered on a plain white background." Floor 8 GiB (peak resident memory 6.21 GiB plus 25%), deadline 120 s.
+
+How: `machine-learning/scripts/add_desktop_description_profiles.py`, run with the runtime source's own environment. The profile was staged as a desktop stages it, and `frameleaf_ml.native_qualification` reproduced its reference in two cold runs (`ready-cpu`, about 4 s each, macOS arm64).
+
+**Not yet added:**
+- Qwen2.5-VL-7B-Instruct (mirror revision `b58477fc`). Its floor of 11.75 GiB (9.39 GiB plus 25%) was more than the qualifying computer had free. The same script adds it to this source in a second run.
+- A desktop runs these profiles only once a factory-signed CPU runtime built from `35ba35dd` carries `llama-server`, and the mirror serves both models (frameleaf-cloud `infra/models/models.json`, audience `desktop`).
