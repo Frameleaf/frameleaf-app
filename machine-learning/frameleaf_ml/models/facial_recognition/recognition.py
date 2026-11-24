@@ -38,6 +38,26 @@ class FaceRecognizer(InferenceModel):
         self.batch_size = max_batch_size if max_batch_size else self._batch_size_default
         self.landmarker: FaceLandmarker | None = None
 
+    def download(self) -> None:
+        if settings.model_downloads and self._changed_since_download():
+            # FL-1775: older releases saved the batch-axis copy over model.onnx; fetch the original again.
+            log.warning(f"Face model '{self.model_name}' changed since it was downloaded; downloading it again")
+            try:
+                self._download()
+            except Exception as error:
+                log.warning(f"Could not download face model '{self.model_name}' again: {error}")
+        super().download()
+
+    def _changed_since_download(self) -> bool:
+        relative = self.model_path.relative_to(self.cache_dir).as_posix()
+        metadata = self.cache_dir / ".cache" / "huggingface" / "download" / f"{relative}.metadata"
+        try:
+            timestamp = float(metadata.read_text().splitlines()[2])
+            # Same 1s tolerance huggingface_hub uses before it re-hashes a local file.
+            return self.model_path.stat().st_mtime - 1 > timestamp
+        except (OSError, IndexError, ValueError):
+            return False
+
     def _load(self) -> ModelSession:
         session = self._make_session(self.model_path)
         if (not self.batch_size or self.batch_size > 1) and str(session.get_inputs()[0].shape[0]) != "batch":
@@ -115,13 +135,10 @@ class FaceRecognizer(InferenceModel):
         input_dims = {proto.graph.input[0].name: ["batch"] + static_input_dims}
         output_dims = {proto.graph.output[0].name: ["batch"] + static_output_dims}
         updated_proto = update_inputs_outputs_dims(proto, input_dims, output_dims)
-        if settings.model_downloads:
-            onnx.save(updated_proto, model_path)
-            return model_path
-
-        # Staged weights are immutable; embed external tensors in the writable derivative.
+        # FL-1775: model files must keep their catalogue hashes (staged or downloaded); embed external tensors in a
+        # derivative outside the model folder instead.
         convert_model_from_external_data(updated_proto)
-        output_path = runtime_cache_dir(model_path) / model_path.name
+        output_path = runtime_cache_dir(model_path, beside_model=False) / model_path.name
         with TemporaryDirectory(dir=output_path.parent) as directory:
             temporary_path = Path(directory) / model_path.name
             onnx.save(updated_proto, temporary_path)

@@ -1869,7 +1869,12 @@ def batch_axis(mocker: MockerFixture) -> SimpleNamespace:
     """Patches for the `_add_batch_axis` path: the onnx module it rewrites the model
     through, and the download it would otherwise trigger on load."""
     mocker.patch("frameleaf_ml.models.base.InferenceModel.download")
+    mocker.patch.object(FaceRecognizer, "download")
+    mocker.patch("frameleaf_ml.models.facial_recognition.recognition.convert_model_from_external_data")
+    mocker.patch("frameleaf_ml.models.facial_recognition.recognition.TemporaryDirectory")
+    mocker.patch("frameleaf_ml.models.facial_recognition.recognition.Path")
     return SimpleNamespace(
+        runtime_cache=mocker.patch("frameleaf_ml.models.facial_recognition.recognition.runtime_cache_dir"),
         onnx=mocker.patch("frameleaf_ml.models.facial_recognition.recognition.onnx", autospec=True),
         update_dims=mocker.patch(
             "frameleaf_ml.models.facial_recognition.recognition.update_inputs_outputs_dims", autospec=True
@@ -2113,6 +2118,7 @@ class TestFaceRecognition:
         proto.graph.output = [output_dims]
 
         batch_axis.onnx.load.return_value = proto
+        batch_axis.runtime_cache.return_value.__truediv__.return_value.suffix = ".onnx"
 
         face_recognizer = FaceRecognizer("buffalo_s", cache_dir=path)
         face_recognizer.load()
@@ -2121,7 +2127,10 @@ class TestFaceRecognition:
         batch_axis.update_dims.assert_called_once_with(
             proto, {"input.1": ["batch", 3, 224, 224]}, {"output.1": ["batch", 800]}
         )
-        batch_axis.onnx.save.assert_called_once_with(batch_axis.update_dims.return_value, face_recognizer.model_path)
+        # FL-1775: the derivative goes to the runtime cache; the downloaded model.onnx keeps its bytes.
+        batch_axis.runtime_cache.assert_called_once_with(face_recognizer.model_path, beside_model=False)
+        batch_axis.onnx.save.assert_called_once()
+        assert batch_axis.onnx.save.call_args.args[1] != face_recognizer.model_path
 
     def test_recognition_does_not_add_batch_axis_if_exists(
         self, batch_axis: SimpleNamespace, ort_session: mock.Mock, path: mock.Mock, mocker: MockerFixture

@@ -19,12 +19,13 @@ def private_runtime_cache(root: Path) -> Iterator[None]:
         _private_cache.reset(token)
 
 
-def runtime_cache_dir(model_path: Path) -> Path:
+def runtime_cache_dir(model_path: Path, *, beside_model: bool = True) -> Path:
+    """`beside_model=False` keeps derived files out of the model folder even while downloads are on."""
     if (root := _private_cache.get()) is not None:
         cache = root / hashlib.sha256(model_path.resolve().as_posix().encode()).hexdigest()
         cache.mkdir(parents=True, exist_ok=True)
         return cache
-    if settings.model_downloads:
+    if settings.model_downloads and beside_model:
         return model_path.parent
     # The receipt includes external weights; the relative path separates models sharing a receipt.
     for parent in model_path.parents:
