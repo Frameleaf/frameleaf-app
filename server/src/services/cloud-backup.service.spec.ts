@@ -554,6 +554,7 @@ describe(CloudBackupService.name, () => {
             new Set((await index.listKeptManifests(bucket)).map(({ key }: { key: string }) => key)),
         ),
       markManifests: vi.fn().mockResolvedValue(0),
+      restorePrunedManifests: vi.fn().mockResolvedValue(0),
       getOwnerRestoreIdentities: vi.fn().mockResolvedValue({}),
       getOwnerHistoryState: vi.fn().mockResolvedValue(new Map()),
       getLibraryState: vi.fn().mockResolvedValue(new Map()),

@@ -510,8 +510,18 @@ export class DatabaseBackupService {
       throw new BadRequestException('Invalid backup name!');
     }
 
-    const filePath = path.join(backupsFolder, `uploaded-${fn}`);
-    await this.storageRepository.createOrOverwriteFile(filePath, file.buffer);
+    // FL-1769: an upload never replaces an earlier one of the same name; the next is numbered instead
+    for (let copy = 1; ; copy++) {
+      const filePath = path.join(backupsFolder, copy === 1 ? `uploaded-${fn}` : `uploaded-${copy}-${fn}`);
+      try {
+        await this.storageRepository.createFile(filePath, file.buffer);
+        return;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException)?.code !== 'EEXIST' || copy >= 1000) {
+          throw error;
+        }
+      }
+    }
   }
 
   downloadBackup(fileName: string): FileDownloadResponse {

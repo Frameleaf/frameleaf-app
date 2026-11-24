@@ -2808,8 +2808,14 @@ export class CloudBackupService {
     }
     const reported = await this.reportManagedRun(operation, result, 'succeeded');
     await this.publishCoverage(operation, result, true, reported);
-    // FL-164: a scheduled run is followed by the clean-up of runs past retention, once it has finished
-    if ((operation.snapshot as { scheduled?: boolean }).scheduled) {
+    // FL-164: a scheduled run is followed by the clean-up of runs past retention, once it has finished.
+    // FL-1769: not after a run that left originals out (a drive gone, say): an older backup may be the last
+    // one that holds them, so retention waits for a run that finds every file.
+    if (result.missing > 0 && (operation.snapshot as { scheduled?: boolean }).scheduled) {
+      this.logger.warn(
+        `Cloud backup run ${id} left ${result.missing} missing files out; the clean-up after it is skipped`,
+      );
+    } else if ((operation.snapshot as { scheduled?: boolean }).scheduled) {
       await this.createOperation(operation.ownerId, run.metadata, 'prune', { scheduled: true, dryRun: false });
     }
   }

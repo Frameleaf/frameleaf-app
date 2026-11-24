@@ -590,6 +590,7 @@ export interface IEmailJob {
 }
 
 export interface INotifySignupJob extends IEntityJob {
+  /** @deprecated FL-1769: only jobs queued by an older version carry it, and it is never emailed. */
   password?: string;
 }
 
@@ -1446,6 +1447,17 @@ export type FrameleafLicenseStore = {
   key: FrameleafLicense | null;
   plan: FrameleafLicense | null;
   noticeState?: 'active' | 'grace' | 'expired';
+  /**
+   * FL-1769: an administrator stopped using the plan on this server while linked as this account at
+   * this link time. Refreshes leave plan certificates out until a checkout, a plan file, an explicit
+   * refresh or a new link.
+   */
+  planDeclined?: { accountId: string | null; linkedAt: string | null };
+  /**
+   * FL-1769: supporter keys removed here that Frameleaf Cloud was not told about yet. Each refresh
+   * retries the deactivation first and never restores a key listed here.
+   */
+  pendingKeyRemovals?: { licenseId: string | null; activationId: string | null }[];
 };
 
 /**

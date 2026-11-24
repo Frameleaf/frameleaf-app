@@ -689,7 +689,8 @@ export class EdgeStateService {
       ipv6Listening: this.ipv6Listening(),
       trustedLanCidrs,
     });
-    if (state.status === 'starting' && this.direct.listening) {
+    // FL-1769: relay only, the direct listener refuses outside connections, so only the relay makes it reachable
+    if (state.status === 'starting' && this.direct.listening && (settings.mode !== 'relay' || state.relay.connected)) {
       state.status = 'ready';
     }
     await this.writeState(state, now);

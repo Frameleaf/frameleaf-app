@@ -633,8 +633,9 @@ describe(NotificationService.name, () => {
       await sut.onUserSignup({ id: '', notify: true });
       expect(mocks.job.queue).toHaveBeenCalledWith({
         name: JobName.NotifyUserSignup,
-        data: { id: '', password: undefined },
+        data: { id: '' },
       });
+      expect(JSON.stringify(mocks.job.queue.mock.calls)).not.toContain('password');
     });
   });
 
@@ -806,6 +807,16 @@ describe(NotificationService.name, () => {
         name: JobName.SendMail,
         data: expect.objectContaining({ subject: 'Welcome to Frameleaf' }),
       });
+    });
+
+    it('never renders a password, even from a job an older version queued (FL-1769)', async () => {
+      mocks.user.get.mockResolvedValue(userStub.admin);
+      mocks.systemMetadata.get.mockResolvedValue({ server: {} });
+      mocks.email.renderEmail.mockResolvedValue({ html: '', text: '' });
+
+      await sut.handleUserSignup({ id: 'user-1', password: 'hunter2-secret' });
+
+      expect(JSON.stringify(mocks.email.renderEmail.mock.calls)).not.toContain('hunter2-secret');
     });
   });
 
