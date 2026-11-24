@@ -132,3 +132,50 @@ def test_face_batch_conversion_keeps_staged_model_and_weights_unchanged(
     runtime = ort.InferenceSession(str(converted_path), providers=["CPUExecutionProvider"])
     inputs = np.array([[10, 20, 30], [40, 50, 60]], dtype=np.float32)
     np.testing.assert_array_equal(runtime.run(None, {"input": inputs})[0], inputs + weights)
+
+
+@pytest.mark.parametrize("batch_size", [None, 1, 2])
+def test_face_load_with_downloads_keeps_model_bytes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, batch_size: int | None
+) -> None:
+    # FL-1775: the downloaded model.onnx must keep the catalogue hashes, whatever the batch size.
+    monkeypatch.setattr(settings, "model_downloads", True)
+    monkeypatch.setattr("frameleaf_ml.sessions.gettempdir", lambda: str(tmp_path / "runtime"))
+    recognizer = FaceRecognizer("buffalo_l", cache_dir=tmp_path / "buffalo_l")
+    recognizer.batch_size = batch_size
+    recognizer.model_path.parent.mkdir(parents=True)
+    graph = helper.make_graph(
+        [helper.make_node("Identity", ["input"], ["output"])],
+        "synthetic-face-model",
+        [helper.make_tensor_value_info("input", onnx.TensorProto.FLOAT, [1, 3])],
+        [helper.make_tensor_value_info("output", onnx.TensorProto.FLOAT, [1, 3])],
+    )
+    onnx.save(
+        helper.make_model(graph, opset_imports=[helper.make_opsetid("", 13)], ir_version=10), recognizer.model_path
+    )
+    before = recognizer.model_path.read_bytes()
+    session = Mock()
+    session.get_inputs.return_value = [SimpleNamespace(shape=(1, 3))]
+    with patch.object(recognizer, "_make_session", return_value=session) as make_session:
+        recognizer._load()
+    assert recognizer.model_path.read_bytes() == before
+    if batch_size != 1:  # batch size 1 runs the downloaded file as it is
+        assert not make_session.call_args.args[0].is_relative_to(recognizer.cache_dir)
+
+
+def test_face_model_changed_since_download_is_fetched_again(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "model_downloads", True)
+    recognizer = FaceRecognizer("buffalo_l", cache_dir=tmp_path / "buffalo_l")
+    recognizer.model_path.parent.mkdir(parents=True)
+    recognizer.model_path.write_bytes(b"rewritten by an older release")
+    metadata = recognizer.cache_dir / ".cache/huggingface/download/recognition/model.onnx.metadata"
+    metadata.parent.mkdir(parents=True)
+    metadata.write_text(f"commit\netag\n{recognizer.model_path.stat().st_mtime - 60}\n")
+    with patch.object(recognizer, "_download") as download:
+        recognizer.download()
+    download.assert_called_once()
+
+    metadata.write_text(f"commit\netag\n{recognizer.model_path.stat().st_mtime}\n")
+    with patch.object(recognizer, "_download") as download:
+        recognizer.download()
+    download.assert_not_called()
