@@ -221,7 +221,10 @@ def test_custom_download_fetches_only_the_files_the_encoders_load(tmp_path: Path
         return str(local_dir)
 
     api, _ = serve_repository(hugging_face.REQUIRED_FILES)
-    with patch.object(hugging_face, "HfApi", api), patch.object(hugging_face, "snapshot_download", side_effect=write) as download:
+    with (
+        patch.object(hugging_face, "HfApi", api),
+        patch.object(hugging_face, "snapshot_download", side_effect=write) as download,
+    ):
         model.download()
 
     assert download.call_args.args == (CUSTOM_REPOSITORY,)
