@@ -1120,8 +1120,39 @@ describe('/albums', () => {
         .set('Authorization', `Bearer ${user2.accessToken}`)
         .send({ role: AlbumUserRole.Editor });
 
+      // FL-1767: members and roles are the owner's alone, so an editor is refused before anything else
       expect(status).toBe(400);
-      expect(body).toEqual(errorDto.badRequest('User is owner'));
+      expect(body).toEqual(errorDto.badRequest('Not found or no album.share access'));
+    });
+
+    it('should not allow an editor to invite people, remove members or make links (FL-1767)', async () => {
+      const album = await utils.createAlbum(user1.accessToken, {
+        albumName: 'testAlbum',
+        albumUsers: [
+          { userId: user2.userId, role: AlbumUserRole.Editor },
+          { userId: user4.userId, role: AlbumUserRole.Viewer },
+        ],
+      });
+      const editor = { Authorization: `Bearer ${user2.accessToken}` };
+
+      const invite = await request(app)
+        .put(`/albums/${album.id}/users`)
+        .set(editor)
+        .send({ albumUsers: [{ userId: admin.userId, role: AlbumUserRole.Viewer }] });
+      expect(invite.status).toBe(400);
+
+      const remove = await request(app).delete(`/albums/${album.id}/user/${user4.userId}`).set(editor);
+      expect(remove.status).toBe(400);
+
+      const link = await request(app)
+        .post('/shared-links')
+        .set(editor)
+        .send({ type: SharedLinkType.Album, albumId: album.id });
+      expect(link.status).toBe(400);
+
+      // leaving stays open to everyone
+      const leave = await request(app).delete(`/albums/${album.id}/user/me`).set(editor);
+      expect(leave.status).toBe(204);
     });
   });
 

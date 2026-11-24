@@ -321,7 +321,8 @@ export class JobService extends BaseService {
     }
     if (asset.libraryScope === LibraryScope.Design) return asset;
     const edits = await this.assetEditRepository.getWithSyncInfo(id);
-    this.websocketRepository.clientSend('AssetEditReadyV2', asset.ownerId, {
+    // FL-1767: a Locked item's details reach the owner's unlocked sessions only
+    this.sendOwnAssetEvent(await this.getOwnAssetAudience(asset.ownerId, [asset]), 'AssetEditReadyV2', asset.id, {
       asset: {
         id: asset.id,
         ownerId: asset.ownerId,
@@ -441,9 +442,10 @@ export class JobService extends BaseService {
           if (!item.data.versionId || (version?.status === 'ready' && version.purpose !== 'export')) {
             const [updatedAsset] = await this.assetRepository.getByIdsWithAllRelationsButStacks([asset.id]);
             if (updatedAsset) {
-              this.websocketRepository.clientSend(
+              this.sendOwnAssetEvent(
+                await this.getOwnAssetAudience(updatedAsset.ownerId, [updatedAsset]),
                 updatedAsset.libraryScope === LibraryScope.Design ? 'LibraryAssetUpdateV1' : 'on_asset_update',
-                updatedAsset.ownerId,
+                updatedAsset.id,
                 await this.withNamedPlace(await this.withLandmarks(mapAsset(updatedAsset)), updatedAsset.ownerId),
               );
             }
@@ -520,12 +522,15 @@ export class JobService extends BaseService {
             // item. Clients treat `on_upload_success` as "add this to the timeline", so a trashed (or
             // permanently deleted, still awaiting removal) asset would reappear in every open timeline.
             // The v2 event below carries `deletedAt`, so its clients place the asset correctly.
+            // FL-1767: an upload its owner's Locked rules hide is announced to their unlocked sessions only
+            const audience = await this.getOwnAssetAudience(asset.ownerId, [asset]);
+            const uploadRoom = audience.withheld.has(asset.id) ? audience.elevatedSessionIds : asset.ownerId;
             if (!asset.deletedAt) {
-              this.websocketRepository.clientSend('on_upload_success', asset.ownerId, mapAsset(asset));
+              this.websocketRepository.clientSend('on_upload_success', uploadRoom, mapAsset(asset));
             }
             if (asset.exifInfo) {
               const exif = asset.exifInfo;
-              this.websocketRepository.clientSend('AssetUploadReadyV2', asset.ownerId, {
+              this.websocketRepository.clientSend('AssetUploadReadyV2', uploadRoom, {
                 // TODO remove `on_upload_success` and then modify the query to select only the required fields)
                 asset: {
                   id: asset.id,

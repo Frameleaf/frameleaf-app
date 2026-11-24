@@ -329,14 +329,10 @@ const checkOtherAccess = async (access: AccessRepository, request: OtherAccessRe
       return await access.album.checkOwnerAccess(auth.user.id, ids);
     }
 
+    // FL-1767: who is in an album, their roles, and its public links are its owner's alone, as the apps
+    // offer them (an editor adds and removes items, never people or links)
     case Permission.AlbumShare: {
-      const isOwner = await access.album.checkOwnerAccess(auth.user.id, ids);
-      const isShared = await access.album.checkSharedAlbumAccess(
-        auth.user.id,
-        ids.difference(isOwner),
-        AlbumUserRole.Editor,
-      );
-      return isOwner.union(isShared);
+      return await access.album.checkOwnerAccess(auth.user.id, ids);
     }
 
     case Permission.AlbumDownload: {

@@ -46,6 +46,17 @@ describe('/users', () => {
 
       expect(token.accessToken).toBeDefined();
     });
+
+    it('should refuse a new password without the current one once no change is required (FL-1767)', async () => {
+      const { status } = await request(app)
+        .put(`/users/me`)
+        .send({ password: 'another-secret' })
+        .set('Authorization', `Bearer ${nonAdmin.accessToken}`);
+
+      expect(status).toBe(400);
+      const token = await login({ loginCredentialDto: { email: nonAdmin.userEmail, password: 'super-secret' } });
+      expect(token.accessToken).toBeDefined();
+    });
   });
 
   describe('PUT /users/me/preferences savedSearches (FL-49)', () => {

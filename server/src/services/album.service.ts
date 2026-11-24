@@ -1441,6 +1441,10 @@ export class AlbumService extends BaseService {
     }
 
     await this.albumUserRepository.delete({ albumId: id, userId });
+    // FL-1767: a link to the album that a former member made stops working with their membership
+    for (const link of await this.sharedLinkRepository.getAll({ userId, albumId: id })) {
+      await this.sharedLinkRepository.remove(link.id);
+    }
     this.sendAccessChange(album, userId, null);
     // FL-90: Studio work this member was doing through the album or space stops now.
     await this.eventRepository.emit('AlbumUserRemove', { albumId: id, userId, removedById: auth.user.id });
