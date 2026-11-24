@@ -262,9 +262,10 @@ export class NotificationService extends BaseService {
 
     const [asset] = await this.assetRepository.getByIdsWithAllRelationsButStacks([assetId], userId);
     if (asset) {
-      this.websocketRepository.clientSend(
+      this.sendOwnAssetEvent(
+        await this.getOwnAssetAudience(userId, [asset]),
         asset.libraryScope === LibraryScope.Design ? 'LibraryAssetUpdateV1' : 'on_asset_update',
-        userId,
+        asset.id,
         await this.withNamedPlace(
           await this.withLandmarks(mapAsset(asset, { auth: { user: { id: userId } } as AuthDto })),
           userId,
@@ -299,9 +300,9 @@ export class NotificationService extends BaseService {
   }
 
   @OnEvent({ name: 'UserSignup' })
-  async onUserSignup({ notify, id, password: password }: ArgOf<'UserSignup'>) {
+  async onUserSignup({ notify, id }: ArgOf<'UserSignup'>) {
     if (notify) {
-      await this.jobRepository.queue({ name: JobName.NotifyUserSignup, data: { id, password } });
+      await this.jobRepository.queue({ name: JobName.NotifyUserSignup, data: { id } });
     }
   }
 
@@ -630,7 +631,7 @@ export class NotificationService extends BaseService {
   }
 
   @OnJob({ name: JobName.NotifyUserSignup, queue: QueueName.Notification })
-  async handleUserSignup({ id, password }: JobOf<JobName.NotifyUserSignup>) {
+  async handleUserSignup({ id }: JobOf<JobName.NotifyUserSignup>) {
     const user = await this.userRepository.get(id, { withDeleted: false });
     if (!user) {
       return JobStatus.Skipped;
@@ -644,7 +645,7 @@ export class NotificationService extends BaseService {
         baseUrl: await this.getPublicUrl(server),
         displayName: user.name,
         username: user.email,
-        password,
+        // FL-1769: no password: a job queued by an older version is rendered without the one it holds
         showBranding: templates.email.showBranding,
       },
       customTemplate: templates.email.welcomeTemplate,

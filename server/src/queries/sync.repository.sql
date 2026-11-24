@@ -665,6 +665,14 @@ select
       else "asset"."visibility"
     end
   ) as "visibility",
+  not not exists (
+    select
+      1
+    from
+      asset_lock
+    where
+      asset_lock."assetId" = "asset"."id"
+  ) as "lockWithheld",
   case
     when "asset"."ownerId" = $1 then "asset"."isFavorite"
     else $2
@@ -784,6 +792,14 @@ select
       else "asset"."visibility"
     end
   ) as "visibility",
+  not not exists (
+    select
+      1
+    from
+      asset_lock
+    where
+      asset_lock."assetId" = "asset"."id"
+  ) as "lockWithheld",
   case
     when "asset"."ownerId" = $1 then "asset"."isFavorite"
     else $2
@@ -905,6 +921,14 @@ select
       else "asset"."visibility"
     end
   ) as "visibility",
+  not not exists (
+    select
+      1
+    from
+      asset_lock
+    where
+      asset_lock."assetId" = "asset"."id"
+  ) as "lockWithheld",
   case
     when "asset"."ownerId" = $1 then "asset"."isFavorite"
     else $2
@@ -1030,6 +1054,14 @@ where
     )
     or "asset"."ownerId" = $9::uuid
   )
+  and not exists (
+    select
+      1
+    from
+      asset_lock
+    where
+      asset_lock."assetId" = "asset"."id"
+  )
 order by
   "album_asset"."updateId" asc
 
@@ -1108,6 +1140,14 @@ where
     )
     or "asset"."ownerId" = $9::uuid
   )
+  and not exists (
+    select
+      1
+    from
+      asset_lock
+    where
+      asset_lock."assetId" = "asset"."id"
+  )
 order by
   "asset_exif"."updateId" asc
 
@@ -1185,6 +1225,14 @@ where
         asset_lock."assetId" = "asset"."id"
     )
     or "asset"."ownerId" = $8::uuid
+  )
+  and not exists (
+    select
+      1
+    from
+      asset_lock
+    where
+      asset_lock."assetId" = "asset"."id"
   )
 order by
   "album_asset"."updateId" asc
@@ -1503,6 +1551,14 @@ select
     where
       origin."assetId" = asset.id
   ) as "partnerOriginOwnerId",
+  not not exists (
+    select
+      1
+    from
+      asset_lock
+    where
+      asset_lock."assetId" = "asset"."id"
+  ) as "lockWithheld",
   case
     when asset."localDateTime" is null then '-infinity'
     else to_char(
@@ -1516,6 +1572,14 @@ where
   "asset"."libraryScope" in ($1, $2)
   and "asset"."updateId" < $3
   and "asset"."ownerId" = $4
+  and not exists (
+    select
+      1
+    from
+      asset_lock
+    where
+      asset_lock."assetId" = "asset"."id"
+  )
   and not (
     exists (
       select
@@ -1669,6 +1733,14 @@ select
     where
       origin."assetId" = asset.id
   ) as "partnerOriginOwnerId",
+  not not exists (
+    select
+      1
+    from
+      asset_lock
+    where
+      asset_lock."assetId" = "asset"."id"
+  ) as "lockWithheld",
   "asset"."updateId"
 from
   "asset" as "asset"
@@ -1728,6 +1800,14 @@ where
   and "asset_exif"."updateId" > $2
   and "asset"."ownerId" = $3
   and "asset"."libraryScope" in ($4, $5)
+  and not exists (
+    select
+      1
+    from
+      asset_lock
+    where
+      asset_lock."assetId" = "asset"."id"
+  )
   and not (
     exists (
       select
@@ -1784,6 +1864,14 @@ where
   and "asset_edit"."updateId" > $2
   and "asset"."ownerId" = $3
   and "asset"."libraryScope" in ($4, $5)
+  and not exists (
+    select
+      1
+    from
+      asset_lock
+    where
+      asset_lock."assetId" = "asset"."id"
+  )
   and not (
     exists (
       select
@@ -1895,6 +1983,14 @@ where
   and "asset_face"."updateId" > $2
   and "asset"."ownerId" = $3
   and "asset"."libraryScope" in ($4, $5)
+  and not exists (
+    select
+      1
+    from
+      asset_lock
+    where
+      asset_lock."assetId" = "asset"."id"
+  )
   and not (
     exists (
       select
@@ -1954,6 +2050,14 @@ where
       "user"."id" = $4
   )
   and "asset"."libraryScope" in ($5, $6)
+  and not exists (
+    select
+      1
+    from
+      asset_lock
+    where
+      asset_lock."assetId" = "asset"."id"
+  )
   and not (
     exists (
       select
@@ -2011,6 +2115,14 @@ where
   and "asset"."ownerId" = $3
   and "asset_metadata"."key" != $4
   and "asset"."libraryScope" in ($5, $6)
+  and not exists (
+    select
+      1
+    from
+      asset_lock
+    where
+      asset_lock."assetId" = "asset"."id"
+  )
   and not (
     exists (
       select
@@ -2077,6 +2189,14 @@ where
   and "asset_ocr"."updateId" > $2
   and "asset"."ownerId" = $3
   and "asset"."libraryScope" in ($4, $5)
+  and not exists (
+    select
+      1
+    from
+      asset_lock
+    where
+      asset_lock."assetId" = "asset"."id"
+  )
   and not (
     exists (
       select
@@ -2397,6 +2517,14 @@ where
   "stack"."updateId" < $1
   and "stack"."updateId" > $2
   and "stack"."ownerId" = $3
+  and not exists (
+    select
+      1
+    from
+      asset_lock
+    where
+      asset_lock."assetId" = "asset"."id"
+  )
   and not (
     exists (
       select

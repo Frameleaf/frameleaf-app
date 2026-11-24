@@ -454,6 +454,31 @@ export class CloudBackupIndexRepository {
     return Number(result.numUpdatedRows);
   }
   /**
+   * FL-1769: manifests a clean-up marked pruned that are still in storage, because the engine refused or
+   * stopped, are shown again with the status they had. Only pruned rows change.
+   */
+  async restorePrunedManifests(
+    bucket: string,
+    manifests: Array<{ key: string; status: 'complete' | 'degraded' }>,
+  ): Promise<number> {
+    let restored = 0;
+    for (const status of ['complete', 'degraded'] as const) {
+      const keys = [...new Set(manifests.filter((manifest) => manifest.status === status).map(({ key }) => key))];
+      if (keys.length === 0) {
+        continue;
+      }
+      const result = await this.db
+        .updateTable('cloud_backup_manifest')
+        .set({ status })
+        .where('bucket', '=', bucket)
+        .where('key', 'in', keys)
+        .where('status', '=', 'pruned')
+        .executeTakeFirst();
+      restored += Number(result.numUpdatedRows);
+    }
+    return restored;
+  }
+  /**
    * FL-164: which of these assets are in the library now, for the restore list: active, trashed, or gone.
    * Backend work that sees Locked assets too; the caller is an administrator's restore of the whole server.
    */

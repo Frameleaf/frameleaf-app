@@ -121,7 +121,10 @@ export const emptyVerifyResult = (depth: 'sample' | 'full', now: Date): CloudBac
  */
 export class CloudBackupMaintenance {
   constructor(
-    private index: Pick<CloudBackupIndexRepository, 'getManifestKeys' | 'adoptManifests' | 'markManifests'>,
+    private index: Pick<
+      CloudBackupIndexRepository,
+      'getManifestKeys' | 'adoptManifests' | 'markManifests' | 'listKeptManifests' | 'restorePrunedManifests'
+    >,
     private logger: LoggingRepository,
   ) {}
 
@@ -202,6 +205,12 @@ export class CloudBackupMaintenance {
     const remove = candidates.filter(({ key }) => !keep.has(key));
 
     // Marked pruned before anything is deleted, so nothing offers a restore from a backup that is going.
+    // FL-1769: what each was before, so a clean-up the engine refuses or stops can show the ones still stored again.
+    const before = dryRun
+      ? new Map<string, 'complete' | 'degraded'>()
+      : new Map(
+          (await this.index.listKeptManifests(bucket.bucketRef)).map(({ key, status }) => [key, status] as const),
+        );
     if (!dryRun) {
       await this.index.adoptManifests(
         bucket.bucketRef,
@@ -221,7 +230,15 @@ export class CloudBackupMaintenance {
         'pruned',
       );
     }
-    const report = await prune(repository, { keep: () => keep, dryRun });
+    let report: Awaited<ReturnType<typeof prune>>;
+    try {
+      report = await prune(repository, { keep: () => keep, dryRun });
+    } catch (error) {
+      if (!dryRun && remove.length > 0) {
+        await this.unmarkStillStored(bucket, repository, remove, before);
+      }
+      throw error;
+    }
     this.logger.log(
       `Cloud backup clean-up${dryRun ? ' (dry run)' : ''}: ${report.keptSnapshots} backups kept, ${report.removedSnapshots.length} past retention, ${report.deletedPacks} stored objects (${report.freedBytes} bytes) no longer needed`,
     );
@@ -234,6 +251,31 @@ export class CloudBackupMaintenance {
       bytesRemoved: Math.max(0, report.freedBytes),
       deleted: dryRun ? 0 : report.deletedPacks,
     };
+  }
+
+  /**
+   * FL-1769: the engine refused or stopped a clean-up after this server marked its backups pruned. The
+   * ones still in storage are shown again as they were (a backup this server had no record of as complete).
+   */
+  private async unmarkStillStored(
+    bucket: CloudBackupBucket,
+    repository: Repository,
+    remove: Array<{ key: string }>,
+    before: Map<string, 'complete' | 'degraded'>,
+  ) {
+    const vaultId = bucket.connection.vaultId!;
+    try {
+      const stored = new Set((await repository.listSnapshots()).map(({ key }) => key));
+      const restored = remove
+        .filter(({ key }) => stored.has(key))
+        .map(({ key }) => {
+          const objectKey = snapshotObjectKey(vaultId, key);
+          return { key: objectKey, status: before.get(objectKey) ?? ('complete' as const) };
+        });
+      await this.index.restorePrunedManifests(bucket.bucketRef, restored);
+    } catch (error) {
+      this.logger.warn(`Cloud backup: backups kept by a stopped clean-up could not be shown again: ${String(error)}`);
+    }
   }
 
   async verify(

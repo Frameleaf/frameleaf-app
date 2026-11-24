@@ -2,6 +2,7 @@ import { BadRequestException, HttpException, Injectable, NotFoundException } fro
 import { randomUUID } from 'node:crypto';
 import { mkdir, mkdtemp, readdir, rename, rm } from 'node:fs/promises';
 import { extname, join } from 'node:path';
+import { setTimeout as sleep } from 'node:timers/promises';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type {
   MediaCapabilitiesDto,
@@ -60,6 +61,9 @@ import {
 import { mimeTypes } from 'src/utils/mime-types.js';
 
 class MediaCapacityWait extends Error {}
+/** FL-1769: a cover or creator picture waits this many times this long for download capacity. */
+const PICTURE_CAPACITY_ATTEMPTS = 6;
+const PICTURE_CAPACITY_WAIT_MS = 5000;
 
 @Injectable()
 export class MediaImportService {
@@ -412,17 +416,24 @@ export class MediaImportService {
    * left out; it never fails the import it belongs to.
    */
   private async keepPicture(row: MediaImport, provider: string, url: string, folder: string, name: string) {
-    try {
-      await mkdir(folder, { recursive: true, mode: 0o700 });
-      const file = await this.extract(row, provider, (signal) =>
-        this.downloader.fetchImage(url, { directory: folder, signal }),
-      );
-      const path = join(folder, name + extname(file.path));
-      await rename(file.path, path);
-      return path;
-    } catch (error) {
-      if (jobSignal()?.aborted) throw error;
-      return null;
+    // FL-1769: busy download capacity is waited out for a while instead of losing the picture for good
+    for (let attempt = 1; ; attempt++) {
+      try {
+        await mkdir(folder, { recursive: true, mode: 0o700 });
+        const file = await this.extract(row, provider, (signal) =>
+          this.downloader.fetchImage(url, { directory: folder, signal }),
+        );
+        const path = join(folder, name + extname(file.path));
+        await rename(file.path, path);
+        return path;
+      } catch (error) {
+        if (jobSignal()?.aborted) throw error;
+        if (error instanceof MediaCapacityWait && attempt < PICTURE_CAPACITY_ATTEMPTS) {
+          await sleep(PICTURE_CAPACITY_WAIT_MS, undefined, { signal: jobSignal() });
+          continue;
+        }
+        return null;
+      }
     }
   }
   private pictures(ownerId: string, ...folders: string[]) {

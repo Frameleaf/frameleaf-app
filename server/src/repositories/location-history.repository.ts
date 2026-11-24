@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { Kysely, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { randomUUID } from 'node:crypto';
-import { mkdir, open, readdir, rename, rm, stat } from 'node:fs/promises';
+import { mkdir, open, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { HistoryPoint } from 'src/location-history/parse.js';
 import { StorageCore } from 'src/cores/storage.core.js';
@@ -62,7 +62,7 @@ export class LocationHistoryRepository {
     return path.join(StorageCore.getMediaLocation(), 'location-history', ownerId);
   }
 
-  private file(ownerId: string, id: string, extension: 'upload' | 'history') {
+  private file(ownerId: string, id: string, extension: 'upload' | 'history' | 'size') {
     if (!UUID.test(id)) {
       throw new Error('Invalid staging identity');
     }
@@ -87,6 +87,7 @@ export class LocationHistoryRepository {
       const stats = await stat(filePath).catch(() => null);
       if (stats && Date.now() - stats.mtimeMs > UPLOAD_KEPT_MS) {
         await rm(filePath, { force: true });
+        await rm(filePath.replace(/\.upload$/, '.size'), { force: true });
       } else if (stats) {
         waiting++;
       }
@@ -99,9 +100,23 @@ export class LocationHistoryRepository {
       throw new LocationHistoryStagingError('There is not enough free space on the server for this file');
     }
     const id = randomUUID();
+    // The declared size waits beside the upload, so a file cut short is never read as the whole history.
+    await writeFile(this.file(ownerId, id, 'size'), String(size), { flag: 'wx', mode: 0o600 });
     const handle = await open(this.file(ownerId, id, 'upload'), 'wx', 0o600);
     await handle.close();
     return id;
+  }
+
+  /** The size declared when the upload started; null for an upload started before sizes were kept. */
+  private async declaredSize(ownerId: string, uploadId: string): Promise<number | null> {
+    const text = await readFile(this.file(ownerId, uploadId, 'size'), 'utf8').catch((error: NodeJS.ErrnoException) => {
+      if (error.code === 'ENOENT') {
+        return null;
+      }
+      throw error;
+    });
+    const size = text === null ? Number.NaN : Number(text);
+    return Number.isSafeInteger(size) && size >= 0 ? size : null;
   }
 
   /** Append a part at `offset`; sending a part already stored again is harmless. Returns the bytes stored. */
@@ -115,12 +130,26 @@ export class LocationHistoryRepository {
     try {
       const { size } = await handle.stat();
       if (offset + bytes.length <= size) {
+        // A retried part must be the part already stored, or this is a different file.
+        const existing = Buffer.alloc(bytes.length);
+        let read = 0;
+        while (read < bytes.length) {
+          const result = await handle.read(existing, read, bytes.length - read, offset + read);
+          if (result.bytesRead === 0) {
+            break;
+          }
+          read += result.bytesRead;
+        }
+        if (read !== bytes.length || !existing.equals(bytes)) {
+          throw new LocationHistoryStagingError('This is not the file that was being uploaded');
+        }
         return size;
       }
       if (offset !== size) {
         throw new LocationHistoryStagingError(`Resume this upload at byte ${size}`, 'offset');
       }
-      if (size + bytes.length > LOCATION_HISTORY_MAX_BYTES) {
+      const declared = await this.declaredSize(ownerId, uploadId);
+      if (size + bytes.length > LOCATION_HISTORY_MAX_BYTES || (declared !== null && size + bytes.length > declared)) {
         throw new LocationHistoryStagingError('This file is too large to be a location history');
       }
       let written = 0;
@@ -144,7 +173,12 @@ export class LocationHistoryRepository {
     if (stats.size === 0) {
       throw new LocationHistoryStagingError('This file is empty');
     }
+    const declared = await this.declaredSize(ownerId, uploadId);
+    if (declared !== null && stats.size !== declared) {
+      throw new LocationHistoryStagingError(`Resume this upload at byte ${stats.size}`, 'offset');
+    }
     await rename(from, this.file(ownerId, sourceId, 'history'));
+    await rm(this.file(ownerId, uploadId, 'size'), { force: true });
   }
 
   async removeStaged(ownerId: string, sourceId: string) {

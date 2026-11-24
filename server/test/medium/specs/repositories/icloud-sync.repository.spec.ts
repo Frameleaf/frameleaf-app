@@ -116,25 +116,12 @@ describe(ICloudSyncRepository.name, () => {
       expect((await repository.counts(connection.id))['needs-review']).toBe(0);
     });
 
-    it('puts an accepted match back in line and remembers the answer', async () => {
-      const id = await held('multiple_content_matches');
-      await expect(repository.acceptReview(connection.id, connection.ownerId, true, { all: true })).resolves.toEqual({
-        accepted: 1,
-        requeued: 1,
-      });
-      const resource = (await repository.resource(id))!;
-      expect(resource.status).toBe('pending');
-      expect((resource.source as { _sync: { acceptedReasons: string[] } })._sync.acceptedReasons).toEqual([
-        'multiple_content_matches',
-      ]);
-    });
-
     it('tries storage again without recording an answer, so it can come back', async () => {
       const id = await held('quota_exceeded');
       await repository.acceptReview(connection.id, connection.ownerId, true, { all: true, group: 'storage' });
       const resource = (await repository.resource(id))!;
       expect(resource.status).toBe('pending');
-      expect((resource.source as { _sync?: unknown })._sync).toBeUndefined();
+      expect((resource.source as { _sync?: { acceptedReasons?: unknown } })._sync?.acceptedReasons).toBeUndefined();
     });
 
     it('leaves a photo marked for later out of accept all', async () => {
@@ -158,11 +145,27 @@ describe(ICloudSyncRepository.name, () => {
       expect((await page()).total).toBe(1);
     });
 
-    it('never holds a photo for being hidden: the next run imports it', async () => {
-      const id = await held('source_hidden_requires_consent');
-      expect((await page()).total).toBe(0);
-      await repository.startRun(connection);
-      expect(await repository.resource(id)).toMatchObject({ status: 'pending', lastError: null });
+    it.each(['source_hidden_requires_consent', 'multiple_content_matches'])(
+      'no longer holds a photo for %s: the next run imports it',
+      async (reason) => {
+        const id = await held(reason);
+        expect((await page()).total).toBe(0);
+        await repository.startRun(connection);
+        expect(await repository.resource(id)).toMatchObject({ status: 'pending', lastError: null });
+      },
+    );
+
+    it('shows a held photo with the matching library photo noted when it was held, whatever its name', async () => {
+      await repository.savePage(connection.id, 'assets:library', 'library', [asset, master], null, true);
+      await repository.materialize(connection, 'library', library);
+      const photo = await seedCanonicalAsset(db, { ownerId: connection.ownerId, originalFileName: 'renamed.jpg' });
+      const resource = (await repository.claim(connection.id, 1000))!;
+      await repository.finish(resource, 'needs-review', 'saved_checksum_conflict', undefined, [randomUUID(), photo.id]);
+      expect((await page()).items).toEqual([
+        expect.objectContaining({ resourceId: resource.id, previewAssetId: photo.id }),
+      ]);
+      await repository.materialize(connection, 'library', library);
+      expect((await page()).items[0].previewAssetId).toBe(photo.id);
     });
 
     it('lists a hidden source for import whatever the saved setting says', async () => {

@@ -169,6 +169,17 @@ const isKindMismatch = (error: unknown, kind: 'server' | 'individual') =>
   cloudErrorCode(error) === 'link_code_kind_mismatch' &&
   error.envelope?.data?.kind === kind;
 
+/** FL-1769: at most this many removed keys wait to be deactivated with the cloud. */
+const MAX_PENDING_KEY_REMOVALS = 10;
+
+/** FL-1769: the pending removals without the key just activated again, so its refreshes keep it. */
+const withoutRemoval = (store: FrameleafLicenseStore, license: FrameleafLicense) => {
+  const remaining = (store.pendingKeyRemovals ?? []).filter(
+    (removal) => !removal.licenseId || removal.licenseId !== license.claims.lic?.id,
+  );
+  return remaining.length > 0 ? remaining : undefined;
+};
+
 /** How long a signed activation from an unlinked server may be used (the token assertions' limit). */
 const ACTIVATION_PROOF_TTL_SECONDS = 120;
 
@@ -322,7 +333,7 @@ export class FrameleafLicenseService extends BaseService {
     const license = await this.verifyForStore(certificate, 'key', { keyHint: check.last4, activationId });
     await this.databaseRepository.withLock(DatabaseLock.FrameleafLicenseRefresh, async () => {
       const store = await this.readStore();
-      await this.writeStore({ ...store, key: license });
+      await this.writeStore({ ...store, key: license, pendingKeyRemovals: withoutRemoval(store, license) });
     });
     await this.audit(auth, AdminAuditAction.LicenseActivated, check.last4);
     return this.getStatus();
@@ -337,7 +348,11 @@ export class FrameleafLicenseService extends BaseService {
     }
     await this.databaseRepository.withLock(DatabaseLock.FrameleafLicenseRefresh, async () => {
       const store = await this.readStore();
-      await this.writeStore(license.kind === 'plan' ? { ...store, plan: license } : { ...store, key: license });
+      await this.writeStore(
+        license.kind === 'plan'
+          ? { ...store, plan: license, planDeclined: undefined }
+          : { ...store, key: license, pendingKeyRemovals: withoutRemoval(store, license) },
+      );
     });
     await this.audit(auth, AdminAuditAction.LicenseActivated, 'file');
     return this.getStatus();
@@ -350,24 +365,50 @@ export class FrameleafLicenseService extends BaseService {
       if (!store.key) {
         throw new NotFoundException('This server has no licence key');
       }
-      await this.deactivateWithCloud(store.key);
-      await this.writeStore({ ...store, key: null });
+      const told = await this.deactivateWithCloud(store.key);
+      // FL-1769: a key Cloud still lists as active here would come back on the next refresh; keep the
+      // removal and retry it before each refresh instead
+      const removal = { licenseId: store.key.claims.lic?.id ?? null, activationId: store.key.activationId ?? null };
+      const pendingKeyRemovals =
+        told || (!removal.licenseId && !removal.activationId)
+          ? store.pendingKeyRemovals
+          : [...(store.pendingKeyRemovals ?? []), removal].slice(-MAX_PENDING_KEY_REMOVALS);
+      await this.writeStore({ ...store, key: null, pendingKeyRemovals });
       await this.audit(auth, AdminAuditAction.LicenseRemoved, store.key.keyHint ?? null);
     });
     return this.getStatus();
   }
 
-  /** `DELETE admin/license/plan`: remove the plan from this server; the subscription is untouched. */
+  /**
+   * `DELETE admin/license/plan`: remove the plan from this server; the subscription is untouched.
+   * FL-1769: Cloud still lists the plan, so the removal is remembered for this link and automatic
+   * refreshes leave the plan out. A checkout, a plan file, an explicit refresh or a new link takes it back.
+   */
   async removePlan(auth: AuthDto): Promise<LicenseStatusResponseDto> {
     await this.databaseRepository.withLock(DatabaseLock.FrameleafLicenseRefresh, async () => {
       const store = await this.readStore();
       if (!store.plan) {
         throw new NotFoundException('This server has no Frameleaf Cloud plan');
       }
-      await this.writeStore({ ...store, plan: null });
+      const { link } = await readCloudLink(this.gatewayDeps());
+      await this.writeStore({
+        ...store,
+        plan: null,
+        planDeclined: { accountId: link?.accountId ?? null, linkedAt: link?.linkedAt ?? null },
+      });
       await this.audit(auth, AdminAuditAction.LicenseRemoved, 'plan');
     });
     return this.getStatus();
+  }
+
+  /** FL-1769: the administrator asked for the plan again; the next refresh may store it. */
+  private async acceptPlanAgain() {
+    await this.databaseRepository.withLock(DatabaseLock.FrameleafLicenseRefresh, async () => {
+      const store = await this.readStore();
+      if (store.planDeclined) {
+        await this.writeStore({ ...store, planDeclined: undefined });
+      }
+    });
   }
 
   /**
@@ -409,6 +450,8 @@ export class FrameleafLicenseService extends BaseService {
     if (problem) {
       throw new BadRequestException(problem);
     }
+    // FL-1769: buying a plan for this server is asking for it here again
+    await this.acceptPlanAgain();
     return answer;
   }
 
@@ -423,7 +466,10 @@ export class FrameleafLicenseService extends BaseService {
           : CLOUD_GATES.linkFirst,
       );
     }
-    await this.databaseRepository.withLock(DatabaseLock.FrameleafLicenseRefresh, () => this.refresh(true));
+    // FL-1769: an administrator asking for current certificates takes a plan they stopped using back
+    await this.databaseRepository.withLock(DatabaseLock.FrameleafLicenseRefresh, () =>
+      this.refresh(true, Date.now(), { acceptPlan: true }),
+    );
     const after = await this.readStore();
     const error = after.plan?.lastRefreshError ?? after.key?.lastRefreshError;
     if (
@@ -465,8 +511,8 @@ export class FrameleafLicenseService extends BaseService {
    * Refresh every certificate that is due (or all, when forced) with `POST /v1/licenses/refresh`.
    * A failure is kept on the certificate; its state then moves into grace by itself.
    */
-  private async refresh(force: boolean, now = Date.now()) {
-    const store = await this.readStore();
+  private async refresh(force: boolean, now = Date.now(), options: { acceptPlan?: boolean } = {}) {
+    let store = await this.readStore();
     const { cloudUrl, link, linked } = await readCloudLink(this.gatewayDeps());
     // FC-62: the staff-set interval in the discovery document this process holds (read again within the hour)
     const interval = cloudUrl
@@ -484,6 +530,33 @@ export class FrameleafLicenseService extends BaseService {
     if (!linked || !cloudUrl || !link?.instanceId) {
       return;
     }
+    // FL-1769: a key removed here is never taken back from this answer, even one Cloud just confirmed
+    const removedKeys = new Set(
+      (store.pendingKeyRemovals ?? []).map((removal) => removal.licenseId).filter((id): id is string => !!id),
+    );
+    // FL-1769: tell Cloud about keys removed while it was unreachable before asking what is active
+    if (store.pendingKeyRemovals?.length) {
+      const stillPending: NonNullable<FrameleafLicenseStore['pendingKeyRemovals']> = [];
+      for (const removal of store.pendingKeyRemovals) {
+        const told = await this.deactivateWithCloud(null, {
+          activationId: removal.activationId,
+          licenseId: removal.licenseId,
+        });
+        if (!told) {
+          stillPending.push(removal);
+        }
+      }
+      if (stillPending.length !== store.pendingKeyRemovals.length) {
+        store = { ...store, pendingKeyRemovals: stillPending.length > 0 ? stillPending : undefined };
+        await this.writeStore(store);
+      }
+    }
+    const declined = store.planDeclined;
+    const planDeclined =
+      !options.acceptPlan &&
+      !!declined &&
+      declined.accountId === (link.accountId ?? null) &&
+      declined.linkedAt === (link.linkedAt ?? null);
     let nextStore: FrameleafLicenseStore;
     try {
       const { document, token } = await this.apiToken(cloudUrl, link.instanceId);
@@ -504,10 +577,16 @@ export class FrameleafLicenseService extends BaseService {
         const license = await this.verifyForStore(certificate, 'account', {}, now);
         switch (license.kind) {
           case 'plan': {
-            plan ??= { ...license, source: store.plan?.source === 'file' ? 'file' : 'account' };
+            if (!planDeclined) {
+              plan ??= { ...license, source: store.plan?.source === 'file' ? 'file' : 'account' };
+            }
             break;
           }
           case 'server': {
+            if (license.claims.lic?.id && removedKeys.has(license.claims.lic.id)) {
+              // removed here; Cloud has not heard yet
+              break;
+            }
             // this server holds one key certificate: the activation of the key it already holds, else the first
             const sameKey = !!store.key && store.key.claims.lic?.id === license.claims.lic?.id;
             if (!key || sameKey) {
@@ -539,7 +618,12 @@ export class FrameleafLicenseService extends BaseService {
           lastRefreshError: undefined,
           nextRefreshAt: nextRefreshAt(license.claims, Math.random, refreshEvery, Math.floor(now / 1000)).toISOString(),
         };
-      nextStore = { ...store, key: stamp(key), plan: stamp(plan) };
+      nextStore = {
+        ...store,
+        key: stamp(key),
+        plan: stamp(plan),
+        planDeclined: options.acceptPlan ? undefined : store.planDeclined,
+      };
     } catch (error) {
       const message =
         error instanceof FrameleafCloudError || error instanceof BadRequestException ? error.message : String(error);
@@ -750,7 +834,7 @@ export class FrameleafLicenseService extends BaseService {
     if (license.kind === 'server' && isAdmin) {
       await this.databaseRepository.withLock(DatabaseLock.FrameleafLicenseRefresh, async () => {
         const store = await this.readStore();
-        await this.writeStore({ ...store, key: license });
+        await this.writeStore({ ...store, key: license, pendingKeyRemovals: withoutRemoval(store, license) });
       });
       await this.audit(auth, AdminAuditAction.LicenseActivated, keyHint);
       return { kind: 'server', keyHint };
@@ -896,14 +980,17 @@ export class FrameleafLicenseService extends BaseService {
     }
   }
 
-  /** `POST /v1/licenses/deactivate`, best effort: removing a key locally never waits on the cloud. */
+  /**
+   * `POST /v1/licenses/deactivate`, best effort: removing a key locally never waits on the cloud.
+   * Answers whether the cloud accepted it (true when there is no cloud to tell).
+   */
   private async deactivateWithCloud(
     license: FrameleafLicense | null,
-    extra: { activationId?: string | null; user?: string } = {},
-  ) {
+    extra: { activationId?: string | null; licenseId?: string | null; user?: string } = {},
+  ): Promise<boolean> {
     const { cloudUrl, linked, link } = await readCloudLink(this.gatewayDeps());
     if (!cloudUrl) {
-      return;
+      return true;
     }
     try {
       const identity = await loadInstanceIdentity(this.gatewayDeps());
@@ -917,12 +1004,21 @@ export class FrameleafLicenseService extends BaseService {
         ...(api ? { dpop: api.token } : { unauthenticated: FrameleafCloudPublicCall.UnlinkedLicense }),
         body: {
           activationId: extra.activationId ?? license?.activationId ?? null,
-          licenseId: license?.claims.lic?.id ?? null,
+          licenseId: extra.licenseId ?? license?.claims.lic?.id ?? null,
           fingerprint: { instanceId, ...(extra.user && { user: extra.user }) },
         },
       });
+      return true;
     } catch (error) {
       this.logger.warn(`Frameleaf Cloud was not told about the removed licence: ${error}`);
+      // a refusal the cloud answered (it holds no such activation, say) is final: trying again changes nothing
+      return (
+        error instanceof FrameleafCloudError &&
+        error.status !== null &&
+        error.status >= 400 &&
+        error.status < 500 &&
+        ![401, 408, 429].includes(error.status)
+      );
     }
   }
 

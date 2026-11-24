@@ -56,7 +56,7 @@ import { PhotographyWorkspaceRepository } from 'src/repositories/photography-wor
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { AlbumService } from 'src/services/album.service.js';
 import { type ClientsPaymentEvent, ClientsPaymentsService } from 'src/services/clients-payments.service.js';
-import { isOwnAddress, legacyStripeEnv, legacyStripeOwner } from 'src/utils/clients-payments.js';
+import { isOwnAddress, legacyStripeEnv, legacyStripeOwner, refundsWholePayment } from 'src/utils/clients-payments.js';
 import { FileDownloadResponse } from 'src/utils/file.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
 import { preparePhotographyLogo, renderPhotographyRendition } from 'src/utils/photography-rendition.js';
@@ -1369,9 +1369,14 @@ export class PhotographyWorkflowService {
     );
     return this.guestView(row, this.requireRecipient(row, guest.recipient.id));
   }
+  /**
+   * FL-1769: a refused choice is a conflict with the gallery as it is now (409 with a code), never a
+   * 403: the client page ends the gallery session on 401, 403 and 410, and a late favourite must not
+   * cost the client their access to the gallery and its downloads.
+   */
   private async selection(row: WorkflowRow, recipient: Recipient, ids: string[], deadline = true) {
     if (deadline && expired(row.value.config.selectionDeadline))
-      throw new ForbiddenException('Selection deadline passed');
+      throw new ConflictException({ message: 'Selection deadline passed', code: 'selection_closed' });
     const eligible = await this.eligible(row, ids);
     if (
       ids.some(
@@ -1381,7 +1386,7 @@ export class PhotographyWorkflowService {
           !row.value.published?.photos.some((p) => p.captureId === id),
       )
     )
-      throw new ForbiddenException('Photo is unavailable');
+      throw new ConflictException({ message: 'Photo is unavailable', code: 'photo_unavailable' });
   }
   /** The studio's selection limit (Client workflow › Maximum client selections), when it sets one. */
   private withinLimit(row: WorkflowRow, captureIds: string[]) {
@@ -2521,8 +2526,16 @@ export class PhotographyWorkflowService {
       throw new ForbiddenException('Provider order amount or currency mismatch');
     const intent = session.payment_intent;
     const charge = typeof intent === 'object' ? intent.latest_charge : null;
+    // FL-1769: a partial (goodwill) refund leaves the order paid and its downloads open; a full refund
+    // or a dispute ends delivery
+    const refundedAmount = Number(charge?.amount_refunded ?? 0) || 0;
     const refund =
-      charge && (charge.refunded === true || Number(charge.amount_refunded) > 0 || charge.disputed === true);
+      !!charge &&
+      (charge.refunded === true ||
+        charge.disputed === true ||
+        (refundedAmount > 0 && refundsWholePayment(refundedAmount, order.total)));
+    const partialRefund = !!charge && !refund && refundedAmount > 0;
+    if (partialRefund) logger.warn(`Order ${order.id} was partly refunded in Stripe; its delivery stays open`);
     const state = refund
       ? 'refunded'
       : session.payment_status === 'paid' && intent?.status === 'succeeded'
@@ -2539,7 +2552,12 @@ export class PhotographyWorkflowService {
         current.status = state;
         current.paymentIntentId = typeof intent === 'object' ? intent.id : (intent ?? null);
       }
-      this.receipt(value, current, `provider:${state ?? 'pending'}`, event.id);
+      this.receipt(
+        value,
+        current,
+        partialRefund ? 'provider:partial-refund' : `provider:${state ?? 'pending'}`,
+        event.id,
+      );
     });
     return { received: true };
   }
@@ -2608,10 +2626,19 @@ export class PhotographyWorkflowService {
           (event.type !== 'payment.succeeded' ||
             (event.amount === order.total && event.currency?.toUpperCase() === order.currency));
     if (!matches) return;
+    // FL-1769: Cloud relays Stripe's `charge.refunded` for partial refunds too, with the running total refunded;
+    // a partial (goodwill) refund leaves the order paid and the client's downloads open
+    const partialRefund = event.type === 'payment.refunded' && !refundsWholePayment(event.amount, order.total);
+    if (partialRefund) logger.warn(`Order ${order.id} was partly refunded in Stripe; its delivery stays open`);
     // FL-423: the payment provider's confirmation of a client's payment keeps the owner's revision
     await this.repository.mutateKeepingRevision(row.id, row.ownerId, row.albumId, undefined, row.value, (value) => {
       if (value.receipts.some((receipt) => receipt.reference === event.id)) return;
       const current = value.orders.find((o) => o.id === orderId)!;
+      if (partialRefund) {
+        if (event.paymentIntent && !current.paymentIntentId) current.paymentIntentId = event.paymentIntent;
+        this.receipt(value, current, 'provider:partial-refund', event.id);
+        return;
+      }
       if (state && current.status !== 'refunded' && current.status !== 'cancelled') {
         if (state === 'cancelled' && current.status === 'settled') return;
         current.status = state;

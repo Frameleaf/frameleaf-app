@@ -21,6 +21,10 @@ from frameleaf_ml.models.base import InferenceModel, ModelUnavailableError
 from frameleaf_ml.schemas import ModelFormat, ModelTask, ModelType, validate_options
 
 RECEIPT = ".frameleaf-staged.json"
+# Compiled-provider caches `sessions/ort.py` writes beside a model file (`<type>/`, `onnx/`, ...) while downloads
+# are on. They are not model files, and a bound request never reads them (it compiles into a private directory).
+# No model repository ships a folder by these names.
+RUNTIME_CACHES = {"coreml", "migraphx", "openvino", "trt-rtx"}
 
 
 _StatKey = tuple[int, int, int, int, int]
@@ -50,6 +54,8 @@ def cache_hashes(cache: Path, *, reuse: bool = False) -> dict[str, str]:
             raise ModelUnavailableError("Model staging requires regular files, without symlinks")
         relative = path.relative_to(cache)
         if relative.parts[0] == ".cache" or relative.as_posix() == RECEIPT:
+            continue
+        if RUNTIME_CACHES.intersection(relative.parts[:-1]):
             continue
         key = _stat_key(info)
         if reuse:

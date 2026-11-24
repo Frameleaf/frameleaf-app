@@ -1,5 +1,12 @@
-/** Reasons that only held a photo back for being hidden. Hidden photos now always import, as Locked. */
-export const ICLOUD_HIDDEN_REVIEW_REASONS = ['source_hidden_requires_consent', 'hidden_match_requires_consent'];
+/**
+ * Reasons that no longer hold a photo back, so the next run imports it. Hidden photos always import, as Locked
+ * (owner 2026-11-22). A file already in the library more than once links to the visible copy (owner 2026-11-23).
+ */
+export const ICLOUD_RELEASED_REVIEW_REASONS = [
+  'source_hidden_requires_consent',
+  'hidden_match_requires_consent',
+  'multiple_content_matches',
+];
 
 export type ICloudReviewGroup = 'match' | 'live-photo' | 'stack' | 'details' | 'edits' | 'storage' | 'other';
 export type ICloudReviewEffect = 'use-existing' | 'keep-current' | 'try-again';
@@ -40,8 +47,3 @@ export const ICLOUD_REVIEW_GROUP_REASONS: Record<Exclude<ICloudReviewGroup, 'oth
 export const ICLOUD_REVIEW_USE_EXISTING = ['multiple_content_matches'];
 /** Accepting tries the item again, because the answer can change (there may be room now). */
 export const ICLOUD_REVIEW_TRY_AGAIN = ['quota_exceeded'];
-
-export const isICloudReviewAccepted = (source: unknown, reason: string) => {
-  const accepted = (source as { _sync?: { acceptedReasons?: unknown } } | null)?._sync?.acceptedReasons;
-  return Array.isArray(accepted) && accepted.includes(reason);
-};

@@ -152,7 +152,8 @@ type EventMap = {
   StackDeleteAll: [{ stackIds: string[]; userId: string }];
 
   // user events
-  UserSignup: [{ notify: boolean; id: string; password?: string }];
+  /** FL-1769: never carries the password; the welcome email is queued and queued data is stored in the database. */
+  UserSignup: [{ notify: boolean; id: string }];
   UserCreate: [UserEvent];
   /** user is soft deleted */
   UserTrash: [UserEvent];

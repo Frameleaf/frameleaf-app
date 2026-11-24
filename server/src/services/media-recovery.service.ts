@@ -14,7 +14,6 @@ import {
 } from 'src/repositories/media-recovery.repository.js';
 import { ICloudScheduledStagingService } from 'src/services/icloud-scheduled-staging.service.js';
 import { MediaIntegrityResult, MediaIntegrityService } from 'src/services/media-integrity.service.js';
-import { isICloudReviewAccepted } from 'src/utils/icloud-review.js';
 
 export type MediaRecoveryInput = RecoveryAuthority & {
   stagedPath: string;
@@ -166,6 +165,16 @@ export class MediaRecoveryService {
         return { outcome: 'failed', reason: 'source_identity_changed' };
       }
       const candidates = await this.repository.findCandidates(input.ownerId, staged, resource.assetId);
+      // The staged copy is deleted once the item is held, so remember a matching photo to show in review.
+      const matchAssetIds = candidates
+        .filter(({ matchesContent, deletedAt }) => matchesContent && !deletedAt)
+        .map(({ id }) => id)
+        .slice(0, 12);
+      const review = (reason: string): RecoveryResult => ({
+        outcome: 'needs-review',
+        reason,
+        ...(matchAssetIds.length > 0 ? { matchAssetIds } : {}),
+      });
       if (candidates.some(({ hidden }) => hidden) && !input.includeHidden) {
         return { outcome: 'needs-review', reason: 'hidden_match_requires_consent' };
       }
@@ -176,7 +185,7 @@ export class MediaRecoveryService {
         return { outcome: 'needs-review', reason: 'mapped_asset_identity_changed' };
       }
       if (candidates.some(({ identityConflict }) => identityConflict)) {
-        return { outcome: 'needs-review', reason: 'saved_checksum_conflict' };
+        return review('saved_checksum_conflict');
       }
       // FL-69 (owner decision): recovery always stores a managed copy. An external original with the same
       // content is evidence only: it is never reused, repaired or converted, and the item is imported as a
@@ -184,11 +193,7 @@ export class MediaRecoveryService {
       const exact = candidates.filter(({ matchesContent, isExternal }) => matchesContent && !isExternal);
       const matchedExternal = candidates.find(({ matchesContent, isExternal }) => matchesContent && isExternal);
       const mapped = exact.find(({ id }) => id === resource.assetId);
-      // The owner accepted a match in review: use the visible copy, since the same bytes are stored only once.
-      const accepted = isICloudReviewAccepted(resource.source, 'multiple_content_matches');
-      if (exact.length > 1 && !mapped && !accepted) {
-        return { outcome: 'needs-review', reason: 'multiple_content_matches' };
-      }
+      // Owner 2026-11-23: a file already in the library more than once links to the visible copy without asking.
       const candidate = mapped ?? exact.find(({ hidden }) => !hidden) ?? exact[0];
       if (input.audit && input.sourceHidden && candidate && !candidate.hidden) {
         return { outcome: 'needs-review', reason: 'audit_private_copy_requires_review' };
@@ -197,11 +202,11 @@ export class MediaRecoveryService {
         return { outcome: 'preserve-trashed', assetId: candidate.id, reason: 'destination_not_active' };
       }
       if (candidate && candidate.type !== input.type) {
-        return { outcome: 'needs-review', reason: 'media_type_mismatch' };
+        return review('media_type_mismatch');
       }
       if (candidate && resource.expectedTarget && !resource.expectedTarget.updateId) {
         // Keep both recovery copies accounted for until the concurrent import is reconciled.
-        return { outcome: 'needs-review', reason: 'reserved_import_content_match' };
+        return review('reserved_import_content_match');
       }
       let outcome: RecoveryTarget['outcome'] = 'imported';
       if (candidate) {

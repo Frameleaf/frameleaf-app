@@ -245,6 +245,32 @@ describe(LocationHistoryService.name, () => {
     expect(await sut.getSources(auth)).toHaveLength(1);
   });
 
+  it('never reads an upload cut short as the whole file, and catches a different file sent again', async () => {
+    const { ctx, sut } = setup();
+    const { user } = await ctx.newUser();
+    const auth = factory.auth({ user });
+    const bytes = await readFile(path.join(fixtures, 'track.gpx'));
+    const upload = await sut.createUpload(auth, { size: bytes.length });
+    await sut.uploadChunk(auth, upload.id, 0, bytes.subarray(0, 500));
+
+    await expect(sut.createSource(auth, { uploadId: upload.id, fileName: 'track.gpx' })).rejects.toBeInstanceOf(
+      ConflictException,
+    );
+    const changed = Buffer.from(bytes.subarray(0, 500));
+    changed[10] ^= 1;
+    await expect(sut.uploadChunk(auth, upload.id, 0, changed)).rejects.toThrow('not the file');
+    // nothing past the size the upload declared
+    await expect(
+      sut.uploadChunk(auth, upload.id, 500, Buffer.concat([bytes.subarray(500), Buffer.from('x')])),
+    ).rejects.toThrow('too large');
+
+    await sut.uploadChunk(auth, upload.id, 500, bytes.subarray(500));
+    const added = await sut.createSource(auth, { uploadId: upload.id, fileName: 'track.gpx' });
+    await sut.handleImport({ id: added.id });
+    expect(await pointsOf(added.id)).toHaveLength(6);
+    expect(await stagedFiles(user.id)).toEqual([]);
+  });
+
   it('stores a long file in batches and counts as it goes', async () => {
     const { ctx, sut } = setup();
     const { user } = await ctx.newUser();

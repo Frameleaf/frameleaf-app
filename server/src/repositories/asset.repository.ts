@@ -1197,7 +1197,10 @@ export class AssetRepository {
               .selectFrom((eb) =>
                 eb
                   .fn('generate_series', [
-                    sql`(select date_part('year', min(("localDateTime" at time zone 'UTC')::date))::int from asset)`,
+                    // the first year these owners have a photo in: another account's oldest (or wrongly dated)
+                    // photo adds no years to look through
+                    sql`(select date_part('year', min(("localDateTime" at time zone 'UTC')::date))::int from asset
+                      where "ownerId" = any(${ownerIds}::uuid[]))`,
                     sql`${year - 1}`,
                   ])
                   .as('year'),

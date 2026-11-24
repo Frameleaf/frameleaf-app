@@ -131,7 +131,6 @@ describe('access Set contracts', () => {
     [Permission.AlbumAssetCreate, AlbumUserRole.Editor],
     [Permission.AlbumAssetDelete, AlbumUserRole.Editor],
     [Permission.AlbumUpdate, AlbumUserRole.Editor],
-    [Permission.AlbumShare, AlbumUserRole.Editor],
   ])('preserves shared album role and remaining IDs for %s', async (permission, role) => {
     mocks.album.checkOwnerAccess.mockResolvedValue(new Set(['b']));
     mocks.album.checkSharedAlbumAccess.mockResolvedValue(new Set(['a', 'b']));
@@ -142,6 +141,18 @@ describe('access Set contracts', () => {
       new Set(['a', 'denied']),
       role,
     );
+  });
+
+  it('keeps sharing an album, its members and its links to the owner (FL-1767)', async () => {
+    mocks.album.checkOwnerAccess.mockResolvedValue(new Set(['b']));
+    mocks.album.checkSharedAlbumAccess.mockResolvedValue(new Set(['a']));
+    const result = await checkAccess(access, {
+      auth: authStub.user1,
+      permission: Permission.AlbumShare,
+      ids: ['a', 'b', 'denied'],
+    });
+    expect([...result]).toEqual(['b']);
+    expect(mocks.album.checkSharedAlbumAccess).not.toHaveBeenCalled();
   });
 
   it('preserves activity owner and album-owner grant order', async () => {

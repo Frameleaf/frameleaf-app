@@ -533,6 +533,9 @@ export class MediaService extends BaseService {
     const config = await this.getConfig({ withCache: true });
 
     if (!asset) {
+      if (await this.assetJobRepository.isGone(id)) {
+        return JobStatus.Skipped;
+      }
       this.logger.warn(`Thumbnail generation failed for asset ${id}: not found in database or missing metadata`);
       return JobStatus.Failed;
     }
@@ -1640,7 +1643,7 @@ export class MediaService extends BaseService {
   async handleStudioHdrProxy({ id }: JobOf<JobName.StudioHdrProxyGenerate>): Promise<JobStatus> {
     const asset = await this.assetJobRepository.getForVideoConversion(id);
     if (!asset) {
-      return JobStatus.Failed;
+      return (await this.assetJobRepository.isGone(id)) ? JobStatus.Skipped : JobStatus.Failed;
     }
     // Everyone but the owner's quick editor plays the edited master, so the unedited original's
     // intermediate would show them what the owner cut away.
@@ -1738,7 +1741,7 @@ export class MediaService extends BaseService {
   async handleVideoConversion({ id }: JobOf<JobName.AssetEncodeVideo>): Promise<JobStatus> {
     const asset = await this.assetJobRepository.getForVideoConversion(id);
     if (!asset) {
-      return JobStatus.Failed;
+      return (await this.assetJobRepository.isGone(id)) ? JobStatus.Skipped : JobStatus.Failed;
     }
 
     // FL-1487: a partner copy plays its live source's converted video; the source's own job hands it over when

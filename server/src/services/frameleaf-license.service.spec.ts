@@ -588,6 +588,64 @@ describe(FrameleafLicenseService.name, () => {
         expect(store()?.plan?.claims.jti).toBe('plan-2');
       });
 
+      it('keeps a removed plan off across automatic refreshes until the administrator refreshes (FL-1769)', async () => {
+        await holdPlanAndKey();
+        cloud.on('POST /api/v1/licenses/refresh', () => ({
+          status: 200,
+          body: { certificates: [certificate({ jti: 'plan-2' }), keyCertificate({ jti: 'key-2' })] },
+        }));
+        await sut.removePlan(authStub.admin);
+
+        await sut.handleRefresh({ force: true });
+
+        expect(store()?.plan).toBeNull();
+        expect(store()?.key?.claims.jti).toBe('key-2');
+        await expect(sut.getStatus()).resolves.toMatchObject({ entitlements: { remoteAccess: false } });
+
+        await sut.refreshNow();
+
+        expect(store()?.plan?.claims.jti).toBe('plan-2');
+        expect(store()?.planDeclined).toBeUndefined();
+      });
+
+      it('takes a removed plan back after linking again (FL-1769)', async () => {
+        await holdPlanAndKey();
+        await sut.removePlan(authStub.admin);
+        metadata.set(SystemMetadataKey.FrameleafCloudLink, {
+          ...(metadata.get(SystemMetadataKey.FrameleafCloudLink) as object),
+          linkedAt: new Date().toISOString(),
+        });
+        cloud.on('POST /api/v1/licenses/refresh', () => ({
+          status: 200,
+          body: { certificates: [certificate({ jti: 'plan-2' })] },
+        }));
+
+        await sut.handleRefresh({ force: true });
+
+        expect(store()?.plan?.claims.jti).toBe('plan-2');
+      });
+
+      it('retries a failed key deactivation and never restores the removed key (FL-1769)', async () => {
+        await holdPlanAndKey();
+        let deactivations = 0;
+        cloud.on('POST /api/v1/licenses/deactivate', () =>
+          ++deactivations === 1 ? { status: 503, body: { code: 'down', message: 'down' } } : { status: 200, body: {} },
+        );
+        cloud.on('POST /api/v1/licenses/refresh', () => ({
+          status: 200,
+          body: { certificates: [certificate({ jti: 'plan-2' }), keyCertificate({ jti: 'key-2' })] },
+        }));
+        await sut.removeKey(authStub.admin);
+        expect(store()?.pendingKeyRemovals).toEqual([{ licenseId: 'licence-1', activationId: 'activation-1' }]);
+
+        await sut.handleRefresh({ force: true });
+
+        expect(deactivations).toBe(2);
+        expect(store()?.key).toBeNull();
+        expect(store()?.plan?.claims.jti).toBe('plan-2');
+        expect(store()?.pendingKeyRemovals).toBeUndefined();
+      });
+
       it('accepts an empty answer for a never-subscribed account without an expiry notice', async () => {
         link();
         serveToken();

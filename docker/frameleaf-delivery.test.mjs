@@ -973,7 +973,12 @@ test("the server base is built in-repo and identical in the production and devel
 
 test("the owned Postgres image uses PG19 and pgvector only", () => {
   const dockerfile = read("docker/postgres/Dockerfile");
-  assert.match(dockerfile, /postgres:19rc2-bookworm@sha256:/);
+  assert.match(
+    dockerfile,
+    /^ARG POSTGRES_IMAGE=docker\.io\/library\/postgres:19-bookworm@sha256:4c736732289da844c2ab892451adc1a6e376e7d0ac54ca9571a2e1cfd14176a1$/m,
+  );
+  assert.doesNotMatch(dockerfile, /postgres:19(rc|beta)|PG_RELEASE/);
+  assert.match(dockerfile, /PostgreSQL\\\) 19\\\.0/);
   assert.match(dockerfile, /0\.8\.7/);
   // FL-1265: publication tags the image with the version its Dockerfile declares.
   assert.equal(

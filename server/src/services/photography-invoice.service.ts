@@ -300,7 +300,7 @@ export class PhotographyInvoiceService extends BaseService implements OnModuleIn
       if (!(await this.invoices.claimReminder(row.id, day))) continue;
       // Only link hashes are stored, so a reminder carries a new link; the ones sent before still work.
       const token = randomBytes(32).toString('hex');
-      if (!(await this.invoices.send(row.ownerId, row.id, sha256(token)))) continue;
+      if (!(await this.invoices.send(row.ownerId, row.id, sha256(token), { reminder: true }))) continue;
       const studio = await this.studio(row.ownerId);
       const values = {
         amount: this.money(next.amount, row.currency, studio.locale),

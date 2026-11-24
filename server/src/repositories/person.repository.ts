@@ -2454,17 +2454,6 @@ export class PersonRepository {
     });
   }
 
-  /** FL-874: one of the owner's categories; undefined for one that is missing or someone else's. */
-  @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID] })
-  getCategory(ownerId: string, id: string) {
-    return this.db
-      .selectFrom('person_category')
-      .selectAll('person_category')
-      .where('person_category.ownerId', '=', ownerId)
-      .where('person_category.id', '=', id)
-      .executeTakeFirst();
-  }
-
   /** FL-874: which of these categories are the owner's. */
   @GenerateSql({ params: [DummyValue.UUID, [DummyValue.UUID]] })
   async getOwnCategoryIds(ownerId: string, ids: string[]): Promise<string[]> {

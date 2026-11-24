@@ -452,6 +452,7 @@ describe(SmartInfoService.name, () => {
 
     it('should fail if asset could not be found', async () => {
       mocks.assetJob.getForClipEncoding.mockResolvedValue(void 0);
+      mocks.assetJob.isGone.mockResolvedValue(false);
 
       expect(await sut.handleEncodeClip({ id: 'non-existent' })).toEqual(JobStatus.Failed);
 

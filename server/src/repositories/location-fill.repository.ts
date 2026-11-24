@@ -6,9 +6,11 @@ import type {
   LocationFillRunTable,
   LocationFillStatus,
 } from 'src/schema/tables/location-fill.table.js';
+import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import type { FillPoint } from 'src/utils/location-fill.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
 import { DB } from 'src/schema/index.js';
+import { withHiddenContentFilter } from 'src/utils/database.js';
 import { isDefaultVisible } from 'src/utils/locked.js';
 
 const RUN_COLUMNS = [
@@ -194,6 +196,74 @@ export class LocationFillRepository {
     return { before: before ?? null, after: after ?? null };
   }
 
+  /**
+   * `getAround` for many moments in one query: for each `{ id, at }`, the owner's last history place at or before
+   * `at` and first at or after it, each within `gapSeconds`. Every id is in the result.
+   */
+  async getAroundMany(
+    ownerId: string,
+    moments: Array<{ id: string; at: Date }>,
+    gapSeconds: number,
+  ): Promise<Map<string, { before: FillPoint | null; after: FillPoint | null }>> {
+    const result = new Map<string, { before: FillPoint | null; after: FillPoint | null }>();
+    if (moments.length === 0) {
+      return result;
+    }
+    const { rows } = await sql<{
+      id: string;
+      beforeAt: Date | null;
+      beforeLatitude: number | null;
+      beforeLongitude: number | null;
+      afterAt: Date | null;
+      afterLatitude: number | null;
+      afterLongitude: number | null;
+    }>`
+      select
+        moment.id,
+        before_point."recordedAt" as "beforeAt",
+        before_point.latitude as "beforeLatitude",
+        before_point.longitude as "beforeLongitude",
+        after_point."recordedAt" as "afterAt",
+        after_point.latitude as "afterLatitude",
+        after_point.longitude as "afterLongitude"
+      from unnest(
+        ${moments.map(({ id }) => id)}::uuid[],
+        ${moments.map(({ at }) => at.toISOString())}::timestamptz[]
+      ) as moment(id, at)
+      left join lateral (
+        select "recordedAt", latitude, longitude
+        from location_point
+        where "ownerId" = ${ownerId}::uuid
+          and "recordedAt" <= moment.at
+          and "recordedAt" >= moment.at - make_interval(secs => ${gapSeconds}::double precision)
+        order by "recordedAt" desc
+        limit 1
+      ) as before_point on true
+      left join lateral (
+        select "recordedAt", latitude, longitude
+        from location_point
+        where "ownerId" = ${ownerId}::uuid
+          and "recordedAt" >= moment.at
+          and "recordedAt" <= moment.at + make_interval(secs => ${gapSeconds}::double precision)
+        order by "recordedAt" asc
+        limit 1
+      ) as after_point on true
+    `.execute(this.db);
+    for (const row of rows) {
+      result.set(row.id, {
+        before:
+          row.beforeAt === null
+            ? null
+            : { recordedAt: row.beforeAt, latitude: row.beforeLatitude!, longitude: row.beforeLongitude! },
+        after:
+          row.afterAt === null
+            ? null
+            : { recordedAt: row.afterAt, latitude: row.afterLatitude!, longitude: row.afterLongitude! },
+      });
+    }
+    return result;
+  }
+
   /** One history place an hour between two moments: enough to say which time zones the owner was in. */
   async getHourlySample(ownerId: string, from: Date, to: Date): Promise<FillPoint[]> {
     const { rows } = await sql<FillPoint>`
@@ -220,42 +290,62 @@ export class LocationFillRepository {
     }
   }
 
-  /** A run's proposals in the order the photos were taken, with one more than `size` when there is a next page. */
-  getProposals(runId: string, offset: number, size: number) {
-    return (
-      this.db
-        .selectFrom('location_fill_proposal as proposal')
-        .innerJoin('asset', 'asset.id', 'proposal.assetId')
-        .select([
-          'proposal.assetId',
-          'proposal.latitude',
-          'proposal.longitude',
-          'proposal.method',
-          'proposal.gapSeconds',
-          'proposal.appliedAt',
-          'proposal.undoneAt',
-          'asset.localDateTime',
-        ])
-        .where('proposal.runId', '=', runId)
-        .where('asset.deletedAt', 'is', null)
-        // a photo locked or hidden since the run looked is no longer listed, with its place and time
-        .where(isDefaultVisible('asset'))
-        .orderBy('asset.localDateTime')
-        .orderBy('proposal.assetId')
-        .offset(offset)
-        .limit(size + 1)
-        .execute()
-    );
+  /**
+   * A run's proposals the session may see: their photo is not in the Trash, not Locked (`isDefaultVisible`) and
+   * not hidden from the session by the owner's Locked rules or sensitive-content setting (`options`, from
+   * `getHiddenContentQueryOptions`). A photo locked or hidden since the run looked is no longer listed, with its
+   * place and time.
+   */
+  private visibleProposals(runId: string, options: HiddenContentQueryOptions) {
+    return this.db
+      .selectFrom('location_fill_proposal as proposal')
+      .innerJoin('asset', 'asset.id', 'proposal.assetId')
+      .where('proposal.runId', '=', runId)
+      .where('asset.deletedAt', 'is', null)
+      .where(isDefaultVisible('asset'))
+      .$call((qb) => withHiddenContentFilter(qb, options));
   }
 
-  /** Mark proposals to apply: all that are not on their photo now, or those of `assetIds`. Returns how many. */
-  async requestApply(runId: string, assetIds?: string[]): Promise<number> {
+  /** A run's proposals in the order the photos were taken, with one more than `size` when there is a next page. */
+  getProposals(runId: string, offset: number, size: number, options: HiddenContentQueryOptions = {}) {
+    return this.visibleProposals(runId, options)
+      .select([
+        'proposal.assetId',
+        'proposal.latitude',
+        'proposal.longitude',
+        'proposal.method',
+        'proposal.gapSeconds',
+        'proposal.appliedAt',
+        'proposal.undoneAt',
+        'asset.localDateTime',
+      ])
+      .orderBy('asset.localDateTime')
+      .orderBy('proposal.assetId')
+      .offset(offset)
+      .limit(size + 1)
+      .execute();
+  }
+
+  /** How many proposals `getProposals` lists across all its pages. */
+  async countProposals(runId: string, options: HiddenContentQueryOptions = {}): Promise<number> {
+    const { count } = await this.visibleProposals(runId, options)
+      .select((eb) => eb.fn.countAll<string>().as('count'))
+      .executeTakeFirstOrThrow();
+    return Number(count);
+  }
+
+  /**
+   * Mark proposals to apply: all that are not on their photo now, or those of `assetIds`, and only ones the
+   * session may see (`getProposals`), so "apply all" never reaches a photo the list did not show. Returns how many.
+   */
+  async requestApply(runId: string, assetIds?: string[], options: HiddenContentQueryOptions = {}): Promise<number> {
     const result = await this.db
       .updateTable('location_fill_proposal')
       .set({ requestedAt: new Date(), undoneAt: null })
       .where('runId', '=', runId)
       .where((eb) => eb.or([eb('appliedAt', 'is', null), eb('undoneAt', 'is not', null)]))
       .$if(!!assetIds, (qb) => qb.where('assetId', 'in', assetIds!))
+      .where('assetId', 'in', this.visibleProposals(runId, options).select('proposal.assetId'))
       .executeTakeFirst();
     return Number(result.numUpdatedRows);
   }

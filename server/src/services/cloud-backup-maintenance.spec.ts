@@ -78,6 +78,8 @@ describe(CloudBackupMaintenance.name, () => {
     getManifestKeys: ReturnType<typeof vi.fn>;
     adoptManifests: ReturnType<typeof vi.fn>;
     markManifests: ReturnType<typeof vi.fn>;
+    listKeptManifests: ReturnType<typeof vi.fn>;
+    restorePrunedManifests: ReturnType<typeof vi.fn>;
   };
   let sut: CloudBackupMaintenance;
 
@@ -107,6 +109,8 @@ describe(CloudBackupMaintenance.name, () => {
       getManifestKeys: vi.fn().mockResolvedValue(new Set()),
       adoptManifests: vi.fn().mockResolvedValue(0),
       markManifests: vi.fn().mockResolvedValue(0),
+      listKeptManifests: vi.fn().mockResolvedValue([]),
+      restorePrunedManifests: vi.fn().mockResolvedValue(0),
     };
     sut = new CloudBackupMaintenance(index as never, { log: vi.fn(), warn: vi.fn() } as never);
   });
@@ -124,6 +128,23 @@ describe(CloudBackupMaintenance.name, () => {
       expect(index.adoptManifests.mock.invocationCallOrder[0]).toBeLessThan(
         index.markManifests.mock.invocationCallOrder[0],
       );
+    });
+
+    it('shows backups again as they were when the engine refuses the clean-up (FL-1769)', async () => {
+      const keys = await backups(40, 20, 0);
+      const gone = [keys[0], keys[1]].map((key) => snapshotObjectKey(VAULT, key));
+      index.listKeptManifests.mockResolvedValue([{ key: gone[0], status: 'degraded' }]);
+      repository.loadIndex = vi.fn().mockRejectedValue(new Error('refused'));
+
+      await expect(
+        sut.prune(bucket, repository, { keepDaily: 1, keepWeekly: 0, keepMonthly: 0 }, false),
+      ).rejects.toThrow('refused');
+
+      expect(index.markManifests).toHaveBeenCalledWith('ref', gone, 'pruned');
+      expect(index.restorePrunedManifests).toHaveBeenCalledWith('ref', [
+        { key: gone[0], status: 'degraded' },
+        { key: gone[1], status: 'complete' },
+      ]);
     });
 
     it('changes nothing in a dry run, and says what it would remove', async () => {

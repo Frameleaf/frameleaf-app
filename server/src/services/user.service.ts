@@ -181,6 +181,15 @@ export class UserService extends BaseService {
     };
 
     if (dto.password) {
+      // FL-1767: setting a password here needs no proof of the old one, so it is only for the forced change
+      // after an administrator set or reset it (the first sign-in page). Any other change goes through
+      // `POST /auth/change-password`, which checks the current password and can sign other devices out.
+      const current = await this.userRepository.get(user.id, {});
+      if (!current?.shouldChangePassword) {
+        throw new BadRequestException(
+          'Change your password with your current one (POST /auth/change-password); this endpoint only sets a password you were asked to change',
+        );
+      }
       const hashedPassword = await this.cryptoRepository.hashBcrypt(dto.password, SALT_ROUNDS);
       update.password = hashedPassword;
       update.shouldChangePassword = false;
