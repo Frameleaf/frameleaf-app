@@ -5,12 +5,11 @@ from collections import OrderedDict
 from typing import Any
 
 from aiocache.backends.memory import SimpleMemoryCache
-from aiocache.plugins import TimingPlugin
 
 from frameleaf_ml.models import from_model_type
 from frameleaf_ml.models.base import InferenceModel
 
-from ..schemas import ImageDescriptionAcceleration, ModelTask, ModelType, has_profiling
+from ..schemas import ImageDescriptionAcceleration, ModelTask, ModelType
 
 ModelCacheKey = tuple[str, str, str, str, str]
 
@@ -39,21 +38,14 @@ class ModelCache:
         self,
         revalidate: bool = False,
         timeout: int | None = None,
-        profiling: bool = False,
         max_entries: int = DEFAULT_MAX_ENTRIES,
     ) -> None:
         """
         Args:
             revalidate: Resets TTL on cache hit. Useful to keep models in memory while active. Defaults to False.
             timeout: Maximum allowed time for model to load. Disabled if None. Defaults to None.
-            profiling: Collects metrics for cache operations, adding slight overhead. Defaults to False.
             max_entries: Resident instances kept; beyond it the least recently used is dropped.
         """
-
-        plugins = []
-
-        if profiling:
-            plugins.append(TimingPlugin())
 
         self.should_revalidate = revalidate
         self.max_entries = max(1, max_entries)
@@ -61,7 +53,7 @@ class ModelCache:
         # Keys in order of last use, for the eviction of the least recently used entry.
         self._recent: OrderedDict[ModelCacheKey, None] = OrderedDict()
 
-        self.cache = SimpleMemoryCache(timeout=timeout, plugins=plugins, namespace=None)
+        self.cache = SimpleMemoryCache(timeout=timeout, namespace=None)
 
     async def get(
         self, model_name: str, model_type: ModelType, model_task: ModelTask, **model_kwargs: Any
@@ -96,12 +88,6 @@ class ModelCache:
         if self.should_revalidate:
             await self.revalidate(key, ttl)
         return model
-
-    async def get_profiling(self) -> dict[str, float] | None:
-        if not has_profiling(self.cache):
-            return None
-
-        return self.cache.profiling
 
     async def revalidate(self, key: ModelCacheKey, ttl: int | None) -> None:
         if ttl is not None and key in self.cache._handlers:

@@ -429,3 +429,11 @@ def test_streaming_validation_rejects_missing_extra_blank_frames_and_dimension_c
             media.validate_video_output(statistics, output, timeout=10)
     with pytest.raises(media.MediaError, match="dimensions"):
         media.video_frame_statistics(source, replace(media.probe(source), width=62), max_frames=12, timeout=10)
+
+
+def test_a_long_escaped_error_still_fits_the_protocol_line_and_keeps_its_end() -> None:
+    error = RuntimeError("\x01" * 3900 + " CUDA out of memory")
+    line = runtime_worker.error_line(error)
+    assert len(line.encode()) <= runtime_worker.MAX_ERROR_LINE_BYTES and line.endswith("\n")
+    assert json.loads(line)["error"].endswith("CUDA out of memory")
+    assert json.loads(runtime_worker.error_line(ValueError("short"))) == {"ok": False, "error": "ValueError: short"}

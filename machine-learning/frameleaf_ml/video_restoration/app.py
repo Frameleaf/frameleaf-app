@@ -25,6 +25,7 @@ import secrets
 import shutil
 import tempfile
 import threading
+import time
 from collections.abc import AsyncIterator, Callable, Mapping
 from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass
@@ -48,6 +49,7 @@ from .runtime_pool import RuntimePool
 from .schemas import (
     RESTORATION_PROTOCOL,
     RESULT_HEADER,
+    CapabilityReport,
     RestorationError,
     RestorationErrorCode,
     RestorationMode,
@@ -62,6 +64,8 @@ MAX_AUTH_HEADER_LENGTH = 8 * 1024
 UPLOAD_CHUNK_BYTES = 8 * 1024 * 1024
 BUSY_RETRY_AFTER_S = 30
 DEFAULT_REFRESH_S = 300
+# The shortest gap between two refreshes a client asks for.
+REFRESH_INTERVAL_S = 10
 # The upload limit derived from the manifest: the raw 16-bit RGB frames of the largest qualified clip.
 # A source compressed to more than its own raw frames is never a sensible input, and a bound set
 # before the body is read keeps a bogus upload from filling the work directory first.
@@ -250,6 +254,9 @@ def create_app(
 ) -> FastAPI:
     busy = threading.Lock()
     stop = threading.Event()
+    # A refresh runs git and nvidia-smi and hashes every model: one at a time, at most once per window.
+    refreshing = threading.Lock()
+    last_refresh = [float("-inf")]
     runtimes = RuntimePool()
     if adapter_factory is adapter_for:
         adapter_factory = partial(adapter_for, runner=runtimes)
@@ -332,8 +339,21 @@ def create_app(
             capability = selected.capability.model_copy(update={"maxFrames": frame_budget(selected)})
             report = registry.report().model_copy(update={"workloads": [], "models": [capability]})
         else:
-            report = registry.refresh() if refresh else registry.report()
+            report = refreshed() if refresh else registry.report()
         return JSONResponse(report.model_dump(mode="json"))
+
+    def refreshed() -> CapabilityReport:
+        """A fresh report, or the last one while another refresh runs or one ran moments ago."""
+        if not refreshing.acquire(blocking=False):
+            return registry.report()
+        try:
+            if time.monotonic() - last_refresh[0] < REFRESH_INTERVAL_S:
+                return registry.report()
+            report = registry.refresh()
+            last_refresh[0] = time.monotonic()
+            return report
+        finally:
+            refreshing.release()
 
     @app.post("/restoration/restore")
     async def restore_endpoint(
