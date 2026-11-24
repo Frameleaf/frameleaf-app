@@ -45,6 +45,42 @@ export function uuidv7(now = Date.now()): string {
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
+/** FL-1770: no Cloud answer is anywhere near this; a bigger one is not read into memory. A history page of 100 entries is about 100 kB. */
+const MAX_ANSWER_BYTES = 4 * 1024 * 1024;
+async function readCapped(response: Response, limit: number): Promise<string> {
+  if (!response.body) return '';
+  const parts: Uint8Array[] = [];
+  let size = 0;
+  const reader = response.body.getReader();
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.byteLength;
+    if (size > limit) {
+      await reader.cancel().catch(() => undefined);
+      throw new CloudError('cloud_answer_unreadable', response.status);
+    }
+    parts.push(value);
+  }
+  return Buffer.concat(parts).toString('utf8');
+}
+
+/** Whether a host name or IP literal is this machine, the LAN, or otherwise not on the public internet. */
+export function localHost(host: string): boolean {
+  if (host === 'localhost' || /\.(localhost|local|internal|lan|home|arpa)$/.test(host)) return true;
+  const v4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(host)?.slice(1).map(Number);
+  if (v4) {
+    const [a, b] = v4 as [number, number];
+    return a === 0 || a === 10 || a === 127 || (a === 100 && b >= 64 && b < 128) || (a === 169 && b === 254) || (a === 172 && b >= 16 && b < 32) || (a === 192 && b === 168) || a >= 224;
+  }
+  if (host.includes(':')) {
+    const mapped = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/.exec(host);
+    if (mapped) return localHost(mapped[1]!);
+    return host === '::' || host === '::1' || /^f[cd]/.test(host) || /^fe[89ab]/.test(host) || /^ff/.test(host) || host.startsWith('::ffff:');
+  }
+  return false;
+}
+
 export function publicJwk(privateKey: string) {
   const { x } = createPublicKey(createPrivateKey(privateKey)).export({ format: 'jwk' });
   return { kty: 'OKP', crv: 'Ed25519', x: x! } as const;
@@ -206,7 +242,12 @@ export class Cloud {
   constructor(
     /** `FRAMELEAF_CLOUD_URL`: where discovery is read from. */
     private url: string,
-    private options: { fetch?: typeof fetch; now?: () => number } = {},
+    private options: {
+      fetch?: typeof fetch;
+      now?: () => number;
+      /** Tests only: storage on this machine or the LAN, over plain HTTP (the local storage stand-in). */
+      localStorage?: boolean;
+    } = {},
   ) {}
 
   private now() {
@@ -249,8 +290,9 @@ export class Cloud {
     if (nonce) this.nonces.set(new URL(url).origin, nonce);
     let text: string;
     try {
-      text = await response.text();
-    } catch {
+      text = await readCapped(response, MAX_ANSWER_BYTES);
+    } catch (error) {
+      if (error instanceof CloudError) throw error;
       // A connection dropped mid-answer is not a refusal: an approved link must survive it.
       throw new CloudError('cloud_unreachable', null);
     }
@@ -496,7 +538,20 @@ export class Cloud {
     const grant = Grant.parse(answer);
     const writes = grant.objectFormats.write.some((item) => `${item.format}/${item.version}` === REPOSITORY_FORMAT);
     if (grant.capability.operation !== operation || !writes) throw new CloudError('cloud_answer_unreadable', null);
+    this.storageEndpoint(grant.endpoint);
     return grant;
+  }
+  /**
+   * FL-1770: the storage address a grant names gets the session credentials on every request, so a tampered
+   * grant must not send them over plain HTTP, to this machine or to the LAN. Storage lives with a provider, not
+   * on Cloud's own host, so `trusted` does not apply. A name that resolves to a private address is not caught here.
+   */
+  private storageEndpoint(value: string) {
+    const url = new URL(value);
+    if (this.options.localStorage) return;
+    const host = url.hostname.toLowerCase().replace(/^\[|\]$/g, '');
+    if (url.protocol !== 'https:' || url.username || url.password || !host.includes('.') || localHost(host))
+      throw new CloudError('cloud_address_untrusted', null, 'storage');
   }
   /** The first credentials for a place. Storage is made on the first call. Upload and prune name the lease they run under. */
   async grant(identity: Identity, request: { locationId: string; operation: Operation; leaseId?: string }) {

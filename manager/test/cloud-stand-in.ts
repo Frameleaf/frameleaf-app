@@ -36,6 +36,10 @@ export function standIn(options: { old?: boolean } = {}) {
     /** Laid over every grant, so a test can point storage at its own stand-in. */
     storage: {} as Record<string, unknown>,
     heartbeatAfterSec: 60,
+    /** How long a lease runs unrenewed. */
+    leaseLifeMs: 300_000,
+    /** Heartbeats never arrive, as in a network split. */
+    dropHeartbeats: false,
     /** How many of the next snapshot records to refuse as if Cloud were down. */
     refuseSnapshots: 0,
     /** Which photo server vouches for which backup machine. */
@@ -243,11 +247,12 @@ export function standIn(options: { old?: boolean } = {}) {
         return envelope(409, 'lease-held', { retryable: true, data: { operation: state.lease.operation, retryAfterSec: 240 } }, { 'retry-after': '240' });
       const fresh = !state.lease;
       state.lease = { leaseId: json.leaseId, operation: json.operation, holder: held.instanceId };
-      return answer(fresh ? 201 : 200, { leaseId: json.leaseId, operation: json.operation, acquiredAt: new Date(state.now).toISOString(), expiresAt: new Date(state.now + 300_000).toISOString(), heartbeatAfterSec: state.heartbeatAfterSec });
+      return answer(fresh ? 201 : 200, { leaseId: json.leaseId, operation: json.operation, acquiredAt: new Date(state.now).toISOString(), expiresAt: new Date(state.now + state.leaseLifeMs).toISOString(), heartbeatAfterSec: state.heartbeatAfterSec });
     }
+    if (route === 'POST api/v4/backup/lease/heartbeat' && state.dropHeartbeats) throw new TypeError('fetch failed');
     if (route === 'POST api/v4/backup/lease/heartbeat')
       return state.lease?.leaseId === json.leaseId
-        ? answer(200, { leaseId: json.leaseId, operation: state.lease!.operation, acquiredAt: new Date(state.now).toISOString(), expiresAt: new Date(state.now + 300_000).toISOString(), heartbeatAfterSec: state.heartbeatAfterSec })
+        ? answer(200, { leaseId: json.leaseId, operation: state.lease!.operation, acquiredAt: new Date(state.now).toISOString(), expiresAt: new Date(state.now + state.leaseLifeMs).toISOString(), heartbeatAfterSec: state.heartbeatAfterSec })
         : envelope(409, 'lease-lost');
     if (route === 'DELETE api/v4/backup/lease') {
       if (state.lease?.leaseId === url.searchParams.get('leaseId')) state.lease = null;

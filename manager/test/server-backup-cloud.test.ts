@@ -42,7 +42,7 @@ const machineIds = () => [...cloud.state.instances].filter(([, item]) => item.ki
 function manager(name: string) {
   const store = new Store(at(name));
   stores.push(store);
-  const link = new CloudBackup(store, new Cloud(API, { fetch: cloud.fetch, now: () => cloud.state.now }), { version: machine.version, platform: machine.platform }, vouch);
+  const link = new CloudBackup(store, new Cloud(API, { fetch: cloud.fetch, now: () => cloud.state.now, localStorage: true }), { version: machine.version, platform: machine.platform }, vouch);
   const service = new ServerBackup(store, { target: null, cloud: link, inside: (path) => path === at('server') || path.startsWith(at('server') + sep), always: [] });
   return { link, service };
 }
@@ -188,6 +188,22 @@ test('one run holds the lease at a time, and losing it is noticed within a beat'
   await until(() => lost);
   await session.end();
   cloud.state.heartbeatAfterSec = 60;
+});
+
+test('a run cut off from Cloud for the lease’s whole life counts its lease as lost', async () => {
+  cloud.state.heartbeatAfterSec = 1;
+  cloud.state.leaseLifeMs = 1500;
+  let lost = false;
+  const session = await first.link.begin('backup', vaultOf(key), () => (lost = true));
+  // Heartbeats that arrive keep it.
+  await sleep(1200);
+  assert.equal(lost, false);
+  cloud.state.dropHeartbeats = true;
+  await until(() => lost);
+  cloud.state.dropHeartbeats = false;
+  await session.end();
+  cloud.state.heartbeatAfterSec = 60;
+  cloud.state.leaseLifeMs = 300_000;
 });
 
 test('a run whose lease is lost is stopped at once, and the next run carries on', async () => {

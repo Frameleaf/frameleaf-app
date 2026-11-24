@@ -359,15 +359,31 @@ export class CloudBackup {
     const hold = async (operation: Lease['operation']): Promise<Lease> => {
       if (lease?.operation === operation) return lease;
       await drop();
+      const asked = Date.now();
       const taken = await this.cloud.acquireLease(identity, operation);
       lease = taken;
+      // FL-1770: how long Cloud lets a lease run unrenewed, timed on this machine's clock from when it was asked
+      // for. Cloud may already have given the lease to another run by then, so this run stops writing.
+      const life = Math.max(0, Date.parse(taken.expiresAt) - Date.parse(taken.acquiredAt));
+      let until = asked + life;
       beat = setInterval(() => {
-        // Only Cloud saying so ends the run. A dropped connection is tried again at the next beat; if it
-        // lasts past the lease's life, Cloud says the lease is lost.
-        this.cloud.heartbeat(identity, taken.leaseId).catch((error) => {
-          // `invalid_client`: another machine took this identity over, so this run no longer owns the backups.
-          if (error instanceof CloudError && (error.code === 'lease-lost' || error.code === 'invalid_client') && lease === taken) onLost();
-        });
+        if (lease !== taken) return;
+        // Cut off from Cloud for the lease's whole life (a network split): it must count as lost.
+        if (Date.now() >= until) {
+          until = Infinity;
+          return onLost();
+        }
+        // A dropped connection is tried again at the next beat.
+        const sent = Date.now();
+        this.cloud.heartbeat(identity, taken.leaseId).then(
+          () => {
+            until = Math.max(until, sent + life);
+          },
+          (error) => {
+            // `invalid_client`: another machine took this identity over, so this run no longer owns the backups.
+            if (error instanceof CloudError && (error.code === 'lease-lost' || error.code === 'invalid_client') && lease === taken) onLost();
+          },
+        );
       }, taken.heartbeatAfterSec * 1000);
       beat.unref();
       return taken;
