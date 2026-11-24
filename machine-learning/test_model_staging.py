@@ -337,6 +337,25 @@ def test_receipt_records_exact_model_bytes_without_download_metadata(model: Synt
     verify_staged(model.cache_dir)
 
 
+def test_provider_runtime_caches_are_not_model_files(model: SyntheticModel) -> None:
+    # Search with downloads on compiles CoreML/OpenVINO/... caches beside the model; the bound identity
+    # check compares these hashes with the catalogue, so they must not count.
+    model._download()
+    before = cache_hashes(model.cache_dir)
+    # beside `<type>/model.onnx`, and beside a model kept elsewhere (NSFW loads `onnx/model.onnx`)
+    for folder in (model.model_dir, model.cache_dir / "onnx"):
+        for name in ("coreml", "openvino", "migraphx", "trt-rtx"):
+            cache = folder / name / "123"
+            cache.mkdir(parents=True)
+            (cache / "model.bin").write_bytes(b"compiled")
+    assert cache_hashes(model.cache_dir) == before
+    (model.cache_dir / "onnx" / "model.onnx").write_bytes(b"a real model file")
+    added = cache_hashes(model.cache_dir)
+    assert added != before
+    model.model_path.write_bytes(b"changed model bytes")
+    assert cache_hashes(model.cache_dir) != added
+
+
 @pytest.mark.parametrize("action", [{}, {"refresh": True}, {"rollback": True}])
 @pytest.mark.parametrize("pending_kind", ["directory", "file", "dangling-symlink"])
 def test_interrupted_rollback_blocks_every_staging_action(
