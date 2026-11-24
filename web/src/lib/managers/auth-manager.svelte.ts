@@ -2,6 +2,7 @@ import {
   getServerFeatures,
   getMyPreferences,
   getMyUser,
+  isHttpError,
   logout,
   type UserAdminResponseDto,
   type UserPreferencesResponseDto,
@@ -10,6 +11,7 @@ import { untrack } from 'svelte';
 import { browser } from '$app/env';
 import { goto } from '$app/navigation';
 import { page } from '$app/state';
+import { forgetOtherAccountsEagleImports } from '$lib/frameleaf/eagle/eagle-import-record';
 import { keepExtensionContinue } from '$lib/frameleaf/extension-sign-in';
 import { hasLocalOfflineAlbums } from '$lib/frameleaf/local-offline';
 import { withoutLockedRuleIds } from '$lib/frameleaf/locked-rules';
@@ -17,8 +19,17 @@ import { clearPrivateBrowserState, getPrivateBrowserStateGeneration } from '$lib
 import { retireStudioImportSessions } from '$lib/frameleaf/studio/import-retention';
 import { eventManager } from '$lib/managers/event-manager.svelte';
 import { Route } from '$lib/route';
+import { isFrameleafSignInRequired } from '$lib/utils/handle-error';
 import { isSharedLinkRoute } from '$lib/utils/navigation';
 import { revokeSessionView } from '$lib/utils/session-privacy';
+
+/**
+ * FL-1771: a sign-out the server refused because the session is already over (expired, revoked, or a
+ * session remote access no longer accepts) still signs out here. Anything else (offline, a server
+ * error) left the session alive.
+ */
+const sessionAlreadyEnded = (error: unknown) =>
+  (isHttpError(error) && error.status === 401) || isFrameleafSignInRequired(error);
 
 class AuthManager {
   isPurchased = $state(false);
@@ -100,12 +111,16 @@ class AuthManager {
         if (!isCurrentUser()) {
           return;
         }
-        if (features?.supporter) {
-          this.isPurchased = true;
+        // FL-1771: a removed licence or supporter key takes the badge away on the next read; a failed
+        // read keeps what the session shows
+        if (features) {
+          this.isPurchased = features.supporter;
         }
       }
 
       eventManager.emit('AuthUserLoaded', user);
+      // FL-1771: another account's Eagle import records don't stay in this browser
+      void Promise.resolve(forgetOtherAccountsEagleImports(user.id)).catch(() => {});
     } catch {
       // noop
     }
@@ -152,19 +167,35 @@ class AuthManager {
     this.#preferences = withoutLockedRuleIds(preferences);
   }
 
-  /** `continue`: where the sign-in page goes once someone signs in again (FL-655: "Not you?"). */
-  async logout(options: { continue?: string } = {}) {
-    retireStudioImportSessions();
+  /**
+   * `continue`: where the sign-in page goes once someone signs in again (FL-655: "Not you?").
+   * Resolves false when the server could not end the session (FL-1771): the person stays signed in
+   * here rather than seeing a sign-out that the next page load would undo.
+   */
+  async logout(options: { continue?: string } = {}): Promise<boolean> {
     let redirectUri = Route.login(options.continue ? { continue: options.continue } : undefined);
 
-    try {
-      const response = await logout();
-      if (response.redirectUri) {
-        redirectUri = response.redirectUri;
+    const attempt = async () => {
+      try {
+        const response = await logout();
+        if (response.redirectUri) {
+          redirectUri = response.redirectUri;
+        }
+        return true;
+      } catch (error) {
+        if (sessionAlreadyEnded(error)) {
+          return true;
+        }
+        console.error('[authManager.logout]: the session could not be ended', error);
+        return false;
       }
-    } catch {
-      // noop
+    };
+    // one retry covers a dropped connection or a server that was restarting
+    if (!(await attempt()) && !(await attempt())) {
+      return false;
     }
+
+    retireStudioImportSessions();
 
     // FL-80: the account's private browser state goes with the session, also when the provider's
     // sign-out page takes over (which skips the in-app reset below)
@@ -176,7 +207,7 @@ class AuthManager {
       this.reset();
       eventManager.emit('AuthLogout');
       revokeSessionView(Route.logout());
-      return;
+      return true;
     }
 
     if (redirectUri.startsWith('/')) {
@@ -193,6 +224,7 @@ class AuthManager {
       }
       location.assign(redirectUri);
     }
+    return true;
   }
 
   reset() {

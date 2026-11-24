@@ -282,6 +282,8 @@ describe('TrashManager (FL-47)', () => {
 
     expect(await screen.findByText(en.frameleaf_trash_error_changed)).toBeInTheDocument();
     expect(reviewTrash).toHaveBeenCalledWith({ trashReviewDto: { action: TrashReviewAction.Empty } });
+    // FL-1771: the refused token cannot be sent again; only a new review can delete
+    await waitFor(() => expect(confirm).toBeDisabled());
   });
 
   it('restores one item through its review', async () => {

@@ -531,6 +531,8 @@
     }
     if (endCardFor) {
       endCardFor = undefined;
+      // FL-1771: back on the last item, its slide starts over instead of showing as already played
+      handlePromiseError(progressBarController?.set(0) ?? Promise.resolve());
       return;
     }
     if (current && assetIndex === 0 && !titleCardFor) {

@@ -268,10 +268,12 @@ export const renderHelpArticle = (markdown: string, origin: string, ids: Readonl
       return null;
     }
   };
+  const helpOrigin = new URL(origin).origin;
   for (const image of root.querySelectorAll('img')) {
     const value = image.getAttribute('src');
     const source = value ? parse(value) : null;
-    if (source) {
+    // FL-1771: an image loads from the help website only, so reading an article never contacts another host
+    if (source?.origin === helpOrigin) {
       image.setAttribute('src', source.href);
       image.setAttribute('loading', 'lazy');
     } else {
@@ -285,9 +287,7 @@ export const renderHelpArticle = (markdown: string, origin: string, ids: Readonl
       continue;
     }
     const id =
-      target.origin === new URL(origin).origin
-        ? /^\/docs\/([a-z0-9-]+\/[a-z0-9-]+)\/$/.exec(target.pathname)?.[1]
-        : undefined;
+      target.origin === helpOrigin ? /^\/docs\/([a-z0-9-]+\/[a-z0-9-]+)\/$/.exec(target.pathname)?.[1] : undefined;
     if (id && ids.has(id)) {
       link.dataset.helpArticle = id;
       if (target.hash) {

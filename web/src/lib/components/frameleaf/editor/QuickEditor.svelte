@@ -727,7 +727,8 @@
    * editor on the same draft (see `discarded-draft.ts`).
    */
   const cancel = () => {
-    const discarded = dirty;
+    // FL-1771: edits a save already on its way holds are not discarded: that version is still made
+    const discarded = dirty && !(saving && savingRecipe && sameRecipe(recipe, savingRecipe));
     const record =
       discarded && onReopen && privateStateGeneration === getPrivateBrowserStateGeneration() ? draftRecord() : null;
     draftReady = false;
@@ -772,6 +773,8 @@
   };
   /** The version being finished before Studio opens on it ("Save version, then open in Studio"). */
   let studioAfter = $state<string | null>(null);
+  /** The recipe the save on its way holds. */
+  let savingRecipe: EditorRecipe | undefined;
   const saveVersion = async (thenStudio = false) => {
     if (saving || studioAfter) {
       return;
@@ -779,6 +782,7 @@
     saving = true;
     // What this save holds: an edit made while it is on its way stays unsaved, and shows as unsaved.
     const savedRecipe = $state.snapshot(recipe) as EditorRecipe;
+    savingRecipe = savedRecipe;
     const assetId = asset.id;
     try {
       // The editor sends its complete lossless snapshot. Replacement makes deliberate mask
