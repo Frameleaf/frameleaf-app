@@ -46,6 +46,9 @@ export class WebsocketSupport {
         this.#addPendingChanges({ type: 'update', values: [toTimelineAsset(asset)] }),
       ),
       websocketEvents.on('on_asset_delete', (id: string) => this.#addPendingChanges({ type: 'delete', values: [id] })),
+      // FL-1767: an item this session may no longer see (Locked, or hidden by its owner's Locked rules,
+      // while this session is not unlocked; or no longer shared with this person) leaves the timeline
+      websocketEvents.on('on_asset_hidden', (id: string) => this.#addPendingChanges({ type: 'delete', values: [id] })),
       websocketEvents.on('on_asset_restore', (ids) => void this.#restore(ids)),
       websocketEvents.on('AssetLocalEffectsV1', (bundle) => void this.#reconcileSequence(bundle)),
     );

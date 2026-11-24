@@ -51,6 +51,7 @@ describe(AlbumService.name, () => {
     mocks.partnerOrigin.getOriginLabels.mockResolvedValue(new Map());
     mocks.user.getMetadata.mockResolvedValue([]);
     mocks.partnerOrigin.withOriginEdit.mockImplementation(async (_kind, _ids, _fields, write) => write());
+    mocks.sharedLink.getAll.mockResolvedValue([]);
   });
 
   it('should work', () => {
@@ -1254,6 +1255,23 @@ describe(AlbumService.name, () => {
       });
     });
 
+    it('ends the links a removed member made to the album (FL-1767)', async () => {
+      const userId = newUuid();
+      const album = AlbumFactory.from().albumUser({ userId }).build();
+      const { user: owner } = album.albumUsers.find(({ role }) => role === AlbumUserRole.Owner)!;
+      mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set([album.id]));
+      mocks.album.getById.mockResolvedValue(getForAlbum(album));
+      mocks.albumUser.delete.mockResolvedValue();
+      mocks.sharedLink.getAll.mockResolvedValue([{ id: 'link-1' }, { id: 'link-2' }] as never);
+      mocks.sharedLink.remove.mockResolvedValue();
+
+      await sut.removeUser(AuthFactory.create(owner), album.id, userId);
+
+      expect(mocks.sharedLink.getAll).toHaveBeenCalledWith({ userId, albumId: album.id });
+      expect(mocks.sharedLink.remove).toHaveBeenCalledWith('link-1');
+      expect(mocks.sharedLink.remove).toHaveBeenCalledWith('link-2');
+    });
+
     it('should prevent removing a shared user from a not-owned album (shared with auth user)', async () => {
       const user1 = UserFactory.create();
       const user2 = UserFactory.create();
@@ -1374,11 +1392,30 @@ describe(AlbumService.name, () => {
     it('never makes a member an owner: an album changes hands only through transfer', async () => {
       const editor = UserFactory.create();
       const album = AlbumFactory.from().albumUser({ userId: editor.id, role: AlbumUserRole.Editor }).build();
+      const { user: owner } = album.albumUsers.find(({ role }) => role === AlbumUserRole.Owner)!;
+      mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set([album.id]));
+      mocks.album.getById.mockResolvedValue(getForAlbum(album));
+
+      await expect(
+        sut.updateUser(AuthFactory.create(owner), album.id, editor.id, { role: AlbumUserRole.Owner }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+
+      expect(mocks.albumUser.update).not.toHaveBeenCalled();
+    });
+
+    it("refuses an editor changing anyone's role (FL-1767)", async () => {
+      const editor = UserFactory.create();
+      const viewer = UserFactory.create();
+      const album = AlbumFactory.from()
+        .albumUser({ userId: editor.id, role: AlbumUserRole.Editor })
+        .albumUser({ userId: viewer.id, role: AlbumUserRole.Viewer })
+        .build();
+      mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set());
       mocks.access.album.checkSharedAlbumAccess.mockResolvedValue(new Set([album.id]));
       mocks.album.getById.mockResolvedValue(getForAlbum(album));
 
       await expect(
-        sut.updateUser(AuthFactory.create(editor), album.id, editor.id, { role: AlbumUserRole.Owner }),
+        sut.updateUser(AuthFactory.create(editor), album.id, viewer.id, { role: AlbumUserRole.Editor }),
       ).rejects.toBeInstanceOf(BadRequestException);
 
       expect(mocks.albumUser.update).not.toHaveBeenCalled();
@@ -1388,11 +1425,11 @@ describe(AlbumService.name, () => {
       const editor = UserFactory.create();
       const album = AlbumFactory.from().albumUser({ userId: editor.id, role: AlbumUserRole.Editor }).build();
       const { user: owner } = album.albumUsers.find(({ role }) => role === AlbumUserRole.Owner)!;
-      mocks.access.album.checkSharedAlbumAccess.mockResolvedValue(new Set([album.id]));
+      mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set([album.id]));
       mocks.album.getById.mockResolvedValue(getForAlbum({ ...album, albumUsers: album.albumUsers.toReversed() }));
 
       await expect(
-        sut.updateUser(AuthFactory.create(editor), album.id, owner.id, { role: AlbumUserRole.Viewer }),
+        sut.updateUser(AuthFactory.create(owner), album.id, owner.id, { role: AlbumUserRole.Viewer }),
       ).rejects.toBeInstanceOf(BadRequestException);
 
       expect(mocks.albumUser.update).not.toHaveBeenCalled();
@@ -3645,12 +3682,12 @@ describe(AlbumService.name, () => {
 
       await expect(
         sut.addUsers(AuthFactory.create(editor), space.id, { albumUsers: [{ userId: newUuid() }] }),
-      ).rejects.toBeInstanceOf(ForbiddenException);
+      ).rejects.toBeInstanceOf(BadRequestException);
       expect(mocks.albumUser.createInvite).not.toHaveBeenCalled();
       expect(mocks.albumUser.create).not.toHaveBeenCalled();
     });
 
-    it('still lets an editor of a plain album share it', async () => {
+    it('refuses an editor of a plain album inviting anyone (FL-1767)', async () => {
       const editorId = newUuid();
       const album = AlbumFactory.from().albumUser({ userId: editorId, role: AlbumUserRole.Editor }).build();
       const { user: editor } = album.albumUsers.find(({ user }) => user.id === editorId)!;
@@ -3660,9 +3697,11 @@ describe(AlbumService.name, () => {
       mocks.album.getById.mockResolvedValue(getForAlbum(album));
       mocks.user.get.mockResolvedValue(user);
 
-      await sut.addUsers(AuthFactory.create(editor), album.id, { albumUsers: [{ userId: user.id }] });
+      await expect(
+        sut.addUsers(AuthFactory.create(editor), album.id, { albumUsers: [{ userId: user.id }] }),
+      ).rejects.toBeInstanceOf(BadRequestException);
 
-      expect(mocks.albumUser.create).toHaveBeenCalled();
+      expect(mocks.albumUser.create).not.toHaveBeenCalled();
       expect(mocks.albumUser.createInvite).not.toHaveBeenCalled();
     });
 
@@ -3735,7 +3774,7 @@ describe(AlbumService.name, () => {
       mocks.access.album.checkSharedAlbumAccess.mockResolvedValue(new Set([space.id]));
       mocks.album.getById.mockResolvedValue(getForAlbum(space));
 
-      await expect(sut.removeUser(auth, space.id, viewerId)).rejects.toBeInstanceOf(ForbiddenException);
+      await expect(sut.removeUser(auth, space.id, viewerId)).rejects.toBeInstanceOf(BadRequestException);
       expect(mocks.albumUser.delete).not.toHaveBeenCalled();
 
       await sut.removeUser(auth, space.id, 'me');

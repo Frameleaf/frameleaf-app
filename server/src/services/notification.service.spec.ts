@@ -569,6 +569,54 @@ describe(NotificationService.name, () => {
         expect.anything(),
       );
     });
+    it("sends a Locked item's details to the owner's unlocked sessions only (FL-1767)", async () => {
+      const asset = AssetFactory.create();
+      mocks.asset.getByIdsWithAllRelationsButStacks.mockResolvedValue([
+        { ...getForAsset(asset), isLocked: true, faces: [] },
+      ] as never);
+      mocks.search.getAssetLandmarks.mockResolvedValue([]);
+      mocks.session.getElevatedIds.mockResolvedValue(['unlocked-session']);
+
+      await sut.onAssetMetadataExtracted({ assetId: asset.id, userId: asset.ownerId, source: 'sidecar-write' });
+
+      expect(mocks.session.getElevatedIds).toHaveBeenCalledWith(asset.ownerId);
+      expect(mocks.websocket.clientSend).toHaveBeenCalledWith(
+        'on_asset_update',
+        ['unlocked-session'],
+        expect.objectContaining({ id: asset.id }),
+      );
+      expect(mocks.websocket.clientSend).not.toHaveBeenCalledWith('on_asset_update', asset.ownerId, expect.anything());
+      expect(mocks.websocket.clientSendExcept).toHaveBeenCalledWith(
+        'on_asset_hidden',
+        asset.ownerId,
+        ['unlocked-session'],
+        asset.id,
+      );
+    });
+
+    it("treats an item the owner's Locked rules hide like a Locked one (FL-1767)", async () => {
+      const asset = AssetFactory.create();
+      mocks.asset.getByIdsWithAllRelationsButStacks.mockResolvedValue([{ ...getForAsset(asset), faces: [] }] as never);
+      mocks.search.getAssetLandmarks.mockResolvedValue([]);
+      mocks.user.getMetadata.mockResolvedValue([
+        {
+          key: UserMetadataKey.Preferences,
+          value: { privacy: { suppression: { tagIds: ['tag-1'], personIds: [], petIds: [], scope: 'owned' } } },
+        },
+      ] as never);
+      mocks.asset.getHiddenContentAssetIds.mockResolvedValue(new Set([asset.id]));
+      mocks.session.getElevatedIds.mockResolvedValue([]);
+
+      await sut.onAssetMetadataExtracted({ assetId: asset.id, userId: asset.ownerId, source: 'sidecar-write' });
+
+      expect(mocks.asset.getHiddenContentAssetIds).toHaveBeenCalledWith(
+        [asset.id],
+        expect.objectContaining({ hiddenContent: expect.objectContaining({ tagIds: ['tag-1'] }) }),
+      );
+      expect(mocks.websocket.clientSend).not.toHaveBeenCalledWith('on_asset_update', asset.ownerId, expect.anything());
+      expect(mocks.websocket.clientSendExcept).toHaveBeenCalledWith('on_asset_hidden', asset.ownerId, [], asset.id);
+    });
+
     it('keeps the landmarks in the update a location edit sends back (LIB-12)', async () => {
       const asset = AssetFactory.from().exif({ latitude: 51.4254, longitude: -116.1773 }).build();
       const landmark = { id: 'Q41858', name: 'Banff National Park', kind: 'park' };

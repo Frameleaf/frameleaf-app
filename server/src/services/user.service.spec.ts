@@ -193,6 +193,26 @@ describe(UserService.name, () => {
       expect(mocks.user.update).not.toHaveBeenCalled();
     });
 
+    it('refuses a new password without the current one unless a change was required (FL-1767)', async () => {
+      mocks.user.get.mockResolvedValue({ ...userStub.user1, shouldChangePassword: false });
+      await expect(sut.updateMe(authStub.user1, { password: 'new-password' })).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+      expect(mocks.crypto.hashBcrypt).not.toHaveBeenCalled();
+      expect(mocks.user.update).not.toHaveBeenCalled();
+    });
+
+    it('sets the password a required change asks for (FL-1767)', async () => {
+      mocks.user.get.mockResolvedValue({ ...userStub.user1, shouldChangePassword: true });
+      mocks.crypto.hashBcrypt.mockResolvedValue('hashed');
+      mocks.user.update.mockResolvedValue(userStub.user1);
+      await sut.updateMe(authStub.user1, { password: 'new-password' });
+      expect(mocks.user.update).toHaveBeenCalledWith(
+        authStub.user1.user.id,
+        expect.objectContaining({ password: 'hashed', shouldChangePassword: false }),
+      );
+    });
+
     it('allows retaining the signed-in account email', async () => {
       mocks.user.getByEmail.mockResolvedValue(userStub.user1);
       mocks.user.update.mockResolvedValue(userStub.user1);

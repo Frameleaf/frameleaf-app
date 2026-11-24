@@ -202,8 +202,24 @@ export class WebsocketRepository implements OnGatewayConnection, OnGatewayDiscon
     await client.leave(client.nsp.name);
   }
 
-  clientSend<T extends keyof ClientEventMap>(event: T, room: string, ...data: ClientEventMap[T]) {
+  clientSend<T extends keyof ClientEventMap>(event: T, room: string | string[], ...data: ClientEventMap[T]) {
+    if (Array.isArray(room) && room.length === 0) {
+      return;
+    }
     this.server?.to(room).emit(event, ...data);
+  }
+
+  /** Sends to `room` except the sockets that are also in one of `except` (FL-1767: an account's other sessions). */
+  clientSendExcept<T extends keyof ClientEventMap>(
+    event: T,
+    room: string,
+    except: string[],
+    ...data: ClientEventMap[T]
+  ) {
+    this.server
+      ?.to(room)
+      .except(except)
+      .emit(event, ...data);
   }
 
   /**

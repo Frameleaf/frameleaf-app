@@ -262,9 +262,10 @@ export class NotificationService extends BaseService {
 
     const [asset] = await this.assetRepository.getByIdsWithAllRelationsButStacks([assetId], userId);
     if (asset) {
-      this.websocketRepository.clientSend(
+      this.sendOwnAssetEvent(
+        await this.getOwnAssetAudience(userId, [asset]),
         asset.libraryScope === LibraryScope.Design ? 'LibraryAssetUpdateV1' : 'on_asset_update',
-        userId,
+        asset.id,
         await this.withNamedPlace(
           await this.withLandmarks(mapAsset(asset, { auth: { user: { id: userId } } as AuthDto })),
           userId,

@@ -103,7 +103,7 @@ import { UserRepository } from 'src/repositories/user.repository.js';
 import { VersionHistoryRepository } from 'src/repositories/version-history.repository.js';
 import { VideoStreamRepository } from 'src/repositories/video-stream.repository.js';
 import { ViewRepository } from 'src/repositories/view-repository.js';
-import { WebsocketRepository } from 'src/repositories/websocket.repository.js';
+import { type ClientEventMap, WebsocketRepository } from 'src/repositories/websocket.repository.js';
 import { WorkflowRepository } from 'src/repositories/workflow.repository.js';
 import { AdminAuditEventTable } from 'src/schema/tables/admin-audit-event.table.js';
 import { UserTable } from 'src/schema/tables/user.table.js';
@@ -112,7 +112,9 @@ import { AccessRequest, checkAccess, requireAccess } from 'src/utils/access.js';
 import { ConfigHistoryKind, ConfigHistorySource, recordConfigHistory } from 'src/utils/config-history.js';
 import { getConfig, readConfig, updateConfig, withEffectiveConfigWrite } from 'src/utils/config.js';
 import { queueReleasedPersonThumbnails } from 'src/utils/cover-references.js';
+import { hasHiddenContentFilter } from 'src/utils/hidden-content.js';
 import { queueLockedSealFor } from 'src/utils/locked-seal-queue.js';
+import { isLockedRow } from 'src/utils/locked.js';
 import {
   MlDestinationNotFoundError,
   MlDestinationRefusedError,
@@ -135,6 +137,12 @@ import { isServerOwner, requireServerOwner } from 'src/utils/server-owner.js';
  * FL-456: an admission that says this place cannot take the job now (refused, gone, or the Frameleaf
  * Desktop helpers cannot take it yet), so the next place in the processing order may.
  */
+/** FL-1767: the websocket events that carry one of the account's own assets in full. */
+type OwnAssetEvent =
+  'on_asset_update' | 'LibraryAssetUpdateV1' | 'on_upload_success' | 'AssetUploadReadyV2' | 'AssetEditReadyV2';
+/** FL-1767: which of an account's own assets only its unlocked sessions may see, and which sessions those are. */
+export type OwnAssetAudience = { ownerId: string; withheld: Set<string>; elevatedSessionIds: string[] };
+
 /** Tell administrators again about a computer that is still away after this long. */
 const COMPUTER_AWAY_NOTICE_MS = 12 * 3_600_000;
 const isPlaceUnavailable = (error: unknown) =>
@@ -1020,15 +1028,74 @@ export class BaseService {
     }
 
     const assets = (await this.assetRepository.getByIdsWithAllRelationsButStacks(assetIds, ownerId)) ?? [];
+    const audience = await this.getOwnAssetAudience(ownerId, assets);
     for (const asset of assets) {
-      this.websocketRepository.clientSend(
+      this.sendOwnAssetEvent(
+        audience,
         asset.libraryScope === LibraryScope.Design ? 'LibraryAssetUpdateV1' : 'on_asset_update',
-        ownerId,
+        asset.id,
         // ponytail: no landmarks here, a Locked move never changes where an item was taken and the
         // viewer closes on it anyway; add `withLandmarks` if an unlock ever keeps the viewer open
         mapAsset(asset, { auth: { user: { id: ownerId } } as AuthDto }),
       );
     }
+  }
+
+  /**
+   * FL-1767: who among `ownerId`'s open sessions may see each of `assets` in full. A Locked item, or one
+   * its owner's Locked rules (people, pets, tags) hide, is seen only by an unlocked (elevated) session,
+   * as every read shows it (owner decision, September 27, 2026); the account's other sockets (its
+   * ordinary sessions, API keys) learn its id only. Read once for a batch.
+   */
+  protected async getOwnAssetAudience(
+    ownerId: string,
+    assets: { id: string; isLocked?: boolean | null; visibility?: string | null }[],
+  ): Promise<OwnAssetAudience> {
+    const withheld = new Set(assets.filter((asset) => isLockedRow(asset)).map(({ id }) => id));
+    const others = assets.filter(({ id }) => !withheld.has(id)).map(({ id }) => id);
+    if (others.length > 0) {
+      const { suppression } = getPreferences((await this.userRepository.getMetadata(ownerId)) ?? []).privacy;
+      const hiddenContent = {
+        userId: ownerId,
+        includeNsfw: false,
+        tagIds: suppression.tagIds,
+        personIds: suppression.personIds,
+        petIds: suppression.petIds,
+        scope: suppression.scope,
+      };
+      if (hasHiddenContentFilter(hiddenContent)) {
+        const hidden = await this.assetRepository.getHiddenContentAssetIds(others, { hiddenContent });
+        for (const id of hidden ?? []) {
+          withheld.add(id);
+        }
+      }
+    }
+    const elevatedSessionIds = withheld.size > 0 ? ((await this.sessionRepository.getElevatedIds(ownerId)) ?? []) : [];
+    return { ownerId, withheld, elevatedSessionIds };
+  }
+
+  /**
+   * FL-1767: sends an event that carries one of the owner's own assets. An asset `audience` withholds goes in
+   * full to the owner's unlocked sessions only; every other socket of the account gets `on_asset_hidden`
+   * with its id, so an open page drops it.
+   */
+  protected sendOwnAssetEvent<T extends OwnAssetEvent>(
+    audience: OwnAssetAudience,
+    event: T,
+    assetId: string,
+    ...data: ClientEventMap[T]
+  ) {
+    if (!audience.withheld.has(assetId)) {
+      this.websocketRepository.clientSend(event, audience.ownerId, ...data);
+      return;
+    }
+    this.websocketRepository.clientSend(event, audience.elevatedSessionIds, ...data);
+    this.websocketRepository.clientSendExcept(
+      'on_asset_hidden',
+      audience.ownerId,
+      audience.elevatedSessionIds,
+      assetId,
+    );
   }
 
   /**

@@ -28,8 +28,9 @@ import {
   isDefaultVisible,
   isTimelineVisible,
   notLockedOrOwnedBy,
+  revealedLockScope,
 } from 'src/utils/locked.js';
-import { mapSyncAssetV2 } from 'src/utils/sync.js';
+import { mapOwnSyncAsset } from 'src/utils/sync.js';
 
 export type SyncBackfillOptions = HiddenContentQueryOptions & {
   nowId: string;
@@ -112,6 +113,21 @@ const albumAssetVisibleTo = (userId: string) => notLockedOrOwnedBy(userId, 'asse
  * upstream Locked folder still files it there; the stored visibility otherwise.
  */
 const syncVisibility = () => effectiveVisibility('asset').as('visibility');
+/**
+ * FL-1767: the owner's own Locked media reaches their own devices in full only in an unlocked (elevated)
+ * session, as every other read does (owner decision, September 27, 2026: unlocked, Locked items act like
+ * any other item; locked, they are not visible). `revealLockedOwnerId` is only set for an elevated session
+ * (`getHiddenContentQueryOptions`).
+ */
+const syncLockRevealed = (options: HiddenContentQueryOptions) => revealedLockScope(options.revealLockedOwnerId);
+/**
+ * FL-1767: in a session that is not unlocked a Locked item's asset row is still sent, so a device that
+ * already holds the item learns it is Locked now and drops it (the iPhone and Android apps never keep a
+ * Locked item), but `mapOwnSyncAsset` strips everything that describes it. Its exif, faces, edits,
+ * metadata, OCR and stack rows are not sent at all (`syncLockRevealed`).
+ */
+const syncLockWithheld = (options: HiddenContentQueryOptions) =>
+  sql<boolean>`not ${syncLockRevealed(options)}`.as('lockWithheld');
 const syncAssetColumns = columns.syncAsset.filter(
   (column) => column !== 'asset.checksum' && column !== 'asset.livePhotoVideoId' && column !== 'asset.visibility',
 );
@@ -138,12 +154,19 @@ const syncAsset = (options: HiddenContentQueryOptions) =>
     syncLivePhotoVideoId(options),
     syncVisibility(),
     syncAssetPartnerOrigin(),
+    syncLockWithheld(options),
   ] as const;
 const syncAlbumAssetColumns = columns.syncAlbumAsset.filter(
   (column) => column !== 'asset.checksum' && column !== 'asset.livePhotoVideoId' && column !== 'asset.visibility',
 );
 const syncAlbumAsset = (options: HiddenContentQueryOptions) =>
-  [...syncAlbumAssetColumns, syncChecksum(), syncLivePhotoVideoId(options), syncVisibility()] as const;
+  [
+    ...syncAlbumAssetColumns,
+    syncChecksum(),
+    syncLivePhotoVideoId(options),
+    syncVisibility(),
+    syncLockWithheld(options),
+  ] as const;
 @Injectable()
 export class SyncRepository {
   tag: TagSync;
@@ -179,7 +202,7 @@ export class SyncRepository {
         entityId: scopeId,
         assetId: asset.id,
         sourceId: updateId,
-        data: { albumId: scopeId, asset: mapSyncAssetV2(asset) },
+        data: { albumId: scopeId, asset: mapOwnSyncAsset(asset) },
       }));
     });
     this.album = new AlbumSync(this.db);
@@ -537,6 +560,7 @@ class AlbumAssetExifSync extends BaseSync {
       .where(personalAlbumScopePredicate(userId, sql.ref('album_asset.albumId')))
       .$call((qb) => withHiddenContentFilter(qb, options))
       .where(albumAssetVisibleTo(userId))
+      .where(syncLockRevealed(options))
       .stream();
   }
   @GenerateSql({ params: [dummyQueryOptions, { updateId: DummyValue.UUID }], stream: true })
@@ -553,6 +577,7 @@ class AlbumAssetExifSync extends BaseSync {
       .where(personalAlbumScopePredicate(userId, sql.ref('album_user.albumId')))
       .$call((qb) => withHiddenContentFilter(qb, options))
       .where(albumAssetVisibleTo(options.userId))
+      .where(syncLockRevealed(options))
       .stream();
   }
   @GenerateSql({ params: [dummyQueryOptions], stream: true })
@@ -569,6 +594,7 @@ class AlbumAssetExifSync extends BaseSync {
       .where(personalAlbumScopePredicate(userId, sql.ref('album_user.albumId')))
       .$call((qb) => withHiddenContentFilter(qb, options))
       .where(albumAssetVisibleTo(options.userId))
+      .where(syncLockRevealed(options))
       .stream();
   }
 }
@@ -744,6 +770,9 @@ class AssetSync extends BaseSync {
         )
         .where('asset.updateId', '<', options.nowId)
         .where('asset.ownerId', '=', options.userId)
+        // FL-1767: the cursor carries each row's date, so a Locked item a session may not see is left
+        // out of the snapshot entirely; a device only needs its row once it already holds the item
+        .where(syncLockRevealed(options))
         .$call((qb) => withHiddenContentFilter(qb, options))
         .$if(!!cursor, (qb) =>
           qb.where(sql<boolean>`(${date}, asset.id) < (${cursor!.timestamp}::timestamptz, ${cursor!.id}::uuid)`),
@@ -919,6 +948,7 @@ class AssetFaceSync extends BaseSync {
       .leftJoin('asset', 'asset.id', 'asset_face.assetId')
       .where('asset.ownerId', '=', options.userId)
       .where(libraryScopePredicate(LibraryScope.Personal))
+      .where(syncLockRevealed(options))
       .$call((qb) => withHiddenContentFilter(qb, options))
       .stream();
   }
@@ -934,6 +964,7 @@ class AssetFaceSync extends BaseSync {
         selectFrom('user').select('user.clusterGroupId').where('user.id', '=', options.userId),
       )
       .where(libraryScopePredicate(LibraryScope.Personal))
+      .where(syncLockRevealed(options))
       .$call((qb) => withHiddenContentFilter(qb, options))
       .stream();
   }
@@ -947,6 +978,7 @@ class AssetExifSync extends BaseSync {
       .select('asset_exif.updateId')
       .where('asset.ownerId', '=', options.userId)
       .where(libraryScopePredicate(LibraryScope.Personal))
+      .where(syncLockRevealed(options))
       .$call((qb) => withHiddenContentFilter(qb, options))
       .stream();
   }
@@ -972,6 +1004,7 @@ class AssetEditSync extends BaseSync {
       .innerJoin('asset', 'asset.id', 'asset_edit.assetId')
       .where('asset.ownerId', '=', options.userId)
       .where(libraryScopePredicate(LibraryScope.Personal))
+      .where(syncLockRevealed(options))
       .$call((qb) => withHiddenContentFilter(qb, options))
       .stream();
   }
@@ -1072,6 +1105,7 @@ class StackSync extends BaseSync {
       .select(columns.syncStack)
       .select('stack.updateId')
       .where('stack.ownerId', '=', options.userId)
+      .where(syncLockRevealed(options))
       .$call((qb) => withHiddenContentFilter(qb, options))
       .stream();
   }
@@ -1131,6 +1165,7 @@ class AssetMetadataSync extends BaseSync {
       .where('asset.ownerId', '=', userId)
       .where('asset_metadata.key', '!=', AssetMetadataKey.MlEnrichment)
       .where(libraryScopePredicate(LibraryScope.Personal))
+      .where(syncLockRevealed(options))
       .$call((qb) => withHiddenContentFilter(qb, options))
       .stream();
   }
@@ -1156,6 +1191,7 @@ class AssetOcrSync extends BaseSync {
       .innerJoin('asset', 'asset.id', 'asset_ocr.assetId')
       .where('asset.ownerId', '=', userId)
       .where(libraryScopePredicate(LibraryScope.Personal))
+      .where(syncLockRevealed(options))
       .$call((qb) => withHiddenContentFilter(qb, options))
       .stream();
   }
