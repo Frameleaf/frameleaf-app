@@ -8,6 +8,7 @@ import json
 import os
 import shutil
 import stat
+import threading
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any
@@ -22,23 +23,55 @@ from frameleaf_ml.schemas import ModelFormat, ModelTask, ModelType, validate_opt
 RECEIPT = ".frameleaf-staged.json"
 
 
-def cache_hashes(cache: Path) -> dict[str, str]:
+_StatKey = tuple[int, int, int, int, int]
+_MAX_REMEMBERED_HASHES = 4096
+_remembered: dict[Path, tuple[_StatKey, str]] = {}
+_remembered_lock = threading.Lock()
+
+
+def _stat_key(info: os.stat_result) -> _StatKey:
+    return (info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, info.st_ctime_ns)
+
+
+def cache_hashes(cache: Path, *, reuse: bool = False) -> dict[str, str]:
+    """Each regular file's SHA-256, by path relative to `cache`.
+
+    With `reuse`, a hash taken earlier is kept while the file's device, inode, size, modification
+    time and status-change time are all unchanged, as the restoration weight check does. Any write
+    or replacement moves the status-change time, which no caller can set back, so it forces a fresh
+    hash. Staging and qualification always hash afresh.
+    """
     files = {}
     for path in sorted(cache.rglob("*")):
-        mode = path.lstat().st_mode
-        if stat.S_ISDIR(mode):
+        info = path.lstat()
+        if stat.S_ISDIR(info.st_mode):
             continue
-        if not stat.S_ISREG(mode):
+        if not stat.S_ISREG(info.st_mode):
             raise ModelUnavailableError("Model staging requires regular files, without symlinks")
         relative = path.relative_to(cache)
         if relative.parts[0] == ".cache" or relative.as_posix() == RECEIPT:
             continue
+        key = _stat_key(info)
+        if reuse:
+            with _remembered_lock:
+                remembered = _remembered.get(path)
+            if remembered is not None and remembered[0] == key:
+                files[relative.as_posix()] = remembered[1]
+                continue
         with path.open("rb") as stream:
-            files[relative.as_posix()] = hashlib.file_digest(stream, "sha256").hexdigest()
+            opened = _stat_key(os.fstat(stream.fileno()))
+            digest = hashlib.file_digest(stream, "sha256").hexdigest()
+        files[relative.as_posix()] = digest
+        # Remembered under what was opened, and only if it still matches after reading it.
+        if opened == key == _stat_key(path.lstat()):
+            with _remembered_lock:
+                if len(_remembered) >= _MAX_REMEMBERED_HASHES:
+                    _remembered.clear()
+                _remembered[path] = (key, digest)
     return files
 
 
-def verify_staged(cache: Path) -> dict[str, str]:
+def verify_staged(cache: Path, *, reuse: bool = False) -> dict[str, str]:
     """Detect changes since acquisition; model-specific manifests remain the upstream trust roots."""
     try:
         receipt = cache / RECEIPT
@@ -46,7 +79,7 @@ def verify_staged(cache: Path) -> dict[str, str]:
         if cache.is_symlink() or not stat.S_ISREG(info.st_mode) or info.st_size > 4 * 1024 * 1024:
             raise ValueError("Invalid staging receipt")
         expected = json.loads(receipt.read_text())
-        actual = cache_hashes(cache)
+        actual = cache_hashes(cache, reuse=reuse)
         if not expected or expected != actual:
             raise ValueError("Staged files changed")
         return actual
