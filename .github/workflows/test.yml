@@ -561,7 +561,7 @@ jobs:
         with:
           registry: ghcr.io
           username: ${{ vars.GHCR_USERNAME || github.actor }}
-          password: ${{ secrets.GH_PUBLISH_TOKEN || github.token }}
+          password: ${{ github.event_name != 'pull_request' && secrets.GH_PUBLISH_TOKEN || github.token }}
       - name: Build medium native runner
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
@@ -886,7 +886,7 @@ jobs:
         with:
           registry: ghcr.io
           username: ${{ vars.GHCR_USERNAME || github.actor }}
-          password: ${{ secrets.GH_PUBLISH_TOKEN || github.token }}
+          password: ${{ github.event_name != 'pull_request' && secrets.GH_PUBLISH_TOKEN || github.token }}
       - name: Build the server image
         working-directory: ./e2e
         env:
@@ -976,7 +976,7 @@ jobs:
         with:
           registry: ghcr.io
           username: ${{ vars.GHCR_USERNAME || github.actor }}
-          password: ${{ secrets.GH_PUBLISH_TOKEN || github.token }}
+          password: ${{ github.event_name != 'pull_request' && secrets.GH_PUBLISH_TOKEN || github.token }}
       - name: Fetch the server image built for this run
         uses: https://code.forgejo.org/forgejo/download-artifact@769f970437aa3291b13f35dc23fc87967d7fb19f # forgejo/download-artifact v7 (FL-1683)
         with:
@@ -1312,7 +1312,7 @@ jobs:
         with:
           registry: ghcr.io
           username: ${{ vars.GHCR_USERNAME || github.actor }}
-          password: ${{ secrets.GH_PUBLISH_TOKEN || github.token }}
+          password: ${{ github.event_name != 'pull_request' && secrets.GH_PUBLISH_TOKEN || github.token }}
       - name: Fetch the server image built for this run
         uses: https://code.forgejo.org/forgejo/download-artifact@769f970437aa3291b13f35dc23fc87967d7fb19f # forgejo/download-artifact v7 (FL-1683)
         with:
