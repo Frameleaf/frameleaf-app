@@ -126,8 +126,8 @@ test('a grant that names storage over plain HTTP, on this machine or on the LAN 
     state.storage = { endpoint };
     await assert.rejects(client.grant(identity, { locationId: 'loc-01', operation: 'restore' }), refused('cloud_address_untrusted'), endpoint);
   }
-  state.storage = { endpoint: 'https://s3.eu-central-2.wasabisys.com' };
-  assert.equal((await client.grant(identity, { locationId: 'loc-01', operation: 'restore' })).endpoint, 'https://s3.eu-central-2.wasabisys.com');
+  state.storage = { endpoint: 'https://s3.eu-central-2.storage.example' };
+  assert.equal((await client.grant(identity, { locationId: 'loc-01', operation: 'restore' })).endpoint, 'https://s3.eu-central-2.storage.example');
 });
 
 test('finished backups are added to a signed history, in order, and a lost answer is safe to send again', async () => {
