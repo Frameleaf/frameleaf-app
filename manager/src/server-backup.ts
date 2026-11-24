@@ -528,7 +528,10 @@ export class ServerBackup {
       here.clock === at ||
       (!!before && (before.day === here.day ? before.clock < at && at <= here.clock : at > before.clock || at <= here.clock));
     if (this.current?.trigger === 'schedule' && this.current.kind === 'backup' && stop && reached(stop)) return this.stop();
-    if (this.child || !reached(time)) return;
+    // FL-1770: Manager was not running at the time (a restart, an update, the server off): the first look after it
+    // starts catches up today's backup, while its window is still open.
+    const missed = previous === null && here.clock > time && (!stop || stop < time || here.clock < stop);
+    if (this.child || !(reached(time) || missed)) return;
     // A time passed just before midnight belongs to the day it was passed on.
     const day = before && before.day !== here.day && time > before.clock ? before.day : here.day;
     if (saved.scheduledOn === day) return;
