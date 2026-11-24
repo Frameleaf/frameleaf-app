@@ -342,12 +342,14 @@ def test_provider_runtime_caches_are_not_model_files(model: SyntheticModel) -> N
     # check compares these hashes with the catalogue, so they must not count.
     model._download()
     before = cache_hashes(model.cache_dir)
-    for name in ("coreml", "openvino", "migraphx", "trt-rtx"):
-        cache = model.model_dir / name / "123"
-        cache.mkdir(parents=True)
-        (cache / "model.bin").write_bytes(b"compiled")
+    # beside `<type>/model.onnx`, and beside a model kept elsewhere (NSFW loads `onnx/model.onnx`)
+    for folder in (model.model_dir, model.cache_dir / "onnx"):
+        for name in ("coreml", "openvino", "migraphx", "trt-rtx"):
+            cache = folder / name / "123"
+            cache.mkdir(parents=True)
+            (cache / "model.bin").write_bytes(b"compiled")
     assert cache_hashes(model.cache_dir) == before
-    (model.model_dir / "extra.onnx").write_bytes(b"not a cache")
+    (model.cache_dir / "onnx" / "model.onnx").write_bytes(b"a real model file")
     assert cache_hashes(model.cache_dir) != before
 
 
