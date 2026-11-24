@@ -508,7 +508,8 @@ describe('media downloads from the popup (FL-1427)', () => {
     signedIn('media');
     vi.mocked(chrome.cookies.getAllCookieStores).mockResolvedValue([
       { id: '1', tabIds: [99] },
-    ] as chrome.cookies.CookieStore[]);
+      // the promise form; vi.mocked types this overload by its callback form, which returns nothing
+    ] as chrome.cookies.CookieStore[] as never);
 
     await expect(handleMessage({ type: 'media-site' }, popup)).resolves.toEqual(
       expect.objectContaining({
