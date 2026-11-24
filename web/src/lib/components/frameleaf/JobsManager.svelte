@@ -721,8 +721,10 @@
             return queue.isPaused;
           }
           // a task that can't start now (its feature is off, or it is busy) is left out, as on its own row
+          // catching up a feature starts only what has a missing-only run; a whole-library task (pet
+          // recognition's "Start now") is started from its own row
           case 'run': {
-            return !!definition.run && !blockedReason(row);
+            return definition.run === 'missing' && !blockedReason(row);
           }
           default: {
             return !!definition.force && !blockedReason(row);

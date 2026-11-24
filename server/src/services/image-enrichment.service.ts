@@ -1097,6 +1097,31 @@ export class ImageEnrichmentService extends BaseService {
     if (!asset || !this.isEligibleForDescription(asset)) {
       return { status: JobStatus.Skipped, reasonKey: 'not-eligible' };
     }
+    // A partner copy shows its source's picture, so it takes the source's description instead of being
+    // described again. A source without one yet hands it over once it has (`publishDescription`).
+    const sourceId = await this.partnerOriginRepository.getLiveSourceId(id);
+    if (sourceId) {
+      const sourceMetadata = await this.getEnrichmentMetadata(sourceId);
+      const source = sourceMetadata.description;
+      if (source?.status !== 'success') {
+        return { status: JobStatus.Skipped, reasonKey: 'waiting-for-source' };
+      }
+      const ownNsfw = this.getStoredNsfw(await this.getEnrichmentMetadata(id));
+      const sourceNsfw = this.getStoredNsfw(sourceMetadata);
+      return this.publishDescription({
+        asset,
+        config,
+        machineLearning,
+        options,
+        result: source.result,
+        nsfw: ownNsfw ?? sourceNsfw,
+        nsfwIsFresh: !ownNsfw && !!sourceNsfw,
+        fingerprintBefore: await this.getSourceFingerprint(id),
+        knownPersons: await this.getKnownPersonsForAsset(id, asset.ownerId),
+        destinationId: source.provenance?.destinationId ?? '',
+        modelName: source.modelName,
+      });
+    }
     if (!asset.previewFile) {
       deferJobUntilDependency('source-unavailable');
       return { status: JobStatus.Skipped, reasonKey: 'no-preview' };
@@ -1464,6 +1489,14 @@ export class ImageEnrichmentService extends BaseService {
         ) {
           await this.jobRepository.queue({ name: JobName.VideoMomentCaptions, data: { id } });
         }
+      }
+      // each partner copy takes this description (`describeAsset`), and hands it on to its
+      // own; outside any run, since a full rerun leaves copies out and the copy may already have been skipped
+      const copies = await this.partnerOriginRepository.getLiveCopyIds(id);
+      if (copies.length > 0) {
+        await this.jobRepository.queueOutsideRun(
+          copies.map((copyId) => ({ name: JobName.ImageDescription as const, data: { id: copyId } })),
+        );
       }
       return { status: JobStatus.Success };
     };

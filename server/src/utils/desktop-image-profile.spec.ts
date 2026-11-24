@@ -22,7 +22,7 @@ it.each(['ocr', 'face'] as const)('selects the released %s identity and revalida
       : desktopFaceProfile(defaults.machineLearning.facialRecognition, key);
   const currentVariants = profiles.filter((profile) => profile.modelKey === current.modelKey);
   // once for runtime f2c451a6 and once for its epoch 14 twin source: the same key on every provider; and
-  // epoch 19's processor twin for the desktop runtime source that adds photo descriptions (FD-31)
+  // epoch 20's processor twin for the desktop runtime source that adds photo descriptions (FD-31)
   const providers = [
     'CPUExecutionProvider',
     'CoreMLExecutionProvider',

@@ -20,7 +20,7 @@ vi.mock('src/utils/desktop-description.js', async (original) => ({
 const options = {
   modelName: 'Qwen/Qwen2.5-VL-7B-Instruct',
   fallbackModelName: 'microsoft/Florence-2-base-ft',
-  acceleration: MachineLearningHardwareAcceleration.Cpu,
+  acceleration: MachineLearningHardwareAcceleration.Auto,
   device: 'AUTO',
 };
 const output = {
@@ -78,7 +78,11 @@ describe('FD-31 desktop descriptions', () => {
     }
     // a selection a desktop took is never sent to the destination's own AI
     await expect(
-      new MachineLearningRepository(LoggingRepository.create()).predict(selection(vi.fn()), { imagePath: image }, {}),
+      new MachineLearningRepository(LoggingRepository.create())['predict'](
+        selection(vi.fn()),
+        { imagePath: image },
+        {} as never,
+      ),
     ).rejects.toThrow('desktop_bound_profile_required');
   });
 });

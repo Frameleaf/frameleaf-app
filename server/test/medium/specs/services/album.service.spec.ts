@@ -23,6 +23,7 @@ import { MapRepository } from 'src/repositories/map.repository.js';
 import { PartnerOriginRepository } from 'src/repositories/partner-origin.repository.js';
 import { PartnerRepository } from 'src/repositories/partner.repository.js';
 import { PersonRepository } from 'src/repositories/person.repository.js';
+import { SessionRepository } from 'src/repositories/session.repository.js';
 import { SmartAlbumRepository } from 'src/repositories/smart-album.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { TagRepository } from 'src/repositories/tag.repository.js';
@@ -41,6 +42,7 @@ const setup = (db?: Kysely<DB>) => {
   const services = newMediumService(AlbumService, {
     database: db || defaultDatabase,
     real: [
+      SessionRepository,
       AccessRepository,
       AlbumRepository,
       AlbumSummaryRepository,

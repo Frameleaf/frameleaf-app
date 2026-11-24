@@ -1,6 +1,7 @@
 import hashlib
 import json
 import os
+import time
 from pathlib import Path
 from unittest.mock import patch
 
@@ -186,6 +187,9 @@ def test_reused_hashes_follow_any_change_to_a_file(tmp_path) -> None:
         assert staging.cache_hashes(tmp_path, reuse=True) == first
     # Same size, and the modification time put back: the status-change time still moves.
     stat_before = (tmp_path / "model.onnx").stat()
+    # Linux keeps these times at clock-tick resolution (up to 10 ms), so a rewrite in the same tick
+    # would leave the status-change time where it was; real replacements are never that close.
+    time.sleep(0.05)
     (tmp_path / "model.onnx").write_bytes(b"other")
     os.utime(tmp_path / "model.onnx", ns=(stat_before.st_atime_ns, stat_before.st_mtime_ns))
     assert staging.cache_hashes(tmp_path, reuse=True) != first

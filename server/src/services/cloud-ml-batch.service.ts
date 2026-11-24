@@ -2125,7 +2125,8 @@ export class CloudMlBatchService extends BaseService {
     const found: Array<{ assetId: string; ownerId: string }> = [];
     let truncated = false;
     for await (const { id } of this.assetJobRepository.streamForImageDescriptionJob(false)) {
-      if (inBatches.has(id)) {
+      // a partner copy takes its source's description and is never sent itself
+      if (inBatches.has(id) || (await this.partnerOriginRepository.getLiveSourceId(id))) {
         continue;
       }
       if (found.length >= limit) {

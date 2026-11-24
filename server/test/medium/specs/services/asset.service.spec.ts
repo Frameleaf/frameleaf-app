@@ -38,6 +38,7 @@ import { OcrRepository } from 'src/repositories/ocr.repository.js';
 import { PersonRepository } from 'src/repositories/person.repository.js';
 import { PhysicalFileRepository } from 'src/repositories/physical-file.repository.js';
 import { SearchRepository } from 'src/repositories/search.repository.js';
+import { SessionRepository } from 'src/repositories/session.repository.js';
 import { SharedLinkAssetRepository } from 'src/repositories/shared-link-asset.repository.js';
 import { SharedLinkRepository } from 'src/repositories/shared-link.repository.js';
 import { StackRepository } from 'src/repositories/stack.repository.js';
@@ -59,6 +60,7 @@ const setup = (db?: Kysely<DB>) => {
   const { sut, ctx } = newMediumService(AssetService, {
     database: db || defaultDatabase,
     real: [
+      SessionRepository,
       AssetRepository,
       DuplicateRepository,
       AssetEditRepository,
@@ -1237,6 +1239,7 @@ describe(AssetService.name, () => {
               const { sut, ctx } = newMediumService(StorageTemplateService, {
                 database: forkDatabase,
                 real: [
+                  SessionRepository,
                   AssetRepository,
                   AssetJobRepository,
                   CryptoRepository,
@@ -1361,6 +1364,7 @@ describe(AssetService.name, () => {
             const { sut, ctx } = newMediumService(StorageTemplateService, {
               database: forkDatabase,
               real: [
+                SessionRepository,
                 AssetRepository,
                 AssetJobRepository,
                 CryptoRepository,
@@ -1431,6 +1435,7 @@ describe(AssetService.name, () => {
               const { sut, ctx } = newMediumService(StorageTemplateService, {
                 database: forkDatabase,
                 real: [
+                  SessionRepository,
                   AssetRepository,
                   AssetJobRepository,
                   CryptoRepository,
@@ -1522,6 +1527,7 @@ describe(AssetService.name, () => {
             const { sut, ctx } = newMediumService(StorageTemplateService, {
               database: forkDatabase,
               real: [
+                SessionRepository,
                 AssetRepository,
                 AssetJobRepository,
                 CryptoRepository,
@@ -2595,13 +2601,25 @@ describe(AssetService.name, () => {
 
       expect(ctx.getMock(WebsocketRepository).clientSend).toHaveBeenCalledWith(
         'on_asset_update',
-        user.id,
+        expect.any(Array), // the owner's unlocked sessions only (FL-1767)
         expect.objectContaining({ id: primary.id, visibility: AssetVisibility.Locked }),
+      );
+      expect(ctx.getMock(WebsocketRepository).clientSendExcept).toHaveBeenCalledWith(
+        'on_asset_hidden',
+        user.id,
+        expect.any(Array),
+        primary.id,
       );
       expect(ctx.getMock(WebsocketRepository).clientSend).toHaveBeenCalledWith(
         'on_asset_update',
-        user.id,
+        expect.any(Array), // the owner's unlocked sessions only (FL-1767)
         expect.objectContaining({ id: sibling.id, visibility: AssetVisibility.Locked }),
+      );
+      expect(ctx.getMock(WebsocketRepository).clientSendExcept).toHaveBeenCalledWith(
+        'on_asset_hidden',
+        user.id,
+        expect.any(Array),
+        sibling.id,
       );
     });
 
@@ -2618,8 +2636,14 @@ describe(AssetService.name, () => {
 
       expect(ctx.getMock(WebsocketRepository).clientSend).toHaveBeenCalledWith(
         'on_asset_update',
-        user.id,
+        expect.any(Array), // the owner's unlocked sessions only (FL-1767)
         expect.objectContaining({ id: sibling.id, visibility: AssetVisibility.Locked }),
+      );
+      expect(ctx.getMock(WebsocketRepository).clientSendExcept).toHaveBeenCalledWith(
+        'on_asset_hidden',
+        user.id,
+        expect.any(Array),
+        sibling.id,
       );
     });
 
@@ -2635,8 +2659,14 @@ describe(AssetService.name, () => {
       expect(ctx.getMock(WebsocketRepository).clientSend).toHaveBeenCalledTimes(1);
       expect(ctx.getMock(WebsocketRepository).clientSend).toHaveBeenCalledWith(
         'on_asset_update',
-        user.id,
+        expect.any(Array), // the owner's unlocked sessions only (FL-1767)
         expect.objectContaining({ id: asset.id }),
+      );
+      expect(ctx.getMock(WebsocketRepository).clientSendExcept).toHaveBeenCalledWith(
+        'on_asset_hidden',
+        user.id,
+        expect.any(Array),
+        asset.id,
       );
     });
   });

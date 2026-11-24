@@ -406,7 +406,7 @@ export class ImportConnectorRepository {
    * its last listing. Returns how many files the run took.
    */
   async offerMany(connectionId: string, importId: string, items: RemoteItem[]): Promise<number> {
-    const unique = [...new Map(items.map((item) => [item.remoteId, item])).values()];
+    const unique = new Map(items.map((item) => [item.remoteId, item])).values().toArray();
     if (unique.length === 0) {
       return 0;
     }

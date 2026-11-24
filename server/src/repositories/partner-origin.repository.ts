@@ -6,6 +6,7 @@ import {
   AlbumKind,
   AssetFileType,
   AssetLockReason,
+  AssetMetadataKey,
   AssetOrder,
   AssetStatus,
   AssetType,
@@ -999,6 +1000,24 @@ export class PartnerOriginRepository {
       await sql`
         INSERT INTO ocr_search ("assetId", text)
         SELECT ${copy.id}::uuid, text FROM ocr_search WHERE "assetId" = ${source.id}::uuid
+      `.execute(trx);
+      // the source's description, tags verdicts and description search too, so the copy is never described again
+      await sql`
+        INSERT INTO asset_metadata ("assetId", key, value)
+        SELECT ${copy.id}::uuid, key, value FROM asset_metadata
+        WHERE "assetId" = ${source.id}::uuid AND key = ${AssetMetadataKey.MlEnrichment}
+        ON CONFLICT DO NOTHING
+      `.execute(trx);
+      await sql`
+        INSERT INTO asset_video_fingerprint ("assetId", "durationMs", hashes)
+        SELECT ${copy.id}::uuid, "durationMs", hashes FROM asset_video_fingerprint WHERE "assetId" = ${source.id}::uuid
+        ON CONFLICT DO NOTHING
+      `.execute(trx);
+      await sql`
+        INSERT INTO smart_search_description ("assetId", embedding, "producerModelKey")
+        SELECT ${copy.id}::uuid, embedding, "producerModelKey" FROM smart_search_description
+        WHERE "assetId" = ${source.id}::uuid
+        ON CONFLICT DO NOTHING
       `.execute(trx);
       const jobStatus = await trx
         .selectFrom('asset_job_status')
