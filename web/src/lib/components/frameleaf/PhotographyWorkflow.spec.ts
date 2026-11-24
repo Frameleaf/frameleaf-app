@@ -137,6 +137,21 @@ it('saves human-readable prices in integer minor units and a studio preset with 
     ),
   );
 });
+it('keeps the price it had when a price field is cleared, never sending NaN (FL-1771)', async () => {
+  render(PhotographyWorkflow, { shoot, panel: 'workflow' });
+  const price = await screen.findByRole('spinbutton', { name: 'Additional photo price' });
+  await fireEvent.change(price, { target: { value: '' } });
+  expect(price).toHaveValue(25);
+  await fireEvent.click(screen.getByRole('button', { name: 'Save client workflow' }));
+  await waitFor(() =>
+    expect(workflowRequest).toHaveBeenCalledWith(
+      'shoot',
+      '/config',
+      'PUT',
+      expect.objectContaining({ config: expect.objectContaining({ additionalPrice: 2500 }) }),
+    ),
+  );
+});
 it('assigns a chapter without overwriting existing photographer or camera-clock values', async () => {
   render(PhotographyWorkflow, { shoot, panel: 'intake' });
   await screen.findByRole('heading', { name: 'Assemble selected captures' });

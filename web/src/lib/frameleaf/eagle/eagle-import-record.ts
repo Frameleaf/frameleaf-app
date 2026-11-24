@@ -39,6 +39,8 @@ export interface EagleImportStore {
   /** Imports this account has not finished, newest first. */
   unfinished(ownerId: string): Promise<EagleImportSaved[]>;
   remove(key: string): Promise<void>;
+  /** FL-1771: drops every record another account left in this browser; this account's stay resumable. */
+  removeOtherAccounts(ownerId: string): Promise<void>;
 }
 
 const newestFirst = (a: EagleImportSaved, b: EagleImportSaved) => b.record.updatedAt.localeCompare(a.record.updatedAt);
@@ -71,6 +73,14 @@ export function memoryEagleImportStore(): EagleImportStore {
     remove: (key) => {
       records.delete(key);
       outcomes.delete(key);
+      return Promise.resolve();
+    },
+    removeOtherAccounts: (ownerId) => {
+      const others = [...records.values()].filter((record) => record.ownerId !== ownerId);
+      for (const { key } of others) {
+        records.delete(key);
+        outcomes.delete(key);
+      }
       return Promise.resolve();
     },
   };
@@ -172,6 +182,29 @@ export function indexedDbEagleImportStore(factory: IDBFactory = indexedDB): Eagl
       });
       await done(transaction);
     },
+    async removeOtherAccounts(ownerId) {
+      const database = await open();
+      const transaction = database.transaction([IMPORTS, ITEMS], 'readwrite');
+      const imports = transaction.objectStore(IMPORTS);
+      const items = transaction.objectStore(ITEMS);
+      const all = imports.getAll();
+      // Deleted inside the success callbacks, so every row goes in the same transaction.
+      all.addEventListener('success', () => {
+        for (const record of all.result as EagleImportRecord[]) {
+          if (record.ownerId === ownerId) {
+            continue;
+          }
+          imports.delete(record.key);
+          const keys = items.index('key').getAllKeys(IDBKeyRange.only(record.key));
+          keys.addEventListener('success', () => {
+            for (const primary of keys.result) {
+              items.delete(primary);
+            }
+          });
+        }
+      });
+      await done(transaction);
+    },
   };
 }
 
@@ -179,3 +212,22 @@ let shared: EagleImportStore | undefined;
 /** The store this browser uses: IndexedDB where it works, memory otherwise. */
 export const eagleImportStore = (): EagleImportStore =>
   (shared ??= typeof indexedDB === 'undefined' ? memoryEagleImportStore() : indexedDbEagleImportStore());
+
+/**
+ * FL-1771: when an account signs in, the Eagle import records another account left in this browser
+ * (library, collection and tag names and ids) are deleted. The signed-in account keeps its own, so a
+ * paused import still carries on after signing out and back in. A browser that never imported from
+ * Eagle is left without the database.
+ */
+export const forgetOtherAccountsEagleImports = async (ownerId: string): Promise<void> => {
+  if (typeof indexedDB === 'undefined') {
+    return shared?.removeOtherAccounts(ownerId);
+  }
+  if (!shared && typeof indexedDB.databases === 'function') {
+    const databases = await indexedDB.databases();
+    if (databases.every(({ name }) => name !== DATABASE)) {
+      return;
+    }
+  }
+  await eagleImportStore().removeOtherAccounts(ownerId);
+};

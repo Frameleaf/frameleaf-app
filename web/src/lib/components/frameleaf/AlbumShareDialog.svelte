@@ -102,9 +102,12 @@
    * offered again, and withdrawn at once (an offer, not a membership).
    */
   let invited = $state<SharedSpaceMemberResponseDto[]>([]);
+  /** The space `invited` was read for. */
+  let invitedFor: string | undefined;
   const loadInvited = async () => {
     if (album.kind !== AlbumKind.Space) {
       invited = [];
+      invitedFor = undefined;
       return;
     }
     const id = album.id;
@@ -112,9 +115,12 @@
       const { members } = await getSharedSpaceMembers({ id });
       if (id === album.id) {
         invited = members.filter(({ pending }) => pending);
+        invitedFor = id;
       }
     } catch {
-      if (id === album.id) {
+      // FL-1771: a failed re-read keeps the invitations already shown for this space, so the people
+      // waiting on them are not offered for a second invitation
+      if (id === album.id && invitedFor !== id) {
         invited = [];
       }
     }

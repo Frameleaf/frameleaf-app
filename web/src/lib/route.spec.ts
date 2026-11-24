@@ -181,6 +181,18 @@ describe('Route', () => {
       expect(Route.setupContinue('/albums?x=1#y', 'https://photos.example.com/')).toBe('/albums?x=1#y');
     });
 
+    it('should land first-time setup on the Allow pages but no other sign-in page (FL-1771)', () => {
+      const base = 'https://photos.example.com/';
+      expect(Route.setupContinue('/auth/allow-app?client_id=app', base)).toBe('/auth/allow-app?client_id=app');
+      expect(Route.setupContinue('/auth/allow-extension?x=1', base)).toBe('/auth/allow-extension?x=1');
+      expect(Route.setupContinue('/auth/%61llow-app?client_id=app', base)).toBe('/auth/%61llow-app?client_id=app');
+      expect(Route.setupContinue('/auth/onboarding', base)).toBe('/photos');
+      expect(Route.setupContinue('/auth/allow-app/../logout', base)).toBe('/photos');
+      // another host's address keeps only its path, here
+      expect(Route.setupContinue('//evil.example/auth/allow-app', base)).toBe('/auth/allow-app');
+      expect(Route.setupContinue('/auth', base)).toBe('/photos');
+    });
+
     it('should keep paths that only start with auth', () => {
       expect(Route.continue('/authors', '/fallback')).property('href', 'https://photos.example.com/authors');
     });

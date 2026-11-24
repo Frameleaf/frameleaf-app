@@ -303,11 +303,13 @@ export const Route = {
   /**
    * FL-146: the in-app page to land on after first-time setup, as a path. The Library when the target
    * is another sign-in page (setup again, logout) or a path the router would read as another host.
+   * The extension's and connected apps' Allow pages go through, as for `continue` (FL-1771): a forced
+   * password change or onboarding no longer loses the request; the page still asks for Allow.
    */
   setupContinue: (target: string | URL, base: string | URL): string => {
     const resolved = new URL(String(target), base);
     const path = routerPath(resolved.pathname);
-    return path === null || /^\/(?:[/\\]|auth(?:\/|$))/.test(path)
+    return path === null || /^\/[/\\]/.test(path) || isSignInPage(resolved.pathname)
       ? '/photos'
       : resolved.pathname + resolved.search + resolved.hash;
   },

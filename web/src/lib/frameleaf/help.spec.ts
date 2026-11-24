@@ -165,6 +165,16 @@ describe('renderHelpArticle', () => {
     ]);
   });
 
+  it('loads images from the help website only (FL-1771)', () => {
+    const element = render(
+      '![here](/shots/a.jpg)\n\n![full](https://frameleaf.app/shots/b.png)\n\n![elsewhere](https://tracker.example/pixel.gif)\n\n![sub](https://cdn.frameleaf.app/c.png)',
+    );
+    expect([...element.querySelectorAll('img')].map((image) => image.getAttribute('src'))).toEqual([
+      'https://frameleaf.app/shots/a.jpg',
+      'https://frameleaf.app/shots/b.png',
+    ]);
+  });
+
   it('turns asides into asides and never lets markup through', () => {
     const element = render(
       ':::caution[Nothing falls back silently]\nA job is **refused**.\n:::\n\n<script>alert(1)</script><img src="/shots/a.jpg" onerror="alert(1)"><img src="javascript:alert(1)">\n\n[x](javascript:alert(1))',

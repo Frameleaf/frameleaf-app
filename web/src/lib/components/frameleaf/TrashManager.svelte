@@ -167,8 +167,13 @@
   const typedConfirmation = $derived(
     !!review && (review.action === TrashReviewAction.Empty || review.count >= TYPED_CONFIRMATION_FROM),
   );
+  /** FL-1771: the server refused this review's token (the items changed); only a new review can delete. */
+  let reviewStale = $state(false);
   const canConfirm = $derived(
-    !!review && !busy && (!typedConfirmation || matchesTyped(deleteConfirmationPhrase(review.count), confirmation)),
+    !!review &&
+      !busy &&
+      !reviewStale &&
+      (!typedConfirmation || matchesTyped(deleteConfirmationPhrase(review.count), confirmation)),
   );
   let gridElement = $state<HTMLElement>();
   /** Above this many rows at once, they are simply removed: a move that large is noise. */
@@ -477,6 +482,7 @@
         return;
       }
       review = { ...reviewed, ids };
+      reviewStale = false;
       confirmation = '';
       reviewError = '';
       reviewOpen = true;
@@ -515,6 +521,7 @@
       undoIds = null;
     } catch (error_) {
       reviewError = failureMessage(error_);
+      reviewStale = review === current && isStaleReview(error_);
     } finally {
       busy = false;
       void refresh();
