@@ -1153,6 +1153,8 @@ describe(MediaService.name, () => {
 
       await expect(sut.handleGenerateThumbnails({ id: asset.id })).resolves.toBe(JobStatus.Skipped);
       expect(mocks.job.queue).not.toHaveBeenCalledWith(expect.objectContaining({ name: JobName.MediaHealthFixAsset }));
+      // recorded, so catching up leaves it alone until the original changes
+      expect(mocks.assetJob.setNoPicture).toHaveBeenCalledWith(asset.id, asset.checksum);
     });
 
     it('should wrap probe failures with a descriptive error preserving the cause', async () => {
@@ -3991,7 +3993,7 @@ describe(MediaService.name, () => {
   });
 
   describe('durable video selection', () => {
-    it.each([true, undefined])('materializes selected video IDs (force=%s)', async (force) => {
+    it.each([true, false])('materializes selected video IDs (force=%s)', async (force) => {
       const query = {};
       mocks.assetJob.selectionForVideoConversion.mockReturnValue(query as never);
       await sut.handleQueueVideoConversion({ force });
@@ -4001,9 +4003,13 @@ describe(MediaService.name, () => {
         force ? undefined : expect.stringMatching(/^[\da-f]{64}$/),
       );
       expect(mocks.job.queueSelection).toHaveBeenCalledWith(JobName.AssetEncodeVideo, query);
-      // FL-650: every video's seek-bar previews, which are a cache hit where they exist
-      expect(mocks.assetJob.selectionForVideoConversion).toHaveBeenCalledWith(true);
-      expect(mocks.job.queueSelection).toHaveBeenCalledWith(JobName.AssetWarmFilmstrip, query);
+      // FL-650: a full rerun warms every video's seek-bar previews; catching up never queues the whole library
+      if (force) {
+        expect(mocks.assetJob.selectionForVideoConversion).toHaveBeenCalledWith(true);
+        expect(mocks.job.queueSelection).toHaveBeenCalledWith(JobName.AssetWarmFilmstrip, query);
+      } else {
+        expect(mocks.job.queueSelection).not.toHaveBeenCalledWith(JobName.AssetWarmFilmstrip, expect.anything());
+      }
       expect(mocks.assetJob.streamForVideoConversion).not.toHaveBeenCalled();
     });
   });
@@ -6083,6 +6089,7 @@ describe(MediaService.name, () => {
       });
 
       await expect(sut.handleVideoConversion({ id: 'video-id' })).resolves.toBe(JobStatus.Skipped);
+      expect(mocks.assetJob.setNoPicture).toHaveBeenCalledWith(asset.id, asset.checksum);
       expect(mocks.media.transcode).not.toHaveBeenCalled();
     });
 
