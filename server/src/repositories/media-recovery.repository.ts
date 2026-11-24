@@ -59,6 +59,8 @@ export type RecoveryResult = {
   outcome: RecoveryOutcome;
   assetId?: string;
   reason?: string;
+  /** Library photos with the same file, for review to show while the item waits. */
+  matchAssetIds?: string[];
 };
 export type RecoveryResource = {
   role: string;

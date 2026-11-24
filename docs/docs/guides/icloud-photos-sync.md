@@ -57,13 +57,14 @@ See [Recover missing or corrupt media](media-recovery.md) for the full workflow 
 
 Photos hidden in iCloud always import and go to your Locked photos. They never wait for review, and saving a connection does not ask for your PIN.
 
+A photo whose file is already in your library, even more than once, links to the copy you can see. It never waits for review, and no copy is added.
+
 When a sync can't settle a photo by itself, the connection shows how many need a look. **Review photos** opens each one with its reason. You can filter by reason, then accept one photo in the large view, a whole page, or all of them. Mark a photo **Later** to keep it out of an accept.
 
-| Reason                                 | What Accept does                                                |
-| -------------------------------------- | --------------------------------------------------------------- |
-| More than one photo has the same bytes | Uses the matching photo in your library. No copy is added.      |
-| Storage full                           | Tries the photo again.                                          |
-| Anything else                          | Keeps what's in Frameleaf now and stops asking for that reason. |
+| Reason        | What Accept does                                                |
+| ------------- | --------------------------------------------------------------- |
+| Storage full  | Tries the photo again.                                          |
+| Anything else | Keeps what's in Frameleaf now and stops asking for that reason. |
 
 Accepting never deletes anything. Locked photos in review appear after you unlock.
 
