@@ -267,13 +267,13 @@ async def qualify(
             raise ValueError("native_engine_qualification_not_supported")
         from frameleaf_ml.native_qwen import binary_sha256, predict_qwen, verify_qwen
 
-        verify_qwen(spec, cache_dir)
+        model = verify_qwen(spec, cache_dir)
         binary = binary_sha256()
         samples = []
         build = None
         for _ in range(2):
             start = perf_counter()
-            output, observed_build = await predict_qwen(cache_dir, data, binary)
+            output, observed_build = await predict_qwen(cache_dir, model, data, binary)
             samples.append((perf_counter() - start) * 1000)
             compare_output(output, spec.expected_output)
             if build is not None and observed_build != build:

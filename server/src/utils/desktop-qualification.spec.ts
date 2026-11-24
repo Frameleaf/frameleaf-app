@@ -342,3 +342,57 @@ it('accepts an OpenVINO accelerator report like CUDA, with no device collector, 
     ),
   ).toThrow();
 });
+
+describe('FD-31 Qwen description qualification', () => {
+  const qwen = parseDesktopModelCatalogue({
+    schemaVersion: 1,
+    epoch: 19,
+    profiles: [JSON.parse(readFileSync('test/fixtures/desktop-description-profile.json', 'utf8'))],
+  }).profiles[0];
+  const qwenChallenge = createDesktopModelChallenge(qwen, id);
+  const qwenRuntime = { ...runtime, sourceRevision: qwen.runtimeSourceRevision, provider: qwen.spec.provider };
+  const qwenReport = () => ({
+    protocolVersion: 1,
+    engine: 'qwen-gguf',
+    modelKey: qwen.modelKey,
+    provider: 'CPUExecutionProvider',
+    preprocessingSha256: qwen.spec.preprocessingSha256,
+    fixtureSha256: qwen.spec.fixtureSha256,
+    bindingSha256: qwenChallenge.bindingSha256,
+    runtime: facts,
+    runtimeFingerprint: fingerprint,
+    reason: null,
+    state: 'ready-cpu',
+    qwenExecution: { build: 'b11146-7fe450e19', binarySha256: 'c'.repeat(64), coldMilliseconds: [9000, 8000] },
+  });
+
+  it('seals a receipt for two cold llama.cpp runs of the bound model', () => {
+    const receipt = DesktopQualificationReceipt.validate(qwenReport(), qwen, qwenChallenge, qwenRuntime);
+    expect(receipt.modelKey).toBe(qwen.modelKey);
+    expect(receipt.bindingSha256).toBe(qwenChallenge.bindingSha256);
+  });
+
+  it('refuses an ONNX report, another build, one run, a slow run or a stale binding', () => {
+    const original = qwenReport();
+    const cases: unknown[] = [
+      report(),
+      { ...original, engine: 'onnx' },
+      { ...original, qwenExecution: { ...original.qwenExecution, build: 'b11146-000000000' } },
+      { ...original, qwenExecution: { ...original.qwenExecution, coldMilliseconds: [9000] } },
+      { ...original, qwenExecution: { ...original.qwenExecution, coldMilliseconds: [9000, 121_000] } },
+      { ...original, bindingSha256: 'b'.repeat(64) },
+      { ...original, state: 'ready-accelerator' },
+      { ...original, execution: [] },
+    ];
+    for (const value of cases)
+      expect(() => DesktopQualificationReceipt.validate(value, qwen, qwenChallenge, qwenRuntime)).toThrow();
+    // An ONNX profile never accepts a Qwen report.
+    expect(() => DesktopQualificationReceipt.validate(original, profile, challenge, runtime)).toThrow();
+    expect(() =>
+      DesktopQualificationReceipt.validate(original, qwen, qwenChallenge, {
+        ...qwenRuntime,
+        collectorSha256: 'd'.repeat(64),
+      }),
+    ).toThrow();
+  });
+});

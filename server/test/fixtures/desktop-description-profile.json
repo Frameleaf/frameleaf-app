@@ -1,0 +1,56 @@
+{
+  "modelKey": "description:62c68b4984ece07f5c0ccdcaab869646db1f50119fc2b33e9f7e96b55bc250a6",
+  "modelName": "Qwen2.5-VL-7B-Instruct",
+  "workload": "description",
+  "runtimeSourceRevision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "modelSnapshotRevision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "spec": {
+    "protocolVersion": 1,
+    "engine": "qwen-gguf",
+    "modelKey": "description:62c68b4984ece07f5c0ccdcaab869646db1f50119fc2b33e9f7e96b55bc250a6",
+    "provider": "CPUExecutionProvider",
+    "models": [
+      {
+        "name": "Qwen2.5-VL-7B-Instruct",
+        "task": "image-description-tagging",
+        "type": "visual",
+        "artifacts": {
+          "models--frameleaf--Qwen2.5-VL-7B-Instruct/refs/main": "e33cdf9c7f7120b98e8c78408953e07f2ecd183006b5606df349b4c212acf43e",
+          "visual/mmproj.gguf": "0f12166cd5d87ffdea9fac1f51ec96cb283f95e1e6b6dc35e14e15f2bad2ff69",
+          "visual/model.gguf": "9372c470eeadd5ecd9c3c74c2b3cb633f8e2f2fad799250a0f70d652b6b825e4"
+        }
+      }
+    ],
+    "entries": {
+      "image-description-tagging": {
+        "visual": {
+          "modelName": "Qwen2.5-VL-7B-Instruct",
+          "options": {}
+        }
+      }
+    },
+    "preprocessingSha256": "da8c96152217e62074a0fc35919bd532fbd5463b0e3e3ac62cf2fbdf5f2d24e4",
+    "fixtureFile": "fixture.png",
+    "fixtureKind": "image",
+    "fixtureSha256": "becf0cf30d6978325d9ccdea315923e2dbbf7e591c2857b92b5f82e41957bb98",
+    "expectedOutput": {
+      "image-description-tagging": {
+        "description": "A red square.",
+        "people": [],
+        "environment": "",
+        "objects": [],
+        "visible_text": [],
+        "context": "",
+        "tags": []
+      }
+    },
+    "minMemoryBytes": 8589934592,
+    "deadlineSeconds": 120
+  },
+  "fixtureBase64": "iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAIAAAD8GO2jAAAAKElEQVR4nO3NsQ0AAAzCMP5/un0CNkuZ41wybXsHAAAAAAAAAAAAxR4yw/wuPL6QkAAAAABJRU5ErkJggg==",
+  "artifactBytes": {
+    "models--frameleaf--Qwen2.5-VL-7B-Instruct/refs/main": 40,
+    "visual/mmproj.gguf": 9,
+    "visual/model.gguf": 5
+  }
+}

@@ -121,7 +121,7 @@ export type LocalPinnedModel = {
   modelKey: string;
   modelName: string;
   /** The catalogue's workloads; a Cloud pin is only ever `clip` or `face`. */
-  workload: 'clip' | 'face' | 'ocr';
+  workload: 'clip' | 'face' | 'ocr' | 'description';
   modelSnapshotRevision: string;
   embeddingDimensions?: number;
   artifactBytes: Record<string, number>;

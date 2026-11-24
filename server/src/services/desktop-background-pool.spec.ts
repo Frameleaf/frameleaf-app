@@ -277,7 +277,12 @@ describe('extra jobs a queue starts for desktops', () => {
       ]),
     );
     expect(await service.queueCapacity('smartSearch')).toBe(0);
-    expect(broker.helperCapacity).toHaveBeenCalledWith({ smartSearch: [], faceDetection: [], ocr: [] });
+    expect(broker.helperCapacity).toHaveBeenCalledWith({
+      smartSearch: [],
+      faceDetection: [],
+      ocr: [],
+      imageDescription: [],
+    });
     expect(ml.desktopModelKeys).not.toHaveBeenCalled();
   });
 
@@ -300,6 +305,7 @@ describe('extra jobs a queue starts for desktops', () => {
       smartSearch: ['clip-key'],
       faceDetection: ['face-key'],
       ocr: [],
+      imageDescription: [],
     });
     // read at most every two seconds for all queues, then again
     vi.spyOn(performance, 'now').mockReturnValue(performance.now() + 2500);

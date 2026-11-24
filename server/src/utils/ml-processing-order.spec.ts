@@ -93,7 +93,12 @@ describe('processing order (FL-456)', () => {
           overrides: {},
         },
       });
-      expect(candidates.map(({ source }) => source)).toEqual([MlProcessingSource.Cloud, MlProcessingSource.Local]);
+      // FD-31: descriptions may go to the desktop helpers too
+      expect(candidates.map(({ source }) => source)).toEqual([
+        MlProcessingSource.Cloud,
+        MlProcessingSource.Local,
+        MlProcessingSource.Desktops,
+      ]);
       expect(firstCandidate(candidates)?.destinationId).toBe(cloud.id);
     });
 
@@ -203,10 +208,10 @@ describe('processing order (FL-456)', () => {
       expect(candidates).toEqual([]);
     });
 
-    it('offers the desktop helpers for search, faces and text, whichever route sent the work home', () => {
+    it('offers the desktop helpers for search, faces, text and descriptions, whichever route sent the work home', () => {
       const pool = (input: Partial<MlRoutePlanInput>) => plan(input).filter(({ desktopPool }) => desktopPool);
       expect(pool({ workload: MlWorkload.Ocr })).toHaveLength(1);
-      expect(pool({ workload: MlWorkload.Enrichment })).toHaveLength(0);
+      expect(pool({ workload: MlWorkload.Enrichment })).toHaveLength(1);
       expect(pool({ storedRoute: undefined })).toHaveLength(0);
       expect(pool({ desktopsReady: false })).toEqual([expect.objectContaining({ available: false })]);
       // a legacy route follows the main order; its desktops stand in for the destination it names
@@ -262,7 +267,8 @@ describe('processing order (FL-456)', () => {
         destinations: [local, second],
         storedRoute: { destinationId: second.id, origin: 'pinned' },
       });
-      expect(candidates.map(({ destinationId }) => destinationId)).toEqual([second.id, local.id]);
+      // the desktop helpers stand in for the destination the route names
+      expect(candidates.map(({ destinationId }) => destinationId)).toEqual([second.id, local.id, second.id]);
     });
   });
 

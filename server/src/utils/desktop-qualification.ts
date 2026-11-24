@@ -73,9 +73,72 @@ const reportSchema = z.strictObject({
     .min(1)
     .max(64),
 });
+// FD-31: a description runs in the runtime's llama.cpp process (native_qualification.py), which reports
+// its build, the digest of the binary it ran and two cold runs (each prediction owns its own process).
+const qwenReportSchema = z.strictObject({
+  protocolVersion: z.literal(1),
+  engine: z.literal('qwen-gguf'),
+  modelKey: z.string().max(256),
+  provider: z.literal('CPUExecutionProvider'),
+  preprocessingSha256: digest,
+  fixtureSha256: digest,
+  bindingSha256: digest,
+  runtimeFingerprint: digest,
+  runtime: factsSchema,
+  reason: z.null(),
+  state: z.literal('ready-cpu'),
+  qwenExecution: z.strictObject({
+    build: z.string().regex(/^b[0-9]{1,9}-7fe450e19[a-f0-9]{0,31}$/),
+    binarySha256: digest,
+    coldMilliseconds: z.tuple([z.number().min(0).max(600_000), z.number().min(0).max(600_000)]),
+  }),
+});
 const profilesSchema = z.object({
   profiles: z.record(z.string(), z.object({ python: z.string(), provider: z.string(), targets: z.array(z.string()) })),
 });
+
+/** The runtime facts both report shapes carry: they are the attested runtime's, on a computer that can run the profile. */
+function assertRuntimeFacts(
+  report: { runtime: z.infer<typeof factsSchema>; runtimeFingerprint: string; provider: string },
+  profile: DesktopModelProfile,
+  runtime: DesktopRuntimeIdentity,
+) {
+  const invalid = () => new Error('desktop_qualification_invalid');
+  const facts = report.runtime;
+  // Python's stable-fact encoder sorts keys and escapes non-ASCII UTF-16 code units.
+  // Python escapes UTF-16 code units, including DEL and each surrogate separately.
+  const encoded = canonicalJson(facts).replaceAll(
+    // eslint-disable-next-line unicorn/prefer-unicode-code-point-escapes
+    /[\u007F-\uFFFF]/g,
+    (character) => String.raw`\u` + character.codePointAt(0)!.toString(16).padStart(4, '0'),
+  );
+  const platform = { Darwin: 'macos', Linux: 'linux', Windows: 'windows' }[facts.system];
+  const architecture = { arm64: 'aarch64', aarch64: 'aarch64', x86_64: 'x86_64', AMD64: 'x86_64' }[facts.architecture];
+  const approved = profilesSchema.parse(
+    JSON.parse(readFileSync(join(import.meta.dirname, '../../resources/desktop/runtime-profiles.json'), 'utf8')),
+  ).profiles;
+  if (
+    sha(encoded) !== report.runtimeFingerprint ||
+    platform !== runtime.platform ||
+    architecture !== runtime.architecture ||
+    facts.totalMemoryBytes < profile.spec.minMemoryBytes ||
+    canonicalJson([...new Set(facts.providers)].sort()) !== canonicalJson(facts.providers) ||
+    !facts.providers.includes(report.provider) ||
+    Object.values(approved).every(
+      (item) =>
+        !(
+          item.provider === runtime.provider &&
+          item.python === facts.python &&
+          item.targets.includes(`${platform}-${architecture}`)
+        ),
+    ) ||
+    // each provider's runtime ships onnxruntime under its own package name
+    ![facts.packages.onnxruntime, facts.packages['onnxruntime-gpu'], facts.packages['onnxruntime-openvino']].includes(
+      facts.ort,
+    )
+  )
+    throw invalid();
+}
 
 /** A sealed, validated receipt; recording it does not authorize a model grant. */
 export class DesktopQualificationReceipt {
@@ -97,6 +160,8 @@ export class DesktopQualificationReceipt {
     runtime: DesktopRuntimeIdentity,
   ): DesktopQualificationReceipt {
     const invalid = () => new Error('desktop_qualification_invalid');
+    if (profile.spec.engine === 'qwen-gguf')
+      return DesktopQualificationReceipt.validateQwen(value, profile, challenge, runtime);
     const report = reportSchema.parse(value);
     const spec: unknown = JSON.parse(challenge.specJson);
     const filename = z.object({ fixtureFile: z.string() }).parse(spec).fixtureFile;
@@ -116,41 +181,7 @@ export class DesktopQualificationReceipt {
     )
       throw invalid();
     const facts = report.runtime;
-    // Python's stable-fact encoder sorts keys and escapes non-ASCII UTF-16 code units.
-    // Python escapes UTF-16 code units, including DEL and each surrogate separately.
-    const encoded = canonicalJson(facts).replaceAll(
-      // eslint-disable-next-line unicorn/prefer-unicode-code-point-escapes
-      /[\u007F-\uFFFF]/g,
-      (character) => String.raw`\u` + character.codePointAt(0)!.toString(16).padStart(4, '0'),
-    );
-    const platform = { Darwin: 'macos', Linux: 'linux', Windows: 'windows' }[facts.system];
-    const architecture = { arm64: 'aarch64', aarch64: 'aarch64', x86_64: 'x86_64', AMD64: 'x86_64' }[
-      facts.architecture
-    ];
-    const approved = profilesSchema.parse(
-      JSON.parse(readFileSync(join(import.meta.dirname, '../../resources/desktop/runtime-profiles.json'), 'utf8')),
-    ).profiles;
-    if (
-      sha(encoded) !== report.runtimeFingerprint ||
-      platform !== runtime.platform ||
-      architecture !== runtime.architecture ||
-      facts.totalMemoryBytes < profile.spec.minMemoryBytes ||
-      canonicalJson([...new Set(facts.providers)].sort()) !== canonicalJson(facts.providers) ||
-      !facts.providers.includes(report.provider) ||
-      Object.values(approved).every(
-        (item) =>
-          !(
-            item.provider === runtime.provider &&
-            item.python === facts.python &&
-            item.targets.includes(`${platform}-${architecture}`)
-          ),
-      ) ||
-      // each provider's runtime ships onnxruntime under its own package name
-      ![facts.packages.onnxruntime, facts.packages['onnxruntime-gpu'], facts.packages['onnxruntime-openvino']].includes(
-        facts.ort,
-      )
-    )
-      throw invalid();
+    assertRuntimeFacts(report, profile, runtime);
     const provider = report.provider;
     // OpenVINO (Intel graphics) qualifies like CUDA: a plain accelerator report with no signed device
     // collector, from a computer that has the device; CoreML keeps its signed-collector proof and stays macOS-only.
@@ -200,6 +231,44 @@ export class DesktopQualificationReceipt {
         !facts.openvinoDevices?.some((device) => device.toUpperCase().startsWith('GPU')))
     )
       throw invalid();
+    return new DesktopQualificationReceipt(
+      sha(canonicalJson(report)),
+      report.runtimeFingerprint,
+      report.bindingSha256,
+      runtime.manifestSha256,
+      profile.modelKey,
+      sha(canonicalJson(profile)),
+    );
+  }
+
+  private static validateQwen(
+    value: unknown,
+    profile: DesktopModelProfile,
+    challenge: Challenge,
+    runtime: DesktopRuntimeIdentity,
+  ): DesktopQualificationReceipt {
+    const invalid = () => new Error('desktop_qualification_invalid');
+    const report = qwenReportSchema.parse(value);
+    const spec: unknown = JSON.parse(challenge.specJson);
+    const filename = z.object({ fixtureFile: z.string() }).parse(spec).fixtureFile;
+    const expected = createDesktopModelChallenge(profile, filename.slice(0, 36));
+    const [first, second] = report.qwenExecution.coldMilliseconds;
+    if (
+      canonicalJson(expected) !== canonicalJson(challenge) ||
+      runtime.sourceRevision !== profile.runtimeSourceRevision ||
+      runtime.provider !== profile.spec.provider ||
+      !/^[a-f0-9]{64}$/.test(runtime.manifestSha256) ||
+      report.bindingSha256 !== challenge.bindingSha256 ||
+      report.modelKey !== profile.modelKey ||
+      report.provider !== profile.spec.provider ||
+      report.preprocessingSha256 !== profile.spec.preprocessingSha256 ||
+      report.fixtureSha256 !== profile.spec.fixtureSha256 ||
+      Math.max(first, second) > profile.spec.deadlineSeconds * 1000 ||
+      // A processor runtime has no device collector; Desktop has already matched the binary to its signed manifest.
+      runtime.collectorSha256
+    )
+      throw invalid();
+    assertRuntimeFacts(report, profile, runtime);
     return new DesktopQualificationReceipt(
       sha(canonicalJson(report)),
       report.runtimeFingerprint,

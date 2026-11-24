@@ -1234,6 +1234,7 @@ export class ImageEnrichmentService extends BaseService {
           JobName.ImageDescription,
           id,
           options,
+          true,
         );
         destinationId = selection.destinationId;
         result = await this.machineLearningRepository.describeImage(
@@ -1789,6 +1790,7 @@ export class ImageEnrichmentService extends BaseService {
     jobName: JobName,
     assetId: string,
     options: EnrichmentRunOptions,
+    description = false,
   ) {
     const destinationId = workload === MlWorkload.Clip ? options.searchDestinationId : options.enrichmentDestinationId;
     const jobId = options.jobId ?? assetId;
@@ -1797,9 +1799,10 @@ export class ImageEnrichmentService extends BaseService {
     }
     // FL-1484: the photo's owner may keep their photos at home
     const ownerId = await this.assetJobRepository.getOwnerId(assetId);
+    const request = { workload, jobId, jobName, ownerId, ...(description && { description }) };
     return destinationId
-      ? this.selectMlDestination({ workload, destinationId, jobId, jobName, ownerId })
-      : this.selectRoutedMlDestination({ workload, jobId, jobName, ownerId });
+      ? this.selectMlDestination({ ...request, destinationId })
+      : this.selectRoutedMlDestination(request);
   }
   /** Reusable frames (FL-59), on the injected database. Tests hand one in with `useVideoMomentRepository`. */
   private _videoMoments?: VideoMomentRepository;
