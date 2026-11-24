@@ -9,6 +9,7 @@ import { EventRepository } from 'src/repositories/event.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { PartnerOriginRepository } from 'src/repositories/partner-origin.repository.js';
+import { SessionRepository } from 'src/repositories/session.repository.js';
 import { WebsocketRepository } from 'src/repositories/websocket.repository.js';
 import { DB } from 'src/schema/index.js';
 import { AssetService } from 'src/services/asset.service.js';
@@ -31,7 +32,7 @@ describe('Matched import metadata fills', () => {
     StorageCore.setMediaLocation('/frameleaf-medium-media');
     const { sut, ctx } = newMediumService(AssetService, {
       database: db,
-      real: [AssetRepository, AccessRepository, PartnerOriginRepository, DatabaseRepository],
+      real: [SessionRepository, AssetRepository, AccessRepository, PartnerOriginRepository, DatabaseRepository],
       mock: [EventRepository, JobRepository, LoggingRepository, WebsocketRepository],
     });
     ctx.getMock(EventRepository).emit.mockResolvedValue();

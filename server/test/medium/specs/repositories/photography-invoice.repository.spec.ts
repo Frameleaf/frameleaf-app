@@ -93,12 +93,15 @@ it('moves to part-paid then paid, refuses an overpayment, and stops reminders on
   expect(await repository.update(user.id, id, values())).toBe(false); // money recorded: no edits
   expect(await repository.recordManual(user.id, id, 20_000)).toBe(true);
   expect(await repository.get(user.id, id)).toMatchObject({ status: 'paid', paid: 30_000 });
-  expect(await repository.remindable('2027-06-22')).toEqual([]);
+  // reminders are found across every owner, and earlier tests leave invoices of their own
+  const mine = async () =>
+    (await repository.remindable('2027-06-22')).filter((row) => row.ownerId === user.id).map((row) => row.id);
+  expect(await mine()).toEqual([]);
 
   const voided = await repository.create(user.id, values());
   await repository.send(user.id, voided, sha256('voided'));
-  expect((await repository.remindable('2027-06-22')).map((row) => row.id)).toEqual([voided]);
+  expect(await mine()).toEqual([voided]);
   await repository.void(user.id, voided);
   expect(await repository.byToken(sha256('voided'))).toBeUndefined();
-  expect(await repository.remindable('2027-06-22')).toEqual([]);
+  expect(await mine()).toEqual([]);
 });

@@ -6,6 +6,7 @@ import { EventRepository } from 'src/repositories/event.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { PersonRepository } from 'src/repositories/person.repository.js';
+import { SessionRepository } from 'src/repositories/session.repository.js';
 import { StackRepository } from 'src/repositories/stack.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
 import { WebsocketRepository } from 'src/repositories/websocket.repository.js';
@@ -20,7 +21,7 @@ let defaultDatabase: Kysely<DB>;
 const setup = (db?: Kysely<DB>) => {
   const { sut, ctx } = newMediumService(StackService, {
     database: db || defaultDatabase,
-    real: [AccessRepository, AssetRepository, PersonRepository, StackRepository, UserRepository],
+    real: [SessionRepository, AccessRepository, AssetRepository, PersonRepository, StackRepository, UserRepository],
     mock: [EventRepository, JobRepository, LoggingRepository, WebsocketRepository],
   });
 

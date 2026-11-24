@@ -806,7 +806,9 @@ export const deleteFiles = async (uploaded: Asset[], duplicates: Asset[], option
     deletionProgress.stop();
   }
   if (keptSidecars.size > 0) {
-    console.log(`Kept ${keptSidecars.size} XMP sidecar${s(keptSidecars.size)} of duplicates, which the server doesn't have`);
+    console.log(
+      `Kept ${keptSidecars.size} XMP sidecar${s(keptSidecars.size)} of duplicates, which the server doesn't have`,
+    );
   }
 };
 
