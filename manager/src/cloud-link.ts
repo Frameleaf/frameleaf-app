@@ -2,7 +2,7 @@
 // sign-in that proves possession of its key on every request, and the calls Server Backup needs.
 // The contract is frameleaf-cloud's `docs/instance-contract.md` and `docs/cloud-backup.md` (FC-284, FC-286, FC-287).
 // The photo server has its own link; nothing here uses it or its key.
-import { createHash, createPrivateKey, createPublicKey, generateKeyPairSync, randomBytes, randomUUID, sign } from 'node:crypto';
+import { createHash, createPrivateKey, createPublicKey, generateKeyPairSync, randomBytes, randomUUID, sign, verify } from 'node:crypto';
 import { z } from 'zod';
 
 export const REPOSITORY_FORMAT = 'frameleaf-repository/1';
@@ -131,6 +131,67 @@ const Purge = z.object({
   cancellable: z.boolean(),
 });
 export type Purge = z.infer<typeof Purge>;
+
+const Digest = z.string().regex(/^[0-9a-f]{64}$/);
+export const SnapshotRecord = z.object({
+  descriptor: z.object({
+    version: z.literal(2),
+    instanceId: z.string(),
+    vaultId: z.string(),
+    snapshotId: z.string(),
+    sequence: z.number().int().min(1),
+    previousDigest: Digest.nullable(),
+    createdAt: z.string(),
+    manifest: z.object({
+      format: z.string(),
+      formatVersion: z.number().int(),
+      keyVersion: z.number().int(),
+      objectKey: z.string(),
+      versionId: z.string(),
+      ciphertextSha256: z.string().nullable(),
+    }),
+    signerKid: z.string(),
+  }),
+  signature: z.string(),
+  digest: Digest,
+});
+export type SnapshotRecord = z.infer<typeof SnapshotRecord>;
+const SnapshotPage = z.object({
+  snapshots: z.array(SnapshotRecord).max(100),
+  head: z.object({ sequence: z.number().int().min(1), digest: Digest }).nullable(),
+  nextAfterSequence: z.number().int().positive().nullable().optional(),
+});
+
+/** The exact text a history entry's signature and digest cover: these fields in exactly this order. */
+export const snapshotTranscript = (d: SnapshotRecord['descriptor']) =>
+  `frameleaf-backup-snapshot-v2\n${JSON.stringify({
+    version: d.version,
+    instanceId: d.instanceId,
+    vaultId: d.vaultId,
+    snapshotId: d.snapshotId,
+    sequence: d.sequence,
+    previousDigest: d.previousDigest,
+    createdAt: d.createdAt,
+    manifest: {
+      format: d.manifest.format,
+      formatVersion: d.manifest.formatVersion,
+      keyVersion: d.manifest.keyVersion,
+      objectKey: d.manifest.objectKey,
+      versionId: d.manifest.versionId,
+      ciphertextSha256: d.manifest.ciphertextSha256,
+    },
+    signerKid: d.signerKid,
+  })}`;
+
+/** Whether `identity`'s key signed this entry, and the entry's digest is the hash of what was signed. */
+export const signedBy = (identity: Identity, record: SnapshotRecord) => {
+  const transcript = snapshotTranscript(record.descriptor);
+  return (
+    record.descriptor.signerKid === identity.kid &&
+    createHash('sha256').update(transcript).digest('hex') === record.digest &&
+    verify(null, Buffer.from(transcript, 'utf8'), createPublicKey(createPrivateKey(identity.privateKey)), Buffer.from(record.signature, 'base64url'))
+  );
+};
 const Parent = z.object({ parent: z.object({ instanceId: z.string(), name: z.string(), attachedAt: z.string(), follows: z.boolean() }).nullable() });
 
 type Operation = 'upload' | 'restore' | 'prune';
@@ -460,8 +521,13 @@ export class Cloud {
 
   /** The newest entry of this machine's signed history for a vault, or null when there is none yet. */
   async snapshotHead(identity: Identity, vaultId: string) {
-    const answer = await this.call(identity, 'GET', `/v2/backup/snapshots?vaultId=${encodeURIComponent(vaultId)}&afterSequence=0&limit=1`);
-    return z.object({ head: z.object({ sequence: z.number().int().min(1), digest: z.string().regex(/^[0-9a-f]{64}$/) }).nullable() }).parse(answer).head;
+    return (await this.snapshotPage(identity, vaultId, 0, 1)).head;
+  }
+
+  /** Entries of the signed history after `afterSequence`, oldest first, with the newest Cloud reports. */
+  async snapshotPage(identity: Identity, vaultId: string, afterSequence: number, limit = 100) {
+    const answer = await this.call(identity, 'GET', `/v2/backup/snapshots?vaultId=${encodeURIComponent(vaultId)}&afterSequence=${afterSequence}&limit=${limit}`);
+    return SnapshotPage.parse(answer);
   }
 
   /**
@@ -476,7 +542,7 @@ export class Cloud {
     entry: { snapshotId: string; vaultId: string; sequence: number; previousDigest: string | null; objectKey: string; versionId: string; ciphertextSha256: string; keyVersion: number; createdAt: string },
   ) {
     const descriptor = {
-      version: 2,
+      version: 2 as const,
       instanceId: identity.instanceId,
       vaultId: entry.vaultId,
       snapshotId: entry.snapshotId,
@@ -486,8 +552,7 @@ export class Cloud {
       manifest: { format: 'frameleaf-repository', formatVersion: 1, keyVersion: entry.keyVersion, objectKey: entry.objectKey, versionId: entry.versionId, ciphertextSha256: entry.ciphertextSha256 },
       signerKid: identity.kid,
     };
-    // Exactly these fields in exactly this order are what is signed.
-    const transcript = `frameleaf-backup-snapshot-v2\n${JSON.stringify(descriptor)}`;
+    const transcript = snapshotTranscript(descriptor);
     const digest = createHash('sha256').update(transcript).digest('hex');
     const record = z.object({ digest: z.string(), receivedAt: z.string() }).parse(await this.call(identity, 'POST', '/v2/backup/snapshots', { descriptor, signature: signText(identity, transcript) }));
     if (record.digest !== digest) throw new CloudError('cloud_answer_unreadable', null);

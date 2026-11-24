@@ -553,6 +553,11 @@ export class ServerBackup {
         : s3Store({ endpoint: target.endpoint, region: target.region, bucket: target.bucket, prefix: target.prefix, credentials: (renew) => session!.credentials('restore', renew) });
     if ((await store.list('config')).length === 0) throw new Refusal('server_backup_nothing_stored');
     const repository = await Repository.open(store, { rootKey: Buffer.from(rootKey, 'hex') });
+    // FL-1770: the newest backup in Cloud's signed history must still be stored. Retention never removes the
+    // newest, so a missing one was dropped, and an older backup would be shown and restored as the latest.
+    const newest = session?.newest;
+    if (newest && target.kind === 'cloud' && !(await repository.listSnapshots()).some(({ key }) => target.prefix + key === newest.objectKey))
+      throw new Refusal('server_backup_cloud_history_changed', 409);
     await repository.loadIndex();
     return repository;
   }

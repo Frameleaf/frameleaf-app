@@ -287,8 +287,19 @@ export function standIn(options: { old?: boolean } = {}) {
       return answer(200, record);
     }
     if (route === 'GET api/v2/backup/snapshots') {
-      const head = state.chain.at(-1);
-      return answer(200, { snapshots: [], head: head ? { sequence: head.sequence, digest: head.digest } : null, nextAfterSequence: null });
+      // Oldest first, a page at a time, with the newest entry on every page (FC-284).
+      const vaultId = url.searchParams.get('vaultId');
+      const afterSequence = Number(url.searchParams.get('afterSequence') ?? 0);
+      const limit = Number(url.searchParams.get('limit') ?? 100);
+      const shown = state.chain.filter((item) => (item.record as { descriptor: { vaultId: string } }).descriptor.vaultId === vaultId);
+      const head = shown.at(-1);
+      const page = shown.filter((item) => item.sequence > afterSequence).slice(0, limit);
+      const last = page.at(-1);
+      return answer(200, {
+        snapshots: page.map((item) => item.record),
+        head: head ? { sequence: head.sequence, digest: head.digest } : null,
+        nextAfterSequence: last && last.sequence < head!.sequence ? last.sequence : null,
+      });
     }
     if (route === 'POST api/v1/backup/runs')
       return /^r\/v1\/[0-9a-f-]{36}\/s\/\d{12}-[0-9a-f]{16,64}$/.test(json.manifestKey ?? '') || json.manifestKey === null ? answer(200, { ...json, receivedAt: new Date(state.now).toISOString() }) : envelope(422, 'request-invalid');
