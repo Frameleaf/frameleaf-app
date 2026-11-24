@@ -2601,13 +2601,25 @@ describe(AssetService.name, () => {
 
       expect(ctx.getMock(WebsocketRepository).clientSend).toHaveBeenCalledWith(
         'on_asset_update',
-        user.id,
+        expect.any(Array), // the owner's unlocked sessions only (FL-1767)
         expect.objectContaining({ id: primary.id, visibility: AssetVisibility.Locked }),
+      );
+      expect(ctx.getMock(WebsocketRepository).clientSendExcept).toHaveBeenCalledWith(
+        'on_asset_hidden',
+        user.id,
+        expect.any(Array),
+        primary.id,
       );
       expect(ctx.getMock(WebsocketRepository).clientSend).toHaveBeenCalledWith(
         'on_asset_update',
-        user.id,
+        expect.any(Array), // the owner's unlocked sessions only (FL-1767)
         expect.objectContaining({ id: sibling.id, visibility: AssetVisibility.Locked }),
+      );
+      expect(ctx.getMock(WebsocketRepository).clientSendExcept).toHaveBeenCalledWith(
+        'on_asset_hidden',
+        user.id,
+        expect.any(Array),
+        sibling.id,
       );
     });
 
@@ -2624,8 +2636,14 @@ describe(AssetService.name, () => {
 
       expect(ctx.getMock(WebsocketRepository).clientSend).toHaveBeenCalledWith(
         'on_asset_update',
-        user.id,
+        expect.any(Array), // the owner's unlocked sessions only (FL-1767)
         expect.objectContaining({ id: sibling.id, visibility: AssetVisibility.Locked }),
+      );
+      expect(ctx.getMock(WebsocketRepository).clientSendExcept).toHaveBeenCalledWith(
+        'on_asset_hidden',
+        user.id,
+        expect.any(Array),
+        sibling.id,
       );
     });
 
@@ -2641,8 +2659,14 @@ describe(AssetService.name, () => {
       expect(ctx.getMock(WebsocketRepository).clientSend).toHaveBeenCalledTimes(1);
       expect(ctx.getMock(WebsocketRepository).clientSend).toHaveBeenCalledWith(
         'on_asset_update',
-        user.id,
+        expect.any(Array), // the owner's unlocked sessions only (FL-1767)
         expect.objectContaining({ id: asset.id }),
+      );
+      expect(ctx.getMock(WebsocketRepository).clientSendExcept).toHaveBeenCalledWith(
+        'on_asset_hidden',
+        user.id,
+        expect.any(Array),
+        asset.id,
       );
     });
   });
