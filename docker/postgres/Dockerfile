@@ -1,18 +1,10 @@
 # Fresh Frameleaf installations use one PostgreSQL 19 database. The base digest
 # is a multi-platform index containing both amd64 and arm64 images.
-# FL-1683: there is no official postgres:19.0 image yet and PostgreSQL's apt repository has dropped the
-# RC packages, so this takes the official 19 RC 2 image (its entrypoint, users and paths) and upgrades
-# its PostgreSQL 19 packages to the final 19.0 release from the same repository.
-ARG POSTGRES_IMAGE=docker.io/library/postgres:19rc2-bookworm@sha256:7b1e213e9680e7838da5ea2a929427901b866e69d08735186b72bddfe73c0453
-ARG PG_RELEASE=19.0-1.pgdg12+1
+# FL-1766: the official postgres:19-bookworm image ships the final PostgreSQL 19.0 release, so the
+# packages come straight from the base image; the build stops if it ever runs anything but 19.0.
+ARG POSTGRES_IMAGE=docker.io/library/postgres:19-bookworm@sha256:4c736732289da844c2ab892451adc1a6e376e7d0ac54ca9571a2e1cfd14176a1
 FROM ${POSTGRES_IMAGE} AS postgres-19
-ARG PG_RELEASE
-RUN apt-get update --error-on=any && \
-    apt-get install -y --no-install-recommends \
-      postgresql-19="${PG_RELEASE}" postgresql-client-19="${PG_RELEASE}" libpq5="${PG_RELEASE}" && \
-    rm -rf /var/lib/apt/lists/* && \
-    postgres --version | grep -Fx "postgres (PostgreSQL) 19.0 (Debian ${PG_RELEASE})"
-ENV PG_VERSION=${PG_RELEASE}
+RUN postgres --version | grep -E "^postgres \(PostgreSQL\) 19\.0( |$)"
 
 FROM postgres-19 AS vector-build
 
