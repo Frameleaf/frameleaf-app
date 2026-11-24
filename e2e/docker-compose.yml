@@ -66,7 +66,7 @@ services:
       context: ../docker/postgres
       dockerfile: Dockerfile
       args:
-        POSTGRES_IMAGE: ${FRAMELEAF_CI_POSTGRES_IMAGE:-docker.io/library/postgres:19rc2-bookworm@sha256:7b1e213e9680e7838da5ea2a929427901b866e69d08735186b72bddfe73c0453}
+        POSTGRES_IMAGE: ${FRAMELEAF_CI_POSTGRES_IMAGE:-docker.io/library/postgres:19-bookworm@sha256:4c736732289da844c2ab892451adc1a6e376e7d0ac54ca9571a2e1cfd14176a1}
     command: -c fsync=off -c shared_preload_libraries=
     environment:
       POSTGRES_PASSWORD: postgres
