@@ -138,5 +138,23 @@ class TestContainerResources(unittest.TestCase):
         self.assertEqual(container_resources(self.proc)["memoryBytes"]["value"], 4096)
 
 
+class TestRequestThreads(unittest.TestCase):
+    def threads(self, cpu: dict[str, object]) -> int:
+        from frameleaf_ml import config
+
+        resources = {"memoryBytes": {"status": "unlimited", "value": None}, "cpuCores": cpu}
+        with (
+            patch.object(config.os, "sched_getaffinity", lambda _pid: set(range(16)), create=True),
+            patch("frameleaf_ml.container_resources.container_resources", lambda: resources),
+        ):
+            return config.default_request_threads()
+
+    def test_request_threads_default_to_the_container_cpu_quota(self) -> None:
+        self.assertEqual(self.threads({"status": "limited", "value": 1.5}), 2)
+        self.assertEqual(self.threads({"status": "limited", "value": 0.1}), 1)
+        self.assertEqual(self.threads({"status": "unlimited", "value": None}), 16)
+        self.assertEqual(self.threads({"status": "unavailable", "value": None}), 16)
+
+
 if __name__ == "__main__":
     unittest.main()

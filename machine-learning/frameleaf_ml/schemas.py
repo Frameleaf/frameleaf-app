@@ -1,6 +1,6 @@
 from collections.abc import Sequence
 from enum import Enum
-from typing import Any, Literal, Protocol, TypeGuard, TypeVar
+from typing import Any, Literal, Protocol, TypeVar
 
 import numpy as np
 import numpy.typing as npt
@@ -104,10 +104,6 @@ class ModelSession(Protocol):
     def get_metadata(self) -> dict[str, str]: ...
 
 
-class HasProfiling(Protocol):
-    profiling: dict[str, float]
-
-
 class FaceDetectionOutput(TypedDict):
     boxes: npt.NDArray[np.float32]
     scores: npt.NDArray[np.float32]
@@ -147,15 +143,17 @@ InferenceEntries = tuple[list[InferenceEntry], list[InferenceEntry]]
 InferenceResponse = dict[ModelTask | Literal["imageHeight"] | Literal["imageWidth"], Any]
 
 
-def has_profiling(obj: Any) -> TypeGuard[HasProfiling]:
-    return hasattr(obj, "profiling") and isinstance(obj.profiling, dict)
-
-
 # Max length for the externally-supplied VLM prompt. Multipart body limits
 # are the primary defense; this cap is belt-and-braces against an attacker
 # who controls the server side and could otherwise send a 100MB prompt.
 # See ml.md High concern "external_prompt and other ML model options".
 MAX_EXTERNAL_PROMPT_LENGTH = 64 * 1024
+
+
+class _ClosedOptions(BaseModel):
+    """A closed option keyspace without `device`, for models whose predict takes no device (see below)."""
+
+    model_config = ConfigDict(extra="forbid")
 
 
 class _OptionsBase(BaseModel):
@@ -179,8 +177,13 @@ class _OptionsBase(BaseModel):
     device: str | None = Field(default=None, max_length=64)
 
 
+class ClipVisualOptions(_ClosedOptions):
+    """CLIP visual encoders take no options: their predict accepts neither `device` nor `language`,
+    so either would fail inside the model instead of being refused here."""
+
+
 class ClipOptions(_OptionsBase):
-    """Options for CLIP textual/visual models."""
+    """Options for CLIP textual models."""
 
     # Weblate language code (e.g. "en-US", "de") for multilingual CLIP text
     # search. The server forwards it via TextEncodingOptions; NLLB tokenizers
@@ -202,7 +205,7 @@ class FacialRecognitionRecognitionOptions(_OptionsBase):
     eyeScores: bool | None = None
 
 
-class OcrDetectionOptions(_OptionsBase):
+class OcrDetectionOptions(_ClosedOptions):
     """Options for the OCR detection task."""
 
     minScore: float | None = Field(default=None, ge=0.0, le=1.0)
@@ -213,7 +216,7 @@ class OcrDetectionOptions(_OptionsBase):
     maxResolution: int | None = Field(default=None, ge=1)
 
 
-class OcrRecognitionOptions(_OptionsBase):
+class OcrRecognitionOptions(_ClosedOptions):
     """Options for the OCR recognition task."""
 
     minScore: float | None = Field(default=None, ge=0.0, le=1.0)
@@ -344,7 +347,7 @@ class TranslateOptions(_OptionsBase):
 # Map of (task, type) -> options pydantic class for per-entry validation.
 OPTIONS_VALIDATORS: dict[tuple[ModelTask, ModelType], type[BaseModel]] = {
     (ModelTask.SEARCH, ModelType.TEXTUAL): ClipOptions,
-    (ModelTask.SEARCH, ModelType.VISUAL): ClipOptions,
+    (ModelTask.SEARCH, ModelType.VISUAL): ClipVisualOptions,
     (ModelTask.FACIAL_RECOGNITION, ModelType.DETECTION): FacialRecognitionDetectionOptions,
     (ModelTask.FACIAL_RECOGNITION, ModelType.RECOGNITION): FacialRecognitionRecognitionOptions,
     (ModelTask.OCR, ModelType.DETECTION): OcrDetectionOptions,

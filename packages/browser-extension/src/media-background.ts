@@ -130,9 +130,9 @@ function seen(details: {
   type: string;
 }): undefined {
   // A new document in the tab: what the last one loaded no longer applies.
-  if (details.type === 'main_frame')
-    watch.documentChanged(details.tabId, details.url);
-  else
+  if (details.type === 'main_frame') {
+    if (watch.documentChanged(details.tabId, details.url)) stopListening();
+  } else
     watch.record(
       details.tabId,
       details.url,
@@ -148,15 +148,18 @@ function listenForMedia() {
     types: ['main_frame', 'media', 'xmlhttprequest', 'other'],
   });
 }
+/** Nothing is watched any more, so nothing is listened to. */
+function stopListening() {
+  if (!listening) return;
+  listening = false;
+  chrome.webRequest?.onBeforeRequest.removeListener(seen);
+}
 export function registerMediaWatch() {
   chrome.tabs.onUpdated?.addListener((tabId, change) => {
-    if (change.url) watch.navigated(tabId, change.url);
+    if (change.url && watch.navigated(tabId, change.url)) stopListening();
   });
   chrome.tabs.onRemoved?.addListener((tabId) => {
-    if (!watch.closed(tabId) || !listening) return;
-    // nothing is watched any more, so nothing is listened to
-    listening = false;
-    chrome.webRequest?.onBeforeRequest.removeListener(seen);
+    if (watch.closed(tabId)) stopListening();
   });
 }
 
@@ -449,10 +452,11 @@ export async function handleMedia(
     case 'media-site': {
       const { view, tabId } = await site(context);
       if (!view.allowed) return { site: view };
-      const access = await readSiteAccess(
-        view.origins,
-        await cookieStore(tabId),
-      );
+      const store = await cookieStore(tabId);
+      // Without the tab's own cookie store, the default one could hold another profile's sign-in.
+      if (store === undefined)
+        return { site: { ...view, reason: 'partitioned' as const } };
+      const access = await readSiteAccess(view.origins, store);
       return {
         site: access.ok
           ? { ...view, domains: access.domains, count: access.count }
@@ -465,11 +469,10 @@ export async function handleMedia(
         throw new QueueFailure(
           'Reading this site’s sign-in wasn’t allowed, so nothing was shared.',
         );
+      const store = await cookieStore(tabId);
+      if (store === undefined) throw new QueueFailure(SITE_REASONS.partitioned);
       // Read now and handed straight to the Library; it is not kept anywhere here.
-      const access = await readSiteAccess(
-        view.origins,
-        await cookieStore(tabId),
-      );
+      const access = await readSiteAccess(view.origins, store);
       if (!access.ok) throw new QueueFailure(SITE_REASONS[access.reason]);
       const refreshing = request.connectionId;
       if (refreshing !== undefined && refreshing !== view.connection?.id)

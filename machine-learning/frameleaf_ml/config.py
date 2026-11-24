@@ -1,5 +1,6 @@
 import concurrent.futures
 import logging
+import math
 import os
 from pathlib import Path
 from typing import Literal
@@ -78,6 +79,23 @@ def default_worker_timeout() -> int:
     return 900 if os.environ.get("DEVICE") == "rocm" else 300
 
 
+def default_request_threads() -> int:
+    """One request thread per processor this worker may use: its CPU affinity, and no more than a
+    container's CPU quota (rounded up). The host's processor count overstates a limited container,
+    and each CPU inference also runs its own runtime threads, so the extra threads only contend."""
+    affinity = getattr(os, "sched_getaffinity", None)  # Linux only
+    try:
+        usable = len(affinity(0)) if affinity is not None else os.cpu_count() or 4
+    except OSError:
+        usable = os.cpu_count() or 4
+    from .container_resources import container_resources
+
+    quota = container_resources()["cpuCores"]
+    if quota["status"] == "limited" and quota["value"] is not None:
+        usable = min(usable, max(1, math.ceil(quota["value"])))
+    return max(1, usable)
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_prefix="MACHINE_LEARNING_",
@@ -100,7 +118,7 @@ class Settings(BaseSettings):
     worker_timeout: int = Field(default_factory=default_worker_timeout)
     http_keepalive_timeout_s: int = 2
     test_full: bool = False
-    request_threads: int = os.cpu_count() or 4
+    request_threads: int = Field(default_factory=default_request_threads)
     model_inter_op_threads: int = 0
     model_intra_op_threads: int = 0
     model_arena: bool = True

@@ -51,6 +51,9 @@ const COMMON_FRAME_RATES: readonly [number, ...number[]] = [
   120,
 ]
 
+/** How many library items are probed at once while Studio opens. */
+const PROBE_CONCURRENCY = 4
+
 /** Snap a measured packet rate to the nearest broadcast rate, as Freecut's own importer does. */
 export const snapFrameRate = (fps: number): number => {
   if (!Number.isFinite(fps) || fps <= 0) return 30
@@ -417,9 +420,15 @@ export function createLibraryMediaSeeder(options: {
       }
     }
     if (marked) onChange()
-    // Probe one at a time in the background, handoff order first: it is the starting cut.
+    // Probe in the background, a few at a time, started in handoff order: it is the starting cut.
+    // Opening still waits for every probe (a clip placed before its probe uses a guessed frame
+    // rate), so overlapping them shortens that wait without placing anything early.
     probing = probing.then(async () => {
-      for (const asset of fresh) await enrich(asset)
+      let next = 0
+      const worker = async () => {
+        for (let asset = fresh[next++]; asset; asset = fresh[next++]) await enrich(asset)
+      }
+      await Promise.all(Array.from({ length: Math.min(PROBE_CONCURRENCY, fresh.length) }, worker))
     })
   }
 

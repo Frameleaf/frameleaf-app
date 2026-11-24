@@ -889,6 +889,27 @@ class TestWorkerApp:
         assert models["workloads"] == []
         assert models["configurationProblems"]
 
+    def test_asked_for_refreshes_run_at_most_once_per_interval(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        calls: list[object] = []
+        original = RestorationRegistry.refresh
+
+        def refresh(self: RestorationRegistry) -> Any:
+            calls.append(self)
+            return original(self)
+
+        monkeypatch.setattr(RestorationRegistry, "refresh", refresh)
+        client = self.client(tmp_path)
+
+        for _ in range(3):
+            assert client.get("/restoration/models", params={"refresh": "true"}).status_code == 200
+        assert len(calls) == 1
+
+        monkeypatch.setattr("frameleaf_ml.video_restoration.app.REFRESH_INTERVAL_S", 0)
+        client.get("/restoration/models", params={"refresh": "true"})
+        assert len(calls) == 2
+
     def test_requires_the_bearer_token_except_for_health(self, tmp_path: Path) -> None:
         client = self.client(tmp_path, token="worker-token")
 

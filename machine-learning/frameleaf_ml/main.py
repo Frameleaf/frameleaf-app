@@ -36,7 +36,8 @@ from frameleaf_ml.models.facial_recognition.landmarks import FaceLandmarker, eye
 from frameleaf_ml.models.musicgen import MusicGenModel
 from frameleaf_ml.models.subject_matte import MAX_FRAME_BYTES as SUBJECT_MATTE_MAX_FRAME_BYTES
 from frameleaf_ml.models.subject_matte import MAX_FRAMES as SUBJECT_MATTE_MAX_FRAMES
-from frameleaf_ml.models.subject_matte import SubjectMatteModel, open_frame
+from frameleaf_ml.models.subject_matte import EncodedFrames, SubjectMatteModel
+from frameleaf_ml.models.subject_matte import frame_size as subject_matte_frame_size
 from frameleaf_ml.models.transcribe import (
     AudioFormatError,
     TranscribeModel,
@@ -98,6 +99,8 @@ downloading: set[Path] = set()
 downloading_lock = threading.Lock()
 active_requests = 0
 last_called: float | None = None
+# Cut-outs run one at a time (see /subject-matte).
+subject_matte_turn = asyncio.Lock()
 # Hands the memory a burst of requests used back to the system shortly after the last one finishes.
 release: asyncio.TimerHandle | None = None
 
@@ -1083,23 +1086,26 @@ async def subject_matte(
     entry = without_deps[0]
     options = dict(entry["options"])
     device = options.pop("device", None)
-    # Every frame is checked from its header (size, equality with the first) before it is decoded, so
-    # an oversized clip is refused for the cost of one header read, not MAX_FRAMES RGB buffers.
-    images: list[Image] = []
+    # Every frame is checked from its header (size, equality with the first), so an oversized clip is
+    # refused for the cost of one header read. Frames stay encoded and are decoded one at a time as the
+    # model follows them, never MAX_FRAMES RGB buffers at once.
+    encoded: list[bytes] = []
+    size: tuple[int, int] | None = None
     try:
         for frame in frames:
             mark_called()
             if frame.size is not None and frame.size > SUBJECT_MATTE_MAX_FRAME_BYTES:
                 raise ValueError(f"A cut-out frame is at most {SUBJECT_MATTE_MAX_FRAME_BYTES // (1024 * 1024)} MiB")
             data = await frame.read()
-            images.append(await run(open_frame, data, images[0].size if images else None))
+            size = await run(subject_matte_frame_size, data, size)
+            encoded.append(data)
     except ValueError as error:
         raise HTTPException(400, str(error)[:512]) from error
     except Exception as error:
         raise HTTPException(400, "A cut-out frame is not an image") from error
-    sizes = {image.size for image in images}
-    if len(sizes) != 1 or min(next(iter(sizes))) <= 0:
+    if size is None or min(size) <= 0:
         raise HTTPException(400, "Every cut-out frame must be the same, non-empty size")
+    images = EncodedFrames(encoded, size)
     mark_called()
     model = await model_cache.get(
         entry["name"], entry["type"], entry["task"], ttl=settings.model_ttl, **({"device": device} if device else {})
@@ -1113,21 +1119,25 @@ async def subject_matte(
         # Counted here, as for /music: the stream outlives the handler.
         active_requests += 1
         try:
-            while True:
-                last_called = time.time()
-                try:
-                    item = await run(next, items, None)
-                except ValueError as error:
-                    # The server reads at most 512 characters of a message (its stream schema).
-                    yield _inference_stream_error(ModelTask.SUBJECT_MATTE, str(error)[:512])
-                    return
-                except Exception as error:
-                    log.error(f"Cut-out failed: {error}")
-                    yield _inference_stream_error(ModelTask.SUBJECT_MATTE, "Cut-out failed")
-                    return
-                if item is None:
-                    break
-                yield orjson.dumps(item) + b"\n"
+            last_called = time.time()
+            # One cut-out runs at a time. Later ones wait here, on the event loop, rather than in pool
+            # threads blocked on the model's lock, which could starve the running one (InferenceBusy).
+            async with subject_matte_turn:
+                while True:
+                    last_called = time.time()
+                    try:
+                        item = await run(next, items, None)
+                    except ValueError as error:
+                        # The server reads at most 512 characters of a message (its stream schema).
+                        yield _inference_stream_error(ModelTask.SUBJECT_MATTE, str(error)[:512])
+                        return
+                    except Exception as error:
+                        log.error(f"Cut-out failed: {error}")
+                        yield _inference_stream_error(ModelTask.SUBJECT_MATTE, "Cut-out failed")
+                        return
+                    if item is None:
+                        break
+                    yield orjson.dumps(item) + b"\n"
             yield orjson.dumps({"type": "done"}) + b"\n"
         finally:
             try:

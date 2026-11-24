@@ -2566,13 +2566,6 @@ class TestCache:
         await model_cache.get("test_model_name", ModelType.RECOGNITION, ModelTask.FACIAL_RECOGNITION, ttl=100)
         mock_cache_expire.assert_called_once_with(mock.ANY, 100)
 
-    async def test_profiling(self, mock_get_model: mock.Mock) -> None:
-        model_cache = ModelCache(profiling=True)
-        await model_cache.get("test_model_name", ModelType.RECOGNITION, ModelTask.FACIAL_RECOGNITION, ttl=100)
-        profiling = await model_cache.get_profiling()
-        assert isinstance(profiling, dict)
-        assert profiling == model_cache.cache.profiling
-
     async def test_identity_fields_are_normalised(self, mock_get_model: mock.Mock) -> None:
         model_cache = ModelCache()
         mock_get_model.side_effect = lambda *args, **kwargs: SimpleNamespace()
@@ -3296,6 +3289,24 @@ def test_options_validation_accepts_clip_language() -> None:
     # Hardening intact: genuinely unknown keys are still rejected.
     with pytest.raises(ValidationError):
         validate_options(ModelTask.SEARCH, ModelType.TEXTUAL, {"bogus": "x"})
+
+
+def test_options_validation_refuses_options_a_model_cannot_take() -> None:
+    # CLIP visual and OCR predict take no `device` (nor `language`, for CLIP visual): refused here
+    # with a 422, instead of failing inside the model with a 500.
+    from pydantic import ValidationError
+
+    from frameleaf_ml.schemas import validate_options
+
+    assert validate_options(ModelTask.SEARCH, ModelType.VISUAL, {}) == {}
+    for task, type_, options in [
+        (ModelTask.SEARCH, ModelType.VISUAL, {"device": "cuda"}),
+        (ModelTask.SEARCH, ModelType.VISUAL, {"language": "de"}),
+        (ModelTask.OCR, ModelType.DETECTION, {"device": "cuda"}),
+        (ModelTask.OCR, ModelType.RECOGNITION, {"device": "cuda"}),
+    ]:
+        with pytest.raises(ValidationError):
+            validate_options(task, type_, options)
 
 
 def test_options_validation_accepts_scan_split_without_options() -> None:

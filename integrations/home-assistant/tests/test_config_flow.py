@@ -88,6 +88,22 @@ async def test_sign_in_through_frameleaf(hass: HomeAssistant, aioclient_mock) ->
 
 
 @pytest.mark.usefixtures("current_request_with_host")
+async def test_registration_address_must_be_a_web_address(hass: HomeAssistant, aioclient_mock) -> None:
+    aioclient_mock.get(f"{API}/server/ping", json={"res": "pong"})
+    aioclient_mock.get(
+        f"{URL}/.well-known/oauth-authorization-server",
+        json={"registration_endpoint": "file:///etc/passwd"},
+    )
+    result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": config_entries.SOURCE_USER})
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_URL: URL, CONF_AUTH_METHOD: AUTH_OAUTH}
+    )
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "cannot_connect"
+    assert not [call for call in aioclient_mock.mock_calls if str(call[0]).upper() == "POST"]
+
+
+@pytest.mark.usefixtures("current_request_with_host")
 async def test_registration_closed(hass: HomeAssistant, aioclient_mock) -> None:
     aioclient_mock.get(f"{API}/server/ping", json={"res": "pong"})
     aioclient_mock.get(f"{URL}/.well-known/oauth-authorization-server", json={})

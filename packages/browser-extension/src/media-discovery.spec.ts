@@ -116,29 +116,38 @@ describe('watching one tab (FL-1427)', () => {
     expect(watch.list(8, page)).toEqual([]);
   });
 
-  it('forgets everything when the tab goes to another page', () => {
+  it('forgets everything and stops watching when the tab goes to another page', () => {
     const watch = new MediaWatch();
     watch.start(7, page);
     watch.record(7, 'https://cdn.example/v/master.m3u8', 'other');
 
-    watch.navigated(7, 'https://page.example/watch?v=2');
+    expect(watch.navigated(7, 'https://page.example/watch?v=2')).toBe(true);
 
     expect(watch.list(7, 'https://page.example/watch?v=2')).toEqual([]);
-    // and what the new page loads is listed for the new page only
+    // watching was allowed for one page: what the new page loads is not listed
     watch.record(7, 'https://cdn.example/v2/master.m3u8', 'other');
-    expect(watch.list(7, 'https://page.example/watch?v=2')).toHaveLength(1);
-    expect(watch.list(7, page)).toEqual([]);
+    expect(watch.list(7, 'https://page.example/watch?v=2')).toEqual([]);
+    expect(watch.watching(7, 'https://page.example/watch?v=2')).toBe(false);
+  });
+
+  it('stops watching when the tab loads a document from another page', () => {
+    const watch = new MediaWatch();
+    watch.start(7, page);
+    expect(watch.documentChanged(7, 'https://elsewhere.example/')).toBe(true);
+    watch.record(7, 'https://cdn.example/clip.mp4', 'media');
+    expect(watch.watching(7, 'https://elsewhere.example/')).toBe(false);
+    expect(watch.list(7, 'https://elsewhere.example/')).toEqual([]);
   });
 
   it('keeps the list across a change of only the #fragment, and clears it on a reload', () => {
     const watch = new MediaWatch();
     watch.start(7, page);
     watch.record(7, 'https://cdn.example/clip.mp4', 'media');
-    watch.navigated(7, `${page}#t=30`);
+    expect(watch.navigated(7, `${page}#t=30`)).toBe(false);
     expect(watch.list(7, page)).toHaveLength(1);
 
     // the same address loaded again is a new document
-    watch.documentChanged(7, page);
+    expect(watch.documentChanged(7, page)).toBe(false);
     expect(watch.list(7, page)).toEqual([]);
     expect(watch.watching(7, page)).toBe(true);
   });
