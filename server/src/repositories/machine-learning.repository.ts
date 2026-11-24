@@ -52,6 +52,8 @@ import { MlDestinationRepository } from 'src/repositories/ml-destination.reposit
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { parseBoundClipResult } from 'src/utils/clip-embedding.js';
 import { readConfig } from 'src/utils/config.js';
+import { DESCRIPTION_TASK, parseBoundDescriptionResult } from 'src/utils/description-result.js';
+import { descriptionEntries, desktopDescriptionProfile } from 'src/utils/desktop-description.js';
 import { desktopFaceProfile, faceEntries } from 'src/utils/desktop-face.js';
 import { equivalentDesktopModelKeys } from 'src/utils/desktop-model-equivalents.js';
 import { desktopOcrProfile, ocrEntries } from 'src/utils/desktop-ocr.js';
@@ -303,6 +305,8 @@ export type DesktopPoolOptions = {
   modelName: string;
   ocr?: MachineLearningConfig['ocr'];
   face?: MachineLearningConfig['facialRecognition'];
+  /** FD-31: the description model the settings name, for a description job's own request. */
+  description?: { modelName: string };
   assertConfig: (tx?: Transaction<DB>) => Promise<void>;
   /** FL-1058: a gallery guest's selfie for this photographer, outside any queued job. */
   guestOwnerId?: string;
@@ -313,6 +317,7 @@ export type MlSelection = {
   /** Internal admitted background pool; never reconstructed from an API response. */
   desktopFace?: (payload: ModelPayload, entries: unknown) => Promise<unknown>;
   desktopOcr?: (payload: ModelPayload, entries: unknown) => Promise<unknown>;
+  desktopDescription?: (payload: ModelPayload, entries: unknown) => Promise<unknown>;
   desktopClip?: (payload: ModelPayload, profile: DesktopModelProfile) => Promise<unknown>;
   destinationId: string;
   kind: MlDestinationKind;
@@ -1958,7 +1963,7 @@ export class MachineLearningRepository implements RestorationInference {
     /** Ends the request early, as well as the queue deadline and the job's own signal. */
     signal?: AbortSignal,
   ): Promise<T> {
-    if (selection.desktopClip || selection.desktopOcr || selection.desktopFace)
+    if (selection.desktopClip || selection.desktopOcr || selection.desktopFace || selection.desktopDescription)
       throw new Error('desktop_bound_profile_required');
     if (selection.endpoint.cloud) {
       throw new CloudJobsUnavailableError(selection.workload);
@@ -2134,6 +2139,10 @@ export class MachineLearningRepository implements RestorationInference {
       if (workload === MlWorkload.Face)
         return config.facialRecognition.enabled ? [desktopFaceProfile(config.facialRecognition).modelKey] : [];
       if (workload === MlWorkload.Ocr) return config.ocr.enabled ? [desktopOcrProfile(config.ocr).modelKey] : [];
+      if (workload === MlWorkload.Enrichment)
+        return config.imageDescription.enabled
+          ? [desktopDescriptionProfile(config.imageDescription.modelName).modelKey]
+          : [];
       if (workload !== MlWorkload.Clip || !config.clip.enabled) return [];
       const selected = await this.clipIndex?.selectProfile(config.clip.modelName, 'image');
       return selected ? [...equivalentDesktopModelKeys(selected.profile.modelKey)] : [];
@@ -2161,9 +2170,23 @@ export class MachineLearningRepository implements RestorationInference {
     jobId?: string | null,
     requireReady = false,
   ): Promise<MlSelection> {
-    if (!queueExecution.getStore() || ![MlWorkload.Clip, MlWorkload.Ocr, MlWorkload.Face].includes(selection.workload))
+    if (
+      !queueExecution.getStore() ||
+      ![MlWorkload.Clip, MlWorkload.Ocr, MlWorkload.Face, MlWorkload.Enrichment].includes(selection.workload)
+    )
       return selection;
     if (!this.desktopPoolSelector) throw new Error('desktop_pool_authority_unavailable');
+    // FD-31: only a description request reaches here for enrichment (`MlSelectionRequest.description`).
+    if (selection.workload === MlWorkload.Enrichment) {
+      const modelName = this.config.imageDescription.modelName;
+      return this.desktopPoolSelector(selection, {
+        jobId,
+        ...(requireReady && { requireReady }),
+        modelName,
+        description: { modelName },
+        assertConfig: (tx?: Transaction<DB>) => this.assertDesktopDescriptionConfig(selection, modelName, tx),
+      });
+    }
     const ocr = selection.workload === MlWorkload.Ocr ? structuredClone(this.config.ocr) : undefined;
     const face = selection.workload === MlWorkload.Face ? structuredClone(this.config.facialRecognition) : undefined;
     const modelName = face?.modelName ?? ocr?.modelName ?? this.config.clip.modelName;
@@ -2201,6 +2224,30 @@ export class MachineLearningRepository implements RestorationInference {
       !current.enabled ||
       !current.clip.enabled ||
       current.clip.modelName !== modelName ||
+      (selection.kind === MlDestinationKind.Local && !current.urls.includes(selection.endpoint.url))
+    )
+      throw new Error('desktop_pool_config_changed');
+  }
+
+  async assertDesktopDescriptionConfig(
+    selection: Pick<MlSelection, 'kind' | 'endpoint'>,
+    modelName: string,
+    tx?: Transaction<DB>,
+  ): Promise<void> {
+    const current =
+      this.configRepo && this.metadataRepo
+        ? (
+            await readConfig({
+              configRepo: this.configRepo,
+              metadataRepo: tx ? new SystemMetadataRepository(tx) : this.metadataRepo,
+              logger: this.logger,
+            })
+          ).machineLearning
+        : this.config;
+    if (
+      !current.enabled ||
+      !current.imageDescription.enabled ||
+      current.imageDescription.modelName !== modelName ||
       (selection.kind === MlDestinationKind.Local && !current.urls.includes(selection.endpoint.url))
     )
       throw new Error('desktop_pool_config_changed');
@@ -2524,6 +2571,24 @@ export class MachineLearningRepository implements RestorationInference {
       acceleration === MachineLearningHardwareAcceleration.OpenVino &&
       !!fallbackModelName &&
       isFlorenceImageDescriptionModel(fallbackModelName);
+    if (selection.desktopDescription) {
+      // FD-31: a desktop runs the catalogue's GGUF build of the configured model with its own fixed prompt.
+      const profile = desktopDescriptionProfile(modelName);
+      const started = Date.now();
+      const size = await this.measure({ imagePath });
+      if (!size || size > 16 * 1024 * 1024) throw new Error('desktop_input_size_invalid');
+      let received = 0;
+      let outcome: 'success' | 'failure' = 'failure';
+      try {
+        const result = await selection.desktopDescription({ imagePath }, descriptionEntries(profile.modelName));
+        const response = parseBoundDescriptionResult(result);
+        received = Buffer.byteLength(JSON.stringify(result));
+        outcome = 'success';
+        return { result: structuredClone(response[DESCRIPTION_TASK]), model: modelName, device: null };
+      } finally {
+        selection.record({ bytesSent: size, bytesReceived: received, durationMs: Date.now() - started, outcome });
+      }
+    }
     // A Frameleaf Cloud job names only the cloud model admission resolved (the routed SKU or the
     // catalogue's default, FL-183), never the local description setting (FL-146) or a model name.
     if (selection.kind === MlDestinationKind.FrameleafCloud) {

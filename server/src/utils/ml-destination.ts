@@ -209,6 +209,11 @@ export type MlSelectionRequest = {
   desktopPool?: 'skip' | 'only';
   /** FL-1058: a gallery guest's selfie for `ownerId`, which the Desktop pool takes outside any queued job. */
   guestFace?: boolean;
+  /**
+   * FD-31: this enrichment request is a photo description, the only enrichment a desktop runs (the safety
+   * check a description job also makes is not).
+   */
+  description?: boolean;
   /** FL-955: this request is a photo operation (see `MlAdmissionInput`). */
   photoOperation?: RestorationPhotoOperation;
 };
@@ -1072,7 +1077,8 @@ export const selectMlDestination = async (
   };
   const poolEligible =
     !!selectBackgroundPool &&
-    [MlWorkload.Clip, MlWorkload.Ocr, MlWorkload.Face].includes(request.workload) &&
+    ([MlWorkload.Clip, MlWorkload.Ocr, MlWorkload.Face].includes(request.workload) ||
+      (request.workload === MlWorkload.Enrichment && !!request.description)) &&
     [MlDestinationKind.Local, MlDestinationKind.Lan].includes(destination.kind);
   if (poolEligible && request.desktopPool !== 'skip') {
     // Desktop capacity is admitted by its own qualification; NAS backend health is irrelevant to it. A desktop
@@ -1089,7 +1095,7 @@ export const selectMlDestination = async (
       },
       { requireReady: true },
     );
-    if (pool.desktopClip || pool.desktopOcr || pool.desktopFace) {
+    if (pool.desktopClip || pool.desktopOcr || pool.desktopFace || pool.desktopDescription) {
       await assertAuthority();
       return pool;
     }

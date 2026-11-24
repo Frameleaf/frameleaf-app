@@ -9,20 +9,21 @@ import pytest
 from frameleaf_ml import native_qwen
 from frameleaf_ml.native_binding import NativeBinding
 from frameleaf_ml.native_hardware import snapshot
-from frameleaf_ml.native_qualification import preprocessing_identity
+from frameleaf_ml.native_qualification import QualificationSpec, preprocessing_identity
 from frameleaf_ml.staging import RECEIPT, cache_hashes
 
 
-@pytest.fixture
-def qwen_binding(tmp_path):
+@pytest.fixture(params=list(native_qwen.MODELS))
+def qwen_binding(tmp_path, request):
+    model = request.param
     cache = tmp_path / "cache"
-    directory = native_qwen.model_directory(cache)
+    directory = native_qwen.model_directory(cache, model)
     (directory / "visual").mkdir(parents=True)
     for name in native_qwen.ARTIFACTS:
         (directory / name).write_bytes(b"GGUF" + name.encode())
     hashes = cache_hashes(directory)
     (directory / RECEIPT).write_text(json.dumps(hashes))
-    entries = {native_qwen.TASK: {"visual": {"modelName": native_qwen.MODEL, "options": {}}}}
+    entries = {native_qwen.TASK: {"visual": {"modelName": model, "options": {}}}}
     fixture = b"\x89PNG\r\n\x1a\nfixture"
     (tmp_path / "test.png").write_bytes(fixture)
     expected = {
@@ -40,7 +41,7 @@ def qwen_binding(tmp_path):
         "engine": "qwen-gguf",
         "protocolVersion": 1,
         "modelKey": "qwen-candidate",
-        "models": [{"name": native_qwen.MODEL, "task": native_qwen.TASK, "type": "visual", "artifacts": hashes}],
+        "models": [{"name": model, "task": native_qwen.TASK, "type": "visual", "artifacts": hashes}],
         "entries": entries,
         "preprocessingSha256": preprocessing_identity("qwen-gguf"),
         "provider": "CPUExecutionProvider",
@@ -70,11 +71,19 @@ def qwen_binding(tmp_path):
     return cache, specification, result, entries
 
 
+def test_qwen_refuses_an_unapproved_model(qwen_binding):
+    cache, spec, _, _ = qwen_binding
+    raw = json.loads(spec.read_bytes())
+    raw["models"][0]["name"] = raw["entries"][native_qwen.TASK]["visual"]["modelName"] = "Qwen2.5-VL-72B-Instruct"
+    with pytest.raises(ValueError, match="native_qwen_inventory_invalid"):
+        native_qwen.verify_qwen(QualificationSpec.model_validate(raw), cache)
+
+
 @pytest.mark.parametrize("artifact", native_qwen.ARTIFACTS)
 def test_qwen_refuses_changed_artifacts_even_if_staging_receipt_is_rewritten(qwen_binding, artifact):
     cache, spec, report, entries = qwen_binding
     binding = NativeBinding.load(spec, report, cache, "CPUExecutionProvider")
-    directory = native_qwen.model_directory(cache)
+    directory = native_qwen.model_directory(cache, entries[native_qwen.TASK]["visual"]["modelName"])
     (directory / artifact).write_bytes(b"GGUFchanged")
     (directory / RECEIPT).write_text(json.dumps(cache_hashes(directory)))
     with pytest.raises(ValueError, match="native_qwen_artifact_changed"):

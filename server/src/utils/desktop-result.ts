@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parseBoundClipResult } from 'src/utils/clip-embedding.js';
+import { parseBoundDescriptionResult } from 'src/utils/description-result.js';
 import { type DesktopModelCatalogue, parseDesktopModelCatalogue } from 'src/utils/desktop-model-catalogue.js';
 import { parseBoundFaceResult } from 'src/utils/face-result.js';
 import { parseBoundOcrResult } from 'src/utils/ocr-result.js';
@@ -16,6 +17,7 @@ export const assertDesktopResult = (task: { modelKey: string }, result: unknown)
   try {
     if (task.modelKey.startsWith('face:')) parseBoundFaceResult(result);
     else if (task.modelKey.startsWith('ocr:')) parseBoundOcrResult(result);
+    else if (task.modelKey.startsWith('description:')) parseBoundDescriptionResult(result);
     else {
       catalogue ??= parseDesktopModelCatalogue(
         JSON.parse(readFileSync(join(import.meta.dirname, '../../resources/desktop/model-catalogue.json'), 'utf8')),

@@ -640,3 +640,39 @@ it.each([
     }
   },
 );
+
+describe('FD-31 description profiles', () => {
+  const fixture = () => JSON.parse(readFileSync('test/fixtures/desktop-description-profile.json', 'utf8'));
+  const parse = (profile: unknown) => parseDesktopModelCatalogue({ schemaVersion: 1, epoch: 19, profiles: [profile] });
+
+  it('accepts a processor Qwen profile that names its GGUF pair', () => {
+    const [profile] = parse(fixture()).profiles;
+    expect(profile.workload).toBe('description');
+    expect(profile.spec.engine).toBe('qwen-gguf');
+    expect(createDesktopModelChallenge(profile, 'd621bd72-ad35-4199-95ab-76300756a38e').bindingSha256).toMatch(
+      /^[a-f0-9]{64}$/,
+    );
+  });
+
+  it('refuses a description profile that is not exactly the binding Qwen runs', () => {
+    const changes: Array<(v: any) => void> = [
+      (v) => delete v.spec.engine,
+      (v) => (v.spec.provider = 'CoreMLExecutionProvider'),
+      (v) => (v.spec.entries['image-description-tagging'].visual.options = { external_prompt: 'other' }),
+      (v) => (v.spec.models[0].task = 'clip'),
+      (v) => delete v.spec.models[0].artifacts['visual/mmproj.gguf'],
+      (v) => (v.embeddingDimensions = 512),
+      (v) => (v.spec.expectedOutput['image-description-tagging'].tags = ['red']),
+      (v) => (v.spec.expectedOutput['image-description-tagging'].description = ''),
+    ];
+    for (const change of changes) {
+      const value = fixture();
+      change(value);
+      expect(() => parse(value)).toThrow();
+    }
+    // An ONNX profile never names the Qwen engine.
+    const ocr = JSON.parse(readFileSync('test/fixtures/desktop-ocr-profile.json', 'utf8'));
+    ocr.spec.engine = 'qwen-gguf';
+    expect(() => parse(ocr)).toThrow();
+  });
+});

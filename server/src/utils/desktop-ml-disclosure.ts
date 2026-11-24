@@ -49,6 +49,13 @@ export const desktopMlDisclosureSchema = z.discriminatedUnion('version', [
     modelKey: z.string().regex(/^face:[a-f0-9]{64}$/),
     face,
   }),
+  // FD-31: a photo description, run with the catalogue's GGUF build of the configured model.
+  z.strictObject({
+    ...common,
+    version: z.literal(5),
+    workload: z.literal('description'),
+    modelKey: z.string().regex(/^description:[a-f0-9]{64}$/),
+  }),
   // FL-1058: a gallery guest's selfie. No library asset or queued job stands behind it; the request that
   // holds it waits for the result and discards the task, so nothing about the selfie outlives the search.
   z.strictObject({

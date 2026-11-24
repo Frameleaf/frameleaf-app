@@ -175,7 +175,12 @@ const wakeClaimLoops = (db: Kysely<DB>) => {
  */
 
 /** The queues whose work desktop helpers can take, in the order a helper's free slots are counted for them. */
-export const DESKTOP_QUEUES: readonly string[] = [QueueName.SmartSearch, QueueName.FaceDetection, QueueName.Ocr];
+export const DESKTOP_QUEUES: readonly string[] = [
+  QueueName.SmartSearch,
+  QueueName.FaceDetection,
+  QueueName.Ocr,
+  QueueName.ImageDescription,
+];
 
 /**
  * How many extra jobs a queue may start for desktop helpers now. The queue store knows nothing of models,

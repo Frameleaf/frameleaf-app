@@ -111132,7 +111132,7 @@
             "type": "string"
           },
           "modelKey": {
-            "pattern": "^(clip|ocr|face):[a-f0-9]{64}$",
+            "pattern": "^(clip|ocr|face|description):[a-f0-9]{64}$",
             "type": "string"
           },
           "qualifiedAt": {
@@ -111502,7 +111502,7 @@
                 },
                 "modelKeys": {
                   "items": {
-                    "pattern": "^(clip|ocr|face):[a-f0-9]{64}$",
+                    "pattern": "^(clip|ocr|face|description):[a-f0-9]{64}$",
                     "type": "string"
                   },
                   "maxItems": 8,
@@ -111588,7 +111588,7 @@
             "type": "string"
           },
           "modelKey": {
-            "pattern": "^(clip|ocr|face):[a-f0-9]{64}$",
+            "pattern": "^(clip|ocr|face|description):[a-f0-9]{64}$",
             "type": "string"
           },
           "reportSha256": {
