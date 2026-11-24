@@ -398,3 +398,57 @@ def test_bound_session_cache_evicts_old_runtime_files(binding, monkeypatch):
     finally:
         predictor.close()
     assert all(not path.exists() for path in paths)
+
+
+def test_bound_model_files_are_hashed_once_then_checked_by_size(binding, synthetic_clip_cache, monkeypatch):
+    from frameleaf_ml import producer_binding
+
+    calls = Mock(wraps=producer_binding.verify_models)
+    monkeypatch.setattr(producer_binding, "verify_models", calls)
+    predictor = BoundPredictor()
+    try:
+        for _ in range(3):
+            assert predictor.predict(json.dumps(binding), None, "frameleaf fixture")["result"] == {"clip": "[5.0,5.0]"}
+        # The first request hashes the files; later ones check names and sizes (owner, 2026-11-23).
+        assert calls.call_count == 1
+        _, cache, _ = synthetic_clip_cache
+        config = cache / "config.json"
+        config.write_text(config.read_text() + " ")
+        # Another size is noticed, hashed again and refused.
+        with pytest.raises(ValueError, match="producer_identity_unavailable"):
+            predictor.predict(json.dumps(binding), None, "frameleaf fixture")
+        assert calls.call_count == 2
+    finally:
+        predictor.close()
+
+
+@pytest.mark.parametrize("downloads", [True, False])
+def test_a_bound_model_missing_from_the_cache_is_staged_once(
+    binding, synthetic_clip_cache, monkeypatch, tmp_path, downloads
+):
+    import shutil
+
+    from frameleaf_ml import staging
+
+    _, cache, _ = synthetic_clip_cache
+    kept = tmp_path / "kept"
+    shutil.move(cache, kept)
+    stage = Mock(side_effect=lambda model: shutil.copytree(kept, model.cache_dir))
+    monkeypatch.setattr(staging, "stage_model", stage)
+    monkeypatch.setattr(settings, "model_downloads", downloads)
+    predictor = BoundPredictor()
+    try:
+        if downloads:
+            for _ in range(2):
+                assert predictor.predict(json.dumps(binding), None, "frameleaf fixture")["result"] == {
+                    "clip": "[5.0,5.0]"
+                }
+            stage.assert_called_once()
+            assert stage.call_args.args[0].cache_dir == cache
+        else:
+            # An administrator who turned model downloads off gets no download, and the request is refused.
+            with pytest.raises(ValueError, match="producer_identity_unavailable"):
+                predictor.predict(json.dumps(binding), None, "frameleaf fixture")
+            stage.assert_not_called()
+    finally:
+        predictor.close()
