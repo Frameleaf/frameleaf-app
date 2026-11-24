@@ -1637,15 +1637,6 @@ order by
   "person_category"."createdAt" asc,
   "person_category"."id" asc
 
--- PersonRepository.getCategory
-select
-  "person_category".*
-from
-  "person_category"
-where
-  "person_category"."ownerId" = $1
-  and "person_category"."id" = $2
-
 -- PersonRepository.getOwnCategoryIds
 select
   "person_category"."id"

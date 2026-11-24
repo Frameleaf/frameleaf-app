@@ -154,8 +154,10 @@ with
                 )::int
               from
                 asset
+              where
+                "ownerId" = any ($3::uuid[])
             ),
-            $3
+            $4
           ) as "year"
       )
     select
@@ -170,9 +172,9 @@ with
           "asset"
           inner join "asset_job_status" on "asset"."id" = "asset_job_status"."assetId"
         where
-          "asset"."libraryScope" in ($4, $5)
+          "asset"."libraryScope" in ($5, $6)
           and (asset."localDateTime" at time zone 'UTC')::date = today.date
-          and "asset"."ownerId" = any ($6::uuid[])
+          and "asset"."ownerId" = any ($7::uuid[])
           and "asset"."visibility" = 'timeline'
           and exists (
             select
@@ -180,7 +182,7 @@ with
               "asset_file"
             where
               "assetId" = "asset"."id"
-              and "asset_file"."type" = $7
+              and "asset_file"."type" = $8
           )
           and "asset"."deletedAt" is null
           and (
@@ -204,10 +206,10 @@ with
         order by
           (asset."localDateTime" at time zone 'UTC')::date desc
         limit
-          $8
+          $9
       ) as "a" on true
     where
-      date_part('month', today.date) = $9
+      date_part('month', today.date) = $10
   )
 select
   date_part(
