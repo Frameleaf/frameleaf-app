@@ -221,6 +221,21 @@ export class ICloudSyncRepository {
         .then((result) => result.rows[0]);
     });
   }
+  /**
+   * A sign-in step still "authenticating" long after any step could last means the server stopped during it.
+   * It then asks for a new sign-in. True when it did.
+   */
+  async expireStaleSignIn(id: string, ownerId: string, olderThanMs: number): Promise<boolean> {
+    return this.active(async (db) => {
+      const { rows } = await sql`UPDATE public.icloud_connection
+        SET state = 'reauthentication-required', "lastError" = NULL, "updatedAt" = now()
+        WHERE id = ${id}::uuid AND "ownerId" = ${ownerId}::uuid AND state = 'authenticating'
+          AND "updatedAt" < now() - make_interval(secs => ${olderThanMs / 1000}::double precision)
+          AND "lastError" IS DISTINCT FROM 'owner_removed'
+        RETURNING id`.execute(db);
+      return rows.length > 0;
+    });
+  }
   async update(
     id: string,
     ownerId: string,

@@ -89,6 +89,8 @@ const ICLOUD_MAX_WAIT_MS = 24 * 60 * 60_000;
 export const ICLOUD_MAX_IDLE_WAITS = 288;
 /** How long a run waits while its owner is signing in again, without spending an attempt. */
 export const ICLOUD_SIGN_IN_WAIT_MS = 30_000;
+/** Far longer than any sign-in step lasts (the bridge gives Apple 90 seconds): one this old was cut off. */
+export const ICLOUD_SIGN_IN_STALE_MS = 15 * 60_000;
 /** Runs one worker process drives at once, so one large first import does not hold up the rest. */
 const ICLOUD_PARALLEL_RUNS = 2;
 /** Connections one account may keep, matching the design's Add connection limit. */
@@ -757,9 +759,13 @@ export class ICloudSyncService {
       return;
     }
     if (connection.state === 'authenticating') {
-      // The owner is signing in again right now; the answer decides, not this claim.
-      await this.wait(claim, connectionId, ICLOUD_SIGN_IN_WAIT_MS, idleWaits);
-      return;
+      if (!(await this.repository.expireStaleSignIn(connectionId, ownerId, ICLOUD_SIGN_IN_STALE_MS))) {
+        // The owner is signing in again right now; the answer decides, not this claim.
+        await this.wait(claim, connectionId, ICLOUD_SIGN_IN_WAIT_MS, idleWaits);
+        return;
+      }
+      // The server stopped during that sign-in step: the owner is asked to sign in again, below.
+      connection = (await this.repository.get(connectionId, ownerId)) ?? connection;
     }
     if (connection.state === 'error' && (operation.autoRetries ?? 0) > 0 && connection.encryptedSession) {
       await this.repository.update(connectionId, ownerId, { state: 'connected', lastError: null });

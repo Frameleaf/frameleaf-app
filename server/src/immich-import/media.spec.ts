@@ -3,15 +3,42 @@ import { link, mkdir, mkdtemp, open, readFile, rm, stat, symlink, writeFile } fr
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
+  INERT_ORIGINAL_FOLDER,
   MEDIA_CONCURRENCY,
   assertMediaPolicy,
+  isUnsafeImportPath,
   lostOriginalPath,
   lostOriginalReason,
   mapInOrder,
   mapMediaPath,
+  pathChecksum,
   verifyMediaFile,
   verifyMediaRoots,
 } from 'src/immich-import/media.js';
+
+describe('isUnsafeImportPath', () => {
+  const roots = [{ source: '/immich', target: '/data' }];
+  it('refuses system folders, the media folder and anything above it', () => {
+    for (const path of [
+      '/',
+      '/etc',
+      '/etc/ssl',
+      '/proc/1',
+      '/sys',
+      '/run/secrets',
+      '/data',
+      '/data/upload',
+      'x',
+      '/a/../etc',
+    ]) {
+      expect(isUnsafeImportPath(path, roots)).toBe(true);
+    }
+  });
+  it('keeps an ordinary library folder', () => {
+    expect(isUnsafeImportPath('/mnt/photos', roots)).toBe(false);
+    expect(isUnsafeImportPath('/database', roots)).toBe(false);
+  });
+});
 
 describe('offline media verification', () => {
   let directory: string;
@@ -57,7 +84,18 @@ describe('offline media verification', () => {
 
     const outside = join(directory, 'elsewhere', 'photo.jpg');
     await expect(lostOriginalReason(await failure(outside), outside, roots)).resolves.toBe('unmapped');
-    expect(lostOriginalPath(outside, 'unmapped', roots)).toBe(outside);
+    // An uploaded original outside every media folder can never point at a server file.
+    expect(lostOriginalPath(outside, 'unmapped', roots)).toBe(`${INERT_ORIGINAL_FOLDER}/${pathChecksum(outside)}`);
+    // An external library's own folder is kept, so mounting it later reconnects the item.
+    expect(lostOriginalPath(outside, 'unmapped', roots, undefined, [join(directory, 'elsewhere')])).toBe(outside);
+    for (const folders of [['/'], ['/etc'], [target], [directory], ['relative'], [outside]]) {
+      expect(lostOriginalPath(outside, 'unmapped', roots, undefined, folders)).toMatch(INERT_ORIGINAL_FOLDER);
+    }
+    expect(lostOriginalPath('/etc/shadow', 'unmapped', roots, undefined, ['/'])).toMatch(INERT_ORIGINAL_FOLDER);
+    const climbing = `${join(directory, 'elsewhere')}/../secret`;
+    expect(lostOriginalPath(climbing, 'unmapped', roots, undefined, [join(directory, 'elsewhere')])).toMatch(
+      INERT_ORIGINAL_FOLDER,
+    );
 
     const inPlace = [{ source, target: source }];
     await expect(lostOriginalReason(await failure(lost), lost, inPlace, manager)).resolves.toBe('missing');
