@@ -350,7 +350,10 @@ def test_provider_runtime_caches_are_not_model_files(model: SyntheticModel) -> N
             (cache / "model.bin").write_bytes(b"compiled")
     assert cache_hashes(model.cache_dir) == before
     (model.cache_dir / "onnx" / "model.onnx").write_bytes(b"a real model file")
-    assert cache_hashes(model.cache_dir) != before
+    added = cache_hashes(model.cache_dir)
+    assert added != before
+    model.model_path.write_bytes(b"changed model bytes")
+    assert cache_hashes(model.cache_dir) != added
 
 
 @pytest.mark.parametrize("action", [{}, {"refresh": True}, {"rollback": True}])
