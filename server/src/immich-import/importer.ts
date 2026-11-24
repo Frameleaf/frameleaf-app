@@ -26,6 +26,7 @@ import { GALLERY_READS } from 'src/immich-import/gallery.js';
 import {
   LostOriginalReason,
   isUnmappedPath,
+  isUnsafeImportPath,
   lostOriginalPath,
   lostOriginalReason,
   mapInOrder,
@@ -104,6 +105,7 @@ export class ImmichImportService {
   private embeddingAdmission?: EmbeddingAdmission;
   /** Originals kept without a verified file, collected by the verification pass for the owners' report. */
   private lostOriginals = new Map<string, { reason: LostOriginalReason; immichPath: string }>();
+  private libraryFoldersRead?: Promise<Map<string, string[]>>;
   constructor(
     readonly destination: ImportDatabase,
     source: ImportDatabase,
@@ -638,7 +640,11 @@ export class ImmichImportService {
           const lost =
             table === 'asset' ? await lostOriginalReason(error, path, this.config.mediaRoots, this.config.media) : null;
           if (lost) {
-            row[column] = lostOriginalPath(path, lost, this.config.mediaRoots, this.config.media);
+            const folders =
+              lost === 'unmapped' && row.isExternal === true && row.libraryId
+                ? ((await this.libraryFolders()).get(String(row.libraryId)) ?? [])
+                : [];
+            row[column] = lostOriginalPath(path, lost, this.config.mediaRoots, this.config.media, folders);
             this.lostOriginals.set(String(row.id), { reason: lost, immichPath: path });
           } else if (
             (error as NodeJS.ErrnoException).code === 'ENOENT' &&
@@ -662,17 +668,29 @@ export class ImmichImportService {
       row.checksum = String.raw`\x${pathChecksum(row.originalPath)}`;
     }
     if (table === 'library') {
-      // An unmapped import path is kept as it was: the library's own scan marks its items offline.
+      // An unmapped import path is kept as it was: the library's own scan marks its items offline, and mounting
+      // the same folder later reconnects them. One that names a system folder or the media folder is refused.
       row.importPaths = (row.importPaths as string[]).map((path) => {
         try {
           return mapMediaPath(path, this.config.mediaRoots, this.config.media).target;
         } catch (error) {
           if (!isUnmappedPath(error)) throw error;
+          if (isUnsafeImportPath(path, this.config.mediaRoots)) throw new ImportRefused('UNSAFE_LIBRARY_IMPORT_PATH');
           return path;
         }
       });
     }
     return row;
+  }
+
+  /** Each copied library's folders, as written to the destination; libraries are copied before assets. */
+  private libraryFolders(): Promise<Map<string, string[]>> {
+    this.libraryFoldersRead ??= this.destination
+      .query(`SELECT id, "importPaths" FROM public.library`)
+      .then(
+        (rows) => new Map(rows.map((row) => [String(row.id), Array.isArray(row.importPaths) ? row.importPaths : []])),
+      );
+    return this.libraryFoldersRead;
   }
 
   private async insert(db: ImportDatabase, table: string, row: ImportRow): Promise<void> {

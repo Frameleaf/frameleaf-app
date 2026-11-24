@@ -25,6 +25,9 @@ export const mysqlSourceConfig = (databaseUrl: string, version: string) => {
   const database = decodeURIComponent(url.pathname.slice(1));
   if (url.protocol !== 'mysql:' || url.search || url.hash || !database || database.includes('/'))
     throw new LibraryImportRefused('IMPORT_PREPARATION_INPUT_INVALID');
+  // Manager restores the copy on the preparation's own loopback; the reader password never leaves this host.
+  if (!['127.0.0.1', '[::1]'].includes(url.hostname))
+    throw new LibraryImportRefused('IMPORT_PREPARATION_INPUT_INVALID');
   return {
     host: url.hostname.replace(/^\[(.*)\]$/u, '$1'),
     port: url.port ? Number(url.port) : 3306,

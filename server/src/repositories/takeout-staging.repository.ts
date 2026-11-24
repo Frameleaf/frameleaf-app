@@ -372,8 +372,9 @@ export class TakeoutStagingRepository {
       throw new TakeoutStagingError('A file changed into a link while it was being read');
     }
     // Opened without following a link, and checked on the open handle, so the file cannot be
-    // swapped for a link between the check above and the read.
-    const handle = await open(actual, constants.O_RDONLY | constants.O_NOFOLLOW).catch(() => {
+    // swapped for a link between the check above and the read. O_NONBLOCK: a file swapped for a FIFO
+    // would otherwise hold the open until a writer appears; it is refused as not a plain file below.
+    const handle = await open(actual, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK).catch(() => {
       throw new TakeoutStagingError('A file changed into a link while it was being read');
     });
     try {

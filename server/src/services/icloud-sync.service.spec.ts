@@ -13,6 +13,7 @@ import { ICloudTransportError } from 'src/repositories/icloud-transport.reposito
 import {
   ICLOUD_IDLE_WAIT_MS,
   ICLOUD_MAX_IDLE_WAITS,
+  ICLOUD_SIGN_IN_STALE_MS,
   ICLOUD_SIGN_IN_WAIT_MS,
   ICloudSyncService,
   mapICloudRun,
@@ -64,6 +65,7 @@ describe(ICloudSyncService.name, () => {
     }) as never;
   const repository = {
     ownerUploadsPaused: vi.fn().mockResolvedValue(false),
+    expireStaleSignIn: vi.fn().mockResolvedValue(false),
     refreshResource: vi.fn(),
     invalidateCursor: vi.fn(),
     block: vi.fn(),
@@ -903,6 +905,24 @@ describe(ICloudSyncService.name, () => {
         returnAttempt: true,
       });
       expect(operations.fail).not.toHaveBeenCalled();
+    });
+
+    it('asks for a new sign-in when a sign-in step was cut off by a server stop', async () => {
+      repository.get
+        .mockResolvedValueOnce({ ...connection, state: 'authenticating' })
+        .mockResolvedValue({ ...connection, state: 'reauthentication-required' });
+      repository.expireStaleSignIn.mockResolvedValueOnce(true);
+      await sut.run(operation(), 'token');
+      expect(repository.expireStaleSignIn).toHaveBeenCalledWith(
+        'connection',
+        expect.any(String),
+        ICLOUD_SIGN_IN_STALE_MS,
+      );
+      expect(operations.requeue).not.toHaveBeenCalledWith(
+        'run',
+        'token',
+        expect.objectContaining({ delayMs: ICLOUD_SIGN_IN_WAIT_MS }),
+      );
     });
 
     it('reports a run that cannot move for a day instead of waiting forever', async () => {

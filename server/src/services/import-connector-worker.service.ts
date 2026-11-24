@@ -164,16 +164,16 @@ export class ImportConnectorWorkerService {
     };
     try {
       for (let next = await read(); !next.done; next = await read()) {
+        const offered = [];
         for (const item of next.value.items) {
           if (!acceptable(item)) {
             rejected++;
             continue;
           }
-          await this.repository.offer(connection.id, row.id, {
-            ...item,
-            caption: item.caption?.slice(0, CAPTION_MAX),
-          });
+          offered.push({ ...item, caption: item.caption?.slice(0, CAPTION_MAX) });
         }
+        // One statement per listed batch, not one round trip per file.
+        await this.repository.offerMany(connection.id, row.id, offered);
         if (next.value.cursor !== undefined) {
           cursor = next.value.cursor;
         }

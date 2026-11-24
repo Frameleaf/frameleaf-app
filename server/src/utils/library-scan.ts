@@ -45,6 +45,8 @@ export type LibraryScanResult = {
   updated: number;
   offlined: number;
   onlined: number;
+  /** Items this scan sent to the Trash because their file is gone; bounded by the scan's safe limit. */
+  missing?: number;
   /** The last item id the check finished. */
   cursor: string | null;
   stopReason: LibraryScanStopReason | null;
@@ -100,6 +102,7 @@ export const parseLibraryScanResult = (value: unknown): LibraryScanResult => {
     updated: asCount(result.updated),
     offlined: asCount(result.offlined),
     onlined: asCount(result.onlined),
+    ...(asCount(result.missing) > 0 && { missing: asCount(result.missing) }),
     cursor: typeof result.cursor === 'string' ? result.cursor : null,
     stopReason:
       typeof result.stopReason === 'string' && STOP_REASONS.has(result.stopReason)

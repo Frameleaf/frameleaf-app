@@ -400,17 +400,33 @@ export class ImportConnectorRepository {
   /* ------------------------------------------------------------------ */
 
   /**
-   * Offer a file to a run. True when the run takes it: the connection has not seen the file before,
-   * the file changed at the source since it did, or the run that offered it earlier is gone. A file
-   * the connection already holds unchanged is left exactly as it is.
+   * Offer a scan batch's files to a run, in one statement. A file is taken when the connection has not seen it
+   * before, it changed at the source since it did, or the run that offered it earlier is gone. A file the
+   * connection already holds unchanged is left exactly as it is. A file listed twice in one batch counts once, as
+   * its last listing. Returns how many files the run took.
    */
-  async offer(connectionId: string, importId: string, item: RemoteItem): Promise<boolean> {
-    const { rows } = await sql`
+  async offerMany(connectionId: string, importId: string, items: RemoteItem[]): Promise<number> {
+    const unique = [...new Map(items.map((item) => [item.remoteId, item])).values()];
+    if (unique.length === 0) {
+      return 0;
+    }
+    const rows = unique.map((item) => ({
+      remoteId: item.remoteId,
+      path: item.path,
+      size: item.size,
+      modifiedAt: item.modifiedAt.toISOString(),
+      contentHash: item.contentHash ?? null,
+      albumHint: item.albumHint,
+      caption: item.caption ?? null,
+      favourite: item.favourite === true,
+    }));
+    const { rows: taken } = await sql`
       insert into import_connection_item
         ("connectionId", "remoteId", path, size, "modifiedAt", "contentHash", "albumHint", caption, favourite, "importId")
-      values (${connectionId}::uuid, ${item.remoteId}, ${item.path}, ${item.size}, ${item.modifiedAt},
-              ${item.contentHash ?? null}, ${item.albumHint}, ${item.caption ?? null}, ${item.favourite === true},
-              ${importId}::uuid)
+      select ${connectionId}::uuid, i."remoteId", i.path, i.size, i."modifiedAt", i."contentHash", i."albumHint",
+        i.caption, i.favourite, ${importId}::uuid
+      from jsonb_to_recordset(${json(rows)}) as i("remoteId" text, path text, size bigint, "modifiedAt" timestamptz,
+        "contentHash" text, "albumHint" text, caption text, favourite boolean)
       on conflict ("connectionId", "remoteId") do update set
         path = excluded.path, size = excluded.size, "modifiedAt" = excluded."modifiedAt",
         "contentHash" = excluded."contentHash", "albumHint" = excluded."albumHint", caption = excluded.caption,
@@ -421,7 +437,7 @@ export class ImportConnectorRepository {
         or (import_connection_item."importId" is null and import_connection_item."fileId" is null)
       returning id
     `.execute(this.db);
-    return rows.length > 0;
+    return taken.length;
   }
 
   /** The next files of a run to download, in a stable order. */

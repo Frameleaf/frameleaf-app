@@ -25,6 +25,15 @@
 #error "Unsupported media runner architecture"
 #endif
 
+#ifndef __NR_clone3
+#define __NR_clone3 435
+#endif
+
+/* CLONE_NEWNS, NEWCGROUP, NEWUTS, NEWIPC, NEWUSER, NEWPID and NEWNET. */
+#define CLONE_NAMESPACES 0x7E020000U
+/* Tasks a fresh runner UID may hold: ffmpeg's threads fit, a fork bomb does not. */
+#define RUNNER_TASKS 1024
+
 #define REJECT (SECCOMP_RET_ERRNO | EPERM)
 #define DENY(nr) \
     BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, __NR_##nr, 0, 1), \
@@ -47,6 +56,15 @@ static int lock_network(void) {
         BPF_JUMP(BPF_JMP | BPF_JGE | BPF_K, 0x40000000U, 0, 1),
         BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_KILL_PROCESS),
 #endif
+        /* clone3 keeps its flags in memory a filter cannot read: ENOSYS makes libc fall back to clone. */
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, __NR_clone3, 0, 1),
+        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ERRNO | ENOSYS),
+        /* clone may start threads and processes, never new namespaces. */
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, __NR_clone, 0, 4),
+        BPF_STMT(BPF_LD | BPF_W | BPF_ABS, offsetof(struct seccomp_data, args[0])),
+        BPF_JUMP(BPF_JMP | BPF_JSET | BPF_K, CLONE_NAMESPACES, 0, 1),
+        BPF_STMT(BPF_RET | BPF_K, REJECT),
+        BPF_STMT(BPF_LD | BPF_W | BPF_ABS, offsetof(struct seccomp_data, nr)),
         LOCAL_SOCKET(socket),
         LOCAL_SOCKET(socketpair),
         DENY(io_uring_setup),
@@ -148,8 +166,11 @@ int main(int argc, char **argv) {
     }
     struct rlimit core = {0, 0};
     struct rlimit files = {256, 256};
+    /* The task limit counts every process of the UID. Only a fresh runner UID is ours alone; a rootless
+       runner shares the server's UID, whose own threads would count against it. */
+    struct rlimit tasks = {RUNNER_TASKS, RUNNER_TASKS};
     if (!getuid() || !geteuid() || setrlimit(RLIMIT_CORE, &core) ||
-        setrlimit(RLIMIT_NOFILE, &files) || !safe_stdio()) {
+        setrlimit(RLIMIT_NOFILE, &files) || (!caller && setrlimit(RLIMIT_NPROC, &tasks)) || !safe_stdio()) {
         return 125;
     }
     if (syscall(SYS_close_range, 3U, ~0U, 0U)) {

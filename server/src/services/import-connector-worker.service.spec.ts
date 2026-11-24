@@ -180,6 +180,13 @@ describe(ImportConnectorWorkerService.name, () => {
       }
       return Promise.resolve(changed);
     }),
+    offerMany: vi.fn(async (connection: string, importId: string, items: RemoteItem[]) => {
+      let taken = 0;
+      for (const item of new Map(items.map((entry) => [entry.remoteId, entry])).values()) {
+        if (await connectors.offer(connection, importId, item)) taken++;
+      }
+      return taken;
+    }),
     pendingItems: vi.fn((importId: string, limit: number) =>
       Promise.resolve(
         seen

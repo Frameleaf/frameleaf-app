@@ -1,6 +1,8 @@
 """Run through the launcher in a local Linux container."""
+import ctypes
 import errno
 import os
+import platform
 import resource
 import socket
 import subprocess
@@ -9,6 +11,27 @@ import tempfile
 from pathlib import Path
 
 HIGH = 3000
+RUNNER = 204107
+# clone and clone3 syscall numbers, and the namespace flags the filter refuses.
+SYSCALLS = {"x86_64": (56, 435), "aarch64": (220, 435)}
+CLONE_NEWUSER, CLONE_NEWNS, SIGCHLD = 0x10000000, 0x00020000, 17
+
+
+def namespaces_refused():
+    """clone with namespace flags fails with EPERM and clone3 with ENOSYS, so libc falls back to plain clone."""
+    libc = ctypes.CDLL(None, use_errno=True)
+    libc.syscall.restype = ctypes.c_long
+    clone, clone3 = SYSCALLS[platform.machine()]
+    child = libc.syscall(ctypes.c_long(clone), ctypes.c_ulong(CLONE_NEWUSER | CLONE_NEWNS | SIGCHLD),
+                         ctypes.c_ulong(0), ctypes.c_ulong(0), ctypes.c_ulong(0), ctypes.c_ulong(0))
+    if child == 0:
+        os._exit(0)
+    if child > 0:
+        os.waitpid(child, 0)
+        raise AssertionError("clone made new namespaces")
+    assert ctypes.get_errno() == errno.EPERM, ctypes.get_errno()
+    assert libc.syscall(ctypes.c_long(clone3), ctypes.c_void_p(0), ctypes.c_ulong(0)) == -1
+    assert ctypes.get_errno() == errno.ENOSYS, ctypes.get_errno()
 
 
 def check():
@@ -35,6 +58,10 @@ def check():
         capture_output=True, check=False,
     )
     assert result.returncode and b"PermissionError" in result.stderr
+    namespaces_refused()
+    # A fresh runner UID (root caller) gets a task limit; a rootless runner shares the server's UID and does not.
+    if os.getuid() == RUNNER:
+        assert resource.getrlimit(resource.RLIMIT_NPROC) == (1024, 1024)
 
 
 def run(launcher):
@@ -55,7 +82,7 @@ def run(launcher):
             resource.setrlimit(resource.RLIMIT_NOFILE, (max(soft, HIGH + 1), hard))
             os.dup2(inherited.fileno(), HIGH, inheritable=True)
             child = subprocess.Popen(
-                [launcher, str(stage), "204107", sys.executable, __file__, "check", str(path), str(HIGH)],
+                [launcher, str(stage), str(RUNNER), sys.executable, __file__, "check", str(path), str(HIGH)],
                 pass_fds=(HIGH,),
                 preexec_fn=lambda: resource.setrlimit(resource.RLIMIT_NOFILE, (1024, 1024)),
             )

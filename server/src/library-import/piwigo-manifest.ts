@@ -105,6 +105,8 @@ export async function readPiwigoManifest(
       return refuse('PIWIGO_OWNER_REVIEW_REQUIRED');
     if (info.status !== 'guest') accountIds.add(id);
   }
+  // A category whose chain already reached the top is not walked again, so deep trees stay linear.
+  const rooted = new Set<string>();
   for (const [id, category] of categories) {
     if (
       typeof category.name !== 'string' ||
@@ -114,12 +116,13 @@ export async function readPiwigoManifest(
       return refuse('PIWIGO_CATEGORY_GRAPH_INVALID');
     const seen = new Set<string>();
     let current: string | undefined = id;
-    while (current !== undefined) {
+    while (current !== undefined && !rooted.has(current)) {
       if (seen.has(current) || !categories.has(current)) return refuse('PIWIGO_CATEGORY_GRAPH_INVALID');
       seen.add(current);
       const parent: PiwigoRow['id_uppercat'] = categories.get(current)!.id_uppercat;
       current = parent === null ? undefined : key(parent);
     }
+    for (const node of seen) rooted.add(node);
   }
   const relations = (
     table: PiwigoTable,
