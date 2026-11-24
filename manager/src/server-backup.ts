@@ -528,7 +528,10 @@ export class ServerBackup {
       here.clock === at ||
       (!!before && (before.day === here.day ? before.clock < at && at <= here.clock : at > before.clock || at <= here.clock));
     if (this.current?.trigger === 'schedule' && this.current.kind === 'backup' && stop && reached(stop)) return this.stop();
-    if (this.child || !reached(time)) return;
+    // FL-1770: Manager was not running at the time (a restart, an update, the server off): the first look after it
+    // starts catches up today's backup, while its window is still open.
+    const missed = previous === null && here.clock > time && (!stop || stop < time || here.clock < stop);
+    if (this.child || !(reached(time) || missed)) return;
     // A time passed just before midnight belongs to the day it was passed on.
     const day = before && before.day !== here.day && time > before.clock ? before.day : here.day;
     if (saved.scheduledOn === day) return;
@@ -553,6 +556,11 @@ export class ServerBackup {
         : s3Store({ endpoint: target.endpoint, region: target.region, bucket: target.bucket, prefix: target.prefix, credentials: (renew) => session!.credentials('restore', renew) });
     if ((await store.list('config')).length === 0) throw new Refusal('server_backup_nothing_stored');
     const repository = await Repository.open(store, { rootKey: Buffer.from(rootKey, 'hex') });
+    // FL-1770: the newest backup in Cloud's signed history must still be stored. Retention never removes the
+    // newest, so a missing one was dropped, and an older backup would be shown and restored as the latest.
+    const newest = session?.newest;
+    if (newest && target.kind === 'cloud' && !(await repository.listSnapshots()).some(({ key }) => target.prefix + key === newest.objectKey))
+      throw new Refusal('server_backup_cloud_history_changed', 409);
     await repository.loadIndex();
     return repository;
   }

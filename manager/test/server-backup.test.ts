@@ -214,6 +214,7 @@ test('the schedule keeps the owner’s time zone, not the container’s', async 
   });
   await zoned.turnOn({ ...settings(), schedule: { time: '02:00', stop: null }, timeZone: 'Asia/Tokyo' });
   // 02:00 in Tokyo (UTC+9, no daylight time) is 17:00 UTC the day before. 02:00 UTC is 11:00 there: nothing starts.
+  await zoned.tick(new Date('2026-11-17T16:00:00Z'));
   await zoned.tick(new Date('2026-11-18T02:00:00Z'));
   assert.equal(zoned.view()!.running, null);
   assert.equal(zoned.view(new Date('2026-11-18T03:00:00Z'))!.next, Date.parse('2026-11-18T17:00:00Z'));
@@ -235,6 +236,28 @@ test('a scheduled minute the timer skipped still starts that day’s backup', as
   await skipped.tick(new Date(2026, 10, 19, 2, 1, 0));
   assert.equal(skipped.view()!.running?.trigger, 'schedule');
   skipped.stop();
+});
+
+test('a backup missed while Manager was not running is caught up when it starts, inside its window', async () => {
+  const late = (name: string) =>
+    new ServerBackup(new Store(at(`${name}-state`)), {
+      target: { kind: 'folder', path: at(`${name}-repository`) },
+      inside: (path) => path === at('server') || path.startsWith(at('server') + sep),
+      always: [],
+    });
+  const caught = late('caught');
+  await caught.turnOn({ ...settings(), schedule: { time: '02:00', stop: '06:00' } });
+  await caught.tick(new Date(2026, 10, 19, 5, 0, 0));
+  assert.equal(caught.view()!.running?.trigger, 'schedule');
+  caught.stop();
+  // After the window closed, the next day's run is the next one.
+  const closed = late('closed');
+  await closed.turnOn({ ...settings(), schedule: { time: '02:00', stop: '06:00' } });
+  await closed.tick(new Date(2026, 10, 19, 7, 0, 0));
+  assert.equal(closed.view()!.running, null);
+  // Only when Manager starts: a running Manager that passed the time already decided.
+  await closed.tick(new Date(2026, 10, 19, 7, 1, 0));
+  assert.equal(closed.view()!.running, null);
 });
 
 test('the schedule starts one backup a day at its time', async () => {

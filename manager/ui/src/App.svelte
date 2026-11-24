@@ -265,7 +265,8 @@
   const operation = $derived(
     dashboard?.operations?.find((item: any) => item.id === selectedOperation) ?? dashboard?.operations?.[0],
   );
-  const activeOperation = $derived(dashboard?.operations?.find((item: any) => item.state !== 'complete'));
+  // FL-1770: a failed Start, Stop or Restart stays in the history with Resume, but no longer blocks other operations.
+  const activeOperation = $derived(dashboard?.operations?.find((item: any) => item.state !== 'complete' && item.holdsLock !== false));
   const timeline = $derived(operation ? operationProgress(operation, operation.backupSkipped) : null);
   const running = $derived(
     dashboard?.services?.some((service: any) => service.service === 'frameleaf-server' && service.running),

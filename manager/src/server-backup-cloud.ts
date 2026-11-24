@@ -1,10 +1,10 @@
 // Server Backup's place in Frameleaf Cloud: the link this Manager holds as a "backup machine", and what a
 // run needs from it: short-lived storage credentials, the run lease, and the signed history of backups.
 // Only this process talks to Cloud. The worker asks it for credentials and never sees the machine's key.
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { chmod, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { Cloud, CloudError, createIdentity, type Grant, type Identity, type Lease } from './cloud-link.js';
+import { Cloud, CloudError, createIdentity, signedBy, snapshotTranscript, type Grant, type Identity, type Lease } from './cloud-link.js';
 import { Refusal } from './contracts.js';
 import type { Store } from './store.js';
 
@@ -31,6 +31,8 @@ export interface Session {
   place: Place;
   /** A backup's place in the signed history: its snapshot is stored under this number. Null for a restore. */
   sequence: number | null;
+  /** The newest backup in the signed history, checked against what this Manager saw before. Null when there is none. */
+  newest: { sequence: number; objectKey: string } | null;
   /** Asked before every request to storage. Asking for `prune` swaps the run lease from backup to prune. */
   credentials(operation: Operation, renew: boolean): Promise<Credentials>;
   /** Adds the finished backup to the signed history Cloud keeps. */
@@ -51,6 +53,19 @@ interface Saved {
   attached?: string | null;
   /** When a locked copy of the recovery key was last stored in Cloud, or null when there is none. */
   keyCopyAt?: number | null;
+  /**
+   * FL-1770: the newest entry of the signed history this Manager has seen, for one vault. Cloud may later show
+   * more, never less: a lower or different head means backups were dropped or swapped, and nothing is trusted.
+   */
+  history?: Mark | null;
+}
+/** One entry of the signed history: enough to know it again and to find its backup. */
+interface Mark {
+  vaultId: string;
+  instanceId: string;
+  sequence: number;
+  digest: string;
+  objectKey: string;
 }
 
 const KEY = 'server-backup-cloud';
@@ -202,7 +217,7 @@ export class CloudBackup {
     });
     await rm(this.file(), { force: true });
     this.linking = null;
-    this.store.set(KEY, { account: null, locationId: null, unrecorded: null, takeover: null, attached: null } satisfies Saved);
+    this.store.set(KEY, { account: null, locationId: null, unrecorded: null, takeover: null, attached: null, history: null } satisfies Saved);
   }
 
   async locations() {
@@ -236,7 +251,8 @@ export class CloudBackup {
     const answer = await this.cloud.takeover(identity, takeover.fromInstanceId);
     if (answer.status === 'approved') {
       await this.keep({ ...identity, instanceId: answer.instanceId ?? takeover.fromInstanceId });
-      this.save({ takeover: null, unrecorded: null });
+      // The older machine's history is new to this one: its first look is taken as it is (see verifyHistory).
+      this.save({ takeover: null, unrecorded: null, history: null });
     } else if (answer.status !== 'pending') this.save({ takeover: null });
     return answer;
   }
@@ -259,13 +275,69 @@ export class CloudBackup {
     const entry = this.saved().unrecorded;
     if (!entry) return;
     try {
-      await this.cloud.recordSnapshot(identity, entry);
+      const { digest } = await this.cloud.recordSnapshot(identity, entry);
+      this.mark(identity, { vaultId: entry.vaultId, sequence: entry.sequence, digest, objectKey: entry.objectKey });
     } catch (error) {
       // ponytail: a record Cloud will never take (its history moved on) is dropped; the backup itself stays
       // stored and restorable, it is only missing from the signed history. Re-sign it in place if that ever matters.
       if (!(error instanceof CloudError) || (error.status !== 409 && error.status !== 422)) throw error;
     }
     this.save({ unrecorded: null });
+  }
+
+  /** Remembers an entry Cloud has taken or shown, unless a newer one is remembered already. */
+  private mark(identity: Identity, entry: Omit<Mark, 'instanceId'>) {
+    const known = this.known(identity, entry.vaultId);
+    if (known && known.sequence >= entry.sequence) return;
+    this.save({ history: { ...entry, instanceId: identity.instanceId } });
+  }
+  private known(identity: Identity, vaultId: string): Mark | null {
+    const mark = this.saved().history;
+    // Another vault (a different recovery key) or another Cloud id has a history of its own.
+    return mark && mark.vaultId === vaultId && mark.instanceId === identity.instanceId ? mark : null;
+  }
+
+  /**
+   * FL-1770: checks Cloud's signed history before it is used. The newest entry may not be lower than, or differ
+   * from, the newest this Manager saw before. Every entry after that one must follow it in order, name the one
+   * before it, belong to this machine and vault, hash to its digest, and carry this machine's signature: only
+   * this machine adds to its history. On a first look (a new link, or after a takeover, when the older machine's
+   * entries carry its key) the whole chain is checked the same way except for whose key signed it.
+   * Returns the newest entry, or null when there is none.
+   */
+  private async verifyHistory(identity: Identity, vaultId: string): Promise<Mark | null> {
+    const known = this.known(identity, vaultId);
+    const refused = () => new Refusal('server_backup_cloud_history_changed', 409);
+    let newest = known;
+    for (let pages = 0; pages < 10_000; pages++) {
+      const after = newest?.sequence ?? 0;
+      const { head, snapshots } = await this.cloud.snapshotPage(identity, vaultId, after);
+      if (known && (!head || head.sequence < known.sequence || (head.sequence === known.sequence && head.digest !== known.digest)))
+        throw refused();
+      if (!head) return null;
+      if (newest && head.sequence === newest.sequence) {
+        if (head.digest !== newest.digest) throw refused();
+        this.mark(identity, newest);
+        return newest;
+      }
+      // Cloud says there are newer entries; it must show them.
+      if (snapshots.length === 0) throw refused();
+      for (const record of snapshots) {
+        const { descriptor } = record;
+        if (
+          descriptor.sequence !== (newest?.sequence ?? 0) + 1 ||
+          descriptor.previousDigest !== (newest?.digest ?? null) ||
+          descriptor.vaultId !== vaultId ||
+          descriptor.instanceId !== identity.instanceId ||
+          createHash('sha256').update(snapshotTranscript(descriptor)).digest('hex') !== record.digest ||
+          (known && !signedBy(identity, record))
+        )
+          throw refused();
+        newest = { vaultId, instanceId: identity.instanceId, sequence: descriptor.sequence, digest: record.digest, objectKey: descriptor.manifest.objectKey };
+      }
+      if (newest!.sequence > head.sequence) throw refused();
+    }
+    throw refused();
   }
 
   /**
@@ -287,15 +359,31 @@ export class CloudBackup {
     const hold = async (operation: Lease['operation']): Promise<Lease> => {
       if (lease?.operation === operation) return lease;
       await drop();
+      const asked = Date.now();
       const taken = await this.cloud.acquireLease(identity, operation);
       lease = taken;
+      // FL-1770: how long Cloud lets a lease run unrenewed, timed on this machine's clock from when it was asked
+      // for. Cloud may already have given the lease to another run by then, so this run stops writing.
+      const life = Math.max(0, Date.parse(taken.expiresAt) - Date.parse(taken.acquiredAt));
+      let until = asked + life;
       beat = setInterval(() => {
-        // Only Cloud saying so ends the run. A dropped connection is tried again at the next beat; if it
-        // lasts past the lease's life, Cloud says the lease is lost.
-        this.cloud.heartbeat(identity, taken.leaseId).catch((error) => {
-          // `invalid_client`: another machine took this identity over, so this run no longer owns the backups.
-          if (error instanceof CloudError && (error.code === 'lease-lost' || error.code === 'invalid_client') && lease === taken) onLost();
-        });
+        if (lease !== taken) return;
+        // Cut off from Cloud for the lease's whole life (a network split): it must count as lost.
+        if (Date.now() >= until) {
+          until = Infinity;
+          return onLost();
+        }
+        // A dropped connection is tried again at the next beat.
+        const sent = Date.now();
+        this.cloud.heartbeat(identity, taken.leaseId).then(
+          () => {
+            until = Math.max(until, sent + life);
+          },
+          (error) => {
+            // `invalid_client`: another machine took this identity over, so this run no longer owns the backups.
+            if (error instanceof CloudError && (error.code === 'lease-lost' || error.code === 'invalid_client') && lease === taken) onLost();
+          },
+        );
       }, taken.heartbeatAfterSec * 1000);
       beat.unref();
       return taken;
@@ -328,9 +416,10 @@ export class CloudBackup {
       const first = await take(kind === 'backup' ? 'upload' : 'restore');
       let sequence: number | null = null;
       let previousDigest: string | null = null;
+      if (kind === 'backup') await this.flush(identity);
+      // Before a backup chains onto it, and before any backup is listed or restored from it.
+      const head = await this.verifyHistory(identity, vaultId);
       if (kind === 'backup') {
-        await this.flush(identity);
-        const head = await this.cloud.snapshotHead(identity, vaultId);
         sequence = (head?.sequence ?? 0) + 1;
         previousDigest = head?.digest ?? null;
       }
@@ -338,6 +427,7 @@ export class CloudBackup {
       return {
         place: { endpoint: first.endpoint, region: first.region, bucket: first.bucket, prefix },
         sequence,
+        newest: head ? { sequence: head.sequence, objectKey: head.objectKey } : null,
         credentials: async (operation, renew) => {
           const have = held.get(operation);
           return have && !renew && have.until > Date.now() ? have.credentials : (await take(operation)).capability.credentials;
@@ -348,7 +438,8 @@ export class CloudBackup {
           const entry: Entry = { snapshotId: randomUUID(), vaultId, sequence, previousDigest, objectKey: prefix + stored.key, versionId: stored.versionId, ciphertextSha256: stored.ciphertextSha256, keyVersion: 1, createdAt: stored.time };
           // Saved before it is sent: if the answer is lost, the same record goes again and Cloud answers with the first.
           this.save({ unrecorded: entry });
-          await this.cloud.recordSnapshot(identity, entry);
+          const { digest } = await this.cloud.recordSnapshot(identity, entry);
+          this.mark(identity, { vaultId, sequence, digest, objectKey: entry.objectKey });
           this.save({ unrecorded: null });
         },
         end: async (report) => {

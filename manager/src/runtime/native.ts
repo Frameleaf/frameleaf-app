@@ -1175,11 +1175,18 @@ export class NativeOperations {
   /**
    * After the server exits unexpectedly only Stop or Start clears the fault. A new backup or restore would take
    * the single-operation lock, be refused by its runner, and keep holding it, so those two could not run.
+   * FL-1770: every state in which the runner refuses a first run is refused here too, not only an unconfirmed
+   * shutdown (native-backup-operation and native-restore-operation make the same check).
    */
   private refuseUnconfirmedShutdown(kind: 'backup' | 'restore', key: string, input: Record<string, unknown>, code: string) {
     if (this.store.request(kind, key, input)) return;
     const status = this.runtime.status();
-    if (status.state === 'unknown' && status.code === 'native_shutdown_unconfirmed') throw new Refusal(code);
+    if (status.state !== 'unknown') return;
+    const usable =
+      kind === 'backup'
+        ? ['native_owner_not_attached', 'native_database_maintenance', 'native_checkpoint_cleanup_maintenance']
+        : ['native_owner_not_attached'];
+    if (!usable.includes(status.code ?? '')) throw new Refusal(code);
   }
   admitMediaMove(key: string, input: Record<string, unknown>): Operation {
     if (!this.mediaMoveWork) throw new Refusal('native_action_unavailable');

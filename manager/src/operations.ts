@@ -3803,6 +3803,8 @@ export class Operations {
       databaseMove:
         operation.kind === 'update' &&
         (!!receipts['database-move-intent'] || !!this.store.get<UpdateReview>(`update:${input.reviewId}`)?.databaseMove),
+      /** FL-1770: false for a failed Start, Stop or Restart, which no longer keeps other operations from starting. */
+      holdsLock: this.store.holdsLock(operation),
       canStop: isMoveOperation(operation.kind) && operation.state === 'running' && !receipts['move-writes-intent'],
       canCancel:
         ['failed', 'interrupted', 'awaiting-review'].includes(operation.state) &&

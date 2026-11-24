@@ -246,15 +246,28 @@ export class DesktopGrants {
       throw error;
     }
   }
+  /**
+   * What new pairings and grants are bound to: the administrator's password, so a new password revokes every
+   * device. FL-1770: not the name, so renaming the administrator no longer does.
+   */
   private epoch(): string {
+    const admin = this.store.get<{ salt: string; hash: string }>('administrator');
+    return digest(admin ? { salt: admin.salt, hash: admin.hash } : null);
+  }
+  /** The whole administrator record: how a password check is matched to the record it read (and older grants' epoch). */
+  private administrator(): string {
     return digest(this.store.get('administrator'));
+  }
+  /** A grant or pairing from before FL-1770 carries the whole record's digest; it holds until the record changes. */
+  private holds(epoch: string): boolean {
+    return epoch === this.epoch() || epoch === this.administrator();
   }
   async approve(password: string, input: unknown): Promise<PairingApproval> {
     const details = Details.safeParse(input);
     if (!details.success) throw new Refusal('desktop_pairing_invalid', 400);
     const admin = await this.security.confirm(password);
     return this.transaction(() => {
-      if (this.epoch() !== digest(admin))
+      if (this.administrator() !== digest(admin))
         throw new Refusal('invalid_credentials', 401);
       const now = Date.now();
       const approval = {
@@ -296,7 +309,7 @@ export class DesktopGrants {
       const now = Date.now();
       if (
         !pending.success ||
-        pending.data.epoch !== this.epoch() ||
+        !this.holds(pending.data.epoch) ||
         pending.data.expiresAt <= now ||
         pending.data.approvedAt > now
       )
@@ -319,7 +332,7 @@ export class DesktopGrants {
         publicKey: details.publicKey,
         scopes: details.scopes,
         tokenHash: sha256(secret),
-        epoch,
+        epoch: this.epoch(),
         expiresAt: now + LIFETIME,
         recentUntil: details.approvedAt + RECENT,
       };
@@ -344,11 +357,18 @@ export class DesktopGrants {
     const parsed = Grant.safeParse(row ? JSON.parse(row.value) : null);
     if (
       !parsed.success ||
-      parsed.data.epoch !== this.epoch() ||
+      !this.holds(parsed.data.epoch) ||
       parsed.data.expiresAt <= Date.now() ||
       parsed.data.expiresAt - LIFETIME > Date.now()
     )
       throw new Refusal('desktop_grant_invalid', 401);
+    // An older grant moves to the password epoch the first time it is used, so a later rename keeps it.
+    if (parsed.data.epoch !== this.epoch()) {
+      parsed.data.epoch = this.epoch();
+      this.store.db
+        .prepare('UPDATE desktop_grants SET value=? WHERE id=?')
+        .run(JSON.stringify(parsed.data), id);
+    }
     return parsed.data;
   }
   authorize(input: unknown, expected: RequestTarget) {
@@ -397,7 +417,7 @@ export class DesktopGrants {
   async reauthenticate(password: string, id: string): Promise<void> {
     const admin = await this.security.confirm(password);
     this.transaction(() => {
-      if (this.epoch() !== digest(admin))
+      if (this.administrator() !== digest(admin))
         throw new Refusal('invalid_credentials', 401);
       const grant = this.current(id);
       grant.recentUntil = Date.now() + RECENT;
@@ -409,7 +429,7 @@ export class DesktopGrants {
   async revoke(password: string, id: string): Promise<void> {
     const admin = await this.security.confirm(password);
     this.transaction(() => {
-      if (this.epoch() !== digest(admin))
+      if (this.administrator() !== digest(admin))
         throw new Refusal('invalid_credentials', 401);
       this.store.db.prepare('DELETE FROM desktop_grants WHERE id=?').run(id);
       this.store.db

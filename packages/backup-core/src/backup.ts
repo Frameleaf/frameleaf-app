@@ -115,8 +115,8 @@ export async function backup(
     const { size: _, ...rest } = now;
     if (before && same(before, now)) {
       const ids = await fileChunks(repository, before).catch(() => null);
-      // Reuse only what storage really holds; anything else is read again.
-      if (ids?.every((id) => repository.index.has(id))) {
+      // Reuse only what storage really holds, and not from a pack found damaged; anything else is read again.
+      if (ids?.every((id) => repository.holds(id))) {
         unchanged++;
         return {
           ...rest,

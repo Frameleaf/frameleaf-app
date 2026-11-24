@@ -107,6 +107,12 @@ export class Repository {
   readonly index = new Map<string, Location>();
   /** Index objects the last `loadIndex` could not open. */
   readonly damagedIndexes: string[] = [];
+  /**
+   * Packs a check found damaged (see `recordDamagedPacks`). Their pieces are still read when nothing else holds
+   * them, since most of a damaged pack usually still opens, but a backup never reuses them: it stores them
+   * again from the files, and the index then points at the new copy.
+   */
+  readonly suspectPacks = new Set<string>();
 
   private constructor(
     readonly store: Store,
@@ -167,6 +173,19 @@ export class Repository {
     const packs = new Set((await this.store.list('p/')).map((object) => object.key));
     const indexed = new Set<string>();
     this.damagedIndexes.length = 0;
+    this.suspectPacks.clear();
+    for (const pack of await this.readDamagedPacks()) {
+      if (packs.has(pack)) {
+        this.suspectPacks.add(pack);
+      }
+    }
+    // A piece stored twice (copied by a prune, or stored again after damage) is read from a pack not found damaged.
+    const place = (id: string, location: Location) => {
+      const known = this.index.get(id);
+      if (!known || this.suspectPacks.has(known.pack) || !this.suspectPacks.has(location.pack)) {
+        this.index.set(id, location);
+      }
+    };
     for (const object of await this.store.list('i/')) {
       const sealed = await this.store.get(object.key);
       let data: Buffer;
@@ -195,7 +214,7 @@ export class Repository {
         }
         indexed.add(pack);
         for (const entry of decodeEntries(entries)) {
-          this.index.set(entry.id, { pack, offset: entry.offset, length: entry.length });
+          place(entry.id, { pack, offset: entry.offset, length: entry.length });
         }
       }
     }
@@ -211,9 +230,61 @@ export class Repository {
         throw error;
       });
       for (const entry of adopted) {
-        this.index.set(entry.id, { pack, offset: entry.offset, length: entry.length });
+        place(entry.id, { pack, offset: entry.offset, length: entry.length });
       }
     }
+  }
+
+  /** Whether a backup may point at the stored copy of a piece instead of storing it again. */
+  holds(id: string): boolean {
+    const location = this.index.get(id);
+    return !!location && !this.suspectPacks.has(location.pack);
+  }
+
+  /**
+   * Notes packs a check found damaged, in storage beside them (`d/`), so every later run knows: the next backup
+   * stores their pieces again from the files that are still there. A note for packs that are gone is removed by prune.
+   */
+  async recordDamagedPacks(packs: string[]): Promise<void> {
+    const fresh = packs.filter((pack) => /^p\/[0-9a-f]{32}$/.test(pack) && !this.suspectPacks.has(pack));
+    if (fresh.length === 0) {
+      return;
+    }
+    const key = `d/${randomBytes(16).toString('hex')}`;
+    await this.store.put(key, seal(this.keys.meta, Buffer.from(key), Buffer.from(JSON.stringify({ packs: fresh }))));
+    for (const pack of fresh) {
+      this.suspectPacks.add(pack);
+    }
+  }
+
+  /** Every pack named in a damage note. A note that can't be opened is left out, as a damaged index is. */
+  async readDamagedPacks(): Promise<string[]> {
+    return (await this.damageNotes()).flatMap((note) => note.packs);
+  }
+
+  /** Removes damage notes whose packs are all gone (a prune deleted them once nothing needed them). */
+  async removeSettledDamageNotes(): Promise<void> {
+    const packs = new Set((await this.store.list('p/')).map((object) => object.key));
+    for (const note of await this.damageNotes()) {
+      if (!note.packs.some((pack) => packs.has(pack))) {
+        await this.store.delete(note.key);
+      }
+    }
+  }
+
+  private async damageNotes(): Promise<{ key: string; packs: string[] }[]> {
+    const notes: { key: string; packs: string[] }[] = [];
+    for (const object of await this.store.list('d/')) {
+      try {
+        const { packs } = JSON.parse(unseal(this.keys.meta, Buffer.from(object.key), await this.store.get(object.key)).toString()) as { packs: unknown };
+        notes.push({ key: object.key, packs: Array.isArray(packs) ? packs.filter((pack): pack is string => typeof pack === 'string') : [] });
+      } catch (error) {
+        if (!(error instanceof UnsealError) && !(error instanceof SyntaxError)) {
+          throw error;
+        }
+      }
+    }
+    return notes;
   }
 
   /** A pack's own list of what it holds. This, not the index, is the authority. */
@@ -329,7 +400,7 @@ export class PackWriter {
   ) {}
 
   has(id: string) {
-    return this.repository.index.has(id) || this.pending.has(id);
+    return this.repository.holds(id) || this.pending.has(id);
   }
 
   /** Returns false when the blob was already there. */
