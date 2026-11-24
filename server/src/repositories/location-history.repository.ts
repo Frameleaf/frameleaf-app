@@ -115,7 +115,7 @@ export class LocationHistoryRepository {
       }
       throw error;
     });
-    const size = text === null ? Number.NaN : Number(text);
+    const size = text === null ? NaN : Number(text);
     return Number.isSafeInteger(size) && size >= 0 ? size : null;
   }
 

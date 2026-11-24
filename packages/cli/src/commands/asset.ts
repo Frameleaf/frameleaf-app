@@ -462,9 +462,9 @@ export const uploadFiles = async (
         showProgress();
         return response;
       }
-      const duplicate = response.status === AssetMediaStatus.Duplicate;
-      newAssets.push({ id: response.id, filepath, ...(duplicate && { duplicate }) });
-      if (duplicate) {
+      const isDuplicate = response.status === AssetMediaStatus.Duplicate;
+      newAssets.push({ id: response.id, filepath, ...(isDuplicate && { duplicate: isDuplicate }) });
+      if (isDuplicate) {
         duplicateCount++;
         duplicateSize += stats.size ?? 0;
       } else {
@@ -760,7 +760,7 @@ export const deleteFiles = async (uploaded: Asset[], duplicates: Asset[], option
   );
   deletionProgress.start(fileCount, 0);
 
-  let keptCount = 0;
+  const keptSidecars = new Set<string>();
   try {
     const sidecars = new Set<string>();
     // Only a new upload took its XMP to the server. A duplicate's XMP was never sent, so it may hold
@@ -768,7 +768,6 @@ export const deleteFiles = async (uploaded: Asset[], duplicates: Asset[], option
     const sentSidecar = new Set(
       options.delete ? uploaded.filter(({ duplicate }) => !duplicate).map(({ filepath }) => filepath) : [],
     );
-    const keptSidecars = new Set<string>();
     const selected = new Set(files.values().map((filepath) => path.resolve(filepath)));
     // Each directory is listed once, however many selected files it holds.
     const inUseByDir = new Map<string, Set<string> | false>();
@@ -795,7 +794,6 @@ export const deleteFiles = async (uploaded: Asset[], duplicates: Asset[], option
     for (const sidecar of keptSidecars) {
       sidecars.delete(sidecar);
     }
-    keptCount = keptSidecars.size;
     for (const batch of chunk(files.values().toArray(), options.concurrency)) {
       await Promise.all(batch.map((filepath) => unlink(filepath)));
       deletionProgress.increment(batch.length);
@@ -807,8 +805,8 @@ export const deleteFiles = async (uploaded: Asset[], duplicates: Asset[], option
   } finally {
     deletionProgress.stop();
   }
-  if (keptCount > 0) {
-    console.log(`Kept ${keptCount} XMP sidecar${s(keptCount)} of duplicates, which the server doesn't have`);
+  if (keptSidecars.size > 0) {
+    console.log(`Kept ${keptSidecars.size} XMP sidecar${s(keptSidecars.size)} of duplicates, which the server doesn't have`);
   }
 };
 

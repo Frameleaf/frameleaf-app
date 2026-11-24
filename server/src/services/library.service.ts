@@ -788,10 +788,10 @@ export class LibraryService extends BaseService {
 
       // Only a file that is gone goes offline. A subfolder that lost its permission (EACCES, EPERM) or a share
       // error is "could not check", and the next scan decides.
-      const gone = await this.storageRepository.stat(assetPath).then(
-        () => false,
-        (error: NodeJS.ErrnoException) => error?.code === 'ENOENT' || error?.code === 'ENOTDIR',
-      );
+      const gone = await this.storageRepository
+        .stat(assetPath)
+        .then(() => false)
+        .catch((error: NodeJS.ErrnoException) => error?.code === 'ENOENT' || error?.code === 'ENOTDIR');
       if (!gone) {
         continue;
       }
