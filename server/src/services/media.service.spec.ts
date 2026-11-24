@@ -87,6 +87,8 @@ describe(MediaService.name, () => {
 
   beforeEach(() => {
     ({ sut, mocks } = newTestService(MediaService));
+    // a file with no picture is recorded as such, so catch-up does not queue it again (FL-1777)
+    mocks.assetJob.setNoPicture.mockResolvedValue();
     // Keep the child batch orchestration real while stubbing its native I/O. The pool tests exercise IPC.
     let decodeFailure: unknown;
     const operations = Object.assign(new SharpOperations(), {
