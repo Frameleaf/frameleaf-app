@@ -3067,6 +3067,87 @@ describe(CloudBackupService.name, () => {
         expect(operations.complete).toHaveBeenCalled();
       });
 
+      describe('run reports that do not get through (FL-1769)', () => {
+        let delays: number[];
+        const unreported = () =>
+          (metadata[SystemMetadataKey.FrameleafCloudBackup] as { unreportedRuns?: Array<{ runId: string }> })
+            .unreportedRuns;
+        beforeEach(() => {
+          delays = [];
+          vi.spyOn(sut as never as { reportRetryDelay: (ms: number) => Promise<void> }, 'reportRetryDelay')
+            // eslint-disable-next-line @typescript-eslint/require-await
+            .mockImplementation(async (ms: number) => {
+              delays.push(ms);
+            });
+        });
+
+        it('tries again with backoff and a fresh token on a 5xx, then reports once', async () => {
+          cloudBackup.reportRun
+            .mockRejectedValueOnce(new FrameleafCloudError(MlAdmissionRefusal.CloudUnavailable, 503, 'down', null))
+            .mockRejectedValueOnce(new TypeError('fetch failed'))
+            .mockResolvedValue(undefined);
+          mocks.frameleafCloud.accessToken.mockClear();
+
+          await sut.run(managedOperation(), 'claim-1');
+
+          expect(cloudBackup.reportRun).toHaveBeenCalledTimes(3);
+          expect(delays).toEqual([5000, 15_000]);
+          expect(mocks.frameleafCloud.accessToken.mock.calls.length).toBeGreaterThanOrEqual(3);
+          expect(unreported()).toBeUndefined();
+          expect(operations.complete).toHaveBeenCalled();
+        });
+
+        it('honours Retry-After on a 429, and never retries a refusal', async () => {
+          cloudBackup.reportRun
+            .mockRejectedValueOnce(
+              new FrameleafCloudError(MlAdmissionRefusal.CloudUnavailable, 429, 'slow down', null, null, 20),
+            )
+            .mockRejectedValueOnce(new FrameleafCloudError(MlAdmissionRefusal.CloudUnavailable, 403, 'no', null));
+
+          await sut.run(managedOperation(), 'claim-1');
+
+          expect(cloudBackup.reportRun).toHaveBeenCalledTimes(2);
+          expect(delays).toEqual([20_000]);
+        });
+
+        it('keeps a report Cloud never took and sends it again on the hourly check', async () => {
+          cloudBackup.reportRun.mockRejectedValue(
+            new FrameleafCloudError(MlAdmissionRefusal.CloudUnavailable, 503, 'down', null),
+          );
+
+          await sut.run(managedOperation(), 'claim-1');
+
+          expect(cloudBackup.reportRun).toHaveBeenCalledTimes(3);
+          expect(unreported()).toEqual([expect.objectContaining({ runId: RUN_1, status: 'succeeded' })]);
+          expect(operations.complete).toHaveBeenCalled();
+
+          cloudBackup.reportRun.mockReset().mockResolvedValue(undefined);
+          await sut.handleVerifyCheck();
+
+          expect(cloudBackup.reportRun).toHaveBeenCalledWith(
+            expect.anything(),
+            expect.objectContaining({ runId: RUN_1, status: 'succeeded' }),
+          );
+          expect(unreported()).toBeUndefined();
+        });
+
+        it('reports a stored backup as succeeded before closing it, and a failure after that never says failed', async () => {
+          operations.complete.mockRejectedValueOnce(new Error('database went away'));
+
+          await sut.run(managedOperation(), 'claim-1');
+
+          expect(cloudBackup.reportRun).toHaveBeenCalledTimes(1);
+          expect(cloudBackup.reportRun).toHaveBeenCalledWith(
+            expect.anything(),
+            expect.objectContaining({ runId: RUN_1, status: 'succeeded' }),
+          );
+          expect(cloudBackup.reportRun.mock.invocationCallOrder[0]).toBeLessThan(
+            operations.complete.mock.invocationCallOrder[0],
+          );
+          expect(operations.fail).not.toHaveBeenCalled();
+        });
+      });
+
       it('reports a failed run and its coverage with nothing committed, and the run still fails as before', async () => {
         // storage takes the repository but refuses every pack
         const put = vault.put.bind(vault);

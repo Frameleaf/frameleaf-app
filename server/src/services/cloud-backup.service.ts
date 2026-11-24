@@ -11,6 +11,7 @@ import { CronTime } from 'cron';
 import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, rm } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
+import { setTimeout as sleep } from 'node:timers/promises';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type {
   CloudBackupOwnerSetupResponseDto,
@@ -324,6 +325,12 @@ export const CLOUD_BACKUP_VERIFY_CRON = 'cloudBackupVerify';
 const VERIFY_CHECK_EXPRESSION = '23 * * * *';
 /** FL-164: a retryable refusal of managed storage waits this long when Frameleaf Cloud names no time. */
 const MANAGED_RETRY_MS = 15 * 60_000;
+/** FL-1769: a run report is tried this many times, waiting 5 s then 15 s (or Cloud's Retry-After, at most 30 s). */
+const RUN_REPORT_ATTEMPTS = 3;
+const RUN_REPORT_BACKOFF_MS = 5000;
+const RUN_REPORT_MAX_WAIT_MS = 30_000;
+/** FL-1769: at most this many unaccepted run reports are kept for the hourly check to send again. */
+const MAX_UNREPORTED_RUNS = 20;
 /** FL-164: while this server is not linked, a managed operation waits this long before it looks again. */
 const MANAGED_UNLINKED_RETRY_MS = 60 * 60_000;
 /** FL-164: the usage a status read shows is asked for again after this long. */
@@ -1522,8 +1529,12 @@ export class CloudBackupService {
       return JobStatus.Skipped;
     }
     await this.resumeAfterUploadHours(metadata, settings.uploadHours, serverTimeZone(server));
-    // FL-362: coverage that could not be reported yet is tried again every hour; it never holds the bucket
+    // FL-362: coverage that could not be reported yet is tried again every hour; it never holds the bucket.
+    // FL-1769: so are run reports, first, so coverage binds to a run Cloud knows.
     if (metadata.target === 'managed') {
+      await this.resendUnreportedRuns().catch((error: unknown) =>
+        this.logger.warn(`Could not send the waiting cloud backup run reports: ${errorMessage(error)}`),
+      );
       await this.coverage.publishDue();
     }
     const now = new Date();
@@ -1928,13 +1939,19 @@ export class CloudBackupService {
   }
 
   private async runBackup(operation: MediaOperation, claimToken: string): Promise<void> {
-    const progress = { result: parseRunResult(operation.result) };
+    const progress: Run['progress'] = { result: parseRunResult(operation.result) };
     try {
       await this.process(operation, claimToken, progress);
     } catch (error) {
       if (await this.settleBackupStop(operation, claimToken, error)) return;
       if (await this.waitForManagedRenewal(operation, claimToken, error)) return;
       const message = errorMessage(error);
+      if (progress.completed) {
+        // FL-1769: the backup is stored, recorded complete and reported as succeeded. A step after that
+        // failing (closing the operation, say) leaves the claim to lapse; the next claim finishes it again.
+        this.logger.error(`Cloud backup run ${operation.id} was stored, but finishing it failed: ${message}`);
+        return;
+      }
       this.logger.error(`Cloud backup run ${operation.id} failed: ${message}`);
       const failure = { error: message, errorCode: 'cloud_backup_failed' };
       const outcome =
@@ -1966,7 +1983,7 @@ export class CloudBackupService {
    * backup is stored leaves nothing behind but what the engine stored, which the next claim adopts and does
    * not send again; one that stops after it was stored goes on to record it.
    */
-  private async process(operation: MediaOperation, claimToken: string, progress: { result: CloudBackupRunResult }) {
+  private async process(operation: MediaOperation, claimToken: string, progress: Run['progress']) {
     const { id } = operation;
     const opened = await this.openBucket(operation, claimToken, () =>
       this.recordRun(operation, progress.result, 'waiting-for-key'),
@@ -2389,23 +2406,96 @@ export class CloudBackupService {
           : null,
       errorCode: status === 'failed' ? 'cloud_backup_failed' : null,
     };
-    try {
-      const api = await this.managedApi();
+    const sent = await this.sendRunReport(report);
+    if (sent.outcome === 'not-reported') {
+      // FL-1769: kept until Cloud has it; the hourly check sends it again, not only coverage's re-report
+      await this.keepUnreportedRun(report);
+    } else {
+      await this.dropUnreportedRun(report.runId);
+    }
+    return sent;
+  }
+
+  /**
+   * FL-1769: one run report, tried up to `RUN_REPORT_ATTEMPTS` times with backoff on a network error,
+   * a 5xx or a 429 (its Retry-After honoured), with a fresh instance token each try. Cloud's
+   * `POST /v1/backup/runs` is an upsert on the run id where the latest report wins, so a retry is safe.
+   */
+  private async sendRunReport(
+    report: BackupRunReport,
+  ): Promise<{ outcome: RunReportOutcome; report: BackupRunReport }> {
+    for (let attempt = 1; ; attempt++) {
       try {
-        await this.cloudBackup.reportRun(api, report);
-        return { outcome: 'reported', report };
-      } catch (error) {
-        const refused = error instanceof FrameleafCloudError && (error.status === 400 || error.status === 422);
-        if (!report.manifestKey || !refused) {
-          throw error;
+        const api = await this.managedApi();
+        try {
+          await this.cloudBackup.reportRun(api, report);
+          return { outcome: 'reported', report };
+        } catch (error) {
+          const refused = error instanceof FrameleafCloudError && (error.status === 400 || error.status === 422);
+          if (!report.manifestKey || !refused) {
+            throw error;
+          }
+          const withoutKey = { ...report, manifestKey: null };
+          await this.cloudBackup.reportRun(api, withoutKey);
+          return { outcome: 'reported-without-key', report: withoutKey };
         }
-        const withoutKey = { ...report, manifestKey: null };
-        await this.cloudBackup.reportRun(api, withoutKey);
-        return { outcome: 'reported-without-key', report: withoutKey };
+      } catch (error) {
+        // a network failure (fetch's TypeError, or a socket error as its cause), a 5xx or a 429
+        const retryable =
+          error instanceof FrameleafCloudError
+            ? error.status === null || error.status >= 500 || error.status === 429
+            : error instanceof TypeError ||
+              typeof (error as { cause?: { code?: unknown } } | null)?.cause?.code === 'string';
+        if (!retryable || attempt >= RUN_REPORT_ATTEMPTS) {
+          this.logger.warn(`Could not report the cloud backup run to Frameleaf Cloud: ${errorMessage(error)}`);
+          return { outcome: 'not-reported', report };
+        }
+        const retryAfterMs =
+          error instanceof FrameleafCloudError && error.retryAfterSeconds ? error.retryAfterSeconds * 1000 : 0;
+        await this.reportRetryDelay(
+          Math.min(RUN_REPORT_MAX_WAIT_MS, Math.max(retryAfterMs, RUN_REPORT_BACKOFF_MS * 3 ** (attempt - 1))),
+        );
       }
-    } catch (error) {
-      this.logger.warn(`Could not report the cloud backup run to Frameleaf Cloud: ${errorMessage(error)}`);
-      return { outcome: 'not-reported', report };
+    }
+  }
+
+  /** FL-1769: the wait between run report attempts; a spec makes it instant. */
+  protected reportRetryDelay(ms: number) {
+    return sleep(ms);
+  }
+
+  private async keepUnreportedRun(report: BackupRunReport) {
+    await this.updateMetadata((current) => ({
+      ...current,
+      unreportedRuns: [...(current.unreportedRuns ?? []).filter(({ runId }) => runId !== report.runId), report].slice(
+        -MAX_UNREPORTED_RUNS,
+      ),
+    }));
+  }
+
+  private async dropUnreportedRun(runId: string) {
+    const metadata = await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafCloudBackup);
+    if (!metadata?.unreportedRuns?.some((run) => run.runId === runId)) {
+      return;
+    }
+    await this.updateMetadata(({ unreportedRuns, ...current }) => {
+      const left = (unreportedRuns ?? []).filter((run) => run.runId !== runId);
+      return left.length > 0 ? { ...current, unreportedRuns: left } : current;
+    });
+  }
+
+  /**
+   * FL-1769: the hourly check sends run reports Cloud has not accepted yet, oldest first. A report that
+   * still fails stays for the next hour. A newer report of the same run replaced it when it was kept.
+   */
+  private async resendUnreportedRuns() {
+    const metadata = await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafCloudBackup);
+    for (const report of metadata?.unreportedRuns ?? []) {
+      const sent = await this.sendRunReport(report);
+      if (sent.outcome === 'not-reported') {
+        return;
+      }
+      await this.dropUnreportedRun(report.runId);
     }
   }
 
@@ -2788,11 +2878,15 @@ export class CloudBackupService {
     const finishedAt = new Date().toISOString();
     const firstBackup = !run.metadata.lastSuccessAt;
     await this.recordRun(operation, result, 'completed');
+    // FL-1769: recorded complete here, so Cloud must never hear "failed" for this run: a step below that
+    // throws is logged, and the run is reported as succeeded before the operation is closed
+    run.progress.completed = true;
     await this.updateMetadata((current) => ({
       ...current,
       lastSuccessAt: finishedAt,
       lastManifestKey: result.manifestKey ?? current.lastManifestKey,
     }));
+    const reported = await this.reportManagedRun(operation, result, 'succeeded');
     const completed =
       (await this.operations.beginValidation(id, claimToken, true)) &&
       (await this.operations.complete(id, claimToken, { resultAssetId: null }, undefined, true));
@@ -2806,7 +2900,6 @@ export class CloudBackupService {
     if (firstBackup) {
       await this.announceActivation({ completed: true });
     }
-    const reported = await this.reportManagedRun(operation, result, 'succeeded');
     await this.publishCoverage(operation, result, true, reported);
     // FL-164: a scheduled run is followed by the clean-up of runs past retention, once it has finished.
     // FL-1769: not after a run that left originals out (a drive gone, say): an older backup may be the last
@@ -5928,7 +6021,8 @@ type Run = {
   metadata: FrameleafCloudBackup;
   connection: CloudBackupConnection;
   bucketKey: Buffer;
-  progress: { result: CloudBackupRunResult };
+  /** `completed`: FL-1769, the run was recorded complete; nothing after that may report it failed. */
+  progress: { result: CloudBackupRunResult; completed?: boolean };
   /** FL-1676: what the backup this claim stored holds; a later claim reads it from the backup's catalog. */
   summary?: CloudBackupRunSummary;
   /** FL-362: the accounts whose originals and profile images this run uploads; null: every account. */

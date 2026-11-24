@@ -6,6 +6,7 @@ import type { IdenticalFilesState } from 'src/dtos/identical-files.dto.js';
 import type { CloudDescriptionEstimateRecord } from 'src/utils/cloud-description-batch.js';
 import type { CloudMlJobEstimateRecord, CloudMlJobUpgradeRecord } from 'src/utils/cloud-ml-job.js';
 import type { ConfigHistory } from 'src/utils/config-history.js';
+import type { BackupRunReport } from 'src/utils/frameleaf-cloud-backup.js';
 import type { PushNotice } from 'src/utils/frameleaf-push.js';
 import type { SuppressionPreferences } from 'src/utils/hidden-content.js';
 import type { Rational } from 'src/utils/rational-time.js';
@@ -1317,6 +1318,11 @@ export type FrameleafCloudBackup = {
   uploadHoursPausedRunId?: string;
   /** FL-879: a scheduled restore drill found the bucket busy; it starts once the operation holding it ends. */
   drillDueAt?: string;
+  /**
+   * FL-1769: run reports Frameleaf Cloud has not accepted yet, newest last; the hourly check sends them
+   * again (Cloud's run report is an upsert on the run id, so a resend is safe).
+   */
+  unreportedRuns?: BackupRunReport[];
 };
 
 /** FL-164: one restore from a manifest. Counts are files; `databaseFile` is the dump's name in `<media>/backups`. */
