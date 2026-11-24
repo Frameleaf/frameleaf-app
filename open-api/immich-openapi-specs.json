@@ -122555,6 +122555,15 @@
         ],
         "type": "object"
       },
+      "ICloudReviewDifferenceField": {
+        "enum": [
+          "date-taken",
+          "favorite",
+          "live-video",
+          "edits"
+        ],
+        "type": "string"
+      },
       "ICloudReviewEffect": {
         "description": "What accepting this photo does",
         "enum": [
@@ -122642,6 +122651,37 @@
           "items": {
             "items": {
               "properties": {
+                "camera": {
+                  "nullable": true,
+                  "type": "string"
+                },
+                "differences": {
+                  "description": "Only what differs between the iCloud copy and the library copy",
+                  "items": {
+                    "properties": {
+                      "field": {
+                        "$ref": "#/components/schemas/ICloudReviewDifferenceField"
+                      },
+                      "icloud": {
+                        "description": "Value in iCloud: an ISO date, true/false, a file name or a count",
+                        "nullable": true,
+                        "type": "string"
+                      },
+                      "library": {
+                        "description": "Value in the library, in the same form",
+                        "nullable": true,
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "field",
+                      "icloud",
+                      "library"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                },
                 "effect": {
                   "$ref": "#/components/schemas/ICloudReviewEffect"
                 },
@@ -122649,8 +122689,22 @@
                   "nullable": true,
                   "type": "string"
                 },
+                "fileSize": {
+                  "description": "Size of the file in iCloud, in bytes",
+                  "maximum": 9007199254740991,
+                  "minimum": 0,
+                  "nullable": true,
+                  "type": "integer"
+                },
                 "group": {
                   "$ref": "#/components/schemas/ICloudReviewGroup"
+                },
+                "icloudAssetId": {
+                  "description": "The photo as copied from iCloud; null when it is not in the library yet",
+                  "format": "uuid",
+                  "nullable": true,
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                  "type": "string"
                 },
                 "previewAssetId": {
                   "description": "The library photo to show; null when there is none yet",
@@ -122661,6 +122715,15 @@
                 },
                 "reason": {
                   "type": "string"
+                },
+                "relatedAssetIds": {
+                  "description": "Up to 4 library photos it sits with: its stack, or the latest edits kept",
+                  "items": {
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                    "type": "string"
+                  },
+                  "type": "array"
                 },
                 "resourceId": {
                   "format": "uuid",
@@ -122679,7 +122742,12 @@
                 "reason",
                 "fileName",
                 "takenAt",
-                "previewAssetId"
+                "previewAssetId",
+                "icloudAssetId",
+                "relatedAssetIds",
+                "differences",
+                "fileSize",
+                "camera"
               ],
               "type": "object"
             },

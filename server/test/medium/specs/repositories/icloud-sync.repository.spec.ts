@@ -162,10 +162,55 @@ describe(ICloudSyncRepository.name, () => {
       const resource = (await repository.claim(connection.id, 1000))!;
       await repository.finish(resource, 'needs-review', 'saved_checksum_conflict', undefined, [randomUUID(), photo.id]);
       expect((await page()).items).toEqual([
-        expect.objectContaining({ resourceId: resource.id, previewAssetId: photo.id }),
+        expect.objectContaining({
+          resourceId: resource.id,
+          group: 'other',
+          effect: 'try-again',
+          previewAssetId: photo.id,
+          icloudAssetId: null,
+          relatedAssetIds: [],
+          differences: [],
+        }),
       ]);
       await repository.materialize(connection, 'library', library);
       expect((await page()).items[0].previewAssetId).toBe(photo.id);
+    });
+
+    it('lists what differs from the library for changed details, and keeps the library version', async () => {
+      const id = await held('source_metadata_conflict');
+      const photo = await seedCanonicalAsset(db, {
+        ownerId: connection.ownerId,
+        fileCreatedAt: new Date('2026-08-02T10:00:00.000Z'),
+        isFavorite: false,
+      });
+      await sql`UPDATE public.icloud_resource SET "assetId" = ${photo.id}::uuid,
+        source = source || '{"fileCreatedAt":"2026-08-01T10:00:00.000Z","isFavorite":true}'::jsonb
+        WHERE id = ${id}::uuid`.execute(db);
+      expect((await page()).items[0]).toMatchObject({
+        group: 'details',
+        effect: 'keep-current',
+        icloudAssetId: photo.id,
+        previewAssetId: photo.id,
+        differences: [
+          { field: 'date-taken', icloud: '2026-08-01T10:00:00.000Z', library: '2026-08-02T10:00:00.000Z' },
+          { field: 'favorite', icloud: 'true', library: 'false' },
+        ],
+      });
+    });
+
+    it('shows the photos a changed stack sits with in the library', async () => {
+      const id = await held('local_stack_membership_override');
+      const [photo, other] = [
+        await seedCanonicalAsset(db, { ownerId: connection.ownerId }),
+        await seedCanonicalAsset(db, { ownerId: connection.ownerId }),
+      ];
+      const { rows } = await sql<{ id: string }>`INSERT INTO public.stack ("ownerId", "primaryAssetId")
+        VALUES (${connection.ownerId}::uuid, ${photo.id}::uuid) RETURNING id`.execute(db);
+      await sql`UPDATE public.asset SET "stackId" = ${rows[0].id}::uuid WHERE id IN (${photo.id}::uuid, ${other.id}::uuid)`.execute(
+        db,
+      );
+      await sql`UPDATE public.icloud_resource SET "assetId" = ${photo.id}::uuid WHERE id = ${id}::uuid`.execute(db);
+      expect((await page()).items[0]).toMatchObject({ group: 'stack', relatedAssetIds: [other.id] });
     });
 
     it('lists a hidden source for import whatever the saved setting says', async () => {

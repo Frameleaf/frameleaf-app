@@ -1,21 +1,24 @@
 <script lang="ts">
   /**
-   * iCloud review: every photo a sync could not settle by itself, with its reason. Accept one in the large view, a
-   * whole page, or all of them. Hidden iCloud photos never wait here; they import to Locked. Nothing here deletes.
+   * iCloud review: every photo a sync could not settle by itself. Open one to compare the iCloud copy with your
+   * library, see why it waits and what Accept and Later do; accept one, a whole page, or all of them. Hidden iCloud
+   * photos never wait here (they import to Locked), and nothing here replaces or deletes. Owner-approved mock:
+   * prototype PR 95.
    */
   import { goto } from '$app/navigation';
   import { page as appPage } from '$app/state';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
-  import { icloudErrorKey, icloudReviewReasonKey } from '$lib/frameleaf/icloud-sync';
+  import { icloudErrorKey } from '$lib/frameleaf/icloud-sync';
   import { Route } from '$lib/route';
   import { getAssetMediaUrl } from '$lib/utils';
+  import { getByteUnitString } from '$lib/utils/byte-units';
   import { getServerErrorMessage } from '$lib/utils/handle-error';
   import {
     AssetMediaSize,
+    ICloudReviewDifferenceField,
     ICloudReviewEffect,
     ICloudReviewGroup,
-    ICloudReviewKind,
     acceptICloudReview,
     getICloudReview,
     type ICloudReviewAcceptDto,
@@ -30,7 +33,7 @@
     mdiChevronRight,
     mdiClockOutline,
     mdiClose,
-    mdiImageOffOutline,
+    mdiImageOutline,
     mdiLockOutline,
   } from '@mdi/js';
   import { onMount } from 'svelte';
@@ -51,10 +54,42 @@
     [ICloudReviewGroup.Storage]: 'frameleaf_icloud_review_group_storage',
     [ICloudReviewGroup.Other]: 'frameleaf_icloud_review_group_other',
   };
-  const EFFECT_KEYS: Record<ICloudReviewEffect, Translations> = {
-    [ICloudReviewEffect.UseExisting]: 'frameleaf_icloud_review_effect_use_existing',
-    [ICloudReviewEffect.KeepCurrent]: 'frameleaf_icloud_review_effect_keep_current',
-    [ICloudReviewEffect.TryAgain]: 'frameleaf_icloud_review_effect_try_again',
+  /** One plain sentence on why a photo waits, and what accepting it does. Possible match no longer waits here. */
+  const REASON_KEYS: Record<ICloudReviewGroup, { why: Translations; accept: Translations }> = {
+    [ICloudReviewGroup.Match]: {
+      why: 'frameleaf_icloud_review_why_other',
+      accept: 'frameleaf_icloud_review_accept_other',
+    },
+    [ICloudReviewGroup.LivePhoto]: {
+      why: 'frameleaf_icloud_review_why_live_photo',
+      accept: 'frameleaf_icloud_review_accept_live_photo',
+    },
+    [ICloudReviewGroup.Stack]: {
+      why: 'frameleaf_icloud_review_why_stack',
+      accept: 'frameleaf_icloud_review_accept_stack',
+    },
+    [ICloudReviewGroup.Details]: {
+      why: 'frameleaf_icloud_review_why_details',
+      accept: 'frameleaf_icloud_review_accept_details',
+    },
+    [ICloudReviewGroup.Edits]: {
+      why: 'frameleaf_icloud_review_why_edits',
+      accept: 'frameleaf_icloud_review_accept_edits',
+    },
+    [ICloudReviewGroup.Storage]: {
+      why: 'frameleaf_icloud_review_why_storage',
+      accept: 'frameleaf_icloud_review_accept_storage',
+    },
+    [ICloudReviewGroup.Other]: {
+      why: 'frameleaf_icloud_review_why_other',
+      accept: 'frameleaf_icloud_review_accept_other',
+    },
+  };
+  const DIFFERENCE_KEYS: Record<ICloudReviewDifferenceField, Translations> = {
+    [ICloudReviewDifferenceField.DateTaken]: 'frameleaf_icloud_review_diff_date_taken',
+    [ICloudReviewDifferenceField.Favorite]: 'favorite',
+    [ICloudReviewDifferenceField.LiveVideo]: 'frameleaf_icloud_review_diff_video',
+    [ICloudReviewDifferenceField.Edits]: 'frameleaf_icloud_review_group_edits',
   };
 
   let review = $state<ICloudReviewPageResponseDto>();
@@ -79,9 +114,7 @@
   const allEffects = $derived.by(() => {
     const effects = { ...(review?.effects ?? { useExisting: 0, keepCurrent: 0, tryAgain: 0 }) };
     for (const { effect } of laterInView) {
-      if (effect === ICloudReviewEffect.UseExisting) {
-        effects.useExisting--;
-      } else if (effect === ICloudReviewEffect.TryAgain) {
+      if (effect === ICloudReviewEffect.TryAgain) {
         effects.tryAgain--;
       } else {
         effects.keepCurrent--;
@@ -215,9 +248,36 @@
   const takenOn = (value: string | null) => {
     const date = value ? new Date(value) : undefined;
     return date && !Number.isNaN(date.getTime())
-      ? date.toLocaleDateString($locale, { day: 'numeric', month: 'short', year: 'numeric' })
+      ? date.toLocaleString($locale, {
+          day: 'numeric',
+          month: 'short',
+          year: 'numeric',
+          hour: 'numeric',
+          minute: '2-digit',
+        })
       : '';
   };
+  type Difference = Item['differences'][number];
+  const shown = (difference: Difference, value: string | null) => {
+    if (value === null) {
+      return '—';
+    }
+    switch (difference.field) {
+      case ICloudReviewDifferenceField.DateTaken: {
+        return takenOn(value);
+      }
+      case ICloudReviewDifferenceField.Favorite: {
+        return $t(value === 'true' ? 'yes' : 'no');
+      }
+      case ICloudReviewDifferenceField.Edits: {
+        return number(Number(value));
+      }
+      default: {
+        return value;
+      }
+    }
+  };
+  const thumb = (id: string, size = AssetMediaSize.Thumbnail) => getAssetMediaUrl({ id, size });
 </script>
 
 <svelte:window {onkeydown} />
@@ -282,6 +342,20 @@
       {/each}
     </div>
 
+    <div class="icr-explain">
+      {#if group}
+        <p>{$t(REASON_KEYS[group].why)}</p>
+        <p><strong>{$t('frameleaf_icloud_review_accept_label')}</strong> {$t(REASON_KEYS[group].accept)}</p>
+      {:else}
+        <p>{$t('frameleaf_icloud_review_explain_all')}</p>
+        <p>
+          <strong>{$t('frameleaf_icloud_review_accept_label')}</strong>
+          {$t('frameleaf_icloud_review_explain_accept')}
+        </p>
+      {/if}
+      <p><strong>{$t('frameleaf_icloud_review_later_label')}</strong> {$t('frameleaf_icloud_review_later_effect')}</p>
+    </div>
+
     <ul class="icr-grid">
       {#each items as item (item.resourceId)}
         {@const held = Object.hasOwn(later, item.resourceId)}
@@ -292,14 +366,15 @@
             aria-label={`${item.fileName ?? $t('frameleaf_icloud_untitled')}: ${$t(GROUP_KEYS[item.group])}`}
             onclick={() => (openId = item.resourceId)}
           >
-            {#if item.previewAssetId}
-              <img
-                src={getAssetMediaUrl({ id: item.previewAssetId, size: AssetMediaSize.Thumbnail })}
-                alt=""
-                loading="lazy"
-              />
+            {#if item.icloudAssetId ?? item.previewAssetId}
+              <img src={thumb((item.icloudAssetId ?? item.previewAssetId)!)} alt="" loading="lazy" />
             {:else}
-              <span class="icr-none"><Icon icon={mdiImageOffOutline} size="28" /></span>
+              <span class="icr-blank"><Icon icon={mdiImageOutline} size="28" /></span>
+            {/if}
+            <!-- The tile is the iCloud copy with the library copy in the corner; with no iCloud copy here yet, the
+              library photo fills the tile instead of a blank. -->
+            {#if item.icloudAssetId && item.previewAssetId}
+              <img class="icr-inset" src={thumb(item.previewAssetId)} alt="" loading="lazy" />
             {/if}
             <span class="icr-tag">{$t(GROUP_KEYS[item.group])}</span>
           </button>
@@ -390,19 +465,48 @@
         >
           <Icon icon={mdiChevronLeft} size="28" />
         </button>
-        <figure>
-          {#if open.previewAssetId}
-            <img
-              src={getAssetMediaUrl({ id: open.previewAssetId, size: AssetMediaSize.Preview })}
-              alt={open.fileName ?? ''}
-            />
-          {:else}
-            <div class="icr-none large">
-              <Icon icon={mdiImageOffOutline} size="48" />
-              <p>{$t('frameleaf_icloud_review_no_preview')}</p>
-            </div>
-          {/if}
-        </figure>
+        <div class="icr-sides">
+          <figure>
+            <figcaption>{$t('frameleaf_icloud_review_in_icloud')}</figcaption>
+            {#if open.icloudAssetId}
+              <div class="icr-shot">
+                <img src={thumb(open.icloudAssetId, AssetMediaSize.Preview)} alt={open.fileName ?? ''} />
+              </div>
+            {:else}
+              <div class="icr-shot icr-none">
+                <Icon icon={mdiImageOutline} size="32" />
+                <span>{$t('frameleaf_icloud_review_icloud_none')}</span>
+              </div>
+            {/if}
+          </figure>
+          <figure>
+            <figcaption>{$t('frameleaf_icloud_review_in_library')}</figcaption>
+            {#if open.previewAssetId}
+              <div class="icr-shot" class:is-group={open.relatedAssetIds.length > 0}>
+                <img src={thumb(open.previewAssetId, AssetMediaSize.Preview)} alt={open.fileName ?? ''} />
+                {#if open.relatedAssetIds.length > 0}
+                  <div class="icr-with">
+                    <small>
+                      {$t(
+                        open.group === ICloudReviewGroup.Edits
+                          ? 'frameleaf_icloud_review_with_edits'
+                          : 'frameleaf_icloud_review_with_stack',
+                      )}
+                    </small>
+                    {#each open.relatedAssetIds as id (id)}
+                      <img src={thumb(id)} alt="" />
+                    {/each}
+                  </div>
+                {/if}
+              </div>
+            {:else}
+              <div class="icr-shot icr-none">
+                <Icon icon={mdiImageOutline} size="32" />
+                <span>{$t('frameleaf_icloud_review_library_none')}</span>
+              </div>
+            {/if}
+          </figure>
+        </div>
         <button
           type="button"
           class="icr-round"
@@ -418,14 +522,48 @@
       <div class="icr-side">
         <p class="icr-overline">{$t('frameleaf_icloud_review_why')}</p>
         <h3>{$t(GROUP_KEYS[open.group])}</h3>
-        <p>{$t(icloudReviewReasonKey({ kind: ICloudReviewKind.Review, reason: open.reason }))}</p>
+        <p>{$t(REASON_KEYS[open.group].why)}</p>
+        {#if open.differences.length > 0}
+          <table class="icr-diff">
+            <thead>
+              <tr>
+                <td></td>
+                <th scope="col">{$t('frameleaf_icloud_review_in_icloud')}</th>
+                <th scope="col">{$t('frameleaf_icloud_review_in_library')}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {#each open.differences as difference (difference.field)}
+                <tr>
+                  <th scope="row">{$t(DIFFERENCE_KEYS[difference.field])}</th>
+                  <td>{shown(difference, difference.icloud)}</td>
+                  <td>{shown(difference, difference.library)}</td>
+                </tr>
+              {/each}
+            </tbody>
+          </table>
+        {/if}
         <p class="icr-overline">{$t('frameleaf_icloud_review_if_accept')}</p>
-        <p>{$t(EFFECT_KEYS[open.effect])}</p>
+        <p>{$t(REASON_KEYS[open.group].accept)}</p>
+        <p class="icr-overline">{$t('frameleaf_icloud_review_if_later')}</p>
+        <p>{$t('frameleaf_icloud_review_later_effect')}</p>
         <dl>
           <div>
             <dt>{$t('frameleaf_icloud_review_file')}</dt>
             <dd>{open.fileName ?? $t('frameleaf_icloud_untitled')}</dd>
           </div>
+          {#if open.camera}
+            <div>
+              <dt>{$t('camera')}</dt>
+              <dd>{open.camera}</dd>
+            </div>
+          {/if}
+          {#if open.fileSize !== null}
+            <div>
+              <dt>{$t('size')}</dt>
+              <dd>{getByteUnitString(open.fileSize, $locale)}</dd>
+            </div>
+          {/if}
           {#if takenOn(open.takenAt)}
             <div>
               <dt>{$t('frameleaf_icloud_review_taken')}</dt>
@@ -435,7 +573,12 @@
         </dl>
       </div>
       <div class="icr-actions">
-        <Button onclick={leaveOpen}>{$t('frameleaf_icloud_review_later')} <kbd>L</kbd></Button>
+        <Button onclick={leaveOpen}>
+          {Object.hasOwn(later, open.resourceId)
+            ? $t('frameleaf_icloud_review_marked_later')
+            : $t('frameleaf_icloud_review_later')}
+          <kbd>L</kbd>
+        </Button>
         <Button variant="primary" disabled={busy} onclick={() => void acceptOpen()}>
           {$t('frameleaf_icloud_review_accept')} <kbd>A</kbd>
         </Button>
@@ -450,12 +593,6 @@
   bind:open={confirmAll}
 >
   <ul class="icr-summary">
-    {#if allEffects.useExisting > 0}
-      <li>
-        <strong>{number(allEffects.useExisting)}</strong>
-        {$t('frameleaf_icloud_review_done_use_existing', { values: { count: allEffects.useExisting } })}
-      </li>
-    {/if}
     {#if allEffects.keepCurrent > 0}
       <li>
         <strong>{number(allEffects.keepCurrent)}</strong>
@@ -513,6 +650,19 @@
   }
   .icr-note span {
     flex: 1 1 200px;
+  }
+  .icr-explain {
+    display: grid;
+    gap: 4px;
+    margin: 0 0 20px;
+    padding: 14px 16px;
+    border: 1px solid var(--fl-border);
+    border-radius: var(--fl-radius-card);
+    background: var(--fl-panel);
+    font-size: var(--fl-font-md);
+  }
+  .icr-explain p {
+    margin: 0;
   }
   .icr-said,
   .icr-error {
@@ -606,19 +756,21 @@
     height: 100%;
     object-fit: cover;
   }
-  .icr-none {
+  .icr-blank {
     display: grid;
     place-items: center;
     width: 100%;
     height: 100%;
   }
-  .icr-none.large {
-    gap: 8px;
-    min-height: 240px;
-    color: rgb(255 255 255 / 0.72);
-  }
-  .icr-none p {
-    margin: 0;
+  .icr-photo .icr-inset {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    width: 44px;
+    height: 44px;
+    border: 2px solid #fff;
+    border-radius: var(--fl-radius-md);
+    box-shadow: var(--fl-shadow-2);
   }
   .icr-tag {
     position: absolute;
@@ -754,22 +906,101 @@
     display: grid;
     grid-template-columns: auto minmax(0, 1fr) auto;
     gap: 16px;
+    align-content: center;
     align-items: center;
     min-height: 0;
   }
-  .icr-frame figure {
+  .icr-sides {
     display: grid;
-    place-items: center;
-    height: 100%;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 16px;
+    align-items: start;
     min-height: 0;
+  }
+  .icr-sides figure {
+    display: grid;
+    gap: 8px;
+    min-width: 0;
     margin: 0;
   }
-  .icr-frame img {
+  .icr-sides figcaption {
+    color: rgb(255 255 255 / 0.72);
+    font-size: var(--fl-font-md);
+    font-weight: var(--fl-weight-medium);
+  }
+  .icr-shot {
+    display: grid;
+    place-items: center;
+    min-height: 0;
+    padding: 12px;
+    border-radius: var(--fl-radius-lg);
+    background: rgb(255 255 255 / 0.06);
+  }
+  .icr-shot img {
     display: block;
     max-width: 100%;
-    max-height: calc(100vh - 112px);
+    max-height: calc(100vh - 148px);
     object-fit: contain;
-    border-radius: var(--fl-radius-lg);
+    border-radius: var(--fl-radius-md);
+  }
+  /* a group: the photo itself large, the photos it sits with small beneath */
+  .icr-shot.is-group {
+    gap: 12px;
+  }
+  .icr-shot.is-group > img {
+    max-height: calc(100vh - 236px);
+  }
+  .icr-with {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+    color: rgb(255 255 255 / 0.6);
+    font-size: var(--fl-font-sm);
+  }
+  .icr-with img {
+    width: 64px;
+    height: 64px;
+    object-fit: cover;
+    border-radius: var(--fl-radius-md);
+  }
+  .icr-none {
+    aspect-ratio: 3 / 2;
+    gap: 8px;
+    align-content: center;
+    border: 1px dashed rgb(255 255 255 / 0.24);
+    background: none;
+    color: rgb(255 255 255 / 0.6);
+    font-size: var(--fl-font-md);
+    text-align: center;
+  }
+  .icr-diff {
+    width: 100%;
+    margin-bottom: 24px;
+    border-collapse: collapse;
+    font-size: var(--fl-font-sm);
+  }
+  .icr-diff th,
+  .icr-diff td {
+    padding: 8px;
+    border-bottom: 1px solid rgb(255 255 255 / 0.14);
+    text-align: start;
+    vertical-align: top;
+  }
+  .icr-diff th:first-child,
+  .icr-diff td:first-child {
+    padding-inline-start: 0;
+  }
+  .icr-diff thead th,
+  .icr-diff tbody th {
+    color: rgb(255 255 255 / 0.6);
+    font-weight: var(--fl-weight-medium);
+  }
+  .icr-diff tbody th {
+    font-weight: inherit;
+  }
+  .icr-diff tbody td {
+    font-weight: var(--fl-weight-medium);
   }
   .icr-round {
     display: grid;
@@ -876,25 +1107,55 @@
     .icr-stage {
       padding: 12px 16px;
     }
+    /* both photos need the full width, so previous and next sit beneath them */
     .icr-frame {
-      position: relative;
-      grid-template-columns: minmax(0, 1fr);
+      grid-template-areas: 'sides sides' 'prev next';
+      grid-template-rows: minmax(0, 1fr) auto;
+      grid-template-columns: auto auto;
+      gap: 12px 8px;
     }
-    .icr-frame > .icr-round {
-      position: absolute;
-      top: 50%;
-      z-index: 1;
-      background: rgb(0 0 0 / 0.55);
-      transform: translateY(-50%);
+    .icr-sides {
+      grid-area: sides;
+      gap: 8px;
     }
     .icr-frame > .icr-round:first-child {
-      left: 8px;
+      grid-area: prev;
+      justify-self: start;
     }
     .icr-frame > .icr-round:last-child {
-      right: 8px;
+      grid-area: next;
+      justify-self: end;
     }
-    .icr-frame img {
-      max-height: calc(54vh - 84px);
+    .icr-sides figcaption {
+      font-size: var(--fl-font-sm);
+    }
+    .icr-shot {
+      padding: 8px;
+    }
+    .icr-shot img {
+      max-height: calc(54vh - 116px);
+    }
+    .icr-shot.is-group {
+      gap: 8px;
+    }
+    .icr-shot.is-group > img {
+      max-height: calc(54vh - 164px);
+    }
+    .icr-with small {
+      display: none;
+    }
+    .icr-with img {
+      width: 40px;
+      height: 40px;
+    }
+    .icr-photo .icr-inset {
+      top: 4px;
+      right: 4px;
+      width: 32px;
+      height: 32px;
+    }
+    .icr-diff {
+      margin-bottom: 16px;
     }
     .icr-viewer aside {
       border-top: 1px solid rgb(255 255 255 / 0.14);
