@@ -38067,6 +38067,64 @@
         "visual/mmproj.gguf": 672423616,
         "visual/model.gguf": 2740937888
       }
+    },
+    {
+      "modelKey": "description:e25fdd9bbc299f88d02b82e10c216b57f7417f530f271226a33a61256f28c416",
+      "modelName": "Qwen2.5-VL-7B-Instruct",
+      "workload": "description",
+      "runtimeSourceRevision": "35ba35dda671b99eb9c027e9168e185c31ebabf1",
+      "modelSnapshotRevision": "b58477fc3ac80fa7f38d5cabf30bd2cdc1d9444f",
+      "spec": {
+        "protocolVersion": 1,
+        "engine": "qwen-gguf",
+        "modelKey": "description:e25fdd9bbc299f88d02b82e10c216b57f7417f530f271226a33a61256f28c416",
+        "provider": "CPUExecutionProvider",
+        "models": [
+          {
+            "name": "Qwen2.5-VL-7B-Instruct",
+            "task": "image-description-tagging",
+            "type": "visual",
+            "artifacts": {
+              "LICENSE": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+              "models--frameleaf--Qwen2.5-VL-7B-Instruct/refs/main": "38c9a74cfb770713c894d8cf73575489664a1e5f592c391174f1a1b63d355114",
+              "visual/mmproj.gguf": "c24a7f5fcfc68286f0a217023b6738e73bea4f11787a43e8238d4bb1b8604cde",
+              "visual/model.gguf": "9258bf05b12686d097ff3b6b18d968ab393649780aa2b3cd67fec43d50554392"
+            }
+          }
+        ],
+        "entries": {
+          "image-description-tagging": {
+            "visual": {
+              "modelName": "Qwen2.5-VL-7B-Instruct",
+              "options": {}
+            }
+          }
+        },
+        "preprocessingSha256": "b0bb536fba9f71ec937ba4874e53f139823252d07d2d0dd31da3315948bc2987",
+        "fixtureFile": "fixture.png",
+        "fixtureKind": "image",
+        "fixtureSha256": "f8356c8231c4f6eb7d78b92c965fb9a840f8904d1d180a6d72014e9cace75b8c",
+        "expectedOutput": {
+          "image-description-tagging": {
+            "description": "The image shows a red square.",
+            "people": [],
+            "environment": "",
+            "objects": [],
+            "visible_text": [],
+            "context": "",
+            "tags": []
+          }
+        },
+        "minMemoryBytes": 12616466432,
+        "deadlineSeconds": 300
+      },
+      "fixtureBase64": "iVBORw0KGgoAAAANSUhEUgAAAIAAAACACAIAAABMXPacAAABd0lEQVR4nO3RQW0DARAEQcPI0/xRmUlCwZ9Ray/VWgCrqdev0l71A/89AHEA4gDEAYgDEAcgDkAcgDgAcQDiAMQBiAMQByAOQByAOABxAOIAxAGIAxAHIA5AHIA4AHEA4gDEAYgbAnx+3o+53UoAAFy43UoAAFy43UoAAFy43UoAAFy43UoAAFy43UoAAFy43UoAAFy43UoAAFy43UoAAFy43UoAAFy43UoAAFy43UoAAFy43UoAAFy43UoAAFy43UoAAFy43UoAAFy43UoAAFy43UoAAFy43UoAAFy43UoAAFy43UoAAFy43UoAAFy43UoAAFy43UoAAFy43UoAAFy43UoAAFy43UoAAFy43UoAAFy43UoAAFy43UoAAFy43UoAAFy43UoAAFy43UoAAFy43UoAngugbwIQByAOQByAOABxAOIAxAGIAxAHIA5AHIA4AHEA4gDEAYgDEAcgDkAcgDgAcQDiAMQBiAMQByAOQByAOABxfwVYEOT5+hyhAAAAAElFTkSuQmCC",
+      "artifactBytes": {
+        "LICENSE": 11358,
+        "models--frameleaf--Qwen2.5-VL-7B-Instruct/refs/main": 40,
+        "visual/mmproj.gguf": 1354162912,
+        "visual/model.gguf": 4683072032
+      }
     }
   ],
   "schemaVersion": 1
