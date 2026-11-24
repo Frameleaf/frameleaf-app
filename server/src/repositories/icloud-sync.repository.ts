@@ -14,8 +14,8 @@ import { parseICloudAlbum, resourcesForICloudAsset, sanitizeICloudFields } from 
 import {
   ICLOUD_RELEASED_REVIEW_REASONS,
   ICLOUD_REVIEW_GROUP_REASONS,
-  ICLOUD_REVIEW_TRY_AGAIN,
-  ICLOUD_REVIEW_USE_EXISTING,
+  ICLOUD_REVIEW_KEEP_GROUPS,
+  type ICloudReviewDifference,
   type ICloudReviewEffect,
   type ICloudReviewGroup,
 } from 'src/utils/icloud-review.js';
@@ -120,7 +120,53 @@ export type ICloudReviewPage = {
     fileName: string | null;
     takenAt: string | null;
     previewAssetId: string | null;
+    icloudAssetId: string | null;
+    relatedAssetIds: string[];
+    differences: ICloudReviewDifference[];
+    fileSize: number | null;
+    camera: string | null;
   }>;
+};
+
+type ICloudReviewRow = Omit<ICloudReviewPage['items'][number], 'relatedAssetIds' | 'differences' | 'fileSize'> & {
+  fileSize: string | null;
+  icloudFavorite: string | null;
+  libraryFavorite: boolean | null;
+  libraryTakenAt: Date | null;
+  icloudVideo: string | null;
+  libraryVideo: string | null;
+  icloudEdits: number | null;
+  libraryEdits: number | null;
+  relatedAssetIds: string[] | null;
+};
+
+/** Only what differs is listed. */
+const reviewDifferences = (row: ICloudReviewRow): ICloudReviewDifference[] => {
+  const differences: ICloudReviewDifference[] = [];
+  if (row.group === 'details') {
+    const icloud = row.takenAt ? new Date(row.takenAt) : null;
+    if (icloud && row.libraryTakenAt && icloud.getTime() !== row.libraryTakenAt.getTime()) {
+      differences.push({
+        field: 'date-taken',
+        icloud: icloud.toISOString(),
+        library: row.libraryTakenAt.toISOString(),
+      });
+    }
+    if (
+      row.icloudFavorite !== null &&
+      row.libraryFavorite !== null &&
+      (row.icloudFavorite === 'true') !== row.libraryFavorite
+    ) {
+      differences.push({ field: 'favorite', icloud: row.icloudFavorite, library: String(row.libraryFavorite) });
+    }
+  }
+  if (row.group === 'live-photo' && row.icloudVideo !== row.libraryVideo) {
+    differences.push({ field: 'live-video', icloud: row.icloudVideo, library: row.libraryVideo });
+  }
+  if (row.group === 'edits' && row.icloudEdits !== null && row.icloudEdits !== row.libraryEdits) {
+    differences.push({ field: 'edits', icloud: String(row.icloudEdits), library: String(row.libraryEdits ?? 0) });
+  }
+  return differences;
 };
 
 const REVIEW_EFFECT_KEYS = {
@@ -135,9 +181,9 @@ const reviewGroupSql = sql.raw(
     .join(' ')} ELSE 'other' END`,
 );
 const reviewEffectSql = sql.raw(
-  `CASE WHEN f.reason IN (${ICLOUD_REVIEW_USE_EXISTING.map((reason) => `'${reason}'`).join(',')}) THEN 'use-existing'
-    WHEN f.reason IN (${ICLOUD_REVIEW_TRY_AGAIN.map((reason) => `'${reason}'`).join(',')}) THEN 'try-again'
-    ELSE 'keep-current' END`,
+  `CASE WHEN f.reason IN (${ICLOUD_REVIEW_KEEP_GROUPS.flatMap((group) => ICLOUD_REVIEW_GROUP_REASONS[group])
+    .map((reason) => `'${reason}'`)
+    .join(',')}) THEN 'keep-current' ELSE 'try-again' END`,
 );
 
 export type ICloudReviewItem = {
@@ -1098,10 +1144,16 @@ export class ICloudSyncRepository {
     const last = Math.max(1, Math.ceil(total / size));
     const current = Math.min(page, last);
     // ponytail: offset paging over a few thousand rows at most; keyset it if a library ever holds far more.
-    const { rows: items } = await sql<ICloudReviewPage['items'][number]>`
+    const visible = (alias: string) =>
+      sql`(${includePrivate}::boolean OR NOT EXISTS (SELECT 1 FROM public.asset_lock l WHERE l."assetId" = ${sql.ref(alias)}.id))`;
+    const { rows } = await sql<ICloudReviewRow>`
       SELECT p.id AS "resourceId", p."group", p.effect, p.reason,
         CASE WHEN a.id IS NOT NULL THEN a."originalFileName" ELSE p.source->>'originalFileName' END AS "fileName",
-        p.source->>'fileCreatedAt' AS "takenAt", coalesce(a.id, h.id, m.id) AS "previewAssetId"
+        p.source->>'fileCreatedAt' AS "takenAt", coalesce(a.id, h.id, m.id) AS "previewAssetId", a.id AS "icloudAssetId",
+        p.source#>>'{resource,size}' AS "fileSize", nullif(concat_ws(' ', ex.make, ex.model), '') AS camera,
+        p.source->>'isFavorite' AS "icloudFavorite", a."isFavorite" AS "libraryFavorite", a."fileCreatedAt" AS "libraryTakenAt",
+        mv.name AS "icloudVideo", lv."originalFileName" AS "libraryVideo",
+        ed.total AS "icloudEdits", ed.kept AS "libraryEdits", coalesce(st.ids, ed.ids) AS "relatedAssetIds"
       FROM (${photos}) p
         LEFT JOIN public.asset a ON a.id = p."assetId" AND a."ownerId" = p."ownerId" AND a."deletedAt" IS NULL
         -- An item not imported yet shows a library photo with the same file, noted when it was held, else one with
@@ -1117,6 +1169,27 @@ export class ICloudSyncRepository {
             AND to_char(x."fileCreatedAt" AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS') = left(p.source->>'fileCreatedAt', 19)
             AND (${includePrivate}::boolean OR NOT EXISTS (SELECT 1 FROM public.asset_lock l WHERE l."assetId" = x.id))
           ORDER BY x.id LIMIT 1) m ON true
+        LEFT JOIN public.asset_exif ex ON ex."assetId" = coalesce(a.id, h.id, m.id)
+        -- Live Photo: the video iCloud pairs with this photo, and the one the library has.
+        LEFT JOIN public.asset lv ON p."group" = 'live-photo' AND lv.id = a."livePhotoVideoId"
+        LEFT JOIN LATERAL (SELECT s.source->>'originalFileName' AS name FROM public.icloud_resource s
+          WHERE p."group" = 'live-photo' AND s."connectionId" = p."connectionId" AND s."libraryKey" = p."libraryKey"
+            AND s."sourceAssetId" = p."sourceAssetId" AND s.role = 'motion' AND s."auditRequestId" IS NULL
+            AND coalesce((s.source->>'current')::boolean, true) ORDER BY s.id LIMIT 1) mv ON true
+        -- Edited versions: how many iCloud has, and the latest ones the library keeps.
+        LEFT JOIN LATERAL (SELECT count(*)::int AS total, count(x.id)::int AS kept,
+            (array_agg(x.id ORDER BY s."updatedAt" DESC) FILTER (WHERE x.id IS NOT NULL))[1:4] AS ids
+          FROM public.icloud_resource s
+            LEFT JOIN public.asset x ON x.id = s."assetId" AND x."ownerId" = p."ownerId" AND x."deletedAt" IS NULL
+              AND x.id IS DISTINCT FROM a.id AND ${visible('x')}
+          WHERE p."group" = 'edits' AND s."connectionId" = p."connectionId" AND s."libraryKey" = p."libraryKey"
+            AND s."sourceAssetId" = p."sourceAssetId" AND s.role IN ('edited-image', 'edited-video')
+            AND s."auditRequestId" IS NULL AND coalesce((s.source->>'current')::boolean, true)) ed ON p."group" = 'edits'
+        -- Stack changed: the photos it sits with in the library.
+        LEFT JOIN LATERAL (SELECT array_agg(x.id ORDER BY x."fileCreatedAt", x.id) AS ids FROM (SELECT x.id, x."fileCreatedAt"
+            FROM public.asset x WHERE p."group" = 'stack' AND a."stackId" IS NOT NULL AND x."stackId" = a."stackId"
+              AND x.id <> a.id AND x."ownerId" = p."ownerId" AND x."deletedAt" IS NULL AND ${visible('x')}
+            ORDER BY x."fileCreatedAt", x.id LIMIT 4) x) st ON p."group" = 'stack'
       WHERE (${group ?? null}::text IS NULL OR p."group" = ${group ?? null})
       ORDER BY p.source->>'fileCreatedAt' DESC NULLS LAST, p.id
       LIMIT ${size} OFFSET ${(current - 1) * size}`.execute(this.db);
@@ -1138,7 +1211,20 @@ export class ICloudSyncRepository {
       effects,
       privateWaiting,
       hiddenLocked: locked[0]?.count ?? 0,
-      items,
+      items: rows.map((row) => ({
+        resourceId: row.resourceId,
+        group: row.group,
+        effect: row.effect,
+        reason: row.reason,
+        fileName: row.fileName,
+        takenAt: row.takenAt,
+        previewAssetId: row.previewAssetId,
+        icloudAssetId: row.icloudAssetId,
+        relatedAssetIds: row.relatedAssetIds ?? [],
+        differences: reviewDifferences(row),
+        fileSize: row.fileSize === null || !/^\d+$/.test(row.fileSize) ? null : Number(row.fileSize),
+        camera: row.camera,
+      })),
     };
   }
   /**

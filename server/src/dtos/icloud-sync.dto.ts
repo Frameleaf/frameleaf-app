@@ -122,6 +122,9 @@ const ICloudReviewKindSchema = z
 const ICloudReviewGroupSchema = z
   .enum(['match', 'live-photo', 'stack', 'details', 'edits', 'storage', 'other'])
   .meta({ id: 'ICloudReviewGroup' });
+const ICloudReviewDifferenceFieldSchema = z
+  .enum(['date-taken', 'favorite', 'live-video', 'edits'])
+  .meta({ id: 'ICloudReviewDifferenceField' });
 const ICloudReviewEffectSchema = z
   .enum(['use-existing', 'keep-current', 'try-again'])
   .describe('What accepting this photo does')
@@ -158,6 +161,27 @@ export class ICloudReviewPageResponseDto extends createZodDto(
           fileName: z.string().nullable(),
           takenAt: z.string().nullable(),
           previewAssetId: z.uuid().nullable().describe('The library photo to show; null when there is none yet'),
+          icloudAssetId: z
+            .uuid()
+            .nullable()
+            .describe('The photo as copied from iCloud; null when it is not in the library yet'),
+          relatedAssetIds: z
+            .array(z.uuid())
+            .describe('Up to 4 library photos it sits with: its stack, or the latest edits kept'),
+          differences: z
+            .array(
+              z.object({
+                field: ICloudReviewDifferenceFieldSchema,
+                icloud: z
+                  .string()
+                  .nullable()
+                  .describe('Value in iCloud: an ISO date, true/false, a file name or a count'),
+                library: z.string().nullable().describe('Value in the library, in the same form'),
+              }),
+            )
+            .describe('Only what differs between the iCloud copy and the library copy'),
+          fileSize: z.int().min(0).nullable().describe('Size of the file in iCloud, in bytes'),
+          camera: z.string().nullable(),
         }),
       ),
     })

@@ -59,14 +59,18 @@ Photos hidden in iCloud always import and go to your Locked photos. They never w
 
 A photo whose file is already in your library, even more than once, links to the copy you can see. It never waits for review, and no copy is added.
 
-When a sync can't settle a photo by itself, the connection shows how many need a look. **Review photos** opens each one with its reason. You can filter by reason, then accept one photo in the large view, a whole page, or all of them. Mark a photo **Later** to keep it out of an accept.
+When a sync can't settle a photo by itself, the connection shows how many need a look. **Review photos** lists them with their reason. Open one to see the copy in iCloud beside the copy in your library, a plain sentence on why it waits, and only the details that differ, such as the date taken. You can filter by reason, then accept one photo, a whole page, or all of them. Mark a photo **Later** to leave it for another time; nothing changes until you decide.
 
-| Reason        | What Accept does                                                |
-| ------------- | --------------------------------------------------------------- |
-| Storage full  | Tries the photo again.                                          |
-| Anything else | Keeps what's in Frameleaf now and stops asking for that reason. |
+| Reason          | What Accept does                                                              |
+| --------------- | ----------------------------------------------------------------------------- |
+| Details changed | Keeps your library version.                                                   |
+| Live Photo      | Keeps your library version and its video.                                     |
+| Stack changed   | Keeps your library group as it is.                                            |
+| Edited versions | Keeps your library version with its latest edits. Older edits stay in iCloud. |
+| Storage full    | Tries copying it again. Make space first, or it comes back.                   |
+| Other           | Tries copying it again.                                                       |
 
-Accepting never deletes anything. Locked photos in review appear after you unlock.
+Accepting never replaces or deletes anything. Locked photos in review appear after you unlock.
 
 ## Apple edits and Stacks
 

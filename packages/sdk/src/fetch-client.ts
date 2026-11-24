@@ -11441,12 +11441,27 @@ export type ICloudReviewPageResponseDto = {
     /** Photos hidden in iCloud that are Locked here */
     hiddenLocked: number;
     items: {
+        camera: string | null;
+        /** Only what differs between the iCloud copy and the library copy */
+        differences: {
+            field: ICloudReviewDifferenceField;
+            /** Value in iCloud: an ISO date, true/false, a file name or a count */
+            icloud: string | null;
+            /** Value in the library, in the same form */
+            library: string | null;
+        }[];
         effect: ICloudReviewEffect;
         fileName: string | null;
+        /** Size of the file in iCloud, in bytes */
+        fileSize: number | null;
         group: ICloudReviewGroup;
+        /** The photo as copied from iCloud; null when it is not in the library yet */
+        icloudAssetId: string | null;
         /** The library photo to show; null when there is none yet */
         previewAssetId: string | null;
         reason: string;
+        /** Up to 4 library photos it sits with: its stack, or the latest edits kept */
+        relatedAssetIds: string[];
         resourceId: string;
         takenAt: string | null;
     }[];
@@ -48846,6 +48861,12 @@ export enum ICloudReviewGroup {
     Edits = "edits",
     Storage = "storage",
     Other = "other"
+}
+export enum ICloudReviewDifferenceField {
+    DateTaken = "date-taken",
+    Favorite = "favorite",
+    LiveVideo = "live-video",
+    Edits = "edits"
 }
 export enum ICloudReviewEffect {
     UseExisting = "use-existing",

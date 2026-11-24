@@ -11,13 +11,8 @@ export const ICLOUD_RELEASED_REVIEW_REASONS = [
 export type ICloudReviewGroup = 'match' | 'live-photo' | 'stack' | 'details' | 'edits' | 'storage' | 'other';
 export type ICloudReviewEffect = 'use-existing' | 'keep-current' | 'try-again';
 
-export const ICLOUD_REVIEW_GROUP_REASONS: Record<Exclude<ICloudReviewGroup, 'other'>, string[]> = {
-  match: [
-    'multiple_content_matches',
-    'saved_checksum_conflict',
-    'mapped_asset_identity_changed',
-    'reserved_import_content_match',
-  ],
+// ponytail: 'match' and 'use-existing' stay in the API for older clients; nothing is put in them since FL-1749.
+export const ICLOUD_REVIEW_GROUP_REASONS: Record<Exclude<ICloudReviewGroup, 'other' | 'match'>, string[]> = {
   'live-photo': [
     'live_photo_identity_conflict',
     'local_live_photo_override',
@@ -43,7 +38,15 @@ export const ICLOUD_REVIEW_GROUP_REASONS: Record<Exclude<ICloudReviewGroup, 'oth
   storage: ['quota_exceeded'],
 };
 
-/** Accepting uses the matching photo already in the library; identical files are stored once. */
-export const ICLOUD_REVIEW_USE_EXISTING = ['multiple_content_matches'];
-/** Accepting tries the item again, because the answer can change (there may be room now). */
-export const ICLOUD_REVIEW_TRY_AGAIN = ['quota_exceeded'];
+/**
+ * Accepting keeps the library version for these groups. Storage full and every other reason copy the photo from
+ * iCloud again instead, because the answer can change (there may be room now). Owner-approved mock, 2026-11-23.
+ */
+export const ICLOUD_REVIEW_KEEP_GROUPS = ['live-photo', 'stack', 'details', 'edits'] as const;
+
+/** What differs between the iCloud copy and the library copy, shown side by side in review. */
+export type ICloudReviewDifference = {
+  field: 'date-taken' | 'favorite' | 'live-video' | 'edits';
+  icloud: string | null;
+  library: string | null;
+};
