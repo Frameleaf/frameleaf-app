@@ -52,7 +52,7 @@ export async function backup(repository, source, options = {}) {
         const { size: _, ...rest } = now;
         if (before && same(before, now)) {
             const ids = await fileChunks(repository, before).catch(() => null);
-            if (ids?.every((id) => repository.index.has(id))) {
+            if (ids?.every((id) => repository.holds(id))) {
                 unchanged++;
                 return {
                     ...rest,
