@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 from typing import Any
+from urllib.parse import urlsplit
 
 from aiohttp import ClientError, ClientSession, ClientTimeout
 
@@ -143,6 +144,11 @@ async def register_client(session: ClientSession, url: str, redirect_uri: str, n
         registration = metadata.get("registration_endpoint")
         if not registration:
             raise FrameleafForbidden("This server does not let new apps register themselves")
+        # Its host may differ (a server whose public address isn't the one Home Assistant uses), but it
+        # must be a web address, and never plain http when the server itself is https.
+        scheme = urlsplit(registration).scheme if isinstance(registration, str) else ""
+        if scheme not in ("http", "https") or (urlsplit(base).scheme == "https" and scheme != "https"):
+            raise FrameleafError("This Frameleaf server names an app registration address that isn't safe to use")
         async with session.post(
             registration,
             json={

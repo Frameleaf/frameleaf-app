@@ -41,7 +41,8 @@ const UPLOAD_WATCH_STABLE_MS = 5000;
 
 // TODO figure out why `id` is missing
 type AssetBulkUploadCheckResults = Array<AssetBulkUploadCheckResult & { id: string }>;
-type Asset = { id: string; filepath: string };
+/** `duplicate` marks an upload the server answered as a duplicate: it kept the asset it had, without this file's XMP. */
+type Asset = { id: string; filepath: string; duplicate?: true };
 
 export interface UploadOptionsDto {
   recursive?: boolean;
@@ -461,8 +462,9 @@ export const uploadFiles = async (
         showProgress();
         return response;
       }
-      newAssets.push({ id: response.id, filepath });
-      if (response.status === AssetMediaStatus.Duplicate) {
+      const duplicate = response.status === AssetMediaStatus.Duplicate;
+      newAssets.push({ id: response.id, filepath, ...(duplicate && { duplicate }) });
+      if (duplicate) {
         duplicateCount++;
         duplicateSize += stats.size ?? 0;
       } else {
@@ -758,14 +760,25 @@ export const deleteFiles = async (uploaded: Asset[], duplicates: Asset[], option
   );
   deletionProgress.start(fileCount, 0);
 
+  let keptCount = 0;
   try {
     const sidecars = new Set<string>();
+    // Only a new upload took its XMP to the server. A duplicate's XMP was never sent, so it may hold
+    // edits the server doesn't have, and stays on disk even when its original is deleted.
+    const sentSidecar = new Set(
+      options.delete ? uploaded.filter(({ duplicate }) => !duplicate).map(({ filepath }) => filepath) : [],
+    );
+    const keptSidecars = new Set<string>();
     const selected = new Set(files.values().map((filepath) => path.resolve(filepath)));
     // Each directory is listed once, however many selected files it holds.
     const inUseByDir = new Map<string, Set<string> | false>();
     for (const filepath of files) {
       const sidecar = findSidecar(filepath);
       if (!sidecar || files.has(sidecar)) {
+        continue;
+      }
+      if (!sentSidecar.has(filepath)) {
+        keptSidecars.add(sidecar);
         continue;
       }
       const sidecarPath = path.resolve(sidecar);
@@ -779,6 +792,10 @@ export const deleteFiles = async (uploaded: Asset[], duplicates: Asset[], option
         sidecars.add(sidecar);
       }
     }
+    for (const sidecar of keptSidecars) {
+      sidecars.delete(sidecar);
+    }
+    keptCount = keptSidecars.size;
     for (const batch of chunk(files.values().toArray(), options.concurrency)) {
       await Promise.all(batch.map((filepath) => unlink(filepath)));
       deletionProgress.increment(batch.length);
@@ -789,6 +806,9 @@ export const deleteFiles = async (uploaded: Asset[], duplicates: Asset[], option
     }
   } finally {
     deletionProgress.stop();
+  }
+  if (keptCount > 0) {
+    console.log(`Kept ${keptCount} XMP sidecar${s(keptCount)} of duplicates, which the server doesn't have`);
   }
 };
 

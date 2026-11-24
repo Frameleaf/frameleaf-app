@@ -757,6 +757,38 @@ describe('deleteFiles', () => {
     },
   );
 
+  it('keeps the XMP of a file found as a duplicate before upload, since it was never sent', async () => {
+    const sidecar = path.join(testDir, 'test.xmp');
+    fs.writeFileSync(sidecar, 'edits only here');
+    await deleteFiles([], [{ id: 'existing', filepath: testFilePath }], { deleteDuplicates: true, concurrency: 1 });
+    expect(fs.existsSync(testFilePath)).toBe(false);
+    expect(fs.existsSync(sidecar)).toBe(true);
+  });
+
+  it('keeps the XMP of an upload the server answered as a duplicate', async () => {
+    const sidecar = path.join(testDir, 'test.xmp');
+    fs.writeFileSync(sidecar, 'edits only here');
+    await deleteFiles([{ id: 'existing', filepath: testFilePath, duplicate: true }], [], {
+      delete: true,
+      concurrency: 1,
+    });
+    expect(fs.existsSync(testFilePath)).toBe(false);
+    expect(fs.existsSync(sidecar)).toBe(true);
+  });
+
+  it('keeps a shared XMP when one of its originals was a duplicate', async () => {
+    const raw = path.join(testDir, 'test.nef');
+    const sidecar = path.join(testDir, 'test.xmp');
+    fs.writeFileSync(raw, 'raw');
+    fs.writeFileSync(sidecar, 'metadata');
+    await deleteFiles([{ id: 'jpeg', filepath: testFilePath }], [{ id: 'raw', filepath: raw }], {
+      delete: true,
+      deleteDuplicates: true,
+      concurrency: 2,
+    });
+    expect([testFilePath, raw, sidecar].map((file) => fs.existsSync(file))).toEqual([false, false, true]);
+  });
+
   it('keeps originals and shared sidecars during dry runs', async () => {
     const sidecar = path.join(testDir, 'test.xmp');
     fs.writeFileSync(sidecar, 'metadata');

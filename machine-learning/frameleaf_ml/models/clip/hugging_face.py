@@ -35,6 +35,9 @@ REQUIRED_FILES = [*_SETTINGS_FILES, "visual/model.onnx", "textual/model.onnx", "
 # Exact paths rather than globs, so nothing else in the repository can be fetched. Large exports
 # keep their tensors beside the model as raw ONNX external data.
 ALLOWED_FILES = [*REQUIRED_FILES, "visual/model.onnx_data", "textual/model.onnx_data"]
+# Everything one repository may make this worker fetch. The largest published search model (ViT-bigG-14,
+# full precision) is about 10 GiB across both encoders, so a real export fits with room to spare.
+MAX_CUSTOM_MODEL_BYTES = 12 * 1024**3
 
 
 def custom_cache_folder(repository: str) -> str:
@@ -76,10 +79,32 @@ def _require_files(repository: str, present: set[str]) -> None:
         )
 
 
-def _fetch(repository: str, folder: Path, files: list[str]) -> None:
+def _checked_revision(repository: str) -> tuple[str | None, dict[str, int | None]]:
+    """The repository's current revision and file sizes, refusing one too large to fetch in full."""
+    try:
+        info = HfApi(endpoint=HUGGING_FACE_URL, token=False).model_info(repository, files_metadata=True, timeout=30)
+    except Exception as error:
+        raise _hub_failure(repository, error) from error
+    sizes = {sibling.rfilename: sibling.size for sibling in info.siblings or []}
+    fetched = [name for name in ALLOWED_FILES if name in sizes]
+    if any(sizes[name] is None for name in fetched):
+        raise _cannot_use(repository, "Hugging Face didn't report the size of its files.")
+    total = sum(sizes[name] or 0 for name in fetched)
+    if total > MAX_CUSTOM_MODEL_BYTES:
+        raise _cannot_use(
+            repository,
+            f"its files add up to {total / 1024**3:.1f} GiB, more than the {MAX_CUSTOM_MODEL_BYTES // 1024**3} GiB "
+            "Frameleaf allows for a search model.",
+        )
+    return getattr(info, "sha", None), sizes
+
+
+def _fetch(repository: str, folder: Path, files: list[str], revision: str | None = None) -> None:
     try:
         snapshot_download(
             repository,
+            # The revision whose sizes were checked, so a later push can't swap in larger files.
+            revision=revision,
             cache_dir=folder,
             local_dir=folder,
             endpoint=HUGGING_FACE_URL,
@@ -130,17 +155,13 @@ def inspect_custom_clip_model(repository: str) -> int:
         raise ModelUnavailableError(
             f"This server only uses models prepared in advance, so it can't get '{repository}' from Hugging Face."
         )
-    try:
-        info = HfApi(endpoint=HUGGING_FACE_URL, token=False).model_info(repository, files_metadata=True, timeout=30)
-    except Exception as error:
-        raise _hub_failure(repository, error) from error
-    sizes = {sibling.rfilename: sibling.size for sibling in info.siblings or []}
+    revision, sizes = _checked_revision(repository)
     _require_files(repository, set(sizes))
     for name in _SETTINGS_FILES:
         if (sizes[name] or 0) > _MAX_SETTINGS_FILE_BYTES:
             raise _cannot_use(repository, f"its {name} is too large to be a settings file.")
     with TemporaryDirectory() as folder:
-        _fetch(repository, Path(folder), _SETTINGS_FILES)
+        _fetch(repository, Path(folder), _SETTINGS_FILES, revision)
         return _embedding_size(repository, Path(folder))
 
 
@@ -155,7 +176,8 @@ class HubClipModel(InferenceModel):
         if self.custom_repository is None:
             super()._download()
             return
-        _fetch(self.custom_repository, self.cache_dir, ALLOWED_FILES)
+        revision, _ = _checked_revision(self.custom_repository)
+        _fetch(self.custom_repository, self.cache_dir, ALLOWED_FILES, revision)
         present = {name for name in REQUIRED_FILES if (self.cache_dir / name).is_file()}
         _require_files(self.custom_repository, present)
 
