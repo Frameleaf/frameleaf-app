@@ -12,7 +12,7 @@ import { DB } from 'src/schema/index.js';
 import { readAliasedEnv } from 'src/utils/env-aliases.js';
 import { parseICloudAlbum, resourcesForICloudAsset, sanitizeICloudFields } from 'src/utils/icloud-records.js';
 import {
-  ICLOUD_HIDDEN_REVIEW_REASONS,
+  ICLOUD_RELEASED_REVIEW_REASONS,
   ICLOUD_REVIEW_GROUP_REASONS,
   ICLOUD_REVIEW_TRY_AGAIN,
   ICLOUD_REVIEW_USE_EXISTING,
@@ -402,10 +402,10 @@ export class ICloudSyncRepository {
           WHERE r."connectionId"=${connection.id}::uuid AND r.status IN ('failed','needs-review') AND r."auditRequestId" IS NULL
             AND (r.status <> 'needs-review' OR r."stagingPath" IS NULL)
             AND NOT coalesce(r.verification ? 'auditValidationInputs',false) AND ${hasOpenFileProblem}`.execute(db);
-        // Items held back for being hidden, before hidden photos always came in.
+        // Items held back for a reason that no longer holds photos back.
         await sql`UPDATE public.icloud_resource r SET status='pending',attempts=0,"lastError"=NULL,"nextAttemptAt"=NULL
           WHERE r."connectionId"=${connection.id}::uuid AND r.status='needs-review' AND r."auditRequestId" IS NULL
-            AND r."stagingPath" IS NULL AND r."lastError" = ANY(${ICLOUD_HIDDEN_REVIEW_REASONS}::text[])
+            AND r."stagingPath" IS NULL AND r."lastError" = ANY(${ICLOUD_RELEASED_REVIEW_REASONS}::text[])
             AND NOT coalesce(r.verification ? 'auditValidationInputs',false)`.execute(db);
       }
     });
@@ -734,6 +734,8 @@ export class ICloudSyncRepository {
     status: string,
     error: string | null = null,
     cleanup?: (current: ICloudResource) => Promise<void>,
+    /** For a held item: library photos with the same file, for review to show. */
+    matchAssetIds?: string[],
   ): Promise<void> {
     const committedFailure = status === 'committed' && error !== null;
     await this.active(async (db) => {
@@ -770,7 +772,11 @@ export class ICloudSyncRepository {
         "nextAttemptAt" = CASE WHEN ${status} = 'retry' OR (${status}='committed' AND ${error}::text IS NOT NULL)
           THEN now() + interval '1 minute' * least(1440, power(2, "attempts" + 1)) * (0.75 + random()*0.5) ELSE NULL END,
         "reservedBytes" = CASE WHEN ${release} THEN 0 ELSE "reservedBytes" END,
-        "stagingPath" = CASE WHEN ${release} THEN NULL ELSE "stagingPath" END, "updatedAt" = now()
+        "stagingPath" = CASE WHEN ${release} THEN NULL ELSE "stagingPath" END, "updatedAt" = now(),
+        source = CASE WHEN ${status} = 'needs-review' AND ${matchAssetIds?.length ? JSON.stringify(matchAssetIds) : null}::text::jsonb IS NOT NULL
+          THEN jsonb_set(source, '{_sync}', coalesce(source->'_sync', '{}'::jsonb)
+            || jsonb_build_object('reviewMatches', ${matchAssetIds?.length ? JSON.stringify(matchAssetIds) : null}::text::jsonb), true)
+          ELSE source #- '{_sync,reviewMatches}' END
         WHERE id = ${resource.id}::uuid AND "leaseToken" = ${resource.leaseToken}::uuid RETURNING attempts`.execute(db);
       if (committedFailure && (rows[0]?.attempts ?? 0) >= 8) {
         await sql`UPDATE public.icloud_connection SET state='error',"lastError"='icloud_finalization_failed',"nextRunAt"=NULL
@@ -1045,7 +1051,7 @@ export class ICloudSyncRepository {
           AND (${includePrivate}::boolean OR (NOT coalesce((r.source->>'isHidden')::boolean, false)
             AND NOT EXISTS (SELECT 1 FROM public.asset_lock l WHERE l."assetId" = r."assetId")))
       ) f
-      WHERE f.reason <> ALL(${ICLOUD_HIDDEN_REVIEW_REASONS}::text[])
+      WHERE f.reason <> ALL(${ICLOUD_RELEASED_REVIEW_REASONS}::text[])
         AND NOT coalesce(f.source#>'{_sync,acceptedReasons}' ? f.reason, false)`;
   }
   /** One row per photo: its original when that is what needs review, so a photo and its edits count once. */
@@ -1080,12 +1086,18 @@ export class ICloudSyncRepository {
     const { rows: items } = await sql<ICloudReviewPage['items'][number]>`
       SELECT p.id AS "resourceId", p."group", p.effect, p.reason,
         CASE WHEN a.id IS NOT NULL THEN a."originalFileName" ELSE p.source->>'originalFileName' END AS "fileName",
-        p.source->>'fileCreatedAt' AS "takenAt", coalesce(a.id, m.id) AS "previewAssetId"
+        p.source->>'fileCreatedAt' AS "takenAt", coalesce(a.id, h.id, m.id) AS "previewAssetId"
       FROM (${photos}) p
         LEFT JOIN public.asset a ON a.id = p."assetId" AND a."ownerId" = p."ownerId" AND a."deletedAt" IS NULL
-        -- An item not imported yet shows the library photo with its name and capture time, if there is one.
+        -- An item not imported yet shows a library photo with the same file, noted when it was held, else one with
+        -- its name and capture time.
+        LEFT JOIN LATERAL (SELECT x.id FROM jsonb_array_elements_text(p.source#>'{_sync,reviewMatches}') WITH ORDINALITY j(id, n)
+            JOIN public.asset x ON x.id::text = j.id
+          WHERE a.id IS NULL AND x."ownerId" = p."ownerId" AND x."deletedAt" IS NULL AND x.visibility IN ('timeline', 'archive')
+            AND (${includePrivate}::boolean OR NOT EXISTS (SELECT 1 FROM public.asset_lock l WHERE l."assetId" = x.id))
+          ORDER BY j.n LIMIT 1) h ON true
         LEFT JOIN LATERAL (SELECT x.id FROM public.asset x
-          WHERE a.id IS NULL AND x."ownerId" = p."ownerId" AND x."deletedAt" IS NULL AND x.visibility = 'timeline'
+          WHERE a.id IS NULL AND h.id IS NULL AND x."ownerId" = p."ownerId" AND x."deletedAt" IS NULL AND x.visibility = 'timeline'
             AND x."originalFileName" = p.source->>'originalFileName'
             AND to_char(x."fileCreatedAt" AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS') = left(p.source->>'fileCreatedAt', 19)
             AND (${includePrivate}::boolean OR NOT EXISTS (SELECT 1 FROM public.asset_lock l WHERE l."assetId" = x.id))

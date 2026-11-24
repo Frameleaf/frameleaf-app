@@ -1174,8 +1174,16 @@ export class ICloudSyncService {
     });
   }
 
-  private async finishResource(resource: ICloudResource, status: string, error: string | null = null) {
-    await this.repository.finish(resource, status, error, (current) => this.staging.cleanup(current));
+  private async finishResource(
+    resource: ICloudResource,
+    status: string,
+    error: string | null = null,
+    matchAssetIds?: string[],
+  ) {
+    const cleanup = (current: ICloudResource) => this.staging.cleanup(current);
+    await (matchAssetIds
+      ? this.repository.finish(resource, status, error, cleanup, matchAssetIds)
+      : this.repository.finish(resource, status, error, cleanup));
   }
 
   private async transfer(connection: ICloudConnection, resource: ICloudResource, claim: Claim): Promise<void> {
@@ -1235,7 +1243,7 @@ export class ICloudSyncService {
                 typeof resource.source.fileCreatedAt === 'string' ? new Date(resource.source.fileCreatedAt) : undefined,
             });
             if (!['imported', 'reused', 'repaired-missing', 'repaired-corrupt'].includes(result.outcome)) {
-              await this.finishResource(resource, result.outcome, result.reason ?? null);
+              await this.finishResource(resource, result.outcome, result.reason ?? null, result.matchAssetIds);
               return;
             }
           }

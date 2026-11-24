@@ -323,13 +323,8 @@ describe(MediaRecoveryService.name, () => {
       const resource = await repository.getResource(input);
       repository.getResource.mockResolvedValue({ ...resource, assetId: null, source });
     };
-    it('waits for review until someone accepts', async () => {
+    it('links to the visible photo without asking, and adds no copy', async () => {
       await resourceWith({});
-      input.includeHidden = true;
-      expect(await sut.reconcile(input)).toEqual({ outcome: 'needs-review', reason: 'multiple_content_matches' });
-    });
-    it('uses the visible photo once accepted, and adds no copy', async () => {
-      await resourceWith({ _sync: { acceptedReasons: ['multiple_content_matches'] } });
       input.includeHidden = true;
       expect(await sut.reconcile(input)).toEqual({ outcome: 'reused', assetId: candidate.id });
     });
