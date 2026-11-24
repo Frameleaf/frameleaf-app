@@ -675,7 +675,7 @@ export class MediaService extends BaseService {
           executionSignal()?.throwIfAborted();
           if (cinemaRaw && isUndecodableError(error)) {
             this.logger.log(`No thumbnail for cinema RAW ${asset.id}: this server has no decoder for it`);
-            return JobStatus.Skipped;
+            return this.noPicture(asset);
           }
           // A video that won't open goes to Library care like a photo. Care checks the file itself and words the
           // cause, so no message is passed. The path is left out of the test: a folder name must not decide this.
@@ -692,7 +692,7 @@ export class MediaService extends BaseService {
         if (videoInfo.videoStreams.length === 0) {
           // FL-1357: sound only (a voice memo saved as .mp4, say). Nothing to picture, and nothing wrong with it.
           this.logger.log(`No thumbnail for ${asset.id}: the file has no picture track`);
-          return JobStatus.Skipped;
+          return this.noPicture(asset);
         }
         videoStream = videoInfo?.videoStreams[0] ?? null;
         format = videoInfo?.format ?? null;
@@ -701,7 +701,7 @@ export class MediaService extends BaseService {
       if (!videoStream || !format || !videoStream.timeBase) {
         if (cinemaRaw) {
           this.logger.log(`No thumbnail for cinema RAW ${asset.id}: this server has no decoder for it`);
-          return JobStatus.Skipped;
+          return this.noPicture(asset);
         }
         throw new Error(`Missing video metadata for asset ${asset.id}`);
       }
@@ -735,10 +735,8 @@ export class MediaService extends BaseService {
         if (!cinemaRaw || isLockedKeyUnavailable(error) || !isUndecodableError(error)) {
           throw error;
         }
-        // ponytail: the nightly missing-thumbnails pass tries it again (one quick ffmpeg run); record a
-        // "skipped for this checksum" marker like transcodeSkippedFor if that ever costs anything.
         this.logger.log(`No thumbnail for cinema RAW ${asset.id}: this server has no decoder for it`);
-        return JobStatus.Skipped;
+        return this.noPicture(asset);
       }
     } else if (asset.type === AssetType.Image) {
       this.logger.verbose(`Thumbnail generation for image ${id} ${asset.originalPath}`);
@@ -749,9 +747,8 @@ export class MediaService extends BaseService {
         if (error instanceof DesignPreviewUnavailableError) {
           // FL-1358: a design file with no picture inside is kept as it is and shown by the plain tile. Nothing is
           // wrong with it, so it is not sent to Library care.
-          // ponytail: looked at again whenever missing thumbnails are queued; record the answer if that ever costs.
           this.logger.verbose(`No preview for design file ${id}: ${error.message}`);
-          return JobStatus.Skipped;
+          return this.noPicture(asset);
         }
         if (handOffDamage && this.isDecodeError(error)) {
           // FL-1337: a photo that won't open goes to Library care, which names the cause and repairs what it can.
@@ -1626,11 +1623,14 @@ export class MediaService extends BaseService {
       this.assetJobRepository.selectionForVideoConversion(force, force ? undefined : videoProcessingPolicy(ffmpeg)),
       ...processingSetAsideOverride(force, includeSetAside),
     );
-    // FL-650: the same run makes seek-bar previews; a video whose previews exist is a quick cache hit
-    await this.jobRepository.queueSelection(
-      JobName.AssetWarmFilmstrip,
-      this.assetJobRepository.selectionForVideoConversion(true),
-    );
+    // FL-650: a full rerun makes every video's seek-bar previews too; catching up leaves them to each encode's
+    // follow-up (`JobService`) and to the player, which makes a missing one when it is first needed
+    if (force) {
+      await this.jobRepository.queueSelection(
+        JobName.AssetWarmFilmstrip,
+        this.assetJobRepository.selectionForVideoConversion(true),
+      );
+    }
 
     return JobStatus.Success;
   }
@@ -1737,6 +1737,15 @@ export class MediaService extends BaseService {
     return JobStatus.Success;
   }
 
+  /**
+   * An original with no picture to render: recorded, so catching up leaves it alone until the original changes
+   * (`NO_PICTURE_STEP`). A full rerun tries it again, for a decoder that has learned it since.
+   */
+  private async noPicture(asset: { id: string; checksum: Buffer }): Promise<JobStatus> {
+    await publishJobResult(() => this.assetJobRepository.setNoPicture(asset.id, asset.checksum));
+    return JobStatus.Skipped;
+  }
+
   @OnJob({ name: JobName.AssetEncodeVideo, queue: QueueName.VideoConversion })
   async handleVideoConversion({ id }: JobOf<JobName.AssetEncodeVideo>): Promise<JobStatus> {
     const asset = await this.assetJobRepository.getForVideoConversion(id);
@@ -1776,11 +1785,11 @@ export class MediaService extends BaseService {
     const cinemaRaw = mimeTypes.isCinemaRaw(asset.originalPath);
     if (cinemaRaw && (!videoStream || !format || !videoStream.height || !videoStream.width)) {
       this.logger.log(`No playback copy for cinema RAW ${asset.id}: this server has no decoder for it`);
-      return JobStatus.Skipped;
+      return this.noPicture(asset);
     }
     if (format && !videoStream) {
       this.logger.log(`No playback copy for asset ${asset.id}: the file has no picture track`);
-      return JobStatus.Skipped;
+      return this.noPicture(asset);
     }
     if (!videoStream || !format) {
       this.logger.warn(`Skipped transcoding for asset ${asset.id}: missing metadata; re-run extraction first`);

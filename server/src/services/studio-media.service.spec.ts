@@ -277,6 +277,23 @@ describe(StudioMediaService.name, () => {
         mocks.duplicateRepository.upsertVideoFingerprint.mockResolvedValue();
       });
 
+      it("a partner copy takes its source's fingerprint without reading the video", async () => {
+        const sourceId = 'b5a5b3b2-6f1c-4a7e-9d3f-2f0b1c9e8a71';
+        mocks.partnerOrigin.getLiveSourceId.mockResolvedValue(sourceId);
+        mocks.duplicateRepository.getVideoFingerprints.mockResolvedValue([
+          { assetId: sourceId, durationMs: 2000, hashes: ['-1', null] },
+        ] as never);
+
+        await expect(sut.handleVideoFingerprint({ id: assetId })).resolves.toBe(JobStatus.Success);
+
+        expect(mocks.media.filmstripFrameGrids).not.toHaveBeenCalled();
+        expect(mocks.duplicateRepository.upsertVideoFingerprint).toHaveBeenCalledWith({
+          assetId,
+          durationMs: 2000,
+          hashes: ['-1', null],
+        });
+      });
+
       it("hashes every frame of the seek-bar filmstrip and removes the retired check's frames", async () => {
         const rising = Array.from({ length: 72 }, (_, pixel) => (pixel % 9) * 20);
         const black = Array.from({ length: 72 }, () => 0);

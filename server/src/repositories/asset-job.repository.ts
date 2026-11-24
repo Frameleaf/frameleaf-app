@@ -17,7 +17,7 @@ import {
   MediaHealthCategory,
   QueueName,
 } from 'src/enum.js';
-import { RAW_RUNG_STEP, processingFailureSteps } from 'src/queue/processing-failure.js';
+import { NO_PICTURE_STEP, RAW_RUNG_STEP, processingFailureSteps } from 'src/queue/processing-failure.js';
 import { publicationDatabase } from 'src/queue/transaction.js';
 import { DB } from 'src/schema/index.js';
 import {
@@ -56,6 +56,26 @@ const convertsOwnVideo = sql<boolean>`NOT EXISTS (
   SELECT 1 FROM public.asset_origin origin
   JOIN asset source ON source.id = origin."sourceAssetId"
   WHERE origin."assetId" = asset.id AND source."deletedAt" IS NULL AND source.status = ${sql.lit(AssetStatus.Active)}
+)`;
+/**
+ * A partner copy with a live source is never read by a model of its own: it takes the source's description and
+ * (on a full rerun) its search embedding, handed over when the source finishes. So a library shared with a partner
+ * is counted and queued once, not once per library.
+ */
+const notAPartnerCopy = convertsOwnVideo;
+/**
+ * A partner copy whose live source has no description yet: the source's description is handed over when it is
+ * made. A copy whose source has one is still caught up (a copy made before copies took it), cheaply.
+ */
+const waitsForSourceDescription = sql<boolean>`EXISTS (
+  SELECT 1 FROM public.asset_origin origin
+  JOIN asset source ON source.id = origin."sourceAssetId"
+  WHERE origin."assetId" = asset.id AND source."deletedAt" IS NULL AND source.status = ${sql.lit(AssetStatus.Active)}
+    AND NOT EXISTS (
+      SELECT 1 FROM public.asset_metadata m
+      WHERE m."assetId" = source.id AND m.key = ${sql.lit(AssetMetadataKey.MlEnrichment)}
+        AND m.value -> 'description' ->> 'status' = 'success'
+    )
 )`;
 /**
  * A partner copy takes its live source's search embedding and never reads the picture itself, so its job is
@@ -118,6 +138,32 @@ const rawSensorNotGivenUp = sql<boolean>`not exists (
     where rung."assetId" = asset.id and rung.step = ${sql.lit(RAW_RUNG_STEP)}
   )`;
 
+/** An original recorded as having no picture (`setNoPicture`), until the original changes. */
+const pictureNotGivenUp = sql<boolean>`not exists (
+    select 1 from public.asset_processing_failure none
+    where none."assetId" = asset.id and none.step = ${sql.lit(NO_PICTURE_STEP)}
+      and none."lastError" = encode(asset.checksum, 'hex')
+  )`;
+
+/** A partner copy whose live source has no thumbnail yet: the source's job hands its files over. */
+const waitsForSourceThumbnails = sql<boolean>`EXISTS (
+  SELECT 1 FROM public.asset_origin origin
+  JOIN asset source ON source.id = origin."sourceAssetId"
+  WHERE origin."assetId" = asset.id AND source."deletedAt" IS NULL AND source.status = ${sql.lit(AssetStatus.Active)}
+    AND NOT EXISTS (
+      SELECT 1 FROM public.asset_file f
+      WHERE f."assetId" = source.id AND f.type = ${sql.lit(AssetFileType.Preview)} AND f."isEdited" = false
+    )
+)`;
+
+/** A partner copy whose live source has no video fingerprint yet; once it has one, the copy takes it. */
+const waitsForSourceFingerprint = sql<boolean>`EXISTS (
+  SELECT 1 FROM public.asset_origin origin
+  JOIN asset source ON source.id = origin."sourceAssetId"
+  WHERE origin."assetId" = asset.id AND source."deletedAt" IS NULL AND source.status = ${sql.lit(AssetStatus.Active)}
+    AND NOT EXISTS (SELECT 1 FROM public.asset_video_fingerprint fp WHERE fp."assetId" = source.id)
+)`;
+
 type ProcessingFailureStep = ProcessingFailureActionDto['items'][number]['step'];
 
 type ReconciledJob =
@@ -143,9 +189,7 @@ export class AssetJobRepository {
       [JobName.AssetExtractMetadata]: () =>
         this.selectionForMetadataExtraction(false, false, true).where(originalNotMissing),
       [JobName.AssetGenerateThumbnails]: () =>
-        this.selectionForThumbnailJob({ force: false, fullsizeEnabled: options.fullsizeEnabled })
-          .where(notInLibraryCare)
-          .where(rawSensorNotGivenUp),
+        this.selectionForThumbnailJob({ force: false, fullsizeEnabled: options.fullsizeEnabled }),
       [JobName.AssetEncodeVideo]: () =>
         this.selectionForVideoConversion(false)
           .innerJoin('asset_exif', 'asset_exif.assetId', 'asset.id')
@@ -155,8 +199,6 @@ export class AssetJobRepository {
             sql<boolean>`"asset_job_status"."transcodeSkippedFor" is distinct from
             (encode(asset.checksum, 'hex') || ':' || ${options.videoPolicy})`,
           )
-          // a copy whose source is trashed or deleted later is picked up again and converts its own
-          .where(convertsOwnVideo)
           .where(originalNotMissing),
       [JobName.SmartSearch]: () => this.selectionForEncodeClip(false),
       [JobName.AssetDetectFaces]: () => this.selectionForDetectFacesJob(false).clearOrderBy(),
@@ -212,6 +254,16 @@ export class AssetJobRepository {
           .where('assetId', '=', assetId)
           .where('step', '=', RAW_RUNG_STEP)
           .execute());
+  }
+
+  /** Record that this original has no picture to render (`NO_PICTURE_STEP`); catching up leaves it alone. */
+  async setNoPicture(assetId: string, checksum: Buffer): Promise<void> {
+    const lastError = checksum.toString('hex');
+    await this.db
+      .insertInto('asset_processing_failure')
+      .values({ assetId, step: NO_PICTURE_STEP, attempts: 1, lastError, lastFailedAt: new Date() })
+      .onConflict((oc) => oc.columns(['assetId', 'step']).doUpdateSet({ lastError, lastFailedAt: new Date() }))
+      .execute();
   }
 
   /** FL-1355: every RAW original whose sensor has not rendered, to try again with a newer decoder. */
@@ -419,6 +471,11 @@ export class AssetJobRepository {
         qb
           // A status row can exist before metadata extraction, for example on a partner copy.
           .innerJoin('asset_job_status', 'asset_job_status.assetId', 'asset.id')
+          // left to Library care, given up on, or waiting for a partner copy's source: catching up never redoes these
+          .where(notInLibraryCare)
+          .where(rawSensorNotGivenUp)
+          .where(pictureNotGivenUp)
+          .where(sql<boolean>`NOT ${waitsForSourceThumbnails}`)
           .where(({ exists, selectFrom }) =>
             exists(selectFrom('asset_exif').select('assetId').whereRef('asset_exif.assetId', '=', 'asset.id')),
           )
@@ -619,25 +676,29 @@ export class AssetJobRepository {
 
   /** FL-651: videos to fingerprint; all of them when forced, else those without a fingerprint. */
   selectionForVideoFingerprint(force?: boolean) {
-    return this.db
-      .selectFrom('asset')
-      .select(['asset.id'])
-      .where('asset.type', '=', sql.lit(AssetType.Video))
-      .where('asset.deletedAt', 'is', null)
-      .where('asset.visibility', '!=', sql.lit(AssetVisibility.Hidden))
-      .where(isNotLocked('asset'))
-      .$if(!force, (qb) =>
-        qb.where((eb) =>
-          eb.not(
-            eb.exists(
-              eb
-                .selectFrom('asset_video_fingerprint')
-                .select('asset_video_fingerprint.assetId')
-                .whereRef('asset_video_fingerprint.assetId', '=', 'asset.id'),
+    return (
+      this.db
+        .selectFrom('asset')
+        .select(['asset.id'])
+        .where('asset.type', '=', sql.lit(AssetType.Video))
+        .where('asset.deletedAt', 'is', null)
+        .where('asset.visibility', '!=', sql.lit(AssetVisibility.Hidden))
+        .where(isNotLocked('asset'))
+        // a partner copy takes its source's fingerprint: a full rerun leaves copies to their sources
+        .where(force ? notAPartnerCopy : sql<boolean>`NOT ${waitsForSourceFingerprint}`)
+        .$if(!force, (qb) =>
+          qb.where((eb) =>
+            eb.not(
+              eb.exists(
+                eb
+                  .selectFrom('asset_video_fingerprint')
+                  .select('asset_video_fingerprint.assetId')
+                  .whereRef('asset_video_fingerprint.assetId', '=', 'asset.id'),
+              ),
             ),
           ),
-        ),
-      );
+        )
+    );
   }
 
   @GenerateSql({ params: [DummyValue.UUID] })
@@ -666,7 +727,8 @@ export class AssetJobRepository {
         qb
           .where((eb) => eb.not((eb) => eb.exists(eb.selectFrom('smart_search').whereRef('assetId', '=', 'asset.id'))))
           .where(sql<boolean>`NOT ${waitsForSourceEmbedding}`),
-      );
+      )
+      .$if(!!force, (qb) => qb.where(notAPartnerCopy));
   }
 
   @GenerateSql({ params: [DummyValue.UUID] })
@@ -913,41 +975,47 @@ export class AssetJobRepository {
    * policy: they never get an encoded copy, so without it every "Missing" run re-checks each one.
    */
   selectionForVideoConversion(force?: boolean, videoPolicy?: string) {
-    return this.db
-      .selectFrom('asset')
-      .select(['asset.id'])
-      .where('asset.type', '=', sql.lit(AssetType.Video))
-      .$if(!force, (qb) =>
-        qb
-          .where((eb) =>
+    return (
+      this.db
+        .selectFrom('asset')
+        .select(['asset.id'])
+        .where('asset.type', '=', sql.lit(AssetType.Video))
+        // a partner copy plays its live source's converted video (FL-1487); one whose source is trashed or deleted
+        // later is picked up again and converts its own
+        .where(convertsOwnVideo)
+        .$if(!force, (qb) =>
+          qb
+            .where((eb) =>
+              eb.not(
+                eb.exists(
+                  eb
+                    .selectFrom('asset_file')
+                    .select('asset_file.id')
+                    .whereRef('asset_file.assetId', '=', 'asset.id')
+                    .where('asset_file.type', '=', sql.lit(AssetFileType.EncodedVideo)),
+                ),
+              ),
+            )
+            .where('asset.visibility', '!=', sql.lit(AssetVisibility.Hidden))
+            .where(pictureNotGivenUp),
+        )
+        .$if(!force && !!videoPolicy, (qb) =>
+          qb.where((eb) =>
             eb.not(
               eb.exists(
                 eb
-                  .selectFrom('asset_file')
-                  .select('asset_file.id')
-                  .whereRef('asset_file.assetId', '=', 'asset.id')
-                  .where('asset_file.type', '=', sql.lit(AssetFileType.EncodedVideo)),
+                  .selectFrom('asset_job_status')
+                  .select('asset_job_status.assetId')
+                  .whereRef('asset_job_status.assetId', '=', 'asset.id')
+                  .where(
+                    sql<boolean>`"asset_job_status"."transcodeSkippedFor" = (encode(asset.checksum, 'hex') || ':' || ${videoPolicy})`,
+                  ),
               ),
             ),
-          )
-          .where('asset.visibility', '!=', sql.lit(AssetVisibility.Hidden)),
-      )
-      .$if(!force && !!videoPolicy, (qb) =>
-        qb.where((eb) =>
-          eb.not(
-            eb.exists(
-              eb
-                .selectFrom('asset_job_status')
-                .select('asset_job_status.assetId')
-                .whereRef('asset_job_status.assetId', '=', 'asset.id')
-                .where(
-                  sql<boolean>`"asset_job_status"."transcodeSkippedFor" = (encode(asset.checksum, 'hex') || ':' || ${videoPolicy})`,
-                ),
-            ),
           ),
-        ),
-      )
-      .where('asset.deletedAt', 'is', null);
+        )
+        .where('asset.deletedAt', 'is', null)
+    );
   }
 
   @GenerateSql({ params: [DummyValue.UUID] })
@@ -1236,6 +1304,8 @@ export class AssetJobRepository {
         // background work includes locked media (owner decision, September 22, 2026): stored visibility only
         .where('asset.visibility', 'in', [sql.lit(AssetVisibility.Archive), sql.lit(AssetVisibility.Timeline)])
         .where('asset.type', 'in', [sql.lit(AssetType.Image), sql.lit(AssetType.Video)])
+        // a full rerun leaves copies to their sources; catching up takes over a source's finished description
+        .where(force ? notAPartnerCopy : sql<boolean>`NOT ${waitsForSourceDescription}`)
         .$if(!!ownerIds?.length, (qb) => qb.where('asset.ownerId', 'in', [...ownerIds!]))
         .$if(!force, (qb) =>
           qb.where((eb) =>
@@ -1334,6 +1404,10 @@ export class AssetJobRepository {
       WHERE a."deletedAt" IS NULL
         AND a.visibility IN (${AssetVisibility.Archive}, ${AssetVisibility.Timeline})
         AND a.type IN (${AssetType.Image}, ${AssetType.Video})
+        AND NOT EXISTS (
+          SELECT 1 FROM public.asset_origin origin JOIN public.asset source ON source.id = origin."sourceAssetId"
+          WHERE origin."assetId" = a.id AND source."deletedAt" IS NULL AND source.status = ${AssetStatus.Active}
+        )
         AND EXISTS (SELECT 1 FROM public.asset_file f WHERE f."assetId" = a.id AND f.type = ${AssetFileType.Preview})`.execute(
       this.db,
     );
