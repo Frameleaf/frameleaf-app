@@ -8,6 +8,19 @@ from
 where
   "deletedAt" is null
 
+-- DateDoctorRepository.getScanMonths
+select distinct
+  (
+    date_trunc('MONTH', asset."localDateTime" AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'
+  ) as "month"
+from
+  "asset"
+where
+  "asset"."ownerId" = $1
+  and "asset"."deletedAt" is null
+order by
+  "month"
+
 -- DateDoctorRepository.getScanRows
 select
   "asset"."id",
@@ -75,6 +88,14 @@ where
       and o."sourceAssetId" is not null
       and not ('dateTimeOriginal' = any (o."overriddenFields"))
   )
+  and (
+    date_trunc('MONTH', asset."localDateTime" AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'
+  ) >= date_trunc('MONTH', $2::timestamptz at time zone 'UTC') at time zone 'UTC'
+  and (
+    date_trunc('MONTH', asset."localDateTime" AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'
+  ) <= date_trunc('MONTH', $3::timestamptz at time zone 'UTC') at time zone 'UTC'
+  and "asset"."localDateTime" >= $4
+  and "asset"."localDateTime" < $5
 
 -- DateDoctorRepository.isScanning
 select

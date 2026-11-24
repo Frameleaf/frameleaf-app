@@ -11,14 +11,6 @@ from
 where
   "asset_print_back"."frontAssetId" = $1::uuid
 
--- PrintBackRepository.getBackIds
-select
-  "backAssetId"
-from
-  "asset_print_back"
-where
-  "backAssetId" in ($1)
-
 -- PrintBackRepository.unpair
 delete from "asset_print_back"
 where
