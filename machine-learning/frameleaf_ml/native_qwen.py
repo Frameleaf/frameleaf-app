@@ -51,7 +51,9 @@ def verify_qwen(spec: "QualificationSpec", cache: Path) -> str:
     ):
         raise ValueError("native_qwen_binding_invalid")
     item = spec.models[0]
-    if (item.task, item.type) != (TASK, "visual") or set(item.artifacts) != set(ARTIFACTS):
+    # Beside the GGUF pair: the mirror's ref (the snapshot every catalogue profile names) and its licence.
+    allowed = {*ARTIFACTS, f"models--frameleaf--{model}/refs/main", "LICENSE"}
+    if (item.task, item.type) != (TASK, "visual") or not set(ARTIFACTS) <= set(item.artifacts) <= allowed:
         raise ValueError("native_qwen_inventory_invalid")
     directory = model_directory(cache, model)
     if directory.is_symlink() or directory.parent.is_symlink():

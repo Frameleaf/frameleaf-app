@@ -21,6 +21,11 @@ def qwen_binding(tmp_path, request):
     (directory / "visual").mkdir(parents=True)
     for name in native_qwen.ARTIFACTS:
         (directory / name).write_bytes(b"GGUF" + name.encode())
+    # as Desktop stages a catalogue profile: the mirror's ref and the licence beside the pair
+    ref = directory / f"models--frameleaf--{model}" / "refs" / "main"
+    ref.parent.mkdir(parents=True)
+    ref.write_text("a" * 40)
+    (directory / "LICENSE").write_text("Apache-2.0")
     hashes = cache_hashes(directory)
     (directory / RECEIPT).write_text(json.dumps(hashes))
     entries = {native_qwen.TASK: {"visual": {"modelName": model, "options": {}}}}
@@ -69,6 +74,14 @@ def qwen_binding(tmp_path, request):
     result = tmp_path / "report.json"
     result.write_text(json.dumps(report))
     return cache, specification, result, entries
+
+
+def test_qwen_refuses_a_file_beside_the_pair_it_does_not_know(qwen_binding):
+    cache, spec, _, _ = qwen_binding
+    raw = json.loads(spec.read_bytes())
+    raw["models"][0]["artifacts"]["visual/extra.gguf"] = "0" * 64
+    with pytest.raises(ValueError, match="native_qwen_inventory_invalid"):
+        native_qwen.verify_qwen(QualificationSpec.model_validate(raw), cache)
 
 
 def test_qwen_refuses_an_unapproved_model(qwen_binding):
