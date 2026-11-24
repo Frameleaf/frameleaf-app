@@ -423,7 +423,8 @@ describe(EdgeStateService.name, () => {
 
       const state = remoteState()!;
       expect(state).toMatchObject({
-        status: 'ready',
+        // FL-1769: relay only, so not reachable until the tunnel connects
+        status: 'starting',
         names: { label: 'u225vlzhsdlhwh4l', domain: 'frameleaf.net' },
         certificate: { reported: true },
         direct: { listening: true, port: 2443 },
@@ -550,6 +551,16 @@ describe(EdgeStateService.name, () => {
         setSettings({ enabled: false, mode: 'relay-and-direct' });
         await sut.tick(now + 20_000);
         expect(portMapping.release).toHaveBeenCalledTimes(2);
+      });
+
+      it('is ready in relay-only mode only while the relay is connected (FL-1769)', async () => {
+        setSettings({ enabled: true, mode: 'relay' });
+        relay.state = { connected: false };
+        await sut.tick(now);
+        expect(remoteState()!.status).not.toBe('ready');
+        relay.state = { connected: true, relayId: 'eu1', latencyMs: 21 };
+        await sut.tick(now + 10_000);
+        expect(remoteState()!.status).toBe('ready');
       });
 
       it.each([
@@ -923,7 +934,8 @@ describe(EdgeStateService.name, () => {
         await sut.tick(now + 10_000);
         expect(enrolments()).toHaveLength(2);
         expect(relay.ensure).toHaveBeenCalledWith(expect.objectContaining({ instanceId: INSTANCE_ID }), now + 10_000);
-        expect(remoteState()).toMatchObject({ status: 'ready', reason: null, relay: { connected: false } });
+        // FL-1769: relay only, so it is ready once the tunnel connects
+        expect(remoteState()).toMatchObject({ status: 'starting', reason: null, relay: { connected: false } });
         expect(remoteState()!.relay.needsPlan).toBeUndefined();
       });
 

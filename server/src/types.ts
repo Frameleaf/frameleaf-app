@@ -6,6 +6,7 @@ import type { IdenticalFilesState } from 'src/dtos/identical-files.dto.js';
 import type { CloudDescriptionEstimateRecord } from 'src/utils/cloud-description-batch.js';
 import type { CloudMlJobEstimateRecord, CloudMlJobUpgradeRecord } from 'src/utils/cloud-ml-job.js';
 import type { ConfigHistory } from 'src/utils/config-history.js';
+import type { BackupRunReport } from 'src/utils/frameleaf-cloud-backup.js';
 import type { PushNotice } from 'src/utils/frameleaf-push.js';
 import type { SuppressionPreferences } from 'src/utils/hidden-content.js';
 import type { Rational } from 'src/utils/rational-time.js';
@@ -590,6 +591,7 @@ export interface IEmailJob {
 }
 
 export interface INotifySignupJob extends IEntityJob {
+  /** @deprecated FL-1769: only jobs queued by an older version carry it, and it is never emailed. */
   password?: string;
 }
 
@@ -1316,6 +1318,11 @@ export type FrameleafCloudBackup = {
   uploadHoursPausedRunId?: string;
   /** FL-879: a scheduled restore drill found the bucket busy; it starts once the operation holding it ends. */
   drillDueAt?: string;
+  /**
+   * FL-1769: run reports Frameleaf Cloud has not accepted yet, newest last; the hourly check sends them
+   * again (Cloud's run report is an upsert on the run id, so a resend is safe).
+   */
+  unreportedRuns?: BackupRunReport[];
 };
 
 /** FL-164: one restore from a manifest. Counts are files; `databaseFile` is the dump's name in `<media>/backups`. */
@@ -1446,6 +1453,17 @@ export type FrameleafLicenseStore = {
   key: FrameleafLicense | null;
   plan: FrameleafLicense | null;
   noticeState?: 'active' | 'grace' | 'expired';
+  /**
+   * FL-1769: an administrator stopped using the plan on this server while linked as this account at
+   * this link time. Refreshes leave plan certificates out until a checkout, a plan file, an explicit
+   * refresh or a new link.
+   */
+  planDeclined?: { accountId: string | null; linkedAt: string | null };
+  /**
+   * FL-1769: supporter keys removed here that Frameleaf Cloud was not told about yet. Each refresh
+   * retries the deactivation first and never restores a key listed here.
+   */
+  pendingKeyRemovals?: { licenseId: string | null; activationId: string | null }[];
 };
 
 /**

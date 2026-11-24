@@ -96,7 +96,7 @@ export class CloudBackupRestoreCommand extends CommandRunner {
 
   @Option({
     flags: '--manifest <key>',
-    description: 'The backup to restore, m/<time>.json.gz; the newest when left out',
+    description: 'The backup to restore, r/v1/<vault>/s/<sequence>-<id>; the newest when left out',
   })
   parseManifest(value: string): string {
     return value;

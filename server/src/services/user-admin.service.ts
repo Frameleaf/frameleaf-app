@@ -128,11 +128,8 @@ export class UserAdminService extends BaseService {
 
     const events = [accountEvent(auth, user, AdminAuditAction.AccountCreated)];
     if (linkBase === undefined) {
-      await this.eventRepository.emit('UserSignup', {
-        notify: !!notify,
-        id: user.id,
-        password: userDto.password,
-      });
+      // FL-1769: the typed password stays out of the welcome email, whose job data is stored in the database
+      await this.eventRepository.emit('UserSignup', { notify: !!notify, id: user.id });
     } else {
       await this.emailPasswordLink(auth, user, linkBase, true);
       events.push(accountEvent(auth, user, AdminAuditAction.PasswordReset, 'link'));

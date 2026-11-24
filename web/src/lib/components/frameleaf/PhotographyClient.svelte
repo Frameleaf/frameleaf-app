@@ -38,6 +38,7 @@
     type PresentationBlock,
     type PublicBrand,
   } from '$lib/frameleaf/photography/workflow-api';
+  import { PhotographyError } from '$lib/frameleaf/photography/errors';
   import Dialog from './Dialog.svelte';
   import PhotographySelfieSearch from './PhotographySelfieSearch.svelte';
   import PhotographyStatus, { photographyErrorKey, photographyLabelKey } from './PhotographyStatus.svelte';
@@ -513,6 +514,7 @@
       return saveRunning;
     }
     saveRunning = (async () => {
+      let selectionClosed = false;
       while (gallery && session && dirty && !disposed) {
         const access = session;
         const saving = edits;
@@ -544,6 +546,21 @@
           // More changed while this was saving: keep it, and save again with the new revision.
           accept(result, true);
         } catch (error_) {
+          if (
+            !disposed &&
+            session === access &&
+            gallery &&
+            !selectionClosed &&
+            error_ instanceof PhotographyError &&
+            error_.code === 'selection_closed'
+          ) {
+            // FL-1769: the deadline passed. The saved favourites stand, access stays open, and notes
+            // waiting with them are saved on the next pass.
+            selectionClosed = true;
+            choices = [...gallery.choices];
+            error = $t(photographyErrorKey(error_));
+            continue;
+          }
           if (!disposed && session === access) {
             saveState = 'error';
             failure(error_);

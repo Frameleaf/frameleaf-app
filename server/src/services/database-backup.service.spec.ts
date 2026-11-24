@@ -829,7 +829,14 @@ describe(DatabaseBackupService.name, () => {
 
     it('should write file', async () => {
       await sut.uploadBackup({ originalname: 'path.sql.gz', buffer: 'buffer' } as never);
-      expect(mocks.storage.createOrOverwriteFile).toBeCalledWith('/data/backups/uploaded-path.sql.gz', 'buffer');
+      expect(mocks.storage.createFile).toBeCalledWith('/data/backups/uploaded-path.sql.gz', 'buffer');
+      expect(mocks.storage.createOrOverwriteFile).not.toHaveBeenCalled();
+    });
+
+    it('numbers an upload whose name is taken instead of replacing the earlier one (FL-1769)', async () => {
+      mocks.storage.createFile.mockRejectedValueOnce(Object.assign(new Error('exists'), { code: 'EEXIST' }));
+      await sut.uploadBackup({ originalname: 'path.sql.gz', buffer: 'buffer' } as never);
+      expect(mocks.storage.createFile).toHaveBeenLastCalledWith('/data/backups/uploaded-2-path.sql.gz', 'buffer');
     });
   });
 
