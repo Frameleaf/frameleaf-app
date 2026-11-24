@@ -143,6 +143,28 @@ test('host system paths, Manager state and folders outside the allowed roots are
   }
 });
 
+test('an older install’s extra folder that holds Manager’s state still renders, with that state hidden in the container', (t) => {
+  const previous = process.env.MANAGER_DATA;
+  process.env.MANAGER_DATA = '/mnt/user/appdata/frameleaf-manager';
+  const warn = t.mock.method(console, 'warn', () => undefined);
+  try {
+    const services: Record<string, any> = { 'frameleaf-server': { volumes: [] } };
+    applyServiceOverrides(services, { 'frameleaf-server': { environment: {}, mounts: [{ source: '/mnt/user/appdata', target: '/appdata', readOnly: false }] } });
+    assert.deepEqual(services['frameleaf-server'].volumes, [
+      { type: 'bind', source: '/mnt/user/appdata', target: '/appdata', read_only: false, bind: { create_host_path: false } },
+      { type: 'tmpfs', target: '/appdata/frameleaf-manager', tmpfs: { size: 4096, mode: 0o500 } },
+    ]);
+    assert.equal(warn.mock.callCount(), 1);
+    // A folder beside Manager's state, or inside a folder that holds it, gets nothing extra.
+    const beside: Record<string, any> = { 'frameleaf-server': { volumes: [] } };
+    applyServiceOverrides(beside, { 'frameleaf-server': { environment: {}, mounts: [{ source: '/mnt/user/appdata/photos', target: '/photos', readOnly: true }] } });
+    assert.equal(beside['frameleaf-server'].volumes.length, 1);
+  } finally {
+    if (previous === undefined) delete process.env.MANAGER_DATA;
+    else process.env.MANAGER_DATA = previous;
+  }
+});
+
 // Review: resolve() keeps symlinks, so a link under an approved root could hand the stack /etc or Manager's state.
 test('an extra folder is checked by its real path: links to denied paths, Manager state or elsewhere are refused', async () => {
   const dir = await realpath(await mkdtemp(join(tmpdir(), 'manager-override-links-')));
