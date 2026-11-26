@@ -10,6 +10,7 @@
 import {
   getStudioProjectFonts,
   getStudioProjectImports,
+  importStudioProjectFont,
   registerStudioImportPublication,
   getStudioImportPublications,
   cancelStudioImportPublication,
@@ -20,7 +21,13 @@ import {
   type StudioProjectImportDto,
 } from '@frameleaf/sdk';
 import { getStudioProjectImportUrl } from '$lib/utils';
-import type { StudioProjectImportRef, StudioProjectImportUpload, StudioPublicationReceipt } from './host-contract';
+import type {
+  StudioProjectFontRef,
+  StudioProjectFontUpload,
+  StudioProjectImportRef,
+  StudioProjectImportUpload,
+  StudioPublicationReceipt,
+} from './host-contract';
 import type { RetentionApi } from './import-retention';
 
 /** Freecut reads a Lottie animation by its own type; the server records the JSON it read. */
@@ -110,6 +117,30 @@ export const uploadStudioProjectImport = async (
     signal ? { signal } : undefined,
   );
   return toStudioProjectImport(projectId, dto);
+};
+
+/**
+ * FL-1562: keep a font file added in the title inspector with the project. The server reads the
+ * family, weight and style from the bytes; they come back with the reference the editor reads the
+ * file by, for it to list the face in `metadata.fonts`.
+ */
+export const uploadStudioProjectFont = async (
+  projectId: string,
+  upload: StudioProjectFontUpload,
+  signal?: AbortSignal,
+): Promise<StudioProjectFontRef> => {
+  const file = new File([upload.file], upload.fileName, { type: upload.file.type });
+  const dto = await importStudioProjectFont(
+    { id: projectId, studioProjectFontCreateDto: { id: upload.id, file } },
+    signal ? { signal } : undefined,
+  );
+  return {
+    ...toStudioProjectFont(projectId, dto),
+    kind: 'font',
+    family: dto.family,
+    weight: dto.weight,
+    style: dto.style,
+  };
 };
 
 /** Pick the public receipt fields; never forward a server row or filesystem declaration. */

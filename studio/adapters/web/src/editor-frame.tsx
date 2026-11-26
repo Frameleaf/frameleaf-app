@@ -45,6 +45,7 @@ import {
   clearLutReferences,
   installProjectLutKeeper,
 } from '@/infrastructure/gpu-effects/lut/lut-references'
+import { installProjectFontKeeper } from '@/shared/typography/project-fonts'
 import { useTimelineSettingsStore } from '@/features/timeline/stores/timeline-settings-store'
 import { watchLocalImports, type LocalImportWatch } from './project-imports'
 import { createCompletionRetention } from './import-retention'
@@ -502,6 +503,30 @@ function keepImportedLuts(state: Session) {
       },
     }),
     clearLutReferences,
+  )
+}
+
+/**
+ * FL-1562: a font file added in the title inspector is kept with the project under a new id. The
+ * server reads its family, weight and style, and the editor lists that face in `metadata.fonts`; a
+ * refusal leaves the project's fonts as they were.
+ */
+function keepAddedFonts(state: Session) {
+  state.unsubscribe.push(
+    installProjectFontKeeper({
+      async keep(file) {
+        const mount = state.mount
+        if (state.disposed || !acceptsWrite(state, mount)) throw new Error('origin_retired')
+        // A save as a copy can change the project while the file uploads; the font stays with the
+        // project it went to and is not listed in this one.
+        const project = studioProjectUuidOf(state.context)
+        const kept = await call('uploadProjectFont', { id: crypto.randomUUID(), fileName: file.name, file })
+        if (state.disposed || state.mount !== mount || studioProjectUuidOf(state.context) !== project)
+          throw new Error('origin_retired')
+        blobUrlManager.registerUrl(kept.id, kept.url)
+        return { importId: kept.id, family: kept.family, weight: kept.weight, style: kept.style }
+      },
+    }),
   )
 }
 
@@ -1125,6 +1150,7 @@ async function mount(context: StudioHostContext): Promise<void> {
   watchImports(state)
   watchLocalImportsFor(state)
   keepImportedLuts(state)
+  keepAddedFonts(state)
   // FL-637: the voice clean-up card talks to this project's server and puts its result in this bin.
   registerVoiceCleanupHost({
     projectId: () => (session === state && !state.disposed ? state.context.project.id : null),

@@ -1,0 +1,816 @@
+diff --git a/src/features/editor/components/properties-sidebar/clip-panel/font-picker.test.tsx b/src/features/editor/components/properties-sidebar/clip-panel/font-picker.test.tsx
+new file mode 100644
+index 0000000..2104dc7
+--- /dev/null
++++ b/src/features/editor/components/properties-sidebar/clip-panel/font-picker.test.tsx
+@@ -0,0 +1,133 @@
++import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
++import { afterEach, describe, expect, it, vi } from 'vite-plus/test'
++
++vi.mock('react-i18next', () => ({
++  useTranslation: () => ({
++    t: (key: string, values?: Record<string, unknown>) =>
++      values ? `${key} ${JSON.stringify(values)}` : key,
++  }),
++}))
++vi.mock('@/shared/typography/fonts', () => ({
++  FONT_CATALOG: [
++    { value: 'Inter', label: 'Inter', family: 'Inter', weights: [400, 700] },
++    { value: 'Lora', label: 'Lora', family: 'Lora', weights: [400] },
++  ],
++  ensureFontsLoaded: vi.fn(async () => undefined),
++  getGoogleFontsCatalog: async () => [
++    { value: 'Inter', label: 'Inter', family: 'Inter', weights: [400, 700] },
++    { value: 'Lora', label: 'Lora', family: 'Lora', weights: [400] },
++  ],
++}))
++
++const {
++  installProjectFontKeeper,
++  setProjectFontWriter,
++  setProjectFonts,
++  getProjectFonts,
++  PROJECT_FONT_LIMIT,
++} = await import('@/shared/typography/project-fonts')
++const { FontPicker } = await import('./font-picker')
++
++const LIGHT = '6f0d2a4e-1c3b-4d5e-8f60-718293a4b5c6'
++const BOLD = '6f0d2a4e-1c3b-4d5e-8f60-718293a4b5c7'
++const ADDED = '6f0d2a4e-1c3b-4d5e-8f60-718293a4b5c8'
++const face = (importId: string, weight: number, family = 'Brandon Grotesque') => ({
++  importId,
++  family,
++  weight,
++  style: 'normal' as const,
++})
++
++let uninstall: (() => void) | undefined
++afterEach(() => {
++  uninstall?.()
++  uninstall = undefined
++  setProjectFontWriter(undefined)
++  setProjectFonts([])
++})
++
++async function open(onValueChange = vi.fn()) {
++  render(<FontPicker value="Inter" onValueChange={onValueChange} />)
++  await act(async () => {
++    fireEvent.click(screen.getByRole('button', { expanded: false }))
++  })
++  return onValueChange
++}
++
++describe('font picker: fonts kept with the project (FL-1562)', () => {
++  it('lists the project families first with their weight count, then the catalogue', async () => {
++    setProjectFonts([face(LIGHT, 300), face(BOLD, 700), face(ADDED, 400, 'Inter')])
++    const onValueChange = await open()
++
++    expect(screen.getByText('engineControls.fonts.yourFonts')).toBeTruthy()
++    expect(screen.getByText('engineControls.fonts.weightCount {"number":2}')).toBeTruthy()
++    expect(screen.getByText('engineControls.fonts.frameleafFonts')).toBeTruthy()
++    // A kept family named like a catalogue font is listed once, among the project's.
++    expect(screen.getAllByRole('option').map((option) => option.textContent)).toEqual([
++      'Brandon GrotesqueengineControls.fonts.weightCount {"number":2}',
++      'InterengineControls.fonts.weightCount {"number":1}',
++      'Lora',
++    ])
++    // No host keeps files here, so no font can be added.
++    expect(screen.queryByText('engineControls.fonts.addFont')).toBeNull()
++
++    fireEvent.click(screen.getByRole('option', { name: /Brandon Grotesque/ }))
++    expect(onValueChange).toHaveBeenCalledWith('Brandon Grotesque')
++  })
++
++  it('keeps an added file with the project, lists its face and selects the family', async () => {
++    const keep = vi.fn(async () => face(ADDED, 700))
++    const written: unknown[] = []
++    uninstall = installProjectFontKeeper({ keep })
++    setProjectFontWriter(async (faces) => {
++      written.push(faces)
++      setProjectFonts(faces)
++    })
++    setProjectFonts([face(LIGHT, 300), face(BOLD, 700)])
++    const onValueChange = await open()
++
++    const file = new File(['font'], 'Brandon-Bold.otf')
++    await act(async () => {
++      fireEvent.change(screen.getByLabelText('engineControls.fonts.addFont'), {
++        target: { files: [file] },
++      })
++    })
++
++    await waitFor(() => expect(onValueChange).toHaveBeenCalledWith('Brandon Grotesque'))
++    expect(keep).toHaveBeenCalledWith(file)
++    // The same family, weight and style is replaced by the new file, not listed twice.
++    expect(written).toEqual([[face(LIGHT, 300), face(ADDED, 700)]])
++    expect(getProjectFonts()).toEqual([face(LIGHT, 300), face(ADDED, 700)])
++  })
++
++  it('says so when the file is refused or the project is full, and changes nothing', async () => {
++    const keep = vi.fn(async () => {
++      throw new Error('refused')
++    })
++    const writer = vi.fn(async () => undefined)
++    uninstall = installProjectFontKeeper({ keep })
++    setProjectFontWriter(writer)
++    const onValueChange = await open()
++
++    await act(async () => {
++      fireEvent.change(screen.getByLabelText('engineControls.fonts.addFont'), {
++        target: { files: [new File(['x'], 'notes.ttf')] },
++      })
++    })
++    expect((await screen.findByRole('alert')).textContent).toBe('engineControls.fonts.addFailed')
++
++    setProjectFonts(Array.from({ length: 32 }, (_, index) => face(LIGHT, 400, `Family ${index}`)))
++    await act(async () => {
++      fireEvent.change(screen.getByLabelText('engineControls.fonts.addFont'), {
++        target: { files: [new File(['x'], 'more.ttf')] },
++      })
++    })
++    await waitFor(() =>
++      expect(screen.getByRole('alert').textContent).toBe('engineControls.fonts.full'),
++    )
++    expect(keep).toHaveBeenCalledTimes(1)
++    expect(writer).not.toHaveBeenCalled()
++    expect(onValueChange).not.toHaveBeenCalled()
++    expect(PROJECT_FONT_LIMIT).toBe('project_font_limit')
++  })
++})
+diff --git a/src/features/editor/components/properties-sidebar/clip-panel/font-picker.tsx b/src/features/editor/components/properties-sidebar/clip-panel/font-picker.tsx
+index 24d1e72..1bffadb 100644
+--- a/src/features/editor/components/properties-sidebar/clip-panel/font-picker.tsx
++++ b/src/features/editor/components/properties-sidebar/clip-panel/font-picker.tsx
+@@ -1,6 +1,15 @@
+-import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
++import {
++  useCallback,
++  useEffect,
++  useMemo,
++  useRef,
++  useState,
++  useSyncExternalStore,
++  type ChangeEvent,
++  type KeyboardEvent,
++} from 'react'
+ import { useTranslation } from 'react-i18next'
+-import { Check, Loader2, Search, Type } from 'lucide-react'
++import { Check, Loader2, Plus, Search, Type } from 'lucide-react'
+ import { Button } from '@/components/ui/button'
+ import { Input } from '@/components/ui/input'
+ import {
+@@ -9,6 +18,14 @@ import {
+   getGoogleFontsCatalog,
+   type FontCatalogEntry,
+ } from '@/shared/typography/fonts'
++import {
++  PROJECT_FONT_FILE_ACCEPT,
++  PROJECT_FONT_LIMIT,
++  addProjectFont,
++  canAddProjectFont,
++  getProjectFonts,
++  subscribeProjectFonts,
++} from '@/shared/typography/project-fonts'
+ 
+ interface FontPickerProps {
+   value?: string
+@@ -30,6 +47,23 @@ export function FontPicker({ value, placeholder, previewText, onValueChange }: F
+   const [hoveredFontValue, setHoveredFontValue] = useState<string | null>(null)
+   const [fonts, setFonts] = useState<readonly FontCatalogEntry[]>(FONT_CATALOG)
+   const [isLoading, setIsLoading] = useState(false)
++  // Frameleaf (FL-1562): the fonts kept with the project, one entry per family.
++  const projectFaces = useSyncExternalStore(subscribeProjectFonts, getProjectFonts)
++  const projectFonts = useMemo<FontCatalogEntry[]>(() => {
++    const weights = new Map<string, number[]>()
++    for (const face of projectFaces) {
++      weights.set(face.family, [...(weights.get(face.family) ?? []), face.weight])
++    }
++    return [...weights].map(([family, list]) => ({
++      value: family,
++      label: family,
++      family,
++      weights: [...new Set(list)].sort((a, b) => a - b),
++    }))
++  }, [projectFaces])
++  const addFontInputRef = useRef<HTMLInputElement | null>(null)
++  const [addingFont, setAddingFont] = useState(false)
++  const [addFontError, setAddFontError] = useState<string | null>(null)
+ 
+   const closePicker = useCallback(() => {
+     setHoveredFontValue(null)
+@@ -39,6 +73,7 @@ export function FontPicker({ value, placeholder, previewText, onValueChange }: F
+   const openPicker = useCallback(() => {
+     setSearchQuery('')
+     setHoveredFontValue(null)
++    setAddFontError(null)
+     setOpen(true)
+   }, [])
+ 
+@@ -76,13 +111,24 @@ export function FontPicker({ value, placeholder, previewText, onValueChange }: F
+     }
+   }, [open])
+ 
+-  const filteredFonts = useMemo(() => {
++  // A family the project keeps wins over a catalogue font of the same name, so it is listed once.
++  const filteredProjectFonts = useMemo(() => {
+     const query = searchQuery.trim().toLowerCase()
+-    if (!query) {
+-      return fonts
+-    }
+-    return fonts.filter((font) => font.label.toLowerCase().includes(query))
+-  }, [fonts, searchQuery])
++    return query
++      ? projectFonts.filter((font) => font.label.toLowerCase().includes(query))
++      : projectFonts
++  }, [projectFonts, searchQuery])
++  const filteredCatalogFonts = useMemo(() => {
++    const query = searchQuery.trim().toLowerCase()
++    const kept = new Set(projectFonts.map((font) => font.value))
++    return fonts.filter(
++      (font) => !kept.has(font.value) && (!query || font.label.toLowerCase().includes(query)),
++    )
++  }, [fonts, projectFonts, searchQuery])
++  const filteredFonts = useMemo(
++    () => [...filteredProjectFonts, ...filteredCatalogFonts],
++    [filteredCatalogFonts, filteredProjectFonts],
++  )
+ 
+   const normalizedPreviewText = useMemo(() => {
+     const source = previewText?.trim() ? previewText : t('editor.fontPicker.previewPangram')
+@@ -94,8 +140,12 @@ export function FontPicker({ value, placeholder, previewText, onValueChange }: F
+     if (!activeValue) {
+       return null
+     }
+-    return fonts.find((font) => font.value === activeValue) ?? null
+-  }, [filteredFonts, fonts, hoveredFontValue, value])
++    return (
++      projectFonts.find((font) => font.value === activeValue) ??
++      fonts.find((font) => font.value === activeValue) ??
++      null
++    )
++  }, [filteredFonts, fonts, hoveredFontValue, projectFonts, value])
+ 
+   const previewCandidates = useMemo(() => {
+     const candidates = [
+@@ -140,6 +190,10 @@ export function FontPicker({ value, placeholder, previewText, onValueChange }: F
+       if (relatedTarget instanceof Node && rootRef.current?.contains(relatedTarget)) {
+         return
+       }
++      // The file chooser of "Add font…" takes the focus away; the list stays open behind it.
++      if (relatedTarget === null) {
++        return
++      }
+ 
+       closePicker()
+     }
+@@ -161,6 +215,31 @@ export function FontPicker({ value, placeholder, previewText, onValueChange }: F
+     [closePicker, onValueChange],
+   )
+ 
++  const handleAddFont = useCallback(
++    async (event: ChangeEvent<HTMLInputElement>) => {
++      const file = event.target.files?.[0]
++      event.target.value = ''
++      if (!file) return
++      setAddFontError(null)
++      setAddingFont(true)
++      try {
++        const face = await addProjectFont(file)
++        void ensureFontsLoaded([face.family], [face.weight])
++        onValueChange(face.family)
++        closePicker()
++      } catch (error) {
++        setAddFontError(
++          error instanceof Error && error.message === PROJECT_FONT_LIMIT
++            ? t('engineControls.fonts.full')
++            : t('engineControls.fonts.addFailed'),
++        )
++      } finally {
++        setAddingFont(false)
++      }
++    },
++    [closePicker, onValueChange, t],
++  )
++
+   const focusFontByIndex = useCallback(
+     (index: number) => {
+       const font = filteredFonts[index]
+@@ -229,6 +308,52 @@ export function FontPicker({ value, placeholder, previewText, onValueChange }: F
+ 
+   const triggerLabel = value ?? resolvedPlaceholder
+ 
++  const renderOption = (font: FontCatalogEntry, detail?: string) => {
++    const isSelected = font.value === value
++
++    return (
++      <button
++        key={font.value}
++        ref={(node) => {
++          if (node) {
++            fontOptionRefs.current.set(font.value, node)
++          } else {
++            fontOptionRefs.current.delete(font.value)
++          }
++        }}
++        type="button"
++        role="option"
++        aria-selected={isSelected}
++        onClick={() => handleSelect(font)}
++        onPointerEnter={() => {
++          setHoveredFontValue(font.value)
++          void ensureFontsLoaded([font.value], [400])
++        }}
++        onFocus={() => {
++          setHoveredFontValue(font.value)
++          void ensureFontsLoaded([font.value], [400])
++        }}
++        onKeyDown={(event) => handleOptionKeyDown(event, font)}
++        className="w-full rounded-md border border-transparent px-2 py-1.5 text-left transition-colors hover:border-border hover:bg-accent/40"
++      >
++        <div className="flex items-center justify-between gap-2">
++          <span className="min-w-0">
++            <span
++              className="block truncate text-xs"
++              style={{ fontFamily: `"${font.family}", sans-serif` }}
++            >
++              {font.label}
++            </span>
++            {detail ? (
++              <span className="block text-[11px] text-muted-foreground">{detail}</span>
++            ) : null}
++          </span>
++          {isSelected ? <Check className="h-3.5 w-3.5 shrink-0 text-primary" /> : null}
++        </div>
++      </button>
++    )
++  }
++
+   return (
+     <div ref={rootRef} className="w-full">
+       <Button
+@@ -277,16 +402,62 @@ export function FontPicker({ value, placeholder, previewText, onValueChange }: F
+             </p>
+           </div>
+ 
+-          <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+-            <span>{t('editor.fontPicker.allFonts')}</span>
+-            <span>{filteredFonts.length}</span>
+-          </div>
+-
+           <div
+             className="max-h-52 space-y-1 overflow-y-auto pr-1 [scrollbar-gutter:stable]"
+             role="listbox"
+             aria-label={t('editor.fontPicker.fontOptions')}
+           >
++            {filteredProjectFonts.length > 0 || canAddProjectFont() ? (
++              <p className="px-2 pt-1 text-[11px] uppercase tracking-wide text-muted-foreground">
++                {t('engineControls.fonts.yourFonts')}
++              </p>
++            ) : null}
++            {filteredProjectFonts.map((font) =>
++              renderOption(
++                font,
++                t('engineControls.fonts.weightCount', { number: font.weights.length }),
++              ),
++            )}
++            {canAddProjectFont() ? (
++              <>
++                <button
++                  type="button"
++                  disabled={addingFont}
++                  onClick={() => addFontInputRef.current?.click()}
++                  className="flex w-full flex-wrap items-center justify-between gap-x-2 gap-y-0.5 rounded-md border border-dashed border-border px-2 py-1.5 text-left text-xs transition-colors hover:bg-accent/40 disabled:opacity-60"
++                >
++                  <span className="flex items-center gap-1.5 whitespace-nowrap">
++                    {addingFont ? (
++                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
++                    ) : (
++                      <Plus className="h-3.5 w-3.5" />
++                    )}
++                    {t('engineControls.fonts.addFont')}
++                  </span>
++                  <span className="whitespace-nowrap text-[11px] text-muted-foreground">
++                    .ttf, .otf, .woff2
++                  </span>
++                </button>
++                <input
++                  ref={addFontInputRef}
++                  type="file"
++                  accept={PROJECT_FONT_FILE_ACCEPT}
++                  className="hidden"
++                  aria-label={t('engineControls.fonts.addFont')}
++                  onChange={(event) => void handleAddFont(event)}
++                />
++                {addFontError ? (
++                  <p role="alert" className="px-2 text-[11px] text-destructive">
++                    {addFontError}
++                  </p>
++                ) : null}
++              </>
++            ) : null}
++
++            <div className="flex items-center justify-between px-2 pt-1 text-[11px] uppercase tracking-wide text-muted-foreground">
++              <span>{t('engineControls.fonts.frameleafFonts')}</span>
++              <span>{filteredCatalogFonts.length}</span>
++            </div>
+             {isLoading ? (
+               <div className="flex items-center justify-center py-8 text-muted-foreground">
+                 <Loader2 className="h-4 w-4 animate-spin" />
+@@ -296,48 +467,15 @@ export function FontPicker({ value, placeholder, previewText, onValueChange }: F
+                 {t('editor.fontPicker.noMatch')}
+               </div>
+             ) : (
+-              filteredFonts.map((font) => {
+-                const isSelected = font.value === value
+-
+-                return (
+-                  <button
+-                    key={font.value}
+-                    ref={(node) => {
+-                      if (node) {
+-                        fontOptionRefs.current.set(font.value, node)
+-                      } else {
+-                        fontOptionRefs.current.delete(font.value)
+-                      }
+-                    }}
+-                    type="button"
+-                    role="option"
+-                    aria-selected={isSelected}
+-                    onClick={() => handleSelect(font)}
+-                    onPointerEnter={() => {
+-                      setHoveredFontValue(font.value)
+-                      void ensureFontsLoaded([font.value], [400])
+-                    }}
+-                    onFocus={() => {
+-                      setHoveredFontValue(font.value)
+-                      void ensureFontsLoaded([font.value], [400])
+-                    }}
+-                    onKeyDown={(event) => handleOptionKeyDown(event, font)}
+-                    className="w-full rounded-md border border-transparent px-2 py-1.5 text-left transition-colors hover:border-border hover:bg-accent/40"
+-                  >
+-                    <div className="flex items-center justify-between gap-2">
+-                      <span
+-                        className="truncate text-xs"
+-                        style={{ fontFamily: `"${font.family}", sans-serif` }}
+-                      >
+-                        {font.label}
+-                      </span>
+-                      {isSelected ? <Check className="h-3.5 w-3.5 text-primary" /> : null}
+-                    </div>
+-                  </button>
+-                )
+-              })
++              filteredCatalogFonts.map((font) => renderOption(font))
+             )}
+           </div>
++
++          {canAddProjectFont() || projectFonts.length > 0 ? (
++            <p className="px-1 text-[11px] leading-snug text-muted-foreground">
++              {t('engineControls.fonts.keptNote')}
++            </p>
++          ) : null}
+         </div>
+       ) : null}
+     </div>
+diff --git a/src/features/editor/components/properties-sidebar/clip-panel/text-section.tsx b/src/features/editor/components/properties-sidebar/clip-panel/text-section.tsx
+index a82449a..c41040c 100644
+--- a/src/features/editor/components/properties-sidebar/clip-panel/text-section.tsx
++++ b/src/features/editor/components/properties-sidebar/clip-panel/text-section.tsx
+@@ -39,6 +39,7 @@ import {
+ } from '../components'
+ import { FontPicker } from './font-picker'
+ import { FONT_CATALOG, FONT_WEIGHT_MAP } from '@/shared/typography/fonts'
++import { isProjectFontFamily } from '@/shared/typography/project-fonts'
+ import {
+   applyTextStylePresetToItem,
+   TEXT_STYLE_PRESETS,
+@@ -439,9 +440,13 @@ function TextSectionComposer({ items, canvas, slots }: TextSectionComposerProps)
+       return FONT_WEIGHT_OPTIONS
+     }
+ 
+-    const selectedFont = FONT_CATALOG.find(
+-      (font) => font.family === selectedFontFamily || font.value === selectedFontFamily,
+-    )
++    // Frameleaf (FL-1562): a family kept with the project draws its nearest face for any of the
++    // four weights, so all four are offered whatever a catalogue font of the same name has.
++    const selectedFont = isProjectFontFamily(selectedFontFamily)
++      ? undefined
++      : FONT_CATALOG.find(
++          (font) => font.family === selectedFontFamily || font.value === selectedFontFamily,
++        )
+     if (!selectedFont) {
+       return FONT_WEIGHT_OPTIONS
+     }
+diff --git a/src/features/projects/stores/project-store.ts b/src/features/projects/stores/project-store.ts
+index 869c5f2..07e955e 100644
+--- a/src/features/projects/stores/project-store.ts
++++ b/src/features/projects/stores/project-store.ts
+@@ -20,7 +20,11 @@ import { createProjectObject, duplicateProject } from '../utils/project-helpers'
+ // v3: Lazy-load media service for cascade operations
+ import { importMediaLibraryService } from '@/features/projects/deps/media-library-contract'
+ import { createLogger } from '@/shared/logging/logger'
+-import { setProjectFonts } from '@/shared/typography/project-fonts'
++import {
++  setProjectFonts,
++  setProjectFontWriter,
++  type ProjectFontFace,
++} from '@/shared/typography/project-fonts'
+ import { clearUnsavedMetadata, queueProjectWrite } from '@/shared/projects/project-write-queue'
+ 
+ const logger = createLogger('ProjectStore')
+@@ -50,7 +54,7 @@ interface ProjectActions {
+   /** Frameleaf (FL-94): `timeline` is written with the metadata, in one project write. */
+   updateProject: (
+     id: string,
+-    data: Partial<ProjectFormData> & { timeline?: Project['timeline'] },
++    data: Partial<ProjectFormData> & { timeline?: Project['timeline']; fonts?: ProjectFontFace[] },
+   ) => Promise<Project>
+   /**
+    * Soft-delete: moves the project to the workspace trash (marker file;
+@@ -172,7 +176,10 @@ export const useProjectStore = create<ProjectState & ProjectActions>()(
+         // Update an existing project with optimistic update
+         updateProject: async (
+           id: string,
+-          data: Partial<ProjectFormData> & { timeline?: Project['timeline'] },
++          data: Partial<ProjectFormData> & {
++            timeline?: Project['timeline']
++            fonts?: ProjectFontFace[]
++          },
+         ) => {
+           set({ error: null })
+ 
+@@ -208,6 +215,8 @@ export const useProjectStore = create<ProjectState & ProjectActions>()(
+               height: data.height ?? existingProject.metadata.height,
+               fps: data.fps ?? existingProject.metadata.fps,
+               backgroundColor: data.backgroundColor ?? existingProject.metadata.backgroundColor,
++              // Frameleaf (FL-1562): a font added in the title inspector.
++              ...(data.fonts !== undefined && { fonts: data.fonts }),
+             },
+             updatedAt: Date.now(),
+           }
+@@ -600,3 +609,10 @@ useProjectStore.subscribe((state, prevState) => {
+     setProjectFonts(state.currentProject?.metadata?.fonts)
+   }
+ })
++
++// Frameleaf (FL-1562): "Add font…" lists the kept face in the open project's `metadata.fonts`.
++setProjectFontWriter(async (fonts) => {
++  const { currentProject, updateProject } = useProjectStore.getState()
++  if (!currentProject) throw new Error('No project is open')
++  await updateProject(currentProject.id, { fonts })
++})
+diff --git a/src/i18n/locales/partials/de/engine-controls.json b/src/i18n/locales/partials/de/engine-controls.json
+new file mode 100644
+index 0000000..f0a293f
+--- /dev/null
++++ b/src/i18n/locales/partials/de/engine-controls.json
+@@ -0,0 +1,13 @@
++{
++  "engineControls": {
++    "fonts": {
++      "yourFonts": "Your fonts",
++      "addFont": "Add font…",
++      "frameleafFonts": "Frameleaf fonts",
++      "weightCount": "Weights: {{number}}",
++      "keptNote": "Fonts you add are kept with the project, so it opens the same on any computer.",
++      "addFailed": "This font could not be added. Use a .ttf, .otf or .woff2 file.",
++      "full": "This project already keeps as many fonts as it can."
++    }
++  }
++}
+diff --git a/src/i18n/locales/partials/en/engine-controls.json b/src/i18n/locales/partials/en/engine-controls.json
+new file mode 100644
+index 0000000..f0a293f
+--- /dev/null
++++ b/src/i18n/locales/partials/en/engine-controls.json
+@@ -0,0 +1,13 @@
++{
++  "engineControls": {
++    "fonts": {
++      "yourFonts": "Your fonts",
++      "addFont": "Add font…",
++      "frameleafFonts": "Frameleaf fonts",
++      "weightCount": "Weights: {{number}}",
++      "keptNote": "Fonts you add are kept with the project, so it opens the same on any computer.",
++      "addFailed": "This font could not be added. Use a .ttf, .otf or .woff2 file.",
++      "full": "This project already keeps as many fonts as it can."
++    }
++  }
++}
+diff --git a/src/i18n/locales/partials/es/engine-controls.json b/src/i18n/locales/partials/es/engine-controls.json
+new file mode 100644
+index 0000000..f0a293f
+--- /dev/null
++++ b/src/i18n/locales/partials/es/engine-controls.json
+@@ -0,0 +1,13 @@
++{
++  "engineControls": {
++    "fonts": {
++      "yourFonts": "Your fonts",
++      "addFont": "Add font…",
++      "frameleafFonts": "Frameleaf fonts",
++      "weightCount": "Weights: {{number}}",
++      "keptNote": "Fonts you add are kept with the project, so it opens the same on any computer.",
++      "addFailed": "This font could not be added. Use a .ttf, .otf or .woff2 file.",
++      "full": "This project already keeps as many fonts as it can."
++    }
++  }
++}
+diff --git a/src/i18n/locales/partials/fr/engine-controls.json b/src/i18n/locales/partials/fr/engine-controls.json
+new file mode 100644
+index 0000000..f0a293f
+--- /dev/null
++++ b/src/i18n/locales/partials/fr/engine-controls.json
+@@ -0,0 +1,13 @@
++{
++  "engineControls": {
++    "fonts": {
++      "yourFonts": "Your fonts",
++      "addFont": "Add font…",
++      "frameleafFonts": "Frameleaf fonts",
++      "weightCount": "Weights: {{number}}",
++      "keptNote": "Fonts you add are kept with the project, so it opens the same on any computer.",
++      "addFailed": "This font could not be added. Use a .ttf, .otf or .woff2 file.",
++      "full": "This project already keeps as many fonts as it can."
++    }
++  }
++}
+diff --git a/src/i18n/locales/partials/ja/engine-controls.json b/src/i18n/locales/partials/ja/engine-controls.json
+new file mode 100644
+index 0000000..f0a293f
+--- /dev/null
++++ b/src/i18n/locales/partials/ja/engine-controls.json
+@@ -0,0 +1,13 @@
++{
++  "engineControls": {
++    "fonts": {
++      "yourFonts": "Your fonts",
++      "addFont": "Add font…",
++      "frameleafFonts": "Frameleaf fonts",
++      "weightCount": "Weights: {{number}}",
++      "keptNote": "Fonts you add are kept with the project, so it opens the same on any computer.",
++      "addFailed": "This font could not be added. Use a .ttf, .otf or .woff2 file.",
++      "full": "This project already keeps as many fonts as it can."
++    }
++  }
++}
+diff --git a/src/i18n/locales/partials/ko/engine-controls.json b/src/i18n/locales/partials/ko/engine-controls.json
+new file mode 100644
+index 0000000..f0a293f
+--- /dev/null
++++ b/src/i18n/locales/partials/ko/engine-controls.json
+@@ -0,0 +1,13 @@
++{
++  "engineControls": {
++    "fonts": {
++      "yourFonts": "Your fonts",
++      "addFont": "Add font…",
++      "frameleafFonts": "Frameleaf fonts",
++      "weightCount": "Weights: {{number}}",
++      "keptNote": "Fonts you add are kept with the project, so it opens the same on any computer.",
++      "addFailed": "This font could not be added. Use a .ttf, .otf or .woff2 file.",
++      "full": "This project already keeps as many fonts as it can."
++    }
++  }
++}
+diff --git a/src/i18n/locales/partials/pt-BR/engine-controls.json b/src/i18n/locales/partials/pt-BR/engine-controls.json
+new file mode 100644
+index 0000000..f0a293f
+--- /dev/null
++++ b/src/i18n/locales/partials/pt-BR/engine-controls.json
+@@ -0,0 +1,13 @@
++{
++  "engineControls": {
++    "fonts": {
++      "yourFonts": "Your fonts",
++      "addFont": "Add font…",
++      "frameleafFonts": "Frameleaf fonts",
++      "weightCount": "Weights: {{number}}",
++      "keptNote": "Fonts you add are kept with the project, so it opens the same on any computer.",
++      "addFailed": "This font could not be added. Use a .ttf, .otf or .woff2 file.",
++      "full": "This project already keeps as many fonts as it can."
++    }
++  }
++}
+diff --git a/src/i18n/locales/partials/tr/engine-controls.json b/src/i18n/locales/partials/tr/engine-controls.json
+new file mode 100644
+index 0000000..f0a293f
+--- /dev/null
++++ b/src/i18n/locales/partials/tr/engine-controls.json
+@@ -0,0 +1,13 @@
++{
++  "engineControls": {
++    "fonts": {
++      "yourFonts": "Your fonts",
++      "addFont": "Add font…",
++      "frameleafFonts": "Frameleaf fonts",
++      "weightCount": "Weights: {{number}}",
++      "keptNote": "Fonts you add are kept with the project, so it opens the same on any computer.",
++      "addFailed": "This font could not be added. Use a .ttf, .otf or .woff2 file.",
++      "full": "This project already keeps as many fonts as it can."
++    }
++  }
++}
+diff --git a/src/i18n/locales/partials/zh/engine-controls.json b/src/i18n/locales/partials/zh/engine-controls.json
+new file mode 100644
+index 0000000..f0a293f
+--- /dev/null
++++ b/src/i18n/locales/partials/zh/engine-controls.json
+@@ -0,0 +1,13 @@
++{
++  "engineControls": {
++    "fonts": {
++      "yourFonts": "Your fonts",
++      "addFont": "Add font…",
++      "frameleafFonts": "Frameleaf fonts",
++      "weightCount": "Weights: {{number}}",
++      "keptNote": "Fonts you add are kept with the project, so it opens the same on any computer.",
++      "addFailed": "This font could not be added. Use a .ttf, .otf or .woff2 file.",
++      "full": "This project already keeps as many fonts as it can."
++    }
++  }
++}
+diff --git a/src/shared/typography/project-fonts.ts b/src/shared/typography/project-fonts.ts
+index 36dbd54..fabb59f 100644
+--- a/src/shared/typography/project-fonts.ts
++++ b/src/shared/typography/project-fonts.ts
+@@ -109,6 +109,7 @@ export function projectFontWeightDescriptor(
+ type Registered = { key: string; face: FontFace }
+ 
+ let listed: ProjectFontFace[] = []
++const listeners = new Set<() => void>()
+ let families = new Map<string, ProjectFontFace[]>()
+ /** Faces added to the document, by face identity and weight range. */
+ const registered = new Map<string, Registered>()
+@@ -133,6 +134,15 @@ export function setProjectFonts(value: unknown): void {
+     registered.delete(key)
+     if (typeof document !== 'undefined' && document.fonts) document.fonts.delete(entry.face)
+   }
++  for (const listener of listeners) listener()
++}
++
++/** Tell a font list when the project's fonts change; pairs with {@link getProjectFonts}. */
++export function subscribeProjectFonts(listener: () => void): () => void {
++  listeners.add(listener)
++  return () => {
++    listeners.delete(listener)
++  }
+ }
+ 
+ export function getProjectFonts(): readonly ProjectFontFace[] {
+@@ -203,3 +213,55 @@ export function loadProjectFontFamily(family: string): Promise<boolean> {
+   loading.set(family, promise)
+   return promise
+ }
++
++/** The font files a person may add: the three the server keeps. */
++export const PROJECT_FONT_FILE_ACCEPT = '.ttf,.otf,.woff2'
++
++/** Thrown by {@link addProjectFont} when the project already lists every face it may. */
++export const PROJECT_FONT_LIMIT = 'project_font_limit'
++
++/**
++ * The host keeps an added font file with the project and answers the face the file gives itself
++ * (its family, weight and style) under the import id it was kept by. It also makes the file
++ * readable by that id before it answers.
++ */
++export interface ProjectFontKeeper {
++  keep(file: File): Promise<ProjectFontFace>
++}
++
++let keeper: ProjectFontKeeper | undefined
++let writer: ((faces: ProjectFontFace[]) => Promise<void>) | undefined
++
++/** Installed by a host that keeps files with the project; without one no font can be added. */
++export function installProjectFontKeeper(next: ProjectFontKeeper): () => void {
++  keeper = next
++  return () => {
++    if (keeper === next) keeper = undefined
++  }
++}
++
++/** Installed by the project store: writes the open project's `metadata.fonts`. */
++export function setProjectFontWriter(next: typeof writer): void {
++  writer = next
++}
++
++export const canAddProjectFont = (): boolean => Boolean(keeper && writer)
++
++/**
++ * Keep a font file with the project and list its face in `metadata.fonts`. A face the project
++ * already lists (same family, weight and style) is replaced by the new file.
++ */
++export async function addProjectFont(file: File): Promise<ProjectFontFace> {
++  if (!keeper || !writer) throw new Error('This project cannot keep fonts')
++  if (listed.length >= MAX_PROJECT_FONT_FACES) throw new Error(PROJECT_FONT_LIMIT)
++  const [face] = normalizeProjectFonts([await keeper.keep(file)])
++  if (!face) throw new Error('The kept font has no usable face')
++  await writer([
++    ...listed.filter(
++      (other) =>
++        other.family !== face.family || other.weight !== face.weight || other.style !== face.style,
++    ),
++    face,
++  ])
++  return face
++}

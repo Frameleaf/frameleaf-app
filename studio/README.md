@@ -234,8 +234,12 @@ channel (`gpu-lift-gamma-gain`) and Hue Curves (`gpu-hue-curves`: hue against hu
 periodic Catmull-Rom curves through JSON points, baked into a 256 x 1 table whose neutral is exact). Each
 has a catalogue entry, a spec page and goldens (`render-goldens.browser.mjs --write --only=<ids>`), and HDR
 projects refuse them until FL-1556. They are the first effects with no row in the pinned upstream feature
-manifest, so `graph-protocol.test.mjs` names them as Frameleaf additions. The editor panels for them wait
-for the FL-1615 mock; imports and the graph use them now.
+manifest, so `graph-protocol.test.mjs` names them as Frameleaf additions. Patch 0203 adds their panels
+(`gpu-grade-panels.tsx`): ASC CDL and Lift Gamma Gain are a grid of one number per stage and channel, CDL
+with its saturation and "Load .cdl or .cc" (the first SOP node and saturation of the file, `cdl-file.ts`),
+and Hue Curves edits the points of its three curves (click to add, drag or arrow keys to move, double-click
+or Delete to remove). In a project that works in HDR each panel says the effect is refused there
+(`useProjectIsHdr`: a stored HDR range or any placed HDR source); the refusal itself is unchanged.
 
 Patch 0185 (FL-1564) adds four transitions other editors use: Film Dissolve (a cross dissolve mixed in
 linear light), Cross Zoom (both clips zoom with a radial blur, `strength`), Cube Spin (the clips are two
@@ -251,8 +255,12 @@ Patch 0187 (FL-1563) lets markers be ranges with notes and clips carry markers. 
 have `durationInFrames` (a range) and `note`; save, bundle import, rate changes (the range keeps its end
 on the same moment) and composition trims (a range is cut to the kept span) keep them. Any item may carry
 `markers` in source frames (`sourceFrame`), which move with the media. Imports from other editors write
-them; the ruler still draws a marker at its start, and editing ranges and notes waits for the FL-1615
-mock. Schema `marker` and `clipMarker`, protocol 12.8 and 2.4.
+them. Schema `marker` and `clipMarker`, protocol 12.8 and 2.4. Patch 0202 adds the editing: the marker
+panel has a Length (0 is a point) and a note, the marker list shows a range's two times, the ruler draws
+the range as a bar from the marker, and one selected clip has a Clip markers section (name, note, where it
+sits in the clip, add at the playhead, remove) with each marker drawn on the clip at its source frame
+(`shared/timeline/clip-markers.ts`, source rate, speed and reverse; a marker the trim leaves out is listed
+as trimmed out and not drawn). "Chapter in exports" per marker is not built: a marker has no such field.
 
 Patch 0188 (FL-1555) adds crossfades between sound clips and sound curves. A transition may now join two
 sound clips on one track that are not compound items and not linked to another clip (unlinking leaves each
@@ -264,7 +272,10 @@ linked or embedded sound alike (`graph-schema-v1.json`, protocol 13.2.3 and 12.2
 `clip.setTransition/adds-between-sound-clips`). Clip fade bends are unchanged; `spec/sound.md` writes them
 down and gives the bends that reproduce other editors' named fade shapes. Tests cover the gain laws, the
 mixed export at the middle of each crossfade, the pair rule, repair and the preview pairing. Choosing the
-curve in the editor is not built yet (it needs a mock first), so only imports and the graph set it.
+curve in the editor is patch 0200: the transition panel has Sound (constant power, constant gain,
+exponential, with the two gain curves drawn from `getAudioCrossfadeGain`) and names the placement Start at
+cut, Centred and End at cut (alignment 0, 0.5 and 1) with a picture; between two sound clips it shows only
+length, alignment and sound.
 
 Patch 0149 (FL-595) adds multicam editing. Selecting 2–4 video clips shows a Multicam section: choose
 the sync reference and the master audio camera, then Sync by audio. Each recording's linked audio (or
@@ -902,7 +913,7 @@ cache contract. Hardware monitor limits, semantic source/output layouts, real
 decoder/encoder/mux round trips, latency and per-browser acceptance remain open.
 Focused synthetic PCM/source tests, typechecking and builds do not close those gates.
 
-Patch `0196-sound-channel-mapping.patch` adds a clip's sound channel mapping (FL-1561): the optional `audioChannelMap` item field, `{left, right}` lists of decoded source plane indexes, each side the sum of its planes times 1 / (number listed). It covers mono from either side, the mono mix, dual mono and picks from 5.1 (front, centre, LFE, surrounds), and is the explicit layout the refusals above ask for: a mapped clip contributes two planes, so a mapped 5.1 clip exports as stereo, mixes with stereo clips and can take track pan, which runs after the map. Export maps the decoded planes before retiming, EQ and pan, in both the full and the windowed mixer, and never packet-copies a mapped clip. Preview maps the source planes at decode, before its stereo preview reduction, in windows kept apart from the unmapped cache, and a mapped clip never plays from the file's own media element. Meters estimate a mapped clip from a mono envelope only. The field survives split, join, save and reopen, and the project schema refuses a malformed map. The rules and worked values are `spec/sound-channels.md`; there is no editor control yet.
+Patch `0196-sound-channel-mapping.patch` adds a clip's sound channel mapping (FL-1561): the optional `audioChannelMap` item field, `{left, right}` lists of decoded source plane indexes, each side the sum of its planes times 1 / (number listed). It covers mono from either side, the mono mix, dual mono and picks from 5.1 (front, centre, LFE, surrounds), and is the explicit layout the refusals above ask for: a mapped clip contributes two planes, so a mapped 5.1 clip exports as stereo, mixes with stereo clips and can take track pan, which runs after the map. Export maps the decoded planes before retiming, EQ and pan, in both the full and the windowed mixer, and never packet-copies a mapped clip. Preview maps the source planes at decode, before its stereo preview reduction, in windows kept apart from the unmapped cache, and a mapped clip never plays from the file's own media element. Meters estimate a mapped clip from a mono envelope only. The field survives split, join, save and reopen, and the project schema refuses a malformed map. The rules and worked values are `spec/sound-channels.md`. Patch `0201-sound-channels-control.patch` adds the control: a Channels choice in the sound inspector with the presets of M5 (Stereo removes the map; mono from left or right, dual mono; from 5.1 the front pair, centre, LFE and surrounds), a map no preset has shown as Custom, and nothing else written. The engine keeps no channel count on a media record, so the 5.1 picks are always offered and are silent on a source with fewer planes (M3); a clip has no pan of its own, so the mock's clip pan is not built.
 
 ## Retained Anime4K completion source (FL-111)
 
@@ -972,7 +983,7 @@ Patch `0160-library-view-in-media-bin.patch` gives the bin's Media / Scenes togg
 
 ## Fonts kept with the project (FL-1562)
 
-Patch `0197-project-fonts.patch` lets a title use a font file the person keeps with the project. The server keeps `.ttf`, `.otf` and `.woff2` files through `POST /studio/projects/{id}/fonts` after reading them whole (`server/src/utils/studio-font-file.ts`: a sane table directory, the tables a font needs, the `head` magic number, at most 32 MB; collections and WOFF 1 are refused) and lists them with `GET /studio/projects/{id}/fonts`, apart from the six import kinds native clients decode. The graph lists the faces a title can use in `metadata.fonts` (`importId`, `family`, `weight` 100 to 900, `style`; graph protocol 14.3.6). `src/shared/typography/project-fonts.ts` reads each listed face from the import's URL and registers it with the range of weights nearest it, so the nearest listed weight is drawn; a listed family skips the catalogue's resource admission and Google Fonts entirely. The project store and every headless entry point set the list, so preview, browser export and the bundled worker draw the same faces. The resolver resolves a listed family from the project's imports as a `font` resource with `files` (`subset: "full"`), and the worker registers those faces with the same ranges (`weightRangeFor`). A face whose file is missing is reported (resolver refusal, inventory `allowed: false`, headless `FONTS_NOT_APPLIED`), and the editor draws its fallback face until the file can be read. No editor control writes `metadata.fonts` yet: the font picker's "Your fonts" waits on the FL-1615 mock. The text goldens were not regenerated; the change draws no bundled family differently.
+Patch `0197-project-fonts.patch` lets a title use a font file the person keeps with the project. The server keeps `.ttf`, `.otf` and `.woff2` files through `POST /studio/projects/{id}/fonts` after reading them whole (`server/src/utils/studio-font-file.ts`: a sane table directory, the tables a font needs, the `head` magic number, at most 32 MB; collections and WOFF 1 are refused) and lists them with `GET /studio/projects/{id}/fonts`, apart from the six import kinds native clients decode. The graph lists the faces a title can use in `metadata.fonts` (`importId`, `family`, `weight` 100 to 900, `style`; graph protocol 14.3.6). `src/shared/typography/project-fonts.ts` reads each listed face from the import's URL and registers it with the range of weights nearest it, so the nearest listed weight is drawn; a listed family skips the catalogue's resource admission and Google Fonts entirely. The project store and every headless entry point set the list, so preview, browser export and the bundled worker draw the same faces. The resolver resolves a listed family from the project's imports as a `font` resource with `files` (`subset: "full"`), and the worker registers those faces with the same ranges (`weightRangeFor`). A face whose file is missing is reported (resolver refusal, inventory `allowed: false`, headless `FONTS_NOT_APPLIED`), and the editor draws its fallback face until the file can be read. Patch `0199-your-fonts-picker.patch` adds the control: the title inspector's font list has "Your fonts" (the families of `metadata.fonts`, with their number of weights), "Add font…" and "Frameleaf fonts" (the catalogue). "Add font…" asks the host to keep the file (`uploadProjectFont`, an optional protocol 9 service: `POST /studio/projects/{id}/fonts`), then lists the face the server read (family, weight, style) in `metadata.fonts` through the project store, replacing a face of the same family, weight and style; a refusal or a project already at 32 faces changes nothing and says so. A title still stores one of four weights (normal, medium, semibold, bold); a kept family offers all four and draws its nearest face. The text goldens gained one case, `layout/platform/project-font/Kept-Sans-bold`: a family registered through this loader from the bytes of a bundled file, measured for a bold title exactly as that file's regular face (`text-goldens.browser.mjs --write --only=<kind>/<name>` writes named cases and keeps every other committed case and the file's head).
 
 ## Bundled render worker (FL-408)
 

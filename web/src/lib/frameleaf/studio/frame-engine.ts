@@ -347,6 +347,11 @@ const serviceCalls: ServiceHandlers = {
   },
   saveWorkspace: (services, [layout]) =>
     services.saveWorkspace ? services.saveWorkspace(layout) : Promise.resolve({ status: 'unavailable' } as const),
+  // FL-1562: a font added in the title inspector; the server reads the face from the bytes.
+  uploadProjectFont: (services, args) =>
+    services.uploadProjectFont && STUDIO_FRAME_SERVICE_SCHEMA_V9.uploadProjectFont(args)
+      ? services.uploadProjectFont(args[0])
+      : Promise.reject(new Error('This project cannot keep fonts')),
   // The frame is not trusted to send an upload of the right shape; the server checks the bytes.
   uploadProjectImport: (services, [upload]) => {
     if (!services.uploadProjectImport) {

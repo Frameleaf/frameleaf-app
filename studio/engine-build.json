@@ -889,7 +889,32 @@
       "path": "patches/0198-hdr-transitions-and-grades.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "b8e59992add8e538ed7422cf8ae55a630ea2bbca34c648bbf19eda1b80452b23"
+    },
+    {
+      "path": "patches/0199-your-fonts-picker.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "3bfef903607c137c349977dfbc5ef460f8024885eaa119775164f144576ea380"
+    },
+    {
+      "path": "patches/0200-transition-sound-curve.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "f89267c2ed57cbcbfbf4be6f0a48781ee01cac7754e602f23a41d031b8954392"
+    },
+    {
+      "path": "patches/0201-sound-channels-control.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "b6b135db9abf23b7e50d8c7c78fed67ef015f36b812f361746d63e38c14b7f26"
+    },
+    {
+      "path": "patches/0202-marker-ranges-notes-clip-markers.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "6ed3245f3b17697c055909b09dab405600f2507a81f79603445f3d7651aff60f"
+    },
+    {
+      "path": "patches/0203-grade-panels.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "1f720f93fbd43fce20280d17847cb4f20c328e3affca0c5ab1055f3fc141fd46"
     }
   ],
-  "sourceSha256": "a4d2a7c6100e9c888b3f24c8804fe4646c761805fdbfc7b7ad2a10fc1da1726d"
+  "sourceSha256": "425f53ca35e8fa5398cbfe589112656f5b907ba09900b29639aca49845920ba5"
 }

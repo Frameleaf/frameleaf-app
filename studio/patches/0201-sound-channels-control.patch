@@ -1,0 +1,473 @@
+diff --git a/src/features/editor/components/properties-sidebar/clip-panel/audio-section-utils.ts b/src/features/editor/components/properties-sidebar/clip-panel/audio-section-utils.ts
+index 6266343..c631edb 100644
+--- a/src/features/editor/components/properties-sidebar/clip-panel/audio-section-utils.ts
++++ b/src/features/editor/components/properties-sidebar/clip-panel/audio-section-utils.ts
+@@ -13,3 +13,49 @@ export function getAudioSectionItems(items: TimelineItem[]): AudioCapableItem[]
+     (item): item is AudioCapableItem => item.type === 'video' || item.type === 'audio',
+   )
+ }
++
++/**
++ * Frameleaf (FL-1561): the channel choices of a sound clip, as the presets of the sound channel
++ * spec (M5). Stereo is the absence of a map. Dual mono and the 5.1 front pair are the same map.
++ */
++export const AUDIO_CHANNEL_CHOICES = [
++  { id: 'stereo', group: null, map: undefined },
++  { id: 'monoLeft', group: null, map: { left: [0], right: [0] } },
++  { id: 'monoRight', group: null, map: { left: [1], right: [1] } },
++  { id: 'dualMono', group: null, map: { left: [0], right: [1] } },
++  { id: 'front', group: 'surround', map: { left: [0], right: [1] } },
++  { id: 'centre', group: 'surround', map: { left: [2], right: [2] } },
++  { id: 'lfe', group: 'surround', map: { left: [3], right: [3] } },
++  { id: 'surround', group: 'surround', map: { left: [4], right: [5] } },
++] as const satisfies ReadonlyArray<{
++  id: string
++  group: 'surround' | null
++  map: { left: readonly number[]; right: readonly number[] } | undefined
++}>
++
++export type AudioChannelChoiceId = (typeof AUDIO_CHANNEL_CHOICES)[number]['id']
++
++const sameSide = (a: readonly number[], b: readonly number[]) =>
++  a.length === b.length && a.every((index, i) => b[i] === index)
++
++/**
++ * The choice a clip's map is: `preferred` when it names the same map (so the 5.1 front pair stays
++ * shown after it is picked), else the first preset with that map, `custom` for a map no preset has
++ * and `mixed` when the clips differ.
++ */
++export function getAudioChannelChoice(
++  items: readonly Pick<AudioCapableItem, 'audioChannelMap'>[],
++  preferred?: AudioChannelChoiceId,
++): AudioChannelChoiceId | 'custom' | 'mixed' {
++  const matches = (map: AudioCapableItem['audioChannelMap']) =>
++    AUDIO_CHANNEL_CHOICES.filter((choice) =>
++      choice.map === undefined || map === undefined
++        ? choice.map === map
++        : sameSide(choice.map.left, map.left) && sameSide(choice.map.right, map.right),
++    ).map((choice) => choice.id)
++  const [first, ...rest] = items.map((item) => matches(item.audioChannelMap))
++  if (!first) return 'stereo'
++  if (rest.some((ids) => ids[0] !== first[0])) return 'mixed'
++  if (preferred && first.includes(preferred)) return preferred
++  return first[0] ?? 'custom'
++}
+diff --git a/src/features/editor/components/properties-sidebar/clip-panel/audio-section.tsx b/src/features/editor/components/properties-sidebar/clip-panel/audio-section.tsx
+index 60d74d3..63b7997 100644
+--- a/src/features/editor/components/properties-sidebar/clip-panel/audio-section.tsx
++++ b/src/features/editor/components/properties-sidebar/clip-panel/audio-section.tsx
+@@ -18,6 +18,7 @@ import { getMixedValue } from '../utils'
+ import { getAudioSectionItems } from './audio-section-utils'
+ import { AudioEqPanelContent } from './audio-eq-panel-content'
+ import { LoudnessMatchSection } from './loudness-match-section'
++import { SoundChannelsControl } from './sound-channels-control'
+ import { VoiceCleanupSection } from './voice-cleanup-section'
+ import {
+   AUDIO_PITCH_CENTS_MAX,
+@@ -380,6 +381,8 @@ export function AudioSection({ items }: AudioSectionProps) {
+             </Button>
+           </div>
+         </PropertyRow>
++
++        <SoundChannelsControl items={audioItems} />
+       </PropertySection>
+ 
+       <PropertySection title={t('editor.audioSection.pitch')} icon={Music} defaultOpen={true}>
+diff --git a/src/features/editor/components/properties-sidebar/clip-panel/sound-channels-control.test.tsx b/src/features/editor/components/properties-sidebar/clip-panel/sound-channels-control.test.tsx
+new file mode 100644
+index 0000000..49dd05a
+--- /dev/null
++++ b/src/features/editor/components/properties-sidebar/clip-panel/sound-channels-control.test.tsx
+@@ -0,0 +1,68 @@
++import type { ReactNode } from 'react'
++import { fireEvent, render, screen } from '@testing-library/react'
++import { beforeEach, describe, expect, it, vi } from 'vite-plus/test'
++import type { AudioItem } from '@/types/timeline'
++import { isValidAudioChannelMap } from '@/shared/utils/audio-channel-map'
++import { AUDIO_CHANNEL_CHOICES, getAudioChannelChoice } from './audio-section-utils'
++
++const updateItem = vi.hoisted(() => vi.fn())
++vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }))
++vi.mock('@/features/editor/deps/timeline-store', () => ({
++  useTimelineStore: (select: (state: unknown) => unknown) => select({ updateItem }),
++}))
++vi.mock('../components', () => ({
++  PropertyRow: ({ children }: { children: ReactNode }) => <div>{children}</div>,
++}))
++
++const { SoundChannelsControl } = await import('./sound-channels-control')
++
++const clip = (id: string, audioChannelMap?: AudioItem['audioChannelMap']) =>
++  ({ id, type: 'audio', audioChannelMap }) as AudioItem
++
++describe('sound clip channels (FL-1561)', () => {
++  beforeEach(() => updateItem.mockClear())
++
++  it('offers only maps the engine accepts, and stereo as no map', () => {
++    for (const choice of AUDIO_CHANNEL_CHOICES) {
++      expect(choice.map === undefined || isValidAudioChannelMap(choice.map), choice.id).toBe(true)
++    }
++    expect(AUDIO_CHANNEL_CHOICES.find((choice) => choice.id === 'stereo')?.map).toBeUndefined()
++  })
++
++  it('names the choice a clip has', () => {
++    expect(getAudioChannelChoice([clip('a')])).toBe('stereo')
++    expect(getAudioChannelChoice([clip('a', { left: [1], right: [1] })])).toBe('monoRight')
++    expect(getAudioChannelChoice([clip('a', { left: [0], right: [1] })])).toBe('dualMono')
++    expect(getAudioChannelChoice([clip('a', { left: [0], right: [1] })], 'front')).toBe('front')
++    expect(getAudioChannelChoice([clip('a', { left: [0], right: [1] })], 'lfe')).toBe('dualMono')
++    expect(getAudioChannelChoice([clip('a', { left: [0, 1], right: [0, 1] })])).toBe('custom')
++    expect(getAudioChannelChoice([clip('a'), clip('b', { left: [0], right: [0] })])).toBe('mixed')
++  })
++
++  it('writes the map to every selected clip and removes it for stereo', () => {
++    const clips = [clip('a'), clip('b')]
++    render(<SoundChannelsControl items={clips} />)
++    const select = screen.getByRole('combobox', { name: 'engineControls.channels.label' })
++    expect((select as HTMLSelectElement).value).toBe('stereo')
++
++    fireEvent.change(select, { target: { value: 'centre' } })
++    expect(updateItem.mock.calls).toEqual([
++      ['a', { audioChannelMap: { left: [2], right: [2] } }],
++      ['b', { audioChannelMap: { left: [2], right: [2] } }],
++    ])
++
++    updateItem.mockClear()
++    fireEvent.change(select, { target: { value: 'stereo' } })
++    expect(updateItem.mock.calls).toEqual([
++      ['a', { audioChannelMap: undefined }],
++      ['b', { audioChannelMap: undefined }],
++    ])
++  })
++
++  it('shows a map no preset has without offering to choose it', () => {
++    render(<SoundChannelsControl items={[clip('a', { left: [0, 1], right: [0, 1] })]} />)
++    const custom = screen.getByRole('option', { name: 'engineControls.channels.custom' })
++    expect((custom as HTMLOptionElement).selected).toBe(true)
++    expect((custom as HTMLOptionElement).disabled).toBe(true)
++  })
++})
+diff --git a/src/features/editor/components/properties-sidebar/clip-panel/sound-channels-control.tsx b/src/features/editor/components/properties-sidebar/clip-panel/sound-channels-control.tsx
+new file mode 100644
+index 0000000..f3aba3f
+--- /dev/null
++++ b/src/features/editor/components/properties-sidebar/clip-panel/sound-channels-control.tsx
+@@ -0,0 +1,66 @@
++/**
++ * Frameleaf (FL-1561): which source channels a sound clip plays. A view of the clip's
++ * `audioChannelMap` (render spec, sound channels M1 to M5); choosing Stereo removes the map.
++ */
++import { useRef } from 'react'
++import { useTranslation } from 'react-i18next'
++import { useTimelineStore } from '@/features/editor/deps/timeline-store'
++import { PropertyRow } from '../components'
++import {
++  AUDIO_CHANNEL_CHOICES,
++  getAudioChannelChoice,
++  type AudioCapableItem,
++  type AudioChannelChoiceId,
++} from './audio-section-utils'
++
++export function SoundChannelsControl({ items }: { items: AudioCapableItem[] }) {
++  const { t } = useTranslation()
++  const updateItem = useTimelineStore((s) => s.updateItem)
++  const picked = useRef<AudioChannelChoiceId | undefined>(undefined)
++  const value = getAudioChannelChoice(items, picked.current)
++  const label = t('engineControls.channels.label')
++  const option = (id: AudioChannelChoiceId) => (
++    <option key={id} value={id}>
++      {t(`engineControls.channels.choice.${id}`)}
++    </option>
++  )
++
++  return (
++    <>
++      <PropertyRow label={label}>
++        <select
++          aria-label={label}
++          value={value}
++          onChange={(event) => {
++            const choice = AUDIO_CHANNEL_CHOICES.find((entry) => entry.id === event.target.value)
++            if (!choice) return
++            picked.current = choice.id
++            const audioChannelMap = choice.map && {
++              left: [...choice.map.left],
++              right: [...choice.map.right],
++            }
++            for (const item of items) updateItem(item.id, { audioChannelMap })
++          }}
++          className="h-7 w-full min-w-0 flex-1 rounded-md border border-input bg-background px-2 text-xs"
++        >
++          {value === 'mixed' || value === 'custom' ? (
++            <option value={value} disabled>
++              {t(`engineControls.channels.${value}`)}
++            </option>
++          ) : null}
++          {AUDIO_CHANNEL_CHOICES.filter((choice) => choice.group === null).map((choice) =>
++            option(choice.id),
++          )}
++          <optgroup label={t('engineControls.channels.surroundGroup')}>
++            {AUDIO_CHANNEL_CHOICES.filter((choice) => choice.group === 'surround').map((choice) =>
++              option(choice.id),
++            )}
++          </optgroup>
++        </select>
++      </PropertyRow>
++      <p className="px-2 text-[11px] leading-snug text-muted-foreground">
++        {t('engineControls.channels.note')}
++      </p>
++    </>
++  )
++}
+diff --git a/src/i18n/locales/partials/de/engine-controls.json b/src/i18n/locales/partials/de/engine-controls.json
+index 24956b8..68ff97e 100644
+--- a/src/i18n/locales/partials/de/engine-controls.json
++++ b/src/i18n/locales/partials/de/engine-controls.json
+@@ -35,6 +35,23 @@
+       "curveGraph": "Sound level of the clip before and after through the transition",
+       "soundApplies": "Sound applies to the clips' own sound under this transition.",
+       "soundPair": "Between {{before}} and {{after}}. Sound clips fade into each other; there's no picture to change."
++    },
++    "channels": {
++      "label": "Channels",
++      "choice": {
++        "stereo": "Stereo",
++        "monoLeft": "Mono from left",
++        "monoRight": "Mono from right",
++        "dualMono": "Dual mono",
++        "front": "Front left and right",
++        "centre": "Centre",
++        "lfe": "LFE",
++        "surround": "Surround left and right"
++      },
++      "surroundGroup": "From 5.1",
++      "mixed": "Mixed",
++      "custom": "Custom",
++      "note": "Choices from 5.1 are silent on a recording that has fewer channels."
+     }
+   }
+ }
+diff --git a/src/i18n/locales/partials/en/engine-controls.json b/src/i18n/locales/partials/en/engine-controls.json
+index 24956b8..68ff97e 100644
+--- a/src/i18n/locales/partials/en/engine-controls.json
++++ b/src/i18n/locales/partials/en/engine-controls.json
+@@ -35,6 +35,23 @@
+       "curveGraph": "Sound level of the clip before and after through the transition",
+       "soundApplies": "Sound applies to the clips' own sound under this transition.",
+       "soundPair": "Between {{before}} and {{after}}. Sound clips fade into each other; there's no picture to change."
++    },
++    "channels": {
++      "label": "Channels",
++      "choice": {
++        "stereo": "Stereo",
++        "monoLeft": "Mono from left",
++        "monoRight": "Mono from right",
++        "dualMono": "Dual mono",
++        "front": "Front left and right",
++        "centre": "Centre",
++        "lfe": "LFE",
++        "surround": "Surround left and right"
++      },
++      "surroundGroup": "From 5.1",
++      "mixed": "Mixed",
++      "custom": "Custom",
++      "note": "Choices from 5.1 are silent on a recording that has fewer channels."
+     }
+   }
+ }
+diff --git a/src/i18n/locales/partials/es/engine-controls.json b/src/i18n/locales/partials/es/engine-controls.json
+index 24956b8..68ff97e 100644
+--- a/src/i18n/locales/partials/es/engine-controls.json
++++ b/src/i18n/locales/partials/es/engine-controls.json
+@@ -35,6 +35,23 @@
+       "curveGraph": "Sound level of the clip before and after through the transition",
+       "soundApplies": "Sound applies to the clips' own sound under this transition.",
+       "soundPair": "Between {{before}} and {{after}}. Sound clips fade into each other; there's no picture to change."
++    },
++    "channels": {
++      "label": "Channels",
++      "choice": {
++        "stereo": "Stereo",
++        "monoLeft": "Mono from left",
++        "monoRight": "Mono from right",
++        "dualMono": "Dual mono",
++        "front": "Front left and right",
++        "centre": "Centre",
++        "lfe": "LFE",
++        "surround": "Surround left and right"
++      },
++      "surroundGroup": "From 5.1",
++      "mixed": "Mixed",
++      "custom": "Custom",
++      "note": "Choices from 5.1 are silent on a recording that has fewer channels."
+     }
+   }
+ }
+diff --git a/src/i18n/locales/partials/fr/engine-controls.json b/src/i18n/locales/partials/fr/engine-controls.json
+index 24956b8..68ff97e 100644
+--- a/src/i18n/locales/partials/fr/engine-controls.json
++++ b/src/i18n/locales/partials/fr/engine-controls.json
+@@ -35,6 +35,23 @@
+       "curveGraph": "Sound level of the clip before and after through the transition",
+       "soundApplies": "Sound applies to the clips' own sound under this transition.",
+       "soundPair": "Between {{before}} and {{after}}. Sound clips fade into each other; there's no picture to change."
++    },
++    "channels": {
++      "label": "Channels",
++      "choice": {
++        "stereo": "Stereo",
++        "monoLeft": "Mono from left",
++        "monoRight": "Mono from right",
++        "dualMono": "Dual mono",
++        "front": "Front left and right",
++        "centre": "Centre",
++        "lfe": "LFE",
++        "surround": "Surround left and right"
++      },
++      "surroundGroup": "From 5.1",
++      "mixed": "Mixed",
++      "custom": "Custom",
++      "note": "Choices from 5.1 are silent on a recording that has fewer channels."
+     }
+   }
+ }
+diff --git a/src/i18n/locales/partials/ja/engine-controls.json b/src/i18n/locales/partials/ja/engine-controls.json
+index 24956b8..68ff97e 100644
+--- a/src/i18n/locales/partials/ja/engine-controls.json
++++ b/src/i18n/locales/partials/ja/engine-controls.json
+@@ -35,6 +35,23 @@
+       "curveGraph": "Sound level of the clip before and after through the transition",
+       "soundApplies": "Sound applies to the clips' own sound under this transition.",
+       "soundPair": "Between {{before}} and {{after}}. Sound clips fade into each other; there's no picture to change."
++    },
++    "channels": {
++      "label": "Channels",
++      "choice": {
++        "stereo": "Stereo",
++        "monoLeft": "Mono from left",
++        "monoRight": "Mono from right",
++        "dualMono": "Dual mono",
++        "front": "Front left and right",
++        "centre": "Centre",
++        "lfe": "LFE",
++        "surround": "Surround left and right"
++      },
++      "surroundGroup": "From 5.1",
++      "mixed": "Mixed",
++      "custom": "Custom",
++      "note": "Choices from 5.1 are silent on a recording that has fewer channels."
+     }
+   }
+ }
+diff --git a/src/i18n/locales/partials/ko/engine-controls.json b/src/i18n/locales/partials/ko/engine-controls.json
+index 24956b8..68ff97e 100644
+--- a/src/i18n/locales/partials/ko/engine-controls.json
++++ b/src/i18n/locales/partials/ko/engine-controls.json
+@@ -35,6 +35,23 @@
+       "curveGraph": "Sound level of the clip before and after through the transition",
+       "soundApplies": "Sound applies to the clips' own sound under this transition.",
+       "soundPair": "Between {{before}} and {{after}}. Sound clips fade into each other; there's no picture to change."
++    },
++    "channels": {
++      "label": "Channels",
++      "choice": {
++        "stereo": "Stereo",
++        "monoLeft": "Mono from left",
++        "monoRight": "Mono from right",
++        "dualMono": "Dual mono",
++        "front": "Front left and right",
++        "centre": "Centre",
++        "lfe": "LFE",
++        "surround": "Surround left and right"
++      },
++      "surroundGroup": "From 5.1",
++      "mixed": "Mixed",
++      "custom": "Custom",
++      "note": "Choices from 5.1 are silent on a recording that has fewer channels."
+     }
+   }
+ }
+diff --git a/src/i18n/locales/partials/pt-BR/engine-controls.json b/src/i18n/locales/partials/pt-BR/engine-controls.json
+index 24956b8..68ff97e 100644
+--- a/src/i18n/locales/partials/pt-BR/engine-controls.json
++++ b/src/i18n/locales/partials/pt-BR/engine-controls.json
+@@ -35,6 +35,23 @@
+       "curveGraph": "Sound level of the clip before and after through the transition",
+       "soundApplies": "Sound applies to the clips' own sound under this transition.",
+       "soundPair": "Between {{before}} and {{after}}. Sound clips fade into each other; there's no picture to change."
++    },
++    "channels": {
++      "label": "Channels",
++      "choice": {
++        "stereo": "Stereo",
++        "monoLeft": "Mono from left",
++        "monoRight": "Mono from right",
++        "dualMono": "Dual mono",
++        "front": "Front left and right",
++        "centre": "Centre",
++        "lfe": "LFE",
++        "surround": "Surround left and right"
++      },
++      "surroundGroup": "From 5.1",
++      "mixed": "Mixed",
++      "custom": "Custom",
++      "note": "Choices from 5.1 are silent on a recording that has fewer channels."
+     }
+   }
+ }
+diff --git a/src/i18n/locales/partials/tr/engine-controls.json b/src/i18n/locales/partials/tr/engine-controls.json
+index 24956b8..68ff97e 100644
+--- a/src/i18n/locales/partials/tr/engine-controls.json
++++ b/src/i18n/locales/partials/tr/engine-controls.json
+@@ -35,6 +35,23 @@
+       "curveGraph": "Sound level of the clip before and after through the transition",
+       "soundApplies": "Sound applies to the clips' own sound under this transition.",
+       "soundPair": "Between {{before}} and {{after}}. Sound clips fade into each other; there's no picture to change."
++    },
++    "channels": {
++      "label": "Channels",
++      "choice": {
++        "stereo": "Stereo",
++        "monoLeft": "Mono from left",
++        "monoRight": "Mono from right",
++        "dualMono": "Dual mono",
++        "front": "Front left and right",
++        "centre": "Centre",
++        "lfe": "LFE",
++        "surround": "Surround left and right"
++      },
++      "surroundGroup": "From 5.1",
++      "mixed": "Mixed",
++      "custom": "Custom",
++      "note": "Choices from 5.1 are silent on a recording that has fewer channels."
+     }
+   }
+ }
+diff --git a/src/i18n/locales/partials/zh/engine-controls.json b/src/i18n/locales/partials/zh/engine-controls.json
+index 24956b8..68ff97e 100644
+--- a/src/i18n/locales/partials/zh/engine-controls.json
++++ b/src/i18n/locales/partials/zh/engine-controls.json
+@@ -35,6 +35,23 @@
+       "curveGraph": "Sound level of the clip before and after through the transition",
+       "soundApplies": "Sound applies to the clips' own sound under this transition.",
+       "soundPair": "Between {{before}} and {{after}}. Sound clips fade into each other; there's no picture to change."
++    },
++    "channels": {
++      "label": "Channels",
++      "choice": {
++        "stereo": "Stereo",
++        "monoLeft": "Mono from left",
++        "monoRight": "Mono from right",
++        "dualMono": "Dual mono",
++        "front": "Front left and right",
++        "centre": "Centre",
++        "lfe": "LFE",
++        "surround": "Surround left and right"
++      },
++      "surroundGroup": "From 5.1",
++      "mixed": "Mixed",
++      "custom": "Custom",
++      "note": "Choices from 5.1 are silent on a recording that has fewer channels."
+     }
+   }
+ }
