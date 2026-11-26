@@ -125,6 +125,14 @@ test('low memory offers to turn off faces and smart search, except on a restore'
   assert.equal(checkSummary(checkRows([low], context('hexos', []))).problems, 0);
 });
 
+test('other containers that can write are named in a warning that never blocks', () => {
+  const [row] = checkRows([{ id: 'writers', status: 'warning', facts: { containers: 'duplicati, krusader' } }], context('unraid', []));
+  assert.equal(row.status, 'warning');
+  assert.match(row.detail ?? '', /^duplicati, krusader can write/);
+  const [unknown] = checkRows([{ id: 'writers', status: 'unknown' }], context('unraid', []));
+  assert.equal(unknown.title, 'Couldn’t check other containers');
+});
+
 test('Unraid’s Docker tab is a warning with the path to add', () => {
   const [row] = checkRows([{ id: 'unraid', status: 'warning', code: 'dockerman_templates_unmapped' }], context('unraid', []));
   assert.equal(row.label, 'Unraid Docker tab');

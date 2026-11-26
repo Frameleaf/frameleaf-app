@@ -49,8 +49,8 @@ test('release refusals read as sentences', () => {
 });
 
 test('a refusal detail names what blocked the request', () => {
-  const text = readable('database_overlaps_existing_container_data', 'Blocking container: krusader, which can write to /mnt/user.');
-  assert.match(text, /choose a database folder outside it\. Blocking container: krusader, which can write to \/mnt\/user\.$/);
+  const text = readable('manager_host_mounts_unverified', 'Found two.');
+  assert.match(text, /then try again\. Found two\.$/);
 });
 
 test('setup names the detected graphics card and treats only GPUs as accelerated', () => {

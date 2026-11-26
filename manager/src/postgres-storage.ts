@@ -3,39 +3,10 @@ import { constants } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
 import { Refusal, type Installation } from './contracts.js';
 import { overlap, type Container, type Docker } from './docker.js';
-import { broadRoots } from './folders.js';
 import { folderDetail, ownControllers, toHost } from './host-paths.js';
 
 const within = (path: string, parent: string) =>
   path === parent || path.startsWith(parent === '/' ? '/' : parent + '/');
-/**
- * Another container (running or stopped: it can start later) that can write into the database folder.
- * Read-only mappings cannot corrupt PostgreSQL, so they never block it. Nor does a mapping of a whole
- * share above an approved database root (an Unraid file manager on /mnt/user): that is browsing access,
- * not another app's data folder. A mapping at or inside the root still blocks.
- */
-export function overlappingWriter(
-  containers: Container[],
-  path: string,
-  managerId: string,
-  installationId?: string,
-  roots: string[] = [],
-): { container: string; source: string } | undefined {
-  // With all of /mnt approved, the chosen folder is the root: only a mapping of that folder itself is another app's data.
-  const share = (source: string) =>
-    source !== path && (broadRoots(roots) || roots.some((root) => within(path, root) && root !== source && within(root, source)));
-  for (const c of containers) {
-    // Any Manager container (a stopped older copy too) maps the database parent itself; Manager never writes PGDATA.
-    if (
-      c.Id === managerId ||
-      c.Config.Labels?.['app.frameleaf.manager.role'] === 'controller' ||
-      (installationId && c.Config.Labels?.['app.frameleaf.manager'] === installationId)
-    )
-      continue;
-    const mount = c.Mounts.find((m) => m.RW && m.Source.startsWith('/') && within(path, m.Source) && !share(m.Source));
-    if (mount) return { container: c.Name.replace(/^\//, ''), source: mount.Source };
-  }
-}
 const unescapeMount = (value: string) =>
   value.replace(/\\(040|011|012|134)/g, (_, octal) => String.fromCharCode(Number.parseInt(octal, 8)));
 export type FilesystemMount = {
@@ -145,8 +116,7 @@ export class PostgresStorage {
     )
       throw new Refusal('host_mount_information_required');
     const hostMounts = filesystemMounts(await readFile('/run/frameleaf-host/mountinfo', 'utf8'));
-    // Mapping checks first: a folder Manager cannot use should say so, not blame another container.
-    const mount = databaseMount(
+    return databaseMount(
       path,
       this.roots,
       compatibility.dataRoot,
@@ -155,19 +125,6 @@ export class PostgresStorage {
       hostMounts,
       this.unraid,
     );
-    // Both views: a writer bound to a host folder above this mapping has no path inside Manager.
-    const writer =
-      overlappingWriter(containers, path, controllers[0].Id, installationId, this.roots) ??
-      overlappingWriter(containers, toHost(path), controllers[0].Id, installationId, this.roots.map(toHost));
-    if (writer) {
-      console.error(`manager: database folder ${path} is inside ${writer.source}, which container ${writer.container} can write to`);
-      throw new Refusal(
-        'database_overlaps_existing_container_data',
-        409,
-        `Blocking container: ${writer.container}, which can write to ${writer.source}.`,
-      );
-    }
-    return mount;
   }
   async validate(
     path: string,

@@ -1,6 +1,6 @@
 // FL-1317 Check this server: the words for every check result Manager's review returns (manager/src/server-check.ts),
 // with the fix for each host. Wording and layout follow the approved prototype (frameleaf-prototype PR 31, FL-1310).
-import { readable } from './presentation';
+import { otherWriters, readable } from './presentation';
 
 export type CheckStatus = 'ok' | 'problem' | 'warning' | 'unknown';
 export type CheckHost = 'unraid' | 'truenas' | 'hexos' | 'linux';
@@ -60,6 +60,7 @@ export const CHECK_LABELS: Record<string, string> = {
   release: 'Release signature',
   memory: 'Memory',
   unraid: 'Unraid Docker tab',
+  writers: 'Other containers',
 };
 /** The checks in the order Manager runs them, for the list shown while it looks. */
 export const checkOrder = (flow: 'install' | 'import' | 'restore', containers = false, host: CheckHost = 'linux') => [
@@ -317,6 +318,13 @@ function notice(result: CheckResult, context: CheckContext): Words {
       detail: `Frameleaf will work, but a faster drive is available. ${result.facts.suggestedDrive}: ${result.facts.reason}`,
       action: { kind: 'suggest', folder: 'database', path: result.facts.suggestion, label: `Use ${result.facts.suggestedName}` },
     };
+  if (result.id === 'writers' && result.status === 'unknown')
+    return {
+      title: 'Couldn’t check other containers',
+      detail: 'Manager couldn’t tell whether other containers can write to Frameleaf’s folders. Frameleaf will still install and run.',
+      action: { kind: 'recheck', label: 'Check again' },
+    };
+  if (result.id === 'writers') return otherWriters(String(result.facts?.containers ?? ''));
   if (result.id === 'room' && result.status === 'unknown')
     return {
       title: 'Couldn’t check Docker’s storage',

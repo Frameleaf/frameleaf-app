@@ -70,6 +70,8 @@ const DRAIN: DrainTiming = { timeoutMs: 30 * 60_000, intervalMs: 2000 };
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /** The existing operation lock owns the copy, mapping commit and conservative write-start intent. */
+/** The folder a move copies into, so writers there are named before the copy starts. */
+const destinationMount = (source: string): Mount => ({ type: 'bind', source, target: '', readOnly: false });
 export class LibraryMove {
   private stopping = new Set<string>();
   constructor(
@@ -121,29 +123,6 @@ export class LibraryMove {
     const mounts = filesystemMounts(await readFile('/run/frameleaf-host/mountinfo', 'utf8'));
     const location = (path: string) => LibraryMove.backing(toHost(path), mounts);
     const destination = location(root);
-    const autostart = await this.fencing.readAutostart();
-    const names = new Set(autostart.split('\n').map((line) => line.trim().split(/\s+/)[0]));
-    const protectedPaths = [...new Set([current.mounts[0].source, source])].map(location).concat(destination);
-    for (const container of await this.docker.inventory()) {
-      if (
-        container.Config.Labels?.['app.frameleaf.manager'] === current.id ||
-        (container.Config.Labels?.['app.frameleaf.manager.role'] === 'controller' &&
-          environment(container).MANAGER_DATA === this.directory)
-      )
-        continue;
-      const canStart =
-        container.State.Running ||
-        !['', 'no'].includes(container.HostConfig.RestartPolicy.Name) ||
-        names.has(container.Name.replace(/^\//, ''));
-      if (!canStart) continue;
-      for (const mapping of container.Mounts.filter((m) => m.RW && ['bind', 'volume'].includes(m.Type))) {
-        if (!mapping.Source.startsWith('/')) throw new Refusal('media_writer_mount_unverified');
-        const source = location(mapping.Source);
-        if (protectedPaths.some((target) => source.device === target.device && overlap(source.path, target.path)))
-          throw new Refusal('other_media_writer_detected');
-      }
-    }
-
     if (
       this.reserved(current)
         .map(location)
@@ -310,7 +289,7 @@ export class LibraryMove {
     await this.storage.validate(root, 0);
     await this.storage.validate(current.mounts[0].source, 0, current.id);
     await this.physicalPaths(current, root, source);
-    await this.fencing.assertMedia(current.mounts, current);
+    await this.fencing.warnMediaWriters([...current.mounts, destinationMount(root)], current);
     const review: Review = {
       available: await this.pauseAvailable(),
       id: randomUUID(),
@@ -481,7 +460,7 @@ export class LibraryMove {
       if (digest(this.current()) !== digest(current)) throw new Refusal('installation_changed');
       await this.storage.validate(review.root, review.bytes);
       await assertMountSources(current.mounts);
-      await this.fencing.assertMedia(current.mounts, current);
+      await this.fencing.warnMediaWriters([...current.mounts, destinationMount(review.root)], current);
       await this.quiesce(operation, current);
       const writers = (await this.docker.inventory()).filter(
         (c) => c.Config.Labels?.['app.frameleaf.manager'] === current.id,
@@ -506,7 +485,7 @@ export class LibraryMove {
     });
     if (!operation.receipts['move-writes-intent']) {
       await this.fencing.verifyInstallation(current);
-      await this.fencing.assertMedia(current.mounts, current);
+      await this.fencing.warnMediaWriters([...current.mounts, destinationMount(review.root)], current);
     }
     const frozen = await step('move-freeze', () => this.helper('freeze', review, review.root));
     await step('move-copy', async () => {
@@ -575,7 +554,7 @@ export class LibraryMove {
     await step('move-start', async () => {
       if ((await this.cancelled(operation)) && !operation.receipts['move-writes-intent'])
         throw new Refusal('media_move_cancelled');
-      await this.fencing.assertMedia([...current.mounts, ...next.mounts], next);
+      await this.fencing.warnMediaWriters([...current.mounts, ...next.mounts], next);
       await this.physicalPaths(current, review.root, source);
       if ((await this.cancelled(operation)) && !operation.receipts['move-writes-intent'])
         throw new Refusal('media_move_cancelled');
@@ -687,7 +666,7 @@ export class LibraryMove {
       throw new Refusal('media_mount_changed');
     if (!operation.receipts['move-recovery-writes-intent'] && operation.completed.includes('move-freeze'))
       await this.helper('freeze', review, review.root);
-    await this.fencing.assertMedia(review.current.mounts, review.current);
+    await this.fencing.warnMediaWriters(review.current.mounts, review.current);
     await atomicJson(join(this.directory, 'stack', 'compose.json'), original);
     this.store.set('installation', review.current);
     operation.receipts['move-recovery-writes-intent'] = true;

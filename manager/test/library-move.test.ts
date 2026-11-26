@@ -259,7 +259,7 @@ async function movingFixture(
     },
   };
   const fencing: any = {
-    assertMedia: async () => {},
+    warnMediaWriters: async () => {},
     stopInstallation: async () => {
       for (const c of containers.filter((c) => c.Config.Labels['app.frameleaf.manager'])) {
         c.State.Running = false;
@@ -504,7 +504,7 @@ test('accepted cancellation while start fencing awaits cannot start writers', as
   await movingFixture(async (move, store, root, source, step, checkpoint) => {
     const review = await move.review(root),
       { operation } = move.start(review.id, 'request');
-    (move as any).fencing.assertMedia = async () => {
+    (move as any).fencing.warnMediaWriters = async () => {
       if (operation.step === 'move-start') await move.stop(operation);
     };
     await assert.rejects(

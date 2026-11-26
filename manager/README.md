@@ -53,7 +53,7 @@ MANAGER_NAME=frameleaf-manager-family MANAGER_PORT=2284 sh launch.sh ghcr.io/fra
   "$STATE_FOLDER_2" "$LIBRARY_FOLDER_2" "$DATABASE_BACKUP_FOLDER_2" "https://server.example:2284" auto "$LAN_ADDRESS"
 ```
 
-The launcher refuses a state or backup folder that another container already uses. Manager refuses media folders that another installation writes to, and photo app ports that are already published. On Unraid, add the Manager template again with a new name, port and folders. On TrueNAS, install the YAML again as a separate app with its own port and folders.
+The launcher warns when another container already maps the state or backup folder; two Managers must not share either. Manager warns, in the review and on Overview, when another container can write to the media or database folders, and never stops for it: external libraries and backup tools share those folders. It refuses photo app ports that are already published. On Unraid, add the Manager template again with a new name, port and folders. On TrueNAS, install the YAML again as a separate app with its own port and folders.
 
 ## Advanced container settings
 
@@ -251,7 +251,7 @@ A move never goes to an older PostgreSQL major or to an image Manager cannot ide
 **Moving the database to another drive** (FL-1322) uses the same `database-move` step on the
 installed release and image. `POST /manager-api/review-database-move` with `{ databaseRoot }` checks
 the folder like a new install's database folder (host bind on a local disk, outside Docker's
-storage, no other container writing there, not inside the media, backup, Manager or any database
+storage, not inside the media, backup, Manager or any database
 folder) and requires room for twice the measured database size: the moved copy, and the second copy
 a later engine upgrade restores beside it. `POST /manager-api/move-database` with `{ id, key }`
 starts a `move-database` operation: `stop-application`, `database-checkpoint`, `database-move` (new

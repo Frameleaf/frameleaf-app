@@ -56,7 +56,7 @@ export class Fencing {
   ) {}
   async stopInstallation(installation: Installation): Promise<void> {
     await this.reconcileAutostart();
-    await this.assertMedia(installation.mounts, installation);
+    await this.warnMediaWriters(installation.mounts, installation);
     const owned = (await this.docker.inventory()).filter(
       (c) => c.Config.Labels?.['app.frameleaf.manager'] === installation.id,
     );
@@ -147,28 +147,37 @@ export class Fencing {
     }
     this.store.set('autostart-write', null);
   }
-  async assertMedia(media: Mount[], installation?: Installation, workers: string[] = []): Promise<void> {
+  /**
+   * Other containers that can write to these folders (a backup tool, a file manager, an app sharing an external
+   * library). Never a refusal: people share these folders on purpose, so Manager only says who else can write.
+   */
+  async mediaWriters(media: Mount[], installation?: Installation, workers: string[] = []): Promise<string[]> {
     const all = await this.docker.inventory();
     const autostart = this.autostartFile ? await this.readAutostart() : '';
     const names = new Set(autostart.split('\n').map((line) => line.trim().split(/\s+/)[0]));
-    const unexpected = all.filter((c) => {
-      const controller =
-        c.Config.Labels?.['app.frameleaf.manager.role'] === 'controller' &&
-        environment(c).MANAGER_DATA === this.store.directory;
-      const owned = !!installation && c.Config.Labels?.['app.frameleaf.manager'] === installation.id;
-      const canStart =
-        c.State.Running ||
-        !['', 'no'].includes(c.HostConfig.RestartPolicy.Name) ||
-        names.has(c.Name.replace(/^\//, ''));
-      const writer = { ...c, Mounts: c.Mounts.filter((m) => m.Type !== 'bind' || !shareRoot(m.Source)) };
-      return canStart && sharesMedia(writer, media, all) && !workers.includes(c.Id) && !controller && !owned;
-    });
-    if (unexpected.length)
-      throw new Refusal(
-        'other_media_writer_detected',
-        409,
-        `Stop these containers and turn off their autostart, then try again: ${unexpected.map((c) => c.Name.replace(/^\//, '')).join(', ')}.`,
-      );
+    return all
+      .filter((c) => {
+        const controller =
+          c.Config.Labels?.['app.frameleaf.manager.role'] === 'controller' &&
+          environment(c).MANAGER_DATA === this.store.directory;
+        const owned = !!installation && c.Config.Labels?.['app.frameleaf.manager'] === installation.id;
+        const canStart =
+          c.State.Running ||
+          !['', 'no'].includes(c.HostConfig.RestartPolicy.Name) ||
+          names.has(c.Name.replace(/^\//, ''));
+        const writer = { ...c, Mounts: c.Mounts.filter((m) => m.Type !== 'bind' || !shareRoot(m.Source)) };
+        return canStart && sharesMedia(writer, media, all) && !workers.includes(c.Id) && !controller && !owned;
+      })
+      .map((c) => c.Name.replace(/^\//, ''));
+  }
+  /** Logs who else can write to the media and carries on; the review and Overview show the same warning. */
+  async warnMediaWriters(media: Mount[], installation?: Installation, workers: string[] = []): Promise<void> {
+    // The database folder is one of the library's folders too.
+    const database: Mount[] = installation?.databaseRoot
+      ? [{ type: 'bind', source: installation.databaseRoot, target: '', readOnly: false }]
+      : [];
+    const writers = await this.mediaWriters([...media, ...database], installation, workers);
+    if (writers.length) console.warn(`manager: other containers can write to Frameleaf's folders: ${writers.join(', ')}`);
   }
   async stop(source: Source | SourceFence): Promise<void> {
     // An export folder has nothing to stop: it only has to still hold what was reviewed.
@@ -179,7 +188,7 @@ export class Fencing {
     if (intent && intent !== source.fingerprint) throw new Refusal('source_changed_review_again');
     await new Discovery(this.docker).revalidate(this.pinned(source), !!intent);
     await this.reconcileAutostart();
-    await this.assertMedia(source.mounts, undefined, source.workers);
+    await this.warnMediaWriters(source.mounts, undefined, source.workers);
     this.store.createOnce(`fence:${source.id}`, source.fingerprint);
     const all = await this.docker.inventory();
     if (source.platform === 'unraid') {
@@ -282,7 +291,7 @@ export class Fencing {
   async verify(source: Source | SourceFence, installation?: Installation): Promise<void> {
     if ('folder' in source && source.folder) return verifyFolderFence(source.folder);
     await new Discovery(this.docker).revalidate(this.pinned(source), true);
-    await this.assertMedia(source.mounts, installation, source.workers);
+    await this.warnMediaWriters(source.mounts, installation, source.workers);
     const all = await this.docker.inventory();
     for (const id of source.workers) {
       const c = all.find((c) => c.Id === id);

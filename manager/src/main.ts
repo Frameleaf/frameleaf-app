@@ -351,6 +351,8 @@ class Api {
       autoUpdate: store.get<boolean>('auto-update') !== false,
       /** FL-973: the last update can be undone until `until`. */
       rollback: operations.rollbackOffer(),
+      /** Other containers that can write to the library's folders: shown as a warning, never blocks. */
+      otherWriters: await operations.otherWriters(),
       /** Why the last automatic update check could not start an update, until a later check does. */
       autoUpdateFailure: store.get<{ code: string; at: string }>('auto-update-failure'),
       profile: store.get('profile'),
