@@ -18,11 +18,11 @@ Two further options, `FRAMELEAF_ICLOUD_IDENTITY_ADOPTION` and `FRAMELEAF_ICLOUD_
 
 ## Capacity and long-video validation
 
-Per-connection controls accept 1–100 concurrent downloads (1 by default); the server downloads at most 4 at a time. The worker also applies server-wide limits:
+Per-connection controls allow 1–100 concurrent downloads (10 by default). The worker also applies server-wide limits:
 
 | Environment variable                 | Default                  | Purpose                                                    |
 | ------------------------------------ | ------------------------ | ---------------------------------------------------------- |
-| `FRAMELEAF_ICLOUD_MAX_CONCURRENCY`   | `4`                      | Maximum active resource leases across connections          |
+| `FRAMELEAF_ICLOUD_MAX_CONCURRENCY`   | `100`                    | Maximum active resource leases across connections          |
 | `FRAMELEAF_ICLOUD_MAX_STAGING_BYTES` | `107374182400` (100 GiB) | Total reserved staging budget                              |
 | `FRAMELEAF_ICLOUD_FREE_SPACE_BYTES`  | `1073741824` (1 GiB)     | Free disk space to retain in addition to the next download |
 

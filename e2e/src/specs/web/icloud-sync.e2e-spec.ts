@@ -175,8 +175,12 @@ const thumbnails = (page: Page) => page.locator('[data-asset-id]');
 const control = (page: Page, name: string) => page.locator('.ic-toolbar').getByRole('button', { name, exact: true });
 
 /** Add the user's first connection and open its sign-in dialog. */
-const addConnection = async (page: Page) => {
+const addConnection = async (page: Page, concurrency?: number) => {
   await expect(page.getByRole('heading', { name: 'Connect an iCloud library' })).toBeVisible();
+  if (concurrency !== undefined) {
+    await page.getByText('Advanced: download limits').click();
+    await page.getByLabel('Downloads at once').fill(String(concurrency));
+  }
   await page.getByRole('button', { name: 'Add connection' }).click();
   await expect(notice(page)).toContainText('Connection added.');
   await page.getByRole('button', { name: 'Connect account' }).click();
@@ -200,8 +204,8 @@ const enterCode = async (page: Page, code: string) => {
 };
 
 /** Sign in with the right password and code; the server queues the first sync. */
-const connect = async (page: Page, account: Account) => {
-  await addConnection(page);
+const connect = async (page: Page, account: Account, concurrency?: number) => {
+  await addConnection(page, concurrency);
   await signIn(page, account);
   await enterCode(page, account.code);
   await expect(dialog(page)).toBeHidden();
@@ -372,13 +376,14 @@ test.describe('iCloud Photos sync with a fake bridge (FL-68, FL-144)', () => {
     const user = await newUser(admin, 'reload');
     const items = await fixture.library(ACCOUNTS.erin.appleId);
     await utils.setAuthCookies(context, user.accessToken);
-    // Let two downloads through, then hold the third: the run is mid-way when the page reloads.
+    // Let two downloads through, then hold the rest: the run is mid-way when the page reloads. At the default of
+    // 10 at a time (FL-1724) every remaining item is downloading at once, and the listing still finishes.
     await fixture.hold(ACCOUNTS.erin.appleId, 2);
     let runId: string | undefined;
     try {
       await openICloud(page);
       await connect(page, ACCOUNTS.erin);
-      await expect.poll(() => downloadsWaiting(ACCOUNTS.erin), { timeout: 60_000 }).toBe(1);
+      await expect.poll(() => downloadsWaiting(ACCOUNTS.erin), { timeout: 60_000 }).toBe(items.length - 2);
       await expect(badge(page)).toHaveText('Syncing', { timeout: 15_000 });
       await expect(runPanel(page)).toContainText(`2 of ${items.length} items settled`, { timeout: 15_000 });
       const before = await runOf(user);
@@ -414,11 +419,12 @@ test.describe('iCloud Photos sync with a fake bridge (FL-68, FL-144)', () => {
     const user = await newUser(admin, 'cancel');
     const items = await fixture.library(ACCOUNTS.frank.appleId);
     await utils.setAuthCookies(context, user.accessToken);
-    // One download through, the second held: the run is busy with an item when it is cancelled.
+    // One download through, the second held: the run is busy with an item when it is cancelled. One download at a
+    // time, so exactly one item is in flight at the cancel.
     await fixture.hold(ACCOUNTS.frank.appleId, 1);
     try {
       await openICloud(page);
-      await connect(page, ACCOUNTS.frank);
+      await connect(page, ACCOUNTS.frank, 1);
       await expect.poll(() => downloadsWaiting(ACCOUNTS.frank), { timeout: 60_000 }).toBe(1);
       await expect(badge(page)).toHaveText('Syncing', { timeout: 15_000 });
 
