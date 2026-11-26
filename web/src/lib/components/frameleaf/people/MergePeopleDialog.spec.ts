@@ -49,7 +49,8 @@ describe('MergePeopleDialog (PD-4)', () => {
     }));
     // a page here is 40 people, whatever size is asked for: enough to stand for "more than one page"
     const PAGE = 40;
-    sdkMock.getAllPeople.mockImplementation(({ name } = {}) => {
+    sdkMock.getAllPeople.mockImplementation((options) => {
+      const name = options?.name;
       const matching = name
         ? everyone.filter((person) => person.name.toLowerCase().includes(name.toLowerCase()))
         : everyone;
