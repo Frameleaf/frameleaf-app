@@ -29,6 +29,7 @@
   import Links from '$lib/components/frameleaf/settings/kit/Links.svelte';
   import Notice from '$lib/components/frameleaf/settings/kit/Notice.svelte';
   import Row from '$lib/components/frameleaf/settings/kit/Row.svelte';
+  import Select from '$lib/components/frameleaf/settings/kit/Select.svelte';
   import Said from '$lib/components/frameleaf/settings/kit/Said.svelte';
   import Section from '$lib/components/frameleaf/settings/kit/Section.svelte';
   import Switch from '$lib/components/frameleaf/settings/kit/Switch.svelte';
@@ -39,6 +40,12 @@
   import { createOwnPreferencesDraft } from '$lib/frameleaf/own-preferences-draft';
   import { backfillProgress } from '$lib/frameleaf/partner-sharing';
   import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
+  import {
+    LINK_EXPIRY_NONE,
+    linkExpiryChoices,
+    linkExpiryFromValue,
+    linkExpiryValue,
+  } from '$lib/frameleaf/link-expiry';
   import { getSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { eventManager } from '$lib/managers/event-manager.svelte';
@@ -529,6 +536,7 @@
       : $t('frameleaf_sharing_erase_who_alone'),
   );
   const selectId = $props.id();
+  const serverExpiry = $derived(settingsDraft?.draft.sharedLinks?.defaultExpiryDays ?? null);
   const count = (value: number) => value.toLocaleString($locale ?? 'en-US');
   const progressLabel = (progress: NonNullable<ReturnType<typeof backfillProgress>>) =>
     progress.state === 'running'
@@ -829,6 +837,27 @@
           held={featureFlagsManager.value.configFile}
           describedBy="{selectId}-find"
           onChange={(value) => (settingsDraft.draft.server.publicUsers = value)}
+        />
+      </Row>
+      <!-- FL-922: how long new shared links last for everyone, unless a person set their own. -->
+      <Row
+        label={$t('frameleaf_link_expiry_label')}
+        help={$t('frameleaf_link_expiry_everyone_help')}
+        helpId="{selectId}-expiry"
+      >
+        <Select
+          label={$t('frameleaf_link_expiry_everyone_label')}
+          value={linkExpiryValue(serverExpiry)}
+          options={[
+            { value: LINK_EXPIRY_NONE, label: $t('frameleaf_link_expiry_never') },
+            ...linkExpiryChoices(serverExpiry).map((days) => ({
+              value: String(days),
+              label: $t('frameleaf_link_expiry_days', { values: { count: days } }),
+            })),
+          ]}
+          disabled={featureFlagsManager.value.configFile}
+          describedBy="{selectId}-expiry"
+          onChange={(value) => (settingsDraft.draft.sharedLinks = { defaultExpiryDays: linkExpiryFromValue(value) })}
         />
       </Row>
     </Section>

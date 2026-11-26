@@ -80,6 +80,8 @@ export type AccountPreferencesDraft = {
   'trash.reuploadUntil': string;
   /** FL-1484: AI work on this person's photos may use Frameleaf Cloud (the account's own choice) */
   'cloudProcessing.enabled': boolean;
+  /** FL-922: days a new shared link lasts; `null` follows the server's default. */
+  'sharedLinks.defaultExpiryDays': number | null;
 };
 
 export type AccountPreferenceKey = keyof AccountPreferencesDraft;
@@ -203,6 +205,7 @@ export const createDefaultDraft = (): AccountPreferencesDraft => ({
   'purchase.hideBuyButtonUntil': new Date(2022, 1, 12).toISOString(),
   'trash.reuploadUntil': '',
   'cloudProcessing.enabled': true,
+  'sharedLinks.defaultExpiryDays': null,
 });
 
 export const draftFromPreferences = (preferences: UserPreferencesResponseDto): AccountPreferencesDraft => ({
@@ -246,6 +249,7 @@ export const draftFromPreferences = (preferences: UserPreferencesResponseDto): A
   'purchase.hideBuyButtonUntil': preferences.purchase.hideBuyButtonUntil,
   'trash.reuploadUntil': preferences.trash.reuploadUntil,
   'cloudProcessing.enabled': preferences.cloudProcessing?.enabled ?? true,
+  'sharedLinks.defaultExpiryDays': preferences.sharedLinks.defaultExpiryDays ?? null,
 });
 
 export const changedPreferenceKeys = (

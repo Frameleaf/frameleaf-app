@@ -57,6 +57,8 @@ export const SERVER_WORDS: Readonly<Record<string, Words>> = Object.freeze({
   'localFeatures.assistant.planner': { label: 'frameleaf_intel_assistant_planner' },
   // People & sharing
   'server.publicUsers': { label: 'frameleaf_sharing_find_label' },
+  // FL-922: People & sharing › For everyone on this server.
+  'sharedLinks.defaultExpiryDays': { label: 'frameleaf_link_expiry_label' },
   // Server & updates › Server name & welcome
   'server.name': { label: 'frameleaf_server_identity_name' },
   'server.loginPageMessage': { label: 'frameleaf_server_identity_welcome' },
@@ -251,6 +253,8 @@ export const PREFERENCE_WORDS: Readonly<Record<string, Words>> = Object.freeze({
   'trash.reuploadUntil': { label: 'frameleaf_prefs_look_reupload' },
   // FL-1484: Your preferences › Where your photos are processed.
   'cloudProcessing.enabled': { label: 'frameleaf_prefs_processing_title' },
+  // FL-922: Your preferences › Shared links.
+  'sharedLinks.defaultExpiryDays': { label: 'frameleaf_link_expiry_label' },
   'people.suggestInSpaces': { label: 'frameleaf_sharing_suggest_spaces' },
   'albums.showPartnerAlbums': { label: 'frameleaf_sharing_partner_albums' },
   'albums.cleanupBannerDismissed': { label: 'frameleaf_album_cleanup_banner_setting' },

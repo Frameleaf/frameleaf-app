@@ -173362,6 +173362,13 @@
             "description": "Server name set by an administrator; empty when none is set",
             "type": "string"
           },
+          "sharedLinkDefaultExpiryDays": {
+            "description": "Days a new shared link lasts by default on this server, unless the person sharing set their own; null: links never expire",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "nullable": true,
+            "type": "integer"
+          },
           "trashDays": {
             "description": "Number of days before trashed assets are permanently deleted",
             "maximum": 9007199254740991,
@@ -173392,6 +173399,7 @@
           "placesRestoring",
           "publicUsers",
           "serverName",
+          "sharedLinkDefaultExpiryDays",
           "trashDays",
           "userDeleteDelay"
         ],

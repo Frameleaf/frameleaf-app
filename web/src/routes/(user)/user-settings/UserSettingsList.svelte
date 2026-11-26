@@ -27,6 +27,7 @@
   import PreservationPanel from '$lib/components/frameleaf/PreservationPanel.svelte';
   import AppSettings from './AppSettings.svelte';
   import CloudProcessingSettings from './CloudProcessingSettings.svelte';
+  import SharedLinkDefaults from './SharedLinkDefaults.svelte';
   import DownloadSettings from './DownloadSettings.svelte';
   import FeatureSettings from './FeatureSettings.svelte';
   import NotificationsSettings from './NotificationsSettings.svelte';
@@ -81,6 +82,9 @@
   <AccountActivity />
 {:else if section === 'download-settings'}
   <DownloadSettings />
+{:else if section === 'shared-link-defaults'}
+  <!-- FL-922: how long new shared links last by default. -->
+  <SharedLinkDefaults />
 {:else if section === 'cloud-processing'}
   <!-- FL-1484: whether AI work on your own photos may use Frameleaf Cloud. -->
   <CloudProcessingSettings />

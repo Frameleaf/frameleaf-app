@@ -19702,6 +19702,8 @@ export type ServerConfigDto = {
     publicUsers: boolean;
     /** Server name set by an administrator; empty when none is set */
     serverName: string;
+    /** Days a new shared link lasts by default on this server, unless the person sharing set their own; null: links never expire */
+    sharedLinkDefaultExpiryDays: number | null;
     /** Number of days before trashed assets are permanently deleted */
     trashDays: number;
     /** Delay in days before deleted users are permanently removed */

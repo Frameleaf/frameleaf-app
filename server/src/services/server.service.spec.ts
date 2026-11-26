@@ -619,6 +619,7 @@ describe(ServerService.name, () => {
         oauthButtonText: 'Sign in with your provider',
         oauthAccountManagementUrl: '',
         trashDays: 30,
+        sharedLinkDefaultExpiryDays: null,
         userDeleteDelay: 7,
         isInitialized: false,
         isOnboarded: false,

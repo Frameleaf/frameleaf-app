@@ -1512,10 +1512,10 @@ export const SETTINGS_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.fr
   },
   {
     pattern: 'sharedLinks.defaultExpiryDays',
-    // FL-922: server default expiry for new links; the settings control follows the approved FL-886 mock
-    kind: 'api-only',
-    file: '../server/src/services/shared-link.service.ts',
-    evidence: '(await this.getConfig({ withCache: true })).sharedLinks.defaultExpiryDays',
+    // FL-922: server default expiry for new links, on People & sharing › For everyone on this server
+    kind: 'control',
+    file: 'src/routes/(user)/user-settings/SharingSettings.svelte',
+    evidence: 'sharedLinks = { defaultExpiryDays',
   },
   {
     pattern: 'signInPolicy.applyToOlderApps',
@@ -2144,10 +2144,10 @@ export const PREFERENCE_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.
   },
   {
     pattern: 'sharedLinks.defaultExpiryDays',
-    // FL-922: personal default expiry for new links; the settings control follows the approved FL-886 mock
-    kind: 'api-only',
-    file: '../server/src/services/shared-link.service.ts',
-    evidence: 'sharedLinks.defaultExpiryDays ??',
+    // FL-922: personal default expiry for new links, on Your preferences › Shared links
+    kind: 'control',
+    file: 'src/routes/(user)/user-settings/SharedLinkDefaults.svelte',
+    evidence: "'sharedLinks.defaultExpiryDays'",
   },
   {
     pattern: 'tags.enabled',

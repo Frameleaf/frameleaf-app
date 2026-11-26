@@ -211,6 +211,8 @@ export const SETTINGS_AREAS: readonly SettingsAreaDefinition[] = Object.freeze([
       'app-settings',
       'feature',
       'download-settings',
+      // FL-922: what new shared links start with.
+      'shared-link-defaults',
       'cloud-processing',
       'frameleaf-account',
       'user-usage-info',
@@ -836,6 +838,7 @@ const DIRECTORY_GROUPS: Partial<Record<SettingsAreaId, Record<string, DirectoryG
     'app-settings': 'library',
     feature: 'library',
     'download-settings': 'downloads',
+    'shared-link-defaults': 'library',
     'cloud-processing': 'library',
   },
 };

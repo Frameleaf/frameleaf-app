@@ -11,6 +11,9 @@
     handleCreateSharedLink,
     handleUpdateSharedLink,
   } from '$lib/services/shared-link.service';
+  import { effectiveLinkExpiryDays } from '$lib/frameleaf/link-expiry';
+  import { authManager } from '$lib/managers/auth-manager.svelte';
+  import { serverConfigManager } from '$lib/managers/server-config-manager.svelte';
   import { locale } from '$lib/stores/preferences.store';
   import { getAllSharedLinks, SharedLinkType, type SharedLinkResponseDto } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
@@ -165,6 +168,17 @@
   let allowUpload = $state(false);
   let showMetadata = $state(false);
   let preset = $state('never');
+  // FL-922: the person's own default for new links, else the server's; none means links never expire.
+  const defaultDays = $derived(
+    effectiveLinkExpiryDays(
+      authManager.authenticated ? authManager.preferences.sharedLinks.defaultExpiryDays : null,
+      serverConfigManager.value.sharedLinkDefaultExpiryDays,
+    ),
+  );
+  /** The preset that default is, or a custom date for a number of days the list doesn't offer. */
+  const defaultPreset = $derived(
+    defaultDays ? (PRESETS.find((item) => item.ms === defaultDays * DAY)?.id ?? 'custom') : undefined,
+  );
   let customAt = $state('');
   let error = $state('');
   let showQr = $state(false);
@@ -256,8 +270,13 @@
     allowDownload = link ? link.allowDownload && link.showMetadata : false;
     allowUpload = link ? link.allowUpload : false;
     showMetadata = link ? link.showMetadata : false;
-    preset = link?.expiresAt ? 'custom' : 'never';
-    customAt = link?.expiresAt ? toLocalInputValue(link.expiresAt) : '';
+    // FL-922: a new link starts on the person's default expiry, else the server's.
+    preset = link ? (link.expiresAt ? 'custom' : 'never') : (defaultPreset ?? 'never');
+    customAt = link?.expiresAt
+      ? toLocalInputValue(link.expiresAt)
+      : !link && defaultPreset === 'custom' && defaultDays
+        ? toLocalInputValue(new Date(Date.now() + defaultDays * DAY).toISOString())
+        : '';
     error = '';
     created = undefined;
     showQr = false;
@@ -307,11 +326,18 @@
   const expiresAt = $derived.by(expiryFromNow);
 
   const expiryHint = $derived(
-    expiresAt
+    (expiresAt
       ? $t('frameleaf_sharing.expires_at', {
           values: { date: formatDateTime(expiresAt, { dateStyle: 'medium', timeStyle: 'short' }, $locale) },
         })
-      : $t('frameleaf_sharing.never_expires_hint'),
+      : $t('frameleaf_sharing.never_expires_hint')) +
+      // FL-922: says where the starting choice came from, while it is still the choice.
+      (!link && defaultDays && defaultPreset !== 'custom' && preset === defaultPreset
+        ? ' ' +
+          $t('frameleaf_link_expiry_form_default', {
+            values: { after: $t('frameleaf_link_expiry_days', { values: { count: defaultDays } }) },
+          })
+        : ''),
   );
 
   const createdUrl = $derived(created ? asUrl(created) : '');
