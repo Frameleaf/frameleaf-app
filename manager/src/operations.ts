@@ -9,7 +9,7 @@ import { Discovery, COMPATIBLE_SETTINGS, maskSettings, unmaskSettings, unsupport
 import { Releases, type VerifiedRelease } from './releases.js';
 import { compareReleases, isNewerRelease } from './release-order.js';
 import { Backups, sourceBackups } from './backups.js';
-import { assertExternalFolder, assertSeparateFolders, broadRoots, ensureChosenFolder, externalRoots, externalRuleSources, inside, onNetworkShare, overlaps } from './folders.js';
+import { assertExternalFolder, assertSeparateFolders, broadRoots, ensureChosenFolder, externalRoots, externalRuleSources, inside, moveRoots, onNetworkShare, overlaps } from './folders.js';
 import { databaseDriveFinding, driveOf, type DriveReport } from './drives.js';
 import { Fencing } from './fencing.js';
 import { detectPhotoApps, identifyPhotoApp, photoAppKind, photoAppNames, type ContainerFileReader, type PhotoAppKind, type PhotoAppPlan } from './photo-app-sources.js';
@@ -325,7 +325,7 @@ export class Operations {
       store,
       docker,
       this.fencing,
-      new PostgresStorage(docker, store.directory, roots, !!databaseStorage?.unraid),
+      new PostgresStorage(docker, store.directory, moveRoots(roots), !!databaseStorage?.unraid),
       store.directory,
       process.env.MANAGER_BACKUP_ROOT ?? join(store.directory, 'backups'),
       undefined,
@@ -385,7 +385,15 @@ export class Operations {
     if (result.status !== undefined) throw new Refusal(`server_refused_${Number(result.status)}`, 502);
     return result.value;
   }
+  /** A move never lands in a folder given to a container as an external folder: a later Containers save would refuse it. */
+  private checkMoveDestination(root: string): void {
+    const current = this.installation();
+    if (!current) return;
+    const binds = current.mounts.filter((m) => m.type === 'bind').map((m) => m.source);
+    this.checkExternalFolders(this.application().services ?? {}, [...binds, current.databaseRoot, root]);
+  }
   reviewMove(root: string) {
+    this.checkMoveDestination(root);
     return this.mediaMove.review(root);
   }
   move(id: string, key: string): Operation {
@@ -396,6 +404,7 @@ export class Operations {
   /** FL-1323: review moving thumbnails to a folder on another drive; the file count and size are measured. */
   async reviewThumbnailMove(root: string) {
     if (this.store.locked()) throw new Refusal('operation_in_progress');
+    this.checkMoveDestination(root);
     const review = await this.mediaMove.review(root, 'thumbs');
     this.thumbnailSizes.set(review.source!, { files: review.files, bytes: review.bytes, measuredAt: Date.now() });
     return review;
@@ -3384,7 +3393,7 @@ export class Operations {
       await assertMountSources(target.mounts);
       const containers = await this.docker.inventory();
       for (const mount of target.mounts) {
-        if (mount.type === 'bind') await storagePath(mount.source, this.roots, 0);
+        if (mount.type === 'bind') await storagePath(mount.source, moveRoots(this.roots), 0);
         else if (!containers.some((c) => c.Mounts.some((m) => m.Type === 'volume' && m.Name === mount.source)))
           throw new Refusal('external_media_volume_unavailable', 409, mount.source);
         if (/^\/(?:proc|sys|dev|etc|run|var\/run)(?:\/|$)/.test(mount.target) || mount.target.includes('..'))

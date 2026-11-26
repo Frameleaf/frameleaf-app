@@ -75,6 +75,7 @@
   let {
     api,
     folders = null,
+    databaseBrowse = true,
     roots = [],
     storage = [],
     disabled = false,
@@ -85,6 +86,8 @@
     api: (path: string, body?: unknown) => Promise<any>;
     /** Where Manager's own folders are, when folders are chosen by browsing (dashboard.folderSetup). */
     folders?: { media: string; database: string; backups: string; manager: string } | null;
+    /** False on an earlier install that mapped the broad folders: photos and thumbnails browse them, the database keeps its saved folders. */
+    databaseBrowse?: boolean;
     /** Without browsing: the folders mounted into Manager to choose from. */
     roots?: string[];
     /** GET /manager-api/storage (FL-1324 StorageSpace): a place's drive is nearly full when its folder says so. */
@@ -160,7 +163,8 @@
   );
 
   /** The folder the review shows and creates: inside the chosen one when folders are browsed. */
-  const destination = (kind: MoveKind, path: string) => (folders ? `${path}/${MOVES[kind].folder}` : path);
+  const browses = (kind: MoveKind) => !!folders && (kind !== 'database' || databaseBrowse);
+  const destination = (kind: MoveKind, path: string) => (browses(kind) ? `${path}/${MOVES[kind].folder}` : path);
   const pickerStart = (kind: MoveKind) => {
     const suggestion = kind === 'database' ? usage?.suggestions?.database : kind === 'thumbs' ? usage?.suggestions?.thumbs : null;
     if (suggestion?.status === 'found' || suggestion?.status === 'too_full') return suggestion.drive.base;
@@ -170,7 +174,7 @@
 
   async function choose(kind: MoveKind) {
     picking = kind;
-    if (!folders) {
+    if (!browses(kind)) {
       await tick();
       rootDialog?.showModal();
     }
@@ -320,7 +324,7 @@
   </section>
 {/if}
 
-{#if picking && folders}
+{#if picking && browses(picking)}
   <FolderPicker
     title={MOVES[picking].pick ?? ''}
     start={pickerStart(picking)}
