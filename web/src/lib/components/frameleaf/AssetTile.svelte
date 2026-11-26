@@ -24,6 +24,7 @@
    * (`/assets/:id/video/playback`), never the original file, and a Live Photo plays its own motion
    * part. Nothing here downloads an original.
    */
+  import { formatApproximateDate } from '$lib/frameleaf/approximate-date';
   import ImageThumbnail from '$lib/components/assets/thumbnail/ImageThumbnail.svelte';
   import TileJobState from '$lib/components/frameleaf/TileJobState.svelte';
   import { beginDragSelect, DRAG_SELECT_EVENT } from '$lib/components/timeline/drag-select';
@@ -256,15 +257,22 @@
    * prototype `localAddedAt`); otherwise the day header above already says it. A photo whose time
    * cannot be read has no caption time (FL-1392). The words follow the person's date and time format.
    */
+  /** FL-936: "1975" or "circa 1970s" where the time would be; an Added-date view still shows the upload time. */
+  const approximateDate = $derived(
+    asset.dateAccuracy && dateType !== TimeBucketDateType.Added
+      ? formatApproximateDate(asset.localDateTime, asset.dateAccuracy, $locale ?? undefined, { $t })
+      : null,
+  );
   const captureTime = $derived(
-    (displayDateTime &&
-      formatLuxon(
-        displayDateTime,
-        dateType === TimeBucketDateType.Added
-          ? { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }
-          : DateTime.TIME_SIMPLE,
-        $locale ?? undefined,
-      )) ||
+    approximateDate ||
+      (displayDateTime &&
+        formatLuxon(
+          displayDateTime,
+          dateType === TimeBucketDateType.Added
+            ? { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }
+            : DateTime.TIME_SIMPLE,
+          $locale ?? undefined,
+        )) ||
       null,
   );
   /** The List view (S-15, template asset-tile.css `[data-layout="list"]`): a 96px 3:2 thumbnail and columns. */
@@ -276,7 +284,7 @@
   /** The list's name column: the file name without its extension, never a Locked item's. */
   const listName = $derived(isLocked ? $t('frameleaf_library_list_locked_item') : (fileName ?? title));
   const listDate = $derived(
-    displayDateTime ? formatLuxon(displayDateTime, DateTime.DATE_MED, $locale ?? undefined) : '',
+    approximateDate ?? (displayDateTime ? formatLuxon(displayDateTime, DateTime.DATE_MED, $locale ?? undefined) : ''),
   );
   /** Template: a video's duration, else the pixel size, else the file size. */
   const listDetail = $derived.by(() => {

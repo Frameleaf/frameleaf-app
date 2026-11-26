@@ -316,6 +316,49 @@ export class AlbumRepository {
         .execute()
     );
   }
+
+  /**
+   * Albums the user owns or edits, the one that most recently received a visible item first.
+   * ponytail: reads the user's album memberships on each picker open; add an (albumId, createdAt)
+   * index or a stored value if this shows up as slow on very large libraries.
+   */
+  @GenerateSql({ params: [DummyValue.UUID, { libraryScope: LibraryScope.Personal }] })
+  async getRecentlyAddedIds(
+    userId: string,
+    options: AlbumReadOptions & { libraryScope?: LibraryViewScope; excludeLocked?: boolean } = {},
+    limit = 30,
+  ): Promise<string[]> {
+    const rows = await this.db
+      .selectFrom('asset')
+      .$call((qb) => withAlbumVisibility(qb, options.lockedOwnerId))
+      .$call((qb) => withHiddenContentFilter(qb, options))
+      .innerJoin('album_asset', 'album_asset.assetId', 'asset.id')
+      .innerJoin('album', 'album.id', 'album_asset.albumId')
+      .innerJoin('album_user', 'album_user.albumId', 'album.id')
+      .select('album_asset.albumId')
+      .where('album_user.userId', '=', userId)
+      .where('album_user.role', 'in', [AlbumUserRole.Owner, AlbumUserRole.Editor])
+      .where('album.deletedAt', 'is', null)
+      .where('asset.deletedAt', 'is', null)
+      .$if(options.excludeLocked === true, (qb) => qb.where('album.isLocked', '=', false))
+      // As the album list: an album shared with this user counts as Personal, whatever its owner's scope.
+      .$if(!!options.libraryScope, (qb) =>
+        qb.where((eb) =>
+          eb.or([
+            libraryScopePredicate(options.libraryScope!, 'album'),
+            ...(options.libraryScope === LibraryScope.Personal
+              ? [eb('album_user.role', '!=', AlbumUserRole.Owner)]
+              : []),
+          ]),
+        ),
+      )
+      .groupBy('album_asset.albumId')
+      .orderBy((eb) => eb.fn.max('album_asset.createdAt'), 'desc')
+      .limit(limit)
+      .execute();
+    return rows.map(({ albumId }) => albumId);
+  }
+
   /**
    * FL-1298: how many photos each album holds for its owner, Locked ones included, whatever the session's PIN
    * state. What decides a merge's winner, so it can never depend on who happens to be looking.
@@ -1105,9 +1148,10 @@ export class AlbumRepository {
 
   /**
    * FL-838: one library's folder albums take their folders' photos. `add` puts each folder's photos (see
-   * `isFolderPhoto`) in its album; `remove` takes out of an album the items of its folder whose file is gone
-   * (offline). Nothing else an album holds is touched, so photos the owner put in by hand stay. Returns the
-   * memberships made and ended.
+   * `isFolderPhoto`) in its album, each only once (`library_folder_album_asset` remembers it), so a photo the owner
+   * took out stays out; `remove` takes out of an album the items of its folder whose file is gone (offline) and
+   * forgets them, so they join again if their file comes back. Nothing else an album holds is touched, so photos the
+   * owner put in by hand stay. Returns the memberships made and ended.
    */
   @GenerateSql({
     params: [
@@ -1131,12 +1175,22 @@ export class AlbumRepository {
           ? []
           : (
               await sql<{ albumId: string; assetId: string }>`
+                WITH seen AS (
+                  INSERT INTO library_folder_album_asset ("folderAlbumId", "assetId")
+                  SELECT link.id, asset.id
+                  FROM asset
+                  JOIN unnest(${add.map(({ folderPath }) => folderPath)}::text[], ${add.map(({ albumId }) => albumId)}::uuid[])
+                    AS folder(path, "albumId") ON folder.path = ${folderOf('asset')}
+                  JOIN library_folder_album link
+                    ON link."albumId" = folder."albumId" AND link."libraryId" = ${asUuid(libraryId)}
+                  WHERE asset."libraryId" = ${asUuid(libraryId)} AND ${isFolderPhoto('asset')}
+                  ON CONFLICT DO NOTHING
+                  RETURNING "folderAlbumId", "assetId"
+                )
                 INSERT INTO album_asset ("albumId", "assetId")
-                SELECT folder."albumId", asset.id
-                FROM asset
-                JOIN unnest(${add.map(({ folderPath }) => folderPath)}::text[], ${add.map(({ albumId }) => albumId)}::uuid[])
-                  AS folder(path, "albumId") ON folder.path = ${folderOf('asset')}
-                WHERE asset."libraryId" = ${asUuid(libraryId)} AND ${isFolderPhoto('asset')}
+                SELECT link."albumId", seen."assetId"
+                FROM seen
+                JOIN library_folder_album link ON link.id = seen."folderAlbumId"
                 ON CONFLICT DO NOTHING
                 RETURNING "albumId", "assetId"`.execute(tx)
             ).rows;
@@ -1154,6 +1208,16 @@ export class AlbumRepository {
                   AND folder.path = ${folderOf('asset')}
                 RETURNING member."albumId", member."assetId"`.execute(tx)
             ).rows;
+      if (removed.length > 0) {
+        await sql`
+          DELETE FROM library_folder_album_asset seen
+          USING library_folder_album link,
+            unnest(${removed.map(({ albumId }) => albumId)}::uuid[], ${removed.map(({ assetId }) => assetId)}::uuid[])
+              AS gone("albumId", "assetId")
+          WHERE seen."folderAlbumId" = link.id AND link."albumId" = gone."albumId" AND seen."assetId" = gone."assetId"`.execute(
+          tx,
+        );
+      }
       await repository.invalidateSourceMemberships(removed);
       return { added, removed };
     });

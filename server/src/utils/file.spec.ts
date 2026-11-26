@@ -12,6 +12,7 @@ import { CacheControl } from 'src/enum.js';
 import {
   DOCUMENT_CONTENT_SECURITY_POLICY,
   FileDownloadResponse,
+  effectiveCacheControl,
   getFileNameWithoutExtension,
   getFilenameExtension,
   getLivePhotoMotionFilename,
@@ -29,6 +30,7 @@ const accessMock = vi.mocked(access);
 const fixture = () => {
   const response = {
     headersSent: false,
+    req: { secure: true } as Record<string, unknown>,
     header: vi.fn(),
     append: vi.fn(),
     sendFile: vi.fn((_path: string, _options: unknown, callback: (error?: Error) => void) => callback()),
@@ -77,6 +79,53 @@ describe('file delivery', () => {
       expect(f.release.mock.contexts).toEqual([file]);
       expect(f.next).not.toHaveBeenCalled();
     }
+  });
+
+  it('sends cacheable files as revalidate-every-time off https and to unlocked sessions (FL-1771)', async () => {
+    const revalidate = 'private, no-cache, no-transform';
+    const cases: [Record<string, unknown> | undefined, CacheControl, CacheControl][] = [
+      [{ secure: true }, CacheControl.PrivateWithCache, CacheControl.PrivateWithCache],
+      [{ secure: true }, CacheControl.PrivateImmutable, CacheControl.PrivateImmutable],
+      [{ secure: false, frameleafTrustedTls: true }, CacheControl.PrivateWithCache, CacheControl.PrivateWithCache],
+      [
+        { secure: false, frameleafForwarded: { proto: 'https' } },
+        CacheControl.PrivateImmutable,
+        CacheControl.PrivateImmutable,
+      ],
+      [{ secure: false }, CacheControl.PrivateWithCache, CacheControl.PrivateWithoutCache],
+      [{ secure: false }, CacheControl.PrivateImmutable, CacheControl.PrivateWithoutCache],
+      [
+        { secure: false, frameleafForwarded: { proto: 'http' } },
+        CacheControl.PrivateWithCache,
+        CacheControl.PrivateWithoutCache,
+      ],
+      [undefined, CacheControl.PrivateWithCache, CacheControl.PrivateWithoutCache],
+      [
+        { secure: true, user: { session: { hasElevatedPermission: true } } },
+        CacheControl.PrivateWithCache,
+        CacheControl.PrivateWithoutCache,
+      ],
+      [
+        { secure: true, user: { session: { hasElevatedPermission: true } } },
+        CacheControl.PrivateImmutable,
+        CacheControl.PrivateWithoutCache,
+      ],
+      [
+        { secure: true, user: { session: { hasElevatedPermission: false } } },
+        CacheControl.PrivateImmutable,
+        CacheControl.PrivateImmutable,
+      ],
+      [{ secure: false }, CacheControl.None, CacheControl.None],
+      [{ secure: false }, CacheControl.PrivateWithoutCache, CacheControl.PrivateWithoutCache],
+    ];
+    for (const [req, policy, expected] of cases) {
+      expect(effectiveCacheControl(policy, req as never)).toBe(expected);
+    }
+
+    const f = fixture();
+    f.response.req = { secure: false };
+    await sendFile(f.res, f.next, () => f.file, f.log);
+    expect(f.response.header).toHaveBeenCalledWith('Cache-Control', revalidate);
   });
 
   it('sends nosniff on every file and a sandboxing CSP on SVG, XML and HTML only', async () => {
@@ -371,8 +420,13 @@ describe('sending an encrypted Locked file (FL-721)', () => {
 
   it('never lets a temporary plain copy be stored, and leaves other files as the route asked', async () => {
     path = join(directory, 'plain.jpg');
-    const ordinary = await request(app()).get('/file').expect(200);
+    const server = app();
+    // the policy a route asks for holds over https (FL-1771); the test talks to it through a local proxy
+    server.set('trust proxy', 'loopback');
+    const ordinary = await request(server).get('/file').set('X-Forwarded-Proto', 'https').expect(200);
     expect(ordinary.headers['cache-control']).toContain('max-age=86400');
+    const plainHttp = await request(server).get('/file').expect(200);
+    expect(plainHttp.headers['cache-control']).toBe('private, no-cache, no-transform');
     vi.stubEnv('FRAMELEAF_LOCKED_TMP', directory);
     try {
       const copy = await request(app()).get('/file').expect(200);

@@ -8,8 +8,13 @@ import { invoiceNext, invoiceStatus } from 'src/utils/photography-invoice.js';
 
 export type InvoiceRow = Selectable<PhotographyInvoiceTable> & { paid: number };
 type InvoiceValues = Omit<Insertable<PhotographyInvoiceTable>, 'ownerId' | 'number'>;
+/** FL-1769: only money in the invoice's own currency counts; a payment in an earlier currency is owed back. */
 const paidSum = sql<number>`(SELECT coalesce(sum(p.amount),0)::int FROM photography_payment p
-  WHERE p."invoiceId"=photography_invoice.id AND p.status='paid')`.as('paid');
+  WHERE p."invoiceId"=photography_invoice.id AND p.status='paid' AND p.currency=photography_invoice.currency)`.as(
+  'paid',
+);
+/** How long a checkout attempt is held for its payer; `attempt` reuses one this young. */
+const HOLD_MINUTES = 30;
 
 /** FL-1081: invoices and the payments recorded against them. */
 @Injectable()
@@ -61,7 +66,10 @@ export class PhotographyInvoiceRepository {
       return id;
     });
   }
-  /** Edits are allowed until money is recorded; returns false otherwise. */
+  /**
+   * Edits are allowed until money is recorded, and not while a payer holds a checkout (FL-1769: that
+   * Stripe page would still take the old amount); returns false otherwise.
+   */
   async update(ownerId: string, id: string, values: InvoiceValues) {
     const { numUpdatedRows } = await this.db
       .updateTable('photography_invoice')
@@ -79,16 +87,31 @@ export class PhotographyInvoiceRepository {
           ),
         ),
       )
+      .where(({ not, exists, selectFrom }) =>
+        not(
+          exists(
+            selectFrom('photography_payment as p')
+              .select('p.id')
+              .whereRef('p.invoiceId', '=', 'photography_invoice.id')
+              .where('p.status', '=', 'pending')
+              .where('p.checkoutId', 'is not', null)
+              .where('p.createdAt', '>', sql<Date>`now() - make_interval(mins => ${HOLD_MINUTES})`),
+          ),
+        ),
+      )
       .executeTakeFirst();
     return numUpdatedRows > 0n;
   }
-  /** Adds an emailed link; links sent earlier keep working. */
-  async send(ownerId: string, id: string, tokenHash: string) {
+  /**
+   * Adds an emailed link; links sent earlier keep working. A reminder (FL-1769) keeps the date the
+   * invoice was sent.
+   */
+  async send(ownerId: string, id: string, tokenHash: string, { reminder = false }: { reminder?: boolean } = {}) {
     const { numUpdatedRows } = await this.db
       .updateTable('photography_invoice')
       .set({
         tokenHashes: sql`array_append("tokenHashes", ${tokenHash})`,
-        sentAt: new Date(),
+        sentAt: reminder ? sql`coalesce("sentAt", now())` : new Date(),
         status: sql`CASE WHEN status='draft' THEN 'sent' ELSE status END`,
       })
       .where('ownerId', '=', ownerId)
@@ -157,7 +180,7 @@ export class PhotographyInvoiceRepository {
    * The checkout attempt for the amount due now. One attempt is held per invoice for `holdMinutes`, so two
    * payers can't pay the same instalment; a retry within the hold gets the same attempt (and Stripe session).
    */
-  attempt(id: string, holdMinutes = 30) {
+  attempt(id: string, holdMinutes = HOLD_MINUTES) {
     return this.db.transaction().execute(async (trx) => {
       const invoice = await this.locked(trx, id);
       const next =
@@ -169,6 +192,9 @@ export class PhotographyInvoiceRepository {
         .where('invoiceId', '=', id)
         .where('status', '=', 'pending')
         .where('createdAt', '>', sql<Date>`now() - make_interval(mins => ${holdMinutes})`)
+        // An attempt for another amount or currency (the invoice was edited or part-paid since) is not this payment.
+        .where('amount', '=', next.amount)
+        .where('currency', '=', invoice.currency)
         .orderBy('createdAt', 'desc')
         .executeTakeFirst();
       if (held) return { invoice, payment: held, reused: true };
@@ -200,7 +226,7 @@ export class PhotographyInvoiceRepository {
     return this.db.transaction().execute(async (trx) => {
       const payment = await trx
         .selectFrom('photography_payment')
-        .select(['invoiceId', 'amount', 'status'])
+        .select(['invoiceId', 'amount', 'currency', 'status'])
         .where('id', '=', paymentId)
         .executeTakeFirst();
       const invoice = payment?.invoiceId ? await this.locked(trx, payment.invoiceId) : undefined;
@@ -216,11 +242,22 @@ export class PhotographyInvoiceRepository {
         .where('status', 'in', from)
         .executeTakeFirst();
       if (moved.numUpdatedRows === 0n) return { moved: false, overpaid: false };
-      const delta =
-        to === 'paid' ? payment.amount : to === 'refunded' && payment.status === 'paid' ? -payment.amount : 0;
+      // FL-1769: a payment in a currency the invoice no longer uses never counts towards it (see `paidSum`)
+      const sameCurrency = payment.currency === invoice.currency;
+      const delta = sameCurrency
+        ? to === 'paid'
+          ? payment.amount
+          : to === 'refunded' && payment.status === 'paid'
+            ? -payment.amount
+            : 0
+        : 0;
       const paid = invoice.paid + delta;
       await this.settle(trx, invoice, paid);
-      return { moved: true, overpaid: to === 'paid' && paid > invoice.total };
+      // Money landing on a voided invoice, or in another currency, is owed back just like money past the total.
+      return {
+        moved: true,
+        overpaid: to === 'paid' && (paid > invoice.total || invoice.status === 'void' || !sameCurrency),
+      };
     });
   }
   /** Sent or part-paid invoices with reminders on, not yet reminded today. */

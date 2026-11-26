@@ -351,6 +351,8 @@ class Api {
       autoUpdate: store.get<boolean>('auto-update') !== false,
       /** FL-973: the last update can be undone until `until`. */
       rollback: operations.rollbackOffer(),
+      /** Other containers that can write to the library's folders: shown as a warning, never blocks. */
+      otherWriters: await operations.otherWriters(),
       /** Why the last automatic update check could not start an update, until a later check does. */
       autoUpdateFailure: store.get<{ code: string; at: string }>('auto-update-failure'),
       profile: store.get('profile'),
@@ -544,8 +546,15 @@ class Api {
   @Get('backups') async snapshots() {
     return (await backups.list()).map(({ id, time }) => ({ id, time }));
   }
-  @Get('backup-status') backupStatus() {
-    return backups.status();
+  /** FL-1732: delete one recovery point; the password is asked again because this cannot be undone. */
+  @Post('backup-delete') async backupDelete(@Body() input: unknown) {
+    const { id, password } = z.object({ id: z.string().regex(/^[a-f0-9]{64}$/), password: z.string().max(256) }).strict().parse(input);
+    await security.confirm(password);
+    await operations.deleteRecoveryPoint(id);
+    return { ...(await backups.status()), protected: [...operations.protectedRecoveryPoints()] };
+  }
+  @Get('backup-status') async backupStatus() {
+    return { ...(await backups.status()), protected: [...operations.protectedRecoveryPoints()] };
   }
   @Post('backup-key') async backupKey(@Body() input: unknown, @Res() response: Response) {
     const { password } = z

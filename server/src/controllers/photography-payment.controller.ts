@@ -10,9 +10,11 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
+  Req,
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import type { Request } from 'express';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import {
   PhotographyPayCheckoutDto,
@@ -30,6 +32,7 @@ import { Auth, Authenticated } from 'src/middleware/auth.guard.js';
 import { RateLimited } from 'src/middleware/rate-limit.guard.js';
 import { ClientsPaymentsService } from 'src/services/clients-payments.service.js';
 import { PhotographyPaymentService } from 'src/services/photography-payment.service.js';
+import { checkoutOrigin } from 'src/utils/clients-payments.js';
 
 const uuid = new ParseUUIDPipe({ version: '4' });
 
@@ -101,9 +104,10 @@ export class PhotographyPaymentController {
     @Param('slug') slug: string,
     @Body() dto: PhotographyPayCheckoutDto,
     @Headers('origin') origin: string | undefined,
+    @Req() request: Request,
   ) {
-    // Stripe returns the payer to the address they came from, else this server's public address.
-    const from = origin && /^https?:\/\/[^/\s]+$/.test(origin) ? origin : await this.payments.publicUrl();
+    // Stripe returns the payer to the address they came from when it is this server's, else its public address.
+    const from = checkoutOrigin(origin, await this.payments.publicUrl(), request.hostname);
     if (!from) throw new ServiceUnavailableException('Set this server’s public address to take payments');
     return this.service.checkout(slug, dto, from);
   }

@@ -392,7 +392,10 @@
       // the next check tries again; a lost link shows up in the status and sends the sheet back a step
       await cloudManager.refresh();
     }
-    arrived();
+    // The link may have been lost while this look was out: the sheet is back on the link step by then.
+    if (stage === 'paying') {
+      arrived();
+    }
   };
   const arrived = () => {
     if (!lacks || !feature) {

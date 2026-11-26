@@ -186,6 +186,8 @@ const requester = (options: ResumableUploadOptions) => {
       body: body as BodyInit | undefined,
       signal: options.signal,
       credentials: 'same-origin',
+      // fetch keeps custom headers across origins, so a redirect would hand an API key (and the file) to its target
+      redirect: options.headers ? 'error' : 'follow',
     });
 };
 

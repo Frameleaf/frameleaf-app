@@ -93,7 +93,12 @@ describe('processing order (FL-456)', () => {
           overrides: {},
         },
       });
-      expect(candidates.map(({ source }) => source)).toEqual([MlProcessingSource.Cloud, MlProcessingSource.Local]);
+      // FD-31: descriptions may go to the desktop helpers too
+      expect(candidates.map(({ source }) => source)).toEqual([
+        MlProcessingSource.Cloud,
+        MlProcessingSource.Local,
+        MlProcessingSource.Desktops,
+      ]);
       expect(firstCandidate(candidates)?.destinationId).toBe(cloud.id);
     });
 
@@ -158,7 +163,8 @@ describe('processing order (FL-456)', () => {
         plan({ workload: MlWorkload.Face, storedRoute: { destinationId, origin: 'pinned' } }).map(
           ({ destinationId }) => destinationId,
         );
-      expect(pinnedTo(libraryLan.id)).toEqual([libraryLan.id]);
+      // the computer itself, then the desktops standing in for it: one place either way
+      expect(pinnedTo(libraryLan.id)).toEqual([libraryLan.id, libraryLan.id]);
       expect(pinnedTo(null)).toEqual([]);
       expect(
         followsMainOrder({ order: [...DEFAULT_ML_PROCESSING_ORDER], overrides: {} }, MlWorkload.Face, {
@@ -202,13 +208,43 @@ describe('processing order (FL-456)', () => {
       expect(candidates).toEqual([]);
     });
 
-    it('offers the desktop helpers only for search, faces and text, through a route this server made', () => {
+    it('offers the desktop helpers for search, faces, text and descriptions, whichever route sent the work home', () => {
       const pool = (input: Partial<MlRoutePlanInput>) => plan(input).filter(({ desktopPool }) => desktopPool);
       expect(pool({ workload: MlWorkload.Ocr })).toHaveLength(1);
-      expect(pool({ workload: MlWorkload.Enrichment })).toHaveLength(0);
-      expect(pool({ storedRoute: { destinationId: local.id, origin: 'pinned' } })).toHaveLength(0);
+      expect(pool({ workload: MlWorkload.Enrichment })).toHaveLength(1);
       expect(pool({ storedRoute: undefined })).toHaveLength(0);
       expect(pool({ desktopsReady: false })).toEqual([expect.objectContaining({ available: false })]);
+      // a legacy route follows the main order; its desktops stand in for the destination it names
+      expect(places(plan({ storedRoute: { destinationId: local.id, origin: 'legacy' } }))).toEqual([
+        { destinationId: local.id, desktopPool: false, available: true },
+        { destinationId: libraryLan.id, desktopPool: false, available: true },
+        { destinationId: local.id, desktopPool: true, available: true },
+      ]);
+      // a route pinned to this server: this server first, then its desktops, and nowhere else
+      expect(places(plan({ storedRoute: { destinationId: local.id, origin: 'pinned' } }))).toEqual([
+        { destinationId: local.id, desktopPool: false, available: true },
+        { destinationId: local.id, desktopPool: true, available: true },
+      ]);
+      // a route pinned to a computer by address: that computer, then the desktops standing in for it
+      expect(places(plan({ storedRoute: { destinationId: libraryLan.id, origin: 'pinned' } }))).toEqual([
+        { destinationId: libraryLan.id, desktopPool: false, available: true },
+        { destinationId: libraryLan.id, desktopPool: true, available: true },
+      ]);
+    });
+
+    it('keeps Frameleaf Cloud work on Frameleaf Cloud, and a workload with its own list to that list', () => {
+      const pool = (input: Partial<MlRoutePlanInput>) => plan(input).filter(({ desktopPool }) => desktopPool);
+      const order = { order: [...DEFAULT_ML_PROCESSING_ORDER], overrides: {} };
+      expect(
+        pool({ workload: MlWorkload.Enrichment, storedRoute: { destinationId: cloud.id, origin: 'pinned' } }),
+      ).toHaveLength(0);
+      expect(pool({ storedRoute: { destinationId: cloud.id, origin: 'legacy' } })).toHaveLength(0);
+      expect(
+        pool({
+          order: { ...order, overrides: { [MlWorkload.Face]: [MlProcessingSource.Local] } },
+          storedRoute: { destinationId: local.id, origin: 'pinned' },
+        }),
+      ).toHaveLength(0);
     });
 
     it('lists Frameleaf Cloud only when it may run the work, and uses it only with consent, within budget and turned on', () => {
@@ -231,7 +267,8 @@ describe('processing order (FL-456)', () => {
         destinations: [local, second],
         storedRoute: { destinationId: second.id, origin: 'pinned' },
       });
-      expect(candidates.map(({ destinationId }) => destinationId)).toEqual([second.id, local.id]);
+      // the desktop helpers stand in for the destination the route names
+      expect(candidates.map(({ destinationId }) => destinationId)).toEqual([second.id, local.id, second.id]);
     });
   });
 

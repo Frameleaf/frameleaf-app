@@ -351,6 +351,8 @@ describe(MediaRecoveryRepository.name, () => {
       ).toEqual({
         outcome: 'needs-review',
         reason: 'reserved_import_content_match',
+        // the upload that won, noted so review can show it (FL-1749)
+        matchAssetIds: [context.assetId],
       });
       expect(
         await db.selectFrom('asset').select('id').where('ownerId', '=', context.authority.ownerId).execute(),

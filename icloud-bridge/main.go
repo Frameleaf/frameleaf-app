@@ -317,6 +317,11 @@ func (b *bridge) auth(w http.ResponseWriter, r *http.Request, q *request) error 
 			switch f.code {
 			case "rate_limited":
 				return f
+			case "upstream_error":
+				// Apple did not answer the approval check: the session stays as it was, waiting for approval.
+				if q.Action == "device-approval" {
+					return f
+				}
 			case "device_approval_required":
 				e.State = "awaiting-device-approval"
 			}

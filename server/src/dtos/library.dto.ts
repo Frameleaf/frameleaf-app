@@ -7,6 +7,8 @@ import { isoDatetimeToDate, stringToBool } from 'src/validation.js';
 /** FL-78: the library form's limits. A folder or pattern longer than this is not a real one. */
 export const LIBRARY_NAME_MAX_LENGTH = 160;
 export const LIBRARY_PATH_MAX_LENGTH = 1024;
+/** FL-838: a folder estimate lists at most this many folders; the preview folds long before. */
+export const FOLDER_ESTIMATE_FOLDERS = 2000;
 
 const stringArrayMax128 = z
   .array(z.string().max(LIBRARY_PATH_MAX_LENGTH))
@@ -21,6 +23,10 @@ const CreateLibrarySchema = z
     name: z.string().min(1).max(LIBRARY_NAME_MAX_LENGTH).optional().describe('Library name'),
     importPaths: stringArrayMax128.optional().describe('Import paths (max 128)'),
     exclusionPatterns: stringArrayMax128.optional().describe('Exclusion patterns (max 128)'),
+    folderAlbums: z
+      .boolean()
+      .optional()
+      .describe('Keep an album for each folder of the library, made after its first scan. Off when left out.'),
   })
   .meta({ id: 'CreateLibraryDto' });
 
@@ -276,6 +282,18 @@ const LibraryFolderEstimateResponseSchema = z
     complete: z
       .boolean()
       .describe('False when the count stopped early (a very large or slow folder), so it is a lower bound'),
+    folders: z
+      .array(
+        z
+          .object({
+            path: z.string().describe('A folder holding photos or videos, without a trailing slash'),
+            count: z.int().min(0).describe('Photos and videos directly in it'),
+          })
+          .meta({ id: 'LibraryFolderEstimateFolderDto' }),
+      )
+      .describe(
+        `The folders holding photos or videos, for the folder albums preview (FL-838); at most ${FOLDER_ESTIMATE_FOLDERS}`,
+      ),
   })
   .meta({ id: 'LibraryFolderEstimateResponseDto' });
 

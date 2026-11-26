@@ -98,7 +98,7 @@ test('fresh setup accepts only a proven absent host list; imports still require 
     });
     if (response === 'missing') {
       assert.equal(await file.read(false), '');
-      await new Fencing(docker as any, { directory: '/state' } as Store, file).assertMedia([]);
+      await new Fencing(docker as any, { directory: '/state' } as Store, file).warnMediaWriters([]);
     }
     else await assert.rejects(file.read(false), { message: 'unraid_autostart_unavailable' });
     await assert.rejects(file.read(true), { message: 'unraid_autostart_unavailable' });

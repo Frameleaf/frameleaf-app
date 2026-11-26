@@ -4,6 +4,7 @@ vi.mock('./delivery', () => ({
   wakeDelivery: vi.fn().mockResolvedValue(undefined),
   stopDelivery: vi.fn(),
   deliveryError: vi.fn().mockReturnValue(null),
+  onDeliverySettled: vi.fn(),
 }));
 vi.mock('./api', async (original) => ({
   ...(await original<typeof import('./api')>()),
@@ -77,6 +78,12 @@ beforeEach(() => {
       onClicked: event(),
     },
     alarms: { create: vi.fn().mockResolvedValue(undefined), onAlarm: event() },
+    commands: { onCommand: event() },
+    action: {
+      setBadgeText: vi.fn().mockResolvedValue(undefined),
+      setBadgeBackgroundColor: vi.fn().mockResolvedValue(undefined),
+      setTitle: vi.fn().mockResolvedValue(undefined),
+    },
   });
   fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
     if (url.endsWith('/api/server/ping')) return json({ res: 'pong' });

@@ -1,5 +1,6 @@
 import { LibraryAssetItemKind, type LibraryItemDto } from '@frameleaf/sdk';
 import { fireEvent, render } from '@testing-library/svelte';
+import { tick } from 'svelte';
 import { describe, expect, it, vi } from 'vitest';
 import BoardsGrid from '$lib/components/frameleaf/BoardsGrid.svelte';
 import type { LibrarySessionStore } from '$lib/frameleaf/library-session.svelte';
@@ -73,5 +74,35 @@ describe('BoardsGrid', () => {
     expect(onOpen).toHaveBeenCalledWith(missing.id);
     expect(container.querySelectorAll(':scope .bg-open img')).toHaveLength(2);
     expect(container.querySelector('[data-broken-asset]')).toBeNull();
+  });
+
+  it('asks for another page when the end is still in view after a page lands', async () => {
+    const callbacks: IntersectionObserverCallback[] = [];
+    vi.stubGlobal(
+      'IntersectionObserver',
+      class {
+        constructor(callback: IntersectionObserverCallback) {
+          callbacks.push(callback);
+        }
+        observe() {}
+        disconnect() {}
+      },
+    );
+    const [first, second] = timelineAssetFactory.buildList(2);
+    const toItem = (asset: typeof first) =>
+      ({ kind: LibraryAssetItemKind.Asset, asset: { id: asset.id } }) as unknown as LibraryItemDto;
+    const onEndReached = vi.fn();
+    const props = { session, layout: 'grid', tileSize: 180, showNames: false, onOpen: vi.fn(), onEndReached } as const;
+    const { rerender } = render(BoardsGrid, { ...props, items: [toItem(first)], assets: [first] });
+    await tick();
+    expect(callbacks).toHaveLength(1);
+
+    await rerender({ ...props, items: [toItem(first), toItem(second)], assets: [first, second] });
+    await tick();
+
+    expect(callbacks).toHaveLength(2);
+    callbacks[1]([{ isIntersecting: true } as IntersectionObserverEntry], {} as IntersectionObserver);
+    expect(onEndReached).toHaveBeenCalledTimes(1);
+    vi.unstubAllGlobals();
   });
 });

@@ -98,7 +98,14 @@ type Context = {
   disabled: { count: number };
   /** Inside a multicam angle: keep only the picture or only the sound. */
   only?: 'video' | 'audio';
+  /** How many compound or multicam clips this one sits inside. */
+  depth: number;
+  /** Elements read in the whole file: a compound clip is read again each time it is used. */
+  read: { count: number };
 };
+
+const MAX_NESTING = 32;
+const MAX_ELEMENTS_READ = 1_000_000;
 
 const bucket = (context: Context, kind: Track['kind'], lane: number, role: string | undefined) => {
   const key = kind === 'video' ? `v:${lane}` : `a:${role ?? lane}`;
@@ -322,13 +329,19 @@ const assetClip = (
 
 /** A sequence inside a compound clip or one angle of a multicam, as tracks. */
 const nestedTracks = (context: Context, items: XmlNode[], origin: number, only?: 'video' | 'audio'): Track[] => {
-  const inner: Context = { ...context, buckets: new Map(), only: only ?? context.only };
+  if (context.depth >= MAX_NESTING) {
+    throw new InterchangeReadError('too-complex', 'The project nests compound clips too deeply to read');
+  }
+  const inner: Context = { ...context, buckets: new Map(), only: only ?? context.only, depth: context.depth + 1 };
   readContainer(inner, items, (time) => time - origin, 0);
   return tracksOf(inner);
 };
 
 /** One element of a storyline at `lane`; `toTimeline` turns the parent's times into the timeline's. */
 const readItem = (context: Context, original: XmlNode, toTimeline: (time: number) => number, lane: number) => {
+  if (++context.read.count > MAX_ELEMENTS_READ) {
+    throw new InterchangeReadError('too-complex', 'The project nests too many clips to read');
+  }
   let node = original;
   if (node.name === 'audition') {
     const picked = node.children.find((item) => CLIP_ELEMENTS.has(item.name));
@@ -524,6 +537,7 @@ export const readFcpxml = (bytes: Buffer | string): InterchangeProject => {
     throw new InterchangeReadError('empty', 'This Final Cut Pro XML file has no project in it');
   }
   const disabled = { count: 0 };
+  const read = { count: 0 };
   const timelines: Timeline[] = [];
   for (const project of projects) {
     const sequence = child(project, 'sequence');
@@ -542,6 +556,8 @@ export const readFcpxml = (bytes: Buffer | string): InterchangeProject => {
       canvasHeight: canvas.height,
       buckets: new Map(),
       disabled,
+      depth: 0,
+      read,
     };
     const origin = fcpxmlSeconds(sequence.attributes.tcStart);
     readContainer(context, child(sequence, 'spine')?.children ?? [], (time) => time - origin, 0);

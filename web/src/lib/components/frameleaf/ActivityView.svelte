@@ -95,6 +95,7 @@
   } from '@mdi/js';
   import { onMount, untrack } from 'svelte';
   import { locale, t } from 'svelte-i18n';
+  import { SvelteSet } from 'svelte/reactivity';
 
   /**
    * The Activity page (FL-104), ported from the prototype's `Processing` screen
@@ -117,7 +118,8 @@
   let { filter: initialFilter = 'all' }: { filter?: ActivityFilter } = $props();
 
   let filter = $state<ActivityFilter>(initialFilter);
-  let busyId = $state<string | null>(null);
+  /** Rows with a request out. Several can be, and one finishing must not free another's buttons. */
+  const busyIds = new SvelteSet<string>();
   /** Row heading ids come from the list position: an item id can hold spaces (a download key). */
   const rowIdPrefix = $props.id();
   /** No ancestor sets the token scope for this page, so it declares its own, as AuthShell does. */
@@ -498,14 +500,17 @@
   };
 
   const run = async (item: ActivityItem, action: () => Promise<unknown>, announceKey: Translations) => {
-    busyId = item.id;
+    if (busyIds.has(item.id)) {
+      return;
+    }
+    busyIds.add(item.id);
     try {
       await action();
       announcement = $t(announceKey, { values: { name: nameOf(item) } });
     } catch (error) {
       handleError(error, $t('errors.something_went_wrong'));
     } finally {
-      busyId = null;
+      busyIds.delete(item.id);
     }
   };
 
@@ -700,7 +705,7 @@
       {#each stoppedScans as item (item.id)}
         <ActivityScanStopped
           {item}
-          busy={busyId === item.id}
+          busy={busyIds.has(item.id)}
           onScanAgain={(libraryId) => scanAgain(item, libraryId)}
           onDismiss={() => dismiss(item)}
         />
@@ -872,7 +877,7 @@
         {/if}
         {#if item.canPause && item.source === 'job'}
           <Button
-            disabled={busyId === item.id}
+            disabled={busyIds.has(item.id)}
             label={$t('frameleaf_running_pause', { values: { name: nameOf(item) } })}
             onclick={() => pause(item)}
           >
@@ -880,7 +885,7 @@
           </Button>
         {:else if item.canResume && item.source === 'job'}
           <Button
-            disabled={busyId === item.id}
+            disabled={busyIds.has(item.id)}
             label={$t('frameleaf_running_resume', { values: { name: nameOf(item) } })}
             onclick={() => resume(item)}
           >
@@ -902,12 +907,12 @@
           <span id="{rowIdPrefix}-pause-{index}" class="sr-only">{$t(item.pauseBlockedKey)}</span>
         {/if}
         {#if item.canCancel && item.source === 'job'}
-          <Button disabled={busyId === item.id} onclick={() => cancel(item)}>
+          <Button disabled={busyIds.has(item.id)} onclick={() => cancel(item)}>
             <Icon icon={mdiCancel} size="1.125rem" aria-hidden={true} />{$t('cancel')}
           </Button>
         {/if}
         {#if item.canRetry}
-          <Button disabled={busyId === item.id} onclick={() => retry(item)}>
+          <Button disabled={busyIds.has(item.id)} onclick={() => retry(item)}>
             <Icon icon={mdiRefresh} size="1.125rem" aria-hidden={true} />{$t('retry')}
           </Button>
         {/if}
@@ -921,7 +926,7 @@
         {#if item.canDismiss}
           <IconButton
             variant="default"
-            disabled={busyId === item.id}
+            disabled={busyIds.has(item.id)}
             label={$t('frameleaf_activity_clear_one', { values: { name: nameOf(item) } })}
             onclick={() => dismiss(item)}
           >
@@ -1054,7 +1059,7 @@
                 <button
                   type="button"
                   class="fw3-link"
-                  disabled={busyId === item.id}
+                  disabled={busyIds.has(item.id)}
                   aria-label={$t('frameleaf_activity_retry_of', { values: { name } })}
                   onclick={() => retry(item)}>{$t('retry')}</button
                 >

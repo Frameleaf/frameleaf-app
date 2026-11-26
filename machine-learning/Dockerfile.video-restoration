@@ -13,6 +13,13 @@
 #           and hashed lock files at video-restoration/runtimes/realbasicvsr.lock and
 #           video-restoration/runtimes/seedvr2.lock (pip format, --require-hashes). None of
 #           these are committed because none has been qualified yet.
+#   photo   The worker plus the photo repair and colourise runtimes (FL-933): facexlib and
+#           DDColor checkouts sharing one environment. Needs explicit pins:
+#             --build-arg FACEXLIB_REVISION=<40-char commit>
+#             --build-arg DDCOLOR_REVISION=<40-char commit>
+#             --build-arg PHOTO_PYTHON=<python version the lock was made for>
+#           The hashed lock is video-restoration/runtimes/photo.lock. Its image revision is a
+#           content hash (frameleaf_ml/video_restoration/image_revision.py), not the commit.
 #
 # Weights are never baked into the image. Mount them read-only (default /restoration/weights,
 # and SeedVR2's ckpts/ inside its checkout) and mount the manifest and qualification files
@@ -51,6 +58,8 @@ FROM worker-base AS worker
 
 WORKDIR /usr/src
 COPY frameleaf_ml frameleaf_ml
+# The photo runtimes' entry points (FL-933); they run with a model runtime's own interpreter.
+COPY video-restoration/runtimes/photo_repair.py video-restoration/runtimes/colourise.py video-restoration/runtimes/
 
 ARG BUILD_SOURCE_COMMIT
 ARG FRAMELEAF_RESTORATION_IMAGE_REVISION=${BUILD_SOURCE_COMMIT}
@@ -131,6 +140,64 @@ RUN --mount=type=bind,source=video-restoration/runtimes,target=/runtimes \
     uv python install "$SEEDVR2_PYTHON" && \
     uv venv --python "$SEEDVR2_PYTHON" /opt/restoration/seedvr/.venv && \
     VIRTUAL_ENV=/opt/restoration/seedvr/.venv uv pip install --require-hashes --no-deps -r /runtimes/seedvr2.lock
+
+# ---------------------------------------------------------------------------------------
+# Photo repair and colourise (FL-933): facexlib and DDColor at exact commits. Both are plain
+# PyTorch (no compiled extensions), so they share one environment; LaMa runs in ONNX Runtime
+# inside it. The entry points are the worker's own video-restoration/runtimes/*.py.
+# ---------------------------------------------------------------------------------------
+FROM worker-base AS photo-runtime
+
+ARG FACEXLIB_REVISION
+ARG DDCOLOR_REVISION
+ARG PHOTO_PYTHON
+RUN test -n "$FACEXLIB_REVISION" && test -n "$DDCOLOR_REVISION" && test -n "$PHOTO_PYTHON" || \
+    { echo "FACEXLIB_REVISION, DDCOLOR_REVISION and PHOTO_PYTHON must pin the qualified runtime" >&2; exit 1; }
+
+RUN git init -q /opt/restoration/facexlib && \
+    git -C /opt/restoration/facexlib remote add origin https://github.com/xinntao/facexlib.git && \
+    git -C /opt/restoration/facexlib fetch -q --depth 1 origin "$FACEXLIB_REVISION" && \
+    git -C /opt/restoration/facexlib checkout -q --detach FETCH_HEAD && \
+    test "$(git -C /opt/restoration/facexlib rev-parse HEAD)" = "$FACEXLIB_REVISION"
+
+RUN git init -q /opt/restoration/ddcolor && \
+    git -C /opt/restoration/ddcolor remote add origin https://github.com/piddnad/DDColor.git && \
+    git -C /opt/restoration/ddcolor fetch -q --depth 1 origin "$DDCOLOR_REVISION" && \
+    git -C /opt/restoration/ddcolor checkout -q --detach FETCH_HEAD && \
+    test "$(git -C /opt/restoration/ddcolor rev-parse HEAD)" = "$DDCOLOR_REVISION"
+
+RUN --mount=type=bind,source=video-restoration/runtimes,target=/runtimes \
+    test -f /runtimes/photo.lock || { echo "video-restoration/runtimes/photo.lock is required" >&2; exit 1; } && \
+    uv python install "$PHOTO_PYTHON" && \
+    uv venv --python "$PHOTO_PYTHON" /opt/restoration/photo/.venv && \
+    VIRTUAL_ENV=/opt/restoration/photo/.venv UV_INDEX_STRATEGY=unsafe-best-match \
+      uv pip install --require-hashes --no-deps -r /runtimes/photo.lock
+
+FROM worker AS photo
+
+USER 0:0
+COPY --from=photo-runtime /opt/python /opt/python
+COPY --from=photo-runtime /opt/restoration/facexlib /opt/restoration/facexlib
+COPY --from=photo-runtime /opt/restoration/ddcolor /opt/restoration/ddcolor
+COPY --from=photo-runtime /opt/restoration/photo /opt/restoration/photo
+COPY video-restoration/runtimes/photo.lock video-restoration/runtimes/photo.lock
+COPY video-restoration/qualification video-restoration/qualification
+
+# The revision is a hash of what can change a model's output, not the commit, so an unrelated
+# release keeps its qualification. The worker recomputes it at startup and refuses on a mismatch.
+ARG CUDA_RUNTIME_BASE
+RUN git config --system --add safe.directory /opt/restoration/facexlib && \
+    git config --system --add safe.directory /opt/restoration/ddcolor && \
+    python -m frameleaf_ml.video_restoration.image_revision write \
+      --root /usr/src \
+      --out /opt/restoration/image-revision.json \
+      --base-image "$CUDA_RUNTIME_BASE" \
+      --python /opt/restoration/photo/.venv/bin/python \
+      --checkout facexlib=/opt/restoration/facexlib \
+      --checkout ddcolor=/opt/restoration/ddcolor
+ENV FRAMELEAF_RESTORATION_IMAGE_REVISION= \
+    FRAMELEAF_RESTORATION_IMAGE_REVISION_FILE=/opt/restoration/image-revision.json
+USER 10001:10001
 
 # ---------------------------------------------------------------------------------------
 # Worker with both runtimes. Still serves nothing until the manifest, weights and a

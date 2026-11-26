@@ -9,6 +9,7 @@ import {
   AlbumIconCatalogueResponseDto,
   AlbumOrderDto,
   AlbumPersonResponseDto,
+  AlbumRecentlyAddedResponseDto,
   AlbumResponseDto,
   AlbumStatisticsResponseDto,
   AlbumTreeResponseDto,
@@ -55,6 +56,17 @@ export class AlbumController {
   })
   createAlbum(@Auth() auth: AuthDto, @Body() dto: CreateAlbumDto): Promise<AlbumResponseDto> {
     return this.service.create(auth, dto);
+  }
+
+  @Get('recently-added')
+  @Authenticated({ permission: Permission.AlbumRead })
+  @Endpoint({
+    summary: 'List albums that recently received items',
+    description: 'Returns the albums the user may add to, the one that most recently received an item first.',
+    history: new HistoryBuilder().added('v2').beta('v2'),
+  })
+  getRecentlyAddedAlbums(@Auth() auth: AuthDto, @Query() dto: AlbumViewDto): Promise<AlbumRecentlyAddedResponseDto> {
+    return this.service.getRecentlyAdded(auth, dto);
   }
 
   @Get('statistics')

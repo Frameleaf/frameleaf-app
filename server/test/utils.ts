@@ -392,6 +392,12 @@ type Constructor<Type, Args extends Array<any>> = {
   new (...deps: Args): Type;
 };
 
+/** Every located asset response reads the viewer's named places; none unless a test sets some. */
+const withNoUserPlaces = <T extends { getUserPlaces: { mockResolvedValue: (places: never[]) => unknown } }>(map: T) => {
+  map.getUserPlaces.mockResolvedValue([]);
+  return map;
+};
+
 export const getMocks = () => {
   const loggerMock = { setContext: () => {} };
   const configMock = { getEnv: () => ({}) };
@@ -407,7 +413,7 @@ export const getMocks = () => {
   databaseMock.withAssetSidecarLock.mockImplementation((_assetId, fn) => fn(undefined as never));
   databaseMock.withUserPreferencesLock.mockImplementation((_userId, fn) => fn(undefined as never));
   databaseMock.withLockedKeyFileLock.mockImplementation((_userId, fn) => fn());
-  databaseMock.getPostgresVersion = vitest.fn().mockResolvedValue('19rc1 (Debian 19~rc1-1.pgdg12+1)');
+  databaseMock.getPostgresVersion = vitest.fn().mockResolvedValue('19.0 (Debian 19.0-2.pgdg12+1)');
   databaseMock.getPostgresVersionRange = vitest.fn().mockReturnValue('>=19.0.0 <20.0.0');
   databaseMock.createExtension = vitest.fn().mockResolvedValue(void 0);
 
@@ -455,7 +461,7 @@ export const getMocks = () => {
     oauthApp: automock(OAuthAppRepository, { args: [database], strict: false }),
     lockedFile: automock(LockedFileRepository, { args: [database], strict: false }),
     machineLearning: automock(MachineLearningRepository, { args: [loggerMock], strict: false }),
-    map: automock(MapRepository, { args: [undefined, undefined, { setContext: () => {} }] }),
+    map: withNoUserPlaces(automock(MapRepository, { args: [undefined, undefined, { setContext: () => {} }] })),
     media: newMediaRepositoryMock(),
     mediaOperation: automock(MediaOperationRepository, { strict: false }),
     memory: automock(MemoryRepository),
@@ -509,6 +515,7 @@ export const getMocks = () => {
   };
 
   mocks.machineLearning.selectBackgroundPool.mockImplementation((selection) => Promise.resolve(selection));
+  mocks.machineLearning.cloudClipStorageKey.mockImplementation((modelKey) => Promise.resolve(modelKey));
   mocks.machineLearning.captureClipRead.mockResolvedValue({
     assertCurrent: () => Promise.resolve(),
     publish: (write) => write(),
@@ -542,6 +549,11 @@ export const getMocks = () => {
   mocks.partnerOrigin.shareGeneratedFiles.mockResolvedValue([]);
   mocks.partnerOrigin.withOriginEdit.mockImplementation(async (_kind, _ids, _fields, write) => write());
   mocks.partnerOrigin.withPersonOrigin.mockImplementation(async (_owner, _group, write) => write(undefined));
+  // FL-842: nobody is related and nothing is a partner copy unless a test says so
+  mocks.partnerOrigin.getPersonCopies.mockResolvedValue([]);
+  mocks.partnerOrigin.getPersonFollowers.mockResolvedValue([]);
+  mocks.person.getRelationships.mockResolvedValue([]);
+  mocks.person.getOwnPeople.mockResolvedValue([]);
   // Write wrappers run their callback by default so a test cannot pass while silently skipping the write.
   mocks.partnerOrigin.withOwnerTagEdit.mockImplementation(async (_owner, write) => write());
   mocks.person.withMergeWrite.mockImplementation(async (write) => write());

@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { lstat, mkdir, realpath } from 'node:fs/promises';
+import { lstat, mkdir, realpath, rm } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { z } from 'zod';
 import { digest, Refusal, releaseTag } from '../contracts.js';
@@ -42,6 +42,25 @@ async function privateDirectory(path: string) {
   return value;
 }
 
+/**
+ * FL-1770: a prepared review's folder holds the database dump in plain form. Once the review has expired and no
+ * unfinished restore names it, nothing can use it any more, so it is removed when the next review is prepared.
+ * Only folders whose contents were verified (prepared reviews) are removed; a failed review keeps its evidence.
+ */
+async function removeExpiredReviews(store: Store, root: string) {
+  const open = new Set(
+    store
+      .history()
+      .filter((operation) => operation.kind === 'restore' && operation.state !== 'complete')
+      .map((operation) => operation.input.reviewId),
+  );
+  for (const key of store.keys('native-restore-review:')) {
+    const review = Prepared.safeParse(store.get(key));
+    if (!review.success || review.data.expires > Date.now() || open.has(review.data.id)) continue;
+    await rm(join(root, review.data.id), { recursive: true, force: true });
+  }
+}
+
 /** Prepares review evidence only. It grants no authority to stop a host or write a database. */
 export async function prepareNativeRestoreReview(
   store: Store,
@@ -71,6 +90,7 @@ export async function prepareNativeRestoreReview(
     if (error.code !== 'EEXIST') throw error;
   });
   const parent = await privateDirectory(root);
+  await removeExpiredReviews(store, root);
   const intent = {
     id,
     snapshot,

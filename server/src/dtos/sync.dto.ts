@@ -7,7 +7,6 @@ import { PetObservationResponseSchema, PetResponseSchema } from 'src/dtos/pet.dt
 import { PIN_LIMIT, PinnedCollectionSchema, PinnedCollectionsResponseSchema } from 'src/dtos/pinned-collection.dto.js';
 import {
   AlbumKindSchema,
-  AlbumUserRole,
   AlbumUserRoleSchema,
   AssetOrderSchema,
   AssetStatus,
@@ -306,15 +305,6 @@ class SyncAlbumV3 extends createZodDto(SyncAlbumV3Schema) {}
 class SyncAlbumToAssetV1 extends createZodDto(SyncAlbumToAssetV1Schema) {}
 @ExtraModel()
 class SyncAlbumToAssetDeleteV1 extends createZodDto(SyncAlbumToAssetDeleteV1Schema) {}
-
-export function syncAlbumV2ToV1(
-  albumV2: SyncAlbumV2,
-  albumUsers: { userId: string; role: AlbumUserRole }[],
-): SyncAlbumV1 {
-  const owner = albumUsers.find(({ role }) => role === AlbumUserRole.Owner)!;
-
-  return { ...albumV2, ownerId: owner.userId };
-}
 
 const SyncMemoryV1Schema = z
   .object({

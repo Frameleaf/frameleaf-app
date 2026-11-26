@@ -1,4 +1,4 @@
-import { LoginResponseDto, Permission } from '@frameleaf/sdk';
+import { LoginResponseDto, Permission, updateConfig } from '@frameleaf/sdk';
 import { createHash } from 'node:crypto';
 import { createUserDto } from 'src/fixtures.js';
 import { app, asBearerAuth, baseUrl, utils } from 'src/utils.js';
@@ -54,6 +54,10 @@ describe('/oauth/apps', () => {
   beforeAll(async () => {
     await utils.resetDatabase();
     admin = await utils.adminSetup();
+    // FL-1632: apps register themselves only once the administrator allows it
+    const config = await utils.getSystemConfig(admin.accessToken);
+    config.connectedApps = { ...config.connectedApps, allowRegistration: true };
+    await updateConfig({ adminConfigDto: config }, { headers: asBearerAuth(admin.accessToken) });
     user = await utils.userSetup(admin.accessToken, createUserDto.user1);
   });
 

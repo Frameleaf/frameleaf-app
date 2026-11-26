@@ -374,6 +374,9 @@ type MatchedAssets = SelectQueryBuilder<DB, 'asset', any>;
 /** How many items a tag's cover shows. */
 const TAG_COVER_ASSETS = 4;
 
+/** ponytail: cover candidates per landmark; places sharing photos past this many may repeat a cover. */
+const LANDMARK_COVER_CANDIDATES = 12;
+
 const asUuidLiteral = (id: string) => sql`${id}::uuid`;
 
 const trimmed = (column: string) => sql`nullif(trim(${sql.ref(column)}), '')`;
@@ -716,6 +719,25 @@ export class SearchRepository {
   }
 
   /**
+   * FL-1027: cities whose name in `lang` matches any of `spellings`, closest first, by the same trigram rule as
+   * `searchPlaces`. An empty table (no pack yet) finds nothing.
+   */
+  // ponytail: scans one language's names (about 7,000 rows) per search; add a trigram index if that ever shows up
+  searchPlacesByLocalName(lang: string, spellings: string[]) {
+    const matches = spellings.map((spelling) => sql`f_unaccent(name_row.name) %>> f_unaccent(${spelling})`);
+    const distances = spellings.map((spelling) => sql`f_unaccent(name_row.name) <->>> f_unaccent(${spelling})`);
+    return this.db
+      .selectFrom('geodata_place_name as name_row')
+      .innerJoin('geodata_places', 'geodata_places.id', 'name_row.geonameId')
+      .selectAll('geodata_places')
+      .where('name_row.lang', '=', lang)
+      .where(sql<boolean>`(${sql.join(matches, sql` or `)})`)
+      .orderBy(sql`least(${sql.join(distances)})`)
+      .limit(20)
+      .execute();
+  }
+
+  /**
    * FL-49: the pet twin of `PersonRepository.getByName`, for Ask Search. The same trigram rule and
    * order (word similarity 0.5, closest first), over the owner's own, not hidden pets only, and only a
    * pet with at least one confirmed photo the caller may see (timeline, not trashed, not hidden
@@ -889,7 +911,12 @@ export class SearchRepository {
           eb.fn.countAll<number>().as('assetCount'),
           eb.fn.min('matched.localDateTime').as('firstTakenAt'),
           eb.fn.max('matched.localDateTime').as('lastTakenAt'),
-          sql<string>`(array_agg(matched."assetId" order by ${bestCover}))[1]`.as('coverAssetId'),
+          // the best few, so the service can give overlapping places (a resort and its park) different covers
+          sql<
+            string[]
+          >`(array_agg(matched."assetId" order by ${bestCover}))[1:${sql.lit(LANDMARK_COVER_CANDIDATES)}]`.as(
+            'coverAssetIds',
+          ),
           sql<
             string | null
           >`mode() within group (order by asset_exif.city) filter (where matched.inference is null)`.as('city'),
@@ -1389,7 +1416,10 @@ export class SearchRepository {
       ? sql<number>`
         ${blendedClipDistance}
         - ${OCR_FUSION_WEIGHT} * coalesce(
-            1 - (f_unaccent((select text from ocr_search where "assetId" = candidate.id)) <->>> f_unaccent(${fusionText})),
+            1 - least(
+              f_unaccent((select text from ocr_search where "assetId" = candidate.id)) <->>> f_unaccent(${fusionText}),
+              f_unaccent((select "searchText" from asset_print_back where "frontAssetId" = candidate.id)) <->>> f_unaccent(${fusionText})
+            ),
             0
           )
         - ${DESCRIPTION_FUSION_WEIGHT} * coalesce(

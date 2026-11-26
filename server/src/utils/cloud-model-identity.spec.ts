@@ -12,11 +12,13 @@ import {
   localPinnedIdentity,
   localPinnedProfile,
   matchLocalModels,
+  modelIdentityOf,
   sameModelIdentity,
   withCloudIdentityGuard,
 } from 'src/utils/cloud-model-identity.js';
 import { parseDesktopClipSpaces } from 'src/utils/desktop-clip-space.js';
 import { parseDesktopModelCatalogue } from 'src/utils/desktop-model-catalogue.js';
+import { equivalentDesktopModelKeys } from 'src/utils/desktop-model-equivalents.js';
 import { parseLocalModelPins } from 'src/utils/local-model-pins.js';
 
 const SIGLIP = 'ViT-B-16-SigLIP-384__webli';
@@ -180,6 +182,25 @@ describe(sameModelIdentity.name, () => {
     expect(sameModelIdentity({ ...pin, preprocess: 'frameleaf-clip-visual/2' }, pin)).toBe(false);
     expect(sameModelIdentity({ ...pin, output: { ...pin.output, normalized: true } }, pin)).toBe(false);
     expect(sameModelIdentity({ ...pin, name: 'other', repo: 'frameleaf/other' }, pin)).toBe(false);
+  });
+});
+
+describe('runtime revisions of one encoder', () => {
+  it('have one Cloud identity, so a result is accepted whichever revision the release added last', () => {
+    const models = released();
+    for (const modelName of new Set(
+      models.catalogue.profiles.filter((p) => p.workload === 'clip').map((p) => p.modelName),
+    )) {
+      const pinned = localPinnedProfile(MlWorkload.Clip, modelName, models)!;
+      const family = equivalentDesktopModelKeys(pinned.modelKey);
+      expect(family.length, modelName).toBeGreaterThan(1);
+      for (const key of family) {
+        const profile = models.catalogue.profiles.find((item) => item.modelKey === key)!;
+        expect(
+          sameModelIdentity(modelIdentityOf(MlWorkload.Clip, profile), modelIdentityOf(MlWorkload.Clip, pinned)),
+        ).toBe(true);
+      }
+    }
   });
 });
 

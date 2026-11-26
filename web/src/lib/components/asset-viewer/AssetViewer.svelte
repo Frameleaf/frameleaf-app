@@ -945,7 +945,10 @@
       }
       case AssetAction.STACK:
       case AssetAction.SET_STACK_PRIMARY_ASSET: {
-        stack = action.stack;
+        // The viewer may have moved on while this was saving: another item's stack is not shown on this one.
+        if (viewerAlive && action.stack.assets.some(({ id }) => id === asset.id)) {
+          stack = action.stack;
+        }
         break;
       }
       case AssetAction.SET_PERSON_FEATURED_PHOTO: {
@@ -962,6 +965,10 @@
         break;
       }
       case AssetAction.RATING: {
+        // A rating answered after moving on belongs to the item it was set on, not the one now open.
+        if (!viewerAlive || action.asset.id !== asset.id) {
+          break;
+        }
         cursor.current = {
           ...asset,
           exifInfo: {
@@ -1010,7 +1017,15 @@
     const isCurrent = captureView();
     // FL-35: a panorama always opens looking around again after a navigation.
     assetViewerManager.resetPanoramaView();
-    await refreshStack();
+    try {
+      await refreshStack();
+    } catch (error) {
+      // A stack that cannot be read must not leave the previous item's stack, faces and text on this one.
+      console.error('Failed to load the stack', error);
+      if (isCurrent()) {
+        stack = null;
+      }
+    }
     if (!isCurrent()) {
       return;
     }

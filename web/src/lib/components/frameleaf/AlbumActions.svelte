@@ -149,9 +149,12 @@
       if (!album) {
         return false;
       }
-      // Stay on the page and say what happened (Collections.jsx); the new album is in the refreshed tree.
       announce($t('frameleaf_albums_created', { values: { name: nameOf(album) } }));
       await refresh();
+      // A new album opens, ready to fill (owner 2026-11-19); a collection or a space stays on the page.
+      if (album.kind === AlbumKind.Album) {
+        await goto(Route.viewAlbum({ id: album.id }));
+      }
       return true;
     } finally {
       busy = false;

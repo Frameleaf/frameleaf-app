@@ -330,6 +330,7 @@ describe(WorkerInventoryService.name, () => {
         lastSeenAt: seen,
         ownerName: 'Taylor',
         household: true,
+        withdrawn: [],
       },
       {
         id: 'pc',
@@ -339,6 +340,11 @@ describe(WorkerInventoryService.name, () => {
         lastSeenAt: null,
         ownerName: 'Emma',
         household: false,
+        // it failed face work three times in a row: held back until then, and text work only needs qualifying again
+        withdrawn: [
+          { workload: 'face', until: seen },
+          { workload: 'ocr', until: null },
+        ],
       },
     ]);
 
@@ -354,6 +360,7 @@ describe(WorkerInventoryService.name, () => {
         lastSeenAt: seen.toISOString(),
         ownerName: 'Taylor',
         household: true,
+        withdrawn: [],
       },
       {
         id: 'pc',
@@ -363,6 +370,10 @@ describe(WorkerInventoryService.name, () => {
         lastSeenAt: null,
         ownerName: 'Emma',
         household: false,
+        withdrawn: [
+          { workload: 'face', until: seen.toISOString() },
+          { workload: 'ocr', until: null },
+        ],
       },
     ]);
     // apps reading entries see no new kind of source

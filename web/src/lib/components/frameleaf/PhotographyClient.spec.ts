@@ -2,6 +2,7 @@ import { render, screen, fireEvent, waitFor, within } from '@testing-library/sve
 import { tick } from 'svelte';
 import { addMessages } from 'svelte-i18n';
 import en from '$i18n/en.json';
+import { PhotographyError } from '$lib/frameleaf/photography/errors';
 import {
   galleryRequest,
   searchGallerySelfie,
@@ -140,6 +141,26 @@ it('drops protected images and the stored session when the server revokes access
   expect(screen.queryByRole('img', { name: 'Photo 7' })).toBeNull();
   expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:protected-pixels');
   expect(sessionStorage.getItem('photography-gallery:shoot')).toBeNull();
+});
+it('keeps the session and the saved favourites when the deadline refuses a late favourite (FL-1769)', async () => {
+  render(PhotographyClient, { galleryId: 'shoot' });
+  await screen.findByRole('img', { name: 'Photo 7' });
+  vi.mocked(galleryRequest).mockRejectedValueOnce(new PhotographyError('selection_closed', 409));
+  await fireEvent.click(screen.getByRole('button', { name: 'Add photo 7 to favourites' }));
+  // the refused favourite is taken back and the saved ones are sent again; access stays open
+  await waitFor(
+    () =>
+      expect(galleryRequest).toHaveBeenLastCalledWith('shoot', 'scoped', '/choices', 'PUT', {
+        expectedRevision: 'loaded',
+        captureIds: [],
+        notes: [],
+      }),
+    { timeout: 3000 },
+  );
+  expect(await screen.findByRole('alert')).toHaveTextContent(en.frameleaf_photography_error_collection_changed);
+  expect(screen.getByRole('img', { name: 'Photo 7' })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Add photo 7 to favourites' })).toBeInTheDocument();
+  expect(sessionStorage.getItem('photography-gallery:shoot')).not.toBeNull();
 });
 it('opens an invitation without a password step when the gallery has no password', async () => {
   history.replaceState(null, '', '/photography/gallery/shoot#invitation=token');

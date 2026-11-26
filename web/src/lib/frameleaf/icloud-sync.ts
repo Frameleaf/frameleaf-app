@@ -240,7 +240,6 @@ export type ICloudDraft = {
   libraries: string[];
   albums: string[];
   includeEdits: boolean;
-  includeHidden: boolean;
   intervalHours: string;
   /** FL-539: "By itself" (in the overnight run) or "Only when I ask". */
   automatic: boolean;
@@ -257,7 +256,6 @@ export const icloudDraft = (connection: Pick<ICloudConnectionResponseDto, 'label
   libraries: [...connection.config.libraries],
   albums: [...connection.config.albums],
   includeEdits: connection.config.includeEdits,
-  includeHidden: connection.config.includeHidden,
   intervalHours: String(connection.config.intervalHours),
   automatic: connection.config.automatic ?? true,
   concurrency: String(connection.config.concurrency),
@@ -271,10 +269,9 @@ export const icloudBlankDraft = (): ICloudDraft => ({
   libraries: [],
   albums: [],
   includeEdits: true,
-  includeHidden: false,
   intervalHours: '24',
   automatic: true,
-  concurrency: '1',
+  concurrency: '10',
   stagingGb: '20',
 });
 
@@ -297,6 +294,9 @@ export const toggleAlbum = (draft: ICloudDraft, id: string): ICloudDraft => ({
   albums: draft.albums.includes(id) ? draft.albums.filter((value) => value !== id) : [...draft.albums, id],
 });
 
+/** FL-1724: matches the server's per-connection limit. */
+export const ICLOUD_MAX_CONCURRENCY = 100;
+
 const integerIn = (value: string, min: number, max: number) => {
   const number = Number(value);
   return value.trim() !== '' && Number.isSafeInteger(number) && number >= min && number <= max;
@@ -317,7 +317,7 @@ export const icloudDraftProblems = (draft: ICloudDraft): ICloudDraftProblem[] =>
   if (!integerIn(draft.intervalHours, 1, 8760)) {
     problems.push('interval');
   }
-  if (!integerIn(draft.concurrency, 1, 4)) {
+  if (!integerIn(draft.concurrency, 1, ICLOUD_MAX_CONCURRENCY)) {
     problems.push('concurrency');
   }
   const gb = Number(draft.stagingGb);
@@ -331,18 +331,6 @@ export const icloudDraftProblems = (draft: ICloudDraft): ICloudDraftProblem[] =>
   }
   return problems;
 };
-
-/**
- * What saving would newly allow; the design asks for explicit consent to each before saving. A match
- * in an external library needs none: the item is always imported as a managed copy beside it, and the
- * external file is only evidence (owner decision, FL-69).
- */
-export const icloudConsentNeeded = (
-  draft: ICloudDraft,
-  connection: Pick<ICloudConnectionResponseDto, 'config'>,
-): { hidden: boolean } => ({
-  hidden: draft.includeHidden && !connection.config.includeHidden,
-});
 
 /**
  * The update to send. An album of a library that is no longer selected is dropped, since it would
@@ -371,7 +359,6 @@ export const icloudDraftUpdate = (
       libraries,
       albums,
       includeEdits: draft.includeEdits,
-      includeHidden: draft.includeHidden,
       intervalHours: Number(draft.intervalHours),
       automatic: draft.automatic,
       concurrency: Number(draft.concurrency),
@@ -412,17 +399,7 @@ export const icloudSummary = (counts: Record<string, number>): ICloudSummary => 
 
 type ReviewItem = ICloudInventoryResponseDto['review'][number];
 
-const LIVE_PHOTO_REASONS = new Set([
-  'live_photo_identity_conflict',
-  'local_live_photo_override',
-  'motion_visibility_override',
-  'motion_has_manual_membership',
-]);
-
 const REASON_KEYS: Record<string, string> = {
-  source_hidden_requires_consent: 'hidden',
-  hidden_match_requires_consent: 'hidden',
-  external_conversion_requires_consent: 'external',
   multiple_content_matches: 'ambiguous_match',
   saved_checksum_conflict: 'ambiguous_match',
   mapped_asset_identity_changed: 'ambiguous_match',
@@ -440,7 +417,10 @@ const REASON_KEYS: Record<string, string> = {
   local_stack_membership_override: 'stack',
   manual_stack_conflict: 'stack',
   source_stack_removed: 'stack',
+  source_stack_provenance_conflict: 'stack',
+  shared_edit_primary_ambiguous: 'stack',
   source_metadata_conflict: 'metadata',
+  source_metadata_family_too_large: 'metadata',
 };
 
 /** A plain explanation of one finding: by its reason when known, else by what kind of finding it is. */
@@ -456,14 +436,6 @@ export const icloudReviewReasonKey = (item: Pick<ReviewItem, 'kind' | 'reason'>)
     return `frameleaf_icloud_reason_${known}` as Translations;
   }
   return `frameleaf_icloud_reason_kind_${item.kind.replaceAll('-', '_')}` as Translations;
-};
-
-/** Where a finding is reviewed: Live Photo pairs in their utility, anything with a photo in the viewer. */
-export const icloudReviewTarget = (item: Pick<ReviewItem, 'reason' | 'assetId'>): 'live-photos' | 'asset' | null => {
-  if (item.reason && LIVE_PHOTO_REASONS.has(item.reason)) {
-    return 'live-photos';
-  }
-  return item.assetId ? 'asset' : null;
 };
 
 const OUTCOME_KEYS: Record<string, string> = {

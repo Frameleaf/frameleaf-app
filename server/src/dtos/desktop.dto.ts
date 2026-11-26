@@ -57,6 +57,8 @@ export class DesktopCapabilitiesDto extends createZodDto(
       worker: z.literal(false),
       workerSession: z.literal(true),
       workerAutoSetup: z.literal(true),
+      workerWithdrawalNotice: z.literal(true),
+      workerConcurrentLeases: z.literal(true),
       sources: z.literal(false),
       nativeHost: z.literal(false),
     }),
@@ -71,6 +73,17 @@ export class DesktopHouseholdDto extends createZodDto(
   z
     .strictObject({ enabled: z.boolean().describe("Works on everyone's photos at home") })
     .meta({ id: 'DesktopHouseholdDto' }),
+) {}
+
+export class DesktopTranscodeSettingsDto extends createZodDto(
+  z
+    .strictObject({
+      enabled: z.boolean().describe('Makes playback copies of videos on this computer'),
+      everyone: z
+        .boolean()
+        .describe("Also takes other people's videos. Needs enabled, and a computer that works on everyone's photos"),
+    })
+    .meta({ id: 'DesktopTranscodeSettingsDto' }),
 ) {}
 
 /** A fixed, language-independent proof binds enrollment to this server and authenticated account. */

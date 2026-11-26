@@ -46,10 +46,19 @@
     roots,
     onClose,
     onChoose,
+    detail,
+    folderIcon = () => mdiFolderOutline,
+    canChoose = () => true,
   }: {
     roots: TakeoutRootDto[];
     onClose: () => void;
     onChoose: (folder: ChosenTakeoutFolder) => void;
+    /** What a folder holds, in words. Google Photos exports by default; another import says its own. */
+    detail?: (contents: TakeoutFolderContentsDto) => string;
+    /** The icon for a folder of this name. */
+    folderIcon?: (name: string) => string;
+    /** Whether the open folder (its location's path, then the folders below it) can be chosen. */
+    canChoose?: (root: TakeoutRootDto, parts: string[]) => boolean;
   } = $props();
 
   let rootId = $state<string>();
@@ -77,7 +86,9 @@
       });
   });
 
-  const describe = (contents: TakeoutFolderContentsDto) => describeTakeoutFolder(contents, $t, $locale);
+  const describe = (contents: TakeoutFolderContentsDto) =>
+    detail ? detail(contents) : describeTakeoutFolder(contents, $t, $locale);
+  const choosable = $derived(!!root && !!current?.result && canChoose(root, trail));
 
   /** The built-in Imports folder (FL-1477) goes by its name; an operator's folder by its path. */
   const rootName = (item: TakeoutRootDto) => (item.builtIn ? $t('frameleaf_takeout_imports_name') : item.path);
@@ -91,7 +102,7 @@
     }
   };
   const choose = () => {
-    if (rootId !== undefined && current?.result) {
+    if (rootId !== undefined && current?.result && choosable) {
       onChoose({ rootId, parts: [...trail], contents: current.result.here });
     }
   };
@@ -127,7 +138,7 @@
       {#each current.result.folders as folder (folder.name)}
         <li>
           <button type="button" onclick={() => (trail = [...trail, folder.name])}>
-            <span class="icon"><Icon icon={mdiFolderOutline} size="20" aria-hidden={true} /></span>
+            <span class="icon"><Icon icon={folderIcon(folder.name)} size="20" aria-hidden={true} /></span>
             <span>
               <strong>{folder.name}</strong>
               <small>{describe(folder)}</small>
@@ -152,10 +163,10 @@
 
   {#snippet actions()}
     <span class="count">
-      {current?.result ? describe(current.result.here) : $t('frameleaf_takeout_folder_open_to_choose')}
+      {choosable && current?.result ? describe(current.result.here) : $t('frameleaf_takeout_folder_open_to_choose')}
     </span>
     <Button onclick={onClose}>{$t('cancel')}</Button>
-    <Button variant="primary" disabled={!current?.result} onclick={choose}>
+    <Button variant="primary" disabled={!choosable} onclick={choose}>
       {$t('frameleaf_takeout_folder_choose_this')}
     </Button>
   {/snippet}

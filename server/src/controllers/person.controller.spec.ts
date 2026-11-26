@@ -2,6 +2,7 @@ import request from 'supertest';
 import { PersonController } from 'src/controllers/person.controller.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { PersonCategoryService } from 'src/services/person-category.service.js';
+import { PersonRelationshipService } from 'src/services/person-relationship.service.js';
 import { PersonService } from 'src/services/person.service.js';
 import { errorDto } from 'test/medium/responses.js';
 import { factory } from 'test/small.factory.js';
@@ -16,6 +17,7 @@ describe(PersonController.name, () => {
     ctx = await controllerSetup(PersonController, [
       { provide: PersonService, useValue: service },
       { provide: PersonCategoryService, useValue: categoryService },
+      { provide: PersonRelationshipService, useValue: mockBaseService(PersonRelationshipService) },
       { provide: LoggingRepository, useValue: automock(LoggingRepository, { strict: false }) },
     ]);
     return () => ctx.close();

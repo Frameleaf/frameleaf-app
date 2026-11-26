@@ -280,6 +280,22 @@ export class SessionRepository {
   }
 
   /**
+   * FL-1767: the ids of this account's unexpired sessions that are unlocked (elevated) right now. Only
+   * their websocket rooms receive the details of a Locked item.
+   */
+  @GenerateSql({ params: [DummyValue.UUID] })
+  async getElevatedIds(userId: string): Promise<string[]> {
+    const rows = await this.db
+      .selectFrom('session')
+      .select('id')
+      .where('userId', '=', asUuid(userId))
+      .where('pinExpiresAt', '>', sql<Date>`clock_timestamp()`)
+      .where((eb) => eb.or([eb('expiresAt', 'is', null), eb('expiresAt', '>', sql<Date>`clock_timestamp()`)]))
+      .execute();
+    return rows.map(({ id }) => id);
+  }
+
+  /**
    * Elevates a session after its PIN was checked (FL-34), only while the account's PIN and password
    * are still the ones that check read. A PIN change or reset, or a password change, that commits
    * (with its `lockAll`) between the check and this write is never undone by it: PostgreSQL

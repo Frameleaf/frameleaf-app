@@ -136,7 +136,16 @@ describe('where work goes (FL-456)', () => {
     const server = await destination(MlDestinationKind.Local);
     const home = await destination(MlDestinationKind.Lan);
     await routes.setRoute(MlWorkload.Face, home.id);
-    expect((await routes.resolveRoute(MlWorkload.Face)).map(({ destinationId }) => destinationId)).toEqual([home.id]);
+    // the computer itself, then the desktops standing in for it: one place either way
+    expect(
+      (await routes.resolveRoute(MlWorkload.Face)).map(({ destinationId, desktopPool }) => [
+        destinationId,
+        desktopPool,
+      ]),
+    ).toEqual([
+      [home.id, false],
+      [home.id, true],
+    ]);
 
     await routes.restoreDefaultRoute(MlWorkload.Face);
     const state = (await routes.getRouteStates()).find((route) => route.workload === MlWorkload.Face);

@@ -486,16 +486,24 @@ describe(LibraryService.name, () => {
     it('counts the photos and videos in a folder and their size, with its skips', async () => {
       mocks.storage.walkLibrary.mockImplementation(async function* () {
         // eslint-disable-next-line unicorn/no-useless-promise-resolve-reject
-        yield await Promise.resolve(['/photos/a.jpg', '/photos/b.mov']);
+        yield await Promise.resolve(['/photos/a.jpg', '/photos/b.mov', '/photos/2024/c.jpg']);
       });
-      mocks.storage.stat.mockResolvedValueOnce({ size: 1000 } as Stats).mockResolvedValueOnce({ size: 2000 } as Stats);
+      mocks.storage.stat
+        .mockResolvedValueOnce({ size: 1000 } as Stats)
+        .mockResolvedValueOnce({ size: 2000 } as Stats)
+        .mockResolvedValueOnce({ size: 500 } as Stats);
 
       await expect(sut.estimateFolder({ path: '/photos/', exclusionPatterns: ['**/@eaDir/**'] })).resolves.toEqual({
         readable: true,
         found: true,
-        count: 2,
-        bytes: 3000,
+        count: 3,
+        bytes: 3500,
         complete: true,
+        // FL-838: per folder, for the folder albums preview
+        folders: [
+          { path: '/photos', count: 2 },
+          { path: '/photos/2024', count: 1 },
+        ],
       });
       expect(mocks.storage.walkLibrary).toHaveBeenCalledWith(
         expect.objectContaining({ pathsToCrawl: ['/photos'], exclusionPatterns: ['**/@eaDir/**'] }),
@@ -524,6 +532,7 @@ describe(LibraryService.name, () => {
         count: 0,
         bytes: 0,
         complete: true,
+        folders: [],
       });
       await expect(sut.estimateFolder({ path: 'photos', exclusionPatterns: [] })).rejects.toThrow();
     });
@@ -538,6 +547,14 @@ describe(LibraryService.name, () => {
 
         await expect(sut.create(dto)).resolves.toMatchObject({ readOnly: true });
         expect(mocks.library.create).toHaveBeenCalledWith(expect.objectContaining({ readOnly: true }));
+      });
+
+      it('makes folder albums only when asked (FL-838)', async () => {
+        mocks.library.create.mockResolvedValue(factory.library());
+        await sut.create({ ownerId: authStub.admin.user.id });
+        expect(mocks.library.create).toHaveBeenLastCalledWith(expect.objectContaining({ folderAlbums: false }));
+        await sut.create({ ownerId: authStub.admin.user.id, folderAlbums: true });
+        expect(mocks.library.create).toHaveBeenLastCalledWith(expect.objectContaining({ folderAlbums: true }));
       });
 
       it('should create with default settings', async () => {
@@ -1308,11 +1325,31 @@ describe(LibraryService.name, () => {
     beforeEach(() => {
       mocks.library.get.mockResolvedValue(library);
       mocks.storage.stat.mockResolvedValue({ isDirectory: () => true } as Stats);
+      mocks.storage.walkLibrary.mockImplementation(async function* () {
+        await Promise.resolve();
+        yield ['/mnt/photos/still-here.jpg'];
+      });
+    });
+
+    it('changes nothing when the folder is an empty mount point (an unmounted share)', async () => {
+      mocks.storage.walkLibrary.mockImplementation(async function* () {});
+      mocks.storage.checkFileExists.mockImplementation((path) => Promise.resolve(path === '/mnt/photos'));
+
+      await sut.handleAssetRemoval({ libraryId: library.id, paths: ['/mnt/photos/a.jpg', '/mnt/photos/b.jpg'] });
+
+      expect(mocks.storage.walkLibrary).toHaveBeenCalledTimes(1);
+      expect(mocks.asset.getByLibraryIdAndOriginalPath).not.toHaveBeenCalled();
+      expect(mocks.asset.updateAll).not.toHaveBeenCalled();
     });
 
     it('marks an item offline, in the trash, when its file is gone and its folder is there', async () => {
       const asset = AssetFactory.create({ libraryId: library.id, originalPath: '/mnt/photos/a.jpg' });
       mocks.storage.checkFileExists.mockImplementation((path) => Promise.resolve(path === '/mnt/photos'));
+      mocks.storage.stat.mockImplementation((path) =>
+        path === '/mnt/photos'
+          ? Promise.resolve({ isDirectory: () => true } as Stats)
+          : Promise.reject({ code: 'ENOENT' }),
+      );
       mocks.asset.getByLibraryIdAndOriginalPath.mockResolvedValue(asset);
 
       await expect(sut.handleAssetRemoval({ libraryId: library.id, paths: [asset.originalPath] })).resolves.toBe(
@@ -1326,6 +1363,11 @@ describe(LibraryService.name, () => {
     it('keeps an already-trashed item in the trash, just offline', async () => {
       const asset = AssetFactory.create({ originalPath: '/mnt/photos/a.jpg', deletedAt: new Date() });
       mocks.storage.checkFileExists.mockImplementation((path) => Promise.resolve(path === '/mnt/photos'));
+      mocks.storage.stat.mockImplementation((path) =>
+        path === '/mnt/photos'
+          ? Promise.resolve({ isDirectory: () => true } as Stats)
+          : Promise.reject({ code: 'ENOENT' }),
+      );
       mocks.asset.getByLibraryIdAndOriginalPath.mockResolvedValue(asset);
 
       await sut.handleAssetRemoval({ libraryId: library.id, paths: [asset.originalPath] });
@@ -1346,6 +1388,19 @@ describe(LibraryService.name, () => {
       mocks.storage.checkFileExists.mockResolvedValue(true);
 
       await sut.handleAssetRemoval({ libraryId: library.id, paths: ['/mnt/photos/a.jpg'] });
+
+      expect(mocks.asset.updateAll).not.toHaveBeenCalled();
+    });
+
+    it.each(['EACCES', 'EPERM', 'EIO'])('leaves an item it could not check (%s) as it is', async (code) => {
+      const asset = AssetFactory.create({ libraryId: library.id, originalPath: '/mnt/photos/locked/a.jpg' });
+      mocks.storage.checkFileExists.mockImplementation((path) => Promise.resolve(path === '/mnt/photos'));
+      mocks.storage.stat.mockImplementation((path) =>
+        path === '/mnt/photos' ? Promise.resolve({ isDirectory: () => true } as Stats) : Promise.reject({ code }),
+      );
+      mocks.asset.getByLibraryIdAndOriginalPath.mockResolvedValue(asset);
+
+      await sut.handleAssetRemoval({ libraryId: library.id, paths: [asset.originalPath] });
 
       expect(mocks.asset.updateAll).not.toHaveBeenCalled();
     });

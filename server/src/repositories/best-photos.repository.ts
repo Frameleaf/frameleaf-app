@@ -8,7 +8,7 @@ import { deferJobAdoption } from 'src/queue/context.js';
 import { DB } from 'src/schema/index.js';
 import { AssetBestPhotoScoreTable } from 'src/schema/tables/asset-best-photo-score.table.js';
 import { AssetTable } from 'src/schema/tables/asset.table.js';
-import { anyUuid, asUuid, withHiddenContentFilter } from 'src/utils/database.js';
+import { asUuid, withHiddenContentFilter } from 'src/utils/database.js';
 import { libraryScopePredicate } from 'src/utils/library-scope.js';
 import { isLocked, revealedLockScope } from 'src/utils/locked.js';
 import { paginationHelper } from 'src/utils/pagination.js';
@@ -169,20 +169,5 @@ export class BestPhotosRepository {
         .execute(),
     ]);
     return { ...paginationHelper(items as BestPhotoAssetRow[], options.limit), total: Number(count) };
-  }
-  @GenerateSql({ params: [[DummyValue.UUID]] })
-  async deleteForAssets(assetIds: string[]): Promise<void> {
-    if (assetIds.length === 0) {
-      return;
-    }
-    await this.db.transaction().execute(async (trx) => {
-      {
-        await trx
-          .withSchema('public')
-          .deleteFrom('asset_best_photo_score')
-          .where('assetId', '=', anyUuid(assetIds))
-          .execute();
-      }
-    });
   }
 }

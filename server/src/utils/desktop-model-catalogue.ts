@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import z from 'zod';
 import { CLIP_MODEL_INFO } from 'src/constants.js';
+import { DESCRIPTION_TASK, parseBoundDescriptionResult } from 'src/utils/description-result.js';
 import { parseBoundFaceResult } from 'src/utils/face-result.js';
 import { canonicalJson } from 'src/utils/object.js';
 import { parseBoundOcrResult } from 'src/utils/ocr-result.js';
@@ -47,15 +48,18 @@ const relative = z
   );
 const model = z.strictObject({
   name: z.string().regex(/^[A-Za-z0-9_.-]{1,128}$/),
-  task: z.enum(['clip', 'ocr', 'facial-recognition']),
+  task: z.enum(['clip', 'ocr', 'facial-recognition', DESCRIPTION_TASK]),
   type: z.enum(['textual', 'visual', 'detection', 'recognition']),
   artifacts: z
     .record(relative, digest)
     .refine((value) => Object.keys(value).length > 0 && Object.keys(value).length <= 4096),
 });
+const modelKey = z.string().regex(/^(clip|ocr|face|description):[a-f0-9]{64}$/);
 const spec = z.strictObject({
   protocolVersion: z.literal(1),
-  modelKey: z.string().regex(/^(clip|ocr|face):[a-f0-9]{64}$/),
+  // FD-31: a description runs in the runtime's own llama.cpp process; every other profile is ONNX.
+  engine: z.literal('qwen-gguf').optional(),
+  modelKey,
   provider: z.enum([
     'CPUExecutionProvider',
     'CUDAExecutionProvider',
@@ -77,9 +81,9 @@ const spec = z.strictObject({
 });
 const profile = z
   .strictObject({
-    modelKey: z.string().regex(/^(clip|ocr|face):[a-f0-9]{64}$/),
+    modelKey,
     modelName: model.shape.name,
-    workload: z.enum(['clip', 'ocr', 'face']),
+    workload: z.enum(['clip', 'ocr', 'face', 'description']),
     runtimeSourceRevision: z.string().regex(/^[a-f0-9]{40}$/),
     modelSnapshotRevision: z.string().regex(/^[a-f0-9]{40}$/),
     embeddingDimensions: z.number().int().min(1).max(65_536).optional(),
@@ -110,13 +114,19 @@ const profile = z
       value.spec.models.some(
         (item) =>
           item.name !== value.modelName ||
-          item.task !== (value.workload === 'face' ? 'facial-recognition' : value.workload),
+          item.task !==
+            (value.workload === 'face'
+              ? 'facial-recognition'
+              : value.workload === 'description'
+                ? DESCRIPTION_TASK
+                : value.workload),
       ) ||
+      (value.spec.engine === 'qwen-gguf') !== (value.workload === 'description') ||
       (value.workload === 'clip' &&
         (value.spec.models.length !== 1 ||
           value.embeddingDimensions === undefined ||
           CLIP_MODEL_INFO[value.modelName]?.dimSize !== value.embeddingDimensions)) ||
-      (value.workload === 'ocr' && value.embeddingDimensions !== undefined) ||
+      ((value.workload === 'ocr' || value.workload === 'description') && value.embeddingDimensions !== undefined) ||
       (value.workload === 'face' && value.embeddingDimensions !== 512)
     )
       invalid();
@@ -142,6 +152,24 @@ const profile = z
         )
           invalid();
       }
+    } else if (value.workload === 'description') {
+      // The binding takes no options: its prompt and limits are its own (native_qwen.py).
+      const entries = z
+        .strictObject({
+          [DESCRIPTION_TASK]: z.strictObject({
+            visual: z.strictObject({ modelName: z.literal(value.modelName), options: z.strictObject({}) }),
+          }),
+        })
+        .safeParse(value.spec.entries);
+      if (
+        !entries.success ||
+        value.spec.fixtureKind !== 'image' ||
+        value.spec.provider !== 'CPUExecutionProvider' ||
+        value.spec.models.length !== 1 ||
+        selected.type !== 'visual' ||
+        Object.keys(selected.artifacts).filter((name) => /^visual\/(model|mmproj)\.gguf$/.test(name)).length !== 2
+      )
+        invalid();
     } else {
       const entries = (
         value.workload === 'face'
@@ -206,6 +234,16 @@ const profile = z
     )
       invalid();
     if (value.spec.fixtureKind === 'text' && !Buffer.from(fixture.toString('utf8'), 'utf8').equals(fixture)) invalid();
+    if (value.workload === 'description') {
+      try {
+        parseBoundDescriptionResult(value.spec.expectedOutput);
+      } catch {
+        invalid();
+      }
+      if (fixture.length < 24 || !fixture.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])))
+        invalid();
+      return;
+    }
     try {
       if (value.workload === 'face') {
         const result = parseBoundFaceResult(value.spec.expectedOutput);

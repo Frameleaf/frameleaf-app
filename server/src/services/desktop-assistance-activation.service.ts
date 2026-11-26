@@ -1,4 +1,4 @@
-import { ConflictException, Injectable, UnauthorizedException } from '@nestjs/common';
+import { ConflictException, ForbiddenException, Injectable, UnauthorizedException } from '@nestjs/common';
 import type { Transaction } from 'kysely';
 import type { DesktopWorkerChallengeRepository } from 'src/repositories/desktop-worker-challenge.repository.js';
 import type { DB } from 'src/schema/index.js';
@@ -62,7 +62,8 @@ export class DesktopAssistanceActivationService {
     const ownerId = await this.workers.owner(grant);
     if (!ownerId) throw new UnauthorizedException('desktop_worker_activation_invalid');
     const account = await this.policies.read(ownerId);
-    if (!account) throw new ConflictException('desktop_pool_policy_required');
+    // Desktop AI processing is off for this account: the same 403 as on every other worker endpoint.
+    if (!account) throw new ForbiddenException('desktop_pool_policy_required');
     try {
       await this.metadata.withConfigTransaction(async (_metadata, tx) => {
         await this.policies.assertCurrent(ownerId, account.revisionId, tx);
@@ -72,7 +73,12 @@ export class DesktopAssistanceActivationService {
           throw new UnauthorizedException('desktop_worker_activation_invalid');
       });
     } catch (error) {
-      if (error instanceof ConflictException || error instanceof UnauthorizedException) throw error;
+      if (
+        error instanceof ConflictException ||
+        error instanceof ForbiddenException ||
+        error instanceof UnauthorizedException
+      )
+        throw error;
       if (
         error instanceof Error &&
         [

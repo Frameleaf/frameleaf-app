@@ -100,6 +100,13 @@ test('numeric EXIF fields retain their string representation', () => {
   });
 });
 
+test('a missing EXIF field never matches as the text "undefined"', () => {
+  assert.deepEqual(
+    invoke('assetExifFilter', 'x', { pattern: 'undefined', matchType: 'contains', property: 'lensModel' }),
+    { workflow: { continue: false } },
+  );
+});
+
 test('non-string file values cannot be coerced into regex matches', () => {
   assert.throws(() => invoke('assetFileFilter', 42, { pattern: '^42$', matchType: 'regex' }), { name: 'TypeError' });
 });
@@ -170,6 +177,25 @@ for (const method of ['assetFileFilter', 'assetExifFilter']) {
       assert.ok(Date.now() - started < 1000);
     });
   }
+  for (const [pattern, caseSensitive] of [
+    ['(a|a)+$', true],
+    ['^(a|aa)+$', true],
+    ['(a|)+b', true],
+    ['((a|ab)c)*$', true],
+    ['(?:x|.)+$', true],
+    ['(\\w|\\d)+$', true],
+    ['(?<n>a|a){30}$', true],
+    ['(A|a)+$', false],
+  ]) {
+    test(`${method} refuses the overlapping-alternation pattern ${pattern} without running it`, () => {
+      const started = Date.now();
+      assert.throws(
+        () => invoke(method, 'a'.repeat(40) + '!', { pattern, matchType: 'regex', caseSensitive, property: 'make' }),
+        /alternatives overlap/,
+      );
+      assert.ok(Date.now() - started < 1000);
+    });
+  }
   test(`${method} refuses a pattern longer than 256 characters`, () => {
     assert.throws(
       () => invoke(method, 'x', { pattern: 'a'.repeat(257), matchType: 'regex', property: 'make' }),
@@ -186,6 +212,13 @@ for (const method of ['assetFileFilter', 'assetExifFilter']) {
     ['\\(a+\\)+', '(a)(a)', true],
     ['^(ab)+$', 'ababx', false],
     ['(a+)?b', 'aab', true],
+    ['\\.(jpg|png)$', 'x.png', true],
+    ['^(jpg|png)+$', 'jpgpngjpg', true],
+    ['^(?:jpg|jpeg|heic)+$', 'jpegjpg', true],
+    ['^(\\.jpg|\\.png)*$', '.jpg.gif', false],
+    ['(a|a)$', 'aa', true],
+    ['(a|aa)?b', 'aab', true],
+    ['^[a|a]+$', 'a|a', true],
   ]) {
     test(`${method} still takes the ordinary pattern ${pattern} / ${value}`, () => {
       assert.deepEqual(invoke(method, value, { pattern, matchType: 'regex', property: 'make' }), {

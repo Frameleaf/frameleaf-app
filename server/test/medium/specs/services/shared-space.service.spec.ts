@@ -14,6 +14,7 @@ import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MapRepository } from 'src/repositories/map.repository.js';
 import { PartnerRepository } from 'src/repositories/partner.repository.js';
 import { PersonRepository } from 'src/repositories/person.repository.js';
+import { SharedLinkRepository } from 'src/repositories/shared-link.repository.js';
 import { SmartAlbumRepository } from 'src/repositories/smart-album.repository.js';
 import { TagRepository } from 'src/repositories/tag.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
@@ -46,6 +47,8 @@ const options = () => ({
     MapRepository,
     PartnerRepository,
     PersonRepository,
+    // a former member's links to the album stop working (FL-1767)
+    SharedLinkRepository,
     SmartAlbumRepository,
     TagRepository,
     UserRepository,

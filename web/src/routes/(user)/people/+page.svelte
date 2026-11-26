@@ -389,7 +389,8 @@
       // as the merge dialog does: open viewers, search chips and person pages follow the merge
       eventManager.emit('PersonFacesChange', { personIds: [survivorId, mergedId], removedPersonIds: [mergedId] });
       announceMerge(merged, survivor);
-      await reloadPeople();
+      // not awaited: the next suggestion can be answered while the grid catches up
+      void reloadPeople();
     } catch (error) {
       if (isCurrentSession()) {
         handleError(error, $t('errors.unable_to_merge_people'));

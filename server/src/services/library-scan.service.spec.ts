@@ -23,6 +23,7 @@ import {
   LibraryScanService,
   checkExistingAsset,
   mapLibraryScan,
+  missingLimit,
 } from 'src/services/library-scan.service.js';
 import { boundExecutionReservations } from 'src/utils/execution-database.js';
 import { executionSignal } from 'src/utils/execution-signal.js';
@@ -630,6 +631,65 @@ describe(LibraryScanService.name, () => {
       );
       expect(operations.complete).toHaveBeenCalledWith(operation.id, 'token', { resultAssetId: null });
       expect(operations.fail).not.toHaveBeenCalled();
+    });
+
+    it.each(['EACCES', 'EPERM', 'EIO'])('leaves an item it could not check (%s) as it is', async (code) => {
+      const existing = { id: 'asset-1', isOffline: false, libraryId: library.id, status: AssetStatus.Active };
+      mocks.storage.walkLibrary.mockImplementation(() => walkOf(['/mnt/photos/other.jpg']));
+      mocks.asset.filterNewExternalAssetPaths.mockResolvedValue([]);
+      mocks.asset.getLibraryAssetCount.mockResolvedValue(1);
+      mocks.library.getAssetIdPage.mockResolvedValueOnce([{ id: 'asset-1' }]).mockResolvedValue([]);
+      mocks.assetJob.getForSyncAssets.mockResolvedValue([
+        { ...existing, originalPath: '/mnt/photos/locked/a.jpg', fileModifiedAt: new Date('2024-01-01') },
+      ] as never);
+      mocks.storage.stat.mockImplementation((path: string) =>
+        path === '/mnt/photos'
+          ? Promise.resolve(directory)
+          : Promise.reject(Object.assign(new Error('denied'), { code })),
+      );
+
+      await sut.run(operationOf(), 'token');
+
+      expect(mocks.asset.updateAll).not.toHaveBeenCalledWith(['asset-1'], expect.objectContaining({ isOffline: true }));
+      expect(operations.complete).toHaveBeenCalledTimes(1);
+    });
+
+    it('stops before sending more than a safe share of the library to the Trash', async () => {
+      const ids = Array.from({ length: 150 }, (_, i) => `asset-${i}`);
+      mocks.storage.walkLibrary.mockImplementation(() => walkOf(['/mnt/photos/other.jpg']));
+      mocks.asset.filterNewExternalAssetPaths.mockResolvedValue([]);
+      mocks.asset.getLibraryAssetCount.mockResolvedValue(1000);
+      mocks.library.getAssetIdPage.mockResolvedValueOnce(ids.map((id) => ({ id }))).mockResolvedValue([]);
+      mocks.assetJob.getForSyncAssets.mockImplementation((assetIds: string[]) =>
+        Promise.resolve(
+          assetIds.map((id) => ({
+            id,
+            isOffline: false,
+            libraryId: library.id,
+            status: AssetStatus.Active,
+            originalPath: `/mnt/photos/nested/${id}.jpg`,
+            fileModifiedAt: new Date('2024-01-01'),
+          })) as never,
+        ),
+      );
+      mocks.storage.stat.mockImplementation((path: string) =>
+        path === '/mnt/photos' ? Promise.resolve(directory) : enoent(),
+      );
+
+      await sut.run(operationOf(), 'token');
+
+      expect(missingLimit(1000)).toBe(100);
+      expect(mocks.asset.updateAll).not.toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ isOffline: true }),
+      );
+      expect(operations.fail).toHaveBeenCalledWith(
+        expect.any(String),
+        'token',
+        expect.objectContaining({ errorCode: 'library_scan_too_many_missing' }),
+        expect.anything(),
+      );
+      expect(operations.complete).not.toHaveBeenCalled();
     });
 
     it('accepts a wide source in 250 item checkpoints and closes only after all crawl and check pages', async () => {

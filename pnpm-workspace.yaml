@@ -90,6 +90,11 @@ dedupePeerDependents: false
 preferWorkspacePackages: true
 injectWorkspacePackages: true
 shamefullyHoist: false
+# svelte-eslint-parser loads the newest `typescript` ESLint can reach and needs its compiler API. The 7.x native
+# preview (`@typescript/native`) has none, so it must not be hoisted to where ESLint would find it.
+hoistPattern:
+  - '*'
+  - '!typescript'
 verifyDepsBeforeRun: install
 minimumReleaseAgeExclude:
   - '@nestjs/cli@12.0.1'

@@ -1,6 +1,7 @@
 import { WorkflowTrigger } from '@frameleaf/plugin-sdk';
 import { BadRequestException, ConflictException, ForbiddenException, HttpException } from '@nestjs/common';
 import { DummyDriver, Kysely, PostgresDialect, Transaction } from 'kysely';
+import { createHash } from 'node:crypto';
 import fs from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -47,7 +48,7 @@ import {
   jobCreateRequestSchema,
   jobViewSchema,
 } from 'src/utils/frameleaf-cloud.js';
-import { stripsVideoMetadata } from 'src/utils/media-privacy.js';
+import { EVEN_SIDES_FILTER, stripsVideoMetadata } from 'src/utils/media-privacy.js';
 import { tryPromise } from 'src/utils/promise.js';
 import { transcriptionClipOf } from 'src/utils/studio-transcription.js';
 import { cloudContractFixture } from 'test/fixtures/frameleaf-cloud-contracts.js';
@@ -391,9 +392,10 @@ describe(CloudMlJobService.name, () => {
     mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(source as never);
     mocks.media.probe.mockResolvedValue({
       format: { formatName: 'mp4', formatLongName: 'mp4', duration: 5, bitrate: 0 },
-      videoStreams: [{ width: 960, height: 540, codecName: 'h264' }],
+      videoStreams: [{ width: 960, height: 540, codecName: 'h264', frameCount: 150, frameRate: 30 }],
       audioStreams: [],
     } as never);
+    mocks.media.countPackets.mockResolvedValue({ packets: 150, hidden: 0, uneven: false, unordered: false, keyGap: 1 });
     mocks.crypto.hashFileDigests.mockResolvedValue({
       sha1: Buffer.alloc(20),
       sha256: Buffer.from(SHA, 'hex'),
@@ -451,6 +453,7 @@ describe(CloudMlJobService.name, () => {
         ...input,
       }) as unknown as AssetRestoration;
     restorations = {
+      hasBatchItem: vi.fn().mockResolvedValue(false),
       create: vi.fn().mockImplementation((input: Partial<AssetRestoration>) => {
         const inserted = row(input);
         rows.set(inserted.id, inserted);
@@ -607,7 +610,12 @@ describe(CloudMlJobService.name, () => {
         workload: 'restoration',
         modelSku: FAITHFUL,
         inputs: [{ inputId: 'v1', contentType: 'video/mp4', bytes: BYTES, sha256: SHA }],
-        request: { mode: 'faithful', scale: 2 },
+        // FL-1725: `targetScale` and the clip as it was uploaded, counted from its packets
+        request: {
+          mode: 'faithful',
+          targetScale: 2,
+          items: [{ inputId: 'v1', durationSec: 5, fps: 30, width: 960, height: 540 }],
+        },
       });
       expect(estimates()[0]).toMatchObject({ id: ESTIMATE_ID, expiresAt: sealed.expiresAt, operationId: null });
       expect(mocks.frameleafCloudMl.createJob).not.toHaveBeenCalled();
@@ -657,6 +665,14 @@ describe(CloudMlJobService.name, () => {
       expect(record.inputs[0].path).toBe(second[1]);
       expect(record.inputs[0].path).not.toBe(source.originalPath);
       expect(record.beforePath).toBe(first[1]);
+    });
+
+    it('crops a whole-frame preview clip to even sides, so an odd-sized video can be encoded', async () => {
+      mocks.frameleafCloudMl.createEstimate.mockResolvedValue({ ...sealed, modelSku: SMOOTH, modelRev: SMOOTH_REV });
+      await sut.estimate(owner, preview({ purpose: 'smooth-motion', factor: 2 }), now);
+
+      const [first] = mocks.media.transcode.mock.calls;
+      expect(first[2].outputOptions).toEqual(expect.arrayContaining(['-vf', EVEN_SIDES_FILTER]));
     });
 
     it('allows a fully promoted job with no wallet balance and approves only its net spending', async () => {
@@ -726,6 +742,116 @@ describe(CloudMlJobService.name, () => {
       expect(mocks.frameleafCloudMl.createEstimate).not.toHaveBeenCalled();
     });
 
+    it('says what Frameleaf Cloud does not run before a copy is prepared or anything is asked of it', async () => {
+      await expect(sut.estimate(owner, preview({ upscale: 4 }), now)).rejects.toThrow(
+        'Frameleaf Cloud restores video at up to 2×. Choose 2×.',
+      );
+      await expect(sut.estimate(owner, preview({ purpose: 'smooth-motion', factor: 8 }), now)).rejects.toThrow(
+        'Frameleaf Cloud smooths motion 2× or 4×. Choose one of those.',
+      );
+      expect(mocks.media.transcode).not.toHaveBeenCalled();
+      expect(mocks.frameleafCloudMl.createEstimate).not.toHaveBeenCalled();
+    });
+
+    it('refuses a clip Frameleaf Cloud would not take, by name, and sends nothing', async () => {
+      mocks.media.probe.mockResolvedValue({
+        format: { formatName: 'mp4', formatLongName: 'mp4', duration: 5, bitrate: 0 },
+        videoStreams: [{ width: 960, height: 540, codecName: 'h264', frameCount: 1200, frameRate: 240 }],
+        audioStreams: [],
+      } as never);
+      await expect(sut.estimate(owner, preview({ purpose: 'smooth-motion', factor: 2 }), now)).rejects.toThrow(
+        'Frameleaf Cloud takes video from 1 to 120 frames a second; this one has 240.',
+      );
+      mocks.media.probe.mockResolvedValue({
+        format: { formatName: 'mp4', formatLongName: 'mp4', duration: 5, bitrate: 0 },
+        videoStreams: [{ width: 960, height: 540, codecName: 'h264' }],
+        audioStreams: [],
+      } as never);
+      await expect(sut.estimate(owner, preview({ upscale: 2 }), now)).rejects.toThrow(
+        'has no readable frame rate or frame count',
+      );
+      expect(mocks.frameleafCloudMl.createEstimate).not.toHaveBeenCalled();
+    });
+
+    it('refuses Smooth motion the cloud would run at another factor, or not at all, before anything is sent', async () => {
+      mocks.media.probe.mockResolvedValue({
+        format: { formatName: 'mp4', formatLongName: 'mp4', duration: 5, bitrate: 0 },
+        videoStreams: [{ width: 960, height: 540, codecName: 'h264', frameCount: 250, frameRate: 50 }],
+        audioStreams: [],
+      } as never);
+      // 4× of 50 frames a second passes 120: the cloud would make 2× and the version would be labelled 4×
+      await expect(sut.estimate(owner, preview({ purpose: 'smooth-motion', factor: 4 }), now)).rejects.toThrow(
+        'This video has 50 frames a second, so 4× would pass 120 frames a second. Choose 2×.',
+      );
+      mocks.media.probe.mockResolvedValue({
+        format: { formatName: 'mp4', formatLongName: 'mp4', duration: 5, bitrate: 0 },
+        videoStreams: [{ width: 960, height: 540, codecName: 'h264', frameCount: 500, frameRate: 100 }],
+        audioStreams: [],
+      } as never);
+      await expect(sut.estimate(owner, preview({ purpose: 'smooth-motion', factor: 2 }), now)).rejects.toThrow(
+        'This video has 100 frames a second. Frameleaf Cloud smooths motion up to 120 frames a second, so there is nothing it can add.',
+      );
+      expect(mocks.frameleafCloudMl.createEstimate).not.toHaveBeenCalled();
+    });
+
+    it("declares the limit for a rate a hair over it, as the cloud's worker allows", async () => {
+      mocks.frameleafCloudMl.createEstimate.mockResolvedValue({ ...sealed, modelSku: SMOOTH, modelRev: SMOOTH_REV });
+      mocks.media.probe.mockResolvedValue({
+        format: { formatName: 'mp4', formatLongName: 'mp4', duration: 5, bitrate: 0 },
+        videoStreams: [{ width: 960, height: 540, codecName: 'h264', frameCount: 150, frameRate: 30.0003 }],
+        audioStreams: [],
+      } as never);
+      await sut.estimate(owner, preview({ purpose: 'smooth-motion', factor: 4 }), now);
+      expect(mocks.frameleafCloudMl.createEstimate).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          request: { factor: 4, items: [{ inputId: 'v1', durationSec: 5, fps: 30, width: 960, height: 540 }] },
+        }),
+      );
+    });
+
+    it('refuses Smooth motion from the stored frame rate before a copy is made', async () => {
+      mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue({
+        ...source,
+        exifInfo: { ...source.exifInfo, fps: 50 },
+      } as never);
+      await expect(sut.estimate(owner, preview({ purpose: 'smooth-motion', factor: 4 }), now)).rejects.toThrow(
+        'This video has 50 frames a second, so 4× would pass 120 frames a second. Choose 2×.',
+      );
+      expect(mocks.media.transcode).not.toHaveBeenCalled();
+      expect(mocks.media.probe).not.toHaveBeenCalled();
+      // a rate a hair over the limit is the limit here too
+      mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue({
+        ...source,
+        exifInfo: { ...source.exifInfo, fps: 30.0003 },
+      } as never);
+      mocks.frameleafCloudMl.createEstimate.mockResolvedValue({ ...sealed, modelSku: SMOOTH, modelRev: SMOOTH_REV });
+      await expect(sut.estimate(owner, preview({ purpose: 'smooth-motion', factor: 4 }), now)).resolves.toBeDefined();
+    });
+
+    it('refuses its own copy when it still carries a rotation or frames the picture never shows', async () => {
+      mocks.media.probe.mockResolvedValue({
+        format: { formatName: 'mp4', formatLongName: 'mp4', duration: 5, bitrate: 0 },
+        videoStreams: [{ width: 960, height: 540, codecName: 'h264', frameCount: 150, frameRate: 30, rotation: 90 }],
+        audioStreams: [],
+      } as never);
+      await expect(sut.estimate(owner, preview({ upscale: 2 }), now)).rejects.toThrow('is still not a plain stream');
+      mocks.media.probe.mockResolvedValue({
+        format: { formatName: 'mp4', formatLongName: 'mp4', duration: 5, bitrate: 0 },
+        videoStreams: [{ width: 960, height: 540, codecName: 'h264', frameCount: 150, frameRate: 30 }],
+        audioStreams: [],
+      } as never);
+      mocks.media.countPackets.mockResolvedValue({
+        packets: 150,
+        hidden: 15,
+        uneven: false,
+        unordered: false,
+        keyGap: 1,
+      });
+      await expect(sut.estimate(owner, preview({ upscale: 2 }), now)).rejects.toThrow('is still not a plain stream');
+      expect(mocks.frameleafCloudMl.createEstimate).not.toHaveBeenCalled();
+    });
+
     it('estimates Smooth motion as interpolation with its frame-rate factor, and only for videos', async () => {
       mocks.frameleafCloudMl.createEstimate.mockResolvedValue({ ...sealed, modelSku: SMOOTH, modelRev: SMOOTH_REV });
 
@@ -734,8 +860,14 @@ describe(CloudMlJobService.name, () => {
       expect(estimate.model.sku).toBe(SMOOTH);
       expect(mocks.frameleafCloudMl.createEstimate).toHaveBeenCalledWith(
         expect.anything(),
-        expect.objectContaining({ workload: 'interpolation', modelSku: SMOOTH, request: { factor: 4 } }),
+        expect.objectContaining({
+          workload: 'interpolation',
+          modelSku: SMOOTH,
+          request: { factor: 4, items: [{ inputId: 'v1', durationSec: 5, fps: 30, width: 960, height: 540 }] },
+        }),
       );
+      // the clip is measured from the file that is uploaded, with its packets counted
+      expect(mocks.media.probe).toHaveBeenCalledWith(expect.stringContaining('input.mp4'), { countFrames: true });
 
       mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue({ ...source, type: AssetType.Image } as never);
       await expect(sut.estimate(owner, preview({ purpose: 'smooth-motion' }), now)).rejects.toThrow(
@@ -796,6 +928,88 @@ describe(CloudMlJobService.name, () => {
       const options = mocks.media.transcode.mock.calls[0][2];
       expect(options.outputOptions).toEqual(expect.arrayContaining(['-bsf:v', 'filter_units=remove_types=6']));
       expect(stripsVideoMetadata(options.outputOptions)).toBe(true);
+    });
+
+    it.each([
+      ['is turned', { rotation: 90 }, { packets: 150, hidden: 0, uneven: false, unordered: false, keyGap: 1 }],
+      ['has frames its edit list hides', {}, { packets: 150, hidden: 15, uneven: false, unordered: false, keyGap: 1 }],
+      ['has a variable frame rate', {}, { packets: 150, hidden: 0, uneven: true, unordered: false, keyGap: 1 }],
+      [
+        'has B-frames timed by decode order',
+        {},
+        { packets: 150, hidden: 0, uneven: false, unordered: true, keyGap: 1 },
+      ],
+    ])('re-encodes a whole video that %s instead of copying its stream', async (_, stream, packets) => {
+      mocks.media.probe.mockResolvedValue({
+        format: { formatName: 'mp4', formatLongName: 'mp4', duration: 5, bitrate: 0 },
+        videoStreams: [{ width: 960, height: 540, codecName: 'h264', frameCount: 150, frameRate: 30, ...stream }],
+        audioStreams: [],
+      } as never);
+      mocks.media.countPackets.mockResolvedValue(packets);
+      await expect(sut.estimate(owner, full(), now)).rejects.toMatchObject({
+        response: expect.objectContaining({ code: 'input-preparing' }),
+      });
+      await prepared();
+
+      const options = mocks.media.transcode.mock.calls[0][2];
+      expect(options.outputOptions).toEqual(expect.arrayContaining(['-c:v', 'libx264']));
+      expect(options.outputOptions).not.toContain('copy');
+      expect(stripsVideoMetadata(options.outputOptions)).toBe(true);
+    });
+
+    it('makes the copy again by re-encoding when the copy itself is not a plain stream', async () => {
+      mocks.media.probe.mockResolvedValue({
+        format: { formatName: 'mp4', formatLongName: 'mp4', duration: 5, bitrate: 0 },
+        videoStreams: [
+          {
+            width: 960,
+            height: 540,
+            codecName: 'h264',
+            frameCount: 150,
+            frameRate: 30,
+            frameRateRational: { num: 30_000, den: 1001 },
+          },
+        ],
+        audioStreams: [],
+      } as never);
+      // the source shows every packet; its copy hides one (a transport stream cut inside a group of pictures)
+      mocks.media.countPackets
+        .mockResolvedValueOnce({ packets: 150, hidden: 0, uneven: false, unordered: false, keyGap: 1 })
+        .mockResolvedValueOnce({ packets: 150, hidden: 1, uneven: false, unordered: false, keyGap: 1 });
+      await expect(sut.estimate(owner, full(), now)).rejects.toMatchObject({
+        response: expect.objectContaining({ code: 'input-preparing' }),
+      });
+      await prepared();
+
+      const [copied, encoded] = mocks.media.transcode.mock.calls.map((call) => call[2].outputOptions);
+      expect(mocks.media.transcode).toHaveBeenCalledTimes(2);
+      expect(copied).toEqual(expect.arrayContaining(['-c:v', 'copy']));
+      expect(encoded).toEqual(
+        expect.arrayContaining(['-c:v', 'libx264', '-fps_mode', 'cfr', '-r', '30000/1001', '-bf', '0']),
+      );
+      // the stream's own times, moved to start at 0, not renumbered: they are real presentation times
+      expect(encoded).toEqual(expect.arrayContaining(['-vf', `${EVEN_SIDES_FILTER},setpts=PTS-STARTPTS`]));
+      expect(encoded).not.toContain('copy');
+      // and the copy made that way is what the estimate uses
+      await expect(sut.estimate(owner, full(), now)).resolves.toBeDefined();
+      expect(mocks.media.transcode).toHaveBeenCalledTimes(2);
+    });
+
+    it('does not reuse a whole-video copy prepared under an earlier copy rule', async () => {
+      await expect(sut.estimate(owner, full(), now)).rejects.toMatchObject({
+        response: expect.objectContaining({ code: 'input-preparing' }),
+      });
+      await prepared();
+      await sut.estimate(owner, full(), now);
+
+      const key = (version: number) =>
+        createHash('sha256')
+          .update(`${source.checksum.toString('hex')}:${version}`)
+          .digest('hex')
+          .slice(0, 32);
+      const [input] = estimates().at(-1)!.inputs;
+      expect(input.path).toContain(`cloud_ml_input_${key(4)}`);
+      expect(input.path).not.toContain(key(3));
     });
 
     it('quotes the whole file without a reviewed preview, and refuses to confirm the quote (FL-348)', async () => {
@@ -2326,6 +2540,163 @@ describe(CloudMlJobService.name, () => {
         expect.objectContaining({ errorCode: 'cloud_ml_turned_off' }),
         { retry: false },
       );
+    });
+  });
+
+  describe('repair and colourise (FL-955, FL-961)', () => {
+    const REPAIR = 'ms_QFQGN68E';
+    const photo = {
+      ...source,
+      type: AssetType.Image,
+      originalFileName: 'Print.jpg',
+      originalPath: '/library/owner-1/Print.jpg',
+      exifInfo: { exifImageWidth: 4000, exifImageHeight: 3000, orientation: null },
+      files: [{ id: 'thumb', type: 'thumbnail', path: '/thumbs/print.webp', isEdited: false, isProgressive: false }],
+    };
+    const repair = (overrides: Partial<CloudMlJobEstimateRequestDto> = {}) =>
+      preview({
+        assetId: photo.id,
+        operation: 'repair' as never,
+        region: { x: 0, y: 0, w: 1, h: 1 },
+        ...overrides,
+      });
+    const priced = {
+      ...sealed,
+      modelSku: REPAIR,
+      routing: {
+        plannedWorkers: 1,
+        perSecondUsd: 0.001,
+        startFeeUsd: 0.01,
+        approvedMaximumUsd: 2,
+      },
+    } as never;
+    const noPrice = () =>
+      new FrameleafCloudError(MlAdmissionRefusal.ModelMismatch, 409, 'This model is not offered', {
+        type: 'about:blank',
+        title: 'Conflict',
+        status: 409,
+        code: 'model-mismatch',
+        detail: 'This model is not offered',
+        requestId: 'request-1',
+      } as never);
+
+    beforeEach(() => {
+      const upscaleCloud = {
+        ...cloud,
+        workloads: [...workloads, MlWorkload.Upscale],
+        lastProbeWorkloads: [...workloads, MlWorkload.Upscale],
+        lastProbeCloud: {
+          ...facts,
+          modelIds: [...facts.modelIds, 'ms_54S55W7C'],
+          modelWorkloads: { ...facts.modelWorkloads, ms_54S55W7C: MlWorkload.Upscale },
+          defaultModels: { ...facts.defaultModels, upscale: 'ms_54S55W7C' },
+          modelGroups: { ...facts.modelGroups, ms_54S55W7C: 'upscale' },
+        },
+      };
+      mocks.mlDestination.getAll.mockResolvedValue([upscaleCloud]);
+      mocks.mlDestination.getById.mockResolvedValue(upscaleCloud);
+      mocks.machineLearning.probe.mockResolvedValue({
+        ...mlProbeStub.frameleafCloud,
+        workloads: upscaleCloud.workloads,
+        cloud: upscaleCloud.lastProbeCloud,
+      });
+      mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(photo as never);
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([photo.id]));
+      mocks.media.decodeImage.mockResolvedValue({
+        data: Buffer.alloc(300, 120),
+        info: { width: 10, height: 10, channels: 3 },
+      } as never);
+      mocks.media.getImageMetadata.mockResolvedValue({ width: 4000, height: 3000 } as never);
+      mocks.frameleafCloudMl.createEstimate.mockResolvedValue(priced);
+    });
+
+    it('asks for the operation on the upscale workload, by its own model and at its own size', async () => {
+      await sut.estimate(owner, repair(), now);
+
+      expect(mocks.frameleafCloudMl.getCatalog).not.toHaveBeenCalled();
+      const body = mocks.frameleafCloudMl.createEstimate.mock.calls[0][1];
+      expect(body).toMatchObject({
+        workload: 'upscale',
+        modelSku: REPAIR,
+        request: {
+          operation: 'repair',
+          items: [{ inputId: 'v1', width: 4000, height: 3000 }],
+          output: { format: 'png' },
+        },
+      });
+      expect(body.request).not.toHaveProperty('scale');
+      expect(body.request).not.toHaveProperty('faceRestore');
+      expect(estimateRequestSchema.safeParse(body).success).toBe(true);
+    });
+
+    it('treats 409 model-mismatch as not available yet: no cost, nothing kept, queued or charged', async () => {
+      mocks.frameleafCloudMl.createEstimate.mockRejectedValue(noPrice());
+
+      await expect(sut.estimate(owner, repair(), now)).rejects.toMatchObject({
+        response: { code: 'photo-operation-unavailable', message: "Frameleaf Cloud isn't available for this yet" },
+      });
+
+      expect(metadata.has(SystemMetadataKey.FrameleafCloudMlJobEstimates)).toBe(false);
+      expect(mocks.frameleafCloudMl.getWallet).not.toHaveBeenCalled();
+      expect(mocks.frameleafCloudMl.createJob).not.toHaveBeenCalled();
+      expect(mocks.mediaOperation.create).not.toHaveBeenCalled();
+    });
+
+    it('asks Cloud once for a batch it cannot price, and shows no cost', async () => {
+      mocks.frameleafCloudMl.createEstimate.mockRejectedValue(noPrice());
+
+      const quote = await sut.quotePhotoBatch(owner, 'repair', [photo.id, photo.id, photo.id], cloud.id, now);
+
+      expect(quote).toEqual({ refusal: "Frameleaf Cloud isn't available for this yet" });
+      expect(mocks.frameleafCloudMl.createEstimate).toHaveBeenCalledOnce();
+    });
+
+    it('starts nothing from a batch Cloud cannot price', async () => {
+      mocks.frameleafCloudMl.createEstimate.mockRejectedValue(noPrice());
+
+      await expect(
+        sut.startPhotoBatch(
+          owner,
+          {
+            batchId: '11111111-1111-4111-8111-111111111111',
+            operation: 'repair',
+            assetIds: [photo.id],
+            destinationId: cloud.id,
+            maxCostUsd: 5,
+            consentVersion: '2026-09-26.1',
+          },
+          now,
+        ),
+      ).rejects.toBeInstanceOf(ConflictException);
+      expect(mocks.mediaOperation.create).not.toHaveBeenCalled();
+      expect(mocks.frameleafCloudMl.createJob).not.toHaveBeenCalled();
+    });
+
+    it('refuses to send a colour photo to Colourise', async () => {
+      // Blocks of equal brightness and different colour, which no single print tone can make.
+      const blocks = Buffer.alloc(400 * 400 * 3);
+      for (let pixel = 0; pixel < 400 * 400; pixel++) {
+        const warm = (Math.floor(pixel / 400 / 25) + Math.floor((pixel % 400) / 25)) % 2 === 0;
+        blocks.set(warm ? [200, 90, 90] : [70, 130, 190], pixel * 3);
+      }
+      mocks.media.decodeImage.mockResolvedValue({
+        data: blocks,
+        info: { width: 400, height: 400, channels: 3 },
+      } as never);
+
+      await expect(sut.estimate(owner, repair({ operation: 'colourise' as never }), now)).rejects.toThrow(
+        'already in colour',
+      );
+      expect(mocks.frameleafCloudMl.createEstimate).not.toHaveBeenCalled();
+    });
+
+    it('leaves a plain photo upscale request without an operation', async () => {
+      mocks.frameleafCloudMl.getCatalog.mockResolvedValue(catalog);
+      await sut.estimate(owner, preview({ assetId: photo.id, upscale: 2 }), now).catch(() => {});
+
+      for (const [, body] of mocks.frameleafCloudMl.createEstimate.mock.calls) {
+        expect(body.request).not.toHaveProperty('operation');
+      }
     });
   });
 

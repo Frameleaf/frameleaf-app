@@ -8,6 +8,19 @@ from
 where
   "deletedAt" is null
 
+-- DateDoctorRepository.getScanMonths
+select distinct
+  (
+    date_trunc('MONTH', asset."localDateTime" AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'
+  ) as "month"
+from
+  "asset"
+where
+  "asset"."ownerId" = $1
+  and "asset"."deletedAt" is null
+order by
+  "month"
+
 -- DateDoctorRepository.getScanRows
 select
   "asset"."id",
@@ -52,6 +65,7 @@ from
 where
   "asset"."ownerId" = $1
   and "asset"."deletedAt" is null
+  and "asset"."dateAccuracy" is null
   and (
     "asset"."visibility" in ('archive', 'timeline')
     and not exists (
@@ -74,6 +88,14 @@ where
       and o."sourceAssetId" is not null
       and not ('dateTimeOriginal' = any (o."overriddenFields"))
   )
+  and (
+    date_trunc('MONTH', asset."localDateTime" AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'
+  ) >= date_trunc('MONTH', $2::timestamptz at time zone 'UTC') at time zone 'UTC'
+  and (
+    date_trunc('MONTH', asset."localDateTime" AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'
+  ) <= date_trunc('MONTH', $3::timestamptz at time zone 'UTC') at time zone 'UTC'
+  and "asset"."localDateTime" >= $4
+  and "asset"."localDateTime" < $5
 
 -- DateDoctorRepository.isScanning
 select
@@ -157,6 +179,7 @@ select
   "asset"."localDateTime",
   "asset_exif"."dateTimeOriginal",
   "asset_exif"."timeZone",
+  "asset"."dateAccuracy",
   array(
     select
       property
@@ -171,7 +194,8 @@ select
   "earlier"."previousZone",
   "earlier"."previousTakenAt",
   "earlier"."previousLocalDateTime",
-  "earlier"."previousLocks"
+  "earlier"."previousLocks",
+  "earlier"."previousDateAccuracy"
 from
   "asset"
   inner join "asset_exif" on "asset_exif"."assetId" = "asset"."id"
@@ -181,7 +205,8 @@ from
       "date_fix_item"."previousZone",
       "date_fix_item"."previousTakenAt",
       "date_fix_item"."previousLocalDateTime",
-      "date_fix_item"."previousLocks"
+      "date_fix_item"."previousLocks",
+      "date_fix_item"."previousDateAccuracy"
     from
       "date_fix_item"
       inner join "date_fix_batch" on "date_fix_batch"."id" = "date_fix_item"."batchId"

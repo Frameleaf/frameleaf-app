@@ -1,5 +1,6 @@
 <script lang="ts">
   import { debounce } from 'lodash-es';
+  import { LIVE_ADDITIONS_MAX_WAIT_MS, LIVE_ADDITIONS_QUIET_MS } from '$lib/constants';
   import { goto } from '$app/navigation';
   import { eventManager } from '$lib/managers/event-manager.svelte';
   import { websocketEvents } from '$lib/stores/websocket';
@@ -37,6 +38,7 @@
   } from '$lib/frameleaf/library-item-search';
   import { compilePaletteQuery, readPaletteState } from '$lib/frameleaf/search-palette';
   import {
+    organizeIntoAlbums,
     organizeLibraryItems,
     ownsLibrarySelection,
     rateLibraryItems,
@@ -212,8 +214,12 @@
   const preferences = workspace === 'design' ? designLibraryGridPreferences : libraryGridPreferences;
   let mounted = $state(false);
   let generation = $state(0);
+  /** Counts changes of what this account may see, apart from ordinary reloads. */
+  let accessVersion = 0;
   let failed = $state(false);
   let organizationFailed = $state(false);
+  /** Says which albums took the items, when an add to several albums partly failed. */
+  let organizationMessage = $state<string | null>(null);
   let organizing = $state(false);
   let filterSection = $state<DiscoveryFilterSection | null>(null);
   let inspectorOpen = $state(true);
@@ -250,7 +256,8 @@
   const mixedSelected = $derived(session.selection.some((id) => id.startsWith('bookmark:')));
   /** Boards acts on every selection with its own bar; elsewhere it takes over only for saved links. */
   const boardsBar = $derived(session.selection.length > 0 && (workspace === 'design' || mixedSelected));
-  const selectedAssetIds = $derived(assets.filter((asset) => session.selection.includes(asset.id)).map(({ id }) => id));
+  const selectionKeys = $derived(new Set(session.selection));
+  const selectedAssetIds = $derived(assets.filter((asset) => selectionKeys.has(asset.id)).map(({ id }) => id));
   const ownsSelection = $derived(
     authManager.authenticated && ownsLibrarySelection(results.items, session.selection, authManager.user.id),
   );
@@ -312,7 +319,7 @@
   const selectedAsset = $derived(
     isBoards
       ? (timelineAssets.find((asset) => asset.id === activeAsset) ?? null)
-      : (timelineAssets.find((asset) => session.selection.includes(asset.id)) ?? null),
+      : (timelineAssets.find((asset) => selectionKeys.has(asset.id)) ?? null),
   );
   const orderedKeys = $derived(
     results.items.map((item) =>
@@ -324,7 +331,7 @@
       results.items.every(
         (item) =>
           item.kind === LibraryAssetItemKind.Asset ||
-          !session.selection.includes(`bookmark:${item.bookmark.id}`) ||
+          !selectionKeys.has(`bookmark:${item.bookmark.id}`) ||
           item.bookmark.ownerId === authManager.user.id,
       ),
   );
@@ -342,6 +349,8 @@
   const requestKey = $derived(JSON.stringify(request));
 
   const refresh = debounce(() => generation++, 250);
+  /** Uploads and processing elsewhere: one reload once they go quiet, not one per photo. */
+  const refreshLive = debounce(() => generation++, LIVE_ADDITIONS_QUIET_MS, { maxWait: LIVE_ADDITIONS_MAX_WAIT_MS });
   /** A removal or an access change clears what is shown; any other live refresh keeps it until the new page lands. */
   let clearOnReload = false;
   const restrict = () => {
@@ -353,8 +362,8 @@
     refresh();
   };
   const unsubscribers = [
-    websocketEvents.on('on_upload_success', refresh),
-    websocketEvents.on('on_asset_update', refresh),
+    websocketEvents.on('on_upload_success', refreshLive),
+    websocketEvents.on('on_asset_update', refreshLive),
     websocketEvents.on('on_asset_restore', refresh),
     websocketEvents.on('on_asset_delete', restrict),
     websocketEvents.on('on_asset_hidden', restrict),
@@ -375,6 +384,7 @@
   ];
   onDestroy(() => {
     refresh.cancel();
+    refreshLive.cancel();
     for (const stop of unsubscribers) {
       stop();
     }
@@ -473,6 +483,7 @@
   });
   onDestroy(
     onLibraryAccessChange(() => {
+      accessVersion++;
       clearOnReload = true;
       results.reset();
       session.clearSelection();
@@ -674,6 +685,7 @@
         reload();
       })
       .catch(() => {
+        organizationMessage = null;
         organizationFailed = true;
       });
   };
@@ -699,7 +711,10 @@
       saveLink(text);
     }
   };
-  /** Runs one change over the selection; it stops quietly if the account or the page changed under it. */
+  /**
+   * Runs one change over the selection; it stops quietly if access to the library changed under it.
+   * A live refresh does not stop it: the change's own first batch sets one off.
+   */
   const runSelection = async (
     change: (keys: string[], owner: string, current: () => boolean) => Promise<void>,
     done?: (count: number) => void,
@@ -707,19 +722,21 @@
     const keys = [...session.selection];
     const owner = authManager.user.id;
     const current = authManager.captureSession();
-    const version = generation;
+    const version = accessVersion;
+    const stillAllowed = () => current() && accessVersion === version;
     dialog = null;
     organizing = true;
     organizationFailed = false;
+    organizationMessage = null;
     try {
-      await change(keys, owner, () => current() && generation === version);
-      if (current() && generation === version) {
+      await change(keys, owner, stillAllowed);
+      if (stillAllowed()) {
         session.clearSelection();
         done?.(keys.length);
         reload();
       }
     } catch {
-      if (current() && generation === version) {
+      if (stillAllowed()) {
         organizationFailed = true;
       }
     } finally {
@@ -732,7 +749,21 @@
   const organize = (payload: BulkPayload, operation: 'add' | 'remove' = 'add') => {
     const name = collectionName;
     return runSelection(
-      (keys, owner, current) => organizeLibraryItems(results.items, keys, owner, payload, current, operation),
+      async (keys, owner, current) => {
+        if (!payload.albumIds) {
+          await organizeLibraryItems(results.items, keys, owner, payload, current, operation);
+          return;
+        }
+        const { added, failed } = await organizeIntoAlbums(results.items, keys, owner, payload.albumIds, current);
+        if (failed.length > 0) {
+          const names = (ids: string[]) => ids.map((id) => payload.albumNames?.[id] ?? $t('unnamed_album')).join(', ');
+          organizationMessage =
+            added.length > 0
+              ? $t('frameleaf_boards_albums_some_failed', { values: { added: names(added), failed: names(failed) } })
+              : $t('frameleaf_boards_albums_all_failed', { values: { failed: names(failed) } });
+          throw new Error('Some albums did not take the items');
+        }
+      },
       operation === 'remove'
         ? (count) => toastManager.primary($t('frameleaf_boards_removed_from', { values: { count, name } }))
         : undefined,
@@ -1168,9 +1199,10 @@
     {/snippet}
     {#if organizationFailed}<InlineError
         compact
-        message={$t('frameleaf_pro_organization_failed')}
+        message={organizationMessage ?? $t('frameleaf_pro_organization_failed')}
         onRetry={() => {
           organizationFailed = false;
+          organizationMessage = null;
           session.clearSelection();
           reload();
         }}

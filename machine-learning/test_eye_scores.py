@@ -182,7 +182,10 @@ def test_eye_scores_for_stored_boxes(deployed_app: Any, mocker: MockerFixture) -
     assert predict.call_args.args[1].tolist() == [[130, 110, 320, 370]]
 
 
-@pytest.mark.parametrize("boxes", ["nope", "[]", "[[1, 2, 3]]", "[[5, 5, 1, 1]]", '[[0, 0, "a", 4]]'])
+@pytest.mark.parametrize(
+    "boxes",
+    ["nope", "[]", "[[1, 2, 3]]", "[[5, 5, 1, 1]]", '[[0, 0, "a", 4]]', "[[0, 0, 1e300, 4]]", "[[1, 1, 1.0000001, 4]]"],
+)
 def test_eye_scores_refuse_bad_boxes(deployed_app: Any, boxes: str) -> None:
     response = deployed_app.post(
         "/face-eye-scores", files={"image": ("face.png", png(face_image(255)), "image/png")}, data={"boxes": boxes}

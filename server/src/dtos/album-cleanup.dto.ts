@@ -171,4 +171,3 @@ export class AlbumCleanupApplyDto extends createZodDto(AlbumCleanupApplySchema) 
 export class AlbumCleanupApplyResponseDto extends createZodDto(AlbumCleanupApplyResponseSchema) {}
 export type AlbumCleanupFacts = z.infer<typeof AlbumCleanupFactsSchema>;
 export type AlbumCleanupOperation = z.infer<typeof AlbumCleanupOperationSchema>;
-export type AlbumCleanupApplyProgress = z.infer<typeof AlbumCleanupApplyProgressSchema>;

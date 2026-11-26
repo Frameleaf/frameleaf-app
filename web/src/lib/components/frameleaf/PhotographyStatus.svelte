@@ -91,6 +91,8 @@
   const errorKeys: Record<PhotographyErrorCode, Translations> = {
     settings_changed: 'frameleaf_photography_error_settings_changed',
     collection_changed: 'frameleaf_photography_error_collection_changed',
+    // FL-1769: the studio's selection deadline passed; existing wording until a dedicated sentence is approved
+    selection_closed: 'frameleaf_photography_error_collection_changed',
     access_ended: 'frameleaf_photography_error_access_ended',
     wait: 'frameleaf_photography_error_wait',
     logo_unavailable: 'frameleaf_photography_error_logo',

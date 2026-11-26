@@ -25,7 +25,7 @@ let defaultDatabase: Kysely<DB>;
 const setup = (db?: Kysely<DB>) => {
   process.env.FRAMELEAF_ENV = FrameleafEnvironment.Testing;
 
-  return newMediumService(UserService, {
+  const service = newMediumService(UserService, {
     database: db || defaultDatabase,
     real: [
       ClusterGroupRepository,
@@ -41,6 +41,9 @@ const setup = (db?: Kysely<DB>) => {
     ],
     mock: [LoggingRepository, JobRepository, EventRepository, WebsocketRepository],
   });
+  // a change to the Locked rules is announced (`LockedRulesChanged`)
+  service.ctx.getMock(EventRepository).emit.mockResolvedValue();
+  return service;
 };
 
 beforeAll(async () => {
@@ -58,7 +61,10 @@ describe(UserService.name, () => {
       const created = await sut.createUser({ name: user.name, email: user.email });
       expect(created).toEqual(expect.objectContaining({ name: user.name, email: user.email }));
 
-      await expect(sut.get(created.id)).resolves.toMatchObject({ name: user.name, email: user.email });
+      await expect(sut.get(factory.auth({ user: { id: created.id } }), created.id)).resolves.toMatchObject({
+        name: user.name,
+        email: user.email,
+      });
     });
 
     it('should reject user with duplicate email', async () => {
@@ -99,7 +105,7 @@ describe(UserService.name, () => {
       const { sut, ctx } = setup();
       const { user } = await ctx.newUser();
 
-      await expect(sut.get(user.id)).resolves.toEqual(
+      await expect(sut.get(factory.auth({ user: { id: user.id } }), user.id)).resolves.toEqual(
         expect.objectContaining({
           id: user.id,
           name: user.name,
@@ -111,7 +117,7 @@ describe(UserService.name, () => {
     it('should not return password', async () => {
       const { sut, ctx } = setup();
       const { user } = await ctx.newUser();
-      const result = await sut.get(user.id);
+      const result = await sut.get(factory.auth({ user: { id: user.id } }), user.id);
 
       expect((result as any).password).toBeUndefined();
     });
@@ -120,7 +126,7 @@ describe(UserService.name, () => {
       const { sut, ctx } = setup();
       const { user } = await ctx.newUser();
 
-      await expect(sut.get(user.id)).resolves.not.toMatchObject({
+      await expect(sut.get(factory.auth({ user: { id: user.id } }), user.id)).resolves.not.toMatchObject({
         shouldChangePassword: expect.anything(),
         storageLabel: expect.anything(),
       });

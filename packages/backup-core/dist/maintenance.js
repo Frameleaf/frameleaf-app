@@ -109,6 +109,9 @@ export async function verify(repository, options = {}) {
             report.damagedPacks.push(pack);
         }
     }
+    if (report.damagedPacks.length > 0 && options.recordDamage !== false) {
+        report.damageRecorded = await repository.recordDamagedPacks(report.damagedPacks).then(() => true, () => false);
+    }
     return report;
 }
 export async function prune(repository, options = {}) {
@@ -206,6 +209,9 @@ export async function prune(repository, options = {}) {
     }
     for (const pack of remove) {
         await repository.store.delete(pack.key);
+    }
+    if (remove.length > 0) {
+        await repository.removeSettledDamageNotes();
     }
     return {
         keptSnapshots: keep.size,

@@ -30,12 +30,13 @@ export class MapService extends BaseService {
   async getMapMarkers(auth: AuthDto, dto: MapMarkerListDto): Promise<MapMarkerResponseDto[]> {
     const { west, south, east, north, skip, take, ...filters } = dto;
     const { albumIds, options } = await this.libraryOptions(auth, filters);
-    return this.mapRepository.getMapMarkers(auth.user.id, [auth.user.id], albumIds, {
+    const markers = await this.mapRepository.getMapMarkers(auth.user.id, [auth.user.id], albumIds, {
       ...options,
       area: areaOf({ west, south, east, north }),
       skip,
       take,
     });
+    return this.localizeMarkerPlaces(auth, markers);
   }
 
   /**
@@ -55,6 +56,7 @@ export class MapService extends BaseService {
       area ? MAP_SINGLES_LIMIT : MAP_COMPLETE_LIMIT,
       { ...options, area },
     );
+    await this.localizeMarkerPlaces(auth, [...result.markers, ...result.clusters]);
     return { ...result, complete: !area && result.total <= MAP_COMPLETE_LIMIT };
   }
 

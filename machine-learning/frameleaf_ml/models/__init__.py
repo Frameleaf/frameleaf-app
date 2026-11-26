@@ -27,6 +27,10 @@ def get_model_class(model_name: str, model_type: ModelType, model_task: ModelTas
         from frameleaf_ml.models.inpaint import InpaintModel
 
         return InpaintModel
+    if model_task == ModelTask.SCAN_SPLIT and model_type == ModelType.VISUAL:
+        from frameleaf_ml.models.scan_split import ScanSplitModel
+
+        return ScanSplitModel
     if model_task == ModelTask.TRANSCRIBE and model_type == ModelType.AUDIO:
         from frameleaf_ml.models.transcribe import TranscribeModel
 

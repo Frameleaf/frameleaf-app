@@ -1,6 +1,7 @@
 // FL-408: the bundled Studio worker's renderer: the prepared Studio engine's own headless render
 // core in a private Chromium. Each render gets a fresh browser and a loopback harness that serves
 // only that claim's verified files; the page may reach nothing but that harness.
+import { randomBytes } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { mkdtemp, rename, rm, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
@@ -124,10 +125,15 @@ export async function createEngineRenderer({
   /** Open a browser on a harness that serves exactly `files` (media id -> path). */
   const open = async (files, signal) => {
     signal?.throwIfAborted();
+    // The harness has no credentials of its own and anything on this loopback can reach it, so a
+    // file is served only under a random name that exists for this session, never its asset id.
+    const names = new Map([...files.keys()].map((id) => [id, randomBytes(24).toString('hex')]));
+    const named = new Map([...names].map(([id, name]) => [name, files.get(id)]));
     const server = await createHarnessServer({
       distDir,
-      resolveMedia: (id) => files.get(id) ?? null,
+      resolveMedia: (name) => named.get(name) ?? null,
     });
+    const mediaUrl = (id) => server.mediaUrl(names.get(id));
     let browser, closing;
     const closeBrowser = () => (browser ? (closing ??= browser.close().catch(() => {})) : Promise.resolve());
     const abort = () => void closeBrowser();
@@ -170,7 +176,7 @@ export async function createEngineRenderer({
       });
       return {
         page,
-        server,
+        mediaUrl,
         adapter,
         close: async () => {
           signal?.removeEventListener('abort', abort);
@@ -261,7 +267,7 @@ export async function createEngineRenderer({
         session.page,
         {
           project,
-          media: [{ mediaId: 'tone', url: session.server.mediaUrl('tone') }],
+          media: [{ mediaId: 'tone', url: session.mediaUrl('tone') }],
           // Encode both streams (the tone's gain change also prevents audio packet copy): copying a source
           // would prove nothing about the encoders.
           settings: {
@@ -371,7 +377,7 @@ export async function createEngineRenderer({
             project,
             media: [...files.keys()].map((mediaId) => ({
               mediaId,
-              url: session.server.mediaUrl(mediaId),
+              url: session.mediaUrl(mediaId),
             })),
             settings,
             hasRange: true,
@@ -442,7 +448,7 @@ export async function createEngineRenderer({
         await registerClaimFonts(session.page, fonts);
         const media = [...files.keys()].map((mediaId) => ({
           mediaId,
-          url: session.server.mediaUrl(mediaId),
+          url: session.mediaUrl(mediaId),
         }));
         for (let frame = bounds.inPoint; frame < bounds.outPoint; frame++) {
           signal?.throwIfAborted();

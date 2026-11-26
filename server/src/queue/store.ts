@@ -174,32 +174,6 @@ const wakeClaimLoops = (db: Kysely<DB>) => {
  * Bind serialized JSON as text before casting: postgres.js otherwise JSON-encodes it a second time.
  */
 
-/** The model-key prefix desktop helpers qualify for each queue whose work they can take. */
-const DESKTOP_QUEUE_MODELS: Partial<Record<string, string>> = {
-  [QueueName.SmartSearch]: 'clip:',
-  [QueueName.FaceDetection]: 'face:',
-  [QueueName.Ocr]: 'ocr:',
-};
-
-/**
- * Desktop helpers online now (seen in the last 90 seconds) that hold a model for this queue's work.
- * ponytail: counts helpers of any account; a job whose owner has none of them falls back to this server,
- * so the server may briefly run more than its own concurrency. Per-owner counting if that matters.
- */
-export const readyDesktopHelpers = async (db: Kysely<DB>, queue: string): Promise<number> => {
-  const prefix = DESKTOP_QUEUE_MODELS[queue];
-  if (!prefix) return 0;
-  const { rows } = await sql<{ ready: number }>`
-    SELECT count(DISTINCT d.id)::int AS ready FROM desktop_device d
-    JOIN desktop_worker_session w ON w."deviceId" = d.id AND w."authorizationEpoch" = d."authorizationEpoch"
-    WHERE d."revokedAt" IS NULL AND d.state = 'preparing' AND d.mode = 'client-worker' AND w."revokedAt" IS NULL
-      AND w."expiresAt" > clock_timestamp() AND w."lastSeenAt" > clock_timestamp() - interval '90 seconds'
-      AND EXISTS (SELECT 1 FROM jsonb_array_elements_text(w."modelKeys") k WHERE starts_with(k, ${prefix}))`.execute(
-    db,
-  );
-  return Math.min(rows[0]?.ready ?? 0, QUEUE_BATCH);
-};
-
 export class SqlQueueStore {
   constructor(readonly db: Kysely<DB>) {}
 
@@ -216,7 +190,8 @@ export class SqlQueueStore {
       await sql`insert into job_queue(name) values (${name}) on conflict do nothing`.execute(this.db);
     }
     if (workerId) {
-      await sql`insert into job_worker(id) values (${workerId}::uuid)`.execute(this.db);
+      // A start-up retried after a lost reply finds its own row: it must not fail on it for ever.
+      await sql`insert into job_worker(id) values (${workerId}::uuid) on conflict (id) do nothing`.execute(this.db);
     }
   }
 
@@ -252,59 +227,59 @@ export class SqlQueueStore {
         db,
       );
     }
+    const setAside = await this.setAsideIntents(intents, db);
     let inserted = 0;
+    // Runs of jobs with no key go in as one statement; a keyed job flushes them first, so the order stays the same.
+    let unkeyed: QueueIntent[] = [];
+    const flushUnkeyed = async () => {
+      inserted += await this.insertUnkeyed(unkeyed, db);
+      unkeyed = [];
+    };
     for (const intent of intents) {
-      const { id } = intent.data;
-      if (isProcessingFailureStep(intent.name) && typeof id === 'string' && isUuid(id)) {
-        const {
-          rows: [check],
-        } = await sql<{ setAside: boolean }>`select ${processingIsSetAside(
-          sql`${id}::uuid`,
-          sql`${intent.name}`,
-          sql`${intent.data.includeSetAside === true}::boolean`,
-        )} as "setAside"`.execute(db);
-        if (check.setAside) continue;
-      }
+      if (setAside.has(intent)) continue;
       const key = intent.options?.deduplication?.id ?? intent.options?.jobId ?? null;
-      if (key) {
-        const {
-          rows: [existing],
-        } = await sql<{
-          id: string;
-          name: string;
-          data: Record<string, unknown>;
-          state: QueueState;
-          ownsProducerState: boolean;
-        }>`select j.id, j.name, j.data, j.state,
-            (j.data ? '_producerCheckpoints' or j.data ? '_selectionCursor') "ownsProducerState"
-          from job j where j.queue = ${intent.queue} and j."dedupKey" = ${key}
-          and j.state in ${LIVE} for update of j`.execute(db);
-        if (existing) {
-          if (intent.options?.deduplication?.keepLastIfActive) {
-            // A pending seal covers every later publication for this asset; it keeps its original request.
-            const sharedSealing =
-              intent.name === JobName.LockedSeal &&
-              existing.name === intent.name &&
-              typeof intent.data.id === 'string' &&
-              existing.data.id === intent.data.id &&
-              !existing.ownsProducerState;
-            if (existing.state === 'active' || existing.ownsProducerState) {
-              // A running job, or a producer that may own a checkpoint, settles first; the latest request runs after it.
-              await sql`update job set "latestPending" = ${JSON.stringify(intent)}::text::jsonb where id = ${existing.id}::uuid`.execute(
-                db,
-              );
-              inserted++;
-            } else if (!sharedSealing) {
-              await sql`update job set data = ${JSON.stringify(intent.data)}::text::jsonb,
-                "safeToRetry" = ${intent.safeToRetry}, sensitive = ${intent.sensitive}, "deadlineMs" = ${intent.deadlineMs},
-                "runId" = ${intent.runId ?? null}::uuid, "itemKey" = ${intent.itemKey ?? null}, "rootItemKey" = ${intent.rootItemKey ?? null},
-                "availableAt" = ${intentAvailability(intent)}
-                where id = ${existing.id}::uuid`.execute(db);
-              inserted++;
-            }
+      if (!key) {
+        unkeyed.push(intent);
+        continue;
+      }
+      await flushUnkeyed();
+      const {
+        rows: [existing],
+      } = await sql<{
+        id: string;
+        name: string;
+        data: Record<string, unknown>;
+        state: QueueState;
+        ownsProducerState: boolean;
+      }>`select j.id, j.name, j.data, j.state,
+          (j.data ? '_producerCheckpoints' or j.data ? '_selectionCursor') "ownsProducerState"
+        from job j where j.queue = ${intent.queue} and j."dedupKey" = ${key}
+        and j.state in ${LIVE} for update of j`.execute(db);
+      if (existing) {
+        if (intent.options?.deduplication?.keepLastIfActive) {
+          // A pending seal covers every later publication for this asset; it keeps its original request.
+          const sharedSealing =
+            intent.name === JobName.LockedSeal &&
+            existing.name === intent.name &&
+            typeof intent.data.id === 'string' &&
+            existing.data.id === intent.data.id &&
+            !existing.ownsProducerState;
+          if (existing.state === 'active' || existing.ownsProducerState) {
+            // A running job, or a producer that may own a checkpoint, settles first; the latest request runs after it.
+            await sql`update job set "latestPending" = ${JSON.stringify(intent)}::text::jsonb where id = ${existing.id}::uuid`.execute(
+              db,
+            );
+            inserted++;
+          } else if (!sharedSealing) {
+            await sql`update job set data = ${JSON.stringify(intent.data)}::text::jsonb,
+              "safeToRetry" = ${intent.safeToRetry}, sensitive = ${intent.sensitive}, "deadlineMs" = ${intent.deadlineMs},
+              "runId" = ${intent.runId ?? null}::uuid, "itemKey" = ${intent.itemKey ?? null}, "rootItemKey" = ${intent.rootItemKey ?? null},
+              "availableAt" = ${intentAvailability(intent)}
+              where id = ${existing.id}::uuid`.execute(db);
+            inserted++;
           }
-          continue;
         }
+        continue;
       }
       const { rows } =
         await sql`insert into job(id, queue, name, data, "dedupKey", "externalId", "safeToRetry", sensitive,
@@ -318,9 +293,54 @@ export class SqlQueueStore {
         inserted++;
       }
     }
+    await flushUnkeyed();
     // Notifications only reduce latency; the independent five-second scan remains authoritative.
     this.wake();
     return inserted;
+  }
+
+  /**
+   * Jobs without a dedup key, in one INSERT. A row its run already holds (`job_run_stage`), also from earlier in
+   * this statement, is skipped by the conflict clause and then re-armed one by one, as a single insert was.
+   */
+  private async insertUnkeyed(intents: QueueIntent[], db: Executor) {
+    if (intents.length === 0) return 0;
+    const ids = intents.map(() => randomUUID());
+    const rows = intents.map(
+      (intent, index) => sql`(${ids[index]}::uuid, ${intent.queue}, ${intent.name},
+        ${JSON.stringify(intent.data)}::text::jsonb, null, null, ${intent.safeToRetry}, ${intent.sensitive},
+        ${intent.deadlineMs}, ${intentAvailability(intent)}, ${intent.runId ?? null}::uuid, ${intent.itemKey ?? null},
+        ${intent.rootItemKey ?? null}, ${intent.parentId ?? null}::uuid)`,
+    );
+    const { rows: added } = await sql<{ id: string }>`insert into job(id, queue, name, data, "dedupKey", "externalId",
+        "safeToRetry", sensitive, "deadlineMs", "availableAt", "runId", "itemKey", "rootItemKey", "parentId")
+      values ${sql.join(rows)} on conflict do nothing returning id`.execute(db);
+    const accepted = new Set(added.map(({ id }) => id));
+    let inserted = accepted.size;
+    for (const [index, intent] of intents.entries()) {
+      if (!accepted.has(ids[index]) && intent.runId && intent.itemKey && (await this.rearmRunStage(intent, null, db))) {
+        inserted++;
+      }
+    }
+    return inserted;
+  }
+
+  /** The intents whose file and step are set aside, read in one round trip for the whole batch. */
+  private async setAsideIntents(intents: QueueIntent[], db: Executor) {
+    const checked = intents.filter(
+      ({ name, data }) =>
+        isProcessingFailureStep(name) &&
+        typeof data.id === 'string' &&
+        isUuid(data.id) &&
+        data.includeSetAside !== true,
+    );
+    if (checked.length === 0) return new Set<QueueIntent>();
+    const { rows } = await sql<{ id: string; name: string }>`select t.id, t.name
+      from unnest(${checked.map(({ data }) => data.id as string)}::uuid[], ${checked.map(({ name }) => name)}::text[])
+        as t(id, name)
+      where ${processingIsSetAside(sql`t.id`, sql`t.name`, sql`false`)}`.execute(db);
+    const found = new Set(rows.map(({ id, name }) => `${id}/${name}`));
+    return new Set(checked.filter(({ name, data }) => found.has(`${(data.id as string).toLowerCase()}/${name}`)));
   }
 
   /**
@@ -487,14 +507,8 @@ export class SqlQueueStore {
         rows: [{ active }],
       } = await sql<{ active: number }>`select count(*)::int active from job
         where queue = ${queue} and state = 'active'`.execute(tx);
-      // The ones started by hand already count as active. Each ready desktop helper adds one: every job
-      // it lets start becomes a desktop task the next free helper claims (docs/desktop-worker-setup-protocol.md).
-      const helpers = await readyDesktopHelpers(tx, queue);
-      const capacity = Math.min(
-        QUEUE_BATCH - byHand.length,
-        maxClaims - byHand.length,
-        config.concurrency + helpers - active,
-      );
+      // The ones started by hand already count as active.
+      const capacity = Math.min(QUEUE_BATCH - byHand.length, maxClaims - byHand.length, config.concurrency - active);
       if (capacity <= 0) {
         return byHand;
       }
@@ -954,9 +968,8 @@ export class SqlQueueStore {
         failure ??= error;
       }
     }
-    await sql`update job_worker set state = 'lost' where "heartbeatAt" < now() - interval '60 seconds'`.execute(
-      this.db,
-    );
+    await sql`update job_worker set state = 'lost'
+      where "heartbeatAt" < now() - interval '60 seconds' and state <> 'lost'`.execute(this.db);
     if (failure) throw failure;
   }
 

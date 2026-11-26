@@ -774,6 +774,23 @@ export const usageSchema = z.object({ items: z.array(z.unknown()).max(1000) }).t
 export type CloudUsage = z.infer<typeof usageSchema>;
 
 /** One input a job uploads, described by its digest; the cloud never sees a file name (FC-66 `JobInput`). */
+/** The cloud's limits for a clip sent for restoration or Smooth motion (FC-47, FC-48). */
+export const CLOUD_VIDEO_MIN_SIDE = 16;
+export const CLOUD_VIDEO_MAX_FPS = 120;
+export const CLOUD_VIDEO_MAX_SECONDS = 21_600;
+
+/** `RestorationSource` / `InterpolationSource`: the clip's length, average frame rate and own pixel size. */
+const cloudVideoClipSchema = (maxWidth: number, maxHeight: number) =>
+  z.strictObject({
+    inputId: z.string().regex(/^[\w-]{1,64}$/),
+    durationSec: z.number().positive().max(CLOUD_VIDEO_MAX_SECONDS),
+    fps: z.number().min(1).max(CLOUD_VIDEO_MAX_FPS),
+    width: z.int().min(CLOUD_VIDEO_MIN_SIDE).max(maxWidth),
+    height: z.int().min(CLOUD_VIDEO_MIN_SIDE).max(maxHeight),
+  });
+
+const cloudVideoCodec = z.enum(['h264', 'hevc']);
+
 const jobInputSchema = z.strictObject({
   inputId: z.string().regex(/^[\w-]{1,64}$/),
   contentType: z.string().regex(/^[a-z]+\/[\d+.a-z-]{1,100}$/),
@@ -834,6 +851,8 @@ export const CLOUD_WORKLOAD_REQUESTS = {
         .min(1)
         .max(1000)
         .optional(),
+      // FL-961: a same-size photo operation on this workload's own models; no new workload value
+      operation: z.enum(['repair', 'colourise']).optional(),
     })
     .refine(
       (request) => !request.items || new Set(request.items.map((item) => item.inputId)).size === request.items.length,
@@ -841,8 +860,47 @@ export const CLOUD_WORKLOAD_REQUESTS = {
         path: ['items'],
         message: 'inputId must be unique',
       },
+    )
+    .refine(
+      (request) =>
+        request.operation === undefined ||
+        (request.scale === undefined && request.faceRestore === undefined && request.items !== undefined),
+      { path: ['operation'], message: "a photo operation keeps the input's size and declares every item's size" },
     ),
-  restoration: z.strictObject({ mode: z.enum(CLOUD_RESTORATION_MODES).optional(), scale: scale.optional() }),
+  // FC-47 `RestorationRequest`, as the cloud defines it: `targetScale` (1, 1.5 or 2: never `scale`) and
+  // `items`, the one clip as it was cut here. An estimate without `items` is refused (a video is not
+  // priced blind), and the cloud's worker refuses a clip that is not exactly what `items` says. This
+  // server sends `mode`, `targetScale` and `items`; the other keys are the cloud's and are never sent.
+  restoration: z
+    .strictObject({
+      mode: z.enum(CLOUD_RESTORATION_MODES).optional(),
+      targetScale: z.union([z.literal(1), z.literal(1.5), z.literal(2)]).optional(),
+      preview: z
+        .strictObject({
+          enabled: z.boolean(),
+          startSec: z.number().min(0).max(CLOUD_VIDEO_MAX_SECONDS),
+          durationSec: z.literal(5),
+        })
+        .optional(),
+      previewModelRev: modelRevSchema.optional(),
+      outputMax: z.strictObject({ width: z.int().min(16).max(3840), height: z.int().min(16).max(2160) }).optional(),
+      chunkSec: z.int().min(20).max(30).optional(),
+      options: z.strictObject({ codec: cloudVideoCodec.optional() }).optional(),
+      items: z.array(cloudVideoClipSchema(7680, 4320)).length(1).optional(),
+    })
+    .refine((request) => !(request.preview?.enabled && request.previewModelRev), {
+      path: ['previewModelRev'],
+      message: 'a preview does not reference another preview',
+    })
+    .refine(
+      (request) =>
+        !request.preview?.enabled ||
+        !request.items ||
+        // an empty or longer list is the length rule's to refuse; there is no one clip to compare with
+        request.items.length !== 1 ||
+        request.preview.startSec + request.preview.durationSec <= request.items[0].durationSec,
+      { path: ['preview'], message: 'the preview lies inside the clip' },
+    ),
   // FC-48 `TranscriptionRequest`: one item per audio input, priced by its length (never a video). No `diarize`.
   transcription: z.strictObject({
     language: z.union([z.literal('auto'), languageTag]).optional(),
@@ -871,7 +929,14 @@ export const CLOUD_WORKLOAD_REQUESTS = {
       .max(5000)
       .regex(/^(?:[^\p{Cc}]|\n)*$/u),
   }),
-  interpolation: z.strictObject({ factor: z.union([z.literal(2), z.literal(4), z.literal(8)]).optional() }),
+  // FC-48 `InterpolationRequest`: 2× or 4× (the FC-34 factor 8 is gone), the highest output rate wanted
+  // and `items`, the one clip, at most 4K. This server sends `factor` and `items`.
+  interpolation: z.strictObject({
+    factor: z.union([z.literal(2), z.literal(4)]).optional(),
+    targetFps: z.int().min(2).max(CLOUD_VIDEO_MAX_FPS).optional(),
+    options: z.strictObject({ codec: cloudVideoCodec.optional() }).optional(),
+    items: z.array(cloudVideoClipSchema(3840, 2160)).length(1).optional(),
+  }),
   // FL-455 `ClipRequest`: the model name this server expects; a SKU running another model is refused
   // (422 `request-invalid`, detail `model`), so a job never runs on another model
   clip: z.strictObject({ model: identityModelName.optional() }),
@@ -1819,6 +1884,74 @@ export const upscaleResultSchema = z
     }
   });
 export type CloudUpscaleResult = z.infer<typeof upscaleResultSchema>;
+
+/** FL-961 `PhotoOperationItem`: one input's outcome; a success is exactly the input's size. */
+const photoOperationItemSchema = z
+  .strictObject({
+    inputId: upscaleInputId,
+    input: z.strictObject({ width: upscaleSide, height: upscaleSide }).nullable(),
+    outputs: z
+      .array(
+        z.strictObject({
+          outputId: upscaleInputId,
+          contentType: z.enum(['image/png', 'image/jpeg', 'image/webp']),
+          width: upscaleSide,
+          height: upscaleSide,
+          bytes: z.number().int().min(1),
+          sha256: z.string().regex(/^[\da-f]{64}$/),
+        }),
+      )
+      .max(1),
+    metrics: z.strictObject({ seconds: z.number().min(0).max(604_800) }),
+    warnings: z.array(z.enum(CLOUD_UPSCALE_WARNINGS)).max(10),
+  })
+  .superRefine((item, context) => {
+    const issue = (path: string, message: string) => context.addIssue({ code: 'custom', path: [path], message });
+    if (new Set(item.warnings).size !== item.warnings.length) {
+      issue('warnings', 'warnings are unique');
+    }
+    const failed = item.warnings.some((warning) => CLOUD_UPSCALE_FAILURE_WARNINGS.includes(warning));
+    if (failed !== (item.outputs.length === 0)) {
+      issue('outputs', 'a failed item has no output and a failure warning; a succeeded item has one output');
+    }
+    const output = item.outputs[0];
+    if (
+      output &&
+      (output.outputId !== item.inputId || output.width !== item.input?.width || output.height !== item.input?.height)
+    ) {
+      issue('outputs', 'the output is named by its input and is exactly its size');
+    }
+  });
+
+/** FL-961 `PhotoOperationResult` (`frameleaf.photo-operation/v1`), the job's result document. */
+export const photoOperationResultSchema = z
+  .strictObject({
+    schema: z.literal('frameleaf.photo-operation/v1'),
+    operation: z.enum(['repair', 'colourise']),
+    modelSku: modelSkuSchema,
+    modelRev: modelRevSchema,
+    licence: z
+      .string()
+      .min(1)
+      .max(80)
+      .regex(/^[^\p{Cc}<>]*$/u),
+    format: z.enum(['png', 'jpeg', 'webp']),
+    items: z.array(photoOperationItemSchema).min(1).max(1000),
+  })
+  .superRefine((result, context) => {
+    if (new Set(result.items.map((item) => item.inputId)).size !== result.items.length) {
+      context.addIssue({ code: 'custom', path: ['items'], message: 'inputId must be unique' });
+    }
+    for (const [index, item] of result.items.entries()) {
+      if (item.outputs[0] && item.outputs[0].contentType !== CLOUD_UPSCALE_OUTPUT_TYPES[result.format]) {
+        context.addIssue({
+          code: 'custom',
+          path: ['items', index, 'outputs'],
+          message: 'the output is in the requested format',
+        });
+      }
+    }
+  });
 
 /**
  * FC-48 `TranscriptionResult` (`transcription-v1`), the job's result document (output `result`). Only

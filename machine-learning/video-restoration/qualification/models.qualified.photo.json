@@ -1,0 +1,127 @@
+{
+  "schemaVersion": 1,
+  "weightsRoot": "/restoration/weights",
+  "models": [
+    {
+      "id": "lama-photo-repair",
+      "family": "lama-repair",
+      "operation": "repair",
+      "displayName": "Photo repair (scratches and dust)",
+      "repository": "https://github.com/xinntao/facexlib",
+      "revision": "260620ae93990a300f4b16448df9bb459f1caba9",
+      "license": {
+        "code": "MIT (facexlib)",
+        "weights": "MIT (RetinaFace detection); Apache-2.0 (LaMa)",
+        "url": "https://github.com/xinntao/facexlib/blob/master/LICENSE"
+      },
+      "nativeScale": null,
+      "runtime": {
+        "root": "/opt/restoration/facexlib",
+        "python": "/opt/restoration/photo/.venv/bin/python",
+        "argv": [
+          "{python}",
+          "-I",
+          "/usr/src/video-restoration/runtimes/photo_repair.py",
+          "--input-dir",
+          "{input_dir}",
+          "--output-dir",
+          "{output_dir}",
+          "--runtime-root",
+          "{runtime_root}",
+          "--detection",
+          "{weight:detection}",
+          "--lama",
+          "{weight:lama}"
+        ],
+        "env": {},
+        "timeoutSeconds": 900
+      },
+      "weights": [
+        {
+          "role": "detection",
+          "path": "retinaface/detection_Resnet50_Final.pth",
+          "sha256": "6d1de9c2944f2ccddca5f5e010ea5ae64a39845a86311af6fdf30841b0a5a16d",
+          "source": {
+            "repo": "retinaface-resnet50",
+            "file": "detection_Resnet50_Final.pth"
+          }
+        },
+        {
+          "role": "lama",
+          "path": "lama/model.onnx",
+          "sha256": "1faef5301d78db7dda502fe59966957ec4b79dd64e16f03ed96913c7a4eb68d6",
+          "source": {
+            "repo": "frameleaf-inpaint",
+            "file": "visual/model.onnx"
+          }
+        }
+      ],
+      "limits": {
+        "maxInputLongEdge": 8192,
+        "maxFrames": 1,
+        "maxFramesPerChunk": 1,
+        "minVramBytes": 8000000000
+      },
+      "dynamicRanges": [
+        "sdr"
+      ],
+      "requiresGpu": true,
+      "notes": "Owner sign-off 2026-11-22 on run 1296. Revision and sha256 values are those measured. minVramBytes is the owner's 8 GB rule; run 1296 was capped at 8 GiB and peaked under 3 GiB. The weights came from their upstream pins and are not on the Frameleaf model source."
+    },
+    {
+      "id": "ddcolor-colourise",
+      "family": "ddcolor",
+      "operation": "colourise",
+      "displayName": "Colourise (DDColor)",
+      "repository": "https://github.com/piddnad/DDColor",
+      "revision": "2adb63f2656ac41cbdf7b894cddd94121a3faf13",
+      "license": {
+        "code": "Apache-2.0",
+        "weights": "Apache-2.0",
+        "url": "https://github.com/piddnad/DDColor/blob/master/LICENSE"
+      },
+      "nativeScale": null,
+      "runtime": {
+        "root": "/opt/restoration/ddcolor",
+        "python": "/opt/restoration/photo/.venv/bin/python",
+        "argv": [
+          "{python}",
+          "-I",
+          "/usr/src/video-restoration/runtimes/colourise.py",
+          "--input-dir",
+          "{input_dir}",
+          "--output-dir",
+          "{output_dir}",
+          "--runtime-root",
+          "{runtime_root}",
+          "--checkpoint",
+          "{weight:ddcolor}"
+        ],
+        "env": {},
+        "timeoutSeconds": 900
+      },
+      "weights": [
+        {
+          "role": "ddcolor",
+          "path": "ddcolor/ddcolor_modelscope.pth",
+          "sha256": "17c460d7e55b32a598370621d77173be59e03c24b0823f06821db23a50c263ce",
+          "source": {
+            "repo": "ddcolor",
+            "file": "ddcolor_modelscope.pth"
+          }
+        }
+      ],
+      "limits": {
+        "maxInputLongEdge": 8192,
+        "maxFrames": 1,
+        "maxFramesPerChunk": 1,
+        "minVramBytes": 8000000000
+      },
+      "dynamicRanges": [
+        "sdr"
+      ],
+      "requiresGpu": true,
+      "notes": "Owner sign-off 2026-11-22 on run 1296. Revision and sha256 values are those measured. minVramBytes is the owner's 8 GB rule; run 1296 was capped at 8 GiB and peaked under 3 GiB. The weights came from their upstream pins and are not on the Frameleaf model source."
+    }
+  ]
+}

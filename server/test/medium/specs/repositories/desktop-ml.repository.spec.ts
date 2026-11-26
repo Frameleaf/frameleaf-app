@@ -23,7 +23,11 @@ import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { DesktopClipIndexRepository } from 'src/repositories/desktop-clip-index.repository.js';
 import { DesktopDeviceRepository } from 'src/repositories/desktop-device.repository.js';
-import { DesktopMlRepository, type DesktopMlTables } from 'src/repositories/desktop-ml.repository.js';
+import {
+  DesktopMlRepository,
+  type DesktopMlTables,
+  MAX_DESKTOP_LEASES,
+} from 'src/repositories/desktop-ml.repository.js';
 import { DesktopWorkerRepository, type DesktopWorkerTables } from 'src/repositories/desktop-worker.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -36,6 +40,14 @@ import { BaseService } from 'src/services/base.service.js';
 import { DesktopAssistancePolicyService } from 'src/services/desktop-assistance-policy.service.js';
 import { DesktopMlService } from 'src/services/desktop-ml.service.js';
 import { desktopImageModelKey } from 'src/utils/desktop-model-catalogue.js';
+import {
+  DESKTOP_CANCELS_BEFORE_FAILURE,
+  DESKTOP_CANCELS_PER_TASK,
+  DESKTOP_CANCEL_WINDOW_SECONDS,
+  DESKTOP_LEASE_SECONDS,
+  DESKTOP_PRESENCE_SECONDS,
+  DESKTOP_REQUALIFY_HOLD_SECONDS,
+} from 'src/utils/desktop-worker-timing.js';
 import { lockEffectiveConfig } from 'src/utils/effective-config-lock.js';
 import { seedDesktopQualification } from 'test/desktop-qualification.js';
 import { mediumFactory, newMediumService } from 'test/medium.factory.js';
@@ -169,6 +181,9 @@ it('knows when an online, qualified helper of the owner is ready for a model (FL
 
 it('two repository instances racing claim one task once and preserve scoped input', async () => {
   const { sut, second, grants, request } = await setup();
+  // Inside the lease length: a deadline of exactly one lease ends after the lease whenever the database
+  // clock is behind this process's clock.
+  request.deadlineAt = new Date(Date.now() + 60_000);
   const task = await sut.create(request);
   const claims = await Promise.all([
     sut.claim(grants[0], [request.modelKey]),
@@ -543,17 +558,551 @@ it('qualification expiry and replacement fence input, renewal, completion and st
   expect(await sut.heartbeat(grants[0], claim.attempt.id)).toBe(false);
   expect(await sut.complete(grants[0], claim.attempt.id, { clip: [1, 2] })).toBe(false);
   expect(await sut.fail(grants[0], claim.attempt.id)).toBe(false);
-  await seedDesktopQualification(db, grants[0], request);
-  expect(await sut.input(grants[0], claim.attempt.id, () => Promise.resolve())).toBeUndefined();
-  expect(await sut.claim(grants[0], [request.modelKey])).toBeUndefined();
+  // Qualifying again does not end the attempt in flight: it goes on under the new qualification.
+  const again = await seedDesktopQualification(db, grants[0], request);
+  expect(await sut.input(grants[0], claim.attempt.id, () => Promise.resolve())).toEqual(request.input);
+  const held = (await sut.claim(grants[0], [request.modelKey]))!;
+  expect([held.attempt.id, held.qualificationId]).toEqual([claim.attempt.id, again.id]);
+  expect(await sut.heartbeat(grants[0], claim.attempt.id)).toBe(true);
+  expect(await sut.hasLiveAttempt(task.id)).toBe(true);
   const secondTask = await sut.create(request);
   const second = (await sut.claim(grants[1], [request.modelKey]))!;
   expect(second.task.id).toBe(secondTask.id);
   expect(await sut.complete(grants[1], second.attempt.id, { clip: [3, 4] })).toBe(true);
   await expect(sut.assertAdoption(secondTask.id, secondTask)).resolves.toBeUndefined();
   await seedDesktopQualification(db, grants[1], request);
+  await expect(sut.assertAdoption(secondTask.id, secondTask)).resolves.toBeUndefined();
+  // but a qualification for another configuration of the model does not carry the work over
+  await seedDesktopQualification(db, grants[1], { ...request, config: { clip: { textual: { modelName: 'other' } } } });
   await expect(sut.assertAdoption(secondTask.id, secondTask)).rejects.toThrow('desktop_result_authority_lost');
+  await seedDesktopQualification(db, grants[0], { ...request, inputKind: 'image' });
+  expect(await sut.complete(grants[0], claim.attempt.id, { clip: [1, 2] })).toBe(false);
   expect((await sut.result(task.id))?.state).toBe('running');
+  await brokerDb.deleteFrom('desktop_ml_task').where('ownerId', '=', request.ownerId).execute();
+});
+
+it('keeps a lease good for a desktop that says nothing for most of it, and no longer', async () => {
+  const { sut, grants, request } = await setup();
+  const task = await sut.create(request);
+  const claim = (await sut.claim(grants[0], [request.modelKey]))!;
+  const silentFor = (seconds: number) =>
+    sql`UPDATE desktop_worker_session SET "lastSeenAt" = clock_timestamp() - make_interval(secs => ${seconds})
+      WHERE id = ${grants[0].sessionId}::uuid`.execute(db);
+  // 91 seconds of silence under a 120-second lease used to lose the job
+  await silentFor(91);
+  expect(await sut.hasLiveAttempt(task.id)).toBe(true);
+  expect(DESKTOP_PRESENCE_SECONDS).toBeGreaterThan(DESKTOP_LEASE_SECONDS);
+  await silentFor(DESKTOP_LEASE_SECONDS + 1);
+  expect(await sut.hasLiveAttempt(task.id)).toBe(true);
+  expect(await sut.hasReadyWorker(request.ownerId, request.modelKey)).toBe(true);
+  await silentFor(DESKTOP_PRESENCE_SECONDS + 1);
+  expect(await sut.hasLiveAttempt(task.id)).toBe(false);
+  // the lease itself decides what the desktop may still do
+  expect(await sut.heartbeat(grants[0], claim.attempt.id)).toBe(true);
+  const lease = await brokerDb
+    .selectFrom('desktop_ml_attempt')
+    .select(sql<number>`extract(epoch from "expiresAt" - clock_timestamp())`.as('seconds'))
+    .where('id', '=', claim.attempt.id)
+    .executeTakeFirstOrThrow();
+  expect(Number(lease.seconds)).toBeGreaterThan(DESKTOP_LEASE_SECONDS - 10);
+  expect(Number(lease.seconds)).toBeLessThanOrEqual(DESKTOP_LEASE_SECONDS);
+  await brokerDb.deleteFrom('desktop_ml_task').where('ownerId', '=', request.ownerId).execute();
+});
+
+it('puts a task a paused desktop gave back straight in line, and counts only real failures', async () => {
+  const { sut, grants, request } = await setup();
+  const task = await sut.create(request);
+  // the person pauses the desktop, again and again: the task never fails for it
+  for (let n = 0; n < 4; n++) {
+    const claim = (await sut.claim(grants[0], [request.modelKey]))!;
+    expect(await sut.fail(grants[0], claim.attempt.id, 'cancelled')).toBe(true);
+    expect((await sut.result(task.id))?.state).toBe('pending');
+  }
+  for (const code of ['inference-failed', 'model-unavailable'] as const) {
+    const claim = (await sut.claim(grants[1], [request.modelKey]))!;
+    expect(await sut.fail(grants[1], claim.attempt.id, code)).toBe(true);
+    expect((await sut.result(task.id))?.state).toBe('pending');
+  }
+  const last = (await sut.claim(grants[1], [request.modelKey]))!;
+  expect(last.task.generation).toBe(7);
+  expect(await sut.fail(grants[1], last.attempt.id, 'input-invalid')).toBe(true);
+  expect(await sut.result(task.id)).toMatchObject({ state: 'failed', result: null });
+  await brokerDb.deleteFrom('desktop_ml_task').where('ownerId', '=', request.ownerId).execute();
+});
+
+it('takes a model away from a desktop that keeps failing it, until it qualifies again', async () => {
+  const { sut, grants, request } = await setup();
+  await sut.create(request);
+  const claim = (await sut.claim(grants[0], [request.modelKey]))!;
+  expect(await sut.attemptModelKey(grants[0], claim.attempt.id)).toBe(request.modelKey);
+  expect(await sut.attemptModelKey(grants[1], claim.attempt.id)).toBeUndefined();
+  expect(await sut.fail(grants[0], claim.attempt.id)).toBe(true);
+  expect(await sut.withdraw(grants[0], request.modelKey)).toBe(true);
+  // no longer offered that work, nor counted as ready for it; the other desktop is untouched
+  expect(await sut.claim(grants[0], [request.modelKey])).toBeUndefined();
+  expect(
+    (await new DesktopWorkerRepository(db).session(grants[0].sessionId, grants[0].credentialHash))?.modelKeys,
+  ).toEqual([]);
+  await sql`UPDATE desktop_worker_session SET "lastSeenAt" = clock_timestamp() - interval '1 hour'
+    WHERE id = ${grants[1].sessionId}::uuid`.execute(db);
+  expect(await sut.hasReadyWorker(request.ownerId, request.modelKey)).toBe(false);
+  expect(await sut.withdraw(grants[0], request.modelKey)).toBe(false);
+  // it qualifies again and is granted the model again
+  const qualification = await seedDesktopQualification(db, grants[0], request);
+  await db
+    .transaction()
+    .execute((tx) =>
+      new DesktopWorkerRepository(db).grantQualifiedModel(
+        { grant: grants[0], ownerId: request.ownerId, qualification, modelKeys: [request.modelKey] },
+        tx,
+      ),
+    );
+  expect((await sut.claim(grants[0], [request.modelKey]))?.attempt.generation).toBe(2);
+  await brokerDb.deleteFrom('desktop_ml_task').where('ownerId', '=', request.ownerId).execute();
+});
+
+it('gives a desktop that asks several leases at once, up to the Jobs setting of that work', async () => {
+  const profiles: DesktopModelProfile[] = JSON.parse(
+    readFileSync(join(process.cwd(), 'resources/desktop/model-catalogue.json'), 'utf8'),
+  ).profiles;
+  const { sut, grants, request } = await setup(
+    true,
+    profiles.find((p) => p.workload === 'clip' && p.spec.fixtureKind === 'text')!,
+  );
+  const [desktop, other] = grants;
+  const setting = (concurrency: number) =>
+    sql`INSERT INTO job_queue (name, concurrency) VALUES ('smartSearch', ${concurrency})
+      ON CONFLICT (name) DO UPDATE SET concurrency = EXCLUDED.concurrency`.execute(db);
+  await setting(3);
+  expect(await sut.workloadConcurrency()).toMatchObject({ clip: 3 });
+  const tasks = [];
+  for (let n = 0; n < 5; n++) tasks.push(await sut.create(request));
+  // each claim with free slots returns one new lease, oldest task first, never one it already holds
+  const leases = [];
+  for (let n = 0; n < 3; n++) leases.push((await sut.claim(desktop, [request.modelKey], 4))!);
+  expect(leases.map((lease) => lease.task.id)).toEqual(tasks.slice(0, 3).map((task) => task.id));
+  expect(leases.every((lease) => !lease.resumed)).toBe(true);
+  // the administrator's setting is the ceiling, whatever the desktop says it can take
+  expect(await sut.claim(desktop, [request.modelKey], 4)).toBeUndefined();
+  // another desktop has its own three
+  expect((await sut.claim(other, [request.modelKey], 1))?.task.id).toBe(tasks[3].id);
+  // every lease stands alone: heartbeat, input, result and failure of one leave the others as they were
+  expect(await sut.heartbeat(desktop, leases[0].attempt.id)).toBe(true);
+  expect(await sut.input(desktop, leases[1].attempt.id, () => Promise.resolve())).toEqual(request.input);
+  expect(await sut.complete(desktop, leases[0].attempt.id, { clip: '[1]' })).toBe(true);
+  expect(await sut.fail(desktop, leases[1].attempt.id, 'cancelled')).toBe(true);
+  expect(await sut.heartbeat(desktop, leases[2].attempt.id)).toBe(true);
+  expect(await sut.hasLiveAttempt(tasks[2].id)).toBe(true);
+  // the two free places are filled again: the task it handed back, then the next one
+  const again = [
+    (await sut.claim(desktop, [request.modelKey], 2))!,
+    (await sut.claim(desktop, [request.modelKey], 1))!,
+  ];
+  expect(again.map((lease) => lease.task.id)).toEqual([tasks[1].id, tasks[4].id]);
+  // a lower setting stops new leases and leaves the held ones alone
+  await setting(1);
+  expect(await sut.claim(desktop, [request.modelKey], 4)).toBeUndefined();
+  expect(await sut.heartbeat(desktop, leases[2].attempt.id)).toBe(true);
+  // a desktop that says nothing about slots still holds one lease, and is given it again
+  const single = (await sut.claim(other, [request.modelKey]))!;
+  expect([single.task.id, single.resumed]).toEqual([tasks[3].id, true]);
+  // taking the model away ends that desktop's leases of that model, and the tasks go straight back in line
+  // for another desktop instead of waiting for those leases to run out
+  expect((await sut.result(tasks[2].id))?.state).toBe('running');
+  await sut.withdraw(desktop, request.modelKey);
+  expect(await sut.heartbeat(desktop, leases[2].attempt.id)).toBe(false);
+  expect(await sut.complete(desktop, again[0].attempt.id, { clip: '[1]' })).toBe(false);
+  expect(
+    await Promise.all([tasks[1], tasks[2], tasks[4]].map(async (task) => (await sut.result(task.id))?.state)),
+  ).toEqual(['pending', 'pending', 'pending']);
+  expect(await sut.heartbeat(other, single.attempt.id)).toBe(true);
+  await setting(3);
+  expect((await sut.claim(other, [request.modelKey], 2))?.task.id).toBe(tasks[1].id);
+  await brokerDb.deleteFrom('desktop_ml_task').where('ownerId', '=', request.ownerId).execute();
+  await sql`DELETE FROM job_queue WHERE name = 'smartSearch'`.execute(db);
+});
+
+it('never gives one desktop more than 64 leases, and bounds open tasks by their bytes as well as their number', async () => {
+  const profiles: DesktopModelProfile[] = JSON.parse(
+    readFileSync(join(process.cwd(), 'resources/desktop/model-catalogue.json'), 'utf8'),
+  ).profiles;
+  const { sut, grants, request } = await setup(
+    true,
+    profiles.find((p) => p.workload === 'clip' && p.spec.fixtureKind === 'text')!,
+  );
+  await brokerDb.deleteFrom('desktop_ml_task').execute();
+  await sql`INSERT INTO job_queue (name, concurrency) VALUES ('smartSearch', 500)
+    ON CONFLICT (name) DO UPDATE SET concurrency = EXCLUDED.concurrency`.execute(db);
+  for (let n = 0; n < MAX_DESKTOP_LEASES + 2; n++) await sut.create(request);
+  let leased = 0;
+  while (await sut.claim(grants[0], [request.modelKey], 64)) leased++;
+  // the Jobs setting would allow 500 and the desktop asked for 64 more each time
+  expect(leased).toBe(MAX_DESKTOP_LEASES);
+  expect(await sut.claim(grants[1], [request.modelKey], 1)).toBeDefined();
+  // the inputs the open tasks hold are bounded together; a task alone always fits
+  const open = (MAX_DESKTOP_LEASES + 2) * request.input.length;
+  await expect(sut.create(request, open + request.input.length - 1)).rejects.toThrow('desktop_broker_busy');
+  await expect(sut.create(request, open + request.input.length)).resolves.toBeDefined();
+  await brokerDb.deleteFrom('desktop_ml_task').execute();
+  await expect(sut.create(request, 1)).resolves.toBeDefined();
+  await brokerDb.deleteFrom('desktop_ml_task').execute();
+  await sql`DELETE FROM job_queue WHERE name = 'smartSearch'`.execute(db);
+});
+
+it('counts failures in a row in the database, per desktop and model, and holds a withdrawn model back', async () => {
+  const { sut, second, grants, request } = await setup();
+  const [one, two] = grants;
+  // another API process, or the same one after a restart, sees the same count
+  expect(await sut.countFailure(one, request.modelKey)).toBe(1);
+  expect(await second.countFailure(one, request.modelKey)).toBe(2);
+  expect(await new DesktopMlRepository(db).countFailure(two, request.modelKey)).toBe(1);
+  expect(await sut.countFailure(one, 'another-model')).toBe(1);
+  // a new worker session for the same computer does not start the count again
+  expect(await sut.countFailure({ deviceId: one.deviceId }, request.modelKey)).toBe(3);
+  // a result it got right does
+  await second.clearFailures(one, request.modelKey);
+  expect(await sut.countFailure(one, request.modelKey)).toBe(1);
+  expect(await sut.countFailure(two, request.modelKey)).toBe(2);
+
+  expect(await sut.heldUntil(one.deviceId, [request.modelKey])).toBeUndefined();
+  expect(await sut.withdraw(one, request.modelKey)).toBe(true);
+  const until = (await second.heldUntil(one.deviceId, ['unrelated', request.modelKey]))!;
+  const seconds = (until.getTime() - Date.now()) / 1000;
+  expect(seconds).toBeGreaterThan(DESKTOP_REQUALIFY_HOLD_SECONDS - 30);
+  expect(seconds).toBeLessThanOrEqual(DESKTOP_REQUALIFY_HOLD_SECONDS + 5);
+  // only that computer, only that model; and the count starts again once it is back
+  expect(await sut.heldUntil(two.deviceId, [request.modelKey])).toBeUndefined();
+  expect(await sut.heldUntil(one.deviceId, ['another-model'])).toBeUndefined();
+  await sut.clearFailures(one, request.modelKey);
+  expect(await sut.heldUntil(one.deviceId, [request.modelKey])).toEqual(until);
+  expect(await sut.countFailure(one, request.modelKey)).toBe(1);
+  // the Computers data says so too (a made-up model key names no kind of work, so nothing is listed for it)
+  const listed = (await new MlDestinationRepository(db).getDesktopHelpers()).find((row) => row.id === one.deviceId)!;
+  expect(listed.withdrawn).toEqual([]);
+  await sut.withdraw(one, `face:${'f'.repeat(64)}`);
+  const held = (await new MlDestinationRepository(db).getDesktopHelpers()).find((row) => row.id === one.deviceId)!;
+  expect(held.withdrawn).toEqual([{ workload: 'face', until: expect.any(Date) }]);
+  await second.clearWithdrawal(one.deviceId, `face:${'f'.repeat(64)}`);
+  // the desktop can be told which of its models were taken away, under any runtime revision's key
+  expect(await second.withdrawnModels(one.deviceId, ['another-model', request.modelKey])).toEqual([request.modelKey]);
+  expect(await sut.withdrawnModels(two.deviceId, [request.modelKey])).toEqual([]);
+  // the hold ends by itself
+  await sql`UPDATE system_metadata SET value = jsonb_set(value, ${`{${one.deviceId}:${request.modelKey},heldUntil}`}::text[],
+    to_jsonb(to_char(now() AT TIME ZONE 'UTC' - interval '1 second', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')))
+    WHERE key = ${SystemMetadataKey.FrameleafDesktopModelFailures}`.execute(db);
+  expect(await sut.heldUntil(one.deviceId, [request.modelKey])).toBeUndefined();
+  // after the hold it is still known as withdrawn, until a report grants it again
+  expect(await sut.withdrawnModels(one.deviceId, [request.modelKey])).toEqual([request.modelKey]);
+  await second.clearWithdrawal(one.deviceId, request.modelKey);
+  expect(await sut.withdrawnModels(one.deviceId, [request.modelKey])).toEqual([]);
+  expect(await sut.countFailure(two, request.modelKey)).toBe(3);
+});
+
+describe('failures and hand-backs of a desktop holding several tasks', () => {
+  const several = async () => {
+    const profiles: DesktopModelProfile[] = JSON.parse(
+      readFileSync(join(process.cwd(), 'resources/desktop/model-catalogue.json'), 'utf8'),
+    ).profiles;
+    const made = await setup(
+      true,
+      profiles.find((p) => p.workload === 'clip' && p.spec.fixtureKind === 'text')!,
+    );
+    await brokerDb.deleteFrom('desktop_ml_task').execute();
+    await sql`DELETE FROM system_metadata WHERE key = ${SystemMetadataKey.FrameleafDesktopModelFailures}`.execute(db);
+    await sql`INSERT INTO job_queue (name, concurrency) VALUES ('smartSearch', 4)
+      ON CONFLICT (name) DO UPDATE SET concurrency = EXCLUDED.concurrency`.execute(db);
+    const lease = async () => {
+      await made.sut.create(made.request);
+      return (await made.sut.claim(made.grants[0], [made.request.modelKey], 4))!.attempt.id;
+    };
+    return { ...made, lease };
+  };
+  afterEach(async () => {
+    await brokerDb.deleteFrom('desktop_ml_task').execute();
+    await sql`DELETE FROM job_queue WHERE name = 'smartSearch'`.execute(db);
+  });
+
+  it('counts every failure, with several tasks in hand and a refill between them', async () => {
+    const { sut, grants, request, lease } = await several();
+    const [desktop] = grants;
+    // four tasks in hand, each fails by itself and its place is filled again: three failures are three
+    const held = [await lease(), await lease(), await lease(), await lease()];
+    for (const [index, id] of held.slice(0, 3).entries()) {
+      expect(await sut.fail(desktop, id, 'inference-failed')).toBe(true);
+      expect(await sut.countFailure(desktop, request.modelKey)).toBe(index + 1);
+      await lease();
+    }
+  });
+
+  it('counts hand-backs with no lease in between once, each later one again, and starts over after the window', async () => {
+    const { sut, grants, request, lease } = await several();
+    const [desktop] = grants;
+    // a stop with three tasks in hand is one hand-back
+    for (const [index, id] of [await lease(), await lease(), await lease()].entries()) {
+      expect(await sut.fail(desktop, id, 'cancelled')).toBe(true);
+      expect(await sut.countCancel(desktop, request.modelKey)).toBe(index === 0 ? 1 : 0);
+    }
+    // a desktop that takes a task and hands it back, again and again, with other tasks still in hand
+    const kept = [await lease(), await lease()];
+    for (const expected of [2, 3, 4]) {
+      const id = await lease();
+      expect(await sut.fail(desktop, id, 'cancelled')).toBe(true);
+      expect(await sut.countCancel(desktop, request.modelKey)).toBe(expected);
+    }
+    // handing back the ones it kept, with no lease since, belongs to the last hand-back
+    for (const id of kept) {
+      expect(await sut.fail(desktop, id, 'cancelled')).toBe(true);
+      expect(await sut.countCancel(desktop, request.modelKey)).toBe(0);
+    }
+    // a result it got right ends the run
+    await sut.clearFailures(desktop, request.modelKey);
+    await lease();
+    expect(await sut.countCancel(desktop, request.modelKey)).toBe(1);
+    await lease();
+    expect(await sut.countCancel(desktop, request.modelKey)).toBe(2);
+    // and so does the end of the window
+    await sql`UPDATE system_metadata SET value = jsonb_set(value, ${`{${desktop.deviceId}:${request.modelKey},cancelsFrom}`}::text[],
+      to_jsonb(to_char(now() AT TIME ZONE 'UTC' - interval '${sql.raw(String(DESKTOP_CANCEL_WINDOW_SECONDS + 1))} seconds', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')))
+      WHERE key = ${SystemMetadataKey.FrameleafDesktopModelFailures}`.execute(db);
+    await lease();
+    expect(await sut.countCancel(desktop, request.modelKey)).toBe(1);
+  });
+
+  it('counts one stop once above the cap too', async () => {
+    const { sut, grants, request, lease } = await several();
+    const [desktop] = grants;
+    // five pauses, each with one task in hand
+    for (let expected = 1; expected <= DESKTOP_CANCELS_BEFORE_FAILURE; expected++) {
+      expect(await sut.fail(desktop, await lease(), 'cancelled')).toBe(true);
+      expect(await sut.countCancel(desktop, request.modelKey)).toBe(expected);
+    }
+    // then one stop with three in hand: one hand-back past the cap, not three
+    const counts: number[] = [];
+    for (const id of [await lease(), await lease(), await lease()]) {
+      expect(await sut.fail(desktop, id, 'cancelled')).toBe(true);
+      counts.push(await sut.countCancel(desktop, request.modelKey));
+    }
+    expect(counts).toEqual([DESKTOP_CANCELS_BEFORE_FAILURE + 1, 0, 0]);
+  });
+
+  it('counts the tasks a crash hands back as part of its one failure, and the next hand-back again', async () => {
+    const { sut, grants, request, lease } = await several();
+    const [desktop] = grants;
+    for (let expected = 1; expected <= DESKTOP_CANCELS_BEFORE_FAILURE; expected++) {
+      expect(await sut.fail(desktop, await lease(), 'cancelled')).toBe(true);
+      expect(await sut.countCancel(desktop, request.modelKey)).toBe(expected);
+    }
+    // a crash with three in hand: `model-unavailable` for one, `cancelled` for the others
+    const [crashed, ...rest] = [await lease(), await lease(), await lease()];
+    expect(await sut.fail(desktop, crashed, 'model-unavailable')).toBe(true);
+    expect(await sut.countFailure(desktop, request.modelKey, true)).toBe(1);
+    for (const id of rest) {
+      expect(await sut.fail(desktop, id, 'cancelled')).toBe(true);
+      expect(await sut.countCancel(desktop, request.modelKey)).toBe(0);
+    }
+    expect(await sut.fail(desktop, await lease(), 'cancelled')).toBe(true);
+    expect(await sut.countCancel(desktop, request.modelKey)).toBe(DESKTOP_CANCELS_BEFORE_FAILURE + 1);
+  });
+
+  it('counts a crash once when its hand-backs are reported before its model-unavailable', async () => {
+    const { sut, grants, request, lease } = await several();
+    const [desktop] = grants;
+    for (let expected = 1; expected <= DESKTOP_CANCELS_BEFORE_FAILURE; expected++) {
+      expect(await sut.fail(desktop, await lease(), 'cancelled')).toBe(true);
+      expect(await sut.countCancel(desktop, request.modelKey)).toBe(expected);
+    }
+    const [crashed, other] = [await lease(), await lease()];
+    // the hand-back is past the cap: the service counts it as a failure
+    expect(await sut.fail(desktop, other, 'cancelled')).toBe(true);
+    expect(await sut.countCancel(desktop, request.modelKey)).toBe(DESKTOP_CANCELS_BEFORE_FAILURE + 1);
+    expect(await sut.countFailure(desktop, request.modelKey)).toBe(1);
+    // the crash report of the same stop adds nothing; a second one for another task it held does
+    expect(await sut.fail(desktop, crashed, 'model-unavailable')).toBe(true);
+    expect(await sut.countFailure(desktop, request.modelKey, true)).toBe(1);
+    expect(await sut.countFailure(desktop, request.modelKey, true)).toBe(2);
+    expect(await sut.fail(desktop, await lease(), 'model-unavailable')).toBe(true);
+    expect(await sut.countFailure(desktop, request.modelKey, true)).toBe(3);
+  });
+
+  it('takes back the hand-back of a crash reported before its model-unavailable, below the cap', async () => {
+    const { sut, grants, request, lease } = await several();
+    const [desktop] = grants;
+    for (let expected = 1; expected < DESKTOP_CANCELS_BEFORE_FAILURE; expected++) {
+      expect(await sut.fail(desktop, await lease(), 'cancelled')).toBe(true);
+      expect(await sut.countCancel(desktop, request.modelKey)).toBe(expected);
+    }
+    // a crash with two in hand, the hand-back reported first: one failure, no hand-back
+    const [crashed, other] = [await lease(), await lease()];
+    expect(await sut.fail(desktop, other, 'cancelled')).toBe(true);
+    expect(await sut.countCancel(desktop, request.modelKey)).toBe(DESKTOP_CANCELS_BEFORE_FAILURE);
+    expect(await sut.fail(desktop, crashed, 'model-unavailable')).toBe(true);
+    expect(await sut.countFailure(desktop, request.modelKey, true)).toBe(1);
+    // so the next hand-back is the fifth, not a failure
+    expect(await sut.fail(desktop, await lease(), 'cancelled')).toBe(true);
+    expect(await sut.countCancel(desktop, request.modelKey)).toBe(DESKTOP_CANCELS_BEFORE_FAILURE);
+  });
+
+  it('starts the window at the next hand-back when a crash takes back the only one', async () => {
+    const { sut, grants, request, lease } = await several();
+    const [desktop] = grants;
+    const [crashed, other] = [await lease(), await lease()];
+    expect(await sut.fail(desktop, other, 'cancelled')).toBe(true);
+    expect(await sut.countCancel(desktop, request.modelKey)).toBe(1);
+    expect(await sut.fail(desktop, crashed, 'model-unavailable')).toBe(true);
+    expect(await sut.countFailure(desktop, request.modelKey, true)).toBe(1);
+    const record = async () => {
+      const { rows } = await sql<{ entry: { cancels?: number; cancelsFrom?: string } }>`
+        SELECT value -> ${`${desktop.deviceId}:${request.modelKey}`} AS entry FROM system_metadata
+        WHERE key = ${SystemMetadataKey.FrameleafDesktopModelFailures}`.execute(db);
+      return rows[0].entry;
+    };
+    const crash = await record();
+    expect(crash.cancels).toBe(0);
+    expect(crash.cancelsFrom).toBeUndefined();
+    expect(await sut.fail(desktop, await lease(), 'cancelled')).toBe(true);
+    expect(await sut.countCancel(desktop, request.modelKey)).toBe(1);
+    expect((await record()).cancelsFrom).toBeDefined();
+  });
+
+  it('counts the hand-back of a lease made while the stop before it was being counted', async () => {
+    const { sut, grants, request, lease } = await several();
+    const [desktop] = grants;
+    expect(await sut.fail(desktop, await lease(), 'cancelled')).toBe(true);
+    expect(await sut.countCancel(desktop, request.modelKey)).toBe(1);
+    // the stop was written after this lease was made: the record says so
+    const id = await lease();
+    await sql`UPDATE system_metadata SET value = jsonb_set(value, ${`{${desktop.deviceId}:${request.modelKey},cancelAt}`}::text[],
+      to_jsonb(to_char(now() AT TIME ZONE 'UTC' + interval '1 minute', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')))
+      WHERE key = ${SystemMetadataKey.FrameleafDesktopModelFailures}`.execute(db);
+    expect(await sut.fail(desktop, id, 'cancelled')).toBe(true);
+    expect(await sut.countCancel(desktop, request.modelKey)).toBe(2);
+  });
+
+  it('reads the newest lease under the lock, so a crash counted late does not put an older lease in the record', async () => {
+    const { sut, grants, request, lease } = await several();
+    const [desktop] = grants;
+    await lease();
+    let crash!: Promise<number>;
+    const id = await db.transaction().execute(async (held) => {
+      await sql`SELECT pg_advisory_xact_lock(912740, 2)`.execute(held);
+      crash = sut.countFailure(desktop, request.modelKey, true);
+      await vi.waitFor(async () => {
+        const { rows } = await sql`SELECT 1 FROM pg_locks WHERE locktype = 'advisory' AND NOT granted`.execute(db);
+        expect(rows).toHaveLength(1);
+      });
+      // a lease made while the crash report waits its turn
+      return lease();
+    });
+    expect(await crash).toBe(1);
+    // the crash is counted with that lease in hand: its hand-back is part of the crash, not a stop of its own
+    expect(await sut.fail(desktop, id, 'cancelled')).toBe(true);
+    expect(await sut.countCancel(desktop, request.modelKey)).toBe(0);
+  });
+
+  it('keeps the hand-backs of an open window when the failure they sit beside is an hour old', async () => {
+    const { sut, grants, request, lease } = await several();
+    const [desktop] = grants;
+    expect(await sut.countFailure(desktop, request.modelKey)).toBe(1);
+    await lease();
+    expect(await sut.countCancel(desktop, request.modelKey)).toBe(1);
+    await sql`UPDATE system_metadata SET value = jsonb_set(value, ${`{${desktop.deviceId}:${request.modelKey},at}`}::text[],
+      to_jsonb(to_char(now() AT TIME ZONE 'UTC' - interval '61 minutes', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')))
+      WHERE key = ${SystemMetadataKey.FrameleafDesktopModelFailures}`.execute(db);
+    // the old failure is forgotten, the hand-backs of the last ten minutes are not
+    await lease();
+    expect(await sut.countCancel(desktop, request.modelKey)).toBe(2);
+    await lease();
+    expect(await sut.countCancel(desktop, request.modelKey)).toBe(3);
+    expect(await sut.countFailure(desktop, request.modelKey)).toBe(1);
+  });
+
+  it('fails a task that is only ever handed back, after the hand-backs a person stopping would make', async () => {
+    const { sut, grants, request } = await several();
+    const task = await sut.create(request);
+    for (let n = 0; n < DESKTOP_CANCELS_PER_TASK + 3; n++) {
+      expect((await sut.result(task.id))?.state).toBe('pending');
+      const claim = (await sut.claim(grants[n % 2], [request.modelKey], 1))!;
+      expect(await sut.fail(grants[n % 2], claim.attempt.id, 'cancelled')).toBe(true);
+    }
+    expect(await sut.result(task.id)).toMatchObject({ state: 'failed', result: null });
+  });
+
+  it('locks the task before its attempt when a model is withdrawn, as a cancelled job does', async () => {
+    const { sut, grants, request } = await several();
+    const [desktop] = grants;
+    const task = await sut.create(request);
+    const claim = (await sut.claim(desktop, [request.modelKey], 1))!;
+    // a job being cancelled holds the task row; the withdrawal must wait for it without holding the attempt
+    let withdrawn: Promise<boolean> | undefined;
+    await db.transaction().execute(async (tx) => {
+      await sql`SELECT 1 FROM desktop_ml_task WHERE id = ${task.id}::uuid FOR UPDATE`.execute(tx);
+      withdrawn = sut.withdraw(desktop, request.modelKey);
+      // wait until the withdrawal is seen waiting for the task row, however slow the machine
+      for (let waited = 0; ; waited++) {
+        // the activity view is a snapshot kept for the whole transaction unless it is cleared
+        await sql`SELECT pg_stat_clear_snapshot()`.execute(tx);
+        const { rows } = await sql<{ waiting: string }>`SELECT count(*) AS waiting FROM pg_stat_activity
+          WHERE datname = current_database() AND wait_event_type = 'Lock' AND query ILIKE '%desktop_ml_task%'`.execute(
+          tx,
+        );
+        if (Number(rows[0].waiting) > 0) break;
+        if (waited > 300) throw new Error('the withdrawal never waited for the task row');
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+      await expect(
+        sql`SELECT 1 FROM desktop_ml_attempt WHERE id = ${claim.attempt.id}::uuid FOR UPDATE NOWAIT`.execute(tx),
+      ).resolves.toBeDefined();
+    });
+    expect(await withdrawn).toBe(true);
+    expect((await sut.result(task.id))?.state).toBe('pending');
+    // and both at once, many times over, never deadlock
+    for (let n = 0; n < 10; n++) {
+      await sut.clearWithdrawal(desktop.deviceId, request.modelKey);
+      const again = await several();
+      const tasks = await Promise.all([1, 2, 3].map(() => again.sut.create(again.request)));
+      for (let slot = 0; slot < 3; slot++) await again.sut.claim(again.grants[0], [again.request.modelKey], 4);
+      await expect(
+        Promise.all([
+          again.sut.withdraw(again.grants[0], again.request.modelKey),
+          ...tasks.toReversed().map((item) => again.sut.cancel(item.id)),
+        ]),
+      ).resolves.toBeDefined();
+    }
+  }, 60_000);
+});
+
+it('leases a search task to a desktop on another runtime revision, under the key that desktop holds', async () => {
+  const profiles: DesktopModelProfile[] = JSON.parse(
+    readFileSync(join(process.cwd(), 'resources/desktop/model-catalogue.json'), 'utf8'),
+  ).profiles;
+  const spaces: { visualModelKey: string }[] = JSON.parse(
+    readFileSync(join(process.cwd(), 'resources/desktop/model-spaces.json'), 'utf8'),
+  ).spaces;
+  const visual = (index: number) => profiles.find((p) => p.modelKey === spaces[index].visualModelKey)!;
+  // the same model under two desktop runtime revisions: different keys, the same request and the same vectors
+  const taskProfile = visual(0);
+  const held = spaces
+    .map((_, index) => visual(index))
+    .find((p) => p.modelName === taskProfile.modelName && p.modelKey !== taskProfile.modelKey)!;
+  const other = spaces.map((_, index) => visual(index)).find((p) => p.modelName !== taskProfile.modelName)!;
+  const { sut, grants, request } = await setup(false, held);
+  await Promise.all(grants.map((grant) => seedDesktopQualification(db, grant, request)));
+  expect(await sut.hasReadyWorker(request.ownerId, taskProfile.modelKey)).toBe(true);
+  expect(await sut.hasReadyWorker(request.ownerId, other.modelKey)).toBe(false);
+  // a task of another model is never this desktop's, whatever its request looks like
+  await sut.create({ ...request, modelKey: other.modelKey });
+  expect(await sut.claim(grants[0], [held.modelKey])).toBeUndefined();
+  const task = await sut.create({ ...request, modelKey: taskProfile.modelKey });
+  const claim = (await sut.claim(grants[0], [held.modelKey]))!;
+  expect(claim.task).toMatchObject({ id: task.id, modelKey: taskProfile.modelKey });
+  expect(claim.workerModelKey).toBe(held.modelKey);
+  expect(await sut.hasLiveAttempt(task.id)).toBe(true);
+  expect(await sut.heartbeat(grants[0], claim.attempt.id)).toBe(true);
+  expect(await sut.input(grants[0], claim.attempt.id, () => Promise.resolve())).toEqual(request.input);
+  expect(await sut.complete(grants[0], claim.attempt.id, { clip: '[1]' })).toBe(true);
+  // the result is adopted for the task as it was made: one producer key across the library
+  await expect(sut.assertAdoption(task.id, task)).resolves.toBeUndefined();
+  await brokerDb.deleteFrom('desktop_ml_task').where('ownerId', '=', request.ownerId).execute();
 });
 
 it('qualification authorizes only the exact request configuration and input kind', async () => {
@@ -720,7 +1269,7 @@ it.each(['unclaimed', 'stale-worker'] as const)(
       const task = await firstReady.promise;
       const held = (await helper.claim(grants[0], [request.modelKey]))!;
       expect(held.task.id).toBe(task.id);
-      await sql`update desktop_worker_session set "lastSeenAt"=clock_timestamp()-interval '91 seconds'
+      await sql`update desktop_worker_session set "lastSeenAt"=clock_timestamp()-make_interval(secs => ${DESKTOP_PRESENCE_SECONDS + 1})
       where id=${grants[0].sessionId}::uuid`.execute(db);
       await firstExecution;
       expect(await helper.input(grants[0], held.attempt.id, () => Promise.resolve())).toBeUndefined();
@@ -812,7 +1361,7 @@ it.each([
         break;
       }
       case 'stale': {
-        await workerDbUpdate({ lastSeenAt: new Date(Date.now() - 91_000) });
+        await workerDbUpdate({ lastSeenAt: new Date(Date.now() - (DESKTOP_PRESENCE_SECONDS + 1) * 1000) });
         break;
       }
       case 'revoked-worker': {

@@ -6,7 +6,7 @@ import { AssetEditAction } from 'src/dtos/editing.dto.js';
 import { AssetStatus, AssetVisibility, DocumentEditAction } from 'src/enum.js';
 import { DB } from 'src/schema/index.js';
 import { AssetDocumentEditTable } from 'src/schema/tables/asset-document-edit.table.js';
-import { asUuid, tokenizeForSearch, withEdits, withHiddenContentFilter } from 'src/utils/database.js';
+import { asUuid, isPrintBack, tokenizeForSearch, withEdits, withHiddenContentFilter } from 'src/utils/database.js';
 import { isLocked, revealedLockScope } from 'src/utils/locked.js';
 import { paginationHelper } from 'src/utils/pagination.js';
 
@@ -68,13 +68,27 @@ export class DocumentRepository {
       .where(revealedLockScope(options.lockedOwnerId, 'asset'))
       .$call((qb) => withHiddenContentFilter(qb, options))
       .where((eb) =>
-        eb.exists(
-          eb
-            .selectFrom('ocr_search')
-            .select(sql`1`.as('found'))
-            .whereRef('ocr_search.assetId', '=', 'asset.id')
-            .where('ocr_search.text', '!=', ''),
-        ),
+        eb.or([
+          eb.exists(
+            eb
+              .selectFrom('ocr_search')
+              .select(sql`1`.as('found'))
+              .whereRef('ocr_search.assetId', '=', 'asset.id')
+              .where('ocr_search.text', '!=', ''),
+          ),
+          // FL-967: a search also finds a print by the writing on its back
+          ...(tokens
+            ? [
+                eb.exists(
+                  eb
+                    .selectFrom('asset_print_back')
+                    .select(sql`1`.as('found'))
+                    .whereRef('asset_print_back.frontAssetId', '=', 'asset.id')
+                    .where('asset_print_back.searchText', '!=', ''),
+                ),
+              ]
+            : []),
+        ]),
       )
       .$if(!!text, (qb) =>
         qb.where((eb) =>
@@ -86,6 +100,17 @@ export class DocumentRepository {
                 .whereRef('ocr_search.assetId', '=', 'asset.id')
                 .where(
                   tokens ? sql<SqlBool>`f_unaccent(ocr_search.text) %>> f_unaccent(${tokens})` : sql<SqlBool>`false`,
+                ),
+            ),
+            eb.exists(
+              eb
+                .selectFrom('asset_print_back')
+                .select(sql`1`.as('found'))
+                .whereRef('asset_print_back.frontAssetId', '=', 'asset.id')
+                .where(
+                  tokens
+                    ? sql<SqlBool>`f_unaccent(asset_print_back."searchText") %>> f_unaccent(${tokens})`
+                    : sql<SqlBool>`false`,
                 ),
             ),
             eb.exists(
@@ -140,6 +165,7 @@ export class DocumentRepository {
       .selectFrom('asset')
       .where('asset.id', '=', asUuid(id))
       .select(['asset.id', 'asset.ownerId', 'asset.visibility', 'asset.deletedAt', 'asset.type'])
+      .select(isPrintBack('asset').as('isPrintBack'))
       .select(withEdits)
       .leftJoin('asset_exif', 'asset_exif.assetId', 'asset.id')
       .select(['asset_exif.exifImageWidth', 'asset_exif.exifImageHeight', 'asset_exif.orientation'])

@@ -11,6 +11,7 @@ import { JOBS_LIBRARY_PAGINATION_SIZE } from 'src/constants.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
 import {
   CreateLibraryDto,
+  FOLDER_ESTIMATE_FOLDERS,
   LibraryFolderBrowseDto,
   LibraryFolderBrowseResponseDto,
   LibraryFolderEstimateDto,
@@ -345,6 +346,7 @@ export class LibraryService extends BaseService {
       name: dto.name ?? 'New External Library',
       importPaths,
       exclusionPatterns,
+      folderAlbums: dto.folderAlbums ?? false,
     });
     await this.recordAdminEvents([libraryEvent(auth, library, AdminAuditAction.LibraryCreated)]);
     if (importPaths.length > 0) {
@@ -418,6 +420,7 @@ export class LibraryService extends BaseService {
     let count = 0;
     let bytes = 0;
     let complete = true;
+    const folders = new Map<string, number>();
     try {
       const batches = this.storageRepository.walkLibrary({
         pathsToCrawl: [folder],
@@ -428,6 +431,10 @@ export class LibraryService extends BaseService {
       for await (const batch of batches) {
         for (const file of batch) {
           count++;
+          const parent = path.posix.dirname(file);
+          if (folders.has(parent) || folders.size < FOLDER_ESTIMATE_FOLDERS) {
+            folders.set(parent, (folders.get(parent) ?? 0) + 1);
+          }
           bytes += await this.storageRepository
             .stat(file)
             .then((stats) => stats.size)
@@ -440,9 +447,16 @@ export class LibraryService extends BaseService {
       }
     } catch (error) {
       const found = !['ENOENT', 'ENOTDIR'].includes((error as NodeJS.ErrnoException).code ?? '');
-      return { readable: false, found, count: 0, bytes: 0, complete: true };
+      return { readable: false, found, count: 0, bytes: 0, complete: true, folders: [] };
     }
-    return { readable: true, found: true, count, bytes, complete };
+    return {
+      readable: true,
+      found: true,
+      count,
+      bytes,
+      complete,
+      folders: [...folders].map(([folderPath, folderCount]) => ({ path: folderPath, count: folderCount })),
+    };
   }
 
   /** Every account's managed uploads, for the Libraries list (FL-78). */
@@ -755,6 +769,7 @@ export class LibraryService extends BaseService {
     const roots = library.importPaths.map((importPath) => normalizeImportPath(importPath));
     const offline: string[] = [];
     const trashedOffline: string[] = [];
+    const holdsFiles = new Map<string, boolean>();
 
     for (const assetPath of job.paths) {
       const root = roots.find((candidate) => isSameOrInside(assetPath, candidate));
@@ -762,8 +777,22 @@ export class LibraryService extends BaseService {
         this.logger.warn(`Ignoring removal of ${assetPath} in library ${library.id}: its import folder is unavailable`);
         continue;
       }
+      // An unmounted share leaves a readable, empty mount point. As in a scan, that is not every file being deleted.
+      if (!holdsFiles.has(root)) {
+        holdsFiles.set(root, await this.rootHoldsFiles(root));
+      }
+      if (!holdsFiles.get(root)) {
+        this.logger.warn(`Ignoring removal of ${assetPath} in library ${library.id}: its import folder is empty`);
+        continue;
+      }
 
-      if (await this.storageRepository.checkFileExists(assetPath)) {
+      // Only a file that is gone goes offline. A subfolder that lost its permission (EACCES, EPERM) or a share
+      // error is "could not check", and the next scan decides.
+      const gone = await this.storageRepository
+        .stat(assetPath)
+        .then(() => false)
+        .catch((error: NodeJS.ErrnoException) => error?.code === 'ENOENT' || error?.code === 'ENOTDIR');
+      if (!gone) {
         continue;
       }
 
@@ -783,6 +812,20 @@ export class LibraryService extends BaseService {
     }
 
     return JobStatus.Success;
+  }
+
+  private async rootHoldsFiles(root: string) {
+    for await (const batch of this.storageRepository.walkLibrary({
+      pathsToCrawl: [root],
+      includeHidden: false,
+      exclusionPatterns: [],
+      take: 1,
+    })) {
+      if (batch.length > 0) {
+        return true;
+      }
+    }
+    return false;
   }
 
   private findOrFail(id: string) {

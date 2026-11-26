@@ -1034,6 +1034,27 @@ describe('TimelineManager', () => {
       timelineManager.destroy();
     });
 
+    it('reloads once for a run of new uploads, not once per upload', async () => {
+      sdkMock.getTimelineDatesToCheck.mockResolvedValue({ count: 0, timeBuckets: [], years: [], pages: [] });
+      await timelineManager.updateOptions({ visibility: AssetVisibility.Timeline });
+      expect(timelineManager.calendarPaged).toBe(true);
+      const refresh = vi.spyOn(timelineManager, 'refresh').mockResolvedValue();
+      vi.useFakeTimers();
+      try {
+        for (let upload = 0; upload < 4; upload++) {
+          timelineManager.upsertAssetsFromLiveEvent([
+            deriveLocalDateTimeFromFileCreatedAt(timelineAssetFactory.build()),
+          ]);
+          vi.advanceTimersByTime(2500);
+        }
+        expect(refresh).not.toHaveBeenCalled();
+        vi.advanceTimersByTime(5000);
+        expect(refresh).toHaveBeenCalledOnce();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
     it('does not insert live event assets with a different owner into a user-scoped timeline', async () => {
       await timelineManager.updateOptions({ userId: 'partner-id', visibility: AssetVisibility.Timeline });
 

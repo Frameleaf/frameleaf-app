@@ -3,6 +3,7 @@ import { ConflictException, Injectable } from '@nestjs/common';
 import { Insertable, Kysely, Updateable, sql } from 'kysely';
 import { jsonArrayFrom, jsonObjectFrom } from 'kysely/helpers/postgres';
 import { InjectKysely } from 'nestjs-kysely';
+import { isDeepStrictEqual } from 'node:util';
 import type { WorkflowBatchResponseDto } from 'src/dtos/workflow.dto.js';
 import type { WorkflowDefinitionDocument } from 'src/schema/tables/workflow-definition.table.js';
 import { columns } from 'src/database.js';
@@ -437,9 +438,21 @@ export class WorkflowRepository {
     id: string,
     dto: Updateable<WorkflowTable>,
     replacement?: { definition: WorkflowDefinitionDocument; steps: WorkflowStepUpsert[] },
+    /** Change nothing when the stored definition is no longer this one (read before the row was locked). */
+    options?: { unlessChangedFrom: WorkflowDefinitionDocument | null },
   ) {
     return this.db.transaction().execute(async (tx) => {
       await tx.selectFrom('workflow').select('id').where('id', '=', id).forUpdate().execute();
+      if (options) {
+        const current = await tx
+          .selectFrom('workflow_definition')
+          .select('definition')
+          .where('workflowId', '=', id)
+          .executeTakeFirst();
+        if (!isDeepStrictEqual(current?.definition ?? null, options.unlessChangedFrom)) {
+          return this.replaceAndReturn(tx, id);
+        }
+      }
       if (replacement || dto.enabled === false) {
         await sql`UPDATE workflow_batch SET status='cancelled',"updatedAt"=now(),"finishedAt"=now() WHERE "workflowId"=${id}::uuid AND status IN ('pending','running')`.execute(
           tx,

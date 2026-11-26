@@ -1483,12 +1483,32 @@ describe('Frameleaf events (FL-819)', () => {
       const fetchMock = vitest.spyOn(globalThis, 'fetch');
       const result = await send(
         { allowedHosts: ['*'], event: { deliveryId: 'd', allowHomeNetwork: false } },
-        { method: 'POST', body: '{}' },
+        { method: 'POST', body: '{}', signingSecret: 'shh-secret' },
         'https://192.168.1.20/api/webhook/x',
       );
       expect(result).toMatchObject({ success: false });
       expect(result.message).toContain('not an address automations can reach');
       expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it('signs every message about a Frameleaf event, and sends none without a secret (FL-1631 TM-7)', async () => {
+      const sendMock = vitest.mocked(sendWebhook).mockResolvedValue({ ok: true, status: 200, body: 'ok' });
+      sendMock.mockClear();
+      const event = { deliveryId: 'delivery-1', allowHomeNetwork: false };
+
+      const unsigned = await send({ allowedHosts: ['*'], event }, { method: 'POST', body: '{}' });
+      expect(unsigned).toMatchObject({ success: false });
+      expect(unsigned.message).toContain('must be signed');
+      expect(sendMock).not.toHaveBeenCalled();
+
+      expect(
+        await send({ allowedHosts: ['*'], event }, { method: 'POST', body: '{}', signingSecret: 'shh-secret' }),
+      ).toMatchObject({ success: true });
+      const [, message] = sendMock.mock.calls[0]!;
+      const timestamp = message.headers.get('x-frameleaf-timestamp')!;
+      expect(message.headers.get('x-frameleaf-signature')).toBe(
+        `sha256=${createHmac('sha256', 'shh-secret').update(`${timestamp}.delivery-1.{}`).digest('hex')}`,
+      );
     });
   });
 });

@@ -170,8 +170,9 @@ def stft(samples: NDArray[np.float32]) -> NDArray[np.complex64]:
     count = math.ceil(len(samples) / HOP) + 1
     padded = np.zeros((count + 1) * HOP, dtype=np.float32)
     padded[FFT_SIZE - HOP : FFT_SIZE - HOP + len(samples)] = samples
-    index = np.arange(FFT_SIZE)[None, :] + HOP * np.arange(count)[:, None]
-    spectrum = np.fft.rfft(padded[index] * _WINDOW, axis=-1) / FFT_SIZE
+    # A view: an index array here would take 16 bytes per sample, more than the audio itself.
+    frames = np.lib.stride_tricks.sliding_window_view(padded, FFT_SIZE)[::HOP][:count]
+    spectrum = np.fft.rfft(frames * _WINDOW, axis=-1) / FFT_SIZE
     return spectrum.astype(np.complex64)
 
 

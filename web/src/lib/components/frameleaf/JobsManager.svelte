@@ -145,7 +145,7 @@
     mdiRedo,
     mdiTuneVariant,
   } from '@mdi/js';
-  import { onMount, untrack } from 'svelte';
+  import { onDestroy, onMount, untrack } from 'svelte';
   import { t, type Translations } from 'svelte-i18n';
 
   onMount(() => queueManager.listen());
@@ -721,8 +721,10 @@
             return queue.isPaused;
           }
           // a task that can't start now (its feature is off, or it is busy) is left out, as on its own row
+          // catching up a feature starts only what has a missing-only run; a whole-library task (pet
+          // recognition's "Start now") is started from its own row
           case 'run': {
-            return !!definition.run && !blockedReason(row);
+            return definition.run === 'missing' && !blockedReason(row);
           }
           default: {
             return !!definition.force && !blockedReason(row);
@@ -983,22 +985,28 @@
   // The tab's count changes as the queue works; the list follows it, at most every few seconds.
   const tabCount = $derived(selected ? jobTabCount(tab, jobCounts(statsOf(selected.queue) ?? NO_STATS)) : 0);
   let lastLoad = 0;
+  // Plain bookkeeping. A count change must not drop a read already out: on a busy queue the count moves
+  // every poll, so a slow list would never land. Another queue, tab, account or command does drop it.
+  let jobsKey = '';
+  let jobsRequest = 0;
+  let jobsApplied = 0;
   $effect(() => {
     const name = selected?.definition.name;
     const statuses = JOB_TAB_STATUSES[tab];
     const ownerId = owner === 'all' ? undefined : owner;
-    void jobsReload;
+    const key = name ? `${name}|${tab}|${ownerId ?? ''}|${jobsReload}` : '';
+    jobsKey = key;
     void tabCount;
     if (!name) {
       jobs = [];
       return;
     }
-    let cancelled = false;
     // The count says there is work the list does not show yet (just after Resume): load it now (FL-588).
     const behind = tabCount > 0 && untrack(() => jobs.length === 0);
     const wait = behind ? 0 : Math.max(0, lastLoad + 5000 - Date.now());
     const timer = setTimeout(() => {
       lastLoad = Date.now();
+      const request = ++jobsRequest;
       void Promise.all(
         statuses.map((status) =>
           getQueueJobs({ name, status: [status], ownerId }).then((list) =>
@@ -1007,23 +1015,24 @@
         ),
       )
         .then((lists) => {
-          if (cancelled) {
+          if (key !== jobsKey || request < jobsApplied) {
             return;
           }
+          jobsApplied = request;
           jobs = lists.flat().sort((a, b) => b.timestamp - a.timestamp);
           jobsLoaded = true;
           jobsFailed = false;
         })
         .catch(() => {
-          if (!cancelled) {
+          if (key === jobsKey && request > jobsApplied) {
             jobsFailed = true;
           }
         });
     }, wait);
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-    };
+    return () => clearTimeout(timer);
+  });
+  onDestroy(() => {
+    jobsKey = '';
   });
 
   const SUBJECT_KEYS = ['id', 'assetId', 'personId', 'libraryId', 'ownerId', 'userId'];
@@ -1052,14 +1061,18 @@
     const id = job.data?.id;
     return typeof id === 'string' ? id : '';
   };
-  const matchingJobs = $derived(
-    jobs.filter((job) => {
-      const terms = searchTerms(query);
+  const matchingJobs = $derived.by(() => {
+    const terms = searchTerms(query);
+    // No search (the usual case): no need to serialize every job's data on each list update.
+    if (terms.length === 0) {
+      return jobs;
+    }
+    return jobs.filter((job) => {
       const haystack =
         `${job.name} ${jobTitle(job.name)} ${job.id ?? ''} ${JSON.stringify(job.data ?? {})}`.toLowerCase();
       return terms.every((term) => haystack.includes(term));
-    }),
-  );
+    });
+  });
   const shownJobs = $derived(matchingJobs.slice(0, shown));
   const timestamp = (value: number) =>
     new Date(value).toLocaleString($locale, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });

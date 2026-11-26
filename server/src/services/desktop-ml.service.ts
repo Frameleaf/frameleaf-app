@@ -31,7 +31,9 @@ import { MlDestinationRepository } from 'src/repositories/ml-destination.reposit
 import { DesktopAssistancePolicyService } from 'src/services/desktop-assistance-policy.service.js';
 import { assertAssetSource } from 'src/utils/asset-source-authority.js';
 import { parseBoundClipResult } from 'src/utils/clip-embedding.js';
+import { parseBoundDescriptionResult } from 'src/utils/description-result.js';
 import { desktopAuthorityFor, householdDevices } from 'src/utils/desktop-assistance-policy.js';
+import { descriptionEntries, desktopDescriptionProfile } from 'src/utils/desktop-description.js';
 import { desktopFaceProfile, faceEntries } from 'src/utils/desktop-face.js';
 import {
   type DesktopMlDisclosure,
@@ -72,7 +74,10 @@ export class DesktopMlService {
     const context = queueExecution.getStore();
     if (
       !context ||
-      ![MlWorkload.Clip, MlWorkload.Ocr, MlWorkload.Face].includes(selection.workload) ||
+      !(
+        [MlWorkload.Clip, MlWorkload.Ocr, MlWorkload.Face].includes(selection.workload) ||
+        (selection.workload === MlWorkload.Enrichment && options.description)
+      ) ||
       ![MlDestinationKind.Local, MlDestinationKind.Lan].includes(selection.kind) ||
       selection.endpoint.cloud
     )
@@ -86,13 +91,10 @@ export class DesktopMlService {
       : sources?.size === 1
         ? sources.values().next().value
         : undefined;
-    if (!source) {
-      if (Object.keys(policy.accounts).length > 0) {
-        deferJobUntilDependency('source-unavailable');
-        throw new Error('desktop_pool_source_required');
-      }
-      return selection;
-    }
+    // Whose photo this is cannot be told (no source was recorded for the job, or several were and the job did
+    // not say which): no desktop may be chosen for it, so the destination itself does the work. It must not
+    // wait: nothing that would settle the owner is coming.
+    if (!source) return selection;
     const ownerId = source.ownerId;
     // FL-1484: the owner's own desktop assistance, else a computer that works on everyone's photos at home
     const account = desktopAuthorityFor(policy, ownerId);
@@ -115,9 +117,10 @@ export class DesktopMlService {
       let profile: DesktopModelProfile;
       try {
         profile = desktopFaceProfile(options.face);
-      } catch (error) {
-        deferJobUntilDependency('destination-configuration');
-        throw error;
+      } catch {
+        // These settings have no desktop profile (a slider moved off its default): no desktop can run the job,
+        // so the destination itself does. It must not wait for settings no desktop will ever be offered.
+        return selection;
       }
       if (!(await ready(profile.modelKey))) return selection;
       return this.selectImagePool(selection, {
@@ -139,14 +142,42 @@ export class DesktopMlService {
         },
       });
     }
+    if (selection.workload === MlWorkload.Enrichment) {
+      let profile: DesktopModelProfile;
+      try {
+        profile = desktopDescriptionProfile(options.description!.modelName);
+      } catch {
+        // The configured model has no desktop build: the destination itself describes the photo.
+        return selection;
+      }
+      if (!(await ready(profile.modelKey))) return selection;
+      return this.selectImagePool(selection, {
+        ownerId,
+        profile,
+        assertAuthority,
+        disclosure: {
+          version: 5,
+          workload: 'description',
+          source: source.snapshot,
+          policyRevision: account.revisionId,
+          destinationId: selection.destinationId,
+          kind: selection.kind as MlDestinationKind.Local | MlDestinationKind.Lan,
+          endpointSha256: desktopEndpointDigest(selection.endpoint),
+          modelName: options.modelName,
+          modelKey: profile.modelKey,
+          job: { id: context.claim.id, token: context.claim.token },
+        },
+      });
+    }
     if (selection.workload === MlWorkload.Ocr) {
       if (!options.ocr) throw new Error('desktop_pool_model_unavailable');
       let profile: DesktopModelProfile;
       try {
         profile = desktopOcrProfile(options.ocr);
-      } catch (error) {
-        deferJobUntilDependency('destination-configuration');
-        throw error;
+      } catch {
+        // These settings have no desktop profile (a slider moved off its default): no desktop can run the job,
+        // so the destination itself does. It must not wait for settings no desktop will ever be offered.
+        return selection;
       }
       if (!(await ready(profile.modelKey))) return selection;
       return this.selectOcrPool(selection, {
@@ -169,10 +200,8 @@ export class DesktopMlService {
       });
     }
     const selected = await this.index.selectProfile(options.modelName, 'image');
-    if (!selected) {
-      deferJobUntilDependency('destination-configuration');
-      throw new Error('desktop_pool_index_required');
-    }
+    // No desktop has been granted smart search yet, so none can take this job: the destination itself does.
+    if (!selected) return selection;
     if (!(await ready(selected.binding.space.visualModelKey))) return selection;
     return this.selectClipPool(selection, {
       ownerId,
@@ -383,6 +412,7 @@ export class DesktopMlService {
       selection.desktopFace ||
       selection.desktopOcr ||
       selection.desktopClip ||
+      selection.desktopDescription ||
       typeof selection.endpoint.assertAuthority !== 'function'
     )
       throw new Error('desktop_pool_selection_invalid');
@@ -406,10 +436,16 @@ export class DesktopMlService {
       await endpoint.assertAuthority!();
       context.signal.throwIfAborted();
     };
+    const hook =
+      profile.workload === 'face'
+        ? 'desktopFace'
+        : profile.workload === 'description'
+          ? 'desktopDescription'
+          : 'desktopOcr';
     return Object.freeze({
       ...selection,
       endpoint,
-      [profile.workload === 'face' ? 'desktopFace' : 'desktopOcr']: async (payload: ModelPayload, entries: unknown) => {
+      [hook]: async (payload: ModelPayload, entries: unknown) => {
         if (
           queueExecution.getStore() !== context ||
           !('imagePath' in payload) ||
@@ -433,7 +469,11 @@ export class DesktopMlService {
           },
           assertAuthority,
           decodeResult: (value) =>
-            profile.workload === 'face' ? parseBoundFaceResult(value) : parseBoundOcrResult(value),
+            profile.workload === 'face'
+              ? parseBoundFaceResult(value)
+              : profile.workload === 'description'
+                ? parseBoundDescriptionResult(value)
+                : parseBoundOcrResult(value),
           signal: context.signal,
         });
       },
@@ -461,41 +501,60 @@ export class DesktopMlService {
         throw new Error('desktop_pool_destination_changed');
       const selection = { destinationId: destination.id, kind: destination.kind, endpoint };
       await routes.assertRecoveryAuthority(destination);
-      if (authority.version === 4 || authority.version === 3) {
-        await routes.assertDesktopDestination(selection, tx, MlWorkload.Face);
-        const profile = desktopFaceProfile(authority.face, authority.modelKey);
-        if (
-          task.modelKey !== authority.modelKey ||
-          profile.modelKey !== task.modelKey ||
-          authority.modelName !== authority.face.modelName ||
-          canonicalJson(task.config) !== canonicalJson(faceEntries(authority.face))
-        )
-          throw new Error('desktop_pool_profile_changed');
-        await this.machineLearning.assertDesktopFaceConfig(selection, profile.spec.entries, tx, authority.face);
-        // FL-1058: a guest selfie has no library photo or queued job; its request discards the task when done.
-        if (authority.version === 4) return;
-      } else if (authority.version === 2) {
-        await routes.assertDesktopDestination(selection, tx, MlWorkload.Ocr);
-        const profile = desktopOcrProfile(authority.ocr, authority.modelKey);
-        if (
-          task.modelKey !== authority.modelKey ||
-          profile.modelKey !== task.modelKey ||
-          authority.modelName !== authority.ocr.modelName ||
-          canonicalJson(task.config) !== canonicalJson(ocrEntries(authority.ocr))
-        )
-          throw new Error('desktop_pool_profile_changed');
-        await this.machineLearning.assertDesktopOcrConfig(selection, profile.spec.entries, tx, authority.ocr);
-      } else {
-        await routes.assertDesktopDestination(selection, tx);
-        await this.machineLearning.assertDesktopPoolConfig(selection, authority.modelName, tx);
-        const binding = await this.index.getActive(tx);
-        if (
-          !binding ||
-          binding.revisionId !== authority.indexRevision ||
-          binding.space.spaceKey !== authority.spaceKey ||
-          ![binding.space.visualModelKey, ...binding.space.textModelKeys].includes(task.modelKey)
-        )
-          throw new Error('desktop_clip_index_changed');
+      switch (authority.version) {
+        case 3:
+        case 4: {
+          await routes.assertDesktopDestination(selection, tx, MlWorkload.Face);
+          const profile = desktopFaceProfile(authority.face, authority.modelKey);
+          if (
+            task.modelKey !== authority.modelKey ||
+            profile.modelKey !== task.modelKey ||
+            authority.modelName !== authority.face.modelName ||
+            canonicalJson(task.config) !== canonicalJson(faceEntries(authority.face))
+          )
+            throw new Error('desktop_pool_profile_changed');
+          await this.machineLearning.assertDesktopFaceConfig(selection, profile.spec.entries, tx, authority.face);
+          // FL-1058: a guest selfie has no library photo or queued job; its request discards the task when done.
+          if (authority.version === 4) return;
+          break;
+        }
+        case 5: {
+          await routes.assertDesktopDestination(selection, tx, MlWorkload.Enrichment);
+          const profile = desktopDescriptionProfile(authority.modelName, authority.modelKey);
+          if (
+            task.modelKey !== authority.modelKey ||
+            profile.modelKey !== task.modelKey ||
+            canonicalJson(task.config) !== canonicalJson(descriptionEntries(profile.modelName))
+          )
+            throw new Error('desktop_pool_profile_changed');
+          await this.machineLearning.assertDesktopDescriptionConfig(selection, authority.modelName, tx);
+          break;
+        }
+        case 2: {
+          await routes.assertDesktopDestination(selection, tx, MlWorkload.Ocr);
+          const profile = desktopOcrProfile(authority.ocr, authority.modelKey);
+          if (
+            task.modelKey !== authority.modelKey ||
+            profile.modelKey !== task.modelKey ||
+            authority.modelName !== authority.ocr.modelName ||
+            canonicalJson(task.config) !== canonicalJson(ocrEntries(authority.ocr))
+          )
+            throw new Error('desktop_pool_profile_changed');
+          await this.machineLearning.assertDesktopOcrConfig(selection, profile.spec.entries, tx, authority.ocr);
+          break;
+        }
+        default: {
+          await routes.assertDesktopDestination(selection, tx);
+          await this.machineLearning.assertDesktopPoolConfig(selection, authority.modelName, tx);
+          const binding = await this.index.getActive(tx);
+          if (
+            !binding ||
+            binding.revisionId !== authority.indexRevision ||
+            binding.space.spaceKey !== authority.spaceKey ||
+            ![binding.space.visualModelKey, ...binding.space.textModelKeys].includes(task.modelKey)
+          )
+            throw new Error('desktop_clip_index_changed');
+        }
       }
       await assertAssetSource(tx, authority.source);
       const { rows } = await sql`SELECT id FROM job WHERE id=${authority.job.id}::uuid
@@ -524,7 +583,9 @@ export class DesktopMlService {
       deferJobUntilDependency('destination-unavailable');
       throw new Error('desktop_helper_unavailable');
     }
-    const pendingUntil = performance.now() + Math.max(0, Math.min(QUEUE_TIMING.scan, remaining - cleanupReserve));
+    // How long a task may sit with no desktop holding it before the job stops waiting on desktops.
+    const unclaimedWindow = Math.max(0, Math.min(QUEUE_TIMING.scan, remaining - cleanupReserve));
+    let unclaimed = { generation: 0, since: performance.now() };
     const parent = jobSignal();
     const signal = AbortSignal.any([
       AbortSignal.timeout(remaining),
@@ -558,9 +619,15 @@ export class DesktopMlService {
             throw new Error('desktop_helper_unavailable');
           }
         }
-        if (canDefer && row.state === 'pending' && row.generation === 0 && performance.now() >= pendingUntil) {
-          deferJobUntilDependency('destination-unavailable');
-          throw new Error('desktop_helper_unavailable');
+        // Nobody took it, or the desktop that had it handed it back (paused, stopped) or failed it, and
+        // nobody has taken it since: the job goes back to its processing order instead of waiting here.
+        if (canDefer && row.state === 'pending') {
+          if (row.generation !== unclaimed.generation)
+            unclaimed = { generation: row.generation, since: performance.now() };
+          if (performance.now() - unclaimed.since >= unclaimedWindow) {
+            deferJobUntilDependency('destination-unavailable');
+            throw new Error('desktop_helper_unavailable');
+          }
         }
         if (row.state === 'completed') {
           if (row.authorityKey !== options.request.authorityKey || row.modelKey !== options.request.modelKey)

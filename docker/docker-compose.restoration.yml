@@ -13,9 +13,10 @@
 # until you do.
 #
 # No restoration image is published until a model is qualified, so this overlay builds the
-# `worker` target from source. That target serves no restoration workload on its own: every
-# model reports why it is unavailable until the manifest, weights and a qualification record
-# are mounted (see the README).
+# `photo` target from source: the worker plus the photo repair and colourise runtimes. It serves
+# no restoration workload on its own: every model reports why it is unavailable until the
+# manifest, weights and a qualification record for this image's revision are mounted (see the
+# README).
 #
 # GPUs: FRAMELEAF_RESTORATION_GPU has no default; Compose refuses to start until you choose.
 # Give each worker its own GPU where you can: set it to a GPU the machine-learning container does
@@ -30,7 +31,12 @@ services:
     build:
       context: ../machine-learning
       dockerfile: Dockerfile.video-restoration
-      target: worker
+      target: photo
+      # The image's revision is derived inside the build from these pins and the runtime files.
+      args:
+        FACEXLIB_REVISION: 260620ae93990a300f4b16448df9bb459f1caba9
+        DDCOLOR_REVISION: 2adb63f2656ac41cbdf7b894cddd94121a3faf13
+        PHOTO_PYTHON: 3.12.11
     environment:
       # This worker's own bearer. The worker reads the variable name the predict image uses, but
       # the value is separate; store the same value on the restoration destination as its token.

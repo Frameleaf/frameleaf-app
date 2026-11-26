@@ -35,6 +35,10 @@ export type AccountPreferencesDraft = {
   'memories.sidebarWeb': boolean;
   /** Seconds; `null` while the field is empty. */
   'memories.duration': number | null;
+  /** FL-880: Mother's Day and Father's Day memories. */
+  'memories.occasions': boolean;
+  /** FL-880: whose dates they use; `auto` follows the account's language and country. */
+  'memories.occasionRegion': string;
   'people.enabled': boolean;
   'people.sidebarWeb': boolean;
   /** `null` while the field is empty. */
@@ -167,6 +171,8 @@ export const createDefaultDraft = (): AccountPreferencesDraft => ({
   'memories.enabled': true,
   'memories.sidebarWeb': true,
   'memories.duration': 5,
+  'memories.occasions': true,
+  'memories.occasionRegion': 'auto',
   'people.enabled': true,
   'people.sidebarWeb': true,
   'people.minimumFaces': 3,
@@ -209,6 +215,8 @@ export const draftFromPreferences = (preferences: UserPreferencesResponseDto): A
   'memories.enabled': preferences.memories.enabled,
   'memories.sidebarWeb': preferences.memories.sidebarWeb,
   'memories.duration': preferences.memories.duration,
+  'memories.occasions': preferences.memories.occasions ?? true,
+  'memories.occasionRegion': preferences.memories.occasionRegion ?? 'auto',
   'people.enabled': preferences.people.enabled,
   'people.sidebarWeb': preferences.people.sidebarWeb,
   'people.minimumFaces': preferences.people.minimumFaces ?? 3,

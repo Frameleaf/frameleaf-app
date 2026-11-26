@@ -21,15 +21,20 @@ it.each(['ocr', 'face'] as const)('selects the released %s identity and revalida
       ? desktopOcrProfile(defaults.machineLearning.ocr, key)
       : desktopFaceProfile(defaults.machineLearning.facialRecognition, key);
   const currentVariants = profiles.filter((profile) => profile.modelKey === current.modelKey);
-  // once for runtime f2c451a6 and once for its epoch 14 twin source: the same key on every provider
+  // once for runtime f2c451a6 and once for its epoch 14 twin source: the same key on every provider; and
+  // epoch 20's processor twin for the desktop runtime source that adds photo descriptions (FD-31)
   const providers = [
     'CPUExecutionProvider',
     'CoreMLExecutionProvider',
     'CUDAExecutionProvider',
     'OpenVINOExecutionProvider',
   ];
-  expect(currentVariants.map((profile) => profile.spec.provider)).toEqual([...providers, ...providers]);
-  expect(new Set(currentVariants.map((profile) => profile.runtimeSourceRevision)).size).toBe(2);
+  expect(currentVariants.map((profile) => profile.spec.provider)).toEqual([
+    ...providers,
+    ...providers,
+    'CPUExecutionProvider',
+  ]);
+  expect(new Set(currentVariants.map((profile) => profile.runtimeSourceRevision)).size).toBe(3);
   expect(select().modelKey).toBe(current.modelKey);
   if (workload === 'ocr') {
     expect(() =>

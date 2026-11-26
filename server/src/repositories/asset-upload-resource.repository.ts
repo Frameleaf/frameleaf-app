@@ -1,7 +1,6 @@
 import {
   BadRequestException,
   ConflictException,
-  HttpException,
   Injectable,
   NotFoundException,
   ServiceUnavailableException,
@@ -92,17 +91,6 @@ export class AssetUploadResourceRepository {
           }
           return existing;
         }
-      }
-      const count = await tx
-        .selectFrom('asset_upload_resource')
-        .select((eb) => eb.fn.countAll<number>().as('count'))
-        .where('ownerId', '=', ownerId)
-        .where('expiresAt', '>', new Date())
-        .where('ingested', '=', false)
-        .where('state', 'not in', ['cancelled', 'rejected'])
-        .executeTakeFirstOrThrow();
-      if (Number(count.count) >= ASSET_UPLOAD_LIMITS.maxActive) {
-        throw new HttpException('Too many incomplete uploads', 429);
       }
       const created = await tx
         .insertInto('asset_upload_resource')

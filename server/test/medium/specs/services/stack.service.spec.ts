@@ -6,6 +6,7 @@ import { EventRepository } from 'src/repositories/event.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { PersonRepository } from 'src/repositories/person.repository.js';
+import { SessionRepository } from 'src/repositories/session.repository.js';
 import { StackRepository } from 'src/repositories/stack.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
 import { WebsocketRepository } from 'src/repositories/websocket.repository.js';
@@ -20,7 +21,7 @@ let defaultDatabase: Kysely<DB>;
 const setup = (db?: Kysely<DB>) => {
   const { sut, ctx } = newMediumService(StackService, {
     database: db || defaultDatabase,
-    real: [AccessRepository, AssetRepository, PersonRepository, StackRepository, UserRepository],
+    real: [SessionRepository, AccessRepository, AssetRepository, PersonRepository, StackRepository, UserRepository],
     mock: [EventRepository, JobRepository, LoggingRepository, WebsocketRepository],
   });
 
@@ -132,8 +133,14 @@ describe(StackService.name, () => {
 
       expect(ctx.getMock(WebsocketRepository).clientSend).toHaveBeenCalledWith(
         'on_asset_update',
-        user.id,
+        expect.any(Array), // the owner's unlocked sessions only (FL-1767)
         expect.objectContaining({ id: plain.id, visibility: AssetVisibility.Locked }),
+      );
+      expect(ctx.getMock(WebsocketRepository).clientSendExcept).toHaveBeenCalledWith(
+        'on_asset_hidden',
+        user.id,
+        expect.any(Array),
+        plain.id,
       );
     });
 

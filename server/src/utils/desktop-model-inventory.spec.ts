@@ -149,3 +149,40 @@ it('offers a newly qualified search model to the factory desktop runtime, which 
     ['unsupported', 0],
   ]);
 });
+
+it('FD-31: offers descriptions when the configured model has a desktop build for this runtime', () => {
+  const profile = parseDesktopModelCatalogue({
+    schemaVersion: 1,
+    epoch: 19,
+    profiles: [JSON.parse(readFileSync('test/fixtures/desktop-description-profile.json', 'utf8'))],
+  }).profiles[0];
+  const input = {
+    ...setup(),
+    catalogue: { ...catalogue, profiles: [...catalogue.profiles, profile] },
+    runtimeSourceRevision: profile.runtimeSourceRevision,
+  };
+  input.config.imageDescription = {
+    ...input.config.imageDescription,
+    enabled: true,
+    modelName: 'Qwen/Qwen2.5-VL-7B-Instruct',
+  };
+  const enrichment = () =>
+    selectDesktopModelInventory(input).find(({ workload }) => workload === MlWorkload.Enrichment);
+  expect(enrichment()).toMatchObject({ state: 'eligible', modelKeys: [profile.modelKey] });
+  expect(
+    DesktopModelInventoryDto.schema.parse({
+      protocolVersion: 1,
+      provider: input.provider,
+      runtimeSourceRevision: input.runtimeSourceRevision,
+      workloads: selectDesktopModelInventory(input),
+    }),
+  ).toBeDefined();
+  // another model, another runtime or the processor's own profile on CoreML: none
+  input.config.imageDescription.modelName = 'Qwen/Qwen2.5-VL-3B-Instruct';
+  expect(enrichment()?.state).toBe('unsupported');
+  input.config.imageDescription.modelName = 'Qwen/Qwen2.5-VL-7B-Instruct';
+  expect(selectDesktopModelInventory({ ...input, provider: 'CoreMLExecutionProvider' })[3].state).toBe('unsupported');
+  input.config.imageDescription.enabled = false;
+  input.config.nsfwDetection.enabled = false;
+  expect(enrichment()?.state).toBe('disabled');
+});

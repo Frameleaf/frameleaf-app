@@ -14,6 +14,12 @@ export const processingFailureSteps = [
 
 /** FL-1355: not a job. The row says a RAW preview is the camera's own, or missing (asset-job.repository `setRawRung`). */
 export const RAW_RUNG_STEP = 'RawSensorRender';
+/**
+ * Not a job either: this original (its checksum is `lastError`) has no picture to make a thumbnail or playback copy
+ * from (cinema RAW without a decoder, sound only, a design file with nothing inside). Catching up leaves it out until
+ * the original changes; a full rerun tries it again.
+ */
+export const NO_PICTURE_STEP = 'NoPicture';
 
 export const isProcessingFailureStep = (name: string): name is (typeof processingFailureSteps)[number] =>
   (processingFailureSteps as readonly string[]).includes(name);

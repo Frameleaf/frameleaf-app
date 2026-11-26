@@ -111,31 +111,27 @@ it.each(['interactive', 'other-account', 'other-workload'])('preserves %s select
   }
   await queueExecution.run(context, async () => expect(await select('asset')).toBe(selection));
 });
-it.each(['unknown', 'ambiguous', 'index'])('waits without falling back for %s authority', async (mode) => {
-  switch (mode) {
-    case 'unknown': {
-      context.sourceAuthorities!.clear();
-      break;
-    }
-    case 'ambiguous': {
-      context.sourceAuthorities!.set('other', {
-        ownerId: other,
-        snapshot: desktopSourceSnapshot(other),
-        assertCurrent: vi.fn(),
-      });
-      break;
-    }
-    case 'index': {
-      index.selectProfile.mockResolvedValue(undefined);
-      break;
-    }
-    default: {
-      break;
-    }
-  }
+it.each(['unknown', 'ambiguous'])('leaves a job with %s ownership on the destination itself', async (mode) => {
+  if (mode === 'unknown') context.sourceAuthorities!.clear();
+  else
+    context.sourceAuthorities!.set('other', {
+      ownerId: other,
+      snapshot: desktopSourceSnapshot(other),
+      assertCurrent: vi.fn(),
+    });
   await queueExecution.run(context, async () => {
-    await expect(select(mode === 'ambiguous' ? undefined : 'asset')).rejects.toThrow();
-    expect(context.dependencyReason).toBe(mode === 'index' ? 'destination-configuration' : 'source-unavailable');
+    // no desktop may be chosen without knowing whose photo it is; the job runs, it does not wait
+    expect(await select(mode === 'ambiguous' ? undefined : 'asset')).toBe(selection);
+    expect(context.dependencyReason).toBeUndefined();
+    expect(policies.assertCurrent).not.toHaveBeenCalled();
+  });
+});
+it('leaves smart search on the destination itself while no desktop has been granted it', async () => {
+  index.selectProfile.mockResolvedValue(undefined);
+  await queueExecution.run(context, async () => {
+    expect(await select('asset')).toBe(selection);
+    // nothing to wait for: a retry must not defer for an index no desktop has asked for
+    expect(context.dependencyReason).toBeUndefined();
   });
 });
 it('refuses changed source before constructing an inference descriptor', async () => {
@@ -207,6 +203,26 @@ it('selects a qualified face workload without changing the CLIP index', async ()
     expect(assertSource).toHaveBeenCalledOnce();
   });
 });
+it.each([MlWorkload.Face, MlWorkload.Ocr])(
+  'leaves %s on the destination itself when its settings have no desktop profile',
+  async (workload) => {
+    selection.workload = workload;
+    await queueExecution.run(context, async () => {
+      const chosen = await service.selectBackgroundPool(selection, {
+        jobId: 'asset',
+        modelName: 'model',
+        assertConfig,
+        // a slider moved off the value the release has a profile for
+        ...(workload === MlWorkload.Face
+          ? { face: { ...defaults.machineLearning.facialRecognition, minScore: 0.123 } }
+          : { ocr: { ...defaults.machineLearning.ocr, minDetectionScore: 0.123 } }),
+      });
+      expect(chosen).toBe(selection);
+      // nothing to wait for: the job runs where it was admitted
+      expect(context.dependencyReason).toBeUndefined();
+    });
+  },
+);
 describe('when the processing order sends the job to the helpers (FL-456)', () => {
   const ready = vi.fn();
   const selectReady = () =>

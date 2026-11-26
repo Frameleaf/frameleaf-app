@@ -142,6 +142,24 @@ describe('the bulk controller', () => {
     expect(controller.undo).not.toBeNull();
   });
 
+  it('dates a large selection to a decade here, as one Doctor batch with an Undo (FL-936)', async () => {
+    const ids = Array.from({ length: DURABLE_BULK_THRESHOLD + 1 }, (_, index) => `id-${index}`);
+    const applyDateFix = vi.fn().mockResolvedValue({ batch: { id: 'batch' }, skipped: [] });
+    const undoDateFix = vi.fn().mockResolvedValue({ id: 'batch' });
+    Object.assign(api, { applyDateFix, undoDateFix });
+
+    await controller.run('change-date', ids, { dateMode: 'set', dateAccuracy: 'decade', year: 1970 });
+    expect(applyDateFix).toHaveBeenCalledWith({
+      dateDoctorFixDto: { assetIds: ids, dateAccuracy: 'decade', year: 1970 },
+    });
+    expect(api.createBulkMediaOperation).not.toHaveBeenCalled();
+    expect(controller.undo?.label).toBe('frameleaf_bulk_change_date');
+
+    await controller.undo!.run();
+    expect(undoDateFix).toHaveBeenCalledWith({ id: 'batch' });
+    expect(controller.undo).toBeNull();
+  });
+
   it('hands a selection above the threshold to the server as a durable job', async () => {
     const ids = Array.from({ length: DURABLE_BULK_THRESHOLD + 1 }, (_, index) => `id-${index}`);
 

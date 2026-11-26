@@ -46,6 +46,45 @@ describe(UserService.name, () => {
     );
   });
 
+  describe('getUnseenCount (FL-1748)', () => {
+    const filter = {
+      userId: authStub.admin.user.id,
+      includeNsfw: false,
+      tagIds: ['tag-1'],
+      personIds: [],
+      petIds: [],
+      scope: 'owned' as const,
+    };
+
+    it('applies the Locked rules to an unlocked session too', async () => {
+      mocks.albumUser.getUnseenCount.mockResolvedValue(4);
+      const auth = {
+        ...authStub.admin,
+        suppressedContent: filter,
+        hiddenContent: undefined,
+        session: { id: 'session-1', hasElevatedPermission: true },
+      };
+
+      await expect(sut.getUnseenCount(auth)).resolves.toEqual({ count: 4 });
+
+      expect(mocks.albumUser.getUnseenCount).toHaveBeenCalledWith(authStub.admin.user.id, {
+        hiddenContent: { ...filter, includeNsfw: true },
+        othersRulesViewerId: authStub.admin.user.id,
+      });
+    });
+
+    it('still excludes sensitive media for an account with no rules', async () => {
+      mocks.albumUser.getUnseenCount.mockResolvedValue(0);
+
+      await expect(sut.getUnseenCount(authStub.admin)).resolves.toEqual({ count: 0 });
+
+      expect(mocks.albumUser.getUnseenCount).toHaveBeenCalledWith(authStub.admin.user.id, {
+        hiddenContent: expect.objectContaining({ userId: authStub.admin.user.id, includeNsfw: true, tagIds: [] }),
+        othersRulesViewerId: authStub.admin.user.id,
+      });
+    });
+  });
+
   describe('countLockedRules (FL-541)', () => {
     const draft = { tagIds: [], personIds: ['00000000-0000-4000-8000-000000000001'], petIds: [] };
 
@@ -154,6 +193,26 @@ describe(UserService.name, () => {
       expect(mocks.user.update).not.toHaveBeenCalled();
     });
 
+    it('refuses a new password without the current one unless a change was required (FL-1767)', async () => {
+      mocks.user.get.mockResolvedValue({ ...userStub.user1, shouldChangePassword: false });
+      await expect(sut.updateMe(authStub.user1, { password: 'new-password' })).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+      expect(mocks.crypto.hashBcrypt).not.toHaveBeenCalled();
+      expect(mocks.user.update).not.toHaveBeenCalled();
+    });
+
+    it('sets the password a required change asks for (FL-1767)', async () => {
+      mocks.user.get.mockResolvedValue({ ...userStub.user1, shouldChangePassword: true });
+      mocks.crypto.hashBcrypt.mockResolvedValue('hashed');
+      mocks.user.update.mockResolvedValue(userStub.user1);
+      await sut.updateMe(authStub.user1, { password: 'new-password' });
+      expect(mocks.user.update).toHaveBeenCalledWith(
+        authStub.user1.user.id,
+        expect.objectContaining({ password: 'hashed', shouldChangePassword: false }),
+      );
+    });
+
     it('allows retaining the signed-in account email', async () => {
       mocks.user.getByEmail.mockResolvedValue(userStub.user1);
       mocks.user.update.mockResolvedValue(userStub.user1);
@@ -206,7 +265,7 @@ describe(UserService.name, () => {
     it('should get a user by id', async () => {
       mocks.user.get.mockResolvedValue(userStub.admin);
 
-      await sut.get(authStub.admin.user.id);
+      await sut.get(authStub.admin, authStub.admin.user.id);
 
       expect(mocks.user.get).toHaveBeenCalledWith(authStub.admin.user.id, { withDeleted: false });
     });
@@ -214,9 +273,19 @@ describe(UserService.name, () => {
     it('should throw an error if a user is not found', async () => {
       mocks.user.get.mockResolvedValue(void 0);
 
-      await expect(sut.get(authStub.admin.user.id)).rejects.toBeInstanceOf(BadRequestException);
+      await expect(sut.get(authStub.admin, authStub.admin.user.id)).rejects.toBeInstanceOf(BadRequestException);
 
       expect(mocks.user.get).toHaveBeenCalledWith(authStub.admin.user.id, { withDeleted: false });
+    });
+
+    it("keeps another person's email from a non-admin while users are not public (FL-1743)", async () => {
+      mocks.user.get.mockResolvedValue(userStub.admin);
+      mocks.systemMetadata.get.mockResolvedValue({ server: { publicUsers: false } });
+
+      await expect(sut.get(authStub.user1, userStub.admin.id)).resolves.toMatchObject({
+        id: userStub.admin.id,
+        email: '',
+      });
     });
   });
 

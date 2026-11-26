@@ -23,6 +23,7 @@ select
   "asset"."libraryScope",
   "asset"."livePhotoVideoId",
   "asset"."localDateTime",
+  "asset"."dateAccuracy",
   "asset"."originalFileName",
   "asset"."originalPath",
   "asset"."libraryPath",
@@ -53,18 +54,39 @@ where
     where
       asset_lock."assetId" = "asset"."id"
   )
-  and "asset"."fileCreatedAt" >= $3
-  and "asset_exif"."lensModel" = $4
-  and "asset"."ownerId" = any ($5::uuid[])
-  and asset."isFavorite" = $6
+  and not (
+    "asset"."visibility" = 'hidden'
+    and exists (
+      select
+        1
+      from
+        asset_print_back
+      where
+        asset_print_back."backAssetId" = "asset"."id"
+    )
+  )
+  and (
+    "asset"."fileCreatedAt" >= $3
+    or (
+      asset."dateAccuracy" is not null
+      and "asset"."fileCreatedAt" > $4
+      and "asset"."fileCreatedAt" + case asset."dateAccuracy"
+        when 'decade' then interval '10 years'
+        else interval '1 year'
+      end > $5
+    )
+  )
+  and "asset_exif"."lensModel" = $6
+  and "asset"."ownerId" = any ($7::uuid[])
+  and asset."isFavorite" = $8
   and "asset"."deletedAt" is null
 order by
   "asset"."fileCreatedAt" desc,
   "asset"."id" desc
 limit
-  $7
+  $9
 offset
-  $8
+  $10
 
 -- SearchRepository.searchStatistics
 select
@@ -82,10 +104,31 @@ where
     where
       asset_lock."assetId" = "asset"."id"
   )
-  and "asset"."fileCreatedAt" >= $3
-  and "asset_exif"."lensModel" = $4
-  and "asset"."ownerId" = any ($5::uuid[])
-  and asset."isFavorite" = $6
+  and not (
+    "asset"."visibility" = 'hidden'
+    and exists (
+      select
+        1
+      from
+        asset_print_back
+      where
+        asset_print_back."backAssetId" = "asset"."id"
+    )
+  )
+  and (
+    "asset"."fileCreatedAt" >= $3
+    or (
+      asset."dateAccuracy" is not null
+      and "asset"."fileCreatedAt" > $4
+      and "asset"."fileCreatedAt" + case asset."dateAccuracy"
+        when 'decade' then interval '10 years'
+        else interval '1 year'
+      end > $5
+    )
+  )
+  and "asset_exif"."lensModel" = $6
+  and "asset"."ownerId" = any ($7::uuid[])
+  and asset."isFavorite" = $8
   and "asset"."deletedAt" is null
 
 -- SearchRepository.searchRandom
@@ -111,6 +154,7 @@ select
   "asset"."libraryScope",
   "asset"."livePhotoVideoId",
   "asset"."localDateTime",
+  "asset"."dateAccuracy",
   "asset"."originalFileName",
   "asset"."originalPath",
   "asset"."libraryPath",
@@ -141,15 +185,36 @@ where
     where
       asset_lock."assetId" = "asset"."id"
   )
-  and "asset"."fileCreatedAt" >= $3
-  and "asset_exif"."lensModel" = $4
-  and "asset"."ownerId" = any ($5::uuid[])
-  and asset."isFavorite" = $6
+  and not (
+    "asset"."visibility" = 'hidden'
+    and exists (
+      select
+        1
+      from
+        asset_print_back
+      where
+        asset_print_back."backAssetId" = "asset"."id"
+    )
+  )
+  and (
+    "asset"."fileCreatedAt" >= $3
+    or (
+      asset."dateAccuracy" is not null
+      and "asset"."fileCreatedAt" > $4
+      and "asset"."fileCreatedAt" + case asset."dateAccuracy"
+        when 'decade' then interval '10 years'
+        else interval '1 year'
+      end > $5
+    )
+  )
+  and "asset_exif"."lensModel" = $6
+  and "asset"."ownerId" = any ($7::uuid[])
+  and asset."isFavorite" = $8
   and "asset"."deletedAt" is null
 order by
   random()
 limit
-  $7
+  $9
 
 -- SearchRepository.searchLargeAssets
 select
@@ -174,6 +239,7 @@ select
   "asset"."libraryScope",
   "asset"."livePhotoVideoId",
   "asset"."localDateTime",
+  "asset"."dateAccuracy",
   "asset"."originalFileName",
   "asset"."originalPath",
   "asset"."libraryPath",
@@ -205,16 +271,37 @@ where
     where
       asset_lock."assetId" = "asset"."id"
   )
-  and "asset"."fileCreatedAt" >= $3
-  and "asset_exif"."lensModel" = $4
-  and "asset"."ownerId" = any ($5::uuid[])
-  and asset."isFavorite" = $6
+  and not (
+    "asset"."visibility" = 'hidden'
+    and exists (
+      select
+        1
+      from
+        asset_print_back
+      where
+        asset_print_back."backAssetId" = "asset"."id"
+    )
+  )
+  and (
+    "asset"."fileCreatedAt" >= $3
+    or (
+      asset."dateAccuracy" is not null
+      and "asset"."fileCreatedAt" > $4
+      and "asset"."fileCreatedAt" + case asset."dateAccuracy"
+        when 'decade' then interval '10 years'
+        else interval '1 year'
+      end > $5
+    )
+  )
+  and "asset_exif"."lensModel" = $6
+  and "asset"."ownerId" = any ($7::uuid[])
+  and asset."isFavorite" = $8
   and "asset"."deletedAt" is null
-  and "asset_exif"."fileSizeInByte" > $7
+  and "asset_exif"."fileSizeInByte" > $9
 order by
   "asset_exif"."fileSizeInByte" desc
 limit
-  $8
+  $10
 
 -- SearchRepository.searchSmart
 begin
@@ -249,25 +336,46 @@ with
         where
           asset_lock."assetId" = "asset"."id"
       )
-      and "asset"."fileCreatedAt" >= $4
-      and "asset_exif"."lensModel" = $5
-      and "asset"."ownerId" = any ($6::uuid[])
-      and asset."isFavorite" = $7
+      and not (
+        "asset"."visibility" = 'hidden'
+        and exists (
+          select
+            1
+          from
+            asset_print_back
+          where
+            asset_print_back."backAssetId" = "asset"."id"
+        )
+      )
+      and (
+        "asset"."fileCreatedAt" >= $4
+        or (
+          asset."dateAccuracy" is not null
+          and "asset"."fileCreatedAt" > $5
+          and "asset"."fileCreatedAt" + case asset."dateAccuracy"
+            when 'decade' then interval '10 years'
+            else interval '1 year'
+          end > $6
+        )
+      )
+      and "asset_exif"."lensModel" = $7
+      and "asset"."ownerId" = any ($8::uuid[])
+      and asset."isFavorite" = $9
       and "asset"."deletedAt" is null
     order by
-      (smart_search.embedding <=> $8)
+      (smart_search.embedding <=> $10)
     limit
-      $9
+      $11
   )
 select
   "candidate".*,
   (
-    candidate."visualDistance" - $10 * coalesce(
+    candidate."visualDistance" - $12 * coalesce(
       greatest(
         0,
-        $11 - (
+        $13 - (
           select
-            embedding <=> $12
+            embedding <=> $14
           from
             smart_search_description
           where
@@ -283,9 +391,9 @@ order by
   "searchDistance",
   "candidate"."id" asc
 limit
-  $13
+  $15
 offset
-  $14
+  $16
 commit
 
 -- SearchRepository.getUnrelatedSearchDistance
@@ -486,6 +594,7 @@ select
   "asset"."libraryScope",
   "asset"."livePhotoVideoId",
   "asset"."localDateTime",
+  "asset"."dateAccuracy",
   "asset"."originalFileName",
   "asset"."originalPath",
   "asset"."libraryPath",
@@ -1196,7 +1305,13 @@ with
                   from
                     smart_search donor_embedding
                     join smart_search target_embedding on target_embedding."assetId" = asset.id
-                    and donor_embedding."producerModelKey" = target_embedding."producerModelKey"
+                    and coalesce(
+                      $11::text::jsonb ->> "donor_embedding"."producerModelKey",
+                      "donor_embedding"."producerModelKey"
+                    ) = coalesce(
+                      $12::text::jsonb ->> "target_embedding"."producerModelKey",
+                      "target_embedding"."producerModelKey"
+                    )
                   where
                     donor_embedding."assetId" = donor.id
                     and target_embedding."producerModelKey" is not null
@@ -1208,7 +1323,7 @@ with
           )
         )
       )
-      and "asset"."ownerId" = any ($11::uuid[])
+      and "asset"."ownerId" = any ($13::uuid[])
       and (
         "asset"."visibility" = 'timeline'
         and not exists (
@@ -1220,7 +1335,7 @@ with
             asset_lock."assetId" = "asset"."id"
         )
       )
-      and "asset"."libraryScope" in ($12, $13)
+      and "asset"."libraryScope" in ($14, $15)
       and "asset"."deletedAt" is null
   )
 select
@@ -1246,7 +1361,7 @@ select
         matched."localDateTime" desc,
         matched."assetId"
     )
-  ) [1] as "coverAssetId",
+  ) [1:12] as "coverAssetIds",
   mode() within group (
     order by
       asset_exif.city
@@ -1277,7 +1392,7 @@ group by
   "landmark"."id"
 having
   bool_or(matched.position = 1)
-  or landmark."radiusM" > $14
+  or landmark."radiusM" > $16
 order by
   "assetCount" desc,
   "landmark"."id"
@@ -1924,7 +2039,13 @@ where
               from
                 smart_search donor_embedding
                 join smart_search target_embedding on target_embedding."assetId" = asset.id
-                and donor_embedding."producerModelKey" = target_embedding."producerModelKey"
+                and coalesce(
+                  $11::text::jsonb ->> "donor_embedding"."producerModelKey",
+                  "donor_embedding"."producerModelKey"
+                ) = coalesce(
+                  $12::text::jsonb ->> "target_embedding"."producerModelKey",
+                  "target_embedding"."producerModelKey"
+                )
               where
                 donor_embedding."assetId" = donor.id
                 and target_embedding."producerModelKey" is not null
@@ -1938,7 +2059,7 @@ where
   )
 order by
   asset_landmark.inference is not null,
-  (landmark."radiusM" > $11),
+  (landmark."radiusM" > $13),
   landmark.rank desc,
   landmark."radiusM",
   landmark.id
@@ -2086,6 +2207,7 @@ select
   "asset"."libraryScope",
   "asset"."livePhotoVideoId",
   "asset"."localDateTime",
+  "asset"."dateAccuracy",
   "asset"."originalFileName",
   "asset"."originalPath",
   "asset"."libraryPath",
@@ -2133,6 +2255,17 @@ where
     "asset"."ownerId" = $6::uuid
     or "asset"."deletedAt" is null
   )
+  and not (
+    "asset"."visibility" = 'hidden'
+    and exists (
+      select
+        1
+      from
+        asset_print_back
+      where
+        asset_print_back."backAssetId" = "asset"."id"
+    )
+  )
   and true
 order by
   "asset"."fileCreatedAt" desc,
@@ -2165,6 +2298,7 @@ select
   "asset"."libraryScope",
   "asset"."livePhotoVideoId",
   "asset"."localDateTime",
+  "asset"."dateAccuracy",
   "asset"."originalFileName",
   "asset"."originalPath",
   "asset"."libraryPath",
@@ -2370,6 +2504,17 @@ where
               )
           )
       )
+    )
+  )
+  and not (
+    "asset"."visibility" = 'hidden'
+    and exists (
+      select
+        1
+      from
+        asset_print_back
+      where
+        asset_print_back."backAssetId" = "asset"."id"
     )
   )
   and (
@@ -2427,6 +2572,7 @@ select
   "asset"."libraryScope",
   "asset"."livePhotoVideoId",
   "asset"."localDateTime",
+  "asset"."dateAccuracy",
   "asset"."originalFileName",
   "asset"."originalPath",
   "asset"."libraryPath",
@@ -2473,6 +2619,17 @@ where
   and (
     "asset"."ownerId" = $6::uuid
     or "asset"."deletedAt" is null
+  )
+  and not (
+    "asset"."visibility" = 'hidden'
+    and exists (
+      select
+        1
+      from
+        asset_print_back
+      where
+        asset_print_back."backAssetId" = "asset"."id"
+    )
   )
   and "asset_exif"."city" = $7
 order by
@@ -2506,6 +2663,7 @@ select
   "asset"."libraryScope",
   "asset"."livePhotoVideoId",
   "asset"."localDateTime",
+  "asset"."dateAccuracy",
   "asset"."originalFileName",
   "asset"."originalPath",
   "asset"."libraryPath",
@@ -2552,6 +2710,17 @@ where
   and (
     "asset"."ownerId" = $6::uuid
     or "asset"."deletedAt" is null
+  )
+  and not (
+    "asset"."visibility" = 'hidden'
+    and exists (
+      select
+        1
+      from
+        asset_print_back
+      where
+        asset_print_back."backAssetId" = "asset"."id"
+    )
   )
   and "asset_exif"."city" is null
 order by
@@ -2585,6 +2754,7 @@ select
   "asset"."libraryScope",
   "asset"."livePhotoVideoId",
   "asset"."localDateTime",
+  "asset"."dateAccuracy",
   "asset"."originalFileName",
   "asset"."originalPath",
   "asset"."libraryPath",
@@ -2631,6 +2801,17 @@ where
   and (
     "asset"."ownerId" = $6::uuid
     or "asset"."deletedAt" is null
+  )
+  and not (
+    "asset"."visibility" = 'hidden'
+    and exists (
+      select
+        1
+      from
+        asset_print_back
+      where
+        asset_print_back."backAssetId" = "asset"."id"
+    )
   )
   and f_unaccent ("asset_exif"."description") ilike (
     '%' || regexp_replace(f_unaccent ($7), $8, $9, 'g') || '%'
@@ -2666,6 +2847,7 @@ select
   "asset"."libraryScope",
   "asset"."livePhotoVideoId",
   "asset"."localDateTime",
+  "asset"."dateAccuracy",
   "asset"."originalFileName",
   "asset"."originalPath",
   "asset"."libraryPath",
@@ -2712,6 +2894,17 @@ where
   and (
     "asset"."ownerId" = $6::uuid
     or "asset"."deletedAt" is null
+  )
+  and not (
+    "asset"."visibility" = 'hidden'
+    and exists (
+      select
+        1
+      from
+        asset_print_back
+      where
+        asset_print_back."backAssetId" = "asset"."id"
+    )
   )
   and (
     "asset_exif"."description" is null
@@ -2750,6 +2943,7 @@ select
   "asset"."libraryScope",
   "asset"."livePhotoVideoId",
   "asset"."localDateTime",
+  "asset"."dateAccuracy",
   "asset"."originalFileName",
   "asset"."originalPath",
   "asset"."libraryPath",
@@ -2796,6 +2990,17 @@ where
   and (
     "asset"."ownerId" = $6::uuid
     or "asset"."deletedAt" is null
+  )
+  and not (
+    "asset"."visibility" = 'hidden'
+    and exists (
+      select
+        1
+      from
+        asset_print_back
+      where
+        asset_print_back."backAssetId" = "asset"."id"
+    )
   )
   and f_unaccent ("asset"."originalFileName") ilike (
     regexp_replace(f_unaccent ($7), $8, $9, 'g') || '%'
@@ -2831,6 +3036,7 @@ select
   "asset"."libraryScope",
   "asset"."livePhotoVideoId",
   "asset"."localDateTime",
+  "asset"."dateAccuracy",
   "asset"."originalFileName",
   "asset"."originalPath",
   "asset"."libraryPath",
@@ -2877,6 +3083,17 @@ where
   and (
     "asset"."ownerId" = $6::uuid
     or "asset"."deletedAt" is null
+  )
+  and not (
+    "asset"."visibility" = 'hidden'
+    and exists (
+      select
+        1
+      from
+        asset_print_back
+      where
+        asset_print_back."backAssetId" = "asset"."id"
+    )
   )
   and f_unaccent ("asset_exif"."make") ilike (
     '%' || regexp_replace(f_unaccent ($7), $8, $9, 'g') || '%'
@@ -2912,6 +3129,7 @@ select
   "asset"."libraryScope",
   "asset"."livePhotoVideoId",
   "asset"."localDateTime",
+  "asset"."dateAccuracy",
   "asset"."originalFileName",
   "asset"."originalPath",
   "asset"."libraryPath",
@@ -2959,21 +3177,42 @@ where
     "asset"."ownerId" = $6::uuid
     or "asset"."deletedAt" is null
   )
-  and exists (
-    select
-    from
-      "ocr_search"
-    where
-      "ocr_search"."assetId" = "asset"."id"
-      and f_unaccent (ocr_search.text) %>> f_unaccent ($7)
+  and not (
+    "asset"."visibility" = 'hidden'
+    and exists (
+      select
+        1
+      from
+        asset_print_back
+      where
+        asset_print_back."backAssetId" = "asset"."id"
+    )
+  )
+  and (
+    exists (
+      select
+      from
+        "ocr_search"
+      where
+        "ocr_search"."assetId" = "asset"."id"
+        and f_unaccent (ocr_search.text) %>> f_unaccent ($7)
+    )
+    or exists (
+      select
+      from
+        "asset_print_back"
+      where
+        "asset_print_back"."frontAssetId" = "asset"."id"
+        and f_unaccent (asset_print_back."searchText") %>> f_unaccent ($8)
+    )
   )
 order by
   "asset"."fileCreatedAt" desc,
   "asset"."id" desc
 limit
-  $8
-offset
   $9
+offset
+  $10
 
 -- SearchRepository.searchMetadataV3 (ids-any)
 select
@@ -2998,6 +3237,7 @@ select
   "asset"."libraryScope",
   "asset"."livePhotoVideoId",
   "asset"."localDateTime",
+  "asset"."dateAccuracy",
   "asset"."originalFileName",
   "asset"."originalPath",
   "asset"."libraryPath",
@@ -3205,6 +3445,17 @@ where
       )
     )
   )
+  and not (
+    "asset"."visibility" = 'hidden'
+    and exists (
+      select
+        1
+      from
+        asset_print_back
+      where
+        asset_print_back."backAssetId" = "asset"."id"
+    )
+  )
   and exists (
     select
     from
@@ -3244,6 +3495,7 @@ select
   "asset"."libraryScope",
   "asset"."livePhotoVideoId",
   "asset"."localDateTime",
+  "asset"."dateAccuracy",
   "asset"."originalFileName",
   "asset"."originalPath",
   "asset"."libraryPath",
@@ -3290,6 +3542,17 @@ where
   and (
     "asset"."ownerId" = $6::uuid
     or "asset"."deletedAt" is null
+  )
+  and not (
+    "asset"."visibility" = 'hidden'
+    and exists (
+      select
+        1
+      from
+        asset_print_back
+      where
+        asset_print_back."backAssetId" = "asset"."id"
+    )
   )
   and exists (
     select
@@ -3337,6 +3600,7 @@ select
   "asset"."libraryScope",
   "asset"."livePhotoVideoId",
   "asset"."localDateTime",
+  "asset"."dateAccuracy",
   "asset"."originalFileName",
   "asset"."originalPath",
   "asset"."libraryPath",
@@ -3544,6 +3808,17 @@ where
       )
     )
   )
+  and not (
+    "asset"."visibility" = 'hidden'
+    and exists (
+      select
+        1
+      from
+        asset_print_back
+      where
+        asset_print_back."backAssetId" = "asset"."id"
+    )
+  )
   and exists (
     select
     from
@@ -3583,6 +3858,7 @@ select
   "asset"."libraryScope",
   "asset"."livePhotoVideoId",
   "asset"."localDateTime",
+  "asset"."dateAccuracy",
   "asset"."originalFileName",
   "asset"."originalPath",
   "asset"."libraryPath",
@@ -3629,6 +3905,17 @@ where
   and (
     "asset"."ownerId" = $6::uuid
     or "asset"."deletedAt" is null
+  )
+  and not (
+    "asset"."visibility" = 'hidden'
+    and exists (
+      select
+        1
+      from
+        asset_print_back
+      where
+        asset_print_back."backAssetId" = "asset"."id"
+    )
   )
   and not exists (
     select
@@ -3670,6 +3957,7 @@ select
   "asset"."libraryScope",
   "asset"."livePhotoVideoId",
   "asset"."localDateTime",
+  "asset"."dateAccuracy",
   "asset"."originalFileName",
   "asset"."originalPath",
   "asset"."libraryPath",
@@ -3716,6 +4004,17 @@ where
   and (
     "asset"."ownerId" = $6::uuid
     or "asset"."deletedAt" is null
+  )
+  and not (
+    "asset"."visibility" = 'hidden'
+    and exists (
+      select
+        1
+      from
+        asset_print_back
+      where
+        asset_print_back."backAssetId" = "asset"."id"
+    )
   )
   and exists (
     select
@@ -3762,6 +4061,7 @@ select
   "asset"."libraryScope",
   "asset"."livePhotoVideoId",
   "asset"."localDateTime",
+  "asset"."dateAccuracy",
   "asset"."originalFileName",
   "asset"."originalPath",
   "asset"."libraryPath",
@@ -3808,6 +4108,17 @@ where
   and (
     "asset"."ownerId" = $6::uuid
     or "asset"."deletedAt" is null
+  )
+  and not (
+    "asset"."visibility" = 'hidden'
+    and exists (
+      select
+        1
+      from
+        asset_print_back
+      where
+        asset_print_back."backAssetId" = "asset"."id"
+    )
   )
   and exists (
     select
@@ -3851,6 +4162,7 @@ select
   "asset"."libraryScope",
   "asset"."livePhotoVideoId",
   "asset"."localDateTime",
+  "asset"."dateAccuracy",
   "asset"."originalFileName",
   "asset"."originalPath",
   "asset"."libraryPath",
@@ -3897,6 +4209,17 @@ where
   and (
     "asset"."ownerId" = $6::uuid
     or "asset"."deletedAt" is null
+  )
+  and not (
+    "asset"."visibility" = 'hidden'
+    and exists (
+      select
+        1
+      from
+        asset_print_back
+      where
+        asset_print_back."backAssetId" = "asset"."id"
+    )
   )
   and exists (
     select
@@ -3945,6 +4268,7 @@ select
   "asset"."libraryScope",
   "asset"."livePhotoVideoId",
   "asset"."localDateTime",
+  "asset"."dateAccuracy",
   "asset"."originalFileName",
   "asset"."originalPath",
   "asset"."libraryPath",
@@ -3991,6 +4315,17 @@ where
   and (
     "asset"."ownerId" = $6::uuid
     or "asset"."deletedAt" is null
+  )
+  and not (
+    "asset"."visibility" = 'hidden'
+    and exists (
+      select
+        1
+      from
+        asset_print_back
+      where
+        asset_print_back."backAssetId" = "asset"."id"
+    )
   )
   and not exists (
     select
@@ -4030,6 +4365,7 @@ select
   "asset"."libraryScope",
   "asset"."livePhotoVideoId",
   "asset"."localDateTime",
+  "asset"."dateAccuracy",
   "asset"."originalFileName",
   "asset"."originalPath",
   "asset"."libraryPath",
@@ -4076,6 +4412,17 @@ where
   and (
     "asset"."ownerId" = $6::uuid
     or "asset"."deletedAt" is null
+  )
+  and not (
+    "asset"."visibility" = 'hidden'
+    and exists (
+      select
+        1
+      from
+        asset_print_back
+      where
+        asset_print_back."backAssetId" = "asset"."id"
+    )
   )
   and exists (
     select
@@ -4116,6 +4463,7 @@ select
   "asset"."libraryScope",
   "asset"."livePhotoVideoId",
   "asset"."localDateTime",
+  "asset"."dateAccuracy",
   "asset"."originalFileName",
   "asset"."originalPath",
   "asset"."libraryPath",
@@ -4162,6 +4510,17 @@ where
   and (
     "asset"."ownerId" = $6::uuid
     or "asset"."deletedAt" is null
+  )
+  and not (
+    "asset"."visibility" = 'hidden'
+    and exists (
+      select
+        1
+      from
+        asset_print_back
+      where
+        asset_print_back."backAssetId" = "asset"."id"
+    )
   )
   and (
     "asset_exif"."fileSizeInByte" <= $7
@@ -4198,6 +4557,7 @@ select
   "asset"."libraryScope",
   "asset"."livePhotoVideoId",
   "asset"."localDateTime",
+  "asset"."dateAccuracy",
   "asset"."originalFileName",
   "asset"."originalPath",
   "asset"."libraryPath",
@@ -4244,6 +4604,17 @@ where
   and (
     "asset"."ownerId" = $6::uuid
     or "asset"."deletedAt" is null
+  )
+  and not (
+    "asset"."visibility" = 'hidden'
+    and exists (
+      select
+        1
+      from
+        asset_print_back
+      where
+        asset_print_back."backAssetId" = "asset"."id"
+    )
   )
   and "asset"."fileCreatedAt" = $7
 order by
@@ -4277,6 +4648,7 @@ select
   "asset"."libraryScope",
   "asset"."livePhotoVideoId",
   "asset"."localDateTime",
+  "asset"."dateAccuracy",
   "asset"."originalFileName",
   "asset"."originalPath",
   "asset"."libraryPath",
@@ -4324,17 +4696,38 @@ where
     "asset"."ownerId" = $6::uuid
     or "asset"."deletedAt" is null
   )
+  and not (
+    "asset"."visibility" = 'hidden'
+    and exists (
+      select
+        1
+      from
+        asset_print_back
+      where
+        asset_print_back."backAssetId" = "asset"."id"
+    )
+  )
   and (
     "asset"."fileCreatedAt" < $7
-    and "asset"."fileCreatedAt" >= $8
+    and (
+      "asset"."fileCreatedAt" >= $8
+      or (
+        asset."dateAccuracy" is not null
+        and "asset"."fileCreatedAt" > $9
+        and "asset"."fileCreatedAt" + case asset."dateAccuracy"
+          when 'decade' then interval '10 years'
+          else interval '1 year'
+        end > $10
+      )
+    )
   )
 order by
   "asset"."fileCreatedAt" desc,
   "asset"."id" desc
 limit
-  $9
+  $11
 offset
-  $10
+  $12
 
 -- SearchRepository.searchMetadataV3 (local-date-range)
 select
@@ -4359,6 +4752,7 @@ select
   "asset"."libraryScope",
   "asset"."livePhotoVideoId",
   "asset"."localDateTime",
+  "asset"."dateAccuracy",
   "asset"."originalFileName",
   "asset"."originalPath",
   "asset"."libraryPath",
@@ -4406,17 +4800,38 @@ where
     "asset"."ownerId" = $6::uuid
     or "asset"."deletedAt" is null
   )
+  and not (
+    "asset"."visibility" = 'hidden'
+    and exists (
+      select
+        1
+      from
+        asset_print_back
+      where
+        asset_print_back."backAssetId" = "asset"."id"
+    )
+  )
   and (
     "asset"."localDateTime" < $7
-    and "asset"."localDateTime" >= $8
+    and (
+      "asset"."localDateTime" >= $8
+      or (
+        asset."dateAccuracy" is not null
+        and "asset"."localDateTime" > $9
+        and "asset"."localDateTime" + case asset."dateAccuracy"
+          when 'decade' then interval '10 years'
+          else interval '1 year'
+        end > $10
+      )
+    )
   )
 order by
   "asset"."fileCreatedAt" desc,
   "asset"."id" desc
 limit
-  $9
+  $11
 offset
-  $10
+  $12
 
 -- SearchRepository.searchMetadataV3 (order-fileSize-noExif)
 select
@@ -4441,6 +4856,7 @@ select
   "asset"."libraryScope",
   "asset"."livePhotoVideoId",
   "asset"."localDateTime",
+  "asset"."dateAccuracy",
   "asset"."originalFileName",
   "asset"."originalPath",
   "asset"."libraryPath",
@@ -4487,6 +4903,17 @@ where
   and (
     "asset"."ownerId" = $6::uuid
     or "asset"."deletedAt" is null
+  )
+  and not (
+    "asset"."visibility" = 'hidden'
+    and exists (
+      select
+        1
+      from
+        asset_print_back
+      where
+        asset_print_back."backAssetId" = "asset"."id"
+    )
   )
   and true
 order by
@@ -4521,6 +4948,7 @@ select
   "asset"."libraryScope",
   "asset"."livePhotoVideoId",
   "asset"."localDateTime",
+  "asset"."dateAccuracy",
   "asset"."originalFileName",
   "asset"."originalPath",
   "asset"."libraryPath",
@@ -4567,6 +4995,17 @@ where
   and (
     "asset"."ownerId" = $6::uuid
     or "asset"."deletedAt" is null
+  )
+  and not (
+    "asset"."visibility" = 'hidden'
+    and exists (
+      select
+        1
+      from
+        asset_print_back
+      where
+        asset_print_back."backAssetId" = "asset"."id"
+    )
   )
   and true
 order by
@@ -4600,6 +5039,7 @@ select
   "asset"."libraryScope",
   "asset"."livePhotoVideoId",
   "asset"."localDateTime",
+  "asset"."dateAccuracy",
   "asset"."originalFileName",
   "asset"."originalPath",
   "asset"."libraryPath",
@@ -4646,6 +5086,17 @@ where
   and (
     "asset"."ownerId" = $6::uuid
     or "asset"."deletedAt" is null
+  )
+  and not (
+    "asset"."visibility" = 'hidden'
+    and exists (
+      select
+        1
+      from
+        asset_print_back
+      where
+        asset_print_back."backAssetId" = "asset"."id"
+    )
   )
   and (
     (
@@ -4707,6 +5158,7 @@ select
   "asset"."libraryScope",
   "asset"."livePhotoVideoId",
   "asset"."localDateTime",
+  "asset"."dateAccuracy",
   "asset"."originalFileName",
   "asset"."originalPath",
   "asset"."libraryPath",
@@ -4914,15 +5366,36 @@ where
       )
     )
   )
+  and not (
+    "asset"."visibility" = 'hidden'
+    and exists (
+      select
+        1
+      from
+        asset_print_back
+      where
+        asset_print_back."backAssetId" = "asset"."id"
+    )
+  )
   and (
     "asset"."fileCreatedAt" < $4
-    and "asset"."fileCreatedAt" >= $5
+    and (
+      "asset"."fileCreatedAt" >= $5
+      or (
+        asset."dateAccuracy" is not null
+        and "asset"."fileCreatedAt" > $6
+        and "asset"."fileCreatedAt" + case asset."dateAccuracy"
+          when 'decade' then interval '10 years'
+          else interval '1 year'
+        end > $7
+      )
+    )
     and (
       (
         (
           (
             (
-              "asset"."ownerId" = $6::uuid
+              "asset"."ownerId" = $8::uuid
               AND "asset"."isFavorite"
             )
             OR EXISTS (
@@ -4932,21 +5405,21 @@ where
                 public.asset_favorite af
               WHERE
                 af."assetId" = "asset"."id"
-                AND af."userId" = $7::uuid
+                AND af."userId" = $9::uuid
             )
           )
-        ) = $8
+        ) = $10
         and (
-          "asset"."ownerId" = any ($9::uuid[])
+          "asset"."ownerId" = any ($11::uuid[])
           and (
-            "asset"."ownerId" = $10::uuid
+            "asset"."ownerId" = $12::uuid
             or (
               "asset"."deletedAt" is null
               and "asset"."visibility" in ('timeline', 'hidden')
             )
           )
         )
-        and "asset"."libraryScope" in ($11, $12)
+        and "asset"."libraryScope" in ($13, $14)
       )
       or exists (
         select
@@ -4954,7 +5427,7 @@ where
           "album_asset"
         where
           "album_asset"."assetId" = "asset"."id"
-          and "album_asset"."albumId" = any ($13::uuid[])
+          and "album_asset"."albumId" = any ($15::uuid[])
       )
     )
   )
@@ -4962,9 +5435,9 @@ order by
   "asset"."fileCreatedAt" desc,
   "asset"."id" desc
 limit
-  $14
+  $16
 offset
-  $15
+  $17
 
 -- SearchRepository.searchMetadataV3 (cursor-offset)
 select
@@ -4989,6 +5462,7 @@ select
   "asset"."libraryScope",
   "asset"."livePhotoVideoId",
   "asset"."localDateTime",
+  "asset"."dateAccuracy",
   "asset"."originalFileName",
   "asset"."originalPath",
   "asset"."libraryPath",
@@ -5035,6 +5509,17 @@ where
   and (
     "asset"."ownerId" = $6::uuid
     or "asset"."deletedAt" is null
+  )
+  and not (
+    "asset"."visibility" = 'hidden'
+    and exists (
+      select
+        1
+      from
+        asset_print_back
+      where
+        asset_print_back."backAssetId" = "asset"."id"
+    )
   )
   and (
     (
@@ -5084,6 +5569,7 @@ select
   "asset"."libraryScope",
   "asset"."livePhotoVideoId",
   "asset"."localDateTime",
+  "asset"."dateAccuracy",
   "asset"."originalFileName",
   "asset"."originalPath",
   "asset"."libraryPath",
@@ -5130,6 +5616,17 @@ where
   and (
     "asset"."ownerId" = $6::uuid
     or "asset"."deletedAt" is null
+  )
+  and not (
+    "asset"."visibility" = 'hidden'
+    and exists (
+      select
+        1
+      from
+        asset_print_back
+      where
+        asset_print_back."backAssetId" = "asset"."id"
+    )
   )
   and true
 order by
@@ -5160,6 +5657,7 @@ select
   "asset"."libraryScope",
   "asset"."livePhotoVideoId",
   "asset"."localDateTime",
+  "asset"."dateAccuracy",
   "asset"."originalFileName",
   "asset"."originalPath",
   "asset"."libraryPath",
@@ -5206,6 +5704,17 @@ where
   and (
     "asset"."ownerId" = $6::uuid
     or "asset"."deletedAt" is null
+  )
+  and not (
+    "asset"."visibility" = 'hidden'
+    and exists (
+      select
+        1
+      from
+        asset_print_back
+      where
+        asset_print_back."backAssetId" = "asset"."id"
+    )
   )
   and (
     (
@@ -5259,6 +5768,7 @@ with
       "asset"."libraryScope",
       "asset"."livePhotoVideoId",
       "asset"."localDateTime",
+      "asset"."dateAccuracy",
       "asset"."originalFileName",
       "asset"."originalPath",
       "asset"."libraryPath",
@@ -5307,6 +5817,17 @@ with
       and (
         "asset"."ownerId" = $7::uuid
         or "asset"."deletedAt" is null
+      )
+      and not (
+        "asset"."visibility" = 'hidden'
+        and exists (
+          select
+            1
+          from
+            asset_print_back
+          where
+            asset_print_back."backAssetId" = "asset"."id"
+        )
       )
       and true
     order by
@@ -5373,6 +5894,7 @@ with
       "asset"."libraryScope",
       "asset"."livePhotoVideoId",
       "asset"."localDateTime",
+      "asset"."dateAccuracy",
       "asset"."originalFileName",
       "asset"."originalPath",
       "asset"."libraryPath",
@@ -5422,24 +5944,45 @@ with
         "asset"."ownerId" = $7::uuid
         or "asset"."deletedAt" is null
       )
+      and not (
+        "asset"."visibility" = 'hidden'
+        and exists (
+          select
+            1
+          from
+            asset_print_back
+          where
+            asset_print_back."backAssetId" = "asset"."id"
+        )
+      )
       and (
         "asset"."fileCreatedAt" < $8
-        and "asset"."fileCreatedAt" >= $9
+        and (
+          "asset"."fileCreatedAt" >= $9
+          or (
+            asset."dateAccuracy" is not null
+            and "asset"."fileCreatedAt" > $10
+            and "asset"."fileCreatedAt" + case asset."dateAccuracy"
+              when 'decade' then interval '10 years'
+              else interval '1 year'
+            end > $11
+          )
+        )
       )
     order by
-      (smart_search.embedding <=> $10)
+      (smart_search.embedding <=> $12)
     limit
-      $11
+      $13
   )
 select
   "candidate".*,
   (
-    candidate."visualDistance" - $12 * coalesce(
+    candidate."visualDistance" - $14 * coalesce(
       greatest(
         0,
-        $13 - (
+        $15 - (
           select
-            embedding <=> $14
+            embedding <=> $16
           from
             smart_search_description
           where
@@ -5455,9 +5998,9 @@ order by
   "searchDistance",
   "candidate"."id" asc
 limit
-  $15
+  $17
 offset
-  $16
+  $18
 commit
 
 -- SearchRepository.searchSmartV3 (cursor-offset)
@@ -5490,6 +6033,7 @@ with
       "asset"."libraryScope",
       "asset"."livePhotoVideoId",
       "asset"."localDateTime",
+      "asset"."dateAccuracy",
       "asset"."originalFileName",
       "asset"."originalPath",
       "asset"."libraryPath",
@@ -5538,6 +6082,17 @@ with
       and (
         "asset"."ownerId" = $7::uuid
         or "asset"."deletedAt" is null
+      )
+      and not (
+        "asset"."visibility" = 'hidden'
+        and exists (
+          select
+            1
+          from
+            asset_print_back
+          where
+            asset_print_back."backAssetId" = "asset"."id"
+        )
       )
       and true
     order by
@@ -5607,6 +6162,17 @@ where
     "asset"."ownerId" = $6::uuid
     or "asset"."deletedAt" is null
   )
+  and not (
+    "asset"."visibility" = 'hidden'
+    and exists (
+      select
+        1
+      from
+        asset_print_back
+      where
+        asset_print_back."backAssetId" = "asset"."id"
+    )
+  )
   and true
 
 -- SearchRepository.searchStatisticsV3 (with-filter)
@@ -5642,10 +6208,31 @@ where
     "asset"."ownerId" = $6::uuid
     or "asset"."deletedAt" is null
   )
+  and not (
+    "asset"."visibility" = 'hidden'
+    and exists (
+      select
+        1
+      from
+        asset_print_back
+      where
+        asset_print_back."backAssetId" = "asset"."id"
+    )
+  )
   and (
     "asset_exif"."fileSizeInByte" >= $7
     and "asset"."fileCreatedAt" < $8
-    and "asset"."fileCreatedAt" >= $9
+    and (
+      "asset"."fileCreatedAt" >= $9
+      or (
+        asset."dateAccuracy" is not null
+        and "asset"."fileCreatedAt" > $10
+        and "asset"."fileCreatedAt" + case asset."dateAccuracy"
+          when 'decade' then interval '10 years'
+          else interval '1 year'
+        end > $11
+      )
+    )
   )
 
 -- SearchRepository.searchStatisticsV3 (with-or)
@@ -5680,6 +6267,17 @@ where
   and (
     "asset"."ownerId" = $6::uuid
     or "asset"."deletedAt" is null
+  )
+  and not (
+    "asset"."visibility" = 'hidden'
+    and exists (
+      select
+        1
+      from
+        asset_print_back
+      where
+        asset_print_back."backAssetId" = "asset"."id"
+    )
   )
   and (
     (
@@ -5733,14 +6331,35 @@ with
           )
           or "asset"."ownerId" = $3::uuid
         )
-        and "asset"."fileCreatedAt" >= $4
-        and "asset"."ownerId" = any ($5::uuid[])
+        and not (
+          "asset"."visibility" = 'hidden'
+          and exists (
+            select
+              1
+            from
+              asset_print_back
+            where
+              asset_print_back."backAssetId" = "asset"."id"
+          )
+        )
+        and (
+          "asset"."fileCreatedAt" >= $4
+          or (
+            asset."dateAccuracy" is not null
+            and "asset"."fileCreatedAt" > $5
+            and "asset"."fileCreatedAt" + case asset."dateAccuracy"
+              when 'decade' then interval '10 years'
+              else interval '1 year'
+            end > $6
+          )
+        )
+        and "asset"."ownerId" = any ($7::uuid[])
         and "asset"."deletedAt" is null
     )
   ),
   facet_rows as (
     select
-      $6::text as field,
+      $8::text as field,
       m.type::text as value,
       null::text as label,
       count(*) as count,
@@ -5757,11 +6376,11 @@ with
       2
     union all
     select
-      $7::text as field,
+      $9::text as field,
       (
         (
           (
-            "m"."ownerId" = $8::uuid
+            "m"."ownerId" = $10::uuid
             AND "m"."isFavorite"
           )
           OR EXISTS (
@@ -5771,7 +6390,7 @@ with
               public.asset_favorite af
             WHERE
               af."assetId" = "m"."id"
-              AND af."userId" = $9::uuid
+              AND af."userId" = $11::uuid
           )
         )
       )::text as value,
@@ -5790,7 +6409,7 @@ with
       2
     union all
     select
-      $10::text as field,
+      $12::text as field,
       case
         when e.rating between 1 and 5 then e.rating::text
         else 'unrated'
@@ -5811,7 +6430,7 @@ with
       2
     union all
     select
-      $11::text as field,
+      $13::text as field,
       nullif(trim("e"."city"), '') as value,
       null::text as label,
       count(*) as count,
@@ -5832,7 +6451,7 @@ with
       2
     union all
     select
-      $12::text as field,
+      $14::text as field,
       nullif(trim("e"."country"), '') as value,
       null::text as label,
       count(*) as count,
@@ -5853,7 +6472,7 @@ with
       2
     union all
     select
-      $13::text as field,
+      $15::text as field,
       nullif(trim("e"."make"), '') as value,
       null::text as label,
       count(*) as count,
@@ -5874,7 +6493,7 @@ with
       2
     union all
     select
-      $14::text as field,
+      $16::text as field,
       nullif(trim("e"."model"), '') as value,
       null::text as label,
       count(*) as count,
@@ -5895,7 +6514,7 @@ with
       2
     union all
     select
-      $15::text as field,
+      $17::text as field,
       nullif(trim("e"."lensModel"), '') as value,
       null::text as label,
       count(*) as count,
@@ -5916,7 +6535,7 @@ with
       2
     union all
     select
-      $16::text as field,
+      $18::text as field,
       k.kind::text as value,
       null::text as label,
       count(*) as count,
@@ -5937,7 +6556,7 @@ with
       2
     union all
     select
-      $17::text as field,
+      $19::text as field,
       m."personGroupId"::text as value,
       max(nullif(p.name, '')) as label,
       count(*) as count,
@@ -5961,15 +6580,15 @@ with
           and f."isVisible" is true
       ) m
       inner join person p on p."personGroupId" = m."personGroupId"
-      and p."ownerId" = $18::uuid
+      and p."ownerId" = $20::uuid
       and not p."isHidden"
     where
-      not (m."personGroupId" = any ($19::uuid[]))
+      not (m."personGroupId" = any ($21::uuid[]))
     group by
       m."personGroupId"
     union all
     select
-      $20::text as field,
+      $22::text as field,
       t.id::text as value,
       max(t.value) as label,
       count(*) as count,
@@ -5992,7 +6611,7 @@ with
           inner join tag_closure tc on tc.id_descendant = ta."tagId"
       ) m
       inner join tag t on t.id = m."tagId"
-      and t."userId" = $21::uuid
+      and t."userId" = $23::uuid
     where
       not exists (
         select
@@ -6001,13 +6620,13 @@ with
           tag_closure
         where
           tag_closure.id_descendant = "t"."id"
-          and tag_closure.id_ancestor = any ($22::uuid[])
+          and tag_closure.id_ancestor = any ($24::uuid[])
       )
     group by
       t.id
     union all
     select
-      $23::text as field,
+      $25::text as field,
       pet.id::text as value,
       max(nullif(pet.name, '')) as label,
       count(distinct m.id) as count,
@@ -6021,12 +6640,12 @@ with
     from
       matched m
       inner join pet_observation po on po."assetId" = m.id
-      and po.state = $24
+      and po.state = $26
       inner join pet on pet.id = po."petId"
-      and pet."ownerId" = $25::uuid
+      and pet."ownerId" = $27::uuid
       and not pet."isHidden"
     where
-      not (pet.id = any ($26::uuid[]))
+      not (pet.id = any ($28::uuid[]))
     group by
       pet.id
     union all
@@ -6068,7 +6687,7 @@ select
 from
   ranked
 where
-  rank <= $27
+  rank <= $29
 order by
   field,
   rank
@@ -6112,6 +6731,17 @@ with
         and (
           "asset"."ownerId" = $6::uuid
           or "asset"."deletedAt" is null
+        )
+        and not (
+          "asset"."visibility" = 'hidden'
+          and exists (
+            select
+              1
+            from
+              asset_print_back
+            where
+              asset_print_back."backAssetId" = "asset"."id"
+          )
         )
         and (
           (
@@ -6488,8 +7118,29 @@ with
           )
           or "asset"."ownerId" = $3::uuid
         )
-        and "asset"."fileCreatedAt" >= $4
-        and "asset"."ownerId" = any ($5::uuid[])
+        and not (
+          "asset"."visibility" = 'hidden'
+          and exists (
+            select
+              1
+            from
+              asset_print_back
+            where
+              asset_print_back."backAssetId" = "asset"."id"
+          )
+        )
+        and (
+          "asset"."fileCreatedAt" >= $4
+          or (
+            asset."dateAccuracy" is not null
+            and "asset"."fileCreatedAt" > $5
+            and "asset"."fileCreatedAt" + case asset."dateAccuracy"
+              when 'decade' then interval '10 years'
+              else interval '1 year'
+            end > $6
+          )
+        )
+        and "asset"."ownerId" = any ($7::uuid[])
         and "asset"."deletedAt" is null
     )
   )
@@ -6545,6 +7196,17 @@ with
           "asset"."ownerId" = $6::uuid
           or "asset"."deletedAt" is null
         )
+        and not (
+          "asset"."visibility" = 'hidden'
+          and exists (
+            select
+              1
+            from
+              asset_print_back
+            where
+              asset_print_back."backAssetId" = "asset"."id"
+          )
+        )
         and true
     )
   )
@@ -6585,11 +7247,32 @@ from
           )
           or "asset"."ownerId" = $3::uuid
         )
-        and "asset"."fileCreatedAt" >= $4
-        and "asset"."ownerId" = any ($5::uuid[])
+        and not (
+          "asset"."visibility" = 'hidden'
+          and exists (
+            select
+              1
+            from
+              asset_print_back
+            where
+              asset_print_back."backAssetId" = "asset"."id"
+          )
+        )
+        and (
+          "asset"."fileCreatedAt" >= $4
+          or (
+            asset."dateAccuracy" is not null
+            and "asset"."fileCreatedAt" > $5
+            and "asset"."fileCreatedAt" + case asset."dateAccuracy"
+              when 'decade' then interval '10 years'
+              else interval '1 year'
+            end > $6
+          )
+        )
+        and "asset"."ownerId" = any ($7::uuid[])
         and "asset"."deletedAt" is null
       limit
-        $6
+        $8
     )
   ) capped
 
@@ -6631,6 +7314,17 @@ from
         and (
           "asset"."ownerId" = $6::uuid
           or "asset"."deletedAt" is null
+        )
+        and not (
+          "asset"."visibility" = 'hidden'
+          and exists (
+            select
+              1
+            from
+              asset_print_back
+            where
+              asset_print_back."backAssetId" = "asset"."id"
+          )
         )
         and true
       limit

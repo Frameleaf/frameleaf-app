@@ -13,13 +13,22 @@ describe(DatabaseService.name, () => {
   let mocks: ServiceMocks;
   beforeEach(() => {
     ({ sut, mocks } = newTestService(DatabaseService));
-    mocks.database.getPostgresVersion.mockResolvedValue('19rc1 (Debian)');
+    mocks.database.getPostgresVersion.mockResolvedValue('19.0 (Debian 19.0-2.pgdg12+1)');
     mocks.database.getPostgresVersionRange.mockReturnValue('>=19.0.0 <20.0.0');
     mocks.database.getExtensionVersionRange.mockReturnValue('>=0.8.7 <0.9.0');
     mocks.database.getExtensionVersions.mockResolvedValue([
       { name: DatabaseExtension.Vector, installedVersion: '0.8.7', availableVersion: '0.8.7' },
     ]);
   });
+
+  it.each(['19rc1 (Debian)', '19beta4'])(
+    'still boots on a database left on a PostgreSQL 19 prerelease (%s)',
+    async (version) => {
+      mocks.database.getPostgresVersion.mockResolvedValue(version);
+      await sut.onBootstrap();
+      expect(mocks.database.runMigrations).toHaveBeenCalledOnce();
+    },
+  );
 
   it.each(['18.4', '20.0', 'unknown'])('rejects unsupported PostgreSQL %s before mutating it', async (version) => {
     mocks.database.getPostgresVersion.mockResolvedValue(version);
@@ -28,7 +37,7 @@ describe(DatabaseService.name, () => {
     expect(mocks.database.createExtension).not.toHaveBeenCalled();
   });
 
-  it('boots PostgreSQL 19 prerelease with one migration chain and HNSW indexes', async () => {
+  it('boots PostgreSQL 19.0 with one migration chain and HNSW indexes', async () => {
     await sut.onBootstrap();
     expect(mocks.database.withLock).toHaveBeenCalledWith(DatabaseLock.Migrations, expect.any(Function));
     expect(mocks.database.assertFrameleafDatabase).toHaveBeenCalledOnce();

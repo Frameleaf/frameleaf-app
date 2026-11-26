@@ -125,7 +125,9 @@ def check_hls(ydl, info):
 def check_dash(ydl, info):
     if manifest := info.get("manifest_url"):
         _, raw = read_http(ydl, manifest, info.get("http_headers") or {}, 4 * 1024 * 1024)
-        if b"<!DOCTYPE" in raw.upper() or b"<!ENTITY" in raw.upper():
+        # Without the NUL bytes, so a UTF-16 manifest cannot hide its declarations from this check.
+        plain = raw.replace(b"\0", b"").upper()
+        if b"<!DOCTYPE" in plain or b"<!ENTITY" in plain:
             raise BridgeError("unsupported")
         root = ElementTree.fromstring(raw)
         if root.get("type") == "dynamic":

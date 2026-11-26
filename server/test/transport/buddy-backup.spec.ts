@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
-import { access, readFile, realpath, statfs, writeFile } from 'node:fs/promises';
+import { access, readFile, realpath, writeFile } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
@@ -433,15 +433,16 @@ it('backs up and restores two real apps bidirectionally without exposing hosted 
         { directory: '/buddy-host', configurationFiles: [] },
         201,
       );
-      const fs = await statfs(join(root, side, 'incoming'));
-      const reserve = Math.max(10 * 1024 ** 3, fs.blocks * fs.bsize * 0.1);
+      // Both figures are the server's own free space after its Buddy reserve, measured on the real disk the
+      // fixture mounts (buddy-fixture-tls.sh sizes it), so this asks only for what the test writes on top.
       if (
-        fs.bavail * fs.bsize - reserve < 512 * 1024 ** 2 ||
+        (preflight.hostingAvailableBytes ?? 0) < 512 * 1024 ** 2 ||
         preflight.stagingAvailableBytes < 3 * preflight.databaseBytes
       ) {
-        throw new Error('Hosted runner lacks real Buddy reserve plus staging space; capacity was not mocked');
+        throw new Error(
+          `Buddy fixture lacks space beyond the server reserve (hosting ${preflight.hostingAvailableBytes}, staging ${preflight.stagingAvailableBytes}, database ${preflight.databaseBytes}); capacity was not mocked`,
+        );
       }
-      expect(preflight.hostingAvailableBytes).toBeGreaterThan(512 * 1024 ** 2);
       await json(app, `${adminRoute}/settings`, 'PUT', app.admin.token, {
         directory: '/buddy-host',
         quotaBytes: 10 * 1024 ** 3,

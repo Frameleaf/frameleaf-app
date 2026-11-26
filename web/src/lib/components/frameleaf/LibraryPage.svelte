@@ -8,12 +8,14 @@
    *   checked yet, or being removed) with Check now and Check every file again, and the scan's own
    *   words under it; what it holds; the folder; whose library and its name; what it skips; recent
    *   changes; and removing it from Frameleaf. "Change…" opens the edit form (folders, name, skips).
+   *   FL-838: "Albums", where the folder can keep an album for each of its folders.
    * - Someone's uploads: how many photos and videos, and when the last one was added; what they hold;
    *   recent changes. Uploads belong to their account, so there is nothing to remove here.
    *
    * The heading (name, "‹ Libraries", View analytics) is the Libraries manager's.
    */
   import Button from '$lib/components/frameleaf/Button.svelte';
+  import FolderAlbumsSection from '$lib/components/frameleaf/FolderAlbumsSection.svelte';
   import Skeleton from '$lib/components/frameleaf/Skeleton.svelte';
   import Advanced from '$lib/components/frameleaf/settings/kit/Advanced.svelte';
   import Facts from '$lib/components/frameleaf/settings/kit/Facts.svelte';
@@ -60,9 +62,21 @@
     /** FL-539: "Check every file again": reads every file, not only the new and changed ones. */
     onScanEveryFile?: () => void;
     onCancelScan: () => void;
+    /** FL-838: "Make an album for each folder" turned on, or off (keeping or removing the albums). */
+    onFolderAlbums?: (on: boolean, removeAlbums: boolean) => void;
   };
 
-  let { row, snapshotAt, busy = false, onEdit, onRemove, onScan, onScanEveryFile, onCancelScan }: Props = $props();
+  let {
+    row,
+    snapshotAt,
+    busy = false,
+    onEdit,
+    onRemove,
+    onScan,
+    onScanEveryFile,
+    onCancelScan,
+    onFolderAlbums,
+  }: Props = $props();
 
   const external = $derived(row.kind === 'external');
   const active = $derived(row.lifecycle === 'active');
@@ -261,6 +275,20 @@
           {/if}
         </Advanced>
       </Section>
+
+      {#if active && onFolderAlbums}
+        <FolderAlbumsSection
+          title={$t('frameleaf_folder_albums_title')}
+          roots={row.importPaths}
+          exclusionPatterns={row.exclusionPatterns}
+          libraryName={row.name}
+          ownerName={row.ownerName}
+          checked={row.folderAlbums ?? false}
+          editing
+          {busy}
+          onChange={onFolderAlbums}
+        />
+      {/if}
     {/if}
 
     <Section title={$t('frameleaf_library_page_history')}>

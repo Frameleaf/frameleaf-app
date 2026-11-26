@@ -95,6 +95,13 @@ class LibraryBatchStopped extends Error {
 
 type LibraryRow = NonNullable<Awaited<ReturnType<LibraryRepository['get']>>>;
 const WRITE_DENIED = new Set(['EACCES', 'EPERM', 'EROFS']);
+/** Errors that mean the file is gone. Permission errors are "could not check", never "gone". */
+const GONE = new Set(['ENOENT', 'ENOTDIR']);
+/** A scan marks at most this many items missing, or this share of the library when that is larger. */
+export const LIBRARY_SCAN_MISSING_FLOOR = 100;
+export const LIBRARY_SCAN_MISSING_SHARE = 0.1;
+export const missingLimit = (total: number) =>
+  Math.max(LIBRARY_SCAN_MISSING_FLOOR, Math.floor(total * LIBRARY_SCAN_MISSING_SHARE));
 
 /**
  * External library scans (FL-78).
@@ -702,6 +709,7 @@ export class LibraryScanService {
           updated: result.updated + counts.updated,
           offlined: result.offlined + counts.offlined,
           onlined: result.onlined + counts.onlined,
+          missing: (result.missing ?? 0) + counts.missing,
         };
       }
     }
@@ -718,15 +726,14 @@ export class LibraryScanService {
   ) {
     const assets = await this.assetJobRepository.getForSyncAssets(assetIds);
     signal.throwIfAborted();
-    // Gone or unreadable (null) is offline. Any other error (EIO, ESTALE, a share timing out) is `undefined`:
-    // the item is left as it is until a scan can read it, rather than sent to the Trash by a hiccup.
+    // Gone (null) is offline. Any other error (EIO, ESTALE, a share timing out, and EACCES/EPERM from a
+    // subfolder that lost its permission) is `undefined`: the item is left as it is until a scan can read it,
+    // rather than sent to the Trash by a hiccup.
     const stats = await Promise.all(
       assets.map((asset) =>
         this.storageRepository
           .stat(asset.originalPath)
-          .catch((error: NodeJS.ErrnoException) =>
-            ['ENOENT', 'ENOTDIR', 'EACCES', 'EPERM'].includes(error?.code ?? '') ? null : undefined,
-          ),
+          .catch((error: NodeJS.ErrnoException) => (GONE.has(error?.code ?? '') ? null : undefined)),
       ),
     );
     signal.throwIfAborted();
@@ -766,6 +773,17 @@ export class LibraryScanService {
       }
     }
 
+    // A nested mount that vanished looks like many files gone while every import folder is still there.
+    // Past a safe share of the library the scan stops before sending anything more to the Trash.
+    const missing = (result.missing ?? 0) + toOffline.length;
+    const limit = missingLimit(result.total);
+    if (missing > limit) {
+      throw new LibraryScanRefusal(
+        'library_scan_too_many_missing',
+        `${missing} items look missing, more than the ${limit} a scan will mark missing at once, so no more were marked missing. Check that every drive and folder is connected and readable, then scan again.`,
+      );
+    }
+
     // stat may have waited on a share that disconnected. Recheck before any offline/online write.
     await this.requireSources(roots, signal);
     await this.requireNonemptySources(library, roots, signal);
@@ -798,6 +816,7 @@ export class LibraryScanService {
           offlined: offline.length + trashedOffline.length,
           onlined: online.length + trashedOnline.length,
           updated: toUpdate.length,
+          missing: toOffline.filter((id) => !excludedSet.has(id)).length,
         };
       },
       {
@@ -810,6 +829,7 @@ export class LibraryScanService {
           updated: result.updated + counts.updated,
           offlined: result.offlined + counts.offlined,
           onlined: result.onlined + counts.onlined,
+          missing: (result.missing ?? 0) + counts.missing,
         }),
       },
     );

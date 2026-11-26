@@ -1,0 +1,63 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "geometry": { "type": "Point", "coordinates": ["139.7454", "35.6585"] },
+      "properties": { "timestamp": 1700000000 }
+    },
+    {
+      "type": "Feature",
+      "geometry": { "type": "Point", "coordinates": [139.7454, 35.6585] },
+      "properties": {
+        "battery_status": "unplugged",
+        "ping": null,
+        "battery": 85,
+        "tracker_id": "synthetic",
+        "topic": "owntracks/synthetic/phone",
+        "altitude": 40,
+        "longitude": "139.7454",
+        "velocity": "0",
+        "trigger": null,
+        "bssid": null,
+        "ssid": null,
+        "connection": "wifi",
+        "vertical_accuracy": 3,
+        "accuracy": 5,
+        "timestamp": 1700000300,
+        "latitude": "35.6585",
+        "mode": null,
+        "inrids": [],
+        "in_regions": [],
+        "city": null,
+        "country": null
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": { "type": "Point", "coordinates": [139.7466, 35.6595] },
+      "properties": { "accuracy": 7, "timestamp": 1700000600 }
+    },
+    {
+      "type": "Feature",
+      "geometry": { "type": "Point", "coordinates": [139.7479, 35.6607] },
+      "properties": { "accuracy": 650, "timestamp": 1700000900 }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [139.74, 35.65],
+          [139.75, 35.66]
+        ]
+      },
+      "properties": {}
+    },
+    {
+      "type": "Feature",
+      "geometry": { "type": "Point", "coordinates": [139.749, 35.662] },
+      "properties": { "accuracy": 6, "timestamp": "2023-11-14T22:33:20Z" }
+    }
+  ]
+}

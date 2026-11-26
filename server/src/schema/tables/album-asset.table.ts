@@ -10,7 +10,11 @@ import {
 } from '@frameleaf/sql-tools';
 import type { Generated, Timestamp } from '@frameleaf/sql-tools';
 import { UpdateIdColumn, UpdatedAtTrigger } from 'src/decorators.js';
-import { album_asset_delete_audit, media_import_collection_removed } from 'src/schema/functions.js';
+import {
+  album_asset_delete_audit,
+  asset_print_back_not_shared,
+  media_import_collection_removed,
+} from 'src/schema/functions.js';
 import { AlbumTable } from 'src/schema/tables/album.table.js';
 import { AssetTable } from 'src/schema/tables/asset.table.js';
 import { connect_event_album_added } from 'src/schema/tables/connect-event.table.js';
@@ -23,6 +27,14 @@ import { connect_event_album_added } from 'src/schema/tables/connect-event.table
   functionName: connect_event_album_added.name,
 })
 @Table({ name: 'album_asset' })
+// FL-967: the back of a print is never an album item, whichever writer tries
+@Trigger({
+  name: 'album_asset_print_back_not_shared',
+  timing: 'before',
+  actions: ['insert'],
+  scope: 'row',
+  functionName: asset_print_back_not_shared.name,
+})
 @Trigger({
   name: 'media_import_collection_removed',
   timing: 'after',

@@ -189,7 +189,6 @@ export default async () => ({
   optimizeDeps: engineConfig.optimizeDeps,
   define: {
     __FRAMELEAF_ENGINE_REVISION__: JSON.stringify(build.upstreamCommit),
-    __FRAMELEAF_ENGINE_SOURCE_SHA256__: JSON.stringify(build.sourceSha256),
   },
   worker: engineConfig.worker,
   build: {

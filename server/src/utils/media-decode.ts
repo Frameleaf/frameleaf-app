@@ -122,6 +122,9 @@ export type DecodeQualification = {
   reshapeDolbyVision?: true;
 };
 
+/** What ffprobe says of a video whose container can't be opened. Test it with the file's path removed. */
+export const DAMAGED_CONTAINER = /moov atom not found|invalid data found when processing input/i;
+
 /**
  * FL-1357: whether a failed ffprobe or ffmpeg run is about the file's format, as opposed to the machine or the
  * drive letting it down (could not start, killed, timed out, read error, full drive). Only the first kind makes

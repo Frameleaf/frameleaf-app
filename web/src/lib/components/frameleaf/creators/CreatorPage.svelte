@@ -394,7 +394,7 @@
             <Icon icon={mdiRefresh} size="18" aria-hidden={true} />{$t('frameleaf_creators_check_now')}
           </Button>
         {/if}
-        {#if standing === 'paused'}
+        {#if standing === 'paused' || standing === 'attention'}
           <Button
             disabled={busy}
             onclick={() => void act(MediaSubscriptionAction.Resume, $t('frameleaf_creators_carrying_on'))}

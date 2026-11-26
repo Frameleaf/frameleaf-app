@@ -1,4 +1,4 @@
-import { normalizeServerAddress } from './api';
+import { homeHost, normalizeServerAddress } from './api';
 import type { RecentServer, SignInProblem } from './settings';
 
 /**
@@ -11,8 +11,9 @@ const NOT_AN_ADDRESS =
   'That doesn’t look like an address. It’s the one you use to open Frameleaf, like photos.example.com.';
 
 /**
- * Checks a typed server address before Sign in. A missing "https://" is added for you. Plain http
- * is only allowed for a server on this computer, with the switch on.
+ * Checks a typed server address before Sign in. A missing scheme is added for you: http:// for a
+ * home-network server with the switch on, https:// otherwise. Plain http is only allowed for a
+ * server on this computer or the home network (`homeHost`, FL-1498), with the switch on.
  */
 export function checkServerAddress(
   input: string,
@@ -20,35 +21,43 @@ export function checkServerAddress(
 ): { ok: true; origin: string; host: string } | { ok: false; problem: string } {
   const typed = String(input ?? '').trim();
   if (!typed) return { ok: false, problem: 'Enter your server’s address.' };
-  const withScheme = /^[a-z][\d+.a-z-]*:\/\//i.test(typed)
-    ? typed
-    : `https://${typed}`;
+  const schemed = /^[a-z][\d+.a-z-]*:\/\//i.test(typed);
+  let address = schemed ? typed : `https://${typed}`;
   let url: URL;
   try {
-    url = new URL(withScheme);
+    url = new URL(address);
+    if (!schemed && allowLocal && homeHost(url.hostname)) {
+      address = `http://${typed}`;
+      url = new URL(address);
+    }
   } catch {
     return { ok: false, problem: NOT_AN_ADDRESS };
   }
-  const local = LOCAL_HOSTS.includes(url.hostname);
-  const bareName = !url.hostname.includes('.') && !local && !url.port;
-  if (!['https:', 'http:'].includes(url.protocol) || bareName)
+  // a bare name ("photos") is only an address on the home network, so only with the switch on
+  if (
+    !allowLocal &&
+    !url.port &&
+    !url.hostname.includes('.') &&
+    !LOCAL_HOSTS.includes(url.hostname)
+  )
     return { ok: false, problem: NOT_AN_ADDRESS };
-  if (url.protocol === 'http:' && !local)
+  if (url.protocol === 'http:' && !homeHost(url.hostname))
     return {
       ok: false,
       problem:
-        'This address needs to start with https://. Only a server on this computer can do without it.',
+        'This address needs to start with https://. Only a server on this computer or your home network can do without it.',
     };
   if (url.protocol === 'http:' && !allowLocal)
     return {
       ok: false,
       problem:
-        'To use a server on this computer without HTTPS, turn on “Allow a local server without HTTPS” below.',
+        'To use a server on this computer or your home network without HTTPS, turn on “Allow a local server without HTTPS” below.',
     };
+  // everything else (other schemes, a user name, "?" or "#") is normalizeServerAddress's to refuse
   try {
     return {
       ok: true,
-      origin: normalizeServerAddress(withScheme, allowLocal),
+      origin: normalizeServerAddress(address, allowLocal),
       host: url.host,
     };
   } catch {

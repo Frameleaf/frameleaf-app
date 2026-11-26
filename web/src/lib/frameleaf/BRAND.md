@@ -48,7 +48,7 @@ Principles:
 - **Accent** is Leaf Green, `#22c55e` dark and `#157b40` light, with a Display P3 twin.
 - **Radii** follow the prototype scale: 9px controls, 12px cards, 16px floating capsules, 22px
   sheets; 4px and 6px for badges and thumbnails.
-- **Type** is the system stack (SF Pro on Apple devices, bundled Inter elsewhere) at 14px body,
+- **Type** is the bundled Inter on every device ("Use system font" swaps in the device's own) at 14px body,
   semibold headings. Counts use tabular figures.
 - **Motion** is the September 24 prototype's spring and ease, in seven patterns (section 4). The
   logo fades in; nothing spins or overshoots on its own.

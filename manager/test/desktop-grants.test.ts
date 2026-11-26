@@ -11,7 +11,7 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import { Store } from '../src/store.js';
 import { Security } from '../src/security.js';
-import { sha256 } from '../src/contracts.js';
+import { digest, sha256 } from '../src/contracts.js';
 import {
   DesktopGrants,
   pairingMessage,
@@ -339,6 +339,22 @@ test('revoke and administrator rotation invalidate grants and pending pairings',
         }),
       /desktop_pairing_unavailable/,
     );
+  });
+});
+test('renaming the administrator keeps paired devices; only a new password revokes them', async () => {
+  await fixture(async (grants, store, security) => {
+    const { grant } = await paired(grants);
+    await security.updateAdministrator('Renamed owner', password);
+    grants.authorize(proof(grants, grant), context);
+    // A grant made before FL-1770 carries the whole record's digest; using it once moves it to the password epoch.
+    const older = await paired(grants);
+    const row = store.db.prepare('SELECT value FROM desktop_grants WHERE id=?').get(older.grant.id) as { value: string };
+    const value = JSON.parse(row.value);
+    value.epoch = digest(store.get('administrator'));
+    store.db.prepare('UPDATE desktop_grants SET value=? WHERE id=?').run(JSON.stringify(value), older.grant.id);
+    grants.authorize(proof(grants, older.grant), context);
+    await security.updateAdministrator('Owner again', password);
+    grants.authorize(proof(grants, older.grant), context);
   });
 });
 test('expired grants and malformed or authority-expanding input fail closed', async (t) => {

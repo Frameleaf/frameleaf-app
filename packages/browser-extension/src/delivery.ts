@@ -10,6 +10,11 @@ let controller: AbortController | undefined;
 let requested = false;
 let retryTimer: ReturnType<typeof setTimeout> | undefined;
 let lastError: { binding: ServerBinding; message: string } | undefined;
+let settled = () => {};
+/** FL-1729: told each time delivery stops for now, so the toolbar badge can follow the queue. */
+export function onDeliverySettled(callback: () => void) {
+  settled = callback;
+}
 export function stopDelivery() {
   clearTimeout(retryTimer);
   retryTimer = undefined;
@@ -118,6 +123,7 @@ export function wakeDelivery(
     }
   })().finally(() => {
     running = undefined;
+    settled();
     if (requested) void wakeDelivery(onFatal);
   });
   return running;

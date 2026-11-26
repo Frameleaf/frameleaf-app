@@ -63,6 +63,10 @@ describe('CLI auth admission', () => {
       url: 'https://example.test',
       key: 'fixture-key',
     });
-    expect(init).toHaveBeenCalledWith({ baseUrl: 'https://example.test', apiKey: 'fixture-key' });
+    expect(init).toHaveBeenCalledWith({
+      baseUrl: 'https://example.test',
+      apiKey: 'fixture-key',
+      fetch: expect.any(Function),
+    });
   });
 });

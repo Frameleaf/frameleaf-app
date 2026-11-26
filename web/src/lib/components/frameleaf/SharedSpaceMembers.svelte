@@ -34,7 +34,11 @@
   } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
   import { mdiAccountGroupOutline, mdiAccountPlusOutline, mdiClockOutline, mdiClose } from '@mdi/js';
+  import { untrack } from 'svelte';
   import { t } from 'svelte-i18n';
+  import HouseholdMemberRows from '$lib/components/frameleaf/households/HouseholdMemberRows.svelte';
+  import HouseholdSharePicker from '$lib/components/frameleaf/households/HouseholdSharePicker.svelte';
+  import { HouseholdShareState } from '$lib/components/frameleaf/households/household-share.svelte';
 
   /**
    * Who is in a shared space, and who has been invited (FL-55).
@@ -70,6 +74,19 @@
   const currentUserId = $derived(authManager.user.id);
   const owner = $derived(canManageMembers(space, currentUserId));
   const roster = $derived(sortMembers(members));
+
+  // FL-998: people from linked households. Only the owner can read them.
+  let household = $state<HouseholdShareState>();
+  $effect(() => {
+    const id = space.id;
+    if (!owner) {
+      household = undefined;
+      return;
+    }
+    const next = new HouseholdShareState(id, () => onChanged());
+    household = next;
+    void untrack(() => next.load());
+  });
 
   let busy = $state(false);
   let status = $state('');
@@ -264,7 +281,6 @@
             <strong>{member.user.name}</strong>
             {#if member.supporter}<SupporterTag />{/if}
           </span>
-          <small>{member.user.email}</small>
         </span>
 
         {#if member.pending}
@@ -310,6 +326,9 @@
         {/if}
       </li>
     {/each}
+    {#if household?.loaded}
+      <HouseholdMemberRows share={household} />
+    {/if}
   </ul>
 
   {#if owner && inviting}
@@ -377,6 +396,9 @@
           {$t('frameleaf_spaces_invite_send')}
         </Button>
       </div>
+      {#if household?.loaded}
+        <HouseholdSharePicker share={household} />
+      {/if}
     </div>
   {/if}
 </section>
@@ -498,6 +520,9 @@
     border-color: var(--fl-border);
     border-style: dashed;
   }
+  .roster :global(.remote) {
+    padding: 0.375rem 0.5rem;
+  }
   .name {
     display: flex;
     flex-direction: column;
@@ -514,13 +539,6 @@
     flex-wrap: wrap;
     gap: var(--fl-space-1) var(--fl-space-2);
     min-width: 0;
-  }
-  .name small {
-    color: var(--fl-muted);
-    font-size: 0.75rem;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
   }
   .tag {
     display: inline-flex;

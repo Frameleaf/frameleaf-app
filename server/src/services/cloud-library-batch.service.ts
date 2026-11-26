@@ -1053,10 +1053,11 @@ export class CloudLibraryBatchService extends BaseService {
         false,
       );
     const files: CloudJobInputFile[] = [];
+    const waiting = new Set(pending);
     for (const item of sent) {
       const path = join(folder, `${item.inputId}.bin`);
       const input = { inputId: item.inputId, sha256: item.sha256!, bytes: item.bytes!, path };
-      if (!pending.includes(item)) {
+      if (!waiting.has(item)) {
         files.push(input);
         continue;
       }
@@ -1365,7 +1366,16 @@ export class CloudLibraryBatchService extends BaseService {
           };
         }
         const profile = localPinnedProfile(MlWorkload.Clip, config.machineLearning.clip.modelName);
-        const embedding = acceptCloudClipResult(profile, { identity: document.result.identity, result: bound });
+        const accepted = acceptCloudClipResult(profile, { identity: document.result.identity, result: bound });
+        // The release may name this encoder under several keys (one per runtime revision); the library keeps one.
+        const modelKey = await this.machineLearningRepository.cloudClipStorageKey(accepted.modelKey);
+        if (!modelKey) {
+          throw new CloudModelIdentityMismatchError(
+            MlWorkload.Clip,
+            "this library's smart search index holds vectors of another model build",
+          );
+        }
+        const embedding = { ...accepted, modelKey };
         const status = await this.smartInfo.publishClipEmbedding(item.assetId, embedding, {
           modelName: snapshot.modelName,
           previewPath: item.previewPath ?? '',

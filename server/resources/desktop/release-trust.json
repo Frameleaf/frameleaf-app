@@ -5,6 +5,10 @@
     {
       "id": "desktop-release-2026-10",
       "publicKeyHex": "7042fdec4ddd8c21b2fcdfc80c5d7e128ef0dbb479551c7fe98cfdddb0c18366"
+    },
+    {
+      "id": "desktop-release-2026-11",
+      "publicKeyHex": "07b33b72dd6c6c500ee34b0e9922a7797e85e1905e2801eab9d4a817e523e647"
     }
   ]
 }

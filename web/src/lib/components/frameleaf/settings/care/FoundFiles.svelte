@@ -127,7 +127,10 @@
       cursor,
     });
 
+  /** Only the newest read lands: an older one would bring back files a decision just moved. */
+  let loadRun = 0;
   const load = async () => {
+    const run = ++loadRun;
     try {
       const [counts, back, added, spare] = await Promise.all([
         getFoundFilesSummary(),
@@ -135,16 +138,26 @@
         getFoundFiles({ outcome: FoundFileOutcome.Added, size: PAGE_SIZE }),
         getFoundFiles({ outcome: FoundFileOutcome.Spare, size: PAGE_SIZE }),
       ]);
+      if (run !== loadRun) {
+        return;
+      }
       summary = counts;
       lists = { back, added, spare };
       const strips = await Promise.all(counts.groups.map((group) => filesOf(group, STRIP)));
+      if (run !== loadRun) {
+        return;
+      }
       groupFiles = Object.fromEntries(counts.groups.map((group, index) => [groupKey(group), strips[index]]));
       expanded = {};
       failed = false;
     } catch {
-      failed = true;
+      if (run === loadRun) {
+        failed = true;
+      }
     } finally {
-      loaded = true;
+      if (run === loadRun) {
+        loaded = true;
+      }
     }
   };
 
@@ -273,9 +286,13 @@
     if (!current.nextCursor) {
       return;
     }
+    const run = loadRun;
     working = true;
     try {
       const next = await getFoundFiles({ outcome: OUTCOME[which], size: PAGE_SIZE, cursor: current.nextCursor });
+      if (run !== loadRun) {
+        return;
+      }
       lists[which] = { items: [...current.items, ...next.items], nextCursor: next.nextCursor };
     } catch {
       said = $t('frameleaf_files_load_failed');
@@ -288,11 +305,15 @@
   const seeGroup = async (group: FoundFileGroupDto) => {
     const key = groupKey(group);
     const current = groupFiles[key] ?? none();
+    const run = loadRun;
     working = true;
     try {
       const next = expanded[key]
         ? await filesOf(group, PAGE_SIZE, current.nextCursor ?? undefined)
         : await filesOf(group, PAGE_SIZE);
+      if (run !== loadRun) {
+        return;
+      }
       groupFiles[key] = expanded[key]
         ? { items: [...current.items, ...next.items], nextCursor: next.nextCursor }
         : next;
@@ -338,6 +359,10 @@
   };
 
   const deleteSpares = async () => {
+    // The dialog's button has no disabled state: a double press must not start two deleting passes.
+    if (working) {
+      return;
+    }
     asking = false;
     working = true;
     const done = { deleted: 0, freedBytes: 0, kept: 0 };

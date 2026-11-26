@@ -2,6 +2,7 @@
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Skeleton from '$lib/components/frameleaf/Skeleton.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
+  import LocationHistoryEntry from '$lib/components/frameleaf/LocationHistoryEntry.svelte';
   import TileJobState from '$lib/components/frameleaf/TileJobState.svelte';
   import type MapComponent from '$lib/components/shared-components/map/Map.svelte';
   import { BulkController } from '$lib/frameleaf/bulk-controller.svelte';
@@ -430,6 +431,7 @@
       <Skeleton variant="block" height="3rem" />
     </div>{:else if nextPage !== null}<Button onclick={() => void load()}>{$t('load_more')}</Button>{/if}
   {#if !loading && assets.length === 0 && !error}<p role="status">{$t('no_assets_to_show')}</p>{/if}
+  <LocationHistoryEntry />
 </div>
 
 {#if review}

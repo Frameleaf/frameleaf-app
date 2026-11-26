@@ -10,6 +10,7 @@ import { userAdminFactory } from '@test-data/factories/user-factory';
 vi.mock('@frameleaf/sdk', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@frameleaf/sdk')>()),
   getAllAlbums: vi.fn(),
+  getRecentlyAddedAlbums: async () => ({ albumIds: [] }),
 }));
 vi.mock('$lib/frameleaf/icon-catalogue', async (importOriginal) => ({
   ...(await importOriginal<typeof import('$lib/frameleaf/icon-catalogue')>()),
@@ -186,19 +187,19 @@ describe('Frameleaf selection bar', () => {
     await fireEvent.click(screen.getByRole('button', { name: 'Add to album' }));
 
     const dialog = await screen.findByRole('dialog');
-    await waitFor(() => expect(within(dialog).getByRole('radio', { name: /Iceland/ })).toBeInTheDocument());
+    await waitFor(() => expect(within(dialog).getByRole('checkbox', { name: /Iceland/ })).toBeInTheDocument());
     expect(getAllAlbums).toHaveBeenCalledOnce();
     expect(within(dialog).getByText('Trips')).toBeInTheDocument();
-    expect(within(dialog).queryByRole('radio', { name: /Trips/ })).not.toBeInTheDocument();
-    expect(within(dialog).getByRole('radio', { name: /Household/ })).toBeInTheDocument();
+    expect(within(dialog).queryByRole('checkbox', { name: /Trips/ })).not.toBeInTheDocument();
+    expect(within(dialog).getByRole('checkbox', { name: /Household/ })).toBeInTheDocument();
 
-    await fireEvent.click(within(dialog).getByRole('radio', { name: /Iceland/ }));
+    await fireEvent.click(within(dialog).getByRole('checkbox', { name: /Iceland/ }));
     await fireEvent.submit(
       within(dialog)
-        .getByRole('radio', { name: /Iceland/ })
+        .getByRole('checkbox', { name: /Iceland/ })
         .closest('form')!,
     );
-    expect(onAction).toHaveBeenCalledWith('add-to-album', { albumId: 'iceland' });
+    await waitFor(() => expect(onAction).toHaveBeenCalledWith('add-to-album', { albumId: 'iceland' }));
   });
 
   it('confirms a permanent delete and never a reversible one', async () => {

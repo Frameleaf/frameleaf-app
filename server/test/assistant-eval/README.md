@@ -60,6 +60,20 @@ command. Only synthetic questions and catalogue names are sent. Live planning
 reports the accepted plan rate and fixture retrieval metrics overall and by
 question family. This mode uses the evaluator's reason claims.
 
+A model that is not pinned yet can be served for this through
+`machine-learning/scripts/assistant-planner-candidate.py`. It answers
+`POST /assistant/plan` with the worker's prompt, validator and single retry over
+an OpenAI-compatible chat server (llama.cpp `llama-server`), an OpenVINO GenAI
+model folder, or a transformers model folder:
+
+```sh
+llama-server -m candidate.gguf --port 8091 -c 4096 -np 1 --jinja --reasoning-budget 0
+cd machine-learning
+uv run --extra cpu python scripts/assistant-planner-candidate.py --backend openai --url http://127.0.0.1:8091
+FRAMELEAF_ASSISTANT_EVAL_MODE=live FRAMELEAF_ASSISTANT_PLANNER_URL=http://127.0.0.1:3903 \
+  pnpm --filter frameleaf test:assistant-eval
+```
+
 For candidate selection, set `FRAMELEAF_ASSISTANT_EVAL_MODE=candidate` instead.
 This exercises the Assistant HTTP response with the production tool schema,
 confidence and catalogue checks, and rule fallback. The report includes both

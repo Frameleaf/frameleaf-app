@@ -15,10 +15,12 @@ import { EventRepository } from 'src/repositories/event.repository.js';
 import { FrameleafUserLicenseRepository } from 'src/repositories/frameleaf-user-license.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { MapRepository } from 'src/repositories/map.repository.js';
 import { PartnerRepository } from 'src/repositories/partner.repository.js';
 import { PersonRepository } from 'src/repositories/person.repository.js';
 import { PluginRepository } from 'src/repositories/plugin.repository.js';
 import { SearchRepository } from 'src/repositories/search.repository.js';
+import { SessionRepository } from 'src/repositories/session.repository.js';
 import { SmartAlbumRepository } from 'src/repositories/smart-album.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
@@ -58,6 +60,10 @@ class WorkflowTestContext extends MediumTestContext<typeof WorkflowExecutionServ
         // the plugin's album search marks supporters among album members
         FrameleafUserLicenseRepository,
         LoggingRepository,
+        // locking sends the update to the owner's unlocked sessions only (FL-1767)
+        SessionRepository,
+        // a located item is named after the viewer's own places (FL-949)
+        MapRepository,
         PartnerRepository,
         // assetLock moves an asset into the Locked folder, which re-picks face thumbnails (FL-53)
         PersonRepository,

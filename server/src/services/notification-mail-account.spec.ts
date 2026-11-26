@@ -13,6 +13,7 @@ const ACCESS = 'access-token-FIXTURE-ONLY';
 const configFor = (type: MailTransportType, enabled = true): SystemConfig => ({
   ...defaults,
   notifications: {
+    ...defaults.notifications,
     smtp: {
       ...defaults.notifications.smtp,
       enabled,

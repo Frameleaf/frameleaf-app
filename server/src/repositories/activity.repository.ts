@@ -1,7 +1,8 @@
 import { Injectable } from '@nestjs/common';
-import { type Insertable, type Kysely, type NotNull, type Updateable } from 'kysely';
+import { type Insertable, type Kysely, type NotNull, type Updateable, sql } from 'kysely';
 import { jsonObjectFrom } from 'kysely/helpers/postgres';
 import { InjectKysely } from 'nestjs-kysely';
+import type { Activity } from 'src/database.js';
 import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import type { LockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { columns } from 'src/database.js';
@@ -23,6 +24,24 @@ export interface ActivitySearch extends HiddenContentQueryOptions, LockedVisibil
   includeLocked?: boolean;
 }
 
+/**
+ * FL-1012: a remote author as the `user` of an activity response. Native apps decode that object strictly, so every
+ * required field is there: the id of the author row (a v4 uuid, never a local account), the name, no email and no
+ * picture, as a member's email is already sent empty.
+ */
+const remoteAuthorUser = sql<Activity['user']>`(
+  select json_build_object(
+    'id', author.id,
+    'name', author."displayName",
+    'email', '',
+    'avatarColor', null,
+    'profileImagePath', '',
+    'profileChangedAt', activity."createdAt"
+  )
+  from household_remote_author author
+  where author.id = activity."remoteAuthorId"
+)`;
+
 interface ActivityStatisticsOptions extends HiddenContentQueryOptions, LockedVisibilityOptions {
   albumId: string;
   assetId?: string;
@@ -40,14 +59,20 @@ export class ActivityRepository {
       this.db
         .selectFrom('activity')
         .selectAll('activity')
-        .innerJoin('user as user2', (join) =>
+        .leftJoin('user as user2', (join) =>
           join.onRef('user2.id', '=', 'activity.userId').on('user2.deletedAt', 'is', null),
         )
+        // a local author who is gone hides the row, as before; a remote author has no account to be gone
+        .where((eb) => eb.or([eb('user2.id', 'is not', null), eb('activity.remoteAuthorId', 'is not', null)]))
         .innerJoinLateral(
           (eb) => eb.selectFrom(dummy).select(columns.userWithPrefix).as('user'),
           (join) => join.onTrue(),
         )
-        .select((eb) => eb.fn.toJson('user').as('user'))
+        .select(
+          sql<
+            Activity['user']
+          >`case when activity."remoteAuthorId" is null then to_json("user") else ${remoteAuthorUser} end`.as('user'),
+        )
         .leftJoin('asset', 'asset.id', 'activity.assetId')
         .$if(!!userId, (qb) => qb.where('activity.userId', '=', userId!))
         .$if(assetId === null, (qb) => qb.where('assetId', 'is', null))
@@ -92,11 +117,10 @@ export class ActivityRepository {
       .selectFrom('activity')
       .selectAll('activity')
       .select((eb) =>
-        jsonObjectFrom(eb.selectFrom('user').whereRef('user.id', '=', 'activity.userId').select(columns.user)).as(
-          'user',
-        ),
+        sql<Activity['user']>`coalesce(${jsonObjectFrom(
+          eb.selectFrom('user').whereRef('user.id', '=', 'activity.userId').select(columns.user),
+        )}, ${remoteAuthorUser})`.as('user'),
       )
-      .$narrowType<{ user: NotNull }>()
       .where('activity.id', '=', asUuid(id))
       .executeTakeFirst();
   }
@@ -130,7 +154,8 @@ export class ActivityRepository {
         eb.fn.countAll<number>().filterWhere('activity.isLiked', '=', false).as('comments'),
         eb.fn.countAll<number>().filterWhere('activity.isLiked', '=', true).as('likes'),
       ])
-      .innerJoin('user', (join) => join.onRef('user.id', '=', 'activity.userId').on('user.deletedAt', 'is', null))
+      .leftJoin('user', (join) => join.onRef('user.id', '=', 'activity.userId').on('user.deletedAt', 'is', null))
+      .where((eb) => eb.or([eb('user.id', 'is not', null), eb('activity.remoteAuthorId', 'is not', null)]))
       .leftJoin('asset', 'asset.id', 'activity.assetId')
       .$if(!!assetId, (qb) => qb.where('activity.assetId', '=', assetId!))
       .$call((qb) => withHiddenContentFilter(qb, options))

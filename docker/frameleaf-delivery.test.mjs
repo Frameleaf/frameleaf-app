@@ -26,7 +26,7 @@ const compose = (path) =>
   load(read(path).replace(/!(?:reset|override)\b/g, ""));
 // FL-191: Frameleaf publishes its own database image, built from docker/postgres.
 const databaseImage =
-  "ghcr.io/frameleaf/frameleaf-postgres:19rc1-pgvector0.8.7@sha256:3efd98096adf147872590ebdb31ffd58ee18de5e54e2309ca431417279b629ff";
+  "ghcr.io/frameleaf/frameleaf-postgres:19.0-pgvector0.8.7@sha256:2f2403e2215ffbdec795220b63fd0c8bbbf52f5dc6114e2e2f7ecf651c95fde7";
 
 test("server identifiers use Frameleaf throughout the tracked source", () => {
   const result = spawnSync(
@@ -208,7 +208,14 @@ test("the restoration overlay adds a separate worker and leaves library analysis
   assert.equal(worker.container_name, "frameleaf_restoration");
   // Built from source: no restoration image is published until a model is qualified.
   assert.equal(worker.build.dockerfile, "Dockerfile.video-restoration");
-  assert.equal(worker.build.target, "worker");
+  assert.equal(worker.build.target, "photo");
+  // FL-933: the same runtime pins qualification used, so the content-hashed revision can match.
+  const pins = JSON.parse(
+    read("machine-learning/video-restoration/qualification/upstream.json"),
+  ).checkouts;
+  assert.equal(worker.build.args.FACEXLIB_REVISION, pins.facexlib.revision);
+  assert.equal(worker.build.args.DDCOLOR_REVISION, pins.ddcolor.revision);
+  assert.match(String(worker.build.args.PHOTO_PYTHON), /^3\.12\.\d+$/);
   assert.doesNotMatch(worker.image, /^ghcr\.io\//);
   // Reached on the Compose network only, with its own bearer and read-only model inputs.
   assert.equal(worker.ports, undefined);
@@ -966,7 +973,12 @@ test("the server base is built in-repo and identical in the production and devel
 
 test("the owned Postgres image uses PG19 and pgvector only", () => {
   const dockerfile = read("docker/postgres/Dockerfile");
-  assert.match(dockerfile, /postgres:19rc2-bookworm@sha256:/);
+  assert.match(
+    dockerfile,
+    /^ARG POSTGRES_IMAGE=docker\.io\/library\/postgres:19-bookworm@sha256:4c736732289da844c2ab892451adc1a6e376e7d0ac54ca9571a2e1cfd14176a1$/m,
+  );
+  assert.doesNotMatch(dockerfile, /postgres:19(rc|beta)|PG_RELEASE/);
+  assert.match(dockerfile, /PostgreSQL\\\) 19\\\.0/);
   assert.match(dockerfile, /0\.8\.7/);
   // FL-1265: publication tags the image with the version its Dockerfile declares.
   assert.equal(

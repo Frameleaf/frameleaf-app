@@ -174,7 +174,11 @@ const api = (path, page, body) => {
   if (path.startsWith('server-backup-')) return sample;
   if (path === 'folders') return { path: '/mnt/user', parent: null, folders: ['appdata', 'documents', 'media', 'shares'].map((name) => ({ name, path: `/mnt/user/${name}` })), truncated: false };
   if (path === 'storage') return storage;
-  if (path === 'backup-status' || path === 'backups') return { configured: true, unlocked: true, keyAvailable: true, snapshots: [{ id: 'd'.repeat(64), time: at(3, 14, 5) }, { id: 'e'.repeat(64), time: at(11, 9, 30) }] };
+  // FL-1732: the third point is the one from just before the last update, kept while it can be undone.
+  if (path === 'backup-status' || path === 'backups' || path === 'backup-delete') {
+    const points = [[0, 14, 5], [1, 2, 40], [4, 21, 12], [6, 9, 30], [9, 18, 2]].map(([days, hour, minute], index) => ({ id: String(index + 1).repeat(64), time: at(days, hour, minute) }));
+    return { configured: true, unlocked: true, keyAvailable: true, protected: ['3'.repeat(64)], snapshots: points.filter((point) => point.id !== body?.id) };
+  }
   if (path === 'releases') return [{ tag: 'frameleaf-v3.2.0-1', publishedAt: at(20, 1), notes: 'Current release' }];
   if (path === 'sources') return { sources: [], refused: [] };
   if (path === 'photo-app-sources') return { sources: [] };

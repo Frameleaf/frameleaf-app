@@ -255,6 +255,41 @@ where
 group by
   "album_asset"."albumId"
 
+-- AlbumRepository.getRecentlyAddedIds
+select
+  "album_asset"."albumId"
+from
+  "asset"
+  inner join "album_asset" on "album_asset"."assetId" = "asset"."id"
+  inner join "album" on "album"."id" = "album_asset"."albumId"
+  inner join "album_user" on "album_user"."albumId" = "album"."id"
+where
+  (
+    "asset"."visibility" in ('archive', 'timeline')
+    and not exists (
+      select
+        1
+      from
+        asset_lock
+      where
+        asset_lock."assetId" = "asset"."id"
+    )
+  )
+  and "album_user"."userId" = $1
+  and "album_user"."role" in ($2, $3)
+  and "album"."deletedAt" is null
+  and "asset"."deletedAt" is null
+  and (
+    "album"."libraryScope" in ($4, $5)
+    or "album_user"."role" != $6
+  )
+group by
+  "album_asset"."albumId"
+order by
+  max("album_asset"."createdAt") desc
+limit
+  $7
+
 -- AlbumRepository.getOwnerAssetCounts
 select
   "album_asset"."albumId",
@@ -688,36 +723,53 @@ where
 order by
   "id"
 for no key update
+WITH
+  seen AS (
+    INSERT INTO
+      library_folder_album_asset ("folderAlbumId", "assetId")
+    SELECT
+      link.id,
+      asset.id
+    FROM
+      asset
+      JOIN unnest($1::text[], $2::uuid[]) AS folder (path, "albumId") ON folder.path = coalesce(
+        nullif(
+          substring("asset"."originalPath", '^(.*)/[^/]*$'),
+          ''
+        ),
+        '/'
+      )
+      JOIN library_folder_album link ON link."albumId" = folder."albumId"
+      AND link."libraryId" = $3::uuid
+    WHERE
+      asset."libraryId" = $4::uuid
+      AND (
+        "asset"."isOffline" = false
+        AND "asset"."deletedAt" IS NULL
+        AND "asset"."visibility" IN ('timeline', 'archive')
+        AND "asset"."type" IN ('IMAGE', 'VIDEO')
+        AND not exists (
+          select
+            1
+          from
+            asset_lock
+          where
+            asset_lock."assetId" = "asset"."id"
+        )
+      )
+    ON CONFLICT DO NOTHING
+    RETURNING
+      "folderAlbumId",
+      "assetId"
+  )
 INSERT INTO
   album_asset ("albumId", "assetId")
 SELECT
-  folder."albumId",
-  asset.id
+  link."albumId",
+  seen."assetId"
 FROM
-  asset
-  JOIN unnest($1::text[], $2::uuid[]) AS folder (path, "albumId") ON folder.path = coalesce(
-    nullif(
-      substring("asset"."originalPath", '^(.*)/[^/]*$'),
-      ''
-    ),
-    '/'
-  )
-WHERE
-  asset."libraryId" = $3::uuid
-  AND (
-    "asset"."isOffline" = false
-    AND "asset"."deletedAt" IS NULL
-    AND "asset"."visibility" IN ('timeline', 'archive')
-    AND "asset"."type" IN ('IMAGE', 'VIDEO')
-    AND not exists (
-      select
-        1
-      from
-        asset_lock
-      where
-        asset_lock."assetId" = "asset"."id"
-    )
-  )
+  seen
+  JOIN library_folder_album link ON link.id = seen."folderAlbumId"
 ON CONFLICT DO NOTHING
 RETURNING
   "albumId",

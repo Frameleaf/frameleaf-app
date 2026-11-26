@@ -78,6 +78,96 @@ describe('Import from Eagle: a library in a folder the server can open', () => {
     expect(screen.getByRole('button', { name: /Choose the library folder/ })).toBeEnabled();
   });
 
+  it('lets an administrator browse the server for a library the list didn’t find', async () => {
+    authManager.setUser(userAdminFactory.build({ isAdmin: true }));
+    sdkMock.getEagleLibraries.mockResolvedValue({ available: true, roots: 1, libraries: [] });
+    sdkMock.getTakeoutRoots.mockResolvedValue({
+      roots: [{ id: 'imports', path: '/data/imports', builtIn: true, hostPath: null }],
+    });
+    const none = { zip: 0, tgz: 0, bytes: 0, unpacked: false };
+    sdkMock.getTakeoutFolders.mockImplementation(({ path }) =>
+      Promise.resolve({ here: none, folders: path ? [] : [{ name: 'Refs.library', ...none }] }),
+    );
+    sdkMock.checkEagleLibrary.mockResolvedValue(library);
+    render(BoardsEagleImportDialog);
+
+    await fireEvent.click(screen.getByRole('radio', { name: /In a folder your server can open/ }));
+    expect(await screen.findByText(/No Eagle library was found/)).toBeInTheDocument();
+    await fireEvent.click(screen.getByRole('button', { name: 'Choose the library folder…' }));
+    await fireEvent.click(await screen.findByRole('button', { name: /Imports/ }));
+    // A folder that isn't a library can be opened, not chosen.
+    expect(await screen.findByRole('button', { name: 'Choose this folder' })).toBeDisabled();
+    await fireEvent.click(await screen.findByRole('button', { name: /Refs\.library/ }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Choose this folder' })).toBeEnabled());
+    await fireEvent.click(screen.getByRole('button', { name: 'Choose this folder' }));
+    await waitFor(() =>
+      expect(sdkMock.checkEagleLibrary).toHaveBeenCalledWith(
+        { eagleLibraryCheckDto: { rootId: 'imports', path: 'Refs.library' } },
+        { signal: undefined },
+      ),
+    );
+  });
+
+  it('chooses an import folder that is itself the library', async () => {
+    authManager.setUser(userAdminFactory.build({ isAdmin: true }));
+    sdkMock.getEagleLibraries.mockResolvedValue({ available: true, roots: 2, libraries: [] });
+    sdkMock.getTakeoutRoots.mockResolvedValue({
+      roots: [{ id: '0', path: '/mnt/design/Refs.library/', builtIn: false, hostPath: null }],
+    });
+    sdkMock.getTakeoutFolders.mockResolvedValue({ here: { zip: 0, tgz: 0, bytes: 0, unpacked: false }, folders: [] });
+    sdkMock.checkEagleLibrary.mockResolvedValue(library);
+    render(BoardsEagleImportDialog);
+
+    await fireEvent.click(screen.getByRole('radio', { name: /In a folder your server can open/ }));
+    await fireEvent.click(await screen.findByRole('button', { name: 'Choose the library folder…' }));
+    await fireEvent.click(await screen.findByRole('button', { name: /Refs\.library/ }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Choose this folder' })).toBeEnabled());
+    await fireEvent.click(screen.getByRole('button', { name: 'Choose this folder' }));
+    await waitFor(() =>
+      expect(sdkMock.checkEagleLibrary).toHaveBeenCalledWith(
+        { eagleLibraryCheckDto: { rootId: '0', path: '.' } },
+        { signal: undefined },
+      ),
+    );
+  });
+
+  it('doesn’t open the server’s folders after where the library is was changed', async () => {
+    authManager.setUser(userAdminFactory.build({ isAdmin: true }));
+    sdkMock.getEagleLibraries.mockResolvedValue({ available: true, roots: 1, libraries: [] });
+    let answer: (value: { roots: [] }) => void = () => {};
+    sdkMock.getTakeoutRoots.mockReturnValue(new Promise((resolve) => (answer = resolve)));
+    render(BoardsEagleImportDialog);
+
+    await fireEvent.click(screen.getByRole('radio', { name: /In a folder your server can open/ }));
+    await fireEvent.click(await screen.findByRole('button', { name: 'Choose the library folder…' }));
+    await fireEvent.click(screen.getByRole('radio', { name: /On this computer/ }));
+    // Back to the server before the answer: the earlier browse is still dropped.
+    await fireEvent.click(screen.getByRole('radio', { name: /In a folder your server can open/ }));
+    answer({ roots: [] });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(screen.queryByText('Choose the folder to import from')).not.toBeInTheDocument();
+  });
+
+  it('keeps the server’s folders open when an earlier browse fails late', async () => {
+    authManager.setUser(userAdminFactory.build({ isAdmin: true }));
+    sdkMock.getEagleLibraries.mockResolvedValue({ available: true, roots: 1, libraries: [] });
+    let fail: (reason: Error) => void = () => {};
+    sdkMock.getTakeoutRoots
+      .mockReturnValueOnce(new Promise((_, reject) => (fail = reject)))
+      .mockResolvedValueOnce({ roots: [{ id: 'imports', path: '/data/imports', builtIn: true, hostPath: null }] });
+    render(BoardsEagleImportDialog);
+
+    await fireEvent.click(screen.getByRole('radio', { name: /In a folder your server can open/ }));
+    const browse = await screen.findByRole('button', { name: 'Choose the library folder…' });
+    await fireEvent.click(browse);
+    await fireEvent.click(browse);
+    expect(await screen.findByText('Choose the folder to import from')).toBeInTheDocument();
+    fail(new Error('late'));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(screen.getByText('Choose the folder to import from')).toBeInTheDocument();
+    expect(screen.queryByText('The folders on your server couldn’t be read.')).not.toBeInTheDocument();
+  });
+
   it('lists the libraries on the server, checks one there and starts the import on the server', async () => {
     authManager.setUser(userAdminFactory.build({ isAdmin: true }));
     sdkMock.getEagleLibraries.mockResolvedValue({

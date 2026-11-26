@@ -2347,6 +2347,11 @@ export class FrameleafCloudService extends BaseService {
       } catch (error) {
         result = 'failed';
         detail = error instanceof Error ? error.message : String(error);
+        // A file system error names a local path, which stays in this server's log and never goes to Cloud.
+        if (error instanceof Error && 'syscall' in error) {
+          this.logger.warn(`Frameleaf Cloud command ${command.type} (${command.id}) failed: ${detail}`);
+          detail = 'a file operation failed on this server';
+        }
       }
     }
 

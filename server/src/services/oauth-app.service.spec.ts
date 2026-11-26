@@ -12,7 +12,13 @@ import type { OAuthAuthorizationCode, OAuthClient, OAuthGrant } from 'src/reposi
 import { AccountEventAction, Permission, SystemMetadataKey } from 'src/enum.js';
 import { OAuthAppService } from 'src/services/oauth-app.service.js';
 import { clearConfigCache } from 'src/utils/config.js';
-import { OAUTH_ACCESS_TTL_SECONDS, OAUTH_CODE_TTL_SECONDS } from 'src/utils/oauth-apps.js';
+import {
+  OAUTH_ACCESS_TTL_SECONDS,
+  OAUTH_CODE_TTL_SECONDS,
+  OAUTH_PURGE_AFTER_DAYS,
+  OAUTH_REFRESH_IDLE_DAYS,
+  OAUTH_UNUSED_CLIENT_DAYS,
+} from 'src/utils/oauth-apps.js';
 import { ServiceMocks, expectNoSecretsInAccountEvents, newTestService } from 'test/utils.js';
 
 const ISSUER = 'https://photos.example.test';
@@ -78,11 +84,18 @@ class FakeOAuthAppRepository {
     this.codes.set(key(code.codeHash), { ...code, createdAt: new Date() } as OAuthAuthorizationCode);
     return Promise.resolve();
   });
-  takeCode = vi.fn((hash: Buffer) => {
-    const found = this.codes.get(key(hash));
+  redeemCode = vi.fn(async (hash: Buffer, makeGrant: (code: OAuthAuthorizationCode) => Promise<Grant | undefined>) => {
+    const code = this.codes.get(key(hash));
     this.codes.delete(key(hash));
-    return Promise.resolve(found);
+    const values = code && (await makeGrant(code));
+    if (!values) {
+      return { code, grant: undefined };
+    }
+    const grant = await this.createGrant(values);
+    this.spent.set(key(hash), grant.id);
+    return { code, grant };
   });
+  purge = vi.fn(() => Promise.resolve({ idle: 1, grants: 2, spentTokens: 3 }));
   createGrant = vi.fn((values: Grant) => {
     const grant = {
       ...values,
@@ -722,6 +735,34 @@ describe(OAuthAppService.name, () => {
       expect(repo.grants).toHaveLength(0);
     });
 
+    it('revokes the grant a code made when the code comes back (FL-1635 TM-12)', async () => {
+      const client = repo.addClient([CLAUDE_REDIRECT]);
+      const { tokens, code, verifier, dto } = await connect(client);
+      await expect(sut.validateAccessToken(tokens.access_token, null)).resolves.toBeDefined();
+
+      const replay = sut.token({
+        grant_type: 'authorization_code',
+        code,
+        client_id: client.id,
+        redirect_uri: dto.redirectUri,
+        code_verifier: verifier,
+      });
+      expect((await oauthErrorOf(replay)).error).toBe('invalid_grant');
+
+      expect(repo.grants).toHaveLength(1);
+      expect(repo.grants[0].revokedAt).not.toBeNull();
+      await expect(sut.validateAccessToken(tokens.access_token, null)).rejects.toBeInstanceOf(UnauthorizedException);
+      expect(mocks.accountEvent.create).toHaveBeenCalledWith(
+        expect.objectContaining({ action: AccountEventAction.AppDisconnected, detail: 'token-reused' }),
+      );
+      expectNoSecretsInAccountEvents(mocks.accountEvent.create, [
+        code,
+        verifier,
+        tokens.access_token,
+        tokens.refresh_token,
+      ]);
+    });
+
     it.each([
       ['another app', { client_id: randomUUID() }],
       ['another return address', { redirect_uri: 'https://claude.ai/other' }],
@@ -795,6 +836,38 @@ describe(OAuthAppService.name, () => {
       expect(next.access_token).not.toBe(tokens.access_token);
       await expect(sut.validateAccessToken(tokens.access_token, null)).rejects.toBeInstanceOf(UnauthorizedException);
       await expect(sut.validateAccessToken(next.access_token, null)).resolves.toBeDefined();
+    });
+
+    describe('idle limit (FL-1633 TM-9)', () => {
+      const DAY = 24 * 60 * 60 * 1000;
+      const idleFor = async (days: number) => {
+        const client = repo.addClient([CLAUDE_REDIRECT]);
+        const { tokens } = await connect(client);
+        repo.grants[0].accessExpiresAt = new Date(Date.now() - days * DAY) as never;
+        mocks.accountEvent.create.mockClear();
+        return sut.token({ grant_type: 'refresh_token', refresh_token: tokens.refresh_token, client_id: client.id });
+      };
+
+      it('refuses a refresh after 91 idle days and writes no event', async () => {
+        expect((await oauthErrorOf(idleFor(OAUTH_REFRESH_IDLE_DAYS + 1))).error).toBe('invalid_grant');
+        expect(repo.rotate).not.toHaveBeenCalled();
+        expect(mocks.accountEvent.create).not.toHaveBeenCalled();
+      });
+
+      it('rotates at 89 idle days', async () => {
+        const next = await idleFor(OAUTH_REFRESH_IDLE_DAYS - 1);
+        await expect(sut.validateAccessToken(next.access_token, null)).resolves.toBeDefined();
+      });
+
+      it('ends idle grants and deletes old revoked grants and spent tokens each night', async () => {
+        const now = Date.now();
+        await sut.onNightlyDatabaseCleanup();
+        const [{ idleBefore, purgeBefore }] = repo.purge.mock.calls[0] as unknown as [
+          { idleBefore: Date; purgeBefore: Date },
+        ];
+        expect(Math.abs(now - OAUTH_REFRESH_IDLE_DAYS * DAY - idleBefore.getTime())).toBeLessThan(5000);
+        expect(Math.abs(now - OAUTH_PURGE_AFTER_DAYS * DAY - purgeBefore.getTime())).toBeLessThan(5000);
+      });
     });
 
     it('revokes the grant when a used refresh token comes back', async () => {
@@ -937,10 +1010,38 @@ describe(OAuthAppService.name, () => {
   });
 
   describe('register (RFC 7591)', () => {
+    beforeEach(() => {
+      mocks.systemMetadata.get.mockResolvedValue({ connectedApps: { allowRegistration: true } });
+    });
+
     it('registers a public client', async () => {
       const result = await sut.register({ client_name: 'Claude', redirect_uris: [CLAUDE_REDIRECT] });
       expect(result).toMatchObject({ token_endpoint_auth_method: 'none', redirect_uris: [CLAUDE_REDIRECT] });
-      expect(repo.createClient).toHaveBeenCalledWith(expect.objectContaining({ dynamic: true }), expect.any(Number));
+      // FL-1636 (TM-13): at the cap only registrations unused for a week make room
+      expect(repo.createClient).toHaveBeenCalledWith(
+        expect.objectContaining({ dynamic: true }),
+        expect.any(Number),
+        OAUTH_UNUSED_CLIENT_DAYS,
+      );
+      expect(OAUTH_UNUSED_CLIENT_DAYS).toBe(7);
+    });
+
+    it('is refused on a fresh server, until the administrator allows it (FL-1632 TM-8)', async () => {
+      mocks.systemMetadata.get.mockResolvedValue(null as never);
+      const error = await oauthErrorOf(sut.register({ redirect_uris: [CLAUDE_REDIRECT] }));
+      expect(error.error).toBe('access_denied');
+      expect(repo.createClient).not.toHaveBeenCalled();
+      expect(await sut.getAuthorizationServerMetadata(ISSUER)).not.toHaveProperty('registration_endpoint');
+    });
+
+    it('refuses localhost for a new app, but an administrator may register it (FL-1635 TM-11)', async () => {
+      const localhost = 'http://localhost:6274/oauth/callback';
+      expect((await oauthErrorOf(sut.register({ redirect_uris: [localhost] }))).error).toBe('invalid_redirect_uri');
+      expect(repo.createClient).not.toHaveBeenCalled();
+      await expect(sut.register({ redirect_uris: [LOCAL_REDIRECT] })).resolves.toBeDefined();
+      await expect(
+        sut.createClient(person('admin', true), { name: 'Inspector', redirectUris: [localhost] }),
+      ).resolves.toMatchObject({ redirectUris: [localhost] });
     });
 
     it('is refused while the administrator does not allow it', async () => {

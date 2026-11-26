@@ -11,6 +11,7 @@ import { MediaRepository } from 'src/repositories/media.repository.js';
 import { SearchRepository } from 'src/repositories/search.repository.js';
 import { AssetDevelopService } from 'src/services/asset-develop.service.js';
 import { PhotographyWorkspaceService } from 'src/services/photography-workspace.service.js';
+import { equivalentDesktopModelKeys } from 'src/utils/desktop-model-equivalents.js';
 import { renderDevelopProjection } from 'src/utils/develop-envelope.js';
 import { defaultDevelopRecipe, normalizeDevelopRecipe } from 'src/utils/develop-recipe.js';
 import {
@@ -89,7 +90,13 @@ export class DevelopStyleService {
     ]);
     return {
       image: extractStyleFeatures(pixels.data, pixels.info.channels),
-      embedding: embedding?.producerModelKey === producerModelKey ? parseEmbedding(embedding.embedding) : undefined,
+      // the same encoder under another runtime revision's key is the same embedding space
+      embedding:
+        producerModelKey &&
+        embedding?.producerModelKey &&
+        equivalentDesktopModelKeys(producerModelKey).includes(embedding.producerModelKey)
+          ? parseEmbedding(embedding.embedding)
+          : undefined,
     };
   }
 

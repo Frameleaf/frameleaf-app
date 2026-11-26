@@ -188,6 +188,14 @@ describe(TakeoutStagingRepository.name, () => {
     }
   });
 
+  it('refuses a folder file swapped for a FIFO at once, without waiting for a writer', async () => {
+    const fifo = join(directory, 'clip.mp4');
+    execFileSync('mkfifo', [fifo]);
+    await expect(sut.openFolderFile(directory, { filePath: fifo, size: 0, dev: 0, ino: 0 })).rejects.toThrow(
+      'Only plain files',
+    );
+  });
+
   it('refuses a descendant directory swapped for a link before descending into it', async () => {
     const selected = join(directory, 'selected'),
       outside = join(directory, 'outside');

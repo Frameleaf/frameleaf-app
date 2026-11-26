@@ -12,7 +12,7 @@ import type { SmartAlbumBuiltInKind } from 'src/dtos/system-config.dto.js';
 import type { AlbumSummary } from 'src/repositories/album-summary.repository.js';
 import type { AlbumMapMarkerSearchOptions } from 'src/repositories/map.repository.js';
 import type { DB } from 'src/schema/index.js';
-import { ALBUM_ICON_GROUPS, MDI_ICON_CATALOGUE_VERSION, MDI_ICON_NAMES } from 'src/constants/album-icons.js';
+import { ALBUM_ICON_GROUPS, ALBUM_ICON_NAMES, MDI_ICON_CATALOGUE_VERSION } from 'src/constants/album-icons.js';
 import { OnEvent } from 'src/decorators.js';
 import {
   AddUsersDto,
@@ -21,6 +21,7 @@ import {
   AlbumIconCatalogueResponseDto,
   AlbumOrderDto,
   AlbumPersonResponseDto,
+  AlbumRecentlyAddedResponseDto,
   AlbumResponseDto,
   AlbumStatisticsResponseDto,
   AlbumTreeResponseDto,
@@ -252,6 +253,17 @@ export class AlbumService extends BaseService {
       shared: shared.length,
       notShared: notShared.length,
     };
+  }
+
+  /** The add-to-album picker's Recent group. Counts only items this session may see. */
+  async getRecentlyAdded(auth: AuthDto, dto: AlbumViewDto = {}): Promise<AlbumRecentlyAddedResponseDto> {
+    const albumIds = await this.albumRepository.getRecentlyAddedIds(auth.user.id, {
+      ...this.nsfwOptions(auth),
+      libraryScope: dto.libraryScope ?? LibraryScope.Personal,
+      // FL-780 (TM-5): a connected app is never told a Locked album exists
+      ...(auth.oauthApp ? { excludeLocked: true } : {}),
+    });
+    return { albumIds };
   }
 
   async getAll(
@@ -492,7 +504,7 @@ export class AlbumService extends BaseService {
   getIconCatalogue(): AlbumIconCatalogueResponseDto {
     return {
       version: MDI_ICON_CATALOGUE_VERSION,
-      names: [...MDI_ICON_NAMES],
+      names: [...ALBUM_ICON_NAMES],
       suggested: ALBUM_ICON_GROUPS.map((group) => ({
         label: group.label,
         icons: group.icons.map(({ name, label }) => ({ name, label })),
@@ -639,7 +651,10 @@ export class AlbumService extends BaseService {
       options.onlyOwnerId = auth.user.id;
     }
 
-    return this.mapRepository.getAlbumMapMarkers(id, { ...this.nsfwOptions(auth), ...options });
+    return this.localizeMarkerPlaces(
+      auth,
+      await this.mapRepository.getAlbumMapMarkers(id, { ...this.nsfwOptions(auth), ...options }),
+    );
   }
 
   async create(auth: AuthDto, dto: CreateAlbumDto): Promise<AlbumResponseDto> {
@@ -785,6 +800,7 @@ export class AlbumService extends BaseService {
           isLocked: dto.isLocked,
           order: dto.order,
           isCustomOrder: dto.isCustomOrder,
+          holdsScans: dto.holdsScans,
           icon: dto.icon,
           color: dto.color,
           sortOrder: dto.sortOrder,
@@ -1037,8 +1053,8 @@ export class AlbumService extends BaseService {
   }
 
   async addAssets(auth: AuthDto, id: string, dto: BulkIdsDto, sourceLinkId?: string): Promise<BulkIdResponseDto[]> {
-    const album = await this.findOrFail(id, auth, { withAssets: false });
     await this.requireAccess({ auth, permission: Permission.AlbumAssetCreate, ids: [id] });
+    const album = await this.findOrFail(id, auth, { withAssets: false });
     this.requireAppMayAddTo(auth, album);
 
     const { results, response } = await this.partnerOriginRepository.withOriginEdit('album', [id], [], () =>
@@ -1396,6 +1412,12 @@ export class AlbumService extends BaseService {
       userId = auth.user.id;
     }
 
+    // Anyone can leave; removing somebody else needs share rights, checked before the answer can say
+    // anything about who is in an album the caller has no access to.
+    if (auth.user.id !== userId) {
+      await this.requireAccess({ auth, permission: Permission.AlbumShare, ids: [id] });
+    }
+
     const album = await this.findOrFail(id, auth, { withAssets: false });
     const space = isSharedSpace(album);
 
@@ -1413,16 +1435,16 @@ export class AlbumService extends BaseService {
       throw new BadRequestException('Cannot remove the last album owner');
     }
 
-    // Anyone can leave; removing somebody else needs share rights, and for a
-    // shared space that means its owner.
-    if (auth.user.id !== userId) {
-      await this.requireAccess({ auth, permission: Permission.AlbumShare, ids: [id] });
-      if (space) {
-        requireSpaceOwner(album, auth.user.id);
-      }
+    // In a shared space, removing somebody else is its owner's alone.
+    if (auth.user.id !== userId && space) {
+      requireSpaceOwner(album, auth.user.id);
     }
 
     await this.albumUserRepository.delete({ albumId: id, userId });
+    // FL-1767: a link to the album that a former member made stops working with their membership
+    for (const link of await this.sharedLinkRepository.getAll({ userId, albumId: id })) {
+      await this.sharedLinkRepository.remove(link.id);
+    }
     this.sendAccessChange(album, userId, null);
     // FL-90: Studio work this member was doing through the album or space stops now.
     await this.eventRepository.emit('AlbumUserRemove', { albumId: id, userId, removedById: auth.user.id });
@@ -1458,10 +1480,14 @@ export class AlbumService extends BaseService {
     await this.requireAccess({ auth, permission: Permission.AlbumShare, ids: [id] });
 
     const album = await this.findOrFail(id, auth, { withAssets: false });
-    const owner = album.albumUsers[0];
 
-    if (owner.user.id === userId) {
+    if (album.albumUsers.some(({ role, user }) => role === AlbumUserRole.Owner && user.id === userId)) {
       throw new BadRequestException('User is owner');
+    }
+
+    // Ownership only changes hands through `AlbumActionsService.transfer`, which applies its rules.
+    if (dto.role === AlbumUserRole.Owner) {
+      throw new BadRequestException('Cannot add another owner');
     }
 
     const space = isSharedSpace(album);

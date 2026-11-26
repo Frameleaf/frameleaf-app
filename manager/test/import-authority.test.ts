@@ -385,14 +385,14 @@ test('resumed cutover captures fenced settings and applies the reviewed ML choic
     };
     const internal = f.operations as unknown as {
       install(operation: Operation, review: unknown): Promise<void>;
-      fencing: { verify(): Promise<void>; assertMedia(): Promise<void>; retireSourceServices(): Promise<unknown[]> };
+      fencing: { verify(): Promise<void>; warnMediaWriters(): Promise<void>; retireSourceServices(): Promise<unknown[]> };
       releases: { eligible(): Promise<void> };
     };
     internal.fencing = {
       verify: async () => {
         f.events.push('verify-fence');
       },
-      assertMedia: async () => {
+      warnMediaWriters: async () => {
         f.events.push('assert-media');
       },
       retireSourceServices: async () => {
@@ -456,13 +456,13 @@ test('resuming after Frameleaf already started does not re-check the original ap
     let mediaChecks = 0;
     f.docker.compose = async () => { started = true; };
     const internal = f.operations as unknown as {
-      fencing: { verify(): Promise<void>; assertMedia(): Promise<void> };
+      fencing: { verify(): Promise<void>; warnMediaWriters(): Promise<void> };
       releases: { eligible(): Promise<void> };
     };
     // The reviewed source was removed after Frameleaf took over the library.
     internal.fencing = {
       verify: async () => { throw new Error('source_changed_review_again'); },
-      assertMedia: async () => { mediaChecks++; },
+      warnMediaWriters: async () => { mediaChecks++; },
     };
     internal.releases = { eligible: async () => {} };
     f.store.set('review:fixture-review', { input: { tag: 'v1.0.0' }, source: f.source, backup: null, release: {} });
@@ -497,10 +497,10 @@ test('a journaled Frameleaf start counts on resume even after its container is g
   const f = await fixture();
   try {
     let mediaChecks = 0;
-    const internal = f.operations as unknown as { fencing: { verify(): Promise<void>; assertMedia(): Promise<void> } };
+    const internal = f.operations as unknown as { fencing: { verify(): Promise<void>; warnMediaWriters(): Promise<void> } };
     internal.fencing = {
       verify: async () => { throw new Error('source_changed_review_again'); },
-      assertMedia: async () => { mediaChecks++; },
+      warnMediaWriters: async () => { mediaChecks++; },
     };
     f.store.set('review:fixture-review', { input: { tag: 'v1.0.0' }, source: f.source, backup: null, release: {} });
     f.operation.input = { reviewId: 'fixture-review' };
@@ -533,12 +533,12 @@ test('starting Frameleaf later checks only for media writers once the original a
   try {
     const internal = f.operations as unknown as {
       composeAction(installation: Installation, kind: 'start'): Promise<boolean>;
-      fencing: { verify(): Promise<void>; assertMedia(): Promise<void> };
+      fencing: { verify(): Promise<void>; warnMediaWriters(): Promise<void> };
     };
     let mediaChecks = 0;
     internal.fencing = {
       verify: async () => { throw new Error('source_changed_review_again'); },
-      assertMedia: async () => { mediaChecks++; },
+      warnMediaWriters: async () => { mediaChecks++; },
     };
     const commands: string[] = [];
     f.docker.compose = async (_directory: string, _project: string, command: string) => { commands.push(command); };
@@ -592,9 +592,9 @@ test('an in-place import stops before any grant or import when a media folder is
       };
     const internal = f.operations as unknown as {
       install(operation: Operation, review: unknown): Promise<void>;
-      fencing: { verify(): Promise<void>; assertMedia(): Promise<void> };
+      fencing: { verify(): Promise<void>; warnMediaWriters(): Promise<void> };
     };
-    internal.fencing = { verify: async () => {}, assertMedia: async () => {} };
+    internal.fencing = { verify: async () => {}, warnMediaWriters: async () => {} };
     f.operation.completed = [
       'preflight',
       'download-images',

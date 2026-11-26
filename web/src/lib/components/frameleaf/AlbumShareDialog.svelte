@@ -47,8 +47,11 @@
     mdiLinkVariant,
     mdiPencilOutline,
   } from '@mdi/js';
-  import { tick } from 'svelte';
+  import { tick, untrack } from 'svelte';
   import { locale, t } from 'svelte-i18n';
+  import HouseholdMemberRows from '$lib/components/frameleaf/households/HouseholdMemberRows.svelte';
+  import HouseholdSharePicker from '$lib/components/frameleaf/households/HouseholdSharePicker.svelte';
+  import { HouseholdShareState } from '$lib/components/frameleaf/households/household-share.svelte';
 
   /**
    * Members, roles and public links for an album, a collection or a shared space (FL-53),
@@ -86,6 +89,7 @@
   let query = $state('');
   let inviteRole = $state<AlbumUserRole>(AlbumUserRole.Editor);
   let linkFormOpen = $state(false);
+  let household = $state<HouseholdShareState>();
 
   const currentUserId = $derived(authManager.user.id);
   const isOwner = $derived(
@@ -98,15 +102,35 @@
    * offered again, and withdrawn at once (an offer, not a membership).
    */
   let invited = $state<SharedSpaceMemberResponseDto[]>([]);
+  /** The space `invited` was read for. */
+  let invitedFor: string | undefined;
   const loadInvited = async () => {
     if (album.kind !== AlbumKind.Space) {
       invited = [];
+      invitedFor = undefined;
       return;
     }
+    const id = album.id;
     try {
-      invited = (await getSharedSpaceMembers({ id: album.id })).members.filter(({ pending }) => pending);
+      const { members } = await getSharedSpaceMembers({ id });
+      if (id === album.id) {
+        invited = members.filter(({ pending }) => pending);
+        invitedFor = id;
+      }
     } catch {
-      invited = [];
+      // FL-1771: a failed re-read keeps the invitations already shown for this space, so the people
+      // waiting on them are not offered for a second invitation
+      if (id === album.id && invitedFor !== id) {
+        invited = [];
+      }
+    }
+  };
+  /** The change is already saved: a failed re-read must not be reported as the change failing. */
+  const reread = async () => {
+    try {
+      await onChanged();
+    } catch {
+      // the next read of the album shows it
     }
   };
   const withdraw = async (member: SharedSpaceMemberResponseDto) => {
@@ -114,7 +138,7 @@
     try {
       await removeSharedSpaceInvitation({ id: album.id, userId: member.user.id });
       invited = invited.filter(({ user }) => user.id !== member.user.id);
-      await onChanged();
+      await reread();
     } catch (error) {
       handleError(error, $t('errors.something_went_wrong'));
     } finally {
@@ -168,20 +192,37 @@
     }
   };
 
+  // Values, not the album object: every re-read gives a new object, and restarting on it would wipe the
+  // people ticked, the search and the role, and reload everything after each change made here.
+  const albumId = $derived(album.id);
+  const albumKind = $derived(album.kind);
+  // Also a value: a prop left at its default signals on every change to the props object.
+  const openingSection = $derived(section);
   $effect(() => {
     if (!open) {
       return;
     }
+    void albumId;
+    void albumKind;
+    void isOwner;
+    const opening = openingSection;
 
-    invitees = [];
-    query = '';
-    inviteRole = AlbumUserRole.Editor;
-    void loadCandidates();
-    void loadLinks();
-    void loadInvited();
-    if (section === 'links') {
-      void tick().then(() => linksSection?.scrollIntoView({ block: 'nearest' }));
-    }
+    untrack(() => {
+      invitees = [];
+      query = '';
+      inviteRole = AlbumUserRole.Editor;
+      void loadCandidates();
+      void loadLinks();
+      void loadInvited();
+      // FL-998: a space's owner can also add people from linked households.
+      const nextHousehold =
+        album.kind === AlbumKind.Space && isOwner ? new HouseholdShareState(album.id, onChanged) : undefined;
+      household = nextHousehold;
+      void nextHousehold?.load();
+      if (opening === 'links') {
+        void tick().then(() => linksSection?.scrollIntoView({ block: 'nearest' }));
+      }
+    });
   });
 
   /** Only people who can still be invited count; a member added elsewhere drops out of the choice. */
@@ -204,7 +245,7 @@
         invitees = [];
         query = '';
         await loadInvited();
-        await onChanged();
+        await reread();
       }
     } finally {
       busy = false;
@@ -222,11 +263,18 @@
       return;
     }
     linksState = 'loading';
+    const id = album.id;
     try {
-      links = (await getAllSharedLinks({ albumId: album.id })) ?? [];
-      linksState = 'ready';
+      const answer = (await getAllSharedLinks({ albumId: id })) ?? [];
+      // Another album's links must never be listed here, with their delete buttons.
+      if (id === album.id) {
+        links = answer;
+        linksState = 'ready';
+      }
     } catch {
-      linksState = 'failed';
+      if (id === album.id) {
+        linksState = 'failed';
+      }
     }
   };
 
@@ -236,7 +284,7 @@
       return;
     }
     links = [link, ...links];
-    void onChanged();
+    void reread();
   };
   const onSharedLinkUpdate = (link: SharedLinkResponseDto) => {
     links = links.map((entry) => (entry.id === link.id ? link : entry));
@@ -271,7 +319,7 @@
       await removeSharedLink({ id: link.id });
       eventManager.emit('SharedLinkDelete', link);
       toastManager.primary($t('deleted_shared_link'));
-      await onChanged();
+      await reread();
     } catch (error) {
       handleError(error, $t('errors.unable_to_delete_shared_link'));
     }
@@ -281,7 +329,7 @@
     busy = true;
     try {
       await handleUpdateUserAlbumRole({ albumId: album.id, userId, role });
-      await onChanged();
+      await reread();
     } finally {
       busy = false;
     }
@@ -298,7 +346,7 @@
     busy = true;
     try {
       await handleRemoveUserFromAlbum(album, user);
-      await onChanged();
+      await reread();
     } finally {
       busy = false;
     }
@@ -402,6 +450,10 @@
       </section>
     {/if}
 
+    {#if household?.loaded}
+      <HouseholdSharePicker share={household} />
+    {/if}
+
     <section aria-label={$t('frameleaf_album_share_access')}>
       <h3>{$t('frameleaf_album_share_access')}</h3>
       <ul class="members">
@@ -414,7 +466,6 @@
                 <strong>{self ? $t('frameleaf_album_you') : member.user.name}</strong>
                 {#if member.supporter}<SupporterTag />{/if}
               </span>
-              <small>{member.user.email}</small>
             </span>
             {#if member.role === AlbumUserRole.Owner || !isOwner}
               <span class="role-static">{roleLabel(member.role)}</span>
@@ -460,7 +511,6 @@
             <span class="avatar" aria-hidden="true"><UserAvatar user={member.user} size="md" /></span>
             <span class="who">
               <strong>{member.user.name}</strong>
-              <small>{member.user.email}</small>
             </span>
             <span class="role-static pending-tag">
               <Icon icon={mdiClockOutline} size="14" aria-hidden />
@@ -480,6 +530,9 @@
             {/if}
           </li>
         {/each}
+        {#if household?.loaded}
+          <HouseholdMemberRows share={household} />
+        {/if}
       </ul>
     </section>
 

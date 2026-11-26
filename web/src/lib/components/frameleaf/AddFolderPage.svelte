@@ -8,13 +8,15 @@
    *    folder's skips). Typing a path is under Advanced.
    * 2. Whose library, and the name.
    * 3. What to skip: the two recommended choices (the server's own defaults), patterns under Advanced.
-   * 4. The first check: starts by itself when the folder is added (`scanLibrary`), unless switched off;
+   * 4. Albums (FL-838): "Make an album for each folder", off by default, with the albums it would make.
+   * 5. The first check: starts by itself when the folder is added (`scanLibrary`), unless switched off;
    *    after that the folder is checked in the overnight schedule.
    *
    * Create checks every folder again on the server, so the page's checks are a convenience.
    */
   import '$lib/frameleaf/libraries.css';
   import Button from '$lib/components/frameleaf/Button.svelte';
+  import FolderAlbumsSection from '$lib/components/frameleaf/FolderAlbumsSection.svelte';
   import Advanced from '$lib/components/frameleaf/settings/kit/Advanced.svelte';
   import Field from '$lib/components/frameleaf/settings/kit/Field.svelte';
   import KitPage from '$lib/components/frameleaf/settings/kit/KitPage.svelte';
@@ -67,6 +69,7 @@
   let skipNas = $state(true);
   let extra = $state('');
   let first = $state(true);
+  let folderAlbums = $state(false);
   let readOnly = $state(true);
   let saving = $state(false);
   let error = $state('');
@@ -182,6 +185,7 @@
           name: name.trim(),
           importPaths: [folder],
           exclusionPatterns: patterns,
+          folderAlbums,
         },
       });
       let scanning = false;
@@ -380,7 +384,18 @@
     </Advanced>
   </Section>
 
-  <Section title={$t('frameleaf_addfolder_step4')}>
+  <FolderAlbumsSection
+    title={$t('frameleaf_addfolder_step4')}
+    roots={ready ? [folder] : []}
+    exclusionPatterns={patterns}
+    libraryName={name.trim()}
+    {ownerName}
+    checked={folderAlbums}
+    estimate={estimate && estimate.readable ? estimate : null}
+    onChange={(on) => (folderAlbums = on)}
+  />
+
+  <Section title={$t('frameleaf_addfolder_step5')}>
     <Row
       label={$t('frameleaf_addfolder_first')}
       help={first ? $t('frameleaf_addfolder_first_on') : $t('frameleaf_addfolder_first_off')}

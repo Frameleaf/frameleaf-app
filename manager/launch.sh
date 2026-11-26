@@ -105,10 +105,11 @@ case "$filesystem" in
   *) echo 'Choose disk-backed appdata storage, outside the container filesystem' >&2; exit 2;;
 esac
 # Each installation owns its state and its Restic backup repository; two Managers must never share either.
+# Other containers (backup tools) may map them, so this only warns.
 shared=$(docker ps -aq | xargs -r docker inspect --format '{{range .Mounts}}{{$.Name}}{{"\t"}}{{.Source}}{{"\n"}}{{end}}' |
   awk -F '\t' -v self="/$name" -v state="$state" -v backups="$backups" \
     '$1 != self && ($2 == state || $2 == backups) { print substr($1, 2) }' | sort -u | tr '\n' ' ')
-test -z "$shared" || { echo "State or backup folder is already used by: $shared- choose separate folders for this installation" >&2; exit 2; }
+test -z "$shared" || echo "Warning: the state or backup folder is also mapped by: $shared- a second Manager must use separate folders" >&2
 command -v cosign >/dev/null || { echo 'Install Cosign to verify the Manager image before launch' >&2; exit 2; }
 script_dir=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
 docker pull "$image"

@@ -16,15 +16,27 @@ on:
         description: Also mirror every server and ML variant at the Latest release's tag, release and latest
         type: boolean
         default: false
+  # FL-1765: finish a mirror a registry cut short. Safe to repeat: finished refs are skipped.
+  workflow_dispatch:
+    inputs:
+      refs:
+        description: Space-separated <image>:<tag> references already on ghcr.io/frameleaf
+        type: string
+        default: ''
+      release-variants:
+        description: Also mirror every server and ML variant at the Latest release's tag, release and latest
+        type: boolean
+        default: false
 
 permissions: {}
 
 jobs:
   mirror:
     name: Mirror to Docker Hub and Forgejo
-    if: github.server_url != 'https://github.com' && github.repository == 'Frameleaf/frameleaf-app'
+    if: github.server_url != 'https://github.com' && github.repository == 'Frameleaf/frameleaf-app' && (github.event_name != 'workflow_dispatch' || github.ref == 'refs/heads/main')
     runs-on: lan
-    timeout-minutes: 60
+    # Long enough to wait out several Docker Hub rate-limit windows.
+    timeout-minutes: 240
     permissions:
       contents: read
     steps:

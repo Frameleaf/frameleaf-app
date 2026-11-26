@@ -170,7 +170,6 @@ export const PhotographyOutputDefinitionSchema = PhotographyDownloadOutputSchema
     .refine((items) => new Set(items.map((item) => item.captureId)).size === items.length, 'Duplicate revision mapping')
     .default([]),
 });
-export type PhotographyOutputDefinition = z.infer<typeof PhotographyOutputDefinitionSchema>;
 export const PhotographyStudioPresetSchema = z.object({ id: Id, name: z.string(), config: PhotographyConfigSchema });
 export type PhotographyStudioPreset = z.infer<typeof PhotographyStudioPresetSchema>;
 export class PhotographyStudioPresetsDto extends createZodDto(

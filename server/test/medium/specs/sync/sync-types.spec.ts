@@ -16,4 +16,12 @@ describe('types', () => {
 
     expect(albumIndex).toBeGreaterThan(albumAssetsIndex);
   });
+
+  it('should send the per-item trash and tag streams last, after photos and their details', () => {
+    expect(SYNC_TYPES_ORDER.slice(-3)).toEqual([
+      SyncRequestType.AssetTrashStatesV1,
+      SyncRequestType.TagsV1,
+      SyncRequestType.AssetTagsV1,
+    ]);
+  });
 });

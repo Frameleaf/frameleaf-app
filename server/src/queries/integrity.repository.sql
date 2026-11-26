@@ -132,21 +132,6 @@ select
 from
   "asset"
 
--- IntegrityRepository.streamAllAssetPaths
-select
-  "originalPath",
-  "asset_file"."path" as "encodedVideoPath"
-from
-  "asset"
-  left join "asset_file" on "asset"."id" = "asset_file"."assetId"
-  and "asset_file"."type" = $1
-
--- IntegrityRepository.streamAllAssetFilePaths
-select
-  "path"
-from
-  "asset_file"
-
 -- IntegrityRepository.streamAssetPathsForMissingFiles
 select
   "allPaths"."path" as "path",

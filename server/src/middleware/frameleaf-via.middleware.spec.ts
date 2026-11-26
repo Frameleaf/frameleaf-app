@@ -192,6 +192,13 @@ describe('frameleafViaMiddleware (FL-161)', () => {
     }
   });
 
+  it('keeps the conversion upload token, also for a desktop that arrives through the edge (FL-1761)', () => {
+    const token = 'x-frameleaf-transcode-upload';
+    expect(run({ [token]: 'upload-token' }).headers[token]).toBe('upload-token');
+    const lan = run({ 'x-frameleaf-via': 'lan', 'x-frameleaf-via-auth': secret, [token]: 'upload-token' });
+    expect(lan.headers[token]).toBe('upload-token');
+  });
+
   it('reads the arrival before the headers are stripped', () => {
     const headers = { 'x-frameleaf-via': 'wan', 'x-frameleaf-via-auth': secret };
     expect(readFrameleafArrival(headers, secret).via).toBe('wan');

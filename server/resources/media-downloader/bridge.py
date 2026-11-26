@@ -30,7 +30,9 @@ FEED_CATEGORIES = frozenset(
     "album archive author board bookmark bookmarks channel collection favorites feed favorites following gallery "
     "group hashtag history home likes list media playlist posts profile replies saved search stories subreddit tag timeline tweets user with-replies".split()
 )
-SECTIONS = {"twitter": "post", "bluesky": "post", "reddit": "post", "pinterest": "pin"}
+SECTIONS = {"twitter": "post", "bluesky": "post", "reddit": "post", "pinterest": "pin", "redgifs": "post",
+            "instagram": "post", "tiktok": "post", "tumblr": "post", "imgur": "post", "flickr": "post",
+            "deviantart": "post"}
 TABS = {"videos": "video", "shorts": "short", "streams": "live"}
 FORMATS = {
     "1080": "bv*[height<=1080]+ba/b[height<=1080]/bv*+ba/b",
@@ -38,6 +40,8 @@ FORMATS = {
     "audio": "ba/b",
 }
 OUTPUT = sys.stdout
+# Whether this attempt carries a site sign-in. One request per process, so the attempt's own answer is enough.
+SIGNED_IN = False
 
 
 def write_message(kind, **fields):
@@ -65,6 +69,8 @@ class Extraction:
         self.gallery_session = gallery_session_factory(request["socketPath"], request["token"], self.session)
         self.auth_fields = {name for name in ("username", "password", "refreshToken", "accessToken", "clientId", "clientSecret")
                             if self.session.get(name)}
+        global SIGNED_IN
+        SIGNED_IN = bool(self.session.get("cookies") or self.auth_fields)
 
     @contextmanager
     def youtube(self, flat=False, feed=False, gallery_session=None):
@@ -279,7 +285,7 @@ class Extraction:
             raise BridgeError("unsupported_session")
         with self.youtube(flat=True, feed=enumerate_feed) as ydl:
             try:
-                metadata = ydl.extract_info(url, download=False)
+                metadata = ydl.extract_info(video_feed(url), download=False)
             except DownloadError as error:
                 # The generic extractor's expected no-video path can still be a direct image.
                 classified = error_code(error)
@@ -420,6 +426,18 @@ def creator_feed(url):
         if match:
             return urlunsplit((parts.scheme, parts.netloc, f"/user/{match[1]}/submitted", parts.query, ""))
     return url
+
+
+def video_feed(url):
+    """A Twitch channel's own address is its live stream; its past broadcasts are what to save."""
+    parts = urlsplit(url)
+    if (parts.hostname or "").removeprefix("www.") != "twitch.tv":
+        return url
+    match = re.fullmatch(r"/([a-zA-Z0-9_]{1,25})", parts.path.rstrip("/"))
+    if not match or match[1].lower() in {"directory", "downloads", "jobs", "p", "search", "settings",
+                                         "subscriptions", "turbo", "wallet", "inventory", "drops", "videos"}:
+        return url
+    return urlunsplit((parts.scheme, parts.netloc, f"/{match[1]}/videos", "", ""))
 
 
 def url_extension(url):
@@ -726,12 +744,22 @@ def inspection(url, provider, kind, entries, checkpoint, limitation, title=None,
     }
 
 
+def refused():
+    """
+    The site would not show this. Signed in, that is about this post or account (private, blocked, age-restricted),
+    not about the sign-in: only an answer that the sign-in itself is not accepted says the connection has lapsed.
+    """
+    return BridgeError("restricted" if SIGNED_IN else "authentication_required")
+
+
 def http_status(status, headers):
     if status == 429:
         retry_after = headers.get("Retry-After")
         return BridgeError("rate_limited", int(retry_after) if str(retry_after).isdigit() and len(str(retry_after)) <= 5 else None)
-    if status in (401, 403):
+    if status == 401:
         return BridgeError("authentication_required")
+    if status == 403:
+        return refused()
     if status in (404, 410):
         return BridgeError("no_media")
     return BridgeError("failed")
@@ -742,8 +770,10 @@ def error_code(error):
         return error
     if isinstance(error, UnsupportedError) or isinstance(getattr(error, "exc_info", None), tuple) and isinstance(error.exc_info[1], UnsupportedError):
         return BridgeError("unsupported")
-    if isinstance(error, (gallery_error.AuthenticationError, gallery_error.AuthorizationError)):
+    if isinstance(error, gallery_error.AuthenticationError):
         return BridgeError("authentication_required")
+    if isinstance(error, gallery_error.AuthorizationError):
+        return refused()
     if isinstance(error, gallery_error.NotFoundError):
         return BridgeError("no_media")
     for inner in (error, getattr(error, "cause", None), getattr(error, "__cause__", None),
@@ -760,8 +790,10 @@ def error_code(error):
             return BridgeError("unsupported")
         if "no video" in details or "no formats" in details or "no media" in details:
             return BridgeError("no_media")
-        if "sign in" in details or "login required" in details or "private video" in details:
+        if "sign in" in details or "login required" in details:
             return BridgeError("authentication_required")
+        if "private video" in details:
+            return refused()
         if "http error 429" in details:
             return BridgeError("rate_limited")
     return BridgeError("failed")

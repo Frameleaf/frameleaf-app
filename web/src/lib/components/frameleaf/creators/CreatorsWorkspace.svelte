@@ -2,18 +2,20 @@
   import './creators.css';
   import type { MediaCreatorItemResponse } from '@frameleaf/sdk';
   import { Theme as AppTheme, themeManager, toastManager } from '@frameleaf/ui';
-  import { onMount } from 'svelte';
+  import { onMount, untrack } from 'svelte';
   import { t } from 'svelte-i18n';
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
   import InlineError from '$lib/components/frameleaf/InlineError.svelte';
   import { creatorsHref, readCreatorsLocation, type CreatorsLocation } from '$lib/frameleaf/creators';
+  import { creatorsDownloads, downloadShow } from '$lib/frameleaf/creators-downloads.svelte';
   import { creatorsStore } from '$lib/frameleaf/creators-store.svelte';
   import { onLibraryAccessChange } from '$lib/frameleaf/library-access';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { eventManager } from '$lib/managers/event-manager.svelte';
   import CreatorItemPanel from './CreatorItemPanel.svelte';
   import CreatorPage from './CreatorPage.svelte';
+  import CreatorsDownloads from './CreatorsDownloads.svelte';
   import CreatorsHome from './CreatorsHome.svelte';
   import CreatorsSubscriptions from './CreatorsSubscriptions.svelte';
   import CreatorsTray from './CreatorsTray.svelte';
@@ -62,7 +64,18 @@
     return () => {
       stopEvents();
       stopAccess();
+      creatorsDownloads.stop();
     };
+  });
+
+  // The tray and the Downloads page show one list, read once Creators is ready and again when a download starts.
+  $effect(() => {
+    void creatorsStore.downloads;
+    if (creatorsStore.status === 'ready') {
+      untrack(() => void creatorsDownloads.load());
+    } else {
+      untrack(() => creatorsDownloads.stop());
+    }
   });
 
   const done = async (message: string, creatorId?: string) => {
@@ -143,10 +156,13 @@
       {/if}
     {:else if where.view === 'subscriptions'}
       <CreatorsSubscriptions />
+    {:else if where.view === 'downloads'}
+      <CreatorsDownloads show={downloadShow(where.show)} onShow={(show) => view({ show })} />
     {:else}
       <CreatorsHome onDone={(message, creatorId) => void done(message, creatorId)} onOpenItem={openItem} />
     {/if}
-    {#if creatorsStore.status === 'ready'}<CreatorsTray />{/if}
+    <!-- The Downloads page is the whole list: no tray over it. -->
+    {#if creatorsStore.status === 'ready' && where.view !== 'downloads'}<CreatorsTray />{/if}
   </div>
   {#if item && creator && creatorsStore.status === 'ready'}
     <CreatorItemPanel {item} {creator} onClose={() => view({ item: null })} onChange={changed} onDeleted={deleted} />

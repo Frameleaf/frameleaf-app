@@ -1,10 +1,15 @@
 import type { AssetResponseDto } from '@frameleaf/sdk';
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
+import { sdkMock } from '$lib/__mocks__/sdk.mock';
+import { confirmFrameleaf } from '$lib/frameleaf/confirm';
 import { buildLandmarkCards } from '$lib/frameleaf/landmarks';
+import { namedPlaces } from '$lib/frameleaf/named-places.svelte';
 import { PlacesGroupBy, placesViewSettings } from '$lib/stores/preferences.store';
 import en from '../../../../../i18n/en.json';
 import PlacesPanel from './PlacesPanel.svelte';
+
+vi.mock('$lib/frameleaf/confirm', () => ({ confirmFrameleaf: vi.fn() }));
 
 const place = (id: string, city: string, state: string | null, country: string | null) =>
   ({
@@ -43,7 +48,12 @@ const landmarks = buildLandmarkCards([
 
 describe('PlacesPanel (FL-51)', () => {
   beforeAll(() => addMessages('dev', en));
-  beforeEach(() => placesViewSettings.set({ groupBy: PlacesGroupBy.CountryState, collapsedGroups: {} }));
+  beforeEach(() => {
+    placesViewSettings.set({ groupBy: PlacesGroupBy.CountryState, collapsedGroups: {} });
+    sdkMock.getUserPlaces.mockResolvedValue([]);
+    sdkMock.searchAssetStatistics.mockResolvedValue({ total: 3 } as never);
+    namedPlaces.reset();
+  });
 
   it('summarises the places and groups them by country and state with their counts', () => {
     render(PlacesPanel, { places, counts, unplaced: 4 });
@@ -131,5 +141,60 @@ describe('PlacesPanel (FL-51)', () => {
     expect(screen.getByText('Where your photos and videos were taken')).toBeInTheDocument();
     expect(screen.queryByRole('searchbox')).toBeNull();
     expect(screen.queryByRole('button', { name: 'Group by country' })).toBeNull();
+  });
+
+  describe('Your places (FL-1019)', () => {
+    const home = {
+      id: 'b0000000-0000-4000-8000-000000000001',
+      name: 'Home',
+      latitude: 10,
+      longitude: 20,
+      radiusMeters: 1500,
+      createdAt: '2026-11-22T00:00:00.000Z',
+      updatedAt: '2026-11-22T00:00:00.000Z',
+    };
+
+    it('lists a place with where it is, its reach, its count and its actions', async () => {
+      sdkMock.getUserPlaces.mockResolvedValue([home]);
+      render(PlacesPanel, { places, counts, unplaced: 0 });
+
+      const section = await screen.findByRole('region', { name: 'Your places' });
+      expect(await within(section).findByText('Home')).toBeInTheDocument();
+      expect(within(section).getByText('Only you see these names.')).toBeInTheDocument();
+      expect(within(section).getByText(/reaches 1\.5 km/)).toBeInTheDocument();
+      expect(await within(section).findByText('3 items')).toBeInTheDocument();
+      expect(sdkMock.searchAssetStatistics).toHaveBeenCalledWith({
+        statisticsSearchDto: { filter: { namedPlaceIds: { any: [home.id] } } },
+      });
+      expect(within(section).getByRole('link', { name: 'Show Home on the map' })).toHaveAttribute(
+        'href',
+        '/map#14/10/20',
+      );
+      expect(within(section).getByRole('button', { name: 'Change Home' })).toBeInTheDocument();
+    });
+
+    it('says when nothing is named yet, and offers the map', async () => {
+      render(PlacesPanel, { places, counts, unplaced: 0 });
+
+      expect(await screen.findByText('No named places yet')).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: 'Name a place' })).toHaveAttribute('href', '/map?naming=1');
+    });
+
+    it('deletes a place only once confirmed', async () => {
+      sdkMock.getUserPlaces.mockResolvedValue([home]);
+      sdkMock.deleteUserPlace.mockResolvedValue(undefined as never);
+      vi.mocked(confirmFrameleaf).mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+      render(PlacesPanel, { places, counts, unplaced: 0 });
+
+      const remove = await screen.findByRole('button', { name: 'Delete Home' });
+      await fireEvent.click(remove);
+      await vi.waitFor(() => expect(confirmFrameleaf).toHaveBeenCalledTimes(1));
+      expect(sdkMock.deleteUserPlace).not.toHaveBeenCalled();
+
+      await fireEvent.click(remove);
+      await vi.waitFor(() => expect(sdkMock.deleteUserPlace).toHaveBeenCalledWith({ id: home.id }));
+      expect(await screen.findByText('“Home” deleted. Its photos keep their location.')).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Delete Home' })).toBeNull();
+    });
   });
 });

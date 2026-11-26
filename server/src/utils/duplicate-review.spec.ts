@@ -53,6 +53,16 @@ describe('duplicate review rules', () => {
       expect(classifyDuplicateGroup(retakes)).toBe(DuplicateGroupKind.Duplicates);
     });
 
+    it('FL-936: scans that share a year or a decade are look-alikes, not copies or a burst', () => {
+      const start = '1975-01-01T00:00:00.000Z';
+      const scans = [
+        { ...rawImage('a', start), dateAccuracy: 'year' },
+        { ...rawImage('b', start), dateAccuracy: 'year' },
+      ] as never;
+      expect(reviewKindOf(scans)).toBe('look-alike');
+      expect(reviewKindOf([image('a', start), image('b', start)])).toBe('copies');
+    });
+
     it('reads a group as copies when two share an instant or a time is missing', () => {
       expect(
         classifyDuplicateGroup([
