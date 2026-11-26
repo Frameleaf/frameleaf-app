@@ -82,5 +82,35 @@ describe('PersonNotes (FL-941)', () => {
     ]);
     expect(noteParts('javascript:alert(1) ftp://x')).toEqual([{ text: 'javascript:alert(1) ftp://x' }]);
     expect(noteParts(null)).toEqual([]);
+    // a bracket the address opened stays; one the sentence opened goes
+    expect(noteParts('https://en.wikipedia.org/wiki/John_Smith_(explorer)')).toEqual([
+      {
+        text: 'https://en.wikipedia.org/wiki/John_Smith_(explorer)',
+        href: 'https://en.wikipedia.org/wiki/John_Smith_(explorer)',
+      },
+    ]);
+    expect(noteParts('(see https://a.test/wiki/X_(y)).')).toEqual([
+      { text: '(see ' },
+      { text: 'https://a.test/wiki/X_(y)', href: 'https://a.test/wiki/X_(y)' },
+      { text: ').' },
+    ]);
+  });
+
+  it('does not hand a late save to the page once the card shows another person', async () => {
+    const first = person('Old note');
+    let finish: (value: PersonResponseDto) => void = () => {};
+    vi.mocked(updatePerson).mockReturnValue(new Promise((resolve) => (finish = resolve)) as never);
+    const onPersonChange = vi.fn();
+    const view = render(PersonNotes, { person: first, onPersonChange });
+
+    await fireEvent.click(screen.getByRole('button', { name: en.edit }));
+    await fireEvent.click(screen.getByRole('button', { name: en.save }));
+    await view.rerender({ person: person('Someone else’s note'), onPersonChange });
+    finish({ ...first, notes: 'Old note' });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(onPersonChange).not.toHaveBeenCalled();
+    expect(screen.getByText('Someone else’s note')).toBeInTheDocument();
   });
 });

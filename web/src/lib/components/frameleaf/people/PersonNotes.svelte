@@ -13,6 +13,7 @@
   import { updatePerson, type PersonResponseDto } from '@frameleaf/sdk';
   import { Icon, toastManager } from '@frameleaf/ui';
   import { mdiPencilOutline } from '@mdi/js';
+  import { onDestroy } from 'svelte';
   import { t } from 'svelte-i18n';
 
   interface Props {
@@ -40,12 +41,20 @@
     draft = note;
     editing = true;
   };
+  // A save that finishes after the page moved on to another person, or after this card is gone, must
+  // not hand its person to the page.
+  let alive = true;
+  onDestroy(() => (alive = false));
   const save = async () => {
+    const id = person.id;
     busy = true;
     try {
       const notes = draft.trim() ? draft : null;
-      const updated = await updatePerson({ id: person.id, personUpdateDto: { notes } });
+      const updated = await updatePerson({ id, personUpdateDto: { notes } });
       eventManager.emit('PersonUpdate', updated);
+      if (!alive || person.id !== id) {
+        return;
+      }
       onPersonChange?.(updated);
       editing = false;
       toastManager.primary($t(notes ? 'frameleaf_person_notes_saved' : 'frameleaf_person_notes_removed'));
