@@ -202,7 +202,7 @@ describe('Nothing lost (FL-940)', () => {
 
   it('shows an administrator the household by person, then one person’s totals, and never a file', async () => {
     vi.mocked(getLedgerAdminSummary).mockImplementation(
-      ({ userId } = {}) =>
+      ({ userId }: { userId?: string } = {}) =>
         Promise.resolve(
           userId
             ? { ...summary({ kept: 15_100, merged: 110, trashed: 22, removed: 61 }), missingByOwner: [], byOwner: [] }

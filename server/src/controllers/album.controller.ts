@@ -9,9 +9,12 @@ import {
   AlbumIconCatalogueResponseDto,
   AlbumOrderDto,
   AlbumPersonResponseDto,
+  AlbumRailResponseDto,
   AlbumRecentlyAddedResponseDto,
   AlbumResponseDto,
   AlbumStatisticsResponseDto,
+  AlbumStatsDto,
+  AlbumStatsResponseDto,
   AlbumTreeResponseDto,
   AlbumUserParamDto,
   AlbumViewDto,
@@ -101,6 +104,31 @@ export class AlbumController {
   })
   getAlbumHierarchy(@Auth() auth: AuthDto, @Query() query: AlbumViewDto): Promise<AlbumHierarchyResponseDto> {
     return this.service.getHierarchy(auth, query);
+  }
+
+  @Get('rail')
+  @Authenticated({ permission: Permission.AlbumRead })
+  @Endpoint({
+    summary: 'Retrieve the album directory for navigation',
+    description:
+      'The same albums, parents and order as /albums/hierarchy, as one list with only what a navigation rail draws: name, parent, icon, colour, counts and your own role. No members, shared links, covers or dates.',
+    history: new HistoryBuilder().added('v3.5.0').alpha('v3.5.0'),
+  })
+  getAlbumRail(@Auth() auth: AuthDto, @Query() query: AlbumViewDto): Promise<AlbumRailResponseDto> {
+    return this.service.getRail(auth, query);
+  }
+
+  @Post('stats')
+  @Authenticated({ permission: Permission.AlbumRead })
+  @HttpCode(HttpStatus.OK)
+  @Endpoint({
+    summary: 'Retrieve the counts and dates of some albums',
+    description:
+      'The numbers an album list shows, for the given albums only. Use it to ask again for albums a list reported as statsPending instead of reading the whole list again.',
+    history: new HistoryBuilder().added('v3.5.0').alpha('v3.5.0'),
+  })
+  getAlbumStats(@Auth() auth: AuthDto, @Body() dto: AlbumStatsDto): Promise<AlbumStatsResponseDto> {
+    return this.service.getStats(auth, dto);
   }
 
   @Get('icons')
