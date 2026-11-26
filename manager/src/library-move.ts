@@ -1,9 +1,10 @@
 import { randomUUID } from 'node:crypto';
-import { mkdir, readFile, realpath, stat } from 'node:fs/promises';
+import { mkdir, readFile, readdir, realpath, rm, stat, writeFile } from 'node:fs/promises';
 import { join, resolve, relative } from 'node:path';
 import { Refusal, digest, type Installation, type Mount, type Operation } from './contracts.js';
 import { command, environment, overlap, type Docker } from './docker.js';
-import { overlaps } from './folders.js';
+import { inside, overlaps, sameFiles } from './folders.js';
+import { folderSize } from './folder-size.js';
 import { toHost } from './host-paths.js';
 import { atomicJson } from './files.js';
 import type { Store } from './store.js';
@@ -47,7 +48,35 @@ type Review = {
   rootIdentity: string;
   files: number;
   bytes: number;
+  /** FL-1784: thumbnails go in `root` itself, the folder the administrator picked, not in a folder made inside it. */
+  exact?: boolean;
+  /** FL-1784: `root` is the folder the thumbnails are in now, reached by another path. Nothing is copied. */
+  same?: boolean;
+  /** FL-1784: with `same`, thumbnails the current path shows that `root` does not (they are on another drive). */
+  missingFiles?: number;
 };
+/**
+ * FL-1784: whether `chosen` and `current` are one folder reached two ways (an Unraid share and the pool behind it, a
+ * link, a second mapping). Tested, not guessed from the paths: a file made in `chosen` shows up in `current`. It is
+ * made in `chosen` because a share shows every drive's files, while a write through the share may land on another drive.
+ */
+export async function sameFolder(chosen: string, current: string): Promise<boolean> {
+  const name = `.frameleaf-same-folder-${randomUUID()}`;
+  await writeFile(join(chosen, name), '', { flag: 'wx' }).catch(() => {
+    throw new Refusal('storage_permissions', 409, chosen);
+  });
+  try {
+    return await stat(join(current, name)).then(
+      () => true,
+      (error: NodeJS.ErrnoException) => {
+        if (error.code === 'ENOENT') return false;
+        throw error;
+      },
+    );
+  } finally {
+    await rm(join(chosen, name), { force: true });
+  }
+}
 type Step = <T>(name: string, action: () => Promise<T>) => Promise<T>;
 export type ServerPauseStatus = {
   paused: boolean;
@@ -75,6 +104,8 @@ const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const destinationMount = (source: string): Mount => ({ type: 'bind', source, target: '', readOnly: false });
 export class LibraryMove {
   private stopping = new Set<string>();
+  /** The same-folder test, replaceable where a test can't reach one folder by two real paths. */
+  static same = sameFolder;
   constructor(
     private store: Store,
     private docker: Docker,
@@ -102,9 +133,23 @@ export class LibraryMove {
     const thumbnails = thumbnailMount(current.mounts);
     return [current.mounts[0].source, ...(thumbnails ? [thumbnails.source] : []), current.databaseRoot, this.directory, this.backups];
   }
-  private paths(current: Installation, root: string): void {
+  private paths(current: Installation, root: string, review: Pick<Review, 'kind' | 'exact'> = {}): void {
+    const clash = (p: string) => overlap(root, p) || overlaps(root, p);
+    if (review.kind === 'thumbs' && review.exact) {
+      // FL-1784: thumbnails go where the administrator says, a pool path into the photos share included. Refused
+      // only where it would damage something else: the database, Manager, backups, or the photos folder as a whole.
+      const library = current.mounts[0].source;
+      // Where thumbnails are now, by any path to it: a folder inside it, or around it, would be copied into itself.
+      // The folder itself by another path is the same-folder case, and is left to that test.
+      const now = thumbnailFolder(current.mounts);
+      if ([current.databaseRoot, this.directory, this.backups].some(clash) || inside(library, root) || (now && now !== root && clash(now) && !sameFiles(root, now)))
+        throw new Refusal('media_move_overlap');
+      // By its own path a folder inside the library is the library's; only `thumbs` there is the thumbnails' home.
+      if (overlap(root, library)) throw new Refusal('thumbnail_folder_inside_library', 409, root);
+      return;
+    }
     // On Unraid /mnt/cache/photo is the same files as /mnt/user/photo: a pool path into the library is the library.
-    if (this.reserved(current).some((p) => overlap(root, p) || overlaps(root, p))) throw new Refusal('media_move_overlap');
+    if (this.reserved(current).some(clash)) throw new Refusal('media_move_overlap');
   }
   private async identity(path: string): Promise<string> {
     const data = await stat(path);
@@ -121,10 +166,21 @@ export class LibraryMove {
       path: resolve(mount.root, relative(mount.target, path)),
     };
   }
-  private async physicalPaths(current: Installation, root: string, source = current.mounts[0].source): Promise<void> {
+  private async physicalPaths(current: Installation, root: string, source = current.mounts[0].source, review: Pick<Review, 'kind' | 'exact'> = {}): Promise<void> {
     const mounts = filesystemMounts(await readFile('/run/frameleaf-host/mountinfo', 'utf8'));
     const location = (path: string) => LibraryMove.backing(toHost(path), mounts);
     const destination = location(root);
+    if (review.kind === 'thumbs' && review.exact) {
+      // The same rule as `paths`, on the drives themselves: a folder inside the photos folder is allowed, the whole of it is not.
+      const library = location(current.mounts[0].source);
+      const whole = library.device === destination.device && (library.path === destination.path || library.path.startsWith(`${destination.path.replace(/\/$/, '')}/`));
+      const others = [current.databaseRoot, this.directory, this.backups].map(location);
+      // On the drive itself, the thumbnails folder may be the destination (the same folder) but never contain it or sit in it.
+      const now = location(source);
+      const nested = now.device === destination.device && now.path !== destination.path && overlap(now.path, destination.path);
+      if (whole || nested || others.some((other) => other.device === destination.device && overlap(other.path, destination.path))) throw new Refusal('media_move_overlap');
+      return;
+    }
     if (
       this.reserved(current)
         .map(location)
@@ -281,17 +337,23 @@ export class LibraryMove {
       throw new Refusal('invalid_media_copy_receipt');
     return values;
   }
-  async review(root: string, kind: MoveKind = 'media'): Promise<Review> {
+  async review(root: string, kind: MoveKind = 'media', exact = false): Promise<Review> {
     const current = this.current();
-    this.paths(current, root);
+    exact &&= kind === 'thumbs';
+    this.paths(current, root, { kind, exact });
     await assertMountSources(current.mounts);
     // Thumbnails are copied from wherever they are now; a library that has none yet has nothing to move.
     const source = kind === 'thumbs' ? thumbnailFolder(current.mounts) : current.mounts[0].source;
     if (!source || (kind === 'thumbs' && !(await folderExists(source)))) throw new Refusal('thumbnail_folder_missing');
-    await this.storage.validate(root, 0);
+    // FL-1784: a folder picked for thumbnails may be on a network share; the review says so.
+    await this.storage.validate(root, 0, undefined, exact);
     await this.storage.validate(current.mounts[0].source, 0, current.id);
-    await this.physicalPaths(current, root, source);
+    if (exact && root === source) throw new Refusal('thumbnails_already_in_folder', 409, root);
+    await this.physicalPaths(current, root, source, { kind, exact });
     await this.fencing.warnMediaWriters([...current.mounts, destinationMount(root)], current);
+    const same = exact && (await LibraryMove.same(root, source));
+    // A folder with other files in it is never mixed with thumbnails: the copy is checked against an empty one.
+    if (exact && !same && (await readdir(root)).length) throw new Refusal('thumbnail_folder_not_empty', 409, root);
     const review: Review = {
       available: await this.pauseAvailable(),
       id: randomUUID(),
@@ -304,10 +366,17 @@ export class LibraryMove {
       rootIdentity: await this.identity(root),
       files: 0,
       bytes: 0,
+      ...(exact && { exact }),
     };
-    const size = await this.helper('measure', review, root);
-    await this.storage.validate(root, size.bytes);
-    Object.assign(review, size);
+    if (same) {
+      // Nothing to copy. What the current path shows and this one doesn't is on another drive, and is made again.
+      const [here, now] = [await folderSize(root), await folderSize(source)];
+      Object.assign(review, { same, files: here?.files ?? 0, missingFiles: Math.max(0, (now?.files ?? 0) - (here?.files ?? 0)) });
+    } else {
+      const size = await this.helper('measure', review, root);
+      await this.storage.validate(root, size.bytes, undefined, exact);
+      Object.assign(review, size);
+    }
     this.store.set(`media-move:${review.id}`, review);
     return review;
   }
@@ -447,20 +516,21 @@ export class LibraryMove {
     const current = review.current;
     const kind = review.kind ?? 'media';
     const source = LibraryMove.source(review);
-    this.paths(current, review.root);
-    await this.physicalPaths(current, review.root, source);
+    this.paths(current, review.root, review);
+    await this.physicalPaths(current, review.root, source, review);
     if (
       (await this.identity(source)) !== review.sourceIdentity ||
       (await this.identity(review.root)) !== review.rootIdentity
     )
       throw new Refusal('media_mount_changed');
-    const destination = join(
-      review.root,
-      `frameleaf-${current.id}-${kind === 'thumbs' ? 'thumbnails' : 'media'}-${operation.id}`,
-    );
+    // FL-1784: thumbnails in the folder the administrator picked; otherwise a folder of Manager's own inside it.
+    const destination = review.exact
+      ? review.root
+      : join(review.root, `frameleaf-${current.id}-${kind === 'thumbs' ? 'thumbnails' : 'media'}-${operation.id}`);
+    const same = !!review.same;
     await step('move-stop-writers', async () => {
       if (digest(this.current()) !== digest(current)) throw new Refusal('installation_changed');
-      await this.storage.validate(review.root, review.bytes);
+      await this.storage.validate(review.root, review.bytes, undefined, !!review.exact);
       await assertMountSources(current.mounts);
       await this.fencing.warnMediaWriters([...current.mounts, destinationMount(review.root)], current);
       await this.quiesce(operation, current);
@@ -489,11 +559,16 @@ export class LibraryMove {
       await this.fencing.verifyInstallation(current);
       await this.fencing.warnMediaWriters([...current.mounts, destinationMount(review.root)], current);
     }
-    const frozen = await step('move-freeze', () => this.helper('freeze', review, review.root));
-    await step('move-copy', async () => {
-      await this.storage.validate(review.root, frozen.bytes);
+    // The folder already holds these thumbnails: nothing is frozen, copied or compared, only the mapping changes.
+    const frozen = same ? { bytes: 0 } : await step('move-freeze', () => this.helper('freeze', review, review.root));
+    if (!same) await step('move-copy', async () => {
+      await this.storage.validate(review.root, frozen.bytes, undefined, !!review.exact);
       if (await this.cancelled(operation)) throw new Refusal('media_move_cancelled');
       const owned = operation.receipts['move-destination'] as { path: string; identity: string } | undefined;
+      if (review.exact) {
+        // The picked folder is used as it is. It was empty at review; only this move's own copy may be in it now.
+        if (!owned && (await readdir(destination)).length) throw new Refusal('thumbnail_folder_not_empty', 409, destination);
+      } else
       try {
         await mkdir(destination, { mode: 0o700 });
       } catch (error: any) {
@@ -509,7 +584,7 @@ export class LibraryMove {
       this.store.save(operation);
       return this.helper('copy', review, destination);
     });
-    await step('move-verify', () => this.helper('verify', review, destination));
+    if (!same) await step('move-verify', () => this.helper('verify', review, destination));
     // A library move changes only the library mount; a thumbnail mount (and its drive) is kept as it is. A
     // thumbnail move changes only the thumbnail mount, so the photos folder is never touched.
     const next = {
@@ -521,16 +596,16 @@ export class LibraryMove {
     };
     await step('move-switch', async () => {
       if (await this.cancelled(operation)) throw new Refusal('media_move_cancelled');
-      await this.helper('verify', review, destination);
+      if (!same) await this.helper('verify', review, destination);
       if (
         (await this.identity(source)) !== review.sourceIdentity ||
         (await this.identity(review.root)) !== review.rootIdentity
       )
         throw new Refusal('media_mount_changed');
       await this.fencing.verifyInstallation(current);
-      await this.physicalPaths(current, review.root, source);
+      await this.physicalPaths(current, review.root, source, review);
 
-      await this.storage.validate(destination, 0, current.id);
+      await this.storage.validate(destination, 0, current.id, !!review.exact);
       const existing = this.store.get<Installation>('installation');
       if (digest(existing) !== digest(current) && digest(existing) !== digest(next))
         throw new Refusal('installation_changed');
@@ -545,8 +620,9 @@ export class LibraryMove {
           : LibraryMove.configuration(original, current.mounts[0], destination),
       );
       this.store.set('installation', next);
-      // The original copy is kept as it was, for the photos and for thumbnails alike.
-      this.store.set(`retained-${kind === 'thumbs' ? 'thumbnails' : 'media'}:${operation.id}`, {
+      // The original copy is kept as it was, for the photos and for thumbnails alike. Where the folder is the same
+      // one reached another way there is no second copy, and nothing is recorded as one.
+      if (!same) this.store.set(`retained-${kind === 'thumbs' ? 'thumbnails' : 'media'}:${operation.id}`, {
         source,
         destination,
         installation: current,
@@ -557,7 +633,7 @@ export class LibraryMove {
       if ((await this.cancelled(operation)) && !operation.receipts['move-writes-intent'])
         throw new Refusal('media_move_cancelled');
       await this.fencing.warnMediaWriters([...current.mounts, ...next.mounts], next);
-      await this.physicalPaths(current, review.root, source);
+      await this.physicalPaths(current, review.root, source, review);
       if ((await this.cancelled(operation)) && !operation.receipts['move-writes-intent'])
         throw new Refusal('media_move_cancelled');
       // The copy carries the server's folder marker when the old folder had one; a folder that never had one (no
@@ -604,6 +680,12 @@ export class LibraryMove {
     )
       throw new Refusal('media_mapping_changed');
     if (server.State.Health?.Status !== 'healthy') throw new Refusal('media_move_health_unverified');
+    if (review.same) {
+      // Nothing was copied, so there is no manifest to read back: the mapping and the library's own check stand.
+      const library = (await status()) as { verificationPassed?: boolean; phase?: string };
+      if (!library.verificationPassed || library.phase === 'needs-attention') throw new Refusal('media_move_library_needs_attention');
+      return { accessChecked: 0, library };
+    }
     const manifest = JSON.parse(await readFile(join(this.state(review.id), 'manifest.json'), 'utf8')) as {
       path: string;
       directory: boolean;

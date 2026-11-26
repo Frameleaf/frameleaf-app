@@ -559,3 +559,56 @@ test('the Storage page reports a missing thumbnail drive and measures a thumbnai
     assert.deepEqual((await operations.storageUsage()).thumbnails, { path: join(photos, 'thumbs'), own: false, missing: false, bytes: 5, files: 1 });
   });
 });
+
+test('FL-1784: thumbnails go in exactly the folder picked, which has to be empty', async () => {
+  await fixture(async ({ move, store, photos, thumbs, root, step, checkpoint }) => {
+    const picked = join(root, 'my thumbnails');
+    await mkdir(picked);
+    await writeFile(join(picked, 'something-else.txt'), 'not a thumbnail');
+    await assert.rejects(move.review(picked, 'thumbs', true), /thumbnail_folder_not_empty/);
+    await rm(join(picked, 'something-else.txt'));
+    await assert.rejects(move.review(thumbs, 'thumbs', true), /thumbnail_folder_inside_library|thumbnails_already_in_folder/);
+
+    const review = await move.review(picked, 'thumbs', true);
+    assert.deepEqual({ exact: review.exact, same: review.same, files: review.files }, { exact: true, same: undefined, files: 3 });
+    const { operation } = move.start(review.id, 'request', 'thumbs');
+    await move.run(operation, step(operation), checkpoint(operation.id), status);
+    // No folder of Manager's own inside it: the thumbnails are in the picked folder itself.
+    assert.deepEqual(store.get<Installation>('installation')!.mounts, [
+      { type: 'bind', source: photos, target: '/data', readOnly: false },
+      { type: 'bind', source: picked, target: THUMBNAIL_TARGET, readOnly: false },
+    ]);
+    assert.equal(await readFile(join(picked, 'user', 'ab', 'one-thumbnail.webp'), 'utf8'), 'thumbnail one');
+    assert.equal(await readFile(join(thumbs, 'user', 'ab', 'one-thumbnail.webp'), 'utf8'), 'thumbnail one', 'the original copy is kept');
+  });
+});
+
+test('FL-1784: a folder that already holds the thumbnails is switched to with nothing copied', async () => {
+  const real = LibraryMove.same;
+  await fixture(async ({ move, store, photos, thumbs, root, server, step, checkpoint, compose }) => {
+    // One folder by two real paths needs a second mapping, which a test can't make: the test's answer stands in.
+    LibraryMove.same = async (chosen, current) => {
+      assert.deepEqual([chosen, current], [root, thumbs]);
+      return true;
+    };
+    await writeFile(join(root, 'already-here.webp'), 'a thumbnail this path shows');
+    const review = await move.review(root, 'thumbs', true);
+    // Counted, not measured: one file here, three by the current path, so two are on another drive.
+    assert.deepEqual({ same: review.same, files: review.files, bytes: review.bytes, missingFiles: review.missingFiles }, { same: true, files: 1, bytes: 0, missingFiles: 2 });
+    const { operation } = move.start(review.id, 'request', 'thumbs');
+    await move.run(operation, step(operation), checkpoint(operation.id), status);
+    assert.deepEqual(store.get<Installation>('installation')!.mounts, [
+      { type: 'bind', source: photos, target: '/data', readOnly: false },
+      { type: 'bind', source: root, target: THUMBNAIL_TARGET, readOnly: false },
+    ]);
+    assert.deepEqual((await compose()).services['frameleaf-server'].volumes.slice(0, 2).map((v: any) => [v.source, v.target]), [[photos, '/data'], [root, THUMBNAIL_TARGET]]);
+    // Nothing was copied in, no step froze or compared anything, and no second copy is recorded as kept.
+    assert.deepEqual((await readdir(root)).filter((name) => name !== '.frameleaf'), ['already-here.webp']);
+    assert.ok(!operation.completed.some((name) => ['move-freeze', 'move-copy', 'move-verify'].includes(name)));
+    assert.ok(!store.get(`retained-thumbnails:${operation.id}`));
+    assert.equal(await readFile(join(thumbs, 'user', 'ab', 'one-thumbnail.webp'), 'utf8'), 'thumbnail one');
+    assert.deepEqual(server.calls, ['pause', 'resume']);
+  }).finally(() => {
+    LibraryMove.same = real;
+  });
+});

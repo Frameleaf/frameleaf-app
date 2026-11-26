@@ -1,10 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, writeFile, readFile, rm, realpath } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, readFile, readdir, rm, realpath, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Store } from '../src/store.js';
-import { LibraryMove, type ServerPause } from '../src/library-move.js';
+import { LibraryMove, sameFolder, type ServerPause } from '../src/library-move.js';
 import { Refusal, sha256, type Installation } from '../src/contracts.js';
 import { createRequire } from 'node:module';
 import { execFileSync } from 'node:child_process';
@@ -42,6 +42,23 @@ test('a move rejects unsupported mappings and overlapping storage before stoppin
     process.env.MANAGER_PLATFORM = 'unraid';
     try {
       await assert.rejects(move.review('/mnt/cache/photo/thumbs', 'thumbs'), /media_move_overlap/);
+      // FL-1784: picked in the folder browser, the same pool path is the administrator's choice and gets past the
+      // overlap rule (here it then stops at the photos folder, which this test has not made).
+      await assert.rejects(move.review('/mnt/cache/photo/thumbs', 'thumbs', true), /media_folder_missing/);
+      // The whole photos folder by its pool path, and a folder inside it by its own path, stay refused.
+      await assert.rejects(move.review('/mnt/cache/photo', 'thumbs', true), /media_move_overlap/);
+      await assert.rejects(move.review('/mnt/user/photo/other', 'thumbs', true), /thumbnail_folder_inside_library/);
+      // A folder inside where thumbnails are now, reached by the pool path, would be copied into itself.
+      await assert.rejects(move.review('/mnt/cache/photo/thumbs/empty', 'thumbs', true), /media_move_overlap/);
+      store.set('installation', {
+        ...installation,
+        mounts: [{ ...installation.mounts[0], source: '/mnt/user/photo' }, { type: 'bind', source: '/mnt/user/previews/thumbs', target: '/data/thumbs', readOnly: false }],
+      });
+      await assert.rejects(move.review('/mnt/cache/previews/thumbs/empty', 'thumbs', true), /media_move_overlap/);
+      await assert.rejects(move.review('/mnt/cache/previews', 'thumbs', true), /media_move_overlap/);
+      // The same folder by its pool path is not an overlap: it goes on to the same-folder test.
+      await assert.rejects(move.review('/mnt/cache/previews/thumbs', 'thumbs', true), /media_folder_missing/);
+      await assert.rejects(move.review(join(directory, 'database', 'thumbs'), 'thumbs', true), /media_move_overlap/);
     } finally {
       if (platform === undefined) delete process.env.MANAGER_PLATFORM;
       else process.env.MANAGER_PLATFORM = platform;
@@ -681,4 +698,18 @@ test('a move refuses a missing thumbnails drive and a destination inside the thu
     store.set('installation', { ...current, mounts: [current.mounts[1], current.mounts[0]] });
     await assert.rejects(move.review(root), /unsupported_media_mappings/);
   }, 'fast-thumbs');
+});
+
+test('a folder reached two ways is recognised by a file made in one and seen in the other', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'manager-same-folder-'));
+  const [thumbs, elsewhere, alias] = [join(directory, 'thumbs'), join(directory, 'elsewhere'), join(directory, 'alias')];
+  await mkdir(thumbs);
+  await mkdir(elsewhere);
+  await symlink(thumbs, alias);
+  assert.equal(await sameFolder(alias, thumbs), true);
+  assert.equal(await sameFolder(thumbs, alias), true);
+  assert.equal(await sameFolder(elsewhere, thumbs), false);
+  // The test file never stays behind, in either folder.
+  assert.deepEqual([await readdir(thumbs), await readdir(elsewhere)], [[], []]);
+  await assert.rejects(sameFolder(join(directory, 'missing'), thumbs), /storage_permissions/);
 });

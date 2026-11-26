@@ -125,6 +125,11 @@ test('PostgreSQL rejects docker.img, Docker data aliases, named volumes, RAM and
   ]) {
     assert.throws(() => databaseMount(root, [root], '/var/lib/docker', manager, info(type, source), hostInfo, true));
   }
+  // FL-1784: a folder picked for thumbnails may be on a network share; a RAM disk or a disk image still may not.
+  for (const [type, source] of [['nfs4', 'server:/apps'], ['cifs', '//server/apps']])
+    assert.equal(databaseMount(root, [root], '/var/lib/docker', manager, info(type, source), hostInfo, true, true).type, type);
+  for (const [type, source] of [['btrfs', '/dev/loop2'], ['tmpfs', 'tmpfs'], ['overlay', 'overlay']])
+    assert.throws(() => databaseMount(root, [root], '/var/lib/docker', manager, info(type, source), hostInfo, true, true));
   assert.throws(
     () => databaseMount(root, [root], root, manager, info('ext4', '/dev/sda1'), hostInfo, false),
     /database_in_docker_storage/,

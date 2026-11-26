@@ -28,7 +28,7 @@ import { Docker, command } from './docker.js';
 import { adoptOwnMounts, folderDetail, tidyLocations, toHost } from './host-paths.js';
 import { findDrives, suggestFolders } from './drives.js';
 import { storageSuggestions } from './storage-suggestions.js';
-import { adoptMappedFolders, applyFolderDefaults, broadRoots, browsedOnEarlierInstall, ensureChosenFolder, ensureManagerFolder, externalRoots, insideMappedFolders, listFolders, newLibraryFolders, readOnlyMapping } from './folders.js';
+import { adoptMappedFolders, applyFolderDefaults, broadRoots, browsedOnEarlierInstall, createFolder, ensureChosenFolder, ensureManagerFolder, externalRoots, insideMappedFolders, listFolders, newLibraryFolders, readOnlyMapping } from './folders.js';
 import { Cloud } from './cloud-link.js';
 import { CloudBackup, reasonOf } from './server-backup-cloud.js';
 import { ServerBackup } from './server-backup.js';
@@ -593,6 +593,13 @@ class Api {
     if (!folderSetup() && !externalFolderSetup()) throw new Refusal('folder_browsing_unavailable');
     return listFolders(z.object({ path: z.string().min(1).max(4096) }).strict().parse(input).path);
   }
+  /** FL-1784: "New folder" in the folder browser. */
+  @Post('create-folder') async createFolder(@Body() input: unknown) {
+    if (!folderSetup() && !externalFolderSetup()) throw new Refusal('folder_browsing_unavailable');
+    const { path, name } = z.object({ path: z.string().min(1).max(4096), name: z.string().min(1).max(255) }).strict().parse(input);
+    if (readOnlyMapping(path, await readFile('/proc/self/mountinfo', 'utf8').catch(() => ''))) throw new Refusal('folder_mapping_read_only', 409, folderDetail(path));
+    return createFolder(path, name);
+  }
   @Post('review-move') async reviewMove(@Body() input: unknown) {
     const { root } = z
       .object({ root: z.string().min(1).max(4096) })
@@ -607,12 +614,13 @@ class Api {
   }
   /** FL-1323: move thumbnails to a folder of their own, usually on a faster drive. The photos stay where they are. */
   @Post('review-thumbnail-move') async reviewThumbnailMove(@Body() input: unknown) {
-    const { root } = z
-      .object({ root: z.string().min(1).max(4096) })
+    // FL-1784: `exact` puts thumbnails in `root` itself, the folder picked in the browser, not in a folder inside it.
+    const { root, exact } = z
+      .object({ root: z.string().min(1).max(4096), exact: z.boolean().optional() })
       .strict()
       .parse(input);
     await ensureMoveFolder(root);
-    return operations.reviewThumbnailMove(root);
+    return operations.reviewThumbnailMove(root, exact);
   }
   @Post('move-thumbnails') moveThumbnails(@Body() input: unknown) {
     const { id, key } = z.object({ id: z.string().uuid(), key: RequestKey }).strict().parse(input);

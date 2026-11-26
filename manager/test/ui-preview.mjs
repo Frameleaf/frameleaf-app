@@ -4,6 +4,7 @@
 //   ?sb=off|on|running|warning|unlicensed|restoring   Server Backup's state (default on)
 //   &ws=backup&page=folders|schedule|restore|activity|key|settings   open a Server Backup screen
 //   &fresh=1   a server with no Frameleaf installed yet
+//   &thumbs=offer|plain|applied|spread   Storage on Unraid: thumbnails in any folder the administrator browses to or makes
 //   &cloud=none|new|code|linked|waiting   the Frameleaf Cloud link (default: connected, storage chosen).
 //     none is a Manager that stores to a folder; waiting has asked to take over another server's backups
 import { svelte } from '@sveltejs/vite-plugin-svelte';
@@ -149,7 +150,7 @@ const api = (path, page, body) => {
   const cloud = clouds[page.get('cloud') ?? 'ready'];
   const sample = { ...(samples[page.get('sb') ?? (fresh ? 'off' : 'on')] ?? on), cloud };
   if (path === 'status') return { claimed: true };
-  if (path === 'dashboard') return dashboard(fresh);
+  if (path === 'dashboard') return page.get('thumbs') ? unraidStorage(page.get('thumbs'), path) : dashboard(fresh);
   if (path === 'server-backup') return sample;
   if (path === 'server-backup-browse') return { path: body.path, entries: tree[body.path.join('/')] ?? [] };
   if (path === 'server-backup-first-key' || path === 'server-backup-key') return { code: 'FLRK-FGF9-M85J-PDHY-1RJF-9KZF-WRT8-7HYR-KYX2-9FMC-GBMA-A3Q1-P8C8-X0' };
@@ -172,6 +173,7 @@ const api = (path, page, body) => {
   if (path === 'server-backup-contents') return { folders: on.folders.map((folder, index) => ({ ...folder, reachable: !(page.get('unreachable') === '1' && index === 3) })) };
   if (path === 'server-backup-adopt-key') return { ...samples.off, snapshots: on.snapshots, key: { saved: true, savedAt: Date.now() }, cloud: clouds.ready };
   if (path.startsWith('server-backup-')) return sample;
+  if (page.get('thumbs')) { const answer = unraidStorage(page.get('thumbs'), path, body); if (answer) return answer; }
   if (path === 'folders') return { path: '/mnt/user', parent: null, folders: ['appdata', 'documents', 'media', 'shares'].map((name) => ({ name, path: `/mnt/user/${name}` })), truncated: false };
   if (path === 'storage') return storage;
   // FL-1732: the third point is the one from just before the last update, kept while it can be undone.
@@ -186,6 +188,48 @@ const api = (path, page, body) => {
   if (path === 'storage-usage') return { media: { path: '/mnt/user/media/photos', bytes: 1.85 * TB }, database: { path: '/mnt/cache/appdata', bytes: 12 * GB }, thumbnails: { path: '/mnt/user/media/photos/thumbs', own: false, missing: false, bytes: 86 * GB, files: 412880 }, drives: [], suggestions: { database: null, thumbs: null } };
   return {};
 };
+
+// Unraid, as an imported library often is: photos in the "photo" share, thumbnails inside it, all of them on Cache.
+const unraidTree = {
+  '/mnt': ['cache', 'disk1', 'disk2', 'nvme', 'user'],
+  '/mnt/cache': ['appdata', 'photo', 'system'],
+  '/mnt/cache/photo': ['encoded-video', 'thumbs'],
+  '/mnt/disk1': ['photo'],
+  '/mnt/disk1/photo': ['library', 'upload'],
+  '/mnt/disk2': ['photo'],
+  '/mnt/disk2/photo': ['library'],
+  '/mnt/nvme': ['appdata'],
+  '/mnt/user': ['appdata', 'backups', 'photo', 'system'],
+  '/mnt/user/photo': ['encoded-video', 'library', 'thumbs', 'upload'],
+};
+const listing = (path) => {
+  while (path !== '/mnt' && !unraidTree[path] && !unraidTree[path.slice(0, path.lastIndexOf('/'))]?.includes(path.slice(path.lastIndexOf('/') + 1))) path = path.slice(0, path.lastIndexOf('/')) || '/mnt';
+  return { path, parent: path === '/mnt' ? null : path.slice(0, path.lastIndexOf('/')), folders: [...(unraidTree[path] ?? [])].sort().map((name) => ({ name, path: `${path}/${name}` })), truncated: false };
+};
+function unraidStorage(state, path, body) {
+  const current = state === 'applied' ? '/mnt/cache/photo/thumbs' : '/mnt/user/photo/thumbs';
+  if (path === 'dashboard')
+    return { ...dashboard(false), folderSetup: { media: '/mnt/user/photo', database: '/mnt/nvme/appdata/frameleaf/databases', backups: '/mnt/user/backups/frameleaf', manager: '/mnt/nvme/appdata/frameleaf-manager' } };
+  if (path === 'folders') return listing(body.path);
+  if (path === 'create-folder') {
+    (unraidTree[body.path] ??= []).push(body.name);
+    return listing(`${body.path}/${body.name}`);
+  }
+  if (path === 'review-thumbnail-move') {
+    const same = /^\/mnt\/(cache|user)\/photo\/thumbs$/.test(body.root);
+    const onCache = body.root.startsWith('/mnt/cache/');
+    return { id: 'd'.repeat(8) + '-0000-4000-8000-' + 'd'.repeat(12), kind: 'thumbs', available: true, same, files: state === 'spread' && same && onCache ? 411676 : 412880, bytes: same ? 0 : 186 * GB, missingFiles: state === 'spread' && same && onCache ? 1204 : 0, networkShare: body.root.startsWith('/mnt/remotes/') };
+  }
+  if (path === 'storage-usage')
+    return {
+      media: { path: '/mnt/user/photo', bytes: 24.8 * TB },
+      database: { path: '/mnt/nvme/appdata/frameleaf/databases', bytes: 54 * GB },
+      thumbnails: { path: current, own: state === 'applied', missing: false, bytes: 186 * GB, files: 412880, direct: state === 'applied' || state === 'plain' ? null : { drive: 'Cache', share: 'photo', path: '/mnt/cache/photo/thumbs' } },
+      drives: [],
+      suggestions: { database: null, thumbs: null },
+    };
+  return null;
+}
 
 const server = await createServer({
   configFile: false,
