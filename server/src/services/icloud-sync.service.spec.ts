@@ -151,7 +151,15 @@ describe(ICloudSyncService.name, () => {
       const result = await callback(connection);
       return result.value;
     });
-    repository.checkpoint.mockResolvedValue({ complete: true });
+    // every listing page is done; the inventory counts as listed once the run's listing saves it (run start clears it)
+    let listed = false;
+    repository.savePage.mockImplementation((_id: string, scope: string) => {
+      listed ||= scope === 'inventory-complete';
+      return Promise.resolve();
+    });
+    repository.checkpoint.mockImplementation((_id: string, scope: string) =>
+      Promise.resolve(scope === 'inventory-complete' && !listed ? undefined : { complete: true }),
+    );
     // a run that ends closes its run record
     repository.endRun.mockResolvedValue(undefined);
     repository.inventory.mockResolvedValue({ libraries: [], albums: [] });
@@ -979,6 +987,22 @@ describe(ICloudSyncService.name, () => {
       } finally {
         vi.useRealTimers();
       }
+    });
+
+    it('lists again when a sign-in during the run cleared the listing (FL-1724)', async () => {
+      // listed when the step starts, then a sign-in (or a settings change) clears the checkpoint mid-run
+      let reads = 0;
+      repository.checkpoint.mockImplementation((_id: string, scope: string) =>
+        Promise.resolve(scope === 'inventory-complete' && reads++ > 0 ? undefined : { complete: true }),
+      );
+      repository.claim.mockReset();
+      repository.claim.mockResolvedValueOnce(resource).mockResolvedValue(undefined);
+      await sut.run(operation(), 'token');
+      expect(staging.download).toHaveBeenCalled();
+      expect(repository.withSession).toHaveBeenCalled();
+      expect(repository.withSession.mock.invocationCallOrder[0]).toBeGreaterThan(
+        staging.download.mock.invocationCallOrder[0],
+      );
     });
 
     it('does not list the library again behind a download that holds the session (FL-1724)', async () => {

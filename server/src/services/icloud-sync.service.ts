@@ -106,8 +106,8 @@ type TransferPool = {
   running: Map<string, Promise<void>>;
   error?: { reason: unknown };
   reconciledAt: number;
-  /** The inventory is listed for this run: later steps need not take the connection's session again. */
-  inventoryComplete?: boolean;
+  /** When the run last recorded progress; a step's wait ends at the next record, not a fresh interval later. */
+  recordedAt: number;
 };
 
 /** Resource statuses still owed work. Everything else is settled, one way or another. */
@@ -818,11 +818,10 @@ export class ICloudSyncService {
         );
     }, ICLOUD_HEARTBEAT_MS);
     // FL-1724: transfers overlap steps, so every way out of the run waits for them first.
-    const pool: TransferPool = { running: new Map(), reconciledAt: 0 };
+    const pool: TransferPool = { running: new Map(), reconciledAt: 0, recordedAt: 0 };
     const drain = async () => {
       await Promise.all(pool.running.values());
     };
-    let recordedAt = 0;
     try {
       for (;;) {
         if (this.stopping) {
@@ -875,10 +874,10 @@ export class ICloudSyncService {
 
         idleWaits = 0;
         // ponytail: a cancel or pause is noticed within the record interval rather than after the next item
-        if (outcome === 'more' && Date.now() - recordedAt < ICLOUD_RECORD_INTERVAL_MS) {
+        if (outcome === 'more' && Date.now() - pool.recordedAt < ICLOUD_RECORD_INTERVAL_MS) {
           continue;
         }
-        recordedAt = Date.now();
+        pool.recordedAt = Date.now();
         const written = await this.record(claim, connectionId, outcome === 'done' ? 'complete' : 'syncing', 0, true);
         if (
           !written ||
@@ -923,12 +922,19 @@ export class ICloudSyncService {
    */
   private async step(connection: ICloudConnection, claim: Claim, pool: TransferPool): Promise<StepOutcome> {
     const { id } = connection;
-    // Listing takes the connection's session, and so does each download until its answer starts: once the
-    // inventory is complete, asking again would wait behind a slow download and stall the whole run.
-    const inventoryComplete = pool.inventoryComplete || (await this.enumerate(connection));
-    pool.inventoryComplete = inventoryComplete;
+    // Listing takes the connection's session lock: once the inventory is complete, asking again would wait behind
+    // a slow download and stall the whole run. The checkpoint is read without the lock; run start, a sign-in and
+    // a settings change all clear it, so a new account or new settings are listed again.
+    const listed = await this.repository.checkpoint(id, 'inventory-complete').then((result) => !!result?.complete);
+    const inventoryComplete = listed || (await this.enumerate(connection));
     let claimed = 0;
-    while (pool.running.size < connection.config.concurrency) {
+    // At most one pool's worth of claims per step: transfers that settle faster than a claim must not keep the
+    // step admitting forever, past pause, cancel and error checks.
+    while (
+      !pool.error &&
+      claimed < connection.config.concurrency &&
+      pool.running.size < connection.config.concurrency
+    ) {
       const resource = await this.repository.claim(id, connection.config.stagingBytes);
       if (!resource) {
         break;
@@ -946,10 +952,11 @@ export class ICloudSyncService {
     if (inventoryComplete && pool.running.size > 0) {
       // ...or the record interval passes: a long download holding every slot must not freeze progress, nor
       // keep a cancel or a pause from being noticed
+      const untilRecord = Math.max(0, pool.recordedAt + ICLOUD_RECORD_INTERVAL_MS - Date.now());
       let timer: ReturnType<typeof setTimeout> | undefined;
       await Promise.race([
         ...pool.running.values(),
-        new Promise<void>((resolve) => (timer = setTimeout(resolve, ICLOUD_RECORD_INTERVAL_MS))),
+        new Promise<void>((resolve) => (timer = setTimeout(resolve, untilRecord))),
       ]);
       clearTimeout(timer);
     }
