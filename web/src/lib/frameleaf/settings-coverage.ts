@@ -1353,6 +1353,20 @@ export const SETTINGS_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.fr
     evidence: 'transport.username',
   },
   {
+    pattern: 'notifications.unifiedPush.allowLocalTargets',
+    // FL-926: API only; the Notifications page toggle waits for an approved prototype mock
+    kind: 'api-only',
+    file: 'src/lib/frameleaf/settings-coverage.ts',
+    evidence: 'FL-926: API only',
+  },
+  {
+    pattern: 'notifications.unifiedPush.availability',
+    // FL-926: API only; the licence switch is set by the owner's pricing decision (FL-908), not on a page yet
+    kind: 'api-only',
+    file: 'src/lib/frameleaf/settings-coverage.ts',
+    evidence: 'FL-926: API only',
+  },
+  {
     pattern: 'oauth.accountManagementUrl',
     kind: 'control',
     file: 'src/routes/admin/system-settings/AuthSettings.svelte',
@@ -1852,6 +1866,18 @@ export const PREFERENCE_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.
     kind: 'control',
     file: 'src/routes/(user)/user-settings/FeatureSettings.svelte',
     evidence: 'memories.enabled',
+  },
+  {
+    pattern: 'memories.occasionRegion',
+    kind: 'control',
+    file: 'src/routes/(user)/user-settings/FeatureSettings.svelte',
+    evidence: 'memories.occasionRegion',
+  },
+  {
+    pattern: 'memories.occasions',
+    kind: 'control',
+    file: 'src/routes/(user)/user-settings/FeatureSettings.svelte',
+    evidence: 'memories.occasions',
   },
   {
     pattern: 'memories.sidebarWeb',

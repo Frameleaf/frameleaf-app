@@ -443,12 +443,14 @@ export class LibraryMove {
   static configuration(compose: any, mount: Mount, destination: string): any {
     const updated = structuredClone(compose);
     const volumes = updated.services?.['frameleaf-server']?.volumes;
+    // Compose strings carry `$` doubled (renderCompose); a bare one would be read as a variable.
+    const escape = (path: string) => path.replaceAll('$', '$$$$');
     const mapping = volumes?.filter(
       (m: any) =>
-        m.type === 'bind' && m.source === mount.source && m.target === mount.target && m.read_only === mount.readOnly,
+        m.type === 'bind' && m.source === escape(mount.source) && m.target === mount.target && m.read_only === mount.readOnly,
     );
     if (mapping?.length !== 1) throw new Refusal('media_mapping_changed');
-    mapping[0].source = destination;
+    mapping[0].source = escape(destination);
     return updated;
   }
   async run(
@@ -575,7 +577,8 @@ export class LibraryMove {
         throw new Refusal('media_move_cancelled');
       await this.fencing.assertMedia([...current.mounts, ...next.mounts], next);
       await this.physicalPaths(current, review.root, source);
-      if (await this.cancelled(operation)) throw new Refusal('media_move_cancelled');
+      if ((await this.cancelled(operation)) && !operation.receipts['move-writes-intent'])
+        throw new Refusal('media_move_cancelled');
       // The copy carries the server's folder marker when the old folder had one; a folder that never had one (no
       // thumbnail made yet) gets it here, as for any thumbnail folder Manager has chosen and checked.
       if (kind === 'thumbs') await seedThumbnailMarker(destination);

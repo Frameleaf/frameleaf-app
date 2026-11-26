@@ -15,6 +15,7 @@ import { SystemMetadataRepository } from 'src/repositories/system-metadata.repos
 import { TagRepository } from 'src/repositories/tag.repository.js';
 import { TrashRepository } from 'src/repositories/trash.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
+import { WebsocketRepository } from 'src/repositories/websocket.repository.js';
 import { DB } from 'src/schema/index.js';
 import { ApiKeyService } from 'src/services/api-key.service.js';
 import { AuthService } from 'src/services/auth.service.js';
@@ -258,7 +259,7 @@ describe('revoking the browser-extension key', () => {
     const keys = newMediumService(ApiKeyService, {
       database: db,
       real: [ApiKeyRepository, CryptoRepository, SystemMetadataRepository],
-      mock: [LoggingRepository],
+      mock: [LoggingRepository, WebsocketRepository],
     }).sut;
     const { user } = await authCtx.ctx.newUser();
     const auth = factory.auth({ user });

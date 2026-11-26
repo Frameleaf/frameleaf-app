@@ -26,6 +26,7 @@ import { DummyValue, GenerateSqlQueries } from 'src/decorators.js';
 import { AssetEditActionItem } from 'src/dtos/editing.dto.js';
 import {
   DEFAULT_SEARCH_ORDER,
+  DateFilter,
   IdsFilter,
   LandmarkIdsFilter,
   MediaKindsFilter,
@@ -127,7 +128,7 @@ export const getKyselyConfig = (connection: DatabaseConnectionParams, monitorPoo
       }
       // Credentials, import recovery inputs, inference rows and queued job payloads must never be logged.
       const privateData =
-        /\b(?:connect_[a-z_]+|oauth_(?:client|grant|authorization_code|spent_refresh_token)|asset_upload_(?:resource|part))\b/iu.test(
+        /\b(?:import_connection|connect_[a-z_]+|oauth_(?:client|grant|authorization_code|spent_refresh_token)|asset_upload_(?:resource|part))\b/iu.test(
           event.query.sql,
         ) ||
         /\bframeleaf_library_import(?:_mapping|_archive(?:_record)?)?\b/iu.test(event.query.sql) ||
@@ -218,6 +219,17 @@ export function lockedOwnerScope<QDB, TB extends keyof QDB>(
   return notLockedOrOwnedBy(lockedOwnerId, alias);
 }
 /**
+ * FL-967: the scan of the back of a print. It is `hidden`, and only its owner reaches it, through its front.
+ * The `hidden` test comes first so the lookup stays off every ordinary row.
+ */
+export const isPrintBack = (assetAlias = 'asset') =>
+  sql<boolean>`(${sql.ref(`${assetAlias}.visibility`)} = ${sql.lit(AssetVisibility.Hidden)} and exists (select 1 from asset_print_back where asset_print_back."backAssetId" = ${sql.ref(`${assetAlias}.id`)}))`;
+
+/** FL-967: a word on the back of a print finds its front, through the back's text filed on the pair. */
+export const printBackTextMatches = (tokens: string) =>
+  sql<string>`select asset_print_back."frontAssetId" from asset_print_back where f_unaccent(asset_print_back."searchText") %>> f_unaccent(${tokens})`;
+
+/**
  * FL-34: the video part of a live photo keeps visibility `hidden` and locks with its still (stacks and
  * live photos lock as a whole). This matches such a motion part whose still is locked, unless the
  * still belongs to `lockedOwnerId` (the viewer, when their session is elevated). Filters apply it
@@ -227,14 +239,26 @@ export function lockedOwnerScope<QDB, TB extends keyof QDB>(
 export function isMotionOfLockedStill(eb: ExpressionBuilder<DB, 'asset'>, lockedOwnerId?: string) {
   return eb.and([
     eb('asset.visibility', '=', sql.lit(AssetVisibility.Hidden)),
-    eb.exists(
-      eb
-        .selectFrom('asset as lockedStill')
-        .select(sql.lit(1).as('exists'))
-        .whereRef('lockedStill.livePhotoVideoId', '=', 'asset.id')
-        .where((eb) => isLockedAsset(eb, 'lockedStill'))
-        .$if(!!lockedOwnerId, (qb) => qb.where('lockedStill.ownerId', '!=', lockedOwnerId!)),
-    ),
+    eb.or([
+      eb.exists(
+        eb
+          .selectFrom('asset as lockedStill')
+          .select(sql.lit(1).as('exists'))
+          .whereRef('lockedStill.livePhotoVideoId', '=', 'asset.id')
+          .where((eb) => isLockedAsset(eb, 'lockedStill'))
+          .$if(!!lockedOwnerId, (qb) => qb.where('lockedStill.ownerId', '!=', lockedOwnerId!)),
+      ),
+      // FL-967: the back of a Locked print is as private as its front
+      eb.exists(
+        eb
+          .selectFrom('asset_print_back')
+          .innerJoin('asset as lockedFront', 'lockedFront.id', 'asset_print_back.frontAssetId')
+          .select(sql.lit(1).as('exists'))
+          .whereRef('asset_print_back.backAssetId', '=', 'asset.id')
+          .where((eb) => isLockedAsset(eb, 'lockedFront'))
+          .$if(!!lockedOwnerId, (qb) => qb.where('lockedFront.ownerId', '!=', lockedOwnerId!)),
+      ),
+    ]),
   ]);
 }
 /**
@@ -634,6 +658,8 @@ export function searchAssetBuilderLegacy(kysely: Kysely<DB>, options: AssetSearc
       .$if(!!options.hideLockedMotion && mayMatchHidden(options.visibility), (qb) =>
         qb.where((eb) => eb.not(isMotionOfLockedStill(eb, options.lockedOwnerId))),
       )
+      // FL-967: the back of a print is found through its front, never as a result of its own
+      .$if(mayMatchHidden(options.visibility), (qb) => qb.where(sql<SqlBool>`not ${isPrintBack('asset')}`))
       .$if(!!options.albumIds && options.albumIds.length > 0, (qb) => inAlbums(qb, options.albumIds!))
       .$if(!!options.tagIds && options.tagIds.length > 0, (qb) => hasTags(qb, options.tagIds!))
       .$if(options.tagIds === null, (qb) =>
@@ -648,7 +674,7 @@ export function searchAssetBuilderLegacy(kysely: Kysely<DB>, options: AssetSearc
       .$if(!!options.trashedBefore, (qb) => qb.where('asset.deletedAt', '<=', options.trashedBefore!))
       .$if(!!options.trashedAfter, (qb) => qb.where('asset.deletedAt', '>=', options.trashedAfter!))
       .$if(!!options.takenBefore, (qb) => qb.where('asset.fileCreatedAt', '<=', options.takenBefore!))
-      .$if(!!options.takenAfter, (qb) => qb.where('asset.fileCreatedAt', '>=', options.takenAfter!))
+      .$if(!!options.takenAfter, (qb) => qb.where(takenFrom('asset.fileCreatedAt', options.takenAfter!)))
       .$if(options.city !== undefined, (qb) =>
         qb
           .innerJoin('asset_exif', 'asset.id', 'asset_exif.assetId')
@@ -733,9 +759,9 @@ export function searchAssetBuilderLegacy(kysely: Kysely<DB>, options: AssetSearc
           ),
       )
       .$if(!!options.ocr, (qb) =>
-        qb
-          .innerJoin('ocr_search', 'asset.id', 'ocr_search.assetId')
-          .where(() => sql`f_unaccent(ocr_search.text) %>> f_unaccent(${tokenizeForSearch(options.ocr!).join(' ')})`),
+        qb.where(
+          sql<SqlBool>`asset.id in (select ocr_search."assetId" from ocr_search where f_unaccent(ocr_search.text) %>> f_unaccent(${tokenizeForSearch(options.ocr!).join(' ')}) union all ${printBackTextMatches(tokenizeForSearch(options.ocr!).join(' '))})`,
+        ),
       )
       .$if(!!options.imageEnrichment, (qb) => withImageEnrichmentFilter(qb, options.imageEnrichment!))
       .$if(!!options.type, (qb) => qb.where('asset.type', '=', options.type!))
@@ -954,6 +980,46 @@ function petIdsPredicates(eb: AssetExpressionBuilder, filter: IdsFilter | undefi
   });
 }
 /**
+ * FL-949: items taken inside the viewer's named places: the photo's own coordinates against each place's circle,
+ * measured as `namedPlaceAt` measures it. Places are the viewer's own, so a partner's photo taken at the viewer's
+ * "Home" matches and the partner's own places never do. Without a viewer (a shared link) the positive groups match
+ * nothing and `none` excludes nothing.
+ */
+function namedPlaceIdsPredicates(
+  eb: AssetExpressionBuilder,
+  filter: IdsFilter | undefined,
+  viewerId: string | null | undefined,
+) {
+  if (filter === undefined) {
+    return [];
+  }
+  const matching = (ids: string[]) =>
+    eb
+      .selectFrom('user_place')
+      .where('user_place.ownerId', '=', viewerId ?? '')
+      .where('user_place.id', '=', anyUuid(ids))
+      .where(
+        sql<SqlBool>`earth_box(ll_to_earth_public(user_place.latitude, user_place.longitude), user_place."radiusMeters")
+          @> ll_to_earth_public(asset_exif.latitude, asset_exif.longitude)`,
+      )
+      .where(
+        sql<SqlBool>`earth_distance(
+          ll_to_earth_public(user_place.latitude, user_place.longitude),
+          ll_to_earth_public(asset_exif.latitude, asset_exif.longitude)) <= user_place."radiusMeters"`,
+      );
+  return idsPredicates(eb, filter, {
+    matchesAny: (ids) => (viewerId ? eb.exists(matching(ids).select('user_place.id')) : eb.lit(false)),
+    matchesAll: (ids) =>
+      viewerId
+        ? eb(
+            matching(ids).select((eb) => eb.fn.count('user_place.id').distinct().as('count')),
+            '=',
+            ids.length,
+          )
+        : eb.lit(false),
+  });
+}
+/**
  * Build landmark inclusion and exclusion filters against live, eligible matches. Both searches
  * revalidate inferred evidence instead of trusting stored associations that may have gone stale.
  */
@@ -1005,6 +1071,24 @@ function tagIdsPredicates(eb: AssetExpressionBuilder, filter?: IdsFilter) {
           .having((eb) => eb.fn.count('tag_closure.id_ancestor').distinct(), '=', ids.length),
       ),
   });
+}
+type CaptureDateColumn = 'asset.fileCreatedAt' | 'asset.localDateTime';
+/**
+ * FL-936: a photo dated to a year or a decade counts as taken throughout it. Its stored date is the day that
+ * period starts, so an upper bound needs nothing, and "from `from` on" also matches a period that began before
+ * `from` and has not ended by then. Photos with an exact date keep the plain comparison; the second arm reads
+ * only the ten years before `from`, so it is a range on the same date index.
+ */
+export function takenFrom(column: CaptureDateColumn, from: Date, strict = false) {
+  const date = sql.ref(column);
+  const earliest = new Date(from);
+  earliest.setUTCFullYear(earliest.getUTCFullYear() - 10);
+  // API dates stop at the millisecond: "after" a period's last millisecond is already past its end
+  const periodEndsAfter = strict ? new Date(from.getTime() + 1) : from;
+  return sql<SqlBool>`(${date} ${strict ? sql`>` : sql`>=`} ${from} or (
+    asset."dateAccuracy" is not null and ${date} > ${earliest}
+    and ${date} + case asset."dateAccuracy" when 'decade' then interval '10 years' else interval '1 year' end > ${periodEndsAfter}
+  ))`;
 }
 type ComparisonFilter<T> = {
   eq?: T | null;
@@ -1199,6 +1283,18 @@ function boolPredicates(filter: { eq: boolean } | undefined, predicate: Expressi
   }
   return [filter.eq ? predicate : sql<SqlBool>`not coalesce(${predicate}, false)`];
 }
+/** A capture date filter, whose lower bounds also reach a year or decade still running then (`takenFrom`). */
+function captureDatePredicates(eb: AssetExpressionBuilder, column: CaptureDateColumn, filter?: DateFilter) {
+  if (filter === undefined) {
+    return [];
+  }
+  const { gt, gte, ...rest } = filter;
+  return [
+    ...comparisonPredicates(eb, column, rest),
+    ...(gt === undefined ? [] : [takenFrom(column, gt, true)]),
+    ...(gte === undefined ? [] : [takenFrom(column, gte)]),
+  ];
+}
 // predicates are collected as expressions rather than chained `where` calls so the same
 // helpers can build each `or` branch, which must compose into eb.and/eb.or
 function branchPredicates(
@@ -1258,14 +1354,24 @@ function branchPredicates(
     ...stringPatternPredicates(eb, 'asset.originalPath', branch.originalPath),
     ...(branch.ocr
       ? [
-          eb.exists(
-            eb
-              .selectFrom('ocr_search')
-              .whereRef('ocr_search.assetId', '=', 'asset.id')
-              .where(
-                sql<SqlBool>`f_unaccent(ocr_search.text) %>> f_unaccent(${tokenizeForSearch(branch.ocr.matches).join(' ')})`,
-              ),
-          ),
+          eb.or([
+            eb.exists(
+              eb
+                .selectFrom('ocr_search')
+                .whereRef('ocr_search.assetId', '=', 'asset.id')
+                .where(
+                  sql<SqlBool>`f_unaccent(ocr_search.text) %>> f_unaccent(${tokenizeForSearch(branch.ocr.matches).join(' ')})`,
+                ),
+            ),
+            eb.exists(
+              eb
+                .selectFrom('asset_print_back')
+                .whereRef('asset_print_back.frontAssetId', '=', 'asset.id')
+                .where(
+                  sql<SqlBool>`f_unaccent(asset_print_back."searchText") %>> f_unaccent(${tokenizeForSearch(branch.ocr.matches).join(' ')})`,
+                ),
+            ),
+          ]),
         ]
       : []),
     ...comparisonPredicates(eb, 'asset_exif.rating', branch.rating),
@@ -1285,8 +1391,17 @@ function branchPredicates(
       >`(select score."technicalScore" from asset_best_photo_score as score where score."assetId" = asset.id)`,
       branch.technicalScore,
     ),
-    ...comparisonPredicates(eb, 'asset.fileCreatedAt', branch.takenAt),
-    ...comparisonPredicates(eb, 'asset.localDateTime', branch.localDateTime),
+    ...captureDatePredicates(eb, 'asset.fileCreatedAt', branch.takenAt),
+    ...captureDatePredicates(eb, 'asset.localDateTime', branch.localDateTime),
+    // FL-936: the local date is in the decade; a year or decade is stored as the day it starts, so it is too
+    ...(branch.takenDecade
+      ? [
+          eb.and([
+            eb('asset.localDateTime', '>=', new Date(Date.UTC(branch.takenDecade.eq, 0, 1))),
+            eb('asset.localDateTime', '<', new Date(Date.UTC(branch.takenDecade.eq + 10, 0, 1))),
+          ]),
+        ]
+      : []),
     ...comparisonPredicates(eb, 'asset.createdAt', branch.createdAt),
     ...comparisonPredicates(eb, 'asset.updatedAt', branch.updatedAt),
     ...comparisonPredicates(eb, 'asset.deletedAt', branch.trashedAt),
@@ -1301,6 +1416,7 @@ function branchPredicates(
     ...petIdsPredicates(eb, branch.petIds, viewerId),
     ...tagIdsPredicates(eb, branch.tagIds),
     ...landmarkIdsPredicates(eb, branch.landmarkIds),
+    ...namedPlaceIdsPredicates(eb, branch.namedPlaceIds, privateViewerId),
     ...mediaKindsPredicates(branch.mediaKinds),
     ...checksumPredicates(eb, branch.checksum),
     ...(encodedVideoPath
@@ -1390,6 +1506,7 @@ export function searchAssetBuilder(kysely: Kysely<DB>, options: AssetSearchBuild
       .$if(!!scope.lockedMotion, (qb) =>
         qb.where((eb) => eb.not(isMotionOfLockedStill(eb, scope.lockedMotion!.lockedOwnerId))),
       )
+      .where(sql<SqlBool>`not ${isPrintBack('asset')}`)
       .$if(!!(options.withFaces || options.withPeople), (qb) =>
         qb.select(withFacesAndPeople({ viewingUserId: scope.viewingUserId! })),
       )

@@ -10,7 +10,7 @@ import { SharpOperations } from 'src/queue/sharp-operations.js';
 import { SharpOperationError, sharpProcessPool } from 'src/queue/sharp-pool.js';
 import { SharpResourceLimitError } from 'src/queue/sharp-protocol.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
-import { MediaRepository } from 'src/repositories/media.repository.js';
+import { MediaRepository, withPercentFreePath } from 'src/repositories/media.repository.js';
 import { cloudVideoClip, isPlainVideoStream } from 'src/utils/cloud-ml-job.js';
 import { DesignPreviewUnavailableError } from 'src/utils/design-preview.js';
 import { orientedToOriginal } from 'src/utils/develop-cleanup.js';
@@ -1606,5 +1606,32 @@ describe(MediaRepository.name, () => {
       const clip = cloudVideoClip('v1', uploaded.stream)!;
       expect(Math.floor(clip.durationSec * clip.fps + 0.5)).toBe(uploaded.packets.packets);
     });
+  });
+});
+
+describe(withPercentFreePath.name, () => {
+  it('passes a path without a percent sign as it is', async () => {
+    await expect(withPercentFreePath('/data/photo.jpg', (path) => Promise.resolve(path))).resolves.toBe(
+      '/data/photo.jpg',
+    );
+  });
+
+  it('hands exiftool a percent-free link to a source whose name has one, and removes it afterwards', async () => {
+    const folder = mkdtempSync(join(tmpdir(), 'percent-'));
+    try {
+      const source = join(folder, '%fx.jpg');
+      writeFileSync(source, 'source bytes');
+      let used = '';
+      await withPercentFreePath(source, (path) => {
+        used = path;
+        expect(path).not.toContain('%');
+        expect(path.endsWith('.jpg')).toBe(true);
+        expect(readFileSync(path, 'utf8')).toBe('source bytes');
+        return Promise.resolve();
+      });
+      expect(() => statSync(used)).toThrow();
+    } finally {
+      rmSync(folder, { recursive: true, force: true });
+    }
   });
 });

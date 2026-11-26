@@ -27,9 +27,11 @@ from frameleaf_ml.models.semantic_mask import MODEL_NAME
 from frameleaf_ml.models.subject_matte import (
     MAX_EDGE,
     MAX_FRAME_BYTES,
+    EncodedFrames,
     SubjectMatteModel,
     check_frames,
     fraction_box,
+    frame_size,
     grow_face_box,
     matte_png,
     open_frame,
@@ -312,15 +314,26 @@ class TestEndpoint:
         response = deployed_app.post("http://localhost:3003/subject-matte", data={"entries": entries()}, files=mixed)
         assert response.status_code == 400
         assert f"at most {MAX_EDGE} pixels" in response.json()["detail"]
-        # The two legal frames were decoded; the oversized one was refused from its header.
-        assert load.call_count == 2
+        # Every frame was refused or accepted from its header: nothing was decoded.
+        assert load.call_count == 0
         get.assert_not_called()
         response = deployed_app.post(
             "http://localhost:3003/subject-matte", data={"entries": entries()}, files=oversized
         )
         assert response.status_code == 400
         assert f"at most {MAX_EDGE} pixels" in response.json()["detail"]
-        assert load.call_count == 2
+        assert load.call_count == 0
+
+    def test_frames_stay_encoded_until_the_model_follows_them(self) -> None:
+        clip = synthetic_clip(3)
+        encoded = [part[1][1] for part in frame_parts(clip)]
+        frames = EncodedFrames(encoded, clip[0].size)
+        assert len(frames) == 3 and check_frames(frames) == clip[0].size
+        assert frames[2].mode == "RGB" and frames[2].size == clip[0].size
+        assert [frame.size for frame in frames] == [clip[0].size] * 3
+        assert frame_size(encoded[0]) == clip[0].size
+        with pytest.raises(ValueError, match="same size"):
+            frame_size(encoded[0], (1, 1))
 
     def test_refuses_unknown_options_and_other_tasks(self, deployed_app: TestClient) -> None:
         response = deployed_app.post(

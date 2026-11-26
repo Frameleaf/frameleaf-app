@@ -88,6 +88,19 @@ describe('AlbumShareDialog', () => {
     expect(onChanged).toHaveBeenCalled();
   });
 
+  it('keeps the people ticked and reads nothing again when the album is re-read', async () => {
+    sdkMock.searchUsers.mockResolvedValue([jamie]);
+    sdkMock.getAllSharedLinks.mockResolvedValue([]);
+    const album = albumFactory.build({ id: 'album-1', albumUsers: [{ user: me, role: AlbumUserRole.Owner }] });
+    const { rerender } = render(AlbumShareDialog, { album, open: true, onChanged: vi.fn(), onLeave: vi.fn() });
+
+    await fireEvent.click(await screen.findByRole('option', { name: /Jamie/ }));
+    await rerender({ album: { ...album } });
+
+    expect(screen.getByRole('option', { name: /Jamie/ })).toHaveAttribute('aria-selected', 'true');
+    expect(sdkMock.searchUsers).toHaveBeenCalledTimes(1);
+  });
+
   it('tags the members the server says are supporters (supporter option b)', () => {
     const album = albumFactory.build({
       id: 'album-1',

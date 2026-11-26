@@ -103,6 +103,34 @@ export const organizeLibraryItems = async (
   }
 };
 
+/**
+ * Adds the selection to each album in turn. One album refusing doesn't stop the others, but a
+ * changed account or page does. An album with a partial failure counts as failed: adding to it again
+ * finishes the job, because items already there are accepted.
+ */
+export const organizeIntoAlbums = async (
+  items: LibraryItemDto[],
+  keys: string[],
+  ownerId: string,
+  albumIds: string[],
+  current: () => boolean,
+) => {
+  const added: string[] = [];
+  const failed: string[] = [];
+  for (const albumId of albumIds) {
+    try {
+      await organizeLibraryItems(items, keys, ownerId, { albumId }, current);
+      added.push(albumId);
+    } catch (error) {
+      if (!current()) {
+        throw error;
+      }
+      failed.push(albumId);
+    }
+  }
+  return { added, failed };
+};
+
 type Current = () => boolean;
 
 const guard = (current: Current) => () => {

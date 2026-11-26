@@ -316,6 +316,42 @@ permanently inactive. It does not remove content or touch source files. Reclaim 
 abandoned destination through an explicit operator database disposal and a fresh
 canonical bootstrap; never clear the journal to reuse partial content.
 
+## Noodle Gallery sources
+
+A source with a `gallery_migrations` table, or one Manager names as Noodle Gallery, is read through
+the Immich base its upstream migration ledger contains; Gallery's own release number is not used.
+`preflight` then reports `sourceKind: "gallery"` and `gallery`: how many rows each read below will carry
+(`spaces`, `members` as people in at least one Space, `memberships`, `spacePhotos`, `people`, `favourites`,
+`pets`), counted through the read's own SELECT, with `null` for a read this release does not offer (FL-1742).
+`run`, `resume` and `verify` end with the same three fields beside the import's status. Manager's review
+counts the running source with its copy of these reads (`manager/src/gallery-reads.ts`, held equal by
+`gallery.spec.ts`). After the standard library is copied and Locked
+media converted, `gallery.ts` reads what Gallery adds (FL-995), each through one read-only SELECT
+that is part of the source fingerprint and has its own checkpoint:
+
+| Gallery data                                                             | Becomes in Frameleaf                                                                                                                                                                     |
+| ------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `shared_space`                                                           | an `album` of kind `space` with its closure row; the cover is the newest photo the Space may show                                                                                        |
+| `shared_space_member`                                                    | `album_user`: one owner (Gallery's owner member, its creator first, else its creator), other owners and editors as `editor`, everyone else as `viewer`                                   |
+| `shared_space_asset`                                                     | `album_asset`                                                                                                                                                                            |
+| `shared_space_person` (named, visible, not a pet)                        | a `shared_space_person` link to the person group most of its faces belong to, under a member of the Space who has that person, with the Space's name for them and a cover from the Space |
+| `asset_favorite` on somebody else's photo                                | `asset_favorite`; the owner's own favourite is `asset."isFavorite"`, copied with the photo                                                                                               |
+| a named pet (`person_pet`, or `person.type = 'pet'` before Gallery 5.11) | a `pet` with name, species and birthday, a confirmed `pet_observation` for each of the owner's photos Gallery found it in, and its entry among the people hidden                         |
+
+A read is offered only when the source has every column it names. Otherwise that data stays in
+the source and is named in `notImported`, with the Gallery data that has no Frameleaf counterpart
+yet: albums and libraries linked to Spaces, people shared between accounts, user groups,
+Gallery-only adjustments and trims, and clean-up decisions. Verification names those to each
+administrator in a notification, and refuses activation unless every Space, member, Space photo,
+favourite and pet read from the source has its row. Gallery releases that dropped
+`asset."isFavorite"` (between its migrations `1794100000000` and `1798800000000`) are refused as
+an unknown schema; updating Gallery restores the column.
+
+`fixtures/structure/gallery-5.11.1.sql` transcribes the Gallery tables read or reported from the
+table declarations at tag `v5.11.1`. It is not a dump of a running install.
+`test/medium/specs/immich-import/gallery.spec.ts` restores it over the 3.2.0 structure and imports
+it end to end through the read-only source role.
+
 ## Frozen provenance and tests
 
 `fixtures/frozen-sources.json` records upstream commit IDs for every accepted tag,

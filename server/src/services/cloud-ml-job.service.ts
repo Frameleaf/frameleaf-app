@@ -94,6 +94,8 @@ import {
   CLOUD_ML_JOB_RUNTIME_CAP_MESSAGE,
   CLOUD_ML_JOB_STEPS_PER_TICK,
   CLOUD_ML_JOB_TICK_MS,
+  CLOUD_PHOTO_BATCH_MAX_ASSETS,
+  CLOUD_PHOTO_OPERATION_SKUS,
   CloudMlJobCost,
   CloudMlJobEstimateRecord,
   CloudMlJobInput,
@@ -115,6 +117,7 @@ import {
   cloudMlJobRecordOf,
   cloudMlJobSpentUsd,
   cloudMlJobWorkload,
+  cloudPhotoOperationRequest,
   cloudSmoothMotionRefusal,
   cloudVideoClip,
   cloudVideoClipRefusal,
@@ -154,6 +157,7 @@ import {
   isNewWorkPaused,
   offeredCatalogModels,
   pausedException,
+  photoOperationResultSchema,
   transcriptionResultSchema,
   upscaleResultSchema,
 } from 'src/utils/frameleaf-cloud.js';
@@ -180,16 +184,20 @@ import {
   consentUnconfirmedOf,
   selectMlDestination,
 } from 'src/utils/ml-destination.js';
+import { photoColourRefusal } from 'src/utils/photo-monochrome.js';
 import {
   RESTORATION_PREVIEW_EDGE,
   STAGE_STATUSES,
   cappedOutputSize,
   isFullRegion,
+  photoOperationLabel,
+  photoOperationOf,
   previewExpiryAfterDecision,
   previewExpiryAfterReady,
   previewRegionPixels,
   restorationOutputPaths,
   resultExpiryAfterAbandon,
+  toPhotoOperation,
 } from 'src/utils/restoration.js';
 import { mapTranscript, segmentsOfVtt } from 'src/utils/studio-transcription.js';
 
@@ -316,6 +324,10 @@ const failureOf = (error: unknown): CloudMlJobFailure | null => {
  * failure on the cloud's side is refunded in full by Frameleaf Cloud. Nothing ever moves to another
  * destination, and turning Frameleaf Cloud processing off stops every job.
  */
+/** FL-955: a batch photo an earlier confirmation already queued. */
+const BATCH_ITEM_QUEUED = 'batch-item-queued';
+const CLOUD_PHOTO_UNAVAILABLE = "Frameleaf Cloud isn't available for this yet";
+
 @Injectable()
 export class CloudMlJobService {
   private tickHandle?: ReturnType<typeof setInterval>;
@@ -447,6 +459,8 @@ export class CloudMlJobService {
     auth: AuthDto,
     dto: CloudMlJobEstimateRequestDto,
     now = new Date(),
+    /** FL-955: a photo of a confirmed batch, whose full render runs without a preview. */
+    batch?: { batchId: string },
   ): Promise<CloudMlJobEstimateResponseDto> {
     await requireAccess(this.accessRepository, { auth, permission: Permission.AssetEditCreate, ids: [dto.assetId] });
     const source = await this.requireSource(dto.assetId);
@@ -460,9 +474,31 @@ export class CloudMlJobService {
 
     // the preview a full render inherits its model and settings from; without one, a full-stage
     // estimate is a quote for the whole file with the given settings, which cannot be confirmed (FL-348)
-    const quoteOnly = dto.stage === 'full' && !dto.restorationId;
-    const preview = dto.stage === 'full' && !quoteOnly ? await this.requireReviewedPreview(auth, dto) : null;
+    const quoteOnly = dto.stage === 'full' && !dto.restorationId && !batch;
+    const preview = dto.stage === 'full' && !quoteOnly && !batch ? await this.requireReviewedPreview(auth, dto) : null;
     const smooth = dto.purpose === 'smooth-motion';
+    // FL-955: repair and colourise keep the photo's size, and a full render does what its preview did
+    const photoOperation = preview ? photoOperationOf(preview.provenance) : toPhotoOperation(dto.operation);
+    if (preview && toPhotoOperation(dto.operation) && toPhotoOperation(dto.operation) !== photoOperation) {
+      throw new BadRequestException('Render this preview as the operation it was made with');
+    }
+    if (photoOperation) {
+      if (video || smooth) {
+        throw new BadRequestException('Repair and Suggested colours work on photos');
+      }
+      const refusal =
+        photoOperation === 'colourise'
+          ? await photoColourRefusal(
+              this.mediaRepository,
+              this.logger,
+              dto.assetId,
+              (await this.assetJobRepository.getForGenerateThumbnailJob(dto.assetId))?.files ?? [],
+            )
+          : null;
+      if (refusal) {
+        throw new BadRequestException(refusal);
+      }
+    }
     const settings = preview
       ? {
           mode: preview.mode as AssetRestorationMode,
@@ -472,9 +508,13 @@ export class CloudMlJobService {
           region: regionOf(preview.previewRegion),
         }
       : {
-          mode: smooth ? AssetRestorationMode.SmoothMotion : (dto.mode ?? AssetRestorationMode.Faithful),
-          upscale: smooth ? 1 : (dto.upscale ?? 2),
-          keepGrain: dto.keepGrain ?? false,
+          mode: smooth
+            ? AssetRestorationMode.SmoothMotion
+            : photoOperation
+              ? AssetRestorationMode.Faithful
+              : (dto.mode ?? AssetRestorationMode.Faithful),
+          upscale: smooth || photoOperation ? 1 : (dto.upscale ?? 2),
+          keepGrain: photoOperation ? false : (dto.keepGrain ?? false),
           factor: smooth ? (dto.factor ?? 2) : null,
           region: dto.region ?? DEFAULT_RESTORATION_REGION,
         };
@@ -490,7 +530,9 @@ export class CloudMlJobService {
     const destination = await this.requireCloudDestination(dto.destinationId, appWorkload);
     const gateway = await this.requireGateway();
 
-    const chosen = await this.chooseModel(gateway, workload, settings.mode, dto.modelSku);
+    const chosen = photoOperation
+      ? this.photoOperationModel(photoOperation, preview)
+      : await this.chooseModel(gateway, workload, settings.mode, dto.modelSku);
     const model = chosen.model;
     if (workload === 'restoration' || workload === 'interpolation') {
       // what this model does not run is said here, before a copy is prepared or an estimate is asked for
@@ -573,19 +615,26 @@ export class CloudMlJobService {
         workload,
         appWorkload,
         settings,
-        request: this.requestOf(workload, settings, prepared.size, clip),
+        request: photoOperation
+          ? cloudPhotoOperationRequest(photoOperation, prepared.size)
+          : this.requestOf(workload, settings, prepared.size, clip),
         inputs: [prepared.input],
         workDir,
         beforePath: prepared.beforePath,
-        output: prepared.output,
+        // a photo operation answers at exactly the size it was sent, above 4K included
+        output: photoOperation ? prepared.size : prepared.output,
         durationSeconds: prepared.durationSeconds,
+        ...(photoOperation && { photoOperation }),
+        ...(batch && { batchId: batch.batchId }),
       },
       {
         model,
         offered,
         quantity: video ? { unit: 'minute', value: (prepared.durationSeconds ?? 0) / 60 } : { unit: 'photo', value: 1 },
         upscaleOf:
-          workload === 'upscale' ? (sealed) => this.upscaleQuote(sealed, settings.upscale, prepared.size) : undefined,
+          workload === 'upscale' && !photoOperation
+            ? (sealed) => this.upscaleQuote(sealed, settings.upscale, prepared.size)
+            : undefined,
         quoteOnly,
       },
       now,
@@ -692,7 +741,8 @@ export class CloudMlJobService {
     now: Date,
   ): Promise<CloudMlJobEstimateResponseDto> {
     const { id, workDir, workload, appWorkload, request } = draft;
-    const { model, offered, quantity, upscaleOf, quoteOnly } = options;
+    const { offered, quantity, upscaleOf, quoteOnly } = options;
+    let model = options.model;
     let sealed: CloudEstimate;
     let wallet: Awaited<ReturnType<FrameleafCloudMlRepository['getWallet']>>;
     let consent: Awaited<ReturnType<FrameleafCloudMlRepository['getConsent']>>;
@@ -703,6 +753,18 @@ export class CloudMlJobService {
         inputs: draft.inputs.map((input) => this.toCloudInput(input)),
         request,
       } as Parameters<FrameleafCloudMlRepository['createEstimate']>[1]);
+      if (draft.photoOperation) {
+        // not in the catalogue: the sealed estimate is what names its revision, compute and rate
+        if (!sealed.routing) {
+          throw this.photoOperationUnavailable();
+        }
+        model = {
+          ...model,
+          rev: model.rev || sealed.modelRev,
+          computeSku: sealed.computeSku,
+          rate: { ...model.rate, perSecondUsd: sealed.routing.perSecondUsd, startFeeUsd: sealed.routing.startFeeUsd },
+        };
+      }
       if (sealed.modelSku !== model.sku || sealed.modelRev !== model.rev) {
         throw this.modelMismatch('Frameleaf Cloud estimated another revision of this model; choose the model again');
       }
@@ -712,6 +774,14 @@ export class CloudMlJobService {
       ]);
     } catch (error) {
       await this.removeWorkDir(workDir);
+      // FL-961: no approved price or pinned model yet. Nothing was held, and no cost is shown.
+      if (
+        draft.photoOperation &&
+        error instanceof FrameleafCloudError &&
+        error.refusal === MlAdmissionRefusal.ModelMismatch
+      ) {
+        throw this.photoOperationUnavailable();
+      }
       throw this.clientError(error);
     }
 
@@ -771,7 +841,7 @@ export class CloudMlJobService {
       model: quotedModel,
       models: offered
         .toSorted((a, b) => a.rank - b.rank)
-        .map((entry) => (entry.sku === model.sku ? quotedModel : this.modelOf(entry))),
+        .map((entry) => (entry.sku === quotedModel.sku ? quotedModel : this.modelOf(entry))),
       basis: sealed.basis,
       p50Usd: cloudCustomerCost(sealed).p50,
       p90Usd: cloudCustomerCost(sealed).p90,
@@ -977,7 +1047,7 @@ export class CloudMlJobService {
       if (record.operationId && record.restorationId) {
         return { operationId: record.operationId, restorationId: record.restorationId, stage: record.stage };
       }
-      if (record.stage === 'full' && !record.restorationId) {
+      if (record.stage === 'full' && !record.restorationId && !record.batchId) {
         // FL-115: a full render runs only what the owner reviewed in a preview; a quote is not a job
         throw new ConflictException({
           message: 'This is a quote for the whole file; preview it first, then estimate the reviewed preview in full',
@@ -1124,6 +1194,7 @@ export class CloudMlJobService {
       estimateId: record.id,
       ...(record.upscale && { upscale: record.upscale }),
       ...(record.studio && { studio: record.studio }),
+      ...(record.photoOperation && { photoOperation: record.photoOperation }),
       consent: {
         version: record.consent.version,
         textSha256: record.consent.textSha256,
@@ -1396,7 +1467,11 @@ export class CloudMlJobService {
     }
     const smooth = record.purpose === 'smooth-motion';
     return {
-      mode: smooth ? 'Smooth motion' : this.modeLabel(record.settings.mode),
+      mode: smooth
+        ? 'Smooth motion'
+        : record.photoOperation
+          ? photoOperationLabel(record.photoOperation)
+          : this.modeLabel(record.settings.mode),
       ...(smooth
         ? { factor: record.settings.factor }
         : { upscale: record.upscale?.appliedScale ?? record.settings.upscale }),
@@ -1418,6 +1493,48 @@ export class CloudMlJobService {
     now: Date,
     trx: Kysely<DB>,
   ): Promise<AssetRestoration> {
+    const photo = record.photoOperation ? { operation: record.photoOperation } : {};
+    if (record.stage === 'full' && record.batchId && !record.restorationId) {
+      // FL-955: under this lock, so a confirmation repeated after a restart cannot queue or charge a photo twice
+      if (await this.restorationRepository.hasBatchItem(record.batchId, record.assetId, trx)) {
+        throw new ConflictException({
+          message: 'This batch already has this photo',
+          error: 'Conflict',
+          statusCode: HttpStatus.CONFLICT,
+          code: BATCH_ITEM_QUEUED,
+        });
+      }
+      const sizes = this.sourceSize(source);
+      return this.restorationRepository.create(
+        {
+          assetId: record.assetId,
+          ownerId: record.ownerId,
+          status: AssetRestorationStatus.Accepted,
+          mode: record.settings.mode,
+          upscale: 1,
+          keepGrain: false,
+          workload: record.appWorkload,
+          destinationId: destination.id,
+          destinationKind: MlDestinationKind.FrameleafCloud,
+          destinationName: destination.name,
+          sourceType: record.sourceType,
+          sourceChecksum: Buffer.from(record.sourceChecksumHex, 'hex'),
+          sourceWidth: sizes.width,
+          sourceHeight: sizes.height,
+          sourceDurationSeconds: null,
+          previewRegion: record.settings.region as unknown as Record<string, unknown>,
+          estimate: null,
+          reviewedAt: now,
+          provenance: {
+            requestedBy: auth.user.id,
+            sessionElevated: !!auth.session?.hasElevatedPermission,
+            ...photo,
+            batchId: record.batchId,
+          },
+        },
+        trx,
+      );
+    }
     if (record.stage === 'full') {
       const accepted = record.restorationId
         ? await this.restorationRepository.transition(
@@ -1459,7 +1576,7 @@ export class CloudMlJobService {
         sourceDurationSeconds: record.sourceType === 'video' ? this.durationOf(source) : null,
         previewRegion: record.settings.region as unknown as Record<string, unknown>,
         estimate: null,
-        provenance: { requestedBy: auth.user.id, sessionElevated: !!auth.session?.hasElevatedPermission },
+        provenance: { requestedBy: auth.user.id, sessionElevated: !!auth.session?.hasElevatedPermission, ...photo },
       },
       trx,
     );
@@ -2252,6 +2369,16 @@ export class CloudMlJobService {
     if (document && run.snapshot.studio) {
       run.result = { ...run.result, transcript: await this.readTranscript(run, files[0], files.at(-1)!) };
       files = files.slice(0, -1);
+    } else if (run.snapshot.photoOperation) {
+      if (!document) {
+        throw new CloudMlJobFailure(
+          'cloud_ml_output_invalid',
+          'Frameleaf Cloud did not describe this photo, so nothing was published',
+          false,
+        );
+      }
+      await this.readPhotoOperationResult(run, files.at(-1)!);
+      files = files.slice(0, -1);
     } else if (document) {
       const upscaleScale = await this.readUpscaleResult(run, files.at(-1)!);
       files = files.slice(0, -1);
@@ -2649,6 +2776,41 @@ export class CloudMlJobService {
     return item.scale;
   }
 
+  /** FL-961: the result document of a repair or colourise, held to the job that was confirmed. */
+  private async readPhotoOperationResult(run: JobRun, file: string): Promise<void> {
+    const { snapshot } = run;
+    const invalid = (detail: string) =>
+      new CloudMlJobFailure('cloud_ml_output_invalid', `The result from Frameleaf Cloud ${detail}`, false);
+    const body = await this.storageRepository.readFile(file);
+    if (body.length > CLOUD_UPSCALE_RESULT_MAX_BYTES) {
+      throw invalid('is larger than the contract allows');
+    }
+    let parsed: ReturnType<typeof photoOperationResultSchema.safeParse>;
+    try {
+      parsed = photoOperationResultSchema.safeParse(JSON.parse(body.toString('utf8')));
+    } catch {
+      throw invalid('is not JSON');
+    }
+    if (!parsed.success) {
+      throw invalid('does not match the contract');
+    }
+    const result = parsed.data;
+    if (
+      result.operation !== snapshot.photoOperation ||
+      result.modelSku !== snapshot.model.sku ||
+      result.modelRev !== snapshot.model.rev
+    ) {
+      throw invalid('names another operation or model');
+    }
+    const item = result.items.find((entry) => entry.inputId === snapshot.inputs[0]?.inputId);
+    if (!item || item.outputs.length === 0) {
+      throw invalid(`says the photo was not finished (${item?.warnings.join(', ') || 'no item'})`);
+    }
+    if (item.input?.width !== snapshot.output.width || item.input?.height !== snapshot.output.height) {
+      throw invalid('describes another photo than the one sent');
+    }
+  }
+
   /** A photo version, checked against its size cap; a full render also gets a preview-sized copy. */
   private async assembleImage(run: JobRun, file: string) {
     const { snapshot, operation } = run;
@@ -2656,7 +2818,15 @@ export class CloudMlJobService {
     const meta = await this.mediaRepository.getImageMetadata(file);
     const upscale = snapshot.upscale;
     const scale = run.result.upscaleScale;
-    if (upscale && scale !== null) {
+    if (snapshot.photoOperation) {
+      if (meta.width !== cap.width || meta.height !== cap.height) {
+        throw new CloudMlJobFailure(
+          'cloud_ml_output_invalid',
+          `The photo from Frameleaf Cloud is ${meta.width}×${meta.height}, not the ${cap.width}×${cap.height} that was sent`,
+          false,
+        );
+      }
+    } else if (upscale && scale !== null) {
       // FC-46: exactly the declared photo times the factor its own item was upscaled by
       if (meta.width !== upscale.input.width * scale || meta.height !== upscale.input.height * scale) {
         throw new CloudMlJobFailure(
@@ -3756,6 +3926,152 @@ export class CloudMlJobService {
       );
     }
     return { model, offered };
+  }
+
+  /**
+   * FL-961: the model of a photo operation, named directly because it is not in the catalogue. Its
+   * revision and rate come from the sealed estimate; a full render stays on the revision its preview ran.
+   */
+  private photoOperationModel(
+    operation: 'repair' | 'colourise',
+    preview: AssetRestoration | null,
+  ): { model: CloudCatalogEntry; offered: CloudCatalogEntry[] } {
+    const sku = CLOUD_PHOTO_OPERATION_SKUS[operation];
+    const reviewed = preview ? this.previewModel(preview) : null;
+    if (preview && reviewed?.sku !== sku) {
+      throw this.modelMismatch('The model changed since the preview; request a new preview');
+    }
+    const model = {
+      sku,
+      rev: reviewed?.rev ?? '',
+      label: photoOperationLabel(operation),
+      rank: 1,
+      computeSku: '',
+      display: { gpu: 'Frameleaf Cloud' },
+      rate: { perSecondUsd: 0, startFeeUsd: 0 },
+    } as unknown as CloudCatalogEntry;
+    return { model, offered: [model] };
+  }
+
+  /** FL-961: Cloud has no approved price or pinned model for this yet. Nothing is queued or charged. */
+  private photoOperationUnavailable() {
+    return new ConflictException({
+      message: CLOUD_PHOTO_UNAVAILABLE,
+      error: 'Conflict',
+      statusCode: HttpStatus.CONFLICT,
+      code: 'photo-operation-unavailable',
+    });
+  }
+
+  /**
+   * FL-955: what a batch would cost on Frameleaf Cloud, each photo estimated on its own. The first
+   * refusal ends it, so while Cloud has no price this asks once and shows no cost.
+   */
+  async quotePhotoBatch(
+    auth: AuthDto,
+    operation: 'repair' | 'colourise',
+    assetIds: string[],
+    destinationId: string,
+    now = new Date(),
+  ): Promise<{ p50Usd: number; p90Usd: number; consentVersion: string; consentSummary: string } | { refusal: string }> {
+    if (assetIds.length > CLOUD_PHOTO_BATCH_MAX_ASSETS) {
+      return { refusal: `Frameleaf Cloud takes up to ${CLOUD_PHOTO_BATCH_MAX_ASSETS} photos at a time` };
+    }
+    let p50Usd = 0;
+    let p90Usd = 0;
+    let consent: { version: string; summary: string } | null = null;
+    for (const assetId of assetIds) {
+      try {
+        const quote = await this.estimate(
+          auth,
+          { assetId, destinationId, purpose: 'restoration', stage: 'full', operation: operation as never },
+          now,
+        );
+        if (quote.refusal) {
+          return { refusal: quote.refusal.message };
+        }
+        p50Usd += quote.p50Usd;
+        p90Usd += quote.p90Usd;
+        consent = quote.consent;
+      } catch (error) {
+        if (error instanceof HttpException && error.getStatus() < 500) {
+          return { refusal: error.message };
+        }
+        throw error;
+      }
+    }
+    return consent
+      ? { p50Usd, p90Usd, consentVersion: consent.version, consentSummary: consent.summary }
+      : { refusal: CLOUD_PHOTO_UNAVAILABLE };
+  }
+
+  /**
+   * FL-955: run a confirmed batch on Frameleaf Cloud, one estimated and confirmed job per photo. It stops
+   * before going over what the person approved. A repeated confirmation skips what is already queued.
+   */
+  async startPhotoBatch(
+    auth: AuthDto,
+    batch: {
+      batchId: string;
+      operation: 'repair' | 'colourise';
+      assetIds: string[];
+      destinationId: string;
+      maxCostUsd: number;
+      consentVersion: string;
+    },
+    now = new Date(),
+  ): Promise<number> {
+    let approved = 0;
+    let queued = 0;
+    for (const assetId of batch.assetIds) {
+      if (await this.restorationRepository.hasBatchItem(batch.batchId, assetId)) {
+        continue;
+      }
+      try {
+        const quote = await this.estimate(
+          auth,
+          {
+            assetId,
+            destinationId: batch.destinationId,
+            purpose: 'restoration',
+            stage: 'full',
+            operation: batch.operation as never,
+          },
+          now,
+          { batchId: batch.batchId },
+        );
+        if (quote.consent.version !== batch.consentVersion) {
+          throw new ConflictException('The Frameleaf Cloud terms changed since the estimate; estimate again');
+        }
+        if (quote.refusal || !quote.permission.canConfirm) {
+          throw new BadRequestException(quote.refusal?.message ?? 'You cannot start Frameleaf Cloud jobs');
+        }
+        if (approved + quote.p90Usd > batch.maxCostUsd) {
+          throw new ConflictException('This batch now costs more than the estimate you approved; estimate again');
+        }
+        await this.create(
+          auth,
+          { estimateId: quote.estimateId, consentVersion: quote.consent.version, acknowledgeDataLeaves: true },
+          now,
+        );
+        approved += quote.p90Usd;
+        queued++;
+      } catch (error) {
+        if (
+          error instanceof ConflictException &&
+          (error.getResponse() as { code?: string }).code === BATCH_ITEM_QUEUED
+        ) {
+          continue;
+        }
+        if (queued === 0) {
+          throw error;
+        }
+        // what was queued stays queued and is reported; nothing further is sent or charged
+        this.logger.warn(`Frameleaf Cloud batch ${batch.batchId} stopped after ${queued}: ${errorMessage(error)}`);
+        break;
+      }
+    }
+    return queued;
   }
 
   /** A catalogue model as the slider shows it: name, GPU class and price, never a model identity. */

@@ -90,6 +90,7 @@ import {
 } from 'src/utils/partner-location.js';
 import { getPreferences, isTrashReuploadOpen, uploadSkipSince } from 'src/utils/preferences.js';
 import { fromChecksum } from 'src/utils/request.js';
+import { isFileRootReachable, pathState } from 'src/utils/storage-reach.js';
 import { MAX_XMP_BYTES, validateXmp } from 'src/utils/xmp-sidecar.js';
 
 /** How long a finished document PDF may take to download before the response is ended. */
@@ -175,12 +176,26 @@ export class AssetMediaService extends BaseService {
    * re-upload) or `good`.
    */
   private async originalFiles(matches: { id: string; originalPath: string }[]) {
-    const exists = await Promise.all(
-      matches.map(({ originalPath }) => this.storageRepository.checkFileExists(originalPath)),
-    );
+    const exists = await Promise.all(matches.map(({ originalPath }) => this.originalMayExist(originalPath)));
     const there = matches.filter((_, index) => exists[index]).map(({ id }) => id);
     const wanted = there.length > 0 ? await this.assetRepository.getReuploadWanted(there) : new Set<string>();
     return matches.map(({ id }, index) => (exists[index] ? (wanted.has(id) ? 'damaged' : 'good') : 'gone'));
+  }
+
+  /**
+   * Only "no such file" makes an original lost: a drive that cannot answer right now has not lost it, and
+   * neither has a media folder that is not mounted at all (its `.frameleaf` mount file is missing too),
+   * which also answers "no such file" for everything under it.
+   */
+  private async originalMayExist(originalPath: string) {
+    if (await this.storageRepository.checkFileExists(originalPath)) {
+      return true;
+    }
+    const state = await pathState(this.storageRepository, originalPath);
+    if (state !== 'missing') {
+      return true;
+    }
+    return !(await isFileRootReachable(this.storageRepository, originalPath, []));
   }
 
   /**
@@ -284,7 +299,7 @@ export class AssetMediaService extends BaseService {
       }
       this.logger.log(`Upload brought asset ${restored} back from the Trash`);
       const fileUsed =
-        !(await this.storageRepository.checkFileExists(asset.originalPath)) &&
+        !(await this.originalMayExist(asset.originalPath)) &&
         (await this.restoreOriginalFrom(auth, asset, dto, file, checksums));
       return { id: restored, visible: true, fileUsed };
     }
@@ -354,11 +369,19 @@ export class AssetMediaService extends BaseService {
     );
     this.storageRepository.mkdirSync(path.dirname(pending));
     await this.storageRepository.rename(file.originalPath, pending);
-    const device = await this.uploadingDevice(auth);
-    await this.jobRepository.queue({
-      name: JobName.MediaHealthPutBackUpload,
-      data: { id, path: pending, ...(device && { device }) },
-    });
+    try {
+      const device = await this.uploadingDevice(auth);
+      await this.jobRepository.queue({
+        name: JobName.MediaHealthPutBackUpload,
+        data: { id, path: pending, ...(device && { device }) },
+      });
+    } catch (error) {
+      // no job owns it, so the upload goes back where the upload's own clean-up finds it
+      await this.storageRepository
+        .rename(pending, file.originalPath)
+        .catch((moveError) => this.logger.warn(`Could not move ${pending} back after queueing failed: ${moveError}`));
+      throw error;
+    }
     this.logger.log(`Upload for asset ${id} queued to take its damaged or repaired file's place`);
   }
 
@@ -849,6 +872,16 @@ export class AssetMediaService extends BaseService {
 
       return { id: asset.id, status: AssetMediaStatus.CREATED };
     } catch (error: any) {
+      const isDuplicate = isAssetChecksumConstraint(error);
+      // The row goes first: FileDelete keeps any path a row still names, so queued before it, the file would stay.
+      if (asset && !isDuplicate) {
+        await this.assetRepository.remove({ id: asset.id });
+        // FL-813: the owner did not delete this one; the next try must not be refused as if they had
+        await this.allowFailedUpload(auth, file).catch((allowError: unknown) =>
+          this.logger.warn(`A failed upload could not be kept off the skip list: ${String(allowError)}`),
+        );
+      }
+
       // clean up files
       await this.jobRepository.queue({
         name: JobName.FileDelete,
@@ -856,7 +889,7 @@ export class AssetMediaService extends BaseService {
       });
 
       // handle duplicates with a success response
-      if (isAssetChecksumConstraint(error)) {
+      if (isDuplicate) {
         const duplicateOptions = this.getDuplicateCheckOptions(auth);
         const duplicateId = duplicateOptions
           ? await this.assetRepository.getUploadAssetIdByChecksum(auth.user.id, file.checksum, duplicateOptions)
@@ -883,15 +916,6 @@ export class AssetMediaService extends BaseService {
 
         this.logger.debug(`Duplicate asset upload rejected: existing asset ${duplicateId}`);
         return { status: AssetMediaStatus.DUPLICATE, id: duplicateId };
-      }
-
-      // clean up the asset row if one was created
-      if (asset) {
-        await this.assetRepository.remove({ id: asset.id });
-        // FL-813: the owner did not delete this one; the next try must not be refused as if they had
-        await this.allowFailedUpload(auth, file).catch((allowError: unknown) =>
-          this.logger.warn(`A failed upload could not be kept off the skip list: ${String(allowError)}`),
-        );
       }
 
       this.logger.error(`Error uploading file ${error}`, error?.stack);

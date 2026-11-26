@@ -40,15 +40,15 @@ const UNSAVED_RETRIES = 8
 
 const wait = (ms: number, signal: AbortSignal) =>
   new Promise<void>((resolve, reject) => {
-    const timer = setTimeout(resolve, ms)
-    signal.addEventListener(
-      'abort',
-      () => {
-        clearTimeout(timer)
-        reject(signal.reason ?? new DOMException('Aborted', 'AbortError'))
-      },
-      { once: true },
-    )
+    const abort = () => {
+      clearTimeout(timer)
+      reject(signal.reason ?? new DOMException('Aborted', 'AbortError'))
+    }
+    const timer = setTimeout(() => {
+      signal.removeEventListener('abort', abort)
+      resolve()
+    }, ms)
+    signal.addEventListener('abort', abort, { once: true })
   })
 
 async function request<T>(url: string, signal: AbortSignal, body?: unknown): Promise<{ ok: boolean; status: number; value: T }> {
@@ -88,20 +88,31 @@ export const stabiliseAnalysis: StabiliseAnalysis = {
     if (!queued.ok || typeof queued.value?.id !== 'string') {
       throw new Error(messageOf(queued.value) || `HTTP ${queued.status}`)
     }
-    const jobUrl = `${base}/${encodeURIComponent(queued.value.id)}`
-    for (;;) {
-      await wait(POLL_MS, signal)
-      const answer = await request<Job>(jobUrl, signal)
-      if (!answer.ok) throw new Error(messageOf(answer.value) || `HTTP ${answer.status}`)
-      const job = answer.value
-      onProgress(job.progress ?? 0)
-      if (job.status === 'completed') {
-        if (!job.result) throw new Error('The analysis finished without a result')
-        return job.result
+    const operationId = encodeURIComponent(queued.value.id)
+    const jobUrl = `${base}/${operationId}`
+    try {
+      for (;;) {
+        await wait(POLL_MS, signal)
+        const answer = await request<Job>(jobUrl, signal)
+        if (!answer.ok) throw new Error(messageOf(answer.value) || `HTTP ${answer.status}`)
+        const job = answer.value
+        onProgress(job.progress ?? 0)
+        if (job.status === 'completed') {
+          if (!job.result) throw new Error('The analysis finished without a result')
+          return job.result
+        }
+        if (job.status === 'failed' || job.status === 'cancelled') {
+          throw new Error(job.error || job.status)
+        }
       }
-      if (job.status === 'failed' || job.status === 'cancelled') {
-        throw new Error(job.error || job.status)
+    } catch (error) {
+      if (signal.aborted) {
+        // The card was closed or moved on: stop the server's analysis too, best effort.
+        void fetch(`/api/media-operations/${operationId}/cancel`, { method: 'POST', credentials: 'same-origin' }).catch(
+          () => undefined,
+        )
       }
+      throw error
     }
   },
 }

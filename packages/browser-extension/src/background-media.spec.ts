@@ -504,6 +504,30 @@ describe('media downloads from the popup (FL-1427)', () => {
     expect(mediaCalls().some((call) => call.method === 'POST')).toBe(false);
   });
 
+  it('reads no cookies when the tab’s own cookie store is not found', async () => {
+    signedIn('media');
+    vi.mocked(chrome.cookies.getAllCookieStores).mockResolvedValue([
+      { id: '1', tabIds: [99] },
+      // the promise form; vi.mocked types this overload by its callback form, which returns nothing
+    ] as chrome.cookies.CookieStore[] as never);
+
+    await expect(handleMessage({ type: 'media-site' }, popup)).resolves.toEqual(
+      expect.objectContaining({
+        media: {
+          site: expect.objectContaining({
+            allowed: true,
+            reason: 'partitioned',
+          }),
+        },
+      }),
+    );
+    await expect(
+      handleMessage({ type: 'media-connect' }, popup),
+    ).resolves.toEqual(expect.objectContaining({ ok: false }));
+    expect(cookies).not.toHaveBeenCalled();
+    expect(mediaCalls().some((call) => call.method === 'POST')).toBe(false);
+  });
+
   it('shows the domains first, then sends the sign-in straight to the Library and keeps no copy', async () => {
     signedIn('media');
     const shown = await handleMessage({ type: 'media-site' }, popup);

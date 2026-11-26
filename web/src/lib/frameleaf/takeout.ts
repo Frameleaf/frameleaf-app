@@ -177,6 +177,26 @@ const chunkSha256 = async (bytes: Uint8Array) => {
 };
 
 /**
+ * Send a file one part at a time from `from`. `send` returns how many bytes the server holds now,
+ * which is where the next part starts. Shared with the location history upload (FL-999).
+ */
+export const sendFileChunks = async (
+  file: Pick<File, 'size' | 'slice'>,
+  from: number,
+  send: (offset: number, bytes: Blob) => Promise<number>,
+  signal: AbortSignal,
+  onProgress: (received: number) => void,
+) => {
+  let received = from;
+  while (received < file.size) {
+    signal.throwIfAborted();
+    const end = Math.min(received + TAKEOUT_UPLOAD_CHUNK_SIZE, file.size);
+    received = await send(received, file.slice(received, end));
+    onProgress(received);
+  }
+};
+
+/**
  * Upload an archive from where the server has it. Name and size only suggest that the chosen file is
  * the archive being resumed; every byte already staged is compared (by SHA-256, one chunk at a
  * time) before anything is appended, so a different file with the same name is caught.
@@ -202,16 +222,21 @@ export const resumeTakeoutArchive = async (
     onProgress({ phase: 'verifying', name: file.name, bytes: end, total: staged.received });
   }
   let current = staged;
-  while (current.received < file.size) {
-    signal.throwIfAborted();
-    const end = Math.min(current.received + TAKEOUT_UPLOAD_CHUNK_SIZE, file.size);
-    const next = await api.upload(current.received, file.slice(current.received, end));
-    if (next.id !== current.id || next.size !== file.size || next.received !== end) {
-      throw new TakeoutUploadError('frameleaf_takeout_error_acknowledgement');
-    }
-    current = next;
-    onProgress({ phase: 'uploading', name: file.name, bytes: current.received, total: file.size });
-  }
+  await sendFileChunks(
+    file,
+    staged.received,
+    async (offset, bytes) => {
+      const end = Math.min(offset + TAKEOUT_UPLOAD_CHUNK_SIZE, file.size);
+      const next = await api.upload(offset, bytes);
+      if (next.id !== current.id || next.size !== file.size || next.received !== end) {
+        throw new TakeoutUploadError('frameleaf_takeout_error_acknowledgement');
+      }
+      current = next;
+      return next.received;
+    },
+    signal,
+    (received) => onProgress({ phase: 'uploading', name: file.name, bytes: received, total: file.size }),
+  );
   return current;
 };
 

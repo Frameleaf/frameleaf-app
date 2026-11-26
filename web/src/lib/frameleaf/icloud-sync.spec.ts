@@ -8,13 +8,11 @@ import { describe, expect, it } from 'vitest';
 import {
   GB,
   icloudAuthStep,
-  icloudConsentNeeded,
   icloudDraft,
   icloudDraftProblems,
   icloudDraftUpdate,
   icloudErrorKey,
   icloudReviewReasonKey,
-  icloudReviewTarget,
   icloudRunControls,
   icloudRunProgress,
   icloudStatus,
@@ -180,14 +178,6 @@ describe('sync preferences', () => {
     expect(update.config?.albums).toEqual(['personal:a']);
     expect(icloudDraftUpdate({ ...draft, stagingGb: '2' }, current).config?.stagingBytes).toBe(2 * GB);
   });
-
-  it('asks for consent only to what saving newly allows', () => {
-    const draft = { ...icloudDraft(connection()), includeHidden: true };
-    expect(icloudConsentNeeded(draft, connection())).toEqual({ hidden: true });
-    expect(icloudConsentNeeded(draft, connection({ config: { ...connection().config, includeHidden: true } }))).toEqual(
-      { hidden: false },
-    );
-  });
 });
 
 describe('reconciliation', () => {
@@ -216,9 +206,6 @@ describe('reconciliation', () => {
     expect(icloudReviewReasonKey({ kind: ICloudReviewKind.Failed, reason: 'something_new' })).toBe(
       'frameleaf_icloud_reason_kind_failed',
     );
-    expect(icloudReviewTarget({ reason: 'local_live_photo_override', assetId: null })).toBe('live-photos');
-    expect(icloudReviewTarget({ reason: 'multiple_content_matches', assetId: 'asset' })).toBe('asset');
-    expect(icloudReviewTarget({ reason: 'multiple_content_matches', assetId: null })).toBeNull();
   });
 
   it('turns a server code into a message, and anything unknown into a general one', () => {

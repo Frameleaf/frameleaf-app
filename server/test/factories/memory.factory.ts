@@ -30,6 +30,7 @@ export class MemoryFactory {
       seenAt: null,
       showAt: newDate(),
       hideAt: newDate(),
+      occasion: null,
       ...dto,
     });
   }

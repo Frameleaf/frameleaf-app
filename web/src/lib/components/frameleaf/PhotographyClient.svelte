@@ -38,6 +38,7 @@
     type PresentationBlock,
     type PublicBrand,
   } from '$lib/frameleaf/photography/workflow-api';
+  import { PhotographyError } from '$lib/frameleaf/photography/errors';
   import Dialog from './Dialog.svelte';
   import PhotographySelfieSearch from './PhotographySelfieSearch.svelte';
   import PhotographyStatus, { photographyErrorKey, photographyLabelKey } from './PhotographyStatus.svelte';
@@ -96,6 +97,10 @@
   const selfieMatchIds = $derived(selfieMatches === null ? null : new Set(selfieMatches));
   let limit = $state(80);
   let generation = 0;
+  /** Moves only when the images on screen are dropped, so a routine refresh never loses a photo still loading. */
+  let mediaGeneration = 0;
+  /** Counts saves the server answered: a refresh sent before one of them holds older favourites and notes. */
+  let savesAnswered = 0;
   let previewRequest = 0;
   let disposed = false;
   let thumbnailLoading = false;
@@ -191,6 +196,7 @@
     annotationDraft = null;
   }
   const clearImages = () => {
+    mediaGeneration++;
     for (const url of Object.values(thumbnails)) {
       URL.revokeObjectURL(url);
     }
@@ -326,11 +332,20 @@
     if (opened && !allowed.has(opened.id)) {
       closePhoto();
     }
+    const shownOutput = openedOutput;
+    const shownRevision = opened?.approvalRevisionId;
     if (opened) {
       opened = result.photos.find((photo) => photo.id === opened?.id) ?? null;
     }
-    if (openedOutput) {
-      openedOutput = opened?.outputs?.find((output) => output.id === openedOutput?.id) ?? null;
+    if (shownOutput) {
+      openedOutput = opened?.outputs?.find((output) => output.id === shownOutput.id) ?? null;
+    }
+    // The picture on screen must be the version an Approve would record: load it again if that moved.
+    if (
+      opened &&
+      (shownOutput ? openedOutput?.revisionId !== shownOutput.revisionId : opened.approvalRevisionId !== shownRevision)
+    ) {
+      void openPhoto(opened);
     }
     gallery = result;
     if (!result.selfieSearch) {
@@ -346,8 +361,10 @@
     annotations = retainDraft
       ? Object.fromEntries(Object.entries(annotations).filter(([id]) => allowed.has(id)))
       : Object.fromEntries(result.notes.map((note) => [note.captureId, structuredClone(note.annotations ?? [])]));
-    const availableOutputs = result.photos.flatMap((photo) =>
-      (photo.outputs ?? []).filter((output) => output.canDownload),
+    const availableOutputs = new Set(
+      result.photos.flatMap((photo) =>
+        (photo.outputs ?? []).filter((output) => output.canDownload).map((output) => output.id),
+      ),
     );
     downloadChoices = initial
       ? result.photos.flatMap((photo) => {
@@ -356,7 +373,7 @@
             photo.outputs?.find((item) => item.canDownload);
           return output ? [output.id] : [];
         })
-      : downloadChoices.filter((id) => availableOutputs.some((output) => output.id === id));
+      : downloadChoices.filter((id) => availableOutputs.has(id));
     if (!retainDraft) {
       dirty = false;
     }
@@ -377,11 +394,12 @@
       return;
     }
     const current = ++generation;
+    const saves = savesAnswered;
     busy = true;
     error = '';
     try {
       const result = await galleryRequest<GuestGallery>(galleryId, session);
-      if (disposed || current !== generation) {
+      if (disposed || current !== generation || saves !== savesAnswered) {
         return;
       }
       accept(result, dirty);
@@ -405,15 +423,15 @@
     }
     thumbnailLoading = true;
     try {
-      const current = generation;
+      const current = mediaGeneration;
       if (gallery.brand.logoUrl && !logo) {
         try {
           const blob = await galleryLogo(galleryId, session);
-          if (!disposed && current === generation) {
+          if (!disposed && current === mediaGeneration) {
             logo = URL.createObjectURL(blob);
           }
         } catch (error_) {
-          if (!disposed && current === generation) {
+          if (!disposed && current === mediaGeneration) {
             failure(error_);
           }
         }
@@ -438,11 +456,11 @@
       // A bounded four-worker queue keeps large contact sheets from opening a request per photograph at once.
       await Promise.all(
         Array.from({ length: Math.min(4, missing.length) }, async () => {
-          while (missing.length > 0 && !disposed && current === generation) {
+          while (missing.length > 0 && !disposed && current === mediaGeneration) {
             const { photo, kind } = missing.shift()!;
             try {
               const blob = await galleryMedia(galleryId, photo.id, kind, session);
-              if (disposed || current !== generation) {
+              if (disposed || current !== mediaGeneration) {
                 return;
               }
               if (kind === 'preview') {
@@ -452,10 +470,10 @@
                 thumbnails[photo.id] = URL.createObjectURL(blob);
               }
             } catch (error_) {
-              if (!disposed && current === generation) {
+              // One unreadable photograph must not stop this worker; ended access stops the loop above.
+              if (!disposed && current === mediaGeneration) {
                 failure(error_);
               }
-              return;
             }
           }
         }),
@@ -496,6 +514,7 @@
       return saveRunning;
     }
     saveRunning = (async () => {
+      let selectionClosed = false;
       while (gallery && session && dirty && !disposed) {
         const access = session;
         const saving = edits;
@@ -518,6 +537,7 @@
           if (disposed || session !== access) {
             return false;
           }
+          savesAnswered++;
           if (edits === saving) {
             accept(result);
             saveState = 'saved';
@@ -526,6 +546,21 @@
           // More changed while this was saving: keep it, and save again with the new revision.
           accept(result, true);
         } catch (error_) {
+          if (
+            !disposed &&
+            session === access &&
+            gallery &&
+            !selectionClosed &&
+            error_ instanceof PhotographyError &&
+            error_.code === 'selection_closed'
+          ) {
+            // FL-1769: the deadline passed. The saved favourites stand, access stays open, and notes
+            // waiting with them are saved on the next pass.
+            selectionClosed = true;
+            choices = [...gallery.choices];
+            error = $t(photographyErrorKey(error_));
+            continue;
+          }
           if (!disposed && session === access) {
             saveState = 'error';
             failure(error_);
@@ -541,16 +576,34 @@
       saveRunning = null;
     }
   }
+  /** A refused save holds an old revision: take the gallery as it is now (the draft stays), then save. */
+  async function retrySave() {
+    if (busy) {
+      return;
+    }
+    await reload();
+    if (!error && dirty) {
+      await saveChoices();
+    }
+  }
+  /** Saves what is waiting before a deliberate action; `busy` is already set, so a second click waits. */
+  async function flushBeforeAction() {
+    const saved = await saveChoices();
+    if ((!saved || !gallery || !session) && !disposed) {
+      busy = false;
+    }
+    return saved && !!gallery && !!session;
+  }
   async function submit() {
     if (!gallery || busy || ownerPreview) {
       return;
     }
     error = '';
-    if (!(await saveChoices()) || !gallery || !session) {
+    busy = true;
+    if (!(await flushBeforeAction()) || !gallery) {
       return;
     }
     const current = ++generation;
-    busy = true;
     try {
       const result = await galleryRequest<GuestGallery>(galleryId, session, '/submit', 'POST', {
         expectedRevision: gallery.revision,
@@ -558,7 +611,7 @@
       if (disposed || current !== generation) {
         return;
       }
-      accept(result);
+      accept(result, dirty);
       confirmSubmit = false;
       notice = $t('frameleaf_photography_client_selections_sent');
     } catch (error_) {
@@ -611,16 +664,22 @@
     openedOutput = null;
     marking = false;
     error = '';
-    const current = generation;
+    const current = mediaGeneration;
     const request = previewRequest;
     try {
       const blob = await galleryMedia(galleryId, photo.id, 'preview', session);
-      if (disposed || current !== generation || request !== previewRequest || opened?.id !== photo.id || openedOutput) {
+      if (
+        disposed ||
+        current !== mediaGeneration ||
+        request !== previewRequest ||
+        opened?.id !== photo.id ||
+        openedOutput
+      ) {
         return;
       }
       preview = URL.createObjectURL(blob);
     } catch (error_) {
-      if (!disposed && current === generation && request === previewRequest) {
+      if (!disposed && current === mediaGeneration && request === previewRequest) {
         failure(error_);
       }
     }
@@ -633,7 +692,7 @@
     opened = photo;
     openedOutput = output;
     marking = false;
-    const current = generation;
+    const current = mediaGeneration;
     const request = previewRequest;
     try {
       const blob = await galleryFile(
@@ -644,7 +703,7 @@
       );
       if (
         !disposed &&
-        current === generation &&
+        current === mediaGeneration &&
         request === previewRequest &&
         opened?.id === photo.id &&
         openedOutput?.id === output.id
@@ -652,7 +711,7 @@
         preview = URL.createObjectURL(blob);
       }
     } catch (error_) {
-      if (!disposed && current === generation && request === previewRequest) {
+      if (!disposed && current === mediaGeneration && request === previewRequest) {
         failure(error_);
       }
     }
@@ -728,19 +787,19 @@
     }
     comparison = {};
     compareOpen = true;
-    const current = generation;
+    const current = mediaGeneration;
     const request = ++compareRequest;
     // Both previews load together; a reply for an earlier comparison is dropped, never shown or leaked.
     await Promise.all(
       compareIds.map(async (id) => {
         try {
           const blob = await galleryMedia(galleryId, id, 'preview', session);
-          if (disposed || current !== generation || request !== compareRequest || !compareOpen) {
+          if (disposed || current !== mediaGeneration || request !== compareRequest || !compareOpen) {
             return;
           }
           comparison[id] = URL.createObjectURL(blob);
         } catch (error_) {
-          if (!disposed && current === generation && request === compareRequest && compareOpen) {
+          if (!disposed && current === mediaGeneration && request === compareRequest && compareOpen) {
             failure(error_);
           }
         }
@@ -820,21 +879,26 @@
     if (!gallery || !approvalRevision || busy || ownerPreview) {
       return;
     }
-    const current = ++generation;
+    // The version the person is looking at now, whatever a save brings back meanwhile.
+    const revisionId = approvalRevision;
     busy = true;
     error = '';
+    if (!(await flushBeforeAction()) || !gallery) {
+      return;
+    }
+    const current = ++generation;
     try {
       const result = await galleryRequest<GuestGallery>(galleryId, session, '/approve', 'POST', {
         expectedRevision: gallery.revision,
         captureId: photo.id,
-        revisionId: approvalRevision,
+        revisionId,
         approved,
         note: notes[photo.id] ?? '',
       });
       if (disposed || current !== generation) {
         return;
       }
-      accept(result);
+      accept(result, dirty);
       notice = approved
         ? $t('frameleaf_photography_client_approved')
         : $t('frameleaf_photography_client_revision_sent');
@@ -885,9 +949,12 @@
     if (!gallery || busy || ownerPreview) {
       return;
     }
-    const current = ++generation;
     busy = true;
     error = '';
+    if (!(await flushBeforeAction()) || !gallery) {
+      return;
+    }
+    const current = ++generation;
     try {
       const result = await galleryRequest<GuestGallery>(
         galleryId,
@@ -899,7 +966,7 @@
       if (disposed || current !== generation) {
         return;
       }
-      accept(result);
+      accept(result, dirty);
       notice = $t('frameleaf_photography_client_order_accepted');
     } catch (error_) {
       if (!disposed && current === generation) {
@@ -945,7 +1012,10 @@
         leaving = false;
       }
       if (document.visibilityState === 'visible' && session) {
-        void reload();
+        // Not over a send, approval or download in progress: a refresh would disown its answer.
+        if (!busy) {
+          void reload();
+        }
       } else if (dirty) {
         // Leaving the tab: save now, without waiting for the pause, in a request that survives a close.
         void saveChoices({ leaving: true });
@@ -1086,7 +1156,7 @@
             savedLabel={$t('frameleaf_photography_client_saved')}
             errorLabel={$t('frameleaf_photography_client_not_saved')}
             retryLabel={$t('frameleaf_error_retry')}
-            onRetry={() => void saveChoices()}
+            onRetry={() => void retrySave()}
           /><button
             type="button"
             class="pc-primary"
@@ -1534,7 +1604,7 @@
               savedLabel={$t('frameleaf_photography_client_saved')}
               errorLabel={$t('frameleaf_photography_client_not_saved')}
               retryLabel={$t('frameleaf_error_retry')}
-              onRetry={() => void saveChoices()}
+              onRetry={() => void retrySave()}
             />{#if approvalRevision}<button
                 type="button"
                 disabled={busy || ownerPreview || !preview}

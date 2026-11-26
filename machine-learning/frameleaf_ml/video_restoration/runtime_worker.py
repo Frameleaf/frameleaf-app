@@ -78,8 +78,26 @@ def main() -> None:
             gc.collect()
             protocol.write('{"ok":true}\n')
         except BaseException as error:
-            protocol.write(json.dumps({"ok": False, "error": f"{type(error).__name__}: {error}"[-4000:]}) + "\n")
+            protocol.write(error_line(error))
             return
+
+
+# The pool refuses a protocol line over 8192 bytes; leave room below it.
+MAX_ERROR_LINE_BYTES = 8000
+
+
+def error_line(error: BaseException) -> str:
+    """The failure reply, its message cut from the front so the encoded line fits the protocol.
+
+    Escaping can make a 4000-character message six times longer, so the encoded length is what is
+    limited. The end is kept: that is where an out-of-memory error names itself.
+    """
+    message = f"{type(error).__name__}: {error}"[-4000:]
+    while True:
+        line = json.dumps({"ok": False, "error": message}) + "\n"
+        if len(line.encode()) <= MAX_ERROR_LINE_BYTES:
+            return line
+        message = message[max(1, len(message) // 4) :]
 
 
 if __name__ == "__main__":

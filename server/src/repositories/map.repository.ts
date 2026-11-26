@@ -21,13 +21,16 @@ import { inferLandmarks } from 'src/repositories/landmark-inference.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { DB } from 'src/schema/index.js';
+import { GeodataPlaceNameTable } from 'src/schema/tables/geodata-place-name.table.js';
 import { GeodataPlacesTable } from 'src/schema/tables/geodata-places.table.js';
 import { LandmarkAreaTable, LandmarkTable } from 'src/schema/tables/landmark.table.js';
 import { NaturalEarthCountriesTable } from 'src/schema/tables/natural-earth-countries.table.js';
+import { UserPlaceTable } from 'src/schema/tables/user-place.table.js';
 import { withAlbumVisibility, withHiddenContentFilter } from 'src/utils/database.js';
 import { favoriteFor } from 'src/utils/favorite.js';
 import { libraryScopePredicate } from 'src/utils/library-scope.js';
 import { isTimelineVisible, visibilityIs } from 'src/utils/locked.js';
+import { type NearestPlace, linkGeonames, parsePlaceNameLine } from 'src/utils/place-names.js';
 
 export interface MapMarkerSearchOptions extends HiddenContentQueryOptions {
   isArchived?: boolean;
@@ -92,6 +95,11 @@ const HEX_COLOUR = /^#[0-9a-f]{6}$/i;
 /** The icon pack is one file of some tens of megabytes; a slow link gets half an hour for it. */
 const LANDMARK_ICON_DOWNLOAD_TIMEOUT_MS = 30 * 60_000;
 
+/** The place-name pack is well under a megabyte; anything far larger is not the pack. */
+const PLACE_NAME_PACK_MAX_BYTES = 64 * 1024 * 1024;
+const PLACE_NAME_PACK_TIMEOUT_MS = 5 * 60_000;
+const FIRST_UUID = '00000000-0000-0000-0000-000000000000';
+
 /** A timestamptz column as an ISO-8601 UTC string, the shape the JSON API returns for dates. */
 const isoTimestamp = (column: 'asset.fileCreatedAt' | 'asset.localDateTime') =>
   sql<string>`to_char(${sql.ref(column)} at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')`;
@@ -133,6 +141,8 @@ const GEODATA_INDEXES = [
   ['idx_geodata_places_admin1_name', 'gin', sql`f_unaccent("admin1Name") gin_trgm_ops`],
   ['idx_geodata_places_admin2_name', 'gin', sql`f_unaccent("admin2Name") gin_trgm_ops`],
 ] as const;
+
+const USER_PLACE_COLUMNS = ['id', 'name', 'latitude', 'longitude', 'radiusMeters', 'createdAt', 'updatedAt'] as const;
 
 @Injectable()
 export class MapRepository {
@@ -414,6 +424,210 @@ export class MapRepository {
         `.execute(manager);
       });
     }
+  }
+
+  private geonameIds?: { admin1: Map<string, number>; countries: Map<string, number> };
+
+  /**
+   * FL-987: the geonameId of every region (by `US.CA`) and country (by `US`), read once from the GeoNames
+   * lists that ship beside the cities. A stack without those files (development, tests) has none, and its
+   * regions and countries simply keep their English names.
+   */
+  async getGeonameIds(): Promise<{ admin1: Map<string, number>; countries: Map<string, number> }> {
+    if (!this.geonameIds) {
+      const { geodata } = this.configRepository.getEnv().resourcePaths;
+      const read = async (file: string, idColumn: number) => {
+        const ids = new Map<string, number>();
+        try {
+          for (const line of (await readFile(file, 'utf8')).split('\n')) {
+            const columns = line.split('\t');
+            const id = Number(columns[idColumn]);
+            if (!line.startsWith('#') && columns[0] && Number.isSafeInteger(id) && id > 0) {
+              ids.set(columns[0], id);
+            }
+          }
+        } catch (error) {
+          this.logger.warn(`Place names stay in English for the places listed in ${basename(file)}: ${error}`);
+        }
+        return ids;
+      };
+      const [admin1, countries] = await Promise.all([read(geodata.admin1, 3), read(geodata.countries, 16)]);
+      this.geonameIds = { admin1, countries };
+    }
+    return this.geonameIds;
+  }
+
+  /**
+   * FL-987: records which GeoNames places an item's stored English names came from (`asset_geoname`), by
+   * finding the city nearest its coordinates the way reverse geocoding does and keeping it only where the
+   * names agree (see `linkGeonames`). Nothing in `asset_exif` is written.
+   *
+   * With `assetId` it brings that one item's row up to date, removing it when the item has no coordinates.
+   * Without, it takes the next `limit` located items after `after` that have no row yet, in id order, so a
+   * run reads each item once and a later run carries on with whatever is new. Resolves to how many items it
+   * read and the last of them.
+   */
+  async linkAssetGeonames(
+    options: { assetId: string } | { after?: string; limit: number },
+  ): Promise<{ count: number; last?: string }> {
+    const one = 'assetId' in options ? options.assetId : undefined;
+    const { rows } = await sql<
+      { assetId: string; city: string | null; state: string | null; country: string | null } & Partial<NearestPlace>
+    >`
+      select e."assetId", e.city, e.state, e.country, p.id, p.name, p."admin1Name", p."admin1Code", p."countryCode"
+      from asset_exif e
+      left join lateral (
+        select id, name, "admin1Name", "admin1Code", "countryCode"
+        from geodata_places
+        where earth_box(ll_to_earth_public(e.latitude, e.longitude), ${reverseGeocodeMaxDistance})
+          @> ll_to_earth_public(latitude, longitude)
+        order by earth_distance(ll_to_earth_public(e.latitude, e.longitude), ll_to_earth_public(latitude, longitude))
+        limit 1
+      ) p on true
+      where e.latitude is not null and e.longitude is not null
+        and ${
+          one
+            ? sql`e."assetId" = ${one}::uuid`
+            : sql`e."assetId" > ${('after' in options && options.after) || FIRST_UUID}::uuid
+                and not exists (select from asset_geoname g where g."assetId" = e."assetId")`
+        }
+      order by e."assetId"
+      limit ${one ? 1 : (options as { limit: number }).limit}
+    `.execute(this.db);
+
+    if (rows.length === 0) {
+      if (one) {
+        await this.db.deleteFrom('asset_geoname').where('assetId', '=', one).execute();
+      }
+      return { count: 0 };
+    }
+
+    const { admin1 } = await this.getGeonameIds();
+    const links = rows.map(({ assetId, city, state, country, id, name, admin1Name, admin1Code, countryCode }) => ({
+      assetId,
+      ...linkGeonames(
+        { city, state, country },
+        id && name && countryCode
+          ? { id, name, admin1Name: admin1Name ?? null, admin1Code: admin1Code ?? null, countryCode }
+          : null,
+        admin1,
+      ),
+    }));
+    // Joined to `asset` so an item deleted meanwhile is skipped instead of failing the whole slice. The
+    // one-item call replaces its row; a slice never overwrites a row that metadata extraction just wrote.
+    await sql`
+      insert into asset_geoname ("assetId", "cityGeonameId", "admin1GeonameId", "countryCode")
+      select link.*
+      from unnest(
+        ${links.map(({ assetId }) => assetId)}::uuid[],
+        ${links.map(({ cityGeonameId }) => cityGeonameId)}::int[],
+        ${links.map(({ admin1GeonameId }) => admin1GeonameId)}::int[],
+        ${links.map(({ countryCode }) => countryCode)}::char(2)[]
+      ) as link ("assetId", "cityGeonameId", "admin1GeonameId", "countryCode")
+      inner join asset on asset.id = link."assetId"
+      on conflict ("assetId") do ${
+        one
+          ? sql`update set "cityGeonameId" = excluded."cityGeonameId",
+              "admin1GeonameId" = excluded."admin1GeonameId", "countryCode" = excluded."countryCode"`
+          : sql`nothing`
+      }
+    `.execute(this.db);
+    return { count: rows.length, last: rows.at(-1)!.assetId };
+  }
+
+  /** FL-987: the places linked to these items, with what each linked city and its region are called in English. */
+  @GenerateSql({ params: [[DummyValue.UUID]] })
+  getAssetGeonames(assetIds: string[]) {
+    return this.db
+      .selectFrom('asset_geoname')
+      .leftJoin('geodata_places', 'geodata_places.id', 'asset_geoname.cityGeonameId')
+      .select([
+        'asset_geoname.assetId',
+        'asset_geoname.cityGeonameId',
+        'asset_geoname.admin1GeonameId',
+        'asset_geoname.countryCode',
+        'geodata_places.name as cityName',
+        'geodata_places.admin1Name',
+      ])
+      .where('asset_geoname.assetId', '=', sql<string>`any(${assetIds}::uuid[])`)
+      .execute();
+  }
+
+  /** FL-987: the names the pack has for these places in one language. A place without a row keeps its English name. */
+  @GenerateSql({ params: ['de', [DummyValue.NUMBER]] })
+  getPlaceNames(lang: string, geonameIds: number[]) {
+    return this.db
+      .selectFrom('geodata_place_name')
+      .select(['geonameId', 'name'])
+      .where('lang', '=', lang)
+      .where('geonameId', '=', sql<number>`any(${geonameIds}::int[])`)
+      .execute();
+  }
+
+  /**
+   * FL-987: downloads the place-name pack and replaces `geodata_place_name` with it, unless that very pack
+   * is already there. The file is taken whole and checked against its SHA-256 before a line is used: one
+   * name a line, `geonameId`, language, name (see bin/build-place-names-pack.mjs). The table is replaced in
+   * one transaction, so readers see the old names or the new ones. Resolves to whether a pack was installed;
+   * a download or a file that fails leaves the table as it was.
+   */
+  async installPlaceNames(pack: { url: string; sha256: string }): Promise<boolean> {
+    if (!/^[a-f0-9]{64}$/.test(pack.sha256)) {
+      throw new Error('The place-name pack checksum is malformed');
+    }
+    const state = await this.metadataRepository.get(SystemMetadataKey.PlaceNamesState);
+    if (state?.sha256 === pack.sha256) {
+      // a restored or reset database can carry the state without the rows
+      const name = await this.db.selectFrom('geodata_place_name').select('geonameId').limit(1).executeTakeFirst();
+      if (name) {
+        return false;
+      }
+    }
+
+    const response = await fetch(pack.url, { signal: AbortSignal.timeout(PLACE_NAME_PACK_TIMEOUT_MS) });
+    if (!response.ok || !response.body) {
+      throw new Error(`${pack.url} answered ${response.status}`);
+    }
+    const chunks: Buffer[] = [];
+    let size = 0;
+    for await (const chunk of Readable.fromWeb(response.body as Parameters<typeof Readable.fromWeb>[0])) {
+      size += (chunk as Buffer).length;
+      if (size > PLACE_NAME_PACK_MAX_BYTES) {
+        throw new Error(`${pack.url} is larger than a place-name pack`);
+      }
+      chunks.push(chunk as Buffer);
+    }
+    const packed = Buffer.concat(chunks);
+    if (createHash('sha256').update(packed).digest('hex') !== pack.sha256) {
+      throw new Error(`${pack.url} does not match its checksum`);
+    }
+
+    const names: Insertable<GeodataPlaceNameTable>[] = [];
+    for (const line of gunzipSync(packed, { maxOutputLength: PLACE_NAME_PACK_MAX_BYTES })
+      .toString('utf8')
+      .split('\n')) {
+      if (!line) {
+        continue;
+      }
+      const name = parsePlaceNameLine(line);
+      if (!name) {
+        throw new Error('The place-name pack has a malformed line');
+      }
+      names.push(name);
+    }
+
+    await this.db.transaction().execute(async (manager) => {
+      await manager.deleteFrom('geodata_place_name').execute();
+      for (let index = 0; index < names.length; index += 5000) {
+        await manager
+          .insertInto('geodata_place_name')
+          .values(names.slice(index, index + 5000))
+          .execute();
+      }
+    });
+    await this.metadataRepository.set(SystemMetadataKey.PlaceNamesState, { sha256: pack.sha256 });
+    this.logger.log(`Imported ${names.length} place names`);
+    return true;
   }
 
   /** Local-only inference, run in bounded slices on the existing background queue (FL-358). */
@@ -918,6 +1132,56 @@ export class MapRepository {
     }
 
     return adminMap;
+  }
+
+  /** FL-949: a person's named places, by name. Only ever read for that person. */
+  @GenerateSql({ params: [DummyValue.UUID] })
+  getUserPlaces(ownerId: string) {
+    return this.db
+      .selectFrom('user_place')
+      .select(USER_PLACE_COLUMNS)
+      .where('ownerId', '=', ownerId)
+      .orderBy(sql`lower(name)`)
+      .orderBy('id')
+      .execute();
+  }
+
+  @GenerateSql({ params: [DummyValue.UUID] })
+  async countUserPlaces(ownerId: string): Promise<number> {
+    const { count } = await this.db
+      .selectFrom('user_place')
+      .select((eb) => eb.fn.countAll<string>().as('count'))
+      .where('ownerId', '=', ownerId)
+      .executeTakeFirstOrThrow();
+    return Number(count);
+  }
+
+  createUserPlace(place: Insertable<UserPlaceTable>) {
+    return this.db.insertInto('user_place').values(place).returning(USER_PLACE_COLUMNS).executeTakeFirstOrThrow();
+  }
+
+  updateUserPlace(
+    ownerId: string,
+    id: string,
+    changes: Partial<Pick<Insertable<UserPlaceTable>, 'name' | 'latitude' | 'longitude' | 'radiusMeters'>>,
+  ) {
+    return this.db
+      .updateTable('user_place')
+      .set({ ...changes, updatedAt: new Date() })
+      .where('ownerId', '=', ownerId)
+      .where('id', '=', id)
+      .returning(USER_PLACE_COLUMNS)
+      .executeTakeFirst();
+  }
+
+  @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID] })
+  async deleteUserPlace(ownerId: string, id: string): Promise<boolean> {
+    const result = await this.db
+      .deleteFrom('user_place')
+      .where('ownerId', '=', ownerId)
+      .where('id', '=', id)
+      .executeTakeFirst();
+    return result.numDeletedRows > 0n;
   }
 
   /**

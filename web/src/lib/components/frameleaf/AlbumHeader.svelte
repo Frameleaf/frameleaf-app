@@ -423,10 +423,15 @@
   const hasMiddleItems = $derived(editor || canShowOwnerBadges || !!rule || album.kind === AlbumKind.Space);
 
   const loadRule = async (id: string) => {
+    let answer: ClassificationRuleResponseDto | undefined;
     try {
-      rule = await getClassificationRule({ id });
+      answer = await getClassificationRule({ id });
     } catch {
-      rule = undefined;
+      answer = undefined;
+    }
+    // The header stays mounted from album to album: a late answer must not land on the next one.
+    if (album.smartRuleId === id) {
+      rule = answer;
     }
   };
 
@@ -437,7 +442,14 @@
       return;
     }
     void loadRule(id);
-    void loadRuleSources().then((sources) => (ruleSources = sources));
+  });
+
+  // People, tags and settings are a heavy read: once per rule, not on every update of the album object.
+  const smartRuleId = $derived(album.smartRuleId);
+  $effect(() => {
+    if (smartRuleId) {
+      void loadRuleSources().then((sources) => (ruleSources = sources));
+    }
   });
 
   const checkedLabel = $derived.by(() => {

@@ -57,8 +57,11 @@ export class ImportImmichCommand extends CommandRunner {
       const importer = new ImmichImportService(target.db, source.db, config);
       switch (action) {
         case 'preflight': {
-          const { sourceVersion, sourceCommit, status, embeddings, notImported } = await importer.preflight();
-          console.log(JSON.stringify({ sourceVersion, sourceCommit, status, embeddings, notImported }));
+          const { sourceVersion, sourceCommit, sourceKind, gallery, status, embeddings, notImported } =
+            await importer.preflight();
+          console.log(
+            JSON.stringify({ sourceVersion, sourceCommit, sourceKind, gallery, status, embeddings, notImported }),
+          );
           return;
         }
         case 'run': {
@@ -78,7 +81,14 @@ export class ImportImmichCommand extends CommandRunner {
           break;
         }
       }
-      console.log(JSON.stringify(await importer.status()));
+      // A Noodle Gallery source also reports what its reads carried and what stayed behind (FL-1742).
+      const { gallery, notImported } = importer.source;
+      console.log(
+        JSON.stringify({
+          ...(await importer.status()),
+          ...(gallery && { sourceKind: 'gallery', gallery: importer.source.galleryCounts, notImported }),
+        }),
+      );
     } catch (error) {
       // Driver errors can include SQL row values and URLs: never print the original error.
       console.error(

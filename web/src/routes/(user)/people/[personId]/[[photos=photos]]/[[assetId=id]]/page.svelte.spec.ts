@@ -27,6 +27,7 @@ vi.mock(
 );
 vi.mock('$lib/components/OnEvents.svelte', () => ({ default: () => {} }));
 vi.mock('$lib/components/timeline/TimelineAssetViewer.svelte', () => ({ default: () => {} }));
+vi.mock('$lib/components/frameleaf/people/FamilySection.svelte', () => ({ default: () => {} }));
 vi.mock('$lib/components/frameleaf/people/PersonHero.svelte', () => ({
   default: (_anchor: unknown, props: { onFacesChanged: () => Promise<void> }) => {
     hero.mounts++;

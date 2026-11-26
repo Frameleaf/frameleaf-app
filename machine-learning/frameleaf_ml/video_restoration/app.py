@@ -25,6 +25,7 @@ import secrets
 import shutil
 import tempfile
 import threading
+import time
 from collections.abc import AsyncIterator, Callable, Mapping
 from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass
@@ -41,12 +42,14 @@ from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoin
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from ..env_aliases import read_env
+from .image_revision import verified_revision
 from .models import RIFE_CANDIDATE_ID, RestorationFailure, RestorationRegistry, adapter_for
 from .pipeline import AdapterFactory, frame_budget, restore
 from .runtime_pool import RuntimePool
 from .schemas import (
     RESTORATION_PROTOCOL,
     RESULT_HEADER,
+    CapabilityReport,
     RestorationError,
     RestorationErrorCode,
     RestorationMode,
@@ -61,6 +64,8 @@ MAX_AUTH_HEADER_LENGTH = 8 * 1024
 UPLOAD_CHUNK_BYTES = 8 * 1024 * 1024
 BUSY_RETRY_AFTER_S = 30
 DEFAULT_REFRESH_S = 300
+# The shortest gap between two refreshes a client asks for.
+REFRESH_INTERVAL_S = 10
 # The upload limit derived from the manifest: the raw 16-bit RGB frames of the largest qualified clip.
 # A source compressed to more than its own raw frames is never a sensible input, and a bound set
 # before the body is read keeps a bogus upload from filling the work directory first.
@@ -103,12 +108,25 @@ class WorkerSettings:
             ),
             work_root=Path(env.get("FRAMELEAF_RESTORATION_WORKDIR", tempfile.gettempdir())),
             auth_token=read_env(env, "FRAMELEAF_ML_AUTH_TOKEN").strip() or None,
-            image_revision=env.get("FRAMELEAF_RESTORATION_IMAGE_REVISION", "").strip() or None,
+            image_revision=image_revision_from_env(env),
             host=env.get("FRAMELEAF_RESTORATION_HOST", "0.0.0.0"),
             port=_int_env(env, "FRAMELEAF_RESTORATION_PORT", 3004),
             refresh_s=_int_env(env, "FRAMELEAF_RESTORATION_REFRESH_S", DEFAULT_REFRESH_S),
             max_upload_bytes=_int_env(env, "FRAMELEAF_RESTORATION_MAX_UPLOAD_BYTES", 0),
         )
+
+
+def image_revision_from_env(env: Mapping[str, str]) -> str | None:
+    """The image's revision. A content-hashed image names its record file, and that file is the only
+    source: when the container no longer measures to it there is no revision and the gate refuses."""
+    record = env.get("FRAMELEAF_RESTORATION_IMAGE_REVISION_FILE", "").strip()
+    if record:
+        root = Path(env.get("FRAMELEAF_RESTORATION_IMAGE_ROOT", "/usr/src"))
+        revision = verified_revision(Path(record), root)
+        if revision is None:
+            log.error("The restoration image revision does not match this container; no model will be served")
+        return revision
+    return env.get("FRAMELEAF_RESTORATION_IMAGE_REVISION", "").strip() or None
 
 
 class BearerAuthMiddleware(BaseHTTPMiddleware):
@@ -139,7 +157,8 @@ class BearerAuthMiddleware(BaseHTTPMiddleware):
 
 def upload_limit(registry: RestorationRegistry) -> int:
     """The largest upload any qualified model or signed candidate could use, from the manifest limits."""
-    limits = [(model.maxFrames, model.maxInputLongEdge) for model in registry.report().models]
+    report = registry.report()
+    limits = [(model.maxFrames, model.maxInputLongEdge) for model in [*report.models, *report.photoModels]]
     limits += [(limit.maxFrames, limit.maxInputLongEdge) for limit in registry.candidate_limits()]
     largest = max((frames * edge**2 * UPLOAD_BYTES_PER_PIXEL for frames, edge in limits), default=0)
     return max(MIN_UPLOAD_BYTES, largest)
@@ -235,6 +254,9 @@ def create_app(
 ) -> FastAPI:
     busy = threading.Lock()
     stop = threading.Event()
+    # A refresh runs git and nvidia-smi and hashes every model: one at a time, at most once per window.
+    refreshing = threading.Lock()
+    last_refresh = [float("-inf")]
     runtimes = RuntimePool()
     if adapter_factory is adapter_for:
         adapter_factory = partial(adapter_for, runner=runtimes)
@@ -317,8 +339,21 @@ def create_app(
             capability = selected.capability.model_copy(update={"maxFrames": frame_budget(selected)})
             report = registry.report().model_copy(update={"workloads": [], "models": [capability]})
         else:
-            report = registry.refresh() if refresh else registry.report()
+            report = refreshed() if refresh else registry.report()
         return JSONResponse(report.model_dump(mode="json"))
+
+    def refreshed() -> CapabilityReport:
+        """A fresh report, or the last one while another refresh runs or one ran moments ago."""
+        if not refreshing.acquire(blocking=False):
+            return registry.report()
+        try:
+            if time.monotonic() - last_refresh[0] < REFRESH_INTERVAL_S:
+                return registry.report()
+            report = registry.refresh()
+            last_refresh[0] = time.monotonic()
+            return report
+        finally:
+            refreshing.release()
 
     @app.post("/restoration/restore")
     async def restore_endpoint(
@@ -367,7 +402,7 @@ def create_app(
             done, _ = await asyncio.wait((inference, disconnected), return_when=asyncio.FIRST_COMPLETED)
             if disconnected in done:
                 await cancel_inference()
-                remove_work_dir(work_dir)
+                await asyncio.to_thread(remove_work_dir, work_dir)
                 return Response(status_code=499)
             result, output_path = inference.result()
         except asyncio.CancelledError:
@@ -375,18 +410,18 @@ def create_app(
             # Shield cleanup and keep admission until that work and its child have closed.
             await asyncio.shield(cancel_inference())
             if work_dir is not None:
-                remove_work_dir(work_dir)
+                await asyncio.shield(asyncio.to_thread(remove_work_dir, work_dir))
             raise
         except RestorationFailure as failure:
             await asyncio.to_thread(runtimes.close)
             if work_dir is not None:
-                remove_work_dir(work_dir)
+                await asyncio.to_thread(remove_work_dir, work_dir)
             log.warning("Restoration %s refused or failed: %s (%s)", parsed.requestId, failure.code, failure.message)
             return error_response(failure)
         except Exception:
             await cancel_inference()
             if work_dir is not None:
-                remove_work_dir(work_dir)
+                await asyncio.to_thread(remove_work_dir, work_dir)
             log.exception("Restoration %s failed unexpectedly", parsed.requestId)
             return error_response(
                 RestorationFailure(RestorationErrorCode.RUNTIME_FAILED, "the restoration failed unexpectedly")

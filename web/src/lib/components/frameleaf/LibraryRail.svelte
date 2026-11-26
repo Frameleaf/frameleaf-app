@@ -24,6 +24,7 @@
     isCreatorsArea,
     readCreatorsLocation,
   } from '$lib/frameleaf/creators';
+  import { creatorsDownloads } from '$lib/frameleaf/creators-downloads.svelte';
   import { creatorsStore } from '$lib/frameleaf/creators-store.svelte';
   import { savedSearchesStore } from '$lib/stores/saved-searches.svelte';
   import { menuButtonId } from '$lib/components/shared-components/navigation-bar/NavigationBar.svelte';
@@ -109,6 +110,7 @@
     mdiPaletteOutline,
     mdiPlus,
     mdiPuzzleOutline,
+    mdiProgressDownload,
     mdiRss,
     mdiVideoOutline,
     mdiViewDashboardOutline,
@@ -211,9 +213,15 @@
       tree = emptyAlbumTree();
       albumRecords = [];
       partners = [];
+      // Counts read under the old access must not outlive it (a lock, another account).
+      countsRequest++;
+      boardsCounts = {};
       if (authManager.authenticated) {
         void refreshAlbums();
         void refreshPartners();
+        if (boards) {
+          void refreshBoardsCounts();
+        }
       }
     }),
   );
@@ -286,10 +294,20 @@
    */
   let dragId = $state<string | null>(null);
   let drop = $state<{ id: string; where: RailDrop } | null>(null);
+  // A move is planned from the loaded tree, so a second one before the reload would undo part of the first.
+  let moveRunning = false;
   const applyMove = async (albumId: string, move: RailMove | null) => {
-    if (!move) {
+    if (!move || moveRunning) {
       return;
     }
+    moveRunning = true;
+    try {
+      await saveMove(albumId, move);
+    } finally {
+      moveRunning = false;
+    }
+  };
+  const saveMove = async (albumId: string, move: RailMove) => {
     const scope = workspaceScope;
     let album = albumRecords.find(({ id }) => id === albumId);
     const name = album?.albumName ?? '';
@@ -825,11 +843,10 @@
     type Group = { id: string; name: string | null; creators: typeof creatorsStore.creators };
     const folders = new Map<string, Group>();
     const loose: Group = { id: '', name: null, creators: [] };
+    const albumNames = new Map(albumRecords.map((album) => [album.id, album.albumName]));
     for (const creator of creatorsStore.creators) {
       const id = creator.parentAlbumId;
-      const name = id
-        ? (albumRecords.find((album) => album.id === id)?.albumName ?? creatorsStore.folderName(id))
-        : undefined;
+      const name = id ? (albumNames.get(id) ?? creatorsStore.folderName(id)) : undefined;
       if (!id || !name) {
         loose.creators.push(creator);
         continue;
@@ -1039,6 +1056,7 @@
 {#snippet creatorsList()}
   {@const home = !creatorsWhere.creator && creatorsWhere.view === 'home'}
   {@const subscriptions = !creatorsWhere.creator && creatorsWhere.view === 'subscriptions'}
+  {@const downloads = !creatorsWhere.creator && creatorsWhere.view === 'downloads'}
   <nav class="fl-section" aria-label={$t('frameleaf_creators_title')}>
     <a
       href={creatorsHref()}
@@ -1070,6 +1088,24 @@
       {#if !iconOnly}
         <span class="fl-label">{$t('frameleaf_creators_subscriptions')}</span>
         <small class="fl-count">{creatorsStore.following.length}</small>
+      {/if}
+    </a>
+    <a
+      href={creatorsHref({ view: 'downloads' })}
+      class="fl-link"
+      class:fl-current={downloads}
+      aria-current={downloads ? 'page' : undefined}
+      title={iconOnly ? $t('frameleaf_creators_downloads') : undefined}
+      aria-label={iconOnly ? $t('frameleaf_creators_downloads') : undefined}
+    >
+      <Icon icon={mdiProgressDownload} size="1.25em" aria-hidden={true} class="fl-icon" />
+      {#if !iconOnly}
+        <span class="fl-label">{$t('frameleaf_creators_downloads')}</span>
+        {#if creatorsDownloads.needs > 0}
+          <small class="fl-count">
+            {$t('frameleaf_creators_tray_needs', { values: { count: creatorsDownloads.needs } })}
+          </small>
+        {/if}
       {/if}
     </a>
   </nav>

@@ -19,15 +19,17 @@
   import { classifyInlineEditError, inlineEditRecovery, type InlineEditFailure } from '$lib/frameleaf/inline-edit';
   import { landmarkHref, landmarkKind } from '$lib/frameleaf/landmarks';
   import { libraryReferenceUrl } from '$lib/frameleaf/library-reference';
+  import NamedPlaceDialog from '$lib/components/frameleaf/NamedPlaceDialog.svelte';
   import ViewerLocationDialog from '$lib/components/frameleaf/ViewerLocationDialog.svelte';
+  import { namedPlaces } from '$lib/frameleaf/named-places.svelte';
   import { locationPatch } from '$lib/frameleaf/viewer-location';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { handlePromiseError } from '$lib/utils';
   import { handleError } from '$lib/utils/handle-error';
   import { dismissAssetLocationInsight, getAssetInfo, updateAsset, type AssetResponseDto } from '@frameleaf/sdk';
   import { Icon, modalManager } from '@frameleaf/ui';
-  import { mdiMapMarkerOutline, mdiOpenInNew, mdiPencil } from '@mdi/js';
-  import { onDestroy } from 'svelte';
+  import { mdiMapMarkerOutline, mdiMapMarkerPlusOutline, mdiOpenInNew, mdiPencil } from '@mdi/js';
+  import { onDestroy, untrack } from 'svelte';
   import { t } from 'svelte-i18n';
 
   type LocationChange = Exclude<ReturnType<typeof locationPatch>, 'invalid' | null>;
@@ -56,6 +58,9 @@
   const landmarks = $derived(
     (asset.landmarks ?? []).filter((item, index) => index === 0 || item.inference === 'visual').slice(0, 2),
   );
+  // FL-1019: the place this person named, above the town. Never on a shared link.
+  const namedPlace = $derived(authManager.isSharedLink ? null : (asset.namedPlace?.name ?? null));
+  const canNamePlace = $derived(isOwner && !!point && !namedPlace && !authManager.isSharedLink);
   const insight = $derived(point ? asset.locationInsight : undefined);
   const insightMapLink = $derived(libraryReferenceUrl(insight?.mapsUrl));
   const insightHeadingId = $props.id();
@@ -87,6 +92,49 @@
   const fail = (error: unknown, change: LocationChange | null) => {
     failure = classifyInlineEditError(error);
     pending = change;
+  };
+
+  /**
+   * FL-1019: only the asset read carries the named place, so it is read again after a place or this
+   * item's location changes. The rest of the panel is left as it is if that fails.
+   */
+  const refreshNamedPlace = async () => {
+    if (authManager.isSharedLink) {
+      return;
+    }
+    const isCurrent = captureView();
+    try {
+      const fresh = await getAssetInfo({ id: asset.id });
+      if (
+        fresh &&
+        isCurrent() &&
+        (fresh.namedPlace?.id !== asset.namedPlace?.id || fresh.namedPlace?.name !== asset.namedPlace?.name)
+      ) {
+        asset = fresh;
+        onAssetRefresh?.(fresh);
+      }
+    } catch {
+      // the name catches up the next time the item is opened
+    }
+  };
+  let seenRevision = namedPlaces.revision;
+  $effect(() => {
+    const revision = namedPlaces.revision;
+    if (revision !== seenRevision) {
+      seenRevision = revision;
+      untrack(() => void refreshNamedPlace());
+    }
+  });
+
+  const namePlace = () => {
+    if (!point) {
+      return;
+    }
+    void namedPlaces.load();
+    void modalManager.show(NamedPlaceDialog, {
+      point: { latitude: point.lat, longitude: point.lng },
+      where: asset.exifInfo?.city ?? undefined,
+    });
   };
 
   const dismissInsight = async () => {
@@ -125,6 +173,7 @@
       failure = null;
       pending = null;
       onAssetRefresh?.(asset);
+      void refreshNamedPlace();
     } catch (error) {
       if (!isCurrent()) {
         return;
@@ -156,6 +205,7 @@
     failure = null;
     pending = null;
     onAssetRefresh?.(asset);
+    void refreshNamedPlace();
   };
 
   const reload = async () => {
@@ -190,7 +240,12 @@
         <div><Icon icon={mdiMapMarkerOutline} size="24" /></div>
 
         <div class="min-w-0">
-          <p>{place ?? $t('frameleaf_info_no_location')}</p>
+          {#if namedPlace}
+            <p data-testid="frameleaf-info-named-place">{namedPlace}</p>
+            {#if place}<p class="text-sm text-gray-500 dark:text-gray-400">{place}</p>{/if}
+          {:else}
+            <p>{place ?? $t('frameleaf_info_no_location')}</p>
+          {/if}
           {#if coordinates}
             <p class="text-sm text-gray-500 dark:text-gray-400">{coordinates}</p>
           {:else if isOwner}
@@ -237,6 +292,13 @@
         </div>
       </a>
     {/each}
+
+    {#if canNamePlace}
+      <button type="button" class="ms-10 mb-3 flex items-center gap-1 text-sm hover:text-primary" onclick={namePlace}>
+        <Icon icon={mdiMapMarkerPlusOutline} size="15" aria-hidden />
+        {$t('frameleaf_named_places_name_this')}
+      </button>
+    {/if}
 
     {#if mapLink}
       <!-- eslint-disable-next-line svelte/no-navigation-without-resolve this is an external link -->

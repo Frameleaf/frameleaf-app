@@ -22,6 +22,9 @@ restoration workload.
 
 The mode names express intention, not a fidelity guarantee.
 
+It also serves two **photo workloads** for stills (FL-933), `photo-repair` and `colourise`.
+They are operations, not modes; see [Photo repair and colourise](#photo-repair-and-colourise).
+
 ## Files
 
 - `models.example.json` — the model manifest format. Copy it to the path in
@@ -117,6 +120,104 @@ from `machine-learning`. Also set `FRAMELEAF_TEST_OPENSSL` to an absolute OpenSS
 3 executable to exercise detached admission and preview-to-full binding with a
 disposable key. The tests exercise synthetic video, audio and the exact model.
 Installed resource limits and representative motion quality still need qualification.
+
+## Photo repair and colourise
+
+Two workloads for old prints (FL-933). Each takes one still and returns a PNG of **exactly the
+same pixel size**; neither enlarges.
+
+| Workload       | Operation   | Family       | What runs                                                                                                   |
+| -------------- | ----------- | ------------ | ----------------------------------------------------------------------------------------------------------- |
+| `photo-repair` | `repair`    | `lama-repair` | `runtimes/photo_repair.py`: LaMa fills scratches and dust; RetinaFace only finds faces to leave them untouched |
+| `colourise`    | `colourise` | `ddcolor`     | `runtimes/colourise.py`: DDColor (large) suggests colour, joined to the photo's own lightness                  |
+
+**Photo repair.** Scratches and dust only: no face, hair, skin or eye pixel is generated.
+RetinaFace (from the pinned facexlib checkout) finds faces on a copy of at most 1536 pixels, at
+a low confidence on purpose, and each box grown by 30% is removed from the mask last, so those
+pixels are byte-identical to the scan. Every pixel outside the mask is copied from the source,
+so the result cannot drift in tone or sharpness. A classical detector marks only isolated specks
+and straight hairlines on smooth areas: it refuses marks that are crowded (lace, hair, grass,
+writing), beside a real edge (a card edge, a fold, a watch chain), not clear of the local grain,
+or a long level or plumb line (a mount rule). It therefore misses many real scratches, wide
+tears, creases and stains; a missed scratch is better than a removed detail. LaMa fills the
+marks in 512-pixel windows, and over 3% of the photo the pass is skipped with a warning. LaMa is
+the same ONNX file the machine-learning service uses for Clean Up (`frameleaf/frameleaf-inpaint`).
+
+**Colourise.** An opt-in suggestion. The model always sees a 512 x 512 copy and answers with two
+colour channels (Lab a and b), enlarged and joined to the lightness of the full-size photo, so a
+large scan keeps its detail and GPU memory does not grow with the scan. Every result carries a
+warning starting `suggested-colours:`. True and toned monochrome (sepia, albumen, selenium) are
+accepted. A hand-tinted print or a colour photo is refused as `unsupported-input`, with the reason:
+a toned print has one colour per brightness, and paint adds a second. Against the museum's own
+"applied color" wording on the 200-scan set (31 tinted, 169 not), repeated 5-fold cross-validation
+of the two thresholds caught 77.4% of tinted prints and accepted 92.1% of the others (89.8%
+accuracy). It misses faint tints on tintypes, and a gilt case or a mount can cause a false refusal.
+The server judges a photo before queuing it with a port of this rule; both test suites read
+`qualification/tint-vectors.json`. Of the refused photos, more than 25% off-tone picture counts as a
+colour photo, a line set from 43 colour photos and not yet measured on the 31 tinted scans. A request
+with `allowHandTinted: true` (the owner's "Suggest colours anyway") runs a hand-tinted print; a
+colour photo is refused either way.
+
+**Inputs.** 8-bit stills up to 8192 pixels on the long edge (67 megapixels; a 600 dpi scan of
+an 8 x 10 inch print is 4800 x 6000). Greyscale and colour files both arrive at the runtime
+as RGB. 16-bit files are refused (`unsupported-input`). A photo with an EXIF orientation is
+**not rotated**: the worker reads and returns the stored pixel grid and writes the same
+orientation tag into the PNG, so the result is shown the same way round as the source. The
+size the server declares is the stored size.
+
+**GPU only.** A photo model whose manifest says `requiresGpu: false` is refused, the gate
+reports `no-gpu` ("no NVIDIA GPU is visible to the worker") without one, and the runtimes
+themselves stop with "needs an NVIDIA GPU" when no CUDA device is available.
+
+**How the server sees them.** `GET /capabilities` lists `photo-repair` and `colourise`
+beside the mode workloads, only while a model for the operation is available. The models
+are reported under `photoModels` in `GET /restoration/models`, never under `models`: every
+entry there carries a restoration mode, and a mode is a value people's apps decode, so no
+mode was added. A server from before FL-933 drops the two workload names and ignores
+`photoModels`. A request names `operation` (`repair` or `colourise`) instead of `mode`, with
+`kind: "image"` and `scale: 1`; the output box does not apply. Routing these from the server
+is FL-955.
+
+**Evidence.** Both need `weights-hashed`, `resource-profile`, `output-size`, `orientation`,
+`hallucination`, `deterministic-repeat` and the five fault tests. Photo repair adds
+`compare-faces`, `face-identity-drift` (restored faces are still the same people),
+`scratch-mask` (the mask stays off faces and under its limit across the scan set) and
+`tile-seams`; colourise adds `colour-plausibility`.
+
+**Qualification run.** `qualification/qualify_photo.py` loads a runtime once, caps the
+process at 8 GB of GPU memory and, for every scan in `qualification/scan-set.json`
+(200 public-domain scanned prints from The Met; links, hashes and licence basis only),
+records output size, orientation tag, seconds, megapixels and peak GPU memory, then a 42- and
+a 67-megapixel stress input, and writes before/after contact sheets. The scans themselves
+are a private Forgejo generic package (`Frameleaf/restoration-scan-set`, version 1), read
+with the org's package-reader secret and checked file by file. `qualification/upstream.json`
+pins where that run takes the runtimes and weights from;
+`.github/workflows/restoration-qualification.yml` runs it, when started by hand, on the
+Forgejo Windows GPU runner. It measures; the comparison items still need a person.
+
+**Result: signed off by the owner on 2026-11-22, not yet served.** On an RTX 3060 (run 1296)
+repair processed all 200 scans and colourise 166, refusing 34 as already coloured, with no
+failures, inside the 8 GB cap at full scan size. Every detected face and every unmasked pixel
+came back byte-identical. The owner accepted two known limits for release: the scratch mask
+still marks some real detail (a garment fold, parts of ruled mount lines), and colourise still
+picks arbitrary colours, and that the output can contain invented pixels. The records accept
+any NVIDIA GPU of at least 8 GB on a tested driver branch (`anyNvidiaGpu`); the only tested
+branch is 610, on one RTX 3060 under Windows, so a Linux worker on another branch is refused.
+The gate still refuses both models because no worker image has run them: `containerRevisions`
+is empty. The records are in `qualification/qualification.photo.json` and
+`qualification/models.qualified.photo.json`.
+
+**Image revision.** The `photo` image's revision is a hash of what can change a model's output:
+the two runtimes, the worker's still input and output code, `runtimes/photo.lock`, the Python
+version, the pinned checkouts, the base image digest and the pinned weight hashes
+(`frameleaf_ml/video_restoration/image_revision.py`). It survives unrelated releases and changes
+when any of those change, which then needs a new qualification run. The worker re-measures it at
+startup and reports no revision on any mismatch, so the gate refuses.
+
+**Running it in the image.** `.github/workflows/restoration-image.yml` (Forgejo, started by hand)
+builds and checks the image on a Linux runner and pushes it nowhere.
+`qualification/qualify_in_image.sh` then runs 8 scans and all 200 inside that image on any Linux
+NVIDIA host, prints the driver branch and revision, and writes the evidence.
 
 ## When a model is available
 
@@ -243,6 +344,7 @@ upload, so a remote worker never receives more of the original than the job need
 | `FRAMELEAF_RESTORATION_MODELS`         | `/restoration/config/models.json`        | Model manifest                                           |
 | `FRAMELEAF_RESTORATION_QUALIFICATION`  | `/restoration/config/qualification.json` | Qualification evidence                                   |
 | `FRAMELEAF_RESTORATION_WORKDIR`        | system temporary directory               | Per-request working directories                          |
+| `FRAMELEAF_RESTORATION_IMAGE_REVISION_FILE` | set by the `photo` image build      | Content-hashed revision record, re-measured at startup; when set, it is the only source |
 | `FRAMELEAF_RESTORATION_IMAGE_REVISION` | set by the image build                   | Revision the qualification record must list              |
 | `FRAMELEAF_RESTORATION_HOST` / `_PORT` | `0.0.0.0` / `3004`                       | Listen address                                           |
 | `FRAMELEAF_RESTORATION_REFRESH_S`      | `300`                                    | How often the capability report is rebuilt; 0 for never  |

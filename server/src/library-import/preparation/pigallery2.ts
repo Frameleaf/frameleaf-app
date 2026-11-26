@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { readFile, readdir } from 'node:fs/promises';
+import { readdir } from 'node:fs/promises';
 import { join, posix } from 'node:path';
 import mysqlFixture from 'src/library-import/fixtures/pigallery2/3.5.2-mysql84.json' with { type: 'json' };
 import fixture from 'src/library-import/fixtures/pigallery2/3.5.2-sqlite.json' with { type: 'json' };
@@ -16,7 +16,7 @@ import {
 } from 'src/library-import/pigallery2.js';
 import { mysqlSourceConfig } from 'src/library-import/preparation/photoprism.js';
 import { qualifiedSource } from 'src/library-import/preparation/sqlite.js';
-import { type PreparationAdapter, type SourceLogin } from 'src/library-import/preparation/types.js';
+import { type PreparationAdapter, type SourceLogin, readSourceFile } from 'src/library-import/preparation/types.js';
 import { encodeSourceArchiveRecord } from 'src/library-import/source-archive-codec.js';
 
 const inventory = (revision: string) => ({
@@ -174,7 +174,7 @@ export const adapter: PreparationAdapter = {
             if (!originalPaths.has(candidate) && (await present(candidate))) archivePaths.add(candidate);
         const archivedFiles = [];
         for (const path of [...archivePaths].toSorted()) {
-          const content = new Uint8Array(await readFile(join(input.originalsRoot, path)));
+          const content = new Uint8Array(await readSourceFile(input.originalsRoot, path));
           archivedFiles.push({
             path,
             bytes: String(content.byteLength),

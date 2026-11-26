@@ -24,6 +24,7 @@
   import AnalyticsArea from '$lib/components/frameleaf/analytics/AnalyticsArea.svelte';
   import BackupArea from '$lib/components/frameleaf/backup/BackupArea.svelte';
   import BackLink from '$lib/components/frameleaf/settings/kit/BackLink.svelte';
+  import LinkedHouseholds from '$lib/components/frameleaf/households/LinkedHouseholds.svelte';
   import CloudTourHost from '$lib/components/frameleaf/cloud/CloudTourHost.svelte';
   import EmptyState from '$lib/components/frameleaf/EmptyState.svelte';
   import LibraryCareLanding from '$lib/components/frameleaf/settings/care/LibraryCareLanding.svelte';
@@ -414,6 +415,10 @@
   // of its pages (or older addresses) is open; People & sharing is one page under its area's name.
   const titled = $derived(area === 'backups' || area === 'sharing' ? undefined : selected);
   const breadcrumb = $derived(titled !== undefined && titled.title !== areaCopy[area].title);
+  /** FL-998: Linked households is a page of People & sharing, for administrators (`section=households`). */
+  const householdsPage = $derived(
+    area === 'sharing' && isAdmin && page.url.searchParams.get('section') === 'households',
+  );
   /** ADMIN-P6: the prototype's description under the page heading, where the page has one. */
   const pageDescription = $derived(
     titled && Object.hasOwn(PAGE_DESCRIPTIONS, titled.key) ? PAGE_DESCRIPTIONS[titled.key] : undefined,
@@ -734,7 +739,7 @@
 
   // The page scrolls inside `.cc-main`, which the router does not reset: a new page starts at its top
   // (design review finding 71). Also covers Back and Forward.
-  const pageKey = $derived(`${addressArea}:${selectedKey ?? ''}`);
+  const pageKey = $derived(`${addressArea}:${selectedKey ?? ''}:${householdsPage ? 'households' : ''}`);
   const scrollKey = $derived(
     `${pageKey}:${addressArea === 'utilities' || addressArea === 'backups' ? page.url.searchParams.get('section') : ''}`,
   );
@@ -996,9 +1001,17 @@
                       {groupCopy[areaDefinition?.group ?? 'library']}
                     {/if}
                   </SettingsOverline>
-                  <h1>{reportName ?? titled?.title ?? areaCopy[area].title}</h1>
+                  <h1>
+                    {householdsPage
+                      ? $t('frameleaf_households_title')
+                      : (reportName ?? titled?.title ?? areaCopy[area].title)}
+                  </h1>
                   <p>
-                    {titled ? (pageDescription ? $t(pageDescription) : titled.subtitle) : areaCopy[area].description}
+                    {#if householdsPage}
+                      {$t('frameleaf_households_description')}
+                    {:else}
+                      {titled ? (pageDescription ? $t(pageDescription) : titled.subtitle) : areaCopy[area].description}
+                    {/if}
                   </p>
                 </header>
               {/if}
@@ -1014,7 +1027,12 @@
                   </button>
                 </div>
               {/if}
-              {#if area === 'overview'}
+              {#if householdsPage}
+                <div class="cc-back-to-area">
+                  <BackLink href={commandCenterUrl('sharing')} label={areaCopy.sharing.title} />
+                </div>
+                <LinkedHouseholds />
+              {:else if area === 'overview'}
                 <Overview />
               {:else if area === 'backups' && backupPage}
                 <BackupArea page={backupPage} />

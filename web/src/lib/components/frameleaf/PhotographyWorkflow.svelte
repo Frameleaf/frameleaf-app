@@ -10,6 +10,7 @@
   import { t } from 'svelte-i18n';
   import { AssetMediaSize, getAssetDevelop } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
+  import { isEqual } from 'lodash-es';
   import {
     mdiCameraOutline,
     mdiImageOutline,
@@ -241,6 +242,19 @@
     }
     return [...totals];
   });
+  /**
+   * FL-1771: a price field's amount in cents. A cleared or unreadable field keeps the price it had (and
+   * shows it again) instead of sending NaN; a negative one is 0.
+   */
+  const centsFrom = (input: HTMLInputElement, previous: number) => {
+    const value = input.valueAsNumber;
+    if (input.value === '' || !Number.isFinite(value)) {
+      input.value = String(previous / 100);
+      return previous;
+    }
+    return Math.max(0, Math.round(value * 100));
+  };
+
   const money = (amount: number, currency = draft?.config.currency ?? 'USD') => {
     try {
       return new Intl.NumberFormat($locale, { style: 'currency', currency }).format(amount / 100);
@@ -253,11 +267,20 @@
    * (`processing` is only "ready" once the preview exists, and the thumbnail is made in the same
    * job), so a RAW the server cannot develop shows the placeholder without a failed request.
    */
+  const captureByAsset = $derived.by(() => {
+    const byAsset = new Map<string, Capture>();
+    for (const capture of draft?.captures ?? []) {
+      if (capture.assetId && !byAsset.has(capture.assetId)) {
+        byAsset.set(capture.assetId, capture);
+      }
+    }
+    return byAsset;
+  });
   const mediaUrl = (id: string | null | undefined, size: AssetMediaSize = AssetMediaSize.Thumbnail) => {
     if (!id) {
       return null;
     }
-    const capture = draft?.captures.find((row) => row.assetId === id);
+    const capture = captureByAsset.get(id);
     return capture && capture.processing !== 'ready' ? null : getAssetMediaUrl({ id, size });
   };
   const photoUrl = (capture: Capture) => (capture.eligible ? mediaUrl(capture.assetId) : null);
@@ -438,6 +461,10 @@
     busy = true;
     error = '';
     message = '';
+    // FL-1771: settings typed but not saved yet survive an action that leaves the saved settings as they were
+    const savedConfig = $state.snapshot(stored.config);
+    const draftConfig = draft ? $state.snapshot(draft.config) : undefined;
+    const unsavedConfig = draftConfig && !isEqual(draftConfig, savedConfig) ? draftConfig : undefined;
     try {
       const result = await workflowRequest<
         Workflow | { workflow: Workflow; invitation: { recipientId: string; token: string; emailed?: boolean } }
@@ -448,6 +475,13 @@
       const saved = 'workflow' in result ? result.workflow : result;
       stored = saved;
       draft = structuredClone(saved);
+      if (unsavedConfig && isEqual(saved.config, savedConfig)) {
+        draft.config = unsavedConfig;
+      }
+      if (typeof body.reference === 'string') {
+        // a payment action went through: its reference isn't offered for the next one
+        paymentReference = '';
+      }
       if ('invitation' in result) {
         const url = new URL(
           `/photography/gallery/${shoot.id}`,
@@ -1114,7 +1148,7 @@
                 step="0.01"
                 value={draft.config.additionalPrice / 100}
                 onchange={(event) => {
-                  draft!.config.additionalPrice = Math.round(event.currentTarget.valueAsNumber * 100);
+                  draft!.config.additionalPrice = centsFrom(event.currentTarget, draft!.config.additionalPrice);
                 }}
               /></label
             ><label
@@ -1124,8 +1158,13 @@
                 step="0.01"
                 value={draft.config.collectionPrice === null ? '' : draft.config.collectionPrice / 100}
                 onchange={(event) => {
+                  const previous = draft!.config.collectionPrice;
                   draft!.config.collectionPrice =
-                    event.currentTarget.value === '' ? null : Math.round(event.currentTarget.valueAsNumber * 100);
+                    event.currentTarget.value === ''
+                      ? null
+                      : Number.isFinite(event.currentTarget.valueAsNumber)
+                        ? Math.max(0, Math.round(event.currentTarget.valueAsNumber * 100))
+                        : previous;
                 }}
                 placeholder={$t('frameleaf_photography_not_offered')}
               /></label
@@ -1197,7 +1236,7 @@
                   step="0.01"
                   value={bundle.price / 100}
                   onchange={(event) => {
-                    bundle.price = Math.round(event.currentTarget.valueAsNumber * 100);
+                    bundle.price = centsFrom(event.currentTarget, bundle.price);
                   }}
                 /></label
               ><Button onclick={() => draft!.config.bundles.splice(index, 1)}

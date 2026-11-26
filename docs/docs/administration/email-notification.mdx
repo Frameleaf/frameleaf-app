@@ -44,3 +44,5 @@ In a [config file](/install/config-file) the same emails are the HTML templates 
 | Welcome email template | `{username}`, `{password}`, `{displayName}`, `{baseUrl}`                   |
 | Invite album template  | `{senderName}`, `{recipientName}`, `{albumId}`, `{albumName}`, `{baseUrl}` |
 | Update album template  | `{recipientName}`, `{albumId}`, `{albumName}`, `{baseUrl}`                 |
+
+The welcome email never contains the new account's password, so `{password}` is always empty. Tell the person their password yourself, or create the account with an emailed link so they choose their own.

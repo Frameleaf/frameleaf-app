@@ -16,6 +16,7 @@ import {
   showDeleteModal,
 } from '$lib/stores/preferences.store';
 import { reduceMotion } from '$lib/stores/reduce-motion.store';
+import { systemFont } from '$lib/stores/system-font.store';
 import { handleError } from '$lib/utils/handle-error';
 import en from '../../../../../i18n/en.json';
 import AppSettings from './AppSettings.svelte';
@@ -144,6 +145,7 @@ describe('AppSettings: Look & playback (FL-368)', () => {
     ['Start videos by themselves', autoPlayVideo],
     ['Repeat videos', loopVideo],
     ['Ask before deleting forever', showDeleteModal],
+    ['Use system font', systemFont],
     ['Use less movement', reduceMotion],
   ] as const)('keeps "%s" as a switch that writes this browser', async (name, store) => {
     render(AppSettings);
@@ -164,6 +166,7 @@ describe('AppSettings: Look & playback (FL-368)', () => {
     await fireEvent.click(screen.getByRole('switch', { name: 'Use less movement' }));
     expect(document.documentElement).toHaveAttribute('data-reduce-motion');
     reduceMotion.set(false);
+    systemFont.set(false);
     expect(document.documentElement).not.toHaveAttribute('data-reduce-motion');
 
     await fireEvent.click(

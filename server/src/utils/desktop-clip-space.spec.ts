@@ -21,8 +21,8 @@ const key = (space: { visualModelKey: string; textModelKeys: string[] }) =>
 it('preserves all prior spaces when adding the corrected CPU producer group', () => {
   const catalogue = models();
   const spaces = parseDesktopClipSpaces(raw(), catalogue);
-  expect(spaces.epoch).toBe(8);
-  expect(spaces.spaces).toHaveLength(14);
+  expect(spaces.epoch).toBe(10);
+  expect(spaces.spaces).toHaveLength(20);
   expect(
     createHash('sha256')
       .update(canonicalJson(spaces.spaces.slice(0, 5)))
@@ -36,8 +36,8 @@ it('preserves all prior spaces when adding the corrected CPU producer group', ()
 it('maps every released exact text/image producer to its explicit space without joining old and new preprocessing', () => {
   const catalogue = models();
   const spaces = parseDesktopClipSpaces(raw(), catalogue);
-  expect(spaces.spaces).toHaveLength(14);
-  expect(new Set(spaces.spaces.map((space) => space.spaceKey)).size).toBe(14);
+  expect(spaces.spaces).toHaveLength(20);
+  expect(new Set(spaces.spaces.map((space) => space.spaceKey)).size).toBe(20);
   for (const profile of catalogue.profiles) {
     if (profile.workload !== 'clip') {
       expect(findDesktopClipSpace(spaces, profile.modelKey)).toBeUndefined();

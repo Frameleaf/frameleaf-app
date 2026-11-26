@@ -13,25 +13,41 @@ import { Route } from '$lib/route';
 import { getServerErrorMessage, handleError } from '$lib/utils/handle-error';
 import { getFormatter } from '$lib/utils/i18n';
 
+/**
+ * FL-1771: a web address, or undefined. The server's link address and the administrator's external
+ * domain are opened and copied as links, so anything but http(s) (`javascript:` and the like) is
+ * never used; the link is then built on this server's own address instead.
+ */
+const webAddress = (value: string | null | undefined, base?: string): URL | undefined => {
+  if (!value) {
+    return undefined;
+  }
+  try {
+    const url = new URL(value, base);
+    return url.protocol === 'https:' || url.protocol === 'http:' ? url : undefined;
+  } catch {
+    return undefined;
+  }
+};
+
+const linkBase = () => (webAddress(serverConfigManager.value.externalDomain) ?? new URL(location.origin)).href;
+
 export const asUrl = (sharedLink: SharedLinkResponseDto) => {
   // FL-305: the server's address when it has one (an external domain is set)
-  if (sharedLink.url) {
-    return sharedLink.url;
+  const given = webAddress(sharedLink.url);
+  if (given) {
+    return given.href;
   }
   const path = Route.viewSharedLink(sharedLink);
-  return new URL(path, serverConfigManager.value.externalDomain || location.origin).href;
+  return new URL(path, linkBase()).href;
 };
 
 /**
  * FL-788: the address of a single-photo link's image file, for embedding in forums and websites; empty
  * when the link has none (more than one item, a video, a password, downloads off or expired).
  */
-export const asDirectImageUrl = (sharedLink: SharedLinkResponseDto) => {
-  if (!sharedLink.directUrl) {
-    return '';
-  }
-  return new URL(sharedLink.directUrl, serverConfigManager.value.externalDomain || location.origin).href;
-};
+export const asDirectImageUrl = (sharedLink: SharedLinkResponseDto) =>
+  webAddress(sharedLink.directUrl, linkBase())?.href ?? '';
 
 /** The server's refusal when a custom address (slug) is held by another link (FL-83 AL-26). */
 export const SHARED_LINK_SLUG_TAKEN = 'Shared link slug is already in use';

@@ -298,6 +298,9 @@ export async function sendEditorDraft(
     state.pendingSuperseded = false
     state.writePending = state.writeVersion !== writeVersion
     io.dirty(state.writePending)
+    // A write landed while this send was out. Its own send may already have run and found the file
+    // equal to the old `hostContent` (an undo back to it), so nothing else would store it.
+    if (state.writePending) await sendEditorDraft(state, mount, io)
   } else if (isSuperseded(result) && mount.graphVersion > version) {
     // The mount took the host's newer graph meanwhile (it already showed it), so what it shows now is
     // built on the host's change: send that instead.

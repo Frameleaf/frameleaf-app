@@ -175,6 +175,25 @@ describe('People library merge suggestions', () => {
       expect(emit).toHaveBeenCalledWith('PersonFacesChange', { personIds: ['ada', 'eve'], removedPersonIds: ['eve'] }),
     );
   });
+
+  it('lets the next suggestion be answered while the people list reloads', async () => {
+    sdkMock.setMergeVerdict.mockResolvedValue({
+      personId: 'ada',
+      suggestionId: 'eve',
+      verdict: PersonMergeVerdict.Same,
+      createdAt: '2026-09-25T00:00:00.000Z',
+    });
+    render(PeoplePage, { data: data([ada, eve, bob], false) });
+    const accept = await screen.findByRole('button', { name: 'frameleaf_people_merge_suggestion_accept' });
+    sdkMock.getAllPeople.mockReturnValue(new Promise(() => {}));
+
+    await fireEvent.click(accept);
+
+    await waitFor(() => expect(sdkMock.getAllPeople).toHaveBeenCalled());
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'frameleaf_people_merge_suggestion_accept' })).toBeEnabled(),
+    );
+  });
 });
 
 // FL-1385: "Is this all one person?" waits behind the merge suggestions; "No, split them" moves the

@@ -1,6 +1,6 @@
 import { Kysely, sql } from 'kysely';
 import { createHash, randomBytes } from 'node:crypto';
-import { ChecksumAlgorithm, SyncEntityType, SyncRequestType } from 'src/enum.js';
+import { AssetVisibility, ChecksumAlgorithm, SyncEntityType, SyncRequestType } from 'src/enum.js';
 import { AssetChecksumRepository } from 'src/repositories/asset-checksum.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { DB } from 'src/schema/index.js';
@@ -241,5 +241,89 @@ describe(SyncEntityType.AssetV2, () => {
       expect.objectContaining({ type: SyncEntityType.SyncCompleteV1 }),
     ]);
     await ctx.assertSyncIsComplete(auth, [SyncRequestType.AssetsV2]);
+  });
+});
+
+describe('Locked media in the own-asset streams (FL-1767)', () => {
+  const lockedAsset = (ctx: SyncTestContext, ownerId: string) =>
+    ctx.newAsset({
+      ownerId,
+      visibility: AssetVisibility.Locked,
+      originalFileName: 'private.jpg',
+      thumbhash: Buffer.from('2225vHcVkZzNp3Q9G+FEA0nu6zUbGb4Tj4UOXkN0wRA=', 'base64'),
+      width: 1920,
+      height: 1080,
+    });
+
+  it('sends a session that is not unlocked only that the item is Locked', async () => {
+    const { auth, ctx } = await setup();
+    const { asset } = await lockedAsset(ctx, auth.user.id);
+    await ctx.newExif({ assetId: asset.id, make: 'Canon', latitude: 51.5, longitude: -0.12 });
+
+    const response = await ctx.syncStream(auth, [SyncRequestType.AssetsV2, SyncRequestType.AssetExifsV1]);
+    expect(response).toEqual([
+      {
+        ack: expect.any(String),
+        data: {
+          id: asset.id,
+          ownerId: auth.user.id,
+          originalFileName: '',
+          thumbhash: null,
+          checksum: '',
+          fileCreatedAt: null,
+          fileModifiedAt: null,
+          createdAt: null,
+          localDateTime: null,
+          duration: null,
+          type: asset.type,
+          deletedAt: null,
+          isFavorite: false,
+          visibility: AssetVisibility.Locked,
+          livePhotoVideoId: null,
+          stackId: null,
+          libraryId: null,
+          width: null,
+          height: null,
+          isEdited: false,
+        },
+        type: SyncEntityType.AssetV2,
+      },
+      expect.objectContaining({ type: SyncEntityType.SyncCompleteV1 }),
+    ]);
+  });
+
+  it('leaves a Locked item out of the snapshot of a session that is not unlocked', async () => {
+    const { auth, ctx } = await setup();
+    await lockedAsset(ctx, auth.user.id);
+    const { asset: visible } = await ctx.newAsset({ ownerId: auth.user.id });
+
+    const response = await ctx.syncStream(auth, [SyncRequestType.AssetsV3]);
+    const ids = response.filter(({ type }) => type === SyncEntityType.AssetV3).map(({ data }: any) => data.id);
+    expect(ids).toEqual([visible.id]);
+  });
+
+  it('sends an unlocked session the whole item, as any other', async () => {
+    const { auth, ctx } = await setup();
+    const { asset } = await lockedAsset(ctx, auth.user.id);
+    await ctx.newExif({ assetId: asset.id, make: 'Canon' });
+    const unlocked = { ...auth, session: { ...auth.session!, hasElevatedPermission: true } };
+
+    const response = await ctx.syncStream(unlocked, [SyncRequestType.AssetsV2, SyncRequestType.AssetExifsV1]);
+    expect(response).toEqual([
+      expect.objectContaining({
+        type: SyncEntityType.AssetV2,
+        data: expect.objectContaining({
+          id: asset.id,
+          originalFileName: 'private.jpg',
+          width: 1920,
+          visibility: AssetVisibility.Locked,
+        }),
+      }),
+      expect.objectContaining({
+        type: SyncEntityType.AssetExifV1,
+        data: expect.objectContaining({ assetId: asset.id, make: 'Canon' }),
+      }),
+      expect.objectContaining({ type: SyncEntityType.SyncCompleteV1 }),
+    ]);
   });
 });

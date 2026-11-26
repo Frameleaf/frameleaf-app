@@ -1,5 +1,5 @@
 import { Reflector } from '@nestjs/core';
-import { ICloudConfigSchema, ICloudConnectionUpdateDto } from 'src/dtos/icloud-sync.dto.js';
+import { ICloudConfigSchema, ICloudConnectionUpdateDto, ICloudReviewAcceptDto } from 'src/dtos/icloud-sync.dto.js';
 import {
   AssetType,
   FrameleafWorker,
@@ -9,12 +9,11 @@ import {
   MetadataKey,
   NotificationLevel,
 } from 'src/enum.js';
-import { ICLOUD_SESSION_BUSY } from 'src/repositories/icloud-sync.repository.js';
 import { ICloudTransportError } from 'src/repositories/icloud-transport.repository.js';
 import {
   ICLOUD_IDLE_WAIT_MS,
   ICLOUD_MAX_IDLE_WAITS,
-  ICLOUD_RECORD_INTERVAL_MS,
+  ICLOUD_SIGN_IN_STALE_MS,
   ICLOUD_SIGN_IN_WAIT_MS,
   ICloudSyncService,
   mapICloudRun,
@@ -66,6 +65,7 @@ describe(ICloudSyncService.name, () => {
     }) as never;
   const repository = {
     ownerUploadsPaused: vi.fn().mockResolvedValue(false),
+    expireStaleSignIn: vi.fn().mockResolvedValue(false),
     refreshResource: vi.fn(),
     invalidateCursor: vi.fn(),
     block: vi.fn(),
@@ -95,6 +95,8 @@ describe(ICloudSyncService.name, () => {
     notify: vi.fn(),
     disconnect: vi.fn(),
     reviewItems: vi.fn(),
+    reviewPage: vi.fn(),
+    acceptReview: vi.fn(),
     receipts: vi.fn(),
     initializeCheckpoint: vi.fn(),
     saveMembershipPage: vi.fn(),
@@ -439,6 +441,36 @@ describe(ICloudSyncService.name, () => {
     });
   });
 
+  it('accepts review items with the session privacy and starts a run only for items that go back in line', async () => {
+    const auth = { user: { id: 'owner' }, session: { hasElevatedPermission: false } } as never;
+    repository.get.mockResolvedValue(connection);
+    repository.ownerUploadsPaused.mockResolvedValue(false);
+    repository.queueOperation.mockResolvedValue({ outcome: 'created', operation: {} });
+    const dto = ICloudReviewAcceptDto.schema.parse({ all: true, group: 'match' });
+
+    repository.acceptReview.mockResolvedValue({ accepted: 2, requeued: 0 });
+    await expect(sut.acceptReview(auth, connection.id, dto)).resolves.toEqual({ accepted: 2, requeued: 0 });
+    expect(repository.acceptReview).toHaveBeenCalledWith(connection.id, 'owner', false, dto);
+    expect(repository.queueOperation).not.toHaveBeenCalled();
+
+    repository.acceptReview.mockResolvedValue({ accepted: 2, requeued: 1 });
+    await sut.acceptReview(auth, connection.id, dto);
+    expect(repository.queueOperation).toHaveBeenCalledOnce();
+
+    // A run that cannot start now does not undo the answers already saved.
+    repository.queueOperation.mockResolvedValue({ outcome: 'not-ready' });
+    await expect(sut.acceptReview(auth, connection.id, dto)).resolves.toEqual({ accepted: 2, requeued: 1 });
+  });
+
+  it('takes either a list of review items or all of them, never both', () => {
+    const id = '00000000-0000-4000-8000-000000000001';
+    expect(ICloudReviewAcceptDto.schema.safeParse({ resourceIds: [id] }).success).toBe(true);
+    expect(ICloudReviewAcceptDto.schema.safeParse({ all: true, exceptResourceIds: [id] }).success).toBe(true);
+    expect(ICloudReviewAcceptDto.schema.safeParse({}).success).toBe(false);
+    expect(ICloudReviewAcceptDto.schema.safeParse({ all: true, resourceIds: [id] }).success).toBe(false);
+    expect(ICloudReviewAcceptDto.schema.safeParse({ resourceIds: [id], group: 'match' }).success).toBe(false);
+  });
+
   it('patches only supplied config fields and validates the merged settings', async () => {
     const auth = { user: { id: 'owner' }, session: { hasElevatedPermission: true } } as never;
     const config = ICloudConfigSchema.parse({
@@ -468,11 +500,9 @@ describe(ICloudSyncService.name, () => {
     });
     expect(ICloudConnectionUpdateDto.schema.safeParse({ config: { typo: true } }).success).toBe(false);
 
+    // Hidden photos always import as Locked, so saving no longer needs an unlocked session.
+    await sut.update({ user: { id: 'owner' }, session: {} } as never, connection.id, dto);
     repository.update.mockClear();
-    await expect(sut.update({ user: { id: 'owner' }, session: {} } as never, connection.id, dto)).rejects.toThrow(
-      'Elevated permission is required',
-    );
-    expect(repository.update).not.toHaveBeenCalled();
     vi.stubEnv('FRAMELEAF_ICLOUD_MAX_CONCURRENCY', '2');
     try {
       await expect(sut.update(auth, connection.id, dto)).rejects.toThrow('icloud_admin_limit_exceeded');
@@ -823,217 +853,6 @@ describe(ICloudSyncService.name, () => {
       expect(operations.complete).not.toHaveBeenCalled();
     });
 
-    it('starts the next download when any one finishes, not when the whole batch does (FL-1724)', async () => {
-      repository.get.mockResolvedValue({ ...connection, config: { ...connection.config, concurrency: 2 } });
-      const item = (id: string) => ({ ...resource, id, sourceAssetId: id });
-      repository.claim.mockReset();
-      repository.claim
-        .mockResolvedValueOnce(item('slow'))
-        .mockResolvedValueOnce(item('fast'))
-        .mockResolvedValueOnce(item('next'))
-        .mockResolvedValue(undefined);
-      let releaseSlow!: () => void;
-      let slowDone = false;
-      const slow = new Promise<void>((resolve) => (releaseSlow = resolve));
-      let nextStartedBeforeSlowFinished: boolean | undefined;
-      staging.download.mockImplementation(async (_connection: unknown, current: { id: string }) => {
-        if (current.id === 'slow') {
-          await slow;
-          slowDone = true;
-        } else if (current.id === 'next') {
-          nextStartedBeforeSlowFinished = !slowDone;
-          releaseSlow();
-        }
-        return '/private/complete';
-      });
-
-      await sut.run(operation(), 'token');
-
-      expect(nextStartedBeforeSlowFinished).toBe(true);
-      expect(staging.download).toHaveBeenCalledTimes(3);
-      expect(operations.complete).toHaveBeenCalled();
-    });
-
-    it('waits for downloads still in flight before handing a failed step back (FL-1724)', async () => {
-      repository.get.mockResolvedValue({ ...connection, config: { ...connection.config, concurrency: 2 } });
-      const item = (id: string) => ({ ...resource, id, sourceAssetId: id });
-      repository.claim.mockReset();
-      repository.claim
-        .mockResolvedValueOnce(item('slow'))
-        .mockResolvedValueOnce(item('throttled'))
-        .mockResolvedValue(undefined);
-      let slowDone = false;
-      staging.download.mockImplementation(async (_connection: unknown, current: { id: string }) => {
-        if (current.id === 'throttled') {
-          throw new ICloudTransportError('rate_limited');
-        }
-        await new Promise((resolve) => setTimeout(resolve, 20));
-        slowDone = true;
-        return '/private/complete';
-      });
-      let slowDoneAtRequeue: boolean | undefined;
-      operations.requeue.mockImplementation(() => {
-        slowDoneAtRequeue = slowDone;
-        return Promise.resolve(true);
-      });
-
-      await sut.run(operation(), 'token');
-
-      expect(repository.defer).toHaveBeenCalledWith('connection', 'owner', 'rate_limited');
-      expect(slowDoneAtRequeue).toBe(true);
-    });
-
-    it('records progress while a long download holds every slot, within the record interval (FL-1724)', async () => {
-      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
-      try {
-        repository.get.mockResolvedValue({ ...connection, config: { ...connection.config, concurrency: 2 } });
-        const item = (id: string) => ({ ...resource, id, sourceAssetId: id });
-        repository.claim.mockReset();
-        repository.claim
-          .mockResolvedValueOnce(item('long'))
-          .mockResolvedValueOnce(item('short'))
-          .mockResolvedValue(undefined);
-        let releaseLong!: () => void;
-        const long = new Promise<void>((resolve) => (releaseLong = resolve));
-        let longDone = false;
-        staging.download.mockImplementation(async (_connection: unknown, current: { id: string }) => {
-          if (current.id === 'long') {
-            await long;
-            longDone = true;
-          }
-          return '/private/complete';
-        });
-        let recordsWhileLong = 0;
-        operations.setBulkResult.mockImplementation(() => {
-          if (!longDone) {
-            recordsWhileLong++;
-          }
-          return Promise.resolve(working);
-        });
-
-        const done = sut.run(operation(), 'token');
-        await vi.advanceTimersByTimeAsync(ICLOUD_RECORD_INTERVAL_MS * 3);
-        // the run still records while the long download is in flight, not only once it finishes
-        expect(recordsWhileLong).toBeGreaterThanOrEqual(2);
-        releaseLong();
-        await vi.runAllTimersAsync();
-        await done;
-        expect(operations.complete).toHaveBeenCalled();
-      } finally {
-        vi.useRealTimers();
-      }
-    });
-
-    it('does not list the library again behind a download that holds the session (FL-1724)', async () => {
-      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
-      try {
-        repository.get.mockResolvedValue({ ...connection, config: { ...connection.config, concurrency: 2 } });
-        const item = (id: string) => ({ ...resource, id, sourceAssetId: id });
-        repository.claim.mockReset();
-        repository.claim
-          .mockResolvedValueOnce(item('held'))
-          .mockResolvedValueOnce(item('quick'))
-          .mockResolvedValue(undefined);
-        // a download keeps the connection's session (its row lock) until the answer starts; listing needs it too
-        let releaseHeld!: () => void;
-        const held = new Promise<void>((resolve) => (releaseHeld = resolve));
-        let sessionTaken: Promise<void> | undefined;
-        const inner = repository.withSession.getMockImplementation()!;
-        repository.withSession.mockImplementation(async (...args) => {
-          await sessionTaken;
-          return inner(...args);
-        });
-        staging.download.mockImplementation((_connection: unknown, current: { id: string }) => {
-          if (current.id === 'held') {
-            sessionTaken = held;
-            return held.then(() => '/private/complete');
-          }
-          return Promise.resolve('/private/complete');
-        });
-        let recordsWhileHeld = 0;
-        let heldDone = false;
-        void held.then(() => (heldDone = true));
-        operations.setBulkResult.mockImplementation(() => {
-          if (!heldDone) {
-            recordsWhileHeld++;
-          }
-          return Promise.resolve(working);
-        });
-
-        const done = sut.run(operation(), 'token');
-        await vi.advanceTimersByTimeAsync(ICLOUD_RECORD_INTERVAL_MS * 3);
-        // the run keeps recording while the held download keeps the session
-        expect(recordsWhileHeld).toBeGreaterThanOrEqual(2);
-        releaseHeld();
-        await vi.runAllTimersAsync();
-        await done;
-        expect(operations.complete).toHaveBeenCalled();
-      } finally {
-        vi.useRealTimers();
-      }
-    });
-
-    it('lets listing step aside while a download holds the session, so progress goes on (FL-1724)', async () => {
-      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
-      try {
-        repository.get.mockResolvedValue({ ...connection, config: { ...connection.config, concurrency: 2 } });
-        const item = (id: string) => ({ ...resource, id, sourceAssetId: id });
-        repository.claim.mockReset();
-        repository.claim
-          .mockResolvedValueOnce(item('held'))
-          .mockResolvedValueOnce(item('quick'))
-          .mockResolvedValue(undefined);
-        let releaseHeld!: () => void;
-        const held = new Promise<void>((resolve) => (releaseHeld = resolve));
-        let heldDone = false;
-        void held.then(() => (heldDone = true));
-        let downloading = false;
-        // the inventory is still being listed; a download holds the session (its row lock) until it answers
-        let listings = 0;
-        const inner = repository.withSession.getMockImplementation()!;
-        repository.withSession.mockImplementation(async (id, owner, callback, options) => {
-          if (downloading && !heldDone) {
-            if (options?.nowait) {
-              throw new Error(ICLOUD_SESSION_BUSY);
-            }
-            await held;
-          }
-          listings++;
-          return listings === 1 ? false : inner(id, owner, callback, options);
-        });
-        staging.download.mockImplementation((_connection: unknown, current: { id: string }) => {
-          if (current.id === 'held') {
-            downloading = true;
-            return held.then(() => '/private/complete');
-          }
-          return Promise.resolve('/private/complete');
-        });
-        let recordsWhileHeld = 0;
-        operations.setBulkResult.mockImplementation(() => {
-          if (!heldDone) {
-            recordsWhileHeld++;
-          }
-          return Promise.resolve(working);
-        });
-
-        const done = sut.run(operation(), 'token');
-        await vi.advanceTimersByTimeAsync(ICLOUD_RECORD_INTERVAL_MS * 3);
-        expect(recordsWhileHeld).toBeGreaterThanOrEqual(2);
-        releaseHeld();
-        await vi.runAllTimersAsync();
-        await done;
-        expect(operations.complete).toHaveBeenCalled();
-      } finally {
-        vi.useRealTimers();
-      }
-    });
-
-    it('allows up to 100 downloads at a time and defaults to 10 (FL-1724)', () => {
-      expect(ICloudConfigSchema.parse({}).concurrency).toBe(10);
-      expect(ICloudConfigSchema.safeParse({ concurrency: 100 }).success).toBe(true);
-      expect(ICloudConfigSchema.safeParse({ concurrency: 101 }).success).toBe(false);
-    });
-
     it('hands the claim back at the next boundary when its owner pauses', async () => {
       operations.setBulkResult.mockResolvedValue({ ...working, pauseRequestedAt: new Date() });
       operations.settlePause.mockResolvedValue(true);
@@ -1086,6 +905,24 @@ describe(ICloudSyncService.name, () => {
         returnAttempt: true,
       });
       expect(operations.fail).not.toHaveBeenCalled();
+    });
+
+    it('asks for a new sign-in when a sign-in step was cut off by a server stop', async () => {
+      repository.get
+        .mockResolvedValueOnce({ ...connection, state: 'authenticating' })
+        .mockResolvedValue({ ...connection, state: 'reauthentication-required' });
+      repository.expireStaleSignIn.mockResolvedValueOnce(true);
+      await sut.run(operation(), 'token');
+      expect(repository.expireStaleSignIn).toHaveBeenCalledWith(
+        'connection',
+        expect.any(String),
+        ICLOUD_SIGN_IN_STALE_MS,
+      );
+      expect(operations.requeue).not.toHaveBeenCalledWith(
+        'run',
+        'token',
+        expect.objectContaining({ delayMs: ICLOUD_SIGN_IN_WAIT_MS }),
+      );
     });
 
     it('reports a run that cannot move for a day instead of waiting forever', async () => {

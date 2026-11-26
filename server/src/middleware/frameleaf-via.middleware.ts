@@ -44,6 +44,8 @@ export const FRAMELEAF_VIA_UNVERIFIED = 'frameleaf_via_unverified';
 const CLIENT_CREDENTIAL_HEADERS = new Set<string>([
   RequestHeader.RenderWorkerSession,
   'x-frameleaf-desktop-proof',
+  // FL-1761: a desktop on the home network may arrive through the edge worker, so this is not local-only
+  'x-frameleaf-transcode-upload',
   MANAGER_TOKEN_HEADER,
   DESKTOP_COPY_TOKEN_HEADER,
 ]);

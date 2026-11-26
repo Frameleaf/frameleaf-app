@@ -125,8 +125,16 @@ async function run(job: Job, report: (progress: Progress) => void, signal: Abort
     // Before anything is thinned, the new backup joins Cloud's signed history.
     if (job.target.kind === 'cloud') await ask({ what: 'record', stored: { key: done.key, versionId: done.versionId, ciphertextSha256: done.ciphertextSha256, time: done.snapshot.time } });
     // Removing needs credentials of its own, which uploading ones don't carry.
-    const thinned = job.prune && job.target.kind === 'cloud' ? await Repository.open(open(job.target, 'prune', ask), { rootKey }) : repository;
-    const removed = job.prune ? (await prune(thinned, { policy: job.retention })).removedSnapshots.length : 0;
+    let removed = 0;
+    if (job.prune) {
+      // The backup is stored and recorded by now: thinning old ones failing must not report it as lost.
+      try {
+        const thinned = job.target.kind === 'cloud' ? await Repository.open(open(job.target, 'prune', ask), { rootKey }) : repository;
+        removed = (await prune(thinned, { policy: job.retention })).removedSnapshots.length;
+      } catch (error) {
+        console.error(`manager: thinning old server backups failed; the next scheduled run tries again: ${(error as Error).message}`);
+      }
+    }
     return {
       kind: 'backup',
       snapshot: done.key,

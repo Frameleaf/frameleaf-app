@@ -28,6 +28,8 @@ import { assertCloudProcessingAllowed } from 'src/utils/cloud-processing-choice.
 import { anyUuid, isLockedAsset } from 'src/utils/database.js';
 import { JOB_QUEUE_CLAIMANT, JOB_QUEUE_EXECUTOR, notJobQueueExecuted } from 'src/utils/edit-operation.js';
 import { ICLOUD_NON_SYNC_SNAPSHOT_KEYS } from 'src/utils/icloud-weekly.js';
+import { lockAssetRowsInOrder } from 'src/utils/locked-stacks.js';
+import { lockedAssetIdExists } from 'src/utils/locked.js';
 import {
   CLAIMED_MEDIA_OPERATION_STATUSES,
   MEDIA_OPERATION_AUTO_RETRIES,
@@ -1499,6 +1501,42 @@ export class MediaOperationRepository {
     );
     this.changed(result, options.executor);
     return result ? 'failed' : false;
+  }
+  /** FL-1761: the lock record, which exists before the Locked seal job has encrypted the file. */
+  async isAssetLocked(assetId: string): Promise<boolean> {
+    const { rows } = await sql<{
+      locked: boolean;
+    }>`SELECT ${lockedAssetIdExists(sql`${assetId}::uuid`)} AS locked`.execute(this.db);
+    return !!rows[0]?.locked;
+  }
+  /** FL-1761: the lock record, read under the asset-row lock Locked writers take, so a lock cannot slip past it. */
+  async isAssetLockedForPublication(assetId: string, tx: Kysely<DB>): Promise<boolean> {
+    await lockAssetRowsInOrder(tx, [assetId]);
+    const { rows } = await sql<{
+      locked: boolean;
+    }>`SELECT ${lockedAssetIdExists(sql`${assetId}::uuid`)} AS locked`.execute(tx);
+    return !!rows[0]?.locked;
+  }
+  /** FL-1758: nobody is left to take this waiting desktop conversion; the server encodes the video instead. */
+  async failUnclaimedDesktopTranscode(id: string): Promise<boolean> {
+    const row = await this.write((db) =>
+      db
+        .updateTable('media_operation')
+        .set({
+          status: MediaOperationStatus.Failed,
+          error: 'No desktop is available to convert this video',
+          errorCode: 'desktop_transcode_unavailable',
+          finishedAt: sql<Date>`now()`,
+        })
+        .where('id', '=', id)
+        .where('kind', '=', MediaOperationKind.PlaybackTranscode)
+        .where('status', '=', MediaOperationStatus.Queued)
+        .where('claimToken', 'is', null)
+        .returning(['id', 'ownerId'])
+        .executeTakeFirst(),
+    );
+    this.changed(row);
+    return !!row;
   }
   /**
    * Hand a claimed job back to the queue on purpose, keeping everything it has recorded (FL-32).

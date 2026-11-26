@@ -448,6 +448,8 @@
     outPoint = 1;
     destination = MediaOperationDestination.Local;
     smoothFactor = null;
+    // A failed read is asked again in a new opening, not remembered until the page reloads.
+    capabilitiesFailed = false;
     advancedOpen = false;
     shape = StudioExportShape.Original;
     multiDelivery = false;

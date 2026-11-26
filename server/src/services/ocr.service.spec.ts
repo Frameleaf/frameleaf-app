@@ -13,6 +13,7 @@ describe(OcrService.name, () => {
 
     mocks.config.getWorker.mockReturnValue(FrameleafWorker.Microservices);
     mocks.assetJob.getForOcr.mockResolvedValue({
+      isPrintBack: false,
       visibility: AssetVisibility.Timeline,
       previewFile: '/uploads/user-id/thumbs/path.jpg',
     });
@@ -29,6 +30,50 @@ describe(OcrService.name, () => {
 
   it('should work', () => {
     expect(sut).toBeDefined();
+  });
+
+  describe('the back of a print (FL-967)', () => {
+    const back = { visibility: AssetVisibility.Hidden, previewFile: '/uploads/back.jpg', isPrintBack: true };
+
+    it('reads a hidden back, keeps its text out of its own search row and files it for the front', async () => {
+      mocks.assetJob.getForOcr.mockResolvedValue(back);
+      mocks.ocr.getDocumentEdits.mockResolvedValue([]);
+      mockOcrResult('Bonfire night');
+
+      await expect(sut.handleOcr({ id: 'back' })).resolves.toBe(JobStatus.Success);
+
+      expect(mocks.ocr.upsert).toHaveBeenCalledWith('back', expect.any(Array), '');
+      expect(mocks.ocr.setPrintBackSearchText).toHaveBeenCalledWith('back', 'Bonfire night');
+    });
+
+    it("keeps the owner's correction when the back is read again", async () => {
+      mocks.assetJob.getForOcr.mockResolvedValue(back);
+      const region = { x1: 0, y1: 1, x2: 2, y2: 3, x3: 4, y3: 5, x4: 6, y4: 7 };
+      mocks.ocr.getDocumentEdits.mockResolvedValue([
+        {
+          id: 'e',
+          key: 'line:gone',
+          action: 'correct',
+          value: 'Bonfire',
+          sourceText: 'Bonfrie',
+          revision: 1,
+          ...region,
+        },
+      ] as never);
+      mockOcrResult('Bonfrie');
+
+      await sut.handleOcr({ id: 'back' });
+
+      expect(mocks.ocr.setPrintBackSearchText).toHaveBeenCalledWith('back', 'Bonfire');
+    });
+
+    it('still skips a Live Photo motion part', async () => {
+      mocks.assetJob.getForOcr.mockResolvedValue({ ...back, isPrintBack: false });
+
+      await expect(sut.handleOcr({ id: 'motion' })).resolves.toBe(JobStatus.Skipped);
+
+      expect(mocks.machineLearning.ocr).not.toHaveBeenCalled();
+    });
   });
 
   describe('handleQueueOcr', () => {
@@ -82,7 +127,11 @@ describe(OcrService.name, () => {
 
     it('should skip assets without a resize path', async () => {
       const asset = AssetFactory.create();
-      mocks.assetJob.getForOcr.mockResolvedValue({ visibility: AssetVisibility.Timeline, previewFile: null });
+      mocks.assetJob.getForOcr.mockResolvedValue({
+        isPrintBack: false,
+        visibility: AssetVisibility.Timeline,
+        previewFile: null,
+      });
 
       expect(await sut.handleOcr({ id: asset.id })).toEqual(JobStatus.Skipped);
 
@@ -91,7 +140,11 @@ describe(OcrService.name, () => {
     });
 
     it('skips a hidden motion part without waiting for a preview it never gets', async () => {
-      mocks.assetJob.getForOcr.mockResolvedValue({ visibility: AssetVisibility.Hidden, previewFile: null });
+      mocks.assetJob.getForOcr.mockResolvedValue({
+        isPrintBack: false,
+        visibility: AssetVisibility.Hidden,
+        previewFile: null,
+      });
 
       expect(await sut.handleOcr({ id: 'motion-part' })).toEqual(JobStatus.Skipped);
 
@@ -216,6 +269,7 @@ describe(OcrService.name, () => {
     it('should skip invisible assets', async () => {
       const asset = AssetFactory.from().file({ type: AssetFileType.Preview }).build();
       mocks.assetJob.getForOcr.mockResolvedValue({
+        isPrintBack: false,
         visibility: AssetVisibility.Hidden,
         previewFile: asset.files[0].path,
       });

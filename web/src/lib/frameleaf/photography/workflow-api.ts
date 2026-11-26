@@ -569,6 +569,16 @@ async function galleryFetch(
       ...(options?.keepalive && { keepalive: true }),
     },
   );
+  if (response.status === 409) {
+    // FL-1769: a favourite refused because the selection deadline passed is told apart from a stale page
+    const refusal = (await response
+      .clone()
+      .json()
+      .catch(() => null)) as { code?: string } | null;
+    if (refusal?.code === 'selection_closed') {
+      throw new PhotographyError('selection_closed', 409);
+    }
+  }
   checkResponse(response);
   return response;
 }

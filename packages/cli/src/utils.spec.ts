@@ -456,6 +456,25 @@ describe('discoverEndpoint', () => {
     expect(warn.mock.calls[0][0]).toContain('https://evil.example.net');
   });
 
+  it('adopts an https redirect on the same host, but no other redirect', async () => {
+    // eslint-disable-next-line unicorn/consistent-function-scoping
+    const redirected = (finalUrl: string) =>
+      vi.stubGlobal(
+        'fetch',
+        vi.fn().mockResolvedValue({
+          redirected: true,
+          url: finalUrl,
+          json: () => Promise.resolve({ api: { endpoint: '/api' } }),
+        }),
+      );
+    // eslint-disable-next-line unicorn/prefer-https
+    const plain = 'http://photos.example.com:2283/';
+    redirected('https://photos.example.com/.well-known/immich');
+    await expect(discoverEndpoint(plain)).resolves.toBe('https://photos.example.com/api');
+    redirected('https://evil.example.net/.well-known/immich');
+    await expect(discoverEndpoint(plain)).resolves.toBe(`${plain}api`);
+  });
+
   it('is null when there is no well-known document or it is not usable', async () => {
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('ECONNREFUSED')));
     await expect(discoverEndpoint(url)).resolves.toBeUndefined();

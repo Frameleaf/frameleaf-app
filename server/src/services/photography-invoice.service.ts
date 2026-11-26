@@ -22,6 +22,7 @@ import { BaseService } from 'src/services/base.service.js';
 import { type ClientsPaymentEvent, ClientsPaymentsService } from 'src/services/clients-payments.service.js';
 import { PhotographyCampaignService } from 'src/services/photography-campaign.service.js';
 import { PhotographyWorkflowService } from 'src/services/photography-workflow.service.js';
+import { refundsWholePayment } from 'src/utils/clients-payments.js';
 import { sendConnectedEmail } from 'src/utils/mail-connection.js';
 import { renderInvoicePdf } from 'src/utils/photography-invoice-pdf.js';
 import {
@@ -261,6 +262,11 @@ export class PhotographyInvoiceService extends BaseService implements OnModuleIn
     if (!move) return;
     if (event.type === 'payment.refunded') {
       if (!event.paymentIntent || (payment.providerRef && payment.providerRef !== event.paymentIntent)) return;
+      // Marking it refunded would put the whole amount back on the invoice and ask the client to pay it again.
+      if (!refundsWholePayment(event.amount, payment.amount)) {
+        this.logger.warn(`Payment ${payment.id} on invoice ${payment.invoiceId} was partly refunded in Stripe`);
+        return;
+      }
     } else if (
       (payment.checkoutId !== null && event.sessionId !== payment.checkoutId) ||
       (event.type === 'payment.succeeded' &&
@@ -294,7 +300,7 @@ export class PhotographyInvoiceService extends BaseService implements OnModuleIn
       if (!(await this.invoices.claimReminder(row.id, day))) continue;
       // Only link hashes are stored, so a reminder carries a new link; the ones sent before still work.
       const token = randomBytes(32).toString('hex');
-      if (!(await this.invoices.send(row.ownerId, row.id, sha256(token)))) continue;
+      if (!(await this.invoices.send(row.ownerId, row.id, sha256(token), { reminder: true }))) continue;
       const studio = await this.studio(row.ownerId);
       const values = {
         amount: this.money(next.amount, row.currency, studio.locale),

@@ -63,6 +63,12 @@ export type DescriptionModelProfile = {
 };
 
 export const DESCRIPTION_MODEL_PROFILES: readonly DescriptionModelProfile[] = [
+  // FD-31: runs only on Frameleaf Desktop; this server's own AI describes with the fallback model.
+  {
+    value: 'Qwen/Qwen3.5-4B',
+    label: 'Qwen3.5 4B (Frameleaf Desktop)',
+    vramHint: '~5 GB memory on the computer',
+  },
   {
     value: 'Qwen/Qwen2.5-VL-3B-Instruct',
     label: 'Qwen2.5-VL 3B (lightweight)',

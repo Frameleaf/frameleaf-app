@@ -82,6 +82,16 @@ it('throws a code for every refusal, never a sentence', async () => {
   await expect(galleryRequest('shoot', 'scoped')).rejects.toMatchObject({ code: 'wait', status: 429 });
   refuse(500);
   await expect(galleryRequest('shoot', 'scoped')).rejects.toMatchObject({ code: 'request_failed', status: 500 });
+  // FL-1769: a favourite after the deadline is told apart from a stale page, and never ends access
+  transport.fetch.mockResolvedValueOnce(Response.json({ code: 'selection_closed' }, { status: 409 }));
+  await expect(galleryRequest('shoot', 'scoped', '/choices', 'PUT', {})).rejects.toMatchObject({
+    code: 'selection_closed',
+    status: 409,
+  });
+  transport.fetch.mockResolvedValueOnce(Response.json({ code: 'photo_unavailable' }, { status: 409 }));
+  await expect(galleryRequest('shoot', 'scoped', '/choices', 'PUT', {})).rejects.toMatchObject({
+    code: 'collection_changed',
+  });
 
   const wrongType = () =>
     transport.fetch.mockResolvedValueOnce(new Response('{}', { headers: { 'Content-Type': 'application/json' } }));

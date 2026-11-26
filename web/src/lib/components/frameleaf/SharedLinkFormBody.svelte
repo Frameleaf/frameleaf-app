@@ -292,7 +292,7 @@
     }
   });
 
-  const expiresAt = $derived.by(() => {
+  const expiryFromNow = () => {
     if (preset === 'never') {
       return null;
     }
@@ -302,7 +302,9 @@
     }
     const found = PRESETS.find((item) => item.id === preset);
     return found?.ms ? new Date(Date.now() + found.ms).toISOString() : null;
-  });
+  };
+  /** For the preview. Saving counts a preset from the moment of saving, however long the form sat open. */
+  const expiresAt = $derived.by(expiryFromNow);
 
   const expiryHint = $derived(
     expiresAt
@@ -436,6 +438,7 @@
       error = $t('frameleaf_sharing.invalid_expiry');
       return;
     }
+    const savedExpiry = expiryFromNow();
     saving = true;
     error = '';
     try {
@@ -448,7 +451,7 @@
             allowDownload,
             allowUpload,
             showMetadata,
-            expiresAt,
+            expiresAt: savedExpiry,
             password: removePassword ? null : password || undefined,
           },
           { onSlugTaken },
@@ -467,7 +470,7 @@
             allowDownload,
             allowUpload,
             showMetadata,
-            expiresAt,
+            expiresAt: savedExpiry,
             password: password || null,
           },
           { onSlugTaken },

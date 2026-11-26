@@ -97,7 +97,6 @@ const FrameleafSetupStorageResponseSchema = z
   })
   .meta({ id: 'FrameleafSetupStorageResponseDto' });
 
-export type FrameleafSetupProgress = z.infer<typeof FrameleafSetupProgressSchema>;
 export const frameleafSetupProgressSchema = FrameleafSetupProgressSchema;
 
 export class FrameleafSetupUpdateDto extends createZodDto(FrameleafSetupUpdateSchema) {}

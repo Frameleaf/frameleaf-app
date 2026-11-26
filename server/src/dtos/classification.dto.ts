@@ -294,5 +294,3 @@ export class ClassificationDecisionDto extends createZodDto(ClassificationDecisi
 export class ClassificationDecisionResponseDto extends createZodDto(ClassificationDecisionResponseSchema) {}
 export class ClassificationContributionDto extends createZodDto(ClassificationContributionSchema) {}
 export class ClassificationSettingsDto extends createZodDto(ClassificationSettingsSchema) {}
-
-export type ClassificationCriteria = z.infer<typeof ClassificationRuleCriteriaSchema>;

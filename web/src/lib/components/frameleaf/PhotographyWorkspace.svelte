@@ -241,14 +241,13 @@
       section = 'settings';
       return;
     }
+    const assetIds = selected.length > 0 ? [...selected] : undefined;
+    const sameAs = (ids?: string[]) => [...(ids ?? [])].sort().join(',') === [...(assetIds ?? [])].sort().join(',');
+    // Only a retry of the same photographs reuses the batch; a new choice is a new batch.
     const request =
-      styleRequest?.shootId === shootId
+      styleRequest?.shootId === shootId && sameAs(styleRequest.assetIds)
         ? styleRequest
-        : {
-            shootId,
-            batchId: newRequestKey(),
-            assetIds: selected.length > 0 ? [...selected] : undefined,
-          };
+        : { shootId, batchId: newRequestKey(), assetIds };
     styleRequest = request;
     styleBusy = true;
     try {
@@ -305,6 +304,7 @@
     scroller?.scrollTo({ top: 0 });
   });
   let generation = 0;
+  let persistRequest = 0;
   let detailGeneration = 0;
   let versionGeneration = 0;
   let disposed = false;
@@ -359,7 +359,8 @@
   const eyesChecking = $derived(photos.filter((photo) => (photo.eyes?.unscoredCount ?? 0) > 0).length);
   /** FL-420: what "Open in RAW editor" opens: the chosen RAW photographs, else every RAW one. */
   const rawPhotos = $derived(photos.filter((photo) => isRawName(photo.fileName)));
-  const chosenRaw = $derived(rawPhotos.filter((photo) => selected.includes(photo.id)).map((photo) => photo.id));
+  const selectedIds = $derived(new Set(selected));
+  const chosenRaw = $derived(rawPhotos.filter((photo) => selectedIds.has(photo.id)).map((photo) => photo.id));
   const availableAlbums = $derived(
     albums.filter(
       (album) =>
@@ -584,6 +585,7 @@
       return false;
     }
     const current = generation;
+    const save = ++persistRequest;
     busy = true;
     error = '';
     message = '';
@@ -601,7 +603,8 @@
       }
       return false;
     } finally {
-      if (current === generation) {
+      // Not tied to `generation`: a reload during the save must not leave the whole page disabled.
+      if (save === persistRequest) {
         busy = false;
       }
     }
@@ -757,8 +760,11 @@
     const shootId = activeId;
     const current = ratingGeneration;
     message = '';
+    // One pass over the grid for the whole selection, not one per photograph.
+    const byId = new Map(photos.map((photo) => [photo.id, photo]));
+    const rated = new Set<string>();
     for (const assetId of ids) {
-      const photo = photos.find(({ id }) => id === assetId);
+      const photo = byId.get(assetId);
       if (!photo?.canRate) {
         continue;
       }
@@ -767,12 +773,7 @@
       }
       const mine = (turn.get(assetId) ?? 0) + 1;
       turn.set(assetId, mine);
-      showRating(assetId, rating);
-      if (Object.hasOwn(ratingFailed, assetId)) {
-        ratingFailed = Object.fromEntries(Object.entries(ratingFailed).filter(([id]) => id !== assetId));
-      }
-      justRated = [...justRated, assetId];
-      setTimeout(() => (justRated = justRated.filter((id) => id !== assetId)), DURATION.slow);
+      rated.add(assetId);
       ratingsSaving++;
       const save = async () => {
         try {
@@ -796,6 +797,18 @@
       };
       queue.set(assetId, (queue.get(assetId) ?? Promise.resolve()).then(save));
     }
+    if (rated.size === 0) {
+      return;
+    }
+    photos = photos.map((photo) => (rated.has(photo.id) ? { ...photo, rating } : photo));
+    if (inspecting && rated.has(inspecting.id)) {
+      inspecting = { ...inspecting, rating };
+    }
+    if (Object.keys(ratingFailed).some((id) => rated.has(id))) {
+      ratingFailed = Object.fromEntries(Object.entries(ratingFailed).filter(([id]) => !rated.has(id)));
+    }
+    justRated = [...justRated, ...rated];
+    setTimeout(() => (justRated = justRated.filter((id) => !rated.has(id))), DURATION.slow);
   }
 
   async function inspect(photo: Photo) {
@@ -1220,7 +1233,7 @@
                     aria-label={$t('frameleaf_photography_select_all_visible')}
                     disabled={visible.every((photo) => !photo.canRate)}
                     checked={visible.some((photo) => photo.canRate) &&
-                      visible.filter((photo) => photo.canRate).every(({ id }) => selected.includes(id))}
+                      visible.filter((photo) => photo.canRate).every(({ id }) => selectedIds.has(id))}
                     onchange={(event) =>
                       (selected = event.currentTarget.checked
                         ? visible.filter((photo) => photo.canRate).map(({ id }) => id)
@@ -1253,7 +1266,7 @@
               <div class="phw-photo-grid" bind:this={grid}>
                 {#each visible as photo (photo.id)}<article
                     class="phw-photo"
-                    class:is-selected={selected.includes(photo.id) || inspecting?.id === photo.id}
+                    class:is-selected={selectedIds.has(photo.id) || inspecting?.id === photo.id}
                     class:is-rejected={photo.rating === -1}
                     data-photo-id={photo.id}
                   >
@@ -1270,7 +1283,7 @@
                         type="checkbox"
                         aria-label={$t('frameleaf_photography_select_photo', { values: { name: photo.fileName } })}
                         disabled={!photo.canRate}
-                        checked={selected.includes(photo.id)}
+                        checked={selectedIds.has(photo.id)}
                         onchange={(event) =>
                           (selected = event.currentTarget.checked
                             ? [...selected, photo.id]

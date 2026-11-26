@@ -43,7 +43,7 @@ jobs:
   # one medium spec and hands its report to the engine job's evidence step.
   lifecycle-evidence:
     env:
-      FRAMELEAF_CI_POSTGRES_IMAGE: mirror.gcr.io/library/postgres@sha256:7b1e213e9680e7838da5ea2a929427901b866e69d08735186b72bddfe73c0453
+      FRAMELEAF_CI_POSTGRES_IMAGE: docker.io/library/postgres@sha256:4c736732289da844c2ab892451adc1a6e376e7d0ac54ca9571a2e1cfd14176a1
       RYUK_CONTAINER_IMAGE: mirror.gcr.io/testcontainers/ryuk@sha256:7c1a8a9a47c780ed0f983770a662f80deb115d95cce3e2daa3d12115b8cd28f0
     if: ${{ github.repository == 'Frameleaf/frameleaf-app' }}
     runs-on: ubuntu-24.04
@@ -102,11 +102,13 @@ jobs:
         with:
           node-version: 22.23.4
       # Node 22 ships Float16Array (used by the Node-side CPU oracles) only behind a V8 flag that
-      # NODE_OPTIONS refuses, so every node in this job runs through a wrapper that passes it.
+      # NODE_OPTIONS refuses, so every node in this job runs through a wrapper that passes it. The wrapper is
+      # bash because Ubuntu's sh (dash) drops variables with a hyphen in the name, like the runner's
+      # INPUT_INCLUDE-HIDDEN-FILES, and the host-mode runner starts actions with the `node` on PATH.
       - name: Enable Float16Array for Node 22
         run: |
           mkdir -p "$RUNNER_TEMP/node-float16"
-          printf '#!/bin/sh\nexec %s --js-float16array "$@"\n' "$(command -v node)" > "$RUNNER_TEMP/node-float16/node"
+          printf '#!/bin/bash\nexec %s --js-float16array "$@"\n' "$(command -v node)" > "$RUNNER_TEMP/node-float16/node"
           chmod +x "$RUNNER_TEMP/node-float16/node"
           echo "$RUNNER_TEMP/node-float16" >> "$GITHUB_PATH"
       - name: Pin the isolated engine package manager
@@ -168,9 +170,9 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends ffmpeg
-          ffmpeg -hide_banner -encoders | grep -q libx265
-          ffmpeg -hide_banner -filters | grep -q zscale
-          ffmpeg -hide_banner -encoders | grep -q libsvtav1
+          ffmpeg -hide_banner -encoders | grep libx265 >/dev/null
+          ffmpeg -hide_banner -filters | grep zscale >/dev/null
+          ffmpeg -hide_banner -encoders | grep libsvtav1 >/dev/null
       - name: HDR diagnostic master metadata, PTS, audio and interrupted restart (FL-107)
         env:
           HDR_TIMING_REPORT: ${{ runner.temp }}/hdr-master-timing-report.json
@@ -294,7 +296,8 @@ jobs:
         env:
           NODE_OPTIONS: --no-experimental-webstorage
         run: |
-          npm --prefix studio/engine run test:run
+          # A shared CI slot can take over 5 s on the heaviest tracking and rendering tests.
+          npm --prefix studio/engine run test:run -- --testTimeout=30000
           npm --prefix studio/engine run headless:test:node
       - name: Build and attest the isolated engine
         run: |

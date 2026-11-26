@@ -24,7 +24,13 @@ import { cloudRouteAllows, hasRequiredConsent } from 'src/utils/ml-destination.j
 export const ML_PROCESSING_ORDER_DEFAULT_SCOPE = 'default';
 
 /** Work a Frameleaf Desktop helper can take, through the desktop assistance pool (FL-490). */
-export const DESKTOP_POOL_WORKLOADS: readonly MlWorkload[] = [MlWorkload.Clip, MlWorkload.Ocr, MlWorkload.Face];
+// FD-31: of enrichment, a desktop takes only descriptions (`DesktopPoolOptions.description`).
+export const DESKTOP_POOL_WORKLOADS: readonly MlWorkload[] = [
+  MlWorkload.Clip,
+  MlWorkload.Ocr,
+  MlWorkload.Face,
+  MlWorkload.Enrichment,
+];
 
 export const KIND_SOURCE: Record<MlDestinationKind, MlProcessingSource> = {
   [MlDestinationKind.Local]: MlProcessingSource.Local,

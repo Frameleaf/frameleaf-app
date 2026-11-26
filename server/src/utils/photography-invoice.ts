@@ -16,6 +16,8 @@ export const invoiceSchedule = (
   balanceDue: string,
 ): InvoiceScheduleItem[] => {
   if (total <= 0) throw new Error('Add at least one paid item');
+  // The stored amounts are 32-bit integers.
+  if (total > 2_147_483_647) throw new Error('The invoice total is too large');
   if (deposit <= 0) return [{ dueOn: balanceDue, amount: total }];
   if (deposit >= total) throw new Error('The deposit must be less than the total');
   if (!depositDue) throw new Error('Choose when the deposit is due');

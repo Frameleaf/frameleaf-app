@@ -115,6 +115,12 @@ const REPEATABLE_JOBS = new Set<JobName>([
   // FL-912: a scan rewrites its owner's findings
   JobName.DateDoctorScan,
   JobName.DateDoctorScanQueueAll,
+  // FL-925: an import clears its file's places and reads the file again from its start
+  JobName.LocationHistoryImport,
+  // FL-964: a run's proposals are made afresh, and apply and undo take up only the photos still to do
+  JobName.LocationFillPropose,
+  JobName.LocationFillApply,
+  JobName.LocationFillUndo,
   JobName.DuplicateResolutionLifecycle,
   JobName.DatabaseBackup,
   JobName.AssetGenerateThumbnails,
@@ -160,6 +166,8 @@ const REPEATABLE_JOBS = new Set<JobName>([
   JobName.SmartAlbumReevaluate,
   JobName.LandmarkMatchAll,
   JobName.LandmarkInfer,
+  // FL-987: a slice links only items without a row, so a re-run carries on where the last one stopped
+  JobName.PlaceNameBackfill,
   // FL-1094: outfits are upserted per face, and only faces without one are encoded
   JobName.AlbumSuggestionOutfit,
   // FL-413: every batch saves the run's cursor; a retry carries on from it
@@ -986,6 +994,10 @@ export class JobRepository {
         : undefined,
       rootItemKey: context?.claim.rootItemKey ?? null,
       parentId: context?.buffering ? context.claim.id : undefined,
+      // A Boards download is a new arrival, as an upload is. It saves its file from inside its own job, so the file's
+      // work (metadata, then thumbnails) joins this job's run instead of an upload run; from the front, each next
+      // step keeps that place (`enqueueFollowups`) and does not wait behind a library-wide backlog.
+      ...(item.name === JobName.MediaImport && { front: true }),
     };
   }
 
@@ -1523,6 +1535,10 @@ export class JobRepository {
     switch (item.name) {
       case JobName.LandmarkInfer: {
         return item.data?.id ? null : { deduplication: { id: JobName.LandmarkInfer, keepLastIfActive: true } };
+      }
+      case JobName.PlaceNameBackfill: {
+        // FL-987: every start and every night asks; one run at a time, and one waiting, is enough
+        return { deduplication: { id: JobName.PlaceNameBackfill, keepLastIfActive: true } };
       }
       case JobName.AlbumSuggestionOutfit: {
         // every load of an album's suggestions asks again until the crops exist; one waiting job is enough

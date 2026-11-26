@@ -293,8 +293,6 @@ export const ENGINE_COMMANDS: Readonly<Record<string, readonly string[]>> = {
   'composition.setControlOverrides': ['extra.published-controls'],
 }
 
-export const isEngineCommand = (id: string): boolean => Object.hasOwn(ENGINE_COMMANDS, id)
-
 /* ------------------------------------------------------------------ */
 /* Exact time                                                           */
 /* ------------------------------------------------------------------ */

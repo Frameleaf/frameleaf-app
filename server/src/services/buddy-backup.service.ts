@@ -334,14 +334,17 @@ export class BuddyBackupService {
   }
 
   async verifyKit(dto: BuddyKitDto) {
-    const ring = await this.keyring();
-    const incoming = parseBuddyKeyring(dto, ring.vaultId);
-    if (
-      ring.current !== incoming.current ||
-      Object.entries(ring.keys).some(([version, key]) => incoming.keys[version] !== key)
-    )
-      throw new BadRequestException('The recovery kit does not match this vault.');
-    await this.repository.update((state) => ({ ...state, recoveryVerified: true }));
+    // Under the keyring lock, so a rotation can't land between the comparison and the "verified" mark.
+    await this.repository.locked('keyring', async (trx) => {
+      const ring = await this.keyring();
+      const incoming = parseBuddyKeyring(dto, ring.vaultId);
+      if (
+        ring.current !== incoming.current ||
+        Object.entries(ring.keys).some(([version, key]) => incoming.keys[version] !== key)
+      )
+        throw new BadRequestException('The recovery kit does not match this vault.');
+      await this.repository.update((state) => ({ ...state, recoveryVerified: true }), trx);
+    });
     return this.status();
   }
 
@@ -403,8 +406,9 @@ export class BuddyBackupService {
         keys: { ...current.keys, [current.current + 1]: randomBytes(32).toString('base64url') },
       };
       parseBuddyKeyring(next, ring.vaultId);
-      await writeBuddyFile(join(this.repository.root(), `${ring.vaultId}.keys.json`), JSON.stringify(next));
+      // Cleared first: a crash after the write must not leave backups running under a key the owner never saved.
       await this.repository.update((state) => ({ ...state, recoveryVerified: false, probeVerified: false }), trx);
+      await writeBuddyFile(join(this.repository.root(), `${ring.vaultId}.keys.json`), JSON.stringify(next));
       return next;
     });
   }

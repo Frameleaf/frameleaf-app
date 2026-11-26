@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { generateKeyPairSync, randomBytes, sign } from 'node:crypto';
+import { createHash, generateKeyPairSync, randomBytes, sign } from 'node:crypto';
 import { once } from 'node:events';
 import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -7,7 +7,7 @@ import { join, sep } from 'node:path';
 import test, { after, before } from 'node:test';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { standIn as storageStandIn } from '../../packages/backup-core/test/s3-stand-in.js';
-import { Cloud, CloudError, uuidv7 } from '../src/cloud-link.js';
+import { Cloud, CloudError, snapshotTranscript, uuidv7 } from '../src/cloud-link.js';
 import { CloudBackup } from '../src/server-backup-cloud.js';
 import { DEFAULT_SETTINGS, ServerBackup, vaultOf, type Run } from '../src/server-backup.js';
 import { Store } from '../src/store.js';
@@ -42,7 +42,7 @@ const machineIds = () => [...cloud.state.instances].filter(([, item]) => item.ki
 function manager(name: string) {
   const store = new Store(at(name));
   stores.push(store);
-  const link = new CloudBackup(store, new Cloud(API, { fetch: cloud.fetch, now: () => cloud.state.now }), { version: machine.version, platform: machine.platform }, vouch);
+  const link = new CloudBackup(store, new Cloud(API, { fetch: cloud.fetch, now: () => cloud.state.now, localStorage: true }), { version: machine.version, platform: machine.platform }, vouch);
   const service = new ServerBackup(store, { target: null, cloud: link, inside: (path) => path === at('server') || path.startsWith(at('server') + sep), always: [] });
   return { link, service };
 }
@@ -190,6 +190,22 @@ test('one run holds the lease at a time, and losing it is noticed within a beat'
   cloud.state.heartbeatAfterSec = 60;
 });
 
+test('a run cut off from Cloud for the lease’s whole life counts its lease as lost', async () => {
+  cloud.state.heartbeatAfterSec = 1;
+  cloud.state.leaseLifeMs = 1500;
+  let lost = false;
+  const session = await first.link.begin('backup', vaultOf(key), () => (lost = true));
+  // Heartbeats that arrive keep it.
+  await sleep(1200);
+  assert.equal(lost, false);
+  cloud.state.dropHeartbeats = true;
+  await until(() => lost);
+  cloud.state.dropHeartbeats = false;
+  await session.end();
+  cloud.state.heartbeatAfterSec = 60;
+  cloud.state.leaseLifeMs = 300_000;
+});
+
 test('a run whose lease is lost is stopped at once, and the next run carries on', async () => {
   cloud.state.heartbeatAfterSec = 1;
   // Slow enough that the upload is still going when the lease goes.
@@ -320,4 +336,39 @@ test('turning the locked copy off deletes it from Cloud', async () => {
   await second.service.dropKeyCopy();
   assert.equal(cloud.state.escrows.size, 0);
   assert.equal(second.link.view().keyCopyAt, null);
+});
+
+test('a signed history that lost or swapped its newest backup is refused before a backup or restore uses it', async () => {
+  await second.service.turnOn({ ...DEFAULT_SETTINGS, folders: [at('server', 'documents')] });
+  const kept = cloud.state.chain.pop()!;
+  await assert.rejects(second.service.backUp(), refused('server_backup_cloud_history_changed'));
+  await until(() => cloud.state.lease === null);
+  // The same number with another entry in its place.
+  cloud.state.chain.push({ ...kept, digest: 'f'.repeat(64) });
+  await assert.rejects(second.service.backUp(), refused('server_backup_cloud_history_changed'));
+  await until(() => cloud.state.lease === null);
+  cloud.state.chain[cloud.state.chain.length - 1] = kept;
+  await second.service.backUp();
+  assert.equal((await finished(second.service)).state, 'done');
+  await until(() => cloud.state.lease === null);
+  // An entry this machine never signed, added after the newest one it knows.
+  const newest = cloud.state.chain.at(-1)!;
+  const { descriptor, signature } = newest.record as { descriptor: { sequence: number; previousDigest: string | null }; signature: string };
+  const next = { ...descriptor, sequence: descriptor.sequence + 1, previousDigest: newest.digest, snapshotId: 'not-signed-here' };
+  const digest = createHash('sha256').update(snapshotTranscript(next as Parameters<typeof snapshotTranscript>[0])).digest('hex');
+  cloud.state.chain.push({ snapshotId: 'not-signed-here', sequence: next.sequence, digest, record: { ...(newest.record as object), descriptor: next, signature, digest } });
+  await assert.rejects(second.service.backUp(), refused('server_backup_cloud_history_changed'));
+  await until(() => cloud.state.lease === null);
+  cloud.state.chain.pop();
+});
+
+test('a newest backup missing from storage is refused when backups are opened', async () => {
+  const newest = (cloud.state.chain.at(-1)!.record as { descriptor: { manifest: { objectKey: string } } }).descriptor.manifest.objectKey;
+  assert.ok(newest.startsWith(`r/v1/${vaultOf(key)}/s/`));
+  const body = storage.objects.get(newest)!;
+  storage.objects.delete(newest);
+  const older = second.service.view()!.snapshots.at(-1)!.key;
+  await assert.rejects(second.service.browse({ snapshot: older, path: [] }), refused('server_backup_cloud_history_changed'));
+  storage.objects.set(newest, body);
+  assert.ok((await second.service.browse({ snapshot: older, path: [] })).entries.length > 0);
 });

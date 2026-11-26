@@ -1111,6 +1111,12 @@
   "notifications.smtp.transport.username": {
     "type": "string"
   },
+  "notifications.unifiedPush.allowLocalTargets": {
+    "type": "boolean"
+  },
+  "notifications.unifiedPush.availability": {
+    "type": "string"
+  },
   "oauth.accountManagementUrl": {
     "type": "string"
   },
@@ -1366,6 +1372,23 @@
     "maximum": 9007199254740991
   },
   "preferences.memories.enabled": {
+    "type": "boolean"
+  },
+  "preferences.memories.occasionRegion": {
+    "type": "string",
+    "enum": [
+      "auto",
+      "us-ca",
+      "uk-ie",
+      "au-nz",
+      "de",
+      "fr",
+      "es-pt",
+      "mx",
+      "se"
+    ]
+  },
+  "preferences.memories.occasions": {
     "type": "boolean"
   },
   "preferences.memories.sidebarWeb": {

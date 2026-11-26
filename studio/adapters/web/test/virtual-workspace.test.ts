@@ -135,6 +135,43 @@ describe('virtual workspace', () => {
     expect(load).toHaveBeenCalledTimes(1)
   })
 
+  it('downloads a lazy file once for concurrent reads', async () => {
+    const workspace = new VirtualWorkspace()
+    let release: (blob: Blob) => void = () => {}
+    const load = vi.fn(() => new Promise<Blob>((resolve) => (release = resolve)))
+    workspace.putLazyFile(['media', 'a', 'clip.mp4'], load, 'video/mp4')
+    const reads = [
+      workspace.readText(['media', 'a', 'clip.mp4']),
+      workspace.readFile(['media', 'a', 'clip.mp4']),
+      workspace.readText(['media', 'a', 'clip.mp4']),
+    ]
+    release(new Blob(['remote']))
+    const [first, file, third] = await Promise.all(reads)
+    expect([first, await file?.text(), third]).toEqual(['remote', 'remote', 'remote'])
+    expect(load).toHaveBeenCalledTimes(1)
+  })
+
+  it('writes in many chunks, seeks past the end and truncates with zeros', async () => {
+    const workspace = new VirtualWorkspace()
+    const root = workspace.handle()
+    const handle = await root.getFileHandle('clip.bin', { create: true })
+    const writable = await handle.createWritable()
+    for (let index = 0; index < 100; index++) await writable.write(new Uint8Array([index]))
+    await writable.write({ type: 'write', position: 102, data: new Uint8Array([7]) })
+    await writable.truncate(105)
+    await writable.close()
+    const bytes = new Uint8Array(await (await handle.getFile()).arrayBuffer())
+    expect(bytes.byteLength).toBe(105)
+    expect([...bytes.subarray(0, 100)]).toEqual(Array.from({ length: 100 }, (_, index) => index))
+    expect([...bytes.subarray(100)]).toEqual([0, 0, 7, 0, 0])
+
+    const shorter = await handle.createWritable({ keepExistingData: true })
+    await shorter.truncate(2)
+    await shorter.truncate(4)
+    await shorter.close()
+    expect([...new Uint8Array(await (await handle.getFile()).arrayBuffer())]).toEqual([0, 1, 0, 0])
+  })
+
   it('refuses every operation after dispose, as a revoked folder would', async () => {
     const workspace = new VirtualWorkspace()
     const root = workspace.handle()

@@ -198,8 +198,6 @@ function mediaPermissionPattern(origin: string) {
 }
 export const hasMediaAccess = (origin: string) =>
   chrome.permissions.contains({ origins: [mediaPermissionPattern(origin)] });
-export const requestMediaAccess = (origin: string) =>
-  chrome.permissions.request({ origins: [mediaPermissionPattern(origin)] });
 
 export function watchMediaAccess(removed: () => void) {
   chrome.permissions.onRemoved.addListener(removed);

@@ -116,6 +116,69 @@ from
 where
   "asset"."deletedAt" is null
   and "asset"."visibility" != 'hidden'
+  and not exists (
+    select
+      1
+    from
+      public.asset_health health
+    where
+      health."assetId" = asset.id
+      and health."resolvedAt" is null
+      and health."dismissedAt" is null
+  )
+  and not exists (
+    select
+      1
+    from
+      job
+    where
+      job.queue = $1
+      and job.name = $2
+      and job.state in ('pending', 'waiting', 'active')
+      and lower(job.data ->> 'id') collate "C" = asset.id::text
+    offset
+      0
+  )
+  and not exists (
+    select
+      1
+    from
+      public.asset_processing_failure rung
+    where
+      rung."assetId" = asset.id
+      and rung.step = 'RawSensorRender'
+  )
+  and not exists (
+    select
+      1
+    from
+      public.asset_processing_failure none
+    where
+      none."assetId" = asset.id
+      and none.step = 'NoPicture'
+      and none."lastError" = encode(asset.checksum, 'hex')
+  )
+  and NOT EXISTS (
+    SELECT
+      1
+    FROM
+      public.asset_origin origin
+      JOIN asset source ON source.id = origin."sourceAssetId"
+    WHERE
+      origin."assetId" = asset.id
+      AND source."deletedAt" IS NULL
+      AND source.status = 'active'
+      AND NOT EXISTS (
+        SELECT
+          1
+        FROM
+          public.asset_file f
+        WHERE
+          f."assetId" = source.id
+          AND f.type = 'preview'
+          AND f."isEdited" = false
+      )
+  )
   and exists (
     select
       "assetId"
@@ -313,6 +376,17 @@ select
   "asset"."checksum",
   "asset"."checksumAlgorithm",
   (
+    "asset"."visibility" = 'hidden'
+    and exists (
+      select
+        1
+      from
+        asset_print_back
+      where
+        asset_print_back."backAssetId" = "asset"."id"
+    )
+  ) as "isPrintBack",
+  (
     select
       coalesce(json_agg(agg), '[]')
     from
@@ -433,6 +507,7 @@ select
   "asset"."libraryScope",
   "asset"."livePhotoVideoId",
   "asset"."localDateTime",
+  "asset"."dateAccuracy",
   "asset"."originalFileName",
   "asset"."originalPath",
   "asset"."libraryPath",
@@ -522,6 +597,14 @@ from
 where
   "asset_file"."assetId" = $1
   and "asset_file"."type" = $2
+
+-- AssetJobRepository.isGone
+select
+  "asset"."id"
+from
+  "asset"
+where
+  "asset"."id" = $1
 
 -- AssetJobRepository.streamForSearchDuplicates
 select
@@ -775,7 +858,18 @@ select
       "asset_file"."assetId" = "asset"."id"
       and "asset_file"."type" = 'preview'
       and "asset_file"."isEdited" = false
-  ) as "previewFile"
+  ) as "previewFile",
+  (
+    "asset"."visibility" = 'hidden'
+    and exists (
+      select
+        1
+      from
+        asset_print_back
+      where
+        asset_print_back."backAssetId" = "asset"."id"
+    )
+  ) as "isPrintBack"
 from
   "asset"
 where
@@ -993,6 +1087,17 @@ from
   "asset"
 where
   "asset"."type" = 'VIDEO'
+  and NOT EXISTS (
+    SELECT
+      1
+    FROM
+      public.asset_origin origin
+      JOIN asset source ON source.id = origin."sourceAssetId"
+    WHERE
+      origin."assetId" = asset.id
+      AND source."deletedAt" IS NULL
+      AND source.status = 'active'
+  )
   and not exists (
     select
       "asset_file"."id"
@@ -1003,6 +1108,16 @@ where
       and "asset_file"."type" = 'encoded_video'
   )
   and "asset"."visibility" != 'hidden'
+  and not exists (
+    select
+      1
+    from
+      public.asset_processing_failure none
+    where
+      none."assetId" = asset.id
+      and none.step = 'NoPicture'
+      and none."lastError" = encode(asset.checksum, 'hex')
+  )
   and "asset"."deletedAt" is null
 
 -- AssetJobRepository.getForVideoConversion
@@ -1286,7 +1401,20 @@ where
   "asset_job_status"."ocrAt" is null
   and "asset"."deletedAt" is null
   and "asset"."type" != 'OTHER'
-  and "asset"."visibility" != $1
+  and (
+    "asset"."visibility" != $1
+    or (
+      "asset"."visibility" = 'hidden'
+      and exists (
+        select
+          1
+        from
+          asset_print_back
+        where
+          asset_print_back."backAssetId" = "asset"."id"
+      )
+    )
+  )
 
 -- AssetJobRepository.streamForImageDescriptionJob
 select
@@ -1308,6 +1436,27 @@ where
   )
   and "asset"."visibility" in ('archive', 'timeline')
   and "asset"."type" in ('IMAGE', 'VIDEO')
+  and NOT EXISTS (
+    SELECT
+      1
+    FROM
+      public.asset_origin origin
+      JOIN asset source ON source.id = origin."sourceAssetId"
+    WHERE
+      origin."assetId" = asset.id
+      AND source."deletedAt" IS NULL
+      AND source.status = 'active'
+      AND NOT EXISTS (
+        SELECT
+          1
+        FROM
+          public.asset_metadata m
+        WHERE
+          m."assetId" = source.id
+          AND m.key = 'ml-enrichment'
+          AND m.value -> 'description' ->> 'status' = 'success'
+      )
+  )
   and not exists (
     select
       "asset_metadata"."assetId"

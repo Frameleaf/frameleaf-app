@@ -409,6 +409,8 @@ describe(MemoryService.name, () => {
         city: 'Anaheim',
         state: 'California',
         country: 'United States',
+        latitude: null,
+        longitude: null,
         landmarks: [park],
       }));
     const eventStory = expect.objectContaining({ type: MemoryType.EventStory });
@@ -417,6 +419,7 @@ describe(MemoryService.name, () => {
       vi.useFakeTimers({ toFake: ['Date'] });
       vi.setSystemTime(new Date('2026-06-10T12:00:00.000Z'));
       mocks.user.getList.mockResolvedValue([{ id: newUuid() }] as never);
+      mocks.map.getUserPlaces.mockResolvedValue([]);
       mocks.asset.getEventStoryCandidates.mockResolvedValue(dayAtThePark());
       mocks.memory.getExistingMemoryDates.mockResolvedValue([]);
       mocks.memory.getPetStoryCandidates.mockResolvedValue([]);
@@ -2060,6 +2063,280 @@ describe(MemoryService.name, () => {
       expect(mocks.memory.getSubjectAssets).toHaveBeenCalledWith(userId, 'pet', petId, {
         from: new Date('2025-01-01T00:00:00.000Z'),
         to: new Date('2026-01-01T00:00:00.000Z'),
+      });
+    });
+
+    describe("Mother's Day and Father's Day (FL-880)", () => {
+      const selfId = '00000000-0000-4000-8000-000000000010';
+      const motherId = '00000000-0000-4000-8000-000000000011';
+      const fatherId = '00000000-0000-4000-8000-000000000012';
+      const childId = '00000000-0000-4000-8000-000000000013';
+      const parentEdge = (parent: string, child: string, parentRole: string) => ({
+        personGroupId: parent,
+        relatedPersonGroupId: child,
+        kind: 'parent',
+        parentRole,
+      });
+      const named = (id: string, name: string, isHidden = false) => ({
+        id,
+        name,
+        isHidden,
+        birthDate: null,
+        deathDate: null,
+      });
+      // photos a week apart, so the burst pass keeps them all
+      const photos = (prefix: string, count: number) =>
+        Array.from({ length: count }, (_, index) => ({
+          id: `00000000-0000-4000-a${prefix}-${String(index).padStart(12, '0')}`,
+          localDateTime: new Date(Date.UTC(2020, 0, 1 + index * 7)),
+        }));
+      const occasionCalls = () =>
+        mocks.memory.create.mock.calls.filter(([memory]) => (memory as { occasion?: string }).occasion);
+      const preferences = (memories: object) =>
+        mocks.user.getMetadata.mockResolvedValue([{ key: 'preferences', value: { memories } }] as never);
+
+      beforeEach(() => {
+        vi.useFakeTimers({ toFake: ['Date'] });
+        vi.setSystemTime(new Date('2026-05-10T12:00:00.000Z'));
+        mocks.memory.getBirthdaySubjects.mockResolvedValue([]);
+        mocks.memory.getRecapSubjects.mockResolvedValue([]);
+        mocks.memory.getShowLess.mockResolvedValue([]);
+        mocks.memory.hasOccasionMemory.mockResolvedValue(false);
+        mocks.memory.getHiddenItemIds.mockResolvedValue(new Set());
+        mocks.user.getMetadata.mockResolvedValue([]);
+        mocks.person.getSelfPersonId.mockResolvedValue(selfId);
+        mocks.person.getRelationships.mockResolvedValue([
+          parentEdge(motherId, selfId, 'mother'),
+          parentEdge(fatherId, selfId, 'father'),
+        ]);
+        mocks.memory.getStoryPeople.mockResolvedValue([named(motherId, 'Margaret'), named(fatherId, 'Robert')]);
+        mocks.memory.getSubjectAssets.mockImplementation((_owner, _subject, id) =>
+          Promise.resolve(id === selfId ? photos('000', 4) : photos('000', 5)),
+        );
+      });
+
+      it('makes no memory and raises no error without a self-person', async () => {
+        mocks.person.getSelfPersonId.mockResolvedValue(undefined);
+
+        await expect(sut.onMemoriesCreate()).resolves.toBeUndefined();
+
+        expect(occasionCalls()).toEqual([]);
+        expect(mocks.person.getRelationships).not.toHaveBeenCalled();
+      });
+
+      it('has no self-person today: the real lookup answers undefined until FL-856', async () => {
+        const { PersonRepository } = await import('src/repositories/person.repository.js');
+        await expect(PersonRepository.prototype.getSelfPersonId.call({}, userId)).resolves.toBeUndefined();
+      });
+
+      it("makes a person recap of the mother on the regional Mother's Day, shown for that day", async () => {
+        await sut.onMemoriesCreate();
+
+        expect(occasionCalls()).toHaveLength(1);
+        const [memory, assetIds] = occasionCalls()[0];
+        expect(memory).toEqual({
+          ownerId: userId,
+          type: MemoryType.PersonRecap,
+          occasion: 'mothers_day',
+          data: {
+            kind: 'person_recap',
+            year: 2026,
+            subject: 'person',
+            subjectId: motherId,
+            name: 'Margaret',
+            assetCount: 4,
+          },
+          memoryAt: '2026-05-10T00:00:00.000Z',
+          showAt: '2026-05-09T10:00:00.000Z',
+          hideAt: '2026-05-11T11:59:59.999Z',
+        });
+        expect(assetIds).toEqual(new Set(photos('000', 4).map(({ id }) => id)));
+      });
+
+      it('asks only for items on the open timeline, so Locked ones are never included', async () => {
+        await sut.onMemoriesCreate();
+
+        expect(mocks.memory.getSubjectAssets).toHaveBeenCalledWith(userId, 'person', selfId, undefined, true);
+        expect(mocks.memory.getSubjectAssets).toHaveBeenCalledWith(userId, 'person', motherId, undefined, true);
+      });
+
+      it("makes the father's memory on Father's Day and not the mother's", async () => {
+        vi.setSystemTime(new Date('2026-06-21T12:00:00.000Z'));
+
+        await sut.onMemoriesCreate();
+
+        expect(occasionCalls().map(([memory]) => [memory.occasion, (memory.data as any).subjectId])).toEqual([
+          ['fathers_day', fatherId],
+        ]);
+      });
+
+      it("makes nothing on another country's day", async () => {
+        preferences({ occasionRegion: 'uk-ie' });
+
+        await sut.onMemoriesCreate();
+
+        expect(occasionCalls()).toEqual([]);
+      });
+
+      it('uses the chosen region', async () => {
+        vi.setSystemTime(new Date('2026-03-15T12:00:00.000Z'));
+        preferences({ occasionRegion: 'uk-ie' });
+
+        await sut.onMemoriesCreate();
+
+        expect(occasionCalls().map(([memory]) => memory.memoryAt)).toEqual(['2026-03-15T00:00:00.000Z']);
+      });
+
+      it("follows the account's locale while the region is automatic", async () => {
+        vi.setSystemTime(new Date('2026-03-15T12:00:00.000Z'));
+        mocks.user.getMetadata.mockResolvedValue([
+          { key: 'preferences', value: { notifications: { locale: 'en-GB' } } },
+        ] as never);
+
+        await sut.onMemoriesCreate();
+
+        expect(occasionCalls()).toHaveLength(1);
+      });
+
+      it('makes nothing with the setting off', async () => {
+        preferences({ occasions: false });
+
+        await sut.onMemoriesCreate();
+
+        expect(occasionCalls()).toEqual([]);
+      });
+
+      it('makes a memory with each child for a self-person who is a mother', async () => {
+        mocks.person.getRelationships.mockResolvedValue([parentEdge(selfId, childId, 'mother')]);
+        mocks.memory.getStoryPeople.mockResolvedValue([named(childId, 'Sam')]);
+
+        await sut.onMemoriesCreate();
+
+        expect(occasionCalls().map(([memory]) => [memory.occasion, (memory.data as any).subjectId])).toEqual([
+          ['mothers_day_child', childId],
+        ]);
+      });
+
+      it("does not treat a father's children as Mother's Day memories", async () => {
+        mocks.person.getRelationships.mockResolvedValue([parentEdge(selfId, childId, 'father')]);
+        mocks.memory.getStoryPeople.mockResolvedValue([named(childId, 'Sam')]);
+
+        await sut.onMemoriesCreate();
+
+        expect(occasionCalls()).toEqual([]);
+      });
+
+      it('ignores a parent recorded only as "parent"', async () => {
+        mocks.person.getRelationships.mockResolvedValue([parentEdge(motherId, selfId, 'parent')]);
+
+        await sut.onMemoriesCreate();
+
+        expect(occasionCalls()).toEqual([]);
+      });
+
+      it('needs the minimum number of photos', async () => {
+        mocks.memory.getSubjectAssets.mockResolvedValue(photos('000', 2));
+
+        await sut.onMemoriesCreate();
+
+        expect(occasionCalls()).toEqual([]);
+      });
+
+      it('uses all photos of the mother when too few show the two together', async () => {
+        mocks.memory.getSubjectAssets.mockImplementation((_owner, _subject, id) =>
+          Promise.resolve(id === selfId ? photos('000', 1) : photos('000', 5)),
+        );
+
+        await sut.onMemoriesCreate();
+
+        expect(occasionCalls()[0][1]).toEqual(new Set(photos('000', 5).map(({ id }) => id)));
+      });
+
+      it('leaves out items hidden by a rule, and counts only what is left', async () => {
+        const suppression = { tagIds: ['t'], personIds: [], petIds: [], scope: 'owned' };
+        mocks.user.getMetadata.mockResolvedValue([
+          { key: 'preferences', value: { privacy: { suppression } } },
+        ] as never);
+        const all = photos('000', 5);
+        mocks.memory.getHiddenItemIds.mockResolvedValue(new Set([all[0].id, all[1].id, all[2].id]));
+
+        await sut.onMemoriesCreate();
+
+        expect(mocks.memory.getHiddenItemIds).toHaveBeenCalledWith(
+          all.map(({ id }) => id),
+          { hiddenContent: { userId, includeNsfw: false, ...suppression } },
+        );
+        // two left, under the minimum
+        expect(occasionCalls()).toEqual([]);
+      });
+
+      it.each([
+        ['the mother', { kind: 'person', value: motherId }],
+        ['the owner', { kind: 'person', value: selfId }],
+        ['the date', { kind: 'date', value: '05-10' }],
+        ['recaps', { kind: 'type', value: MemoryType.PersonRecap }],
+      ])('makes nothing with a show-less rule on %s', async (_name, rule) => {
+        mocks.memory.getShowLess.mockResolvedValue([{ ...rule, createdAt: new Date() }] as never);
+
+        await sut.onMemoriesCreate();
+
+        expect(occasionCalls()).toEqual([]);
+      });
+
+      it('skips a hidden or unnamed parent', async () => {
+        mocks.memory.getStoryPeople.mockResolvedValue([named(motherId, 'Margaret', true)]);
+        await sut.onMemoriesCreate();
+        expect(occasionCalls()).toEqual([]);
+
+        mocks.memory.getStoryPeople.mockResolvedValue([named(motherId, '')]);
+        await sut.onMemoriesCreate();
+        expect(occasionCalls()).toEqual([]);
+      });
+
+      it('does not make a second memory for the same person and year', async () => {
+        mocks.memory.hasOccasionMemory.mockResolvedValue(true);
+
+        await sut.onMemoriesCreate();
+
+        expect(mocks.memory.hasOccasionMemory).toHaveBeenCalledWith(userId, 'mothers_day', motherId, 2026);
+        expect(occasionCalls()).toEqual([]);
+      });
+
+      it('returns the occasion beside ordinary recap data', async () => {
+        const memory = getForMemory(
+          MemoryFactory.from({
+            ownerId: userId,
+            type: MemoryType.PersonRecap,
+            occasion: 'mothers_day',
+            data: {
+              kind: 'person_recap',
+              year: 2026,
+              subject: 'person',
+              subjectId: motherId,
+              name: 'Old',
+              assetCount: 3,
+            },
+          })
+            .asset(AssetFactory.create())
+            .build(),
+        );
+        const auth = factory.auth({ user: { id: userId } });
+        mocks.memory.search.mockResolvedValue([memory] as never);
+        mocks.memory.getStoryPeople.mockResolvedValue([named(motherId, 'Margaret')]);
+
+        const [response] = await sut.search(auth, {});
+
+        expect(response.type).toBe(MemoryType.PersonRecap);
+        expect(response.occasion).toEqual({ kind: 'mothers_day', personId: motherId });
+        expect(response.data).toMatchObject({ kind: 'person_recap', name: 'Margaret' });
+      });
+
+      it('says whether anyone is recorded as a mother or father', async () => {
+        const auth = factory.auth();
+        await expect(sut.getOccasionsStatus(auth)).resolves.toEqual({ hasParent: true });
+
+        mocks.person.getRelationships.mockResolvedValue([parentEdge(motherId, selfId, 'parent')]);
+        await expect(sut.getOccasionsStatus(auth)).resolves.toEqual({ hasParent: false });
       });
     });
   });

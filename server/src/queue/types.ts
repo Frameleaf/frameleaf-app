@@ -23,7 +23,6 @@ export type RunHolds = Partial<Record<string, RunHoldReason>>;
 export type LibrarySourceIdentity = { operationId: string; libraryId: string };
 export type QueueState =
   'pending' | 'waiting' | 'active' | 'completed' | 'failed' | 'needs_attention' | 'cancelled' | 'blocked';
-export const TERMINAL_QUEUE_STATES: QueueState[] = ['completed', 'failed', 'needs_attention', 'cancelled', 'blocked'];
 export type QueueOptions = {
   jobId?: string;
   delay?: number;

@@ -161,6 +161,17 @@ describe('WebsocketSupport restores (FL-47)', () => {
       vi.useRealTimers();
     }
   });
+
+  it('FL-1767: drops an item this session may no longer see', () => {
+    const manager = makeManager();
+    const support = connect(manager);
+
+    handlers.get('on_asset_hidden')!('locked-item');
+
+    expect(manager.removeAssets).toHaveBeenCalledWith(['locked-item']);
+    support.disconnectWebsocketEvents();
+    expect(handlers.has('on_asset_hidden')).toBe(false);
+  });
 });
 
 const deferred = <T>() => {

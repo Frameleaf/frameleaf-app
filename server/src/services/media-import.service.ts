@@ -1,7 +1,8 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, HttpException, Injectable, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { mkdir, mkdtemp, readdir, rename, rm } from 'node:fs/promises';
 import { extname, join } from 'node:path';
+import { setTimeout as sleep } from 'node:timers/promises';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type {
   MediaCapabilitiesDto,
@@ -60,6 +61,9 @@ import {
 import { mimeTypes } from 'src/utils/mime-types.js';
 
 class MediaCapacityWait extends Error {}
+/** FL-1769: a cover or creator picture waits this many times this long for download capacity. */
+const PICTURE_CAPACITY_ATTEMPTS = 6;
+const PICTURE_CAPACITY_WAIT_MS = 5000;
 
 @Injectable()
 export class MediaImportService {
@@ -230,9 +234,14 @@ export class MediaImportService {
   }
   async subscriptions(auth: AuthDto) {
     await this.repository.actor(auth, Permission.MediaSubscriptionRead);
+    const rows = await this.repository.subscriptions(auth.user.id);
+    // One query for the whole list: someone can follow thousands of accounts.
+    const counts = await this.repository.subscriptionCountsFor(rows.map(({ id }) => id));
     return {
       subscriptions: await Promise.all(
-        (await this.repository.subscriptions(auth.user.id)).map((row) => this.subscriptionResponse(row)),
+        rows.map((row) =>
+          this.subscriptionResponse(row, counts.get(row.id) ?? { discovered: 0, saved: 0, skipped: 0, failed: 0 }),
+        ),
       ),
     };
   }
@@ -248,7 +257,10 @@ export class MediaImportService {
     await this.schedule();
     return this.subscriptionResponse(row);
   }
-  private async subscriptionResponse(row: MediaSubscription): Promise<MediaSubscriptionResponseDto> {
+  private async subscriptionResponse(
+    row: MediaSubscription,
+    counts?: Awaited<ReturnType<MediaImportRepository['subscriptionCounts']>>,
+  ): Promise<MediaSubscriptionResponseDto> {
     return {
       id: row.id,
       provider: row.provider,
@@ -273,7 +285,7 @@ export class MediaImportService {
       historyComplete: row.historyComplete,
       limitation: row.limitation,
       error: row.error,
-      ...(await this.repository.subscriptionCounts(row.id)),
+      ...(counts ?? (await this.repository.subscriptionCounts(row.id))),
     };
   }
   private creatorResponse(
@@ -404,17 +416,24 @@ export class MediaImportService {
    * left out; it never fails the import it belongs to.
    */
   private async keepPicture(row: MediaImport, provider: string, url: string, folder: string, name: string) {
-    try {
-      await mkdir(folder, { recursive: true, mode: 0o700 });
-      const file = await this.extract(row, provider, (signal) =>
-        this.downloader.fetchImage(url, { directory: folder, signal }),
-      );
-      const path = join(folder, name + extname(file.path));
-      await rename(file.path, path);
-      return path;
-    } catch (error) {
-      if (jobSignal()?.aborted) throw error;
-      return null;
+    // FL-1769: busy download capacity is waited out for a while instead of losing the picture for good
+    for (let attempt = 1; ; attempt++) {
+      try {
+        await mkdir(folder, { recursive: true, mode: 0o700 });
+        const file = await this.extract(row, provider, (signal) =>
+          this.downloader.fetchImage(url, { directory: folder, signal }),
+        );
+        const path = join(folder, name + extname(file.path));
+        await rename(file.path, path);
+        return path;
+      } catch (error) {
+        if (jobSignal()?.aborted) throw error;
+        if (error instanceof MediaCapacityWait && attempt < PICTURE_CAPACITY_ATTEMPTS) {
+          await sleep(PICTURE_CAPACITY_WAIT_MS, undefined, { signal: jobSignal() });
+          continue;
+        }
+        return null;
+      }
     }
   }
   private pictures(ownerId: string, ...folders: string[]) {
@@ -487,8 +506,15 @@ export class MediaImportService {
         await this.repository.defer(authority, 30, 'Waiting for download capacity', false);
         return JobStatus.Success;
       }
+      // The owner is shown a general message; the cause is kept here, or a paused import cannot be explained.
+      if (!(error instanceof MediaDownloadError))
+        this.logger.warn(
+          `Media import ${id} paused: ${error instanceof Error ? (error.stack ?? error.message) : error}`,
+        );
+      // What stopped it, in the words the owner would get from the same refusal anywhere else (a lost connection,
+      // a collection that is gone, no room); only an unexpected failure gets the general message.
       const message =
-        error instanceof MediaDownloadError
+        error instanceof MediaDownloadError || error instanceof HttpException
           ? error.message
           : 'Media import could not continue; check access, destination and storage';
       const retryable =

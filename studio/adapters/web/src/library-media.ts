@@ -51,6 +51,9 @@ const COMMON_FRAME_RATES: readonly [number, ...number[]] = [
   120,
 ]
 
+/** How many library items are probed at once while Studio opens. */
+const PROBE_CONCURRENCY = 4
+
 /** Snap a measured packet rate to the nearest broadcast rate, as Freecut's own importer does. */
 export const snapFrameRate = (fps: number): number => {
   if (!Number.isFinite(fps) || fps <= 0) return 30
@@ -245,8 +248,11 @@ async function fetchBlob(url: string, signal?: AbortSignal): Promise<Blob> {
 }
 
 export interface LibraryMediaSeeder {
-  /** Make these assets available to the project; already-seeded ids are left alone. */
-  seed(assets: readonly StudioAssetRef[]): Promise<void>
+  /**
+   * Make these assets available to the project; already-seeded ids are left alone. Resolves after
+   * their probes too, unless `background` is set.
+   */
+  seed(assets: readonly StudioAssetRef[], options?: { background?: boolean }): Promise<void>
   /**
    * FL-103 / FL-105: offer the files kept with the project under the media ids their clips use. A
    * file this document already holds (imported here, then kept) is left as the editor made it.
@@ -414,19 +420,25 @@ export function createLibraryMediaSeeder(options: {
       }
     }
     if (marked) onChange()
-    // Probe one at a time in the background, handoff order first: it is the starting cut.
+    // Probe in the background, a few at a time, started in handoff order: it is the starting cut.
+    // Opening still waits for every probe (a clip placed before its probe uses a guessed frame
+    // rate), so overlapping them shortens that wait without placing anything early.
     probing = probing.then(async () => {
-      for (const asset of fresh) await enrich(asset)
+      let next = 0
+      const worker = async () => {
+        for (let asset = fresh[next++]; asset; asset = fresh[next++]) await enrich(asset)
+      }
+      await Promise.all(Array.from({ length: Math.min(PROBE_CONCURRENCY, fresh.length) }, worker))
     })
   }
 
   return {
-    async seed(assets) {
+    async seed(assets, seedOptions) {
       const run = seeding.then(() => seedNow(assets))
       seeding = run.catch(() => {})
       await run
       // Probing runs in the background, outside the queue, so it never holds up the next seed.
-      await probing
+      if (!seedOptions?.background) await probing
     },
     async associate(target, from) {
       const ids = new Set(seeded)

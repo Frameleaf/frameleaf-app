@@ -44,6 +44,8 @@ MP4_COPYABLE_AUDIO = frozenset({"aac", "mp3", "alac", "ac3", "eac3"})
 # ``-vsync`` is spelled ``-fps_mode`` from ffmpeg 5.1, but the old spelling still works there
 # and is the only one ffmpeg 4.4 (Ubuntu 22.04, the worker image) understands.
 PASSTHROUGH_TIMING = ["-vsync", "passthrough"]
+# ffprobe ``format_name`` values whose content names other files to read.
+PLAYLIST_FORMATS = frozenset({"hls", "applehttp", "concat", "dash", "imf"})
 
 
 class MediaError(Exception):
@@ -113,6 +115,10 @@ def bit_depth_of(pix_fmt: str | None, bits_per_raw_sample: str | None) -> int:
 def parse_probe(payload: dict[str, Any], *, still: bool = False) -> SourceProbe:
     """Interpret ``ffprobe -show_streams -show_format -of json`` output. A still has no
     meaningful frame rate or duration; it is treated as one frame at 1/1 lasting 0 ms."""
+    # A playlist makes the decoder open other files on this worker, and their frames would come back as the result.
+    format_names = str((payload.get("format") or {}).get("format_name") or "").split(",")
+    if PLAYLIST_FORMATS.intersection(format_names):
+        raise MediaError("the upload is a playlist, not a media file", unsupported=True)
     streams: list[dict[str, Any]] = payload.get("streams") or []
     video = next((stream for stream in streams if stream.get("codec_type") == "video"), None)
     if video is None:
@@ -220,11 +226,13 @@ def extract_frames(
     yuv_matrix: str,
     timeout: float,
     max_frames: int | None = None,
+    autorotate: bool = True,
 ) -> int:
     """Decode the video frames of ``source`` (optionally one segment) to RGB PNG files.
 
     With ``max_frames`` the decoder stops one frame past it: the caller refuses a longer clip from the
-    count, without every frame of it having been written first.
+    count, without every frame of it having been written first. ``autorotate`` off keeps the stored
+    pixel grid of a source that carries a rotation or orientation tag.
     """
     frames_dir.mkdir(parents=True, exist_ok=False)
     _run(
@@ -234,6 +242,7 @@ def extract_frames(
             "-v",
             "error",
             *_segment_args(start_ms, end_ms),
+            *([] if autorotate else ["-noautorotate"]),
             "-i",
             str(source),
             "-map",
@@ -280,7 +289,14 @@ def encode_near_lossless_clip(
 
 
 def cut_video_segment(
-    source: Path, output: Path, source_probe: SourceProbe, *, start_ms: int, end_ms: int, timeout: float
+    source: Path,
+    output: Path,
+    source_probe: SourceProbe,
+    *,
+    start_ms: int,
+    end_ms: int,
+    timeout: float,
+    max_frames: int | None = None,
 ) -> None:
     """Cut exact frames, without PNGs or exposing frames outside the requested segment.
 
@@ -318,6 +334,9 @@ def cut_video_segment(
             "-qp",
             "0",
             *colour,
+            # One past the budget: a container that understates its frames is refused by the count, not after
+            # its lossless copy has filled the work directory.
+            *(["-frames:v", str(max_frames + 1)] if max_frames is not None else []),
             str(output),
         ],
         timeout=timeout,
@@ -665,3 +684,29 @@ def encode_still_output(frames_dir: Path, output: Path, *, target: tuple[int, in
         ],
         timeout=timeout,
     )
+
+
+EXIF_ORIENTATION = 0x0112
+
+
+def exif_orientation(path: Path) -> int:
+    """The EXIF orientation of a still (1 to 8), or 1 when it has none or cannot be read."""
+    try:
+        with Image.open(path) as image:
+            value = image.getexif().get(EXIF_ORIENTATION, 1)
+    except (OSError, ValueError, SyntaxError, Image.DecompressionBombError):
+        return 1
+    return value if isinstance(value, int) and 1 <= value <= 8 else 1
+
+
+def write_photo_output(frame: Path, output: Path, *, orientation: int) -> None:
+    """Write a photo operation's frame as the result PNG (FL-933): the same stored pixels, carrying the
+    source's orientation tag so it is shown the same way round as the source."""
+    try:
+        with Image.open(frame) as image:
+            exif = Image.Exif()
+            if orientation != 1:
+                exif[EXIF_ORIENTATION] = orientation
+            image.convert("RGB").save(output, format="PNG", exif=exif)
+    except (OSError, ValueError, Image.DecompressionBombError) as error:
+        raise MediaError(f"the restored photo could not be written: {error}")

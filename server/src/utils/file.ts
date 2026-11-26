@@ -1,5 +1,5 @@
 import { NotFoundException, StreamableFile } from '@nestjs/common';
-import { NextFunction, Response } from 'express';
+import { NextFunction, Request, Response } from 'express';
 import { access, constants } from 'node:fs/promises';
 import { basename, extname, parse } from 'node:path';
 import { Readable } from 'node:stream';
@@ -83,6 +83,32 @@ const cacheControlHeaders: Record<CacheControl, string | null> = {
   [CacheControl.None]: null, // falsy value to prevent adding Cache-Control header
 };
 
+/**
+ * FL-1771: the browser drops a cached private file at sign-out only through `Clear-Site-Data`, and a
+ * Lock makes it revalidate only through the service worker. Both need a secure context, and video
+ * Range requests skip the service worker even then. So a file that would be cached is sent as
+ * "revalidate every time" (`PrivateWithoutCache`) when the request did not arrive over https, and to
+ * an unlocked (elevated) session, the only kind that can read Locked or rule-hidden media. Revalidation
+ * is a conditional request the server answers 304 while access still holds.
+ */
+export const effectiveCacheControl = (cacheControl: CacheControl, req: Request | undefined): CacheControl => {
+  if (cacheControl !== CacheControl.PrivateWithCache && cacheControl !== CacheControl.PrivateImmutable) {
+    return cacheControl;
+  }
+  // As `frameleaf-via.middleware` records it (not imported, to keep this module's imports light).
+  const marked = req as
+    | (Request & {
+        frameleafTrustedTls?: boolean;
+        frameleafForwarded?: { proto?: string | null } | null;
+        user?: { session?: { hasElevatedPermission?: boolean } };
+      })
+    | undefined;
+  const https =
+    !!marked && (marked.secure || marked.frameleafTrustedTls === true || marked.frameleafForwarded?.proto === 'https');
+  const elevated = marked?.user?.session?.hasElevatedPermission === true;
+  return https && !elevated ? cacheControl : CacheControl.PrivateWithoutCache;
+};
+
 export const DOCUMENT_CONTENT_SECURITY_POLICY =
   "sandbox; default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:";
 // Types a browser renders as an active document (SVG, XML such as .xmp sidecars, HTML).
@@ -107,7 +133,7 @@ export const sendFile = async (
 
     await access(file.path, constants.R_OK);
 
-    const cacheControlHeader = cacheControlHeaders[file.cacheControl];
+    const cacheControlHeader = cacheControlHeaders[effectiveCacheControl(file.cacheControl, res.req)];
     if (cacheControlHeader) {
       // set the header to Cache-Control
       res.header('Cache-Control', cacheControlHeader);

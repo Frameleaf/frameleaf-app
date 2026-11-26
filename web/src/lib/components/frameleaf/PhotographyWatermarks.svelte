@@ -96,7 +96,9 @@
     error = '';
     message = '';
     try {
-      const result = await saveBrand(draft.revision, $state.snapshot(draft.brand));
+      // This page never changes the studio logo. Left out, the server keeps one it hid from the
+      // load because it is unavailable right now; sent back as that null, it would be erased.
+      const result = await saveBrand(draft.revision, { ...$state.snapshot(draft.brand), logoAssetId: undefined });
       if (disposed) {
         return;
       }

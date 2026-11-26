@@ -252,8 +252,9 @@ export class EagleImportWorkerService {
       auth,
       library,
       target,
-      albums: { ...row.albums },
-      tagIds: { ...row.tagIds },
+      // Keyed by names from the library's own JSON: `__proto__` or `constructor` must be an ordinary key here.
+      albums: Object.assign(Object.create(null) as Record<string, string>, row.albums),
+      tagIds: Object.assign(Object.create(null) as Record<string, string>, row.tagIds),
       rootAlbumId: target.mode === 'inside' && target.inside !== 'new' ? target.inside : row.rootAlbumId,
       failed: new Set(row.failed),
       recent: [...row.recent],

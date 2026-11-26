@@ -29,10 +29,12 @@ import {
 } from 'src/dtos/user-preferences.dto.js';
 import { CreateProfileImageDto, CreateProfileImageResponseDto } from 'src/dtos/user-profile.dto.js';
 import {
+  UnseenCountResponseDto,
   UserAdminResponseDto,
   UserMeResponseDto,
   UserResponseDto,
   UserUpdateMeDto,
+  mapMember,
   mapUser,
   mapUserAdmin,
 } from 'src/dtos/user.dto.js';
@@ -55,6 +57,7 @@ import { CONFIG_HISTORY_LIMITS, describeObjectChanges } from 'src/utils/config-h
 import { moveFileWithin } from 'src/utils/file-trash.js';
 import { FileDownloadResponse } from 'src/utils/file.js';
 import { readCloudLink } from 'src/utils/frameleaf-cloud-gateway.js';
+import { emptyHiddenContentFilter, getOthersRulesQueryOptions } from 'src/utils/hidden-content.js';
 import { isLockedAsset } from 'src/utils/locked-state.js';
 import { getLockedOwnerId, getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { mimeTypes } from 'src/utils/mime-types.js';
@@ -123,6 +126,19 @@ export class UserService extends BaseService {
     return users.map((user) => mapUser(user));
   }
 
+  /**
+   * FL-1748: what is new for this account across its shared spaces, for a badge in a phone's account
+   * switcher. Always answered as a locked session (`suppressedContent` is set whether or not this one
+   * is unlocked), so unlocking, or opening a Locked item, never moves the number.
+   */
+  async getUnseenCount(auth: AuthDto): Promise<UnseenCountResponseDto> {
+    const count = await this.albumUserRepository.getUnseenCount(auth.user.id, {
+      hiddenContent: { ...(auth.suppressedContent ?? emptyHiddenContentFilter(auth.user.id)), includeNsfw: true },
+      ...getOthersRulesQueryOptions(auth),
+    });
+    return { count };
+  }
+
   async getMe(auth: AuthDto): Promise<UserMeResponseDto> {
     const user = await this.userRepository.get(auth.user.id, {});
     if (!user) {
@@ -165,6 +181,15 @@ export class UserService extends BaseService {
     };
 
     if (dto.password) {
+      // FL-1767: setting a password here needs no proof of the old one, so it is only for the forced change
+      // after an administrator set or reset it (the first sign-in page). Any other change goes through
+      // `POST /auth/change-password`, which checks the current password and can sign other devices out.
+      const current = await this.userRepository.get(user.id, {});
+      if (!current?.shouldChangePassword) {
+        throw new BadRequestException(
+          'Change your password with your current one (POST /auth/change-password); this endpoint only sets a password you were asked to change',
+        );
+      }
       const hashedPassword = await this.cryptoRepository.hashBcrypt(dto.password, SALT_ROUNDS);
       update.password = hashedPassword;
       update.shouldChangePassword = false;
@@ -223,6 +248,7 @@ export class UserService extends BaseService {
     // stream changed; other preferences reach devices as an ordinary user metadata upsert.
     if (changesSyncVisibility(previous, updated)) {
       await this.sessionRepository.requestSyncResetForUser(auth.user.id);
+      await this.eventRepository.emit('LockedRulesChanged', { userId: auth.user.id });
     }
     await this.recordPreferenceHistory(auth, previous, updated);
     this.websocketRepository.clientSend('on_speech_index_change', auth.user.id);
@@ -323,9 +349,17 @@ export class UserService extends BaseService {
     }
   }
 
-  async get(id: string): Promise<UserResponseDto> {
+  /**
+   * FL-1743: an id from an album or space member list must not turn into that person's address. Their email
+   * goes only to themselves, an administrator, or where the server lists its users to everyone anyway.
+   */
+  async get(auth: AuthDto, id: string): Promise<UserResponseDto> {
     const user = await this.findOrFail(id, { withDeleted: false });
-    return mapUser(user);
+    if (auth.user.isAdmin || auth.user.id === user.id) {
+      return mapUser(user);
+    }
+    const { server } = await this.getConfig({ withCache: false });
+    return server.publicUsers ? mapUser(user) : mapMember(user);
   }
 
   async createProfileImage(

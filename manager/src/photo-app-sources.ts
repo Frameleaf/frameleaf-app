@@ -350,7 +350,7 @@ function hostFolder(container: Container, path: string): { mount: Mount; path: s
 const mysqlImage = /(?:^|\/)(?:mariadb|mysql|percona(?:-server)?)$/u;
 const postgresImage = /(?:^|\/)(?:postgres|postgis|pgvecto-rs|pgvector)$/u;
 const userName = /^[A-Za-z0-9_.@-]{1,64}$/u;
-const databaseName = /^[A-Za-z0-9_$-]{1,64}$/u;
+const databaseName = /^[A-Za-z0-9_$][A-Za-z0-9_$-]{0,63}$/u;
 
 /** Credentials stay in Manager memory and its private store; never in the journal, a log or a response. */
 export type PhotoAppServerDatabase = {

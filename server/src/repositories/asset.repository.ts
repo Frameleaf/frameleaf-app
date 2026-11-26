@@ -806,17 +806,32 @@ export class AssetRepository {
   }
   @GenerateSql({ params: [[DummyValue.UUID], DummyValue.NUMBER, DummyValue.STRING] })
   @Chunked()
-  updateDateTimeOriginal(ids: string[], delta?: number, timeZone?: string) {
-    return this.db
-      .updateTable('asset_exif')
-      .set((eb) => ({
-        dateTimeOriginal: sql`"dateTimeOriginal" + ${(delta ?? 0) + ' minute'}::interval`,
-        timeZone,
-        lockedProperties: distinctLocked(eb, ['dateTimeOriginal', 'timeZone']),
-      }))
-      .where('assetId', 'in', ids)
-      .returning(['assetId', 'dateTimeOriginal', 'timeZone'])
-      .execute();
+  updateDateTimeOriginal(ids: string[], delta?: number, timeZone?: string, exactOnly = false) {
+    return (
+      this.db
+        .updateTable('asset_exif')
+        .set((eb) => ({
+          dateTimeOriginal: sql`"dateTimeOriginal" + ${(delta ?? 0) + ' minute'}::interval`,
+          timeZone,
+          lockedProperties: distinctLocked(eb, ['dateTimeOriginal', 'timeZone']),
+        }))
+        .where('assetId', 'in', ids)
+        // FL-936: `exactOnly` leaves out photos dated to a year or a decade, which have no clock to move
+        .$if(exactOnly, (qb) =>
+          qb.where((eb) =>
+            eb.not(
+              eb.exists(
+                eb
+                  .selectFrom('asset')
+                  .whereRef('asset.id', '=', 'asset_exif.assetId')
+                  .where('asset.dateAccuracy', 'is not', null),
+              ),
+            ),
+          ),
+        )
+        .returning(['assetId', 'dateTimeOriginal', 'timeZone'])
+        .execute()
+    );
   }
   /**
    * Set one asset's capture date outright, locking it as `updateDateTimeOriginal` does (FL-32).
@@ -1060,6 +1075,9 @@ export class AssetRepository {
           'asset_exif.city as city',
           'asset_exif.state as state',
           'asset_exif.country as country',
+          // FL-949: where it was taken, for the owner's named places
+          'asset_exif.latitude as latitude',
+          'asset_exif.longitude as longitude',
         ])
         // FL-356: every landmark the asset was taken at, so a visit to one can be a story
         .select((eb) =>
@@ -1077,6 +1095,8 @@ export class AssetRepository {
         // FL-195 follow-up: Locked items make memories too; the memory is then hidden while locked
         .where(isOnTimelineWhateverLock('asset'))
         .where('asset.deletedAt', 'is', null)
+        // FL-936: a photo dated to a year or a decade was not taken on the day that period starts
+        .where('asset.dateAccuracy', 'is', null)
         .where('asset.localDateTime', '>=', from)
         .where('asset.localDateTime', '<=', to)
         .where((eb) =>
@@ -1177,7 +1197,10 @@ export class AssetRepository {
               .selectFrom((eb) =>
                 eb
                   .fn('generate_series', [
-                    sql`(select date_part('year', min(("localDateTime" at time zone 'UTC')::date))::int from asset)`,
+                    // the first year these owners have a photo in: another account's oldest (or wrongly dated)
+                    // photo adds no years to look through
+                    sql`(select date_part('year', min(("localDateTime" at time zone 'UTC')::date))::int from asset
+                      where "ownerId" = any(${ownerIds}::uuid[]))`,
                     sql`${year - 1}`,
                   ])
                   .as('year'),
@@ -1208,6 +1231,8 @@ export class AssetRepository {
                 .where('asset.deletedAt', 'is', null)
                 // FL-1410: a camera's reset day is not a day to look back on
                 .where(hasGoodDate('asset'))
+                // FL-936: nor is the first day of a year or decade that is all the photo's date says
+                .where('asset.dateAccuracy', 'is', null)
                 .orderBy(sql`(asset."localDateTime" at time zone 'UTC')::date`, 'desc')
                 .limit(20)
                 .as('a'),
@@ -1554,7 +1579,7 @@ export class AssetRepository {
   }
   /**
    * The ids a lock or unlock of `ids` covers: the assets themselves, the stills whose video part they
-   * are, every member of their stacks, and the video parts of all of those.
+   * are, every member of their stacks, the video parts of all of those, and (FL-967) both sides of a print.
    */
   private async getLockGroupIds(db: Kysely<DB>, ids: string[]): Promise<string[]> {
     const { rows } = await sql<{
@@ -1564,6 +1589,10 @@ export class AssetRepository {
         select asset.id, asset."stackId" from asset where asset.id = ${anyUuid(ids)}
         union
         select still.id, still."stackId" from asset as still where still."livePhotoVideoId" = ${anyUuid(ids)}
+        union
+        select front.id, front."stackId" from asset_print_back as pair
+        inner join asset as front on front.id = pair."frontAssetId"
+        where pair."backAssetId" = ${anyUuid(ids)}
       ),
       grouped as (
         select direct.id from direct
@@ -1576,6 +1605,10 @@ export class AssetRepository {
       from asset
       inner join grouped on grouped.id = asset.id
       where asset."livePhotoVideoId" is not null
+      union
+      select pair."backAssetId" as id
+      from asset_print_back as pair
+      inner join grouped on grouped.id = pair."frontAssetId"
     `.execute(db);
     return rows.map(({ id }) => id);
   }
@@ -1717,6 +1750,20 @@ export class AssetRepository {
       .execute();
     return count;
   }
+  /** FL-967: which of these are the paired back of a print. */
+  @GenerateSql({ params: [[DummyValue.UUID]] })
+  async getPrintBackIds(ids: string[]): Promise<string[]> {
+    if (ids.length === 0) {
+      return [];
+    }
+    const rows = await this.db
+      .selectFrom('asset_print_back')
+      .select('backAssetId')
+      .where('backAssetId', 'in', ids)
+      .execute();
+    return rows.map(({ backAssetId }) => backAssetId);
+  }
+
   @GenerateSql()
   getFileSamples() {
     return this.db.selectFrom('asset_file').select(['assetId', 'path']).limit(sql.lit(3)).execute();
@@ -3489,6 +3536,7 @@ export class AssetRepository {
             sql`asset."deletedAt" is not null`.as('isTrashed'),
             // FL-33 (T-17): the tile's Offline badge (AssetTile.jsx `asset.isOffline`).
             'asset.isOffline',
+            'asset.dateAccuracy',
             livePhotoVideoId,
             localOffsetHours.as('localOffsetHours'),
             'asset.ownerId',
@@ -3720,6 +3768,10 @@ export class AssetRepository {
             // TODO: isTrashed is redundant as it will always be all true or false depending on the options
             eb.fn.coalesce(eb.fn('array_agg', ['isTrashed']), sql.lit('{}')).as('isTrashed'),
             eb.fn.coalesce(eb.fn('array_agg', ['isOffline']), sql.lit('{}')).as('isOffline'),
+            // FL-936: null unless a photo here is dated to a year or a decade, which few pages have
+            sql<(string | null)[] | null>`case when count("dateAccuracy") > 0 then array_agg("dateAccuracy") end`.as(
+              'dateAccuracy',
+            ),
             eb.fn.coalesce(eb.fn('array_agg', ['livePhotoVideoId']), sql.lit('{}')).as('livePhotoVideoId'),
             eb.fn.coalesce(eb.fn('array_agg', ['fileCreatedAt']), sql.lit('{}')).as('fileCreatedAt'),
             eb.fn.coalesce(eb.fn('array_agg', ['createdAt']), sql.lit('{}')).as('createdAt'),

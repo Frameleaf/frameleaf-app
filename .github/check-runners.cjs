@@ -112,6 +112,19 @@ for (const [file, workflow] of Object.entries(workflows)) {
         `${label}: hosted intake must stay outside this repository's CI`,
       );
       assert.deepEqual(Object.keys(workflow.on), ["workflow_dispatch"]);
+    } else if (file === "restoration-qualification.yml" && id === "qualify") {
+      // FL-933: the one job on the owner's Windows GPU runner. Forgejo only, started by hand.
+      assert.equal(
+        job["runs-on"],
+        "windows-gpu",
+        `${label}: GPU runner changed`,
+      );
+      assert.equal(
+        job.if,
+        "github.server_url != 'https://github.com' && github.repository == 'Frameleaf/frameleaf-app'",
+        `${label}: the GPU job must stay Forgejo-only`,
+      );
+      assert.deepEqual(Object.keys(workflow.on), ["workflow_dispatch"]);
     } else
       assert(
         supported.has(job["runs-on"]),

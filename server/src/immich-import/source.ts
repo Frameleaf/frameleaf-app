@@ -8,6 +8,7 @@ import {
   newestContainedRelease,
   withForkContent,
 } from 'src/immich-import/adapters.js';
+import { GALLERY_READS, withGalleryContent } from 'src/immich-import/gallery.js';
 import { assertMediaPolicy, lostOriginalReason, mapInOrder, verifyMediaFile } from 'src/immich-import/media.js';
 import { readSourceStructure, verifyReadableStructure, verifySourceStructure } from 'src/immich-import/schema.js';
 import {
@@ -19,24 +20,52 @@ import {
   quote,
 } from 'src/immich-import/types.js';
 
-// Gallery-only data the import does not carry yet (FL-995), by source table. Preflight lists those holding rows.
-const NOODLE_ONLY: Record<string, string> = {
-  shared_space: 'Spaces',
-  shared_space_person: 'people named in Spaces',
-  person_user: 'people shared between accounts',
-  person_pet: 'pets',
-  user_group: 'user groups',
-  asset_image_adjust: 'exposure, contrast, saturation and invert adjustments',
-  asset_video_trim: 'video trims',
-  cleanup_decision: 'clean-up review decisions',
+// Gallery-only data by source table. Preflight lists those holding rows, unless the named read carries them
+// (src/immich-import/gallery.ts); the rest have no Frameleaf counterpart yet.
+export const NOODLE_ONLY: Record<string, { name: string; carriedBy?: (typeof GALLERY_READS)[number] }> = {
+  shared_space: { name: 'Spaces', carriedBy: 'gallery_space' },
+  shared_space_person: { name: 'people named in Spaces', carriedBy: 'gallery_space_person' },
+  shared_space_library: { name: 'libraries linked to Spaces' },
+  shared_space_album: { name: 'albums linked to Spaces' },
+  person_user: { name: 'people shared between accounts' },
+  person_pet: { name: 'pets', carriedBy: 'gallery_pet' },
+  user_group: { name: 'user groups' },
+  asset_image_adjust: { name: 'exposure, contrast, saturation and invert adjustments' },
+  asset_video_trim: { name: 'video trims' },
+  cleanup_decision: { name: 'clean-up review decisions' },
 };
 // Each owner's favourite is asset."isFavorite"; asset_favorite also holds favourites other people set.
-const OTHERS_FAVOURITES = `SELECT EXISTS (SELECT 1 FROM public.asset_favorite f JOIN public.asset a ON a.id = f."assetId"
+export const OTHERS_FAVOURITES = `SELECT EXISTS (SELECT 1 FROM public.asset_favorite f JOIN public.asset a ON a.id = f."assetId"
   WHERE f."userId" <> a."ownerId") AS rows`;
+
+/** Rows each Gallery read yields (FL-1742); null where this release's tables cannot be read. */
+export type GalleryCounts = {
+  spaces: number | null;
+  /** People who are in at least one Space. */
+  members: number | null;
+  /** Memberships: one for each person in each Space. */
+  memberships: number | null;
+  spacePhotos: number | null;
+  people: number | null;
+  favourites: number | null;
+  pets: number | null;
+};
+const GALLERY_COUNTS: Record<Exclude<keyof GalleryCounts, 'members'>, (typeof GALLERY_READS)[number]> = {
+  spaces: 'gallery_space',
+  memberships: 'gallery_space_member',
+  spacePhotos: 'gallery_space_asset',
+  people: 'gallery_space_person',
+  favourites: 'gallery_favorite',
+  pets: 'gallery_pet',
+};
 
 export class ImmichSource {
   /** Noodle Gallery data that stays in the source, named for people. */
   notImported: string[] = [];
+  /** What each Gallery read will carry, counted through the read's own SELECT. Set with `gallery`. */
+  galleryCounts: GalleryCounts | null = null;
+  /** Set once preflight has recognised the source as Noodle Gallery. */
+  gallery = false;
   private frozen: FrozenSource;
   /** The frozen shape, plus pre-Frameleaf fork content once preflight has seen the source. */
   fixture: FrozenSource;
@@ -82,7 +111,7 @@ export class ImmichSource {
       const base = newestContainedRelease(names);
       if (!base) throw new ImportRefused('UNKNOWN_SOURCE_MIGRATIONS');
       this.frozen = { ...frozenSource(base), exact: false };
-      this.notImported = await this.noodleOnlyData();
+      this.gallery = true;
     }
     const structure = await readSourceStructure(this.db);
     if (this.frozen.exact && canonicalJson(names) === canonicalJson(this.frozen.migrations)) {
@@ -97,13 +126,18 @@ export class ImmichSource {
       // Fork sources carry extra migrations, so they always take this path.
       this.fixture = withForkContent(this.frozen, structure);
     }
+    if (this.gallery) {
+      this.fixture = withGalleryContent(this.fixture, structure);
+      this.notImported = await this.noodleOnlyData();
+      this.galleryCounts = await this.countGallery();
+    }
     const identity = await this.db.query(`SELECT current_database() AS database,
       (SELECT oid::text FROM pg_database WHERE datname=current_database()) AS database_oid,
       system_identifier::text AS system_identifier FROM pg_control_system()`);
     const hash = createHash('sha256').update(
       digest({ structure, identity, migrations, sourceId: this.config.sourceId }),
     );
-    for (const table of CONTENT_TABLES) {
+    for (const table of [...CONTENT_TABLES, ...GALLERY_READS]) {
       if (!this.fixture.tables[table]) {
         continue;
       }
@@ -150,15 +184,44 @@ export class ImmichSource {
     );
     const tables = new Set(found?.tables as string[] | undefined);
     const names: string[] = [];
-    for (const [table, name] of Object.entries(NOODLE_ONLY)) {
-      if (!tables.has(table)) continue;
+    for (const [table, { name, carriedBy }] of Object.entries(NOODLE_ONLY)) {
+      if (!tables.has(table) || (carriedBy && this.fixture.tables[carriedBy])) continue;
       const [held] = await this.db.query(`SELECT EXISTS (SELECT 1 FROM public.${quote(table)}) AS rows`);
       if (held?.rows) names.push(name);
     }
-    if (tables.has('asset_favorite') && (await this.db.query(OTHERS_FAVOURITES))[0]?.rows) {
+    if (
+      tables.has('asset_favorite') &&
+      !this.fixture.tables.gallery_favorite &&
+      (await this.db.query(OTHERS_FAVOURITES))[0]?.rows
+    ) {
       names.push('favourites set by other people');
     }
     return names;
+  }
+
+  /** Count queries over the reads the importer will run; a read this source does not offer counts as null. */
+  private async countGallery(): Promise<GalleryCounts> {
+    const rows = async (read: (typeof GALLERY_READS)[number], what = '*') => {
+      if (!this.fixture.tables[read]) return null;
+      const [row] = await this.db.query(
+        `SELECT count(${what})::text AS count FROM (${this.fixture.views[read]}) AS rows`,
+      );
+      return Number(row?.count ?? 0);
+    };
+    const counts = { members: await rows('gallery_space_member', 'DISTINCT rows."userId"') } as GalleryCounts;
+    for (const [name, read] of Object.entries(GALLERY_COUNTS) as [
+      keyof typeof GALLERY_COUNTS,
+      (typeof GALLERY_READS)[number],
+    ][]) {
+      counts[name] = await rows(read);
+    }
+    return counts;
+  }
+
+  /** Rows one Gallery read yields, for the verification count. */
+  async count(read: (typeof GALLERY_READS)[number]): Promise<string> {
+    const [rows] = await this.db.query(`SELECT count(*)::text AS count FROM (${this.fixture.views[read]}) AS rows`);
+    return String(rows.count);
   }
 
   private async rowFingerprint(table: string, row: ImportRow): Promise<string[]> {
@@ -193,7 +256,7 @@ export class ImmichSource {
 
   async *batches(table: string, after: string[] | null = null): AsyncGenerator<{ row: ImportRow; cursor: string[] }[]> {
     const shape = this.fixture.tables[table];
-    if (!shape || shape.key.length === 0 || !(CONTENT_TABLES as readonly string[]).includes(table)) {
+    if (!shape || shape.key.length === 0 || !([...CONTENT_TABLES, ...GALLERY_READS] as string[]).includes(table)) {
       throw new ImportRefused('UNSUPPORTED_IMPORT_TABLE');
     }
     const fields = shape.columns

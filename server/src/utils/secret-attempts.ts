@@ -70,9 +70,10 @@ export async function checkSecret<T>(
       try {
         result = await check();
       } catch (error) {
-        // Record failure and apply backoff. Failures expire after a quiet window.
+        // Record failure and apply backoff. Failures expire after a quiet window, counted from the end of
+        // a lockout: from the last failure, sitting out the 1-hour tier would reset the count every time.
         const prev =
-          state && now - state.lastFailureAt < FAILURE_RESET_MS
+          state && now - Math.max(state.lastFailureAt, state.lockedUntil) < FAILURE_RESET_MS
             ? state
             : { failureCount: 0, lastFailureAt: 0, lockedUntil: 0 };
         const failureCount = prev.failureCount + 1;

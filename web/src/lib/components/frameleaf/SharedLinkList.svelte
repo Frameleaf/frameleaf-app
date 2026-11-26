@@ -314,11 +314,14 @@
     deleteOpen = true;
   };
 
+  // A second press while the first is out would be refused and report a deleted link as a failure.
+  let deleting = false;
   const confirmDelete = async () => {
-    if (dialog?.kind !== 'delete') {
+    if (dialog?.kind !== 'delete' || deleting) {
       return;
     }
     const { link } = dialog;
+    deleting = true;
     try {
       await removeSharedLink({ id: link.id });
       eventManager.emit('SharedLinkDelete', link);
@@ -327,6 +330,7 @@
     } catch (error) {
       handleError(error, $t('errors.unable_to_delete_shared_link'));
     } finally {
+      deleting = false;
       deleteOpen = false;
     }
   };
