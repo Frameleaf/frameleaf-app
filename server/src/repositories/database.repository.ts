@@ -5,13 +5,11 @@ import { Kysely, type RawBuilder, type Transaction, sql } from 'kysely';
 import { Migrator } from 'kysely/migration';
 import { InjectKysely } from 'nestjs-kysely';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import * as semver from 'semver';
 import z from 'zod';
 import type { DB } from 'src/schema/index.js';
 import {
   CLIP_MODEL_INFO,
   CUSTOM_CLIP_DIM_SIZE,
-  EXTENSION_NAMES,
   POSTGRES_VERSION_RANGE,
   VECTOR_INDEX_TABLES,
   VECTOR_VERSION_RANGE,
@@ -169,35 +167,6 @@ export class DatabaseRepository {
 
   async createExtension(extension: DatabaseExtension): Promise<void> {
     await sql`CREATE EXTENSION IF NOT EXISTS ${sql.id(extension)} CASCADE`.execute(this.db);
-  }
-
-  async dropExtension(extension: DatabaseExtension): Promise<void> {
-    this.logger.log(`Dropping ${EXTENSION_NAMES[extension]} extension`);
-    await sql`DROP EXTENSION IF EXISTS ${sql.raw(extension)}`.execute(this.db);
-  }
-
-  async updateVectorExtension(extension: VectorExtension, targetVersion?: string): Promise<void> {
-    const [{ availableVersion, installedVersion }] = await this.getExtensionVersions([extension]);
-    if (!installedVersion) {
-      throw new Error(`${EXTENSION_NAMES[extension]} extension is not installed`);
-    }
-
-    if (!availableVersion) {
-      throw new Error(`No available version for ${EXTENSION_NAMES[extension]} extension`);
-    }
-    targetVersion ??= availableVersion;
-
-    if (!semver.diff(installedVersion, targetVersion)) {
-      return;
-    }
-
-    await Promise.all([
-      this.db.schema.dropIndex(VectorIndex.Clip).ifExists().execute(),
-      this.db.schema.dropIndex(VectorIndex.Face).ifExists().execute(),
-    ]);
-
-    await sql`ALTER EXTENSION ${sql.raw(extension)} UPDATE TO ${sql.lit(targetVersion)}`.execute(this.db);
-    await Promise.all([this.reindexVectors(VectorIndex.Clip), this.reindexVectors(VectorIndex.Face)]);
   }
 
   async prewarm(_index: VectorIndex): Promise<void> {

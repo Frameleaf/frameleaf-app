@@ -1,15 +1,15 @@
+import asyncio
 import time
 from asyncio import Lock
 from collections import OrderedDict
 from typing import Any
 
 from aiocache.backends.memory import SimpleMemoryCache
-from aiocache.plugins import TimingPlugin
 
 from frameleaf_ml.models import from_model_type
 from frameleaf_ml.models.base import InferenceModel
 
-from ..schemas import ModelTask, ModelType, has_profiling
+from ..schemas import ImageDescriptionAcceleration, ModelTask, ModelType
 
 ModelCacheKey = tuple[str, str, str, str, str]
 
@@ -24,6 +24,13 @@ def normalize_identity(value: Any) -> str:
     return str(value or "").strip().lower()
 
 
+def acceleration_identity(value: Any) -> str:
+    """Models read anything but CUDA and OpenVINO as automatic, so those values must share one loaded instance."""
+    acceleration = normalize_identity(value)
+    explicit = (ImageDescriptionAcceleration.CUDA, ImageDescriptionAcceleration.OPENVINO)
+    return acceleration if acceleration in explicit else ""
+
+
 class ModelCache:
     """Fetches a model from an in-memory cache, instantiating it if it's missing."""
 
@@ -31,21 +38,14 @@ class ModelCache:
         self,
         revalidate: bool = False,
         timeout: int | None = None,
-        profiling: bool = False,
         max_entries: int = DEFAULT_MAX_ENTRIES,
     ) -> None:
         """
         Args:
             revalidate: Resets TTL on cache hit. Useful to keep models in memory while active. Defaults to False.
             timeout: Maximum allowed time for model to load. Disabled if None. Defaults to None.
-            profiling: Collects metrics for cache operations, adding slight overhead. Defaults to False.
             max_entries: Resident instances kept; beyond it the least recently used is dropped.
         """
-
-        plugins = []
-
-        if profiling:
-            plugins.append(TimingPlugin())
 
         self.should_revalidate = revalidate
         self.max_entries = max(1, max_entries)
@@ -53,7 +53,7 @@ class ModelCache:
         # Keys in order of last use, for the eviction of the least recently used entry.
         self._recent: OrderedDict[ModelCacheKey, None] = OrderedDict()
 
-        self.cache = SimpleMemoryCache(timeout=timeout, plugins=plugins, namespace=None)
+        self.cache = SimpleMemoryCache(timeout=timeout, namespace=None)
 
     async def get(
         self, model_name: str, model_type: ModelType, model_task: ModelTask, **model_kwargs: Any
@@ -63,7 +63,7 @@ class ModelCache:
             str(model_type),
             str(model_task),
             normalize_identity(model_kwargs.get("device")),
-            normalize_identity(model_kwargs.get("acceleration")),
+            acceleration_identity(model_kwargs.get("acceleration")),
         )
         ttl = model_kwargs.get("ttl")
         model: InferenceModel | None = await self.cache.get(key)
@@ -78,7 +78,8 @@ class ModelCache:
             async with self._create_lock:
                 model = await self.cache.get(key)
                 if model is None:
-                    model = from_model_type(model_name, model_type, model_task, **model_kwargs)
+                    # Constructors can import torch or a native runtime, which would stall the event loop.
+                    model = await asyncio.to_thread(from_model_type, model_name, model_type, model_task, **model_kwargs)
                     await self.cache.set(key, model, ttl=ttl)
                     self._touch(key)
                     await self._evict_surplus()
@@ -87,12 +88,6 @@ class ModelCache:
         if self.should_revalidate:
             await self.revalidate(key, ttl)
         return model
-
-    async def get_profiling(self) -> dict[str, float] | None:
-        if not has_profiling(self.cache):
-            return None
-
-        return self.cache.profiling
 
     async def revalidate(self, key: ModelCacheKey, ttl: int | None) -> None:
         if ttl is not None and key in self.cache._handlers:

@@ -219,6 +219,10 @@ export type EnhanceStop = {
 
 export const ENHANCE_CLOUD_STOP = 'frameleaf-cloud';
 
+/** FL-955: the face model (GFPGAN) can change how a face looks, so it alone carries a warning. */
+export const isFaceModelStop = (stop: Pick<EnhanceStop, 'id' | 'name' | 'model'> | null) =>
+  !!stop && /gfpgan/i.test(`${stop.model ?? ''} ${stop.id} ${stop.name}`);
+
 /** Refusals the set-up sheet can put right: a link, a licence, the terms, Cloud on, or AI credit. */
 const CLOUD_SETUP_REFUSALS: ReadonlySet<MlAdmissionRefusal> = new Set([
   MlAdmissionRefusal.DestinationMissing,

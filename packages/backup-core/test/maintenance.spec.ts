@@ -275,6 +275,57 @@ describe('verify', () => {
   });
 });
 
+describe('damaged packs', () => {
+  it('are noted by verify, stored again by the next backup, and removed by prune once nothing needs them', async () => {
+    const { store, repository, b } = await twoBackups();
+    const newer = await repository.readSnapshot(b.key);
+    const hurt = repository.index.get((await find(repository, newer, ['c-keep.bin']))!.chunks![0]!)!.pack;
+    const damaged = store.objects.get(hurt)!;
+    damaged[5] = damaged[5]! ^ 1;
+
+    const report = await verify(repository, { readPack: () => true });
+    expect(report.damagedPacks).toEqual([hurt]);
+    expect(report.damageRecorded).toBe(true);
+    expect(await store.list('d/')).toHaveLength(1);
+    // Checking again notes nothing new.
+    await verify(repository, { readPack: () => true });
+    expect(await store.list('d/')).toHaveLength(1);
+
+    // A later run, in a new process, knows the pack is damaged and does not point the new backup at it.
+    const later = await Repository.open(store, { rootKey });
+    await later.loadIndex();
+    expect([...later.suspectPacks]).toEqual([hurt]);
+    const c = await backup(later, folder(second), { packTarget });
+    expect(c.snapshot.stats.storedBytes).toBeGreaterThan(0);
+    const reopened = await Repository.open(store, { rootKey });
+    await reopened.loadIndex();
+    const snapshot = await reopened.readSnapshot(c.key);
+    for (const [name, body] of Object.entries(second)) {
+      for (const id of (await find(reopened, snapshot, [name]))!.chunks ?? []) {
+        expect(reopened.index.get(id)!.pack).not.toBe(hurt);
+      }
+      expect((await content(reopened, snapshot, name)).equals(body)).toBe(true);
+    }
+
+    // Nothing kept needs the damaged pack any more: prune deletes it, and its note with it.
+    await prune(reopened, everything);
+    expect(store.objects.has(hurt)).toBe(false);
+    expect(await store.list('d/')).toEqual([]);
+  });
+
+  it('still lend their healthy pieces to a restore when nothing else holds them', async () => {
+    const { store, repository, b } = await twoBackups();
+    const newer = await repository.readSnapshot(b.key);
+    const chunk = (await find(repository, newer, ['c-keep.bin']))!.chunks![0]!;
+    await repository.recordDamagedPacks([repository.index.get(chunk)!.pack]);
+    const later = await Repository.open(store, { rootKey });
+    await later.loadIndex();
+    // Not reused by a backup, but still read: most of a damaged pack usually opens.
+    expect(later.holds(chunk)).toBe(false);
+    expect((await content(later, await later.readSnapshot(b.key), 'c-keep.bin')).equals(second['c-keep.bin'])).toBe(true);
+  });
+});
+
 describe('a backup that cannot go on', () => {
   it('ends when storage fails, instead of calling the file unreadable', async () => {
     const store = memoryStore();

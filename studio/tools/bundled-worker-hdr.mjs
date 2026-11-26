@@ -148,6 +148,9 @@ export async function streamHdrMaster({
     child.once('error', reject);
     child.once('close', (code) => resolve(code));
   });
+  // A failed spawn rejects while the first frame renders; it is reported at `await closed`, and
+  // unobserved until then it would end the whole worker as an unhandled rejection.
+  closed.catch(() => {});
   const abort = () => child.kill('SIGKILL');
   signal?.addEventListener('abort', abort, { once: true });
   child.stdin.on('error', () => {});
@@ -158,7 +161,8 @@ export async function streamHdrMaster({
       if (frame.width !== width || frame.height !== height)
         throw new Error('Every HDR frame must have the master size');
       if (frame.rgb48.byteLength !== rawFrameBytes(width, height, 'rgb48le')) throw new Error('Incomplete HDR frame');
-      meter.add(frame.rgb48, width, height);
+      // Content light is PQ metadata; an HLG master never reads it.
+      if (transfer === 'pq') meter.add(frame.rgb48, width, height);
       if (wanted.has(written)) references.set(written, lumaGrid(frame.rgb48, width, height));
       if (!child.stdin.write(frame.rgb48)) {
         await Promise.race([
@@ -330,6 +334,7 @@ export async function verifyHdrMaster({
     child.once('error', reject);
     child.once('close', resolve);
   });
+  closed.catch(() => {});
   const luma = {};
   let decoded = 0;
   let pending = [];

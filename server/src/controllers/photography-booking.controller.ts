@@ -11,8 +11,10 @@ import {
   Patch,
   Post,
   Put,
+  Req,
 } from '@nestjs/common';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import type { Request } from 'express';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import {
   PhotographyBookingDto,
@@ -29,6 +31,7 @@ import { ApiTag } from 'src/enum.js';
 import { Auth, Authenticated } from 'src/middleware/auth.guard.js';
 import { RATE_LIMITS, RateLimited } from 'src/middleware/rate-limit.guard.js';
 import { PhotographyBookingService } from 'src/services/photography-booking.service.js';
+import { checkoutOrigin } from 'src/utils/clients-payments.js';
 
 const uuid = new ParseUUIDPipe({ version: '4' });
 
@@ -105,7 +108,9 @@ export class PhotographyBookingController {
     @Param('site') site: string,
     @Body() dto: PhotographyBookingRequestDto,
     @Headers('origin') origin: string | undefined,
+    @Req() request: Request,
   ) {
-    return this.service.request(site, dto, origin && /^https?:\/\/[^/\s]+$/.test(origin) ? origin : null);
+    // The service prefers the server's public address; this is its fallback, so only the request's own host counts.
+    return this.service.request(site, dto, checkoutOrigin(origin, null, request.hostname));
   }
 }

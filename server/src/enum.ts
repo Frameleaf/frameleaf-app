@@ -548,6 +548,8 @@ export const StorageFolderSchema = z.enum(StorageFolder).describe('Storage folde
 export enum SystemMetadataKey {
   MediaLocation = 'MediaLocation',
   ReverseGeocodingState = 'reverse-geocoding-state',
+  /** FL-987: which place-name pack `geodata_place_name` holds. */
+  PlaceNamesState = 'place-names-state',
   FacialRecognitionState = 'facial-recognition-state',
   /** FL-1493: the face model the library's faces were last found with. */
   FaceModelState = 'face-model-state',
@@ -1457,6 +1459,8 @@ export enum MediaOperationKind {
   StudioTranscription = 'studio_transcription',
   /** Internal library indexing. Its live status and controls use the dedicated speech API. */
   SpeechTranscription = 'speech_transcription',
+  /** FL-1758: one video's playback copy, made on a Frameleaf Desktop. Internal, never an Activity row. */
+  PlaybackTranscode = 'playback_transcode',
   /**
    * Make a movie (FL-561): the best moments of an album, a memory or a selection, cut on the beat of
    * music made for it or a song from the library, saved as a Studio project.
@@ -1588,7 +1592,7 @@ export enum MediaOperationKind {
 export const MediaOperationKindSchema = z
   .enum(MediaOperationKind)
   // Legacy clients decode a closed enum. Internal indexing is never a generic Activity/render response.
-  .exclude(['SpeechTranscription'])
+  .exclude(['SpeechTranscription', 'PlaybackTranscode'])
   .describe('Media operation kind')
   .meta({ id: 'MediaOperationKind' });
 
@@ -2366,6 +2370,8 @@ export enum JobName {
   AssetEditThumbnailGeneration = 'AssetEditThumbnailGeneration',
   AssetDevelopRender = 'AssetDevelopRender',
   DevelopImport = 'DevelopImport',
+  /** FL-923: cut the confirmed prints out of a flatbed scan as new photos. */
+  ScanSplit = 'ScanSplit',
   AssetPaletteExtract = 'AssetPaletteExtract',
   AssetPaletteQueueAll = 'AssetPaletteQueueAll',
   PhotographyWorkflowRender = 'PhotographyWorkflowRender',
@@ -2430,6 +2436,8 @@ export enum JobName {
   MemoryGenerate = 'MemoryGenerate',
   LandmarkMatchAll = 'LandmarkMatchAll',
   LandmarkInfer = 'LandmarkInfer',
+  /** FL-987: links located items to the places their stored names came from, a slice at a time. */
+  PlaceNameBackfill = 'PlaceNameBackfill',
   AlbumSuggestionAutoAdd = 'AlbumSuggestionAutoAdd',
   AlbumSuggestionOutfit = 'AlbumSuggestionOutfit',
   AlbumCleanupScan = 'AlbumCleanupScan',
@@ -2437,6 +2445,12 @@ export enum JobName {
   // FL-912: the Date & Time Doctor, one scan per owner
   DateDoctorScan = 'DateDoctorScan',
   DateDoctorScanQueueAll = 'DateDoctorScanQueueAll',
+  // FL-925: read one staged location history file into its owner's places
+  LocationHistoryImport = 'LocationHistoryImport',
+  // FL-964: propose, apply and undo locations from location history, one run at a time
+  LocationFillPropose = 'LocationFillPropose',
+  LocationFillApply = 'LocationFillApply',
+  LocationFillUndo = 'LocationFillUndo',
   MemoryExport = 'MemoryExport',
 
   NotificationsCleanup = 'NotificationsCleanup',
@@ -2564,6 +2578,7 @@ export enum JobName {
 // is observed through asset details rather than the public job catalogue, and FL-1092's album auto-add
 // and FL-1094's outfit crops through the album itself. FL-819's workflow event jobs are observed
 // through the workflow's run history. FL-838's folder album sync is observed through the albums it keeps.
+// FL-987's place-name backfill is a background fill nobody watches.
 export const JobNameSchema = z
   .enum(JobName)
   .exclude([
@@ -2579,12 +2594,17 @@ export const JobNameSchema = z
     JobName.AssetVideoFingerprint,
     JobName.DescriptionFillerTagCleanup,
     JobName.LandmarkInfer,
+    JobName.PlaceNameBackfill,
     JobName.AlbumSuggestionAutoAdd,
     JobName.AlbumSuggestionOutfit,
     JobName.AlbumCleanupScan,
     JobName.AlbumCleanupApply,
     JobName.DateDoctorScan,
     JobName.DateDoctorScanQueueAll,
+    JobName.LocationHistoryImport,
+    JobName.LocationFillPropose,
+    JobName.LocationFillApply,
+    JobName.LocationFillUndo,
     JobName.LockedSeal,
     JobName.LockedUnseal,
     JobName.LockedRewrap,
@@ -2594,6 +2614,8 @@ export const JobNameSchema = z
     JobName.WorkflowEventDispatch,
     JobName.WorkflowEventTrigger,
     JobName.LibraryFolderAlbumSync,
+    // FL-923: observed through the photos it adds
+    JobName.ScanSplit,
     // the member's key: its value is 'media-import', unlike the names above
     'MediaImport',
   ])
@@ -2731,6 +2753,8 @@ export enum DatabaseLock {
   ClientsPaymentEvents = 982,
   /** FL-838: a library's folder albums are synced, or removed, by one worker at a time. */
   LibraryFolderAlbums = 988,
+  /** FL-1758: one desktop conversion at a time per video (taken with the asset id as the second key). */
+  DesktopTranscode = 989,
 }
 
 export enum MaintenanceAction {

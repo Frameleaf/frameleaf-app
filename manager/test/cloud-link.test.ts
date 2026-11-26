@@ -106,6 +106,30 @@ test('credentials come only under a lease, and one run holds it at a time', asyn
   await assert.rejects(client.rotate(identity, { operation: 'restore' }), (error: unknown) => refused('entitlement-missing', 402)(error) && (error as CloudError).data?.missing === 'licence');
 });
 
+test('a grant that names storage over plain HTTP, on this machine or on the LAN is refused', async () => {
+  const { state, client, identity } = await linked();
+  for (const endpoint of [
+    'http://s3.us-east-1.backup.frameleaf.cloud/',
+    'https://user:secret@s3.us-east-1.backup.frameleaf.cloud/',
+    'https://127.0.0.1:9000',
+    'https://192.168.1.20',
+    'https://10.0.0.5',
+    'https://172.20.0.2',
+    'https://169.254.169.254',
+    'https://[::1]',
+    'https://[fd00::1]',
+    'https://[::ffff:192.168.1.20]',
+    'https://nas.local',
+    'https://storage',
+    'https://localhost',
+  ]) {
+    state.storage = { endpoint };
+    await assert.rejects(client.grant(identity, { locationId: 'loc-01', operation: 'restore' }), refused('cloud_address_untrusted'), endpoint);
+  }
+  state.storage = { endpoint: 'https://s3.eu-central-2.storage.example' };
+  assert.equal((await client.grant(identity, { locationId: 'loc-01', operation: 'restore' })).endpoint, 'https://s3.eu-central-2.storage.example');
+});
+
 test('finished backups are added to a signed history, in order, and a lost answer is safe to send again', async () => {
   const { state, client, identity } = await linked();
   const vaultId = randomUUID();
@@ -194,4 +218,9 @@ test('a machine nobody approved learns nothing by asking who it is', async () =>
   const { state, client, identity } = await linked();
   state.instances.get(identity.instanceId)!.linked = false;
   await assert.rejects(client.takeover(identity, randomUUID()), refused('invalid_client', 400));
+});
+
+test('an answer far bigger than any Cloud sends is not read into memory', async () => {
+  const huge = new Cloud(API, { fetch: async () => new Response('x'.repeat(5 * 1024 * 1024), { status: 200 }) });
+  await assert.rejects(huge.discovery(), refused('cloud_answer_unreadable'));
 });

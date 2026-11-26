@@ -1,4 +1,4 @@
-import { chmod, chown, lstat, mkdir, open, rename, symlink, utimes } from 'node:fs/promises';
+import { chmod, chown, lstat, mkdir, open, rename, rm, symlink, utimes } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import type { Repository, Snapshot } from './repository.js';
 import { type Entry, fileChunks, readTree, safeName } from './tree.js';
@@ -77,6 +77,7 @@ export async function restore(
   const started = new Date().toISOString().replaceAll(/[:.]/g, '-');
   const aside = options.aside ?? ((existing: string) => `${existing}.before-restore-${started}`);
   const result: RestoreResult = { files: 0, bytes: 0, movedAside: [] };
+  let written = 0;
   const start = await find(repository, snapshot, path);
   if (!start) {
     throw new Error('No such file or folder in this backup');
@@ -123,25 +124,34 @@ export async function restore(
       await utimes(place, stamp(entry.mtime), stamp(entry.mtime)).catch(() => undefined);
       return;
     }
-    await clear(place);
     if (entry.type === 'symlink') {
+      await clear(place);
       await symlink(entry.target ?? '', place);
       return;
     }
-    const file = await open(place, 'wx', 0o600);
+    // Written beside its place first: a full disk or damaged backup must not leave half a file where a good one was.
+    const temporary = join(dirname(place), `.frameleaf-restoring-${started}-${++written}`);
+    const file = await open(temporary, 'wx', 0o600);
     try {
-      for await (const chunk of readFile(repository, entry)) {
-        // writeFile goes on until every byte is written; a bare write may stop short on a full disk.
-        await file.writeFile(chunk);
-        result.bytes += chunk.length;
+      try {
+        for await (const chunk of readFile(repository, entry)) {
+          // writeFile goes on until every byte is written; a bare write may stop short on a full disk.
+          await file.writeFile(chunk);
+          result.bytes += chunk.length;
+        }
+      } finally {
+        await file.close();
       }
-    } finally {
-      await file.close();
+      await own(temporary, entry);
+      // Set outright, after ownership: the mode a file is made with is cut down by the process's umask.
+      await chmod(temporary, entry.mode);
+      await utimes(temporary, stamp(entry.mtime), stamp(entry.mtime));
+      await clear(place);
+      await rename(temporary, place);
+    } catch (error) {
+      await rm(temporary, { force: true });
+      throw error;
     }
-    await own(place, entry);
-    // Set outright, after ownership: the mode a file is made with is cut down by the process's umask.
-    await chmod(place, entry.mode);
-    await utimes(place, stamp(entry.mtime), stamp(entry.mtime));
     result.files++;
   };
 

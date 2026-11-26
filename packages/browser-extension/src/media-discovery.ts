@@ -175,7 +175,8 @@ const MAX_SEEN = 2000;
 /**
  * What one tab's current page has been seen to request. Kept in memory only (addresses can carry
  * signed tokens, so they are never written to storage) and forgotten the moment the tab goes to
- * another page, another tab is watched or the tab closes.
+ * another page, another tab is watched or the tab closes. Watching was allowed for one page, so it
+ * stops when the tab goes to another page; a reload or a change of only the #fragment keeps it.
  */
 export class MediaWatch {
   private tabId: number | undefined;
@@ -202,15 +203,24 @@ export class MediaWatch {
     const media = classifyMedia(url, hint);
     if (media && !this.seen.has(media.url)) this.seen.set(media.url, media);
   }
-  /** The tab loaded a new document (even the same address again): start over. */
+  /**
+   * The tab loaded a new document. The same address again starts over; another page stops watching.
+   * Answers whether watching has stopped.
+   */
   documentChanged(tabId: number, pageUrl: string) {
-    if (tabId === this.tabId) this.start(tabId, pageUrl);
+    if (tabId !== this.tabId) return false;
+    if (!samePage(this.pageUrl, pageUrl)) {
+      this.stop();
+      return true;
+    }
+    this.start(tabId, pageUrl);
+    return false;
   }
-  /** The tab went somewhere: what the last page loaded says nothing about the new one. */
+  /** The tab went to another page, so watching stops. Answers whether it has. */
   navigated(tabId: number, pageUrl: string) {
-    if (tabId !== this.tabId || samePage(this.pageUrl, pageUrl)) return;
-    this.pageUrl = pageUrl;
-    this.seen.clear();
+    if (tabId !== this.tabId || samePage(this.pageUrl, pageUrl)) return false;
+    this.stop();
+    return true;
   }
   /** Whether that was the watched tab, and so watching has stopped. */
   closed(tabId: number) {

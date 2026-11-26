@@ -481,6 +481,9 @@ export class MediaHealthRepository {
       }>`
         SELECT count(*)::int AS count FROM public.icloud_resource
         WHERE status IN ('needs-review', 'failed')
+          AND NOT coalesce(source#>'{_sync,acceptedReasons}' ? "lastError", false)
+          AND "lastError" IS DISTINCT FROM 'source_hidden_requires_consent'
+          AND "lastError" IS DISTINCT FROM 'hidden_match_requires_consent'
         ${ownerId ? sql`AND "ownerId" = ${ownerId}::uuid` : sql``}`.execute(this.db);
       return Number(result.rows[0]?.count ?? 0);
     } catch {
@@ -785,21 +788,6 @@ export class MediaHealthRepository {
         .set({ status: MediaHealthStatus.Resolved, severity: MediaHealthSeverity.Info, resolvedAt })
         .where('category', '=', category)
         .where('assetId', '=', asUuid(assetId))
-        .execute();
-    });
-  }
-  async markResolvedMany(category: MediaHealthCategory, assetIds: string[]): Promise<void> {
-    if (assetIds.length === 0) {
-      return;
-    }
-    const resolvedAt = new Date();
-    await this.db.transaction().execute(async (trx) => {
-      await trx
-        .withSchema('public')
-        .updateTable('asset_health')
-        .set({ status: MediaHealthStatus.Resolved, severity: MediaHealthSeverity.Info, resolvedAt })
-        .where('category', '=', category)
-        .where('assetId', '=', anyUuid(assetIds))
         .execute();
     });
   }

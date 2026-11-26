@@ -17,6 +17,7 @@
   import EmptyState from '$lib/components/frameleaf/EmptyState.svelte';
   import InlineError from '$lib/components/frameleaf/InlineError.svelte';
   import LandmarkBadge from '$lib/components/frameleaf/LandmarkBadge.svelte';
+  import YourPlaces from '$lib/components/frameleaf/YourPlaces.svelte';
   import { landmarkKind, landmarkStateId, type LandmarkCard } from '$lib/frameleaf/landmarks';
   import {
     buildPlacesTree,
@@ -120,6 +121,19 @@
           ]
             .filter(Boolean)
             .join(' · '),
+  );
+
+  // FL-1019: what Your places says each named place is near
+  const towns = $derived(
+    tree.countries.flatMap((country) =>
+      country.states.flatMap((state) =>
+        state.cities.map((city) => ({
+          latitude: city.latitude,
+          longitude: city.longitude,
+          label: `${city.name}, ${state.name}`,
+        })),
+      ),
+    ),
   );
 
   const setGrouped = (value: boolean) =>
@@ -239,6 +253,10 @@
       </div>
     {/if}
   </header>
+
+  {#if !failed}
+    <YourPlaces {towns} />
+  {/if}
 
   {#if failed}
     <InlineError

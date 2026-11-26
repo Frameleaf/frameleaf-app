@@ -146,6 +146,8 @@ const getDefaultPreferences = (): FrameleafUserPreferences => {
       enabled: true,
       duration: 5,
       sidebarWeb: true,
+      occasions: true,
+      occasionRegion: 'auto',
     },
     people: {
       enabled: true,

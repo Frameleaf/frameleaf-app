@@ -178,9 +178,6 @@ export const challengeRecordName = (enrollment: Pick<FrameleafRemoteEnrollment, 
 
 // ------------------------------------------------------------------ cloud answers
 
-/** A DNS-01 value: base64url SHA-256 of the key authorization (RFC 8555 section 8.4), 43 characters. */
-export const ACME_CHALLENGE_VALUE = /^[\w-]{43}$/;
-
 /** `POST /v1/remote/enroll` (contract `remote/enroll.ts`). Unknown fields are ignored. */
 export const enrollResponseSchema = z.object({
   label: z.string().regex(/^[2-7a-z]{16}$/),

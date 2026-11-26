@@ -523,6 +523,7 @@ export class RestorationWorkerService {
           },
           {
             mode: snapshot.mode,
+            ...(snapshot.operation && { operation: snapshot.operation }),
             destinationId: snapshot.destinationId,
             acknowledgeCloudUpload: true,
             jobId: operation.id,
@@ -691,7 +692,11 @@ export class RestorationWorkerService {
     this.check(ctx);
     await this.progress(ctx, MediaOperationStatus.Rendering, 2, total);
 
-    const cap = { width: snapshot.output.width, height: snapshot.output.height };
+    // FL-955: a photo operation returns exactly the pixel grid it was sent, which an orientation tag can
+    // turn relative to the oriented size in the snapshot.
+    const cap = snapshot.operation
+      ? { width: input.width, height: input.height }
+      : { width: snapshot.output.width, height: snapshot.output.height };
     const resultTmp = this.scratch(ctx, path.join(workDir, `result-${operation.id}.png`));
     await this.clearStaleOutput(resultTmp);
     const result = await this.machineLearningRepository.restore(
@@ -1505,6 +1510,8 @@ export class RestorationWorkerService {
     }
     return {
       mode: ctx.snapshot.mode,
+      ...(ctx.snapshot.operation && { operation: ctx.snapshot.operation }),
+      ...(ctx.snapshot.allowHandTinted && { allowHandTinted: true }),
       // FL-423: the model the person chose for the preview; a full render names the model its reviewed
       // preview ran, so the worker runs exactly that one or refuses (never another)
       modelId,

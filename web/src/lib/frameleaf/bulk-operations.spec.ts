@@ -1,6 +1,7 @@
 import {
   AssetJobName,
   AssetVisibility,
+  BulkIdErrorReason,
   ImageEnrichmentFilter,
   MediaOperationBulkAction,
   MediaOperationItemStatus,
@@ -64,6 +65,7 @@ const gateway = () =>
     searchAssetStatistics: vi.fn().mockResolvedValue({ total: 0 }),
     createBulkMediaOperation: vi.fn().mockImplementation(() => Promise.resolve({ id: 'job' })),
     applyDateFix: vi.fn().mockResolvedValue({ batch: { id: 'batch' }, skipped: [] }),
+    undoDateFix: vi.fn().mockResolvedValue({ id: 'batch' }),
     downloadArchive: vi.fn().mockResolvedValue(undefined),
   }) as unknown as BulkGateway;
 
@@ -215,6 +217,26 @@ describe('bulk actions bind to existing endpoints', () => {
     expect(api.updateAssets).toHaveBeenCalledWith({
       assetBulkUpdateDto: { ids: ['b'], dateTimeOriginal: '2026-07-01T12:00:00+01:00' },
     });
+  });
+
+  it('dates a selection to a decade as one Doctor batch, and its undo puts that batch back (FL-936)', async () => {
+    const ids = Array.from({ length: 100 }, (_, index) => `id-${index}`);
+    const payload = { dateMode: 'set', dateAccuracy: 'decade', year: 1970 } as const;
+    expect(shouldRunDurably('change-date', ids.length, payload)).toBe(false);
+
+    const result = await runBulkAction('change-date', ids, { gateway: api, payload });
+    expect(api.applyDateFix).toHaveBeenCalledTimes(1);
+    expect(api.applyDateFix).toHaveBeenCalledWith({
+      dateDoctorFixDto: { assetIds: ids, dateAccuracy: 'decade', year: 1970 },
+    });
+    expect(api.updateAssets).not.toHaveBeenCalled();
+    expect(result.undo).toEqual({ action: 'change-date', ids, payload: { undoDateFixId: 'batch' } });
+
+    expect(shouldRunDurably('change-date', ids.length, result.undo!.payload)).toBe(false);
+    const undone = await runBulkAction('change-date', ids, { gateway: api, payload: result.undo!.payload });
+    expect(api.undoDateFix).toHaveBeenCalledWith({ id: 'batch' });
+    expect(undone.succeeded).toEqual(ids);
+    expect(undone.undo).toBeUndefined();
   });
 
   it('fixes dates as one Date & Time Doctor fix, a zone keeping the clock time, and reports a fix the server refused (FL-943)', async () => {
@@ -962,5 +984,59 @@ describe('durable jobs on the page', () => {
 
     const states = [...durableItemStates(ids, truncated).values()].map((state) => state.state);
     expect(states).toEqual(ids.map(() => 'unchanged'));
+  });
+});
+
+describe('adding to several albums', () => {
+  it('counts an item added to any album, and undo removes only what each album newly received', async () => {
+    const api = gateway();
+    vi.mocked(api.addAssetsToAlbum).mockImplementation(({ id, bulkIdsDto }) =>
+      Promise.resolve(
+        bulkIdsDto.ids.map((assetId) =>
+          (id === 'one') === (assetId === 'a')
+            ? { id: assetId, success: false, error: BulkIdErrorReason.Duplicate }
+            : { id: assetId, success: true },
+        ),
+      ),
+    );
+    vi.mocked(api.removeAssetFromAlbum).mockImplementation(({ bulkIdsDto }) =>
+      Promise.resolve(bulkIdsDto.ids.map((id) => ({ id, success: true }))),
+    );
+
+    const result = await runBulkAction('add-to-album', ['a', 'b'], {
+      gateway: api,
+      payload: { albumId: 'one', albumIds: ['one', 'two'] },
+    });
+
+    expect(result.succeeded).toEqual(['a', 'b']);
+    expect(shouldRunDurably('add-to-album', DURABLE_BULK_THRESHOLD + 1, { albumIds: ['one', 'two'] })).toBe(false);
+    await runBulkAction('remove-from-album', result.undo!.ids, { gateway: api, payload: result.undo!.payload });
+    expect(api.removeAssetFromAlbum).toHaveBeenCalledWith({ id: 'one', bulkIdsDto: { ids: ['b'] } });
+    expect(api.removeAssetFromAlbum).toHaveBeenCalledWith({ id: 'two', bulkIdsDto: { ids: ['a'] } });
+  });
+
+  it('fails an item any album refused, and a failed undo stays failed', async () => {
+    const api = gateway();
+    vi.mocked(api.addAssetsToAlbum).mockImplementation(({ id, bulkIdsDto }) =>
+      id === 'two'
+        ? Promise.reject(new Error('gone'))
+        : Promise.resolve(bulkIdsDto.ids.map((assetId) => ({ id: assetId, success: true }))),
+    );
+    const result = await runBulkAction('add-to-album', ['a', 'b'], {
+      gateway: api,
+      payload: { albumId: 'one', albumIds: ['one', 'two'] },
+    });
+    expect(result.succeeded).toEqual([]);
+    expect(result.failed.map(({ id }) => id)).toEqual(['a', 'b']);
+
+    vi.mocked(api.removeAssetFromAlbum)
+      .mockResolvedValueOnce([{ id: 'a', success: false }])
+      .mockResolvedValueOnce([{ id: 'a', success: true }]);
+    const undone = await runBulkAction('remove-from-album', ['a'], {
+      gateway: api,
+      payload: { addedByAlbum: { one: ['a'], two: ['a'] } },
+    });
+    expect(api.removeAssetFromAlbum).toHaveBeenCalledTimes(2);
+    expect(undone.failed.map(({ id }) => id)).toEqual(['a']);
   });
 });

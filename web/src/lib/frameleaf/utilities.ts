@@ -7,6 +7,7 @@ import {
   mdiFolderSearchOutline,
   mdiHarddisk,
   mdiMapMarker,
+  mdiMapMarkerPath,
   mdiMovieOpenOutline,
   mdiShieldCheckOutline,
   mdiTuneVariant,
@@ -20,6 +21,7 @@ export type UtilityId =
   | 'large-files'
   | 'live-photos'
   | 'geolocation'
+  | 'location-history'
   | 'icloud'
   | 'missing-media'
   | 'corrupt-media'
@@ -35,6 +37,8 @@ export type UtilityTool = {
   adminOnly?: boolean;
   /** Opened from another tool, not listed in the directory (Phones opens from Mobile apps). */
   unlisted?: boolean;
+  /** The tool this page is opened from; its heading leads back there. */
+  parent?: UtilityId;
 };
 export const UTILITY_TOOLS: UtilityTool[] = [
   {
@@ -57,6 +61,16 @@ export const UTILITY_TOOLS: UtilityTool[] = [
     icon: mdiMapMarker,
     titleKey: 'library_care_tool_geolocation',
     descriptionKey: 'library_care_tool_geolocation_description',
+  },
+  {
+    // FL-999: opened from the "Use your location history" section of Fix locations.
+    id: 'location-history',
+    group: 'organize',
+    icon: mdiMapMarkerPath,
+    titleKey: 'frameleaf_location_history_title',
+    descriptionKey: 'frameleaf_location_history_description',
+    unlisted: true,
+    parent: 'geolocation',
   },
   {
     id: 'live-photos',

@@ -34,14 +34,6 @@ delete from "ml_destination"
 where
   "id" = $1
 
--- MlDestinationRepository.getStoredRoutes
-select
-  *
-from
-  "ml_workload_route"
-order by
-  "workload" asc
-
 -- MlDestinationRepository.getStoredRoute
 select
   *

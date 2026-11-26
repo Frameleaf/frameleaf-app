@@ -1,4 +1,4 @@
-import { LoginResponseDto, Permission } from '@frameleaf/sdk';
+import { LoginResponseDto, Permission, updateConfig } from '@frameleaf/sdk';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { createHash, randomBytes } from 'node:crypto';
@@ -76,6 +76,10 @@ describe('Frameleaf Connect MCP (FL-844)', () => {
   beforeAll(async () => {
     await utils.resetDatabase();
     admin = await utils.adminSetup({ onboarding: false });
+    // FL-1632: apps register themselves only once the administrator allows it
+    const config = await utils.getSystemConfig(admin.accessToken);
+    config.connectedApps = { ...config.connectedApps, allowRegistration: true };
+    await updateConfig({ adminConfigDto: config }, { headers: asBearerAuth(admin.accessToken) });
     owner = await utils.userSetup(admin.accessToken, createUserDto.user1);
 
     const { body } = await request(app)

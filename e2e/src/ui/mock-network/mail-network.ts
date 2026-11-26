@@ -107,10 +107,10 @@ export const setupMailMockApiRoutes = async (context: BrowserContext, mock: Mail
       status: 'connected',
       connectedAt: '2026-10-11T10:00:00.000Z',
     };
-    const origin = new URL(route.request().url()).origin;
     return route.fulfill({
       json: {
-        authorizationUrl: `${origin}${MAIL_PROVIDER_PAGE}?service=${body.provider}`,
+        // the page opens only https sign-in addresses; the provider route below answers this one
+        authorizationUrl: `https://mail-provider.test${MAIL_PROVIDER_PAGE}?service=${body.provider}`,
         expiresAt: '2026-10-11T10:10:00.000Z',
       },
     });

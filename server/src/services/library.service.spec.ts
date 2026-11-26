@@ -1325,11 +1325,31 @@ describe(LibraryService.name, () => {
     beforeEach(() => {
       mocks.library.get.mockResolvedValue(library);
       mocks.storage.stat.mockResolvedValue({ isDirectory: () => true } as Stats);
+      mocks.storage.walkLibrary.mockImplementation(async function* () {
+        await Promise.resolve();
+        yield ['/mnt/photos/still-here.jpg'];
+      });
+    });
+
+    it('changes nothing when the folder is an empty mount point (an unmounted share)', async () => {
+      mocks.storage.walkLibrary.mockImplementation(async function* () {});
+      mocks.storage.checkFileExists.mockImplementation((path) => Promise.resolve(path === '/mnt/photos'));
+
+      await sut.handleAssetRemoval({ libraryId: library.id, paths: ['/mnt/photos/a.jpg', '/mnt/photos/b.jpg'] });
+
+      expect(mocks.storage.walkLibrary).toHaveBeenCalledTimes(1);
+      expect(mocks.asset.getByLibraryIdAndOriginalPath).not.toHaveBeenCalled();
+      expect(mocks.asset.updateAll).not.toHaveBeenCalled();
     });
 
     it('marks an item offline, in the trash, when its file is gone and its folder is there', async () => {
       const asset = AssetFactory.create({ libraryId: library.id, originalPath: '/mnt/photos/a.jpg' });
       mocks.storage.checkFileExists.mockImplementation((path) => Promise.resolve(path === '/mnt/photos'));
+      mocks.storage.stat.mockImplementation((path) =>
+        path === '/mnt/photos'
+          ? Promise.resolve({ isDirectory: () => true } as Stats)
+          : Promise.reject({ code: 'ENOENT' }),
+      );
       mocks.asset.getByLibraryIdAndOriginalPath.mockResolvedValue(asset);
 
       await expect(sut.handleAssetRemoval({ libraryId: library.id, paths: [asset.originalPath] })).resolves.toBe(
@@ -1343,6 +1363,11 @@ describe(LibraryService.name, () => {
     it('keeps an already-trashed item in the trash, just offline', async () => {
       const asset = AssetFactory.create({ originalPath: '/mnt/photos/a.jpg', deletedAt: new Date() });
       mocks.storage.checkFileExists.mockImplementation((path) => Promise.resolve(path === '/mnt/photos'));
+      mocks.storage.stat.mockImplementation((path) =>
+        path === '/mnt/photos'
+          ? Promise.resolve({ isDirectory: () => true } as Stats)
+          : Promise.reject({ code: 'ENOENT' }),
+      );
       mocks.asset.getByLibraryIdAndOriginalPath.mockResolvedValue(asset);
 
       await sut.handleAssetRemoval({ libraryId: library.id, paths: [asset.originalPath] });
@@ -1363,6 +1388,19 @@ describe(LibraryService.name, () => {
       mocks.storage.checkFileExists.mockResolvedValue(true);
 
       await sut.handleAssetRemoval({ libraryId: library.id, paths: ['/mnt/photos/a.jpg'] });
+
+      expect(mocks.asset.updateAll).not.toHaveBeenCalled();
+    });
+
+    it.each(['EACCES', 'EPERM', 'EIO'])('leaves an item it could not check (%s) as it is', async (code) => {
+      const asset = AssetFactory.create({ libraryId: library.id, originalPath: '/mnt/photos/locked/a.jpg' });
+      mocks.storage.checkFileExists.mockImplementation((path) => Promise.resolve(path === '/mnt/photos'));
+      mocks.storage.stat.mockImplementation((path) =>
+        path === '/mnt/photos' ? Promise.resolve({ isDirectory: () => true } as Stats) : Promise.reject({ code }),
+      );
+      mocks.asset.getByLibraryIdAndOriginalPath.mockResolvedValue(asset);
+
+      await sut.handleAssetRemoval({ libraryId: library.id, paths: [asset.originalPath] });
 
       expect(mocks.asset.updateAll).not.toHaveBeenCalled();
     });

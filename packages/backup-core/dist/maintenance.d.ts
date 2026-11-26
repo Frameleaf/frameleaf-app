@@ -17,9 +17,11 @@ export interface VerifyReport {
     packsRead: number;
     damagedPacks: string[];
     damagedIndexes: string[];
+    damageRecorded?: boolean;
 }
 export interface VerifyOptions {
     readPack?: (pack: string, index: number) => boolean;
+    recordDamage?: boolean;
 }
 export declare function verify(repository: Repository, options?: VerifyOptions): Promise<VerifyReport>;
 export interface PruneOptions {

@@ -60,6 +60,19 @@ beforeAll(async () => {
   installAnimations();
 });
 
+// A toast's removal timer can outlive its spec file, and its exit transition then runs with no DOM left to read.
+// Imported here so it is the manager this spec used; a spec that mocks `@frameleaf/ui` may have none. Only when
+// something is still mounted: a spec that never drew anything must not load the UI package for this.
+afterAll(async () => {
+  if (document.body.childElementCount === 0) {
+    return;
+  }
+  const ui: Partial<typeof import('@frameleaf/ui')> = await import('@frameleaf/ui');
+  if ('toastManager' in ui) {
+    await ui.toastManager?.unmount?.();
+  }
+});
+
 if (!('part' in HTMLElement.prototype)) {
   class PartShim {
     declare getAttribute: HTMLElement['getAttribute'];

@@ -17,16 +17,76 @@ const MAX_REGEX_PATTERN_LENGTH = 256;
 /** `{n}`, `{n,}` or `{n,m}` at `index`: a counted quantifier (anything else there is a literal brace). */
 const countedQuantifierAt = (pattern: string, index: number) => /^\{\d+(?:,\d*)?\}/.test(pattern.slice(index));
 
+/** The text an alternative matches when it is plain literal characters, or `undefined` when it is not. */
+const literalAlternative = (alternative: string, caseInsensitive: boolean): string | undefined => {
+  let text = '';
+  for (let index = 0; index < alternative.length; index++) {
+    const char = alternative[index];
+    if (char === '\\') {
+      const escaped = alternative[index + 1];
+      // `\d`, `\w`, `\b`, `\1`, `\x41` and the like are classes, anchors or codes, not one fixed character.
+      if (escaped === undefined || /[\dA-Za-z]/.test(escaped)) {
+        return undefined;
+      }
+      text += escaped;
+      index++;
+    } else if ('.[](){}*+?^$|'.includes(char)) {
+      return undefined;
+    } else {
+      text += char;
+    }
+  }
+  return caseInsensitive ? text.toLowerCase() : text;
+};
+
 /**
- * Whether a quantified group holds a quantifier, as in `(a+)+`, `(a*)*`, `(\d?){2,}` or `((a+)b)+`:
- * the shapes that make a backtracking matcher try an exponential number of ways to split the input.
+ * Whether a group's alternatives can match the same text in more than one way, as in `(a|a)`, `(a|aa)`
+ * or `(a|)`. Alternatives of plain literal text where none starts with another, such as `(jpg|png)` or
+ * `(jpg|jpeg)`, split any input in at most one way, so repeating them stays linear. Any other group
+ * with a `|` counts as ambiguous, which only matters when the group is repeated.
+ */
+const ambiguousAlternation = (alternatives: string[], caseInsensitive: boolean): boolean => {
+  const literals: string[] = [];
+  for (const alternative of alternatives) {
+    const text = literalAlternative(alternative, caseInsensitive);
+    if (text === undefined) {
+      return true;
+    }
+    literals.push(text);
+  }
+  return literals.some((text, index) =>
+    literals.some((other, otherIndex) => otherIndex !== index && other.startsWith(text)),
+  );
+};
+
+type GroupScan = {
+  quantifierInside: boolean;
+  ambiguous: boolean;
+  bodyStart: number;
+  bars: number[];
+  assertion: boolean;
+};
+
+const newGroupScan = (bodyStart: number): GroupScan => ({
+  quantifierInside: false,
+  ambiguous: false,
+  bodyStart,
+  bars: [],
+  assertion: false,
+});
+
+/**
+ * Why a pattern could backtrack exponentially, or `undefined` when it cannot in these shapes:
+ * `quantifier` for a quantified group that holds a quantifier, as in `(a+)+`, `(a*)*`, `(\d?){2,}` or
+ * `((a+)b)+`, and `alternation` for a quantified group whose alternatives overlap, as in `(a|a)+$` or
+ * `((a|aa)b)*`. Both make a backtracking matcher try an exponential number of ways to split the input.
  * The workflow owner writes the pattern and anyone can upload a file name for it to run against, and
  * the plugin runtime has no backtracking limit, so such patterns are refused up front. Escapes and
  * character classes are skipped; `(?` opens a non-capturing group or an assertion, not a quantifier.
  */
-const hasNestedQuantifier = (pattern: string): boolean => {
-  const enclosing: boolean[] = [];
-  let quantifierInside: boolean = false;
+const unboundedBacktracking = (pattern: string, caseInsensitive: boolean): 'quantifier' | 'alternation' | undefined => {
+  const enclosing: GroupScan[] = [];
+  let current = newGroupScan(0);
   let inClass = false;
   for (let index = 0; index < pattern.length; index++) {
     const char = pattern[index];
@@ -37,25 +97,42 @@ const hasNestedQuantifier = (pattern: string): boolean => {
     } else if (char === '[') {
       inClass = true;
     } else if (char === '(') {
-      enclosing.push(quantifierInside);
-      quantifierInside = false;
+      enclosing.push(current);
+      current = newGroupScan(index + 1);
       if (pattern[index + 1] === '?') {
-        index++;
+        // `(?:` and `(?<name>` start the alternatives after their opener; lookarounds are never treated as literal.
+        const named = /^\?<[A-Za-z_$][\w$]*>/.exec(pattern.slice(index + 1));
+        const opener = named ? named[0].length : pattern[index + 2] === ':' ? 2 : 0;
+        current.assertion = opener === 0;
+        index += opener === 0 ? 1 : opener;
+        current.bodyStart = index + 1;
       }
+    } else if (char === '|') {
+      current.bars.push(index);
     } else if (char === ')') {
-      const inner: boolean = quantifierInside;
-      quantifierInside = enclosing.pop() ?? false;
+      const inner = current;
+      current = enclosing.pop() ?? newGroupScan(0);
       const next = pattern[index + 1];
       const quantified = next === '*' || next === '+' || (next === '{' && countedQuantifierAt(pattern, index + 1));
-      if (inner && quantified) {
-        return true;
+      let ambiguous = inner.ambiguous;
+      if (inner.bars.length > 0) {
+        const bounds = [inner.bodyStart - 1, ...inner.bars, index];
+        const alternatives = bounds.slice(1).map((end, part) => pattern.slice(bounds[part] + 1, end));
+        ambiguous ||= inner.assertion || ambiguousAlternation(alternatives, caseInsensitive);
       }
-      quantifierInside ||= inner || quantified;
+      if (quantified && inner.quantifierInside) {
+        return 'quantifier';
+      }
+      if (quantified && ambiguous) {
+        return 'alternation';
+      }
+      current.quantifierInside ||= inner.quantifierInside || quantified;
+      current.ambiguous ||= ambiguous;
     } else if (char === '*' || char === '+' || char === '?' || (char === '{' && countedQuantifierAt(pattern, index))) {
-      quantifierInside = true;
+      current.quantifierInside = true;
     }
   }
-  return false;
+  return undefined;
 };
 
 /** The filter's regular expression, or a RangeError for one that could run for an unbounded time. */
@@ -63,9 +140,15 @@ const filterRegExp = (pattern: string, flags: string) => {
   if (pattern.length > MAX_REGEX_PATTERN_LENGTH) {
     throw new RangeError(`Regular-expression patterns are limited to ${MAX_REGEX_PATTERN_LENGTH} characters`);
   }
-  if (hasNestedQuantifier(pattern)) {
+  const reason = unboundedBacktracking(pattern, flags.includes('i'));
+  if (reason === 'quantifier') {
     throw new RangeError(
       'Regular-expression patterns must not quantify a group that holds a quantifier (such as (a+)+), which can take unbounded time',
+    );
+  }
+  if (reason === 'alternation') {
+    throw new RangeError(
+      'Regular-expression patterns must not quantify a group whose alternatives overlap (such as (a|a)+), which can take unbounded time',
     );
   }
   return new RegExp(pattern, flags);
@@ -198,11 +281,13 @@ const methods = wrapper<Manifest>({
   },
 
   assetExifFilter: ({ config, data }) => {
-    if (!data.asset.exifInfo || data.asset.exifInfo[config.property] === null) {
+    const value = data.asset.exifInfo?.[config.property];
+    // A missing field is no value, not the text "undefined" for a pattern to match.
+    if (value === null || value === undefined) {
       return { workflow: { continue: false } };
     }
 
-    return matchValueResult(String(data.asset.exifInfo[config.property]), config);
+    return matchValueResult(String(value), config);
   },
 
   assetDateFilter: ({ config, data }) => {

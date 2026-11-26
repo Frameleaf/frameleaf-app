@@ -27,6 +27,7 @@ const BLOCK = 512;
 /** pax headers and GNU long names larger than this are not names. */
 const META_MAX_BYTES = 1024 * 1024;
 const READ_MAX_BYTES = 1024 * 1024;
+const MAX_DATE_MS = 8.64e15;
 /** pax extended and global headers, GNU long name and long link name. */
 const META_TYPES = new Set(['x', 'g', 'L', 'K']);
 
@@ -210,7 +211,8 @@ export async function* readTakeoutTar(input: AsyncIterable<Buffer>): AsyncGenera
         yield {
           name,
           size: link ? 0 : size,
-          modifiedAt: new Date(Number.isFinite(mtime) ? mtime * 1000 : 0),
+          // A date no `Date` can hold reads as the epoch; an Invalid Date would fail the whole scan at insert.
+          modifiedAt: new Date(Math.abs(mtime * 1000) <= MAX_DATE_MS ? mtime * 1000 : 0),
           refused: link ? 'link' : undefined,
           body,
         };

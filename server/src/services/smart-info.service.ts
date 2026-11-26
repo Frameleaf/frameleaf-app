@@ -210,7 +210,7 @@ export class SmartInfoService extends BaseService {
     await this.jobRepository.guardAssetSource(id);
     const asset = await this.assetJobRepository.getForClipEncoding(id);
     if (!asset) {
-      return JobStatus.Failed;
+      return (await this.assetJobRepository.isGone(id)) ? JobStatus.Skipped : JobStatus.Failed;
     }
 
     // Before the preview: a hidden asset (a Live Photo's motion part) never gets one.

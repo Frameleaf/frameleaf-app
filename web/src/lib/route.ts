@@ -39,8 +39,22 @@ export const fromQueueSlug = (slug: string): QueueName | undefined => {
   }
 };
 
-const isSignInPage = (pathname: string) =>
-  /^\/auth(?:\/|$)/.test(pathname) && !/^\/auth\/allow-extension\/?$/.test(pathname);
+/** The path as the router matches it, so `/%61uth/logout` is read as `/auth/logout`; null when malformed. */
+const routerPath = (pathname: string) => {
+  try {
+    return pathname
+      .split('%25')
+      .map((part) => decodeURI(part))
+      .join('%25');
+  } catch {
+    return null;
+  }
+};
+
+const isSignInPage = (pathname: string) => {
+  const path = routerPath(pathname);
+  return path === null || (/^\/auth(?:\/|$)/.test(path) && !/^\/auth\/allow-(?:extension|app)\/?$/.test(path));
+};
 
 export const Route = {
   /** `shoot` opens that shoot; `section: 'galleries'` opens its galleries (the editor's Proof, FL-420). */
@@ -105,6 +119,8 @@ export const Route = {
   // map
   map: (point?: { zoom: number; lat: number; lng: number }) =>
     '/map' + (point ? `#${point.zoom}/${point.lat}/${point.lng}` : ''),
+  /** FL-1019: the Map, with the panel for naming a new place open. */
+  mapNaming: () => '/map?naming=1',
   /** The Map screen scoped to one album's located items (prototype `setMapScope("collection")`). */
   mapAlbum: ({ id }: { id: string }) => '/map' + asQueryString({ albumId: id }),
 
@@ -134,7 +150,8 @@ export const Route = {
   // photos
   /** `area` is a map area (`west,south,east,north`) from the Map screen's "Search this area". */
   photos: (params?: { at?: string; area?: string }) => '/photos' + asQueryString(params),
-  viewAsset: ({ id }: { id: string }) => `/photos/${id}`,
+  // Encoded: `/link?id=../auth/logout` must not resolve to another page.
+  viewAsset: ({ id }: { id: string }) => `/photos/${encodeURIComponent(id)}`,
   recentlyAdded: (params?: { at?: string }) => '/recently-added' + asQueryString(params),
   viewRecentlyAddedAsset: ({ id }: { id: string }) => `/recently-added/${id}`,
   bestPhotos: (params?: { page?: number; limit?: number; minScore?: number }) => '/best-photos' + asQueryString(params),
@@ -254,6 +271,7 @@ export const Route = {
   largeFileUtility: () => utilitiesUrl('large-files'),
   livePhotosUtility: () => utilitiesUrl('live-photos'),
   geolocationUtility: () => utilitiesUrl('geolocation'),
+  locationHistoryUtility: () => utilitiesUrl('location-history'),
   icloudSyncUtility: () => utilitiesUrl('icloud'),
   missingMediaUtility: (params?: { status?: MediaHealthStatus }) => utilitiesUrl('missing-media', params),
   corruptMediaUtility: (params?: { status?: MediaHealthStatus }) => utilitiesUrl('corrupt-media', params),
@@ -285,20 +303,29 @@ export const Route = {
   /**
    * FL-146: the in-app page to land on after first-time setup, as a path. The Library when the target
    * is another sign-in page (setup again, logout) or a path the router would read as another host.
+   * The extension's and connected apps' Allow pages go through, as for `continue` (FL-1771): a forced
+   * password change or onboarding no longer loses the request; the page still asks for Allow.
    */
   setupContinue: (target: string | URL, base: string | URL): string => {
     const resolved = new URL(String(target), base);
-    const path = resolved.pathname + resolved.search + resolved.hash;
-    return /^\/(?:[/\\]|auth(?:\/|$))/.test(path) ? '/photos' : path;
+    const path = routerPath(resolved.pathname);
+    return path === null || /^\/[/\\]/.test(path) || isSignInPage(resolved.pathname)
+      ? '/photos'
+      : resolved.pathname + resolved.search + resolved.hash;
   },
 
   /**
    * A same-origin address to land on, or the fallback. Another sign-in page is never a landing
-   * (`?continue=/auth/logout` would sign the visitor out on a single GET); the extension's allow
-   * page is the one `/auth` target a sign-in legitimately continues to (FL-655).
+   * (`?continue=/auth/logout` would sign the visitor out on a single GET); the Allow pages of the
+   * extension (FL-655) and of connected apps (FL-860) are the `/auth` targets a sign-in continues to.
    */
   continue: (url: string | null, fallback: string): string | URL => {
-    const resolved = new URL(url ?? fallback, document.baseURI);
+    let resolved: URL;
+    try {
+      resolved = new URL(url ?? fallback, document.baseURI);
+    } catch {
+      return fallback;
+    }
 
     if (resolved.origin !== location.origin || isSignInPage(resolved.pathname)) {
       return fallback;

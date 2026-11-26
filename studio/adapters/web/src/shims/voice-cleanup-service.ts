@@ -60,11 +60,15 @@ async function request<T>(path: string, init: RequestInit & { signal?: AbortSign
 
 const sleep = (ms: number, signal: AbortSignal) =>
   new Promise<void>((resolve, reject) => {
-    const timer = setTimeout(resolve, ms)
-    signal.addEventListener('abort', () => {
+    const abort = () => {
       clearTimeout(timer)
       reject(signal.reason ?? new DOMException('Aborted', 'AbortError'))
-    }, { once: true })
+    }
+    const timer = setTimeout(() => {
+      signal.removeEventListener('abort', abort)
+      resolve()
+    }, ms)
+    signal.addEventListener('abort', abort, { once: true })
   })
 
 const project = (): string => {

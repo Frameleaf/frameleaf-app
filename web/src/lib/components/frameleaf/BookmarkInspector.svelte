@@ -65,9 +65,16 @@
       generation++;
     }),
   );
+  // Only someone else's link reads from the search record. The page replaces those records on every
+  // live refresh, which must not re-read an owned link and wipe what is being typed in its form.
+  const sharedRecord = $derived(
+    bookmark && authManager.authenticated && bookmark.ownerId !== authManager.user.id ? bookmark : undefined,
+  );
+  // A value, so a parent re-render passing the same id does not restart the read and wipe the form.
+  const selectedId = $derived(id);
   $effect(() => {
-    const selected = id;
-    const shared = bookmark;
+    const selected = selectedId;
+    const shared = sharedRecord;
     const version = generation;
     const controller = new AbortController();
     detail = null;
@@ -79,7 +86,7 @@
     if (!authManager.authenticated) {
       return () => controller.abort();
     }
-    if (shared && shared.ownerId !== authManager.user.id) {
+    if (shared) {
       // The parent refreshes this authorized, redacted search projection; owned detail reads stay private.
       if (shared !== invalidatedBookmark && shared.id === selected) {
         detail = { ...shared, note: null, rating: null };
@@ -127,8 +134,10 @@
     };
   });
   const removeLinkTag = async (tagId: string) => {
-    const linked = await getBookmarkTags({ id });
-    await setBookmarkTags({ id, bookmarkTagsDto: { ids: linked.ids.filter((tag) => tag !== tagId) } });
+    // The panel can move to another link during the read; the write stays on this one.
+    const selected = id;
+    const linked = await getBookmarkTags({ id: selected });
+    await setBookmarkTags({ id: selected, bookmarkTagsDto: { ids: linked.ids.filter((tag) => tag !== tagId) } });
   };
   const save = async () => {
     if (!owner || !detail || busy) {
@@ -182,7 +191,7 @@
     {#if failed}<InlineError
         compact
         message={$t('frameleaf_item_details_unavailable')}
-        onRetry={() => generation++}
+        onRetry={() => (detail ? void save() : generation++)}
       />{/if}
     {#if detail}
       {#if url}<a class="fl-bookmark-open" href={url} target="_blank" rel="noopener noreferrer"

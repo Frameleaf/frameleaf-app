@@ -17,8 +17,6 @@ export const CLOUD_BACKUP_MARKER = 'frameleaf-backup.json';
 export const CLOUD_BACKUP_OBJECT_PREFIX = 'o/';
 /** Where the capability check writes its throwaway test file (and deletes it again). */
 export const CLOUD_BACKUP_PROBE_PREFIX = 'frameleaf-backup-probe/';
-/** A bucket key is 256 bits. */
-export const CLOUD_BACKUP_KEY_BYTES = 32;
 /** The typed acknowledgement own-memory mode needs. */
 export const CLOUD_BACKUP_OWN_MEMORY_ACKNOWLEDGEMENT = 'i understand';
 
@@ -231,9 +229,6 @@ export type CloudBackupManifestFile = {
   size: number;
   mtime: string | null;
 };
-
-/** The manifest version a run writes now. Version 1 manifests (files only) stay readable. */
-export const CLOUD_BACKUP_MANIFEST_VERSION = 2;
 
 const isoText = z.string().max(64);
 

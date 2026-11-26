@@ -1044,10 +1044,11 @@ export class CloudLibraryBatchService extends BaseService {
         false,
       );
     const files: CloudJobInputFile[] = [];
+    const waiting = new Set(pending);
     for (const item of sent) {
       const path = join(folder, `${item.inputId}.bin`);
       const input = { inputId: item.inputId, sha256: item.sha256!, bytes: item.bytes!, path };
-      if (!pending.includes(item)) {
+      if (!waiting.has(item)) {
         files.push(input);
         continue;
       }

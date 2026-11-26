@@ -19,6 +19,11 @@ describe('invoice arithmetic', () => {
     expect(invoiceTotals([{ description: 'x', quantity: 1, unitPrice: 9 }], 500).tax).toBe(0);
   });
 
+  it('refuses a total the database cannot store', () => {
+    expect(() => invoiceSchedule(2_147_483_648, 0, null, '2027-06-22')).toThrow('too large');
+    expect(invoiceSchedule(2_147_483_647, 0, null, '2027-06-22')).toHaveLength(1);
+  });
+
   it('splits a deposit from the balance and refuses an impossible schedule', () => {
     expect(invoiceSchedule(36_750, 10_000, '2027-05-22', '2027-06-22')).toEqual([
       { dueOn: '2027-05-22', amount: 10_000 },

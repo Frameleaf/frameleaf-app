@@ -45,10 +45,14 @@ export class OAuthAppRepository {
 
   /**
    * Registers an app (RFC 7591). Self-registered apps are capped: when there are too many, the
-   * oldest ones that nobody allowed (no grant at all) and that are over a day old are removed first;
-   * if that does not make room, nothing is registered and `undefined` is returned.
+   * oldest ones that nobody allowed (no grant at all) and that are over `unusedDays` old are removed
+   * first; if that does not make room, nothing is registered and `undefined` is returned.
    */
-  async createClient(values: Insertable<OAuthClientTable>, dynamicLimit: number): Promise<OAuthClient | undefined> {
+  async createClient(
+    values: Insertable<OAuthClientTable>,
+    dynamicLimit: number,
+    unusedDays: number,
+  ): Promise<OAuthClient | undefined> {
     return this.db.transaction().execute(async (trx) => {
       if (values.dynamic !== false) {
         const { count } = await trx
@@ -62,7 +66,7 @@ export class OAuthAppRepository {
             .selectFrom('oauth_client')
             .select('id')
             .where('dynamic', '=', true)
-            .where('createdAt', '<', new Date(Date.now() - 24 * 60 * 60 * 1000))
+            .where('createdAt', '<', new Date(Date.now() - unusedDays * 24 * 60 * 60 * 1000))
             .where((eb) =>
               eb.not(
                 eb.exists(
@@ -138,14 +142,64 @@ export class OAuthAppRepository {
     });
   }
 
-  /** Take a code once: it is removed whether or not it is still valid, so it can never be tried twice. */
-  @GenerateSql({ params: [DummyValue.BUFFER] })
-  takeCode(codeHash: Buffer): Promise<OAuthAuthorizationCode | undefined> {
-    return this.db
-      .deleteFrom('oauth_authorization_code')
-      .where('codeHash', '=', codeHash)
-      .returningAll()
+  /**
+   * Takes a code once and, when `makeGrant` returns one, makes its grant, all in one transaction.
+   * The code is removed whether or not it is still valid, so it can never be tried twice.
+   *
+   * FL-1635 (TM-12): the code's hash is kept with the refresh tokens the grant has spent, so the code
+   * coming back is found by `getBySpentRefreshToken` and revokes the grant like they do. A second
+   * request with the same code waits on the row this one is deleting, then finds the code gone and
+   * the grant already recorded: there is no moment when a replay goes unseen.
+   *
+   * `makeGrant` must not throw for a refused code (return undefined), or the code would be put back.
+   */
+  async redeemCode(
+    codeHash: Buffer,
+    makeGrant: (code: OAuthAuthorizationCode) => Promise<Insertable<OAuthGrantTable> | undefined>,
+  ) {
+    return this.db.transaction().execute(async (trx) => {
+      const code = await trx
+        .deleteFrom('oauth_authorization_code')
+        .where('codeHash', '=', codeHash)
+        .returningAll()
+        .executeTakeFirst();
+      const values = code && (await makeGrant(code));
+      if (!values) {
+        return { code, grant: undefined };
+      }
+      const grant = await trx
+        .insertInto('oauth_grant')
+        .values(values)
+        .returning(grantColumns)
+        .executeTakeFirstOrThrow();
+      await trx.insertInto('oauth_spent_refresh_token').values({ tokenHash: codeHash, grantId: grant.id }).execute();
+      return { code, grant };
+    });
+  }
+
+  /**
+   * FL-1633: the nightly tidy-up. Ends grants whose access token ran out before `idleBefore` (their
+   * refresh token is already refused), then deletes grants revoked before `purgeBefore`, refresh
+   * tokens and codes spent before it, and codes that expired unused.
+   */
+  async purge({ idleBefore, purgeBefore }: { idleBefore: Date; purgeBefore: Date }) {
+    const idle = await this.db
+      .updateTable('oauth_grant')
+      .set({ revokedAt: new Date() })
+      .where('revokedAt', 'is', null)
+      .where('accessExpiresAt', '<', idleBefore)
       .executeTakeFirst();
+    const grants = await this.db.deleteFrom('oauth_grant').where('revokedAt', '<', purgeBefore).executeTakeFirst();
+    const spentTokens = await this.db
+      .deleteFrom('oauth_spent_refresh_token')
+      .where('spentAt', '<', purgeBefore)
+      .executeTakeFirst();
+    await this.db.deleteFrom('oauth_authorization_code').where('expiresAt', '<=', new Date()).execute();
+    return {
+      idle: Number(idle.numUpdatedRows),
+      grants: Number(grants.numDeletedRows),
+      spentTokens: Number(spentTokens.numDeletedRows),
+    };
   }
 
   createGrant(values: Insertable<OAuthGrantTable>) {
@@ -196,7 +250,7 @@ export class OAuthAppRepository {
       .executeTakeFirst();
   }
 
-  /** The grant that already used this refresh token, if any (presenting it again revokes the grant). */
+  /** The grant that already used this refresh token or code, if any (presenting it again revokes the grant). */
   @GenerateSql({ params: [DummyValue.BUFFER] })
   getBySpentRefreshToken(tokenHash: Buffer) {
     return this.db

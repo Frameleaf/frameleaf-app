@@ -38,6 +38,7 @@
   import { confirmFrameleaf } from '$lib/frameleaf/confirm';
   import { createOwnPreferencesDraft } from '$lib/frameleaf/own-preferences-draft';
   import { backfillProgress } from '$lib/frameleaf/partner-sharing';
+  import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
   import { getSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { eventManager } from '$lib/managers/event-manager.svelte';
@@ -73,6 +74,7 @@
     mdiAccountHeartOutline,
     mdiAccountMultipleOutline,
     mdiAccountPlusOutline,
+    mdiHomeGroup,
     mdiImageMultipleOutline,
     mdiLinkVariant,
   } from '@mdi/js';
@@ -799,6 +801,17 @@
           body: $t('frameleaf_sharing_also_links_body'),
           href: Route.sharedLinks(),
         },
+        // FL-998: an administrator's way to Linked households.
+        ...(authManager.user.isAdmin
+          ? [
+              {
+                icon: mdiHomeGroup,
+                title: $t('frameleaf_households_title'),
+                body: $t('frameleaf_households_description'),
+                href: commandCenterUrl('sharing', 'households'),
+              },
+            ]
+          : []),
       ]}
     />
   </Section>

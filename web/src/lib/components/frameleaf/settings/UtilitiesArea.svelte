@@ -10,7 +10,9 @@
   import LivePhotosUtility from '$lib/components/frameleaf/LivePhotosUtility.svelte';
   import GeolocationUtility from '$lib/components/frameleaf/GeolocationUtility.svelte';
   import InlineError from '$lib/components/frameleaf/InlineError.svelte';
+  import LocationHistoryUtility from '$lib/components/frameleaf/LocationHistoryUtility.svelte';
   import Skeleton from '$lib/components/frameleaf/Skeleton.svelte';
+  import ICloudReview from '$lib/components/frameleaf/ICloudReview.svelte';
   import ICloudSyncPanel from '$lib/components/frameleaf/ICloudSyncPanel.svelte';
   import LibraryCareHealth from '$lib/components/frameleaf/LibraryCareHealth.svelte';
   import Button from '$lib/components/frameleaf/Button.svelte';
@@ -54,6 +56,7 @@
       void goto(commandCenterUrl('care', 'unused-files'), { replaceState: true });
     }
   });
+  const parentTool = $derived(selected?.parent ? utilityTool(selected.parent) : undefined);
   const denied = $derived(selected?.adminOnly && !authManager.user.isAdmin);
   // A repair tool opened from Library care says so and goes back there (design review finding 67).
   const fromCare = $derived(
@@ -98,6 +101,18 @@
       active = false;
     };
   });
+
+  // The iCloud review is a page of the tool, so Back and a reload stay on it.
+  const reviewConnection = $derived.by(() => {
+    const id = page.url.searchParams.get('review');
+    return data?.tool === 'icloud' && data.initial.connections.some((connection) => connection.id === id) ? id : null;
+  });
+  const closeICloudReview = async () => {
+    const url = new URL(page.url.href);
+    url.searchParams.delete('review');
+    await goto(`${url.pathname}${url.search}`, { reset: false });
+    retry++; // the counts changed
+  };
 
   // FL-519: one cheap call says what each tool has waiting; the directory works without it.
   let summary = $state<UtilitiesSummaryResponseDto | null>(null);
@@ -261,6 +276,7 @@
       'workflowName',
       'from',
       'phone',
+      'review',
     ]) {
       url.searchParams.delete(key);
     }
@@ -274,8 +290,12 @@
 <header class="heading">
   <SettingsOverline>
     {#if selected && !query.trim()}
-      <button type="button" onclick={() => select()}
-        >{fromCare ? $t('frameleaf_settings_area_care') : $t('frameleaf_tools')}</button
+      <button type="button" onclick={() => select(parentTool?.id)}
+        >{parentTool
+          ? $t(parentTool.titleKey)
+          : fromCare
+            ? $t('frameleaf_settings_area_care')
+            : $t('frameleaf_tools')}</button
       >
       <Icon icon={mdiChevronRight} size="0.875rem" aria-hidden={true} />
       {$t(selected.titleKey)}
@@ -347,6 +367,7 @@
       {:else if data.tool === 'large-files'}<LargeFilesUtility {data} />
       {:else if data.tool === 'live-photos'}<LivePhotosUtility {data} />
       {:else if data.tool === 'geolocation'}<GeolocationUtility />
+      {:else if data.tool === 'location-history'}<LocationHistoryUtility />
       {:else if data.tool === 'workflows'}
         {#key page.url.searchParams.get('workflowId') ?? page.url.searchParams.get('workflowQuery') ?? page.url.searchParams.get('workflowAlbum')}
           <WorkflowsPanel
@@ -366,6 +387,8 @@
         {/key}
       {:else if data.tool === 'downloads'}<MobileApps />
       {:else if data.tool === 'phones'}<Phones />
+      {:else if data.tool === 'icloud' && reviewConnection}
+        <ICloudReview connectionId={reviewConnection} onBack={closeICloudReview} />
       {:else if data.tool === 'icloud'}<ICloudSyncPanel initial={data.initial} />
       {:else if data.tool === 'missing-media' || data.tool === 'corrupt-media'}
         <LibraryCareHealth
@@ -380,7 +403,7 @@
       {/if}
       <!-- UT-11: every tool but Duplicate review shows the shared history (UtilitiesManager.jsx:946);
            Missing and Damaged media show Library Care's own, with its scans and searches. -->
-      {#if !['duplicates', 'missing-media', 'corrupt-media'].includes(data.tool)}
+      {#if !['duplicates', 'missing-media', 'corrupt-media', 'location-history'].includes(data.tool)}
         <UtilityHistory />
       {/if}
     </div>

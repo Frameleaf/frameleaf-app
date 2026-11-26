@@ -134,6 +134,25 @@ export type ExtractResult = {
   format: RawExtractedFormat;
 };
 
+/**
+ * exiftool reads `%f`, `%d`, `%e` and the like in a `-TagsFromFile` path as parts of the target's name, and `%%` does
+ * not escape them: a source named `%fx.jpg` is read as `<target>x.jpg`. A source path with a `%` is handed over as a
+ * `%`-free link to it in a private temporary folder, removed afterwards.
+ */
+export const withPercentFreePath = async <T>(source: string, use: (path: string) => Promise<T>): Promise<T> => {
+  if (!source.includes('%')) {
+    return use(source);
+  }
+  const folder = await fs.mkdtemp(join(tmpdir(), 'frameleaf-exif-'));
+  try {
+    const link = join(folder, `source${extname(source).replaceAll('%', '')}`);
+    await fs.symlink(source, link);
+    return await use(link);
+  } finally {
+    await fs.rm(folder, { recursive: true, force: true });
+  }
+};
+
 @Injectable()
 export class MediaRepository {
   private hdrCodecProbe?: { value: Promise<HdrCodecCapabilities | null>; expires: number };
@@ -414,13 +433,15 @@ export class MediaRepository {
 
   async copyTagGroup(tagGroup: string, source: string, target: string): Promise<boolean> {
     try {
-      await exiftool.write(
-        target,
-        {},
-        {
-          ignoreMinorErrors: true,
-          writeArgs: ['-TagsFromFile', source, `-${tagGroup}:all>${tagGroup}:all`, '-overwrite_original'],
-        },
+      await withPercentFreePath(source, (from) =>
+        exiftool.write(
+          target,
+          {},
+          {
+            ignoreMinorErrors: true,
+            writeArgs: ['-TagsFromFile', from, `-${tagGroup}:all>${tagGroup}:all`, '-overwrite_original'],
+          },
+        ),
       );
       return true;
     } catch (error: any) {
@@ -627,6 +648,11 @@ export class MediaRepository {
     return sharpProcessPool.run('renderDownloadJpeg', [input, output, maxEdge], signal);
   }
 
+  /** FL-923: one straightened print of a flatbed scan as a full-resolution JPEG; answers the photo's size. */
+  renderScanCrop(...args: SharpArguments<'renderScanCrop'>): Promise<ImageDimensions> {
+    return sharpProcessPool.run('renderScanCrop', args, executionSignal());
+  }
+
   /**
    * FL-826: copies the original's EXIF, XMP and IPTC into a rendered download JPEG, leaving out what no
    * longer describes it (orientation, the embedded thumbnail, the colour profile) and, with
@@ -635,25 +661,27 @@ export class MediaRepository {
    */
   async copyDownloadMetadata(source: string, target: string, { removeLocation }: { removeLocation: boolean }) {
     try {
-      await exiftool.write(
-        target,
-        {},
-        {
-          ignoreMinorErrors: true,
-          writeArgs: [
-            '-TagsFromFile',
-            source,
-            '-EXIF:all',
-            '-XMP:all',
-            '-IPTC:all',
-            '--Orientation',
-            '--IFD1:all',
-            '--ICC_Profile:all',
-            // `--` leaves a tag out of the copy
-            ...(removeLocation ? LOCATION_TAG_SELECTORS.map((selector) => `-${selector}`) : []),
-            '-overwrite_original',
-          ],
-        },
+      await withPercentFreePath(source, (from) =>
+        exiftool.write(
+          target,
+          {},
+          {
+            ignoreMinorErrors: true,
+            writeArgs: [
+              '-TagsFromFile',
+              from,
+              '-EXIF:all',
+              '-XMP:all',
+              '-IPTC:all',
+              '--Orientation',
+              '--IFD1:all',
+              '--ICC_Profile:all',
+              // `--` leaves a tag out of the copy
+              ...(removeLocation ? LOCATION_TAG_SELECTORS.map((selector) => `-${selector}`) : []),
+              '-overwrite_original',
+            ],
+          },
+        ),
       );
     } catch (error: any) {
       this.logger.warn(`Could not copy metadata into a download: ${error.message}`);

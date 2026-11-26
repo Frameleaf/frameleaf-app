@@ -84,7 +84,8 @@ const updatedConfig = Object.freeze<SystemConfig>({
     },
   },
   signInPolicy: { require: 'administrators-away', applyToOlderApps: false },
-  connectedApps: { allowMcp: true, allowRegistration: true },
+  // FL-1632 (TM-8): apps register themselves only once the administrator allows it
+  connectedApps: { allowMcp: true, allowRegistration: false },
   analytics: {
     enabled: true,
     historyDays: 730,
@@ -398,6 +399,7 @@ const updatedConfig = Object.freeze<SystemConfig>({
     newUserStorageQuota: null,
   },
   notifications: {
+    unifiedPush: { allowLocalTargets: false, availability: 'all' },
     smtp: {
       enabled: false,
       from: '',
@@ -1385,6 +1387,7 @@ describe(SystemConfigService.name, () => {
       await sut.updateAdminConfig({
         ...redacted,
         notifications: {
+          ...redacted.notifications,
           smtp: {
             ...redacted.notifications.smtp,
             transport: { ...redacted.notifications.smtp.transport, host: 'mail.elsewhere.example' },

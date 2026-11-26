@@ -445,9 +445,11 @@ export const addressLabel = (address: string) => {
 
 export const CREATORS_AREA = 'creators';
 export type CreatorsLocation = {
-  /** A creator's page; without one, Home or the Subscriptions list. */
+  /** A creator's page; without one, Home, the Subscriptions list or the Downloads list. */
   creator: string | null;
-  view: 'home' | 'subscriptions';
+  view: 'home' | 'subscriptions' | 'downloads';
+  /** The Downloads list, narrowed to one kind. */
+  show: string | null;
   section: string | null;
   kind: CreatorKind;
   unwatched: boolean;
@@ -463,9 +465,11 @@ export const isCreatorsArea = (url: URL) =>
 export const readCreatorsLocation = (url: URL): CreatorsLocation => {
   const get = (name: string) => url.searchParams.get(name);
   const creator = get('creator');
+  const view = get('view');
   return {
     creator,
-    view: !creator && get('view') === 'subscriptions' ? 'subscriptions' : 'home',
+    view: !creator && (view === 'subscriptions' || view === 'downloads') ? view : 'home',
+    show: !creator && view === 'downloads' ? get('show') : null,
     section: creator ? get('section') : null,
     kind: creator ? creatorKind(get('kind')) : 'all',
     unwatched: !!creator && get('unwatched') === '1',
@@ -495,6 +499,11 @@ export const creatorsHref = (location: Partial<CreatorsLocation> = {}) => {
     }
   } else if (location.view === 'subscriptions') {
     search.set('view', 'subscriptions');
+  } else if (location.view === 'downloads') {
+    search.set('view', 'downloads');
+    if (location.show && location.show !== 'all') {
+      search.set('show', location.show);
+    }
   }
   return `/pro?${search}`;
 };

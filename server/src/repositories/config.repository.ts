@@ -90,6 +90,8 @@ export interface EnvData {
       admin2: string;
       cities500: string;
       naturalEarthCountriesPath: string;
+      /** FL-987: GeoNames' country list, read for each country's geonameId. */
+      countries: string;
       landmarks: string;
       landmarkIcons: string;
     };
@@ -152,6 +154,9 @@ export interface EnvData {
     trustDir: string;
   };
 
+  /** FL-974: Google's file picker (`FRAMELEAF_GOOGLE_PICKER_API_KEY`, `FRAMELEAF_GOOGLE_PICKER_APP_ID`); both or none. */
+  googleDrivePicker?: { apiKey: string; appId: string } | null;
+
   /** FL-159: Frameleaf Cloud deployment configuration. `url` null means not configured. */
   frameleafCloud: {
     url: string | null;
@@ -168,6 +173,8 @@ export interface EnvData {
     trustedLanCidrs: string[];
     /** Integration builds only: the extra licence JWKS file (`FRAMELEAF_LICENSE_EXTRA_JWKS_FILE`), or null. */
     licenseExtraJwksFile: string | null;
+    /** FL-926: Cloud push needs a plan (`FRAMELEAF_CLOUD_PUSH_REQUIRES_PLAN`, off by default), pending FL-908. */
+    pushRequiresPlan?: boolean;
   };
 
   noColor: boolean;
@@ -324,6 +331,7 @@ const getEnv = (): EnvData => {
         admin2: join(folders.geodata, 'admin2Codes.txt'),
         cities500: join(folders.geodata, citiesFile),
         naturalEarthCountriesPath: join(folders.geodata, 'ne_10m_admin_0_countries.geojson'),
+        countries: join(folders.geodata, 'countryInfo.txt'),
         landmarks: join(folders.geodata, 'landmarks.ndjson.gz'),
         landmarkIcons: join(folders.geodata, 'landmark-icons'),
       },
@@ -345,6 +353,14 @@ const getEnv = (): EnvData => {
       trustDir: dto.FRAMELEAF_STUDIO_WORKER_TRUST_DIR ?? '/run/frameleaf/studio-worker',
     },
 
+    googleDrivePicker:
+      process.env.FRAMELEAF_GOOGLE_PICKER_API_KEY?.trim() && process.env.FRAMELEAF_GOOGLE_PICKER_APP_ID?.trim()
+        ? {
+            apiKey: process.env.FRAMELEAF_GOOGLE_PICKER_API_KEY.trim(),
+            appId: process.env.FRAMELEAF_GOOGLE_PICKER_APP_ID.trim(),
+          }
+        : null,
+
     frameleafCloud: {
       url: dto.FRAMELEAF_CLOUD_URL.replace(/\/+$/, ''),
       pushUrl: dto.FRAMELEAF_PUSH_URL ? dto.FRAMELEAF_PUSH_URL.replace(/\/+$/, '') : null,
@@ -359,6 +375,8 @@ const getEnv = (): EnvData => {
       localUrl: dto.FRAMELEAF_LOCAL_URL ? new URL(dto.FRAMELEAF_LOCAL_URL).origin : null,
       trustedLanCidrs: parseTrustedLanCidrs(dto.FRAMELEAF_TRUSTED_LAN_CIDRS),
       licenseExtraJwksFile: dto.FRAMELEAF_LICENSE_EXTRA_JWKS_FILE?.trim() || null,
+      // Read directly: every EnvSchema key is published as a response enum, and a new value breaks native apps.
+      pushRequiresPlan: /^(?:true|1|yes|on)$/i.test(process.env.FRAMELEAF_CLOUD_PUSH_REQUIRES_PLAN?.trim() ?? ''),
     },
 
     storage: {

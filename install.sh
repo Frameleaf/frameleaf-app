@@ -55,6 +55,101 @@ verify_download() {
   fi
 }
 
+# FL-1770: SHA256SUMS comes from the same place as the files, so it only proves they arrived whole. With cosign
+# installed, the release is authenticated: the server and machine-learning images must carry Frameleaf's
+# signature, and the server image's signed release manifest must name these exact docker-compose.yml and
+# example.env bytes (the Compose file pins the database image by digest, so that is covered too). Without
+# cosign the install goes on as before, with a warning; FRAMELEAF_REQUIRE_SIGNATURES=1 refuses it instead.
+# These are cosign.pub and cosign-previous.pub from the repository (a test keeps them the same).
+readonly FrameleafKeys=(
+  '-----BEGIN PUBLIC KEY-----
+MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEtHidzi9+LvA3y0Vc0NfHinYnpcN4
+5fFchdVhpmeAPrChQbEyvwbWKUkC9Zx9NsaFAspaxOmH5gFhp21bVuQmqA==
+-----END PUBLIC KEY-----'
+  '-----BEGIN PUBLIC KEY-----
+MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEfQM9z7o1fdFMSA4eArsnHuwjsJaq
+Oqnda37+gMnjoloOgHXKYJ6YSaJKqzzXjeDe4bWslM4LOqd2lbTXL84xAw==
+-----END PUBLIC KEY-----'
+)
+readonly ReleaseAttestation='https://frameleaf.app/attestations/release-manifest/v3'
+
+# The digest Docker pulled for an image reference, as repository@sha256:...
+pulled_digest() {
+  local -r image=$1
+  local repository=${image%@*}
+  [[ ${repository##*/} == *:* ]] && repository=${repository%:*}
+  docker image inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' "$image" 2>/dev/null |
+    awk -v repo="$repository" 'index($0, repo "@sha256:") == 1 { print; exit }'
+}
+
+# Whether the signed release manifest of a server image names the downloaded files (the hashes they matched).
+manifest_names_downloads() {
+  local -r cosign=$1 key=$2 digest=$3
+  local compose env payloads
+  compose=$(awk '$2 == "docker-compose.yml" { print $1 }' ./SHA256SUMS)
+  env=$(awk '$2 == "example.env" { print $1 }' ./SHA256SUMS)
+  payloads=$("$cosign" verify-attestation --key "$key" --type "$ReleaseAttestation" "$digest" 2>/dev/null |
+    sed -n 's/.*"payload":"\([^"]*\)".*/\1/p' |
+    while IFS= read -r line; do
+      printf '%s' "$line" | base64 -d 2>/dev/null
+      echo
+    done)
+  grep -F "\"docker-compose.yml\":\"sha256:$compose\"" <<<"$payloads" | grep -qF "\"example.env\":\"sha256:$env\""
+}
+
+verify_signatures() {
+  local -r cosign=${FRAMELEAF_COSIGN:-cosign}
+  if ! command -v "$cosign" >/dev/null; then
+    if [[ ${FRAMELEAF_REQUIRE_SIGNATURES:-} == 1 ]]; then
+      echo 'FRAMELEAF_REQUIRE_SIGNATURES=1 needs cosign: https://docs.sigstore.dev/cosign/system_config/installation/' >&2
+      return 1
+    fi
+    echo 'Warning: cosign is not installed, so the downloads were only checked against the release checksums' >&2
+    echo 'and the images are not signature-checked. Install cosign and run the installer again to have them verified.' >&2
+    return 0
+  fi
+  echo "Checking Frameleaf's signatures on the release..."
+  local keys index=0 key
+  keys=$(mktemp -d) || return 1
+  for key in "${FrameleafKeys[@]}"; do
+    printf '%s\n' "$key" >"$keys/$index.pub"
+    index=$((index + 1))
+  done
+  if ! docker compose pull --quiet frameleaf-server frameleaf-machine-learning; then
+    echo 'could not pull the Frameleaf images to check their signatures' >&2
+    rm -rf "$keys"
+    return 1
+  fi
+  local service image digest signed
+  for service in frameleaf-server frameleaf-machine-learning; do
+    image=$(docker compose config --images "$service" 2>/dev/null | head -n 1)
+    digest=$(pulled_digest "$image")
+    if [[ -z $image || ! $digest =~ @sha256:[a-f0-9]{64}$ ]]; then
+      echo "could not find the pulled digest of $service" >&2
+      rm -rf "$keys"
+      return 1
+    fi
+    signed=0
+    for key in "$keys"/*.pub; do
+      "$cosign" verify --key "$key" "$digest" >/dev/null 2>&1 || continue
+      if [[ $service == frameleaf-server ]] && ! manifest_names_downloads "$cosign" "$key" "$digest"; then
+        echo "The signed release manifest of $digest does not name these docker-compose.yml and example.env files; refusing to start" >&2
+        rm -rf "$keys"
+        return 1
+      fi
+      signed=1
+      break
+    done
+    if [[ $signed -ne 1 ]]; then
+      echo "$digest does not carry Frameleaf's signature; refusing to start" >&2
+      rm -rf "$keys"
+      return 1
+    fi
+  done
+  rm -rf "$keys"
+  echo 'The release and its images are signed by Frameleaf.'
+}
+
 generate_random_password() {
   echo "Generate random password for .env file..."
   local rand_pass
@@ -211,6 +306,10 @@ main() {
   generate_random_password || {
     echo 'error generating database password'
     return 15
+  }
+  verify_signatures || {
+    echo "error checking Frameleaf's signatures"
+    return 20
   }
   start_docker_compose || {
     echo 'error starting Docker'

@@ -24,8 +24,15 @@ import {
   SharedSpacePersonResponseDto,
   SharedSpacePreviewResponseDto,
 } from 'src/dtos/shared-space.dto.js';
-import { UserResponseDto, mapUser } from 'src/dtos/user.dto.js';
-import { AlbumUserRole, AssetFileType, CacheControl, Permission, SharedSpaceEventType } from 'src/enum.js';
+import { UserResponseDto, mapMember, mapUser } from 'src/dtos/user.dto.js';
+import {
+  AlbumUserRole,
+  AssetFileType,
+  CacheControl,
+  Permission,
+  SharedSpaceEventType,
+  UserAvatarColor,
+} from 'src/enum.js';
 import { RecipientGroup, SharedSpaceEvent, SharedSpaceInvite } from 'src/repositories/album-user.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { requireEntityAccess } from 'src/utils/access.js';
@@ -75,7 +82,7 @@ import { getSupporters } from 'src/utils/supporter.js';
  * panel in the first place. FL-446: likewise an item matching its owner's Locked rules (people, pets
  * and tags marked Locked) is left out of every panel, for every member; such items reach partners only.
  */
-const SPACE_CONTENT_OPTIONS: HiddenContentQueryOptions = { excludeNsfw: true, ...everyOwnersRules };
+export const SPACE_CONTENT_OPTIONS: HiddenContentQueryOptions = { excludeNsfw: true, ...everyOwnersRules };
 
 /** How many "new since your last visit" ids the client is given to filter a timeline with. */
 const NEW_ASSET_LIMIT = 500;
@@ -115,7 +122,7 @@ type CommentRow = {
   id: string;
   createdAt: Date;
   updatedAt: Date;
-  userId: string;
+  userId: string | null;
   user: Parameters<typeof mapUser>[0];
   assetId: string | null;
   comment: string | null;
@@ -339,7 +346,7 @@ export class SharedSpaceService extends BaseService {
     requireSharedSpace(album);
 
     const members: SharedSpaceMemberResponseDto[] = album.albumUsers.map(({ user, role }) => ({
-      user: mapUser(user),
+      user: mapMember(user),
       role,
       pending: false,
     }));
@@ -351,7 +358,7 @@ export class SharedSpaceService extends BaseService {
         continue;
       }
       members.push({
-        user: mapUser(user),
+        user: mapMember(user),
         role: invite.role,
         pending: true,
         invitedAt: asDateTimeString(invite.createdAt),
@@ -583,13 +590,14 @@ export class SharedSpaceService extends BaseService {
     );
 
     const name = dto.name?.trim() || person.name;
-    await this.albumUserRepository.createLinkedPerson({
+    const personLink = await this.albumUserRepository.createLinkedPerson({
       albumId: id,
       personOwnerId: auth.user.id,
       personGroupId: dto.personId,
       name,
       coverAssetId,
     });
+    await this.eventRepository.emit('HouseholdFeedPerson', { albumId: id, personLinkId: personLink.id });
     // The feed carries the space's own name for them, never the person's id or private name.
     await this.albumUserRepository.createSpaceEvent({
       albumId: id,
@@ -618,6 +626,7 @@ export class SharedSpaceService extends BaseService {
     requireUnlinkRights(space, auth.user.id, link.personOwnerId);
 
     await this.albumUserRepository.deleteLinkedPerson(linkId);
+    await this.eventRepository.emit('HouseholdFeedPerson', { albumId: id, personLinkId: linkId });
     await this.albumUserRepository.createSpaceEvent({
       albumId: id,
       actorId: auth.user.id,
@@ -707,7 +716,17 @@ export class SharedSpaceService extends BaseService {
         id: event.id,
         type: event.type,
         createdAt: asDateTimeString(event.createdAt),
-        actor: await users.get(event.actorId),
+        // FL-1012: a remote author by name, in the shape every member has: no email, no picture
+        actor: event.remoteAuthorId
+          ? {
+              id: event.remoteAuthorId,
+              name: event.remoteAuthorName ?? '',
+              email: '',
+              profileImagePath: '',
+              avatarColor: UserAvatarColor.Primary,
+              profileChangedAt: asDateTimeString(event.createdAt),
+            }
+          : await users.get(event.actorId),
         targetUser: await users.get(event.targetUserId),
         subject: event.subject,
         assetIds: event.assetIds,
@@ -845,6 +864,11 @@ export class SharedSpaceService extends BaseService {
         : { albumId: id, actorId: auth.user.id, type: SharedSpaceEventType.Comment, activityId: activity.id },
     );
     await this.notifyMentioned(auth, id, assetId, activity.id, mentioned, []);
+    await this.eventRepository.emit('HouseholdFeedComments', {
+      albumId: id,
+      activityIds: [activity.id],
+      deleted: false,
+    });
 
     const recipient = root ? replyRecipient(space, root, auth.user.id, mentioned) : null;
     if (root && recipient) {
@@ -883,6 +907,7 @@ export class SharedSpaceService extends BaseService {
     await this.albumUserRepository.deleteMentions(commentId);
     await this.albumUserRepository.createMentions(commentId, mentioned);
     await this.notifyMentioned(auth, id, updated.assetId, commentId, mentioned, previous);
+    await this.eventRepository.emit('HouseholdFeedComments', { albumId: id, activityIds: [commentId], deleted: false });
 
     // Editing never moves a comment between threads; report where it already is.
     const [[parent], replies] = await Promise.all([
@@ -906,7 +931,12 @@ export class SharedSpaceService extends BaseService {
     const existing = await this.requireSpaceComment(id, commentId);
     requireCommentDeleteRights(space, existing, auth.user.id);
 
-    await this.albumUserRepository.deleteCommentWithReplies(commentId);
+    const removed = await this.albumUserRepository.deleteCommentWithReplies(commentId);
+    await this.eventRepository.emit('HouseholdFeedComments', {
+      albumId: id,
+      activityIds: removed,
+      deleted: true,
+    });
   }
 
   /**
@@ -1071,7 +1101,7 @@ export class SharedSpaceService extends BaseService {
       id: row.id,
       createdAt: asDateTimeString(row.createdAt),
       updatedAt: asDateTimeString(row.updatedAt),
-      user: mapUser(row.user),
+      user: mapMember(row.user),
       assetId: row.assetId,
       comment: row.comment ?? '',
       mentions: await this.mapMentions(mentionIds, users),
@@ -1092,7 +1122,7 @@ export class SharedSpaceService extends BaseService {
         if (!cache.has(userId)) {
           cache.set(
             userId,
-            this.userRepository.get(userId, {}).then((user) => (user ? mapUser(user) : null)),
+            this.userRepository.get(userId, {}).then((user) => (user ? mapMember(user) : null)),
           );
         }
         return cache.get(userId)!;
@@ -1146,8 +1176,8 @@ export class SharedSpaceService extends BaseService {
       albumName: album.albumName,
       description: album.description ?? '',
       icon: album.icon,
-      owner: mapUser(owner),
-      invitedBy: invitedBy ? mapUser(invitedBy) : null,
+      owner: mapMember(owner),
+      invitedBy: invitedBy ? mapMember(invitedBy) : null,
       role: invite?.role ?? AlbumUserRole.Viewer,
       invitedAt: asDateTimeString(invite?.createdAt ?? album.createdAt),
       accepted,

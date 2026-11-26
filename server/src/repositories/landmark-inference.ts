@@ -53,6 +53,7 @@ const inferOne = async (db: Kysely<DB>, id: string): Promise<void> => {
         'asset.ownerId',
         'asset.libraryId',
         'asset.fileCreatedAt',
+        'asset.dateAccuracy',
         'asset.checksum',
         'asset_exif.make',
         'asset_exif.model',
@@ -79,13 +80,21 @@ const inferOne = async (db: Kysely<DB>, id: string): Promise<void> => {
       .where('donor_exif.latitude', 'is not', null)
       .where('donor_exif.longitude', 'is not', null);
 
-    if (target.latitude === null && target.longitude === null && target.make?.trim() && target.model?.trim()) {
+    // FL-936: a year or a decade is not a moment, so such a photo neither takes nor gives a place by time
+    if (
+      target.latitude === null &&
+      target.longitude === null &&
+      target.make?.trim() &&
+      target.model?.trim() &&
+      !target.dateAccuracy
+    ) {
       // shortcut: camera identity uses owner/library/make/model; prefer serials when metadata extraction retains them.
       const nearby = donors
         .select(['donor.id', 'donor.fileCreatedAt as takenAt', 'donor_exif.latitude', 'donor_exif.longitude'])
         .where('donor.libraryId', target.libraryId === null ? 'is' : '=', target.libraryId)
         .where('donor_exif.make', '=', target.make)
         .where('donor_exif.model', '=', target.model)
+        .where('donor.dateAccuracy', 'is', null)
         .where('donor.fileCreatedAt', '>=', new Date(target.fileCreatedAt.getTime() - LANDMARK_INFERENCE_WINDOW_MS))
         .where('donor.fileCreatedAt', '<=', new Date(target.fileCreatedAt.getTime() + LANDMARK_INFERENCE_WINDOW_MS))
         .$narrowType<{ latitude: number; longitude: number }>();

@@ -49,6 +49,7 @@ export class Repository {
     gear;
     index = new Map();
     damagedIndexes = [];
+    suspectPacks = new Set();
     constructor(store, config, keys, gear) {
         this.store = store;
         this.config = config;
@@ -94,6 +95,18 @@ export class Repository {
         const packs = new Set((await this.store.list('p/')).map((object) => object.key));
         const indexed = new Set();
         this.damagedIndexes.length = 0;
+        this.suspectPacks.clear();
+        for (const pack of await this.readDamagedPacks()) {
+            if (packs.has(pack)) {
+                this.suspectPacks.add(pack);
+            }
+        }
+        const place = (id, location) => {
+            const known = this.index.get(id);
+            if (!known || this.suspectPacks.has(known.pack) || !this.suspectPacks.has(location.pack)) {
+                this.index.set(id, location);
+            }
+        };
         for (const object of await this.store.list('i/')) {
             const sealed = await this.store.get(object.key);
             let data;
@@ -118,7 +131,7 @@ export class Repository {
                 }
                 indexed.add(pack);
                 for (const entry of decodeEntries(entries)) {
-                    this.index.set(entry.id, { pack, offset: entry.offset, length: entry.length });
+                    place(entry.id, { pack, offset: entry.offset, length: entry.length });
                 }
             }
         }
@@ -133,9 +146,50 @@ export class Repository {
                 throw error;
             });
             for (const entry of adopted) {
-                this.index.set(entry.id, { pack, offset: entry.offset, length: entry.length });
+                place(entry.id, { pack, offset: entry.offset, length: entry.length });
             }
         }
+    }
+    holds(id) {
+        const location = this.index.get(id);
+        return !!location && !this.suspectPacks.has(location.pack);
+    }
+    async recordDamagedPacks(packs) {
+        const fresh = packs.filter((pack) => /^p\/[0-9a-f]{32}$/.test(pack) && !this.suspectPacks.has(pack));
+        if (fresh.length === 0) {
+            return;
+        }
+        const key = `d/${randomBytes(16).toString('hex')}`;
+        await this.store.put(key, seal(this.keys.meta, Buffer.from(key), Buffer.from(JSON.stringify({ packs: fresh }))));
+        for (const pack of fresh) {
+            this.suspectPacks.add(pack);
+        }
+    }
+    async readDamagedPacks() {
+        return (await this.damageNotes()).flatMap((note) => note.packs);
+    }
+    async removeSettledDamageNotes() {
+        const packs = new Set((await this.store.list('p/')).map((object) => object.key));
+        for (const note of await this.damageNotes()) {
+            if (!note.packs.some((pack) => packs.has(pack))) {
+                await this.store.delete(note.key);
+            }
+        }
+    }
+    async damageNotes() {
+        const notes = [];
+        for (const object of await this.store.list('d/')) {
+            try {
+                const { packs } = JSON.parse(unseal(this.keys.meta, Buffer.from(object.key), await this.store.get(object.key)).toString());
+                notes.push({ key: object.key, packs: Array.isArray(packs) ? packs.filter((pack) => typeof pack === 'string') : [] });
+            }
+            catch (error) {
+                if (!(error instanceof UnsealError) && !(error instanceof SyntaxError)) {
+                    throw error;
+                }
+            }
+        }
+        return notes;
     }
     async readTrailer(pack) {
         const footer = await this.store.get(pack, { suffix: PACK_FOOTER });
@@ -227,7 +281,7 @@ export class PackWriter {
         this.target = target;
     }
     has(id) {
-        return this.repository.index.has(id) || this.pending.has(id);
+        return this.repository.holds(id) || this.pending.has(id);
     }
     async add(id, plain) {
         const hex = id.toString('hex');

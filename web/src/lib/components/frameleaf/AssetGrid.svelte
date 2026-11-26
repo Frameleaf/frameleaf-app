@@ -234,6 +234,8 @@
     if (!target || !onEndReached || typeof IntersectionObserver !== 'function') {
       return;
     }
+    // An observer only reports a change: look again after each page, or an end still in view stops paging.
+    void entries.length;
     const observer = new IntersectionObserver(
       (entries) => {
         if (entries.some((entry) => entry.isIntersecting)) {

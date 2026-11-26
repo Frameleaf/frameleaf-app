@@ -453,6 +453,7 @@ describe(CloudMlJobService.name, () => {
         ...input,
       }) as unknown as AssetRestoration;
     restorations = {
+      hasBatchItem: vi.fn().mockResolvedValue(false),
       create: vi.fn().mockImplementation((input: Partial<AssetRestoration>) => {
         const inserted = row(input);
         rows.set(inserted.id, inserted);
@@ -2539,6 +2540,163 @@ describe(CloudMlJobService.name, () => {
         expect.objectContaining({ errorCode: 'cloud_ml_turned_off' }),
         { retry: false },
       );
+    });
+  });
+
+  describe('repair and colourise (FL-955, FL-961)', () => {
+    const REPAIR = 'ms_QFQGN68E';
+    const photo = {
+      ...source,
+      type: AssetType.Image,
+      originalFileName: 'Print.jpg',
+      originalPath: '/library/owner-1/Print.jpg',
+      exifInfo: { exifImageWidth: 4000, exifImageHeight: 3000, orientation: null },
+      files: [{ id: 'thumb', type: 'thumbnail', path: '/thumbs/print.webp', isEdited: false, isProgressive: false }],
+    };
+    const repair = (overrides: Partial<CloudMlJobEstimateRequestDto> = {}) =>
+      preview({
+        assetId: photo.id,
+        operation: 'repair' as never,
+        region: { x: 0, y: 0, w: 1, h: 1 },
+        ...overrides,
+      });
+    const priced = {
+      ...sealed,
+      modelSku: REPAIR,
+      routing: {
+        plannedWorkers: 1,
+        perSecondUsd: 0.001,
+        startFeeUsd: 0.01,
+        approvedMaximumUsd: 2,
+      },
+    } as never;
+    const noPrice = () =>
+      new FrameleafCloudError(MlAdmissionRefusal.ModelMismatch, 409, 'This model is not offered', {
+        type: 'about:blank',
+        title: 'Conflict',
+        status: 409,
+        code: 'model-mismatch',
+        detail: 'This model is not offered',
+        requestId: 'request-1',
+      } as never);
+
+    beforeEach(() => {
+      const upscaleCloud = {
+        ...cloud,
+        workloads: [...workloads, MlWorkload.Upscale],
+        lastProbeWorkloads: [...workloads, MlWorkload.Upscale],
+        lastProbeCloud: {
+          ...facts,
+          modelIds: [...facts.modelIds, 'ms_54S55W7C'],
+          modelWorkloads: { ...facts.modelWorkloads, ms_54S55W7C: MlWorkload.Upscale },
+          defaultModels: { ...facts.defaultModels, upscale: 'ms_54S55W7C' },
+          modelGroups: { ...facts.modelGroups, ms_54S55W7C: 'upscale' },
+        },
+      };
+      mocks.mlDestination.getAll.mockResolvedValue([upscaleCloud]);
+      mocks.mlDestination.getById.mockResolvedValue(upscaleCloud);
+      mocks.machineLearning.probe.mockResolvedValue({
+        ...mlProbeStub.frameleafCloud,
+        workloads: upscaleCloud.workloads,
+        cloud: upscaleCloud.lastProbeCloud,
+      });
+      mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(photo as never);
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([photo.id]));
+      mocks.media.decodeImage.mockResolvedValue({
+        data: Buffer.alloc(300, 120),
+        info: { width: 10, height: 10, channels: 3 },
+      } as never);
+      mocks.media.getImageMetadata.mockResolvedValue({ width: 4000, height: 3000 } as never);
+      mocks.frameleafCloudMl.createEstimate.mockResolvedValue(priced);
+    });
+
+    it('asks for the operation on the upscale workload, by its own model and at its own size', async () => {
+      await sut.estimate(owner, repair(), now);
+
+      expect(mocks.frameleafCloudMl.getCatalog).not.toHaveBeenCalled();
+      const body = mocks.frameleafCloudMl.createEstimate.mock.calls[0][1];
+      expect(body).toMatchObject({
+        workload: 'upscale',
+        modelSku: REPAIR,
+        request: {
+          operation: 'repair',
+          items: [{ inputId: 'v1', width: 4000, height: 3000 }],
+          output: { format: 'png' },
+        },
+      });
+      expect(body.request).not.toHaveProperty('scale');
+      expect(body.request).not.toHaveProperty('faceRestore');
+      expect(estimateRequestSchema.safeParse(body).success).toBe(true);
+    });
+
+    it('treats 409 model-mismatch as not available yet: no cost, nothing kept, queued or charged', async () => {
+      mocks.frameleafCloudMl.createEstimate.mockRejectedValue(noPrice());
+
+      await expect(sut.estimate(owner, repair(), now)).rejects.toMatchObject({
+        response: { code: 'photo-operation-unavailable', message: "Frameleaf Cloud isn't available for this yet" },
+      });
+
+      expect(metadata.has(SystemMetadataKey.FrameleafCloudMlJobEstimates)).toBe(false);
+      expect(mocks.frameleafCloudMl.getWallet).not.toHaveBeenCalled();
+      expect(mocks.frameleafCloudMl.createJob).not.toHaveBeenCalled();
+      expect(mocks.mediaOperation.create).not.toHaveBeenCalled();
+    });
+
+    it('asks Cloud once for a batch it cannot price, and shows no cost', async () => {
+      mocks.frameleafCloudMl.createEstimate.mockRejectedValue(noPrice());
+
+      const quote = await sut.quotePhotoBatch(owner, 'repair', [photo.id, photo.id, photo.id], cloud.id, now);
+
+      expect(quote).toEqual({ refusal: "Frameleaf Cloud isn't available for this yet" });
+      expect(mocks.frameleafCloudMl.createEstimate).toHaveBeenCalledOnce();
+    });
+
+    it('starts nothing from a batch Cloud cannot price', async () => {
+      mocks.frameleafCloudMl.createEstimate.mockRejectedValue(noPrice());
+
+      await expect(
+        sut.startPhotoBatch(
+          owner,
+          {
+            batchId: '11111111-1111-4111-8111-111111111111',
+            operation: 'repair',
+            assetIds: [photo.id],
+            destinationId: cloud.id,
+            maxCostUsd: 5,
+            consentVersion: '2026-09-26.1',
+          },
+          now,
+        ),
+      ).rejects.toBeInstanceOf(ConflictException);
+      expect(mocks.mediaOperation.create).not.toHaveBeenCalled();
+      expect(mocks.frameleafCloudMl.createJob).not.toHaveBeenCalled();
+    });
+
+    it('refuses to send a colour photo to Colourise', async () => {
+      // Blocks of equal brightness and different colour, which no single print tone can make.
+      const blocks = Buffer.alloc(400 * 400 * 3);
+      for (let pixel = 0; pixel < 400 * 400; pixel++) {
+        const warm = (Math.floor(pixel / 400 / 25) + Math.floor((pixel % 400) / 25)) % 2 === 0;
+        blocks.set(warm ? [200, 90, 90] : [70, 130, 190], pixel * 3);
+      }
+      mocks.media.decodeImage.mockResolvedValue({
+        data: blocks,
+        info: { width: 400, height: 400, channels: 3 },
+      } as never);
+
+      await expect(sut.estimate(owner, repair({ operation: 'colourise' as never }), now)).rejects.toThrow(
+        'already in colour',
+      );
+      expect(mocks.frameleafCloudMl.createEstimate).not.toHaveBeenCalled();
+    });
+
+    it('leaves a plain photo upscale request without an operation', async () => {
+      mocks.frameleafCloudMl.getCatalog.mockResolvedValue(catalog);
+      await sut.estimate(owner, preview({ assetId: photo.id, upscale: 2 }), now).catch(() => {});
+
+      for (const [, body] of mocks.frameleafCloudMl.createEstimate.mock.calls) {
+        expect(body.request).not.toHaveProperty('operation');
+      }
     });
   });
 

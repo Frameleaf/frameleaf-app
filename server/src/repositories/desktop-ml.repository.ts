@@ -111,10 +111,15 @@ export const MAX_OPEN_TASKS = 256;
 export const MAX_OPEN_TASK_BYTES = 512 * 1024 * 1024;
 /** The most tasks one desktop is ever given at once, whatever it asks for. */
 export const MAX_DESKTOP_LEASES = 64;
-/** The kind of work a model key names: `clip`, `face` or `ocr`. */
+/** The kind of work a model key names: `clip`, `face`, `ocr` or `description`. */
 const workloadOf = (modelKey: string) => modelKey.split(':', 1)[0];
 /** The queue each kind of desktop work comes from. */
-const WORKLOAD_QUEUES: Record<string, string> = { clip: 'smartSearch', face: 'faceDetection', ocr: 'ocr' };
+const WORKLOAD_QUEUES: Record<string, string> = {
+  clip: 'smartSearch',
+  face: 'faceDetection',
+  ocr: 'ocr',
+  description: 'imageDescription',
+};
 /** The Jobs concurrency setting of each kind of work's queue; 1 where the queue has no row yet. */
 const queueLimits = async (db: Kysely<DesktopMlDatabase>): Promise<Record<string, number>> => {
   const { rows } = await sql<{ name: string; concurrency: number }>`

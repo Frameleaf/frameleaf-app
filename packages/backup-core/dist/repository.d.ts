@@ -51,6 +51,7 @@ export declare class Repository {
     readonly gear: Uint32Array;
     readonly index: Map<string, Location>;
     readonly damagedIndexes: string[];
+    readonly suspectPacks: Set<string>;
     private constructor();
     static init(store: Store, options: {
         rootKey: Buffer;
@@ -62,6 +63,11 @@ export declare class Repository {
         rootKey: Buffer;
     }): Promise<Repository>;
     loadIndex(): Promise<void>;
+    holds(id: string): boolean;
+    recordDamagedPacks(packs: string[]): Promise<void>;
+    readDamagedPacks(): Promise<string[]>;
+    removeSettledDamageNotes(): Promise<void>;
+    private damageNotes;
     readTrailer(pack: string): Promise<{
         id: string;
         offset: number;

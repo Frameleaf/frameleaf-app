@@ -152,6 +152,23 @@ export class StudioMediaService extends BaseService {
       deferJobUntilDependency('workload-disabled');
       return JobStatus.Skipped;
     }
+    // A partner copy shows its source's video, so it takes the source's fingerprint instead of reading the same
+    // file again. One whose source has none yet is left out of catching up until it has.
+    const sourceId = await this.partnerOriginRepository.getLiveSourceId(id);
+    if (sourceId) {
+      const [source] = await this.duplicateRepository.getVideoFingerprints([sourceId]);
+      if (!source) {
+        return JobStatus.Skipped;
+      }
+      await publishJobResult(() =>
+        this.duplicateRepository.upsertVideoFingerprint({
+          assetId: id,
+          durationMs: source.durationMs,
+          hashes: source.hashes,
+        }),
+      );
+      return JobStatus.Success;
+    }
     const video = await this.assetJobRepository.getForVideoDuplicateFrameJob(id);
     if (!video || video.visibility === AssetVisibility.Hidden || video.visibility === AssetVisibility.Locked) {
       return JobStatus.Skipped;

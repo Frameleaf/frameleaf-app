@@ -1,6 +1,7 @@
 import {
   TIMELINE_FILTER_MAX_LENGTH,
   TimeBucketAssetDto,
+  TimeBucketAssetResponseDto,
   TimeBucketDto,
   TimelineHighlightsDto,
   TimelineOrderedDto,
@@ -176,5 +177,16 @@ describe('bounded calendar pages', () => {
     ]) {
       expect(TimeBucketAssetDto.schema.safeParse({ timeBucket, ...page }).success).toBe(false);
     }
+  });
+});
+
+describe('approximate dates in a time bucket (FL-936)', () => {
+  it('is an optional column of plain strings that a page without one leaves out or null', () => {
+    const column = TimeBucketAssetResponseDto.schema.shape.dateAccuracy;
+    expect(column.safeParse(undefined).success).toBe(true);
+    expect(column.safeParse(null).success).toBe(true);
+    expect(column.safeParse([null, 'year', 'decade']).success).toBe(true);
+    // not an enum: a value added later must not break a client that decodes strictly
+    expect(column.safeParse(['season']).success).toBe(true);
   });
 });

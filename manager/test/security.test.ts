@@ -198,6 +198,9 @@ test('without MANAGER_ORIGIN, Manager accepts local addresses only and still che
       assert.equal(invoke({ host }).status, 403, host);
     assert.equal(invoke({ host: 'tower:9443', origin: 'https://tower:9443' }, 'POST', '/manager-api/login').next, true);
     assert.equal(invoke({ host: 'tower:9443', origin: 'https://192.168.1.20:9443' }, 'POST', '/manager-api/login').status, 403);
+    // A trailing slash reaches the same route but would miss the password-attempt budget, which matches exact paths.
+    const slashed = invoke({ host: 'tower:9443', origin: 'https://tower:9443' }, 'POST', '/manager-api/backup-key/');
+    assert.deepEqual(slashed, { status: 403, next: false });
     assert.equal(security.requestOrigin({ headers: { host: 'tower.local:9443' } } as unknown as Request), 'https://tower.local:9443');
     assert.throws(() => new Security(store, undefined, 'https://tower:5001'));
   } finally { store.close(); await rm(directory, { recursive: true, force: true }); }

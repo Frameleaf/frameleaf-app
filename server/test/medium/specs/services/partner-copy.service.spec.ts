@@ -48,6 +48,7 @@ import {
   lockFilePath,
 } from 'src/repositories/physical-file.repository.js';
 import { SearchRepository } from 'src/repositories/search.repository.js';
+import { SessionRepository } from 'src/repositories/session.repository.js';
 import { SharedLinkAssetRepository } from 'src/repositories/shared-link-asset.repository.js';
 import { SmartAlbumRepository } from 'src/repositories/smart-album.repository.js';
 import { StackRepository } from 'src/repositories/stack.repository.js';
@@ -115,6 +116,7 @@ const assetService = () => {
   const { sut, ctx } = newMediumService(AssetService, {
     database: db,
     real: [
+      SessionRepository,
       ...real,
       AssetEditRepository,
       AssetJobRepository,
@@ -138,7 +140,14 @@ const assetService = () => {
 const albumService = () => {
   const { sut, ctx } = newMediumService(AlbumService, {
     database: db,
-    real: [...real, AlbumUserRepository, ClassificationRepository, MapRepository, SmartAlbumRepository],
+    real: [
+      SessionRepository,
+      ...real,
+      AlbumUserRepository,
+      ClassificationRepository,
+      MapRepository,
+      SmartAlbumRepository,
+    ],
     mock: [EventRepository, JobRepository, LoggingRepository],
   });
   ctx.getMock(EventRepository).emit.mockResolvedValue();
@@ -151,7 +160,14 @@ const albumService = () => {
 const mediaService = () => {
   const media = newMediumService(MediaService, {
     database: db,
-    real: [AssetJobRepository, AssetRepository, ConfigRepository, PartnerOriginRepository, SystemMetadataRepository],
+    real: [
+      SessionRepository,
+      AssetJobRepository,
+      AssetRepository,
+      ConfigRepository,
+      PartnerOriginRepository,
+      SystemMetadataRepository,
+    ],
     mock: [JobRepository, LoggingRepository, MediaRepository, StorageRepository],
   });
   media.ctx.getMock(JobRepository).queue.mockResolvedValue();

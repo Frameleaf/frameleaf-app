@@ -2,7 +2,11 @@ import { BadRequestException, NotFoundException } from '@nestjs/common';
 import type { SystemConfig } from 'src/config.js';
 import type { AssetRestorationMode } from 'src/dtos/asset-restoration.dto.js';
 import type { MlProbeHardware } from 'src/schema/tables/ml-destination.table.js';
-import { type RestorationModelCapability, RestorationModelState } from 'src/dtos/restoration-inference.dto.js';
+import {
+  type RestorationModelCapability,
+  RestorationModelState,
+  type RestorationPhotoOperation,
+} from 'src/dtos/restoration-inference.dto.js';
 import {
   CLOUD_ML_DESTINATION_KINDS,
   FRAMELEAF_CLOUD_CATALOG_WORKLOADS,
@@ -205,6 +209,13 @@ export type MlSelectionRequest = {
   desktopPool?: 'skip' | 'only';
   /** FL-1058: a gallery guest's selfie for `ownerId`, which the Desktop pool takes outside any queued job. */
   guestFace?: boolean;
+  /**
+   * FD-31: this enrichment request is a photo description, the only enrichment a desktop runs (the safety
+   * check a description job also makes is not).
+   */
+  description?: boolean;
+  /** FL-955: this request is a photo operation (see `MlAdmissionInput`). */
+  photoOperation?: RestorationPhotoOperation;
 };
 
 export type MlSelectionDeps = {
@@ -371,7 +382,11 @@ export type MlProbeRestorationModel = {
 };
 
 /** The stored hardware facts, with the restoration models a restoration worker reported (FL-423). */
-export type MlProbeFacts = MlProbeHardware & { restorationModels?: MlProbeRestorationModel[] };
+export type MlProbeFacts = MlProbeHardware & {
+  restorationModels?: MlProbeRestorationModel[];
+  /** FL-955: the photo operations the worker proved at its last check. */
+  photoOperations?: RestorationPhotoOperation[];
+};
 
 export const restorationModelsFromReport = (
   models: Pick<
@@ -391,13 +406,21 @@ export const restorationModelsFromReport = (
 export const storedRestorationModels = (hardware: MlProbeHardware | null): MlProbeRestorationModel[] =>
   (hardware as MlProbeFacts | null)?.restorationModels ?? [];
 
+/** FL-955: the photo operations a destination proved at its last health check. */
+export const storedPhotoOperations = (hardware: MlProbeHardware | null | undefined): RestorationPhotoOperation[] =>
+  (hardware as MlProbeFacts | null | undefined)?.photoOperations ?? [];
+
 /** The hardware facts worth keeping from one probe, or null when the worker did not report them. */
 export const hardwareFromProbe = (
-  probe: Pick<MlEndpointProbe, 'reachable' | 'hardware'>,
+  probe: Pick<MlEndpointProbe, 'reachable' | 'hardware' | 'photoOperations'>,
   gpus: MlProbeHardware['gpus'] = [],
   restorationModels: MlProbeRestorationModel[] = [],
 ): MlProbeFacts | null => {
-  if (!probe.reachable || (!probe.hardware && gpus.length === 0 && restorationModels.length === 0)) {
+  const photoOperations = probe.photoOperations ?? [];
+  if (
+    !probe.reachable ||
+    (!probe.hardware && gpus.length === 0 && restorationModels.length === 0 && photoOperations.length === 0)
+  ) {
     return null;
   }
   return {
@@ -406,6 +429,7 @@ export const hardwareFromProbe = (
     cudaDeviceCount: Math.max(probe.hardware?.cudaDeviceCount ?? 0, gpus.length),
     gpus,
     ...(restorationModels.length > 0 && { restorationModels }),
+    ...(photoOperations.length > 0 && { photoOperations }),
   };
 };
 
@@ -454,7 +478,8 @@ export const storedProbe = (
   row: Pick<
     MlDestinationRow,
     'lastProbeAt' | 'lastProbeHealth' | 'lastProbeWorkloads' | 'lastProbeSummary' | 'lastProbeCloud'
-  >,
+  > &
+    Partial<Pick<MlDestinationRow, 'lastProbeHardware'>>,
 ): MlEndpointProbe | null => {
   if (!row.lastProbeAt) {
     return null;
@@ -469,6 +494,9 @@ export const storedProbe = (
     error: healthy ? null : (row.lastProbeSummary ?? 'not probed'),
     // FL-186: in today's shape, whatever version recorded it
     cloud: normalizeCloudProbeFacts(row.lastProbeCloud),
+    ...(storedPhotoOperations(row.lastProbeHardware).length > 0 && {
+      photoOperations: storedPhotoOperations(row.lastProbeHardware),
+    }),
   };
 };
 
@@ -507,12 +535,15 @@ export const storedAdmission = ({
   spentUsd,
   choices,
   studioFeature,
+  photoOperation,
 }: {
   destination: MlDestinationRow;
   workload: MlWorkload;
   spentUsd: number;
   choices: CloudModelChoices;
   studioFeature?: StudioAiCloudFeature | null;
+  /** FL-955: judge this photo operation, which the workload's allow-list and role rules still govern. */
+  photoOperation?: RestorationPhotoOperation;
 }): MlAdmissionVerdict => {
   const endpoint = resolveEndpoint(destination);
   const probe = storedProbe(destination);
@@ -528,6 +559,7 @@ export const storedAdmission = ({
       modelId: group && isCloudModelGroup(group) ? (choices[group] ?? null) : null,
       studioFeature: feature,
       fromStoredCheck: true,
+      photoOperation,
     });
   };
   if (!isCloud || workload !== MlWorkload.StudioAi || studioFeature) {
@@ -585,6 +617,12 @@ export type MlAdmissionInput = {
   holdUsd?: number | null;
   /** FL-186: the Studio feature of a Studio AI job, which names its model group. */
   studioFeature?: StudioAiCloudFeature | null;
+  /**
+   * FL-955: the request is this photo operation. It runs under the faithful workload's allow-list, consent,
+   * budget and role rules, and is served only by a worker that proved the operation itself. Frameleaf
+   * Cloud refuses it until it offers and prices these operations (FL-961).
+   */
+  photoOperation?: RestorationPhotoOperation;
   /**
    * FL-186: the probe is a stored check read for a view, not a live one. A check from before FL-186
    * cannot place a model in a group, so its model rules are skipped (unknown until the next check)
@@ -817,9 +855,16 @@ export const evaluateAdmission = ({
   studioFeature,
   fromStoredCheck,
   createdCloudJob,
+  photoOperation,
 }: MlAdmissionInput): MlAdmissionVerdict => {
   if (!destination) {
     return refuse(MlAdmissionRefusal.DestinationMissing, 'the destination does not exist');
+  }
+  if (photoOperation && destination.kind === MlDestinationKind.FrameleafCloud) {
+    return refuse(
+      MlAdmissionRefusal.WorkloadNotServed,
+      `${destination.name} does not offer ${photoOperation === 'repair' ? 'Repair' : 'Suggested colours'} yet`,
+    );
   }
 
   if (!destination.enabled) {
@@ -873,6 +918,15 @@ export const evaluateAdmission = ({
       MlAdmissionRefusal.DestinationUnhealthy,
       `${destination.name} did not answer${probe?.error ? `: ${probe.error}` : ''}`,
     );
+  }
+  if (photoOperation) {
+    // FL-955: its own models and its own memory needs; the worker refuses a photo it cannot hold
+    return (probe.photoOperations ?? []).includes(photoOperation)
+      ? { admitted: true }
+      : refuse(
+          MlAdmissionRefusal.WorkloadNotServed,
+          `${destination.name} has no ready model for ${photoOperation === 'repair' ? 'Repair' : 'Suggested colours'}`,
+        );
   }
   if (!probe.workloads.includes(workload)) {
     return refuse(
@@ -992,6 +1046,7 @@ export const selectMlDestination = async (
     holdUsd: request.holdUsd,
     studioFeature: request.studioFeature,
     createdCloudJob,
+    photoOperation: request.photoOperation,
   });
   if (!preflight.admitted && preflight.refusal !== MlAdmissionRefusal.DestinationUnhealthy) {
     throw new MlDestinationRefusedError(preflight.refusal, request.workload, destination.id, preflight.detail);
@@ -1022,7 +1077,8 @@ export const selectMlDestination = async (
   };
   const poolEligible =
     !!selectBackgroundPool &&
-    [MlWorkload.Clip, MlWorkload.Ocr, MlWorkload.Face].includes(request.workload) &&
+    ([MlWorkload.Clip, MlWorkload.Ocr, MlWorkload.Face].includes(request.workload) ||
+      (request.workload === MlWorkload.Enrichment && !!request.description)) &&
     [MlDestinationKind.Local, MlDestinationKind.Lan].includes(destination.kind);
   if (poolEligible && request.desktopPool !== 'skip') {
     // Desktop capacity is admitted by its own qualification; NAS backend health is irrelevant to it. A desktop
@@ -1039,7 +1095,7 @@ export const selectMlDestination = async (
       },
       { requireReady: true },
     );
-    if (pool.desktopClip || pool.desktopOcr || pool.desktopFace) {
+    if (pool.desktopClip || pool.desktopOcr || pool.desktopFace || pool.desktopDescription) {
       await assertAuthority();
       return pool;
     }
@@ -1102,6 +1158,7 @@ export const selectMlDestination = async (
     holdUsd: request.holdUsd,
     studioFeature: request.studioFeature,
     createdCloudJob,
+    photoOperation: request.photoOperation,
   });
   if (!verdict.admitted) {
     throw new MlDestinationRefusedError(

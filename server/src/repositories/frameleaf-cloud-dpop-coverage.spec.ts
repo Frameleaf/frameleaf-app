@@ -52,12 +52,14 @@ const RAW_FETCH = {
   'repositories/icloud-transport.repository.ts': 'local bridge health probe',
   // local and self-hosted ML workers
   'repositories/machine-learning.repository.ts': 'ML workers',
-  // FL-355: fixed public icon pack, anonymous whole-pack download with a pinned checksum; no instance token.
-  'repositories/map.repository.ts': 'public landmark icon pack',
+  // FL-355: fixed public icon pack, FL-987: fixed public place-name pack. Anonymous whole-pack downloads with a
+  // pinned checksum; no instance token.
+  'repositories/map.repository.ts': 'public landmark icon and place-name packs',
   // FL-632: Save a link reads a typed page's title and picture through the guarded public-only fetch
   // (no private addresses, checked at connect and on each redirect); anonymous, no instance token.
   // FL-1420: also every hop of a user's workflow HTTP step (fetchAutomationHop)
-  'utils/public-fetch.ts': 'link preview of a public page, automation messages and workflow HTTP steps',
+  // FL-926: and UnifiedPush messages to a device's push server (sendWebhook, same address checks)
+  'utils/public-fetch.ts': 'link preview of a public page, automation messages, workflow HTTP steps and UnifiedPush',
   // generic OIDC profile pictures
   'repositories/oauth.repository.ts': 'OIDC profile picture',
   // the public release feed: anonymous on purpose, no instance identity is ever sent (FL-80, FL-192)
@@ -67,6 +69,14 @@ const RAW_FETCH = {
   'services/help.service.ts': 'help website articles and Ask',
   // FL-283: fixed api.stripe.com checkout/reconciliation with the studio's Stripe key; never a Cloud/media call.
   'services/photography-workflow.service.ts': 'studio-owned Stripe checkout and payment reconciliation',
+  // FL-920: import connections read the person's own Dropbox, Google Drive and OneDrive at those services' fixed
+  // addresses with that account's token; broker sign-in goes through FrameleafCloudRepository.
+  'import-connectors/dropbox.source.ts': 'Dropbox API with the connected account token',
+  'import-connectors/google-drive.source.ts': 'Google Drive API with the connected account token',
+  'import-connectors/onedrive.source.ts': 'Microsoft Graph with the connected account token',
+  'import-connectors/provider-http.ts': 'shared transport for those three provider APIs',
+  // FL-1012: another household's server, with a Cloud-issued grant bound by a DPoP proof on every request.
+  'utils/household-client.ts': 'DPoP-authenticated household peer transport',
   // Buddy vault requests carry source-key DPoP and require a pinned destination receipt (buddy-backup-client.spec.ts).
   // Cloud grants still use FrameleafCloudRepository through BuddyBackupPeerService.cloud.
   'utils/buddy-backup-client.ts': 'DPoP-authenticated Buddy peer transport',
@@ -114,10 +124,11 @@ describe('every Frameleaf Cloud call sends a DPoP proof (FC-50, CLD-201)', () =>
   });
 
   describe('source', () => {
-    it('keeps the landmark pack request anonymous and bounded by its timeout', () => {
+    it('keeps the landmark and place-name pack requests anonymous and bounded by their timeouts', () => {
       const source = readFileSync(join(SRC, 'repositories/map.repository.ts'), 'utf8');
-      expect(source.match(/\bfetch\(/g)).toHaveLength(1);
+      expect(source.match(/\bfetch\(/g)).toHaveLength(2);
       expect(source).toContain('fetch(pack.url, { signal: AbortSignal.timeout(LANDMARK_ICON_DOWNLOAD_TIMEOUT_MS) })');
+      expect(source).toContain('fetch(pack.url, { signal: AbortSignal.timeout(PLACE_NAME_PACK_TIMEOUT_MS) })');
     });
 
     it('has no raw fetch outside the reviewed list', () => {

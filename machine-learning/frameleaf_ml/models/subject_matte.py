@@ -27,7 +27,7 @@ import io
 import threading
 from collections.abc import Callable, Generator, Sequence
 from pathlib import Path
-from typing import Any, ClassVar, Literal, cast
+from typing import Any, ClassVar, Literal, cast, overload
 
 import numpy as np
 from numpy.typing import NDArray
@@ -123,6 +123,23 @@ def matte_png(probability: NDArray[np.float32], width: int, height: int) -> str:
     return base64.b64encode(png.getvalue()).decode("ascii")
 
 
+def _checked_header(image: Image.Image, size: tuple[int, int] | None) -> tuple[int, int]:
+    width, height = image.size
+    if width <= 0 or height <= 0 or max(width, height) > MAX_EDGE:
+        raise ValueError(f"Cut-out frames must have an edge of at most {MAX_EDGE} pixels")
+    if size is not None and (width, height) != size:
+        raise ValueError("Every cut-out frame must be the same size")
+    return width, height
+
+
+def frame_size(data: bytes, size: tuple[int, int] | None = None) -> tuple[int, int]:
+    """An uploaded frame's size from its header alone, with the checks `open_frame` makes."""
+    if len(data) > MAX_FRAME_BYTES:
+        raise ValueError(f"A cut-out frame is at most {MAX_FRAME_BYTES // (1024 * 1024)} MiB")
+    with Image.open(io.BytesIO(data)) as image:
+        return _checked_header(image, size)
+
+
 def open_frame(data: bytes, size: tuple[int, int] | None = None) -> Image.Image:
     """Decode one uploaded frame, refusing it from its header before any pixel is decoded.
 
@@ -133,23 +150,46 @@ def open_frame(data: bytes, size: tuple[int, int] | None = None) -> Image.Image:
     if len(data) > MAX_FRAME_BYTES:
         raise ValueError(f"A cut-out frame is at most {MAX_FRAME_BYTES // (1024 * 1024)} MiB")
     image = Image.open(io.BytesIO(data))
-    width, height = image.size
-    if width <= 0 or height <= 0 or max(width, height) > MAX_EDGE:
-        raise ValueError(f"Cut-out frames must have an edge of at most {MAX_EDGE} pixels")
-    if size is not None and (width, height) != size:
-        raise ValueError("Every cut-out frame must be the same size")
+    _checked_header(image, size)
     image.load()
     return image if image.mode == "RGB" else image.convert("RGB")
+
+
+class EncodedFrames(Sequence[Image.Image]):
+    """A clip's uploaded frames, kept encoded and decoded one at a time as they are read.
+
+    Every header was checked when the clip was received, so all frames are `size`. Decoding the whole
+    clip up front would hold up to MAX_FRAMES RGB frames (about 1.8 GB) per request.
+    """
+
+    def __init__(self, frames: list[bytes], size: tuple[int, int]) -> None:
+        self._frames = frames
+        self.size = size
+
+    def __len__(self) -> int:
+        return len(self._frames)
+
+    @overload
+    def __getitem__(self, index: int) -> Image.Image: ...
+
+    @overload
+    def __getitem__(self, index: slice) -> Sequence[Image.Image]: ...
+
+    def __getitem__(self, index: int | slice) -> Image.Image | Sequence[Image.Image]:
+        if isinstance(index, slice):
+            return [open_frame(data, self.size) for data in self._frames[index]]
+        return open_frame(self._frames[index], self.size)
 
 
 def check_frames(frames: Sequence[Image.Image]) -> tuple[int, int]:
     """Every frame the same size and within the bounds; answers that size."""
     if not 1 <= len(frames) <= MAX_FRAMES:
         raise ValueError(f"A cut-out needs between 1 and {MAX_FRAMES} frames")
-    width, height = frames[0].size
+    # Encoded frames had every header checked on arrival; reading their sizes here would decode them.
+    width, height = frames.size if isinstance(frames, EncodedFrames) else frames[0].size
     if width <= 0 or height <= 0 or max(width, height) > MAX_EDGE:
         raise ValueError(f"Cut-out frames must have an edge of at most {MAX_EDGE} pixels")
-    if any(frame.size != (width, height) for frame in frames):
+    if not isinstance(frames, EncodedFrames) and any(frame.size != (width, height) for frame in frames):
         raise ValueError("Every cut-out frame must be the same size")
     return width, height
 
@@ -256,8 +296,13 @@ class SubjectMatteModel(InferenceModel):
         width, height = check_frames(frames)
         if not (1 <= matteWidth <= MAX_MATTE_EDGE and 1 <= matteHeight <= MAX_MATTE_EDGE):
             raise ValueError(f"A matte has an edge of at most {MAX_MATTE_EDGE} pixels")
-        # Frames already in RGB are used as they are; convert() would copy every one of them.
-        rgb = [frame if frame.mode == "RGB" else frame.convert("RGB") for frame in frames]
+        # Frames already in RGB are used as they are; convert() would copy every one of them. Encoded
+        # frames decode to RGB one at a time as they are followed.
+        rgb: Sequence[Image.Image] = (
+            frames
+            if isinstance(frames, EncodedFrames)
+            else [frame if frame.mode == "RGB" else frame.convert("RGB") for frame in frames]
+        )
         total = len(rgb)
         # The handler advances this generator on any thread of the pool, and inference mode is
         # thread-local: it is entered around each unit of model work, never across a yield.

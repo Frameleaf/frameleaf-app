@@ -1164,11 +1164,29 @@ export class NativeOperations {
       throw new Refusal('native_action_unavailable');
     if (!['start', 'stop', 'restart', 'backup'].includes(kind))
       throw new Refusal('invalid_control_operation');
+    if (kind === 'backup')
+      this.refuseUnconfirmedShutdown('backup', key, { ...this.runtime.identity }, 'native_backup_owner_unavailable');
     const { operation, created } = this.store.start(kind, key, {
       ...this.runtime.identity,
     });
     if (created) this.launch(operation);
     return operation;
+  }
+  /**
+   * After the server exits unexpectedly only Stop or Start clears the fault. A new backup or restore would take
+   * the single-operation lock, be refused by its runner, and keep holding it, so those two could not run.
+   * FL-1770: every state in which the runner refuses a first run is refused here too, not only an unconfirmed
+   * shutdown (native-backup-operation and native-restore-operation make the same check).
+   */
+  private refuseUnconfirmedShutdown(kind: 'backup' | 'restore', key: string, input: Record<string, unknown>, code: string) {
+    if (this.store.request(kind, key, input)) return;
+    const status = this.runtime.status();
+    if (status.state !== 'unknown') return;
+    const usable =
+      kind === 'backup'
+        ? ['native_owner_not_attached', 'native_database_maintenance', 'native_checkpoint_cleanup_maintenance']
+        : ['native_owner_not_attached'];
+    if (!usable.includes(status.code ?? '')) throw new Refusal(code);
   }
   admitMediaMove(key: string, input: Record<string, unknown>): Operation {
     if (!this.mediaMoveWork) throw new Refusal('native_action_unavailable');
@@ -1211,6 +1229,7 @@ export class NativeOperations {
       !checkpointOperation.safeParse(key).success
     )
       throw new Refusal('native_restore_request_invalid');
+    this.refuseUnconfirmedShutdown('restore', key, { reviewId, ...this.runtime.identity }, 'native_restore_owner_unavailable');
     const { operation, created } = this.store.start('restore', key, {
       reviewId,
       ...this.runtime.identity,

@@ -1,5 +1,5 @@
 import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
-import { KeyObject, generateKeyPairSync, randomUUID } from 'node:crypto';
+import { KeyObject, createECDH, generateKeyPairSync, randomBytes, randomUUID } from 'node:crypto';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -19,7 +19,9 @@ import { FrameleafCloudPushRepository } from 'src/repositories/frameleaf-cloud-p
 import { FrameleafCloudRepository } from 'src/repositories/frameleaf-cloud.repository.js';
 import { InstanceIdentityRepository } from 'src/repositories/instance-identity.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { UnifiedPushRepository } from 'src/repositories/unified-push.repository.js';
 import { PushService } from 'src/services/push.service.js';
+import { getConfig } from 'src/utils/config.js';
 import { FrameleafCloudError } from 'src/utils/frameleaf-cloud.js';
 import { PushNotice, PushSendRequest, PushSendResult, PushTargetKind, collapseIdOf } from 'src/utils/frameleaf-push.js';
 import { NOTIFICATION_CATALOGS, type NotificationCatalogs } from 'src/utils/notification-locale.js';
@@ -28,6 +30,11 @@ import { openPushEnvelope } from 'src/utils/push-crypto.js';
 import { FakeCloud, startFakeCloud, tokenAnswer } from 'test/fake-frameleaf-cloud.js';
 import localeFixtures from 'test/fixtures/system-notification-locale.json' with { type: 'json' };
 import { factory } from 'test/small.factory.js';
+
+vi.mock('src/utils/config.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('src/utils/config.js')>()),
+  getConfig: vi.fn(),
+}));
 
 type DeviceKey = { publicKey: string; privateKey: KeyObject };
 
@@ -47,6 +54,9 @@ const device = (key: DeviceKey, overrides: Partial<PushDeviceWithActivities> = {
   publicKey: key.publicKey,
   backupDeviceKey: null,
   disabledEvents: [],
+  unifiedPushEndpoint: null,
+  unifiedPushPublicKey: null,
+  unifiedPushAuth: null,
   createdAt: new Date('2026-10-01T00:00:00.000Z'),
   updatedAt: new Date('2026-10-01T00:00:00.000Z'),
   lastDeliveredAt: null,
@@ -58,7 +68,17 @@ const device = (key: DeviceKey, overrides: Partial<PushDeviceWithActivities> = {
 const CLOUD_URL = 'https://cloud.frameleaf.test';
 const APNS_TOKEN = 'f'.repeat(64);
 
-const newHarness = (options: { linked?: boolean; cloudUrl?: string | null; cloneSuspected?: boolean } = {}) => {
+const newHarness = (
+  options: {
+    linked?: boolean;
+    cloudUrl?: string | null;
+    cloneSuspected?: boolean;
+    unifiedPush?: { allowLocalTargets?: boolean; availability?: string };
+    cloudPushRequiresPlan?: boolean;
+    /** FL-926: the real UnifiedPush client (its address checks), instead of a mock. */
+    realUnifiedPush?: boolean;
+  } = {},
+) => {
   const cloudUrl = options.cloudUrl === undefined ? CLOUD_URL : options.cloudUrl;
   const metadata = new Map<string, unknown>();
   if (options.linked ?? true) {
@@ -87,7 +107,19 @@ const newHarness = (options: { linked?: boolean; cloudUrl?: string | null; clone
     getPreviewSafeAssetIds: vi.fn().mockResolvedValue(new Set()),
     getStaleBackupWakeTargets: vi.fn().mockResolvedValue([]),
     markStaleWake: vi.fn(),
+    getById: vi.fn(),
+    hasUnifiedPushDevices: vi.fn().mockResolvedValue(false),
+    deleteGoneUnifiedPush: vi.fn(),
   };
+  const unifiedPush = {
+    checkEndpoint: vi.fn(),
+    send: vi.fn().mockResolvedValue({ status: 'sent' }),
+  };
+  vi.mocked(getConfig).mockResolvedValue({
+    notifications: {
+      unifiedPush: { allowLocalTargets: false, availability: 'all', ...options.unifiedPush },
+    },
+  } as never);
   const sent: PushSendRequest[] = [];
   const gateway = {
     target: vi.fn().mockResolvedValue({ url: `${CLOUD_URL}/v1/push/send`, token: { accessToken: 't' } }),
@@ -106,7 +138,15 @@ const newHarness = (options: { linked?: boolean; cloudUrl?: string | null; clone
   };
   const sut = new PushService(
     LoggingRepository.create(),
-    { getEnv: () => ({ frameleafCloud: { url: cloudUrl, identityDir: '/tmp/identity' } }) } as never,
+    {
+      getEnv: () => ({
+        frameleafCloud: {
+          url: cloudUrl,
+          identityDir: '/tmp/identity',
+          pushRequiresPlan: options.cloudPushRequiresPlan,
+        },
+      }),
+    } as never,
     {
       get: vi.fn((key: string) => Promise.resolve(metadata.get(key) ?? null)),
       set: vi.fn((key: string, value: unknown) => {
@@ -122,8 +162,9 @@ const newHarness = (options: { linked?: boolean; cloudUrl?: string | null; clone
     jobs as never,
     users as never,
     albums as never,
+    options.realUnifiedPush ? new UnifiedPushRepository() : (unifiedPush as never),
   );
-  return { sut, devices, gateway, sent, jobs, users, albums };
+  return { sut, devices, gateway, sent, jobs, users, albums, unifiedPush, metadata };
 };
 
 const decrypt = (request: PushSendRequest, key: DeviceKey) =>
@@ -266,6 +307,9 @@ describe(PushService.name, () => {
         publicKey: key.publicKey,
         backupDeviceKey: null,
         disabledEvents: [PushEventType.Memories],
+        unifiedPushEndpoint: null,
+        unifiedPushPublicKey: null,
+        unifiedPushAuth: null,
       });
       expect(result).toMatchObject({ current: true, hasPushToStartToken: true, preferences: { memories: false } });
       expect(JSON.stringify(result)).not.toContain('apns-1-0123456789abcdef0123456789abcdef');
@@ -1036,6 +1080,7 @@ describe(PushService.name, () => {
         deleteByIds: vi.fn(),
         clearPushToStartTokens: vi.fn(),
         deleteActivitiesByIds: vi.fn(),
+        deleteGoneUnifiedPush: vi.fn(),
         markDelivered: vi.fn(),
       };
       const cloudRepository = new FrameleafCloudRepository(LoggingRepository.create());
@@ -1056,6 +1101,7 @@ describe(PushService.name, () => {
         { queue: vi.fn() } as never,
         { getAdmins: vi.fn().mockResolvedValue([]), getMetadata: vi.fn().mockResolvedValue([]) } as never,
         { getById: vi.fn() } as never,
+        new UnifiedPushRepository(),
       );
 
       await expect(
@@ -1072,6 +1118,457 @@ describe(PushService.name, () => {
       expect(payload).toMatchObject({ title: 'Trip', preview: null, assetIds: [] });
       expect(JSON.stringify(payload)).not.toContain('locked');
       expect(devices.markDelivered).toHaveBeenCalled();
+    });
+  });
+
+  describe('UnifiedPush (FL-926)', () => {
+    const ENDPOINT = 'https://ntfy.example.net/upAbCdEfGhIjKl?up=1';
+
+    const newWebPushKeys = () => {
+      const ecdh = createECDH('prime256v1');
+      ecdh.generateKeys();
+      return {
+        privateKey: ecdh.getPrivateKey(),
+        p256dh: ecdh.getPublicKey().toString('base64url'),
+        auth: randomBytes(16).toString('base64url'),
+      };
+    };
+
+    const unifiedPushDevice = (key: DeviceKey, overrides: Partial<PushDeviceWithActivities> = {}) => {
+      const webPush = newWebPushKeys();
+      return device(key, {
+        platform: PushPlatform.Android,
+        pushToken: null,
+        unifiedPushEndpoint: ENDPOINT,
+        unifiedPushPublicKey: webPush.p256dh,
+        unifiedPushAuth: webPush.auth,
+        ...overrides,
+      });
+    };
+
+    const activeLicence = () => ({
+      key: { kind: 'server', claims: { exp: Math.floor(Date.now() / 1000) + 86_400, lic_exp: null, ent: ['SERVER'] } },
+      plan: null,
+    });
+
+    describe('registration', () => {
+      it('registers an Android device by its UnifiedPush endpoint and keys alone, without an FCM token', async () => {
+        const { sut, devices, unifiedPush } = newHarness({ linked: false });
+        const key = newDeviceKey();
+        const webPush = newWebPushKeys();
+        devices.getBySession.mockResolvedValue(undefined);
+        devices.upsert.mockImplementation((registration) => Promise.resolve(device(key, registration)));
+
+        const result = await sut.register(factory.auth({ session: {} }), {
+          platform: PushPlatform.Android,
+          publicKey: key.publicKey,
+          unifiedPushEndpoint: ENDPOINT,
+          // standard base64 with padding is accepted and stored as unpadded base64url
+          unifiedPushPublicKey: Buffer.from(webPush.p256dh, 'base64url').toString('base64'),
+          unifiedPushAuth: webPush.auth,
+        });
+
+        expect(unifiedPush.checkEndpoint).toHaveBeenCalledWith(ENDPOINT, { allowLocalTargets: false });
+        expect(devices.upsert).toHaveBeenCalledWith(
+          expect.objectContaining({
+            platform: PushPlatform.Android,
+            pushToken: null,
+            unifiedPushEndpoint: ENDPOINT,
+            unifiedPushPublicKey: webPush.p256dh,
+            unifiedPushAuth: webPush.auth,
+          }),
+        );
+        expect(result).toMatchObject({
+          transport: 'unifiedpush',
+          unifiedPush: { endpointHost: 'ntfy.example.net', available: true, reason: null },
+        });
+        // the endpoint is a capability: only its host is ever returned
+        expect(JSON.stringify(result)).not.toContain('upAbCdEfGhIjKl');
+        expect(JSON.stringify(result)).not.toContain(webPush.auth);
+      });
+
+      it('refuses UnifiedPush from iOS, without its keys, with bad keys, and a device with no way to reach it', async () => {
+        const { sut } = newHarness();
+        const key = newDeviceKey();
+        const webPush = newWebPushKeys();
+        const auth = factory.auth({ session: {} });
+        const base = { platform: PushPlatform.Android, publicKey: key.publicKey };
+        const up = {
+          unifiedPushEndpoint: ENDPOINT,
+          unifiedPushPublicKey: webPush.p256dh,
+          unifiedPushAuth: webPush.auth,
+        };
+
+        await expect(
+          sut.register(auth, { ...base, ...up, platform: PushPlatform.Ios, pushToken: APNS_TOKEN }),
+        ).rejects.toThrow('Only Android devices use UnifiedPush');
+        await expect(sut.register(auth, { ...base, unifiedPushEndpoint: ENDPOINT })).rejects.toThrow(
+          'needs its unifiedPushPublicKey and unifiedPushAuth',
+        );
+        await expect(sut.register(auth, { ...base, ...up, unifiedPushPublicKey: key.publicKey })).rejects.toThrow(
+          BadRequestException,
+        );
+        await expect(sut.register(auth, { ...base, ...up, unifiedPushAuth: 'AAAA' })).rejects.toThrow('16 bytes');
+        await expect(sut.register(auth, base)).rejects.toThrow('A push token is needed');
+      });
+
+      it('refuses an endpoint on this network, or this server itself, unless allowed (SSRF guard)', async () => {
+        const key = newDeviceKey();
+        const webPush = newWebPushKeys();
+        const auth = factory.auth({ session: {} });
+        const registration = (endpoint: string) => ({
+          platform: PushPlatform.Android,
+          publicKey: key.publicKey,
+          unifiedPushEndpoint: endpoint,
+          unifiedPushPublicKey: webPush.p256dh,
+          unifiedPushAuth: webPush.auth,
+        });
+
+        const strict = newHarness({ realUnifiedPush: true });
+        for (const endpoint of [
+          'https://192.168.1.20/upAbCdEfGhIjKl',
+          'https://127.0.0.1/upAbCdEfGhIjKl',
+          'https://localhost/upAbCdEfGhIjKl',
+          'https://169.254.169.254/latest',
+          // eslint-disable-next-line unicorn/prefer-https -- plain http to a public host is refused
+          'http://ntfy.example.net/upAbCdEfGhIjKl',
+          'https://user:pass@ntfy.example.net/up',
+        ]) {
+          await expect(strict.sut.register(auth, registration(endpoint))).rejects.toThrow(
+            'not at a public https address',
+          );
+        }
+
+        const local = newHarness({ realUnifiedPush: true, unifiedPush: { allowLocalTargets: true } });
+        local.devices.upsert.mockImplementation((value) => Promise.resolve(device(key, value)));
+        await expect(
+          local.sut.register(auth, registration('http://192.168.1.20:8080/upAbCdEfGhIjKl?up=1')),
+        ).resolves.toMatchObject({ transport: 'unifiedpush' });
+        // loopback and link-local stay out of reach even then
+        await expect(local.sut.register(auth, registration('https://127.0.0.1/up'))).rejects.toThrow(
+          BadRequestException,
+        );
+        await expect(local.sut.register(auth, registration('https://[fe80::1]/up'))).rejects.toThrow(
+          BadRequestException,
+        );
+      });
+
+      it('switches back to the Cloud gateway when the device clears its endpoint, but never to nothing', async () => {
+        const { sut, devices } = newHarness();
+        const key = newDeviceKey();
+        const auth = factory.auth({ session: {} });
+        const current = unifiedPushDevice(key);
+        devices.getBySession.mockResolvedValue(current);
+        devices.update.mockImplementation((_session, changes) => Promise.resolve({ ...current, ...changes }));
+
+        await expect(sut.update(auth, { unifiedPushEndpoint: null })).rejects.toThrow('needs a push token');
+
+        const result = await sut.update(auth, {
+          unifiedPushEndpoint: null,
+          pushToken: 'fcm-0123456789abcdef0123456789abcdef',
+        });
+        expect(devices.update).toHaveBeenCalledWith(auth.session!.id, {
+          pushToken: 'fcm-0123456789abcdef0123456789abcdef',
+          unifiedPushEndpoint: null,
+          unifiedPushPublicKey: null,
+          unifiedPushAuth: null,
+        });
+        expect(result).toMatchObject({ transport: 'cloud', unifiedPush: null });
+      });
+    });
+
+    describe('delivery', () => {
+      it('delivers to a UnifiedPush device on a server with no Cloud link, with the payload the gateway would get', async () => {
+        const { sut, devices, gateway, unifiedPush } = newHarness({ linked: false });
+        const key = newDeviceKey();
+        const target = unifiedPushDevice(key, { userId: 'user-1' });
+        devices.hasUnifiedPushDevices.mockResolvedValue(true);
+        devices.getDeliveryTargets.mockResolvedValue([target]);
+
+        await expect(sut.handleDeliver({ notice: notice({ dedupeKey: 'album-update/1' }) })).resolves.toBe(
+          JobStatus.Success,
+        );
+
+        expect(gateway.send).not.toHaveBeenCalled();
+        expect(unifiedPush.send).toHaveBeenCalledTimes(1);
+        const [subscription, message, options] = unifiedPush.send.mock.calls[0];
+        expect(subscription).toEqual({
+          endpoint: ENDPOINT,
+          p256dh: target.unifiedPushPublicKey,
+          auth: target.unifiedPushAuth,
+        });
+        expect(options).toEqual({ allowLocalTargets: false });
+        expect(message).toMatchObject({ ttlSec: 86_400, urgency: 'high', topic: collapseIdOf('album-update/1') });
+        const plaintext = JSON.parse(message.plaintext.toString('utf8'));
+        // exactly the data an FCM push from the gateway carries: the envelope and the push type
+        expect(plaintext).toEqual({ e: expect.any(String), t: 'alert' });
+        expect(decrypt({ payload: plaintext.e } as PushSendRequest, key)).toMatchObject({
+          title: 'Trip',
+          body: 'New items in Trip',
+        });
+        expect(message.plaintext.toString('utf8')).not.toContain('Trip');
+        expect(devices.markDelivered).toHaveBeenCalledWith([target.id]);
+      });
+
+      it('routes each device by its own way: UnifiedPush when it has an endpoint, else the gateway', async () => {
+        const { sut, devices, sent, unifiedPush } = newHarness();
+        const upDevice = unifiedPushDevice(newDeviceKey(), { pushToken: 'fcm-0123456789abcdef0123456789abcdef' });
+        const cloudDevice = device(newDeviceKey(), { pushToken: APNS_TOKEN });
+        devices.getDeliveryTargets.mockResolvedValue([upDevice, cloudDevice]);
+
+        await sut.handleDeliver({ notice: notice() });
+
+        expect(unifiedPush.send).toHaveBeenCalledTimes(1);
+        expect(unifiedPush.send.mock.calls[0][0].endpoint).toBe(ENDPOINT);
+        expect(sent).toHaveLength(1);
+        expect(sent[0].token).toBe(APNS_TOKEN);
+        expect(devices.markDelivered.mock.calls[0][0].toSorted()).toEqual([upDevice.id, cloudDevice.id].toSorted());
+      });
+
+      it('unregisters a device whose endpoint is gone (404/410)', async () => {
+        const { sut, devices, unifiedPush, jobs } = newHarness({ linked: false });
+        const target = unifiedPushDevice(newDeviceKey());
+        devices.hasUnifiedPushDevices.mockResolvedValue(true);
+        devices.getDeliveryTargets.mockResolvedValue([target]);
+        unifiedPush.send.mockResolvedValue({ status: 'gone' });
+
+        await sut.handleDeliver({ notice: notice() });
+
+        expect(devices.deleteGoneUnifiedPush).toHaveBeenCalledWith([{ id: target.id, endpoint: ENDPOINT }]);
+        expect(devices.markDelivered).toHaveBeenCalledWith([]);
+        expect(jobs.queue).not.toHaveBeenCalled();
+      });
+
+      it('backs off after a 429 by its Retry-After, for a bounded number of attempts', async () => {
+        const { sut, devices, unifiedPush, jobs } = newHarness({ linked: false });
+        const target = unifiedPushDevice(newDeviceKey());
+        devices.hasUnifiedPushDevices.mockResolvedValue(true);
+        devices.getDeliveryTargets.mockResolvedValue([target]);
+        unifiedPush.send.mockResolvedValue({ status: 'retry', retryAfterSec: 120 });
+
+        let data: { notice: PushNotice } = { notice: notice() };
+        const attempts: number[] = [];
+        for (let run = 0; run < 10; run++) {
+          jobs.queue.mockClear();
+          await sut.handleDeliver(data);
+          if (jobs.queue.mock.calls.length === 0) {
+            break;
+          }
+          expect(jobs.queue).toHaveBeenCalledTimes(1);
+          const next = jobs.queue.mock.calls[0][0].data as { notice: PushNotice };
+          attempts.push(next.notice.retry!.attempt);
+          // the first retry waits for Retry-After (2 min) rather than the 30 s backoff
+          if (next.notice.retry!.attempt === 2) {
+            expect(next.notice.delayMs).toBe(120_000);
+          }
+          expect(next.notice.retry!.targets).toEqual([`${target.id}:${PushTargetKind.Device}:`]);
+          data = next;
+        }
+
+        expect(attempts).toEqual([2, 3, 4, 5]);
+        expect(unifiedPush.send).toHaveBeenCalledTimes(5);
+        expect(devices.deleteGoneUnifiedPush).toHaveBeenCalledWith([]);
+      });
+
+      it('refuses, without retrying, an endpoint that points at this network or this server (SSRF guard)', async () => {
+        const { sut, devices, jobs } = newHarness({ linked: false, realUnifiedPush: true });
+        devices.hasUnifiedPushDevices.mockResolvedValue(true);
+        devices.getDeliveryTargets.mockResolvedValue([
+          unifiedPushDevice(newDeviceKey(), { unifiedPushEndpoint: 'https://127.0.0.1:8080/upAbCdEfGhIjKl' }),
+          unifiedPushDevice(newDeviceKey(), { unifiedPushEndpoint: 'https://10.0.0.7/upAbCdEfGhIjKl' }),
+          unifiedPushDevice(newDeviceKey(), { unifiedPushEndpoint: 'https://metadata.google.internal/up' }),
+        ]);
+
+        await expect(sut.handleDeliver({ notice: notice() })).resolves.toBe(JobStatus.Success);
+
+        expect(devices.markDelivered).toHaveBeenCalledWith([]);
+        expect(devices.deleteGoneUnifiedPush).toHaveBeenCalledWith([]);
+        expect(jobs.queue).not.toHaveBeenCalled();
+      });
+
+      it('queues events for UnifiedPush devices on a server with no Cloud link', async () => {
+        const { sut, devices, jobs } = newHarness({ linked: false });
+        await sut.onPushNotify(notice());
+        expect(jobs.queue).not.toHaveBeenCalled();
+
+        devices.hasUnifiedPushDevices.mockResolvedValue(true);
+        await sut.onPushNotify(notice());
+        expect(jobs.queue).toHaveBeenCalledWith({ name: JobName.PushDeliver, data: { notice: notice() } });
+      });
+    });
+
+    describe('licensed switch (FL-908 pending)', () => {
+      it('limits UnifiedPush to a licensed server when the administrator says so', async () => {
+        const { sut, devices, gateway, unifiedPush, metadata, jobs } = newHarness({
+          unifiedPush: { availability: 'licensed' },
+        });
+        const key = newDeviceKey();
+        const webPush = newWebPushKeys();
+        const auth = factory.auth({ session: {} });
+        const registration = {
+          platform: PushPlatform.Android,
+          publicKey: key.publicKey,
+          unifiedPushEndpoint: ENDPOINT,
+          unifiedPushPublicKey: webPush.p256dh,
+          unifiedPushAuth: webPush.auth,
+        };
+
+        // registration
+        await expect(sut.register(auth, registration)).rejects.toThrow(ForbiddenException);
+        await expect(sut.getStatus(auth)).resolves.toMatchObject({
+          unifiedPush: { available: false, reason: 'licence-required', encoding: 'aes128gcm' },
+        });
+
+        // send: a device with an FCM token falls back to the gateway; one without is not reached
+        const withToken = unifiedPushDevice(key, { pushToken: 'fcm-0123456789abcdef0123456789abcdef' });
+        const withoutToken = unifiedPushDevice(newDeviceKey());
+        devices.getDeliveryTargets.mockResolvedValue([withToken, withoutToken]);
+        await sut.handleDeliver({ notice: notice() });
+        expect(unifiedPush.send).not.toHaveBeenCalled();
+        expect(gateway.send).toHaveBeenCalledTimes(1);
+        expect(gateway.send.mock.calls[0][1]).toMatchObject({ platform: 'fcm', token: withToken.pushToken });
+        devices.getByUser.mockResolvedValue([withoutToken]);
+        await expect(sut.listDevices(auth)).resolves.toMatchObject({
+          devices: [{ transport: 'unifiedpush', unifiedPush: { available: false, reason: 'licence-required' } }],
+        });
+
+        // an unlinked, unlicensed server queues nothing for UnifiedPush devices
+        metadata.delete(SystemMetadataKey.FrameleafCloudLink);
+        devices.hasUnifiedPushDevices.mockResolvedValue(true);
+        await sut.onPushNotify(notice());
+        expect(jobs.queue).not.toHaveBeenCalled();
+
+        // with an active licence it is available again
+        metadata.set(SystemMetadataKey.FrameleafLicense, activeLicence());
+        devices.upsert.mockImplementation((value) => Promise.resolve(device(key, value)));
+        await expect(sut.register(auth, registration)).resolves.toMatchObject({ transport: 'unifiedpush' });
+        await sut.handleDeliver({ notice: notice() });
+        expect(unifiedPush.send).toHaveBeenCalledTimes(2);
+      });
+    });
+
+    describe('Cloud push plan switch (FL-908 pending)', () => {
+      const cloudPlan = () => ({
+        key: null,
+        plan: { kind: 'plan', claims: { exp: Math.floor(Date.now() / 1000) + 86_400, lic_exp: null, ent: ['CLOUD'] } },
+      });
+
+      it.each([false, true])('leaves Cloud push alone when off, never reading the licence (plan: %s)', async (plan) => {
+        const { sut, devices, gateway, metadata } = newHarness();
+        if (plan) {
+          metadata.set(SystemMetadataKey.FrameleafLicense, cloudPlan());
+        }
+        const read = vi.spyOn(metadata, 'get');
+        devices.getDeliveryTargets.mockResolvedValue([device(newDeviceKey())]);
+        await expect(sut.getStatus(factory.auth({ session: {} }))).resolves.toMatchObject({ available: true });
+        await sut.handleDeliver({ notice: notice() });
+        expect(gateway.send).toHaveBeenCalledTimes(1);
+        expect(read).not.toHaveBeenCalledWith(SystemMetadataKey.FrameleafLicense);
+      });
+
+      it('asks only for devices it can reach when waking stale backups', async () => {
+        const { sut, devices } = newHarness({ linked: false });
+        devices.hasUnifiedPushDevices.mockResolvedValue(true);
+        await sut.handleBackupStaleCheck();
+        expect(devices.getStaleBackupWakeTargets).toHaveBeenCalledWith(expect.any(Date), expect.any(Date), {
+          cloud: false,
+          unifiedPush: true,
+        });
+      });
+
+      it('refuses an endpoint clear when the conditional write finds no token left', async () => {
+        const { sut, devices } = newHarness();
+        const stored = device(newDeviceKey());
+        devices.getBySession.mockResolvedValue(stored);
+        devices.update.mockResolvedValue(undefined);
+        await expect(
+          sut.update(factory.auth({ session: { id: stored.sessionId } }), { unifiedPushEndpoint: null }),
+        ).rejects.toThrow(BadRequestException);
+      });
+
+      it('holds Cloud push without a plan when on, and never UnifiedPush', async () => {
+        const { sut, devices, gateway, unifiedPush, metadata } = newHarness({ cloudPushRequiresPlan: true });
+        const cloudDevice = device(newDeviceKey());
+        const ntfyDevice = unifiedPushDevice(newDeviceKey());
+        devices.getDeliveryTargets.mockResolvedValue([cloudDevice, ntfyDevice]);
+        devices.hasUnifiedPushDevices.mockResolvedValue(true);
+
+        await expect(sut.getStatus(factory.auth({ session: {} }))).resolves.toMatchObject({
+          available: false,
+          reason: null,
+          unifiedPush: { available: true },
+        });
+        await sut.handleDeliver({ notice: notice() });
+        expect(gateway.send).not.toHaveBeenCalled();
+        expect(unifiedPush.send).toHaveBeenCalledTimes(1);
+
+        metadata.set(SystemMetadataKey.FrameleafLicense, cloudPlan());
+        await expect(sut.getStatus(factory.auth({ session: {} }))).resolves.toMatchObject({ available: true });
+        await sut.handleDeliver({ notice: notice() });
+        expect(gateway.send).toHaveBeenCalledTimes(1);
+      });
+    });
+
+    describe('test notification', () => {
+      it('sends a test to an own device by its way and says it was sent', async () => {
+        const { sut, devices, unifiedPush } = newHarness({ linked: false });
+        const auth = factory.auth({ session: {} });
+        const key = newDeviceKey();
+        // the test ignores the device's preferences
+        const target = unifiedPushDevice(key, { userId: auth.user.id, disabledEvents: [PushEventType.SharedActivity] });
+        devices.getById.mockResolvedValue(target);
+
+        await expect(sut.sendTest(auth, target.id)).resolves.toEqual({
+          transport: 'unifiedpush',
+          status: 'sent',
+          message: null,
+        });
+
+        const plaintext = JSON.parse(unifiedPush.send.mock.calls[0][1].plaintext.toString('utf8'));
+        expect(decrypt({ payload: plaintext.e } as PushSendRequest, key)).toMatchObject({
+          title: 'Test notification',
+          data: { action: 'test' },
+        });
+        expect(devices.markDelivered).toHaveBeenCalledWith([target.id]);
+      });
+
+      it("lets an administrator test anyone's device, and nobody else", async () => {
+        const { sut, devices, sent } = newHarness();
+        const target = device(newDeviceKey(), { userId: 'owner', pushToken: APNS_TOKEN });
+        devices.getById.mockResolvedValue(target);
+
+        await expect(sut.sendTest(factory.auth(), target.id)).rejects.toThrow(NotFoundException);
+        await expect(sut.sendTest(factory.auth({ user: { isAdmin: true } }), target.id)).resolves.toMatchObject({
+          transport: 'cloud',
+          status: 'sent',
+        });
+        expect(sent).toHaveLength(1);
+        devices.getById.mockResolvedValue(undefined);
+        await expect(sut.sendTest(factory.auth({ user: { isAdmin: true } }), target.id)).rejects.toThrow(
+          NotFoundException,
+        );
+      });
+
+      it('unregisters a device the push server reports gone, and reports a Cloud device of an unlinked server', async () => {
+        const { sut, devices, unifiedPush } = newHarness({ linked: false });
+        const auth = factory.auth();
+        const target = unifiedPushDevice(newDeviceKey(), { userId: auth.user.id });
+        devices.getById.mockResolvedValue(target);
+        unifiedPush.send.mockResolvedValue({ status: 'gone' });
+
+        await expect(sut.sendTest(auth, target.id)).resolves.toMatchObject({
+          transport: 'unifiedpush',
+          status: 'gone',
+        });
+        expect(devices.deleteGoneUnifiedPush).toHaveBeenCalledWith([{ id: target.id, endpoint: ENDPOINT }]);
+
+        devices.getById.mockResolvedValue(device(newDeviceKey(), { userId: auth.user.id, pushToken: APNS_TOKEN }));
+        await expect(sut.sendTest(auth, target.id)).resolves.toMatchObject({
+          transport: 'cloud',
+          status: 'unavailable',
+          message: expect.stringContaining('not-linked'),
+        });
+      });
     });
   });
 });

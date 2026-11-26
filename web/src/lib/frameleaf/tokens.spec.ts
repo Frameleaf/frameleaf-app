@@ -507,7 +507,7 @@ describe('Frameleaf theme contract', () => {
     expect(appCss).not.toContain('66 80 175');
     expect(appCss).not.toContain('172 203 250');
     // The app font is the Frameleaf stack, not the earlier bundled face.
-    expect(appCss).toMatch(/--font-sans: -apple-system, BlinkMacSystemFont, system-ui, Inter, 'Segoe UI', sans-serif;/);
+    expect(appCss).toMatch(/--font-sans: Inter, -apple-system, BlinkMacSystemFont, system-ui, 'Segoe UI', sans-serif;/);
   });
 
   it('defines the motion vocabulary as classes with exits and a Reduce Motion crossfade', () => {
@@ -691,13 +691,13 @@ describe('Frameleaf theme contract', () => {
     expect(baseline).not.toContain('fl-continuous-corners');
   });
 
-  it('starts the font stack with SF Pro and falls back to bundled Inter', () => {
+  it('starts the font stack with the bundled Inter', () => {
     const stack = base.get('--fl-family-ui');
     expect(stack?.replaceAll("'", '').replaceAll(', ', ',')).toBe(tokens.font.ui.replaceAll(', ', ','));
     // The scope sets its own face from the body step of the type scale.
     expect(css).toMatch(/\.fl-media-viewer,\s*\.frameleaf {[^}]*font: var\(--fl-type-body\);/);
-    expect(stack?.indexOf('-apple-system')).toBe(0);
-    expect(stack?.indexOf('Inter')).toBeGreaterThan(stack?.indexOf('system-ui') ?? Infinity);
+    expect(stack?.indexOf('Inter')).toBe(0);
+    expect(stack?.indexOf('system-ui')).toBeGreaterThan(0);
   });
 
   it('uses no monospace face anywhere, not even for codes, paths or keys', () => {
@@ -854,7 +854,9 @@ describe('Frameleaf theme contract', () => {
     for (const [, body] of baseline.matchAll(/@font-face\s*{([^}]+)}/g)) {
       const [, weight] = /font-weight: (\d+);/.exec(body) ?? [];
       const [, source] = /url\('([^']+)'\)/.exec(body) ?? [];
-      sources.set(weight, source);
+      if (!source?.includes('latin-ext')) {
+        sources.set(weight, source);
+      }
     }
     for (const weight of [400, 500, 600]) {
       const source = sources.get(String(weight));

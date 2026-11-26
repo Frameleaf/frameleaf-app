@@ -46,7 +46,7 @@ test("development diagnostics are read-only and dispatchable through existing Te
   assert.deepEqual(call.permissions, { contents: "read" });
   for (const [name, job] of Object.entries(entry.jobs)) {
     if (name !== "development-validation")
-      assert.match(job.if, /!inputs\.development_validation/);
+      assert.match(job.if, /inputs\.development_validation != true && inputs\.development_validation != 'true'/);
   }
   const definition = workflow("development-validation.yml");
   assert.deepEqual(Object.keys(definition.on).sort(), [

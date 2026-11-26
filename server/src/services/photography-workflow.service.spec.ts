@@ -1153,7 +1153,14 @@ describe('photography workflow integration boundaries', () => {
     await s.service.callback(...event('evt_paid'));
     expect(s.row().value.orders[0].status).toBe('settled');
     expect(s.row().value.receipts.filter((r) => r.reference === 'evt_paid')).toHaveLength(1);
+    // FL-1769: a partial refund keeps the order paid and its downloads open; the full refund ends them
     state.payment_intent.latest_charge.amount_refunded = 500;
+    await s.service.callback(...event('evt_partly_refunded', 'charge.refunded'));
+    expect(s.row().value.orders[0].status).toBe('settled');
+    expect(s.row().value.receipts.find((r) => r.reference === 'evt_partly_refunded')?.action).toBe(
+      'provider:partial-refund',
+    );
+    state.payment_intent.latest_charge.amount_refunded = 1500;
     await s.service.callback(...event('evt_refunded', 'charge.refunded'));
     expect(s.row().value.orders[0]).toMatchObject({ status: 'refunded', total: 1500, captureIds: [s.captureId] });
   });
@@ -1219,7 +1226,10 @@ describe('photography workflow integration boundaries', () => {
     // An expiry after payment never cancels it; a refund of that payment does mark it.
     await s.service.connectedPayment(event('evt_expired', 'payment.expired'));
     expect(s.row().value.orders[0].status).toBe('settled');
-    await s.service.connectedPayment(event('evt_refund', 'payment.refunded', { sessionId: null, amount: 500 }));
+    // FL-1769: a partial refund keeps the client's downloads; the running total reaching the price ends them
+    await s.service.connectedPayment(event('evt_part_refund', 'payment.refunded', { sessionId: null, amount: 500 }));
+    expect(s.row().value.orders[0].status).toBe('settled');
+    await s.service.connectedPayment(event('evt_refund', 'payment.refunded', { sessionId: null, amount: 1500 }));
     expect(s.row().value.orders[0].status).toBe('refunded');
   });
   it('records a refund that arrives before its payment, and the late success changes nothing (FL-1037)', async () => {
@@ -1819,6 +1829,25 @@ describe('photography gallery hero, studio summary and client preview', () => {
     expect((await s.service.gallery(s.shootId, client.session)).date).toBeNull();
     s.workspace.get.mockResolvedValue(undefined as never);
     expect((await s.service.gallery(s.shootId, client.session)).date).toBeNull();
+  });
+  it('refuses a favourite after the deadline as a conflict and keeps the gallery session (FL-1769)', async () => {
+    const s = await setup();
+    const client = await s.invitation();
+    await s.published();
+    s.row().value.config.selectionDeadline = new Date(Date.now() - 60_000).toISOString();
+    const refusal = await s.service
+      .choices(s.shootId, client.session, { expectedRevision: s.row().revision, captureIds: [s.captureId], notes: [] })
+      .catch((error: unknown) => error);
+    expect(refusal).toBeInstanceOf(ConflictException);
+    expect(respond(refusal as Error).body).toMatchObject({ code: 'selection_closed' });
+    // the session still opens the gallery, and notes alone are still saved
+    await expect(s.service.gallery(s.shootId, client.session)).resolves.toMatchObject({ choices: [] });
+    await s.service.choices(s.shootId, client.session, {
+      expectedRevision: s.row().revision,
+      captureIds: [],
+      notes: [{ captureId: s.captureId, text: 'Late note' }],
+    });
+    expect(s.row().value.recipients[0].notes[0].text).toBe('Late note');
   });
   it('passes the outstanding total, currency and live invitation count through the studio summary', async () => {
     const s = await setup();

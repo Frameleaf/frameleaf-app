@@ -1,11 +1,4 @@
-import {
-  AssetVisibility,
-  restoreAssets,
-  updateAsset,
-  lockAssets,
-  unlockAssets,
-  type AssetResponseDto,
-} from '@frameleaf/sdk';
+import { AssetVisibility, updateAsset, lockAssets, unlockAssets, type AssetResponseDto } from '@frameleaf/sdk';
 import { toastManager } from '@frameleaf/ui';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { AssetAction } from '$lib/constants';
@@ -13,7 +6,6 @@ import { handleError } from '$lib/utils/handle-error';
 import { toTimelineAsset } from '$lib/utils/timeline-util';
 import { assetFactory } from '@test-data/factories/asset-factory';
 import ArchiveAction from './ArchiveAction.svelte';
-import RestoreAction from './RestoreAction.svelte';
 import SetVisibilityAction from './SetVisibilityAction.svelte';
 
 const lockRequest = vi.hoisted(() => vi.fn());
@@ -29,7 +21,6 @@ vi.mock('@frameleaf/sdk', async (importOriginal) => ({
   updateAsset: vi.fn(),
   lockAssets: lockRequest,
   unlockAssets: vi.fn(),
-  restoreAssets: vi.fn(),
 }));
 vi.mock('$lib/utils/handle-error', () => ({ handleError: vi.fn() }));
 
@@ -38,7 +29,6 @@ beforeEach(() => {
   vi.mocked(updateAsset).mockReset();
   lockRequest.mockReset();
   vi.mocked(unlockAssets).mockReset();
-  vi.mocked(restoreAssets).mockReset();
   vi.mocked(handleError).mockClear();
   vi.spyOn(toastManager, 'primary').mockImplementation(() => {});
 });
@@ -77,28 +67,6 @@ it('does not publish an archive completion when the request fails', async () => 
   await fireEvent.click(screen.getByRole('menuitem'));
   await waitFor(() => expect(handleError).toHaveBeenCalled());
   expect(onAction).not.toHaveBeenCalled();
-});
-
-it('restore completion mutates and emits the invoked asset, not its replacement', async () => {
-  const first = assetFactory.build({ isTrashed: true });
-  const next = assetFactory.build({ isTrashed: true });
-  const request = deferred<Awaited<ReturnType<typeof restoreAssets>>>();
-  vi.mocked(restoreAssets).mockReturnValueOnce(request.promise);
-  const onAction = vi.fn();
-  const { rerender } = render(RestoreAction, { asset: first, onAction });
-  await fireEvent.click(screen.getByRole('menuitem'));
-  await rerender({ asset: next, onAction });
-  request.resolve({ count: 0 });
-  await waitFor(() =>
-    expect(onAction).toHaveBeenCalledWith(
-      expect.objectContaining({
-        type: AssetAction.RESTORE,
-        asset: expect.objectContaining({ id: first.id, isTrashed: false }),
-      }),
-    ),
-  );
-  expect(next.isTrashed).toBe(true);
-  expect(restoreAssets).toHaveBeenLastCalledWith({ bulkIdsDto: { ids: [first.id] } });
 });
 
 it.each([false, true])('lock completion retains its target and direction (locked=%s)', async (locked) => {

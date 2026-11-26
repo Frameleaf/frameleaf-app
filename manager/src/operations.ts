@@ -3,6 +3,7 @@ import { lstat, mkdir, readFile, writeFile, stat, statfs, rename, open, realpath
 import { basename, isAbsolute, join, relative } from 'node:path';
 import { z } from 'zod';
 import { Store } from './store.js';
+import { galleryImportRefused, importedGallery } from './gallery-preview.js';
 import { Docker, type ImportInspection } from './docker.js';
 import { Discovery, COMPATIBLE_SETTINGS, maskSettings, unmaskSettings, unsupportedSettings } from './discovery.js';
 import { Releases, type VerifiedRelease } from './releases.js';
@@ -691,6 +692,22 @@ export class Operations {
       ),
     );
   }
+  private summaryCache: { installation: string; until: number; value: Promise<unknown> } | null = null;
+  /** The dashboard polls every 10 seconds per tab; counting a large library that often is wasted work. */
+  dashboardSummary(): Promise<unknown> {
+    const installation = this.installation()?.id ?? '';
+    const held = this.summaryCache;
+    if (held?.installation === installation && held.until > Date.now()) return held.value;
+    const value = this.librarySummary();
+    const entry = { installation, until: Date.now() + 60_000, value };
+    this.summaryCache = entry;
+    // A failure, or a library not migrated yet, is asked again on the next poll.
+    const forget = () => {
+      if (this.summaryCache === entry) this.summaryCache = null;
+    };
+    value.then((summary) => summary ?? forget(), forget);
+    return value;
+  }
   private async reviewedSource(id: string, requireCompatible = true) {
     const stored = this.store.get<Source>(`source:${id}`);
     if (!stored) throw new Refusal('select_source_installation');
@@ -698,6 +715,8 @@ export class Operations {
     const source = this.editedSource(stored);
     // Review still opens so the administrator can see and edit the settings; cutover cannot start.
     if (requireCompatible && source.unsupportedSettings.length) throw new Refusal('incompatible_settings_require_review');
+    // FL-1752: the importer would refuse this Gallery, or Manager could not tell, so it is never stopped for an import.
+    if (requireCompatible && galleryImportRefused(source)) throw new Refusal('source_database_dump_failed');
     if (source.platform === 'unraid') {
       if (!this.autostartFile) throw new Refusal('unraid_autostart_file_required');
       await this.fencing.readAutostart(true);
@@ -918,6 +937,9 @@ export class Operations {
       this.store.save(operation);
       const image = await this.preparationImage(tag);
       await this.fencing.verify(capture.fence);
+      // The folder comes from the app's own settings: a link there would hand this container another host folder.
+      if ((await realpath(capture.originalsPath).catch(() => null)) !== capture.originalsPath)
+        throw new Refusal('import_runtime_media_invalid');
       const path = await stageCommonImportPreparation(this.directory(), operationId, request);
       const preparationSha256 = await fileHash(path);
       const inspection = await this.docker.inspectImportSource(
@@ -1786,7 +1808,10 @@ export class Operations {
         if (state.status !== 'activated') {
           await this.runImport(operation, review, installation, state.status === 'fresh' ? 'run' : 'resume');
           await this.fencing.verify(source);
-          await this.runImport(operation, review, installation, 'verify');
+          const report = await this.runImport(operation, review, installation, 'verify');
+          // FL-1742: what the importer carried from Noodle Gallery and what stayed behind, for "Your server is ready".
+          const gallery = importedGallery(report);
+          if (gallery) this.store.set(`import-gallery:${installation.id}`, gallery);
         }
         return true;
       });
@@ -1798,8 +1823,10 @@ export class Operations {
         const result = JSON.parse(
           await this.docker.sql(
             db,
+            // A Noodle Gallery Space arrives as an album of kind "space"; the source counted its albums only.
             `SELECT json_build_object('users',(SELECT count(*) FROM public.user),
-          'assets',(SELECT count(*) FROM public.asset),'albums',(SELECT count(*) FROM public.album));`,
+          'assets',(SELECT count(*) FROM public.asset),'albums',(SELECT count(*) FROM public.album
+            WHERE kind IS DISTINCT FROM 'space'));`,
           ),
         );
         const receipt = operation.receipts['copy-current-database'] as { summary: Record<string, number> };
@@ -2135,6 +2162,10 @@ export class Operations {
     if (kind === 'backup') {
       await this.step(operation, 'database-backup', async () => {
         await this.backups.initialize();
+        // The library keeps running while this backup is retried: a dump from the failed try would be an old
+        // database recorded as a recovery point from now.
+        delete operation.receipts['checkpoint-dump'];
+        await rm(join(this.store.directory, 'checkpoints', operation.id, 'database.dump'), { force: true });
         const checkpoint = await this.checkpoint(operation);
         return this.backups.snapshot(checkpoint, operation.id);
       });
@@ -3170,6 +3201,8 @@ export class Operations {
       data.source = installation.databasePath.replaceAll('$', () => '$$');
       await atomicJson(join(this.directory(), 'compose.json'), compose);
       this.store.set('database-password', review.recovery.databasePassword);
+      // The compose.json above carries these settings; the next render must not bring newer ones back.
+      this.store.set('application-config', review.recovery.application);
       this.store.set('installation', installation);
       await this.docker.compose(this.directory(), installation.project, 'up', ['database']);
       const database = await this.targetDatabase();
@@ -3196,9 +3229,25 @@ export class Operations {
    * because the thumbnail folder is gone (FL-1320). Without it a missing thumbnail folder is refused by name.
    */
   async reviewRestore(snapshot: string, databaseRoot: string, managerPort?: number, thumbnailFallback = false) {
-    const current = this.installation();
     const id = randomUUID(),
       checkpoint = join(this.store.directory, `restore-${id}`);
+    try {
+      return await this.prepareRestoreReview(id, checkpoint, snapshot, databaseRoot, managerPort, thumbnailFallback);
+    } catch (error) {
+      // A refused review must not leave a plaintext copy of the database on the disk.
+      await rm(checkpoint, { recursive: true, force: true });
+      throw error;
+    }
+  }
+  private async prepareRestoreReview(
+    id: string,
+    checkpoint: string,
+    snapshot: string,
+    databaseRoot: string,
+    managerPort: number | undefined,
+    thumbnailFallback: boolean,
+  ) {
+    const current = this.installation();
     await this.backups.restore(snapshot, checkpoint);
     const recovery = Recovery.parse(JSON.parse(await readFile(join(checkpoint, 'recovery.json'), 'utf8')));
     if (recovery.databaseFormat !== 'frameleaf-canonical')
@@ -3789,6 +3838,8 @@ export class Operations {
       databaseMove:
         operation.kind === 'update' &&
         (!!receipts['database-move-intent'] || !!this.store.get<UpdateReview>(`update:${input.reviewId}`)?.databaseMove),
+      /** FL-1770: false for a failed Start, Stop or Restart, which no longer keeps other operations from starting. */
+      holdsLock: this.store.holdsLock(operation),
       canStop: isMoveOperation(operation.kind) && operation.state === 'running' && !receipts['move-writes-intent'],
       canCancel:
         ['failed', 'interrupted', 'awaiting-review'].includes(operation.state) &&

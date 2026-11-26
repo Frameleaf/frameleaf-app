@@ -109,8 +109,6 @@ export const VERSIONING_OFF_MESSAGE =
   'This bucket does not keep object versions. Turn on versioning for the bucket (and a lifecycle rule that removes old versions after a few days), then check the bucket again.';
 
 const REQUEST_TIMEOUT_MS = 120_000;
-/** How long a freshly rotated managed key may take to become valid (Frameleaf Cloud FC-33). */
-export const CLOUD_BACKUP_FRESH_KEY_MS = 30_000;
 const LIST_PAGE = 1000;
 
 const md5Base64 = (data: Buffer) => createHash('md5').update(data).digest('base64');

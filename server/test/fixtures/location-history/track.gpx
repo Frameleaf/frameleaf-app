@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="Frameleaf synthetic fixture" xmlns="http://www.topografix.com/GPX/1/1">
+  <metadata><name>Synthetic walk</name><time>2023-09-16T08:00:00Z</time></metadata>
+  <wpt lat="51.4254" lon="-116.1773"><ele>1731</ele><time>2023-09-16T08:00:00Z</time><name>Trailhead &amp; car park</name></wpt>
+  <wpt lat="51.4170" lon="-116.2160"><name>No time on this one</name></wpt>
+  <trk>
+    <name>Morning</name>
+    <trkseg>
+      <trkpt lat="51.4254" lon="-116.1773"><ele>1731.2</ele><time>2023-09-16T08:01:00Z</time></trkpt>
+      <trkpt lon="-116.1850" lat="51.4240"><ele>1760.0</ele><time>2023-09-16T08:16:00Z</time><hdop>1.1</hdop></trkpt>
+      <trkpt lat="51.4221" lon="-116.1930"><time>
+        2023-09-16T08:31:00Z
+      </time></trkpt>
+    </trkseg>
+    <trkseg>
+      <trkpt lat="51.4200" lon="-116.2020"><time>2023-09-16T09:02:00.500Z</time></trkpt>
+      <trkpt lat="91.0000" lon="-116.2020"><time>2023-09-16T09:03:00Z</time></trkpt>
+    </trkseg>
+  </trk>
+  <rte><rtept lat="51.4170" lon="-116.2160"><time>2023-09-16T09:40:00Z</time></rtept></rte>
+</gpx>

@@ -80,6 +80,10 @@ export class MailSignInStore {
     const tab = window.open('', '_blank');
     try {
       const { authorizationUrl } = await startMailSignIn({ mailSignInStartDto: { provider } });
+      // The blank tab shares this origin, so anything but a web page here would run as the app.
+      if (new URL(authorizationUrl).protocol !== 'https:') {
+        throw new Error('unexpected sign-in address');
+      }
       if (tab) {
         // the provider's page gets no handle on this one
         tab.opener = null;

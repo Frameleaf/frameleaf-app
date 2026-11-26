@@ -118,12 +118,20 @@
       : undefined,
   );
 
+  /** Only the newest read lands: an older "off" after Turn on would stop the progress polling. */
+  let refreshRun = 0;
   const refresh = async () => {
+    const run = ++refreshRun;
     try {
-      status = await getLockedEncryption();
-      failed = false;
+      const next = await getLockedEncryption();
+      if (run === refreshRun) {
+        status = next;
+        failed = false;
+      }
     } catch {
-      failed = true;
+      if (run === refreshRun) {
+        failed = true;
+      }
     }
   };
 

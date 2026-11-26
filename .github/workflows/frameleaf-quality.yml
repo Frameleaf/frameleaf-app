@@ -83,7 +83,7 @@ jobs:
         run: node --test --test-concurrency=1 packaging/nas/build.test.cjs
       - name: Install plugin WASM, API generation and ffmpeg tools
         env:
-          GITHUB_TOKEN: ${{ secrets.GH_PUBLISH_TOKEN || github.token }}
+          GITHUB_TOKEN: ${{ github.event_name != 'pull_request' && secrets.GH_PUBLISH_TOKEN || github.token }}
           FORGEJO_TOKEN: ${{ github.token }}
         run: |
           docker create --name fork-integration-mise ghcr.io/jdx/mise:2026.10.8@sha256:b720f506c21a6bf5f733a3b1cd04361617ac461a597e44f513aa3976dcd71e57 /bin/true

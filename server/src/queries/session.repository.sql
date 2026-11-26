@@ -114,6 +114,19 @@ where
     or "expiresAt" > clock_timestamp()
   )
 
+-- SessionRepository.getElevatedIds
+select
+  "id"
+from
+  "session"
+where
+  "userId" = $1::uuid
+  and "pinExpiresAt" > clock_timestamp()
+  and (
+    "expiresAt" is null
+    or "expiresAt" > clock_timestamp()
+  )
+
 -- SessionRepository.delete
 delete from "session"
 where

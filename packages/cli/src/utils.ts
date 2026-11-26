@@ -10,7 +10,7 @@ import {
 import { convertPathToPattern, glob } from 'fast-glob';
 import { createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';
-import { lstat, readFile, realpath, stat, writeFile } from 'node:fs/promises';
+import { chmod, lstat, readFile, realpath, stat, writeFile } from 'node:fs/promises';
 import { platform } from 'node:os';
 import { dirname, join, resolve, sep } from 'node:path';
 import yaml from 'yaml';
@@ -79,14 +79,23 @@ Please make sure your API key has the correct permissions.`,
 export const discoverEndpoint = async (url: string): Promise<string | undefined> => {
   const wellKnownUrl = new URL('.well-known/immich', url);
   let endpoint: URL;
+  let base = url;
   try {
-    // eslint-disable-next-line unicorn/prefer-await
-    const wellKnown = (await fetch(wellKnownUrl).then((response) => response.json())) as { api: { endpoint: string } };
-    endpoint = new URL(wellKnown.api.endpoint, url);
+    const response = await fetch(wellKnownUrl);
+    const wellKnown = (await response.json()) as { api: { endpoint: string } };
+    // API calls never follow redirects, so an http address that moves to https on the same host is
+    // adopted here; this request carries no key.
+    if (response.redirected) {
+      const [from, to] = [new URL(url), new URL(response.url)];
+      if (from.protocol === 'http:' && to.protocol === 'https:' && from.hostname === to.hostname) {
+        base = to.origin;
+      }
+    }
+    endpoint = new URL(wellKnown.api.endpoint, base);
   } catch {
     return;
   }
-  if (endpoint.origin !== new URL(url).origin) {
+  if (endpoint.origin !== new URL(base).origin) {
     console.warn(
       `Ignoring the API endpoint ${endpoint.origin} that ${wellKnownUrl.origin}/.well-known/immich names: it is on a different origin`,
     );
@@ -95,6 +104,9 @@ export const discoverEndpoint = async (url: string): Promise<string | undefined>
   return endpoint.href;
 };
 
+/** fetch keeps `x-api-key` across origins, so a followed redirect would hand the key to its target. */
+const fetchWithoutRedirects: typeof fetch = (input, requestInit) => fetch(input, { ...requestInit, redirect: 'error' });
+
 export const connect = async (url: string, key: string) => {
   const endpoint = await discoverEndpoint(url);
   if (endpoint && endpoint !== url) {
@@ -102,7 +114,7 @@ export const connect = async (url: string, key: string) => {
   }
   url = endpoint ?? url;
 
-  init({ baseUrl: url, apiKey: key });
+  init({ baseUrl: url, apiKey: key, fetch: fetchWithoutRedirects });
 
   const [error] = await withError(getMyUser());
   if (error) {
@@ -151,8 +163,12 @@ export const readAuthFile = async (dir: string) => {
   }
 };
 
-export const writeAuthFile = async (dir: string, auth: AuthDto) =>
-  writeFile(getAuthFilePath(dir), yaml.stringify(auth), { mode: 0o600 });
+export const writeAuthFile = async (dir: string, auth: AuthDto) => {
+  const file = getAuthFilePath(dir);
+  await writeFile(file, yaml.stringify(auth), { mode: 0o600 });
+  // `mode` applies only when the file is created: an older, wider file would keep its permissions
+  await chmod(file, 0o600);
+};
 
 export const withError = async <T>(promise: Promise<T>): Promise<[Error, undefined] | [undefined, T]> => {
   try {
@@ -247,7 +263,8 @@ export const crawl = async (options: CrawlOptions): Promise<string[]> => {
     absolute: true,
     caseSensitiveMatch: false,
     dot: includeHidden,
-    ignore: [`**/${ignorePattern}`],
+    // without a pattern this would read `**/undefined` and skip any folder of that name
+    ignore: ignorePattern ? [`**/${ignorePattern}`] : [],
   });
   const files = await insideRoots(globbedFiles, roots);
   files.push(...crawledFiles);

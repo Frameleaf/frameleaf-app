@@ -21,8 +21,10 @@ import {
   type DiscoverySearchDto,
   type DiscoveryTextField,
 } from '$lib/components/discovery/query';
+import { decadeOf, parseApproximateYear } from '$lib/frameleaf/approximate-date';
 import { formatDate } from '$lib/frameleaf/date-format';
 import { mediaKindInfo } from '$lib/frameleaf/media-kinds';
+import { albumCountText } from '$lib/frameleaf/search-filters';
 import type { FilterPanelOptions } from '$lib/frameleaf/search-options';
 
 /**
@@ -30,7 +32,7 @@ import type { FilterPanelOptions } from '$lib/frameleaf/search-options';
  * `design/frameleaf/template/src/search-palette.mjs` (September 24, 2026).
  *
  * Typed operators (`person:`, `place:`, `tag:`, `type:`, `camera:`, `lens:`, `rating:`, `is:`, `year:`,
- * `month:`, `after:`, `before:`, `file:`, `text:`, `path:`, each with a leading `-` to exclude) become
+ * `decade:`, `month:`, `after:`, `before:`, `file:`, `text:`, `path:`, `albums:`, each with a leading `-` to exclude) become
  * conditions on the server's structured `SearchFilter` — the same shape the results page sends
  * (`structuredSearchRequest`) — so every palette count and result still comes from the metadata-search
  * contract. Nothing is invented: an operator whose value cannot be resolved against the account's own
@@ -197,12 +199,14 @@ export type OperatorKey =
   | 'rating'
   | 'is'
   | 'year'
+  | 'decade'
   | 'month'
   | 'after'
   | 'before'
   | 'file'
   | 'text'
-  | 'path';
+  | 'path'
+  | 'albums';
 
 /** The operators the palette understands; `hint` is shown in the syntax help, as in the prototype. */
 export const SEARCH_OPERATORS: readonly { key: OperatorKey; hint: string; labelKey: Translations }[] = [
@@ -215,12 +219,14 @@ export const SEARCH_OPERATORS: readonly { key: OperatorKey; hint: string; labelK
   { key: 'rating', hint: 'rating:4', labelKey: 'frameleaf_search_operator_rating' },
   { key: 'is', hint: 'is:favorite', labelKey: 'frameleaf_search_operator_is' },
   { key: 'year', hint: 'year:2026', labelKey: 'frameleaf_search_operator_year' },
+  { key: 'decade', hint: 'decade:1970', labelKey: 'frameleaf_search_operator_decade' },
   { key: 'month', hint: 'month:2026-08', labelKey: 'frameleaf_search_operator_month' },
   { key: 'after', hint: 'after:2026-08-12', labelKey: 'frameleaf_search_operator_after' },
   { key: 'before', hint: 'before:2026-08-15', labelKey: 'frameleaf_search_operator_before' },
   { key: 'file', hint: 'file:IMG_', labelKey: 'frameleaf_search_operator_file' },
   { key: 'text', hint: 'text:"lake agnes"', labelKey: 'frameleaf_search_operator_text' },
   { key: 'path', hint: 'path:2026/', labelKey: 'frameleaf_search_operator_path' },
+  { key: 'albums', hint: 'albums:2', labelKey: 'frameleaf_search_operator_albums' },
 ];
 
 const OPERATOR_KEYS: ReadonlySet<string> = new Set(SEARCH_OPERATORS.map((operator) => operator.key));
@@ -246,6 +252,8 @@ export type PaletteCatalog = {
   places: CatalogValue[];
   /** The landmarks the account has photos at (FL-354); `place:` names them as well as towns. */
   landmarks: { id: string; name: string; count?: number }[];
+  /** FL-1019: the places this person named; `place:` finds these first. */
+  namedPlaces?: { id: string; name: string }[];
   makes: CatalogValue[];
   models: CatalogValue[];
   lenses: CatalogValue[];
@@ -259,6 +267,7 @@ export const emptyPaletteCatalog = (): PaletteCatalog => ({
   tags: [],
   places: [],
   landmarks: [],
+  namedPlaces: [],
   makes: [],
   models: [],
   lenses: [],
@@ -456,6 +465,12 @@ const resolveToken = (
       return { display: tag.label, fields: ['tagIds'], id: tag.id };
     }
     case 'place': {
+      // FL-1019: a place the person named comes before a town of the same name. Two mean either one.
+      const named = byName(catalog.namedPlaces ?? [], value, (item) => item.name);
+      if (named) {
+        filter.namedPlaceIds = withId(filter.namedPlaceIds as IdsCondition, named.id, exclude, 'any');
+        return { display: named.name, fields: ['namedPlaceIds'], id: named.id };
+      }
       const city = catalog.places.find((item) => fold(item.value) === fold(value))?.value;
       // A landmark answers to place: as well (FL-354); a town of the same name wins. Two landmarks mean
       // either one, as two towns do. ponytail: a town and a landmark together mean both, since they are
@@ -505,6 +520,17 @@ const resolveToken = (
       filter.rating = { gte: Number(value) };
       return { display: value, fields: ['rating'] };
     }
+    case 'albums': {
+      // FL-976: at least this many albums; a count cannot be excluded
+      if (!/^[1-9]\d?\+?$/.test(value) || exclude) {
+        return null;
+      }
+      const least = Number(value.replace('+', ''));
+      // Repeated tokens all hold, so the highest minimum is the one that decides.
+      const earlier = (filter.albumCount as { gte?: number } | undefined)?.gte ?? 0;
+      filter.albumCount = { gte: Math.max(earlier, least) };
+      return { display: String(least), fields: ['albumCount'] };
+    }
     case 'is': {
       // FL-1284: is:slomo, is:panorama, is:burst … name a capture kind
       const kind = mediaKindForWord(value);
@@ -519,6 +545,16 @@ const resolveToken = (
       }
       filter.isFavorite = { eq: !exclude };
       return { display: value, fields: ['isFavorite'] };
+    }
+    case 'decade': {
+      // FL-936: any year of the decade reads as the decade; a year outside what can be dated stays free text
+      const year = parseApproximateYear(value);
+      if (year === null || exclude) {
+        return null;
+      }
+      const decade = decadeOf(year);
+      filter.takenDecade = { eq: decade };
+      return { display: String(decade), fields: ['takenDecade'] };
     }
     case 'year':
     case 'month':
@@ -576,6 +612,15 @@ export const tokenLabel = ($t: MessageFormatter, token: Pick<PaletteToken, 'key'
     case 'is': {
       const kind = mediaKindForWord(value);
       label = kind ? $t(mediaKindInfo(kind)!.labelKey) : $t('favorites');
+      break;
+    }
+    case 'albums': {
+      const text = albumCountText(Number(value));
+      label = $t(text.key, { values: text.values });
+      break;
+    }
+    case 'decade': {
+      label = $t('frameleaf_search_token_decade', { values: { value } });
       break;
     }
     case 'after': {
@@ -668,7 +713,7 @@ export const withoutTokensForFields = (tokens: string[], fields: Iterable<string
 /* Typeahead                                                                    */
 /* -------------------------------------------------------------------------- */
 
-export type SuggestionKind = 'person' | 'place' | 'tag' | 'camera' | 'year' | 'type' | 'is' | 'operator';
+export type SuggestionKind = 'person' | 'place' | 'tag' | 'camera' | 'year' | 'type' | 'is' | 'albums' | 'operator';
 
 export type PaletteSuggestion = {
   kind: SuggestionKind;
@@ -682,6 +727,8 @@ export type PaletteSuggestion = {
   insert: string;
   /** For person suggestions, so the row can show their face photo. */
   personId?: string;
+  /** FL-1019: a place this person named, listed first and marked "Your place". */
+  yourPlace?: boolean;
 };
 
 /**
@@ -748,6 +795,9 @@ export const suggestSearchTokens = (
       push('person', 'person', person.name, person.name, person.count, { personId: person.id });
     }
   }
+  for (const place of catalog.namedPlaces ?? []) {
+    push('place', 'place', place.name, place.name, undefined, { yourPlace: true });
+  }
   for (const place of catalog.places) {
     push('place', 'place', place.value, place.value, place.count);
   }
@@ -766,9 +816,15 @@ export const suggestSearchTokens = (
   push('type', 'type', 'photo', 'photo', catalog.typeCounts?.[AssetTypeEnum.Image], { labelKey: 'photos' });
   push('type', 'type', 'video', 'video', catalog.typeCounts?.[AssetTypeEnum.Video], { labelKey: 'videos' });
   push('is', 'is', 'favorite', 'favorite', catalog.favoriteCount, { labelKey: 'favorites' });
+  // A count cannot be excluded, so `-albums:` is never offered.
+  if (!minus) {
+    push('albums', 'albums', '2', 'In more than one album', undefined, {
+      labelKey: 'frameleaf_search_in_more_than_one_album',
+    });
+  }
   if (!hasOperator && typedKey.length >= 2) {
     for (const operator of operators) {
-      if (operator.key.startsWith(typedKey)) {
+      if (operator.key.startsWith(typedKey) && !(minus && operator.key === 'albums')) {
         out.push({
           kind: 'operator',
           label: operator.key,
@@ -781,7 +837,13 @@ export const suggestSearchTokens = (
     }
   }
   return out
-    .sort((a, b) => a.rank - b.rank || (b.count ?? -1) - (a.count ?? -1) || a.label.localeCompare(b.label))
+    .sort(
+      (a, b) =>
+        Number(!!b.yourPlace) - Number(!!a.yourPlace) ||
+        a.rank - b.rank ||
+        (b.count ?? -1) - (a.count ?? -1) ||
+        a.label.localeCompare(b.label),
+    )
     .slice(0, limit)
     .map(({ rank: _, ...item }) => item);
 };
@@ -834,6 +896,7 @@ export const buildPaletteCatalog = (
     tags: options.tags.map((tag) => ({ id: tag.value, label: tag.label, count: tags.get(tag.value) })),
     places: withCounts(options.cities, facets[SearchFacetField.City]),
     landmarks: options.landmarks,
+    namedPlaces: options.namedPlaces ?? [],
     makes: withCounts(options.makes, facets[SearchFacetField.Make]),
     models: withCounts(options.models, facets[SearchFacetField.Model]),
     lenses: withCounts(options.lenses, facets[SearchFacetField.LensModel]),
@@ -1181,8 +1244,10 @@ const candidateTokens = (field: string, condition: Condition, catalog: PaletteCa
     case 'city': {
       return both('place', [...values('eq'), ...values('in')], [...values('ne'), ...values('notIn')]);
     }
+    case 'namedPlaceIds':
     case 'landmarkIds': {
-      const name = (id: unknown) => catalog.landmarks.find((item) => item.id === id)?.name;
+      const list = field === 'namedPlaceIds' ? (catalog.namedPlaces ?? []) : catalog.landmarks;
+      const name = (id: unknown) => list.find((item) => item.id === id)?.name;
       const ids = [...values('any'), ...values('none')];
       if (ids.some((id) => !name(id))) {
         return undefined;
@@ -1212,8 +1277,14 @@ const candidateTokens = (field: string, condition: Condition, catalog: PaletteCa
     case 'rating': {
       return both('rating', values('gte'), []);
     }
+    case 'albumCount': {
+      return both('albums', values('gte'), []);
+    }
     case 'isFavorite': {
       return [operatorToken('is', 'favorite', condition.eq === false)];
+    }
+    case 'takenDecade': {
+      return both('decade', values('eq'), []);
     }
     case 'localDateTime': {
       const { gte, lt } = condition;

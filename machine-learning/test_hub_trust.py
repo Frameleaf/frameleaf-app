@@ -25,6 +25,22 @@ from frameleaf_ml.models.nsfw_detection import NsfwDetectionModel
 from frameleaf_ml.schemas import ModelFormat, ModelSource
 
 
+def test_custom_clip_refuses_external_weights_outside_its_files(tmp_path: Path) -> None:
+    import onnx
+
+    tensor = onnx.TensorProto(name="w", data_type=onnx.TensorProto.FLOAT, dims=[1])
+    tensor.data_location = onnx.TensorProto.EXTERNAL
+    location = tensor.external_data.add()
+    location.key, location.value = "location", "../../secret"
+    graph = onnx.helper.make_graph([], "graph", [], [], initializer=[tensor])
+    (tmp_path / "visual").mkdir()
+    (tmp_path / "visual" / "model.onnx").write_bytes(onnx.helper.make_model(graph).SerializeToString())
+    model = OpenClipVisualEncoder("someone/own-model", cache_dir=tmp_path)
+
+    with pytest.raises(ModelUnavailableError):
+        model._make_session(model.model_path)
+
+
 @pytest.fixture(autouse=True)
 def public_source(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "model_source_url", None)
@@ -204,7 +220,11 @@ def test_custom_download_fetches_only_the_files_the_encoders_load(tmp_path: Path
                 target.write_bytes(b"{}")
         return str(local_dir)
 
-    with patch.object(hugging_face, "snapshot_download", side_effect=write) as download:
+    api, _ = serve_repository(hugging_face.REQUIRED_FILES)
+    with (
+        patch.object(hugging_face, "HfApi", api),
+        patch.object(hugging_face, "snapshot_download", side_effect=write) as download,
+    ):
         model.download()
 
     assert download.call_args.args == (CUSTOM_REPOSITORY,)
@@ -220,10 +240,43 @@ def test_custom_download_fetches_only_the_files_the_encoders_load(tmp_path: Path
 
 def test_custom_download_refuses_a_repository_without_the_expected_layout(tmp_path: Path) -> None:
     model = OpenClipVisualEncoder(CUSTOM_REPOSITORY, cache_dir=tmp_path)
-    with patch.object(hugging_face, "snapshot_download"):
+    api, _ = serve_repository([])
+    with patch.object(hugging_face, "HfApi", api), patch.object(hugging_face, "snapshot_download"):
         with pytest.raises(ModelUnavailableError, match="missing config.json.*visual/model.onnx"):
             model.download()
     assert not model.cached
+
+
+def test_custom_download_refuses_a_repository_too_large_to_fetch_before_fetching(tmp_path: Path) -> None:
+    model = OpenClipVisualEncoder(CUSTOM_REPOSITORY, cache_dir=tmp_path)
+    api, _ = serve_repository(hugging_face.ALLOWED_FILES)
+    api.return_value.model_info.return_value.siblings[-1].size = hugging_face.MAX_CUSTOM_MODEL_BYTES
+    with patch.object(hugging_face, "HfApi", api), patch.object(hugging_face, "snapshot_download") as download:
+        with pytest.raises(ModelUnavailableError, match="GiB"):
+            model.download()
+    download.assert_not_called()
+
+    with patch.object(hugging_face, "HfApi", api), patch.object(hugging_face, "snapshot_download") as download:
+        with pytest.raises(ModelUnavailableError, match="GiB"):
+            hugging_face.inspect_custom_clip_model(CUSTOM_REPOSITORY)
+    download.assert_not_called()
+
+
+def test_custom_download_refuses_unknown_sizes_and_fetches_the_checked_revision(tmp_path: Path) -> None:
+    model = OpenClipVisualEncoder(CUSTOM_REPOSITORY, cache_dir=tmp_path)
+    api, _ = serve_repository(hugging_face.REQUIRED_FILES)
+    api.return_value.model_info.return_value.siblings[0].size = None
+    with patch.object(hugging_face, "HfApi", api), patch.object(hugging_face, "snapshot_download") as download:
+        with pytest.raises(ModelUnavailableError, match="size"):
+            model.download()
+    download.assert_not_called()
+
+    api, _ = serve_repository(hugging_face.REQUIRED_FILES)
+    api.return_value.model_info.return_value.sha = "abc123"
+    with patch.object(hugging_face, "HfApi", api), patch.object(hugging_face, "snapshot_download") as download:
+        with pytest.raises(ModelUnavailableError):
+            model.download()
+    assert download.call_args.kwargs["revision"] == "abc123"
 
 
 def test_inspect_reads_the_embedding_size_from_the_config_without_fetching_weights() -> None:

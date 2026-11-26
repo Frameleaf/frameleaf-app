@@ -20,6 +20,7 @@ import {
   QueueName,
   StorageFolder,
 } from 'src/enum.js';
+import { advanceJobProgress } from 'src/queue/context.js';
 import { BaseService } from 'src/services/base.service.js';
 import { getAssetFile } from 'src/utils/asset.util.js';
 import { getFilenameExtension, getLivePhotoMotionFilename } from 'src/utils/file.js';
@@ -255,6 +256,8 @@ export class StorageTemplateService extends BaseService {
           await this.moveAsset(livePhotoVideo, { storageLabel, filename: motionFilename }, asset);
         }
       }
+      // A whole-library move outlasts the job's fixed limit; with progress, only a stall ends it
+      advanceJobProgress(1);
     }
 
     this.logger.debug('Cleaning up empty directories...');

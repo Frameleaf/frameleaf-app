@@ -253,20 +253,34 @@ it('keeps a newer write dirty when an earlier draft is acknowledged', async () =
     writeVersion: 1,
     disposed: false,
   };
-  let acknowledge!: (result: { status: string }) => void;
+  let file = '{"v":1}';
+  const acknowledgements: Array<(result: { status: string }) => void> = [];
+  const stage = vi.fn(
+    () =>
+      new Promise((resolve) => {
+        acknowledgements.push(resolve);
+      }),
+  );
   const dirty = vi.fn();
   const sending = sendEditorDraft(state, state.mount, {
-    read: async () => '{"v":1}',
+    read: async () => file,
     contentOf: JSON.stringify,
-    stage: () => new Promise((resolve) => (acknowledge = resolve)),
+    stage,
     dirty,
   });
-  await Promise.resolve();
+  await vi.waitFor(() => expect(stage).toHaveBeenCalledTimes(1));
+  file = '{"v":2}';
   state.writeVersion = 2;
-  acknowledge({ status: 'staged' });
-  await sending;
+  acknowledgements[0]({ status: 'staged' });
+  // The earlier acknowledgement leaves the newer write dirty, and that write is sent in its turn.
+  await vi.waitFor(() => expect(stage).toHaveBeenCalledTimes(2));
   expect(state.writePending).toBe(true);
   expect(dirty).toHaveBeenCalledWith(true);
+  expect((stage.mock.calls[1] as unknown[])[0]).toEqual({ v: 2 });
+  acknowledgements[1]({ status: 'staged' });
+  await sending;
+  expect(state.writePending).toBe(false);
+  expect(dirty).toHaveBeenLastCalledWith(false);
 });
 
 // Best Photos no longer pages `GET /best-photos` into a list of its own (LIB-P3): it is the library

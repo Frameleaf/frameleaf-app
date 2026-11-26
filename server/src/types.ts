@@ -6,6 +6,7 @@ import type { IdenticalFilesState } from 'src/dtos/identical-files.dto.js';
 import type { CloudDescriptionEstimateRecord } from 'src/utils/cloud-description-batch.js';
 import type { CloudMlJobEstimateRecord, CloudMlJobUpgradeRecord } from 'src/utils/cloud-ml-job.js';
 import type { ConfigHistory } from 'src/utils/config-history.js';
+import type { BackupRunReport } from 'src/utils/frameleaf-cloud-backup.js';
 import type { PushNotice } from 'src/utils/frameleaf-push.js';
 import type { SuppressionPreferences } from 'src/utils/hidden-content.js';
 import type { Rational } from 'src/utils/rational-time.js';
@@ -424,6 +425,9 @@ export interface IPartnerPropagateJob {
   fields: string[];
 }
 
+/** FL-923: one print on a scan: its corners in the scan's displayed pixels and the quarter turns to apply. */
+export type ScanCropJobItem = { quad: [number, number][]; rotation: number };
+
 export interface IEntityJob extends IBaseJob {
   id: string;
   source?: JobSource;
@@ -587,6 +591,7 @@ export interface IEmailJob {
 }
 
 export interface INotifySignupJob extends IEntityJob {
+  /** @deprecated FL-1769: only jobs queued by an older version carry it, and it is never emailed. */
   password?: string;
 }
 
@@ -784,11 +789,18 @@ export type JobItem =
   | { name: JobName.MemoryGenerate; data?: IBaseJob }
   | { name: JobName.LandmarkMatchAll; data?: IBaseJob }
   | { name: JobName.LandmarkInfer; data?: IBaseJob & { id?: string; trigger?: 'metadata' | 'embedding' } }
+  | { name: JobName.PlaceNameBackfill; data?: IBaseJob }
   | { name: JobName.AlbumSuggestionAutoAdd; data: IEntityJob }
   | { name: JobName.AlbumSuggestionOutfit; data: IEntityJob }
   | { name: JobName.AlbumCleanupScan; data: { userId: string } }
   | { name: JobName.DateDoctorScan; data: { userId: string } }
   | { name: JobName.DateDoctorScanQueueAll; data?: IBaseJob }
+  // FL-925: `id` is the location history source
+  | { name: JobName.LocationHistoryImport; data: IEntityJob }
+  // FL-964: `id` is the location fill run
+  | { name: JobName.LocationFillPropose; data: IEntityJob }
+  | { name: JobName.LocationFillApply; data: IEntityJob }
+  | { name: JobName.LocationFillUndo; data: IEntityJob }
   | { name: JobName.AlbumCleanupApply; data: { id: string } }
   | { name: JobName.MemoryExport; data: IEntityJob }
 
@@ -958,6 +970,7 @@ export type JobItem =
   // Editor
   | { name: JobName.AssetEditThumbnailGeneration; data: IEntityJob & IEditOperationJob }
   | { name: JobName.DevelopImport; data: IEntityJob & IDelayedJob }
+  | { name: JobName.ScanSplit; data: IEntityJob & { crops: ScanCropJobItem[] } }
   | { name: JobName.AssetDevelopRender; data: IEntityJob & IDelayedJob & IEditOperationJob };
 
 export type VectorExtension = (typeof VECTOR_EXTENSIONS)[number];
@@ -1305,6 +1318,11 @@ export type FrameleafCloudBackup = {
   uploadHoursPausedRunId?: string;
   /** FL-879: a scheduled restore drill found the bucket busy; it starts once the operation holding it ends. */
   drillDueAt?: string;
+  /**
+   * FL-1769: run reports Frameleaf Cloud has not accepted yet, newest last; the hourly check sends them
+   * again (Cloud's run report is an upsert on the run id, so a resend is safe).
+   */
+  unreportedRuns?: BackupRunReport[];
 };
 
 /** FL-164: one restore from a manifest. Counts are files; `databaseFile` is the dump's name in `<media>/backups`. */
@@ -1435,6 +1453,17 @@ export type FrameleafLicenseStore = {
   key: FrameleafLicense | null;
   plan: FrameleafLicense | null;
   noticeState?: 'active' | 'grace' | 'expired';
+  /**
+   * FL-1769: an administrator stopped using the plan on this server while linked as this account at
+   * this link time. Refreshes leave plan certificates out until a checkout, a plan file, an explicit
+   * refresh or a new link.
+   */
+  planDeclined?: { accountId: string | null; linkedAt: string | null };
+  /**
+   * FL-1769: supporter keys removed here that Frameleaf Cloud was not told about yet. Each refresh
+   * retries the deactivation first and never restores a key listed here.
+   */
+  pendingKeyRemovals?: { licenseId: string | null; activationId: string | null }[];
 };
 
 /**
@@ -1710,6 +1739,8 @@ export interface SystemMetadata extends Record<SystemMetadataKey, Record<string,
   [SystemMetadataKey.FrameleafLibraryMovePause]: LibraryMovePauseState;
   [SystemMetadataKey.MediaLocation]: MediaLocation;
   [SystemMetadataKey.IdenticalFiles]: IdenticalFilesState;
+  /** FL-987: the SHA-256 of the place-name pack whose names are in `geodata_place_name`. */
+  [SystemMetadataKey.PlaceNamesState]: { sha256?: string };
   [SystemMetadataKey.ReverseGeocodingState]: {
     lastUpdate?: string;
     lastImportFileName?: string;
@@ -1849,6 +1880,10 @@ export type UserPreferences = {
     enabled: boolean;
     duration: number;
     sidebarWeb: boolean;
+    /** FL-880: Mother's Day and Father's Day memories */
+    occasions: boolean;
+    /** FL-880: a region from `OCCASION_REGIONS`, or `auto` to follow the account's locale */
+    occasionRegion: string;
   };
   people: {
     enabled: boolean;

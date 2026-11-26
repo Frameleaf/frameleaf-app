@@ -287,8 +287,9 @@ export class Security {
       });
       // Host equality rejects DNS rebinding, including on read-only endpoints. Never trust proxy headers.
       const origin = this.requestOrigin(req);
-      // Express route matching is case-insensitive unless explicitly configured otherwise.
-      if (req.path.toLowerCase().startsWith('/manager-api/') && req.path !== req.path.toLowerCase())
+      // Express route matching ignores case and a trailing slash unless configured otherwise; the exact-path
+      // checks below (password-attempt budgets) must see the one spelling each route has.
+      if (req.path.toLowerCase().startsWith('/manager-api/') && (req.path !== req.path.toLowerCase() || req.path.endsWith('/')))
         throw new Refusal('invalid_api_path', 403);
       if (!req.path.startsWith('/manager-api/')) return next();
       const write = !['GET', 'HEAD'].includes(req.method);

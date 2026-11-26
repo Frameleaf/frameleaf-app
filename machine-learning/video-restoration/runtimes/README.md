@@ -12,6 +12,16 @@ proved it on real hardware, together with the upstream commit and Python version
 build arguments. The two environments are kept apart on purpose; their dependency stacks
 are not compatible with each other or with the worker.
 
+## Photo repair and colourise (FL-933)
+
+`photo_repair.py` and `colourise.py` are the entry points of the two photo workloads. They
+run with the photo runtime's interpreter (`photo.lock`: PyTorch, torchvision, OpenCV, NumPy,
+Pillow and ONNX Runtime with CUDA), take the network classes from the pinned facexlib or
+DDColor checkout passed as `--runtime-root`, and load only tensor weights from local files.
+Each reads one `00000001.png` and writes one of the same size plus a small `report.json`
+whose warnings the worker passes on. They need a CUDA device and make no network requests.
+`photo.lock` is not committed yet, for the same reason as the other locks.
+
 ## Real-ESRGAN still-image candidate (FD-34)
 
 `realesrgan_still.py` is an opt-in CPU qualification candidate. It uses the

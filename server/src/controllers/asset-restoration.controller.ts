@@ -17,6 +17,8 @@ import type { NextFunction, Response } from 'express';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import {
+  AssetRestorationBatchRequestDto,
+  AssetRestorationBatchResponseDto,
   AssetRestorationFileQueryDto,
   AssetRestorationListResponseDto,
   AssetRestorationOptionsDto,
@@ -49,6 +51,22 @@ export class AssetRestorationController {
     private service: AssetRestorationService,
     private logger: LoggingRepository,
   ) {}
+
+  @Post('restorations/batch')
+  @HttpCode(HttpStatus.OK)
+  @Authenticated({ permission: Permission.AssetEditCreate })
+  @Endpoint({
+    summary: 'Estimate or start a batch of photo repairs or colourisations',
+    description:
+      'Without confirm, answers which photos would run and every destination in the processing order with its time or cost; nothing is queued. With confirm, the destinationId and the estimate batchId, queues one durable job per photo. Confirming the same batch again queues only what is missing.',
+    history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
+  })
+  restoreAssetsBatch(
+    @Auth() auth: AuthDto,
+    @Body() dto: AssetRestorationBatchRequestDto,
+  ): Promise<AssetRestorationBatchResponseDto> {
+    return this.service.batch(auth, dto);
+  }
 
   @Get(':id/restorations')
   @Authenticated({ permission: Permission.AssetEditGet })

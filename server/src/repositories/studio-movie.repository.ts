@@ -3,6 +3,7 @@ import { Kysely, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { AssetStatus, AssetType, AssetVisibility } from 'src/enum.js';
 import { superviseMediaProcess } from 'src/queue/process-lifetime.js';
 import { DB } from 'src/schema/index.js';
@@ -80,9 +81,15 @@ export class StudioMovieRepository {
    * The photos and videos among `ids` that may go in a movie, with what picking moments uses: Best
    * Photos scores and best video frame, favourites, ratings, visible faces and the smart search
    * embedding. Locked items, hidden items, other people's items their owner's Locked rules hide from
-   * `viewerId`, and anything in the trash are left out (owner decisions FL-195, FL-446).
+   * `viewerId`, and anything in the trash are left out (owner decisions FL-195, FL-446). `options`
+   * (`getHiddenContentQueryOptions`) also leaves out the viewer's own items their session does not show:
+   * those their own Locked rules hide, and sensitive items, while the session is not unlocked.
    */
-  async getMovieAssets(ids: string[], viewerId: string): Promise<StudioMovieAsset[]> {
+  async getMovieAssets(
+    ids: string[],
+    viewerId: string,
+    options: HiddenContentQueryOptions = {},
+  ): Promise<StudioMovieAsset[]> {
     if (ids.length === 0) {
       return [];
     }
@@ -119,7 +126,7 @@ export class StudioMovieRepository {
       .where(isNotLocked('asset'))
       .orderBy('asset.fileCreatedAt', 'asc')
       .limit(STUDIO_MOVIE_MAX_SOURCE);
-    const rows = await withHiddenContentFilter(query, { othersRulesViewerId: viewerId }).execute();
+    const rows = await withHiddenContentFilter(query, { ...options, othersRulesViewerId: viewerId }).execute();
     return rows.map((row) => ({
       id: row.id,
       type: row.type === AssetType.Video ? 'VIDEO' : 'IMAGE',

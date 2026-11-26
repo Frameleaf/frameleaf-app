@@ -105,4 +105,66 @@ describe('ViewerDateDialog (V-23)', () => {
     expect(screen.getByRole('button', { name: 'save' })).toBeDisabled();
     expect(screen.getByText('frameleaf_info_enter_valid_date')).toBeInTheDocument();
   });
+
+  describe('a year or a decade (FL-936)', () => {
+    const period = (localDateTime: string, dateAccuracy: string | null = null) =>
+      ({ ...assetFactory.build(), localDateTime, dateAccuracy }) as ReturnType<typeof assetFactory.build>;
+    const choose = (name: string) => fireEvent.click(screen.getByRole('radio', { name }));
+
+    it('saves a decade as the start of the decade', async () => {
+      const asset = period('1975-06-01T12:00:00.000Z');
+      render(ViewerDateDialog, { asset, initialDate, onClose: vi.fn() });
+      await choose('frameleaf_date_precision_decade');
+      await fireEvent.change(screen.getByLabelText('frameleaf_date_precision_decade', { selector: 'select' }), {
+        target: { value: '1970' },
+      });
+      await fireEvent.click(screen.getByRole('button', { name: 'save' }));
+      await waitFor(() =>
+        expect(updateAssets).toHaveBeenCalledWith({
+          assetBulkUpdateDto: { ids: [asset.id], dateTimeOriginal: '1970-01-01T00:00:00.000Z', dateAccuracy: 'decade' },
+        }),
+      );
+    });
+
+    it('saves a year as the start of the year', async () => {
+      const asset = period('1980-06-01T12:00:00.000Z');
+      render(ViewerDateDialog, { asset, initialDate, onClose: vi.fn() });
+      await choose('frameleaf_date_precision_year');
+      await fireEvent.input(screen.getByRole('textbox', { name: 'frameleaf_date_precision_year' }), {
+        target: { value: '1975' },
+      });
+      await fireEvent.click(screen.getByRole('button', { name: 'save' }));
+      await waitFor(() =>
+        expect(updateAssets).toHaveBeenCalledWith({
+          assetBulkUpdateDto: { ids: [asset.id], dateTimeOriginal: '1975-01-01T00:00:00.000Z', dateAccuracy: 'year' },
+        }),
+      );
+    });
+
+    it('reopens on the stored mode and value', () => {
+      render(ViewerDateDialog, { asset: period('1970-01-01T00:00:00.000Z', 'decade'), onClose: vi.fn() });
+      expect(screen.getByRole('radio', { name: 'frameleaf_date_precision_decade' })).toBeChecked();
+      expect(screen.getByLabelText('frameleaf_date_precision_decade', { selector: 'select' })).toHaveValue('1970');
+    });
+
+    it('makes the date exact again without sending an accuracy', async () => {
+      const asset = period('1975-01-01T00:00:00.000Z', 'year');
+      render(ViewerDateDialog, { asset, initialDate, initialTimeZone: 'Asia/Tokyo', onClose: vi.fn() });
+      await choose('frameleaf_date_precision_exact');
+      await fireEvent.click(screen.getByRole('button', { name: 'save' }));
+      await waitFor(() => expect(updateAssets).toHaveBeenCalled());
+      const [{ assetBulkUpdateDto }] = vi.mocked(updateAssets).mock.calls[0];
+      expect(assetBulkUpdateDto).not.toHaveProperty('dateAccuracy');
+      expect(assetBulkUpdateDto.dateTimeOriginal).toBe('2026-09-24T18:05:00.000+09:00');
+    });
+
+    it('refuses a year out of range, with a message', async () => {
+      render(ViewerDateDialog, { asset: period('1975-01-01T00:00:00.000Z', 'year'), onClose: vi.fn() });
+      await fireEvent.input(screen.getByRole('textbox', { name: 'frameleaf_date_precision_year' }), {
+        target: { value: '1700' },
+      });
+      expect(screen.getByRole('button', { name: 'save' })).toBeDisabled();
+      expect(screen.getByText('frameleaf_date_year_range')).toBeInTheDocument();
+    });
+  });
 });

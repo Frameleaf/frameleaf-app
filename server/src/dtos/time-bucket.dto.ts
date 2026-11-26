@@ -275,6 +275,13 @@ const TimeBucketAssetResponseSchema = z
       .optional()
       .describe('Array indicating whether each asset is offline (its file is missing from an external library)'),
     isImage: z.array(z.boolean()).describe('Array indicating whether each asset is an image (false for videos)'),
+    // plain strings, not an enum: a response enum can never gain a value without breaking the native apps
+    dateAccuracy: z
+      .array(z.string().nullable())
+      .nullish()
+      .describe(
+        'For each asset, `year` or `decade` when only that much of its capture date is known, else null. The whole array is null or absent when no asset here has one',
+      ),
     thumbhash: z
       .array(z.string().nullable())
       .describe('Array of BlurHash strings for generating asset previews (base64 encoded)'),

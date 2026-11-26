@@ -1,11 +1,12 @@
 import { createHash } from 'node:crypto';
-import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import media from 'src/library-import/fixtures/ente/0.4.2-media.json' with { type: 'json' };
 import { ENTE_EXPORT_FILE, ENTE_INVENTORY_FILE, adapter } from 'src/library-import/preparation/ente.js';
 import { adapter as lychee } from 'src/library-import/preparation/lychee.js';
 import { UNTESTED_VERSION_LOSS, inspectPreparationSource } from 'src/library-import/preparation/prepare.js';
+import { readSourceFile } from 'src/library-import/preparation/types.js';
 import { assertPreparationLocation } from 'src/library-import/prepare-command.js';
 import { type SourceArchiveRecord } from 'src/library-import/source-archive-codec.js';
 
@@ -32,6 +33,24 @@ async function writeExport(root: string, account: 'alice' | 'bob', extra: typeof
   await mkdir(join(root, 'Trash', 'Old album', 'metadata'), { recursive: true });
   await writeFile(join(root, 'Trash', 'Old album', 'metadata.json'), '{not json');
 }
+
+describe('readSourceFile', () => {
+  it('follows a link inside the export and refuses one that leaves it', async () => {
+    const base = await mkdtemp(join(tmpdir(), 'source-file-'));
+    try {
+      const root = join(base, 'export');
+      await mkdir(root);
+      await writeFile(join(base, 'secret.json'), '{"secret":true}');
+      await writeFile(join(root, 'real.json'), '{}');
+      await symlink('real.json', join(root, 'inside.json'));
+      await symlink('../secret.json', join(root, 'outside.json'));
+      await expect(readSourceFile(root, 'inside.json')).resolves.toEqual(Buffer.from('{}'));
+      await expect(readSourceFile(root, 'outside.json')).rejects.toThrow('IMPORT_SOURCE_PATH_ESCAPE');
+    } finally {
+      await rm(base, { recursive: true, force: true });
+    }
+  });
+});
 
 describe('Ente preparation adapter', () => {
   let directory: string;

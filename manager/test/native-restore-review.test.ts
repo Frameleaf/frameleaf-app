@@ -145,6 +145,27 @@ test('native restore review decrypts once, persists lineage and revalidates exac
   });
 });
 
+test('an expired review’s plain dump is removed when the next review is prepared, unless a restore still names it', async () => {
+  await fixture(async ({ store, context, engine }) => {
+    const expire = (id) => {
+      const saved = store.get(`native-restore-review:${id}`);
+      saved.expires = 0;
+      store.set(`native-restore-review:${id}`, saved);
+    };
+    const folder = (id) => join(store.directory, 'native-restore-reviews', id);
+    const named = await prepareNativeRestoreReview(store, engine, context, '1'.repeat(64));
+    const unused = await prepareNativeRestoreReview(store, engine, context, '1'.repeat(64));
+    expire(named.id);
+    expire(unused.id);
+    store.start('restore', 'still-running', { reviewId: named.id });
+    const fresh = await prepareNativeRestoreReview(store, engine, context, '1'.repeat(64));
+    const left = await readdir(join(store.directory, 'native-restore-reviews'));
+    assert.ok(left.includes(basename(folder(named.id))));
+    assert.ok(!left.includes(unused.id));
+    assert.ok(left.includes(fresh.id));
+  });
+});
+
 test('foreign library and corrupt dump produce no prepared review and retain failed evidence', async () => {
   for (const mutation of ['library', 'dump'])
     await fixture(async ({ store, context, recovery, engine, path }) => {

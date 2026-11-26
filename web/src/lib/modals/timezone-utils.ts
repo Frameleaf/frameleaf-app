@@ -148,11 +148,3 @@ export function toDatetime(selectedDate: string, selectedZone: ZoneOption) {
 export function toIsoDate(selectedDate: string, selectedZone: ZoneOption) {
   return toDatetime(selectedDate, selectedZone).toISO({ includeOffset: true })!;
 }
-
-export const calcNewDate = (timestamp: DateTime, selectedDuration: number, timezone?: string) => {
-  let newDateTime = timestamp.plus({ minutes: selectedDuration });
-  if (timezone) {
-    newDateTime = newDateTime.setZone(timezone);
-  }
-  return newDateTime.toFormat("yyyy-MM-dd'T'HH:mm:ss.SSS");
-};

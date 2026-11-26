@@ -34,6 +34,8 @@ export const preferencesFactory = Sync.makeFactory<UserPreferencesResponseDto>({
   memories: {
     enabled: false,
     duration: 5,
+    occasionRegion: 'auto',
+    occasions: false,
     sidebarWeb: false,
   },
   people: {

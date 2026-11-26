@@ -312,6 +312,23 @@ describe(MediaRecoveryService.name, () => {
       expect.not.objectContaining({ matchedExternalAssetId: expect.anything() }),
     );
   });
+  describe('several library photos with the same content', () => {
+    let other: typeof candidate;
+    beforeEach(async () => {
+      await writeFile(original, bytes);
+      other = { ...candidate, id: randomUUID(), hidden: true };
+      repository.findCandidates.mockResolvedValue([other, candidate]);
+    });
+    const resourceWith = async (source: unknown) => {
+      const resource = await repository.getResource(input);
+      repository.getResource.mockResolvedValue({ ...resource, assetId: null, source });
+    };
+    it('links to the visible photo without asking, and adds no copy', async () => {
+      await resourceWith({});
+      input.includeHidden = true;
+      expect(await sut.reconcile(input)).toEqual({ outcome: 'reused', assetId: candidate.id });
+    });
+  });
   it('keeps an established mapping when another same-owner content match exists', async () => {
     repository.findCandidates.mockResolvedValue([{ ...candidate, id: randomUUID() }, candidate]);
     expect(await sut.reconcile(input)).toEqual({ outcome: 'repaired-missing', assetId: candidate.id });
