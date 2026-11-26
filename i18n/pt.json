@@ -12355,7 +12355,7 @@
   "frameleaf_ledger_part_library_you": "{count} estão na sua biblioteca",
   "frameleaf_ledger_part_removed": "{count} foram removidos",
   "frameleaf_ledger_part_trash": "{count} na Reciclagem",
-  "frameleaf_ledger_people_description": "Cada pessoa vê quais das suas fotografias são estas em Cuidado da biblioteca › Nada perdido. Os parceiros nunca veem as do outro.",
+  "frameleaf_ledger_people_description": "Cada pessoa vê quais das suas fotografias são estas em Cuidado da biblioteca › Nada perdido. Esta página nunca lista as fotografias de outra pessoa.",
   "frameleaf_ledger_people_title": "Por pessoa",
   "frameleaf_ledger_person_ok": "Tudo contabilizado",
   "frameleaf_ledger_person_since": "Desde {date}",

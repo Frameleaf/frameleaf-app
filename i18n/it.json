@@ -12355,7 +12355,7 @@
   "frameleaf_ledger_part_library_you": "{count} sono nella tua libreria",
   "frameleaf_ledger_part_removed": "{count} sono stati rimossi",
   "frameleaf_ledger_part_trash": "{count} nel Cestino",
-  "frameleaf_ledger_people_description": "Ogni persona vede quali delle sue foto sono in Cura della libreria › Niente di perso. I partner non vedono mai quelle dell’altro.",
+  "frameleaf_ledger_people_description": "Ogni persona vede quali delle sue foto sono in Cura della libreria › Niente di perso. Questa pagina non elenca mai le foto di un’altra persona.",
   "frameleaf_ledger_people_title": "Per persona",
   "frameleaf_ledger_person_ok": "Tutto contabilizzato",
   "frameleaf_ledger_person_since": "Dal {date}",

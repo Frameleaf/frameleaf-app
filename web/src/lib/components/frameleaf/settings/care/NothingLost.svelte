@@ -114,11 +114,18 @@
 
   /** The originals that are gone with no record of a removal: the reader's own only. */
   let missing = $state<AssetLedgerItemDto[]>([]);
+  let missingRun = 0;
   const loadMissing = async () => {
+    // Rows read while Locked was open must not stay once it closes, nor arrive late over a newer read.
+    const current = ++missingRun;
+    missing = [];
     try {
-      missing = (await getLedger({ state: AssetLedgerState.Missing, size: PAGE })).items;
+      const page = await getLedger({ state: AssetLedgerState.Missing, size: PAGE });
+      if (current === missingRun) {
+        missing = page.items;
+      }
     } catch {
-      missing = [];
+      // the hero still says how many; the list stays empty
     }
   };
 

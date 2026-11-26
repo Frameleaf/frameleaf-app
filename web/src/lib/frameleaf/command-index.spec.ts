@@ -120,6 +120,11 @@ describe('settings areas', () => {
     }
   });
 
+  it('finds Nothing lost by its search words for a member too (FL-940)', () => {
+    const page = buildPageCommands($t, context()).find((command) => command.id === 'care-nothing-lost');
+    expect(page?.keywords).toContain('frameleaf_ledger_search_keywords');
+  });
+
   it('finds Deleted items by the Trash retention it holds', () => {
     expect(SETTINGS_SECTION_KEYWORDS.trash).toEqual(expect.arrayContaining(['trash', 'frameleaf_deleted_keep_photos']));
   });

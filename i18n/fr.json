@@ -12353,7 +12353,7 @@
   "frameleaf_ledger_part_library_you": "{count} sont dans votre bibliothèque",
   "frameleaf_ledger_part_removed": "{count} ont été supprimés",
   "frameleaf_ledger_part_trash": "{count} dans la Corbeille",
-  "frameleaf_ledger_people_description": "Chaque personne voit lesquelles de ses photos sont concernées sous Entretien de la bibliothèque › Rien de perdu. Les partenaires ne voient jamais celles des autres.",
+  "frameleaf_ledger_people_description": "Chaque personne voit lesquelles de ses photos sont concernées sous Entretien de la bibliothèque › Rien de perdu. Cette page ne liste jamais les photos d’une autre personne.",
   "frameleaf_ledger_people_title": "Par personne",
   "frameleaf_ledger_person_ok": "Tout est comptabilisé",
   "frameleaf_ledger_person_since": "Depuis le {date}",

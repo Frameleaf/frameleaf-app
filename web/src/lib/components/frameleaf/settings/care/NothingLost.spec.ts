@@ -225,7 +225,7 @@ describe('Nothing lost (FL-940)', () => {
     expect(
       await hero().findByRole('heading', { name: '3 photos and videos can’t be accounted for' }),
     ).toBeInTheDocument();
-    expect(hero().getByText(/They’re in Morgan’s library\./)).toBeInTheDocument();
+    expect(hero().getByText(/They were in Morgan’s library\./)).toBeInTheDocument();
     expect(screen.getByText('3 can’t be accounted for')).toBeInTheDocument();
     expect(screen.getByText(en.frameleaf_ledger_person_ok)).toBeInTheDocument();
     expect(screen.queryByText(en.frameleaf_ledger_happened_title)).not.toBeInTheDocument();

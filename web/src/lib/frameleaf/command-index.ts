@@ -188,6 +188,9 @@ export const buildPageCommands = ($t: MessageFormatter, context: CommandIndexCon
       title: $t('frameleaf_ledger_title'),
       icon: mdiClipboardCheckOutline,
       href: commandCenterUrl('care', 'nothing-lost'),
+      // Every account has this page, so its search words go on the command, not only on the
+      // administrators' settings sections.
+      keywords: [$t('frameleaf_ledger_search_keywords')],
     },
   ];
   for (const extra of extras) {
