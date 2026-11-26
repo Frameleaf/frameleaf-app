@@ -674,7 +674,7 @@
   /* collections.css .cl-tabs: two pills over a hairline. */
   .tabs {
     display: flex;
-    gap: var(--fl-space-2);
+    gap: var(--fl-space-3);
     padding-bottom: var(--fl-space-3);
     border-bottom: 1px solid var(--fl-border);
   }
@@ -811,7 +811,7 @@
   .link-list {
     display: flex;
     flex-direction: column;
-    gap: var(--fl-space-1);
+    gap: var(--fl-space-2);
     margin: 0 0 var(--fl-space-3);
     padding: 0;
     list-style: none;
@@ -865,7 +865,7 @@
   .invite-row {
     display: flex;
     align-items: flex-end;
-    gap: var(--fl-space-2);
+    gap: var(--fl-space-3);
   }
   .invite-row label {
     display: flex;
@@ -895,7 +895,7 @@
   .links {
     display: flex;
     align-items: center;
-    gap: var(--fl-space-2);
+    gap: var(--fl-space-3);
   }
   button,
   .manage {
