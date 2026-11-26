@@ -47,6 +47,7 @@ import {
   PersonSplitVerdictDeleteDto,
   PersonSplitVerdictResponseDto,
   PersonStatisticsResponseDto,
+  PersonThumbnailDto,
   PersonUpdateDto,
   SplitSuggestionsResponseDto,
 } from 'src/dtos/person.dto.js';
@@ -435,8 +436,9 @@ export class PersonController {
     @Next() next: NextFunction,
     @Auth() auth: AuthDto,
     @Param() { id }: UUIDParamDto,
+    @Query() dto: PersonThumbnailDto,
   ) {
-    await sendFile(res, next, () => this.service.getThumbnail(auth, id), this.logger);
+    await sendFile(res, next, () => this.service.getThumbnail(auth, id, dto), this.logger);
   }
 
   @Put(':id/reassign')

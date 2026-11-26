@@ -185,37 +185,16 @@ describe(AlbumService.name, () => {
       );
     });
 
-    it('does not wait for the cover repair, and repairs at most once a minute per person', async () => {
-      const auth = AuthFactory.create();
+    it('never repairs covers from a list read (FL-1791)', async () => {
       mocks.album.getAll.mockResolvedValue([]);
-      mocks.album.updateThumbnails.mockReturnValue(new Promise(() => {}));
+      mocks.album.getRail.mockResolvedValue([]);
 
-      await sut.getAll(auth, {});
-      await sut.getAll(auth, {});
+      await sut.getAll(AuthFactory.create(), {});
+      await sut.getTree(AuthFactory.create());
+      await sut.getHierarchy(AuthFactory.create());
+      await sut.getRail(AuthFactory.create());
 
-      expect(mocks.album.updateThumbnails).toHaveBeenCalledTimes(1);
-    });
-
-    it('never starts a second cover repair while one is still running, even after a minute', async () => {
-      vi.useFakeTimers();
-      try {
-        const auth = AuthFactory.create();
-        mocks.album.getAll.mockResolvedValue([]);
-        let finish!: () => void;
-        mocks.album.updateThumbnails.mockReturnValueOnce(new Promise((resolve) => (finish = () => resolve(0))));
-
-        await sut.getAll(auth, {});
-        vi.advanceTimersByTime(120_000);
-        await sut.getAll(auth, {});
-        expect(mocks.album.updateThumbnails).toHaveBeenCalledTimes(1);
-
-        finish();
-        await vi.waitFor(() =>
-          sut.getAll(auth, {}).then(() => expect(mocks.album.updateThumbnails).toHaveBeenCalledTimes(2)),
-        );
-      } finally {
-        vi.useRealTimers();
-      }
+      expect(mocks.album.updateThumbnails).not.toHaveBeenCalled();
     });
 
     it("labels the viewer's own albums copied from a partner with the original owner (FL-326)", async () => {
@@ -231,8 +210,6 @@ describe(AlbumService.name, () => {
 
       const result = await sut.getAll(AuthFactory.create(owner), {});
 
-      // covers are put right for this person's albums only, not every album on the server
-      expect(mocks.album.updateThumbnails).toHaveBeenCalledWith({ userId: owner.id });
       expect(mocks.partnerOrigin.getOriginLabels).toHaveBeenCalledWith('album', [album.id, other.id], owner.id);
       expect(result[0].origin).toEqual({ rootOwnerId, rootOwnerName: 'Jamie' });
       expect(result[1]).not.toHaveProperty('origin');
@@ -1958,6 +1935,207 @@ describe(AlbumService.name, () => {
       await sut.getHierarchy(auth);
 
       expect(mocks.album.getPositions).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('cover repair (FL-1791)', () => {
+    it('repairs the covers of albums holding trashed or restored items, without waiting', () => {
+      mocks.album.updateThumbnails.mockReturnValue(new Promise(() => {}));
+      const assetIds = [newUuid(), newUuid()];
+
+      sut.onAssetTrashRepairCovers({ assetId: assetIds[0], userId: newUuid() });
+      sut.onAssetTrashAllRepairCovers({ assetIds, userId: newUuid() });
+      sut.onAssetDeleteAllRepairCovers({ assetIds, userId: newUuid() });
+      sut.onAssetRestoreAllRepairCovers({ assetIds, userId: newUuid() });
+
+      expect(mocks.album.updateThumbnails.mock.calls).toEqual([
+        [{ assetIds: [assetIds[0]] }],
+        [{ assetIds }],
+        [{ assetIds }],
+        [{ assetIds }],
+      ]);
+    });
+
+    it('never fails the trash that announced it', async () => {
+      mocks.album.updateThumbnails.mockRejectedValue(new Error('database is away'));
+
+      expect(() => sut.onAssetTrashAllRepairCovers({ assetIds: [newUuid()], userId: newUuid() })).not.toThrow();
+      await vi.waitFor(() => expect(mocks.logger.error).toHaveBeenCalled());
+    });
+
+    it('repairs every album hourly in the background worker', async () => {
+      mocks.album.updateThumbnails.mockResolvedValue(0);
+      mocks.cron.create.mockReturnValue();
+
+      sut.onBootstrapCoverRepair();
+      expect(mocks.cron.create).toHaveBeenCalledWith(expect.objectContaining({ name: 'albumCoverRepair' }));
+
+      await sut.repairAlbumCovers();
+      expect(mocks.album.updateThumbnails).toHaveBeenCalledWith();
+    });
+  });
+
+  describe('getRail (FL-1791)', () => {
+    const railRow = (album: ReturnType<typeof getForAlbum>, role = AlbumUserRole.Owner, shared = false) => ({
+      id: album.id,
+      albumName: album.albumName,
+      parentId: album.parentId,
+      kind: album.kind,
+      icon: album.icon,
+      color: album.color ?? null,
+      sortOrder: album.sortOrder,
+      isLocked: false,
+      role,
+      shared,
+    });
+
+    it('returns nothing, and reads nothing more, when the user has no albums', async () => {
+      mocks.album.getRail.mockResolvedValue([]);
+
+      await expect(sut.getRail(AuthFactory.create())).resolves.toEqual({ albums: [] });
+      expect(mocks.albumSummary.getByIds).not.toHaveBeenCalled();
+    });
+
+    it('returns only the slim fields, in the order and with the parents of the hierarchy', async () => {
+      const collection = AlbumFactory.from({ albumName: 'Family', kind: AlbumKind.Collection }).build();
+      const { user: owner } = collection.albumUsers.find(({ role }) => role === AlbumUserRole.Owner)!;
+      const inside = AlbumFactory.from({ parentId: collection.id }).owner(owner).build();
+      const loose = AlbumFactory.from().owner(owner).build();
+      const sharedWithMe = AlbumFactory.from().albumUser({ userId: owner.id, role: AlbumUserRole.Viewer }).build();
+      const space = AlbumFactory.from({ kind: AlbumKind.Space, parentId: collection.id }).owner(owner).build();
+      const auth = AuthFactory.create(owner);
+      const all = [loose, space, inside, sharedWithMe, collection].map((item) => getForAlbum(item));
+      mocks.album.getAll.mockResolvedValue(all);
+      mocks.album.getRail.mockResolvedValue(
+        all.map((album) =>
+          album.id === sharedWithMe.id ? railRow(album, AlbumUserRole.Viewer, true) : railRow(album),
+        ),
+      );
+      mocks.albumSummary.getByIds.mockResolvedValue([storedRow(inside.id, 4), storedRow(loose.id, 2)]);
+      mocks.smartAlbum.getSmartBackedAlbumKinds.mockResolvedValue(new Map([[loose.id, 'food']]));
+      mocks.album.getBookmarkCounts.mockResolvedValue(new Map([[loose.id, 3]]));
+      mocks.album.getPositions.mockResolvedValue(new Map([[sharedWithMe.id, 0]]));
+      mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set([collection.id]));
+
+      const { albums } = await sut.getRail(auth);
+
+      expect(mocks.album.getRail).toHaveBeenCalledWith(owner.id, { libraryScope: LibraryScope.Personal });
+      expect(Object.keys(albums.find(({ id }) => id === loose.id)!).sort()).toEqual([
+        'albumName',
+        'assetCount',
+        'bookmarkCount',
+        'color',
+        'icon',
+        'id',
+        'isLocked',
+        'isSmart',
+        'kind',
+        'parentId',
+        'role',
+        'shared',
+        'smartRuleId',
+        'sortOrder',
+      ]);
+      expect(albums.find(({ id }) => id === loose.id)).toMatchObject({
+        assetCount: 2,
+        bookmarkCount: 3,
+        isSmart: true,
+        role: AlbumUserRole.Owner,
+        shared: false,
+      });
+      expect(albums.find(({ id }) => id === sharedWithMe.id)).toMatchObject({
+        assetCount: 0,
+        statsPending: true,
+        role: AlbumUserRole.Viewer,
+        shared: true,
+      });
+      // a shared space is always top level, even one stored with a parent
+      expect(albums.find(({ id }) => id === space.id)?.parentId).toBeNull();
+
+      const flatten = (nodes: Awaited<ReturnType<typeof sut.getHierarchy>>['roots']): string[] =>
+        nodes.flatMap(({ album, children }) => [`${album.id}<${album.parentId}`, ...flatten(children)]);
+      const hierarchy = await sut.getHierarchy(auth);
+      expect(albums.map(({ id, parentId }) => `${id}<${parentId}`)).toEqual(flatten(hierarchy.roots));
+    });
+
+    it('never names a collection the member cannot read, or a partner collection turned off', async () => {
+      const member = UserFactory.create();
+      const privateCollectionId = newUuid();
+      const shared = AlbumFactory.from({ parentId: privateCollectionId })
+        .albumUser({ userId: member.id, role: AlbumUserRole.Viewer })
+        .build();
+      mocks.album.getRail.mockResolvedValue([railRow(getForAlbum(shared), AlbumUserRole.Viewer, true)]);
+      mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set());
+      mocks.access.album.checkSharedAlbumAccess.mockResolvedValue(new Set());
+
+      const rail = await sut.getRail(AuthFactory.create(member));
+      expect(rail.albums).toEqual([expect.objectContaining({ id: shared.id, parentId: null })]);
+      expect(JSON.stringify(rail)).not.toContain(privateCollectionId);
+
+      mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set([privateCollectionId]));
+      mocks.partnerOrigin.getPartnerAlbumIds.mockResolvedValue([privateCollectionId]);
+      mocks.user.getMetadata.mockResolvedValue([
+        { key: UserMetadataKey.Preferences, value: { albums: { showPartnerAlbums: false } } },
+      ]);
+      const hidden = await sut.getRail(AuthFactory.create(member));
+      expect(mocks.album.getRail).toHaveBeenLastCalledWith(member.id, {
+        libraryScope: LibraryScope.Personal,
+        excludeIds: [privateCollectionId],
+      });
+      expect(JSON.stringify(hidden)).not.toContain(privateCollectionId);
+    });
+  });
+
+  describe('connected apps and Locked albums (FL-1791)', () => {
+    it('never tells a connected app a Locked album exists, in the rail or in the stats', async () => {
+      const auth = { ...AuthFactory.create(), oauthApp: { id: newUuid() } } as unknown as AuthDto;
+      const [open, locked] = [newUuid(), newUuid()];
+      const row = (id: string, isLocked: boolean, parentId: string | null = null) => ({
+        id,
+        albumName: 'Album',
+        parentId,
+        kind: AlbumKind.Album,
+        icon: null,
+        color: null,
+        sortOrder: null,
+        isLocked,
+        role: AlbumUserRole.Owner,
+        shared: false,
+      });
+      mocks.album.getRail.mockResolvedValue([row(locked, true), row(open, false, locked)]);
+      mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set([open, locked]));
+      mocks.albumSummary.getByIds.mockResolvedValue([storedRow(open, 2), storedRow(locked, 9)]);
+
+      const rail = await sut.getRail(auth);
+      expect(rail.albums).toEqual([expect.objectContaining({ id: open, parentId: null })]);
+      expect(JSON.stringify(rail)).not.toContain(locked);
+
+      const stats = await sut.getStats(auth, { albumIds: [open, locked] });
+      expect(stats.albums.map(({ id }) => id)).toEqual([open]);
+
+      // the person themself still sees both
+      const own = await sut.getStats(AuthFactory.create(auth.user), { albumIds: [open, locked] });
+      expect(own.albums.map(({ id }) => id)).toEqual([open, locked]);
+    });
+  });
+
+  describe('getStats (FL-1791)', () => {
+    it('reads the stored numbers of the asked albums only, leaving out ones the user cannot read', async () => {
+      const auth = AuthFactory.create();
+      const [counted, waiting, notMine] = [newUuid(), newUuid(), newUuid()];
+      mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set([counted, waiting]));
+      mocks.albumSummary.getByIds.mockResolvedValue([storedRow(counted, 7)]);
+
+      const result = await sut.getStats(auth, { albumIds: [counted, waiting, notMine, counted] });
+
+      expect(mocks.albumSummary.getByIds).toHaveBeenCalledWith(expect.any(String), [counted, waiting]);
+      expect(result.albums).toEqual([
+        expect.objectContaining({ id: counted, assetCount: 7 }),
+        expect.objectContaining({ id: waiting, assetCount: 0, statsPending: true }),
+      ]);
+      expect(result.albums[0]).not.toHaveProperty('statsPending');
+      expect(mocks.album.getAll).not.toHaveBeenCalled();
+      expect(mocks.album.updateThumbnails).not.toHaveBeenCalled();
     });
   });
 
