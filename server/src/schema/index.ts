@@ -345,6 +345,7 @@ import {
   TakeoutPairTable,
   TakeoutSourceTable,
 } from 'src/schema/tables/takeout.table.js';
+import { TimelineSummaryTable } from 'src/schema/tables/timeline-summary.table.js';
 import { UserAuditTable } from 'src/schema/tables/user-audit.table.js';
 import { UserKnownDeviceTable } from 'src/schema/tables/user-known-device.table.js';
 import { UserMetadataAuditTable } from 'src/schema/tables/user-metadata-audit.table.js';
@@ -532,6 +533,7 @@ export class ImmichDatabase {
     GeodataPlacesTable,
     GeodataPlaceNameTable,
     AssetGeonameTable,
+    TimelineSummaryTable,
     LandmarkTable,
     LandmarkAreaTable,
     AssetLandmarkTable,
@@ -875,6 +877,7 @@ export interface DB extends QueueDatabase {
   geodata_places: GeodataPlacesTable;
   geodata_place_name: GeodataPlaceNameTable;
   asset_geoname: AssetGeonameTable;
+  timeline_summary: TimelineSummaryTable;
   landmark: LandmarkTable;
   landmark_area: LandmarkAreaTable;
   asset_landmark: AssetLandmarkTable;

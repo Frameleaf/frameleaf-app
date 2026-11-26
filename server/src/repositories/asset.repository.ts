@@ -14,7 +14,7 @@ import {
 import { jsonArrayFrom } from 'kysely/helpers/postgres';
 import { isEmpty, isUndefined, omitBy } from 'lodash-es';
 import { InjectKysely } from 'nestjs-kysely';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import type { Updateable } from 'kysely';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { SearchFilter } from 'src/dtos/search.dto.js';
@@ -382,6 +382,14 @@ interface TimelineCalendarCursor {
 }
 /** FL-1592: how many whole timeline summaries (one per user and set of filters) each process keeps */
 const CALENDAR_PAGE_CACHE_SIZE = 32;
+/**
+ * FL-1792: part of every stored summary's key. Raise it whenever the pages of a month could come out
+ * differently for the same photos (the ranking order, the page fields), so no release reads another's rows.
+ */
+const TIMELINE_SUMMARY_FORMAT = 1;
+/** FL-1792: how many stored summaries (sets of filters) each person keeps; the least recently ranked go first */
+const TIMELINE_SUMMARY_STORED_PER_USER = 8;
+type CalendarMonths = Map<string, { fingerprint: string; pages: TimeBucketItem[] }>;
 export interface TimeBucketItem {
   timeBucket: string;
   count: number;
@@ -546,7 +554,7 @@ const isBestPhotoOf = (eb: ExpressionBuilder<DB, 'asset'>, { ownerId, minScore }
 export class AssetRepository {
   private readonly smartAlbums: SmartAlbumRepository;
   /** FL-1592: per-month calendar page summaries by request, each kept with the fingerprint it was ranked at. */
-  private readonly calendarPageCache = new Map<string, Map<string, { fingerprint: string; pages: TimeBucketItem[] }>>();
+  private readonly calendarPageCache = new Map<string, CalendarMonths>();
   constructor(
     @InjectKysely()
     private db: Kysely<DB>,
@@ -3270,7 +3278,11 @@ export class AssetRepository {
         order by "timeBucket" ${direction}
       `.execute(this.db);
       const key = JSON.stringify([auth?.user.id, auth?.sharedLink?.id, options, pages.pageSize]);
-      const cached = this.calendarPageCache.get(key);
+      // FL-1792: after a server start the months come from the stored summary, so only those whose
+      // fingerprint moved while the server was down are ranked, not the whole library.
+      const storedKey = auth && createHash('sha256').update(`${TIMELINE_SUMMARY_FORMAT}:${key}`).digest('hex');
+      const cached =
+        this.calendarPageCache.get(key) ?? (storedKey ? await this.readTimelineSummary(storedKey) : undefined);
       const stale = months.filter(
         ({ timeBucket, fingerprint }) => cached?.get(timeBucket)?.fingerprint !== fingerprint,
       );
@@ -3289,6 +3301,11 @@ export class AssetRepository {
         if (this.calendarPageCache.size <= CALENDAR_PAGE_CACHE_SIZE) break;
         this.calendarPageCache.delete(old);
       }
+      if (storedKey && (stale.length > 0 || cached?.keys().some((timeBucket) => !next.has(timeBucket)))) {
+        const ranked = new Map(stale.map(({ timeBucket }) => [timeBucket, next.get(timeBucket)!]));
+        // A summary that could not be stored is only ranked again after the next start.
+        await this.storeTimelineSummary(storedKey, auth.user.id, ranked, next.keys().toArray()).catch(() => {});
+      }
       return next
         .values()
         .flatMap(({ pages }) => pages)
@@ -3302,6 +3319,63 @@ export class AssetRepository {
       .groupBy('timeBucket')
       .orderBy('timeBucket', options.order ?? 'desc')
       .execute() as any as Promise<TimeBucketItem[]>;
+  }
+  /** FL-1792: the months of a stored timeline summary, each with the fingerprint it was ranked at. */
+  @GenerateSql({ params: [DummyValue.STRING] })
+  private async readTimelineSummary(key: string): Promise<CalendarMonths | undefined> {
+    const rows = await this.db
+      .selectFrom('timeline_summary')
+      .select(['timeBucket', 'fingerprint', 'pages'])
+      .where('key', '=', key)
+      .execute();
+    return rows.length > 0
+      ? new Map(
+          rows.map(({ timeBucket, fingerprint, pages }) => [
+            timeBucket,
+            { fingerprint, pages: pages as TimeBucketItem[] },
+          ]),
+        )
+      : undefined;
+  }
+  /**
+   * FL-1792: stores the months just ranked, forgets the months the summary no longer has, and keeps
+   * only this person's most recently ranked summaries.
+   */
+  private async storeTimelineSummary(key: string, userId: string, ranked: CalendarMonths, timeBuckets: string[]) {
+    const computedAt = new Date();
+    if (ranked.size > 0) {
+      await this.db
+        .insertInto('timeline_summary')
+        .values(
+          [...ranked].map(([timeBucket, { fingerprint, pages }]) => ({
+            key,
+            timeBucket,
+            userId,
+            fingerprint,
+            pages: JSON.stringify(pages),
+            computedAt,
+          })),
+        )
+        .onConflict((oc) =>
+          oc.columns(['key', 'timeBucket']).doUpdateSet((eb) => ({
+            fingerprint: eb.ref('excluded.fingerprint'),
+            pages: eb.ref('excluded.pages'),
+            computedAt: eb.ref('excluded.computedAt'),
+          })),
+        )
+        .execute();
+    }
+    await this.db
+      .deleteFrom('timeline_summary')
+      .where('key', '=', key)
+      .where(sql<boolean>`"timeBucket" <> all(${timeBuckets}::text[])`)
+      .execute();
+    await sql`
+      delete from timeline_summary where "userId" = ${userId}::uuid and key not in (
+        select key from timeline_summary where "userId" = ${userId}::uuid
+        group by key order by max("computedAt") desc limit ${TIMELINE_SUMMARY_STORED_PER_USER}
+      )
+    `.execute(this.db);
   }
   /**
    * FL-33: one curated card per year or month of a timeline request. Each card carries its count,

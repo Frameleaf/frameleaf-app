@@ -216,6 +216,8 @@ describe('bounded calendar pages', () => {
     const options = { userIds: [user.id], visibility: AssetVisibility.Timeline, order: AssetOrder.Desc };
     const expectFresh = async () => {
       const summary = await cached.getTimeBuckets(options, auth, { pageSize: 2 });
+      // FL-1792: without the stored summary, a new repository ranks every month from nothing
+      await sql`delete from timeline_summary where "userId" = ${user.id}::uuid`.execute(db);
       expect(summary).toEqual(await new AssetRepository(db).getTimeBuckets(options, auth, { pageSize: 2 }));
       return summary;
     };
@@ -234,6 +236,99 @@ describe('bounded calendar pages', () => {
       ['2024-03-01', 1],
       ['2024-02-01', 1],
     ]);
+  });
+
+  it('keeps the ranked months across a server start and ranks only what changed meanwhile (FL-1792)', async () => {
+    const { ctx } = newMediumService(BaseService, {
+      database: db,
+      real: [AssetRepository],
+      mock: [LoggingRepository],
+    });
+    const { user } = await ctx.newUser();
+    const auth = factory.auth({ user: { id: user.id } });
+    const ids: string[] = [];
+    for (const at of ['2024-03-02', '2024-03-01', '2024-02-10', '2024-01-05']) {
+      const date = new Date(`${at}T12:00:00Z`);
+      const { asset } = await ctx.newAsset({
+        ownerId: user.id,
+        fileCreatedAt: date,
+        localDateTime: date,
+        visibility: AssetVisibility.Timeline,
+      });
+      await ctx.newExif({ assetId: asset.id, timeZone: 'UTC' });
+      ids.push(asset.id);
+    }
+    const options = { userIds: [user.id], visibility: AssetVisibility.Timeline, order: AssetOrder.Desc };
+    // Every `new AssetRepository` is a server start: nothing ranked is in memory.
+    const afterStart = () => new AssetRepository(db).getTimeBuckets(options, auth, { pageSize: 2 });
+    const rankedFromNothing = async () => {
+      await sql`delete from timeline_summary where "userId" = ${user.id}::uuid`.execute(db);
+      return afterStart();
+    };
+    const stored = () =>
+      sql<{ timeBucket: string }>`
+        select "timeBucket" from timeline_summary where "userId" = ${user.id}::uuid order by "timeBucket"
+      `
+        .execute(db)
+        .then(({ rows }) => rows.map(({ timeBucket }) => timeBucket));
+
+    const first = await rankedFromNothing();
+    expect(await stored()).toEqual(['2024-01-01', '2024-02-01', '2024-03-01']);
+    expect(await afterStart()).toEqual(first);
+
+    // A marker in every stored month shows which months the next start reads rather than ranks.
+    await sql`
+      update timeline_summary set pages = jsonb_build_array(pages -> 0 || '{"count": 99}'::jsonb)
+      where "userId" = ${user.id}::uuid
+    `.execute(db);
+    expect((await afterStart()).map(({ timeBucket, count }) => [timeBucket, count])).toEqual([
+      ['2024-03-01', 99],
+      ['2024-02-01', 99],
+      ['2024-01-01', 99],
+    ]);
+
+    // While the server is down: February's photo is trashed (its month goes), a March photo is locked.
+    await sql`update asset set "deletedAt" = now() where id = ${ids[2]}::uuid`.execute(db);
+    await sql`insert into asset_lock ("assetId", reason) values (${ids[1]}::uuid, 'marked')`.execute(db);
+    expect((await afterStart()).map(({ timeBucket, count }) => [timeBucket, count])).toEqual([
+      ['2024-03-01', 1],
+      ['2024-01-01', 99],
+    ]);
+    expect(await stored()).toEqual(['2024-01-01', '2024-03-01']);
+
+    // Apart from the marker, a start that reads the stored months answers as one that ranks them all.
+    const fromStore = await afterStart();
+    const fromNothing = await rankedFromNothing();
+    expect(fromStore.filter(({ timeBucket }) => timeBucket !== '2024-01-01')).toEqual(
+      fromNothing.filter(({ timeBucket }) => timeBucket !== '2024-01-01'),
+    );
+
+    // Another person, or the same person with other options, never reads these months.
+    await sql`update timeline_summary set pages = '[]'::jsonb where "userId" = ${user.id}::uuid`.execute(db);
+    const ascending = await new AssetRepository(db).getTimeBuckets({ ...options, order: AssetOrder.Asc }, auth, {
+      pageSize: 2,
+    });
+    expect(ascending.map(({ timeBucket }) => timeBucket)).toEqual(['2024-01-01', '2024-03-01']);
+  });
+
+  it('stores only the summaries a person ranked most recently (FL-1792)', async () => {
+    const { ctx } = newMediumService(BaseService, {
+      database: db,
+      real: [AssetRepository],
+      mock: [LoggingRepository],
+    });
+    const { user } = await ctx.newUser();
+    const auth = factory.auth({ user: { id: user.id } });
+    const { asset } = await ctx.newAsset({ ownerId: user.id, visibility: AssetVisibility.Timeline });
+    await ctx.newExif({ assetId: asset.id, timeZone: 'UTC' });
+    const repository = ctx.get(AssetRepository);
+    for (let pageSize = 1; pageSize <= 10; pageSize++) {
+      await repository.getTimeBuckets({ userIds: [user.id], visibility: AssetVisibility.Timeline }, auth, { pageSize });
+    }
+    const { rows } = await sql<{ keys: number }>`
+      select count(distinct key)::integer as keys from timeline_summary where "userId" = ${user.id}::uuid
+    `.execute(db);
+    expect(rows[0].keys).toBe(8);
   });
 
   it.each([TimeBucketDateType.Taken, TimeBucketDateType.Added])(
