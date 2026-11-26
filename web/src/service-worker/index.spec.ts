@@ -46,10 +46,10 @@ it.each([
   expect(waitUntil).toHaveBeenCalledExactlyOnceWith(promise);
 });
 
-it.each(['thumbnail?size=preview', 'original?download=1'])(
+it.each(['assets/a/thumbnail?size=preview', 'assets/a/original?download=1', 'people/a/thumbnail?updatedAt=1'])(
   'hands the same request and response promise to %s',
   (path) => {
-    const request = new Request(`https://frameleaf.test/api/assets/a/${path}`);
+    const request = new Request(`https://frameleaf.test/api/${path}`);
     const promise = Promise.resolve(new Response('media'));
     vi.mocked(handleFetch).mockReturnValueOnce(promise);
     const respondWith = vi.fn();
