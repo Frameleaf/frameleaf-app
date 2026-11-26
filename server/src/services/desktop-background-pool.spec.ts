@@ -254,67 +254,6 @@ describe('when the processing order sends the job to the helpers (FL-456)', () =
   });
 });
 
-describe('extra jobs a queue starts for desktops', () => {
-  const broker = { helperCapacity: vi.fn() };
-  const plans = { resolveRoutes: vi.fn() };
-  const ml = { desktopModelKeys: vi.fn() };
-  const here = { source: 'local', destinationId: 'nas', desktopPool: false, available: true };
-  const desktops = { source: 'desktops', destinationId: 'nas', desktopPool: true, available: true };
-  beforeEach(() => {
-    service = new DesktopMlService(broker as never, index as never, policies as never, plans as never, ml as never);
-    ml.desktopModelKeys.mockImplementation((workload: MlWorkload) => Promise.resolve([`${workload}-key`]));
-    broker.helperCapacity.mockImplementation((scopes: Record<string, string[]>) =>
-      Promise.resolve(Object.fromEntries(Object.entries(scopes).map(([queue, keys]) => [queue, keys.length * 2]))),
-    );
-  });
-
-  it('starts none while this server comes first and its AI is answering', async () => {
-    plans.resolveRoutes.mockResolvedValue(
-      new Map([
-        [MlWorkload.Clip, [here, desktops]],
-        [MlWorkload.Face, [here, desktops]],
-        [MlWorkload.Ocr, [here, desktops]],
-      ]),
-    );
-    expect(await service.queueCapacity('smartSearch')).toBe(0);
-    expect(broker.helperCapacity).toHaveBeenCalledWith({
-      smartSearch: [],
-      faceDetection: [],
-      ocr: [],
-      imageDescription: [],
-    });
-    expect(ml.desktopModelKeys).not.toHaveBeenCalled();
-  });
-
-  it('counts desktops only for a queue whose work goes to them first, for the models the settings ask for', async () => {
-    plans.resolveRoutes.mockResolvedValue(
-      new Map([
-        // desktops first in the order
-        [MlWorkload.Clip, [desktops, here]],
-        // this server first, but its AI is down: the first place that can take the work is the desktops
-        [MlWorkload.Face, [{ ...here, available: false }, desktops]],
-        // no desktop is ready: this server
-        [MlWorkload.Ocr, [{ ...desktops, available: false }, here]],
-      ]),
-    );
-    expect(await service.queueCapacity('smartSearch')).toBe(2);
-    expect(await service.queueCapacity('faceDetection')).toBe(2);
-    expect(await service.queueCapacity('ocr')).toBe(0);
-    expect(await service.queueCapacity('thumbnailGeneration')).toBe(0);
-    expect(broker.helperCapacity).toHaveBeenCalledExactlyOnceWith({
-      smartSearch: ['clip-key'],
-      faceDetection: ['face-key'],
-      ocr: [],
-      imageDescription: [],
-    });
-    // read at most every two seconds for all queues, then again
-    vi.spyOn(performance, 'now').mockReturnValue(performance.now() + 2500);
-    await service.queueCapacity('smartSearch');
-    expect(broker.helperCapacity).toHaveBeenCalledTimes(2);
-    vi.restoreAllMocks();
-  });
-});
-
 describe('a gallery guest selfie (FL-1058)', () => {
   const broker = {
     hasReadyWorker: vi.fn(),

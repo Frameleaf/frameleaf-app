@@ -55,15 +55,9 @@ const LEASE_LOST = new Set([
   'Asset inputs changed before publication',
 ]);
 
-/** A desktop's remembered capacity is written again after this long, well inside the hour it is kept. */
-const CAPACITY_REFRESH_MS = 10 * 60 * 1000;
-
 @Injectable()
 export class DesktopWorkerService {
   private logger = LoggingRepository.create(DesktopWorkerService.name);
-  /** What each desktop's capacity was last written as, so a claim writes it only when it changed. */
-  private capacities = new Map<string, { total: number; at: number }>();
-
   constructor(
     private auth: DesktopWorkerAuthService,
     private broker: DesktopMlRepository,
@@ -124,17 +118,6 @@ export class DesktopWorkerService {
         if (withdrawn.length > 0) {
           note(`withdrawn ${withdrawn.join(', ')}`);
           throw new ConflictException('desktop_qualification_hold');
-        }
-      }
-      // How many tasks it can run at once (what it holds plus what it can still take) decides how many
-      // queue jobs are started for it. Written when it changes, and now and then so it does not lapse.
-      if (request.slots !== undefined) {
-        const total = (await this.broker.heldLeases(grant)) + request.slots;
-        const known = this.capacities.get(grant.deviceId);
-        if (!known || known.total !== total || Date.now() - known.at > CAPACITY_REFRESH_MS) {
-          await this.broker.rememberCapacity(grant, total);
-          if (this.capacities.size > 1024) this.capacities.clear();
-          this.capacities.set(grant.deviceId, { total, at: Date.now() });
         }
       }
       const deadline = performance.now() + request.waitMs;

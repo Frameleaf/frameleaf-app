@@ -682,7 +682,6 @@ it('gives a desktop that asks several leases at once, up to the Jobs setting of 
   for (let n = 0; n < 3; n++) leases.push((await sut.claim(desktop, [request.modelKey], 4))!);
   expect(leases.map((lease) => lease.task.id)).toEqual(tasks.slice(0, 3).map((task) => task.id));
   expect(leases.every((lease) => !lease.resumed)).toBe(true);
-  expect(await sut.heldLeases(desktop)).toBe(3);
   // the administrator's setting is the ceiling, whatever the desktop says it can take
   expect(await sut.claim(desktop, [request.modelKey], 4)).toBeUndefined();
   // another desktop has its own three
@@ -694,7 +693,6 @@ it('gives a desktop that asks several leases at once, up to the Jobs setting of 
   expect(await sut.fail(desktop, leases[1].attempt.id, 'cancelled')).toBe(true);
   expect(await sut.heartbeat(desktop, leases[2].attempt.id)).toBe(true);
   expect(await sut.hasLiveAttempt(tasks[2].id)).toBe(true);
-  expect(await sut.heldLeases(desktop)).toBe(1);
   // the two free places are filled again: the task it handed back, then the next one
   const again = [
     (await sut.claim(desktop, [request.modelKey], 2))!,

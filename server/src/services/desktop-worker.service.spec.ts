@@ -17,8 +17,6 @@ const broker = {
   countCancel: vi.fn(),
   clearFailures: vi.fn(),
   withdrawnModels: vi.fn(),
-  heldLeases: vi.fn(),
-  rememberCapacity: vi.fn(),
 };
 const warn = vi.spyOn(LoggingRepository.prototype, 'warn').mockImplementation(() => {});
 const warnings = () => warn.mock.calls.map(([message]) => message);
@@ -59,7 +57,6 @@ it('authenticates the exact claim bytes and returns only immutable task/lease me
   expect(auth.authenticate).toHaveBeenCalledWith('token', 'proof', 'claim', payload);
   expect(broker.claim).toHaveBeenCalledWith(grant, ['model'], undefined);
   // a desktop that holds one lease says nothing about slots, and nothing is remembered about it
-  expect(broker.rememberCapacity).not.toHaveBeenCalled();
   expect(result.task).toMatchObject({
     id: 'attempt',
     taskId: 'task',
@@ -292,19 +289,9 @@ describe('a desktop that can run several tasks at once', () => {
     service.claim('token', 'proof', `{"modelKeys":["m"],"waitMs":0,"slots":${slots}}`, signal);
   beforeEach(() => broker.claim.mockResolvedValue(undefined));
 
-  it('passes its free slots to the broker and remembers how many it can run in all', async () => {
-    broker.heldLeases.mockResolvedValue(2);
+  it('passes its free slots to the broker', async () => {
     await claim(3);
     expect(broker.claim).toHaveBeenCalledWith(grant, ['m'], 3);
-    // two held and three more: five at once, which is what the queues start jobs for
-    expect(broker.rememberCapacity).toHaveBeenCalledExactlyOnceWith(grant, 5);
-    // the same total again (one more held, one fewer free) is not written again
-    broker.heldLeases.mockResolvedValue(3);
-    await claim(2);
-    expect(broker.rememberCapacity).toHaveBeenCalledOnce();
-    // its capacity dropped: one claim with the lower number is enough
-    await claim(1);
-    expect(broker.rememberCapacity).toHaveBeenLastCalledWith(grant, 4);
   });
 
   it('refuses a number of slots that is not a small positive whole number', async () => {
