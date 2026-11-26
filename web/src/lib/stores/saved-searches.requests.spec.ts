@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import { emptyDiscoveryQuery } from '$lib/components/discovery/query';
 import { toSavedSearch } from '$lib/frameleaf/search-palette';
+import { authManager } from '$lib/managers/auth-manager.svelte';
 import { eventManager } from '$lib/managers/event-manager.svelte';
 import { savedSearchesStore as searches } from '$lib/stores/saved-searches.svelte';
 import { preferencesFactory } from '@test-data/factories/preferences-factory';
@@ -36,6 +37,18 @@ beforeEach(async () => {
 });
 
 describe('saved search reads', () => {
+  it('starts from the preferences sign-in just read, then asks the server on a reload (FL-1798)', async () => {
+    const take = vi.spyOn(authManager, 'takeFreshPreferences').mockReturnValueOnce(preferences([item('Seed')], 'r7'));
+    await searches.load();
+    expect(names()).toEqual(['Seed']);
+    expect(sdkMock.getMyPreferences).not.toHaveBeenCalled();
+
+    sdkMock.getMyPreferences.mockResolvedValue(preferences([item('Server')], 'r8'));
+    await searches.load(true);
+    expect(names()).toEqual(['Server']);
+    expect(take).toHaveBeenCalledTimes(1);
+  });
+
   it('shares one read with a hundred readers and retains the fulfilled cache', async () => {
     const request = deferred();
     sdkMock.getMyPreferences.mockReturnValue(request.promise);

@@ -195,8 +195,9 @@ describe('Job manager (FL-71, JobsManager.jsx)', () => {
     }
     // How many run at once edits the settings draft, so it waits for the settings to load.
     expect(screen.getByRole('button', { name: 'How many run at once' })).toBeDisabled();
-    expect(screen.getByText('3 running')).toBeInTheDocument();
-    expect(screen.getByText('6 waiting')).toBeInTheDocument();
+    // FL-1785: how much is left and how much is running, over one bar
+    expect(screen.getByText('3 running now')).toBeInTheDocument();
+    expect(screen.getByText('9 left')).toBeInTheDocument();
 
     // what went wrong comes first, with its one action
     const look = within(screen.getByRole('region', { name: 'Needs a look' }));
@@ -595,9 +596,10 @@ describe('Job manager (FL-71, JobsManager.jsx)', () => {
     expect(faces.queryByText('No failures')).not.toBeInTheDocument();
     const thumbnails = within(screen.getByRole('button', { name: 'Open Making thumbnails' }).closest('li')!);
     expect(thumbnails.getByText('Running 1 at once')).toBeInTheDocument();
-    expect(thumbnails.getByText('2 waiting')).toBeInTheDocument();
+    expect(thumbnails.getByText('0 of 3')).toBeInTheDocument();
     // a part is not summed as if it were the whole
-    expect(screen.queryByText(/^\d+ running$/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/^\d+ running now$/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/% done$/)).not.toBeInTheDocument();
   });
 
   it("lets a slow read of an account's counts land while the open queue keeps changing (FL-1239)", async () => {
@@ -948,6 +950,25 @@ describe('One job at a time (approved design, 2026-11-04)', () => {
       expect(within(dialog).getByRole('button', { name: 'Retry' })).toBeInTheDocument();
       expect(within(dialog).queryByRole('link', { name: 'In Library care' })).not.toBeInTheDocument();
     });
+  });
+
+  it('says what went wrong in plain words, with the server’s own on request (FL-1785)', async () => {
+    at('&queue=face-detection&tab=failed');
+    vi.mocked(getQueueJobs).mockResolvedValue([{ ...failedJob, cause: QueueProblemCause.MlUnavailable }]);
+    render(JobsManager);
+
+    // the row says the cause and that the photo is fine, not the server's message
+    const open = await screen.findByRole('button', { name: /The face and search helper didn’t answer/ });
+    expect(open).toHaveTextContent('Nothing is wrong with this photo or video.');
+    expect(open).not.toHaveTextContent('Machine learning is unreachable');
+
+    await fireEvent.click(open);
+    const dialog = within(await screen.findByRole('dialog'));
+    expect(dialog.getByRole('heading', { name: 'The face and search helper didn’t answer' })).toBeInTheDocument();
+    expect(dialog.getByText('Try it again once the helper is back. It restarts by itself.')).toBeInTheDocument();
+    // the server's words are kept, folded
+    expect(dialog.getByText('What the server said')).toBeInTheDocument();
+    expect(dialog.getByText('Machine learning is unreachable')).not.toBeVisible();
   });
 
   it('starts one waiting job now', async () => {

@@ -8,6 +8,7 @@ import {
   DuplicateDecisionGroupDto,
   DuplicateDecisionHistoryDto,
   DuplicateReviewGroupDto,
+  DuplicateReviewPageDto,
 } from 'src/dtos/duplicate-review.dto.js';
 import {
   AssetStatus,
@@ -150,8 +151,11 @@ export class DuplicateDecisionService {
    * how the group reads (copies or burst), the evidence behind the suggestion and whether the session
    * may decide it.
    */
-  async getReview(auth: AuthDto): Promise<DuplicateReviewGroupDto[]> {
-    const groups = await this.duplicates.getDuplicates(auth);
+  async getReview(auth: AuthDto, { take, after }: DuplicateReviewPageDto = {}): Promise<DuplicateReviewGroupDto[]> {
+    // FL-1795: with `take`, one page; everything below reads only what its groups need
+    const groups = await (take === undefined
+      ? this.duplicates.getDuplicates(auth)
+      : this.duplicates.getDuplicates(auth, { take, after }));
     const members = await this.repository.getGroupMembers(groups.map(({ duplicateId }) => duplicateId));
     const byGroup = new Map<string, typeof members>();
     for (const member of members) {

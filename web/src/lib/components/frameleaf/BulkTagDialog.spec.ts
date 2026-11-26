@@ -36,6 +36,12 @@ describe('BulkTagDialog (FL-648)', () => {
     expect(onSubmit).toHaveBeenCalledWith({ tagIds: ['t-beach'], newTagNames: [] });
   });
 
+  it('opens with the cursor in the tag field (FL-1823)', async () => {
+    renderWithTooltips(BulkTagDialog, { count: 1, options: [], onSubmit: vi.fn() });
+
+    await waitFor(() => expect(screen.getByRole('combobox', { name: 'frameleaf_bulk_tag_add' })).toHaveFocus());
+  });
+
   it('uses the tags the view passes without loading them again', async () => {
     renderWithTooltips(BulkTagDialog, { count: 1, options: [{ id: 't-cake', name: 'cake' }], onSubmit: vi.fn() });
 

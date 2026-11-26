@@ -31,6 +31,7 @@ export const newJobRepositoryMock = (): Mocked<RepositoryInterface<JobRepository
     actOnRunFailures: vitest.fn(),
     listQueueProblems: vitest.fn(),
     getQueueHolds: vitest.fn(),
+    getQueueProgress: vitest.fn().mockResolvedValue([]),
     actOnQueueProblem: vitest.fn(),
     recentFileCheck: vitest.fn(),
     listRuns: vitest.fn().mockResolvedValue([]),

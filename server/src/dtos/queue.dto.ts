@@ -73,6 +73,17 @@ const QueueJobWorkerSchema = z
   })
   .meta({ id: 'QueueJobWorkerDto' });
 
+/**
+ * FL-1486: Background work › Advanced. Its own enums: `JobRunFailureCause` and the queue fields above are decoded
+ * strictly by the native apps, so richer values are only ever sent here.
+ */
+export const QueueProblemCauseSchema = z
+  .enum(QUEUE_PROBLEM_CAUSES)
+  .describe(
+    "What went wrong: drive (an external library can't be reached), missing (the file is gone), damaged, unsupported (a format that can't be read), writeDenied (a folder could not be written to), mlUnavailable (the machine-learning helper did not answer), tooLong (the job ran past its deadline), or other",
+  )
+  .meta({ id: 'QueueProblemCause' });
+
 const QueueJobResponseSchema = z
   .object({
     id: z.string().optional().describe('Job ID'),
@@ -81,6 +92,7 @@ const QueueJobResponseSchema = z
     timestamp: z.int().describe('Job creation timestamp'),
     attemptsMade: z.int().optional().describe('How many times the job has been attempted'),
     failedReason: z.string().optional().describe('Why the last attempt failed, for a failed job'),
+    cause: QueueProblemCauseSchema.optional().describe('What went wrong, for a failed job (FL-1785)'),
     account: QueueJobAccountSchema.optional().describe(
       'The account whose item the job works on, when the job names an asset, person, library or account',
     ),
@@ -145,16 +157,6 @@ const QueueResponseSchema = z
   })
   .meta({ id: 'QueueResponseDto' });
 
-/**
- * FL-1486: Background work › Advanced. Its own enums: `JobRunFailureCause` and the queue fields above are decoded
- * strictly by the native apps, so richer values are only ever sent here.
- */
-export const QueueProblemCauseSchema = z
-  .enum(QUEUE_PROBLEM_CAUSES)
-  .describe(
-    "What went wrong: drive (an external library can't be reached), missing (the file is gone), damaged, unsupported (a format that can't be read), writeDenied (a folder could not be written to), mlUnavailable (the machine-learning helper did not answer), tooLong (the job ran past its deadline), or other",
-  )
-  .meta({ id: 'QueueProblemCause' });
 const QueueProblemSchema = z
   .object({
     cause: QueueProblemCauseSchema,
@@ -183,6 +185,18 @@ const QueueTaskSchema = z
     pausedAt: z.iso.datetime().optional().describe('For paused: when a person paused it; absent when the server did'),
     closedUntil: z.iso.datetime().optional().describe('For quietHours: when it opens again'),
     waitingFor: QueueNameSchema.optional().describe('For waitingFor: the queue it waits for'),
+    done: z
+      .int()
+      .min(0)
+      .optional()
+      .describe(
+        'Jobs of this queue finished since it last had nothing to do (FL-1785). With what is running and waiting, how far along it is',
+      ),
+    perHour: z
+      .int()
+      .min(1)
+      .optional()
+      .describe('Jobs finished an hour at the pace of the last ten minutes; absent when none finished'),
   })
   .meta({ id: 'QueueTaskDto' });
 const QueueOverviewResponseSchema = z

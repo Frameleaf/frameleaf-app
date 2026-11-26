@@ -78,6 +78,8 @@
     type JobTab,
     MANUAL_JOBS,
     type ManualJobDefinition,
+    PROBLEM_KEYS,
+    PROBLEMS_AT_RISK,
   } from '$lib/frameleaf/job-queues';
   import type { EnrichmentTaskAction } from '$lib/frameleaf/enrichment-tasks';
   import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
@@ -144,7 +146,9 @@
     mdiPause,
     mdiPlay,
     mdiPlus,
+    mdiAlertOutline,
     mdiRedo,
+    mdiShieldCheckOutline,
     mdiTuneVariant,
   } from '@mdi/js';
   import { onDestroy, onMount, untrack } from 'svelte';
@@ -1294,9 +1298,10 @@
 {:else if !selectedName}
   <!--
     Advanced, the list (approved design, 2026-11-12, FL-1486): what went wrong first, then each task with
-    why it is not running, the tools at the foot. Recent work is in Activity.
+    why it is not running, the tools at the foot. Recent work is in Activity. A page of data: it uses the whole
+    pane (FL-1785).
   -->
-  <KitPage>
+  <KitPage wide>
     {@render views()}
     <section class="jobs-manager" aria-label={$t('frameleaf_jobs_label')} bind:this={main}>
       {@render messages()}
@@ -1570,7 +1575,13 @@
                       {#if subject(job)}
                         <small>{subject(job)}</small>
                       {/if}
-                      {#if job.status === 'failed' && job.failedReason}
+                      {#if job.status === 'failed' && job.cause}
+                        <!-- FL-1785: what went wrong in plain words; the server's own are in the details -->
+                        <span class="jm-job-plain">
+                          <b>{$t(`frameleaf_jobs_adv_cause_${PROBLEM_KEYS[job.cause]}` as Translations)}</b>
+                          {$t(`frameleaf_jobs_adv_cause_${PROBLEM_KEYS[job.cause]}_safe_one` as Translations)}
+                        </span>
+                      {:else if job.status === 'failed' && job.failedReason}
                         <span class="jm-job-error">{job.failedReason}</span>
                       {/if}
                     </button>
@@ -1792,9 +1803,26 @@
         </div>
       </dl>
       {#if detail.status === 'failed'}
-        <div class="jm-failure">
-          <h3>{$t('frameleaf_jobs_detail_error')}</h3>
-          <p>{detail.failedReason || $t('frameleaf_jobs_detail_error_none')}</p>
+        <div class="jm-failure" class:jm-plain={!!detail.cause}>
+          {#if detail.cause}
+            {@const key = PROBLEM_KEYS[detail.cause]}
+            {@const risk = PROBLEMS_AT_RISK.has(detail.cause)}
+            <h3>{$t(`frameleaf_jobs_adv_cause_${key}` as Translations)}</h3>
+            <p class="jm-plain-safe" class:jm-plain-risk={risk}>
+              <Icon icon={risk ? mdiAlertOutline : mdiShieldCheckOutline} size="17px" aria-hidden={true} />
+              <span>{$t(`frameleaf_jobs_adv_cause_${key}_safe_one` as Translations)}</span>
+            </p>
+            <p>{$t(`frameleaf_jobs_adv_cause_${key}_todo` as Translations)}</p>
+            {#if detail.failedReason}
+              <details class="jm-said">
+                <summary>{$t('frameleaf_jobs_adv_said')}</summary>
+                <code>{detail.failedReason}</code>
+              </details>
+            {/if}
+          {:else}
+            <h3>{$t('frameleaf_jobs_detail_error')}</h3>
+            <p>{detail.failedReason || $t('frameleaf_jobs_detail_error_none')}</p>
+          {/if}
           <div class="jm-failure-actions">
             <Button onclick={() => void goto(Route.systemWorkers())}>{$t('frameleaf_jobs_check_workers')}</Button>
             {#if detailProblem}
@@ -2324,6 +2352,61 @@
     margin: 0 0 4px;
     font-size: 13px;
     color: var(--jm-red);
+  }
+  /* FL-1785: a failure in plain words is information, not an alarm */
+  .jm-job-plain {
+    display: block;
+    margin-top: 8px;
+    max-width: 420px;
+    color: var(--fl-muted);
+    font-size: 12px;
+    font-weight: 400;
+    line-height: 1.5;
+  }
+  .jm-job-plain b {
+    display: block;
+    color: var(--fl-text);
+    font-weight: 500;
+  }
+  .jm-failure.jm-plain {
+    padding: var(--fl-space-4);
+    border-color: var(--fl-border);
+    background: var(--fl-panel);
+  }
+  .jm-failure.jm-plain h3 {
+    margin-bottom: var(--fl-space-3);
+    font-size: 15px;
+    color: var(--fl-text);
+  }
+  .jm-plain-safe {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--fl-space-2);
+  }
+  .jm-plain-safe :global(svg) {
+    flex: none;
+    margin-top: 3px;
+    color: var(--fl-accent);
+  }
+  .jm-plain-risk :global(svg) {
+    color: var(--fl-warning);
+  }
+  .jm-said {
+    margin-bottom: var(--fl-space-3);
+  }
+  .jm-said summary {
+    color: var(--fl-accent);
+    cursor: pointer;
+  }
+  .jm-said code {
+    display: block;
+    margin-top: var(--fl-space-2);
+    padding: 10px 12px;
+    border: 1px solid var(--fl-border);
+    border-radius: var(--fl-radius-sm);
+    background: var(--fl-bg);
+    font-size: 12px;
+    overflow-wrap: anywhere;
   }
   .jm-failure-actions {
     display: flex;

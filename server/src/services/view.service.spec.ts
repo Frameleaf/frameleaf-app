@@ -116,8 +116,35 @@ describe(ViewService.name, () => {
 
       const result = await sut.getAssetsByOriginalPath(authStub.admin, path);
       expect(result).toEqual(mockAssetReponseDto);
-      expect(mocks.view.getAssetsByOriginalPath).toHaveBeenCalledWith(authStub.admin.user.id, path, {});
+      expect(mocks.view.getAssetsByOriginalPath).toHaveBeenCalledWith(authStub.admin.user.id, path, {}, undefined);
       await expect(mocks.view.getAssetsByOriginalPath(authStub.admin.user.id, path)).resolves.toEqual(mockAssets);
+    });
+
+    it('reads one page when asked for one (FL-1795)', async () => {
+      const after = AssetFactory.create().id;
+      mocks.view.getAssetsByOriginalPath.mockResolvedValue([]);
+
+      await sut.getAssetsByOriginalPath(authStub.admin, '/asset', { take: 500 });
+      expect(mocks.view.getAssetsByOriginalPath).toHaveBeenLastCalledWith(
+        authStub.admin.user.id,
+        '/asset',
+        {},
+        {
+          take: 500,
+          after: undefined,
+        },
+      );
+
+      await sut.getAssetsByOriginalPath(authStub.admin, '/asset', { take: 500, after });
+      expect(mocks.view.getAssetsByOriginalPath).toHaveBeenLastCalledWith(
+        authStub.admin.user.id,
+        '/asset',
+        {},
+        {
+          take: 500,
+          after,
+        },
+      );
     });
   });
 });
