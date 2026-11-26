@@ -70,6 +70,8 @@ const DRAIN: DrainTiming = { timeoutMs: 30 * 60_000, intervalMs: 2000 };
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /** The existing operation lock owns the copy, mapping commit and conservative write-start intent. */
+/** The folder a move copies into, so writers there are named before the copy starts. */
+const destinationMount = (source: string): Mount => ({ type: 'bind', source, target: '', readOnly: false });
 export class LibraryMove {
   private stopping = new Set<string>();
   constructor(
@@ -287,7 +289,7 @@ export class LibraryMove {
     await this.storage.validate(root, 0);
     await this.storage.validate(current.mounts[0].source, 0, current.id);
     await this.physicalPaths(current, root, source);
-    await this.fencing.warnMediaWriters(current.mounts, current);
+    await this.fencing.warnMediaWriters([...current.mounts, destinationMount(root)], current);
     const review: Review = {
       available: await this.pauseAvailable(),
       id: randomUUID(),
@@ -458,7 +460,7 @@ export class LibraryMove {
       if (digest(this.current()) !== digest(current)) throw new Refusal('installation_changed');
       await this.storage.validate(review.root, review.bytes);
       await assertMountSources(current.mounts);
-      await this.fencing.warnMediaWriters(current.mounts, current);
+      await this.fencing.warnMediaWriters([...current.mounts, destinationMount(review.root)], current);
       await this.quiesce(operation, current);
       const writers = (await this.docker.inventory()).filter(
         (c) => c.Config.Labels?.['app.frameleaf.manager'] === current.id,
@@ -483,7 +485,7 @@ export class LibraryMove {
     });
     if (!operation.receipts['move-writes-intent']) {
       await this.fencing.verifyInstallation(current);
-      await this.fencing.warnMediaWriters(current.mounts, current);
+      await this.fencing.warnMediaWriters([...current.mounts, destinationMount(review.root)], current);
     }
     const frozen = await step('move-freeze', () => this.helper('freeze', review, review.root));
     await step('move-copy', async () => {

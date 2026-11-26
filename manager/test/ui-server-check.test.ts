@@ -129,6 +129,8 @@ test('other containers that can write are named in a warning that never blocks',
   const [row] = checkRows([{ id: 'writers', status: 'warning', facts: { containers: 'duplicati, krusader' } }], context('unraid', []));
   assert.equal(row.status, 'warning');
   assert.match(row.detail ?? '', /^duplicati, krusader can write/);
+  const [unknown] = checkRows([{ id: 'writers', status: 'unknown' }], context('unraid', []));
+  assert.equal(unknown.title, 'Couldn’t check other containers');
 });
 
 test('Unraid’s Docker tab is a warning with the path to add', () => {

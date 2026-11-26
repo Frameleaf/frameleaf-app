@@ -172,7 +172,11 @@ export class Fencing {
   }
   /** Logs who else can write to the media and carries on; the review and Overview show the same warning. */
   async warnMediaWriters(media: Mount[], installation?: Installation, workers: string[] = []): Promise<void> {
-    const writers = await this.mediaWriters(media, installation, workers);
+    // The database folder is one of the library's folders too.
+    const database: Mount[] = installation?.databaseRoot
+      ? [{ type: 'bind', source: installation.databaseRoot, target: '', readOnly: false }]
+      : [];
+    const writers = await this.mediaWriters([...media, ...database], installation, workers);
     if (writers.length) console.warn(`manager: other containers can write to Frameleaf's folders: ${writers.join(', ')}`);
   }
   async stop(source: Source | SourceFence): Promise<void> {

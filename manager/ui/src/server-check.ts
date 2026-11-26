@@ -318,6 +318,12 @@ function notice(result: CheckResult, context: CheckContext): Words {
       detail: `Frameleaf will work, but a faster drive is available. ${result.facts.suggestedDrive}: ${result.facts.reason}`,
       action: { kind: 'suggest', folder: 'database', path: result.facts.suggestion, label: `Use ${result.facts.suggestedName}` },
     };
+  if (result.id === 'writers' && result.status === 'unknown')
+    return {
+      title: 'Couldn’t check other containers',
+      detail: 'Manager couldn’t tell whether other containers can write to Frameleaf’s folders. Frameleaf will still install and run.',
+      action: { kind: 'recheck', label: 'Check again' },
+    };
   if (result.id === 'writers') return otherWriters(String(result.facts?.containers ?? ''));
   if (result.id === 'room' && result.status === 'unknown')
     return {

@@ -1259,7 +1259,11 @@ export class Operations {
     await this.writersCheck(
       checks,
       this.folderMounts({
-        mounts: source?.mounts ?? [{ type: 'bind', source: input.mediaPath!, target: '', readOnly: false }],
+        mounts: source?.mounts ?? [
+          { type: 'bind', source: input.mediaPath!, target: '', readOnly: false },
+          // A thumbnail folder of its own is one of the library's folders.
+          ...(input.thumbnailsPath ? [{ type: 'bind' as const, source: input.thumbnailsPath, target: '', readOnly: false }] : []),
+        ],
         databaseRoot: input.databaseRoot,
       }),
       undefined,
@@ -1311,14 +1315,20 @@ export class Operations {
   }
   /** Who else can write to the library's folders: a warning in the review, never a reason to stop. */
   private async writersCheck(checks: ServerCheck, folders: Mount[], installation?: Installation, workers?: string[]) {
-    const containers = await this.fencing.mediaWriters(folders, installation, workers).catch(() => []);
-    if (containers.length)
+    // A lookup that fails is "couldn't tell", not "nobody else".
+    const containers = await this.fencing.mediaWriters(folders, installation, workers).catch(() => null);
+    if (!containers) checks.results.push({ id: 'writers', status: 'unknown' });
+    else if (containers.length)
       checks.results.push({ id: 'writers', status: 'warning', facts: { containers: containers.join(', ') } });
   }
   /** Overview's warning: other containers that can write to this library's photos or database folder. */
   async otherWriters(): Promise<string[]> {
     const installation = this.installation();
-    return installation ? this.fencing.mediaWriters(this.folderMounts(installation), installation).catch(() => []) : [];
+    if (!installation) return [];
+    return this.fencing.mediaWriters(this.folderMounts(installation), installation).catch((error) => {
+      console.warn(`manager: could not check which other containers can write to Frameleaf's folders: ${error?.message ?? error}`);
+      return [];
+    });
   }
   private async roomCheck(checks: ServerCheck, ml: boolean): Promise<void> {
     const needed = dockerRoomNeeded(ml, ml ? await detectAcceleration() : 'cpu');
