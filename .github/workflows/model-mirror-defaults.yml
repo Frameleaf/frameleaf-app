@@ -44,6 +44,6 @@ jobs:
         run: |-
           mise run //server:install
           mise run //:plugins
-      - name: Check the default models on the mirror
+      - name: Check the default models on the model source
         working-directory: server
         run: pnpm test:model-mirror

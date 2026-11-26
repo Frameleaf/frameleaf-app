@@ -261,6 +261,23 @@ class TestBase:
 
         assert snapshot_download.call_args.kwargs["token"] is False
 
+    def test_download_says_when_the_token_was_refused(
+        self, snapshot_download: mock.Mock, mocker: MockerFixture
+    ) -> None:
+        mocker.patch.object(settings, "hugging_face_token", SecretStr("fake-hf-token"))
+        mocker.patch.object(log, "error")
+        request = httpx.Request("GET", "https://huggingface.co/api/models/frameleaf/buffalo_l/revision/main")
+        snapshot_download.side_effect = RepositoryNotFoundError(
+            "Invalid credentials", response=httpx.Response(401, request=request)
+        )
+
+        with pytest.raises(ModelUnavailableError) as raised:
+            FaceRecognizer("buffalo_l", cache_dir="/path/to/cache").download()
+
+        assert "refused the access token" in str(raised.value)
+        assert "MACHINE_LEARNING_HUGGING_FACE_TOKEN" in str(raised.value)
+        assert "fake-hf-token" not in str(raised.value)
+
     def test_download_uses_configured_model_source(self, snapshot_download: mock.Mock, mocker: MockerFixture) -> None:
         mocker.patch.object(settings, "model_source_url", "https://models.example.com/")
         encoder = OpenClipTextualEncoder("ViT-B-32__openai", cache_dir="/path/to/cache")
