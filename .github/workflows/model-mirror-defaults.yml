@@ -1,6 +1,6 @@
 name: Model Mirror Defaults
-# FL-330: every default machine-learning model must resolve on the Frameleaf model mirror
-# (https://models.frameleaf.cloud), or fresh servers fail that ML task out of the box.
+# FL-330: every default machine-learning model must resolve on the default model source
+# (the Frameleaf organisation on Hugging Face), or fresh servers fail that ML task out of the box.
 'on':
   pull_request:
     branches:
@@ -22,7 +22,7 @@ concurrency:
   cancel-in-progress: true
 jobs:
   default-models:
-    name: Default ML models resolve on the mirror
+    name: Default ML models resolve on the model source
     if: ${{ github.repository == 'Frameleaf/frameleaf-app' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
