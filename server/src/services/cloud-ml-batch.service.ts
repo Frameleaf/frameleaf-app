@@ -265,10 +265,19 @@ export class CloudMlBatchService extends BaseService {
     this.cronRepository.create({
       name: 'frameleafCloudDescriptionBatches',
       expression: CLOUD_DESCRIPTION_PASS_CRON,
-      onTick: () =>
-        handlePromiseError(this.jobRepository.queue({ name: JobName.CloudMlDescriptionBatch, data: {} }), this.logger),
+      onTick: () => handlePromiseError(this.queuePass(), this.logger),
       start: !!this.configRepository.getEnv().frameleafCloud.url,
     });
+  }
+
+  /**
+   * A server that never linked to Frameleaf Cloud has no batches, so no pass is queued. One that was linked keeps its
+   * passes so batches left behind by an unlink are still released.
+   */
+  private async queuePass() {
+    if (await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafCloudLink)) {
+      await this.jobRepository.queue({ name: JobName.CloudMlDescriptionBatch, data: {} });
+    }
   }
 
   @OnJob({ name: JobName.CloudMlDescriptionBatch, queue: QueueName.BackgroundTask })
