@@ -2052,6 +2052,11 @@ export type ClassConstructorsToInstances<T extends readonly ClassConstructor<unk
 
 /** FL-537: the video converter's graphics card, as Video playback copies says it. */
 export type VideoCardState = {
+  /**
+   * When start-up found the switch on, or turned it on because a test transcode ran on a card. Set once;
+   * after it the switch is the administrator's alone.
+   */
+  autoEnabledAt?: string | null;
   /** When a copy last had to be made on the processor because the card failed; null once it works again. */
   failedAt: string | null;
   /** The kind of card that failed (`ffmpeg.accel`). */

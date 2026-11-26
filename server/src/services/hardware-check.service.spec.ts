@@ -1,5 +1,12 @@
+import type { SystemConfig } from 'src/config.js';
 import type { MlSelection } from 'src/repositories/machine-learning.repository.js';
-import { MediaOperationKind, MlWorkload, RenderWorkerStatus, SystemMetadataKey } from 'src/enum.js';
+import {
+  MediaOperationKind,
+  MlWorkload,
+  RenderWorkerStatus,
+  SystemMetadataKey,
+  TranscodeHardwareAcceleration,
+} from 'src/enum.js';
 import { HardwareCheckService } from 'src/services/hardware-check.service.js';
 import { withSyntheticGpuBudget } from 'test/fixtures/gpu-working-budget.stub.js';
 import { mlDestinationStub, mlSelectionStub } from 'test/fixtures/ml-destination.stub.js';
@@ -41,6 +48,84 @@ describe(HardwareCheckService.name, () => {
       devices: { renderNodes: [], kfd: false, kfdAccessible: false, nvidia: true, nvidiaRequested: true },
     });
     mocks.mlDestination.getRoute.mockResolvedValue(undefined);
+  });
+
+  describe('enableVideoCard', () => {
+    const withAccel = (accel: TranscodeHardwareAcceleration) => {
+      const config = { ffmpeg: { accel } } as SystemConfig;
+      vi.spyOn(sut, 'getConfig').mockResolvedValue(config);
+      return vi.spyOn(sut, 'updateConfigExclusively').mockImplementation((change) => {
+        const next = structuredClone(config);
+        change(next);
+        return Promise.resolve({ oldConfig: config, newConfig: next });
+      });
+    };
+
+    it('turns the switch on once when the test transcode ran on a card', async () => {
+      const update = withAccel(TranscodeHardwareAcceleration.Disabled);
+
+      await sut.enableVideoCard();
+
+      expect(update).toHaveBeenCalledTimes(1);
+      const { newConfig } = await update.mock.results[0].value;
+      expect(newConfig.ffmpeg.accel).toBe(TranscodeHardwareAcceleration.Nvenc);
+      expect(mocks.event.emit).toHaveBeenCalledWith('ConfigUpdate', expect.anything());
+      expect(stored).toMatchObject({ autoEnabledAt: expect.any(String) });
+
+      // An administrator who then turns it off keeps it off.
+      withAccel(TranscodeHardwareAcceleration.Disabled);
+      mocks.hardwareProbe.readServer.mockClear();
+      await sut.enableVideoCard();
+      expect(mocks.hardwareProbe.readServer).not.toHaveBeenCalled();
+    });
+
+    it('uses VA-API for an Intel or AMD card', async () => {
+      mocks.hardwareProbe.readServer.mockResolvedValue({
+        nvidia: null,
+        nvidiaError: null,
+        nvidiaRequested: false,
+        nvidiaDevice: false,
+        renderNodes: [],
+        encoders: ['h264_vaapi'],
+        test: { encoder: 'h264_vaapi', gpu: true, speed: 6, error: null },
+        host: { kernel: '6.8.0', gpus: [], dxg: false, groups: [0], root: true },
+      });
+      const update = withAccel(TranscodeHardwareAcceleration.Disabled);
+
+      await sut.enableVideoCard();
+
+      const { newConfig } = await update.mock.results[0].value;
+      expect(newConfig.ffmpeg.accel).toBe(TranscodeHardwareAcceleration.Vaapi);
+    });
+
+    it('leaves the switch off and checks again next start when no card worked', async () => {
+      mocks.hardwareProbe.readServer.mockResolvedValue({
+        nvidia: null,
+        nvidiaError: null,
+        nvidiaRequested: false,
+        nvidiaDevice: false,
+        renderNodes: [],
+        encoders: [],
+        test: { encoder: 'libx264', gpu: false, speed: 2, error: null },
+        host: { kernel: '6.8.0', gpus: [], dxg: false, groups: [0], root: true },
+      });
+      const update = withAccel(TranscodeHardwareAcceleration.Disabled);
+
+      await sut.enableVideoCard();
+
+      expect(update).not.toHaveBeenCalled();
+      expect(stored).toBeUndefined();
+    });
+
+    it('only marks it when the switch is already on', async () => {
+      const update = withAccel(TranscodeHardwareAcceleration.Qsv);
+
+      await sut.enableVideoCard();
+
+      expect(update).not.toHaveBeenCalled();
+      expect(mocks.hardwareProbe.readServer).not.toHaveBeenCalled();
+      expect(stored).toMatchObject({ autoEnabledAt: expect.any(String) });
+    });
   });
 
   it('checks both containers and keeps the result', async () => {

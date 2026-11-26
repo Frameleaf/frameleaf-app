@@ -2,14 +2,24 @@ import { Injectable } from '@nestjs/common';
 import { createHash } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
 import type { MachineLearningConfig } from 'src/dtos/config.dto.js';
+import { OnEvent } from 'src/decorators.js';
 import { HardwareCheck, HardwareCheckResponseDto } from 'src/dtos/hardware-check.dto.js';
-import { MlDestinationKind, MlWorkerRole, MlWorkload, RenderWorkerStatus, SystemMetadataKey } from 'src/enum.js';
+import {
+  FrameleafWorker,
+  MlDestinationKind,
+  MlWorkerRole,
+  MlWorkload,
+  RenderWorkerStatus,
+  SystemMetadataKey,
+  TranscodeHardwareAcceleration,
+} from 'src/enum.js';
 import { MlDestinationRow } from 'src/repositories/ml-destination.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { RENDER_WORKER_STALE_MS } from 'src/services/worker-inventory.service.js';
 import { evaluateApprovedRenderSession } from 'src/utils/gpu-working-budget-policy.js';
 import {
   ContainerTest,
+  HardwareBackend,
   MlContainerReport,
   WORKER_MODEL_MODES,
   WorkerCheck,
@@ -33,6 +43,12 @@ const BENCHMARK_EMBEDDINGS = 5;
 /** Test photos the description benchmark times after one that loads the model. */
 const BENCHMARK_DESCRIPTIONS = 2;
 
+/** The playback-video setting for a card the server's test transcode ran on. */
+const CARD_ACCEL: Partial<Record<HardwareBackend, TranscodeHardwareAcceleration>> = {
+  NVENC: TranscodeHardwareAcceleration.Nvenc,
+  'VA-API': TranscodeHardwareAcceleration.Vaapi,
+};
+
 const errorText = (error: unknown) => (error instanceof Error ? error.message : String(error)).slice(0, 300);
 
 type MeasurementSource = { destinations: MlDestinationRow[]; machineLearning: MachineLearningConfig; scope: string };
@@ -46,6 +62,50 @@ type MeasurementSource = { destinations: MlDestinationRow[]; machineLearning: Ma
  */
 @Injectable()
 export class HardwareCheckService extends BaseService {
+  /**
+   * Playback videos use the graphics card without anyone having to find the switch: at start-up, while
+   * the switch is still off and the server's test transcode runs on a card, it is turned on, once.
+   * Once it has been on (turned on here or by an administrator), start-up leaves it alone, so turning
+   * it off stays off. Runs in the background so a slow test never holds up start-up.
+   */
+  @OnEvent({ name: 'AppBootstrap', workers: [FrameleafWorker.Microservices] })
+  onBootstrap() {
+    void this.enableVideoCard().catch((error) =>
+      this.logger.warn(`Could not check the graphics card for playback videos: ${errorText(error)}`),
+    );
+  }
+
+  async enableVideoCard(): Promise<void> {
+    const state = await this.systemMetadataRepository.get(SystemMetadataKey.VideoCardState);
+    if (state?.autoEnabledAt) {
+      return;
+    }
+    const mark = () =>
+      this.systemMetadataRepository.set(SystemMetadataKey.VideoCardState, {
+        failedAt: null,
+        accel: null,
+        lastTest: null,
+        ...state,
+        autoEnabledAt: new Date().toISOString(),
+      });
+    const { ffmpeg } = await this.getConfig({ withCache: false });
+    if (ffmpeg.accel !== TranscodeHardwareAcceleration.Disabled) {
+      await mark();
+      return;
+    }
+    // ponytail: until a card is found this runs one short test transcode per start-up
+    const accel = CARD_ACCEL[serverCheckFrom(await this.hardwareProbeRepository.readServer()).backend];
+    if (!accel) {
+      return;
+    }
+    const { oldConfig, newConfig } = await this.updateConfigExclusively((config) => {
+      config.ffmpeg.accel = accel;
+    });
+    await this.eventRepository.emit('ConfigUpdate', { oldConfig, newConfig });
+    await mark();
+    this.logger.log(`Playback videos now use the graphics card (${accel.toUpperCase()}), found by a test transcode`);
+  }
+
   async getCheck(): Promise<HardwareCheckResponseDto> {
     const stored = await this.systemMetadataRepository.get(SystemMetadataKey.HardwareCheck);
     if (
