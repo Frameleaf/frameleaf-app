@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { mkdir, mkdtemp, realpath, stat, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { adoptMappedFolders, assertExternalFolder, assertSeparateFolders, applyFolderDefaults, broadRoots, externalRoots, externalRuleSources, ensureChosenFolder, moveRoots, ensureManagerFolder, inside, isMounted, listFolders, realTarget, sameFiles } from '../src/folders.js';
+import { adoptMappedFolders, assertExternalFolder, assertSeparateFolders, applyFolderDefaults, broadRoots, externalRoots, browsedOnEarlierInstall, externalRuleSources, ensureChosenFolder, readOnlyMapping, moveRoots, ensureManagerFolder, inside, isMounted, listFolders, realTarget, sameFiles } from '../src/folders.js';
 import type { Refusal } from '../src/contracts.js';
 import { externalFolderIssue, externalFolders, setExternalFolders } from '../ui/src/presentation.js';
 
@@ -85,6 +85,22 @@ test('on an earlier install the external rules cover what /mnt added, never a fo
   } finally {
     delete process.env.MANAGER_EXTERNAL_ROOTS;
   }
+});
+
+test('a move on an earlier install checks a browsed folder, never a saved root, and names a read-only mapping', () => {
+  const saved = ['/mnt/user/photos'];
+  assert.equal(browsedOnEarlierInstall('/mnt/user/photos', saved), false);
+  assert.equal(browsedOnEarlierInstall('/mnt/user/photos/frameleaf-thumbnails', saved), true);
+  assert.equal(browsedOnEarlierInstall('/mnt/cache/fast/frameleaf-thumbnails', saved), true);
+  assert.equal(browsedOnEarlierInstall('/srv/elsewhere', saved), false);
+  const mountinfo = [
+    '100 90 0:50 / / rw,relatime - overlay overlay rw',
+    '101 100 0:40 / /mnt ro,relatime master:1 - tmpfs rootfs rw',
+    '102 101 0:41 / /mnt/user/photos rw,relatime - fuse.shfs shfs rw',
+  ].join('\n');
+  assert.equal(readOnlyMapping('/mnt/cache/fast/frameleaf-thumbnails', mountinfo), '/mnt');
+  assert.equal(readOnlyMapping('/mnt/user/photos/frameleaf-thumbnails', mountinfo), null);
+  assert.equal(readOnlyMapping('/mnt/cache/fast', ''), null);
 });
 
 test('on TrueNAS a pool is just a pool, whatever it is called, and the apps dataset is off limits', async () => {

@@ -385,7 +385,15 @@ export class Operations {
     if (result.status !== undefined) throw new Refusal(`server_refused_${Number(result.status)}`, 502);
     return result.value;
   }
+  /** A move never lands in a folder given to a container as an external folder: a later Containers save would refuse it. */
+  private checkMoveDestination(root: string): void {
+    const current = this.installation();
+    if (!current) return;
+    const binds = current.mounts.filter((m) => m.type === 'bind').map((m) => m.source);
+    this.checkExternalFolders(this.application().services ?? {}, [...binds, current.databaseRoot, root]);
+  }
   reviewMove(root: string) {
+    this.checkMoveDestination(root);
     return this.mediaMove.review(root);
   }
   move(id: string, key: string): Operation {
@@ -396,6 +404,7 @@ export class Operations {
   /** FL-1323: review moving thumbnails to a folder on another drive; the file count and size are measured. */
   async reviewThumbnailMove(root: string) {
     if (this.store.locked()) throw new Refusal('operation_in_progress');
+    this.checkMoveDestination(root);
     const review = await this.mediaMove.review(root, 'thumbs');
     this.thumbnailSizes.set(review.source!, { files: review.files, bytes: review.bytes, measuredAt: Date.now() });
     return review;

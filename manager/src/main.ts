@@ -25,10 +25,10 @@ import { Store } from './store.js';
 import { DesktopGrants } from './desktop-grants.js';
 import { desktopApi } from './desktop-api.js';
 import { Docker, command } from './docker.js';
-import { adoptOwnMounts, tidyLocations, toHost } from './host-paths.js';
+import { adoptOwnMounts, folderDetail, tidyLocations, toHost } from './host-paths.js';
 import { findDrives, suggestFolders } from './drives.js';
 import { storageSuggestions } from './storage-suggestions.js';
-import { adoptMappedFolders, applyFolderDefaults, broadRoots, ensureChosenFolder, ensureManagerFolder, externalRoots, insideMappedFolders, listFolders, newLibraryFolders } from './folders.js';
+import { adoptMappedFolders, applyFolderDefaults, broadRoots, browsedOnEarlierInstall, ensureChosenFolder, ensureManagerFolder, externalRoots, insideMappedFolders, listFolders, newLibraryFolders, readOnlyMapping } from './folders.js';
 import { Cloud } from './cloud-link.js';
 import { CloudBackup, reasonOf } from './server-backup-cloud.js';
 import { ServerBackup } from './server-backup.js';
@@ -188,8 +188,14 @@ const storageRoots = () => (process.env.MANAGER_STORAGE_ROOTS ?? '').split(':').
 const folderSetup = () => runtime === 'docker' && broadRoots(storageRoots());
 /** FL-1407: an earlier install that has since mapped the broad folders browses them for External folders only. */
 const externalFolderSetup = () => runtime === 'docker' && !folderSetup() && externalRoots().length > 0;
-/** A move's folder was chosen by browsing, so it is checked and created like a folder chosen in setup. */
-const browsedFolder = (path: string) => folderSetup() || (externalFolderSetup() && insideMappedFolders(path));
+/** A move's folder chosen by browsing is checked and created like a folder chosen in setup. */
+async function ensureMoveFolder(path: string): Promise<void> {
+  if (!folderSetup() && !(externalFolderSetup() && browsedOnEarlierInstall(path, storageRoots()))) return;
+  // Named before anything is created: the mapping added for External folders is read-only, and a move writes.
+  if (readOnlyMapping(path, await readFile('/proc/self/mountinfo', 'utf8').catch(() => '')))
+    throw new Refusal('folder_mapping_read_only', 409, folderDetail(path));
+  await ensureChosenFolder(path);
+}
 /** With a broad folder mapped, the places worth reporting are the folders in use, not /mnt. */
 const mediaPlaces = () =>
   folderSetup() ? (operations.installation()?.mounts ?? []).filter((m) => m.type === 'bind').map((m) => m.source) : storageRoots();
@@ -592,7 +598,7 @@ class Api {
       .object({ root: z.string().min(1).max(4096) })
       .strict()
       .parse(input);
-    if (browsedFolder(root)) await ensureChosenFolder(root);
+    await ensureMoveFolder(root);
     return operations.reviewMove(root);
   }
   @Post('move-library') moveLibrary(@Body() input: unknown) {
@@ -605,7 +611,7 @@ class Api {
       .object({ root: z.string().min(1).max(4096) })
       .strict()
       .parse(input);
-    if (browsedFolder(root)) await ensureChosenFolder(root);
+    await ensureMoveFolder(root);
     return operations.reviewThumbnailMove(root);
   }
   @Post('move-thumbnails') moveThumbnails(@Body() input: unknown) {

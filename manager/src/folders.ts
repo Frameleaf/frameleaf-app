@@ -93,6 +93,21 @@ export const externalRoots = () => split(process.env.MANAGER_EXTERNAL_ROOTS ?? '
  */
 export const moveRoots = (savedRoots: string[]) => [...savedRoots, ...externalRoots()];
 /**
+ * Whether a move's folder on an earlier install is a new one chosen by browsing the broad folders, to be checked and
+ * created like a folder chosen in setup. A saved root itself was always allowed as it is, and stays so.
+ */
+export const browsedOnEarlierInstall = (path: string, savedRoots: string[]) => insideMappedFolders(path) && !savedRoots.includes(path);
+/**
+ * The mount covering `path` when Manager's mount table (`mountinfo` text) has it read-only, else null. An earlier
+ * install is told to map the broad folders read-only for External folders; a move has to write there.
+ */
+export function readOnlyMapping(path: string, mountinfo: string): string | null {
+  const mount = filesystemMounts(mountinfo)
+    .filter((m) => within(path, m.target))
+    .sort((a, b) => b.target.length - a.target.length)[0];
+  return mount?.options.includes('ro') ? mount.target : null;
+}
+/**
  * The extra folders held to the External folders rules. Where folders are chosen in Manager: all of them. On an
  * earlier install: only what the broad mapping added, so a folder its saved roots already allowed never starts
  * being refused (an update re-checks every saved setting).
