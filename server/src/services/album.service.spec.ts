@@ -2086,6 +2086,39 @@ describe(AlbumService.name, () => {
     });
   });
 
+  describe('connected apps and Locked albums (FL-1791)', () => {
+    it('never tells a connected app a Locked album exists, in the rail or in the stats', async () => {
+      const auth = { ...AuthFactory.create(), oauthApp: { id: newUuid() } } as unknown as AuthDto;
+      const [open, locked] = [newUuid(), newUuid()];
+      const row = (id: string, isLocked: boolean, parentId: string | null = null) => ({
+        id,
+        albumName: 'Album',
+        parentId,
+        kind: AlbumKind.Album,
+        icon: null,
+        color: null,
+        sortOrder: null,
+        isLocked,
+        role: AlbumUserRole.Owner,
+        shared: false,
+      });
+      mocks.album.getRail.mockResolvedValue([row(locked, true), row(open, false, locked)]);
+      mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set([open, locked]));
+      mocks.albumSummary.getByIds.mockResolvedValue([storedRow(open, 2), storedRow(locked, 9)]);
+
+      const rail = await sut.getRail(auth);
+      expect(rail.albums).toEqual([expect.objectContaining({ id: open, parentId: null })]);
+      expect(JSON.stringify(rail)).not.toContain(locked);
+
+      const stats = await sut.getStats(auth, { albumIds: [open, locked] });
+      expect(stats.albums.map(({ id }) => id)).toEqual([open]);
+
+      // the person themself still sees both
+      const own = await sut.getStats(AuthFactory.create(auth.user), { albumIds: [open, locked] });
+      expect(own.albums.map(({ id }) => id)).toEqual([open, locked]);
+    });
+  });
+
   describe('getStats (FL-1791)', () => {
     it('reads the stored numbers of the asked albums only, leaving out ones the user cannot read', async () => {
       const auth = AuthFactory.create();

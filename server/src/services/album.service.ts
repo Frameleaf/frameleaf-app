@@ -481,10 +481,12 @@ export class AlbumService extends BaseService {
    */
   async getRail(auth: AuthDto, dto: AlbumViewDto = {}): Promise<AlbumRailResponseDto> {
     const hiddenPartnerAlbums = await this.hiddenPartnerAlbumIds(auth.user.id);
-    const rows = await this.albumRepository.getRail(auth.user.id, {
+    const listed = await this.albumRepository.getRail(auth.user.id, {
       libraryScope: dto.libraryScope ?? LibraryScope.Personal,
       ...(hiddenPartnerAlbums.length > 0 ? { excludeIds: hiddenPartnerAlbums } : {}),
     });
+    // FL-780 (TM-5): a connected app is never told a Locked album exists; its albums stand on their own
+    const rows = auth.oauthApp ? listed.filter(({ isLocked }) => !isLocked) : listed;
     if (rows.length === 0) {
       return { albums: [] };
     }
@@ -523,6 +525,14 @@ export class AlbumService extends BaseService {
    */
   async getStats(auth: AuthDto, { albumIds }: AlbumStatsDto): Promise<AlbumStatsResponseDto> {
     const allowed = await this.checkAccess({ auth, permission: Permission.AlbumRead, ids: albumIds });
+    if (auth.oauthApp) {
+      // FL-780 (TM-5): to a connected app a Locked album is the same as one that does not exist
+      for (const { id, isLocked } of await this.albumRepository.getRail(auth.user.id)) {
+        if (isLocked) {
+          allowed.delete(id);
+        }
+      }
+    }
     const ids = [...new Set(albumIds)].filter((id) => allowed.has(id));
     const { metadata, pending } = await this.readStoredMetadata(ids, this.nsfwOptions(auth));
     return {
