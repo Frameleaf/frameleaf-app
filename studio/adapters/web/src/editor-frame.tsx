@@ -62,6 +62,7 @@ import type { Project } from '@/types/project'
 import type { StudioHostToFrameMessage } from '@frameleaf/host/frame-protocol'
 import { STUDIO_FRAME_PROTOCOL_VERSION } from '@frameleaf/host/frame-protocol'
 import type { StudioHostContext } from '@frameleaf/host/host-contract'
+import { engineThemeVariables } from './theme-map'
 import {
   cadenceFromDecimal,
   nearestTimelineFrame,
@@ -161,24 +162,9 @@ const engineProjectIdOf = (context: StudioHostContext): string => {
   return `frameleaf-${context.project.id.replace(/[^A-Za-z0-9_-]/g, '')}`
 }
 
-const THEME_MAP: Record<string, string> = {
-  '--primary': '--fl-accent',
-  '--primary-foreground': '--fl-accent-text',
-  '--ring': '--fl-accent',
-  '--background': '--fl-viewer-canvas',
-  '--card': '--fl-viewer-panel',
-  '--popover': '--fl-viewer-raised',
-  '--foreground': '--fl-viewer-text',
-  '--card-foreground': '--fl-viewer-text',
-  '--popover-foreground': '--fl-viewer-text',
-  '--muted-foreground': '--fl-viewer-muted',
-  '--border': '--fl-viewer-border',
-  '--destructive': '--fl-danger',
-}
-
 /**
- * Frameleaf's tokens on this document's root. The editor is a dark, monitor-style surface in
- * both themes (`design/frameleaf/template/src/studio.css`), so the viewer tokens drive it.
+ * Frameleaf's tokens on this document's root, and the engine's variables set from them
+ * (`theme-map.ts`). The engine's own classes are dark, so the document stays `dark` in both themes.
  */
 function applyTheme(context: StudioHostContext) {
   const root = document.documentElement
@@ -186,10 +172,8 @@ function applyTheme(context: StudioHostContext) {
   root.dataset.frameleafTheme = context.theme.theme
   for (const [name, value] of Object.entries(context.theme.tokens))
     root.style.setProperty(name, value)
-  for (const [engineName, hostName] of Object.entries(THEME_MAP)) {
-    const value = context.theme.tokens[hostName]
-    if (value) root.style.setProperty(engineName, value)
-  }
+  for (const [name, value] of Object.entries(engineThemeVariables(context.theme)))
+    root.style.setProperty(name, value)
 }
 
 /** The editor frame's session; `mount` and the draft rules live in `draft-sync.ts`. */
