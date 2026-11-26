@@ -68,7 +68,7 @@
     event.preventDefault();
     const next = (DOWNLOAD_FORMATS.indexOf(format) + step + DOWNLOAD_FORMATS.length) % DOWNLOAD_FORMATS.length;
     format = DOWNLOAD_FORMATS[next];
-    (event.currentTarget as HTMLElement).querySelectorAll<HTMLElement>('[role="radio"]')[next]?.focus();
+    (event.currentTarget as HTMLElement).parentElement?.querySelectorAll<HTMLElement>('[role="radio"]')[next]?.focus();
   };
 </script>
 
@@ -80,7 +80,7 @@
   bind:open
   onClosed={() => onClose(chosen)}
 >
-  <div class="formats" role="radiogroup" aria-label={$t('frameleaf_download_format_group')} onkeydown={choose}>
+  <div class="formats" role="radiogroup" aria-label={$t('frameleaf_download_format_group')}>
     {#each DOWNLOAD_FORMATS as id (id)}
       <button
         type="button"
@@ -90,6 +90,7 @@
         class="format"
         class:on={format === id}
         onclick={() => (format = id)}
+        onkeydown={choose}
       >
         <Icon icon={format === id ? mdiRadioboxMarked : mdiRadioboxBlank} size="20" aria-hidden="true" />
         <span class="words">

@@ -52,6 +52,12 @@ describe('DownloadFormatDialog (FL-826)', () => {
     ).toBeTruthy();
     expect(screen.getByText(/Your default is High-quality JPEG\./)).toBeTruthy();
 
+    // Arrow keys move the choice, as in any group of radio buttons.
+    await fireEvent.keyDown(radio(/High-quality JPEG/), { key: 'ArrowDown' });
+    expect(radio(/Web size/)).toHaveAttribute('aria-checked', 'true');
+    await fireEvent.keyDown(radio(/Web size/), { key: 'ArrowUp' });
+    expect(radio(/High-quality JPEG/)).toHaveAttribute('aria-checked', 'true');
+
     await fireEvent.click(radio(/Web size/));
     await fireEvent.click(screen.getByRole('button', { name: 'Download' }));
 
