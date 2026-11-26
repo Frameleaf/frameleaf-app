@@ -7898,6 +7898,7 @@
   "frameleaf_creators_sort_oldest": "Najstarsze najpierw",
   "frameleaf_creators_source": "Źródło",
   "frameleaf_creators_state_attention": "Wymaga Ciebie: zaloguj się ponownie, aby kontynuować",
+  "frameleaf_creators_state_attention_reason": "Wymaga Ciebie: {reason}",
   "frameleaf_creators_state_on": "Sprawdzono {checked} · następne {next}",
   "frameleaf_creators_state_on_unchecked": "Jeszcze nie sprawdzano · następne {next}",
   "frameleaf_creators_state_paused": "Wstrzymano · ostatnio sprawdzono {checked}",

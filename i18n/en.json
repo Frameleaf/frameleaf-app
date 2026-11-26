@@ -7800,6 +7800,7 @@
   "frameleaf_creators_sort_oldest": "Oldest first",
   "frameleaf_creators_source": "Source",
   "frameleaf_creators_state_attention": "Needs you: sign in again to carry on",
+  "frameleaf_creators_state_attention_reason": "Needs you: {reason}",
   "frameleaf_creators_state_on": "Checked {checked} · next {next}",
   "frameleaf_creators_state_on_unchecked": "Not checked yet · next {next}",
   "frameleaf_creators_state_paused": "Paused · last checked {checked}",

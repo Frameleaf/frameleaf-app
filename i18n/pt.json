@@ -7897,6 +7897,7 @@
   "frameleaf_creators_sort_oldest": "Mais antigos primeiro",
   "frameleaf_creators_source": "Origem",
   "frameleaf_creators_state_attention": "Precisa da sua atenção: inicie sessão novamente para continuar",
+  "frameleaf_creators_state_attention_reason": "Precisa da sua atenção: {reason}",
   "frameleaf_creators_state_on": "Verificado {checked} · próxima {next}",
   "frameleaf_creators_state_on_unchecked": "Ainda não verificado · próxima {next}",
   "frameleaf_creators_state_paused": "Em pausa · última verificação {checked}",

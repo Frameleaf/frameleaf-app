@@ -65,3 +65,23 @@ it('leaves the list cleared when an action answers after Creators was closed', a
   expect(creatorsDownloads.pending).toBe('');
   expect(sdkMock.getMediaImports).not.toHaveBeenCalled();
 });
+
+it('carries on a stopped subscription once instead of retrying each of its runs', async () => {
+  const run = (id: string) => ({
+    ...job(MediaImportState.Partial, [MediaImportItemState.Discovered]),
+    id,
+    subscriptionId: 'subscription-1',
+  });
+  sdkMock.getMediaImports.mockResolvedValue({ imports: [run('a'), run('b')] });
+  sdkMock.updateMediaSubscription.mockResolvedValue({} as never);
+  await creatorsDownloads.load();
+  expect(creatorsDownloads.retryable.map(({ id }) => id)).toEqual(['a']);
+  await creatorsDownloads.retryAll();
+  expect(sdkMock.updateMediaSubscription).toHaveBeenCalledTimes(1);
+  expect(sdkMock.updateMediaSubscription).toHaveBeenCalledWith({
+    id: 'subscription-1',
+    mediaSubscriptionUpdateDto: { action: 'resume' },
+  });
+  expect(sdkMock.retryMediaImport).not.toHaveBeenCalled();
+  creatorsDownloads.stop();
+});

@@ -7897,6 +7897,7 @@
   "frameleaf_creators_sort_oldest": "Prima i più vecchi",
   "frameleaf_creators_source": "Origine",
   "frameleaf_creators_state_attention": "Serve il tuo intervento: accedi di nuovo per continuare",
+  "frameleaf_creators_state_attention_reason": "Serve il tuo intervento: {reason}",
   "frameleaf_creators_state_on": "Controllato {checked} · prossimo {next}",
   "frameleaf_creators_state_on_unchecked": "Non ancora controllato · prossimo {next}",
   "frameleaf_creators_state_paused": "In pausa · ultimo controllo {checked}",
