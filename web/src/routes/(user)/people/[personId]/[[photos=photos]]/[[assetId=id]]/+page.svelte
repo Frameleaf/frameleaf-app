@@ -6,6 +6,7 @@
   import LibraryView from '$lib/components/frameleaf/LibraryView.svelte';
   import FamilySection from '$lib/components/frameleaf/people/FamilySection.svelte';
   import PersonHero from '$lib/components/frameleaf/people/PersonHero.svelte';
+  import PersonNotes from '$lib/components/frameleaf/people/PersonNotes.svelte';
   import UserPageLayout from '$lib/components/layouts/UserPageLayout.svelte';
   import TimelineAssetViewer from '$lib/components/timeline/TimelineAssetViewer.svelte';
   import { OpenQueryParam, QueryParameter } from '$lib/constants';
@@ -178,6 +179,7 @@
         onOpenAsset={(assetId) => void navigate({ targetRoute: 'current', assetId })}
         onOpenRecognitionGroups={() => goto(Route.userSettings({ isOpen: OpenQueryParam.SHARING }))}
       />
+      <PersonNotes {person} onPersonChange={(updated) => (person = updated)} />
       <FamilySection {person} />
 
       {#snippet viewer()}

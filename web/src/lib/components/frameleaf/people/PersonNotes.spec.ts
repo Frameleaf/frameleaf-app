@@ -1,0 +1,86 @@
+import { updatePerson, type PersonResponseDto } from '@frameleaf/sdk';
+import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { addMessages } from 'svelte-i18n';
+import PersonNotes from '$lib/components/frameleaf/people/PersonNotes.svelte';
+import { noteParts } from '$lib/frameleaf/person-notes';
+import { personFactory } from '@test-data/factories/person-factory';
+import en from '../../../../../../i18n/en.json';
+
+/** Notes on the person page (FL-941): private, plain text, links shown as links; an empty note clears it. */
+vi.mock('@frameleaf/sdk', async (original) => ({ ...(await original<object>()), updatePerson: vi.fn() }));
+
+const person = (notes: string | null | undefined) =>
+  ({ ...personFactory.build({ name: 'Ray' }), notes }) as PersonResponseDto;
+
+describe('PersonNotes (FL-941)', () => {
+  beforeAll(() => addMessages('dev', en));
+  beforeEach(() => vi.clearAllMocks());
+
+  it('shows nothing for a person whose notes the server does not send (a partner’s)', () => {
+    render(PersonNotes, { person: person(undefined) });
+    expect(screen.queryByText(en.frameleaf_person_notes_title)).not.toBeInTheDocument();
+  });
+
+  it('shows a note with its links as links', () => {
+    render(PersonNotes, { person: person('Grandad’s brother.\nRecipe: https://example.test/soup, try it.') });
+    expect(screen.getByText(en.frameleaf_person_notes_private)).toBeInTheDocument();
+    const link = screen.getByRole('link', { name: 'https://example.test/soup' });
+    expect(link).toHaveAttribute('target', '_blank');
+    expect(link).toHaveAttribute('rel', 'noopener noreferrer');
+    expect(screen.getByRole('button', { name: en.edit })).toBeInTheDocument();
+  });
+
+  it('adds a note, counts the characters, and tells the page', async () => {
+    const current = person(null);
+    const saved = { ...current, notes: 'Met at the hiking club.' };
+    vi.mocked(updatePerson).mockResolvedValue(saved);
+    const onPersonChange = vi.fn();
+    render(PersonNotes, { person: current, onPersonChange });
+
+    expect(screen.getByText(en.frameleaf_person_notes_empty)).toBeInTheDocument();
+    await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_person_notes_add }));
+    const box = screen.getByRole('textbox', { name: 'Notes about Ray' });
+    expect(box).toHaveAttribute('maxlength', '2000');
+    await fireEvent.input(box, { target: { value: 'Met at the hiking club.' } });
+    expect(screen.getByText(/^23 of 2,000 characters/)).toBeInTheDocument();
+    await fireEvent.click(screen.getByRole('button', { name: en.save }));
+
+    await waitFor(() => expect(onPersonChange).toHaveBeenCalledWith(saved));
+    expect(updatePerson).toHaveBeenCalledWith({
+      id: saved.id,
+      personUpdateDto: { notes: 'Met at the hiking club.' },
+    });
+    expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
+  });
+
+  it('clears the note when it is saved empty, and Cancel changes nothing', async () => {
+    const current = person('Old note');
+    vi.mocked(updatePerson).mockResolvedValue(person(null));
+    render(PersonNotes, { person: current });
+
+    await fireEvent.click(screen.getByRole('button', { name: en.edit }));
+    await fireEvent.input(screen.getByRole('textbox'), { target: { value: 'Something else' } });
+    await fireEvent.click(screen.getByRole('button', { name: en.cancel }));
+    expect(updatePerson).not.toHaveBeenCalled();
+    expect(screen.getByText('Old note')).toBeInTheDocument();
+
+    await fireEvent.click(screen.getByRole('button', { name: en.edit }));
+    await fireEvent.input(screen.getByRole('textbox'), { target: { value: ' '.repeat(3) } });
+    await fireEvent.click(screen.getByRole('button', { name: en.save }));
+    await waitFor(() =>
+      expect(updatePerson).toHaveBeenCalledWith({ id: current.id, personUpdateDto: { notes: null } }),
+    );
+  });
+
+  it('finds web links and leaves the punctuation after them alone', () => {
+    expect(noteParts('See https://a.test/x. And (http://b.test/y) too')).toEqual([
+      { text: 'See ' },
+      { text: 'https://a.test/x', href: 'https://a.test/x' },
+      { text: '. And (' },
+      { text: 'http://b.test/y', href: 'http://b.test/y' },
+      { text: ') too' },
+    ]);
+    expect(noteParts('javascript:alert(1) ftp://x')).toEqual([{ text: 'javascript:alert(1) ftp://x' }]);
+    expect(noteParts(null)).toEqual([]);
+  });
+});

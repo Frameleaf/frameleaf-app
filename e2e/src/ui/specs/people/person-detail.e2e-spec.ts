@@ -53,6 +53,7 @@ test.describe('person page', () => {
       isFavorite: false,
       thumbnailPath: '/thumbs/ada.jpg',
       updatedAt: '2026-01-01T00:00:00.000Z',
+      notes: null,
     };
     updates.length = 0;
     await context.routeWebSocket('**/socket.io/**', () => {
@@ -80,6 +81,7 @@ test.describe('person page', () => {
         person = {
           ...person,
           ...('birthDate' in body && { birthDate: body.birthDate }),
+          ...('notes' in body && { notes: body.notes }),
           updatedAt: new Date().toISOString(),
         };
         return route.fulfill({ json: person });
@@ -239,5 +241,25 @@ test.describe('person page', () => {
 
     await page.goto('/people');
     await expect(page.locator('.pl-card .avatar img').first()).toHaveAttribute('src', after!);
+  });
+
+  // FL-941: a private note under the header, saved through the person update, with its link shown as a link.
+  test('keeps a private note on the person', async ({ context, page }) => {
+    await setup(context);
+    await openPersonPage(page);
+
+    const notes = page.getByRole('region', { name: 'Notes about Ada' });
+    await expect(notes.getByText('Only you can see these')).toBeVisible();
+    await expect(notes.getByText('No notes yet.')).toBeVisible();
+    await notes.getByRole('button', { name: 'Add a note' }).click();
+    await notes
+      .getByRole('textbox', { name: 'Notes about Ada' })
+      .fill('Met at the hiking club. https://example.test/club');
+    await expect(notes.getByText(/^49 of 2,000 characters/)).toBeVisible();
+    await notes.getByRole('button', { name: 'Save' }).click();
+
+    await expect(notes.getByRole('link', { name: 'https://example.test/club' })).toBeVisible();
+    expect(updates).toEqual([{ notes: 'Met at the hiking club. https://example.test/club' }]);
+    await expect(notes.getByRole('button', { name: 'Edit' })).toBeVisible();
   });
 });
