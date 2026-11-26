@@ -54,9 +54,8 @@ import { parseBoundClipResult } from 'src/utils/clip-embedding.js';
 import { readConfig } from 'src/utils/config.js';
 import { DESCRIPTION_TASK, parseBoundDescriptionResult } from 'src/utils/description-result.js';
 import { descriptionEntries, desktopDescriptionProfile } from 'src/utils/desktop-description.js';
-import { desktopFaceProfile, faceEntries } from 'src/utils/desktop-face.js';
-import { equivalentDesktopModelKeys } from 'src/utils/desktop-model-equivalents.js';
-import { desktopOcrProfile, ocrEntries } from 'src/utils/desktop-ocr.js';
+import { faceEntries } from 'src/utils/desktop-face.js';
+import { ocrEntries } from 'src/utils/desktop-ocr.js';
 import { parseBoundFaceResult } from 'src/utils/face-result.js';
 import { readPlainFile } from 'src/utils/locked-read.js';
 import { canonicalJson } from 'src/utils/object.js';
@@ -2125,30 +2124,6 @@ export class MachineLearningRepository implements RestorationInference {
 
   setDesktopPoolSelector(selector: DesktopPoolSelector | null) {
     this.desktopPoolSelector = selector;
-  }
-
-  /**
-   * The model keys a desktop can hold to take this workload's queued work under the saved settings: the
-   * configured model's key and, for smart search, the same encoder under other desktop runtime revisions.
-   * None while the task is off, the model has no catalogue profile or no desktop has been granted smart search.
-   */
-  async desktopModelKeys(workload: MlWorkload): Promise<string[]> {
-    const config = this._config;
-    if (!config?.enabled) return [];
-    try {
-      if (workload === MlWorkload.Face)
-        return config.facialRecognition.enabled ? [desktopFaceProfile(config.facialRecognition).modelKey] : [];
-      if (workload === MlWorkload.Ocr) return config.ocr.enabled ? [desktopOcrProfile(config.ocr).modelKey] : [];
-      if (workload === MlWorkload.Enrichment)
-        return config.imageDescription.enabled
-          ? [desktopDescriptionProfile(config.imageDescription.modelName).modelKey]
-          : [];
-      if (workload !== MlWorkload.Clip || !config.clip.enabled) return [];
-      const selected = await this.clipIndex?.selectProfile(config.clip.modelName, 'image');
-      return selected ? [...equivalentDesktopModelKeys(selected.profile.modelKey)] : [];
-    } catch {
-      return [];
-    }
   }
 
   /** FL-1058: the owner's own Frameleaf Desktop helpers take a gallery guest's selfie, outside the queue. */
