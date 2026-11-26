@@ -98,7 +98,8 @@
     }
     event.preventDefault();
     event.stopPropagation();
-    tab = event.key === 'Home' ? 'people' : event.key === 'End' ? 'links' : tab === 'people' ? 'links' : 'people';
+    const toPeople = event.key === 'Home' || (event.key !== 'End' && tab === 'links');
+    tab = toPeople ? 'people' : 'links';
     tabButtons[tab]?.focus();
   };
   let household = $state<HouseholdShareState>();
