@@ -120999,7 +120999,7 @@
             "default": {
               "albums": [],
               "automatic": true,
-              "concurrency": 1,
+              "concurrency": 10,
               "includeEdits": true,
               "includeHidden": false,
               "intervalHours": 24,
@@ -121023,7 +121023,7 @@
                 "type": "boolean"
               },
               "concurrency": {
-                "default": 1,
+                "default": 10,
                 "maximum": 100,
                 "minimum": 1,
                 "type": "integer"
