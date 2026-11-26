@@ -102,7 +102,7 @@
 <!-- One element with or without a page, so a page that asks for the shell after it mounts is not rebuilt. -->
 <div
   bind:this={container}
-  tabindex={page ? -1 : undefined}
+  tabindex="-1"
   style={page ? `--sidebar-width: ${railWidth}` : undefined}
   class={page
     ? `relative z-0 grid overflow-hidden

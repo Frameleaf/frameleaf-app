@@ -139,9 +139,6 @@
 
   let { children }: Props = $props();
 
-  const albumRoots = $derived(
-    (tree.roots ?? [...tree.collections, ...tree.albums]).filter(({ kind }) => kind !== 'space'),
-  );
   /** Sections folded on this device (`frameleaf.rail.closedSections`, as in the prototype). */
   let closedSections = $state<RailSectionId[]>(readClosedRailSections(browser ? localStorage : undefined));
   const foldSection = (id: RailSectionId) => {
@@ -176,6 +173,9 @@
   const tree = $derived<FrameleafAlbumTree>(railAlbums?.tree ?? emptyAlbumTree());
   /** The same albums as the server sent them, for the right-click menu's dialogs. */
   const albumRecords = $derived<AlbumResponseDto[]>(railAlbums?.records ?? []);
+  const albumRoots = $derived(
+    (tree.roots ?? [...tree.collections, ...tree.albums]).filter(({ kind }) => kind !== 'space'),
+  );
   let mounted = true;
   onDestroy(() => (mounted = false));
   const refreshAlbums = async (scope = workspaceScope) => {
