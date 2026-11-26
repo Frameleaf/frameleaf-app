@@ -201,6 +201,16 @@ export const PersonResponseSchema = z
   .meta({ id: 'PersonResponseDto' });
 
 export class PersonCreateDto extends createZodDto(PersonCreateSchema) {}
+
+const PersonThumbnailSchema = z
+  .object({
+    updatedAt: z
+      .string()
+      .optional()
+      .describe("Cache version: the person's current updatedAt. A matching thumbnail is served as immutable."),
+  })
+  .meta({ id: 'PersonThumbnailDto' });
+export class PersonThumbnailDto extends createZodDto(PersonThumbnailSchema) {}
 export class PersonUpdateDto extends createZodDto(PersonUpdateSchema) {}
 export class PeopleUpdateDto extends createZodDto(PeopleUpdateSchema) {}
 export class MergePersonDto extends createZodDto(MergePersonSchema) {}
