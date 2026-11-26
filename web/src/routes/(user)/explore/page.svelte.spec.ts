@@ -142,7 +142,9 @@ it('titles an on-this-day memory as Memories does', () => {
     title: null,
     memoryAt: '2026-11-11T00:00:00.000Z',
     data: { year: 2025, places: ['Jasper'] },
-    assets: [assetFactory.build()],
+    // FL-1793: the strip's memories arrive slim
+    assets: [],
+    slimAssets: [{ id: 'asset-1', type: 'IMAGE', localDateTime: '2025-11-11T10:00:00.000Z' }],
   } as unknown as MemoryResponseDto;
   render(ExplorePage, { data: data([], [memory]) });
 

@@ -177,6 +177,9 @@ export const memoryLocalDay = (memory: MemoryResponseDto): string | undefined =>
   return DateTime.fromMillis((start + end) / 2, { zone: 'utc' }).toISODate() ?? undefined;
 };
 
+/** A memory's items: its full assets when it was read with them, else the slim list a memory list carries (FL-1793). */
+const itemsOf = (memory: MemoryResponseDto) => (memory.assets.length > 0 ? memory.assets : (memory.slimAssets ?? []));
+
 /**
  * FL-1408 (M8): the years an "on this day" memory's items were taken in, newest first. More than one
  * means the server gave years with only a photo or two each one memory to share.
@@ -184,7 +187,7 @@ export const memoryLocalDay = (memory: MemoryResponseDto): string | undefined =>
 export const onThisDayYears = (memory: MemoryResponseDto): string[] =>
   memory.type === MemoryType.OnThisDay
     ? [
-        ...new Set(memory.assets.flatMap(({ localDateTime }) => (localDateTime ? [localDateTime.slice(0, 4)] : []))),
+        ...new Set(itemsOf(memory).flatMap(({ localDateTime }) => (localDateTime ? [localDateTime.slice(0, 4)] : []))),
       ].sort((a, b) => b.localeCompare(a))
     : [];
 
@@ -279,7 +282,7 @@ const generatedHeadline = (
   memory: MemoryResponseDto,
   { t, locale, today }: { t: Translate; locale?: string; today: string },
 ): MemoryHeadline => {
-  const count = t('frameleaf_memories_item_count', { values: { count: memory.assets.length } });
+  const count = t('frameleaf_memories_item_count', { values: { count: itemsOf(memory).length } });
   if (isEventStory(memory)) {
     const range = formatLocalDateRange(memory.data.startDate, memory.data.endDate, locale);
     const { landmark, dayCount } = memory.data;

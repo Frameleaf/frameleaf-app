@@ -13720,7 +13720,24 @@ export type MemoryOccasionDto = {
     /** The person the memory is about */
     personId: string;
 };
+export type MemorySlimAssetDto = {
+    /** When the file was captured (UTC) */
+    fileCreatedAt: string;
+    /** Asset height */
+    height: number | null;
+    /** Asset ID */
+    id: string;
+    /** Local date and time of capture */
+    localDateTime: string;
+    /** Thumbhash (base64), also the thumbnail cache key */
+    thumbhash: string | null;
+    "type": AssetTypeEnum;
+    visibility: AssetVisibility;
+    /** Asset width */
+    width: number | null;
+};
 export type MemoryResponseDto = {
+    /** The items; empty when the search asked for `slim` */
     assets: AssetResponseDto[];
     /** Creation date */
     createdAt: string;
@@ -13745,6 +13762,8 @@ export type MemoryResponseDto = {
     seenAt?: string;
     /** Date when memory should be shown */
     showAt?: string;
+    /** The items in the same order, when the search asked for `slim` */
+    slimAssets?: MemorySlimAssetDto[];
     /** The owner's own title, when they set one */
     title: string | null;
     "type": MemoryType;
@@ -24610,6 +24629,8 @@ export type MemorySearchDto = {
     page?: number;
     /** Number of memories to return */
     size?: number;
+    /** Leave `assets` empty and list each item in `slimAssets` instead, for lists that only draw covers */
+    slim?: boolean;
     "type"?: MemoryType;
 };
 export type NotificationSearchDto = {
@@ -36583,7 +36604,7 @@ export function updateMediaWatch({ assetId, mediaWatchUpdateDto }: {
 /**
  * Retrieve memories
  */
-export function searchMemories({ $for, id, isHidden, isSaved, isTrashed, isUpcoming, order, page, size, $type }: {
+export function searchMemories({ $for, id, isHidden, isSaved, isTrashed, isUpcoming, order, page, size, slim, $type }: {
     $for?: string;
     id?: string;
     isHidden?: boolean;
@@ -36593,6 +36614,7 @@ export function searchMemories({ $for, id, isHidden, isSaved, isTrashed, isUpcom
     order?: MemorySearchOrder;
     page?: number;
     size?: number;
+    slim?: boolean;
     $type?: MemoryType;
 }, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
@@ -36608,6 +36630,7 @@ export function searchMemories({ $for, id, isHidden, isSaved, isTrashed, isUpcom
         order,
         page,
         size,
+        slim,
         "type": $type
     }))}`, {
         ...opts
@@ -36763,7 +36786,7 @@ export function addMemoryShowLess({ memoryShowLessDto }: {
 /**
  * Retrieve memories statistics
  */
-export function memoriesStatistics({ $for, id, isHidden, isSaved, isTrashed, isUpcoming, order, page, size, $type }: {
+export function memoriesStatistics({ $for, id, isHidden, isSaved, isTrashed, isUpcoming, order, page, size, slim, $type }: {
     $for?: string;
     id?: string;
     isHidden?: boolean;
@@ -36773,6 +36796,7 @@ export function memoriesStatistics({ $for, id, isHidden, isSaved, isTrashed, isU
     order?: MemorySearchOrder;
     page?: number;
     size?: number;
+    slim?: boolean;
     $type?: MemoryType;
 }, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
@@ -36788,6 +36812,7 @@ export function memoriesStatistics({ $for, id, isHidden, isSaved, isTrashed, isU
         order,
         page,
         size,
+        slim,
         "type": $type
     }))}`, {
         ...opts

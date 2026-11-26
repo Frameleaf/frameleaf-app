@@ -52,7 +52,7 @@
   } from '$lib/frameleaf/memory-stories';
   import { FLIP_DURATION_MS, prefersReducedMotion } from '$lib/frameleaf/motion';
   import { toastUndo } from '$lib/frameleaf/toast';
-  import { memoryManager } from '$lib/managers/memory-manager.svelte';
+  import { type LoadedMemory, memoryManager } from '$lib/managers/memory-manager.svelte';
   import { userPreferencesManager, type MemoriesPreferences } from '$lib/managers/user-preferences-manager.svelte';
   import { Route } from '$lib/route';
   import { locale } from '$lib/stores/preferences.store';
@@ -61,7 +61,6 @@
   import {
     AssetMediaSize,
     AssetVisibility,
-    type MemoryResponseDto,
     type MemoryShowLessDto,
     type MemoryShowLessResponseDto,
   } from '@frameleaf/sdk';
@@ -149,22 +148,22 @@
       .toLocaleString(DateTime.DATE_FULL),
   );
 
-  const coverOf = (memory: MemoryResponseDto | undefined) =>
-    memory?.assets.find((asset) => asset.visibility !== AssetVisibility.Locked);
+  const coverOf = (memory: LoadedMemory | undefined) =>
+    memory?.slimAssets.find((asset) => asset.visibility !== AssetVisibility.Locked);
 
   let status = $state('');
   let settingsOpen = $state(false);
   let showHidden = $state(false);
   let gear: HTMLButtonElement | undefined = $state();
 
-  const cardHref = (memory: MemoryResponseDto) => {
-    const first = memory.assets[0];
+  const cardHref = (memory: LoadedMemory) => {
+    const first = memory.slimAssets[0];
     return first
       ? Route.viewMemory({ id: memory.id, assetId: first.id, isSaved: preferences.onlyFavorites || undefined })
       : undefined;
   };
 
-  const play = (memory: MemoryResponseDto) => {
+  const play = (memory: LoadedMemory) => {
     const href = cardHref(memory);
     if (href) {
       void goto(href);
@@ -174,13 +173,13 @@
   /** Make a movie (FL-561) from a memory, from its card's "…" menu. */
   let movieOpen = $state(false);
   let movieSource = $state<MakeMovieSource | null>(null);
-  const makeMovie = (memory: MemoryResponseDto, title: string) => {
+  const makeMovie = (memory: LoadedMemory, title: string) => {
     movieSource = {
       kind: 'memory',
       memoryId: memory.id,
       name: title,
-      itemCount: memory.assets.length,
-      previewIds: memory.assets.slice(0, 3).map(({ id }) => id),
+      itemCount: memory.slimAssets.length,
+      previewIds: memory.slimAssets.slice(0, 3).map(({ id }) => id),
     };
     movieOpen = true;
   };
@@ -194,7 +193,7 @@
     }
   };
 
-  const toggleFavorite = (memory: MemoryResponseDto) => {
+  const toggleFavorite = (memory: LoadedMemory) => {
     const title = $memoryHeadline(memory).title;
     const message = memory.isSaved
       ? $t('frameleaf_memories_removed_from_favorites', { values: { title } })
@@ -208,7 +207,7 @@
    * places at once.
    */
   let root = $state<HTMLElement>();
-  const hide = async (memory: MemoryResponseDto) => {
+  const hide = async (memory: LoadedMemory) => {
     const message = $t('frameleaf_memories_hidden_status', { values: { title: $memoryHeadline(memory).title } });
     const cards = [...(root?.querySelectorAll<HTMLElement>('.fm-card') ?? [])];
     const before = new Map(cards.map((card) => [card, card.getBoundingClientRect()]));
@@ -240,7 +239,7 @@
   };
 
   /** FL-356: everything taken at the landmark on the days of the visit, as an album. */
-  const saveAsAlbum = async (memory: MemoryResponseDto) => {
+  const saveAsAlbum = async (memory: LoadedMemory) => {
     const landmark = eventStoryLandmark(memory);
     if (!landmark || !isEventStory(memory)) {
       return;
@@ -253,7 +252,7 @@
         startDate,
         endDate,
         albumName,
-        assetIds: memory.assets.map(({ id }) => id),
+        assetIds: memory.slimAssets.map(({ id }) => id),
       });
       status = albumId ? $t('frameleaf_memories_saved_to_albums') : $t('frameleaf_search_save_snapshot_empty');
     } catch (error) {
@@ -261,7 +260,7 @@
     }
   };
 
-  const restore = (memory: MemoryResponseDto) =>
+  const restore = (memory: LoadedMemory) =>
     run(
       () => memoryManager.restoreMemory(memory.id),
       $t('frameleaf_memories_restored', { values: { title: $memoryHeadline(memory).title } }),
@@ -305,7 +304,7 @@
   };
 </script>
 
-{#snippet coverImage(memory: MemoryResponseDto | undefined, motion: boolean)}
+{#snippet coverImage(memory: LoadedMemory | undefined, motion: boolean)}
   {@const cover = coverOf(memory)}
   {#if cover}
     <!-- `data-fl-shared` (cards only): the card's cover travels into the player's stage, and back (BRAND.md "Hero"). -->
@@ -326,7 +325,7 @@
 {#snippet card(entry: MemoryEntry, size: 'hero' | 'regular')}
   {@const memory = entry.memory}
   {@const headline = $memoryHeadline(memory)}
-  {@const count = $t('frameleaf_memories_item_count', { values: { count: memory.assets.length } })}
+  {@const count = $t('frameleaf_memories_item_count', { values: { count: memory.slimAssets.length } })}
   {@const kind = memoryStoryKind(memory)}
   {@const landmark = eventStoryLandmark(memory)}
   {@const occasion = memoryOccasion(memory)}
@@ -370,7 +369,7 @@
           <Icon icon={mdiPlay} size="16" aria-hidden="true" />
           {$t('frameleaf_memories_play')}
         </MenuItem>
-        <MenuItem disabled={memory.assets.length === 0} onSelect={() => makeMovie(memory, headline.title)}>
+        <MenuItem disabled={memory.slimAssets.length === 0} onSelect={() => makeMovie(memory, headline.title)}>
           <Icon icon={mdiMovieOpenPlayOutline} size="16" aria-hidden="true" />
           {$t('frameleaf_movie_make')}
         </MenuItem>

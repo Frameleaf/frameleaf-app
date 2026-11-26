@@ -408,3 +408,80 @@ it('keeps Undo available through an ordinary same-session filter refresh', async
     vi.useRealTimers();
   }
 });
+
+// FL-1793: the list is read slim; opening a memory reads its full items
+describe('memoryManager slim list', () => {
+  const slim = (id: string, assetIds: string[]) =>
+    ({
+      id,
+      memoryAt: `2026-01-0${id.at(-1)}T00:00:00.000Z`,
+      type: 'on_this_day',
+      data: { year: 2020 },
+      assets: [],
+      slimAssets: assetIds.map((assetId) => ({ id: assetId, type: 'IMAGE' })),
+    }) as unknown as MemoryResponseDto;
+  const full = (id: string, assetIds: string[]) =>
+    ({
+      ...slim(id, []),
+      slimAssets: undefined,
+      assets: assetIds.map((assetId) => ({ id: assetId, originalFileName: `${assetId}.jpg`, type: 'IMAGE' })),
+    }) as unknown as MemoryResponseDto;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(searchMemories).mockResolvedValue([]);
+  });
+
+  it('asks for the list slim and lists a memory by its slim items', async () => {
+    vi.mocked(searchMemories).mockResolvedValueOnce([slim('memory-9', ['a', 'b'])]);
+    vi.mocked(memoriesStatistics).mockResolvedValueOnce({ total: 1 });
+
+    await memoryManager.reloadForSessionAccess();
+
+    expect(searchMemories).toHaveBeenCalledWith(expect.objectContaining({ slim: true, page: 1 }));
+    expect(memoryManager.memories.map(({ id }) => id)).toEqual(['memory-9']);
+    expect(memoryManager.memories[0].assets).toEqual([]);
+    expect(memoryManager.memories[0].slimAssets.map(({ id }) => id)).toEqual(['a', 'b']);
+  });
+
+  it('shows nothing for an open memory until its items are read, then reads them once', async () => {
+    memoryManager.memories = [slim('memory-1', ['asset-1', 'asset-2'])];
+    expect(memoryManager.current).toBeUndefined();
+
+    vi.mocked(searchMemories).mockResolvedValueOnce([full('memory-1', ['asset-1', 'asset-2'])]);
+    const [first, second] = await Promise.all([
+      memoryManager.loadMemory('memory-1'),
+      memoryManager.loadMemory('memory-1'),
+    ]);
+
+    expect(searchMemories).toHaveBeenCalledTimes(1);
+    expect(searchMemories).toHaveBeenCalledWith({ id: 'memory-1' });
+    expect(first?.assets.map(({ id }) => id)).toEqual(['asset-1', 'asset-2']);
+    expect(second?.id).toBe('memory-1');
+    expect(memoryManager.current?.asset.id).toBe('asset-1');
+    expect(memoryManager.current?.nextHref).toContain('asset-2');
+
+    await memoryManager.loadMemory('memory-1');
+    expect(searchMemories).toHaveBeenCalledTimes(1);
+  });
+
+  it('links to the memories either side from their slim items and reads them in the background', async () => {
+    memoryManager.memories = [slim('memory-3', ['newer']), slim('memory-1', ['asset-1']), slim('memory-0', ['older'])];
+    vi.mocked(searchMemories).mockImplementation(({ id }) =>
+      Promise.resolve([full(id!, id === 'memory-1' ? ['asset-1'] : id === 'memory-3' ? ['newer'] : ['older'])]),
+    );
+
+    await memoryManager.loadMemory('memory-1');
+    expect(memoryManager.current?.previousHref).toContain('newer');
+    expect(memoryManager.current?.nextHref).toContain('older');
+
+    await vi.waitFor(() =>
+      expect(memoryManager.current?.viewerAssets.map(({ id }) => id)).toEqual(['newer', 'asset-1', 'older']),
+    );
+    expect(vi.mocked(searchMemories).mock.calls.map(([query]) => query.id)).toEqual([
+      'memory-1',
+      'memory-3',
+      'memory-0',
+    ]);
+  });
+});
