@@ -51,6 +51,20 @@ describe('PersonNotes (FL-941)', () => {
       personUpdateDto: { notes: 'Met at the hiking club.' },
     });
     expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
+    // FL-1810: a saved field says so beside it, not in a toast
+    expect(screen.getByTestId('frameleaf-status-line')).toHaveTextContent(en.frameleaf_person_notes_saved);
+  });
+
+  it('says in place that the note was not saved, and keeps the text (FL-1810)', async () => {
+    vi.mocked(updatePerson).mockRejectedValue(new Error('offline'));
+    render(PersonNotes, { person: person(null) });
+
+    await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_person_notes_add }));
+    await fireEvent.input(screen.getByRole('textbox'), { target: { value: 'Keep me' } });
+    await fireEvent.click(screen.getByRole('button', { name: en.save }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(en.frameleaf_person_notes_error);
+    expect(screen.getByRole('textbox')).toHaveValue('Keep me');
   });
 
   it('clears the note when it is saved empty, and Cancel changes nothing', async () => {

@@ -68,3 +68,43 @@ order by
     $4,
     $5
   ) asc
+
+-- ViewRepository.getAssetsByOriginalPath (page)
+select
+  "asset".*,
+  exists (
+    select
+      1
+    from
+      asset_lock
+    where
+      asset_lock."assetId" = "asset"."id"
+  ) as "isLocked",
+  to_json("asset_exif") as "exifInfo"
+from
+  "asset"
+  left join "asset_exif" on "asset"."id" = "asset_exif"."assetId"
+where
+  "ownerId" = $1::uuid
+  and (
+    "asset"."visibility" = 'timeline'
+    and not exists (
+      select
+        1
+      from
+        asset_lock
+      where
+        asset_lock."assetId" = "asset"."id"
+    )
+  )
+  and "deletedAt" is null
+  and "fileCreatedAt" is not null
+  and "fileModifiedAt" is not null
+  and "localDateTime" is not null
+  and coalesce("asset"."libraryPath", "asset"."originalPath") like $2
+  and coalesce("asset"."libraryPath", "asset"."originalPath") not like $3
+  and "asset"."id" > $4::uuid
+order by
+  "asset"."id" asc
+limit
+  $5
