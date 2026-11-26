@@ -1802,10 +1802,10 @@ export const PREFERENCE_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.
   },
   {
     pattern: 'duplicates.keepRules',
-    // FL-832: the owner's rules for which duplicate is suggested as the keeper; the settings control follows the approved FL-886 mock
-    kind: 'api-only',
-    file: '../server/src/services/duplicate.service.ts',
-    evidence: '.duplicates.keepRules',
+    // FL-832: the account's rules for which duplicate is suggested as the keeper
+    kind: 'control',
+    file: 'src/lib/components/frameleaf/settings/care/KeepRules.svelte',
+    evidence: 'duplicates: { keepRules',
   },
   {
     pattern: 'emailNotifications.albumInvite',

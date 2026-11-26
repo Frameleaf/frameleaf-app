@@ -793,6 +793,20 @@ describe(PersonService.name, () => {
       );
       expect(mocks.access.person.checkOwnerAccess).toHaveBeenCalledWith(auth.user.id, new Set([person.personGroupId]));
     });
+
+    it('serves it as immutable only when the URL carries the current updatedAt (FL-1788)', async () => {
+      const auth = AuthFactory.create();
+      const person = PersonFactory.create({ updatedAt: new Date('2026-11-26T10:00:00.000Z') });
+      mocks.person.getByGroupId.mockResolvedValue(person);
+      mocks.access.person.checkOwnerAccess.mockResolvedValue(new Set([person.personGroupId]));
+
+      const cacheControlFor = async (updatedAt?: string) =>
+        (await sut.getThumbnail(auth, person.personGroupId, { updatedAt })).cacheControl;
+      await expect(cacheControlFor('2026-11-26T10:00:00.000Z')).resolves.toBe(CacheControl.PrivateImmutable);
+      // an older URL (the featured photo changed since) and a bare URL keep revalidating
+      await expect(cacheControlFor('2026-11-25T10:00:00.000Z')).resolves.toBe(CacheControl.PrivateWithoutCache);
+      await expect(cacheControlFor()).resolves.toBe(CacheControl.PrivateWithoutCache);
+    });
   });
 
   describe('update', () => {

@@ -253,6 +253,8 @@ export const PREFERENCE_WORDS: Readonly<Record<string, Words>> = Object.freeze({
   'trash.reuploadUntil': { label: 'frameleaf_prefs_look_reupload' },
   // FL-1484: Your preferences › Where your photos are processed.
   'cloudProcessing.enabled': { label: 'frameleaf_prefs_processing_title' },
+  // FL-832: Library care › Duplicates, which copy to suggest keeping.
+  'duplicates.keepRules': { label: 'frameleaf_keep_title' },
   // FL-922: Your preferences › Shared links.
   'sharedLinks.defaultExpiryDays': { label: 'frameleaf_link_expiry_label' },
   'people.suggestInSpaces': { label: 'frameleaf_sharing_suggest_spaces' },

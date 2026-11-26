@@ -52,6 +52,7 @@ import {
   PersonSplitVerdictDeleteDto,
   PersonSplitVerdictResponseDto,
   PersonStatisticsResponseDto,
+  PersonThumbnailDto,
   PersonUpdateDto,
   SplitSuggestionsResponseDto,
   mapFaces,
@@ -1069,7 +1070,11 @@ export class PersonService extends BaseService {
     });
   }
 
-  async getThumbnail(auth: AuthDto, personGroupId: string): Promise<FileDownloadResponse> {
+  async getThumbnail(
+    auth: AuthDto,
+    personGroupId: string,
+    dto: PersonThumbnailDto = {},
+  ): Promise<FileDownloadResponse> {
     await this.requirePerson(auth, Permission.PersonRead, personGroupId);
     const person = await this.personRepository.getByGroupId({ ownerId: auth.user.id, personGroupId });
     if (!person || !person.thumbnailPath) {
@@ -1083,7 +1088,12 @@ export class PersonService extends BaseService {
     return new FileDownloadResponse({
       path: person.thumbnailPath,
       contentType: mimeTypes.lookup(person.thumbnailPath),
-      cacheControl: CacheControl.PrivateWithoutCache,
+      // FL-1788: the web puts the person's updatedAt in the URL, so a match names this exact thumbnail.
+      // The web service worker still revalidates it after a Lock or a page load, as for asset thumbnails.
+      cacheControl:
+        dto.updatedAt && dto.updatedAt === asDateTimeString(person.updatedAt)
+          ? CacheControl.PrivateImmutable
+          : CacheControl.PrivateWithoutCache,
     });
   }
 

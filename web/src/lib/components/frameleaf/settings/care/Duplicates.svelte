@@ -52,11 +52,11 @@
   import ItemList from '$lib/components/frameleaf/settings/kit/ItemList.svelte';
   import KitPage from '$lib/components/frameleaf/settings/kit/KitPage.svelte';
   import Notice from '$lib/components/frameleaf/settings/kit/Notice.svelte';
-  import Promises from '$lib/components/frameleaf/settings/kit/Promises.svelte';
   import Row from '$lib/components/frameleaf/settings/kit/Row.svelte';
   import Said from '$lib/components/frameleaf/settings/kit/Said.svelte';
   import Section from '$lib/components/frameleaf/settings/kit/Section.svelte';
   import Switch from '$lib/components/frameleaf/settings/kit/Switch.svelte';
+  import KeepRules from '$lib/components/frameleaf/settings/care/KeepRules.svelte';
   import { identicalProblems, PROBLEM_COPY } from '$lib/components/frameleaf/settings/care/identical-files';
   import { backupWhen } from '$lib/frameleaf/backup-overview';
   import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
@@ -98,7 +98,6 @@
     mdiPlay,
     mdiRefresh,
     mdiShieldCheckOutline,
-    mdiStarOutline,
     mdiVideoOutline,
   } from '@mdi/js';
   import { onMount } from 'svelte';
@@ -559,16 +558,8 @@
           {/snippet}
         </Notice>
       {/if}
-      <!-- duplicateDetection.preferOriginalFormat is deprecated: originals are always suggested first. -->
-      <Promises
-        rows={[
-          {
-            icon: mdiStarOutline,
-            text: $t('frameleaf_dupes_originals_promise'),
-            detail: $t('frameleaf_dupes_originals_promise_detail'),
-          },
-        ]}
-      />
+      <!-- FL-832: the account's own rules replace the fixed "originals first" promise. -->
+      <KeepRules />
       <Row label={$t('frameleaf_dupes_videos')} help={$t('frameleaf_dupes_videos_help')}>
         <Switch
           label={$t('frameleaf_dupes_videos')}

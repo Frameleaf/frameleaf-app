@@ -49386,6 +49386,15 @@
               "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
               "type": "string"
             }
+          },
+          {
+            "name": "updatedAt",
+            "required": false,
+            "in": "query",
+            "description": "Cache version: the person's current updatedAt. A matching thumbnail is served as immutable.",
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -142166,6 +142175,15 @@
           "photos",
           "videos"
         ],
+        "type": "object"
+      },
+      "PersonThumbnailDto": {
+        "properties": {
+          "updatedAt": {
+            "description": "Cache version: the person's current updatedAt. A matching thumbnail is served as immutable.",
+            "type": "string"
+          }
+        },
         "type": "object"
       },
       "PersonUpdateDto": {

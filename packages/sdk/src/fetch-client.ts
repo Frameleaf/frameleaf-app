@@ -24664,6 +24664,10 @@ export type PersonSearchDto = {
     /** Include hidden people */
     withHidden?: boolean;
 };
+export type PersonThumbnailDto = {
+    /** Cache version: the person's current updatedAt. A matching thumbnail is served as immutable. */
+    updatedAt?: string;
+};
 export type PetAssetObservationSearchDto = {
     /** Asset whose pet observations to list */
     assetId: string;
@@ -38020,13 +38024,16 @@ export function getPersonStatistics({ id }: {
 /**
  * Get person thumbnail
  */
-export function getPersonThumbnail({ id }: {
+export function getPersonThumbnail({ id, updatedAt }: {
     id: string;
+    updatedAt?: string;
 }, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchBlob<{
         status: 200;
         data: Blob;
-    }>(`/people/${encodeURIComponent(id)}/thumbnail`, {
+    }>(`/people/${encodeURIComponent(id)}/thumbnail${QS.query(QS.explode({
+        updatedAt
+    }))}`, {
         ...opts
     }));
 }
