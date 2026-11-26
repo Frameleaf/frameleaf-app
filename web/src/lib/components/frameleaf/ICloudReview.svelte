@@ -9,6 +9,9 @@
   import { page as appPage } from '$app/state';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
+  import EmptyState from '$lib/components/frameleaf/EmptyState.svelte';
+  import GridSkeleton from '$lib/components/frameleaf/GridSkeleton.svelte';
+  import InlineError from '$lib/components/frameleaf/InlineError.svelte';
   import { formatDateTime } from '$lib/frameleaf/date-format';
   import { icloudErrorKey } from '$lib/frameleaf/icloud-sync';
   import { formatCount } from '$lib/frameleaf/number-format';
@@ -318,19 +321,24 @@
   {#if said}
     <p class="icr-said" role="status"><Icon icon={mdiCheckCircleOutline} size="18" /> {said}</p>
   {/if}
-  {#if error}
+  {#if error && review}
     <p class="icr-error" role="alert">{error}</p>
   {/if}
 
   {#if !review}
-    {#if !error}<p class="icr-loading" role="status">{$t('loading')}</p>{/if}
+    <!-- FL-1810: placeholders in the shape of the grid, and a failed read says so in place -->
+    {#if error}
+      <InlineError compact message={error} onRetry={() => load(1)} />
+    {:else}
+      <GridSkeleton tiles={8} />
+    {/if}
   {:else if totalWaiting === 0}
-    <div class="icr-empty">
-      <Icon icon={mdiCheckCircleOutline} size="36" />
-      <h3>{$t('frameleaf_icloud_review_empty_title')}</h3>
-      <p>{$t('frameleaf_icloud_review_empty')}</p>
-      <Button onclick={onBack}>{$t('frameleaf_icloud_review_back')}</Button>
-    </div>
+    <EmptyState
+      icon={mdiCheckCircleOutline}
+      title={$t('frameleaf_icloud_review_empty_title')}
+      message={$t('frameleaf_icloud_review_empty')}
+      secondaryAction={{ label: $t('frameleaf_icloud_review_back'), onClick: onBack }}
+    />
   {:else}
     <div class="icr-filters" role="group" aria-label={$t('frameleaf_icloud_review_reasons')}>
       <button type="button" class:on={!group} aria-pressed={!group} onclick={() => choose(undefined)}>
@@ -637,11 +645,6 @@
     font-size: var(--fl-font-xl);
   }
   .icr-head p,
-  .icr-loading {
-    margin: 0;
-    color: var(--fl-muted);
-    font-size: var(--fl-font-md);
-  }
   .icr-note {
     display: flex;
     flex-wrap: wrap;
@@ -680,24 +683,6 @@
   }
   .icr-error {
     color: var(--fl-danger);
-  }
-  .icr-empty {
-    display: grid;
-    gap: 8px;
-    justify-items: center;
-    padding: 56px 24px;
-    border: 1px solid var(--fl-border);
-    border-radius: var(--fl-radius-card);
-    background: var(--fl-panel);
-    text-align: center;
-  }
-  .icr-empty h3,
-  .icr-empty p {
-    margin: 0;
-  }
-  .icr-empty p {
-    margin-bottom: 8px;
-    color: var(--fl-muted);
   }
   .icr-filters {
     display: flex;
