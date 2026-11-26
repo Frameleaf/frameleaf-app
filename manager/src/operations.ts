@@ -9,7 +9,7 @@ import { Discovery, COMPATIBLE_SETTINGS, maskSettings, unmaskSettings, unsupport
 import { Releases, type VerifiedRelease } from './releases.js';
 import { compareReleases, isNewerRelease } from './release-order.js';
 import { Backups, sourceBackups } from './backups.js';
-import { assertExternalFolder, assertSeparateFolders, broadRoots, ensureChosenFolder, externalRoots, externalRuleSources, inside, onNetworkShare, overlaps } from './folders.js';
+import { assertExternalFolder, assertSeparateFolders, broadRoots, ensureChosenFolder, externalRoots, externalRuleSources, inside, moveRoots, onNetworkShare, overlaps } from './folders.js';
 import { databaseDriveFinding, driveOf, type DriveReport } from './drives.js';
 import { Fencing } from './fencing.js';
 import { detectPhotoApps, identifyPhotoApp, photoAppKind, photoAppNames, type ContainerFileReader, type PhotoAppKind, type PhotoAppPlan } from './photo-app-sources.js';
@@ -325,7 +325,7 @@ export class Operations {
       store,
       docker,
       this.fencing,
-      new PostgresStorage(docker, store.directory, roots, !!databaseStorage?.unraid),
+      new PostgresStorage(docker, store.directory, moveRoots(roots), !!databaseStorage?.unraid),
       store.directory,
       process.env.MANAGER_BACKUP_ROOT ?? join(store.directory, 'backups'),
       undefined,
@@ -3384,7 +3384,7 @@ export class Operations {
       await assertMountSources(target.mounts);
       const containers = await this.docker.inventory();
       for (const mount of target.mounts) {
-        if (mount.type === 'bind') await storagePath(mount.source, this.roots, 0);
+        if (mount.type === 'bind') await storagePath(mount.source, moveRoots(this.roots), 0);
         else if (!containers.some((c) => c.Mounts.some((m) => m.Type === 'volume' && m.Name === mount.source)))
           throw new Refusal('external_media_volume_unavailable', 409, mount.source);
         if (/^\/(?:proc|sys|dev|etc|run|var\/run)(?:\/|$)/.test(mount.target) || mount.target.includes('..'))

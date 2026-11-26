@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { mkdir, mkdtemp, realpath, stat, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { adoptMappedFolders, assertExternalFolder, assertSeparateFolders, applyFolderDefaults, broadRoots, externalRoots, externalRuleSources, ensureChosenFolder, ensureManagerFolder, inside, isMounted, listFolders, realTarget, sameFiles } from '../src/folders.js';
+import { adoptMappedFolders, assertExternalFolder, assertSeparateFolders, applyFolderDefaults, broadRoots, externalRoots, externalRuleSources, ensureChosenFolder, moveRoots, ensureManagerFolder, inside, isMounted, listFolders, realTarget, sameFiles } from '../src/folders.js';
 import type { Refusal } from '../src/contracts.js';
 import { externalFolderIssue, externalFolders, setExternalFolders } from '../ui/src/presentation.js';
 
@@ -74,11 +74,14 @@ test('on an earlier install the external rules cover what /mnt added, never a fo
   const sources = ['/mnt/user/appdata/frameleaf-media/inbox', '/mnt/user/photos/Archive'];
   const savedRoots = ['/mnt/user/appdata/frameleaf-media'];
   assert.deepEqual(externalRoots(), []);
+  assert.deepEqual(moveRoots(savedRoots), savedRoots);
   assert.deepEqual(externalRuleSources(sources, false, savedRoots), []);
   assert.deepEqual(externalRuleSources(sources, true, savedRoots), sources);
   process.env.MANAGER_EXTERNAL_ROOTS = '/mnt';
   try {
     assert.deepEqual(externalRuleSources(sources, false, savedRoots), ['/mnt/user/photos/Archive']);
+    // The library and its thumbnails can move anywhere under /mnt once it is mapped, not only inside the saved roots.
+    assert.deepEqual(moveRoots(savedRoots), [...savedRoots, '/mnt']);
   } finally {
     delete process.env.MANAGER_EXTERNAL_ROOTS;
   }

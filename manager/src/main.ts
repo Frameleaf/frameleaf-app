@@ -188,6 +188,8 @@ const storageRoots = () => (process.env.MANAGER_STORAGE_ROOTS ?? '').split(':').
 const folderSetup = () => runtime === 'docker' && broadRoots(storageRoots());
 /** FL-1407: an earlier install that has since mapped the broad folders browses them for External folders only. */
 const externalFolderSetup = () => runtime === 'docker' && !folderSetup() && externalRoots().length > 0;
+/** A move's folder was chosen by browsing, so it is checked and created like a folder chosen in setup. */
+const browsedFolder = (path: string) => folderSetup() || (externalFolderSetup() && insideMappedFolders(path));
 /** With a broad folder mapped, the places worth reporting are the folders in use, not /mnt. */
 const mediaPlaces = () =>
   folderSetup() ? (operations.installation()?.mounts ?? []).filter((m) => m.type === 'bind').map((m) => m.source) : storageRoots();
@@ -590,7 +592,7 @@ class Api {
       .object({ root: z.string().min(1).max(4096) })
       .strict()
       .parse(input);
-    if (folderSetup()) await ensureChosenFolder(root);
+    if (browsedFolder(root)) await ensureChosenFolder(root);
     return operations.reviewMove(root);
   }
   @Post('move-library') moveLibrary(@Body() input: unknown) {
@@ -603,7 +605,7 @@ class Api {
       .object({ root: z.string().min(1).max(4096) })
       .strict()
       .parse(input);
-    if (folderSetup()) await ensureChosenFolder(root);
+    if (browsedFolder(root)) await ensureChosenFolder(root);
     return operations.reviewThumbnailMove(root);
   }
   @Post('move-thumbnails') moveThumbnails(@Body() input: unknown) {

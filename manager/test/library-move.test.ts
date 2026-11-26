@@ -36,6 +36,16 @@ test('a move rejects unsupported mappings and overlapping storage before stoppin
     store.set('installation', installation);
     await assert.rejects(move.review(source), /media_move_overlap/);
     await assert.rejects(move.review(installation.databaseRoot), /media_move_overlap/);
+    // On Unraid the library share reached by its pool path is the library itself, for a thumbnail move too.
+    store.set('installation', { ...installation, mounts: [{ ...installation.mounts[0], source: '/mnt/user/photo' }] });
+    const platform = process.env.MANAGER_PLATFORM;
+    process.env.MANAGER_PLATFORM = 'unraid';
+    try {
+      await assert.rejects(move.review('/mnt/cache/photo/thumbs', 'thumbs'), /media_move_overlap/);
+    } finally {
+      if (platform === undefined) delete process.env.MANAGER_PLATFORM;
+      else process.env.MANAGER_PLATFORM = platform;
+    }
   } finally {
     store.close();
     await rm(directory, { recursive: true, force: true });

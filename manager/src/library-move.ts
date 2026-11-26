@@ -3,6 +3,7 @@ import { mkdir, readFile, realpath, stat } from 'node:fs/promises';
 import { join, resolve, relative } from 'node:path';
 import { Refusal, digest, type Installation, type Mount, type Operation } from './contracts.js';
 import { command, environment, overlap, type Docker } from './docker.js';
+import { overlaps } from './folders.js';
 import { toHost } from './host-paths.js';
 import { atomicJson } from './files.js';
 import type { Store } from './store.js';
@@ -102,7 +103,8 @@ export class LibraryMove {
     return [current.mounts[0].source, ...(thumbnails ? [thumbnails.source] : []), current.databaseRoot, this.directory, this.backups];
   }
   private paths(current: Installation, root: string): void {
-    if (this.reserved(current).some((p) => overlap(root, p))) throw new Refusal('media_move_overlap');
+    // On Unraid /mnt/cache/photo is the same files as /mnt/user/photo: a pool path into the library is the library.
+    if (this.reserved(current).some((p) => overlap(root, p) || overlaps(root, p))) throw new Refusal('media_move_overlap');
   }
   private async identity(path: string): Promise<string> {
     const data = await stat(path);

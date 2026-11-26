@@ -88,6 +88,11 @@ export function adoptMappedFolders(env: Record<string, string | undefined>, moun
 /** The broad folders an earlier install may add External folders from; none on a new install, which has them as its roots. */
 export const externalRoots = () => split(process.env.MANAGER_EXTERNAL_ROOTS ?? '');
 /**
+ * Where the library and its thumbnails may be moved to: an earlier install's saved roots, plus the broad folders it
+ * has since mapped in. Without this a server set up before /mnt was mapped could only move inside its photos folder.
+ */
+export const moveRoots = (savedRoots: string[]) => [...savedRoots, ...externalRoots()];
+/**
  * The extra folders held to the External folders rules. Where folders are chosen in Manager: all of them. On an
  * earlier install: only what the broad mapping added, so a folder its saved roots already allowed never starts
  * being refused (an update re-checks every saved setting).
