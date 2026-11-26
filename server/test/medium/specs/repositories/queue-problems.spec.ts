@@ -9,7 +9,13 @@ import {
   MediaHealthStatus,
   QueueName,
 } from 'src/enum.js';
-import { listQueueProblems, queueHolds, queueProblemJobs } from 'src/queue/queue-problems.js';
+import {
+  listQueueProblems,
+  queueHolds,
+  queueProblemJobs,
+  queueProgress,
+  recordQueueBatches,
+} from 'src/queue/queue-problems.js';
 import {
   type QueueProblemInput,
   problemRank,
@@ -320,5 +326,61 @@ describe('account filter', () => {
     expect(await jobs.getJobCounts(QueueName.ThumbnailGeneration)).toMatchObject({ waiting: 6, failed: 1 });
     expect(await jobs.searchJobs(QueueName.ThumbnailGeneration, { ownerId: grace.id })).toHaveLength(2);
     expect(await jobs.searchJobs(QueueName.ThumbnailGeneration, { ownerId: ada.id })).toHaveLength(3);
+  });
+});
+
+/** FL-1785: a progress bar per task, and each failed job in the words Needs a look uses. */
+describe('progress', () => {
+  const finished = (queue: string, ago: string) =>
+    sql`insert into job(id, queue, name, data, "safeToRetry", "deadlineMs", state, "finishedAt")
+      values (gen_random_uuid(), ${queue}, 'x', '{}', true, 1000, 'completed', now() - ${ago}::interval)`.execute(db);
+  const of = async (name: string) => (await queueProgress(database)).find((row) => row.name === name);
+
+  beforeEach(() => sql`delete from system_metadata where key = 'frameleaf-queue-batch'`.execute(db));
+
+  it('counts what a task finished, keeps the count once the jobs are deleted, and starts again when it runs dry', async () => {
+    await job('thumbnailGeneration', JobName.AssetGenerateThumbnails, 'a', null, { state: 'pending' });
+    await finished('thumbnailGeneration', '30 minutes');
+    await finished('thumbnailGeneration', '5 minutes');
+    await finished('thumbnailGeneration', '1 minute');
+    // two in the last ten minutes: twelve an hour
+    expect(await of('thumbnailGeneration')).toEqual({ name: 'thumbnailGeneration', done: 3, perHour: 12 });
+    expect(await of('faceDetection')).toEqual({ name: 'faceDetection', done: 0, perHour: 0 });
+
+    // the sweep records the count, then the finished jobs go
+    await recordQueueBatches(db);
+    expect(await of('thumbnailGeneration')).toMatchObject({ done: 3 });
+    await sql`delete from job where state = 'completed'`.execute(db);
+    expect(await of('thumbnailGeneration')).toMatchObject({ done: 3, perHour: 0 });
+    // a second sweep counts nothing twice
+    await recordQueueBatches(db);
+    expect(await of('thumbnailGeneration')).toMatchObject({ done: 3 });
+
+    // nothing left to do: the next batch starts from nothing
+    await sql`delete from job`.execute(db);
+    await recordQueueBatches(db);
+    expect(await of('thumbnailGeneration')).toMatchObject({ done: 0 });
+  });
+
+  it('says what went wrong with each failed job', async () => {
+    const ctx = setup();
+    const { user } = await ctx.newUser();
+    const { asset } = await ctx.newAsset({ ownerId: user.id });
+    const { asset: gone } = await ctx.newAsset({ ownerId: user.id });
+    await finding(gone.id, MediaHealthCategory.Missing);
+    await job('thumbnailGeneration', JobName.AssetGenerateThumbnails, asset.id, ML);
+    await job('thumbnailGeneration', JobName.AssetGenerateThumbnails, gone.id, 'boom');
+    await job('thumbnailGeneration', JobName.AssetGenerateThumbnails, asset.id, 'x', { cancelReason: 'deadline' });
+    await job('thumbnailGeneration', JobName.AssetGenerateThumbnails, asset.id, null, { state: 'pending' });
+
+    const jobs = new JobRepository({} as never, {} as never, {} as never, LoggingRepository.create(), db);
+    const rows = await jobs.searchJobs(QueueName.ThumbnailGeneration, {});
+    // the waiting job has none
+    expect(rows.map(({ cause }) => cause ?? 'none').sort((a, b) => a.localeCompare(b))).toEqual([
+      'missing',
+      'mlUnavailable',
+      'none',
+      'tooLong',
+    ]);
   });
 });
