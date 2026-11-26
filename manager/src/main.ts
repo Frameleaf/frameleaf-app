@@ -85,7 +85,7 @@ const nativeAddress = runtime === 'native' ? nativeListener(origin!) : null;
 if (!['docker', 'native'].includes(runtime)) throw new Refusal('manager_runtime_invalid');
 // A new install maps one broad folder, so Docker no longer creates Manager's own folder.
 if (runtime === 'docker' && broadRoots([process.env.MANAGER_STORAGE_ROOTS ?? ''])) await ensureManagerFolder(directory);
-const store = new Store(directory, { releaseFailedControl: runtime === 'docker' });
+const store = new Store(directory);
 if (runtime === 'docker' && store.get('native-installation')) throw new Refusal('manager_runtime_changed');
 if (runtime === 'native') {
   const bootstrapPipe = fstatSync(0);
@@ -372,7 +372,7 @@ class Api {
         // ponytail: probed once per Manager start; a new GPU or driver shows after Manager restarts.
         acceleration: runtime === 'docker' ? await (acceleration ??= detectAcceleration()) : 'cpu',
       },
-      summary: installation ? await operations.dashboardSummary().catch(() => null) : null,
+      summary: installation ? await operations.librarySummary().catch(() => null) : null,
       services: containers.map((c) => ({
         id: c.Id,
         service: c.Config.Labels['com.docker.compose.service'],
@@ -387,8 +387,6 @@ class Api {
         .filter(Boolean),
       databaseStorage: await databaseDefaults(),
       onboardingFinished: !!store.get('onboarding-finished'),
-      /** FL-1742: what a Noodle Gallery import carried and left behind, as the importer reported it. */
-      importedGallery: installation ? (store.get(`import-gallery:${installation.id}`) ?? null) : null,
       installations: hostInstallations(inventory, installation?.id, security.requestOrigin(request)),
       suggestedPort: suggestedPort(inventory, [Number(new URL(security.requestOrigin(request)).port || 443)]),
       appUrl: installation ? new URL(`http://${new URL(security.requestOrigin(request)).hostname}:${installation.port}`).origin : null,
@@ -535,7 +533,7 @@ class Api {
     return { enabled };
   }
   @Post('unlock-backups') async unlockBackups(@Body() input: unknown) {
-    if (store.locked()) throw new Refusal('operation_in_progress');
+    if (store.history().some((operation) => operation.state !== 'complete')) throw new Refusal('operation_in_progress');
     const { key } = z
       .object({ key: z.string().max(128) })
       .strict()
@@ -551,10 +549,10 @@ class Api {
     const { id, password } = z.object({ id: z.string().regex(/^[a-f0-9]{64}$/), password: z.string().max(256) }).strict().parse(input);
     await security.confirm(password);
     await operations.deleteRecoveryPoint(id);
-    return backups.status();
+    return { ...(await backups.status()), protected: [...operations.protectedRecoveryPoints()] };
   }
-  @Get('backup-status') backupStatus() {
-    return backups.status();
+  @Get('backup-status') async backupStatus() {
+    return { ...(await backups.status()), protected: [...operations.protectedRecoveryPoints()] };
   }
   @Post('backup-key') async backupKey(@Body() input: unknown, @Res() response: Response) {
     const { password } = z
