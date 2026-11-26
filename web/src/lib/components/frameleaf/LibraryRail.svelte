@@ -30,12 +30,7 @@
   import { menuButtonId } from '$lib/components/shared-components/navigation-bar/NavigationBar.svelte';
   import { sidebarStore } from '$lib/stores/sidebar.svelte';
   import { websocketEvents } from '$lib/stores/websocket';
-  import {
-    buildAlbumTree,
-    emptyAlbumTree,
-    type FrameleafAlbumNode,
-    type FrameleafAlbumTree,
-  } from '$lib/frameleaf/album-tree';
+  import { emptyAlbumTree, type FrameleafAlbumNode, type FrameleafAlbumTree } from '$lib/frameleaf/album-tree';
   import {
     buildPhoneMenuDestinations,
     buildRailSections,
@@ -61,6 +56,7 @@
   import '$lib/frameleaf/tokens.css';
   import { searchContextFor, workspaceHref } from '$lib/frameleaf/search-context';
   import { onLibraryAccessChange } from '$lib/frameleaf/library-access';
+  import { railSession } from '$lib/frameleaf/rail-session.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { eventManager } from '$lib/managers/event-manager.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
@@ -78,15 +74,10 @@
     LibraryItemSearchKind,
     LibraryScope,
     LibraryViewScope,
-    getAlbumHierarchy,
     setAlbumOrder,
-    type AlbumHierarchyNode,
     type AlbumResponseDto,
     searchLibraryItems,
     type SearchFilter,
-    getPartners,
-    PartnerDirection,
-    type PartnerResponseDto,
   } from '@frameleaf/sdk';
   import { Icon, Theme as AppTheme, themeManager, toastManager } from '@frameleaf/ui';
   import {
@@ -148,11 +139,6 @@
 
   let { children }: Props = $props();
 
-  let tree = $state<FrameleafAlbumTree>(emptyAlbumTree());
-  /** The same albums as the server sent them, for the right-click menu's dialogs. */
-  let albumRecords = $state<AlbumResponseDto[]>([]);
-  const flattenHierarchy = (nodes: AlbumHierarchyNode[]): AlbumResponseDto[] =>
-    nodes.flatMap((node) => [node.album, ...flattenHierarchy(node.children)]);
   const albumRoots = $derived(
     (tree.roots ?? [...tree.collections, ...tree.albums]).filter(({ kind }) => kind !== 'space'),
   );
@@ -170,7 +156,6 @@
   /** Collections whose open state the user has flipped away from the saved default. */
   const flipped = new SvelteSet<string>();
 
-  let treeRequest = 0;
   /**
    * The workspace the URL names; failing that, a Boards collection opened by its own address
    * (`/albums/<id>`) is still in Boards (FL-670).
@@ -182,37 +167,33 @@
         : undefined),
   );
   const scopedHref = (href: string) => workspaceHref(href, workspaceScope, page.url.origin);
+  /*
+   * FL-1796: the tree and the partners live in the session (`rail-session`), not in this rail. A
+   * rail that mounts again draws the last answer at once and reads it again behind it, instead of
+   * going blank on every page.
+   */
+  const railAlbums = $derived(railSession.albums[workspaceScope ?? '']);
+  const tree = $derived<FrameleafAlbumTree>(railAlbums?.tree ?? emptyAlbumTree());
+  /** The same albums as the server sent them, for the right-click menu's dialogs. */
+  const albumRecords = $derived<AlbumResponseDto[]>(railAlbums?.records ?? []);
+  let mounted = true;
+  onDestroy(() => (mounted = false));
   const refreshAlbums = async (scope = workspaceScope) => {
-    const version = ++treeRequest;
-    const current = authManager.captureSession();
     try {
-      const response = await getAlbumHierarchy(scope ? { libraryScope: scope } : {});
-      if (version === treeRequest && current() && scope === workspaceScope) {
-        tree = buildAlbumTree(response);
-        albumRecords = flattenHierarchy(response.roots);
-      }
+      await railSession.refreshAlbums(scope);
     } catch (error) {
-      if (version === treeRequest && current()) {
+      if (mounted) {
         handleError(error, $t('errors.frameleaf_unable_to_load_albums'));
       }
     }
   };
   $effect(() => {
     const scope = workspaceScope;
-    untrack(() => {
-      tree = emptyAlbumTree();
-      albumRecords = [];
-      void refreshAlbums(scope);
-    });
+    untrack(() => void refreshAlbums(scope));
   });
-  onDestroy(() => treeRequest++);
   onDestroy(
+    // the session store dropped what it held (it listens first); this rail asks again
     onLibraryAccessChange(() => {
-      treeRequest++;
-      partnerRequest++;
-      tree = emptyAlbumTree();
-      albumRecords = [];
-      partners = [];
       // Counts read under the old access must not outlive it (a lock, another account).
       countsRequest++;
       boardsCounts = {};
@@ -227,24 +208,8 @@
   );
 
   /** People who share their library with this account (the prototype's partner library entry). */
-  let partners = $state<PartnerResponseDto[]>([]);
-  let partnerRequest = 0;
-  onDestroy(() => partnerRequest++);
-  const refreshPartners = async () => {
-    const version = ++partnerRequest;
-    const current = authManager.captureSession();
-    try {
-      const response = await getPartners({ direction: PartnerDirection.SharedWith });
-      if (version === partnerRequest && current()) {
-        partners = response;
-      }
-    } catch {
-      // The rail still works without the entry; the Sharing page reports partner errors.
-      if (version === partnerRequest && current()) {
-        partners = [];
-      }
-    }
-  };
+  const partners = $derived(railSession.partners ?? []);
+  const refreshPartners = () => railSession.refreshPartners();
 
   /*
    * Right-click (approved design, 2026-11-04): an album, collection or space opens its menu at the
@@ -464,8 +429,7 @@
   };
 
   const refreshAccessAlbums = () => {
-    tree = emptyAlbumTree();
-    albumRecords = [];
+    railSession.dropAlbums(workspaceScope);
     void refreshAlbums();
   };
   onMount(() => {
