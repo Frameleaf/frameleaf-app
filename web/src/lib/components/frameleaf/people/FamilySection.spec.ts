@@ -91,7 +91,7 @@ describe('FamilySection (FL-842)', () => {
     await fireEvent.click(screen.getByRole('button', { name: "Remove Alex as Taylor's sibling" }));
 
     await waitFor(() =>
-      expect(screen.getByRole('status').textContent).toBe(
+      expect(screen.getByTestId('frameleaf-status-line').textContent?.trim()).toBe(
         "Alex is no longer listed as Taylor's sibling. Their photos are not changed.",
       ),
     );
@@ -125,7 +125,9 @@ describe('FamilySection (FL-842)', () => {
 
     await chooseEmmaAsParent();
 
-    await waitFor(() => expect(screen.getByRole('status').textContent).toBe("Emma added as Taylor's parent."));
+    await waitFor(() =>
+      expect(screen.getByTestId('frameleaf-status-line').textContent?.trim()).toBe("Emma added as Taylor's parent."),
+    );
     expect(api.createPersonRelationship).toHaveBeenCalledWith({
       id: person.id,
       personRelationshipCreateDto: { relatedPersonId: 'emma', relation: 'parent' },
@@ -154,7 +156,9 @@ describe('FamilySection (FL-842)', () => {
       expect(screen.getByRole('link', { name: 'Margaret öffnen (Mutter von Taylor)' })).toBeTruthy();
       await fireEvent.click(screen.getByRole('button', { name: 'Margaret entfernen (Mutter von Taylor)' }));
 
-      await waitFor(() => expect(screen.getByRole('status').textContent).toContain('Margaret (Mutter)'));
+      await waitFor(() =>
+        expect(screen.getByTestId('frameleaf-status-line').textContent?.trim()).toContain('Margaret (Mutter)'),
+      );
     });
 
     it('keeps the capital in the added sentence', async () => {
@@ -170,11 +174,23 @@ describe('FamilySection (FL-842)', () => {
       await fireEvent.click(screen.getAllByRole('button', { name: 'Verwandtschaft hinzufügen' }).at(-1)!);
 
       await waitFor(() =>
-        expect(screen.getByRole('status').textContent).toBe(
+        expect(screen.getByTestId('frameleaf-status-line').textContent?.trim()).toBe(
           'Verwandtschaft für Taylor hinzugefügt: Emma (Elternteil).',
         ),
       );
     });
+  });
+
+  it('shows placeholders while the family is read, and a failed read in place with Try again (FL-1810)', async () => {
+    api.getPersonRelationships.mockRejectedValueOnce(new Error('offline')).mockResolvedValueOnce(none);
+    render(FamilySection, { person: personWith(undefined) });
+
+    expect(screen.getByTestId('frameleaf-list-skeleton')).toBeTruthy();
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toContain("Unable to load this person's family");
+    await fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    await waitFor(() => expect(screen.getByText('No family added yet')).toBeTruthy());
+    expect(screen.queryByRole('alert')).toBeNull();
   });
 
   it('shows a refusal in the dialog and changes nothing', async () => {
