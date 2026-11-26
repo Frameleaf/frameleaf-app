@@ -93,6 +93,14 @@ Frameleaf is built on [Immich](https://github.com/immich-app/immich), the open-s
 - **Landmark place pack (OpenStreetMap boundaries, Wikidata places):** Place boundaries © OpenStreetMap contributors, available under the Open Database License (https://www.openstreetmap.org/copyright). The pack is a derivative database under the same licence; server/base-image/geodata/landmarks/build.mjs is the method that produces it. Place names, identifiers, kinds and ranks are from Wikidata (CC0).
 - **GeoNames (cities, regions, countries and their names in other languages):** City, region and country data © GeoNames (https://www.geonames.org/), licensed under CC BY 4.0. The places used to name where a photo was taken ship with the server. Their names in the app's other languages are a selection from GeoNames' alternate names, made by server/bin/build-place-names-pack.mjs, which the server downloads as one file.
 
+## Album and collection icons
+
+| Name                                                                  | Author                                   | Licence    | How it reaches you |
+| --------------------------------------------------------------------- | ---------------------------------------- | ---------- | ------------------ |
+| [Tabler Icons](https://github.com/tabler/tabler-icons)                | Paweł Kuna and Tabler Icons contributors | MIT        | bundled            |
+| [Material Symbols](https://github.com/google/material-design-icons)   | Google                                   | Apache-2.0 | bundled            |
+| [IconOven (Stroke style, selected icons)](https://iconoven.com/icons) | Appic Marketing                          | MIT        | bundled            |
+
 ## Fonts (Studio titles)
 
 Title fonts come from [Google Fonts](https://fonts.google.com) and are loaded from Google Fonts when a title uses them; not bundled, except the seven title families marked bundled, whose files ship with the server from the named @fontsource package, as WOFF2 and decompressed to TrueType with no other change, and are served to the native apps. Designers and licences: google/fonts @ 23e54b51ddffbc7713c583748e3bd86f62b1fa4a (licence directory and METADATA.pb designer per family), retrieved 2026-09-25.
@@ -353,6 +361,7 @@ arbitrarily-targeted use).
 - [`licenses/texts/cc-by-nc-4.0.txt`](https://github.com/Frameleaf/frameleaf-app/blob/main/licenses/texts/cc-by-nc-4.0.txt)
 - [`licenses/texts/dotlottie-web-mit.txt`](https://github.com/Frameleaf/frameleaf-app/blob/main/licenses/texts/dotlottie-web-mit.txt)
 - [`licenses/texts/fairseq-m2m100-mit.txt`](https://github.com/Frameleaf/frameleaf-app/blob/main/licenses/texts/fairseq-m2m100-mit.txt)
+- [`licenses/texts/iconoven-mit.txt`](https://github.com/Frameleaf/frameleaf-app/blob/main/licenses/texts/iconoven-mit.txt)
 - [`licenses/texts/insightface-model-licence.txt`](https://github.com/Frameleaf/frameleaf-app/blob/main/licenses/texts/insightface-model-licence.txt)
 - [`licenses/texts/lfm-open-license-1.0.txt`](https://github.com/Frameleaf/frameleaf-app/blob/main/licenses/texts/lfm-open-license-1.0.txt)
 - [`licenses/texts/llama-cpp-mit.txt`](https://github.com/Frameleaf/frameleaf-app/blob/main/licenses/texts/llama-cpp-mit.txt)
@@ -367,6 +376,7 @@ arbitrarily-targeted use).
 - [`licenses/texts/practical-rife-mit.txt`](https://github.com/Frameleaf/frameleaf-app/blob/main/licenses/texts/practical-rife-mit.txt)
 - [`licenses/texts/qwen-research-license.txt`](https://github.com/Frameleaf/frameleaf-app/blob/main/licenses/texts/qwen-research-license.txt)
 - [`licenses/texts/supertonic-3-openrail-m.txt`](https://github.com/Frameleaf/frameleaf-app/blob/main/licenses/texts/supertonic-3-openrail-m.txt)
+- [`licenses/texts/tabler-icons-mit.txt`](https://github.com/Frameleaf/frameleaf-app/blob/main/licenses/texts/tabler-icons-mit.txt)
 - [`licenses/texts/ubuntu-font-licence-1.0.txt`](https://github.com/Frameleaf/frameleaf-app/blob/main/licenses/texts/ubuntu-font-licence-1.0.txt)
 - [`studio/notices/anime4k-license.txt`](https://github.com/Frameleaf/frameleaf-app/blob/main/studio/notices/anime4k-license.txt)
 - [`studio/notices/anime4k-websr.txt`](https://github.com/Frameleaf/frameleaf-app/blob/main/studio/notices/anime4k-websr.txt)

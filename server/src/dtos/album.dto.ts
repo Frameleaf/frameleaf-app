@@ -25,15 +25,17 @@ import { MaybeDehydrated } from 'src/types.js';
 import { asDateTimeString } from 'src/utils/date.js';
 import { stringToBool } from 'src/validation.js';
 
-// Icons are validated against the Material Design Icons catalogue the server
-// owns as data (src/constants/album-icons.ts); the 31 legacy kebab-case keys stay
+// Icons are validated against the Material Design Icons catalogue and the extra
+// icon packs the server owns as data (src/constants/album-icons.ts); the 31 legacy kebab-case keys stay
 // valid so older rows are never rejected. Enforced via refine (not z.enum) so the
 // wire type stays `string` and no client needs a codegen bump when the
 // catalogue version moves.
 export const AlbumIconSchema = z
   .string()
   .max(80)
-  .refine((value) => isValidAlbumIcon(value), { message: 'Invalid album icon: expected a Material Design Icons name' });
+  .refine((value) => isValidAlbumIcon(value), {
+    message: 'Invalid album icon: expected a name from the icon catalogue',
+  });
 
 // Album colours: the eight named colours shared with tags. Validated on write; the wire type stays `string`.
 export const ALBUM_COLORS = ['grey', 'green', 'teal', 'blue', 'purple', 'pink', 'amber', 'red'] as const;

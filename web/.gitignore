@@ -8,3 +8,4 @@ node_modules
 !.env.example
 /static/studio-engine
 /static/mdi-icon-paths.json
+/static/icon-packs
