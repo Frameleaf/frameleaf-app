@@ -28,4 +28,22 @@ const FolderSummaryResponseSchema = z
   })
   .meta({ id: 'FolderSummaryResponseDto' });
 
+// FL-1795
+const FolderAssetsSchema = z
+  .object({
+    path: z.string().describe('Folder path'),
+    take: z.coerce
+      .number()
+      .int()
+      .min(1)
+      .max(1000)
+      .optional()
+      .describe(
+        'Most assets to return. With it the folder is read a page at a time, in asset ID order: a page shorter than this is the last one. Without it every asset is returned, in file name order.',
+      ),
+    after: z.uuidv4().optional().describe('ID of the last asset of the page before; only with take'),
+  })
+  .meta({ id: 'FolderAssetsDto' });
+
 export class FolderSummaryResponseDto extends createZodDto(FolderSummaryResponseSchema) {}
+export class FolderAssetsDto extends createZodDto(FolderAssetsSchema) {}

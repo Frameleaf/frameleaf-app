@@ -1,6 +1,11 @@
-import { getAssetsByOriginalPath, getFolderSummary, type FolderSummaryResponseDto } from '@frameleaf/sdk';
+import {
+  getAssetsByOriginalPath,
+  getFolderSummary,
+  type AssetResponseDto,
+  type FolderSummaryResponseDto,
+} from '@frameleaf/sdk';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { foldersStore } from '$lib/stores/folders.svelte';
+import { FOLDER_FILES_KEPT, FOLDER_FILES_PAGE_SIZE, foldersStore } from '$lib/stores/folders.svelte';
 
 vi.mock('$lib/managers/event-manager.svelte', () => ({
   eventManager: {
@@ -79,6 +84,41 @@ describe('foldersStore', () => {
     foldersStore.bustAssetCache();
     await foldersStore.fetchAssetsByPath('/a');
     expect(getAssetsByOriginalPath).toHaveBeenCalledTimes(2);
+  });
+
+  it('reads a large folder a page at a time and hands back every file (FL-1795)', async () => {
+    const file = (id: string) => ({ id }) as AssetResponseDto;
+    const full = Array.from({ length: FOLDER_FILES_PAGE_SIZE }, (_, index) => file(`first-${index}`));
+    vi.mocked(getAssetsByOriginalPath)
+      .mockResolvedValueOnce(full)
+      .mockResolvedValueOnce([file('last')]);
+
+    const files = await foldersStore.fetchAssetsByPath('/big');
+
+    expect(files).toHaveLength(FOLDER_FILES_PAGE_SIZE + 1);
+    expect(vi.mocked(getAssetsByOriginalPath).mock.calls).toEqual([
+      [{ path: '/big', take: FOLDER_FILES_PAGE_SIZE }],
+      [{ path: '/big', take: FOLDER_FILES_PAGE_SIZE, after: `first-${FOLDER_FILES_PAGE_SIZE - 1}` }],
+    ]);
+    // the whole folder is cached as one list
+    expect(await foldersStore.fetchAssetsByPath('/big')).toHaveLength(FOLDER_FILES_PAGE_SIZE + 1);
+    expect(getAssetsByOriginalPath).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps the files of the last few folders only, the ones opened most recently (FL-1795)', async () => {
+    vi.mocked(getAssetsByOriginalPath).mockResolvedValue([]);
+    for (let index = 0; index < FOLDER_FILES_KEPT; index++) {
+      await foldersStore.fetchAssetsByPath(`/folder-${index}`);
+    }
+    // opened again, so it is no longer the one opened longest ago
+    await foldersStore.fetchAssetsByPath('/folder-0');
+    await foldersStore.fetchAssetsByPath('/one-more');
+    expect(getAssetsByOriginalPath).toHaveBeenCalledTimes(FOLDER_FILES_KEPT + 1);
+
+    await foldersStore.fetchAssetsByPath('/folder-0');
+    expect(getAssetsByOriginalPath).toHaveBeenCalledTimes(FOLDER_FILES_KEPT + 1);
+    await foldersStore.fetchAssetsByPath('/folder-1');
+    expect(getAssetsByOriginalPath).toHaveBeenCalledTimes(FOLDER_FILES_KEPT + 2);
   });
 
   it("never stores the previous account's tree or files when they arrive after logout", async () => {

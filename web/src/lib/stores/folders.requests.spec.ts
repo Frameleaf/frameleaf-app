@@ -61,7 +61,7 @@ describe('folder file requests', () => {
       request.resolve([]);
       await Promise.all(readers);
     }
-    expect(sdkMock.getAssetsByOriginalPath).toHaveBeenCalledWith({ path: '/a' });
+    expect(sdkMock.getAssetsByOriginalPath).toHaveBeenCalledWith({ path: '/a', take: 500 });
   });
 
   it('keeps different paths independent and caches empty folders', async () => {

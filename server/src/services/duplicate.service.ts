@@ -94,11 +94,17 @@ const getUniqueCoordinate = (assets: MapAsset[], key: 'latitude' | 'longitude'):
 
 @Injectable()
 export class DuplicateService extends BaseService {
-  async getDuplicates(auth: AuthDto): Promise<DuplicateResponseDto[]> {
-    // Clean up singleton groups (assets that are the only member of their duplicate group)
-    await this.duplicateRepository.cleanupSingletonGroups(auth.user.id);
+  /** With `page` (FL-1795) one page of the groups, in group id order; without it, every group. */
+  async getDuplicates(auth: AuthDto, page?: { take: number; after?: string }): Promise<DuplicateResponseDto[]> {
+    // Clean up singleton groups (assets that are the only member of their duplicate group), once per
+    // walk through the pages rather than before every page
+    if (!page?.after) {
+      await this.duplicateRepository.cleanupSingletonGroups(auth.user.id);
+    }
 
-    const duplicates = await this.duplicateRepository.getAll(auth.user.id, this.nsfwOptions(auth));
+    const duplicates = page
+      ? await this.duplicateRepository.getAll(auth.user.id, this.nsfwOptions(auth), page)
+      : await this.duplicateRepository.getAll(auth.user.id, this.nsfwOptions(auth));
     const ids = duplicates.flatMap(({ assets }) => assets.map(({ id }) => id));
     // Each lookup stands on its own: missing evidence never permits unattended disposal.
     const [historyResult, damagedResult] = await Promise.allSettled([

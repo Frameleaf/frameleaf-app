@@ -26,7 +26,18 @@ export type SharedLinkSearchOptions = HiddenContentQueryOptions & {
   userId: string;
   id?: string;
   albumId?: string;
+  /** FL-1795: at most this many links, newest first, each with the `cursorAt` a next page starts after. */
+  take?: number;
+  /** FL-1795: only links older than this one (its `cursorAt` and id). */
+  after?: { at: string; id: string };
 };
+
+/** A link's own, or its album still exists: the links a list shows. */
+const isListed = (eb: ExpressionBuilder<DB, 'shared_link'>) =>
+  eb.or([
+    eb('shared_link.type', '=', SharedLinkType.Individual),
+    eb.exists(withSharedLinkAlbum(eb).clearSelect().select(sql.lit(1).as('one'))),
+  ]);
 
 type SharedLinkPrivacyOptions = HiddenContentQueryOptions;
 
@@ -185,8 +196,29 @@ export class SharedLinkRepository {
       .executeTakeFirst();
   }
 
-  @GenerateSql({ params: [{ userId: DummyValue.UUID, albumId: DummyValue.UUID }] })
-  getAll({ userId, id, albumId, ...options }: SharedLinkSearchOptions) {
+  /** FL-1795: how many links of each type `getAll` lists for this user, without reading any of them. */
+  @GenerateSql({ params: [DummyValue.UUID] })
+  async getCounts(userId: string): Promise<{ album: number; individual: number }> {
+    const rows = await this.db
+      .selectFrom('shared_link')
+      .select('shared_link.type')
+      .select(sql<number>`count(*)::int`.as('count'))
+      .where('shared_link.userId', '=', userId)
+      .where(isListed)
+      .groupBy('shared_link.type')
+      .execute();
+    const countOf = (type: SharedLinkType) => rows.find((row) => row.type === type)?.count ?? 0;
+    return { album: countOf(SharedLinkType.Album), individual: countOf(SharedLinkType.Individual) };
+  }
+
+  @GenerateSql(
+    { params: [{ userId: DummyValue.UUID, albumId: DummyValue.UUID }] },
+    {
+      name: 'page',
+      params: [{ userId: DummyValue.UUID, take: 60, after: { at: '2026-01-01 00:00:00+00', id: DummyValue.UUID } }],
+    },
+  )
+  getAll({ userId, id, albumId, take, after, ...options }: SharedLinkSearchOptions) {
     return (
       this.db
         .selectFrom('shared_link')
@@ -232,7 +264,15 @@ export class SharedLinkRepository {
         .where((eb) => eb.or([eb('shared_link.type', '=', SharedLinkType.Individual), eb('album.id', 'is not', null)]))
         .$if(!!albumId, (eb) => eb.where('shared_link.albumId', '=', albumId!))
         .$if(!!id, (eb) => eb.where('shared_link.id', '=', id!))
+        // the stored time in full: a JavaScript date drops the microseconds a next page has to start after
+        .$if(!!take, (qb) => qb.select(sql<string>`"shared_link"."createdAt"::text`.as('cursorAt')).limit(take!))
+        .$if(!!after, (qb) =>
+          qb.where(
+            sql<boolean>`("shared_link"."createdAt", "shared_link"."id") < (${after!.at}::timestamptz, ${after!.id}::uuid)`,
+          ),
+        )
         .orderBy('shared_link.createdAt', 'desc')
+        .orderBy('shared_link.id', 'desc')
         .execute()
     );
   }

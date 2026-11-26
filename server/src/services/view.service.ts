@@ -12,11 +12,17 @@ export class ViewService extends BaseService {
     return this.viewRepository.getUniqueOriginalPaths(auth.user.id, getHiddenContentQueryOptions(auth));
   }
 
-  async getAssetsByOriginalPath(auth: AuthDto, path: string): Promise<AssetResponseDto[]> {
+  /** With `take` (FL-1795) one page of the folder, in asset id order; without it, every file by name. */
+  async getAssetsByOriginalPath(
+    auth: AuthDto,
+    path: string,
+    { take, after }: { take?: number; after?: string } = {},
+  ): Promise<AssetResponseDto[]> {
     const assets = await this.viewRepository.getAssetsByOriginalPath(
       auth.user.id,
       path,
       getHiddenContentQueryOptions(auth),
+      take === undefined ? undefined : { take, after },
     );
     return assets.map((asset) => mapAsset(asset, { auth }));
   }
