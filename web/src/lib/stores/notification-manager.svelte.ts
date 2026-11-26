@@ -16,6 +16,8 @@ class NotificationStore {
   #session = 0;
   #userId: string | undefined;
   #writes = new Set<Promise<void>>();
+  /** FL-1796: this account's list was asked for; the socket (`on_notification`) keeps it current. */
+  #asked = false;
 
   constructor() {
     eventManager.on({
@@ -25,6 +27,12 @@ class NotificationStore {
         return this.refresh();
       },
       AuthLogout: () => this.clear(),
+      // pushes sent while the socket was down were missed: read the list again
+      WebsocketConnect: () => {
+        if (this.#asked) {
+          void this.refresh();
+        }
+      },
       AuthUserLoaded: ({ id }) => {
         if (id === this.#userId) {
           return;
@@ -35,7 +43,16 @@ class NotificationStore {
     });
   }
 
+  /**
+   * FL-1796: read the list once per account. The top bar asks on every mount; after the first
+   * answer the server's pushes keep the list current, so later mounts ask nothing.
+   */
+  load() {
+    return this.#asked ? Promise.resolve() : this.refresh();
+  }
+
   async refresh() {
+    this.#asked = true;
     this.#cancelRefresh();
     const request = new AbortController();
     this.#refresh = request;
@@ -52,6 +69,8 @@ class NotificationStore {
       }
     } catch (error) {
       if (this.#refresh === request) {
+        // a failed first read is asked again by the next mount
+        this.#asked = false;
         handleError(error, get(t)('errors.failed_to_load_notifications'));
       }
     } finally {
@@ -137,6 +156,7 @@ class NotificationStore {
     this.#session++;
     this.#userId = undefined;
     this.#writes.clear();
+    this.#asked = false;
     this.notifications = [];
   };
 }

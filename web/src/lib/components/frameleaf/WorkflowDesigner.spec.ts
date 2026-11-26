@@ -111,7 +111,7 @@ describe('WorkflowDesigner', () => {
       evaluatedAt: '2026-10-28T00:00:00Z',
     });
     setup([], workflow({ enabled: false, source: { filter: { rating: { gte: 4 } } }, steps: [] }));
-    await screen.findByText('Server timezone: UTC');
+    await screen.findByRole('heading', { name: t.schedule });
     await fireEvent.click(screen.getByRole('button', { name: t.tab_validation }));
     await fireEvent.click(screen.getByRole('button', { name: t.validate }));
     expect(await screen.findByText(/^25,001 photos and videos match\. Nothing was changed/)).toBeInTheDocument();
@@ -171,7 +171,7 @@ describe('WorkflowDesigner', () => {
         ],
       }),
     );
-    await screen.findByText('Server timezone: UTC');
+    await screen.findByRole('heading', { name: t.schedule });
     await fireEvent.click(screen.getByRole('button', { name: t.tab_validation }));
     await fireEvent.click(screen.getByRole('button', { name: t.validate }));
 
@@ -201,7 +201,7 @@ describe('WorkflowDesigner', () => {
       evaluatedAt: '2026-10-28T00:00:00Z',
     });
     setup([], workflow({ enabled: false, steps: [] }));
-    await screen.findByText('Server timezone: UTC');
+    await screen.findByRole('heading', { name: t.schedule });
     await fireEvent.click(screen.getByRole('button', { name: t.tab_validation }));
     await fireEvent.click(screen.getByRole('button', { name: t.validate }));
 
@@ -221,7 +221,7 @@ describe('WorkflowDesigner', () => {
       evaluatedAt: '2026-10-28T00:00:00Z',
     });
     setup([], workflow({ enabled: false, steps: [] }));
-    await screen.findByText('Server timezone: UTC');
+    await screen.findByRole('heading', { name: t.schedule });
     await fireEvent.click(screen.getByRole('button', { name: t.tab_validation }));
     await fireEvent.click(screen.getByRole('button', { name: t.validate }));
 

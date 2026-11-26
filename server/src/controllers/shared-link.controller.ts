@@ -26,6 +26,8 @@ import {
   SharedLinkDirectImageDto,
   SharedLinkEditDto,
   SharedLinkLoginDto,
+  SharedLinkPageDto,
+  SharedLinkPageResponseDto,
   SharedLinkResponseDto,
   SharedLinkSearchDto,
 } from 'src/dtos/shared-link.dto.js';
@@ -76,6 +78,18 @@ export class SharedLinkController {
   })
   getAllSharedLinks(@Auth() auth: AuthDto, @Query() dto: SharedLinkSearchDto): Promise<SharedLinkResponseDto[]> {
     return this.service.getAll(auth, dto);
+  }
+
+  @Get('page')
+  @Authenticated({ permission: Permission.SharedLinkRead })
+  @Endpoint({
+    summary: 'Retrieve shared links a page at a time',
+    description:
+      'Your shared links, newest first, a page at a time, with how many album links and links to chosen items you have in all.',
+    history: new HistoryBuilder().added('v3.5.0').alpha('v3.5.0'),
+  })
+  getSharedLinkPage(@Auth() auth: AuthDto, @Query() dto: SharedLinkPageDto): Promise<SharedLinkPageResponseDto> {
+    return this.service.getPage(auth, dto);
   }
 
   @Post('login')

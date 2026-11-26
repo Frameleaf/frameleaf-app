@@ -30,7 +30,7 @@ vi.mock('$lib/utils/session-privacy', () => ({ clearSessionMedia: vi.fn(), revok
 vi.mock('$app/state', () => ({ page: app.page }));
 vi.mock('$lib/managers/feature-flags-manager.svelte', () => ({ featureFlagsManager: { value: { search: false } } }));
 vi.mock('$lib/stores/notification-manager.svelte', () => ({
-  notificationManager: { notifications: [], refresh: vi.fn().mockResolvedValue(undefined) },
+  notificationManager: { notifications: [], load: vi.fn().mockResolvedValue(undefined) },
 }));
 
 const authStatus = (isElevated: boolean) => ({ isElevated, password: true, pinCode: true });

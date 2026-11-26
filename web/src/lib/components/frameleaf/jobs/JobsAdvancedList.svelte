@@ -4,11 +4,13 @@
    * Three questions in order: what needs me (failures by what went wrong, across tasks, one thing to do each), what
    * the server is doing and why the rest is not running, and, folded away, every task with nothing to do. The Job
    * manager owns the queues, the review of every command and the dialogs; this reads the overview and draws the page.
+   * FL-1785 (approved 2026-11-26, prototype `?jobs=v3`): a progress bar on the page and on each task, what a failure
+   * means for the photo, and the whole width of the pane.
    */
   import Button from '$lib/components/frameleaf/Button.svelte';
   import InlineError from '$lib/components/frameleaf/InlineError.svelte';
   import type { JobQueueDefinition, JobTab } from '$lib/frameleaf/job-queues';
-  import { jobCounts } from '$lib/frameleaf/job-queues';
+  import { jobCounts, PROBLEM_KEYS, PROBLEMS_AT_RISK } from '$lib/frameleaf/job-queues';
   import {
     actOnQueueProblem,
     getQueueOverview,
@@ -25,6 +27,7 @@
   import { Icon } from '@frameleaf/ui';
   import {
     mdiAlertCircleOutline,
+    mdiAlertOutline,
     mdiArrowRight,
     mdiCheckCircleOutline,
     mdiChevronDown,
@@ -39,6 +42,7 @@
     mdiPlay,
     mdiPlus,
     mdiServerNetworkOff,
+    mdiShieldCheckOutline,
     mdiTimerSandComplete,
     mdiTuneVariant,
   } from '@mdi/js';
@@ -119,25 +123,26 @@
 
   // ---- Needs a look --------------------------------------------------------------------------------
 
-  type Fix = 'retry' | 'stop' | 'care' | 'jobs';
-  const PROBLEMS: Record<QueueProblemCause, { icon: string; fix: Fix; key: string }> = {
-    [QueueProblemCause.Drive]: { icon: mdiHarddiskRemove, fix: 'retry', key: 'drive' },
-    [QueueProblemCause.Missing]: { icon: mdiImageSearchOutline, fix: 'care', key: 'missing' },
-    [QueueProblemCause.Damaged]: { icon: mdiImageBrokenVariant, fix: 'care', key: 'damaged' },
-    [QueueProblemCause.Unsupported]: { icon: mdiFileQuestionOutline, fix: 'stop', key: 'unsupported' },
-    [QueueProblemCause.WriteDenied]: { icon: mdiFolderLockOutline, fix: 'retry', key: 'write' },
-    [QueueProblemCause.MlUnavailable]: { icon: mdiServerNetworkOff, fix: 'retry', key: 'ml' },
-    [QueueProblemCause.TooLong]: { icon: mdiTimerSandComplete, fix: 'retry', key: 'slow' },
-    [QueueProblemCause.Other]: { icon: mdiAlertCircleOutline, fix: 'jobs', key: 'other' },
+  type Fix = 'retry' | 'stop' | 'care';
+  const PROBLEMS: Record<QueueProblemCause, { icon: string; fix: Fix }> = {
+    [QueueProblemCause.Drive]: { icon: mdiHarddiskRemove, fix: 'retry' },
+    [QueueProblemCause.Missing]: { icon: mdiImageSearchOutline, fix: 'care' },
+    [QueueProblemCause.Damaged]: { icon: mdiImageBrokenVariant, fix: 'care' },
+    [QueueProblemCause.Unsupported]: { icon: mdiFileQuestionOutline, fix: 'stop' },
+    [QueueProblemCause.WriteDenied]: { icon: mdiFolderLockOutline, fix: 'retry' },
+    [QueueProblemCause.MlUnavailable]: { icon: mdiServerNetworkOff, fix: 'retry' },
+    [QueueProblemCause.TooLong]: { icon: mdiTimerSandComplete, fix: 'retry' },
+    // FL-1785: no longer a dead end; the jobs and the server's words are a click away
+    [QueueProblemCause.Other]: { icon: mdiAlertCircleOutline, fix: 'retry' },
   };
+
   const FIX_LABELS: Record<Fix, Translations> = {
     retry: 'frameleaf_bgwork_try_again',
     stop: 'frameleaf_jobs_adv_stop_trying',
     care: 'frameleaf_jobs_open_library_care',
-    jobs: 'frameleaf_jobs_adv_see_jobs',
   };
-  /** How many reasons show before the fold: the biggest, so the tasks stay within reach. */
-  const SHOWN = 3;
+  /** How many reasons show before the fold: the biggest, two rows of two on a wide pane. */
+  const SHOWN = 4;
 
   const byName = $derived(new Map(rows.map((row) => [row.definition.name, row])));
   const titleOf = (name: QueueName) => {
@@ -178,13 +183,6 @@
   };
   const act = async (problem: QueueProblemDto) => {
     const { fix } = PROBLEMS[problem.cause];
-    if (fix === 'jobs') {
-      const [first] = problem.queues;
-      if (first) {
-        onOpen(first, 'failed');
-      }
-      return;
-    }
     if (fix === 'care') {
       return;
     }
@@ -230,10 +228,10 @@
     }
     // the queue list is read more often than the overview: a pause or resume made a moment ago shows at once
     if (known.reason === QueueIdleReason.Paused && !queue.isPaused) {
-      return { name, reason: null };
+      return { name, reason: null, done: known.done, perHour: known.perHour };
     }
     if (queue.isPaused && known.reason !== QueueIdleReason.Paused && known.reason !== QueueIdleReason.FeatureOff) {
-      return { name, reason: QueueIdleReason.Paused };
+      return { name, reason: QueueIdleReason.Paused, done: known.done, perHour: known.perHour };
     }
     return known;
   };
@@ -273,8 +271,9 @@
   const anyUnknown = $derived(rows.some(({ definition }) => isUnknown(definition.name)));
   const tasks = $derived(
     rows.map((row) => {
-      const counts = jobCounts(row.queue.statistics);
       const why = whyOf(row);
+      // how far along its batch is: what it finished since it last ran dry, of that plus what is left
+      const counts = { ...jobCounts(row.queue.statistics), done: why.done ?? 0 };
       const dash = isUnknown(row.definition.name);
       const state = dash
         ? 'idle'
@@ -290,13 +289,16 @@
       const line = dash
         ? '—'
         : counts.active
-          ? $t('frameleaf_jobs_adv_running', { values: { count: counts.active } })
+          ? [
+              $t('frameleaf_jobs_adv_running', { values: { count: counts.active } }),
+              ...(why.perHour && counts.pending ? [timeLeft(counts.pending, why.perHour)] : []),
+            ].join(' · ')
           : why.reason
             ? whyLine(why)
             : counts.pending
               ? $t('frameleaf_jobs_adv_next')
               : counts.failed
-                ? $t('frameleaf_jobs_adv_only_failures')
+                ? $t('frameleaf_jobs_adv_finished')
                 : $t('frameleaf_jobs_adv_nothing');
       // one button: undo what holds it when a person can, else pause it
       const button =
@@ -332,8 +334,39 @@
   const idle = $derived(tasks.filter((task) => !hasWork(task) && matches(task)));
   const yours = $derived(rows.filter(({ queue, definition }) => queue.isPaused && definition.canPause));
   const pausable = $derived(rows.filter(({ queue, definition }) => !queue.isPaused && definition.canPause));
-  const sum = (key: 'active' | 'pending') => tasks.reduce((total, { counts }) => total + counts[key], 0);
+  const sum = (key: 'active' | 'pending' | 'done') => tasks.reduce((total, task) => total + task.counts[key], 0);
+
+  // ---- Progress (FL-1785) --------------------------------------------------------------------------
+
+  const HOUR = 3_600_000;
+  /** "about 2 days left", from how many are left and how many finish an hour. */
+  const timeLeft = (left: number, perHour: number) => {
+    const hours = left / perHour;
+    if (hours < 1) {
+      return $t('frameleaf_jobs_adv_left_under_hour');
+    }
+    return hours < 36
+      ? $t('frameleaf_jobs_adv_left_hours', { values: { count: Math.round(hours) } })
+      : $t('frameleaf_jobs_adv_left_days', { values: { count: Math.round((hours * HOUR) / DAY) } });
+  };
+  /** Never an empty or a full bar while there is work: 1 to 99. */
+  const percent = (done: number, left: number) =>
+    left === 0 ? 100 : Math.min(99, Math.max(1, Math.floor((done / (done + left)) * 100)));
+  const left = $derived(sum('active') + sum('pending'));
 </script>
+
+{#snippet bar(done: number, remaining: number, state: string)}
+  <span
+    class="ja-bar"
+    data-state={state}
+    role="progressbar"
+    aria-valuemin={0}
+    aria-valuemax={100}
+    aria-valuenow={percent(done, remaining)}
+  >
+    <span style:width="{percent(done, remaining)}%"></span>
+  </span>
+{/snippet}
 
 {#snippet taskRow(task: (typeof tasks)[number])}
   {@const { row, name, counts, button } = task}
@@ -348,13 +381,18 @@
         <i aria-hidden="true"></i>
         {task.line}
       </span>
-      <span class="ja-num">
+      <span class="ja-progress">
         {#if task.dash}
-          <span class="ja-dim">—</span>
+          <span class="ja-num ja-dim">—</span>
         {:else if counts.pending}
-          {$t('frameleaf_jobs_adv_sum_waiting', { values: { count: counts.pending } })}
+          {@render bar(counts.done, counts.pending + counts.active, task.state)}
+          <span class="ja-num">
+            {$t('frameleaf_jobs_adv_progress', {
+              values: { done: counts.done, total: counts.done + counts.pending + counts.active },
+            })}
+          </span>
         {:else}
-          <span class="ja-dim">{$t('frameleaf_jobs_adv_none_waiting')}</span>
+          <span class="ja-num ja-dim">{$t('frameleaf_jobs_adv_none_waiting')}</span>
         {/if}
       </span>
       <span class="ja-num">
@@ -420,16 +458,39 @@
     <div>
       <p class="ja-eyebrow">{$t('frameleaf_bgwork_adv_overline')}</p>
       <h2>{$t('frameleaf_bgwork_adv_title')}</h2>
-      <p class="ja-sum">
+      <div class="ja-overall">
         <!-- an account's counts that are not all known are not summed: a part would read as the whole -->
-        {#if !anyUnknown}
-          <span>{$t('frameleaf_jobs_adv_sum_running', { values: { count: sum('active') } })}</span>
-          <span aria-hidden="true">·</span>
-          <span>{$t('frameleaf_jobs_adv_sum_waiting', { values: { count: sum('pending') } })}</span>
-          <span aria-hidden="true">·</span>
+        {#if !anyUnknown && left > 0}
+          {@render bar(sum('done'), left, sum('active') > 0 ? 'running' : 'held')}
         {/if}
-        <span class:ja-bad={failed > 0}>{$t('frameleaf_jobs_adv_sum_look', { values: { count: failed } })}</span>
-      </p>
+        <p class="ja-sum">
+          {#if !anyUnknown}
+            {#if sum('active') > 0}
+              <span>{$t('frameleaf_jobs_adv_sum_done', { values: { percent: percent(sum('done'), left) } })}</span>
+              <span aria-hidden="true">·</span>
+              <span>{$t('frameleaf_jobs_adv_sum_left', { values: { count: left } })}</span>
+              <span aria-hidden="true">·</span>
+              <span>{$t('frameleaf_jobs_adv_sum_running_now', { values: { count: sum('active') } })}</span>
+            {:else if left > 0}
+              <span>
+                <strong>{$t('frameleaf_jobs_adv_sum_idle')}</strong>
+                {$t('frameleaf_jobs_adv_sum_idle_waiting', { values: { count: left } })}
+                {#if yours.length > 0}
+                  {$t('frameleaf_jobs_adv_sum_idle_paused', { values: { count: yours.length } })}
+                {/if}
+              </span>
+            {:else}
+              <span><strong>{$t('frameleaf_jobs_adv_sum_caught_up')}</strong></span>
+            {/if}
+            {#if failed > 0}
+              <span aria-hidden="true">·</span>
+            {/if}
+          {/if}
+          {#if failed > 0 || anyUnknown}
+            <span class:ja-bad={failed > 0}>{$t('frameleaf_jobs_adv_sum_look', { values: { count: failed } })}</span>
+          {/if}
+        </p>
+      </div>
     </div>
     <div class="ja-head-actions">
       {#if yours.length > 0}
@@ -460,7 +521,8 @@
     {#if problems.length > 0}
       <ul class="ja-problems">
         {#each allProblems ? problems : problems.slice(0, SHOWN) as problem (problem.cause)}
-          {@const { icon, fix, key } = PROBLEMS[problem.cause]}
+          {@const { icon, fix } = PROBLEMS[problem.cause]}
+          {@const key = PROBLEM_KEYS[problem.cause]}
           {@const heading = $t(`frameleaf_jobs_adv_cause_${key}` as Translations)}
           {#if settled.has(problem.cause)}
             <li class="ja-problem ja-settled" role="status">
@@ -471,8 +533,6 @@
               </div>
             </li>
           {:else}
-            <!-- an unrecognised problem has only the server's words to go on: they show at once -->
-            {@const always = problem.cause === QueueProblemCause.Other}
             <li class="ja-problem">
               <span class="ja-problem-icon"><Icon {icon} size="19px" aria-hidden={true} /></span>
               <div class="ja-problem-text">
@@ -481,14 +541,22 @@
                   <span class="ja-count">{unit(problem)}</span>
                 </h4>
                 <p>{$t(`frameleaf_jobs_adv_cause_${key}_body` as Translations)}</p>
-                {#if problem.message && (always || said.has(problem.cause))}
+                <p class="ja-safe" class:ja-risk={PROBLEMS_AT_RISK.has(problem.cause)}>
+                  <Icon
+                    icon={PROBLEMS_AT_RISK.has(problem.cause) ? mdiAlertOutline : mdiShieldCheckOutline}
+                    size="17px"
+                    aria-hidden={true}
+                  />
+                  <span>{$t(`frameleaf_jobs_adv_cause_${key}_safe` as Translations)}</span>
+                </p>
+                {#if problem.message && said.has(problem.cause)}
                   <code class="ja-said">{problem.message}</code>
                 {/if}
                 <p class="ja-where">
                   {$t('frameleaf_jobs_adv_in', {
                     values: { tasks: problem.queues.map((name) => titleOf(name)).join(', ') },
                   })}
-                  {#if problem.message && !always}
+                  {#if problem.message}
                     <button
                       type="button"
                       class="ja-link"
@@ -496,6 +564,11 @@
                       onclick={() => toggleSaid(problem.cause)}
                     >
                       {said.has(problem.cause) ? $t('frameleaf_jobs_adv_said_hide') : $t('frameleaf_jobs_adv_said')}
+                    </button>
+                  {/if}
+                  {#if problem.cause === QueueProblemCause.Other && problem.queues[0]}
+                    <button type="button" class="ja-link" onclick={() => onOpen(problem.queues[0], 'failed')}>
+                      {$t('frameleaf_jobs_adv_see_jobs')}
                     </button>
                   {/if}
                 </p>
@@ -650,6 +723,58 @@
   .ja-sum .ja-bad,
   .ja-failed {
     color: var(--fl-danger);
+  }
+  .ja-overall {
+    display: grid;
+    gap: var(--fl-space-3);
+    width: min(720px, 100%);
+  }
+  .ja-bar {
+    display: block;
+    height: 6px;
+    border-radius: var(--fl-radius-sm);
+    background: var(--fl-raised);
+    overflow: hidden;
+  }
+  .ja-bar > span {
+    display: block;
+    height: 100%;
+    border-radius: var(--fl-radius-sm);
+    background: var(--fl-muted);
+    transition: width 700ms linear;
+  }
+  .ja-bar[data-state='running'] > span {
+    background: var(--fl-accent);
+  }
+  .ja-bar[data-state='held'] > span {
+    background: var(--fl-warning);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .ja-bar > span {
+      transition: none;
+    }
+  }
+  .ja-progress {
+    display: grid;
+    gap: var(--fl-space-2);
+    min-width: 0;
+  }
+  .ja-safe {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--fl-space-2);
+  }
+  .ja-problem-text .ja-safe {
+    margin-top: 10px;
+    color: var(--fl-text);
+  }
+  .ja-safe :global(svg) {
+    flex: none;
+    margin-top: 2px;
+    color: var(--fl-accent);
+  }
+  .ja-risk :global(svg) {
+    color: var(--fl-warning);
   }
   .ja-head-actions {
     display: flex;
@@ -813,7 +938,7 @@
     flex: 1;
     min-width: 0;
     display: grid;
-    grid-template-columns: 33px minmax(150px, 1.1fr) minmax(170px, 1.5fr) minmax(96px, 0.7fr) minmax(88px, 0.6fr);
+    grid-template-columns: 33px minmax(150px, 1.1fr) minmax(170px, 1.4fr) minmax(150px, 1fr) minmax(88px, 0.5fr);
     gap: var(--fl-space-4);
     align-items: center;
     padding: var(--fl-space-4) 0 var(--fl-space-4) var(--fl-space-6);
@@ -869,9 +994,7 @@
   .ja-state[data-state='held'] {
     color: var(--fl-warning);
   }
-  .ja-state[data-state='stopped'] {
-    color: var(--fl-danger);
-  }
+  /* a task that finished with failures is not an alarm: they are counted beside it and explained above */
   .ja-num {
     font-size: var(--fl-font-callout);
     color: var(--fl-text);
@@ -961,6 +1084,22 @@
   .ja-recent {
     margin-inline-start: auto;
   }
+  /* wide enough for two reasons side by side: 1px gaps over the border colour draw the dividers */
+  @container (min-width: 1360px) {
+    .ja-problems {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1px;
+      background: var(--fl-border);
+    }
+    .ja-problem.ja-problem {
+      background: var(--fl-panel);
+      border-top: 0;
+    }
+    .ja-problem:last-child:nth-child(odd) {
+      grid-column: 1 / -1;
+    }
+  }
   /* 900px: one line still fits beside the settings sidebar on a 1280px window */
   @container (max-width: 900px) {
     .ja-task {
@@ -976,8 +1115,12 @@
     .ja-task-main .ja-state {
       grid-column: 2 / -1;
     }
-    .ja-state + .ja-num {
+    .ja-progress {
       grid-column: 2;
+    }
+    /* the failed count sits on the numbers' line, not half way up the bar */
+    .ja-task-main > .ja-num {
+      align-self: end;
     }
     .ja-task-actions {
       margin-inline-start: 73px;

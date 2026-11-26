@@ -50,45 +50,38 @@ describe('PersonHero (PD-1, PD-2, PD-7, PD-8)', () => {
     })) as never);
   });
 
-  it('keeps the everyday actions in the row and the rest, with Correction history, in the … menu (FL-146 PD-9)', async () => {
+  it('shows four buttons and no … menu; photo and dates each have one way in (FL-1813)', () => {
     render(PersonHero, props());
 
     const toolbar = screen.getByRole('toolbar', { name: /Ada/ });
-    for (const name of ['Featured photo', 'Merge people', 'Hide', 'Favorite']) {
-      expect(within(toolbar).getByRole('button', { name })).toBeInTheDocument();
-    }
-    for (const name of ['Correction history', 'Add dates', 'Fix incorrect match', 'Recognition groups']) {
-      expect(within(toolbar).queryByRole('button', { name })).toBeNull();
-    }
-
-    await fireEvent.click(within(toolbar).getByRole('button', { name: 'More actions for Ada' }));
-    const item = await screen.findByRole('menuitem', { name: 'Correction history' });
-    await fireEvent.click(item);
-    await waitFor(() => expect(screen.queryByRole('menuitem', { name: 'Correction history' })).toBeNull());
+    expect(
+      within(toolbar)
+        .getAllByRole('button')
+        .map((button) => button.textContent?.trim()),
+    ).toEqual(['Merge people', 'Hide', 'Favorite', 'Fix recognition']);
+    expect(screen.queryByRole('button', { name: 'More actions for Ada' })).toBeNull();
+    // one way in each: the photo itself, and the line under the name
+    expect(screen.getByRole('button', { name: 'Select featured photo for Ada' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Add date of birth' })).toBeInTheDocument();
   });
 
-  it('keeps the same row and … menu on a phone (DISCOVERY-P6)', async () => {
-    vi.mocked(matchMedia).mockImplementation(((query: string) => ({
-      matches: query.includes('max-width'),
-      media: query,
-      onchange: null,
-      addEventListener: vi.fn(),
-      removeEventListener: vi.fn(),
-      dispatchEvent: vi.fn(),
-    })) as never);
-    render(PersonHero, props());
+  it('opens Fix recognition on Wrong faces, switches to Changes made, and links to how faces are grouped (FL-1813)', async () => {
+    const view = props();
+    render(PersonHero, view);
 
-    const toolbar = screen.getByRole('toolbar', { name: /Ada/ });
-    for (const name of ['Featured photo', 'Merge people', 'Hide', 'Favorite']) {
-      expect(within(toolbar).getByRole('button', { name })).toBeInTheDocument();
-    }
-    await fireEvent.click(within(toolbar).getByRole('button', { name: 'More actions for Ada' }));
-    expect((await screen.findAllByRole('menuitem')).map((item) => item.textContent?.trim())).toEqual([
-      'Add dates',
-      'Fix incorrect match',
-      'Correction history',
-      'Recognition groups',
-    ]);
+    await fireEvent.click(screen.getByRole('button', { name: 'Fix recognition' }));
+    const tabs = screen.getByRole('tablist', { name: 'Fix recognition' });
+    expect(within(tabs).getByRole('tab', { name: 'Wrong faces' })).toHaveAttribute('aria-selected', 'true');
+    // the stand-in for the Wrong faces list
+    expect(screen.getByRole('button', { name: 'Moved a face' })).toBeInTheDocument();
+
+    await fireEvent.click(within(tabs).getByRole('tab', { name: 'Changes made' }));
+    const panel = await screen.findByRole('dialog', { name: 'Fix recognition' });
+    expect(within(panel).getByRole('tab', { name: 'Changes made' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.queryByRole('button', { name: 'Moved a face' })).toBeNull();
+
+    await fireEvent.click(within(panel).getByRole('button', { name: 'How faces are grouped' }));
+    expect(view.onOpenRecognitionGroups).toHaveBeenCalledOnce();
   });
 
   it('counts photos and videos as PersonDetail.jsx does', () => {
@@ -101,15 +94,13 @@ describe('PersonHero (PD-1, PD-2, PD-7, PD-8)', () => {
     expect(screen.getByText('1 photo')).toBeTruthy();
   });
 
-  it('says there are no photos yet and disables the photo actions', async () => {
+  it('says there are no photos yet, disables the photo, and opens Fix recognition on Changes made', async () => {
     render(PersonHero, props({ statistics: { assets: 0, photos: 0, videos: 0 } }));
     expect(screen.getByText('No photos yet')).toBeTruthy();
-    expect((screen.getByRole('button', { name: 'Featured photo' }) as HTMLButtonElement).disabled).toBe(true);
-    await fireEvent.click(screen.getByRole('button', { name: 'More actions for Ada' }));
-    expect(await screen.findByRole('menuitem', { name: 'Fix incorrect match' })).toHaveAttribute(
-      'aria-disabled',
-      'true',
-    );
+    // nothing to look through, but past changes can still be undone
+    await fireEvent.click(screen.getByRole('button', { name: 'Fix recognition' }));
+    const panel = await screen.findByRole('dialog', { name: 'Fix recognition' });
+    expect(within(panel).getByRole('tab', { name: 'Changes made' })).toHaveAttribute('aria-selected', 'true');
     expect((screen.getByRole('button', { name: 'Select featured photo for Ada' }) as HTMLButtonElement).disabled).toBe(
       true,
     );
@@ -185,8 +176,7 @@ describe('PersonHero (PD-1, PD-2, PD-7, PD-8)', () => {
     const stop = eventManager.on({ PersonFacesChange: changes });
     render(PersonHero, view);
 
-    await fireEvent.click(screen.getByRole('button', { name: 'More actions for Ada' }));
-    await fireEvent.click(await screen.findByRole('menuitem', { name: 'Fix incorrect match' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Fix recognition' }));
     await fireEvent.click(await screen.findByRole('button', { name: 'Moved a face' }));
 
     // announced once, by the hero, for this person and the person the face moved to
