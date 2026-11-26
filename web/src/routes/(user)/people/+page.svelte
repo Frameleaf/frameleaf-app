@@ -180,6 +180,8 @@
   // Sorting and search run over the whole list, so every page is read up front, in the largest
   // pages the API allows. The grid mounts only the cards near the viewport, so the list has no cap.
   let loadGeneration = 0;
+  /** The changes `replacePerson` made since the re-read in flight began; see `reloadPeople`. */
+  let changedDuringReload: Map<string, PersonResponseDto> | undefined;
   let loadRequest: AbortController | undefined;
 
   /**
@@ -224,7 +226,7 @@
    * `people` is replaced once, so a card whose person is still there stays mounted. Replacing the list
    * with the first page and adding the rest back destroyed and rebuilt every card past that page.
    *
-   * `quiet`: a background re-read. Its first read gives up after a while, and it says nothing when it
+   * `quiet`: a background re-read. Each of its reads gives up after a while, and it says nothing when it
    * fails: the page keeps what it has and the next turn asks again.
    */
   const reloadPeople = async ({ quiet = false }: { quiet?: boolean } = {}) => {
@@ -236,6 +238,10 @@
     loadRequest = request;
     const generation = ++loadGeneration;
     const current = () => isCurrentView() && generation === loadGeneration && !request.signal.aborted;
+    // what the person changes while the pages are read (a rename, hide, favorite) is newer than a page
+    // read before it: it is put back over the list this re-read gathers
+    const changed = new Map<string, PersonResponseDto>();
+    changedDuringReload = changed;
     try {
       const all: PeopleListItemDto[] = [];
       const known = new Set<string>();
@@ -245,10 +251,11 @@
         const result = await getAllPeople(
           { withHidden: true, ...(!first && { page: pageNumber }), size: PEOPLE_PAGE_SIZE },
           {
-            signal:
-              quiet && first
-                ? AbortSignal.any([request.signal, AbortSignal.timeout(WAITING_REFRESH_MS * 2)])
-                : request.signal,
+            // every page of a quiet re-read gives up after a while: one that never answered would
+            // keep the next turn from asking
+            signal: quiet
+              ? AbortSignal.any([request.signal, AbortSignal.timeout(WAITING_REFRESH_MS * 2)])
+              : request.signal,
           },
         );
         if (!current()) {
@@ -267,12 +274,19 @@
           break;
         }
       }
-      people = all;
+      people =
+        changed.size > 0
+          ? all.map((person) => (changed.has(person.id) ? { ...person, ...changed.get(person.id) } : person))
+          : all;
       scanning = stillScanning;
       nextPage = null;
     } catch (error) {
       if (!quiet && current()) {
         handleError(error, $t('errors.failed_to_load_people'));
+      }
+    } finally {
+      if (changedDuringReload === changed) {
+        changedDuringReload = undefined;
       }
     }
   };
@@ -344,6 +358,7 @@
       return;
     }
     people = people.map((person) => (person.id === updated.id ? { ...person, ...updated } : person));
+    changedDuringReload?.set(updated.id, updated);
   };
 
   // FL-57: guided merge-suggestion verdicts. "No" and "Ask me later" are stored on the server
