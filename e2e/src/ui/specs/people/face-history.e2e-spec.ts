@@ -217,9 +217,10 @@ test.describe('face history', () => {
     const calls = await setup(context);
     await openPersonPage(page);
 
-    await action(page, 'More actions for Ada').click();
-    await page.getByRole('menuitem', { name: 'Fix incorrect match' }).click();
-    const panel = page.getByRole('dialog', { name: 'Fix incorrect match' });
+    // FL-1813: one "Fix recognition" panel; it opens on Wrong faces
+    await action(page, 'Fix recognition').click();
+    const panel = page.getByRole('dialog', { name: 'Fix recognition' });
+    await expect(panel.getByRole('tab', { name: 'Wrong faces' })).toHaveAttribute('aria-selected', 'true');
     await expect(panel.getByText('2 faces to review')).toBeVisible();
 
     await panel.getByRole('checkbox', { name: 'Select the face in photo-1.jpg' }).check();
@@ -243,10 +244,10 @@ test.describe('face history', () => {
     const calls = await setup(context);
     await openPersonPage(page);
 
-    // FL-146 PD-9: in the person toolbar's … menu, so the toolbar itself matches the prototype
-    await action(page, 'More actions for Ada').click();
-    await page.getByRole('menuitem', { name: 'Correction history' }).click();
-    const panel = page.getByRole('dialog', { name: 'Correction history for Ada' });
+    // FL-1813: correction history is the "Changes made" tab of Fix recognition
+    await action(page, 'Fix recognition').click();
+    const panel = page.getByRole('dialog', { name: 'Fix recognition' });
+    await panel.getByRole('tab', { name: 'Changes made' }).click();
     const rows = panel.locator('.pd-history-row');
     await expect(rows).toHaveCount(25);
     expect(calls.historyPages).toEqual(['1']);

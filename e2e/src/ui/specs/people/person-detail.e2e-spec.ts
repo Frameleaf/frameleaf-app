@@ -168,11 +168,8 @@ test.describe('person page', () => {
     await setup(context);
     await openPersonPage(page);
 
-    await page
-      .getByRole('toolbar', { name: 'Actions for Ada' })
-      .getByRole('button', { name: 'More actions for Ada' })
-      .click();
-    await page.getByRole('menuitem', { name: 'Add dates' }).click();
+    // FL-1813: dates have one way in, the line under the name
+    await page.getByRole('button', { name: 'Add date of birth' }).click();
     const dialog = page.getByRole('dialog', { name: 'Dates' });
     const field = dialog.getByLabel('Date of birth for Ada');
     const save = dialog.getByRole('button', { name: 'Save', exact: true });
@@ -230,10 +227,8 @@ test.describe('person page', () => {
     const avatar = page.locator('.pd-avatar img');
     const before = await avatar.getAttribute('src');
 
-    await page
-      .getByRole('toolbar', { name: 'Actions for Ada' })
-      .getByRole('button', { name: 'Featured photo' })
-      .click();
+    // FL-1813: the featured photo has one way in, the photo itself
+    await page.getByRole('button', { name: 'Select featured photo for Ada' }).click();
     const dialog = page.getByRole('dialog', { name: 'Select featured photo' });
     // the current featured photo is marked (People.jsx:603-628)
     await expect(dialog.getByRole('radio', { name: 'photo.jpg, current featured photo' })).toHaveAttribute(
