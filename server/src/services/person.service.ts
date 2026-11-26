@@ -634,10 +634,15 @@ export class PersonService extends BaseService {
    */
   /**
    * FL-1790: asks for the owner's merge suggestions to be worked out again. The job waits a minute and
-   * there is one per owner, so an import or a run of corrections is one pass (see `getNamedJobOptions`).
+   * there is one waiting per owner, so an import or a run of corrections is one pass (see
+   * `getNamedJobOptions`); that key alone decides what collapses.
    */
   private queueMergeCandidates(ownerId: string) {
-    return this.jobRepository.queue({ name: JobName.PersonCleanup, data: { mergeCandidatesOwnerId: ownerId } });
+    // outside the asking job's run: a run keeps one row per item and stage, so the second request of a
+    // long recognition run would be dropped once the first refresh had finished
+    return this.jobRepository.queueOutsideRun([
+      { name: JobName.PersonCleanup, data: { mergeCandidatesOwnerId: ownerId } },
+    ]);
   }
 
   private async refreshIdentities(ownerId: string, change: { personGroupIds?: string[]; assetIds?: string[] }) {
@@ -1740,6 +1745,14 @@ export class PersonService extends BaseService {
       if (facesToAdd.length > 0 || faceIdsToRemove.length > 0 || embeddings.length > 0) {
         await this.personRepository.refreshFaces(facesToAdd, faceIdsToRemove, embeddings);
         await this.eventRepository.emit('HouseholdFeedAssets', { assetIds: [id] });
+        // FL-1790: a face found again has a new embedding, and one no longer found is gone: the stored
+        // pairs were measured with the old ones. A new face asks for this itself once it is recognized.
+        if (faceIdsToRemove.length > 0 || embeddings.length > facesToAdd.length) {
+          const ownerId = await this.assetJobRepository.getOwnerId(id);
+          if (ownerId) {
+            await this.queueMergeCandidates(ownerId);
+          }
+        }
       }
       for (const { id: faceId, ...box } of facesToMove) {
         // a person's main photo is cut from this box, so it is made again from the new one

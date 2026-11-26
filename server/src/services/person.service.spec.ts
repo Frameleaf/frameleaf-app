@@ -312,6 +312,7 @@ describe(PersonService.name, () => {
       expect(mocks.person.refreshMergeCandidates).not.toHaveBeenCalled();
       expect(mocks.person.reanchorMergeVerdicts).not.toHaveBeenCalled();
       expect(mocks.job.queue).not.toHaveBeenCalled();
+      expect(mocks.job.queueOutsideRun).not.toHaveBeenCalled();
     });
 
     it('reads every reference photo for the face boxes in one query (FL-1790)', async () => {
@@ -1736,10 +1737,9 @@ describe(PersonService.name, () => {
         data: { ownerId: auth.user.id, assetIds: [face.assetId] },
       });
       // FL-1790: a moved face asks for the owner's merge suggestions to be worked out again
-      expect(mocks.job.queue).toHaveBeenCalledWith({
-        name: JobName.PersonCleanup,
-        data: { mergeCandidatesOwnerId: auth.user.id },
-      });
+      expect(mocks.job.queueOutsideRun).toHaveBeenCalledWith([
+        { name: JobName.PersonCleanup, data: { mergeCandidatesOwnerId: auth.user.id } },
+      ]);
       expect(mocks.job.queueAll).toHaveBeenCalledWith([]);
     });
 
@@ -3359,10 +3359,15 @@ describe(PersonService.name, () => {
       mocks.machineLearning.detectFaces.mockResolvedValue(getAsDetectedFace(face));
       mocks.assetJob.getForDetectFacesJob.mockResolvedValue(getForDetectedFaces(asset));
       mocks.person.refreshFaces.mockResolvedValue();
+      mocks.assetJob.getOwnerId.mockResolvedValue(asset.ownerId);
 
       await sut.handleDetectFaces({ id: asset.id });
 
       expect(mocks.person.refreshFaces).toHaveBeenCalledWith([], [], [{ faceId: face.id, embedding: '[1, 2, 3, 4]' }]);
+      // FL-1790: a face found again has a new embedding, so the owner's stored pairs are measured again
+      expect(mocks.job.queueOutsideRun).toHaveBeenCalledWith([
+        { name: JobName.PersonCleanup, data: { mergeCandidatesOwnerId: asset.ownerId } },
+      ]);
       expect(mocks.job.queueAll).not.toHaveBeenCalled();
       expect(mocks.person.reassignFace).not.toHaveBeenCalled();
       expect(mocks.person.reassignFaces).not.toHaveBeenCalled();
@@ -3498,10 +3503,9 @@ describe(PersonService.name, () => {
       await sut.handleRecognizeFaces({ id: noPerson1.id });
 
       // FL-1790: a recognized face asks for the owner's merge suggestions to be worked out again
-      expect(mocks.job.queue).toHaveBeenCalledWith({
-        name: JobName.PersonCleanup,
-        data: { mergeCandidatesOwnerId: asset.ownerId },
-      });
+      expect(mocks.job.queueOutsideRun).toHaveBeenCalledWith([
+        { name: JobName.PersonCleanup, data: { mergeCandidatesOwnerId: asset.ownerId } },
+      ]);
       expect(mocks.person.create).not.toHaveBeenCalled();
       // joining a person who exists runs alongside other faces, without the creation lock
       expect(mocks.person.lockPersonCreation).not.toHaveBeenCalled();
