@@ -64,6 +64,9 @@ import { assertAssetSource, readAssetSource } from 'src/utils/asset-source-autho
 import { recordStoppedAttempt } from 'src/utils/attempt-evidence.js';
 import { DATABASE_POOL_SIZE } from 'src/utils/execution-database.js';
 import { FIX_SEARCH_DELAY_MS } from 'src/utils/file-fix.js';
+
+/** FL-1790: how long a refresh of merge suggestions waits for more face changes to arrive. */
+export const MERGE_CANDIDATES_DELAY_MS = 60_000;
 import { forgetLockedClaim, lockedKeyLoadedSinceDeferral } from 'src/utils/locked-read.js';
 import { FrameleafStartupError, getKeyByValue } from 'src/utils/misc.js';
 import { NIGHT_DATA_KEY, nightWork, withNight } from 'src/utils/night-work.js';
@@ -1761,6 +1764,18 @@ export class JobRepository {
         return item.data.delay
           ? { delay: item.data.delay, deduplication: { id: `${id}:later`, keepLastIfActive: true } }
           : { deduplication: { id, keepLastIfActive: true } };
+      }
+      case JobName.PersonCleanup: {
+        // FL-1790: one waiting refresh of an owner's merge suggestions. It waits a little so a burst of
+        // face changes (an import, a run of corrections) is one pass, and one asked for while a pass
+        // runs gets its own after it. The nightly cleanup carries no owner and is left as it was.
+        const ownerId = item.data?.mergeCandidatesOwnerId;
+        return ownerId
+          ? {
+              delay: MERGE_CANDIDATES_DELAY_MS,
+              deduplication: { id: `${JobName.PersonCleanup}:merge-candidates:${ownerId}`, keepLastIfActive: true },
+            }
+          : null;
       }
       case JobName.PushBackupStaleCheck: {
         return { deduplication: { id: JobName.PushBackupStaleCheck } };
