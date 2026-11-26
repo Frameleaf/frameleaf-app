@@ -169,10 +169,19 @@
   let showMetadata = $state(false);
   let preset = $state('never');
   // FL-922: the person's own default for new links, else the server's; none means links never expire.
+  // The form is mounted, closed, by every surface that can share; where the server's settings have not
+  // been read (FL-1812: that threw, and took the whole surface with it) there is no server default.
+  const serverDefaultDays = () => {
+    try {
+      return serverConfigManager.value.sharedLinkDefaultExpiryDays;
+    } catch {
+      return null;
+    }
+  };
   const defaultDays = $derived(
     effectiveLinkExpiryDays(
       authManager.authenticated ? authManager.preferences.sharedLinks.defaultExpiryDays : null,
-      serverConfigManager.value.sharedLinkDefaultExpiryDays,
+      serverDefaultDays(),
     ),
   );
   /** The preset that default is, or a custom date for a number of days the list doesn't offer. */
