@@ -21,6 +21,7 @@
   import UserAvatar from '$lib/components/shared-components/UserAvatar.svelte';
   import {
     LEDGER_CHIPS,
+    LEDGER_CHIP_STATE,
     LEDGER_STATES,
     LEDGER_STATE_ICONS,
     addedKey,
@@ -42,6 +43,7 @@
     getLedgerAdminSummary,
     getLedgerSummary,
     searchUsers,
+    AssetLedgerState,
     searchUsersAdmin,
     type AssetLedgerAdminSummaryResponseDto,
     type AssetLedgerItemDto,
@@ -114,7 +116,7 @@
   let missing = $state<AssetLedgerItemDto[]>([]);
   const loadMissing = async () => {
     try {
-      missing = (await getLedger({ state: 'missing', size: PAGE })).items;
+      missing = (await getLedger({ state: AssetLedgerState.Missing, size: PAGE })).items;
     } catch {
       missing = [];
     }
@@ -135,7 +137,11 @@
     listFailed = false;
     listBusy = true;
     try {
-      const page = await getLedger({ state: chip, size: PAGE, cursor: more ? (cursor ?? undefined) : undefined });
+      const page = await getLedger({
+        state: LEDGER_CHIP_STATE[chip],
+        size: PAGE,
+        cursor: more ? (cursor ?? undefined) : undefined,
+      });
       if (current === listRun) {
         items = more ? [...(items ?? []), ...page.items] : page.items;
         cursor = page.nextCursor;

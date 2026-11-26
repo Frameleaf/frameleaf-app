@@ -3,7 +3,7 @@
  * keeps the record (FL-921); this turns its totals and rows into the message keys, icons and tones the
  * page shows. No page code here, so it can be tested on its own.
  */
-import type { AssetLedgerCountsDto, AssetLedgerItemDto } from '@frameleaf/sdk';
+import { AssetLedgerState, type AssetLedgerCountsDto, type AssetLedgerItemDto } from '@frameleaf/sdk';
 import {
   mdiAccountRemoveOutline,
   mdiContentCopy,
@@ -17,6 +17,7 @@ import {
   mdiTrashCanOutline,
 } from '@mdi/js';
 import { DateTime } from 'luxon';
+import type { Translations } from 'svelte-i18n';
 
 export type LedgerState = keyof AssetLedgerCountsDto;
 
@@ -26,6 +27,12 @@ export const LEDGER_STATES: LedgerState[] = ['kept', 'merged', 'trashed', 'remov
 /** The states the list can be narrowed to (the server's `state` filter). */
 export const LEDGER_CHIPS = ['removed', 'trashed', 'merged'] as const;
 export type LedgerChip = (typeof LEDGER_CHIPS)[number];
+/** A chip as the server's `state` filter. */
+export const LEDGER_CHIP_STATE: Record<LedgerChip, AssetLedgerState> = {
+  removed: AssetLedgerState.Removed,
+  trashed: AssetLedgerState.Trashed,
+  merged: AssetLedgerState.Merged,
+};
 
 export const LEDGER_STATE_ICONS: Record<LedgerState, string> = {
   kept: mdiImageMultipleOutline,
@@ -41,10 +48,10 @@ export const inLibrary = (states: AssetLedgerCountsDto) => states.kept + states.
 const ADDED_VIA = new Set(['upload', 'library-scan', 'import', 'partner-copy', 'studio', 'recovered']);
 /** How it arrived, as a message that takes `{date}`. A way this page has never heard of says "Added". */
 export const addedKey = (addedVia: string) =>
-  `frameleaf_ledger_via_${ADDED_VIA.has(addedVia) ? addedVia.replace('-', '_') : 'unknown'}`;
+  `frameleaf_ledger_via_${ADDED_VIA.has(addedVia) ? addedVia.replace('-', '_') : 'unknown'}` as Translations;
 
 export type LedgerViewer = { me: string; names: Map<string, string> };
-export type LedgerRow = { icon: string; key: string; name?: string; warn: boolean };
+export type LedgerRow = { icon: string; key: Translations; name?: string; warn: boolean };
 
 /**
  * One row of the list: what happened and who did it. `key` is the sentence; with `name` it is the
@@ -55,13 +62,13 @@ export type LedgerRow = { icon: string; key: string; name?: string; warn: boolea
 export function ledgerRow(item: AssetLedgerItemDto, { me, names }: LedgerViewer): LedgerRow {
   const row = (icon: string, base: string, warn = false): LedgerRow => {
     if (!item.stateBy) {
-      return { icon, key: base, warn };
+      return { icon, key: base as Translations, warn };
     }
     return item.stateBy === me
-      ? { icon, key: `${base}_you`, warn }
-      : { icon, key: `${base}_by`, name: names.get(item.stateBy) ?? '', warn };
+      ? { icon, key: `${base}_you` as Translations, warn }
+      : { icon, key: `${base}_by` as Translations, name: names.get(item.stateBy) ?? '', warn };
   };
-  const plain = (icon: string, key: string, warn = false): LedgerRow => ({ icon, key, warn });
+  const plain = (icon: string, key: Translations, warn = false): LedgerRow => ({ icon, key, warn });
   switch (item.state) {
     case 'removed': {
       switch (item.reason) {
