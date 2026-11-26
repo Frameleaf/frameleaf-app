@@ -205,6 +205,7 @@ describe('/server', () => {
         oauthButtonText: 'Sign in with your provider',
         oauthAccountManagementUrl: '',
         trashDays: 30,
+        sharedLinkDefaultExpiryDays: null,
         userDeleteDelay: 7,
         isInitialized: true,
         externalDomain: '',

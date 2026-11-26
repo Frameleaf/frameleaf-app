@@ -368,6 +368,7 @@ export class ServerService extends BaseService {
       loginPageMessageFormat: config.server.loginPageMessageFormat,
       serverName: config.server.name,
       trashDays: config.trash.days,
+      sharedLinkDefaultExpiryDays: config.sharedLinks.defaultExpiryDays,
       userDeleteDelay: config.user.deleteDelay,
       oauthButtonText: config.oauth.buttonText,
       oauthAccountManagementUrl: config.oauth.accountManagementUrl,

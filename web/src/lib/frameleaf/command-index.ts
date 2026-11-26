@@ -303,6 +303,13 @@ export const USER_SETTINGS_AREAS: readonly {
     descriptionKey: 'frameleaf_prefs_downloads_description',
     icon: mdiDownload,
   },
+  // FL-922: how long new shared links last by default.
+  {
+    key: 'shared-link-defaults',
+    titleKey: 'frameleaf_link_expiry_page_title',
+    descriptionKey: 'frameleaf_link_expiry_page_description',
+    icon: mdiLinkVariant,
+  },
   // FL-1484: whether AI work on your own photos may use Frameleaf Cloud.
   {
     key: 'cloud-processing',

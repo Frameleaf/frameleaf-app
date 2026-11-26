@@ -263,6 +263,13 @@ const ServerConfigSchema = z
     loginPageMessageFormat: LoginPageMessageFormatSchema,
     serverName: z.string().describe('Server name set by an administrator; empty when none is set'),
     trashDays: z.int().describe('Number of days before trashed assets are permanently deleted'),
+    // FL-922: so the link form and each person's preferences can show what the administrator set
+    sharedLinkDefaultExpiryDays: z
+      .int()
+      .nullable()
+      .describe(
+        'Days a new shared link lasts by default on this server, unless the person sharing set their own; null: links never expire',
+      ),
     userDeleteDelay: z.int().describe('Delay in days before deleted users are permanently removed'),
     isInitialized: z.boolean().describe('Whether the server has been initialized'),
     isOnboarded: z.boolean().describe('Whether the admin has completed onboarding'),
