@@ -11,7 +11,9 @@ import {
   type LibrarySessionAction,
 } from '$lib/frameleaf/library-session';
 
-vi.mock('$lib/utils/i18n', () => ({
+// The rest of the module stays real: the date helper's stores load through it (FL-1805).
+vi.mock('$lib/utils/i18n', async (original) => ({
+  ...(await original<typeof import('$lib/utils/i18n')>()),
   getFormatter: async () => (key: string) => key,
 }));
 vi.mock('$lib/utils/asset-utils', () => ({ downloadArchive: vi.fn() }));
