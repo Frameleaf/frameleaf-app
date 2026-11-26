@@ -39,6 +39,9 @@ class AuthManager {
   #user = $state<UserAdminResponseDto>();
   #preferences = $state<UserPreferencesResponseDto>();
   #sessionGeneration = $state(0);
+  #loading: Promise<void> | undefined;
+  /** FL-1798: the preferences `refresh` just read, for one reader that would otherwise ask again. */
+  #freshPreferences: { value: UserPreferencesResponseDto; at: number } | undefined;
 
   captureSession({ reactive = false }: { reactive?: boolean } = {}) {
     // Capturing an async guard must not subscribe its caller's effect and restart work at sign-out.
@@ -73,20 +76,41 @@ class AuthManager {
   constructor() {
     eventManager.on({
       // FL-34: a deleted session discards every view, player and download it held, not only the route
-      SessionDelete: () => revokeSessionView(Route.logout()),
+      SessionDelete: () => {
+        this.#freshPreferences = undefined;
+        revokeSessionView(Route.logout());
+      },
+      // what the server withholds changes with the lock, so an answer from before it is not reused
+      SessionLocked: () => (this.#freshPreferences = undefined),
+      SessionAccessChanged: () => (this.#freshPreferences = undefined),
+      UserPinCodeReset: () => (this.#freshPreferences = undefined),
     });
   }
 
-  async load() {
-    if (authManager.authenticated) {
-      return;
+  /** FL-1798: the layout's loader and each page's `authenticate()` share one read on a cold load. */
+  load(): Promise<void> {
+    if (this.authenticated || !this.#hasAuthCookie()) {
+      return Promise.resolve();
     }
-
-    if (!this.#hasAuthCookie()) {
-      return;
+    if (!this.#loading) {
+      const loading = this.refresh().finally(() => {
+        if (this.#loading === loading) {
+          this.#loading = undefined;
+        }
+      });
+      this.#loading = loading;
     }
+    return this.#loading;
+  }
 
-    return this.refresh();
+  /**
+   * FL-1798: the preferences as `refresh` read them within the last few seconds, handed out once, so
+   * a store that opens with the app (saved searches) starts from that answer. Later readers ask the server.
+   */
+  takeFreshPreferences(maxAgeMs = 10_000): UserPreferencesResponseDto | undefined {
+    const fresh = this.#freshPreferences;
+    this.#freshPreferences = undefined;
+    return fresh && Date.now() - fresh.at <= maxAgeMs ? fresh.value : undefined;
   }
 
   async refresh() {
@@ -98,6 +122,7 @@ class AuthManager {
       }
       this.setUser(user);
       this.setPreferences(preferences);
+      this.#freshPreferences = { value: preferences, at: Date.now() };
       const isCurrentUser = this.captureSession();
 
       if (user.license?.activatedAt) {
@@ -229,6 +254,8 @@ class AuthManager {
 
   reset() {
     this.#sessionGeneration++;
+    this.#loading = undefined;
+    this.#freshPreferences = undefined;
     retireStudioImportSessions();
     this.isPurchased = false;
     this.#user = undefined;

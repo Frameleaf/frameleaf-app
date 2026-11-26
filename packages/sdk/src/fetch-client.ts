@@ -18638,9 +18638,13 @@ export type QueueProblemDto = {
 export type QueueTaskDto = {
     /** For quietHours: when it opens again */
     closedUntil?: string;
+    /** Jobs of this queue finished since it last had nothing to do (FL-1785). With what is running and waiting, how far along it is */
+    done?: number;
     name: QueueName;
     /** For paused: when a person paused it; absent when the server did */
     pausedAt?: string;
+    /** Jobs finished an hour at the pace of the last ten minutes; absent when none finished */
+    perHour?: number;
     /** Why it is not running; null when nothing holds it */
     reason: (QueueIdleReason) | null;
     /** For waitingFor: the queue it waits for */
@@ -18684,6 +18688,8 @@ export type QueueJobResponseDto = {
     account?: QueueJobAccountDto;
     /** How many times the job has been attempted */
     attemptsMade?: number;
+    /** What went wrong, for a failed job (FL-1785) */
+    cause?: QueueProblemCause;
     /** Job data payload */
     data: {
         [key: string]: any;
@@ -20224,6 +20230,16 @@ export type SharedLinkCreateDto = {
 export type SharedLinkLoginDto = {
     /** Shared link password */
     password: string;
+};
+export type SharedLinkPageResponseDto = {
+    /** All your album links, on every page */
+    albumCount: number;
+    /** All your links to chosen items, on every page */
+    individualCount: number;
+    /** Newest first */
+    links: SharedLinkResponseDto[];
+    /** Pass as cursor for the next page; null when there are no more */
+    nextCursor: string | null;
 };
 export type SharedLinkEditDto = {
     /** Allow downloads */
@@ -23917,6 +23933,12 @@ export type DuplicateEstimateQueryDto = {
     /** The distances to estimate groups for, from 0.001 (nearly identical) to 0.1 */
     maxDistances: number[];
 };
+export type DuplicateReviewPageDto = {
+    /** duplicateId of the last group of the page before; only with take */
+    after?: string;
+    /** Most groups to return. With it the review is read a page at a time, in group ID order: a page shorter than this is the last one. Without it every group is returned. */
+    take?: number;
+};
 export type EagleImportQueryDto = {
     /** Include what became of every item, for the finish report */
     outcomes?: boolean;
@@ -23939,6 +23961,14 @@ export type FileTrashListQueryDto = {
     page?: number;
     /** Entries per page */
     size?: number;
+};
+export type FolderAssetsDto = {
+    /** ID of the last asset of the page before; only with take */
+    after?: string;
+    /** Folder path */
+    path: string;
+    /** Most assets to return. With it the folder is read a page at a time, in asset ID order: a page shorter than this is the last one. Without it every asset is returned, in file name order. */
+    take?: number;
 };
 export type FoundFileListDto = {
     /** The id of the last file of the page before */
@@ -24848,6 +24878,12 @@ export type SearchSuggestionRequestDto = {
 };
 export type SharedLinkDirectImageDto = {
     size?: SharedLinkDirectImageSize;
+};
+export type SharedLinkPageDto = {
+    /** nextCursor of the page before; omitted for the first page */
+    cursor?: string;
+    /** Most links to return */
+    take?: number;
 };
 export type SharedLinkSearchDto = {
     /** Filter by album ID */
@@ -34261,11 +34297,17 @@ export function resolveDuplicates({ duplicateResolveDto }: {
 /**
  * Retrieve the duplicate review
  */
-export function getDuplicateReview(opts?: Oazapfts.RequestOpts) {
+export function getDuplicateReview({ after, take }: {
+    after?: string;
+    take?: number;
+}, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
         status: 200;
         data: DuplicateReviewGroupDto[];
-    }>("/duplicates/review", {
+    }>(`/duplicates/review${QS.query(QS.explode({
+        after,
+        take
+    }))}`, {
         ...opts
     }));
 }
@@ -41820,6 +41862,23 @@ export function getMySharedLink({ key, slug }: {
     }));
 }
 /**
+ * Retrieve shared links a page at a time
+ */
+export function getSharedLinkPage({ cursor, take }: {
+    cursor?: string;
+    take?: number;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: SharedLinkPageResponseDto;
+    }>(`/shared-links/page${QS.query(QS.explode({
+        cursor,
+        take
+    }))}`, {
+        ...opts
+    }));
+}
+/**
  * Delete a shared link
  */
 export function removeSharedLink({ id }: {
@@ -46065,14 +46124,18 @@ export function getUtilitiesSummary(opts?: Oazapfts.RequestOpts) {
 /**
  * Retrieve assets by original path
  */
-export function getAssetsByOriginalPath({ path }: {
+export function getAssetsByOriginalPath({ after, path, take }: {
+    after?: string;
     path: string;
+    take?: number;
 }, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
         status: 200;
         data: AssetResponseDto[];
     }>(`/view/folder${QS.query(QS.explode({
-        path
+        after,
+        path,
+        take
     }))}`, {
         ...opts
     }));

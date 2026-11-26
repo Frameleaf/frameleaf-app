@@ -35,6 +35,8 @@
   import { onDestroy, untrack } from 'svelte';
   import { locale, t, type Translations } from 'svelte-i18n';
   import Button from '$lib/components/frameleaf/Button.svelte';
+  import EmptyRow from '$lib/components/frameleaf/EmptyRow.svelte';
+  import GridSkeleton from '$lib/components/frameleaf/GridSkeleton.svelte';
   import InlineError from '$lib/components/frameleaf/InlineError.svelte';
   import { MEDIA_INTERVALS, type MediaInterval } from '$lib/components/frameleaf/media/boards-media';
   import {
@@ -510,9 +512,9 @@
   {#if failed && items.length === 0}
     <InlineError compact message={$t('frameleaf_creators_load_error')} onRetry={() => load(1)} />
   {:else if items.length === 0 && loading}
-    <p class="cr-empty" role="status">{$t('loading')}</p>
+    <GridSkeleton tiles={8} />
   {:else if items.length === 0 || (layout === 'groups' && groups.length === 0)}
-    <p class="cr-empty">{$t(filtered ? 'frameleaf_creators_no_match' : 'frameleaf_creators_nothing_saved')}</p>
+    <EmptyRow title={$t(filtered ? 'frameleaf_creators_no_match' : 'frameleaf_creators_nothing_saved')} />
   {:else if layout === 'timeline'}
     <ul class="cr-timeline">
       {#each posts as post (post.id)}

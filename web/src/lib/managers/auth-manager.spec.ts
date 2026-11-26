@@ -229,3 +229,75 @@ describe('authManager.refreshPreferences', () => {
     expect(emit).not.toHaveBeenCalledWith('AuthUserLoaded', expect.anything());
   });
 });
+
+/** FL-1798: a cold load reads the account once, however many loaders ask. */
+describe('authManager.load', () => {
+  const user = { id: 'user-1', name: 'Ada', email: 'ada@example.test', license: { activatedAt: 'x' } };
+  const preferences = { revision: 'r1', privacy: { suppression: { personIds: [], tagIds: [], petIds: [] } } };
+  let cookie: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    vi.resetAllMocks();
+    authManager.reset();
+    cookie = vi.spyOn(document, 'cookie', 'get').mockReturnValue('theme=dark; immich_is_authenticated=true');
+    sdkMock.getMyUser.mockResolvedValue(user as never);
+    sdkMock.getMyPreferences.mockResolvedValue(preferences as never);
+  });
+
+  afterEach(() => cookie.mockRestore());
+
+  it('shares one in-flight read between concurrent callers', async () => {
+    const first = authManager.load();
+    expect(authManager.load()).toBe(first);
+    await Promise.all([first, authManager.load()]);
+    expect(sdkMock.getMyUser).toHaveBeenCalledTimes(1);
+    expect(sdkMock.getMyPreferences).toHaveBeenCalledTimes(1);
+    expect(authManager.authenticated).toBe(true);
+    await authManager.load();
+    expect(sdkMock.getMyUser).toHaveBeenCalledTimes(1);
+  });
+
+  it('asks again after a failed read', async () => {
+    sdkMock.getMyUser.mockRejectedValueOnce(new Error('offline'));
+    await authManager.load();
+    expect(authManager.authenticated).toBe(false);
+    await authManager.load();
+    expect(sdkMock.getMyUser).toHaveBeenCalledTimes(2);
+    expect(authManager.authenticated).toBe(true);
+  });
+
+  it('does not join a read that a sign-out discarded', async () => {
+    let finish!: (value: never) => void;
+    sdkMock.getMyUser.mockReturnValueOnce(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    const stale = authManager.load();
+    authManager.reset();
+    const next = authManager.load();
+    expect(next).not.toBe(stale);
+    finish(user as never);
+    await Promise.all([stale, next]);
+    expect(authManager.authenticated).toBe(true);
+  });
+
+  it('asks without a sign-in cookie for nothing', async () => {
+    cookie.mockReturnValue('theme=dark');
+    await authManager.load();
+    expect(sdkMock.getMyUser).not.toHaveBeenCalled();
+  });
+
+  it('hands the preferences it just read to one reader, and not across a lock', async () => {
+    await authManager.load();
+    expect(authManager.takeFreshPreferences()?.revision).toBe('r1');
+    expect(authManager.takeFreshPreferences()).toBeUndefined();
+
+    await authManager.refresh();
+    eventManager.emit('SessionLocked');
+    expect(authManager.takeFreshPreferences()).toBeUndefined();
+
+    await authManager.refresh();
+    expect(authManager.takeFreshPreferences(-1)).toBeUndefined();
+  });
+});

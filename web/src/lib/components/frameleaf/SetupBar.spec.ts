@@ -3,6 +3,7 @@ import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import SetupBar from '$lib/components/frameleaf/SetupBar.svelte';
+import { eventManager } from '$lib/managers/event-manager.svelte';
 import { locale } from '$lib/stores/preferences.store';
 import { setupProgress } from '$lib/stores/setup-progress.svelte';
 import { handleError } from '$lib/utils/handle-error';
@@ -417,6 +418,51 @@ describe('SetupBar', () => {
       await vi.advanceTimersByTimeAsync(15_000);
       expect(screen.getByText('Setting up your library')).toBeInTheDocument();
     } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  /** FL-1800 */
+  it('stops asking on a server with no setup running, and asks again when the socket reconnects', async () => {
+    vi.useFakeTimers();
+    try {
+      sdkMock.getLibrarySetupProgress.mockResolvedValue(progress({ active: false }));
+      render(SetupBar);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(sdkMock.getLibrarySetupProgress).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(10 * 15_000);
+      expect(sdkMock.getLibrarySetupProgress).toHaveBeenCalledTimes(1);
+
+      sdkMock.getLibrarySetupProgress.mockResolvedValue(progress());
+      eventManager.emit('WebsocketConnect');
+      await vi.advanceTimersByTimeAsync(0);
+      expect(screen.getByText('Setting up your library')).toBeInTheDocument();
+      await vi.advanceTimersByTimeAsync(15_000);
+      expect(sdkMock.getLibrarySetupProgress).toHaveBeenCalledTimes(3);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('asks nothing while the tab is hidden, and asks at once when it is shown', async () => {
+    const show = (state: DocumentVisibilityState) => {
+      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => state });
+      document.dispatchEvent(new Event('visibilitychange'));
+    };
+    vi.useFakeTimers();
+    try {
+      sdkMock.getLibrarySetupProgress.mockResolvedValue(progress());
+      render(SetupBar);
+      await vi.advanceTimersByTimeAsync(0);
+      show('hidden');
+      await vi.advanceTimersByTimeAsync(10 * 15_000);
+      expect(sdkMock.getLibrarySetupProgress).toHaveBeenCalledTimes(1);
+
+      show('visible');
+      await vi.advanceTimersByTimeAsync(0);
+      expect(sdkMock.getLibrarySetupProgress).toHaveBeenCalledTimes(2);
+    } finally {
+      show('visible');
       vi.useRealTimers();
     }
   });

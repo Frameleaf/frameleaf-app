@@ -11,9 +11,9 @@ async function _init(fetch: Fetch) {
   // https://kit.svelte.dev/docs/load#making-fetch-requests
   // https://github.com/oazapfts/oazapfts/blob/main/README.md#fetch-options
   setFetch(fetch);
-  await initLanguage();
-  await serverConfigManager.init();
-  await authManager.load();
+  // FL-1798: language, config and the account do not depend on each other. The flags wait for all three:
+  // config says whether maintenance skips them, and sign-in's own flags read saves them a request.
+  await Promise.all([initLanguage(), serverConfigManager.init(), authManager.load()]);
 
   if (!serverConfigManager.value.maintenanceMode) {
     await featureFlagsManager.init();

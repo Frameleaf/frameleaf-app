@@ -105,6 +105,13 @@ it('keeps the plain body layout when a caller passes no actions', async () => {
   expect(dialog.querySelector('.dialog-body, .dialog-actions')).toBeNull();
 });
 
+it('opens an unmarked dialog with the cursor in its first text field (FL-1823)', async () => {
+  const { default: DialogHarness } = await import('$lib/../test-data/frameleaf/DialogHarness.svelte');
+  render(DialogHarness);
+  await fireEvent.click(screen.getByRole('button', { name: 'Open details' }));
+  expect(document.activeElement).toBe(screen.getByRole('textbox', { name: 'Name' }));
+});
+
 it('keeps nested picker themes independent and disables all picker controls', async () => {
   vi.stubGlobal('visualViewport', null);
   const { rerender } = render(PickerHarness, { theme: 'dark' });

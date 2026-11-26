@@ -8,10 +8,11 @@
    */
   import type { Snippet } from 'svelte';
 
-  let { children }: { children: Snippet } = $props();
+  /** `wide`: a page of data (Background work › Advanced, FL-1785) uses the whole pane, not the reading width. */
+  let { children, wide = false }: { children: Snippet; wide?: boolean } = $props();
 </script>
 
-<div class="kit-page">{@render children()}</div>
+<div class="kit-page" class:wide>{@render children()}</div>
 
 <style>
   .kit-page {
@@ -26,6 +27,9 @@
     margin-inline: 0 auto;
     padding-bottom: var(--fl-space-8);
     color: var(--fl-text);
+  }
+  .kit-page.wide {
+    max-width: none;
   }
   /*
    * The gap is the rhythm between the pieces: a piece's own outer margin would double it (Background

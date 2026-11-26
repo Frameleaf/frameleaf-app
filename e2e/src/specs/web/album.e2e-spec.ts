@@ -673,9 +673,11 @@ test.describe('Album', () => {
 
     await toolbar.getByRole('button', { name: 'More actions' }).click();
     const menu = page.getByRole('menu', { name: 'More actions' });
-    for (const name of ['Links', 'Slideshow', 'Download']) {
+    for (const name of ['Slideshow', 'Download']) {
       await expect(menu.getByRole('menuitem', { name, exact: true })).toBeVisible();
     }
+    // FL-1812: links are the Link tab of the Share dialog
+    await expect(menu.getByRole('menuitem', { name: 'Links', exact: true })).toHaveCount(0);
     await expect(menu.getByRole('menuitemcheckbox', { name: 'Comments' })).toBeVisible();
   });
 });
