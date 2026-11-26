@@ -117,3 +117,46 @@ export async function queueHolds(db: Kysely<DB>): Promise<QueueHold[]> {
     from job_queue q`.execute(db);
   return rows;
 }
+
+const QUEUE_BATCH_KEY = 'frameleaf-queue-batch';
+const finishedJobs = sql`j.state = 'completed' and j."latestPending" is null`;
+
+/**
+ * FL-1785: how many jobs each queue has finished since it last had nothing to do, kept so a progress bar survives the
+ * hour a finished job is kept for (FL-1485). Called by the sweep that deletes finished jobs, in its transaction, so
+ * every job is counted before it can go. A queue with no work left drops out, and starts again from nothing.
+ */
+export async function recordQueueBatches(db: Kysely<any>) {
+  // ponytail: a job that commits after this snapshot with an earlier finish time is missed; a per-job counter on
+  // job_queue would be exact, at the cost of every worker updating one row
+  await sql`with prev as (select value from system_metadata where key = ${QUEUE_BATCH_KEY}),
+    since as (select coalesce((select (value->>'at')::timestamptz from prev), now() - interval '1 hour') at),
+    finished as (select j.queue, count(*) n from job j, since
+      where ${finishedJobs} and j."finishedAt" > since.at and j."finishedAt" <= now() group by j.queue),
+    live as (select q.name from job_queue q where exists (
+      select 1 from job j where j.queue = q.name and j.state in ('pending','waiting','active')))
+    insert into system_metadata(key, value) select ${QUEUE_BATCH_KEY}, jsonb_build_object('at', now(), 'done',
+      coalesce((select jsonb_object_agg(l.name,
+        coalesce(((select value from prev)->'done'->>l.name)::bigint, 0) + coalesce(f.n, 0))
+        from live l left join finished f on f.queue = l.name), '{}'::jsonb))
+    on conflict (key) do update set value = excluded.value`.execute(db);
+}
+
+export type QueueProgress = { name: string; done: number; perHour: number };
+
+/** FL-1785: each queue's finished jobs of its current batch (`recordQueueBatches` plus those since), and its pace. */
+export async function queueProgress(db: Kysely<DB>): Promise<QueueProgress[]> {
+  // the hour bounds the read if the sweep has not run; finished jobs older than that may already be gone
+  const { rows } = await sql<QueueProgress>`with prev as (
+      select value, greatest((value->>'at')::timestamptz, now() - interval '1 hour') at
+      from system_metadata where key = ${QUEUE_BATCH_KEY}
+      union all select '{}'::jsonb, now() - interval '1 hour' limit 1),
+    finished as (select j.queue, count(*) filter (where j."finishedAt" > prev.at) tail,
+        count(*) filter (where j."finishedAt" > now() - interval '10 minutes') recent
+      from job j, prev where ${finishedJobs}
+        and j."finishedAt" > least(prev.at, now() - interval '10 minutes') group by j.queue)
+    select q.name, (coalesce((prev.value->'done'->>q.name)::bigint, 0) + coalesce(f.tail, 0))::int done,
+      (coalesce(f.recent, 0) * 6)::int "perHour"
+    from job_queue q cross join prev left join finished f on f.queue = q.name`.execute(db);
+  return rows;
+}

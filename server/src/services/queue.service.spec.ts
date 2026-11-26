@@ -925,6 +925,24 @@ describe(QueueService.name, () => {
       );
     });
 
+    it('says how far along each task is, and its pace only when something finished (FL-1785)', async () => {
+      mocks.job.getQueueProgress.mockResolvedValue([
+        { name: QueueName.VideoConversion, done: 61_840, perHour: 3400 },
+        { name: QueueName.FaceDetection, done: 12, perHour: 0 },
+      ]);
+      await expect(reasonOf(QueueName.VideoConversion)).resolves.toEqual({
+        name: QueueName.VideoConversion,
+        reason: null,
+        done: 61_840,
+        perHour: 3400,
+      });
+      await expect(reasonOf(QueueName.FaceDetection)).resolves.toEqual({
+        name: QueueName.FaceDetection,
+        reason: null,
+        done: 12,
+      });
+    });
+
     it('only offers each action where it helps', async () => {
       mocks.job.actOnQueueProblem.mockResolvedValue(7);
       await expect(sut.actOnProblem(authStub.admin, { cause: 'tooLong', action: 'retry' })).resolves.toEqual({

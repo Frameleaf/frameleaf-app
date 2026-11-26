@@ -18581,9 +18581,13 @@ export type QueueProblemDto = {
 export type QueueTaskDto = {
     /** For quietHours: when it opens again */
     closedUntil?: string;
+    /** Jobs of this queue finished since it last had nothing to do (FL-1785). With what is running and waiting, how far along it is */
+    done?: number;
     name: QueueName;
     /** For paused: when a person paused it; absent when the server did */
     pausedAt?: string;
+    /** Jobs finished an hour at the pace of the last ten minutes; absent when none finished */
+    perHour?: number;
     /** Why it is not running; null when nothing holds it */
     reason: (QueueIdleReason) | null;
     /** For waitingFor: the queue it waits for */
@@ -18627,6 +18631,8 @@ export type QueueJobResponseDto = {
     account?: QueueJobAccountDto;
     /** How many times the job has been attempted */
     attemptsMade?: number;
+    /** What went wrong, for a failed job (FL-1785) */
+    cause?: QueueProblemCause;
     /** Job data payload */
     data: {
         [key: string]: any;

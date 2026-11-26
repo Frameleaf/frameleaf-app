@@ -165054,6 +165054,10 @@
             "minimum": -9007199254740991,
             "type": "integer"
           },
+          "cause": {
+            "$ref": "#/components/schemas/QueueProblemCause",
+            "description": "What went wrong, for a failed job (FL-1785)"
+          },
           "data": {
             "additionalProperties": {},
             "description": "Job data payload",
@@ -165661,6 +165665,12 @@
             "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
             "type": "string"
           },
+          "done": {
+            "description": "Jobs of this queue finished since it last had nothing to do (FL-1785). With what is running and waiting, how far along it is",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
           "name": {
             "$ref": "#/components/schemas/QueueName"
           },
@@ -165669,6 +165679,12 @@
             "format": "date-time",
             "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
             "type": "string"
+          },
+          "perHour": {
+            "description": "Jobs finished an hour at the pace of the last ten minutes; absent when none finished",
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
           },
           "reason": {
             "allOf": [
