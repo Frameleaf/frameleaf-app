@@ -14266,6 +14266,61 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/albums/rail": {
+      "get": {
+        "description": "The same albums, parents and order as /albums/hierarchy, as one list with only what a navigation rail draws: name, parent, icon, colour, counts and your own role. No members, shared links, covers or dates.",
+        "operationId": "getAlbumRail",
+        "parameters": [
+          {
+            "name": "libraryScope",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/LibraryViewScope"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AlbumRailResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Retrieve the album directory for navigation",
+        "tags": [
+          "Albums"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.5.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.5.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "album.read",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/albums/recently-added": {
       "get": {
         "description": "Returns the albums the user may add to, the one that most recently received an item first.",
@@ -14369,6 +14424,62 @@
         ],
         "x-immich-permission": "album.statistics",
         "x-immich-state": "Stable"
+      }
+    },
+    "/albums/stats": {
+      "post": {
+        "description": "The numbers an album list shows, for the given albums only. Use it to ask again for albums a list reported as statsPending instead of reading the whole list again.",
+        "operationId": "getAlbumStats",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AlbumStatsDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AlbumStatsResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Retrieve the counts and dates of some albums",
+        "tags": [
+          "Albums"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.5.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.5.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "album.read",
+        "x-immich-state": "Alpha"
       }
     },
     "/albums/tree": {
@@ -87858,6 +87969,111 @@
         ],
         "type": "object"
       },
+      "AlbumRailItemDto": {
+        "properties": {
+          "albumName": {
+            "description": "Album name",
+            "type": "string"
+          },
+          "assetCount": {
+            "description": "Number of assets",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "bookmarkCount": {
+            "description": "Number of links (Boards)",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "color": {
+            "description": "Colour name (grey, green, teal, blue, purple, pink, amber, red) or null",
+            "nullable": true,
+            "type": "string"
+          },
+          "icon": {
+            "description": "Icon: a Material Design Icons name or legacy key (null = default icon)",
+            "nullable": true,
+            "type": "string"
+          },
+          "id": {
+            "description": "Album ID",
+            "type": "string"
+          },
+          "isLocked": {
+            "description": "The owner chose to lock this album",
+            "type": "boolean"
+          },
+          "isSmart": {
+            "description": "True when the album is filled by smart album rules",
+            "type": "boolean"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/AlbumKind"
+          },
+          "parentId": {
+            "description": "Parent album or collection in this list (null = top level). Never names an album the list leaves out.",
+            "nullable": true,
+            "type": "string"
+          },
+          "role": {
+            "$ref": "#/components/schemas/AlbumUserRole",
+            "description": "The authenticated user's own role in the album"
+          },
+          "shared": {
+            "description": "Is shared album",
+            "type": "boolean"
+          },
+          "smartRuleId": {
+            "description": "Your classification rule behind this smart album, when it is one of yours",
+            "nullable": true,
+            "type": "string"
+          },
+          "sortOrder": {
+            "description": "Sibling display position. Lower values appear first.",
+            "format": "double",
+            "nullable": true,
+            "type": "number"
+          },
+          "statsPending": {
+            "description": "True while this album's count is still being worked out for this viewer; assetCount is 0 until then.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "albumName",
+          "assetCount",
+          "bookmarkCount",
+          "color",
+          "icon",
+          "id",
+          "isLocked",
+          "isSmart",
+          "kind",
+          "parentId",
+          "role",
+          "shared",
+          "smartRuleId",
+          "sortOrder"
+        ],
+        "type": "object"
+      },
+      "AlbumRailResponseDto": {
+        "properties": {
+          "albums": {
+            "description": "Every album of the directory in display order, each parent before its children",
+            "items": {
+              "$ref": "#/components/schemas/AlbumRailItemDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "albums"
+        ],
+        "type": "object"
+      },
       "AlbumRecentlyAddedResponseDto": {
         "properties": {
           "albumIds": {
@@ -88389,6 +88605,78 @@
           "notShared",
           "owned",
           "shared"
+        ],
+        "type": "object"
+      },
+      "AlbumStatsDto": {
+        "properties": {
+          "albumIds": {
+            "description": "Albums to read the numbers of",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "maxItems": 5000,
+            "minItems": 1,
+            "type": "array"
+          }
+        },
+        "required": [
+          "albumIds"
+        ],
+        "type": "object"
+      },
+      "AlbumStatsItemDto": {
+        "properties": {
+          "assetCount": {
+            "description": "Number of assets",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "endDate": {
+            "description": "End date (latest asset)",
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "description": "Album ID",
+            "type": "string"
+          },
+          "lastModifiedAssetTimestamp": {
+            "description": "Last modified asset timestamp",
+            "format": "date-time",
+            "type": "string"
+          },
+          "startDate": {
+            "description": "Start date (earliest asset)",
+            "format": "date-time",
+            "type": "string"
+          },
+          "statsPending": {
+            "description": "True while this album's count and dates are still being worked out; assetCount is 0 until then.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "assetCount",
+          "id"
+        ],
+        "type": "object"
+      },
+      "AlbumStatsResponseDto": {
+        "properties": {
+          "albums": {
+            "description": "One entry per requested album the user can read; the others are left out",
+            "items": {
+              "$ref": "#/components/schemas/AlbumStatsItemDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "albums"
         ],
         "type": "object"
       },

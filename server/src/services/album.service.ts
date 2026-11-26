@@ -10,6 +10,7 @@ import type { Kysely } from 'kysely';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { SmartAlbumBuiltInKind } from 'src/dtos/system-config.dto.js';
 import type { AlbumSummary } from 'src/repositories/album-summary.repository.js';
+import type { ArgOf } from 'src/repositories/event.repository.js';
 import type { AlbumMapMarkerSearchOptions } from 'src/repositories/map.repository.js';
 import type { DB } from 'src/schema/index.js';
 import { ALBUM_ICON_GROUPS, ALBUM_ICON_NAMES, MDI_ICON_CATALOGUE_VERSION } from 'src/constants/album-icons.js';
@@ -21,9 +22,13 @@ import {
   AlbumIconCatalogueResponseDto,
   AlbumOrderDto,
   AlbumPersonResponseDto,
+  AlbumRailItemDto,
+  AlbumRailResponseDto,
   AlbumRecentlyAddedResponseDto,
   AlbumResponseDto,
   AlbumStatisticsResponseDto,
+  AlbumStatsDto,
+  AlbumStatsResponseDto,
   AlbumTreeResponseDto,
   AlbumViewDto,
   AlbumsAddAssetsDto,
@@ -60,7 +65,14 @@ import {
   recordAlbumEdit,
   recordAssetEdit,
 } from 'src/services/partner-copy.service.js';
-import { albumOrderGroup, buildAlbumHierarchy, buildAlbumTree, orderAlbumTree } from 'src/utils/album-tree.js';
+import {
+  AlbumTreeOf,
+  albumOrderGroup,
+  buildAlbumHierarchy,
+  buildAlbumTree,
+  flattenAlbumHierarchy,
+  orderAlbumTree,
+} from 'src/utils/album-tree.js';
 import { albumViewerKey } from 'src/utils/album-viewer-key.js';
 import { addAssets, removeAssets } from 'src/utils/asset.util.js';
 import { asDateTimeString } from 'src/utils/date.js';
@@ -82,13 +94,8 @@ import { getSupporters } from 'src/utils/supporter.js';
 export const ALBUM_MOVE_OWNER_ONLY =
   'Only the album owner can move it. Editors can change what is in the album, but not where it is kept.';
 
-/** When each person's album covers were last repaired; see `refreshCoversInBackground`. */
 /** FL-809: the most people an album offers as chips. */
 const ALBUM_PEOPLE_LIMIT = 50;
-const coverRefreshAt = new Map<string, number>();
-/** People whose cover repair is still running: a slow one never overlaps the next. */
-const coverRefreshRunning = new Set<string>();
-const COVER_REFRESH_INTERVAL_MS = 60_000;
 
 /** FL-1297: when each viewer variant's stored album numbers were last refreshed. */
 const summaryRefreshAt = new Map<string, number>();
@@ -111,26 +118,50 @@ const millis = (value: Date | string) => new Date(value).getTime();
 @Injectable()
 export class AlbumService extends BaseService {
   /**
-   * Repairs this person's album covers (gone, trashed or Locked items; "newest item" covers) without
-   * holding up the album list. On a large library the repair rewrites every album and took seconds,
-   * so a list may show a stale cover until the next load.
-   * ponytail: in-process map, one entry per user; a write-time repair would make this unnecessary.
+   * FL-1791: album covers are repaired when the items behind them change, never by a list read.
+   * Trashing an item, or deleting it for good at once, replaces the covers it was (and "newest item"
+   * covers); restoring one gives an album left without a cover its cover back. Adding and removing
+   * album items repair as they always did, and `repairAlbumCovers` catches everything else hourly.
+   * Not awaited: the trash or restore that announced it never waits for, or fails on, a cover.
    */
-  private refreshCoversInBackground(userId: string) {
-    const now = Date.now();
-    if (coverRefreshRunning.has(userId) || now - (coverRefreshAt.get(userId) ?? 0) < COVER_REFRESH_INTERVAL_MS) {
-      return;
-    }
-    coverRefreshAt.set(userId, now);
-    coverRefreshRunning.add(userId);
-    const refresh = async () => {
-      try {
-        await this.albumRepository.updateThumbnails({ userId });
-      } finally {
-        coverRefreshRunning.delete(userId);
-      }
-    };
-    handlePromiseError(refresh(), this.logger);
+  @OnEvent({ name: 'AssetTrash' })
+  onAssetTrashRepairCovers({ assetId }: ArgOf<'AssetTrash'>) {
+    handlePromiseError(this.albumRepository.updateThumbnails({ assetIds: [assetId] }), this.logger);
+  }
+
+  @OnEvent({ name: 'AssetTrashAll' })
+  onAssetTrashAllRepairCovers({ assetIds }: ArgOf<'AssetTrashAll'>) {
+    handlePromiseError(this.albumRepository.updateThumbnails({ assetIds }), this.logger);
+  }
+
+  // Deleted without the trash: the items are marked deleted and still in their albums when this is told.
+  @OnEvent({ name: 'AssetDeleteAll' })
+  onAssetDeleteAllRepairCovers({ assetIds }: ArgOf<'AssetDeleteAll'>) {
+    handlePromiseError(this.albumRepository.updateThumbnails({ assetIds }), this.logger);
+  }
+
+  @OnEvent({ name: 'AssetRestoreAll' })
+  onAssetRestoreAllRepairCovers({ assetIds }: ArgOf<'AssetRestoreAll'>) {
+    handlePromiseError(this.albumRepository.updateThumbnails({ assetIds }), this.logger);
+  }
+
+  /**
+   * Hourly, in the background worker: covers that went wrong some other way (an item deleted for good,
+   * hidden by a rule, a shared album whose cover became sensitive). It rewrites every album and can
+   * take seconds on a large library, which is why no request does it.
+   */
+  @OnEvent({ name: 'AppBootstrap', workers: [FrameleafWorker.Microservices] })
+  onBootstrapCoverRepair(): void {
+    this.cronRepository.create({
+      name: 'albumCoverRepair',
+      expression: '41 * * * *',
+      onTick: () => handlePromiseError(this.repairAlbumCovers(), this.logger),
+      start: true,
+    });
+  }
+
+  async repairAlbumCovers(): Promise<void> {
+    await this.albumRepository.updateThumbnails();
   }
 
   /**
@@ -271,8 +302,6 @@ export class AlbumService extends BaseService {
     { assetId, suppressedOnly, ...rest }: GetAlbumsDto,
     options?: { excludeLocked?: boolean },
   ): Promise<AlbumResponseDto[]> {
-    this.refreshCoversInBackground(auth.user.id);
-
     const ownerId = auth.user.id;
     const privacyOptions = this.nsfwOptions(auth, suppressedOnly);
     // FL-522: a smart album the person hid stays out of their own album list (it keeps filling).
@@ -394,8 +423,6 @@ export class AlbumService extends BaseService {
     auth: AuthDto,
     dto: AlbumViewDto,
   ): Promise<{ tree: AlbumTreeResponseDto; positions: Map<string, number> }> {
-    this.refreshCoversInBackground(auth.user.id);
-
     const privacyOptions = this.nsfwOptions(auth);
     const hiddenPartnerAlbums = await this.hiddenPartnerAlbumIds(auth.user.id);
     let albums: MapAlbumDto[] = await this.albumRepository.getAll(auth.user.id, {
@@ -448,16 +475,80 @@ export class AlbumService extends BaseService {
     return { tree, positions };
   }
 
+  /**
+   * FL-1791: the directory for the library rail. The same albums, parents and order as
+   * `getHierarchy`, read without members, shared links, covers, dates, origins or folder sources.
+   */
+  async getRail(auth: AuthDto, dto: AlbumViewDto = {}): Promise<AlbumRailResponseDto> {
+    const hiddenPartnerAlbums = await this.hiddenPartnerAlbumIds(auth.user.id);
+    const rows = await this.albumRepository.getRail(auth.user.id, {
+      libraryScope: dto.libraryScope ?? LibraryScope.Personal,
+      ...(hiddenPartnerAlbums.length > 0 ? { excludeIds: hiddenPartnerAlbums } : {}),
+    });
+    if (rows.length === 0) {
+      return { albums: [] };
+    }
+
+    const ids = rows.map(({ id }) => id);
+    const [stored, smartBackedIds, ruleAlbumIds, rules, positions, bookmarkCounts, readable] = await Promise.all([
+      this.readStoredMetadata(ids, this.nsfwOptions(auth)),
+      this.smartAlbumRepository.getSmartBackedAlbumKinds(ids),
+      this.classificationRepository.getRuleAlbumIds(ids),
+      this.classificationRepository.getRules(auth.user.id),
+      this.albumRepository.getPositions(auth.user.id),
+      this.albumRepository.getBookmarkCounts(auth, ids),
+      this.readableParents(auth, rows),
+    ]);
+    // A parent the directory doesn't list can't be named by its children.
+    for (const id of hiddenPartnerAlbums) {
+      readable.delete(id);
+    }
+    const ruleByAlbum = new Map(rules.map((rule) => [rule.albumId, rule.id]));
+    const items: AlbumRailItemDto[] = rows.map((row) => ({
+      ...this.withReadableParent(row, readable),
+      kind: asAlbumKind(row.kind),
+      assetCount: stored.metadata[row.id]?.assetCount ?? 0,
+      bookmarkCount: bookmarkCounts.get(row.id) ?? 0,
+      isSmart: smartBackedIds.has(row.id) || ruleAlbumIds.has(row.id),
+      smartRuleId: ruleByAlbum.get(row.id) ?? null,
+      ...(stored.pending.has(row.id) && { statsPending: true }),
+    }));
+    const tree = orderAlbumTree(buildAlbumTree(items), positions);
+    return { albums: flattenAlbumHierarchy(buildAlbumHierarchy(this.directoryItems(tree), positions).roots) };
+  }
+
+  /**
+   * FL-1791: the numbers of some albums, so a list waiting on `statsPending` asks for those alone.
+   * Albums the user cannot read are left out rather than refused: one may be deleted between asks.
+   */
+  async getStats(auth: AuthDto, { albumIds }: AlbumStatsDto): Promise<AlbumStatsResponseDto> {
+    const allowed = await this.checkAccess({ auth, permission: Permission.AlbumRead, ids: albumIds });
+    const ids = [...new Set(albumIds)].filter((id) => allowed.has(id));
+    const { metadata, pending } = await this.readStoredMetadata(ids, this.nsfwOptions(auth));
+    return {
+      albums: ids.map((id) => ({
+        id,
+        assetCount: metadata[id]?.assetCount ?? 0,
+        startDate: asDateTimeString(metadata[id]?.startDate ?? undefined),
+        endDate: asDateTimeString(metadata[id]?.endDate ?? undefined),
+        lastModifiedAssetTimestamp: asDateTimeString(metadata[id]?.lastModifiedAssetTimestamp ?? undefined),
+        ...(pending.has(id) && { statsPending: true }),
+      })),
+    };
+  }
+
+  /** Every item of a directory in the order its groups list them: the input the hierarchy is built from. */
+  private directoryItems<T>(tree: AlbumTreeOf<T>): T[] {
+    return [
+      ...tree.collections.flatMap(({ collection, albums }) => [collection, ...albums]),
+      ...tree.albums,
+      ...tree.spaces,
+    ];
+  }
+
   async getHierarchy(auth: AuthDto, dto: AlbumViewDto = {}): Promise<AlbumHierarchyResponseDto> {
     const { tree, positions } = await this.loadDirectory(auth, dto);
-    return buildAlbumHierarchy(
-      [
-        ...tree.collections.flatMap(({ collection, albums }) => [collection, ...albums]),
-        ...tree.albums,
-        ...tree.spaces,
-      ],
-      positions,
-    );
+    return buildAlbumHierarchy(this.directoryItems(tree), positions);
   }
 
   /**
@@ -549,6 +640,8 @@ export class AlbumService extends BaseService {
 
   async get(auth: AuthDto, id: string, { suppressedOnly }: GetAlbumInfoDto = {}): Promise<AlbumResponseDto> {
     await this.requireAccess({ auth, permission: Permission.AlbumRead, ids: [id] });
+    // Kept on purpose (FL-1791 moved only the list repair): one album, and the last guard that a
+    // Locked item is never answered as the cover of the album being opened.
     await this.albumRepository.updateThumbnails([id]);
     const privacyOptions = this.nsfwOptions(auth, suppressedOnly);
     const album = await this.findOrFail(id, auth, { withAssets: false });
