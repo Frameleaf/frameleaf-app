@@ -52,14 +52,18 @@
     creating = $state(false);
   async function make() {
     if (!listing || !name.trim() || creating) return;
+    // The same sequence as open(): an answer for a folder since left is dropped, never shown over the one open now.
+    const request = ++latest;
     creating = true;
     error = '';
     try {
-      listing = await api('create-folder', { path: listing.path, name: name.trim() });
+      const made = await api('create-folder', { path: listing.path, name: name.trim() });
+      if (request !== latest) return;
+      listing = made;
       naming = false;
       name = '';
     } catch (e) {
-      error = readable(e instanceof Error ? e.message : 'storage_permissions');
+      if (request === latest) error = readable(e instanceof Error ? e.message : 'storage_permissions');
     } finally {
       creating = false;
     }

@@ -48,6 +48,16 @@ test('a move rejects unsupported mappings and overlapping storage before stoppin
       // The whole photos folder by its pool path, and a folder inside it by its own path, stay refused.
       await assert.rejects(move.review('/mnt/cache/photo', 'thumbs', true), /media_move_overlap/);
       await assert.rejects(move.review('/mnt/user/photo/other', 'thumbs', true), /thumbnail_folder_inside_library/);
+      // A folder inside where thumbnails are now, reached by the pool path, would be copied into itself.
+      await assert.rejects(move.review('/mnt/cache/photo/thumbs/empty', 'thumbs', true), /media_move_overlap/);
+      store.set('installation', {
+        ...installation,
+        mounts: [{ ...installation.mounts[0], source: '/mnt/user/photo' }, { type: 'bind', source: '/mnt/user/previews/thumbs', target: '/data/thumbs', readOnly: false }],
+      });
+      await assert.rejects(move.review('/mnt/cache/previews/thumbs/empty', 'thumbs', true), /media_move_overlap/);
+      await assert.rejects(move.review('/mnt/cache/previews', 'thumbs', true), /media_move_overlap/);
+      // The same folder by its pool path is not an overlap: it goes on to the same-folder test.
+      await assert.rejects(move.review('/mnt/cache/previews/thumbs', 'thumbs', true), /media_folder_missing/);
       await assert.rejects(move.review(join(directory, 'database', 'thumbs'), 'thumbs', true), /media_move_overlap/);
     } finally {
       if (platform === undefined) delete process.env.MANAGER_PLATFORM;

@@ -2,7 +2,7 @@ import { mkdir, readFile, readdir, realpath, stat } from 'node:fs/promises';
 import { dirname, join, relative, resolve } from 'node:path';
 import { Refusal } from './contracts.js';
 import { folderDetail } from './host-paths.js';
-import { filesystemMounts } from './postgres-storage.js';
+import { NETWORK_FILESYSTEMS, filesystemMounts } from './postgres-storage.js';
 import { managerPlatform } from './server-check.js';
 
 /**
@@ -191,8 +191,6 @@ export async function ensureManagerFolder(path: string): Promise<void> {
   });
 }
 
-/** Filesystems whose files live on another machine. */
-const NETWORK_FILESYSTEMS = /^(?:nfs4?|cifs|smb3?|smbfs|9p|afs|ceph|glusterfs|fuse\.(?:sshfs|rclone|glusterfs|s3fs))$/;
 /**
  * FL-1321: whether `path` is on a network share, from the mount table Manager sees (`mountinfo` text). Unraid's
  * Unassigned Devices mounts remote shares under /mnt/remotes. Thumbnails and the database need a drive inside this

@@ -214,7 +214,7 @@
   }
   /** Which open() the dialog belongs to: a review answered after its dialog closed is never shown in another. */
   let opened = 0;
-  async function open(kind: MoveKind, path?: string, from?: string) {
+  async function open(kind: MoveKind, path?: string, from?: string, exact = kind === 'thumbs' && browses(kind)) {
     const request = ++opened;
     picking = null;
     rootDialog?.close();
@@ -229,7 +229,7 @@
       const answer = await api(
         route,
         // FL-1784: a browsed thumbnails folder is used as it is; a saved root still gets a folder of Manager's own inside it.
-        kind === 'rebuild' ? {} : kind === 'database' ? { databaseRoot: path } : kind === 'thumbs' && browses(kind) ? { root: path, exact: true } : { root: path },
+        kind === 'rebuild' ? {} : kind === 'database' ? { databaseRoot: path } : kind === 'thumbs' && exact ? { root: path, exact: true } : { root: path },
       );
       if (request === opened) review = answer;
     } catch (e) {
@@ -341,7 +341,7 @@
       {@const direct = usage.thumbnails.direct}
       {#snippet thumbsAdvice()}
         {#if direct}
-          <div class="st-suggest"><Icon name="bulb" /><div><strong>Your thumbnails are all on {direct.drive}</strong><p>Frameleaf reaches them through the {direct.share} share, which is slower than the drive itself. It can use {direct.path} instead, with nothing to copy.</p></div><button type="button" class="button" {disabled} onclick={() => open('thumbs', direct.path, usage!.thumbnails.path ?? undefined)}>Use {direct.drive} directly…</button></div>
+          <div class="st-suggest"><Icon name="bulb" /><div><strong>Your thumbnails are all on {direct.drive}</strong><p>Frameleaf reaches them through the {direct.share} share, which is slower than the drive itself. It can use {direct.path} instead, with nothing to copy.</p></div><button type="button" class="button" {disabled} onclick={() => open('thumbs', direct.path, usage!.thumbnails.path ?? undefined, true)}>Use {direct.drive} directly…</button></div>
         {:else}{@render suggestion('thumbs', usage!.suggestions?.thumbs)}{/if}
       {/snippet}
       {#snippet thumbsActions()}<button type="button" class="button quiet" {disabled} onclick={() => choose('thumbs')}>{direct || usage!.suggestions?.thumbs?.status === 'found' ? 'Choose another folder…' : 'Change folder…'}</button>{/snippet}
