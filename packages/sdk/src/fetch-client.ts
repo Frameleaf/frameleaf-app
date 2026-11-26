@@ -20225,6 +20225,16 @@ export type SharedLinkLoginDto = {
     /** Shared link password */
     password: string;
 };
+export type SharedLinkPageResponseDto = {
+    /** All your album links, on every page */
+    albumCount: number;
+    /** All your links to chosen items, on every page */
+    individualCount: number;
+    /** Newest first */
+    links: SharedLinkResponseDto[];
+    /** Pass as cursor for the next page; null when there are no more */
+    nextCursor: string | null;
+};
 export type SharedLinkEditDto = {
     /** Allow downloads */
     allowDownload?: boolean;
@@ -24848,6 +24858,12 @@ export type SearchSuggestionRequestDto = {
 };
 export type SharedLinkDirectImageDto = {
     size?: SharedLinkDirectImageSize;
+};
+export type SharedLinkPageDto = {
+    /** nextCursor of the page before; omitted for the first page */
+    cursor?: string;
+    /** Most links to return */
+    take?: number;
 };
 export type SharedLinkSearchDto = {
     /** Filter by album ID */
@@ -41815,6 +41831,23 @@ export function getMySharedLink({ key, slug }: {
     }>(`/shared-links/me${QS.query(QS.explode({
         key,
         slug
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Retrieve shared links a page at a time
+ */
+export function getSharedLinkPage({ cursor, take }: {
+    cursor?: string;
+    take?: number;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: SharedLinkPageResponseDto;
+    }>(`/shared-links/page${QS.query(QS.explode({
+        cursor,
+        take
     }))}`, {
         ...opts
     }));

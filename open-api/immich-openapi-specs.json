@@ -64004,6 +64004,75 @@
         "x-immich-state": "Stable"
       }
     },
+    "/shared-links/page": {
+      "get": {
+        "description": "Your shared links, newest first, a page at a time, with how many album links and links to chosen items you have in all.",
+        "operationId": "getSharedLinkPage",
+        "parameters": [
+          {
+            "name": "cursor",
+            "required": false,
+            "in": "query",
+            "description": "nextCursor of the page before; omitted for the first page",
+            "schema": {
+              "maxLength": 200,
+              "type": "string"
+            }
+          },
+          {
+            "name": "take",
+            "required": false,
+            "in": "query",
+            "description": "Most links to return",
+            "schema": {
+              "minimum": 1,
+              "maximum": 200,
+              "default": 60,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SharedLinkPageResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Retrieve shared links a page at a time",
+        "tags": [
+          "Shared links"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.5.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.5.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "sharedLink.read",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/shared-links/{id}": {
       "delete": {
         "description": "Delete a specific shared link by its ID.",
@@ -174689,6 +174758,58 @@
         },
         "required": [
           "name"
+        ],
+        "type": "object"
+      },
+      "SharedLinkPageDto": {
+        "properties": {
+          "cursor": {
+            "description": "nextCursor of the page before; omitted for the first page",
+            "maxLength": 200,
+            "type": "string"
+          },
+          "take": {
+            "default": 60,
+            "description": "Most links to return",
+            "maximum": 200,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "SharedLinkPageResponseDto": {
+        "properties": {
+          "albumCount": {
+            "description": "All your album links, on every page",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "individualCount": {
+            "description": "All your links to chosen items, on every page",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "links": {
+            "description": "Newest first",
+            "items": {
+              "$ref": "#/components/schemas/SharedLinkResponseDto"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "description": "Pass as cursor for the next page; null when there are no more",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "albumCount",
+          "individualCount",
+          "links",
+          "nextCursor"
         ],
         "type": "object"
       },
