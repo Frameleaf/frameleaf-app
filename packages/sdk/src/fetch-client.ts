@@ -23950,6 +23950,14 @@ export type FileTrashListQueryDto = {
     /** Entries per page */
     size?: number;
 };
+export type FolderAssetsDto = {
+    /** ID of the last asset of the page before; only with take */
+    after?: string;
+    /** Folder path */
+    path: string;
+    /** Most assets to return. With it the folder is read a page at a time, in asset ID order: a page shorter than this is the last one. Without it every asset is returned, in file name order. */
+    take?: number;
+};
 export type FoundFileListDto = {
     /** The id of the last file of the page before */
     cursor?: string;
@@ -46098,14 +46106,18 @@ export function getUtilitiesSummary(opts?: Oazapfts.RequestOpts) {
 /**
  * Retrieve assets by original path
  */
-export function getAssetsByOriginalPath({ path }: {
+export function getAssetsByOriginalPath({ after, path, take }: {
+    after?: string;
     path: string;
+    take?: number;
 }, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
         status: 200;
         data: AssetResponseDto[];
     }>(`/view/folder${QS.query(QS.explode({
-        path
+        after,
+        path,
+        take
     }))}`, {
         ...opts
     }));
