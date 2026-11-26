@@ -444,6 +444,30 @@ describe('SetupBar', () => {
     }
   });
 
+  /** FL-1794 */
+  it('asks whether setup started while the server says its queues are moving, once a minute at most', async () => {
+    vi.useFakeTimers();
+    try {
+      sdkMock.getLibrarySetupProgress.mockResolvedValue(progress({ active: false }));
+      render(SetupBar);
+      await vi.advanceTimersByTimeAsync(0);
+      for (let second = 0; second < 59; second++) {
+        eventManager.emit('QueueProgress');
+        await vi.advanceTimersByTimeAsync(1000);
+      }
+      expect(sdkMock.getLibrarySetupProgress).toHaveBeenCalledTimes(1);
+
+      sdkMock.getLibrarySetupProgress.mockResolvedValue(progress());
+      await vi.advanceTimersByTimeAsync(1000);
+      eventManager.emit('QueueProgress');
+      await vi.advanceTimersByTimeAsync(0);
+      expect(sdkMock.getLibrarySetupProgress).toHaveBeenCalledTimes(2);
+      expect(screen.getByText('Setting up your library')).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('asks nothing while the tab is hidden, and asks at once when it is shown', async () => {
     const show = (state: DocumentVisibilityState) => {
       Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => state });

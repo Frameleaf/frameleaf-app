@@ -86,6 +86,8 @@ const SETUP_QUEUES = [
  */
 const HALTING_QUEUES = new Set<QueueName>([QueueName.Library, QueueName.MediaHealth]);
 const KEY = 'frameleaf-manager-library-setup';
+/** FL-1794: how long one read of the library's item, people and album counts serves the setup bar. */
+export const LIBRARY_COUNTS_TTL_MS = 30_000;
 /**
  * FL-1146 (owner 2026-11-02): an import opens before its originals are read. Metadata and thumbnails start at
  * once; the stages below wait for Library Care's checksum scan of every original, then start by themselves.
@@ -499,6 +501,32 @@ export class FrameleafLibrarySetupService {
     ];
   }
 
+  private countsRead?: { at: number; counts: Promise<{ items: number; people: number; albums: number }> };
+
+  /**
+   * FL-1794: the library's size for the setup bar and its completion window. Three whole-table counts are
+   * too much for every poll of every administrator's tab, and nobody reads these to the item, so one read
+   * serves everyone for a while. A failed read is not kept.
+   */
+  private libraryCounts() {
+    if (!this.countsRead || Date.now() - this.countsRead.at > LIBRARY_COUNTS_TTL_MS) {
+      const counts = sql<{ items: number; people: number; albums: number }>`SELECT
+        (SELECT count(*) FROM asset WHERE "deletedAt" IS NULL)::int AS items,
+        (SELECT count(*) FROM person WHERE name <> '')::int AS people,
+        (SELECT count(*) FROM album WHERE "deletedAt" IS NULL)::int AS albums`
+        .execute(this.db)
+        .then(({ rows: [row] }) => row);
+      const read = { at: Date.now(), counts };
+      this.countsRead = read;
+      counts.catch(() => {
+        if (this.countsRead === read) {
+          this.countsRead = undefined;
+        }
+      });
+    }
+    return this.countsRead.counts;
+  }
+
   /**
    * FL-1146 setup bar: what an imported library still has to do after it opens. Null when this server was not
    * set up from an import, or before its first setup started.
@@ -562,12 +590,7 @@ export class FrameleafLibrarySetupService {
       LEFT JOIN asset_health_run missing ON missing.id=(op.snapshot->>'missingRunId')::uuid
       LEFT JOIN asset_health_run corrupt ON corrupt.id=(op.snapshot->>'corruptRunId')::uuid
       WHERE op.id=ANY(${healthIds}::uuid[])`.execute(this.db);
-    const {
-      rows: [{ items, people, albums }],
-    } = await sql<{ items: number; people: number; albums: number }>`SELECT
-      (SELECT count(*) FROM asset WHERE "deletedAt" IS NULL)::int AS items,
-      (SELECT count(*) FROM person WHERE name <> '')::int AS people,
-      (SELECT count(*) FROM album WHERE "deletedAt" IS NULL)::int AS albums`.execute(this.db);
+    const { items, people, albums } = await this.libraryCounts();
     const thumbnails = sum(THUMBNAIL_STAGES);
     const search = sum(SEARCH_STAGES);
     const checked = !!state.checkReleasedAt;
