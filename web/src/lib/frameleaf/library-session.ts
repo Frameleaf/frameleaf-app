@@ -718,13 +718,12 @@ export const toStoredLibraryTransient = (session: LibrarySession, context = '') 
   state: structuredClone(session.state),
   // FL-1804: a very large selection is not written to the tab's storage (it would not fit, and
   // every change would write it again); after a reload the selection is simply empty.
-  ...(session.selection.length > STORED_SELECTION_LIMIT
-    ? { selection: [], anchorId: null }
-    : {
-        selection: [...session.selection],
-        anchorId: session.anchorId,
-        selectionSnapshot: session.selectionSnapshot && structuredClone(session.selectionSnapshot),
-      }),
+  selection: session.selection.length > STORED_SELECTION_LIMIT ? [] : [...session.selection],
+  anchorId: session.selection.length > STORED_SELECTION_LIMIT ? null : session.anchorId,
+  selectionSnapshot:
+    session.selection.length > STORED_SELECTION_LIMIT || !session.selectionSnapshot
+      ? undefined
+      : structuredClone(session.selectionSnapshot),
   scrollAnchor: session.scrollAnchor,
   draft: session.draft && structuredClone(session.draft),
   page: session.page,
