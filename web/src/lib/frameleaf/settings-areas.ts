@@ -18,6 +18,8 @@ export type SettingsHostSection = {
   icon: string;
   /** The form. Account sections without one are drawn by the host's `sectionBody` snippet. */
   component?: Component;
+  /** The form, fetched when the page is first opened (FL-1799). */
+  load?: () => Promise<{ default: Component }>;
   /** True for server settings, which only administrators see. */
   admin?: boolean;
   /** Other words the Command Center search finds the section by, such as a setting it holds (FL-168). */

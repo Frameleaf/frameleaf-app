@@ -3,21 +3,30 @@
  * FL-139 (QA-103): a hardware-free performance budget for the web app. For every route it measures
  * the JavaScript and CSS the browser must load before the page can show (the client entry, the
  * route's layouts and its page, with their static imports; lazy `import()` chunks are left out),
- * gzipped, and holds it to the committed baseline plus a margin.
+ * gzipped, and holds it to the limit committed in web/bundle-budget.json.
  *
- *   node scripts/frameleaf-web-bundle-budget.mjs            check web/ against web/bundle-budget.json
- *   node scripts/frameleaf-web-bundle-budget.mjs --update   write today's sizes as the new baseline
+ * FL-1799: the limits are limits. A route over its limit fails the check, and a limit only goes up
+ * through `--raise` with a reason, which is recorded in the file for review.
  *
- * Run after `vite build` in web/. When a route grows on purpose, update the baseline in the same
- * change so the growth is reviewed.
+ *   node scripts/frameleaf-web-bundle-budget.mjs                      check web/ against its limits
+ *   node scripts/frameleaf-web-bundle-budget.mjs --raise "FL-1: why"  lift the limits of routes over
+ *                                                                     theirs (and add new routes),
+ *                                                                     recording the reason
+ *   node scripts/frameleaf-web-bundle-budget.mjs --lower              bring limits down to today's
+ *                                                                     sizes after a reduction
+ *   node scripts/frameleaf-web-bundle-budget.mjs --measure out.json   write today's sizes, change nothing
+ *
+ * Run after `vite build` in web/.
  */
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { gzipSync } from "node:zlib";
 
-/** A route may grow this much over its baseline before the budget fails. */
-export const MARGIN = { ratio: 0.05, bytes: 4096 };
+/** A limit is set this far above the size measured when it is set, so small changes fit. */
+export const HEADROOM = 0.02;
+
+const limitFor = (size) => Math.ceil(size * (1 + HEADROOM));
 
 /** The route → node table SvelteKit generates: `"/(user)/photos": [page, [layouts...]]`. */
 export const parseDictionary = (appJs) => {
@@ -102,29 +111,81 @@ export const measure = ({ manifest, dictionary, sizeOf }) => {
   return sizes;
 };
 
-/** The routes over budget, and those added or gone since the baseline. */
-export const compare = (baseline, sizes, margin = MARGIN) => {
+/** The routes over their limit, and those added or gone since the limits were set. */
+export const compare = (limits, sizes) => {
   const over = [];
   for (const [route, size] of Object.entries(sizes)) {
-    const allowed = baseline[route];
-    if (allowed === undefined) {
-      continue;
-    }
-    const limit = Math.max(
-      Math.round(allowed * (1 + margin.ratio)),
-      allowed + margin.bytes,
-    );
-    if (size > limit) {
-      over.push({ route, size, baseline: allowed, limit });
+    const limit = limits[route];
+    if (limit !== undefined && size > limit) {
+      over.push({ route, size, limit });
     }
   }
   const added = Object.keys(sizes).filter(
-    (route) => baseline[route] === undefined,
+    (route) => limits[route] === undefined,
   );
-  const removed = Object.keys(baseline).filter(
+  const removed = Object.keys(limits).filter(
     (route) => sizes[route] === undefined,
   );
   return { over, added, removed };
+};
+
+const sorted = (limits) =>
+  Object.fromEntries(
+    Object.entries(limits).sort(([a], [b]) => a.localeCompare(b)),
+  );
+
+/**
+ * The budget after lifting the limit of every route over its own, adding new routes and dropping
+ * those no longer built. The reason must name the issue the growth belongs to; it is recorded with
+ * how many routes rose and by how much.
+ */
+export const raise = (budget, sizes, reason, date) => {
+  if (!/[A-Z]+-\d+\b.*\S/.test(reason ?? "")) {
+    throw new Error(
+      'a raise needs a reason that names its issue, e.g. --raise "FL-123: the new editor toolbar"',
+    );
+  }
+  const { over, added, removed } = compare(budget.limits, sizes);
+  if (over.length === 0 && added.length === 0 && removed.length === 0) {
+    return budget;
+  }
+  const limits = { ...budget.limits };
+  let bytes = 0;
+  for (const { route, size, limit } of over) {
+    limits[route] = limitFor(size);
+    bytes += limits[route] - limit;
+  }
+  for (const route of added) {
+    limits[route] = limitFor(sizes[route]);
+  }
+  for (const route of removed) {
+    delete limits[route];
+  }
+  return {
+    limits: sorted(limits),
+    raises: [
+      ...(budget.raises ?? []),
+      {
+        date,
+        reason,
+        raised: over.length,
+        bytes,
+        added: added.length,
+        removed: removed.length,
+      },
+    ],
+  };
+};
+
+/** The budget with every limit that has more room than the headroom brought down to today's size. */
+export const lower = (budget, sizes) => {
+  const limits = { ...budget.limits };
+  for (const [route, size] of Object.entries(sizes)) {
+    if (limits[route] !== undefined && limitFor(size) < limits[route]) {
+      limits[route] = limitFor(size);
+    }
+  }
+  return { ...budget, limits: sorted(limits) };
 };
 
 const kb = (bytes) => `${(bytes / 1024).toFixed(1)} KB`;
@@ -145,40 +206,67 @@ const main = () => {
     dictionary,
     sizeOf: (file) => gzipSync(readFileSync(join(client, file))).length,
   });
-  const baselinePath = join(web, "bundle-budget.json");
+  const budgetPath = join(web, "bundle-budget.json");
+  const write = (budget) =>
+    writeFileSync(budgetPath, `${JSON.stringify(budget, null, 2)}\n`);
+  const option = (name) => {
+    const index = process.argv.indexOf(name);
+    return index === -1 ? undefined : (process.argv[index + 1] ?? "");
+  };
 
-  if (process.argv.includes("--update")) {
-    const sorted = Object.fromEntries(
-      Object.entries(sizes).sort(([a], [b]) => a.localeCompare(b)),
-    );
-    writeFileSync(baselinePath, `${JSON.stringify(sorted, null, 2)}\n`);
-    console.log(
-      `wrote the initial-load baseline for ${Object.keys(sorted).length} routes to web/bundle-budget.json`,
-    );
+  const measureTo = option("--measure");
+  if (measureTo !== undefined) {
+    writeFileSync(measureTo, `${JSON.stringify(sorted(sizes), null, 2)}\n`);
+    console.log(`wrote today's sizes to ${measureTo}`);
     return;
   }
 
-  const baseline = JSON.parse(readFileSync(baselinePath, "utf8"));
-  const { over, added, removed } = compare(baseline, sizes);
-  for (const { route, size, baseline: allowed, limit } of over) {
+  const budget = JSON.parse(readFileSync(budgetPath, "utf8"));
+  const reason = option("--raise");
+  if (reason !== undefined) {
+    const raised = raise(
+      budget,
+      sizes,
+      reason,
+      new Date().toISOString().slice(0, 10),
+    );
+    if (raised === budget) {
+      console.log("every route is within its limit: nothing to raise");
+      return;
+    }
+    write(raised);
+    const { raised: count, bytes, added, removed } = raised.raises.at(-1);
+    console.log(
+      `raised ${count} limits by ${kb(bytes)} in all, added ${added} routes, removed ${removed}; reason recorded in web/bundle-budget.json`,
+    );
+    return;
+  }
+  if (process.argv.includes("--lower")) {
+    write(lower(budget, sizes));
+    console.log("lowered the limits to today's sizes where they had room");
+    return;
+  }
+
+  const { over, added, removed } = compare(budget.limits, sizes);
+  for (const { route, size, limit } of over) {
     console.error(
-      `${route}: loads ${kb(size)} up front, over its budget of ${kb(limit)} (baseline ${kb(allowed)})`,
+      `${route}: loads ${kb(size)} up front, over its limit of ${kb(limit)} by ${kb(size - limit)}`,
     );
   }
   for (const route of added) {
-    console.error(`${route}: new route with no budget yet`);
+    console.error(`${route}: new route with no limit yet`);
   }
   for (const route of removed) {
-    console.error(`${route}: in the budget but no longer built`);
+    console.error(`${route}: has a limit but is no longer built`);
   }
   if (over.length > 0 || added.length > 0 || removed.length > 0) {
     console.error(
-      "If the change is intended, run `node scripts/frameleaf-web-bundle-budget.mjs --update` after a web build and commit web/bundle-budget.json.",
+      'Load less up front (a lazy `import()` is not counted), or, when the growth is intended, run `node scripts/frameleaf-web-bundle-budget.mjs --raise "FL-123: why"` after a web build and commit web/bundle-budget.json with the reason.',
     );
     process.exit(1);
   }
   console.log(
-    `initial load within budget on all ${Object.keys(sizes).length} routes`,
+    `initial load within its limit on all ${Object.keys(sizes).length} routes`,
   );
 };
 
