@@ -10,6 +10,7 @@
   import IconButton from '$lib/components/frameleaf/IconButton.svelte';
   import Pill from '$lib/components/frameleaf/settings/kit/Pill.svelte';
   import {
+    DEFAULT_KEEP_RULES_USED,
     dropKeepRule,
     isDefaultKeepOrder,
     KEEP_EXAMPLE,
@@ -32,35 +33,47 @@
 
   let order = $state(savedOrder());
   let dragging: DuplicateKeepRule | undefined = $state();
-  let saves = 0;
+  /** The order the server last confirmed, which a failed save goes back to. */
+  let confirmed = savedOrder();
+  let queue: Promise<void> = Promise.resolve();
 
   const usual = $derived(isDefaultKeepOrder(order));
-  const example = $derived(suggestKeep(KEEP_EXAMPLE, order));
+  // While nothing is saved the server uses only its own default rules, so the example does too.
+  const example = $derived(suggestKeep(KEEP_EXAMPLE, usual ? order.slice(0, DEFAULT_KEEP_RULES_USED) : order));
   const label = (rule: DuplicateKeepRule) => $t(`frameleaf_keep_rule_${KEEP_RULE_WORDS[rule]}` as Translations);
   const help = (rule: DuplicateKeepRule) => $t(`frameleaf_keep_rule_${KEEP_RULE_WORDS[rule]}_help` as Translations);
+  const same = (a: readonly string[], b: readonly string[]) => a.join(',') === b.join(',');
 
-  /** Saves the order on screen; of several saves under way, only the last one's answer is kept. */
-  const save = async () => {
-    const run = ++saves;
-    try {
-      const preferences = await updateMyPreferences({
-        userPreferencesUpdateDto: { duplicates: { keepRules: usual ? [] : order } },
-      });
-      if (run === saves) {
-        authManager.setPreferences(preferences);
+  /**
+   * Saves the order on screen. Saves go one at a time, each sending the order shown when its turn
+   * comes, so the server can never keep an older order than the page; a failure goes back to the
+   * last order the server confirmed.
+   */
+  const save = () => {
+    queue = queue.then(async () => {
+      const target = [...order];
+      if (same(target, confirmed)) {
+        return;
       }
-    } catch (error) {
-      if (run === saves) {
-        order = savedOrder();
+      try {
+        const preferences = await updateMyPreferences({
+          userPreferencesUpdateDto: { duplicates: { keepRules: isDefaultKeepOrder(target) ? [] : target } },
+        });
+        confirmed = target;
+        authManager.setPreferences(preferences);
+      } catch (error) {
+        if (same(order, target)) {
+          order = [...confirmed];
+        }
         handleError(error, $t('frameleaf_keep_save_failed'));
       }
-    }
+    });
   };
 
   const set = (next: DuplicateKeepRule[]) => {
-    if (next.join(',') !== order.join(',')) {
+    if (!same(next, order)) {
       order = next;
-      void save();
+      save();
     }
   };
 
@@ -78,6 +91,7 @@
     <div>
       <strong id="keep-rules-title">{$t('frameleaf_keep_title')}</strong>
       <p>{$t('frameleaf_keep_help')}</p>
+      {#if usual}<p>{$t('frameleaf_keep_default_note')}</p>{/if}
     </div>
     <Button disabled={usual} onclick={() => set(keepOrder())}>
       <Icon icon={mdiRestore} size="18" aria-hidden="true" />
@@ -100,9 +114,7 @@
           }}
           ondragend={() => {
             dragging = undefined;
-            if (order.join(',') !== savedOrder().join(',')) {
-              void save();
-            }
+            save();
           }}
         >
           <span class="grip" aria-hidden="true"><Icon icon={mdiDragVertical} size="18" /></span>

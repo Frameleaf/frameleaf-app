@@ -47,7 +47,11 @@ describe('KeepRules (FL-832)', () => {
 
     expect(rules()[0]).toBe('Favorite');
     expect(screen.getByText('Kept: IMG_2048.JPG, because of “Favorite”, rule 1.')).toBeInTheDocument();
-    await waitFor(() => expect(sdkMock.updateMyPreferences).toHaveBeenCalledTimes(9));
+    await waitFor(() =>
+      expect(
+        sdkMock.updateMyPreferences.mock.calls.at(-1)?.[0].userPreferencesUpdateDto.duplicates?.keepRules?.[0],
+      ).toBe('favorite'),
+    );
     const last = sdkMock.updateMyPreferences.mock.calls.at(-1)?.[0].userPreferencesUpdateDto.duplicates?.keepRules;
     expect(last?.slice(0, 2)).toEqual(['favorite', 'raw']);
     expect(last).toHaveLength(10);
@@ -74,5 +78,32 @@ describe('KeepRules (FL-832)', () => {
     await fireEvent.click(screen.getByRole('button', { name: 'Move HEIC up' }));
 
     await waitFor(() => expect(rules()[0]).toBe('RAW'));
+  });
+
+  it('says the default order uses four rules, until a rule is moved', async () => {
+    sdkMock.updateMyPreferences.mockResolvedValue({ duplicates: { keepRules: [] } } as never);
+    render(KeepRules);
+    expect(screen.getByText(en.frameleaf_keep_default_note)).toBeInTheDocument();
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Move HEIC up' }));
+
+    expect(screen.queryByText(en.frameleaf_keep_default_note)).toBeNull();
+  });
+
+  it('sends saves one at a time and goes back to the last saved order when a later one fails', async () => {
+    let finishFirst: (value: unknown) => void = () => {};
+    sdkMock.updateMyPreferences
+      .mockImplementationOnce(() => new Promise((resolve) => (finishFirst = resolve)) as never)
+      .mockRejectedValueOnce(new Error('offline'));
+    render(KeepRules);
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Move HEIC up' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Move Largest file up' }));
+    expect(sdkMock.updateMyPreferences).toHaveBeenCalledTimes(1);
+
+    finishFirst({ duplicates: { keepRules: ['heic', 'raw'] } });
+
+    await waitFor(() => expect(sdkMock.updateMyPreferences).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(rules().slice(0, 3)).toEqual(['HEIC', 'RAW', 'Largest file']));
   });
 });

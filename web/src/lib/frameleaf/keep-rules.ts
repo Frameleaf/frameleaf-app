@@ -39,6 +39,9 @@ export const keepOrder = (saved: readonly string[] = []): DuplicateKeepRule[] =>
   return [...new Set([...known, ...DEFAULT_KEEP_ORDER])];
 };
 
+/** How many rules the server uses while nothing is saved: its own default list. */
+export const DEFAULT_KEEP_RULES_USED = 4;
+
 export const isDefaultKeepOrder = (order: readonly string[]) => order.join(',') === DEFAULT_KEEP_ORDER.join(',');
 
 /** Moves one rule up (-1) or down (+1). */
