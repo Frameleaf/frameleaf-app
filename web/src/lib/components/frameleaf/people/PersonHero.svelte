@@ -10,7 +10,7 @@
   import FixMatchPanel from '$lib/components/frameleaf/people/FixMatchPanel.svelte';
   import MergePeopleDialog from '$lib/components/frameleaf/people/MergePeopleDialog.svelte';
   import PersonNameField from '$lib/components/frameleaf/people/PersonNameField.svelte';
-  import { ageInYears, isUnnamedPerson } from '$lib/frameleaf/people';
+  import { ageInYears, isUnnamedPerson, lifespan } from '$lib/frameleaf/people';
   import { toastUndo } from '$lib/frameleaf/toast';
   import { ICON_SIZE } from '$lib/frameleaf/tokens';
   import { eventManager } from '$lib/managers/event-manager.svelte';
@@ -24,6 +24,7 @@
     mdiAccountGroupOutline,
     mdiArrowLeft,
     mdiCakeVariantOutline,
+    mdiFlowerTulipOutline,
     mdiCallMerge,
     mdiCameraOutline,
     mdiEyeOffOutline,
@@ -102,6 +103,8 @@
   );
   const unnamed = $derived(isUnnamedPerson(person));
   const name = $derived(unnamed ? $t('unnamed_person') : person.name);
+  // FL-864: once someone has passed, their page shows a lifespan, never an age.
+  const span = $derived(lifespan(person.birthDate, person.deathDate));
   const age = $derived(ageInYears(person.birthDate));
   const birthday = $derived(
     person.birthDate
@@ -255,8 +258,10 @@
               : $t('frameleaf_people_no_photos_yet'))}
         </span>
         <button type="button" class="pd-fact pd-fact-link" onclick={() => (birthdayOpen = true)}>
-          <Icon icon={mdiCakeVariantOutline} size="15" aria-hidden="true" />
-          {#if birthday}
+          <Icon icon={span ? mdiFlowerTulipOutline : mdiCakeVariantOutline} size="15" aria-hidden="true" />
+          {#if span}
+            {span.born ? span.years : $t('frameleaf_people_died_year', { values: { year: span.years } })}
+          {:else if birthday}
             {age === null
               ? $t('frameleaf_people_born', { values: { date: birthday } })
               : $t('frameleaf_people_born_age', { values: { date: birthday, age } })}
@@ -302,7 +307,7 @@
         {/snippet}
         <MenuItem onSelect={() => (birthdayOpen = true)}>
           <Icon icon={mdiCakeVariantOutline} size={ICON_SIZE.lg} aria-hidden="true" />
-          {person.birthDate ? $t('date_of_birth') : $t('set_date_of_birth')}
+          {person.birthDate || person.deathDate ? $t('frameleaf_people_dates') : $t('frameleaf_people_dates_add')}
         </MenuItem>
         <MenuItem disabled={assetCount === 0} onSelect={() => (fixOpen = true)}>
           <Icon icon={mdiFaceRecognition} size={ICON_SIZE.lg} aria-hidden="true" />
@@ -338,9 +343,9 @@
 <BirthdayDialog
   {person}
   bind:open={birthdayOpen}
-  onSaved={(updated, birthDate) => {
+  onSaved={(updated, hasDates) => {
     onPersonChange(updated);
-    announce(birthDate ? $t('frameleaf_people_birthday_saved') : $t('frameleaf_people_birthday_removed'));
+    announce(hasDates ? $t('frameleaf_people_dates_saved') : $t('frameleaf_people_dates_removed'));
   }}
 />
 {#if fixOpen}

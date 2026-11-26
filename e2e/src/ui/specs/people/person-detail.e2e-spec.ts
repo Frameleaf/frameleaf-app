@@ -81,6 +81,7 @@ test.describe('person page', () => {
         person = {
           ...person,
           ...('birthDate' in body && { birthDate: body.birthDate }),
+          ...('deathDate' in body && { deathDate: body.deathDate }),
           ...('notes' in body && { notes: body.notes }),
           updatedAt: new Date().toISOString(),
         };
@@ -171,8 +172,8 @@ test.describe('person page', () => {
       .getByRole('toolbar', { name: 'Actions for Ada' })
       .getByRole('button', { name: 'More actions for Ada' })
       .click();
-    await page.getByRole('menuitem', { name: 'Set date of birth' }).click();
-    const dialog = page.getByRole('dialog', { name: 'Date of birth' });
+    await page.getByRole('menuitem', { name: 'Add dates' }).click();
+    const dialog = page.getByRole('dialog', { name: 'Dates' });
     const field = dialog.getByLabel('Date of birth for Ada');
     const save = dialog.getByRole('button', { name: 'Save', exact: true });
     await expect(save).toBeDisabled();
@@ -187,9 +188,19 @@ test.describe('person page', () => {
     await expect(save).toBeEnabled();
     await save.click();
 
-    await expect(page.getByText('Date of birth saved.')).toBeVisible();
+    await expect(page.getByText('Dates saved.')).toBeVisible();
     expect(updates).toEqual([{ birthDate: '1990-05-17' }]);
     await expect(page.getByRole('button', { name: /^Born / })).toBeVisible();
+
+    // FL-864: a date of passing turns the age into a lifespan.
+    await page.getByRole('button', { name: /^Born / }).click();
+    await dialog.getByRole('button', { name: 'Add a date of passing' }).click();
+    await dialog.getByLabel('Date of passing (optional)').fill('2021-10-09');
+    await expect(dialog.getByText(/Ada’s page shows 1990 – 2021 instead of an age/)).toBeVisible();
+    await save.click();
+
+    expect(updates.at(-1)).toEqual({ deathDate: '2021-10-09' });
+    await expect(page.getByRole('button', { name: '1990 – 2021' })).toBeVisible();
   });
 
   test('a new featured photo updates the hero and the People card', async ({ context, page }) => {

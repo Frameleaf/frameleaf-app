@@ -57,7 +57,7 @@ describe('PersonHero (PD-1, PD-2, PD-7, PD-8)', () => {
     for (const name of ['Featured photo', 'Merge people', 'Hide', 'Favorite']) {
       expect(within(toolbar).getByRole('button', { name })).toBeInTheDocument();
     }
-    for (const name of ['Correction history', 'Set date of birth', 'Fix incorrect match', 'Recognition groups']) {
+    for (const name of ['Correction history', 'Add dates', 'Fix incorrect match', 'Recognition groups']) {
       expect(within(toolbar).queryByRole('button', { name })).toBeNull();
     }
 
@@ -84,7 +84,7 @@ describe('PersonHero (PD-1, PD-2, PD-7, PD-8)', () => {
     }
     await fireEvent.click(within(toolbar).getByRole('button', { name: 'More actions for Ada' }));
     expect((await screen.findAllByRole('menuitem')).map((item) => item.textContent?.trim())).toEqual([
-      'Set date of birth',
+      'Add dates',
       'Fix incorrect match',
       'Correction history',
       'Recognition groups',
@@ -170,6 +170,13 @@ describe('PersonHero (PD-1, PD-2, PD-7, PD-8)', () => {
     expect(screen.getByText(/30 years old/)).toBeTruthy();
     expect(screen.getByText('Hidden from People')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Unhide' })).toBeTruthy();
+  });
+
+  it('shows a lifespan instead of an age once someone has passed (FL-864)', () => {
+    const person = personFactory.build({ id: 'ada', name: 'Ada', birthDate: '1938-04-02', deathDate: '2021-10-09' });
+    render(PersonHero, props({ person }));
+    expect(screen.getByRole('button', { name: '1938 – 2021' })).toBeTruthy();
+    expect(screen.queryByText(/years old/)).toBeNull();
   });
 
   it('announces moved faces after Fix incorrect match so chips and search re-read them', async () => {

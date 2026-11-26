@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
   ageInYears,
+  datesProblem,
   filterPeopleByName,
   isUnnamedPerson,
+  lifespan,
   matchesPersonSearch,
   normalizedFaceBox,
   sortMergeCandidates,
@@ -85,6 +87,36 @@ describe('frameleaf people grid helpers', () => {
     expect(ageInYears('2000-09-25', now)).toBe(25);
     expect(ageInYears('2027-01-01', now)).toBeNull();
     expect(ageInYears(null, now)).toBeNull();
+  });
+});
+
+describe('datesProblem (FL-864)', () => {
+  const today = '2026-11-26';
+  it('accepts either date alone, both in order, or none', () => {
+    for (const [born, died] of [
+      ['', ''],
+      ['1938-04-02', ''],
+      ['', '2021-10-09'],
+      ['1938-04-02', '2021-10-09'],
+      ['2021-10-09', '2021-10-09'],
+    ]) {
+      expect(datesProblem(born, died, today)).toBeNull();
+    }
+  });
+
+  it('refuses a date in the future and a passing before the birth', () => {
+    expect(datesProblem('2999-01-01', '', today)).toBe('frameleaf_people_birthday_future');
+    expect(datesProblem('', '2026-11-27', today)).toBe('frameleaf_people_passing_future');
+    expect(datesProblem('1938-04-02', '1938-04-01', today)).toBe('frameleaf_people_passing_before_birth');
+  });
+});
+
+describe('lifespan (FL-864)', () => {
+  it('is the two years once someone has passed, and nothing before', () => {
+    expect(lifespan('1938-04-02', '2021-10-09')).toEqual({ years: '1938 – 2021', born: true });
+    expect(lifespan(null, '2021-10-09')).toEqual({ years: '2021', born: false });
+    expect(lifespan('1938-04-02', null)).toBeNull();
+    expect(lifespan('1938-04-02', undefined)).toBeNull();
   });
 });
 

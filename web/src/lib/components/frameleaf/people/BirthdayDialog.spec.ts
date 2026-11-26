@@ -5,7 +5,7 @@ import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import { personFactory } from '@test-data/factories/person-factory';
 import BirthdayDialog from './BirthdayDialog.svelte';
 
-describe('BirthdayDialog (PD-5)', () => {
+describe('BirthdayDialog (PD-5, FL-864)', () => {
   beforeAll(async () => {
     await init({ fallbackLocale: 'en-US' });
     register('en-US', () => import('$i18n/en.json'));
@@ -38,9 +38,56 @@ describe('BirthdayDialog (PD-5)', () => {
     const onSaved = vi.fn();
     render(BirthdayDialog, { person, open: true, onSaved });
 
-    await fireEvent.click(screen.getByRole('button', { name: 'Remove' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Remove dates' }));
 
-    await waitFor(() => expect(onSaved).toHaveBeenCalledOnce());
+    await waitFor(() => expect(onSaved).toHaveBeenCalledWith(expect.anything(), false));
     expect(sdkMock.updatePerson).toHaveBeenCalledWith({ id: person.id, personUpdateDto: { birthDate: null } });
+  });
+
+  it('adds a date of passing and sends only that date', async () => {
+    const person = personFactory.build({ name: 'Ada', birthDate: '1938-04-02', deathDate: null });
+    sdkMock.updatePerson.mockResolvedValue({ ...person, deathDate: '2021-10-09' });
+    const onSaved = vi.fn();
+    render(BirthdayDialog, { person, open: true, onSaved });
+
+    expect(screen.queryByLabelText('Date of passing (optional)')).toBeNull();
+    await fireEvent.click(screen.getByRole('button', { name: 'Add a date of passing' }));
+    const passing = screen.getByLabelText('Date of passing (optional)');
+
+    await fireEvent.input(passing, { target: { value: '1938-04-01' } });
+    expect(screen.getByText('The date of passing can’t be before the date of birth.')).toBeTruthy();
+    expect((screen.getByRole('button', { name: 'Save' }) as HTMLButtonElement).disabled).toBe(true);
+
+    await fireEvent.input(passing, { target: { value: '2021-10-09' } });
+    expect(screen.getByText(/Ada’s page shows 1938 – 2021 instead of an age/)).toBeTruthy();
+    await fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(onSaved).toHaveBeenCalledWith(expect.anything(), true));
+    expect(sdkMock.updatePerson).toHaveBeenCalledWith({ id: person.id, personUpdateDto: { deathDate: '2021-10-09' } });
+  });
+
+  it('takes the date of passing away again and keeps the date of birth', async () => {
+    const person = personFactory.build({ name: 'Ada', birthDate: '1938-04-02', deathDate: '2021-10-09' });
+    sdkMock.updatePerson.mockResolvedValue({ ...person, deathDate: null });
+    const onSaved = vi.fn();
+    render(BirthdayDialog, { person, open: true, onSaved });
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Remove date of passing' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(onSaved).toHaveBeenCalledWith(expect.anything(), true));
+    expect(sdkMock.updatePerson).toHaveBeenCalledWith({ id: person.id, personUpdateDto: { deathDate: null } });
+  });
+
+  it('does not save a half-typed date as a removal', async () => {
+    const person = personFactory.build({ name: 'Ada', birthDate: '1938-04-02', deathDate: '2021-10-09' });
+    render(BirthdayDialog, { person, open: true });
+
+    // A date field with a segment missing reports an empty value and `badInput`.
+    const passing = screen.getByLabelText('Date of passing (optional)');
+    Object.defineProperty(passing, 'validity', { configurable: true, value: { badInput: true } });
+    await fireEvent.input(passing, { target: { value: '' } });
+
+    expect((screen.getByRole('button', { name: 'Save' }) as HTMLButtonElement).disabled).toBe(true);
   });
 });

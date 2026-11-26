@@ -804,12 +804,12 @@
   <BirthdayDialog
     person={dialog.person}
     bind:open={dialogOpen}
-    onSaved={(updated, birthDate) => {
+    onSaved={(updated, hasDates) => {
       replacePerson(updated);
       announce(
-        birthDate
-          ? $t('frameleaf_people_birthday_saved_for', { values: { name: nameOf(updated) } })
-          : $t('frameleaf_people_birthday_removed_for', { values: { name: nameOf(updated) } }),
+        hasDates
+          ? $t('frameleaf_people_dates_saved_for', { values: { name: nameOf(updated) } })
+          : $t('frameleaf_people_dates_removed_for', { values: { name: nameOf(updated) } }),
       );
     }}
   />

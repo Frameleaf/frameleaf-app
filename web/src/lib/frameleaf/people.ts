@@ -4,6 +4,7 @@
  * every mutation through the existing `@frameleaf/sdk` person services
  * (`updatePerson`, `updatePeople`, `searchPerson`, `mergePerson`).
  */
+import type { Translations } from 'svelte-i18n';
 
 export interface NamedPerson {
   name: string;
@@ -83,6 +84,31 @@ export const ageInYears = (birthDate: string | null | undefined, now = new Date(
     age--;
   }
   return age >= 0 ? age : null;
+};
+
+/** A date problem as a message key, or null. Either date may be empty; `today` is an ISO day. */
+export const datesProblem = (birthDate: string, deathDate: string, today: string): Translations | null => {
+  const real = (value: string) => /^\d{4}-\d{2}-\d{2}$/.test(value) && value <= today;
+  if (birthDate && !real(birthDate)) {
+    return 'frameleaf_people_birthday_future';
+  }
+  if (deathDate && !real(deathDate)) {
+    return 'frameleaf_people_passing_future';
+  }
+  return birthDate && deathDate && deathDate < birthDate ? 'frameleaf_people_passing_before_birth' : null;
+};
+
+/** "1938 – 2021" once someone has passed (FL-864), the year alone without a birth date; null otherwise. */
+export const lifespan = (
+  birthDate: string | null | undefined,
+  deathDate: string | null | undefined,
+): { years: string; born: boolean } | null => {
+  const died = /^\d{4}/.exec(deathDate ?? '')?.[0];
+  if (!died) {
+    return null;
+  }
+  const born = /^\d{4}/.exec(birthDate ?? '')?.[0];
+  return { years: born ? `${born} – ${died}` : died, born: !!born };
 };
 
 export interface FaceBox {

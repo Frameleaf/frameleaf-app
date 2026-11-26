@@ -130,7 +130,11 @@
       </MenuItem>
       <MenuItem onSelect={onSetBirthday}>
         <Icon icon={mdiCakeVariantOutline} size="16" aria-hidden="true" />
-        <span>{person.birthDate ? $t('frameleaf_people_change_birthday') : $t('set_date_of_birth')}</span>
+        <span
+          >{person.birthDate || person.deathDate
+            ? $t('frameleaf_people_dates_change')
+            : $t('frameleaf_people_dates_add')}</span
+        >
       </MenuItem>
     </Menu>
   </div>
