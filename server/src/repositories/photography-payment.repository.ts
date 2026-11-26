@@ -42,12 +42,6 @@ export class PhotographyPaymentRepository {
       FROM photography_payment_link l WHERE l."ownerId"=${ownerId}::uuid ORDER BY l."createdAt" DESC`.execute(this.db);
     return rows;
   }
-  async link(id: string) {
-    const { rows } = await sql<PaymentLinkRow>`SELECT * FROM photography_payment_link WHERE id=${id}::uuid`.execute(
-      this.db,
-    );
-    return rows[0];
-  }
   async linkBySlug(slug: string) {
     const { rows } = await sql<PaymentLinkRow>`SELECT * FROM photography_payment_link WHERE slug=${slug}`.execute(
       this.db,
@@ -126,14 +120,6 @@ export class PhotographyPaymentRepository {
   }
   async setCheckout(id: string, checkoutId: string) {
     await sql`UPDATE photography_payment SET "checkoutId"=${checkoutId} WHERE id=${id}::uuid`.execute(this.db);
-  }
-  /** Whether someone started paying this link in the last `minutes` and hasn't finished or given up. */
-  async pendingSince(linkId: string, minutes: number) {
-    const { rows } = await sql<{ n: number }>`SELECT count(*)::int AS n FROM photography_payment
-      WHERE "linkId"=${linkId}::uuid AND status='pending' AND "createdAt" > now() - make_interval(mins => ${minutes})`.execute(
-      this.db,
-    );
-    return rows[0].n > 0;
   }
   /**
    * Moves a payment from one of `from` to `to`; `moved` is false when it was already elsewhere, so a replayed

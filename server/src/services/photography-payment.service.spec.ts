@@ -174,6 +174,9 @@ describe(PhotographyPaymentService.name, () => {
     await s.service.paymentEvent(s.event(payment, 'payment.expired'));
     await s.service.paymentEvent(s.event(payment, 'payment.refunded', { sessionId: null, paymentIntent: 'pi_other' }));
     expect(payment.status).toBe('paid');
+    // Stripe's refund event also fires for part of a payment, with the running total refunded.
+    await s.service.paymentEvent(s.event(payment, 'payment.refunded', { sessionId: null, amount: payment.amount - 1 }));
+    expect(payment.status).toBe('paid');
     await s.service.paymentEvent(s.event(payment, 'payment.refunded', { sessionId: null }));
     expect(payment.status).toBe('refunded');
   });

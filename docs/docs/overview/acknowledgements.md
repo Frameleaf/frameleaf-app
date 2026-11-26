@@ -73,6 +73,7 @@ Frameleaf is built on [Immich](https://github.com/immich-app/immich), the open-s
 | [Qwen2.5-VL Instruct 3B and 7B (photo descriptions)](https://huggingface.co/Qwen/Qwen2.5-VL-3B-Instruct)                                       | Qwen team, Alibaba Cloud; OpenVINO conversions by llmware                                            | Qwen Research License (3B, the default); Apache-2.0 (7B)                                                                         | downloaded         |
 | [Florence-2 (base, large; -ft) and Phi-3 / Phi-3.5 vision (photo descriptions)](https://huggingface.co/microsoft/Florence-2-base)              | Microsoft; native Florence conversions by florence-community; OpenVINO Phi conversions by OpenVINO   | MIT                                                                                                                              | downloaded         |
 | [NSFW image detection (ONNX)](https://huggingface.co/Falconsai/nsfw_image_detection)                                                           | Falconsai; ONNX conversion by onnx-community                                                         | Apache-2.0                                                                                                                       | downloaded         |
+| [llama.cpp](https://github.com/ggml-org/llama.cpp)                                                                                             | The ggml authors                                                                                     | MIT                                                                                                                              | bundled            |
 
 - **InsightFace face detection and recognition (buffalo_l, buffalo_m, buffalo_s, antelopev2):** buffalo_l is used under a commercial licence the owner obtained from InsightFace at no cost, in support of open source (FL-146, 2026-09-25). buffalo_m, buffalo_s and antelopev2 are provided under InsightFace’s model terms (non-commercial research only) and run for personal use by the server owner on their own server (legal review 2026-10-17, FL-445).
 - **NLLB-CLIP (base and large, SigLIP):** Non-commercial licence. Runs on this server, a home-network worker and Frameleaf Cloud. Basis: personal use by the user on their own server or a Frameleaf Cloud container (legal review 2026-10-17, FL-451).
@@ -87,8 +88,18 @@ Frameleaf is built on [Immich](https://github.com/immich-app/immich), the open-s
 | Name                                                                                                       | Author                                            | Licence                                          | How it reaches you |
 | ---------------------------------------------------------------------------------------------------------- | ------------------------------------------------- | ------------------------------------------------ | ------------------ |
 | [Landmark place pack (OpenStreetMap boundaries, Wikidata places)](https://www.openstreetmap.org/copyright) | OpenStreetMap contributors; Wikidata contributors | ODbL-1.0 (boundaries); CC0-1.0 (Wikidata fields) | bundled            |
+| [GeoNames (cities, regions, countries and their names in other languages)](https://www.geonames.org/)      | GeoNames                                          | CC-BY-4.0                                        | bundled            |
 
 - **Landmark place pack (OpenStreetMap boundaries, Wikidata places):** Place boundaries © OpenStreetMap contributors, available under the Open Database License (https://www.openstreetmap.org/copyright). The pack is a derivative database under the same licence; server/base-image/geodata/landmarks/build.mjs is the method that produces it. Place names, identifiers, kinds and ranks are from Wikidata (CC0).
+- **GeoNames (cities, regions, countries and their names in other languages):** City, region and country data © GeoNames (https://www.geonames.org/), licensed under CC BY 4.0. The places used to name where a photo was taken ship with the server. Their names in the app's other languages are a selection from GeoNames' alternate names, made by server/bin/build-place-names-pack.mjs, which the server downloads as one file.
+
+## Album and collection icons
+
+| Name                                                                  | Author                                   | Licence    | How it reaches you |
+| --------------------------------------------------------------------- | ---------------------------------------- | ---------- | ------------------ |
+| [Tabler Icons](https://github.com/tabler/tabler-icons)                | Paweł Kuna and Tabler Icons contributors | MIT        | bundled            |
+| [Material Symbols](https://github.com/google/material-design-icons)   | Google                                   | Apache-2.0 | bundled            |
+| [IconOven (Stroke style, selected icons)](https://iconoven.com/icons) | Appic Marketing                          | MIT        | bundled            |
 
 ## Fonts (Studio titles)
 
@@ -350,8 +361,10 @@ arbitrarily-targeted use).
 - [`licenses/texts/cc-by-nc-4.0.txt`](https://github.com/Frameleaf/frameleaf-app/blob/main/licenses/texts/cc-by-nc-4.0.txt)
 - [`licenses/texts/dotlottie-web-mit.txt`](https://github.com/Frameleaf/frameleaf-app/blob/main/licenses/texts/dotlottie-web-mit.txt)
 - [`licenses/texts/fairseq-m2m100-mit.txt`](https://github.com/Frameleaf/frameleaf-app/blob/main/licenses/texts/fairseq-m2m100-mit.txt)
+- [`licenses/texts/iconoven-mit.txt`](https://github.com/Frameleaf/frameleaf-app/blob/main/licenses/texts/iconoven-mit.txt)
 - [`licenses/texts/insightface-model-licence.txt`](https://github.com/Frameleaf/frameleaf-app/blob/main/licenses/texts/insightface-model-licence.txt)
 - [`licenses/texts/lfm-open-license-1.0.txt`](https://github.com/Frameleaf/frameleaf-app/blob/main/licenses/texts/lfm-open-license-1.0.txt)
+- [`licenses/texts/llama-cpp-mit.txt`](https://github.com/Frameleaf/frameleaf-app/blob/main/licenses/texts/llama-cpp-mit.txt)
 - [`licenses/texts/microsoft-mit.txt`](https://github.com/Frameleaf/frameleaf-app/blob/main/licenses/texts/microsoft-mit.txt)
 - [`licenses/texts/multilingual-clip-mit.txt`](https://github.com/Frameleaf/frameleaf-app/blob/main/licenses/texts/multilingual-clip-mit.txt)
 - [`licenses/texts/odbl-1.0.txt`](https://github.com/Frameleaf/frameleaf-app/blob/main/licenses/texts/odbl-1.0.txt)
@@ -363,6 +376,7 @@ arbitrarily-targeted use).
 - [`licenses/texts/practical-rife-mit.txt`](https://github.com/Frameleaf/frameleaf-app/blob/main/licenses/texts/practical-rife-mit.txt)
 - [`licenses/texts/qwen-research-license.txt`](https://github.com/Frameleaf/frameleaf-app/blob/main/licenses/texts/qwen-research-license.txt)
 - [`licenses/texts/supertonic-3-openrail-m.txt`](https://github.com/Frameleaf/frameleaf-app/blob/main/licenses/texts/supertonic-3-openrail-m.txt)
+- [`licenses/texts/tabler-icons-mit.txt`](https://github.com/Frameleaf/frameleaf-app/blob/main/licenses/texts/tabler-icons-mit.txt)
 - [`licenses/texts/ubuntu-font-licence-1.0.txt`](https://github.com/Frameleaf/frameleaf-app/blob/main/licenses/texts/ubuntu-font-licence-1.0.txt)
 - [`studio/notices/anime4k-license.txt`](https://github.com/Frameleaf/frameleaf-app/blob/main/studio/notices/anime4k-license.txt)
 - [`studio/notices/anime4k-websr.txt`](https://github.com/Frameleaf/frameleaf-app/blob/main/studio/notices/anime4k-websr.txt)

@@ -15,6 +15,10 @@ import {
   ICloudIdentityReuseAuthorityDto,
   ICloudIdentityReuseAuthorityStatusDto,
   ICloudInventoryResponseDto,
+  ICloudReviewAcceptDto,
+  ICloudReviewAcceptResponseDto,
+  ICloudReviewPageResponseDto,
+  ICloudReviewQueryDto,
   ICloudSyncActivityResponseDto,
 } from 'src/dtos/icloud-sync.dto.js';
 import {
@@ -60,7 +64,7 @@ import { ICloudRelationsService } from 'src/services/icloud-relations.service.js
 import { ICloudStagingService } from 'src/services/icloud-staging.service.js';
 import { ICloudWeeklyService } from 'src/services/icloud-weekly.service.js';
 import { LocalEffectsPendingError, MediaRecoveryService } from 'src/services/media-recovery.service.js';
-import { checkAccess, requireElevatedPermission } from 'src/utils/access.js';
+import { checkAccess } from 'src/utils/access.js';
 import { readAliasedEnv } from 'src/utils/env-aliases.js';
 import { maskAppleAccount } from 'src/utils/icloud-identity.js';
 import { hasWeeklyAuthorityInput, isPrivateICloudOperation } from 'src/utils/icloud-weekly.js';
@@ -85,6 +89,8 @@ const ICLOUD_MAX_WAIT_MS = 24 * 60 * 60_000;
 export const ICLOUD_MAX_IDLE_WAITS = 288;
 /** How long a run waits while its owner is signing in again, without spending an attempt. */
 export const ICLOUD_SIGN_IN_WAIT_MS = 30_000;
+/** Far longer than any sign-in step lasts (the bridge gives Apple 90 seconds): one this old was cut off. */
+export const ICLOUD_SIGN_IN_STALE_MS = 15 * 60_000;
 /** Runs one worker process drives at once, so one large first import does not hold up the rest. */
 const ICLOUD_PARALLEL_RUNS = 2;
 /** Connections one account may keep, matching the design's Add connection limit. */
@@ -96,7 +102,13 @@ export const ICLOUD_MAX_CONNECTIONS = 20;
 export const ICLOUD_RECORD_INTERVAL_MS = 5000;
 
 /** The run's transfers in flight, keyed by resource. A transfer never rejects here; its error waits in `error`. */
-type TransferPool = { running: Map<string, Promise<void>>; error?: { reason: unknown }; reconciledAt: number };
+type TransferPool = {
+  running: Map<string, Promise<void>>;
+  error?: { reason: unknown };
+  reconciledAt: number;
+  /** When the run last recorded progress; a step's wait ends at the next record, not a fresh interval later. */
+  recordedAt: number;
+};
 
 /** Resource statuses still owed work. Everything else is settled, one way or another. */
 const OPEN_RESOURCE_STATUSES = ['pending', 'retry', 'staging', 'validated', 'promoted', 'committed'];
@@ -110,6 +122,9 @@ const SIGN_IN_CODES = new Set([
   'icloud_sign_in_required',
   'icloud_disconnected',
 ]);
+
+/** A sign-in step that got no answer from Apple. */
+const TRANSIENT_AUTH_CODES = new Set(['rate_limited', 'icloud_transport_failed', 'icloud_transport_timeout']);
 
 type StepOutcome = 'more' | 'idle' | 'done';
 type Claim = { operation: MediaOperation; claimToken: string };
@@ -308,9 +323,6 @@ export class ICloudSyncService {
     }
     await this.staging.root();
     this.checkLimits(dto.config);
-    if (dto.config.includeHidden) {
-      requireElevatedPermission(auth);
-    }
     const created = await this.repository.create(auth.user.id, dto.label, dto.config, ICLOUD_MAX_CONNECTIONS);
     if (!created) {
       throw new BadRequestException('icloud_connection_limit');
@@ -336,9 +348,6 @@ export class ICloudSyncService {
     const merged = dto.config ? { ...connection.config, ...dto.config } : undefined;
     const config = merged && canonicalJson(merged) !== canonicalJson(connection.config) ? merged : undefined;
     if (config) {
-      if (config.includeHidden) {
-        requireElevatedPermission(auth);
-      }
       this.checkLimits(config);
     }
     await this.repository.update(id, auth.user.id, { ...dto, config });
@@ -358,7 +367,7 @@ export class ICloudSyncService {
     dto: ICloudAuthDto,
     secure: boolean,
   ): Promise<ICloudConnectionResponseDto> {
-    await this.owned(auth, id);
+    const before = await this.owned(auth, id);
     if (!secure) {
       throw new BadRequestException('icloud_requires_https');
     }
@@ -396,7 +405,19 @@ export class ICloudSyncService {
         );
       }
     } catch (error) {
-      await this.failure(id, auth.user.id, error);
+      if (error instanceof ICloudTransportError && TRANSIENT_AUTH_CODES.has(error.code)) {
+        // The step never got an answer, so the sign-in stands where it was: a waiting code or approval is not
+        // "connected", which is what the run back-off would make it.
+        const current = await this.repository.get(id, auth.user.id);
+        if (current?.state === 'authenticating') {
+          await this.repository.update(id, auth.user.id, {
+            state: before.state === 'authenticating' ? 'reauthentication-required' : before.state,
+            lastError: error.code,
+          });
+        }
+      } else {
+        await this.failure(id, auth.user.id, error);
+      }
     }
     return this.response((await this.repository.get(id, auth.user.id))!);
   }
@@ -568,6 +589,30 @@ export class ICloudSyncService {
     };
   }
 
+  /** One page of the photos waiting for review. Private ones only for an unlocked session. */
+  async reviewPage(auth: AuthDto, id: string, dto: ICloudReviewQueryDto): Promise<ICloudReviewPageResponseDto> {
+    await this.owned(auth, id);
+    return this.repository.reviewPage(id, auth.user.id, auth.session?.hasElevatedPermission === true, dto);
+  }
+
+  /** Settle chosen photos, or every one in view. Never deletes; a photo that needs its file again rejoins a run. */
+  async acceptReview(auth: AuthDto, id: string, dto: ICloudReviewAcceptDto): Promise<ICloudReviewAcceptResponseDto> {
+    const connection = await this.owned(auth, id);
+    const result = await this.repository.acceptReview(
+      id,
+      auth.user.id,
+      auth.session?.hasElevatedPermission === true,
+      dto,
+    );
+    if (result.requeued > 0) {
+      // A run already going picks them up; otherwise the next one does.
+      await this.queue(connection, 'manual').catch((error) =>
+        this.logger.warn(`iCloud connection ${id}: no run queued after review: ${message(error)}`),
+      );
+    }
+    return result;
+  }
+
   /* ------------------------------------------------------------------ */
   /* Schedule and worker                                                 */
   /* ------------------------------------------------------------------ */
@@ -728,9 +773,13 @@ export class ICloudSyncService {
       return;
     }
     if (connection.state === 'authenticating') {
-      // The owner is signing in again right now; the answer decides, not this claim.
-      await this.wait(claim, connectionId, ICLOUD_SIGN_IN_WAIT_MS, idleWaits);
-      return;
+      if (!(await this.repository.expireStaleSignIn(connectionId, ownerId, ICLOUD_SIGN_IN_STALE_MS))) {
+        // The owner is signing in again right now; the answer decides, not this claim.
+        await this.wait(claim, connectionId, ICLOUD_SIGN_IN_WAIT_MS, idleWaits);
+        return;
+      }
+      // The server stopped during that sign-in step: the owner is asked to sign in again, below.
+      connection = (await this.repository.get(connectionId, ownerId)) ?? connection;
     }
     if (connection.state === 'error' && (operation.autoRetries ?? 0) > 0 && connection.encryptedSession) {
       await this.repository.update(connectionId, ownerId, { state: 'connected', lastError: null });
@@ -769,11 +818,10 @@ export class ICloudSyncService {
         );
     }, ICLOUD_HEARTBEAT_MS);
     // FL-1724: transfers overlap steps, so every way out of the run waits for them first.
-    const pool: TransferPool = { running: new Map(), reconciledAt: 0 };
+    const pool: TransferPool = { running: new Map(), reconciledAt: 0, recordedAt: 0 };
     const drain = async () => {
       await Promise.all(pool.running.values());
     };
-    let recordedAt = 0;
     try {
       for (;;) {
         if (this.stopping) {
@@ -826,10 +874,10 @@ export class ICloudSyncService {
 
         idleWaits = 0;
         // ponytail: a cancel or pause is noticed within the record interval rather than after the next item
-        if (outcome === 'more' && Date.now() - recordedAt < ICLOUD_RECORD_INTERVAL_MS) {
+        if (outcome === 'more' && Date.now() - pool.recordedAt < ICLOUD_RECORD_INTERVAL_MS) {
           continue;
         }
-        recordedAt = Date.now();
+        pool.recordedAt = Date.now();
         const written = await this.record(claim, connectionId, outcome === 'done' ? 'complete' : 'syncing', 0, true);
         if (
           !written ||
@@ -852,6 +900,13 @@ export class ICloudSyncService {
           (await this.operations.complete(id, claimToken, { resultAssetId: null }))
         ) {
           this.logger.log(`iCloud sync run ${id} finished`);
+          // A sign-in that cleared the listing just before this run finished found it still active and queued
+          // nothing; the listing is gone, so the new account gets its run now (the sign-in's own queue covers later).
+          if (!(await this.repository.checkpoint(connectionId, 'inventory-complete'))?.complete) {
+            await this.queue(current, 'authenticated').catch((error) =>
+              this.logger.warn(`iCloud connection ${connectionId}: run not queued after sign-in: ${message(error)}`),
+            );
+          }
           return;
         }
         await this.acknowledgeCancel(claim, connectionId);
@@ -868,15 +923,27 @@ export class ICloudSyncService {
    * One unit of work. Every part of it is safe to repeat: leases, checkpoints and receipts decide.
    *
    * FL-1724: transfers are a rolling pool, not a batch. The step tops it up to the connection's
-   * concurrency and, once the inventory is listed, waits only for the first transfer to finish, so
-   * one large video never holds the other slots idle. While the inventory is still being listed it
+   * concurrency and, once the inventory is listed, waits only for the first transfer to finish (or the
+   * record interval, whichever comes first), so one large video never holds the other slots idle. While the inventory is still being listed it
    * does not wait at all: the next page is the step's work.
    */
   private async step(connection: ICloudConnection, claim: Claim, pool: TransferPool): Promise<StepOutcome> {
     const { id } = connection;
-    const inventoryComplete = await this.enumerate(connection);
+    // Listing takes the connection's session lock: once the inventory is complete, asking again would wait behind
+    // a slow download and stall the whole run. The checkpoint is read without the lock; run start, a sign-in and
+    // a settings change all clear it, so a new account or new settings are listed again.
+    const listed = await this.repository.checkpoint(id, 'inventory-complete').then((result) => !!result?.complete);
+    const inventoryComplete = listed || (await this.enumerate(connection));
     let claimed = 0;
-    while (pool.running.size < connection.config.concurrency) {
+    // At most one pool's worth of claims per step: transfers that settle faster than a claim must not keep the
+    // step admitting forever, past pause, cancel and error checks. Claims are slow at 100 (each takes a shared
+    // lock), so admission also stops once the next record is due; the next step fills the free slots.
+    while (
+      !pool.error &&
+      claimed < connection.config.concurrency &&
+      pool.running.size < connection.config.concurrency &&
+      (claimed === 0 || Date.now() < pool.recordedAt + ICLOUD_RECORD_INTERVAL_MS)
+    ) {
       const resource = await this.repository.claim(id, connection.config.stagingBytes);
       if (!resource) {
         break;
@@ -892,7 +959,15 @@ export class ICloudSyncService {
       );
     }
     if (inventoryComplete && pool.running.size > 0) {
-      await Promise.race(pool.running.values());
+      // ...or the record interval passes: a long download holding every slot must not freeze progress, nor
+      // keep a cancel or a pause from being noticed
+      const untilRecord = Math.max(0, pool.recordedAt + ICLOUD_RECORD_INTERVAL_MS - Date.now());
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      await Promise.race([
+        ...pool.running.values(),
+        new Promise<void>((resolve) => (timer = setTimeout(resolve, untilRecord))),
+      ]);
+      clearTimeout(timer);
     }
     if (pool.error) {
       const { reason } = pool.error;
@@ -1195,8 +1270,16 @@ export class ICloudSyncService {
     });
   }
 
-  private async finishResource(resource: ICloudResource, status: string, error: string | null = null) {
-    await this.repository.finish(resource, status, error, (current) => this.staging.cleanup(current));
+  private async finishResource(
+    resource: ICloudResource,
+    status: string,
+    error: string | null = null,
+    matchAssetIds?: string[],
+  ) {
+    const cleanup = (current: ICloudResource) => this.staging.cleanup(current);
+    await (matchAssetIds
+      ? this.repository.finish(resource, status, error, cleanup, matchAssetIds)
+      : this.repository.finish(resource, status, error, cleanup));
   }
 
   private async transfer(connection: ICloudConnection, resource: ICloudResource, claim: Claim): Promise<void> {
@@ -1206,7 +1289,8 @@ export class ICloudSyncService {
           resourceId: resource.id,
           leaseToken: resource.leaseToken!,
           ownerId: connection.ownerId,
-          includeHidden: connection.config.includeHidden,
+          // Owner 2026-11-22: a hidden iCloud photo is never held back; it imports Locked.
+          includeHidden: true,
         };
         const reused = await this.recovery.verifyMapped(authority);
         if (reused && reused.outcome !== 'reused') {
@@ -1255,7 +1339,7 @@ export class ICloudSyncService {
                 typeof resource.source.fileCreatedAt === 'string' ? new Date(resource.source.fileCreatedAt) : undefined,
             });
             if (!['imported', 'reused', 'repaired-missing', 'repaired-corrupt'].includes(result.outcome)) {
-              await this.finishResource(resource, result.outcome, result.reason ?? null);
+              await this.finishResource(resource, result.outcome, result.reason ?? null, result.matchAssetIds);
               return;
             }
           }

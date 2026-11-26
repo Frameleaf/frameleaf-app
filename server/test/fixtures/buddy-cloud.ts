@@ -283,6 +283,8 @@ export const startBuddyCloud = async () => {
     return refused();
   });
   protectedRoute('GET /api/v1/discovery', () => answer({ services: {}, cloneSuspected: false }));
+  // FL-952: every linked server asks for its household links on a timer; these two have none
+  protectedRoute('GET /v1/households/links', () => answer({ version: 1, links: [] }));
   protectedRoute('GET /v1/buddy/pairing', () => answer(pairing));
   protectedRoute('GET /v1/buddy/jwks', () => answer(jwks));
   protectedRoute('POST /v1/buddy/invitations', (request, instance) => {

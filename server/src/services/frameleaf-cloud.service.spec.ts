@@ -1101,6 +1101,27 @@ describe(FrameleafCloudService.name, () => {
     });
   });
 
+  describe('heartbeat cron tick', () => {
+    const tick = async () => {
+      await sut.onBootstrap();
+      const { onTick } = mocks.cron.create.mock.calls.find(([{ name }]) => name === 'frameleafHeartbeat')![0];
+      mocks.job.queue.mockClear();
+      await (onTick as () => Promise<void>)();
+      await new Promise((resolve) => setImmediate(resolve));
+    };
+
+    it('queues no check-in on a server that never linked', async () => {
+      await tick();
+      expect(mocks.job.queue).not.toHaveBeenCalledWith(expect.objectContaining({ name: JobName.FrameleafHeartbeat }));
+    });
+
+    it('queues a check-in while linked', async () => {
+      metadata.set(SystemMetadataKey.FrameleafCloudLink, { status: 'linked', cloudUrl: cloud.url, instanceId: 'x' });
+      await tick();
+      expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.FrameleafHeartbeat, data: {} });
+    });
+  });
+
   describe('headless link token (FL-155)', () => {
     it('links once with X-Frameleaf-Link-Token and never sends the same token again', async () => {
       serveLinking(() => ({ status: 400, body: { error: 'authorization_pending' } }));

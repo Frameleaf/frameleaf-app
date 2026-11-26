@@ -7,10 +7,9 @@ import z from 'zod';
 import type { DB } from 'src/schema/index.js';
 import type { DesktopModelProfile } from 'src/utils/desktop-model-catalogue.js';
 import { OnEvent } from 'src/decorators.js';
-import { MlDestinationKind, MlWorkload, QueueName } from 'src/enum.js';
+import { MlDestinationKind, MlWorkload } from 'src/enum.js';
 import { afterJobCommit, deferJobAdoption, jobSignal, queueExecution } from 'src/queue/context.js';
 import { deferJobUntilDependency } from 'src/queue/dependency.js';
-import { setDesktopQueueCapacity } from 'src/queue/store.js';
 import { QUEUE_TIMING } from 'src/queue/types.js';
 import {
   type DesktopClipIndexBinding,
@@ -32,7 +31,9 @@ import { MlDestinationRepository } from 'src/repositories/ml-destination.reposit
 import { DesktopAssistancePolicyService } from 'src/services/desktop-assistance-policy.service.js';
 import { assertAssetSource } from 'src/utils/asset-source-authority.js';
 import { parseBoundClipResult } from 'src/utils/clip-embedding.js';
+import { parseBoundDescriptionResult } from 'src/utils/description-result.js';
 import { desktopAuthorityFor, householdDevices } from 'src/utils/desktop-assistance-policy.js';
+import { descriptionEntries, desktopDescriptionProfile } from 'src/utils/desktop-description.js';
 import { desktopFaceProfile, faceEntries } from 'src/utils/desktop-face.js';
 import {
   type DesktopMlDisclosure,
@@ -47,18 +48,8 @@ import { resolveEndpoint } from 'src/utils/ml-destination.js';
 import { canonicalJson } from 'src/utils/object.js';
 import { parseBoundOcrResult } from 'src/utils/ocr-result.js';
 
-/** The queues desktops can work, in the order a free desktop is counted for them, and the work each does. */
-const QUEUE_WORKLOADS: ReadonlyArray<[string, MlWorkload]> = [
-  [QueueName.SmartSearch, MlWorkload.Clip],
-  [QueueName.FaceDetection, MlWorkload.Face],
-  [QueueName.Ocr, MlWorkload.Ocr],
-];
-const CAPACITY_FRESH_MS = 2000;
-
 @Injectable()
 export class DesktopMlService {
-  private capacity?: { at: number; value: Promise<Record<string, number>> };
-
   constructor(
     private repository: DesktopMlRepository,
     private index: DesktopClipIndexRepository,
@@ -71,37 +62,11 @@ export class DesktopMlService {
   onBootstrap() {
     if (!this.machineLearning) throw new Error('desktop_pool_authority_unavailable');
     this.machineLearning.setDesktopPoolSelector(this.selectBackgroundPool.bind(this));
-    setDesktopQueueCapacity(this.queueCapacity.bind(this));
   }
 
   @OnEvent({ name: 'AppShutdown' })
   onShutdown() {
     this.machineLearning?.setDesktopPoolSelector(null);
-    setDesktopQueueCapacity(null);
-  }
-
-  /**
-   * How many extra jobs `queue` may start for desktops now, on top of the administrator's concurrency.
-   * A queue gets none unless its work would go to desktops first (the first place in its processing order
-   * that is available now is the desktops), so with this server first and its AI answering, this server's
-   * AI never runs more jobs than the administrator set. Read at most every two seconds for all queues.
-   */
-  async queueCapacity(queue: string): Promise<number> {
-    const now = performance.now();
-    if (!this.capacity || now - this.capacity.at > CAPACITY_FRESH_MS)
-      this.capacity = { at: now, value: this.countCapacity() };
-    return (await this.capacity.value)[queue] ?? 0;
-  }
-
-  private async countCapacity(): Promise<Record<string, number>> {
-    if (!this.routes || !this.machineLearning) return {};
-    const plans = await this.routes.resolveRoutes(QUEUE_WORKLOADS.map(([, workload]) => workload));
-    const scopes: Record<string, string[]> = {};
-    for (const [queue, workload] of QUEUE_WORKLOADS) {
-      const first = plans.get(workload)?.find((candidate) => candidate.available);
-      scopes[queue] = first?.desktopPool ? await this.machineLearning.desktopModelKeys(workload) : [];
-    }
-    return this.repository.helperCapacity(scopes);
   }
 
   async selectBackgroundPool(selection: MlSelection, options: DesktopPoolOptions): Promise<MlSelection> {
@@ -109,7 +74,10 @@ export class DesktopMlService {
     const context = queueExecution.getStore();
     if (
       !context ||
-      ![MlWorkload.Clip, MlWorkload.Ocr, MlWorkload.Face].includes(selection.workload) ||
+      !(
+        [MlWorkload.Clip, MlWorkload.Ocr, MlWorkload.Face].includes(selection.workload) ||
+        (selection.workload === MlWorkload.Enrichment && options.description)
+      ) ||
       ![MlDestinationKind.Local, MlDestinationKind.Lan].includes(selection.kind) ||
       selection.endpoint.cloud
     )
@@ -170,6 +138,33 @@ export class DesktopMlService {
           modelName: options.modelName,
           modelKey: profile.modelKey,
           face: structuredClone(options.face),
+          job: { id: context.claim.id, token: context.claim.token },
+        },
+      });
+    }
+    if (selection.workload === MlWorkload.Enrichment) {
+      let profile: DesktopModelProfile;
+      try {
+        profile = desktopDescriptionProfile(options.description!.modelName);
+      } catch {
+        // The configured model has no desktop build: the destination itself describes the photo.
+        return selection;
+      }
+      if (!(await ready(profile.modelKey))) return selection;
+      return this.selectImagePool(selection, {
+        ownerId,
+        profile,
+        assertAuthority,
+        disclosure: {
+          version: 5,
+          workload: 'description',
+          source: source.snapshot,
+          policyRevision: account.revisionId,
+          destinationId: selection.destinationId,
+          kind: selection.kind as MlDestinationKind.Local | MlDestinationKind.Lan,
+          endpointSha256: desktopEndpointDigest(selection.endpoint),
+          modelName: options.modelName,
+          modelKey: profile.modelKey,
           job: { id: context.claim.id, token: context.claim.token },
         },
       });
@@ -417,6 +412,7 @@ export class DesktopMlService {
       selection.desktopFace ||
       selection.desktopOcr ||
       selection.desktopClip ||
+      selection.desktopDescription ||
       typeof selection.endpoint.assertAuthority !== 'function'
     )
       throw new Error('desktop_pool_selection_invalid');
@@ -440,10 +436,16 @@ export class DesktopMlService {
       await endpoint.assertAuthority!();
       context.signal.throwIfAborted();
     };
+    const hook =
+      profile.workload === 'face'
+        ? 'desktopFace'
+        : profile.workload === 'description'
+          ? 'desktopDescription'
+          : 'desktopOcr';
     return Object.freeze({
       ...selection,
       endpoint,
-      [profile.workload === 'face' ? 'desktopFace' : 'desktopOcr']: async (payload: ModelPayload, entries: unknown) => {
+      [hook]: async (payload: ModelPayload, entries: unknown) => {
         if (
           queueExecution.getStore() !== context ||
           !('imagePath' in payload) ||
@@ -467,7 +469,11 @@ export class DesktopMlService {
           },
           assertAuthority,
           decodeResult: (value) =>
-            profile.workload === 'face' ? parseBoundFaceResult(value) : parseBoundOcrResult(value),
+            profile.workload === 'face'
+              ? parseBoundFaceResult(value)
+              : profile.workload === 'description'
+                ? parseBoundDescriptionResult(value)
+                : parseBoundOcrResult(value),
           signal: context.signal,
         });
       },
@@ -495,41 +501,60 @@ export class DesktopMlService {
         throw new Error('desktop_pool_destination_changed');
       const selection = { destinationId: destination.id, kind: destination.kind, endpoint };
       await routes.assertRecoveryAuthority(destination);
-      if (authority.version === 4 || authority.version === 3) {
-        await routes.assertDesktopDestination(selection, tx, MlWorkload.Face);
-        const profile = desktopFaceProfile(authority.face, authority.modelKey);
-        if (
-          task.modelKey !== authority.modelKey ||
-          profile.modelKey !== task.modelKey ||
-          authority.modelName !== authority.face.modelName ||
-          canonicalJson(task.config) !== canonicalJson(faceEntries(authority.face))
-        )
-          throw new Error('desktop_pool_profile_changed');
-        await this.machineLearning.assertDesktopFaceConfig(selection, profile.spec.entries, tx, authority.face);
-        // FL-1058: a guest selfie has no library photo or queued job; its request discards the task when done.
-        if (authority.version === 4) return;
-      } else if (authority.version === 2) {
-        await routes.assertDesktopDestination(selection, tx, MlWorkload.Ocr);
-        const profile = desktopOcrProfile(authority.ocr, authority.modelKey);
-        if (
-          task.modelKey !== authority.modelKey ||
-          profile.modelKey !== task.modelKey ||
-          authority.modelName !== authority.ocr.modelName ||
-          canonicalJson(task.config) !== canonicalJson(ocrEntries(authority.ocr))
-        )
-          throw new Error('desktop_pool_profile_changed');
-        await this.machineLearning.assertDesktopOcrConfig(selection, profile.spec.entries, tx, authority.ocr);
-      } else {
-        await routes.assertDesktopDestination(selection, tx);
-        await this.machineLearning.assertDesktopPoolConfig(selection, authority.modelName, tx);
-        const binding = await this.index.getActive(tx);
-        if (
-          !binding ||
-          binding.revisionId !== authority.indexRevision ||
-          binding.space.spaceKey !== authority.spaceKey ||
-          ![binding.space.visualModelKey, ...binding.space.textModelKeys].includes(task.modelKey)
-        )
-          throw new Error('desktop_clip_index_changed');
+      switch (authority.version) {
+        case 3:
+        case 4: {
+          await routes.assertDesktopDestination(selection, tx, MlWorkload.Face);
+          const profile = desktopFaceProfile(authority.face, authority.modelKey);
+          if (
+            task.modelKey !== authority.modelKey ||
+            profile.modelKey !== task.modelKey ||
+            authority.modelName !== authority.face.modelName ||
+            canonicalJson(task.config) !== canonicalJson(faceEntries(authority.face))
+          )
+            throw new Error('desktop_pool_profile_changed');
+          await this.machineLearning.assertDesktopFaceConfig(selection, profile.spec.entries, tx, authority.face);
+          // FL-1058: a guest selfie has no library photo or queued job; its request discards the task when done.
+          if (authority.version === 4) return;
+          break;
+        }
+        case 5: {
+          await routes.assertDesktopDestination(selection, tx, MlWorkload.Enrichment);
+          const profile = desktopDescriptionProfile(authority.modelName, authority.modelKey);
+          if (
+            task.modelKey !== authority.modelKey ||
+            profile.modelKey !== task.modelKey ||
+            canonicalJson(task.config) !== canonicalJson(descriptionEntries(profile.modelName))
+          )
+            throw new Error('desktop_pool_profile_changed');
+          await this.machineLearning.assertDesktopDescriptionConfig(selection, authority.modelName, tx);
+          break;
+        }
+        case 2: {
+          await routes.assertDesktopDestination(selection, tx, MlWorkload.Ocr);
+          const profile = desktopOcrProfile(authority.ocr, authority.modelKey);
+          if (
+            task.modelKey !== authority.modelKey ||
+            profile.modelKey !== task.modelKey ||
+            authority.modelName !== authority.ocr.modelName ||
+            canonicalJson(task.config) !== canonicalJson(ocrEntries(authority.ocr))
+          )
+            throw new Error('desktop_pool_profile_changed');
+          await this.machineLearning.assertDesktopOcrConfig(selection, profile.spec.entries, tx, authority.ocr);
+          break;
+        }
+        default: {
+          await routes.assertDesktopDestination(selection, tx);
+          await this.machineLearning.assertDesktopPoolConfig(selection, authority.modelName, tx);
+          const binding = await this.index.getActive(tx);
+          if (
+            !binding ||
+            binding.revisionId !== authority.indexRevision ||
+            binding.space.spaceKey !== authority.spaceKey ||
+            ![binding.space.visualModelKey, ...binding.space.textModelKeys].includes(task.modelKey)
+          )
+            throw new Error('desktop_clip_index_changed');
+        }
       }
       await assertAssetSource(tx, authority.source);
       const { rows } = await sql`SELECT id FROM job WHERE id=${authority.job.id}::uuid

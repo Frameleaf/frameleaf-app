@@ -69,7 +69,6 @@ export const ASSET_UPLOAD_LIMITS = {
   maxAge: 86_400,
   /** FL-797: an upload that is receiving bytes stays resumable this long after its latest bytes (sliding). */
   activeMaxAge: 7 * 86_400,
-  maxActive: 4,
   maxParallelParts: 6,
 };
 /** FL-797: the expiry an upload gets each time bytes are committed; untouched uploads keep the 24-hour one. */

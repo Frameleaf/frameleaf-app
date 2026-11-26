@@ -154,8 +154,10 @@ with
                 )::int
               from
                 asset
+              where
+                "ownerId" = any ($3::uuid[])
             ),
-            $3
+            $4
           ) as "year"
       )
     select
@@ -170,9 +172,9 @@ with
           "asset"
           inner join "asset_job_status" on "asset"."id" = "asset_job_status"."assetId"
         where
-          "asset"."libraryScope" in ($4, $5)
+          "asset"."libraryScope" in ($5, $6)
           and (asset."localDateTime" at time zone 'UTC')::date = today.date
-          and "asset"."ownerId" = any ($6::uuid[])
+          and "asset"."ownerId" = any ($7::uuid[])
           and "asset"."visibility" = 'timeline'
           and exists (
             select
@@ -180,7 +182,7 @@ with
               "asset_file"
             where
               "assetId" = "asset"."id"
-              and "asset_file"."type" = $7
+              and "asset_file"."type" = $8
           )
           and "asset"."deletedAt" is null
           and (
@@ -200,13 +202,14 @@ with
               false
             )
           )
+          and "asset"."dateAccuracy" is null
         order by
           (asset."localDateTime" at time zone 'UTC')::date desc
         limit
-          $8
+          $9
       ) as "a" on true
     where
-      date_part('month', today.date) = $9
+      date_part('month', today.date) = $10
   )
 select
   date_part(
@@ -439,6 +442,14 @@ from
   "asset"
 where
   "livePhotoVideoId" = $1::uuid
+
+-- AssetRepository.getPrintBackIds
+select
+  "backAssetId"
+from
+  "asset_print_back"
+where
+  "backAssetId" in ($1)
 
 -- AssetRepository.getFileSamples
 select
@@ -884,7 +895,17 @@ with
         f_unaccent ("asset_exif"."make") ilike (
           '%' || regexp_replace(f_unaccent ($3), $4, $5, 'g') || '%'
         )
-        and "asset"."fileCreatedAt" >= $6
+        and (
+          "asset"."fileCreatedAt" >= $6
+          or (
+            asset."dateAccuracy" is not null
+            and "asset"."fileCreatedAt" > $7
+            and "asset"."fileCreatedAt" + case asset."dateAccuracy"
+              when 'decade' then interval '10 years'
+              else interval '1 year'
+            end > $8
+          )
+        )
         and exists (
           select
             "asset_face"."assetId"
@@ -893,19 +914,19 @@ with
           where
             "asset_face"."assetId" = "asset"."id"
             and "asset_face"."deletedAt" is null
-            and "asset_face"."isVisible" = $7
-            and "asset_face"."personGroupId" = any ($8::uuid[])
+            and "asset_face"."isVisible" = $9
+            and "asset_face"."personGroupId" = any ($10::uuid[])
           group by
             "asset_face"."assetId"
           having
-            count(distinct "asset_face"."personGroupId") = $9
+            count(distinct "asset_face"."personGroupId") = $11
         )
         and (
-          "asset_exif"."city" = $10
-          or "asset_exif"."rating" >= $11
+          "asset_exif"."city" = $12
+          or "asset_exif"."rating" >= $13
         )
       )
-      and "asset"."type" = $12
+      and "asset"."type" = $14
       and not exists (
         select
           1
@@ -913,7 +934,7 @@ with
           asset_metadata
         where
           asset_metadata."assetId" = "asset"."id"
-          and asset_metadata.key = $13
+          and asset_metadata.key = $15
           and asset_metadata.value #>> '{description,status}' = 'success'
       )
       and (
@@ -953,7 +974,17 @@ with
         f_unaccent ("asset_exif"."make") ilike (
           '%' || regexp_replace(f_unaccent ($3), $4, $5, 'g') || '%'
         )
-        and "asset"."fileCreatedAt" >= $6
+        and (
+          "asset"."fileCreatedAt" >= $6
+          or (
+            asset."dateAccuracy" is not null
+            and "asset"."fileCreatedAt" > $7
+            and "asset"."fileCreatedAt" + case asset."dateAccuracy"
+              when 'decade' then interval '10 years'
+              else interval '1 year'
+            end > $8
+          )
+        )
         and exists (
           select
             "asset_face"."assetId"
@@ -962,44 +993,44 @@ with
           where
             "asset_face"."assetId" = "asset"."id"
             and "asset_face"."deletedAt" is null
-            and "asset_face"."isVisible" = $7
-            and "asset_face"."personGroupId" = any ($8::uuid[])
+            and "asset_face"."isVisible" = $9
+            and "asset_face"."personGroupId" = any ($10::uuid[])
           group by
             "asset_face"."assetId"
           having
-            count(distinct "asset_face"."personGroupId") = $9
+            count(distinct "asset_face"."personGroupId") = $11
         )
         and (
-          "asset_exif"."city" = $10
-          or "asset_exif"."rating" >= $11
+          "asset_exif"."city" = $12
+          or "asset_exif"."rating" >= $13
         )
       )
       and earth_box (
-        ll_to_earth_public ($12, $13),
+        ll_to_earth_public ($14, $15),
         greatest(
           earth_distance (
-            ll_to_earth_public ($14, $15),
-            ll_to_earth_public ($16, $17)
+            ll_to_earth_public ($16, $17),
+            ll_to_earth_public ($18, $19)
           ),
           earth_distance (
-            ll_to_earth_public ($18, $19),
-            ll_to_earth_public ($20, $21)
+            ll_to_earth_public ($20, $21),
+            ll_to_earth_public ($22, $23)
           ),
           earth_distance (
-            ll_to_earth_public ($22, $23),
-            ll_to_earth_public ($24, $25)
+            ll_to_earth_public ($24, $25),
+            ll_to_earth_public ($26, $27)
           ),
           earth_distance (
-            ll_to_earth_public ($26, $27),
-            ll_to_earth_public ($28, $29)
+            ll_to_earth_public ($28, $29),
+            ll_to_earth_public ($30, $31)
           )
         )
       ) @> ll_to_earth_public (asset_exif.latitude, asset_exif.longitude)
-      and "asset_exif"."latitude" >= $30
-      and "asset_exif"."latitude" <= $31
-      and "asset_exif"."longitude" >= $32
-      and "asset_exif"."longitude" <= $33
-      and "asset"."type" = $34
+      and "asset_exif"."latitude" >= $32
+      and "asset_exif"."latitude" <= $33
+      and "asset_exif"."longitude" >= $34
+      and "asset_exif"."longitude" <= $35
+      and "asset"."type" = $36
       and not exists (
         select
           1
@@ -1007,7 +1038,7 @@ with
           asset_metadata
         where
           asset_metadata."assetId" = "asset"."id"
-          and asset_metadata.key = $35
+          and asset_metadata.key = $37
           and asset_metadata.value #>> '{description,status}' = 'success'
       )
       and (
@@ -1192,6 +1223,7 @@ with
       asset.type = 'IMAGE' as "isImage",
       asset."deletedAt" is not null as "isTrashed",
       "asset"."isOffline",
+      "asset"."dateAccuracy",
       "asset"."livePhotoVideoId",
       extract(
         epoch
@@ -1298,6 +1330,9 @@ with
       coalesce(array_agg("isImage"), '{}') as "isImage",
       coalesce(array_agg("isTrashed"), '{}') as "isTrashed",
       coalesce(array_agg("isOffline"), '{}') as "isOffline",
+      case
+        when count("dateAccuracy") > 0 then array_agg("dateAccuracy")
+      end as "dateAccuracy",
       coalesce(array_agg("livePhotoVideoId"), '{}') as "livePhotoVideoId",
       coalesce(array_agg("fileCreatedAt"), '{}') as "fileCreatedAt",
       coalesce(array_agg("createdAt"), '{}') as "createdAt",
@@ -1361,6 +1396,7 @@ with
       asset.type = 'IMAGE' as "isImage",
       asset."deletedAt" is not null as "isTrashed",
       "asset"."isOffline",
+      "asset"."dateAccuracy",
       "asset"."livePhotoVideoId",
       extract(
         epoch
@@ -1442,7 +1478,17 @@ with
         f_unaccent ("asset_exif"."make") ilike (
           '%' || regexp_replace(f_unaccent ($6), $7, $8, 'g') || '%'
         )
-        and "asset"."fileCreatedAt" >= $9
+        and (
+          "asset"."fileCreatedAt" >= $9
+          or (
+            asset."dateAccuracy" is not null
+            and "asset"."fileCreatedAt" > $10
+            and "asset"."fileCreatedAt" + case asset."dateAccuracy"
+              when 'decade' then interval '10 years'
+              else interval '1 year'
+            end > $11
+          )
+        )
         and exists (
           select
             "asset_face"."assetId"
@@ -1451,19 +1497,19 @@ with
           where
             "asset_face"."assetId" = "asset"."id"
             and "asset_face"."deletedAt" is null
-            and "asset_face"."isVisible" = $10
-            and "asset_face"."personGroupId" = any ($11::uuid[])
+            and "asset_face"."isVisible" = $12
+            and "asset_face"."personGroupId" = any ($13::uuid[])
           group by
             "asset_face"."assetId"
           having
-            count(distinct "asset_face"."personGroupId") = $12
+            count(distinct "asset_face"."personGroupId") = $14
         )
         and (
-          "asset_exif"."city" = $13
-          or "asset_exif"."rating" >= $14
+          "asset_exif"."city" = $15
+          or "asset_exif"."rating" >= $16
         )
       )
-      and "asset"."type" = $15
+      and "asset"."type" = $17
       and not exists (
         select
           1
@@ -1471,10 +1517,10 @@ with
           asset_metadata
         where
           asset_metadata."assetId" = "asset"."id"
-          and asset_metadata.key = $16
+          and asset_metadata.key = $18
           and asset_metadata.value #>> '{description,status}' = 'success'
       )
-      and date_trunc('MONTH', "localDateTime" AT TIME ZONE 'UTC') AT TIME ZONE 'UTC' = $17
+      and date_trunc('MONTH', "localDateTime" AT TIME ZONE 'UTC') AT TIME ZONE 'UTC' = $19
       and not exists (
         select
         from
@@ -1503,6 +1549,9 @@ with
       coalesce(array_agg("isImage"), '{}') as "isImage",
       coalesce(array_agg("isTrashed"), '{}') as "isTrashed",
       coalesce(array_agg("isOffline"), '{}') as "isOffline",
+      case
+        when count("dateAccuracy") > 0 then array_agg("dateAccuracy")
+      end as "dateAccuracy",
       coalesce(array_agg("livePhotoVideoId"), '{}') as "livePhotoVideoId",
       coalesce(array_agg("fileCreatedAt"), '{}') as "fileCreatedAt",
       coalesce(array_agg("createdAt"), '{}') as "createdAt",
@@ -1566,6 +1615,7 @@ with
       asset.type = 'IMAGE' as "isImage",
       asset."deletedAt" is not null as "isTrashed",
       "asset"."isOffline",
+      "asset"."dateAccuracy",
       "asset"."livePhotoVideoId",
       extract(
         epoch
@@ -1682,6 +1732,9 @@ with
       coalesce(array_agg("isImage"), '{}') as "isImage",
       coalesce(array_agg("isTrashed"), '{}') as "isTrashed",
       coalesce(array_agg("isOffline"), '{}') as "isOffline",
+      case
+        when count("dateAccuracy") > 0 then array_agg("dateAccuracy")
+      end as "dateAccuracy",
       coalesce(array_agg("livePhotoVideoId"), '{}') as "livePhotoVideoId",
       coalesce(array_agg("fileCreatedAt"), '{}') as "fileCreatedAt",
       coalesce(array_agg("createdAt"), '{}') as "createdAt",

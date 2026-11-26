@@ -553,6 +553,28 @@ class TestMedia:
 
         assert error.value.unsupported
 
+    def test_cut_video_segment_stops_one_frame_past_the_budget(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        calls: list[list[str]] = []
+        monkeypatch.setattr(media, "_run", lambda args, **_: calls.append(args))
+        video = {"codec_type": "video", "width": 8, "height": 6, "r_frame_rate": "25/1", "duration": "1"}
+        probe = media.parse_probe({"streams": [video], "format": {}})
+
+        media.cut_video_segment(
+            tmp_path / "in.mp4", tmp_path / "out.mp4", probe, start_ms=0, end_ms=500, timeout=1, max_frames=10
+        )
+
+        assert calls[0][calls[0].index("-frames:v") + 1] == "11"
+
+    @pytest.mark.parametrize("format_name", ["hls", "concat", "dash"])
+    def test_parse_probe_refuses_playlists(self, format_name: str) -> None:
+        video = {"codec_type": "video", "width": 8, "height": 6, "r_frame_rate": "25/1", "duration": "1"}
+        with pytest.raises(media.MediaError) as error:
+            media.parse_probe({"streams": [video], "format": {"format_name": format_name, "duration": "1"}})
+
+        assert error.value.unsupported
+
     def test_validate_output_frames_accepts_matching_frames(self, tmp_path: Path) -> None:
         source = write_frames(tmp_path / "source", 3, (8, 6))
         output = write_frames(tmp_path / "output", 3, (32, 24))
@@ -867,6 +889,27 @@ class TestWorkerApp:
         assert models["workloads"] == []
         assert models["configurationProblems"]
 
+    def test_asked_for_refreshes_run_at_most_once_per_interval(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        calls: list[object] = []
+        original = RestorationRegistry.refresh
+
+        def refresh(self: RestorationRegistry) -> Any:
+            calls.append(self)
+            return original(self)
+
+        monkeypatch.setattr(RestorationRegistry, "refresh", refresh)
+        client = self.client(tmp_path)
+
+        for _ in range(3):
+            assert client.get("/restoration/models", params={"refresh": "true"}).status_code == 200
+        assert len(calls) == 1
+
+        monkeypatch.setattr("frameleaf_ml.video_restoration.app.REFRESH_INTERVAL_S", 0)
+        client.get("/restoration/models", params={"refresh": "true"})
+        assert len(calls) == 2
+
     def test_requires_the_bearer_token_except_for_health(self, tmp_path: Path) -> None:
         client = self.client(tmp_path, token="worker-token")
 
@@ -940,7 +983,9 @@ class TestWorkerApp:
         from frameleaf_ml.video_restoration.app import UPLOAD_BYTES_PER_PIXEL
 
         candidate = SimpleNamespace(maxFrames=240, maxInputLongEdge=3840)
-        registry = SimpleNamespace(report=lambda: SimpleNamespace(models=[]), candidate_limits=lambda: [candidate])
+        registry = SimpleNamespace(
+            report=lambda: SimpleNamespace(models=[], photoModels=[]), candidate_limits=lambda: [candidate]
+        )
         expected = 240 * 3840**2 * UPLOAD_BYTES_PER_PIXEL
         assert upload_limit(registry) == max(MIN_UPLOAD_BYTES, expected)  # type: ignore[arg-type]
         assert upload_limit(registry) > MIN_UPLOAD_BYTES  # type: ignore[arg-type]

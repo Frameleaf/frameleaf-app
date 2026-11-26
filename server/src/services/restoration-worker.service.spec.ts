@@ -183,6 +183,7 @@ describe(RestorationWorkerService.name, () => {
       getForOwner: vi.fn(),
       listByAsset: vi.fn(),
       getCurrent: vi.fn(),
+      hasBatchItem: vi.fn().mockResolvedValue(false),
       listRestoredForPlayback: vi.fn().mockResolvedValue([]),
       update: vi
         .fn()

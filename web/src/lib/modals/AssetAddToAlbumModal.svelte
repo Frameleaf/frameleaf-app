@@ -1,7 +1,6 @@
 <script lang="ts">
-  import AlbumPickerModal from '$lib/modals/AlbumPickerModal.svelte';
+  import BulkAlbumDialog from '$lib/components/frameleaf/BulkAlbumDialog.svelte';
   import { addAssetsToAlbums } from '$lib/services/album.service';
-  import { type AlbumResponseDto } from '@frameleaf/sdk';
 
   type Props = {
     assetIds: string[];
@@ -10,18 +9,12 @@
 
   const { assetIds, onClose }: Props = $props();
 
-  const handleClose = async (albums?: AlbumResponseDto[]) => {
-    const albumIds = (albums ?? []).map(({ id }) => id);
-    if (albumIds.length === 0) {
-      onClose();
-      return;
-    }
-
-    const success = await addAssetsToAlbums(albumIds, assetIds, { notify: true });
-    if (success) {
-      onClose();
-    }
-  };
+  let open = $state(true);
 </script>
 
-<AlbumPickerModal selectedItemsCount={assetIds.length} onClose={handleClose} />
+<BulkAlbumDialog
+  count={assetIds.length}
+  bind:open
+  onSubmit={({ albumId, albumIds }) => addAssetsToAlbums(albumIds ?? [albumId!], assetIds, { notify: true })}
+  onClosed={onClose}
+/>

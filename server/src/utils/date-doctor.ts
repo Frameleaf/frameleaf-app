@@ -63,6 +63,14 @@ const NEIGHBOUR_WINDOW = 3 * HOUR;
 const FILENAME_SLACK = 36 * HOUR;
 /** Clock drift: how far one camera's clock may be off, how close a match must be, and the smallest shift worth proposing. */
 const DRIFT_MAX = 12 * HOUR;
+
+/**
+ * How far around the photos it decides on a scan must read for the same findings as a scan of everything: the
+ * neighbours a zone is taken from (`NEIGHBOUR_WINDOW`) and the anchors a drift is measured against (`DRIFT_MAX`
+ * either side of a camera's day). A day never straddles a month, so a month read with this margin either side
+ * decides its own photos exactly as the whole library would.
+ */
+export const DATE_SCAN_MARGIN = Math.max(NEIGHBOUR_WINDOW, DRIFT_MAX);
 const DRIFT_MATCH = 2 * MINUTE;
 const DRIFT_MIN = 5 * MINUTE;
 /** Photos further apart than this are separate moments of a shoot; a drift must line up at least two of them. */

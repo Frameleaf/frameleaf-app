@@ -71,7 +71,7 @@ import {
   SystemMetadataKey,
   VectorIndex,
 } from 'src/enum.js';
-import { deferJobAdoption, publishJobResult } from 'src/queue/context.js';
+import { advanceJobProgress, deferJobAdoption, publishJobResult } from 'src/queue/context.js';
 import { deferJobUntilDependency } from 'src/queue/dependency.js';
 import { processingSetAsideOverride } from 'src/queue/processing-failure.js';
 import { assertPublicationSource, publicationTransaction } from 'src/queue/transaction.js';
@@ -80,6 +80,7 @@ import { AssetOriginField } from 'src/repositories/partner-origin.repository.js'
 import { BaseService } from 'src/services/base.service.js';
 import { queueScopedCopies } from 'src/services/partner-copy.service.js';
 import { PartnerPeopleService } from 'src/services/partner-people.service.js';
+import { PersonRelationshipService } from 'src/services/person-relationship.service.js';
 import { requireEntityAccess } from 'src/utils/access.js';
 import { getDimensions } from 'src/utils/asset.util.js';
 import { CloudLibraryQueueWriter, cloudLibraryDestination } from 'src/utils/cloud-library-batch.js';
@@ -338,13 +339,14 @@ export class PersonService extends BaseService {
    * A stale "later" never replaces a stored "different".
    */
   async setMergeVerdict(auth: AuthDto, dto: PersonMergeVerdictCreateDto): Promise<PersonMergeVerdictResponseDto> {
-    const [personId, suggestionId] = await this.requireMergePair(auth, dto);
+    const [first, second] =
+      dto.verdict === 'ignore'
+        ? await this.requireIgnoredPerson(auth, dto.personId)
+        : await this.requireMergePair(auth, dto);
     if (dto.verdict === 'same') {
       return this.acceptMergeSuggestion(auth, dto.personId.toLowerCase(), dto.suggestionId.toLowerCase());
     }
 
-    const [first, second] =
-      dto.verdict === 'ignore' ? [dto.personId.toLowerCase(), dto.personId.toLowerCase()] : [personId, suggestionId];
     const { verdict, createdAt } = await this.personRepository.setMergeVerdict(
       auth.user.id,
       first,
@@ -1000,7 +1002,10 @@ export class PersonService extends BaseService {
 
   async getById(auth: AuthDto, personGroupId: string): Promise<PersonResponseDto> {
     await this.requirePerson(auth, Permission.PersonRead, personGroupId);
-    return this.mapOwnPerson(auth, await this.findOrFail(auth, personGroupId));
+    const person = await this.mapOwnPerson(auth, await this.findOrFail(auth, personGroupId));
+    // FL-842: only this single-person read carries the family, so no list pays for it
+    const relationships = await BaseService.create(PersonRelationshipService, this).forPerson(auth, personGroupId);
+    return { ...person, relationships };
   }
 
   /**
@@ -1287,6 +1292,7 @@ export class PersonService extends BaseService {
     let pairs = 0;
     for (const ownerId of await this.personRepository.getPersonOwnerIds()) {
       pairs += (await this.personRepository.refreshMergeCandidates(ownerId, maxDistance)) ?? 0;
+      advanceJobProgress(1);
     }
     // read again: the main photo pass above may have set its own date meanwhile
     const latest = await this.systemMetadataRepository.get(SystemMetadataKey.PeopleCareState);
@@ -1345,6 +1351,8 @@ export class PersonService extends BaseService {
       } else {
         await this.personRepository.deleteSplitCandidate(ownerId, personGroupId, { keepAnswered: true });
       }
+      // Without this a first pass over many people hits the job's limit, saves nothing and restarts every night
+      advanceJobProgress(1);
     }
     const latest = await this.systemMetadataRepository.get(SystemMetadataKey.PeopleCareState);
     await this.systemMetadataRepository.set(SystemMetadataKey.PeopleCareState, {
@@ -1382,6 +1390,7 @@ export class PersonService extends BaseService {
       } else if (sideways && firstPass) {
         jobs.push({ name: JobName.PersonGenerateThumbnail, data: { ownerId, personGroupId } });
       }
+      advanceJobProgress(1);
     }
     await this.jobRepository.queueAll(jobs);
     if (firstPass) {
@@ -1498,7 +1507,7 @@ export class PersonService extends BaseService {
     await this.jobRepository.guardAssetSource(id);
     const asset = await this.assetJobRepository.getForDetectFacesJob(id);
     if (!asset) {
-      return JobStatus.Failed;
+      return (await this.assetJobRepository.isGone(id)) ? JobStatus.Skipped : JobStatus.Failed;
     }
 
     // Before the preview: a hidden asset (a Live Photo's motion part) never gets one.
@@ -1698,6 +1707,7 @@ export class PersonService extends BaseService {
 
       if (facesToAdd.length > 0 || faceIdsToRemove.length > 0 || embeddings.length > 0) {
         await this.personRepository.refreshFaces(facesToAdd, faceIdsToRemove, embeddings);
+        await this.eventRepository.emit('HouseholdFeedAssets', { assetIds: [id] });
       }
       for (const { id: faceId, ...box } of facesToMove) {
         // a person's main photo is cut from this box, so it is made again from the new one
@@ -2020,6 +2030,7 @@ export class PersonService extends BaseService {
           this.logger.debug(`Face ${id} was decided meanwhile, keeping that decision`);
           throw new Error('Face decision changed before recognition publication');
         }
+        await this.eventRepository.emit('HouseholdFeedAssets', { assetIds: [face.assetId] });
         // partner copies show the source's people, so they take its faces again now one has a person
         await this.propagateFaces([face.assetId]);
         // FL-774: a face given its person can bring the photo into a partner's scope
@@ -2139,6 +2150,8 @@ export class PersonService extends BaseService {
 
         try {
           const affected = await this.workflowPersonAssets(targetPerson.ownerId, [mergeId, targetPerson.personGroupId]);
+          const relationships = BaseService.create(PersonRelationshipService, this);
+          let relationshipsChanged = false as boolean;
           const people = await this.personRepository.withMergeWrite(async () => {
             const survivor = await this.personRepository.getByGroupId({
               ownerId: targetPerson.ownerId,
@@ -2167,11 +2180,23 @@ export class PersonService extends BaseService {
             );
             // FL-874: the person who stays is also in the merged-away person's categories
             await this.personRepository.copyCategoryMembers(targetPerson.ownerId, mergeId, targetPerson.personGroupId);
+            // FL-842: the person who stays keeps the merged-away person's relationships too
+            relationshipsChanged = await relationships.onMerge(
+              targetPerson.ownerId,
+              mergeId,
+              targetPerson.personGroupId,
+            );
             return this.personRepository.delete([mergeId], targetPerson.ownerId);
           }, targetPerson.ownerId);
           await this.emitAssetsChanged(affected);
           await this.queueFaceSidecars(affected);
           await this.cleanupRemovedPeople(people, targetPerson.ownerId);
+          if (relationshipsChanged) {
+            // the merge is done: a partner's copies catching up must not report it as failed
+            await relationships.afterMerge(targetPerson.ownerId, targetPerson.personGroupId).catch((error: any) => {
+              this.logger.error(`Unable to update copied relationships after a merge: ${error}`, error?.stack);
+            });
+          }
 
           this.logger.log(`Merged ${mergeName} into ${targetPerson.name || targetPerson.personGroupId}`);
           results.push({ id: mergeId, success: true });

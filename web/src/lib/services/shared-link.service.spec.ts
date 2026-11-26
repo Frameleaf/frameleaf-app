@@ -35,6 +35,12 @@ describe('SharedLinkService', () => {
         'https://photos.example.com/s/foo',
       );
     });
+    it('never uses an address that is not a web page (FL-1771)', () => {
+      expect(asUrl(sharedLinkFactory.build({ slug: 'foo', url: 'javascript:alert(1)' }))).toBe(
+        'http://localhost:2283/s/foo',
+      );
+      expect(asDirectImageUrl(sharedLinkFactory.build({ directUrl: 'javascript:alert(1)' }))).toBe('');
+    });
   });
   describe('asDirectImageUrl (FL-788)', () => {
     it("puts a root path after the server's address and keeps an absolute one", () => {

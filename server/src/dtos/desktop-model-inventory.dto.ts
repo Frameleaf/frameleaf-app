@@ -27,7 +27,7 @@ const entry = z
       .enum(['eligible', 'disabled', 'pinned', 'legacy', 'unavailable', 'unsupported'])
       .meta({ id: 'DesktopModelAvailability' }),
     modelNames: z.array(z.string().min(1).max(512)).max(8),
-    modelKeys: z.array(z.string().regex(/^(clip|ocr|face):[a-f0-9]{64}$/)).max(8),
+    modelKeys: z.array(z.string().regex(/^(clip|ocr|face|description):[a-f0-9]{64}$/)).max(8),
     /** Protocol 2: the catalogue profile of each model key, in the same order, exactly as the server ships it. */
     profiles: z.array(z.record(z.string(), z.unknown())).max(8).optional(),
     /**
@@ -38,10 +38,12 @@ const entry = z
   })
   .refine((value) =>
     value.state === 'eligible'
-      ? value.workload !== MlWorkload.Enrichment &&
-        value.modelKeys.length === (value.workload === MlWorkload.Clip ? 3 : 1) &&
+      ? value.modelKeys.length === (value.workload === MlWorkload.Clip ? 3 : 1) &&
         new Set(value.modelKeys).size === value.modelKeys.length &&
-        value.modelKeys.every((key) => key.startsWith(value.workload + ':'))
+        // FD-31: the enrichment a desktop runs is descriptions
+        value.modelKeys.every((key) =>
+          key.startsWith((value.workload === MlWorkload.Enrichment ? 'description' : value.workload) + ':'),
+        )
       : value.modelKeys.length === 0,
   )
   .refine(

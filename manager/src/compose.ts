@@ -1,7 +1,7 @@
 import { readFile, readdir, writeFile, mkdir, realpath, statfs, access } from 'node:fs/promises';
 import { constants, realpathSync } from 'node:fs';
 import { totalmem } from 'node:os';
-import { basename, dirname, join, resolve } from 'node:path';
+import { basename, dirname, join, relative, resolve } from 'node:path';
 import { load } from 'js-yaml';
 import { z } from 'zod';
 import { Refusal, imageDigest, type Installation, type Mount, type NasManifest, type Source } from './contracts.js';
@@ -223,9 +223,33 @@ function deniedMountSource(source: string, managerData = process.env.MANAGER_DAT
   const path = resolve(source);
   if (path === '/') return true;
   return (
-    DENIED_MOUNT_SOURCES.filter((denied) => denied !== '/').some((denied) => under(path, denied)) ||
+    // A folder above a denied path (/var holds /var/lib/docker) hands over everything inside it too.
+    DENIED_MOUNT_SOURCES.filter((denied) => denied !== '/').some((denied) => under(path, denied) || under(denied, path)) ||
     (!!managerData && under(path, resolve(managerData)))
   );
+}
+/**
+ * FL-1770: where Manager's state (the recovery key, the library database password) sits inside an extra folder,
+ * as a path relative to that folder, or null when it does not. A folder chosen in Manager may not hold it
+ * (assertExternalFolder), but an install from an earlier template may have saved one that does, such as the
+ * whole appdata share. Refusing it would stop every update of that install, so the folder stays and Manager's
+ * state is hidden inside the container instead (see applyServiceOverrides).
+ */
+export function managerStateWithin(source: string, managerData = process.env.MANAGER_DATA): string | null {
+  if (!managerData) return null;
+  const data = resolve(managerData);
+  const real = (() => {
+    try {
+      return realpathSync(data);
+    } catch {
+      return data;
+    }
+  })();
+  for (const state of new Set([data, real])) {
+    const path = resolve(source);
+    if (path !== state && under(state, path)) return relative(path, state);
+  }
+  return null;
 }
 /**
  * The real path of an extra folder. `resolve()` keeps symlinks, so a link under an approved root that points
@@ -314,6 +338,15 @@ export function applyServiceOverrides(services: Record<string, unknown>, overrid
         ...(service.volumes ?? []),
         { type: 'bind', source: mount.source, target: mount.target, read_only: mount.readOnly, bind: { create_host_path: false } },
       ];
+      // An older install's folder that holds Manager's state keeps working; an empty in-memory folder covers that
+      // state inside the container (Docker mounts the deeper path last), so the library never sees the key files.
+      const state = managerStateWithin(mount.source) ?? managerStateWithin(real);
+      if (state !== null) {
+        console.warn(
+          `manager: ${name}: the extra folder ${mount.source} holds Manager's own state; it is hidden from the container. Choose a folder inside it instead.`,
+        );
+        service.volumes.push({ type: 'tmpfs', target: join(mount.target, state), tmpfs: { size: 4096, mode: 0o500 } });
+      }
     }
     // Reserved names never reach here (schema); the rest of the administrator's values win over source defaults.
     if (Object.keys(override.environment).length) service.environment = { ...service.environment, ...override.environment };

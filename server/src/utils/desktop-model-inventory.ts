@@ -5,6 +5,7 @@ import type { DesktopModelCatalogue } from 'src/utils/desktop-model-catalogue.js
 import { desktopInventoryWorkloads } from 'src/dtos/desktop-model-inventory.dto.js';
 import { MlWorkload } from 'src/enum.js';
 import { findDesktopClipSpace } from 'src/utils/desktop-clip-space.js';
+import { descriptionEntries, desktopDescriptionModel } from 'src/utils/desktop-description.js';
 import { faceEntries } from 'src/utils/desktop-face.js';
 import { desktopImageModelKey } from 'src/utils/desktop-model-catalogue.js';
 import { ocrEntries } from 'src/utils/desktop-ocr.js';
@@ -44,7 +45,23 @@ export const selectDesktopModelInventory = ({
       modelKeys,
     });
     if (!config.enabled || !(model ? model.enabled : enrichment.length > 0)) return result('disabled');
-    if (!model) return result('unsupported');
+    if (!model) {
+      // FD-31: of enrichment a desktop runs only descriptions, and only with a model the catalogue has for it.
+      const name = config.imageDescription.enabled
+        ? desktopDescriptionModel(config.imageDescription.modelName)
+        : undefined;
+      const keys = catalogue.profiles
+        .filter(
+          (item) =>
+            item.workload === 'description' &&
+            item.modelName === name &&
+            item.spec.provider === provider &&
+            item.runtimeSourceRevision === runtimeSourceRevision &&
+            canonicalJson(item.spec.entries) === canonicalJson(descriptionEntries(item.modelName)),
+        )
+        .map((item) => item.modelKey);
+      return keys.length === 1 ? result('eligible', keys) : result('unsupported');
+    }
     const profiles = catalogue.profiles.filter(
       (item) =>
         item.workload === workload &&

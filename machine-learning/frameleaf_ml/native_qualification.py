@@ -14,7 +14,7 @@ import sys
 import tempfile
 import traceback
 from pathlib import Path, PurePosixPath
-from threading import Timer
+from threading import Lock, Timer
 from time import perf_counter, sleep
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -151,9 +151,41 @@ def accelerator_present(provider: str, facts: dict[str, Any]) -> bool:
     return False
 
 
+_validated_weights: dict[tuple[Any, ...], None] = {}
+_validated_weights_lock = Lock()
+
+
+def _validate_external_weights_once(model_path: Path, root: Path, artifacts: dict[str, str]) -> None:
+    """`validate_external_weights`, parsing the ONNX file again only when it or an artifact changed.
+
+    The caller has just checked every artifact's hash, so the same model file (by device, inode,
+    size, modification and status-change time) with the same artifact hashes has the same answer.
+    """
+    info = model_path.stat()
+    key = (
+        str(model_path.resolve()),
+        (info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, info.st_ctime_ns),
+        str(root.resolve()),
+        tuple(sorted(artifacts.items())),
+    )
+    with _validated_weights_lock:
+        if key in _validated_weights:
+            return
+    validate_external_weights(model_path, root, artifacts)
+    with _validated_weights_lock:
+        if len(_validated_weights) >= 256:
+            _validated_weights.clear()
+        _validated_weights[key] = None
+
+
 def verify_models(
-    spec: ModelBindingSpec, cache_dir: Path, *, require_staged: bool = True
+    spec: ModelBindingSpec, cache_dir: Path, *, require_staged: bool = True, reuse_checks: bool = True
 ) -> tuple[InferenceEntries, list[InferenceModel]]:
+    """The bound models, after checking their files still match the binding.
+
+    Bound requests call this twice each, so by default a file hash or ONNX check is reused while
+    the file is unchanged (see `cache_hashes`). Qualification passes `reuse_checks=False`.
+    """
     from frameleaf_ml.models import from_model_type
     from frameleaf_ml.native_runtime import library_entries
     from frameleaf_ml.staging import cache_hashes, verify_staged
@@ -175,12 +207,19 @@ def verify_models(
             raise ValueError("native_model_name_not_canonical")
         if not model.cache_dir.resolve().is_relative_to(cache_dir.resolve()):
             raise ValueError("native_cache_directory_invalid")
-        actual = verify_staged(model.cache_dir) if require_staged else cache_hashes(model.cache_dir)
+        actual = (
+            verify_staged(model.cache_dir, reuse=reuse_checks)
+            if require_staged
+            else cache_hashes(model.cache_dir, reuse=reuse_checks)
+        )
         if actual != item.artifacts:
             raise ValueError("native_staged_hash_mismatch")
         if model.model_path.suffix != ".onnx":
             raise ValueError("native_engine_qualification_not_supported")
-        validate_external_weights(model.model_path, model.cache_dir, item.artifacts)
+        if reuse_checks:
+            _validate_external_weights_once(model.model_path, model.cache_dir, item.artifacts)
+        else:
+            validate_external_weights(model.model_path, model.cache_dir, item.artifacts)
         models.append(model)
     return entries, models
 
@@ -228,13 +267,13 @@ async def qualify(
             raise ValueError("native_engine_qualification_not_supported")
         from frameleaf_ml.native_qwen import binary_sha256, predict_qwen, verify_qwen
 
-        verify_qwen(spec, cache_dir)
+        qwen_model = verify_qwen(spec, cache_dir)
         binary = binary_sha256()
         samples = []
         build = None
         for _ in range(2):
             start = perf_counter()
-            output, observed_build = await predict_qwen(cache_dir, data, binary)
+            output, observed_build = await predict_qwen(cache_dir, qwen_model, data, binary)
             samples.append((perf_counter() - start) * 1000)
             compare_output(output, spec.expected_output)
             if build is not None and observed_build != build:
@@ -257,7 +296,7 @@ async def qualify(
             "provider": spec.provider,
             "qwenExecution": {"build": build, "binarySha256": binary, "coldMilliseconds": samples},
         }
-    entries, models = verify_models(spec, cache_dir)
+    entries, models = verify_models(spec, cache_dir, reuse_checks=False)
     session: OrtSession | None = None
     previous_temp = tempfile.tempdir
     completed = False

@@ -84,6 +84,8 @@ export class VirtualWorkspace {
     { node: DirectoryNode; path: readonly string[] }
   >()
   private disposed = false
+  /** A lazy file's fetch while it is in flight, so concurrent reads share one download. */
+  private readonly loading = new WeakMap<FileNode, Promise<Blob>>()
 
   onWrite(listener: WorkspaceWriteListener): () => void {
     this.listeners.add(listener)
@@ -204,7 +206,16 @@ export class VirtualWorkspace {
     this.assertLive()
     if (node.data) return node.data
     if (!node.load) return new Blob([], { type: node.type })
-    const blob = await node.load()
+    let pending = this.loading.get(node)
+    if (!pending) {
+      pending = node.load()
+      this.loading.set(node, pending)
+      const forget = () => {
+        if (this.loading.get(node) === pending) this.loading.delete(node)
+      }
+      pending.then(forget, forget)
+    }
+    const blob = await pending
     this.assertLive()
     // A write that landed while the fetch was in flight wins over the remote bytes.
     if (!node.data) {
@@ -329,19 +340,31 @@ export class VirtualWorkspace {
       },
       async createWritable(options?: { keepExistingData?: boolean }) {
         workspace.assertLive()
-        let bytes = options?.keepExistingData
+        // `buffer` may be larger than the file: it grows by doubling, so a file written in many
+        // chunks is copied a few times rather than once per chunk. Past `length` it is all zeros.
+        let buffer = options?.keepExistingData
           ? new Uint8Array(await (await workspace.materialize(node)).arrayBuffer())
           : new Uint8Array(0)
+        let length = buffer.byteLength
         let position = 0
         let closed = false
+        const reserve = (size: number) => {
+          if (size <= buffer.byteLength) return
+          const grown = new Uint8Array(Math.max(size, buffer.byteLength * 2))
+          grown.set(buffer.subarray(0, length))
+          buffer = grown
+        }
+        const truncateTo = (size: number) => {
+          if (size < length) buffer.fill(0, size, length)
+          else reserve(size)
+          length = size
+          position = Math.min(position, size)
+        }
         const writeAt = (chunk: Uint8Array, at: number) => {
           const end = at + chunk.byteLength
-          if (end > bytes.byteLength) {
-            const grown = new Uint8Array(end)
-            grown.set(bytes)
-            bytes = grown
-          }
-          bytes.set(chunk, at)
+          reserve(end)
+          buffer.set(chunk, at)
+          length = Math.max(length, end)
           position = end
         }
         return {
@@ -353,13 +376,7 @@ export class VirtualWorkspace {
                 return
               }
               if (chunk.type === 'truncate') {
-                bytes = bytes.slice(0, chunk.size)
-                if (bytes.byteLength < chunk.size) {
-                  const grown = new Uint8Array(chunk.size)
-                  grown.set(bytes)
-                  bytes = grown
-                }
-                position = Math.min(position, chunk.size)
+                truncateTo(chunk.size)
                 return
               }
               writeAt(await toBytes(chunk.data), chunk.position ?? position)
@@ -371,7 +388,7 @@ export class VirtualWorkspace {
             position = at
           },
           async truncate(size: number) {
-            bytes = bytes.slice(0, size)
+            truncateTo(size)
           },
           async abort() {
             closed = true
@@ -380,7 +397,7 @@ export class VirtualWorkspace {
             if (closed) return
             closed = true
             workspace.assertLive()
-            const blob = new Blob([bytes], { type: node.type || mimeFor(node.name) })
+            const blob = new Blob([buffer.subarray(0, length)], { type: node.type || mimeFor(node.name) })
             node.data = blob
             node.load = null
             node.lastModified = Date.now()

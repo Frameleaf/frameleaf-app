@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import { stat } from 'node:fs/promises';
-import { join, posix } from 'node:path';
+import { posix } from 'node:path';
 import { type ImportManifest } from 'src/library-import/manifest.js';
 import { parseImportedOwnerIntent } from 'src/library-import/owner-reconciliation.js';
 import { publishAdapterImportBundle } from 'src/library-import/photoprism-bundle.js';
@@ -11,6 +11,7 @@ import {
   type PreparationAdapter,
   type PreparationSourceInput,
   type SourceLogin,
+  resolveSourceFile,
   unrestrictedLogin,
 } from 'src/library-import/preparation/types.js';
 import { LibraryImportRefused } from 'src/library-import/state.js';
@@ -54,8 +55,9 @@ async function observe(source: OpenedPreparationSource, originalsRoot: string, h
   const observed: ObservedFile[] = [];
   const missing: string[] = [];
   for (const file of await source.files()) {
-    const path = join(originalsRoot, file.path);
     try {
+      // Paths come from the source's database: one that leaves the originals reads as missing and stops the import.
+      const path = await resolveSourceFile(originalsRoot, file.path);
       const info = await stat(path);
       if (!info.isFile()) throw new Error('not a file');
       observed.push({
@@ -127,15 +129,20 @@ export function mergeIdenticalOriginals(manifest: ImportManifest): number {
   }
   if (mergedInto.size === 0) return 0;
   const dropped = new Set<string>();
-  for (let index = assets.length - 1; index >= 0; index--) {
-    if (!mergedInto.has(assets[index].id)) continue;
-    for (const id of assets[index].fileIds) dropped.add(id);
-    assets.splice(index, 1);
-  }
+  // Kept in place in one pass: removing one at a time is quadratic on a library with many copies.
+  const keepOnly = <T>(list: T[], keep: (item: T) => boolean) => {
+    let kept = 0;
+    for (const item of list) if (keep(item)) list[kept++] = item;
+    list.length = kept;
+  };
+  keepOnly(assets, (asset) => {
+    if (!mergedInto.has(asset.id)) return true;
+    for (const id of asset.fileIds) dropped.add(id);
+    return false;
+  });
   // a file the kept copies still use stays
   for (const asset of assets) for (const id of asset.fileIds) dropped.delete(id);
-  for (let index = manifest.files.length - 1; index >= 0; index--)
-    if (dropped.has(manifest.files[index].id)) manifest.files.splice(index, 1);
+  keepOnly(manifest.files as Array<{ id: string }>, (file) => !dropped.has(file.id));
   for (const album of manifest.albums)
     album.assetIds = [...new Set(album.assetIds.map((id) => mergedInto.get(id) ?? id))];
   for (const id of mergedInto.keys())

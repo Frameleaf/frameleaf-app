@@ -689,7 +689,8 @@ export class EdgeStateService {
       ipv6Listening: this.ipv6Listening(),
       trustedLanCidrs,
     });
-    if (state.status === 'starting' && this.direct.listening) {
+    // FL-1769: relay only, the direct listener refuses outside connections, so only the relay makes it reachable
+    if (state.status === 'starting' && this.direct.listening && (settings.mode !== 'relay' || state.relay.connected)) {
       state.status = 'ready';
     }
     await this.writeState(state, now);
@@ -1124,9 +1125,18 @@ export class EdgeStateService {
     if (needed && !waiting) {
       try {
         const issued = await this.issue(input);
+        // Checked before it replaces anything: a bad answer must not take down a certificate that still works.
+        const issuedFacts = certificateFacts(issued.certificate);
+        const byName = (a: string, b: string) => a.localeCompare(b);
+        if (
+          !certificateMatchesKey(issued.certificate, issued.key) ||
+          !isEqual(issuedFacts.names.toSorted(byName), names.toSorted(byName))
+        ) {
+          throw new Error('the issued certificate does not match this server’s key and names');
+        }
         await this.certificates.write(identityDir, kind, issued);
         pair = { certificate: issued.certificate, key: issued.key };
-        facts = { ...certificateFacts(issued.certificate), reported: false };
+        facts = { ...issuedFacts, reported: false };
         accountPinned = issued.accountPinned;
         this.reportAttempts.delete(kind);
         issuance = { failures: 0, lastAttemptAt: new Date(now).toISOString(), nextCheckAt: nextRenewalCheck(now) };

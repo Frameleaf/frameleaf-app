@@ -151,13 +151,45 @@ export const lostOriginalReason = async (
   return source && target && !present ? 'missing' : null;
 };
 
-/** Where a kept original points after import: its mapped destination, or its Immich path when unmapped. */
+/** System folders an imported library may never point into: they hold secrets, devices or the server itself. */
+const SYSTEM_FOLDERS = ['/etc', '/proc', '/sys', '/run', '/var/run', '/dev', '/boot', '/root', '/usr', '/bin', '/sbin'];
+
+/**
+ * A library folder kept as the source wrote it is only trusted when it is a plain absolute path outside the system
+ * folders, and neither inside nor above any destination media folder (`/` is above every one).
+ */
+export const isUnsafeImportPath = (path: string, roots: MediaRootMap[]): boolean =>
+  typeof path !== 'string' ||
+  !isAbsolute(path) ||
+  path !== resolve(path) ||
+  SYSTEM_FOLDERS.some((folder) => beneath(folder, path)) ||
+  roots.some((root) => beneath(path, resolve(root.target)) || beneath(resolve(root.target), path));
+
+/** Uploaded originals outside every media folder point here: procfs never holds files, so nothing can be read. */
+export const INERT_ORIGINAL_FOLDER = '/proc/frameleaf-lost-original';
+
+/**
+ * Where a kept original points after import: its mapped destination; for an unmapped original, its Immich path
+ * only when it sits inside one of its own external library's folders (so mounting that folder later reconnects
+ * it); otherwise an inert path, so a hostile source database cannot point an asset at a server file. The Immich
+ * path stays in the Library care record either way.
+ */
 export const lostOriginalPath = (
   path: string,
   reason: LostOriginalReason,
   roots: MediaRootMap[],
   policy?: ImportMediaPolicy,
-): string => (reason === 'unmapped' ? path : mapMediaPath(path, roots, policy).target);
+  libraryFolders: string[] = [],
+): string => {
+  if (reason !== 'unmapped') {
+    return mapMediaPath(path, roots, policy).target;
+  }
+  const own =
+    isAbsolute(path) &&
+    path === resolve(path) &&
+    libraryFolders.some((folder) => !isUnsafeImportPath(folder, roots) && path !== folder && beneath(folder, path));
+  return own ? path : `${INERT_ORIGINAL_FOLDER}/${pathChecksum(path)}`;
+};
 
 /** Media checks wait on the share, not the CPU: a NAS answers many opens at once. Results keep input order. */
 export const MEDIA_CONCURRENCY = 16;

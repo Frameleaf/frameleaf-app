@@ -7,9 +7,10 @@ import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { ClassConstructor } from 'src/types.js';
 import type { SetupGateDeps } from 'src/utils/frameleaf-setup-gate.js';
 import type { MailConnectionDeps } from 'src/utils/mail-connection.js';
+import type { EnglishPlaceNames, PlaceNameLanguage, PlaceNamesLocalized } from 'src/utils/place-names.js';
 import { SALT_ROUNDS } from 'src/constants.js';
 import { StorageCore } from 'src/cores/storage.core.js';
-import { UserAdmin } from 'src/database.js';
+import { Place, UserAdmin } from 'src/database.js';
 import { AssetResponseDto, mapAsset } from 'src/dtos/asset-response.dto.js';
 import { SystemConfig } from 'src/dtos/config.dto.js';
 import {
@@ -102,7 +103,7 @@ import { UserRepository } from 'src/repositories/user.repository.js';
 import { VersionHistoryRepository } from 'src/repositories/version-history.repository.js';
 import { VideoStreamRepository } from 'src/repositories/video-stream.repository.js';
 import { ViewRepository } from 'src/repositories/view-repository.js';
-import { WebsocketRepository } from 'src/repositories/websocket.repository.js';
+import { type ClientEventMap, WebsocketRepository } from 'src/repositories/websocket.repository.js';
 import { WorkflowRepository } from 'src/repositories/workflow.repository.js';
 import { AdminAuditEventTable } from 'src/schema/tables/admin-audit-event.table.js';
 import { UserTable } from 'src/schema/tables/user.table.js';
@@ -111,7 +112,9 @@ import { AccessRequest, checkAccess, requireAccess } from 'src/utils/access.js';
 import { ConfigHistoryKind, ConfigHistorySource, recordConfigHistory } from 'src/utils/config-history.js';
 import { getConfig, readConfig, updateConfig, withEffectiveConfigWrite } from 'src/utils/config.js';
 import { queueReleasedPersonThumbnails } from 'src/utils/cover-references.js';
+import { hasHiddenContentFilter } from 'src/utils/hidden-content.js';
 import { queueLockedSealFor } from 'src/utils/locked-seal-queue.js';
+import { isLockedRow } from 'src/utils/locked.js';
 import {
   MlDestinationNotFoundError,
   MlDestinationRefusedError,
@@ -122,6 +125,10 @@ import {
   routedMlDestinationId,
   selectMlDestination,
 } from 'src/utils/ml-destination.js';
+import { namedPlaceAt } from 'src/utils/named-place.js';
+import { notificationLocaleOf } from 'src/utils/notification-locale.js';
+import { englishCountryName, localizePlaceNames, placeNameLanguageOf } from 'src/utils/place-names.js';
+import { getPreferences } from 'src/utils/preferences.js';
 import { replaceLockedProfileImages } from 'src/utils/profile-image.js';
 import { resolvePublicUrl } from 'src/utils/public-url.js';
 import { isServerOwner, requireServerOwner } from 'src/utils/server-owner.js';
@@ -130,6 +137,12 @@ import { isServerOwner, requireServerOwner } from 'src/utils/server-owner.js';
  * FL-456: an admission that says this place cannot take the job now (refused, gone, or the Frameleaf
  * Desktop helpers cannot take it yet), so the next place in the processing order may.
  */
+/** FL-1767: the websocket events that carry one of the account's own assets in full. */
+type OwnAssetEvent =
+  'on_asset_update' | 'LibraryAssetUpdateV1' | 'on_upload_success' | 'AssetUploadReadyV2' | 'AssetEditReadyV2';
+/** FL-1767: which of an account's own assets only its unlocked sessions may see, and which sessions those are. */
+export type OwnAssetAudience = { ownerId: string; withheld: Set<string>; elevatedSessionIds: string[] };
+
 /** Tell administrators again about a computer that is still away after this long. */
 const COMPUTER_AWAY_NOTICE_MS = 12 * 3_600_000;
 const isPlaceUnavailable = (error: unknown) =>
@@ -230,6 +243,9 @@ export const HAND_BUILT_DEPENDENCIES: readonly unknown[] = [LockedEncryptionServ
 const propertyDependencies = (Service: object): Array<{ key: string; type: unknown }> =>
   // eslint-disable-next-line unicorn/no-nonstandard-builtin-properties
   Reflect.getMetadata(PROPERTY_DEPS_METADATA, Service) ?? [];
+
+/** FL-987: how many items one place-name lookup names at a time. */
+const PLACE_NAME_LOOKUP_SLICE = 5000;
 
 @Injectable()
 export class BaseService {
@@ -440,6 +456,162 @@ export class BaseService {
     if (!(await this.assetDevelopRepository.syncUsage(id))) {
       await this.userRepository.syncUsage(id);
     }
+  }
+
+  /**
+   * FL-987: the language place names are shown in for this request, or undefined for English. It is the
+   * account's saved language (the one its emails and notifications use, with a device's own choice first);
+   * a shared link has no account behind its viewer, so its place names stay in English.
+   */
+  protected async getPlaceNameLanguage(auth: AuthDto): Promise<PlaceNameLanguage | undefined> {
+    if (auth.sharedLink || !auth.user?.id) {
+      return;
+    }
+    const metadata = (await this.userRepository.getMetadata(auth.user.id)) ?? [];
+    return placeNameLanguageOf(notificationLocaleOf(getPreferences(metadata), auth.session?.id));
+  }
+
+  /**
+   * FL-987: the translated place names of items, by item id, for the items whose stored English names have a
+   * translation in the viewer's language. `items` carry the English names exactly as the response shows
+   * them, so a name the viewer may not see (or one edited since the item was linked) is never translated.
+   * Any failure leaves the map empty: the English names in the response are always enough.
+   */
+  protected async getLocalizedPlaceNames(
+    auth: AuthDto,
+    items: Array<{ id: string } & EnglishPlaceNames>,
+  ): Promise<Map<string, PlaceNamesLocalized>> {
+    const localized = new Map<string, PlaceNamesLocalized>();
+    try {
+      const named = items.filter(({ city, state, country }) => city || state || country);
+      const lang = named.length > 0 ? await this.getPlaceNameLanguage(auth) : undefined;
+      if (!lang) {
+        return localized;
+      }
+      const { countries } = await this.mapRepository.getGeonameIds();
+      for (let index = 0; index < named.length; index += PLACE_NAME_LOOKUP_SLICE) {
+        const slice = named.slice(index, index + PLACE_NAME_LOOKUP_SLICE);
+        const links = await this.mapRepository.getAssetGeonames(slice.map(({ id }) => id));
+        const geonameIds = new Set<number>();
+        for (const { cityGeonameId, admin1GeonameId, countryCode } of links) {
+          for (const id of [cityGeonameId, admin1GeonameId, countryCode && countries.get(countryCode)]) {
+            if (id) {
+              geonameIds.add(id);
+            }
+          }
+        }
+        if (geonameIds.size === 0) {
+          continue;
+        }
+        const names = new Map(
+          (await this.mapRepository.getPlaceNames(lang, [...geonameIds])).map(({ geonameId, name }) => [
+            geonameId,
+            name,
+          ]),
+        );
+        const linkOf = new Map(links.map((link) => [link.assetId, link]));
+        for (const item of slice) {
+          const places = localizePlaceNames(lang, item, linkOf.get(item.id), names, countries);
+          if (places) {
+            localized.set(item.id, places);
+          }
+        }
+      }
+    } catch (error) {
+      this.logger.warn(`Place names stay in English for this response: ${error}`);
+      localized.clear();
+    }
+    return localized;
+  }
+
+  /** FL-987: fills `exifInfo.placeNamesLocalized` on asset responses, in place. Resolves to the same array. */
+  protected async localizeAssetPlaces<T extends Pick<AssetResponseDto, 'id' | 'exifInfo'>>(
+    auth: AuthDto,
+    assets: T[],
+  ): Promise<T[]> {
+    const located = assets.filter(({ exifInfo }) => exifInfo?.city || exifInfo?.state || exifInfo?.country);
+    if (located.length === 0) {
+      return assets;
+    }
+    const localized = await this.getLocalizedPlaceNames(
+      auth,
+      located.map(({ id, exifInfo }) => ({
+        id,
+        city: exifInfo!.city,
+        state: exifInfo!.state,
+        country: exifInfo!.country,
+      })),
+    );
+    for (const asset of located) {
+      asset.exifInfo!.placeNamesLocalized = localized.get(asset.id) ?? null;
+    }
+    return assets;
+  }
+
+  /**
+   * FL-987: sets `placeNamesLocalized` on the map markers and clusters that have translated names, in place.
+   * The others are left as they were, so a map of many thousands of markers carries nothing extra.
+   * Resolves to the same array.
+   */
+  protected async localizeMarkerPlaces<
+    T extends { id: string; placeNamesLocalized?: PlaceNamesLocalized | null } & EnglishPlaceNames,
+  >(auth: AuthDto, markers: T[]): Promise<T[]> {
+    const localized = await this.getLocalizedPlaceNames(auth, markers);
+    for (const marker of localized.size > 0 ? markers : []) {
+      const places = localized.get(marker.id);
+      if (places) {
+        marker.placeNamesLocalized = places;
+      }
+    }
+    return markers;
+  }
+
+  /**
+   * FL-987: the translated names of places from `geodata_places` (the place search), by place id: the place
+   * as `city`, with its region and its country.
+   */
+  protected async getLocalizedPlaces(
+    auth: AuthDto,
+    places: Array<Pick<Place, 'id' | 'name' | 'admin1Name' | 'admin1Code' | 'countryCode'>>,
+  ): Promise<Map<number, PlaceNamesLocalized>> {
+    const localized = new Map<number, PlaceNamesLocalized>();
+    try {
+      const lang = places.length > 0 ? await this.getPlaceNameLanguage(auth) : undefined;
+      if (!lang) {
+        return localized;
+      }
+      const { admin1, countries } = await this.mapRepository.getGeonameIds();
+      const linked = places.map((place) => ({
+        place,
+        link: {
+          cityGeonameId: place.id,
+          admin1GeonameId: admin1.get(`${place.countryCode}.${place.admin1Code}`) ?? null,
+          countryCode: place.countryCode,
+          cityName: place.name,
+          admin1Name: place.admin1Name,
+        },
+      }));
+      const geonameIds = linked.flatMap(({ link }) =>
+        [link.cityGeonameId, link.admin1GeonameId, countries.get(link.countryCode)].filter((id) => !!id),
+      ) as number[];
+      const names = new Map(
+        (await this.mapRepository.getPlaceNames(lang, [...new Set(geonameIds)])).map(({ geonameId, name }) => [
+          geonameId,
+          name,
+        ]),
+      );
+      for (const { place, link } of linked) {
+        const stored = { city: place.name, state: place.admin1Name, country: englishCountryName(place.countryCode) };
+        const translated = localizePlaceNames(lang, stored, link, names, countries);
+        if (translated) {
+          localized.set(place.id, translated);
+        }
+      }
+    } catch (error) {
+      this.logger.warn(`Place names stay in English for this response: ${error}`);
+      localized.clear();
+    }
+    return localized;
   }
 
   /** FL-190: this server's public address for links it sends, or `undefined` (see `resolvePublicUrl`). */
@@ -833,6 +1005,7 @@ export class BaseService {
    * queues their unseals, which remove the locks once the files are plain.
    */
   protected async afterAssetsUnlocked(assetIds: string[]): Promise<void> {
+    await this.eventRepository.emit('HouseholdFeedAssets', { assetIds });
     const owners = new Set(
       (await this.assetRepository.getLockedEncryptionItems(assetIds))
         .filter(({ pending }) => pending)
@@ -855,15 +1028,74 @@ export class BaseService {
     }
 
     const assets = (await this.assetRepository.getByIdsWithAllRelationsButStacks(assetIds, ownerId)) ?? [];
+    const audience = await this.getOwnAssetAudience(ownerId, assets);
     for (const asset of assets) {
-      this.websocketRepository.clientSend(
+      this.sendOwnAssetEvent(
+        audience,
         asset.libraryScope === LibraryScope.Design ? 'LibraryAssetUpdateV1' : 'on_asset_update',
-        ownerId,
+        asset.id,
         // ponytail: no landmarks here, a Locked move never changes where an item was taken and the
         // viewer closes on it anyway; add `withLandmarks` if an unlock ever keeps the viewer open
         mapAsset(asset, { auth: { user: { id: ownerId } } as AuthDto }),
       );
     }
+  }
+
+  /**
+   * FL-1767: who among `ownerId`'s open sessions may see each of `assets` in full. A Locked item, or one
+   * its owner's Locked rules (people, pets, tags) hide, is seen only by an unlocked (elevated) session,
+   * as every read shows it (owner decision, September 27, 2026); the account's other sockets (its
+   * ordinary sessions, API keys) learn its id only. Read once for a batch.
+   */
+  protected async getOwnAssetAudience(
+    ownerId: string,
+    assets: { id: string; isLocked?: boolean | null; visibility?: string | null }[],
+  ): Promise<OwnAssetAudience> {
+    const withheld = new Set(assets.filter((asset) => isLockedRow(asset)).map(({ id }) => id));
+    const others = assets.filter(({ id }) => !withheld.has(id)).map(({ id }) => id);
+    if (others.length > 0) {
+      const { suppression } = getPreferences((await this.userRepository.getMetadata(ownerId)) ?? []).privacy;
+      const hiddenContent = {
+        userId: ownerId,
+        includeNsfw: false,
+        tagIds: suppression.tagIds,
+        personIds: suppression.personIds,
+        petIds: suppression.petIds,
+        scope: suppression.scope,
+      };
+      if (hasHiddenContentFilter(hiddenContent)) {
+        const hidden = await this.assetRepository.getHiddenContentAssetIds(others, { hiddenContent });
+        for (const id of hidden ?? []) {
+          withheld.add(id);
+        }
+      }
+    }
+    const elevatedSessionIds = withheld.size > 0 ? ((await this.sessionRepository.getElevatedIds(ownerId)) ?? []) : [];
+    return { ownerId, withheld, elevatedSessionIds };
+  }
+
+  /**
+   * FL-1767: sends an event that carries one of the owner's own assets. An asset `audience` withholds goes in
+   * full to the owner's unlocked sessions only; every other socket of the account gets `on_asset_hidden`
+   * with its id, so an open page drops it.
+   */
+  protected sendOwnAssetEvent<T extends OwnAssetEvent>(
+    audience: OwnAssetAudience,
+    event: T,
+    assetId: string,
+    ...data: ClientEventMap[T]
+  ) {
+    if (!audience.withheld.has(assetId)) {
+      this.websocketRepository.clientSend(event, audience.ownerId, ...data);
+      return;
+    }
+    this.websocketRepository.clientSend(event, audience.elevatedSessionIds, ...data);
+    this.websocketRepository.clientSendExcept(
+      'on_asset_hidden',
+      audience.ownerId,
+      audience.elevatedSessionIds,
+      assetId,
+    );
   }
 
   /**
@@ -878,6 +1110,19 @@ export class BaseService {
         const icons = this.mapRepository.getLandmarkIcons();
         data.landmarks = landmarks.map((landmark) => ({ ...landmark, icon: icons.get(landmark.id) }));
       }
+    }
+    return data;
+  }
+
+  /**
+   * FL-949: names the viewer's own place a located asset was taken in. `viewerId` is the signed-in person the response
+   * is for, whoever owns the asset: a partner's photo taken at the viewer's "Home" says Home, and the owner's own name
+   * for the spot is never read. Leave it out (a shared link) and nothing is named.
+   */
+  protected async withNamedPlace(data: AssetResponseDto, viewerId: string | undefined): Promise<AssetResponseDto> {
+    if (viewerId && typeof data.exifInfo?.latitude === 'number' && typeof data.exifInfo.longitude === 'number') {
+      const place = namedPlaceAt(await this.mapRepository.getUserPlaces(viewerId), data.exifInfo);
+      data.namedPlace = place ? { id: place.id, name: place.name } : null;
     }
     return data;
   }

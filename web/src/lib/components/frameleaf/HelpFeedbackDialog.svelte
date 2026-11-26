@@ -14,6 +14,7 @@
    */
   import AcknowledgementsList from '$lib/components/frameleaf/AcknowledgementsList.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
+  import { providerAccountLink } from '$lib/frameleaf/personal-access';
   import { type ServerAboutResponseDto } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
   import {
@@ -36,6 +37,8 @@
   };
 
   const { onClose, info }: Props = $props();
+  /** An address from the server's settings, as written, only when it is a web page. */
+  const webLink = (value?: string) => (providerAccountLink(value) ? value : undefined);
 
   let open = $state(true);
   $effect(() => {
@@ -109,7 +112,7 @@
           title: 'frameleaf_help_source',
           text: 'frameleaf_help_source_text',
           // an empty address counts as none, so the Frameleaf repository stays offered
-          href: info.thirdPartySourceUrl || info.repositoryUrl || FRAMELEAF_HELP.source,
+          href: webLink(info.thirdPartySourceUrl || info.repositoryUrl) ?? FRAMELEAF_HELP.source,
         },
       ] satisfies Row[]
     ).filter((row) => row.href),

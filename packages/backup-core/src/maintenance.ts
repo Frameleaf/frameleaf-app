@@ -92,14 +92,21 @@ export interface VerifyReport {
   damagedPacks: string[];
   /** Index objects that can no longer be opened. Nothing is lost: packs describe themselves. The next prune replaces them. */
   damagedIndexes: string[];
+  /** With damaged packs: whether they were noted in storage, so the next backup stores their pieces again. */
+  damageRecorded?: boolean;
 }
 
 export interface VerifyOptions {
   /** Which packs to download and check byte for byte. Default none: only that every needed piece is listed. */
   readPack?: (pack: string, index: number) => boolean;
+  /** False to change nothing at all. By default damaged packs are noted in storage, so the next backup stores their pieces again. */
+  recordDamage?: boolean;
 }
 
-/** Checks that every backup can still be restored. Changes nothing. */
+/**
+ * Checks that every backup can still be restored. The only change it makes: damaged packs are noted beside them
+ * (see `Repository.recordDamagedPacks`), so the next backup stores those pieces again from the files.
+ */
 export async function verify(repository: Repository, options: VerifyOptions = {}): Promise<VerifyReport> {
   await repository.loadIndex();
   const live = new Set<string>();
@@ -151,6 +158,13 @@ export async function verify(repository: Repository, options: VerifyOptions = {}
     } catch {
       report.damagedPacks.push(pack);
     }
+  }
+  if (report.damagedPacks.length > 0 && options.recordDamage !== false) {
+    // A check that can only read still reports what it found; only the note for the next backup is missing.
+    report.damageRecorded = await repository.recordDamagedPacks(report.damagedPacks).then(
+      () => true,
+      () => false,
+    );
   }
   return report;
 }
@@ -299,6 +313,9 @@ export async function prune(repository: Repository, options: PruneOptions = {}):
   }
   for (const pack of remove) {
     await repository.store.delete(pack.key);
+  }
+  if (remove.length > 0) {
+    await repository.removeSettledDamageNotes();
   }
   return {
     keptSnapshots: keep.size,

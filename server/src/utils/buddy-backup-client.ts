@@ -80,7 +80,10 @@ export class BuddyBackupClient {
             headers,
             body: payload as BodyInit | undefined,
             redirect: 'error' as const,
-            signal: executionTimeout(Math.min(remaining, block ? 240_000 : 60_000)),
+            // The host re-reads every object of a snapshot before it commits it, so that answer gets the grant's life.
+            signal: executionTimeout(
+              method === 'POST' && path === 'snapshots' ? remaining : Math.min(remaining, block ? 240_000 : 60_000),
+            ),
             ...(block && { duplex: 'half' }),
           };
           let response: Response;

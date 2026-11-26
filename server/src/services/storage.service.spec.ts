@@ -1,3 +1,4 @@
+import { ConflictException } from '@nestjs/common';
 import { ErrorMessages } from 'src/constants.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { JobStatus, SystemMetadataKey } from 'src/enum.js';
@@ -387,6 +388,25 @@ describe(StorageService.name, () => {
 
       expect(mocks.storage.readdir).not.toHaveBeenCalled();
       expect(mocks.storage.removeDirIfEmpty).not.toHaveBeenCalled();
+    });
+
+    it('retries, after the other files, a file whose original registration changed while it was trashed', async () => {
+      mocks.physicalFile.deleteUnreferencedPath.mockImplementation((async (
+        path: string,
+        unlink: () => Promise<void>,
+      ) => {
+        if (path === 'path/to/changed') {
+          throw new ConflictException('Original registration changed; retry file trash');
+        }
+        await unlink();
+        return { deleted: true, references: 0 };
+      }) as never);
+
+      await expect(sut.handleDeleteFiles({ files: ['path/to/changed', 'path/to/other'] })).rejects.toBeInstanceOf(
+        ConflictException,
+      );
+      expect(mocks.storage.unlink).toHaveBeenCalledWith('path/to/other');
+      expect(mocks.storage.unlink).not.toHaveBeenCalledWith('path/to/changed');
     });
 
     it('should handle an error removing a file', async () => {

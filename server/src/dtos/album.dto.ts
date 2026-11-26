@@ -9,7 +9,7 @@ import { BulkIdErrorReasonSchema } from 'src/dtos/asset-ids.response.dto.js';
 import { MapAsset } from 'src/dtos/asset-response.dto.js';
 import { PartnerOriginSchema } from 'src/dtos/partner-origin.dto.js';
 import { SMART_ALBUM_BUILT_IN_KINDS } from 'src/dtos/system-config.dto.js';
-import { UserResponseSchema, mapUser } from 'src/dtos/user.dto.js';
+import { UserResponseSchema, mapMember } from 'src/dtos/user.dto.js';
 import {
   AlbumKind,
   AlbumKindSchema,
@@ -25,15 +25,17 @@ import { MaybeDehydrated } from 'src/types.js';
 import { asDateTimeString } from 'src/utils/date.js';
 import { stringToBool } from 'src/validation.js';
 
-// Icons are validated against the Material Design Icons catalogue the server
-// owns as data (src/constants/album-icons.ts); the 31 legacy kebab-case keys stay
+// Icons are validated against the Material Design Icons catalogue and the extra
+// icon packs the server owns as data (src/constants/album-icons.ts); the 31 legacy kebab-case keys stay
 // valid so older rows are never rejected. Enforced via refine (not z.enum) so the
 // wire type stays `string` and no client needs a codegen bump when the
 // catalogue version moves.
 export const AlbumIconSchema = z
   .string()
   .max(80)
-  .refine((value) => isValidAlbumIcon(value), { message: 'Invalid album icon: expected a Material Design Icons name' });
+  .refine((value) => isValidAlbumIcon(value), {
+    message: 'Invalid album icon: expected a name from the icon catalogue',
+  });
 
 // Album colours: the eight named colours shared with tags. Validated on write; the wire type stays `string`.
 export const ALBUM_COLORS = ['grey', 'green', 'teal', 'blue', 'purple', 'pink', 'amber', 'red'] as const;
@@ -145,6 +147,12 @@ const UpdateAlbumSchema = z
       .optional()
       .describe(
         "Lock the album: the owner's items in it (photos, videos and any other files) are locked now, together with the rest of their stacks and Live Photo videos, even those outside the album. The owner's items added later through the album's add actions are locked as they are added (if that fails, the hourly check retries); any that arrive another way (smart-album rules, iCloud sync, capture) are locked by an hourly check, which can take more than one run for a very large backlog. Other members' items and links are not locked. Unlocking the album stops locking new items and leaves the locked ones locked. While the item, or any other part of its stack or Live Photo, is in a locked album its owner owns, unlocking that item alone does not last: the hourly check locks it again. To keep an item unlocked, remove it and its stack and Live Photo parts from every locked album of the item's owner, or unlock those albums, first. Locked albums of other people don't lock it. Only the album owner may send this field; other members must leave it out, or the whole update is refused (403).",
+      ),
+    holdsScans: z
+      .boolean()
+      .optional()
+      .describe(
+        'Check uploads into this album for several photos on one scan and offer to split them. Nothing is split without the owner confirming.',
       ),
     order: AssetOrderSchema.optional(),
     isCustomOrder: z
@@ -299,6 +307,7 @@ export const AlbumResponseSchema = z
       .describe(
         'The owner chose to lock this album: their items in it are locked as they are added, or by the hourly check. Unlocking stops that; items already locked stay locked. It does not prove that every item is locked yet.',
       ),
+    holdsScans: z.boolean().optional().describe('Uploads into this album are checked for several photos on one scan'),
     order: AssetOrderSchema.optional(),
     isCustomOrder: z
       .boolean()
@@ -502,6 +511,14 @@ export class AlbumViewDto extends createZodDto(AlbumViewSchema) {}
 export class GetAlbumsDto extends createZodDto(GetAlbumsSchema) {}
 export class GetAlbumInfoDto extends createZodDto(GetAlbumInfoSchema) {}
 export class AlbumStatisticsResponseDto extends createZodDto(AlbumStatisticsResponseSchema) {}
+const AlbumRecentlyAddedResponseSchema = z
+  .object({
+    albumIds: z
+      .array(z.uuidv4())
+      .describe('Albums the user may add to, the one that most recently received an item first'),
+  })
+  .meta({ id: 'AlbumRecentlyAddedResponseDto' });
+export class AlbumRecentlyAddedResponseDto extends createZodDto(AlbumRecentlyAddedResponseSchema) {}
 export class UpdateAlbumUserDto extends createZodDto(UpdateAlbumUserSchema) {}
 export class AlbumResponseDto extends createZodDto(AlbumResponseSchema) {}
 export class AlbumDescendantCountResponseDto extends createZodDto(AlbumDescendantCountResponseSchema) {}
@@ -528,6 +545,7 @@ export type MapAlbumDto = {
   isLocked?: boolean;
   order: AssetOrder;
   isCustomOrder?: boolean;
+  holdsScans?: boolean;
   parentId: string | null;
   icon: string | null;
   color?: string | null;
@@ -545,7 +563,7 @@ export const mapAlbum = (entity: MaybeDehydrated<MapAlbumDto>): AlbumResponseDto
 
   if (entity.albumUsers) {
     for (const albumUser of entity.albumUsers) {
-      const user = mapUser(albumUser.user);
+      const user = mapMember(albumUser.user);
       albumUsers.push({
         user,
         role: albumUser.role,
@@ -584,6 +602,7 @@ export const mapAlbum = (entity: MaybeDehydrated<MapAlbumDto>): AlbumResponseDto
     isLocked: entity.isLocked ?? false,
     order: entity.order,
     isCustomOrder: entity.isCustomOrder ?? false,
+    holdsScans: entity.holdsScans ?? false,
     parentId: entity.parentId,
     icon: entity.icon,
     color: entity.color ?? null,

@@ -319,10 +319,16 @@ test('a transitioning or faulted application owner cannot be adopted or stopped 
     { state: 'stopping' },
     { state: 'unknown', code: 'native_host_pipe_failed' },
   ])
-    await fixture(async ({ operations, runtime, counts }) => {
+    await fixture(async ({ operations, runtime, counts, store }) => {
       runtime.status = () => status;
-      const op = operations.control('backup', 'busy');
-      assert.equal((await operations.wait(op.id)).state, 'failed');
+      if (status.state === 'unknown') {
+        // FL-1770: a fault only Stop or Start clears is refused before the backup takes the lock.
+        assert.throws(() => operations.control('backup', 'busy'), /native_backup_owner_unavailable/);
+        assert.equal(store.locked(), null);
+      } else {
+        const op = operations.control('backup', 'busy');
+        assert.equal((await operations.wait(op.id)).state, 'failed');
+      }
       assert.deepEqual(counts, {
         start: 0,
         stop: 0,

@@ -507,7 +507,7 @@ export class PhotographyWorkflowController {
     // The body is optional (FL-1037): an empty request reads as `{}`, a given one is checked strictly.
     const parsed = PhotographyCheckoutRequestDto.schema.safeParse(req.body ?? {});
     if (!parsed.success) throw new BadRequestException('Invalid checkout request');
-    return this.service.checkout(id, session, orderId, parsed.data.returnUrl);
+    return this.service.checkout(id, session, orderId, parsed.data.returnUrl, req.hostname);
   }
   @Post('galleries/:id/zip')
   @ApiOperation({ operationId: 'photographyZip' })

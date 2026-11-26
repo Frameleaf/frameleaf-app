@@ -142,6 +142,7 @@ try {
     unlocked: false,
     keyAvailable: false,
     snapshots: [],
+    protected: [],
   });
   docker(
     'exec',

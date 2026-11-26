@@ -37,6 +37,12 @@ describe('clearPrivateBrowserState (FL-80)', () => {
     expect(isPrivateBrowserKey('immich-ui-theme')).toBe(false);
   });
 
+  it('clears the Best Photos "Not now" choice, old and new keys alike (FL-1771)', () => {
+    expect(isPrivateBrowserKey('frameleaf-best-photos-later:ViT-B-32')).toBe(true);
+    expect(isPrivateBrowserKey('fl-best-photos-later:ViT-B-32')).toBe(true);
+    expect(isPrivateBrowserKey('fl-other')).toBe(false);
+  });
+
   it('removes expired sign-in records and keeps a live one', () => {
     const now = Date.now();
     localStorage.setItem(

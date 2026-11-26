@@ -27,6 +27,24 @@ describe(UserController.name, () => {
     ctx.reset();
   });
 
+  describe('GET /users/me/unseen-count', () => {
+    it('should be an authenticated route', async () => {
+      await request(ctx.getHttpServer()).get('/users/me/unseen-count');
+      expect(ctx.authenticate).toHaveBeenCalledWith(
+        expect.objectContaining({ metadata: expect.objectContaining({ permission: Permission.UserRead }) }),
+      );
+    });
+
+    it('should answer with the count', async () => {
+      service.getUnseenCount.mockResolvedValue({ count: 7 });
+      const { status, body } = await request(ctx.getHttpServer())
+        .get('/users/me/unseen-count')
+        .set('Authorization', `Bearer token`);
+      expect(status).toBe(200);
+      expect(body).toEqual({ count: 7 });
+    });
+  });
+
   describe('PUT /users/me', () => {
     for (const [key, message] of [
       ['email', 'Invalid input: expected email, received object'],

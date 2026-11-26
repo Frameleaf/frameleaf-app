@@ -43,6 +43,9 @@ def signature_ok(
     """Frameleaf signs `<X-Frameleaf-Timestamp>.<X-Frameleaf-Delivery>.<body>` with HMAC-SHA256 (`sha256=<hex>`)."""
     if not timestamp or not delivery or not signature or not timestamp.isdigit():
         return False
+    # non-ASCII headers would raise below (int, encode, compare_digest) instead of being refused
+    if not (timestamp.isascii() and delivery.isascii() and signature.isascii()):
+        return False
     if abs(now - int(timestamp)) > SIGNATURE_TOLERANCE_SECONDS:
         return False
     signed = f"{timestamp}.{delivery}.".encode() + body

@@ -19,6 +19,7 @@ const tools = vi.hoisted(() => ({
   save: vi.fn(),
   loadLatest: vi.fn(),
 }));
+const occasions = vi.hoisted(() => ({ getMemoryOccasions: vi.fn() }));
 vi.mock('$app/navigation', () => ({ invalidateAll: vi.fn(), beforeNavigate: vi.fn(), goto: vi.fn() }));
 vi.mock('$lib/frameleaf/own-preferences-draft', () => ({ createOwnPreferencesDraft: () => tools }));
 vi.mock('$lib/managers/auth-manager.svelte', () => ({ authManager: { preferences: {}, user: {} } }));
@@ -26,6 +27,8 @@ vi.mock('$lib/managers/auth-manager.svelte', () => ({ authManager: { preferences
 vi.mock('@frameleaf/sdk', async (original) => ({
   ...(await original<object>()),
   getMySmartAlbums: vi.fn().mockResolvedValue({ enabled: false, albums: [] }),
+  // FL-880: cast until the SDK is regenerated with this endpoint
+  getMemoryOccasions: occasions.getMemoryOccasions,
 }));
 
 const values = (overrides: Record<string, unknown> = {}) => ({
@@ -34,6 +37,8 @@ const values = (overrides: Record<string, unknown> = {}) => ({
   'memories.enabled': true,
   'memories.sidebarWeb': false,
   'memories.duration': 5,
+  'memories.occasions': true,
+  'memories.occasionRegion': 'auto',
   'people.enabled': false,
   'people.sidebarWeb': true,
   'people.minimumFaces': 3,
@@ -56,8 +61,67 @@ describe('FeatureSettings: Tools & sidebar (ACCOUNT-P4)', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    occasions.getMemoryOccasions.mockResolvedValue({ hasParent: true });
     tools.draft = values();
     tools.baseline = values();
+  });
+
+  describe("Mother's Day and Father's Day (FL-880)", () => {
+    const dates = () => screen.getByRole('combobox', { name: "Use the Mother's Day and Father's Day dates for" });
+
+    it('shows the switch and the dates for the region, and saves another region', async () => {
+      render(FeatureSettings);
+      await fireEvent.click(screen.getByText('Memories options'));
+
+      expect(screen.getByRole('switch', { name: "Mother's Day and Father's Day" })).toBeChecked();
+      expect(
+        screen.getByText('A memory of your mother or father on the day, from the people you have added as family.'),
+      ).toBeInTheDocument();
+      expect(dates()).toHaveValue('us-ca');
+      expect(
+        screen.getByText("Mother's Day: second Sunday of May. Father's Day: third Sunday of June."),
+      ).toBeInTheDocument();
+      expect(within(dates()).getAllByRole('option')).toHaveLength(8);
+
+      await fireEvent.change(dates(), { target: { value: 'uk-ie' } });
+      expect(tools.set).toHaveBeenCalledWith('memories.occasionRegion', 'uk-ie');
+    });
+
+    it('shows the days of a chosen region', async () => {
+      tools.draft = values({ 'memories.occasionRegion': 'uk-ie' });
+      render(FeatureSettings);
+      await fireEvent.click(screen.getByText('Memories options'));
+
+      expect(dates()).toHaveValue('uk-ie');
+      expect(
+        screen.getByText(
+          "Mother's Day: Mothering Sunday, three weeks before Easter Sunday. Father's Day: third Sunday of June.",
+        ),
+      ).toBeInTheDocument();
+    });
+
+    it('hides the dates while the switch is off', async () => {
+      tools.draft = values({ 'memories.occasions': false });
+      render(FeatureSettings);
+      await fireEvent.click(screen.getByText('Memories options'));
+
+      expect(screen.getByRole('switch', { name: "Mother's Day and Father's Day" })).not.toBeChecked();
+      expect(screen.queryByRole('combobox', { name: "Use the Mother's Day and Father's Day dates for" })).toBeNull();
+    });
+
+    it('holds the switch off with nobody added as a mother or father', async () => {
+      occasions.getMemoryOccasions.mockResolvedValue({ hasParent: false });
+      render(FeatureSettings);
+      await fireEvent.click(screen.getByText('Memories options'));
+
+      expect(
+        await screen.findByText("Needs a mother or father. Add one under Family on a person's page."),
+      ).toBeVisible();
+      const held = screen.getByRole('switch', { name: "Mother's Day and Father's Day" });
+      expect(held).toBeDisabled();
+      expect(held).not.toBeChecked();
+      expect(screen.queryByRole('combobox', { name: "Use the Mother's Day and Father's Day dates for" })).toBeNull();
+    });
   });
 
   it('says back the sidebar the switches make: tools in it and turned on, between the fixed items', () => {

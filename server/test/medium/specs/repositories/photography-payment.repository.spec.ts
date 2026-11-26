@@ -49,7 +49,8 @@ describe(PhotographyPaymentRepository.name, () => {
     expect(started.filter(Boolean)).toHaveLength(1);
     const first = started.find(Boolean)!;
     expect((await sut.pendingAttempt(single.id, first.payerEmail, 30))?.id).toBe(first.id);
-    expect(await sut.pendingSince(single.id, 30)).toBe(true);
+    // A third payer inside the hold is refused while the first is still paying.
+    await expect(sut.createPayment(single, 'c@example.com')).resolves.toBeUndefined();
     // With no hold (as after 30 minutes), a second payer can still start.
     const second = (await sut.createPayment(single, 'b@example.com', 0))!;
     expect(second).toBeDefined();
@@ -59,8 +60,9 @@ describe(PhotographyPaymentRepository.name, () => {
     ]);
     expect(settled.map((s) => s.moved)).toEqual([true, true]);
     expect(settled.filter((s) => s.duplicate)).toHaveLength(1);
-    expect((await sut.link(single.id))!.active).toBe(false);
-    expect(await sut.pendingSince(single.id, 30)).toBe(false);
+    expect((await sut.linkBySlug(single.slug))!.active).toBe(false);
+    await expect(sut.pendingAttempt(single.id, first.payerEmail, 30)).resolves.toBeUndefined();
+    await expect(sut.pendingAttempt(single.id, second.payerEmail, 30)).resolves.toBeUndefined();
     // A replay changes nothing.
     expect(await sut.transition(first.id, ['pending'], 'paid', 'pi_a')).toEqual({ moved: false, duplicate: false });
   });

@@ -148,6 +148,7 @@ export class McpService extends BaseService {
       const entry = name && tools[name];
       let outcome: 'denied' | 'error' | 'success' = 'denied';
       let count = 0;
+      let targets: { albumId?: string; tagId?: string; assetIds?: string[] } = {};
       try {
         // Journal before accessing the library. A completed write still has this row if its
         // outcome cannot be recorded after the mutation.
@@ -175,6 +176,20 @@ export class McpService extends BaseService {
           ? data.filter((item: { success?: boolean }) => !entry.scope.endsWith(':write') || item.success === true)
               .length
           : 1;
+        if (entry.scope.endsWith(':write')) {
+          // FL-1634 (TM-10): which album, tag and photos the write changed. The arguments passed the
+          // tool's schema, so these are ids and never text; a call takes at most MAX_RESULTS photos.
+          const args = params.arguments as { albumId?: string; tagId?: string };
+          const albumId = params.name === 'create_album' ? (data as { id: string }).id : args.albumId?.toLowerCase();
+          const changed = Array.isArray(data)
+            ? data.filter((item: { success?: boolean }) => item.success === true).map((item: { id: string }) => item.id)
+            : [];
+          targets = {
+            ...(albumId && { albumId }),
+            ...(args.tagId && { tagId: args.tagId.toLowerCase() }),
+            ...(changed.length > 0 && { assetIds: changed.slice(0, MAX_RESULTS) }),
+          };
+        }
         const result = { data };
         return { content: [{ type: 'text', text: JSON.stringify(result) }], structuredContent: result };
       } catch (error) {
@@ -194,6 +209,7 @@ export class McpService extends BaseService {
             tool: name ?? 'unknown',
             outcome,
             count,
+            ...targets,
           }),
         });
       }

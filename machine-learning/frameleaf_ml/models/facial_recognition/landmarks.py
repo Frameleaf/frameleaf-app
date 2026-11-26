@@ -129,11 +129,18 @@ def _eye_crop(grey: NDArray[Any], eye: NDArray[np.float32]) -> NDArray[Any] | No
     return cv2.resize(crop, (EYE_WIDTH, height), interpolation=cv2.INTER_AREA)
 
 
+def grey_image(image: NDArray[np.uint8]) -> NDArray[np.uint8]:
+    return cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)  # type: ignore[return-value]
+
+
 def eye_scores(
     image: NDArray[np.uint8], box: NDArray[np.float32], points: NDArray[np.float32]
 ) -> tuple[float | None, float | None]:
-    """(eyesOpen, eyeSharpness) for one face; None where the eyes can't be seen."""
-    grey = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
+    """(eyesOpen, eyeSharpness) for one face; None where the eyes can't be seen.
+
+    `image` is RGB or, for several faces of one photo, its `grey_image` so it is converted only once.
+    """
+    grey = image if image.ndim == 2 else grey_image(image)
     crops = [_eye_crop(grey, points[eye]) for eye in EYES]
     if any(crop is None for crop in crops):
         return None, None

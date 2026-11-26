@@ -16,6 +16,8 @@ export type AssistantActionItem = {
   isFavorite: boolean;
   visibility: AssetVisibility;
   fileCreatedAt: Date;
+  /** FL-936: `year` or `decade` when that is all the capture date says. */
+  dateAccuracy?: string | null;
   rating: number | null;
   burstId: string | null;
   score: number | null;
@@ -129,6 +131,7 @@ export class AssistantActionRepository {
         'asset.isFavorite',
         'asset.visibility',
         'asset.fileCreatedAt',
+        'asset.dateAccuracy',
         'asset_exif.rating',
         'asset_exif.autoStackId as burstId',
         'asset_best_photo_score.score',

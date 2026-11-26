@@ -215,6 +215,81 @@ describe(ImageEnrichmentService.name, () => {
     });
   });
 
+  describe('partner copies', () => {
+    const sourceId = newUuid();
+    const sourceDescription = {
+      key: AssetMetadataKey.MlEnrichment,
+      updatedAt: new Date(),
+      value: {
+        description: {
+          status: 'success',
+          modelName: 'Qwen/Qwen2.5-VL-3B-Instruct',
+          updatedAt: '2026-05-05T00:00:00.000Z',
+          result: {
+            description: 'A kitchen.',
+            people: [],
+            environment: '',
+            objects: [],
+            visible_text: [],
+            context: '',
+            tags: [],
+          },
+        },
+      },
+    };
+
+    beforeEach(() => {
+      mocks.systemMetadata.get.mockResolvedValue({
+        machineLearning: { nsfwDetection: { enabled: false }, imageDescription: { enabled: true } },
+      });
+      mocks.partnerOrigin.getLiveSourceId.mockResolvedValue(sourceId);
+    });
+
+    it('takes the source description instead of describing the copy again', async () => {
+      mocks.asset.getMetadataByKey.mockImplementation((id) =>
+        Promise.resolve((id === sourceId ? sourceDescription : undefined) as never),
+      );
+
+      await expect(sut.handleImageDescription({ id: assetId })).resolves.toBe(JobStatus.Success);
+
+      expect(mocks.machineLearning.describeImage).not.toHaveBeenCalled();
+      const saved = mocks.asset.upsertMetadata.mock.calls
+        .filter(([id]) => id === assetId)
+        .flatMap(([, items]) => items)
+        .map((item) => item.value as { description?: { status: string; result?: { description?: string } } })
+        .findLast((value) => value.description?.status === 'success');
+      expect(saved?.description?.result?.description).toBe('A kitchen.');
+    });
+
+    it('waits for the source when it has no description yet', async () => {
+      mocks.asset.getMetadataByKey.mockResolvedValue(undefined as never);
+
+      await expect(sut.handleImageDescription({ id: assetId })).resolves.toBe(JobStatus.Skipped);
+      expect(mocks.machineLearning.describeImage).not.toHaveBeenCalled();
+    });
+  });
+
+  it('hands a new description on to its partner copies', async () => {
+    const copyId = newUuid();
+    mocks.systemMetadata.get.mockResolvedValue({
+      machineLearning: { nsfwDetection: { enabled: false }, imageDescription: { enabled: true } },
+    });
+    mocks.partnerOrigin.getLiveCopyIds.mockResolvedValue([copyId]);
+    mocks.machineLearning.describeImage.mockResolvedValue({
+      description: 'A kitchen.',
+      people: [],
+      environment: 'kitchen',
+      objects: [],
+      visible_text: [],
+      context: '',
+      tags: [],
+    });
+
+    await expect(sut.handleImageDescription({ id: assetId })).resolves.toBe(JobStatus.Success);
+
+    expect(mocks.job.queueOutsideRun).toHaveBeenCalledWith([{ name: JobName.ImageDescription, data: { id: copyId } }]);
+  });
+
   it('should require asset update access when reading private enrichment metadata', async () => {
     mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([assetId]));
     mocks.asset.getMetadataByKey.mockResolvedValue({ value: {} } as never);

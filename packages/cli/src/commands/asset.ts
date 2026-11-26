@@ -11,6 +11,7 @@ import {
   ResumableUploadLimits,
   addAssetsToAlbum,
   attachAssetUploadSidecar,
+  cancelResumableUpload,
   checkBulkUpload,
   createAlbum,
   defaults,
@@ -40,7 +41,8 @@ const UPLOAD_WATCH_STABLE_MS = 5000;
 
 // TODO figure out why `id` is missing
 type AssetBulkUploadCheckResults = Array<AssetBulkUploadCheckResult & { id: string }>;
-type Asset = { id: string; filepath: string };
+/** `duplicate` marks an upload the server answered as a duplicate: it kept the asset it had, without this file's XMP. */
+type Asset = { id: string; filepath: string; duplicate?: true };
 
 export interface UploadOptionsDto {
   recursive?: boolean;
@@ -460,8 +462,9 @@ export const uploadFiles = async (
         showProgress();
         return response;
       }
-      newAssets.push({ id: response.id, filepath });
-      if (response.status === AssetMediaStatus.Duplicate) {
+      const isDuplicate = response.status === AssetMediaStatus.Duplicate;
+      newAssets.push({ id: response.id, filepath, ...(isDuplicate && { duplicate: isDuplicate }) });
+      if (isDuplicate) {
         duplicateCount++;
         duplicateSize += stats.size ?? 0;
       } else {
@@ -584,12 +587,23 @@ const uploadFile = async (
       return buffer.subarray(0, bytesRead);
     },
     onResource: async (url) => {
-      state.set(key, url);
-      // The XMP goes with the photo, before any of its bytes.
+      // The XMP goes with the photo, before any of its bytes. The upload is remembered only once it
+      // has it: resuming one without would publish the photo alone, and --delete would then remove
+      // the only copy of the XMP.
       if (sidecarPath) {
-        const sidecarData = new Blob([await readFile(sidecarPath)]);
-        await attachAssetUploadSidecar({ id: url.slice(url.lastIndexOf('/') + 1), body: { sidecarData } });
+        try {
+          const sidecarData = new Blob([await readFile(sidecarPath)]);
+          await attachAssetUploadSidecar({ id: url.slice(url.lastIndexOf('/') + 1), body: { sidecarData } });
+        } catch (error) {
+          try {
+            await cancelResumableUpload(url, { baseUrl, headers: headers as Record<string, string> });
+          } catch {
+            // the server lets an abandoned upload expire
+          }
+          throw error;
+        }
       }
+      state.set(key, url);
     },
     onProgress: (bytes) => {
       state.touch(key);
@@ -746,14 +760,24 @@ export const deleteFiles = async (uploaded: Asset[], duplicates: Asset[], option
   );
   deletionProgress.start(fileCount, 0);
 
+  const keptSidecars = new Set<string>();
   try {
     const sidecars = new Set<string>();
+    // Only a new upload took its XMP to the server. A duplicate's XMP was never sent, so it may hold
+    // edits the server doesn't have, and stays on disk even when its original is deleted.
+    const sentSidecar = new Set(
+      options.delete ? uploaded.filter(({ duplicate }) => !duplicate).map(({ filepath }) => filepath) : [],
+    );
     const selected = new Set(files.values().map((filepath) => path.resolve(filepath)));
     // Each directory is listed once, however many selected files it holds.
     const inUseByDir = new Map<string, Set<string> | false>();
     for (const filepath of files) {
       const sidecar = findSidecar(filepath);
       if (!sidecar || files.has(sidecar)) {
+        continue;
+      }
+      if (!sentSidecar.has(filepath)) {
+        keptSidecars.add(sidecar);
         continue;
       }
       const sidecarPath = path.resolve(sidecar);
@@ -767,6 +791,9 @@ export const deleteFiles = async (uploaded: Asset[], duplicates: Asset[], option
         sidecars.add(sidecar);
       }
     }
+    for (const sidecar of keptSidecars) {
+      sidecars.delete(sidecar);
+    }
     for (const batch of chunk(files.values().toArray(), options.concurrency)) {
       await Promise.all(batch.map((filepath) => unlink(filepath)));
       deletionProgress.increment(batch.length);
@@ -777,6 +804,11 @@ export const deleteFiles = async (uploaded: Asset[], duplicates: Asset[], option
     }
   } finally {
     deletionProgress.stop();
+  }
+  if (keptSidecars.size > 0) {
+    console.log(
+      `Kept ${keptSidecars.size} XMP sidecar${s(keptSidecars.size)} of duplicates, which the server doesn't have`,
+    );
   }
 };
 

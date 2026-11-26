@@ -173,6 +173,8 @@ describe('/admin/maintenance', () => {
           },
         )
         .toBeFalsy();
-    });
+      // Longer than the 60 s poll: under the 15 s default a loaded runner timed out mid-poll, and the retry then
+      // got 401 because maintenance had already ended.
+    }, 90_000);
   });
 });

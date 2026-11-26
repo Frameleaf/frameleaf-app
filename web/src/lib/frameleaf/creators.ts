@@ -15,7 +15,18 @@ import {
   type MediaReach,
   type MediaSaves,
 } from '@frameleaf/sdk';
-import { mdiButterflyOutline, mdiFacebook, mdiPinterest, mdiReddit, mdiWeb, mdiYoutube } from '@mdi/js';
+import {
+  mdiButterflyOutline,
+  mdiDeviantart,
+  mdiFacebook,
+  mdiInstagram,
+  mdiPinterest,
+  mdiReddit,
+  mdiTwitch,
+  mdiVimeo,
+  mdiWeb,
+  mdiYoutube,
+} from '@mdi/js';
 import type { Translations } from 'svelte-i18n';
 import { readMediaAddress, type MediaAddress, type MediaPlatform } from '$lib/frameleaf/media-address';
 import { getAssetMediaUrl } from '$lib/utils';
@@ -87,6 +98,21 @@ export const CREATOR_PLATFORMS: Record<MediaPlatform, Platform> = {
   },
   reddit: { name: 'Reddit', icon: mdiReddit, sections: ['posts', 'media'], saves: [pictures, videos] },
   bluesky: { name: 'Bluesky', icon: mdiButterflyOutline, sections: ['posts', 'media'], saves: [pictures, videos] },
+  redgifs: { name: 'RedGIFs', icon: null, letter: 'R', sections: ['media', 'videos'], saves: [pictures, videos] },
+  instagram: {
+    name: 'Instagram',
+    icon: mdiInstagram,
+    needsSignIn: true,
+    sections: ['posts', 'media', 'videos'],
+    saves: [pictures, videos],
+  },
+  tiktok: { name: 'TikTok', icon: null, letter: 'T', sections: ['videos', 'media'], saves: [pictures, videos] },
+  tumblr: { name: 'Tumblr', icon: null, letter: 't', sections: ['posts', 'media'], saves: [pictures, videos] },
+  vimeo: { name: 'Vimeo', icon: mdiVimeo, sections: ['videos'], saves: [] },
+  twitch: { name: 'Twitch', icon: mdiTwitch, sections: ['videos'], saves: [] },
+  imgur: { name: 'Imgur', icon: null, letter: 'i', sections: ['media', 'posts'], saves: [pictures, videos] },
+  flickr: { name: 'Flickr', icon: null, letter: 'f', sections: ['media', 'videos'], saves: [pictures, videos] },
+  deviantart: { name: 'DeviantArt', icon: mdiDeviantart, sections: ['media', 'posts'], saves: [pictures, videos] },
   other: { name: '', icon: mdiWeb, sections: ['media'], saves: [] },
 };
 
@@ -117,7 +143,21 @@ export const creatorPlatform = (provider: string | null | undefined, url?: strin
   if (name === 'x' || name.includes('twitter')) {
     return 'x';
   }
-  for (const platform of ['pinterest', 'facebook', 'reddit', 'bluesky'] as const) {
+  for (const platform of [
+    'pinterest',
+    'facebook',
+    'reddit',
+    'bluesky',
+    'redgifs',
+    'instagram',
+    'tiktok',
+    'tumblr',
+    'vimeo',
+    'twitch',
+    'imgur',
+    'flickr',
+    'deviantart',
+  ] as const) {
     if (name.includes(platform)) {
       return platform;
     }
@@ -158,7 +198,8 @@ export const sectionRequest = (
 ): { section?: MediaSection; kind?: MediaItemKind; layout: CreatorLayout } => {
   switch (section) {
     case 'videos': {
-      return platform === 'youtube' || platform === 'facebook'
+      // yt-dlp's sites file each video under Videos; the others' videos are cuts of their posts
+      return ['youtube', 'facebook', 'vimeo', 'twitch'].includes(platform)
         ? { section: MediaSection.Video, layout: 'videos' }
         : { section: MediaSection.Post, kind: MediaItemKind.Video, layout: 'media' };
     }
@@ -235,7 +276,10 @@ export const creatorStatus = (
   const state = creatorState(creator);
   const subscription = creator.subscription;
   if (state === 'attention') {
-    return { key: 'frameleaf_creators_state_attention' };
+    // What actually stopped it; only a subscription with no saved reason falls back to "sign in again".
+    return subscription?.error
+      ? { key: 'frameleaf_creators_state_attention_reason', values: { reason: subscription.error } }
+      : { key: 'frameleaf_creators_state_attention' };
   }
   if (state === 'saved' || !subscription) {
     return { key: 'frameleaf_creators_state_saved' };
@@ -381,6 +425,12 @@ export const ADDRESS_NOUNS: Record<MediaAddress['what'], Translations> = {
   playlist: 'frameleaf_creators_what_playlist',
   post: 'frameleaf_creators_what_post',
   pin: 'frameleaf_creators_what_pin',
+  subreddit: 'frameleaf_creators_what_subreddit',
+  blog: 'frameleaf_creators_what_blog',
+  reel: 'frameleaf_creators_what_reel',
+  clip: 'frameleaf_creators_what_clip',
+  image: 'frameleaf_creators_what_image',
+  album: 'frameleaf_creators_what_album',
 };
 
 /** The handle or site an address names, shown until the Library has read the real name. */
@@ -398,9 +448,11 @@ export const addressLabel = (address: string) => {
 
 export const CREATORS_AREA = 'creators';
 export type CreatorsLocation = {
-  /** A creator's page; without one, Home or the Subscriptions list. */
+  /** A creator's page; without one, Home, the Subscriptions list or the Downloads list. */
   creator: string | null;
-  view: 'home' | 'subscriptions';
+  view: 'home' | 'subscriptions' | 'downloads';
+  /** The Downloads list, narrowed to one kind. */
+  show: string | null;
   section: string | null;
   kind: CreatorKind;
   unwatched: boolean;
@@ -416,9 +468,11 @@ export const isCreatorsArea = (url: URL) =>
 export const readCreatorsLocation = (url: URL): CreatorsLocation => {
   const get = (name: string) => url.searchParams.get(name);
   const creator = get('creator');
+  const view = get('view');
   return {
     creator,
-    view: !creator && get('view') === 'subscriptions' ? 'subscriptions' : 'home',
+    view: !creator && (view === 'subscriptions' || view === 'downloads') ? view : 'home',
+    show: !creator && view === 'downloads' ? get('show') : null,
     section: creator ? get('section') : null,
     kind: creator ? creatorKind(get('kind')) : 'all',
     unwatched: !!creator && get('unwatched') === '1',
@@ -448,6 +502,11 @@ export const creatorsHref = (location: Partial<CreatorsLocation> = {}) => {
     }
   } else if (location.view === 'subscriptions') {
     search.set('view', 'subscriptions');
+  } else if (location.view === 'downloads') {
+    search.set('view', 'downloads');
+    if (location.show && location.show !== 'all') {
+      search.set('show', location.show);
+    }
   }
   return `/pro?${search}`;
 };

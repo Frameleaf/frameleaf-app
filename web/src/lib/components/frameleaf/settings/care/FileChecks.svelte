@@ -239,7 +239,10 @@
     }
   };
 
+  /** Only the newest read lands: an older one would bring back a finding just dismissed. */
+  let loadRun = 0;
   const load = async () => {
+    const run = ++loadRun;
     const [counts, times, lists, findings, sorted, photos] = await Promise.all([
       getIntegrityReportSummary().catch(() => undefined),
       getIntegrityCheckRuns().catch(() => undefined),
@@ -250,12 +253,16 @@
       quietly(getFoundFilesSummary),
       quietly(() => getFoundFiles({ outcome: FoundFileOutcome.Added, size: FOUND_STRIP })),
     ]);
-    foundFiles = sorted;
-    foundStrip = photos?.items.filter((file) => foundPicture(file)) ?? [];
-    summary = counts;
-    runs = times;
-    overview = findings;
-    found = Object.fromEntries(CHECKS.map((check, index) => [check.type, lists[index]]));
+    if (run !== loadRun) {
+      return;
+    }
+    // A read that failed keeps what was known: no counts would make the page say every file is fine.
+    foundFiles = sorted ?? foundFiles;
+    foundStrip = photos ? photos.items.filter((file) => foundPicture(file)) : foundStrip;
+    summary = counts ?? summary;
+    runs = times ?? runs;
+    overview = findings ?? overview;
+    found = Object.fromEntries(CHECKS.map((check, index) => [check.type, lists[index] ?? found[check.type]]));
     loaded = true;
   };
 

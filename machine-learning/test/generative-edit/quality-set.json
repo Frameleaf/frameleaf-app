@@ -1,0 +1,1025 @@
+{
+  "schema": "frameleaf.generative-edit-quality-set/v1",
+  "description": "FL-775 reference edits for Generative Develop (epic FL-748). Fictional photos; the owner scores each result on scoring-sheet.json. See README.md.",
+  "gate": {
+    "minAccepted": 40,
+    "of": 50
+  },
+  "edits": [
+    {
+      "id": "instruct-01-street-cars",
+      "mode": "instruct",
+      "image": {
+        "path": "photos/instruct-01-street-cars.jpg",
+        "sha256": "8ba545d156e07a4603ff80e98b03c2c8b01f7ddf165aabc894fa22c7d2b31ca9",
+        "width": 1216,
+        "height": 832,
+        "fixturePrompt": "A narrow cobbled street in an old European town on a dull overcast afternoon, three cars parked along the right kerb, stone houses with shutters, slightly underexposed.",
+        "fixtureSeed": 775
+      },
+      "prompt": "Make it brighter and remove the cars.",
+      "accept": [
+        "All three cars are gone and the kerb and cobbles continue where they stood.",
+        "The photo is clearly brighter without blown-out sky or walls.",
+        "Houses, shutters and street layout are unchanged."
+      ]
+    },
+    {
+      "id": "instruct-02-beach-background-people",
+      "mode": "instruct",
+      "image": {
+        "path": "photos/instruct-02-beach-background-people.jpg",
+        "sha256": "6471b3f2394d64aeab2da0d96d36d68cd8e57dcd2f615dc22ebe5712ceb0748f",
+        "width": 1216,
+        "height": 832,
+        "fixturePrompt": "A mother and her young daughter building a sandcastle on a busy beach, several strangers walking and sitting in the background, sea behind.",
+        "fixtureSeed": 775
+      },
+      "prompt": "Remove the people in the background.",
+      "accept": [
+        "Only the mother and daughter remain.",
+        "Sand, sea and horizon are filled in believably with no smears or ghost limbs.",
+        "The two subjects and the sandcastle are untouched."
+      ]
+    },
+    {
+      "id": "instruct-03-picnic-rubbish",
+      "mode": "instruct",
+      "image": {
+        "path": "photos/instruct-03-picnic-rubbish.jpg",
+        "sha256": "c5eced6126329823415a8eaa94ef2b94527090551dcfff543166ab09aae74190",
+        "width": 1216,
+        "height": 832,
+        "fixturePrompt": "A picnic blanket with sandwiches and fruit on park grass, an overflowing rubbish bin and two plastic bags on the grass behind it, trees in the distance.",
+        "fixtureSeed": 775
+      },
+      "prompt": "Remove the rubbish bin and the plastic bags.",
+      "accept": [
+        "Bin and bags are gone and grass fills the space.",
+        "The picnic and blanket are unchanged."
+      ]
+    },
+    {
+      "id": "instruct-04-portrait-glasses",
+      "mode": "instruct",
+      "image": {
+        "path": "photos/instruct-04-portrait-glasses.jpg",
+        "sha256": "5197e34a79da2061d723281fd1f3e81f0ccf7b39a8d50be1875cf183f9cba721",
+        "width": 832,
+        "height": 1216,
+        "fixturePrompt": "Head and shoulders portrait of a woman in her forties with shoulder-length brown hair wearing black rectangular glasses, standing in a garden, soft daylight.",
+        "fixtureSeed": 775
+      },
+      "prompt": "Remove her glasses.",
+      "accept": [
+        "Glasses are gone, including shadows and reflections.",
+        "She is clearly the same person: eyes, face shape, hair and skin texture are kept.",
+        "Background is unchanged."
+      ]
+    },
+    {
+      "id": "instruct-05-jacket-colour",
+      "mode": "instruct",
+      "image": {
+        "path": "photos/instruct-05-jacket-colour.jpg",
+        "sha256": "e9da46f5db04907042c7167bef28a5512daa8b2c3ea347746cd0955895cf3ebc",
+        "width": 832,
+        "height": 1216,
+        "fixturePrompt": "A man in his thirties wearing a bright blue rain jacket standing on a city pavement, shops behind him, three-quarter length.",
+        "fixtureSeed": 775
+      },
+      "prompt": "Change his jacket to dark green.",
+      "accept": [
+        "The jacket is dark green with the same folds, zip and shape.",
+        "Face, hands, trousers and background are unchanged."
+      ]
+    },
+    {
+      "id": "instruct-06-dog-lead",
+      "mode": "instruct",
+      "image": {
+        "path": "photos/instruct-06-dog-lead.jpg",
+        "sha256": "f31c37c5968cc98f24abafbbad48c49b0a9d3af92c859bd93e29a17edf939548",
+        "width": 1216,
+        "height": 832,
+        "fixturePrompt": "A border collie standing on a park path wearing a red lead that runs up out of the frame to the right, autumn leaves on the ground.",
+        "fixtureSeed": 775
+      },
+      "prompt": "Remove the lead.",
+      "accept": [
+        "The lead is gone along its whole length.",
+        "The dog's fur, collar area and the path behind are rebuilt cleanly."
+      ]
+    },
+    {
+      "id": "instruct-07-cafe-sign-text",
+      "mode": "instruct",
+      "image": {
+        "path": "photos/instruct-07-cafe-sign-text.jpg",
+        "sha256": "f37a639d6dc596111a0147301cd3ae37a54be59794b8b467bf4f58679bec1b94",
+        "width": 1216,
+        "height": 832,
+        "fixturePrompt": "The front of a small corner cafe with a wooden door and a hanging chalkboard sign that reads \"OPEN\" in white chalk letters, flower pots by the door.",
+        "fixtureSeed": 775
+      },
+      "prompt": "Change the sign to say \"CLOSED\".",
+      "accept": [
+        "The sign reads CLOSED, spelled correctly, in the same chalk style.",
+        "Nothing else on the shop front changes."
+      ]
+    },
+    {
+      "id": "instruct-08-wall-colour",
+      "mode": "instruct",
+      "image": {
+        "path": "photos/instruct-08-wall-colour.jpg",
+        "sha256": "2ae4d0a3dea2c65e6912043c3e8c7e414a886ab56bf2e720ca2512f20b47f8c0",
+        "width": 1216,
+        "height": 832,
+        "fixturePrompt": "A lived-in living room with a grey sofa, a wooden coffee table, a plant and a plain white wall with two framed pictures, daylight from a window on the left.",
+        "fixtureSeed": 775
+      },
+      "prompt": "Paint the wall sage green.",
+      "region": [
+        0.0,
+        0.0,
+        1.0,
+        0.55
+      ],
+      "accept": [
+        "The wall is sage green with the same light fall-off and shadows.",
+        "Pictures, sofa, plant and floor keep their colours and edges."
+      ]
+    },
+    {
+      "id": "instruct-09-cake-candles",
+      "mode": "instruct",
+      "image": {
+        "path": "photos/instruct-09-cake-candles.jpg",
+        "sha256": "b2a08f009796180e56dacb3fa98a64451f24053cf443cb91fd937421692328f4",
+        "width": 1216,
+        "height": 832,
+        "fixturePrompt": "A homemade chocolate birthday cake with no candles on a kitchen table, paper plates and a child's hands at the edge of the frame.",
+        "fixtureSeed": 775
+      },
+      "prompt": "Add five lit candles to the cake.",
+      "accept": [
+        "Exactly five candles, lit, standing in the cake.",
+        "A soft glow on the icing is welcome; the rest of the table is unchanged."
+      ]
+    },
+    {
+      "id": "instruct-10-autumn-to-winter",
+      "mode": "instruct",
+      "image": {
+        "path": "photos/instruct-10-autumn-to-winter.jpg",
+        "sha256": "44b92e5b3c1ac8c701716c424b238a36a3a8cd08979b78274bd9a45c83f23572",
+        "width": 1216,
+        "height": 832,
+        "fixturePrompt": "A park path lined with trees in full orange autumn leaf, a wooden bench on the left, fallen leaves on the ground, soft afternoon light.",
+        "fixtureSeed": 775
+      },
+      "prompt": "Make it winter, with snow on the ground and bare trees.",
+      "accept": [
+        "Snow covers the ground and bench, trees are bare.",
+        "The path, bench and tree positions are the same scene."
+      ]
+    },
+    {
+      "id": "instruct-11-make-him-smile",
+      "mode": "instruct",
+      "image": {
+        "path": "photos/instruct-11-make-him-smile.jpg",
+        "sha256": "01da8c2322cfb2e867a2442353d2edbac24ebc2f227c3b450af26161f7cfef0a",
+        "width": 832,
+        "height": 1216,
+        "fixturePrompt": "Portrait of an older man with a grey beard and a flat cap looking at the camera with a neutral, serious expression, brick wall behind.",
+        "fixtureSeed": 775
+      },
+      "prompt": "Make him smile.",
+      "accept": [
+        "A natural smile, with teeth and eye creases that fit his face.",
+        "Same man: beard, cap, skin and wall unchanged."
+      ]
+    },
+    {
+      "id": "instruct-12-power-lines",
+      "mode": "instruct",
+      "image": {
+        "path": "photos/instruct-12-power-lines.jpg",
+        "sha256": "799865c977e50d61fa530f01f896a7d0fa22f5919c631b6e48fbc6c36588e58a",
+        "width": 1216,
+        "height": 832,
+        "fixturePrompt": "Rolling green farmland under a pale sky with an electricity pylon in the middle distance and power lines crossing the whole sky.",
+        "fixtureSeed": 775
+      },
+      "prompt": "Remove the power lines and the pylon.",
+      "accept": [
+        "Lines and pylon are gone with no faint traces across the sky.",
+        "Fields and hedges are unchanged."
+      ]
+    },
+    {
+      "id": "instruct-13-food-warmer",
+      "mode": "instruct",
+      "image": {
+        "path": "photos/instruct-13-food-warmer.jpg",
+        "sha256": "8d482038350eac6563eced38185d6a65a87728101da4c40520a44bf48d6bab1d",
+        "width": 1216,
+        "height": 832,
+        "fixturePrompt": "A plate of roast chicken, potatoes and green beans on a wooden table, photographed under dull bluish kitchen light, looking flat and unappetising.",
+        "fixtureSeed": 775
+      },
+      "prompt": "Make the food look fresh and appetising with warmer colours. Keep the plate and table as they are.",
+      "accept": [
+        "Colour and contrast are warmer and livelier.",
+        "The food is the same food: no new items, no changed shapes."
+      ]
+    },
+    {
+      "id": "instruct-14-car-colour",
+      "mode": "instruct",
+      "image": {
+        "path": "photos/instruct-14-car-colour.jpg",
+        "sha256": "14f0cea0c16d3cee25ab52a49a645134fa2586dbe3b73a2b64104ca0842e7bae",
+        "width": 1216,
+        "height": 832,
+        "fixturePrompt": "A shiny red vintage hatchback parked on a gravel drive in front of a hedge, sunny day, reflections on the bodywork.",
+        "fixtureSeed": 775
+      },
+      "prompt": "Make the car pale blue.",
+      "accept": [
+        "Bodywork is pale blue, with reflections and highlights kept.",
+        "Lights, glass, tyres, chrome and the hedge keep their colours."
+      ]
+    },
+    {
+      "id": "instruct-15-clear-counter",
+      "mode": "instruct",
+      "image": {
+        "path": "photos/instruct-15-clear-counter.jpg",
+        "sha256": "ec569aa2871ffaabe5e8b9eb118656a4356cad13be92fbd9cdd5e076885af32e",
+        "width": 1216,
+        "height": 832,
+        "fixturePrompt": "A cluttered kitchen counter with a steel kettle, dirty mugs, a cereal box, keys, post and a fruit bowl, tiled wall behind.",
+        "fixtureSeed": 775
+      },
+      "prompt": "Clear everything off the counter except the kettle.",
+      "accept": [
+        "Only the kettle is left on the counter.",
+        "Counter surface and tiles are rebuilt cleanly where things stood."
+      ]
+    },
+    {
+      "id": "instruct-16-bike-helmet",
+      "mode": "instruct",
+      "image": {
+        "path": "photos/instruct-16-bike-helmet.jpg",
+        "sha256": "992c6e4ad6305a8d47f8feedce87cee762bceef22534d3d2b336b96633c349f8",
+        "width": 1216,
+        "height": 832,
+        "fixturePrompt": "A seven year old girl with a ponytail riding a small pink bicycle on a quiet suburban pavement, no helmet, side view.",
+        "fixtureSeed": 775
+      },
+      "prompt": "Add a blue cycling helmet on her head.",
+      "accept": [
+        "A blue helmet that sits properly on her head with straps.",
+        "Her face, ponytail and the bicycle are unchanged."
+      ]
+    },
+    {
+      "id": "instruct-17-fence-foreground",
+      "mode": "instruct",
+      "image": {
+        "path": "photos/instruct-17-fence-foreground.jpg",
+        "sha256": "5b8cdcc7554760cf9c26807544c05e0ff865347d25bc1262591c6485e11f3dbf",
+        "width": 1216,
+        "height": 832,
+        "fixturePrompt": "A giraffe at a zoo photographed through a wire mesh fence, the blurry fence wires cross the whole foreground.",
+        "fixtureSeed": 775
+      },
+      "prompt": "Remove the fence in the foreground.",
+      "accept": [
+        "The mesh is gone from the whole frame.",
+        "The giraffe's pattern and the background are rebuilt without a grid ghost."
+      ]
+    },
+    {
+      "id": "instruct-18-photobomber",
+      "mode": "instruct",
+      "image": {
+        "path": "photos/instruct-18-photobomber.jpg",
+        "sha256": "e27937a7431ea1b871f81095652a57e65f00cad90dd432cd1366bc3ca1e4910a",
+        "width": 1216,
+        "height": 832,
+        "fixturePrompt": "A smiling couple in their twenties taking a photo in front of a fountain in a city square, a man in a red T-shirt walking past close behind them.",
+        "fixtureSeed": 775
+      },
+      "prompt": "Remove the man in the red shirt behind them.",
+      "region": [
+        0.55,
+        0.15,
+        0.4,
+        0.8
+      ],
+      "accept": [
+        "The passer-by is gone and the fountain and square fill the space.",
+        "The couple are untouched, including hair edges."
+      ]
+    },
+    {
+      "id": "instruct-19-blur-background",
+      "mode": "instruct",
+      "image": {
+        "path": "photos/instruct-19-blur-background.jpg",
+        "sha256": "04ab8ba8ffbbfff186b0cbe1036be5e9fb70deda97513b588a7c22a98bbe8b2d",
+        "width": 832,
+        "height": 1216,
+        "fixturePrompt": "A teenage boy in a school blazer standing in a busy street market, everything in sharp focus from front to back, stalls and shoppers behind him.",
+        "fixtureSeed": 775
+      },
+      "prompt": "Blur the background and keep him sharp.",
+      "accept": [
+        "Background has a smooth lens-like blur.",
+        "He stays sharp with a clean edge around hair and shoulders, no halo."
+      ]
+    },
+    {
+      "id": "instruct-20-colourise",
+      "mode": "instruct",
+      "image": {
+        "path": "photos/instruct-20-colourise.jpg",
+        "sha256": "ff49ec45259b54fca75bd0c7c5549f6a4dcbaa3ed7d01f8ca90ef8357c90eea9",
+        "width": 1216,
+        "height": 832,
+        "fixturePrompt": "A black and white 1950s family photograph of parents and two children standing outside a terraced house, slightly faded, visible film grain.",
+        "fixtureSeed": 775
+      },
+      "prompt": "Colourise this photo with natural colours.",
+      "accept": [
+        "Skin, clothes, brick and sky have believable period colours.",
+        "Faces and details are the same; grain may stay."
+      ]
+    },
+    {
+      "id": "extend-01-pier-to-wide",
+      "mode": "extend",
+      "image": {
+        "path": "photos/extend-01-pier-to-wide.jpg",
+        "sha256": "091fed273166fae9775eda446802ae1f62f167b5f20cdd754a29ebc114982696",
+        "width": 832,
+        "height": 1216,
+        "fixturePrompt": "A woman in a yellow coat standing on a wooden pier looking out over a calm grey sea, seen from behind, vertical photo.",
+        "fixtureSeed": 775
+      },
+      "prompt": "Extend the photo to a wide landscape.",
+      "extend": {
+        "aspect": "16:9"
+      },
+      "accept": [
+        "New sea, pier and sky continue with a straight horizon.",
+        "No second person or repeated pier posts appear.",
+        "Original pixels are unchanged and no seam shows."
+      ]
+    },
+    {
+      "id": "extend-02-lake-to-square",
+      "mode": "extend",
+      "image": {
+        "path": "photos/extend-02-lake-to-square.jpg",
+        "sha256": "3ff7b89a5b90a82eff37e572b66f17179748e5e3f488827d344991ce4bed24fb",
+        "width": 1216,
+        "height": 832,
+        "fixturePrompt": "A tightly framed mountain lake with pine trees on the far shore, the tree tops and the near shoreline are cut off by the frame.",
+        "fixtureSeed": 775
+      },
+      "prompt": "Extend the photo to a square.",
+      "extend": {
+        "aspect": "1:1"
+      },
+      "accept": [
+        "More sky above and more shore or water below, matching the light.",
+        "Tree tops complete naturally.",
+        "No seam at the old edges."
+      ]
+    },
+    {
+      "id": "extend-03-mountain-to-vertical",
+      "mode": "extend",
+      "image": {
+        "path": "photos/extend-03-mountain-to-vertical.jpg",
+        "sha256": "28de19b28c9fff012245b721fde26ac754c534cb7d1071ca83f8b606aa215e11",
+        "width": 1216,
+        "height": 832,
+        "fixturePrompt": "A snowy mountain peak above a green valley with a small wooden hut, clear morning light.",
+        "fixtureSeed": 775
+      },
+      "prompt": "Extend the photo to a tall phone wallpaper.",
+      "extend": {
+        "aspect": "9:16"
+      },
+      "accept": [
+        "Sky above and valley below continue believably.",
+        "The peak and hut are unchanged."
+      ]
+    },
+    {
+      "id": "extend-04-cropped-head",
+      "mode": "extend",
+      "image": {
+        "path": "photos/extend-04-cropped-head.jpg",
+        "sha256": "e7885623c5914f9ae09d13d0fa7296e859e54218502c81cc107df7c000aded9d",
+        "width": 832,
+        "height": 1216,
+        "fixturePrompt": "Close portrait of a young man with curly dark hair in a park, framed too tightly so the top of his hair is cut off by the top edge of the photo.",
+        "fixtureSeed": 775
+      },
+      "prompt": "Extend the top of the photo to show the rest of his hair.",
+      "extend": {
+        "top": 0.3
+      },
+      "accept": [
+        "His hair is completed in the same style and colour.",
+        "Face is untouched; background continues."
+      ]
+    },
+    {
+      "id": "extend-05-dinner-table-sides",
+      "mode": "extend",
+      "image": {
+        "path": "photos/extend-05-dinner-table-sides.jpg",
+        "sha256": "d432cf23109db18b0b6b112a9e3377cf6c9f8f12366190c09e7a57ffe6c190ad",
+        "width": 1216,
+        "height": 832,
+        "fixturePrompt": "Four friends at a restaurant table laughing, framed so the people at the far left and far right are cut in half by the edges of the photo.",
+        "fixtureSeed": 775
+      },
+      "prompt": "Extend the photo on both sides.",
+      "extend": {
+        "left": 0.25,
+        "right": 0.25
+      },
+      "accept": [
+        "The cut-off people are completed with matching clothes and plausible faces.",
+        "No extra duplicate guests; table and lighting continue."
+      ]
+    },
+    {
+      "id": "extend-06-church-tower-top",
+      "mode": "extend",
+      "image": {
+        "path": "photos/extend-06-church-tower-top.jpg",
+        "sha256": "7088452ff7f44e1c7b58a9e84c09a1597c00ac19c16e93432effe41a3326f96d",
+        "width": 832,
+        "height": 1216,
+        "fixturePrompt": "A stone church photographed from the street, the top of its tower and spire is cut off by the top of the frame, blue sky.",
+        "fixtureSeed": 775
+      },
+      "prompt": "Extend the top of the photo to show the whole tower.",
+      "extend": {
+        "top": 0.4
+      },
+      "accept": [
+        "The tower finishes with a believable spire or top.",
+        "Vertical lines stay straight; stone matches."
+      ]
+    },
+    {
+      "id": "extend-07-beach-panorama",
+      "mode": "extend",
+      "image": {
+        "path": "photos/extend-07-beach-panorama.jpg",
+        "sha256": "7fccc2aaf2457bb73c226ad0b978a3251896d1db5717f18da0448ae8539e63a8",
+        "width": 1216,
+        "height": 832,
+        "fixturePrompt": "An empty sandy beach at low tide with a headland on the left and gentle waves, late afternoon.",
+        "fixtureSeed": 775
+      },
+      "prompt": "Extend the photo to a panorama.",
+      "extend": {
+        "aspect": "21:9"
+      },
+      "accept": [
+        "Horizon is level across the whole width.",
+        "Waves and sand texture continue without repeats."
+      ]
+    },
+    {
+      "id": "extend-08-cat-square-to-wide",
+      "mode": "extend",
+      "image": {
+        "path": "photos/extend-08-cat-square-to-wide.jpg",
+        "sha256": "727d7f55f7f5fa599373adbf45ec1fd96e2291a221910eebdbbae3ce13fb3152",
+        "width": 1024,
+        "height": 1024,
+        "fixturePrompt": "A ginger cat asleep on a blue sofa cushion, square photo, close framing.",
+        "fixtureSeed": 775
+      },
+      "prompt": "Extend the photo to a 3:2 landscape.",
+      "extend": {
+        "aspect": "3:2"
+      },
+      "accept": [
+        "More sofa and room appear on each side.",
+        "There is still one cat, unchanged."
+      ]
+    },
+    {
+      "id": "relight-01-backlit-face",
+      "mode": "relight",
+      "image": {
+        "path": "photos/relight-01-backlit-face.jpg",
+        "sha256": "c4ed8f1d464a81449198e0b29e5e10ef3c89474074f0296f752653dc090fe59a",
+        "width": 832,
+        "height": 1216,
+        "fixturePrompt": "A woman standing indoors in front of a very bright window, strongly backlit so her face is dark and in shadow.",
+        "fixtureSeed": 775
+      },
+      "prompt": "Light her face softly from the front left, as if from a second window.",
+      "accept": [
+        "Her face is clearly visible with soft, directional light.",
+        "She is the same person; the window stays bright but not grey."
+      ]
+    },
+    {
+      "id": "relight-02-noon-to-golden-hour",
+      "mode": "relight",
+      "image": {
+        "path": "photos/relight-02-noon-to-golden-hour.jpg",
+        "sha256": "30426b009f361d621e445a85130bc05934c59f01e64a5aef531078a272e6a10b",
+        "width": 1216,
+        "height": 832,
+        "fixturePrompt": "Two children playing football on a village green at midday under harsh overhead sun with short hard shadows.",
+        "fixtureSeed": 775
+      },
+      "prompt": "Make it golden hour, with warm low sun from the right.",
+      "accept": [
+        "Warm low light with long shadows that fall to the left.",
+        "Children, ball and green are the same."
+      ]
+    },
+    {
+      "id": "relight-03-harsh-flash",
+      "mode": "relight",
+      "image": {
+        "path": "photos/relight-03-harsh-flash.jpg",
+        "sha256": "620e025fa1f62d57ecabcfa8dcf7e8e81969c6656a5c27f5cd194a7f8d058870",
+        "width": 1216,
+        "height": 832,
+        "fixturePrompt": "Three friends at a house party photographed with direct on-camera flash, shiny faces, hard shadows on the wall behind, dark room.",
+        "fixtureSeed": 775
+      },
+      "prompt": "Replace the harsh flash with soft, even room light.",
+      "accept": [
+        "No hard flash shadows or shiny hot spots.",
+        "Faces and clothes are unchanged; the room is visible."
+      ]
+    },
+    {
+      "id": "relight-04-night-to-day",
+      "mode": "relight",
+      "image": {
+        "path": "photos/relight-04-night-to-day.jpg",
+        "sha256": "88f324ed75f4c1eb3a2191161149067648e68c2c206a5e4cdc60e8523ea81382",
+        "width": 1216,
+        "height": 832,
+        "fixturePrompt": "A quiet residential street at night lit by orange street lamps, parked cars and terraced houses.",
+        "fixtureSeed": 775
+      },
+      "prompt": "Make it daytime.",
+      "accept": [
+        "Daylight sky and natural colours; street lamps are off.",
+        "The same houses and cars in the same places."
+      ]
+    },
+    {
+      "id": "relight-05-overcast-house",
+      "mode": "relight",
+      "image": {
+        "path": "photos/relight-05-overcast-house.jpg",
+        "sha256": "ec814dd384a3c5682d3fcd016ca8728e2aa96c83caf456bdc3f5d6813af81c47",
+        "width": 1216,
+        "height": 832,
+        "fixturePrompt": "The front of a white cottage with a blue door and a small garden on a flat grey overcast day.",
+        "fixtureSeed": 775
+      },
+      "prompt": "Make it a sunny afternoon with soft shadows.",
+      "accept": [
+        "Sunlit walls and shadows from one direction.",
+        "Cottage, door and garden details are unchanged."
+      ]
+    },
+    {
+      "id": "relight-06-still-life-lamp",
+      "mode": "relight",
+      "image": {
+        "path": "photos/relight-06-still-life-lamp.jpg",
+        "sha256": "6b659f95ac859718ba358cf15ebc390a0c76527c88c0f64aafcb7101f1a661f1",
+        "width": 1216,
+        "height": 832,
+        "fixturePrompt": "A ceramic teapot, two cups and a bowl of lemons on a wooden table in flat even light against a plain wall.",
+        "fixtureSeed": 775
+      },
+      "prompt": "Light it from the left with a warm lamp and make the background darker.",
+      "accept": [
+        "Highlights on the left, shadows to the right, darker wall.",
+        "Objects keep shape, glaze and position."
+      ]
+    },
+    {
+      "id": "relight-07-blue-hour",
+      "mode": "relight",
+      "image": {
+        "path": "photos/relight-07-blue-hour.jpg",
+        "sha256": "388d010da0724f0eefa9d4c1d7b1e4e966def4ec85e19d4f83ca68341ca3b337",
+        "width": 1216,
+        "height": 832,
+        "fixturePrompt": "A couple walking a dog along a riverside promenade in plain daylight, street lamps along the railing, buildings opposite.",
+        "fixtureSeed": 775
+      },
+      "prompt": "Make it blue hour in the evening with the street lamps on.",
+      "accept": [
+        "Deep blue sky, lamps lit and casting warm pools of light.",
+        "The couple, dog and buildings are the same."
+      ]
+    },
+    {
+      "id": "relight-08-underexposed-dinner",
+      "mode": "relight",
+      "image": {
+        "path": "photos/relight-08-underexposed-dinner.jpg",
+        "sha256": "40e49788d597b53c622d8bcb9abe95b35624e87dcbb1a5799b737e87548f2a6e",
+        "width": 1216,
+        "height": 832,
+        "fixturePrompt": "Four friends at a restaurant table laughing, framed so the people at the far left and far right are cut in half by the edges of the photo.",
+        "fixtureSeed": 775,
+        "derivedFrom": "photos/extend-05-dinner-table-sides.jpg",
+        "derivation": "Brightness multiplied by 0.13, saved as JPEG quality 88."
+      },
+      "prompt": "This photo came out far too dark. Brighten it so the faces are clear, and keep it looking like an evening indoors.",
+      "accept": [
+        "Every face is readable with natural skin tones.",
+        "Still an indoor evening: no daylight look, no heavy noise or banding.",
+        "The people, food and room are the same."
+      ]
+    },
+    {
+      "id": "sky-01-grey-to-blue",
+      "mode": "sky",
+      "image": {
+        "path": "photos/sky-01-grey-to-blue.jpg",
+        "sha256": "3a7780fc766d8564f96562fbc3354d19f997683c7606376ecf8d76fc3dd844f4",
+        "width": 1216,
+        "height": 832,
+        "fixturePrompt": "A wide view of green hills and a stone wall under a completely flat grey sky.",
+        "fixtureSeed": 775
+      },
+      "prompt": "Replace the sky with a blue sky and a few white clouds.",
+      "accept": [
+        "Blue sky with clouds; light on the hills fits it.",
+        "Horizon line and land are unchanged."
+      ]
+    },
+    {
+      "id": "sky-02-skyline-sunset",
+      "mode": "sky",
+      "image": {
+        "path": "photos/sky-02-skyline-sunset.jpg",
+        "sha256": "823ad32aa0d020d4c19fa2456414ede6b2e05a6844c6e7f10b1a1e78173042d6",
+        "width": 1216,
+        "height": 832,
+        "fixturePrompt": "A city skyline across a river with a blown-out white sky, calm water reflecting the buildings.",
+        "fixtureSeed": 775
+      },
+      "prompt": "Replace the sky with a dramatic sunset.",
+      "accept": [
+        "Sunset sky behind the buildings with clean edges.",
+        "The river reflection takes the sunset colours."
+      ]
+    },
+    {
+      "id": "sky-03-beach-milky-way",
+      "mode": "sky",
+      "image": {
+        "path": "photos/sky-03-beach-milky-way.jpg",
+        "sha256": "4c1f71fcb0e52e49604c2b9916b66bb43792c0a16e2c7071e3003e3803b07825",
+        "width": 1216,
+        "height": 832,
+        "fixturePrompt": "A beach with a wooden lifeguard hut at dusk under a plain dark blue sky.",
+        "fixtureSeed": 775
+      },
+      "prompt": "Replace the sky with a starry night sky showing the Milky Way.",
+      "accept": [
+        "Stars and Milky Way look like a real long exposure.",
+        "Hut and beach stay, darkened to match night."
+      ]
+    },
+    {
+      "id": "sky-04-lake-storm-reflection",
+      "mode": "sky",
+      "image": {
+        "path": "photos/sky-04-lake-storm-reflection.jpg",
+        "sha256": "ca694690784885fddbe214c27b0f0f09095d5e39982a26fac67006659108844b",
+        "width": 1216,
+        "height": 832,
+        "fixturePrompt": "A still mountain lake that mirrors the mountains and a clear pale sky.",
+        "fixtureSeed": 775
+      },
+      "prompt": "Replace the sky with dark storm clouds.",
+      "accept": [
+        "Storm clouds in the sky and in the lake reflection.",
+        "Mountains are unchanged; overall light is dimmer."
+      ]
+    },
+    {
+      "id": "sky-05-bare-branches",
+      "mode": "sky",
+      "image": {
+        "path": "photos/sky-05-bare-branches.jpg",
+        "sha256": "2fd01733a7fb651937763144989182b1084cf3488db57cc1b05ddd94f71ea50e",
+        "width": 1216,
+        "height": 832,
+        "fixturePrompt": "A brick house behind a large bare winter tree with many fine branches against a white overcast sky.",
+        "fixtureSeed": 775
+      },
+      "prompt": "Replace the sky with a clear blue sky.",
+      "accept": [
+        "Blue shows between the fine branches with no white fringe.",
+        "No branches are lost."
+      ]
+    },
+    {
+      "id": "sky-06-hair-sunrise",
+      "mode": "sky",
+      "image": {
+        "path": "photos/sky-06-hair-sunrise.jpg",
+        "sha256": "3ed8b5e8b171875bbc4c9cc12c526f2032d7fa21d8cb0837b28d80d38b2f015b",
+        "width": 832,
+        "height": 1216,
+        "fixturePrompt": "A woman with loose windswept curly hair standing on a hilltop against a plain pale sky, three-quarter view.",
+        "fixtureSeed": 775
+      },
+      "prompt": "Replace the sky with a pink sunrise.",
+      "accept": [
+        "Pink sunrise sky; loose hair strands stay intact with no halo.",
+        "Her face is unchanged, with a slight warm tint at most."
+      ]
+    },
+    {
+      "id": "transfer-01-dog-by-bench",
+      "mode": "transfer",
+      "image": {
+        "path": "photos/transfer-01-dog-by-bench.jpg",
+        "sha256": "d78eb6cbdd953c5117e69c185ac6322d175840e65aabdb7aca156a15d3c4f9dc",
+        "width": 1216,
+        "height": 832,
+        "fixturePrompt": "An empty wooden park bench on mown grass beside a gravel path, trees behind, sunny day.",
+        "fixtureSeed": 775
+      },
+      "prompt": "Put the dog from the second photo sitting on the grass to the right of the bench.",
+      "reference": {
+        "path": "references/ref-golden-retriever.jpg",
+        "sha256": "4a2ad2b5faa44b63c04183e7744ecfbd51802a3c3d8c11853df086612e85fe41",
+        "width": 1024,
+        "height": 1024,
+        "fixturePrompt": "A golden retriever sitting facing the camera on a plain light grey studio floor, full body.",
+        "fixtureSeed": 775
+      },
+      "placement": [
+        0.6,
+        0.45,
+        0.3,
+        0.5
+      ],
+      "accept": [
+        "The same dog: coat colour and markings match the reference.",
+        "Right size for the bench, sitting on the grass with a contact shadow.",
+        "Bench and park are unchanged."
+      ]
+    },
+    {
+      "id": "transfer-02-cat-on-armchair",
+      "mode": "transfer",
+      "image": {
+        "path": "photos/transfer-02-armchair-room.jpg",
+        "sha256": "9d4d1ff3cfe3b0d4d8db68d5a7fb614318760be20c298390ad67006b7673d8a3",
+        "width": 1216,
+        "height": 832,
+        "fixturePrompt": "The corner of a bright bedroom with a wooden floor, an armchair on the left and an empty corner on the right.",
+        "fixtureSeed": 775
+      },
+      "prompt": "Put the cat from the second photo curled up asleep on the armchair.",
+      "reference": {
+        "path": "photos/extend-08-cat-square-to-wide.jpg",
+        "sha256": "727d7f55f7f5fa599373adbf45ec1fd96e2291a221910eebdbbae3ce13fb3152",
+        "width": 1024,
+        "height": 1024,
+        "fixturePrompt": "A ginger cat asleep on a blue sofa cushion, square photo, close framing.",
+        "fixtureSeed": 775
+      },
+      "placement": [
+        0.03,
+        0.42,
+        0.32,
+        0.4
+      ],
+      "accept": [
+        "The same cat: ginger tabby coat matches the reference.",
+        "Right size for the armchair, lying on the seat with a soft shadow.",
+        "The room is unchanged; nothing of the blue sofa comes across."
+      ]
+    },
+    {
+      "id": "transfer-03-dog-on-beach",
+      "mode": "transfer",
+      "image": {
+        "path": "photos/sky-03-beach-milky-way.jpg",
+        "sha256": "4c1f71fcb0e52e49604c2b9916b66bb43792c0a16e2c7071e3003e3803b07825",
+        "width": 1216,
+        "height": 832,
+        "fixturePrompt": "A beach with a wooden lifeguard hut at dusk under a plain dark blue sky.",
+        "fixtureSeed": 775
+      },
+      "prompt": "Put the dog from the second photo standing on the sand to the left of the hut.",
+      "reference": {
+        "path": "photos/instruct-06-dog-lead.jpg",
+        "sha256": "f31c37c5968cc98f24abafbbad48c49b0a9d3af92c859bd93e29a17edf939548",
+        "width": 1216,
+        "height": 832,
+        "fixturePrompt": "A border collie standing on a park path wearing a red lead that runs up out of the frame to the right, autumn leaves on the ground.",
+        "fixtureSeed": 775
+      },
+      "placement": [
+        0.12,
+        0.55,
+        0.3,
+        0.38
+      ],
+      "accept": [
+        "The same dog: black and white markings match.",
+        "No lead and none of the path or leaves come across.",
+        "Feet on the sand with a shadow that fits the dusk light; hut and sea unchanged."
+      ]
+    },
+    {
+      "id": "transfer-04-teapot-on-table",
+      "mode": "transfer",
+      "image": {
+        "path": "photos/instruct-08-wall-colour.jpg",
+        "sha256": "2ae4d0a3dea2c65e6912043c3e8c7e414a886ab56bf2e720ca2512f20b47f8c0",
+        "width": 1216,
+        "height": 832,
+        "fixturePrompt": "A lived-in living room with a grey sofa, a wooden coffee table, a plant and a plain white wall with two framed pictures, daylight from a window on the left.",
+        "fixtureSeed": 775
+      },
+      "prompt": "Put the white teapot from the second photo on the coffee table.",
+      "reference": {
+        "path": "photos/relight-06-still-life-lamp.jpg",
+        "sha256": "6b659f95ac859718ba358cf15ebc390a0c76527c88c0f64aafcb7101f1a661f1",
+        "width": 1216,
+        "height": 832,
+        "fixturePrompt": "A ceramic teapot, two cups and a bowl of lemons on a wooden table in flat even light against a plain wall.",
+        "fixtureSeed": 775
+      },
+      "placement": [
+        0.28,
+        0.55,
+        0.22,
+        0.25
+      ],
+      "accept": [
+        "The same teapot: shape, lid and glaze match.",
+        "Only the teapot comes across, not the cup or the lemons.",
+        "It stands on the table at a believable size, with a soft shadow."
+      ]
+    },
+    {
+      "id": "transfer-05-girl-on-avenue",
+      "mode": "transfer",
+      "image": {
+        "path": "photos/instruct-10-autumn-to-winter.jpg",
+        "sha256": "44b92e5b3c1ac8c701716c424b238a36a3a8cd08979b78274bd9a45c83f23572",
+        "width": 1216,
+        "height": 832,
+        "fixturePrompt": "A park path lined with trees in full orange autumn leaf, a wooden bench on the left, fallen leaves on the ground, soft afternoon light.",
+        "fixtureSeed": 775
+      },
+      "prompt": "Put the girl riding the pink bicycle from the second photo on the path, riding towards the camera side.",
+      "reference": {
+        "path": "photos/instruct-16-bike-helmet.jpg",
+        "sha256": "992c6e4ad6305a8d47f8feedce87cee762bceef22534d3d2b336b96633c349f8",
+        "width": 1216,
+        "height": 832,
+        "fixturePrompt": "A seven year old girl with a ponytail riding a small pink bicycle on a quiet suburban pavement, no helmet, side view.",
+        "fixtureSeed": 775
+      },
+      "placement": [
+        0.45,
+        0.5,
+        0.3,
+        0.45
+      ],
+      "accept": [
+        "The same girl and the same pink bicycle.",
+        "Wheels on the path, size right for the distance, lit like the avenue.",
+        "Trees, bench and leaves are unchanged."
+      ]
+    },
+    {
+      "id": "transfer-06-woman-on-snow",
+      "mode": "transfer",
+      "image": {
+        "path": "photos/extend-03-mountain-to-vertical.jpg",
+        "sha256": "28de19b28c9fff012245b721fde26ac754c534cb7d1071ca83f8b606aa215e11",
+        "width": 1216,
+        "height": 832,
+        "fixturePrompt": "A snowy mountain peak above a green valley with a small wooden hut, clear morning light.",
+        "fixtureSeed": 775
+      },
+      "prompt": "Put the woman in the yellow coat from the second photo standing on the snow in the foreground, seen from behind, looking at the mountains.",
+      "reference": {
+        "path": "photos/extend-01-pier-to-wide.jpg",
+        "sha256": "091fed273166fae9775eda446802ae1f62f167b5f20cdd754a29ebc114982696",
+        "width": 832,
+        "height": 1216,
+        "fixturePrompt": "A woman in a yellow coat standing on a wooden pier looking out over a calm grey sea, seen from behind, vertical photo.",
+        "fixtureSeed": 775
+      },
+      "placement": [
+        0.55,
+        0.35,
+        0.22,
+        0.6
+      ],
+      "accept": [
+        "The same woman: yellow coat, dark trousers and hair match.",
+        "Feet in the snow with a shadow that fits the sun.",
+        "Mountains and hut are unchanged; no pier or sea comes across."
+      ]
+    },
+    {
+      "id": "transfer-07-man-at-lake",
+      "mode": "transfer",
+      "image": {
+        "path": "photos/extend-02-lake-to-square.jpg",
+        "sha256": "3ff7b89a5b90a82eff37e572b66f17179748e5e3f488827d344991ce4bed24fb",
+        "width": 1216,
+        "height": 832,
+        "fixturePrompt": "A tightly framed mountain lake with pine trees on the far shore, the tree tops and the near shoreline are cut off by the frame.",
+        "fixtureSeed": 775
+      },
+      "prompt": "Put the man in the blue jacket from the second photo standing on the rocks at the right of the lake shore.",
+      "reference": {
+        "path": "photos/instruct-05-jacket-colour.jpg",
+        "sha256": "e9da46f5db04907042c7167bef28a5512daa8b2c3ea347746cd0955895cf3ebc",
+        "width": 832,
+        "height": 1216,
+        "fixturePrompt": "A man in his thirties wearing a bright blue rain jacket standing on a city pavement, shops behind him, three-quarter length.",
+        "fixtureSeed": 775
+      },
+      "placement": [
+        0.62,
+        0.35,
+        0.22,
+        0.6
+      ],
+      "accept": [
+        "The same man: face, beard and blue jacket match.",
+        "Standing on the rocks, lit by the daylight of the lake scene.",
+        "No shop fronts or street come across; lake and trees unchanged."
+      ]
+    },
+    {
+      "id": "transfer-08-car-at-cottage",
+      "mode": "transfer",
+      "image": {
+        "path": "photos/relight-05-overcast-house.jpg",
+        "sha256": "ec814dd384a3c5682d3fcd016ca8728e2aa96c83caf456bdc3f5d6813af81c47",
+        "width": 1216,
+        "height": 832,
+        "fixturePrompt": "The front of a white cottage with a blue door and a small garden on a flat grey overcast day.",
+        "fixtureSeed": 775
+      },
+      "prompt": "Park the red car from the second photo on the grass in front of the cottage.",
+      "reference": {
+        "path": "photos/instruct-14-car-colour.jpg",
+        "sha256": "14f0cea0c16d3cee25ab52a49a645134fa2586dbe3b73a2b64104ca0842e7bae",
+        "width": 1216,
+        "height": 832,
+        "fixturePrompt": "A shiny red vintage hatchback parked on a gravel drive in front of a hedge, sunny day, reflections on the bodywork.",
+        "fixtureSeed": 775
+      },
+      "placement": [
+        0.4,
+        0.5,
+        0.55,
+        0.45
+      ],
+      "accept": [
+        "The same car: colour, shape and headlights match.",
+        "Wheels on the grass, perspective and overcast light fit the cottage.",
+        "The cottage, door and garden are unchanged."
+      ]
+    }
+  ]
+}

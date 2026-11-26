@@ -10,6 +10,7 @@ import {
   DesktopEnrollmentDto,
   DesktopHouseholdDto,
   DesktopMemberApprovalDto,
+  DesktopTranscodeSettingsDto,
 } from 'src/dtos/desktop.dto.js';
 import { ApiTag, Permission } from 'src/enum.js';
 import { Auth, Authenticated } from 'src/middleware/auth.guard.js';
@@ -58,6 +59,20 @@ export class DesktopDeviceController {
     @Body() dto: DesktopHouseholdDto,
   ): Promise<DesktopHouseholdDto> {
     return this.policy.setHousehold(auth, id, dto.enabled);
+  }
+
+  @Put('devices/:id/transcode')
+  @Authenticated({ permission: Permission.AdminUserUpdate, admin: true })
+  @Endpoint({
+    summary: "Turn playback copies of videos on or off for a computer, and whether it takes other people's videos",
+    history: history(),
+  })
+  setDesktopTranscode(
+    @Auth() auth: AuthDto,
+    @Param() { id }: UUIDParamDto,
+    @Body() dto: DesktopTranscodeSettingsDto,
+  ): Promise<DesktopTranscodeSettingsDto> {
+    return this.policy.setTranscode(auth, id, dto);
   }
 
   @Get('capabilities')

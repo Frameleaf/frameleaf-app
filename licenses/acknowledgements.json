@@ -8,7 +8,8 @@
     "studio-assets": "Studio assets and tools",
     "library-models": "Photo library machine learning models",
     "fonts": "Fonts (Studio titles)",
-    "library-data": "Photo library place data"
+    "library-data": "Photo library place data",
+    "icons": "Album and collection icons"
   },
   "components": [
     {
@@ -707,6 +708,23 @@
       "source": "Hugging Face card Falconsai/nsfw_image_detection (license: apache-2.0); the conversion declares none"
     },
     {
+      "status": "recorded",
+      "notice": null,
+      "id": "llama-cpp",
+      "group": "library-models",
+      "name": "llama.cpp",
+      "author": "The ggml authors",
+      "licence": "MIT",
+      "link": "https://github.com/ggml-org/llama.cpp",
+      "version": "b12477",
+      "shipped": "bundled",
+      "noticeFiles": [
+        "licenses/texts/llama-cpp-mit.txt"
+      ],
+      "covers": [],
+      "source": "LICENSE in the llama.cpp b12477 Linux Vulkan release, which the ML worker image installs (machine-learning/Dockerfile)"
+    },
+    {
       "status": "looked-up",
       "notice": "Place boundaries © OpenStreetMap contributors, available under the Open Database License (https://www.openstreetmap.org/copyright). The pack is a derivative database under the same licence; server/base-image/geodata/landmarks/build.mjs is the method that produces it. Place names, identifiers, kinds and ranks are from Wikidata (CC0).",
       "id": "landmark-place-pack",
@@ -722,6 +740,74 @@
       ],
       "covers": [],
       "source": "server/base-image/geodata/geodata.lock (landmarks.ndjson.gz) and server/base-image/geodata/landmarks/README.md; licence terms from https://osmfoundation.org/wiki/Licence and https://www.wikidata.org/wiki/Wikidata:Licensing"
+    },
+    {
+      "status": "looked-up",
+      "notice": "City, region and country data © GeoNames (https://www.geonames.org/), licensed under CC BY 4.0. The places used to name where a photo was taken ship with the server. Their names in the app's other languages are a selection from GeoNames' alternate names, made by server/bin/build-place-names-pack.mjs, which the server downloads as one file.",
+      "id": "geonames-place-names",
+      "group": "library-data",
+      "name": "GeoNames (cities, regions, countries and their names in other languages)",
+      "author": "GeoNames",
+      "licence": "CC-BY-4.0",
+      "link": "https://www.geonames.org/",
+      "version": "2026-11-22",
+      "shipped": "bundled",
+      "noticeFiles": [
+        "licenses/texts/cc-by-4.0.txt"
+      ],
+      "covers": [],
+      "source": "server/base-image/geodata/geodata.lock (cities500.zip, admin1CodesASCII.txt, admin2Codes.txt, countryInfo.txt) and PLACE_NAME_PACK in server/src/constants.ts; licence terms from https://www.geonames.org/export/ and https://creativecommons.org/licenses/by/4.0/"
+    },
+    {
+      "status": "looked-up",
+      "notice": null,
+      "id": "tabler-icons",
+      "group": "icons",
+      "name": "Tabler Icons",
+      "author": "Paweł Kuna and Tabler Icons contributors",
+      "licence": "MIT",
+      "link": "https://github.com/tabler/tabler-icons",
+      "version": "3.52.0 (@iconify-json/tabler 1.2.47)",
+      "shipped": "bundled",
+      "noticeFiles": [
+        "licenses/texts/tabler-icons-mit.txt"
+      ],
+      "covers": [],
+      "source": "GitHub repository licence (MIT); drawn from the @iconify-json/tabler package by web/scripts/icon-packs.mjs"
+    },
+    {
+      "status": "looked-up",
+      "notice": null,
+      "id": "material-symbols",
+      "group": "icons",
+      "name": "Material Symbols",
+      "author": "Google",
+      "licence": "Apache-2.0",
+      "link": "https://github.com/google/material-design-icons",
+      "version": "@iconify-json/material-symbols 1.2.101",
+      "shipped": "bundled",
+      "noticeFiles": [
+        "licenses/texts/apache-2.0.txt"
+      ],
+      "covers": [],
+      "source": "GitHub repository licence (Apache-2.0); drawn from the @iconify-json/material-symbols package by web/scripts/icon-packs.mjs"
+    },
+    {
+      "status": "looked-up",
+      "notice": null,
+      "id": "iconoven",
+      "group": "icons",
+      "name": "IconOven (Stroke style, selected icons)",
+      "author": "Appic Marketing",
+      "licence": "MIT",
+      "link": "https://iconoven.com/icons",
+      "version": "@iconify-json/iconoven 1.2.1",
+      "shipped": "bundled",
+      "noticeFiles": [
+        "licenses/texts/iconoven-mit.txt"
+      ],
+      "covers": [],
+      "source": "iconoven.com states every Stroke style icon is MIT, commercial use included; licence text from github.com/iconoven/iconoven-swift; drawn from the @iconify-json/iconoven package by web/scripts/icon-packs.mjs"
     }
   ],
   "fonts": {
@@ -1767,6 +1853,27 @@
       "source": "https://opendatacommons.org/licenses/odbl/odbl-10.txt",
       "retrievedOn": "2026-10-10",
       "sha256": "607680718977f6f6c9607972afd98f208573f19251315ed1362a8589b51beaf5"
+    },
+    {
+      "file": "licenses/texts/llama-cpp-mit.txt",
+      "title": "MIT (OpenAI CLIP)",
+      "source": "https://github.com/ggml-org/llama.cpp/blob/054a1babf3f57074b0f63f415fc34bdf13435a64/LICENSE",
+      "retrievedOn": "2026-09-25",
+      "sha256": "94f29bbed6a22c35b992c5c6ebf0e7c92f13b836b90f36f461c9cf2f0f1d010d"
+    },
+    {
+      "file": "licenses/texts/tabler-icons-mit.txt",
+      "title": "MIT (Tabler Icons)",
+      "source": "https://raw.githubusercontent.com/tabler/tabler-icons/main/LICENSE",
+      "retrievedOn": "2026-11-26",
+      "sha256": "b740a1d46122672da62833e97f7e7c8a13fa85cbc7445b584b297cc00dde93db"
+    },
+    {
+      "file": "licenses/texts/iconoven-mit.txt",
+      "title": "MIT (IconOven)",
+      "source": "https://raw.githubusercontent.com/iconoven/iconoven-swift/main/LICENSE",
+      "retrievedOn": "2026-11-26",
+      "sha256": "3478f693d7ad620267d02f10efe093b4fa26038eafb5b03cc88dc7143d246bb2"
     }
   ]
 }

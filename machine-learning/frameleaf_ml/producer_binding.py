@@ -4,6 +4,7 @@ import hashlib
 import json
 import math
 import re
+import stat
 import threading
 from collections import OrderedDict
 from io import BytesIO
@@ -13,20 +14,90 @@ from typing import Any
 
 import orjson
 from PIL import Image as PillowImage
+from PIL import UnidentifiedImageError
 from PIL.Image import Image
 
-from .config import settings
-from .models.base import InferenceModel
+from .config import log, settings
+from .models.base import InferenceModel, ModelUnavailableError
 from .models.transforms import decode_pil
 from .native_qualification import ModelBindingSpec, preprocessing_identity, verify_models
 from .schemas import ModelTask, ModelType
 from .sessions import private_runtime_cache
 
 
+def _same_sizes(sizes: dict[Path, int]) -> bool:
+    """Every file a bound model was verified with is still a plain file of the size it had."""
+    for path, size in sizes.items():
+        try:
+            info = path.lstat()
+        except OSError:
+            return False
+        if not stat.S_ISREG(info.st_mode) or info.st_size != size:
+            return False
+    return True
+
+
+def _bound_models(spec: ModelBindingSpec) -> list[InferenceModel]:
+    """An unloaded model for each model the binding names, with the options its entries give it."""
+    from .models import from_model_type
+    from .native_runtime import library_entries
+
+    groups = library_entries(orjson.dumps(spec.entries).decode())
+    options = {(entry["name"], entry["task"], entry["type"]): entry["options"] for group in groups for entry in group}
+    return [
+        from_model_type(item.name, item.type, item.task, **options.get((item.name, item.task, item.type), {}))
+        for item in spec.models
+    ]
+
+
 class BoundPredictor:
     def __init__(self) -> None:
         self._lock = threading.Lock()
         self._models: OrderedDict[tuple[str, str], tuple[InferenceModel, TemporaryDirectory[str]]] = OrderedDict()
+        # The size of each file of a bound model when its files were hashed (`_verified_models`). Sizes only:
+        # holding the models here would keep their sessions alive after `_clear`.
+        self._verified: dict[tuple[str, str], dict[Path, int]] = {}
+
+    def _verified_models(self, spec: ModelBindingSpec, cache: Path) -> list[InferenceModel]:
+        """The bound model, its files hashed against the binding the first time and then checked by name and size.
+
+        Hashing a large model's files at every request made each one read gigabytes (owner, 2026-11-23: hash once,
+        then check presence and size). Files a binding needs and this cache lacks are staged from the model
+        source first, when model downloads are allowed: a server whose computers do its search work has never
+        downloaded the model it now needs for search text.
+        """
+        key = (spec.model_key, str(cache.resolve()))
+        sizes = self._verified.get(key)
+        if sizes is not None and _same_sizes(sizes):
+            return _bound_models(spec)
+        self._verified.pop(key, None)
+        try:
+            _, models = verify_models(spec, cache, require_staged=False)
+        except (ValueError, ModelUnavailableError):
+            if not (settings.model_downloads and self._stage_missing(spec)):
+                raise
+            _, models = verify_models(spec, cache, require_staged=False)
+        self._verified[key] = {
+            model.cache_dir / name: (model.cache_dir / name).lstat().st_size
+            for model, item in zip(models, spec.models, strict=True)
+            for name in item.artifacts
+        }
+        return models
+
+    @staticmethod
+    def _stage_missing(spec: ModelBindingSpec) -> bool:
+        """Stage each bound model whose cache lacks a file it lists; whether any was staged."""
+        from .staging import stage_model
+
+        staged = False
+        for model, item in zip(_bound_models(spec), spec.models, strict=True):
+            if all((model.cache_dir / name).exists() for name in item.artifacts):
+                continue
+            # ponytail: staged under the predictor lock, so other bound requests wait (busy) for this download.
+            log.info(f"Downloading {item.name} for bound {item.type.value} requests: its files are not in the cache")
+            stage_model(model)
+            staged = True
+        return staged
 
     def _clear(self) -> None:
         directories = [directory for _, directory in self._models.values()]
@@ -48,6 +119,9 @@ class BoundPredictor:
             result = None
             try:
                 result = self._predict(raw, image, text)
+            except UnidentifiedImageError:
+                # Refused from its header, before any model was touched: one bad file keeps the warm models.
+                raise ValueError("producer_input_invalid") from None
             except Exception as error:
                 # Retained exception chains must release sessions before derived files are removed.
                 pending: list[BaseException] = [error]
@@ -116,7 +190,7 @@ class BoundPredictor:
         cache = Path(settings.cache_folder)
         if cache.is_symlink():
             raise ValueError("producer_cache_invalid")
-        _, verified = verify_models(spec, cache, require_staged=False)
+        verified = self._verified_models(spec, cache)
         key = (spec.model_key, str(cache.resolve()))
         if key not in self._models:
             # Keep the usual visual/textual pair warm, with a fixed memory bound.
@@ -141,8 +215,12 @@ class BoundPredictor:
             raise ValueError("producer_output_invalid")
         if isinstance(payload, Image):
             result.update(imageWidth=payload.width, imageHeight=payload.height)
-        # Loaded models never borrow trust from the legacy cache or a client-supplied label.
-        verify_models(spec, cache, require_staged=False)
+        # Loaded models never borrow trust from the legacy cache or a client-supplied label: a file that changed
+        # size during inference withholds the output, and the next request hashes the files again.
+        sizes = self._verified.get(key)
+        if sizes is None or not _same_sizes(sizes):
+            self._verified.pop(key, None)
+            raise ValueError("producer_artifacts_changed")
         if preprocessing_identity() != spec.preprocessing_sha256:
             raise ValueError("producer_preprocessing_changed")
         if len(orjson.dumps(result)) > 4 * 1024 * 1024:

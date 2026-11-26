@@ -98,8 +98,8 @@
   };
   const failedSave = () => $t('frameleaf_intel_redo_failed');
 
-  // FL-1597: "Not now" is kept in this browser for the chosen model.
-  const laterKey = $derived(`fl-best-photos-later:${saved.clip.modelName}`);
+  // FL-1597: "Not now" is kept in this browser for the chosen model, until sign-out (FL-1771).
+  const laterKey = $derived(`frameleaf-best-photos-later:${saved.clip.modelName}`);
   let later = $state(false);
   $effect(() => {
     try {

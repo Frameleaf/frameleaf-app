@@ -243,7 +243,9 @@ const checkOtherAccess = async (access: AccessRepository, request: OtherAccessRe
       // albums by any path; the album then hides it from every session that is not the owner's elevated
       // one. An ordinary session is still refused. Shared links never carry Locked media, so the
       // shared-link service refuses it on top of this check (see SharedLinkService).
-      return checkAssetOwnerAccess(access, auth, ids, !!auth.session?.hasElevatedPermission);
+      const owned = await checkAssetOwnerAccess(access, auth, ids, !!auth.session?.hasElevatedPermission);
+      // FL-967: the back of a print goes nowhere on its own: every add-to-album and shared-link path asks here
+      return owned.difference(await access.asset.checkPrintBacks(owned));
     }
 
     case Permission.AssetFileDownload: {
@@ -327,14 +329,10 @@ const checkOtherAccess = async (access: AccessRepository, request: OtherAccessRe
       return await access.album.checkOwnerAccess(auth.user.id, ids);
     }
 
+    // FL-1767: who is in an album, their roles, and its public links are its owner's alone, as the apps
+    // offer them (an editor adds and removes items, never people or links)
     case Permission.AlbumShare: {
-      const isOwner = await access.album.checkOwnerAccess(auth.user.id, ids);
-      const isShared = await access.album.checkSharedAlbumAccess(
-        auth.user.id,
-        ids.difference(isOwner),
-        AlbumUserRole.Editor,
-      );
-      return isOwner.union(isShared);
+      return await access.album.checkOwnerAccess(auth.user.id, ids);
     }
 
     case Permission.AlbumDownload: {

@@ -61,6 +61,13 @@ export class Backups {
       };
     }
   }
+  /** ponytail: one restic write at a time per repository, so a prune's exclusive lock never fails a backup or restore. */
+  private queue: Promise<unknown> = Promise.resolve();
+  private serial<T>(work: () => Promise<T>): Promise<T> {
+    const run = this.queue.then(work, work);
+    this.queue = run.catch(() => undefined);
+    return run;
+  }
   private args(args: string[]): string[] {
     const password = typeof this.keyFile === 'string' ? ['--password-file', this.keyFile] : [];
     return ['--repo', this.repository, ...password, '--json', ...args];
@@ -97,7 +104,10 @@ export class Backups {
     if (!files.length) await this.execute('restic', this.args(['init']));
     await this.execute('restic', this.args(['cat', 'config']));
   }
-  async snapshot(checkpointDirectory: string, operationId: string): Promise<string> {
+  snapshot(checkpointDirectory: string, operationId: string): Promise<string> {
+    return this.serial(() => this.takeSnapshot(checkpointDirectory, operationId));
+  }
+  private async takeSnapshot(checkpointDirectory: string, operationId: string): Promise<string> {
     // The caller constructs this database/config-only directory. Never accept a list of user paths.
     const permitted = new Set(['database.dump', 'recovery.json', 'compose.json', 'application-settings.json']);
     for (const file of await readdir(checkpointDirectory))
@@ -139,7 +149,8 @@ export class Backups {
   }
   async list(): Promise<{ id: string; time: string; paths: string[] }[]> {
     const snapshots = JSON.parse(
-      await this.execute('restic', this.args(['snapshots', '--tag', 'frameleaf-manager-database,frameleaf-canonical'])),
+      // --no-lock: listing must not wait for, or fail on, a prune holding the exclusive lock.
+      await this.execute('restic', this.args(['snapshots', '--no-lock', '--tag', 'frameleaf-manager-database,frameleaf-canonical'])),
     );
     return snapshots
       .filter(
@@ -169,7 +180,18 @@ export class Backups {
       snapshots: unlocked ? (await this.list()).map(({ id, time }) => ({ id, time })) : [],
     };
   }
-  async restore(snapshot: string, emptyDirectory: string): Promise<void> {
+  restore(snapshot: string, emptyDirectory: string): Promise<void> {
+    return this.serial(() => this.restoreSnapshot(snapshot, emptyDirectory));
+  }
+  /** FL-1732: forgets these recovery points and frees the space they alone used. Only listed recovery points are accepted. */
+  forget(ids: string[]): Promise<void> {
+    return this.serial(async () => {
+      const known = new Set((await this.list()).map((s) => s.id));
+      if (!ids.length || ids.some((id) => !/^[a-f0-9]{64}$/.test(id) || !known.has(id))) throw new Refusal('unknown_snapshot');
+      await this.execute('restic', this.args(['forget', '--prune', ...ids]), { timeout: 7_200_000 });
+    });
+  }
+  private async restoreSnapshot(snapshot: string, emptyDirectory: string): Promise<void> {
     const entry = (await this.list()).find((s) => s.id === snapshot);
     const paths = entry?.paths;
     if (

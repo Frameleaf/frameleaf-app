@@ -17,7 +17,7 @@ import { getHiddenContentQueryOptions, getOthersRulesQueryOptions } from 'src/ut
 
 import { withoutStoredLockedRuleIds } from 'src/utils/preferences.js';
 import { ClientDisconnectedError, waitForDrain } from 'src/utils/response.js';
-import { SerializeOptions, fromAck, mapSyncAssetV2, serialize, toAck, withPartnerOrigin } from 'src/utils/sync.js';
+import { SerializeOptions, fromAck, mapOwnSyncAsset, serialize, toAck, withPartnerOrigin } from 'src/utils/sync.js';
 
 const parseAssetBootstrapAck = (ack: string, type = SyncEntityType.AssetBootstrapV1) => {
   const parts = ack.split('|');
@@ -557,7 +557,7 @@ export class SyncService extends BaseService {
     const upsertType = SyncEntityType.AssetV2;
     const upserts = this.syncRepository.asset.getUpserts({ ...options, ack: checkpointMap[upsertType] });
     for await (const { updateId, ...data } of upserts) {
-      await send(response, { type: upsertType, ids: [updateId], data: mapSyncAssetV2(data) });
+      await send(response, { type: upsertType, ids: [updateId], data: mapOwnSyncAsset(data) });
     }
   }
 
@@ -574,7 +574,7 @@ export class SyncService extends BaseService {
           type: SyncEntityType.AssetV3,
           ackType: bootstrapType,
           ids: [watermark, cursor],
-          data: mapSyncAssetV2(data),
+          data: mapOwnSyncAsset(data),
         });
       }
       await sendEntityBackfillCompleteAck(response, bootstrapType, watermark);
@@ -594,7 +594,7 @@ export class SyncService extends BaseService {
       ...options,
       ack: checkpointMap[upsertType] ?? floor,
     })) {
-      await send(response, { type: upsertType, ids: [updateId], data: mapSyncAssetV2(data) });
+      await send(response, { type: upsertType, ids: [updateId], data: mapOwnSyncAsset(data) });
     }
   }
 
@@ -806,7 +806,7 @@ export class SyncService extends BaseService {
       );
 
       for await (const { updateId, ...data } of backfill) {
-        await send(response, { type: backfillType, ids: [createId, updateId], data: mapSyncAssetV2(data) });
+        await send(response, { type: backfillType, ids: [createId, updateId], data: mapOwnSyncAsset(data) });
       }
     }
 
@@ -816,7 +816,7 @@ export class SyncService extends BaseService {
         createCheckpoint,
       );
       for await (const { updateId, ...data } of updates) {
-        await send(response, { type: updateType, ids: [updateId], data: mapSyncAssetV2(data) });
+        await send(response, { type: updateType, ids: [updateId], data: mapOwnSyncAsset(data) });
       }
     }
 
@@ -832,7 +832,7 @@ export class SyncService extends BaseService {
         });
         isFirst = false;
       }
-      await send(response, { type: createType, ids: [updateId], data: mapSyncAssetV2(data) });
+      await send(response, { type: createType, ids: [updateId], data: mapOwnSyncAsset(data) });
     }
   }
 

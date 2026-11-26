@@ -15,6 +15,7 @@ import { tick } from 'svelte';
 import { t } from 'svelte-i18n';
 import { get } from 'svelte/store';
 import { authManager } from '$lib/managers/auth-manager.svelte';
+import { eventManager } from '$lib/managers/event-manager.svelte';
 import { uploadManager } from '$lib/managers/upload-manager.svelte';
 import { addAssetsToAlbums } from '$lib/services/album.service';
 import { uploadAssetsStore } from '$lib/stores/upload';
@@ -315,6 +316,8 @@ async function fileUploader(
   const controller = new AbortController();
   const { signal } = controller;
   activeUploads.add(controller);
+  // Signing out stops the hashing and the parallel parts too, which `cancelUploadRequests` cannot reach.
+  const stopWatchingSignOut = eventManager.on({ AuthLogout: () => controller.abort(new AbortError()) });
   const assertCurrent = (pending = true) => {
     if (pending) {
       signal.throwIfAborted();
@@ -519,6 +522,7 @@ async function fileUploader(
     uploadAssetsStore.updateItem(deviceAssetId, { state: UploadState.ERROR, error: errorMessage });
     return;
   } finally {
+    stopWatchingSignOut();
     activeUploads.delete(controller);
   }
 }

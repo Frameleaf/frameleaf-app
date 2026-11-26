@@ -43,8 +43,8 @@ test.describe('Database Backups', () => {
   });
 
   test('restore a backup from settings', async ({ context, page }) => {
-    // Snapshot creation, restore validation and both server restarts can exceed one minute on CI.
-    test.setTimeout(120_000);
+    // Snapshot, restore and restart take 20 to 75 s on a loaded CI runner (FL-1728): wait up to two minutes.
+    test.setTimeout(180_000);
 
     await utils.resetBackups(admin.accessToken);
     const filename = await utils.createBackup(admin.accessToken);
@@ -57,7 +57,7 @@ test.describe('Database Backups', () => {
 
     await page.waitForURL('/maintenance?**');
     await expect(page.getByRole('heading', { name: 'Maintenance is finished', exact: true })).toBeVisible({
-      timeout: 60_000,
+      timeout: 120_000,
     });
     await page.getByRole('button', { name: 'Open Frameleaf', exact: true }).click();
     await page.waitForURL(backToMaintenance, { timeout: 60_000 });
@@ -66,7 +66,7 @@ test.describe('Database Backups', () => {
   // FL-81: the restore runs on the server, so a dropped connection or a reload mid-restore picks the
   // progress back up (status is re-read on load), then offers the explicit return when the restore ends.
   test('a restore survives a dropped connection and a reload', async ({ context, page }) => {
-    test.setTimeout(90_000);
+    test.setTimeout(150_000);
 
     await utils.resetBackups(admin.accessToken);
     await utils.createBackup(admin.accessToken);
@@ -85,7 +85,7 @@ test.describe('Database Backups', () => {
     await page.reload();
 
     await expect(page.getByRole('heading', { name: 'Maintenance is finished', exact: true })).toBeVisible({
-      timeout: 60_000,
+      timeout: 120_000,
     });
     await page.getByRole('button', { name: 'Open Frameleaf', exact: true }).click();
     await page.waitForURL(backToMaintenance, { timeout: 60_000 });
@@ -154,7 +154,7 @@ test.describe('Database Backups', () => {
   });
 
   test('restore a backup from onboarding', async ({ context, page }) => {
-    test.setTimeout(120_000);
+    test.setTimeout(180_000);
 
     await utils.resetBackups(admin.accessToken);
     await utils.createBackup(admin.accessToken);
@@ -180,7 +180,7 @@ test.describe('Database Backups', () => {
 
     await page.waitForURL('/maintenance?**');
     await expect(page.getByRole('heading', { name: 'Maintenance is finished', exact: true })).toBeVisible({
-      timeout: 60_000,
+      timeout: 120_000,
     });
     await page.getByRole('button', { name: 'Open Frameleaf', exact: true }).click();
     await page.waitForURL('/photos', { timeout: 60_000 });

@@ -23,7 +23,13 @@
     type SearchHistogramBucketDto,
   } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
-  import { mdiAlertCircleOutline, mdiEyeOffOutline, mdiTextBoxOutline } from '@mdi/js';
+  import {
+    mdiAlertCircleOutline,
+    mdiEyeOffOutline,
+    mdiLockOutline,
+    mdiMapMarkerRadiusOutline,
+    mdiTextBoxOutline,
+  } from '@mdi/js';
   import { locale, t } from 'svelte-i18n';
 
   /**
@@ -39,6 +45,7 @@
     typing,
     facets,
     people,
+    namedPlaces = [],
     selectedPeople,
     tokens,
     enrichment,
@@ -55,6 +62,8 @@
     typing: boolean;
     facets: PaletteFacets;
     people: PersonResponseDto[];
+    /** FL-1019: the places this person named, as chips before anything is typed. */
+    namedPlaces?: { id: string; name: string }[];
     selectedPeople: Set<string>;
     tokens: string[];
     enrichment?: ImageEnrichmentFilter;
@@ -239,6 +248,28 @@
     </section>
   {/if}
 
+  {#if !typing && namedPlaces.length > 0}
+    <section>
+      <h3>{$t('frameleaf_named_places_yours')}</h3>
+      <div class="sp-facets">
+        {#each namedPlaces as item (item.id)}
+          <button
+            type="button"
+            aria-pressed={tokenSet.has(operatorToken('place', item.name))}
+            onclick={() => toggleToken(operatorToken('place', item.name))}
+          >
+            <Icon icon={mdiMapMarkerRadiusOutline} size="14" aria-hidden={true} />
+            {item.name}
+          </button>
+        {/each}
+      </div>
+      <p class="sp-yours-note">
+        <Icon icon={mdiLockOutline} size="12" aria-hidden={true} />
+        {$t('frameleaf_named_places_only_you')}
+      </p>
+    </section>
+  {/if}
+
   <!-- Places to start from, before anything is typed; no heading over an empty list. -->
   {#if !typing && idlePlaces.length > 0}
     <section>
@@ -336,6 +367,14 @@
     margin-top: 4px;
     color: var(--fl-muted);
     font-size: 11px;
+  }
+  .sp-yours-note {
+    display: flex;
+    align-items: center;
+    gap: var(--fl-space-1);
+    margin-top: var(--fl-space-2);
+    color: var(--fl-muted);
+    font-size: var(--fl-font-small);
   }
   .sp-facets,
   .sp-facet-people {

@@ -1,7 +1,8 @@
 name: Deploy
 
 # Run by hand on main before a release (Deploy production needs a successful same-SHA run of this
-# workflow and of Test). It no longer runs after every merge, so `edge` moves only when this runs.
+# workflow and a dispatched Test run, the only kind with the Arm e2e lanes; FL-1733). It no longer runs
+# after every merge, so `edge` moves only when this runs.
 on:
   workflow_dispatch:
 

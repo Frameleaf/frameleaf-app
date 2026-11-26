@@ -37,6 +37,8 @@ describe('atomic Live Photo asset edits', () => {
     const { sut, mocks } = newTestService(AssetService, { asset: repo, access: new AccessRepository(db) });
     mocks.person.getMissingThumbnailsForAssets.mockResolvedValue([]);
     mocks.user.getLockedProfileImageSources.mockResolvedValue([]);
+    // a Locked change reaches the owner's unlocked sessions only (FL-1767); none are open here
+    mocks.session.getElevatedIds.mockResolvedValue([]);
     // the edit runs inside the partner-origin edit admission; these assets have no origins, so let it pass through
     mocks.partnerOrigin.withOriginEdit.mockImplementation(async (_kind, _ids, _fields, write) => write());
     return { user, photo, video, old, repo, sut, mocks, auth: AuthFactory.create({ id: user.id }) };

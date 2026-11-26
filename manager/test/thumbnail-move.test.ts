@@ -149,7 +149,7 @@ async function fixture(run: (context: Context) => Promise<void>, own = false) {
     },
   };
   const fencing: any = {
-    assertMedia: async () => {},
+    warnMediaWriters: async () => {},
     stopInstallation: async () => {
       for (const c of containers.filter((c) => c.Config.Labels['app.frameleaf.manager'])) {
         c.State.Running = false;
@@ -439,7 +439,7 @@ async function homeFixture(run: (context: { operations: Operations; store: Store
     },
   };
   const operations = new Operations(store, docker as never, {} as never, {} as never, [base], {} as never);
-  (operations as any).fencing = { assertMedia: async () => {} };
+  (operations as any).fencing = { warnMediaWriters: async () => {} };
   // Manager sees every fixture folder, whatever this machine's own mounts are (as the FL-1320 tests do).
   operations.visibility = async () => () => true;
   (operations as any).librarySummary = async () => ({ assets: 412880 });

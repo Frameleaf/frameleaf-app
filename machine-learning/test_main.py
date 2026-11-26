@@ -1869,7 +1869,12 @@ def batch_axis(mocker: MockerFixture) -> SimpleNamespace:
     """Patches for the `_add_batch_axis` path: the onnx module it rewrites the model
     through, and the download it would otherwise trigger on load."""
     mocker.patch("frameleaf_ml.models.base.InferenceModel.download")
+    mocker.patch.object(FaceRecognizer, "download")
+    mocker.patch("frameleaf_ml.models.facial_recognition.recognition.convert_model_from_external_data")
+    mocker.patch("frameleaf_ml.models.facial_recognition.recognition.TemporaryDirectory")
+    mocker.patch("frameleaf_ml.models.facial_recognition.recognition.Path")
     return SimpleNamespace(
+        runtime_cache=mocker.patch("frameleaf_ml.models.facial_recognition.recognition.runtime_cache_dir"),
         onnx=mocker.patch("frameleaf_ml.models.facial_recognition.recognition.onnx", autospec=True),
         update_dims=mocker.patch(
             "frameleaf_ml.models.facial_recognition.recognition.update_inputs_outputs_dims", autospec=True
@@ -2113,6 +2118,7 @@ class TestFaceRecognition:
         proto.graph.output = [output_dims]
 
         batch_axis.onnx.load.return_value = proto
+        batch_axis.runtime_cache.return_value.__truediv__.return_value.suffix = ".onnx"
 
         face_recognizer = FaceRecognizer("buffalo_s", cache_dir=path)
         face_recognizer.load()
@@ -2121,7 +2127,10 @@ class TestFaceRecognition:
         batch_axis.update_dims.assert_called_once_with(
             proto, {"input.1": ["batch", 3, 224, 224]}, {"output.1": ["batch", 800]}
         )
-        batch_axis.onnx.save.assert_called_once_with(batch_axis.update_dims.return_value, face_recognizer.model_path)
+        # FL-1775: the derivative goes to the runtime cache; the downloaded model.onnx keeps its bytes.
+        batch_axis.runtime_cache.assert_called_once_with(face_recognizer.model_path, beside_model=False)
+        batch_axis.onnx.save.assert_called_once()
+        assert batch_axis.onnx.save.call_args.args[1] != face_recognizer.model_path
 
     def test_recognition_does_not_add_batch_axis_if_exists(
         self, batch_axis: SimpleNamespace, ort_session: mock.Mock, path: mock.Mock, mocker: MockerFixture
@@ -2557,13 +2566,6 @@ class TestCache:
         await model_cache.get("test_model_name", ModelType.RECOGNITION, ModelTask.FACIAL_RECOGNITION, ttl=100)
         mock_cache_expire.assert_called_once_with(mock.ANY, 100)
 
-    async def test_profiling(self, mock_get_model: mock.Mock) -> None:
-        model_cache = ModelCache(profiling=True)
-        await model_cache.get("test_model_name", ModelType.RECOGNITION, ModelTask.FACIAL_RECOGNITION, ttl=100)
-        profiling = await model_cache.get_profiling()
-        assert isinstance(profiling, dict)
-        assert profiling == model_cache.cache.profiling
-
     async def test_identity_fields_are_normalised(self, mock_get_model: mock.Mock) -> None:
         model_cache = ModelCache()
         mock_get_model.side_effect = lambda *args, **kwargs: SimpleNamespace()
@@ -2605,6 +2607,19 @@ class TestCache:
         assert await model_cache.get("test", ModelType.VISUAL, ModelTask.IMAGE_DESCRIPTION, device="GPU") is one
         monkeypatch.setattr("frameleaf_ml.models.cache.time.monotonic", lambda: 100.0)
         assert await model_cache.get("test", ModelType.VISUAL, ModelTask.IMAGE_DESCRIPTION, device="GPU") is not one
+        assert mock_get_model.call_count == 2
+
+    async def test_unknown_accelerations_share_the_automatic_instance(self, mock_get_model: mock.Mock) -> None:
+        model_cache = ModelCache()
+        mock_get_model.side_effect = lambda *args, **kwargs: SimpleNamespace()
+
+        async def get(**kwargs: Any) -> Any:
+            return await model_cache.get("test", ModelType.VISUAL, ModelTask.IMAGE_DESCRIPTION, **kwargs)
+
+        automatic = await get(acceleration="auto")
+        assert await get(acceleration="made-up") is automatic
+        assert await get() is automatic
+        assert await get(acceleration="cuda") is not automatic
         assert mock_get_model.call_count == 2
 
     async def test_loads_mclip(self) -> None:
@@ -3169,8 +3184,9 @@ def test_refuses_a_model_this_container_cannot_run_without_loading_it(
 
     download.assert_not_called()
     assert warning.call_count == 1
-    assert to_thread.await_count == 2
-    assert all(call.args[0].__name__ == "missing_runtime" for call in to_thread.await_args_list)
+    # Building the model also runs off the event loop, once; the runtime is probed on each request.
+    probes = [call for call in to_thread.await_args_list if call.args[0].__name__ == "missing_runtime"]
+    assert len(probes) == 2
 
 
 def test_unknown_task_or_type_is_a_malformed_request(deployed_app: TestClient) -> None:
@@ -3273,6 +3289,36 @@ def test_options_validation_accepts_clip_language() -> None:
     # Hardening intact: genuinely unknown keys are still rejected.
     with pytest.raises(ValidationError):
         validate_options(ModelTask.SEARCH, ModelType.TEXTUAL, {"bogus": "x"})
+
+
+def test_options_validation_refuses_options_a_model_cannot_take() -> None:
+    # CLIP visual and OCR predict take no `device` (nor `language`, for CLIP visual): refused here
+    # with a 422, instead of failing inside the model with a 500.
+    from pydantic import ValidationError
+
+    from frameleaf_ml.schemas import validate_options
+
+    assert validate_options(ModelTask.SEARCH, ModelType.VISUAL, {}) == {}
+    for task, type_, options in [
+        (ModelTask.SEARCH, ModelType.VISUAL, {"device": "cuda"}),
+        (ModelTask.SEARCH, ModelType.VISUAL, {"language": "de"}),
+        (ModelTask.OCR, ModelType.DETECTION, {"device": "cuda"}),
+        (ModelTask.OCR, ModelType.RECOGNITION, {"device": "cuda"}),
+    ]:
+        with pytest.raises(ValidationError):
+            validate_options(task, type_, options)
+
+
+def test_options_validation_accepts_scan_split_without_options() -> None:
+    # FL-923: the server sends `scan-split` with an empty option set. The task must be registered in
+    # OPTIONS_VALIDATORS so it has a closed keyspace like every other task.
+    from pydantic import ValidationError
+
+    from frameleaf_ml.schemas import validate_options
+
+    assert validate_options(ModelTask.SCAN_SPLIT, ModelType.VISUAL, {}) == {}
+    with pytest.raises(ValidationError):
+        validate_options(ModelTask.SCAN_SPLIT, ModelType.VISUAL, {"minArea": 0.1})
 
 
 def test_options_validation_accepts_ocr_max_resolution() -> None:
@@ -3702,3 +3748,32 @@ def test_semantic_mask_requests_leave_the_device_to_the_worker_setting() -> None
 
     assert validate_options(ModelTask.SEMANTIC_MASK, ModelType.VISUAL, {"target": "sky"}) == {"target": "sky"}
     assert validate_options(ModelTask.SEMANTIC_MASK, ModelType.VISUAL, {"device": "cuda"})["device"] == "cuda"
+
+
+def test_a_new_lifespan_never_judges_idleness_by_an_earlier_lifespans_last_call(monkeypatch: MonkeyPatch) -> None:
+    """FL-1733: each test client is a new lifespan in one pytest process. A `last_called` left by an earlier test
+    made the idle task's first poll send SIGINT to pytest (Unit Test ML died at test_voice_cleanup on slow runners).
+    """
+    from frameleaf_ml import main
+
+    monkeypatch.setattr(main.settings, "model_ttl", 300)
+    monkeypatch.setattr(main.settings, "model_ttl_poll_s", 10)
+    monkeypatch.setattr(main, "last_called", time.time() - 3600)
+    tasks: list[asyncio.Task[None]] = []
+    real_ensure_future = asyncio.ensure_future
+
+    def recording_ensure_future(coro: Any) -> Any:
+        task = real_ensure_future(coro)
+        tasks.append(task)
+        return task
+
+    with (
+        mock.patch("frameleaf_ml.main.os.kill") as kill,
+        mock.patch("frameleaf_ml.main.asyncio.ensure_future", side_effect=recording_ensure_future),
+    ):
+        with TestClient(main.app) as client:
+            # Several round trips through the event loop, so the idle task has polled at least once.
+            for _ in range(3):
+                assert client.get("/ping").status_code == 200
+        kill.assert_not_called()
+    assert len(tasks) == 1 and tasks[0].cancelled(), "the idle task must not outlive its lifespan"

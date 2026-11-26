@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
-import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { once } from 'node:events';
 import os from 'node:os';
@@ -22,6 +22,8 @@ import {
 import {
   NO_TRUST_VOLUME,
   bindOwnerPipe,
+  claimDeadline,
+  clearStaleClaims,
   main,
   readTrust,
   sessionReady,
@@ -680,6 +682,35 @@ describe('bundled worker configuration', () => {
     assert.equal(workingMemoryBytes(null, 7.5 * GIB), 3n * BigInt(GIB));
     assert.equal(workingMemoryBytes(null, 3 * GIB), 1n * BigInt(GIB));
     assert.equal(workingMemoryBytes(6n * BigInt(GIB), 64 * GIB), 6n * BigInt(GIB));
+  });
+
+  it('keeps a default for a mistyped limit', () => {
+    const config = workerConfig({
+      FRAMELEAF_STUDIO_WORKER_MAX_INPUT_BYTES: '8GB',
+      FRAMELEAF_STUDIO_WORKER_POLL_MS: 'soon',
+    });
+    assert.equal(config.maxInputBytes, 8 * GIB);
+    assert.equal(config.pollMs, 5000);
+  });
+
+  it('stops claiming with half the session left, so a long export keeps its lease', () => {
+    const now = Date.parse('2026-11-22T00:00:00.000Z');
+    const hour = 60 * 60_000;
+    assert.equal(claimDeadline(new Date(now + 12 * hour).toISOString(), now), now + 6 * hour);
+  });
+
+  it('removes only the scratch a killed worker left', async () => {
+    const folder = await mkdtemp(path.join(os.tmpdir(), 'fl408-stale-'));
+    try {
+      await mkdir(path.join(folder, 'claim-old'));
+      await writeFile(path.join(folder, 'claim-old', 'input'), 'bytes');
+      await writeFile(path.join(folder, 'keep'), 'bytes');
+      await clearStaleClaims(folder);
+      assert.deepEqual(await readdir(folder), ['keep']);
+      await clearStaleClaims(path.join(folder, 'missing'));
+    } finally {
+      await rm(folder, { recursive: true, force: true });
+    }
   });
 
   it('reads only a complete enrolment', async () => {

@@ -5,7 +5,7 @@ import type { InteractiveAdmissionSource } from 'src/repositories/studio-source-
 import { EXTERNAL_SCAN_CHECKSUM } from 'src/constants.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
 import { AuthDto } from 'src/dtos/auth.dto.js';
-import { AssetFileType, AssetStatus, ChecksumAlgorithm, IntegrityReport } from 'src/enum.js';
+import { AssetStatus, ChecksumAlgorithm, IntegrityReport } from 'src/enum.js';
 import { AssetLocalEffectRepository } from 'src/repositories/asset-local-effect.repository.js';
 import { KEPT_STATUSES, recentlyVerified } from 'src/repositories/media-health.repository.js';
 import { countPathReferences } from 'src/repositories/physical-file.repository.js';
@@ -483,20 +483,6 @@ export class IntegrityRepository {
       .selectFrom('asset')
       .select((eb) => eb.fn.countAll<number>().as('count'))
       .executeTakeFirstOrThrow();
-  }
-  @GenerateSql({ params: [], stream: true })
-  streamAllAssetPaths() {
-    return this.db
-      .selectFrom('asset')
-      .leftJoin('asset_file', (join) =>
-        join.onRef('asset.id', '=', 'asset_file.assetId').on('asset_file.type', '=', AssetFileType.EncodedVideo),
-      )
-      .select(['originalPath', 'asset_file.path as encodedVideoPath'])
-      .stream();
-  }
-  @GenerateSql({ params: [], stream: true })
-  streamAllAssetFilePaths() {
-    return this.db.selectFrom('asset_file').select(['path']).stream();
   }
   @GenerateSql({ params: [], stream: true })
   streamAssetPathsForMissingFiles() {

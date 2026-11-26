@@ -79,6 +79,21 @@ describe('what the media half of the Page tab is, from the page’s address', ()
       'Follow this page',
       'Save what they post on Facebook',
     ],
+    [
+      'https://www.reddit.com/r/woodworking',
+      'Follow this subreddit',
+      'Save what they post on Reddit',
+    ],
+    [
+      'https://www.redgifs.com/users/someone',
+      'Follow this profile',
+      'Save what they post on RedGIFs',
+    ],
+    [
+      'https://northtimber.tumblr.com/',
+      'Follow this blog',
+      'Save what they post on Tumblr',
+    ],
   ])(
     'a whole channel, account, profile or page is followed: %s',
     (address, title, hint) => {
@@ -94,6 +109,9 @@ describe('what the media half of the Page tab is, from the page’s address', ()
     ['https://www.youtube.com/playlist?list=PL1', 'Download this playlist'],
     ['https://x.com/northtimber/status/184', 'Download this post'],
     ['https://www.pinterest.com/pin/123/', 'Download this pin'],
+    ['https://www.instagram.com/reel/C1abc/', 'Download this reel'],
+    ['https://clips.twitch.tv/CalmLarch', 'Download this clip'],
+    ['https://imgur.com/a/AbC12', 'Download this album'],
   ])(
     'one video or post is downloaded, never followed: %s',
     (address, title) => {
@@ -302,6 +320,36 @@ describe('whose page "Follow them too" would follow', () => {
       'https://www.facebook.com/alpinelodge',
     ],
     [
+      'https://www.tiktok.com/@northtimber/video/7300',
+      null,
+      'https://www.tiktok.com/@northtimber',
+    ],
+    [
+      'https://www.instagram.com/northtimber/p/C1abc/',
+      null,
+      'https://www.instagram.com/northtimber',
+    ],
+    [
+      'https://northtimber.tumblr.com/post/7300/larch',
+      null,
+      'https://northtimber.tumblr.com/',
+    ],
+    [
+      'https://www.twitch.tv/northtimber/clip/CalmLarch',
+      null,
+      'https://www.twitch.tv/northtimber',
+    ],
+    [
+      'https://www.flickr.com/photos/northtimber/5300',
+      null,
+      'https://www.flickr.com/photos/northtimber',
+    ],
+    [
+      'https://www.deviantart.com/northtimber/art/Larch-7300',
+      null,
+      'https://www.deviantart.com/northtimber',
+    ],
+    [
       'https://www.youtube.com/watch?v=abc',
       'UCabcdefghijklmnopqrstuv',
       'https://www.youtube.com/channel/UCabcdefghijklmnopqrstuv',
@@ -324,6 +372,9 @@ describe('whose page "Follow them too" would follow', () => {
     ['https://www.reddit.com/r/woodworking/comments/1/x/', null],
     ['https://www.pinterest.com/pin/123/', null],
     ['https://fb.watch/abc', null],
+    ['https://www.instagram.com/p/C1abc/', null],
+    ['https://clips.twitch.tv/CalmLarch', null],
+    ['https://www.redgifs.com/watch/calmlake', null],
     // already a whole account, or not a platform at all
     ['https://x.com/northtimber', null],
     ['https://alpinelodge.example/rooms/loft', '@someone'],

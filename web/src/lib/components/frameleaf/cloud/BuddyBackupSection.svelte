@@ -111,7 +111,10 @@
   const formatTime = (value: string | null | undefined) =>
     value ? formatDateTime(value, $locale) : $t('frameleaf_buddy_not_yet');
   const bytes = (value: number) => getByteUnitString(value);
+  /** Fences a status read already out when an action starts: its older answer must not undo the action's. */
+  let statusRead = 0;
   const action = async (run: () => Promise<void>) => {
+    statusRead++;
     busy = true;
     failure = '';
     notice = '';
@@ -126,8 +129,12 @@
     }
   };
   const load = async () => {
-    status = await getBuddyBackupStatus();
-    loadFailed = false;
+    const read = ++statusRead;
+    const next = await getBuddyBackupStatus();
+    if (read === statusRead) {
+      status = next;
+      loadFailed = false;
+    }
   };
   const loadFirst = async () => {
     loadFailed = false;
@@ -329,7 +336,8 @@
         });
       }
       confirmAction = null;
-      await load();
+      // The action is done; a failed re-read must not report it as failed (the 15-second read catches up).
+      await load().catch(() => {});
     });
   onMount(() => {
     const stopCloud = cloudManager.listen();

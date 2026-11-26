@@ -302,10 +302,18 @@ export class BulkController {
       requestId?: string;
     } = {},
   ): Promise<void> {
+    // A durable job takes one album, so several albums are one job each, shown separately in Activity.
+    if (payload?.albumIds && payload.albumIds.length > 1) {
+      for (const albumId of payload.albumIds) {
+        await this.runMatching(action, scope, { payload: { albumId }, submittedTotal });
+      }
+      return;
+    }
     const controller = new AbortController();
     this.#running.set(requestId, controller);
     this.#dispatch({ type: 'operation-start', requestId, action, scope, payload, submittedTotal });
-    if (durableBulkAction(action)) {
+    // FL-936: a year or a decade is one undoable Doctor batch, which the durable date job cannot run
+    if (durableBulkAction(action) && !payload?.dateAccuracy) {
       try {
         await this.#handOff(requestId, action, scope, controller.signal, { payload, submittedTotal });
       } finally {
@@ -340,6 +348,10 @@ export class BulkController {
         cancelled: outcome.cancelled,
         truncated: outcome.truncated,
       });
+      if (payload?.dateAccuracy) {
+        await this.#report(action, outcome, payload);
+        return;
+      }
       const removed = this.#removed(action, outcome);
       if (removed.length > 0) {
         this.#dispatch({ type: 'mutated', removedIds: removed });

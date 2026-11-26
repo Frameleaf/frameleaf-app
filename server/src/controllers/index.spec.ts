@@ -30,6 +30,7 @@ const ADMIN_ROUTES = new Set([
   'DELETE libraries/:id/scan',
   'GET libraries/:id/removal',
   'GET libraries/managed-uploads',
+  'GET import-connections/statistics',
   'POST libraries/:id/removal',
   'GET desktop/accounts/:id/approval',
   'GET enrichment/options',
@@ -121,6 +122,7 @@ const ADMIN_ROUTES = new Set([
   'PUT desktop/accounts/:id/approval',
   // FL-1484: an administrator lets a computer work on everyone's photos at home
   'PUT desktop/devices/:id/household',
+  'PUT desktop/devices/:id/transcode',
   'PUT jobs/:name',
   'PUT libraries/:id',
   'PUT queues/:name',

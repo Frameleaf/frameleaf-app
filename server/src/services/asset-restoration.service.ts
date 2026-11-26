@@ -1,15 +1,20 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
+import type { RestorationPhotoOperation } from 'src/dtos/restoration-inference.dto.js';
 import type { ArgOf } from 'src/repositories/event.repository.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { OnEvent } from 'src/decorators.js';
 import {
+  AssetRestorationBatchRequestDto,
+  AssetRestorationBatchResponseDto,
   AssetRestorationDestinationDto,
   AssetRestorationEstimateDto,
   AssetRestorationFileKind,
   AssetRestorationListResponseDto,
   AssetRestorationMode,
   AssetRestorationModelDto,
+  AssetRestorationOperation,
   AssetRestorationOptionsDto,
   AssetRestorationOptionsQueryDto,
   AssetRestorationRegion,
@@ -28,6 +33,7 @@ import {
   MediaOperationKind,
   MlAdmissionRefusal,
   MlDestinationKind,
+  MlProcessingSource,
   MlWorkload,
   NotificationLevel,
   NotificationType,
@@ -42,10 +48,12 @@ import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MachineLearningRepository } from 'src/repositories/machine-learning.repository.js';
 import { MediaOperationRepository } from 'src/repositories/media-operation.repository.js';
+import { MediaRepository } from 'src/repositories/media.repository.js';
 import { MlDestinationRepository, MlDestinationRow } from 'src/repositories/ml-destination.repository.js';
 import { NotificationRepository } from 'src/repositories/notification.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
+import { CloudMlJobService } from 'src/services/cloud-ml-job.service.js';
 import { requireAccess } from 'src/utils/access.js';
 import { getConfig } from 'src/utils/config.js';
 import { asDateTimeString } from 'src/utils/date.js';
@@ -63,6 +71,8 @@ import {
   storedAdmission,
   storedRestorationModels,
 } from 'src/utils/ml-destination.js';
+import { KIND_SOURCE, sourcesFor } from 'src/utils/ml-processing-order.js';
+import { HAND_TINTED, colourRefusalReason, photoColourRefusal } from 'src/utils/photo-monochrome.js';
 import {
   INTERPOLATION_PREVIEW_SECONDS,
   RESTORATION_PREVIEW_SECONDS,
@@ -76,11 +86,14 @@ import {
   isActiveRestoration,
   isSmoothMotionFactor,
   mediaOperationDestinationOf,
+  photoOperationLabel,
+  photoOperationOf,
   previewExpiryAfterDecision,
   previewInputBytes,
   restorationEstimate,
   restorationModeLabel,
   restorationWorkDir,
+  toPhotoOperation,
   workloadForMode,
 } from 'src/utils/restoration.js';
 /** Why work is refused on a computer at home while an administrator has set it to Frameleaf Cloud. */
@@ -98,6 +111,9 @@ const routeOf = (
   }
   return sourceType === AssetRestorationSourceType.Image ? routing.upscale : routing.restoration;
 };
+
+/** Thrown inside a batch item's transaction when an earlier confirmation already queued it. */
+class BatchItemAlreadyQueued extends Error {}
 
 /** Window over which a destination's measured throughput is averaged for estimates. */
 const ESTIMATE_WINDOW_DAYS = 30;
@@ -227,6 +243,8 @@ export class AssetRestorationService {
     private configRepository: ConfigRepository,
     private systemMetadataRepository: SystemMetadataRepository,
     private notificationRepository: NotificationRepository,
+    private mediaRepository: MediaRepository,
+    private cloudMlJobService: CloudMlJobService,
   ) {
     this.logger.setContext(AssetRestorationService.name);
   }
@@ -249,10 +267,15 @@ export class AssetRestorationService {
   ): Promise<AssetRestorationOptionsDto> {
     await requireAccess(this.accessRepository, { auth, permission: Permission.AssetEditGet, ids: [assetId] });
     const source = await this.requireSource(assetId);
-    const mode = dto.mode ?? AssetRestorationMode.Faithful;
+    // FL-955: repair and colourise run as a faithful restoration that keeps the photo's size
+    const photoOperation = toPhotoOperation(dto.operation);
+    if (photoOperation && source.sourceType !== AssetRestorationSourceType.Image) {
+      throw new BadRequestException('Repair and Suggested colours work on photos');
+    }
+    const mode = photoOperation ? AssetRestorationMode.Faithful : (dto.mode ?? AssetRestorationMode.Faithful);
     const smooth = mode === AssetRestorationMode.SmoothMotion;
     // Smooth motion keeps the size; only a restoration upscales.
-    const upscale = smooth ? 1 : ((dto.upscale ?? 2) as 1 | 2 | 4);
+    const upscale = smooth || photoOperation ? 1 : ((dto.upscale ?? 2) as 1 | 2 | 4);
     const workload = workloadForMode(mode);
     const output = cappedOutputSize(source.width, source.height, upscale);
     const routing = await this.routing();
@@ -278,6 +301,7 @@ export class AssetRestorationService {
             ? 0
             : await this.mlDestinationRepository.getSpend(row.id, windowStart(ML_BUDGET_WINDOW_DAYS)),
         choices,
+        ...(photoOperation && row.kind !== MlDestinationKind.FrameleafCloud && { photoOperation }),
       });
       if (verdict.admitted && cloudOnly && row.kind !== MlDestinationKind.FrameleafCloud) {
         // Set to Frameleaf Cloud under Where work runs, even when this computer could run it.
@@ -316,10 +340,12 @@ export class AssetRestorationService {
           ESTIMATE_WINDOW_DAYS,
         ),
         gpu: row.lastProbeHardware?.gpus?.[0] ?? null,
-        models: offeredModels(row, mode),
+        // The worker picks its one qualified model for a photo operation.
+        models: photoOperation ? [] : offeredModels(row, mode),
       });
     }
 
+    const colourRefusal = photoOperation === 'colourise' ? await this.colourRefusal(assetId) : null;
     return {
       assetId,
       sourceType: source.sourceType,
@@ -341,6 +367,8 @@ export class AssetRestorationService {
       adapterInstalled: true,
       destinations,
       route,
+      ...(photoOperation && { operation: dto.operation }),
+      ...(colourRefusal && { colourRefusal, colourRefusalReason: colourRefusalReason(colourRefusal) }),
     };
   }
 
@@ -434,8 +462,18 @@ export class AssetRestorationService {
     assetId: string,
     dto: AssetRestorationRequestDto,
   ): Promise<AssetRestorationResponseDto> {
-    await this.refuseCloudRequest(dto.destinationId);
+    const photoOperation = toPhotoOperation(dto.operation);
+    await this.refuseCloudRequest(dto.destinationId, photoOperation);
     const source = await this.requireSource(assetId);
+    if (photoOperation) {
+      if (source.sourceType !== AssetRestorationSourceType.Image) {
+        throw new BadRequestException('Repair and Suggested colours work on photos');
+      }
+      const refusal = photoOperation === 'colourise' ? await this.colourRefusal(assetId, dto.allowHandTinted) : null;
+      if (refusal) {
+        throw new BadRequestException(refusal);
+      }
+    }
     const smooth = dto.mode === AssetRestorationMode.SmoothMotion;
     if (smooth) {
       // FL-162: local Smooth motion (RIFE) on this server or a home-network restoration worker.
@@ -458,7 +496,7 @@ export class AssetRestorationService {
     const region = dto.region ?? DEFAULT_RESTORATION_REGION;
 
     // Consent, allow-list, budget, health and the worker's role are all decided here, before a row exists.
-    await this.admitRestoration(workload, dto.destinationId, MediaOperationKind.RestorationPreview);
+    await this.admitRestoration(workload, dto.destinationId, MediaOperationKind.RestorationPreview, photoOperation);
     const destination = await this.requireDestination(dto.destinationId);
     if (
       destination.kind !== MlDestinationKind.FrameleafCloud &&
@@ -472,7 +510,8 @@ export class AssetRestorationService {
       );
     }
     refuseUnofferedModel(destination, dto);
-    const output = cappedOutputSize(source.width, source.height, smooth ? 1 : dto.upscale);
+    const upscale = photoOperation ? 1 : dto.upscale;
+    const output = cappedOutputSize(source.width, source.height, smooth ? 1 : upscale);
     const sample = await this.mlDestinationRepository.getThroughput(
       destination.id,
       windowStart(ESTIMATE_WINDOW_DAYS),
@@ -486,7 +525,7 @@ export class AssetRestorationService {
       status: AssetRestorationStatus.PreviewQueued,
       mode: dto.mode,
       // A Smooth motion row keeps its frame-rate factor where a restoration keeps its upscale (FL-162).
-      upscale: smooth ? dto.smoothMotionFactor! : dto.upscale,
+      upscale: smooth ? dto.smoothMotionFactor! : upscale,
       keepGrain: dto.keepGrain,
       workload,
       destinationId: destination.id,
@@ -499,7 +538,11 @@ export class AssetRestorationService {
       sourceDurationSeconds: source.durationSeconds,
       previewRegion: region,
       estimate,
-      provenance,
+      provenance: {
+        ...provenance,
+        ...(photoOperation && { operation: photoOperation }),
+        ...(photoOperation === 'colourise' && dto.allowHandTinted && { allowHandTinted: true }),
+      },
     });
 
     try {
@@ -561,6 +604,342 @@ export class AssetRestorationService {
   }
 
   /**
+   * FL-955: repair or colourise many photos. Without `confirm` this is the estimate: which photos would
+   * run, and every destination in the processing order with its time, or its cost on Frameleaf Cloud
+   * once Cloud offers a price. With `confirm` each eligible photo becomes one durable full-render job on
+   * the destination the person chose, one at a time per worker. A job survives a restart on its own;
+   * confirming the same `batchId` again queues only what is missing. Work at home never touches the
+   * AI Wallet, and Frameleaf Cloud refuses these operations until FL-961 offers and prices them.
+   */
+  async batch(auth: AuthDto, dto: AssetRestorationBatchRequestDto): Promise<AssetRestorationBatchResponseDto> {
+    const ids = [...new Set(dto.assetIds)];
+    await requireAccess(this.accessRepository, { auth, permission: Permission.AssetEditCreate, ids });
+    const photoOperation = toPhotoOperation(dto.operation)!;
+    const skipped: AssetRestorationBatchResponseDto['skipped'] = [];
+    const eligible: RestorationSource[] = [];
+    const allowHandTinted = photoOperation === 'colourise' && !!dto.allowHandTinted;
+    const tinted = { count: 0 };
+    for (const assetId of ids) {
+      const reason = await this.batchSkipReason(assetId, photoOperation, eligible, allowHandTinted, tinted);
+      if (reason) {
+        skipped.push({ assetId, reason });
+      }
+    }
+    const destinations = await this.batchDestinations(photoOperation, eligible);
+    if (allowHandTinted && tinted.count > 0) {
+      // Frameleaf Cloud has no override yet, so a batch with hand-tinted prints in it stays at home.
+      for (const row of destinations) {
+        if (row.kind === MlDestinationKind.FrameleafCloud && row.available) {
+          row.available = false;
+          row.refusal = MlAdmissionRefusal.WorkloadNotServed;
+          row.refusalDetail = 'Frameleaf Cloud cannot include hand-tinted prints yet';
+        }
+      }
+    }
+    const summary = {
+      batchId: dto.batchId ?? randomUUID(),
+      operation: dto.operation,
+      total: ids.length,
+      eligible: eligible.length,
+      skipped,
+      ...(photoOperation === 'colourise' && { handTinted: tinted.count }),
+      destinations,
+    };
+    if (!dto.confirm) {
+      await this.quoteCloud(auth, photoOperation, eligible, destinations);
+      return { ...summary, queued: 0 };
+    }
+
+    const chosen = destinations.find(({ id }) => id === dto.destinationId);
+    if (!chosen) {
+      throw new NotFoundException(`Machine learning destination ${dto.destinationId} does not exist`);
+    }
+    if (!chosen.available) {
+      throw new BadRequestException(
+        chosen.refusalDetail ?? `${chosen.name} cannot run this right now; nothing was queued`,
+      );
+    }
+    if (eligible.length === 0) {
+      throw new BadRequestException(
+        'None of these photos can be repaired or given suggested colours; nothing was queued',
+      );
+    }
+    if (chosen.kind === MlDestinationKind.FrameleafCloud) {
+      if (dto.maxCostUsd === undefined || !dto.consentVersion || dto.acknowledgeDataLeaves !== true) {
+        throw new BadRequestException('Confirm the Frameleaf Cloud estimate and terms first; nothing was sent');
+      }
+      const queued = await this.cloudMlJobService.startPhotoBatch(auth, {
+        batchId: summary.batchId,
+        operation: photoOperation,
+        assetIds: eligible.map(({ id }) => id),
+        destinationId: chosen.id,
+        maxCostUsd: dto.maxCostUsd,
+        consentVersion: dto.consentVersion,
+      });
+      return { ...summary, queued };
+    }
+    await this.admitRestoration(
+      MlWorkload.RestorationFaithful,
+      chosen.id,
+      MediaOperationKind.Restoration,
+      photoOperation,
+    );
+    const destination = await this.requireDestination(chosen.id);
+    let queued = 0;
+    for (const source of eligible) {
+      if (await this.queueBatchItem(auth, summary.batchId, photoOperation, source, destination, allowHandTinted)) {
+        queued++;
+      }
+    }
+    this.logger.log(
+      `Restoration batch ${summary.batchId}: queued ${queued} of ${eligible.length} on ${destination.name}`,
+    );
+    return { ...summary, queued };
+  }
+
+  /** FL-961: Frameleaf Cloud's own estimate of the batch, or the plain reason it cannot take it. */
+  private async quoteCloud(
+    auth: AuthDto,
+    photoOperation: RestorationPhotoOperation,
+    eligible: RestorationSource[],
+    destinations: AssetRestorationBatchResponseDto['destinations'],
+  ) {
+    const cloud = destinations.find((row) => row.kind === MlDestinationKind.FrameleafCloud && row.available);
+    if (!cloud) {
+      return;
+    }
+    const quote =
+      eligible.length > 0
+        ? await this.cloudMlJobService.quotePhotoBatch(
+            auth,
+            photoOperation,
+            eligible.map(({ id }) => id),
+            cloud.id,
+          )
+        : { refusal: 'None of these photos can be sent' };
+    if ('refusal' in quote) {
+      cloud.available = false;
+      cloud.refusal = MlAdmissionRefusal.WorkloadNotServed;
+      cloud.refusalDetail = quote.refusal;
+      return;
+    }
+    cloud.costUsd = quote.p50Usd;
+    cloud.maxCostUsd = quote.p90Usd;
+    cloud.consentVersion = quote.consentVersion;
+    cloud.consentSummary = quote.consentSummary;
+  }
+
+  /** Why a photo stays out of a batch, or null after adding it to `eligible`. */
+  private async batchSkipReason(
+    assetId: string,
+    photoOperation: RestorationPhotoOperation,
+    eligible: RestorationSource[],
+    allowHandTinted: boolean,
+    tinted: { count: number },
+  ): Promise<string | null> {
+    let source: RestorationSource;
+    try {
+      source = await this.requireSource(assetId);
+    } catch (error) {
+      if (error instanceof BadRequestException || error instanceof NotFoundException) {
+        return 'unavailable';
+      }
+      throw error;
+    }
+    if (source.sourceType !== AssetRestorationSourceType.Image) {
+      return 'not-a-photo';
+    }
+    if (photoOperation === 'colourise') {
+      const refusal = await this.colourRefusal(assetId);
+      if (refusal === HAND_TINTED) {
+        tinted.count++;
+      }
+      if (refusal && !(refusal === HAND_TINTED && allowHandTinted)) {
+        return colourRefusalReason(refusal);
+      }
+    }
+    eligible.push(source);
+    return null;
+  }
+
+  /** Every destination, in the order this work follows (Local, Desktops, Cloud unless reordered). */
+  private async batchDestinations(
+    photoOperation: RestorationPhotoOperation,
+    sources: RestorationSource[],
+  ): Promise<AssetRestorationBatchResponseDto['destinations']> {
+    const workload = MlWorkload.RestorationFaithful;
+    const [rows, order, routing] = await Promise.all([
+      this.mlDestinationRepository.getAll(),
+      this.mlDestinationRepository.getProcessingOrder(),
+      this.routing(),
+    ]);
+    const places: MlProcessingSource[] = sourcesFor(order, workload);
+    const rank = (kind: MlDestinationKind) => {
+      const index = places.indexOf(KIND_SOURCE[kind]);
+      return index === -1 ? places.length : index;
+    };
+    const ordered = [...rows].sort((a, b) => rank(a.kind) - rank(b.kind));
+    const choices = await readCloudModelChoices(this.mlDestinationRepository, rows);
+    const since = windowStart(ESTIMATE_WINDOW_DAYS);
+    const bytes = sources.reduce((sum, source) => sum + source.sizeBytes, 0);
+
+    const destinations: AssetRestorationBatchResponseDto['destinations'] = [];
+    for (const row of ordered) {
+      let verdict = storedAdmission({
+        destination: row,
+        // Frameleaf Cloud runs these on its upscale workload and answers for them at the estimate
+        workload: row.kind === MlDestinationKind.FrameleafCloud ? MlWorkload.Upscale : workload,
+        spentUsd:
+          row.budgetLimitUsd === null
+            ? 0
+            : await this.mlDestinationRepository.getSpend(row.id, windowStart(ML_BUDGET_WINDOW_DAYS)),
+        choices,
+        ...(row.kind !== MlDestinationKind.FrameleafCloud && { photoOperation }),
+      });
+      if (verdict.admitted && routing.upscale === 'cloud' && row.kind !== MlDestinationKind.FrameleafCloud) {
+        verdict = { admitted: false, refusal: MlAdmissionRefusal.WorkloadNotAllowed, detail: CLOUD_ONLY_DETAIL };
+      }
+      if (verdict.admitted && row.kind !== MlDestinationKind.FrameleafCloud) {
+        const conflict = await restorationRoleConflict(
+          {
+            mlDestinationRepository: this.mlDestinationRepository,
+            machineLearningRepository: this.machineLearningRepository,
+          },
+          row,
+          workload,
+        );
+        if (conflict) {
+          verdict = { admitted: false, refusal: MlAdmissionRefusal.RoleConflict, detail: conflict };
+        }
+      }
+      const sample = await this.mlDestinationRepository.getThroughput(row.id, since, workload);
+      destinations.push({
+        id: row.id,
+        kind: row.kind,
+        name: row.name,
+        available: verdict.admitted,
+        refusal: verdict.admitted ? null : verdict.refusal,
+        refusalDetail: verdict.admitted ? null : verdict.detail,
+        leavesNetwork: isCloudDestination(row.kind),
+        estimateSeconds: restorationEstimate(sample, { preview: 0, full: bytes }, ESTIMATE_WINDOW_DAYS).fullSeconds,
+        // Never guessed: home work is free, and Frameleaf Cloud's comes only from its own estimate.
+        costUsd: null,
+        maxCostUsd: null,
+        consentVersion: null,
+        consentSummary: null,
+      });
+    }
+    return destinations;
+  }
+
+  /** One photo of a batch as a full render, with no preview. False when this batch already queued it. */
+  private async queueBatchItem(
+    auth: AuthDto,
+    batchId: string,
+    photoOperation: RestorationPhotoOperation,
+    source: RestorationSource,
+    destination: MlDestinationRow,
+    allowHandTinted: boolean,
+  ): Promise<boolean> {
+    const output = { width: source.width, height: source.height };
+    const sample = await this.mlDestinationRepository.getThroughput(
+      destination.id,
+      windowStart(ESTIMATE_WINDOW_DAYS),
+      MlWorkload.RestorationFaithful,
+    );
+    const estimate = restorationEstimate(
+      sample,
+      this.inputBytes(source, DEFAULT_RESTORATION_REGION),
+      ESTIMATE_WINDOW_DAYS,
+    );
+    try {
+      await this.operationRepository.createWithin(
+        async (trx) => {
+          if (await this.restorationRepository.hasBatchItem(batchId, source.id, trx)) {
+            throw new BatchItemAlreadyQueued();
+          }
+          const restoration = await this.restorationRepository.create(
+            {
+              assetId: source.id,
+              ownerId: source.ownerId,
+              status: AssetRestorationStatus.Accepted,
+              mode: AssetRestorationMode.Faithful,
+              upscale: 1,
+              keepGrain: false,
+              workload: MlWorkload.RestorationFaithful,
+              destinationId: destination.id,
+              destinationKind: destination.kind,
+              destinationName: destination.name,
+              sourceType: source.sourceType,
+              sourceChecksum: source.checksum,
+              sourceWidth: source.width,
+              sourceHeight: source.height,
+              sourceDurationSeconds: null,
+              previewRegion: DEFAULT_RESTORATION_REGION,
+              estimate,
+              reviewedAt: new Date(),
+              provenance: {
+                requestedBy: auth.user.id,
+                sessionElevated: !!auth.session?.hasElevatedPermission,
+                operation: photoOperation,
+                batchId,
+                ...(allowHandTinted && { allowHandTinted: true }),
+              },
+            },
+            trx,
+          );
+          return {
+            operation: {
+              ownerId: source.ownerId,
+              kind: MediaOperationKind.Restoration,
+              destination: mediaOperationDestinationOf(destination.kind),
+              destinationDetail: destination.name,
+              label: source.originalFileName,
+              assetId: source.id,
+              resultAssetId: null,
+              retryOfId: null,
+              projectId: null,
+              revisionId: restoration.id,
+              snapshot: this.snapshotOf(restoration, source, 'full', output),
+              settings: this.settingsOf(restoration, destination.name, false),
+              estimate:
+                estimate.fullSeconds === null
+                  ? null
+                  : { seconds: estimate.fullSeconds, sizeBytes: null, cloudCost: null },
+            },
+            value: restoration,
+          };
+        },
+        async (trx, operation, restoration) => {
+          const updated = await this.restorationRepository.transition(
+            restoration.id,
+            [AssetRestorationStatus.Accepted],
+            { status: AssetRestorationStatus.Accepted, fullOperationId: operation.id },
+            trx,
+            { stage: 'full', id: null },
+          );
+          if (!updated) throw new ConflictException('This restoration was already decided');
+        },
+      );
+      return true;
+    } catch (error) {
+      if (error instanceof BatchItemAlreadyQueued) {
+        return false;
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * FL-955: why this photo cannot get suggested colours, or null when it can (sepia counts). The same
+   * rule as the worker. A photo that cannot be read is refused too, rather than guessed at.
+   */
+  private async colourRefusal(assetId: string, allowHandTinted = false): Promise<string | null> {
+    const asset = await this.assetRepository.getById(assetId, { files: true });
+    return photoColourRefusal(this.mediaRepository, this.logger, assetId, asset?.files ?? [], allowHandTinted);
+  }
+
+  /**
    * Accept the reviewed preview: the full render is bound to exactly what was previewed. The
    * source must still be the file the preview was made from, the destination must still exist
    * and must still admit the workload — consent revoked since the preview is a refusal here too.
@@ -578,19 +957,24 @@ export class AssetRestorationService {
     if (!restoration.destinationId) {
       throw new BadRequestException('The destination this preview ran on has been removed; request a new preview');
     }
-    await this.refuseCloudRequest(restoration.destinationId);
+    const photoOperation = photoOperationOf(restoration.provenance);
+    await this.refuseCloudRequest(restoration.destinationId, photoOperation);
 
     await this.admitRestoration(
       restoration.workload as MlWorkload,
       restoration.destinationId,
       MediaOperationKind.Restoration,
+      photoOperation,
     );
     const destination = await this.requireDestination(restoration.destinationId);
-    const output = cappedOutputSize(
-      restoration.sourceWidth,
-      restoration.sourceHeight,
-      restoration.mode === AssetRestorationMode.SmoothMotion ? 1 : restoration.upscale,
-    );
+    // FL-955: a photo operation keeps the photo's own size, above 4K included.
+    const output = photoOperation
+      ? { width: restoration.sourceWidth, height: restoration.sourceHeight }
+      : cappedOutputSize(
+          restoration.sourceWidth,
+          restoration.sourceHeight,
+          restoration.mode === AssetRestorationMode.SmoothMotion ? 1 : restoration.upscale,
+        );
     const sample = await this.mlDestinationRepository.getThroughput(
       destination.id,
       windowStart(ESTIMATE_WINDOW_DAYS),
@@ -838,9 +1222,14 @@ export class AssetRestorationService {
    * FL-162: work on Frameleaf Cloud is estimated and confirmed as a cloud job (`POST /cloud/ml/jobs`),
    * with its price and consent shown first. This request path never sends anything to the cloud.
    */
-  private async refuseCloudRequest(destinationId: string) {
+  private async refuseCloudRequest(destinationId: string, photoOperation?: RestorationPhotoOperation) {
     const destination = await this.mlDestinationRepository.getById(destinationId);
     if (destination?.kind === MlDestinationKind.FrameleafCloud) {
+      if (photoOperation) {
+        throw new BadRequestException(
+          `Frameleaf Cloud does not offer ${photoOperationLabel(photoOperation)} yet; nothing was sent.`,
+        );
+      }
       throw new BadRequestException(
         'Frameleaf Cloud work is estimated and confirmed first; nothing was sent. Use the Frameleaf Cloud estimate.',
       );
@@ -924,7 +1313,12 @@ export class AssetRestorationService {
    * pod, still allows library work or shares an endpoint a library route uses (FL-72), and then
    * by the ordinary admission (consent, allow-list, budget, live health). Nothing is moved.
    */
-  private async admitRestoration(workload: MlWorkload, destinationId: string, jobName: MediaOperationKind) {
+  private async admitRestoration(
+    workload: MlWorkload,
+    destinationId: string,
+    jobName: MediaOperationKind,
+    photoOperation?: RestorationPhotoOperation,
+  ) {
     const deps = {
       mlDestinationRepository: this.mlDestinationRepository,
       machineLearningRepository: this.machineLearningRepository,
@@ -936,7 +1330,7 @@ export class AssetRestorationService {
         throw new MlDestinationRefusedError(MlAdmissionRefusal.RoleConflict, workload, row.id, conflict);
       }
     }
-    await selectMlDestination(deps, { workload, destinationId, jobName });
+    await selectMlDestination(deps, { workload, destinationId, jobName, ...(photoOperation && { photoOperation }) });
   }
 
   private inputBytes(source: RestorationSource, region: AssetRestorationRegion) {
@@ -962,6 +1356,7 @@ export class AssetRestorationService {
     modelId?: string,
   ): RestorationSnapshot {
     const smooth = restoration.mode === AssetRestorationMode.SmoothMotion;
+    const photoOperation = photoOperationOf(restoration.provenance);
     return {
       version: 1,
       stage,
@@ -986,13 +1381,20 @@ export class AssetRestorationService {
       ...(stage === 'full' &&
         restoration.modelName && { model: { name: restoration.modelName, version: restoration.modelVersion } }),
       ...(stage === 'preview' && modelId && { modelId }),
+      ...(photoOperation && { operation: photoOperation }),
+      ...((restoration.provenance as { allowHandTinted?: boolean } | null)?.allowHandTinted === true && {
+        allowHandTinted: true,
+      }),
     };
   }
 
   /** What Activity shows under the job title. Customer words, not enum values. */
   private settingsOf(restoration: AssetRestoration, destinationName: string, preview: boolean) {
+    const photoOperation = photoOperationOf(restoration.provenance);
     return {
-      mode: restorationModeLabel(restoration.mode as AssetRestorationMode),
+      mode: photoOperation
+        ? photoOperationLabel(photoOperation)
+        : restorationModeLabel(restoration.mode as AssetRestorationMode),
       upscale: restoration.upscale,
       preview,
       destination: destinationName,
@@ -1037,6 +1439,7 @@ export class AssetRestorationService {
 
   private toDto(row: AssetRestoration): AssetRestorationResponseDto {
     const status = row.status as AssetRestorationStatus;
+    const photoOperation = photoOperationOf(row.provenance);
     return {
       id: row.id,
       assetId: row.assetId,
@@ -1075,6 +1478,8 @@ export class AssetRestorationService {
       resultExpiresAt: asIso(row.resultExpiresAt as Date | null),
       createdAt: asDateTimeString(row.createdAt as Date),
       updatedAt: asDateTimeString(row.updatedAt as Date),
+      // FL-955: only on repair and colourise rows, so an enhance response is what it always was
+      ...(photoOperation && { operation: photoOperation as AssetRestorationOperation }),
     };
   }
 }

@@ -181,6 +181,8 @@ describe(PhotographyInvoiceService.name, () => {
     invoices.send.mockResolvedValue(true);
     await sut.remind();
     expect(invoices.claimReminder).toHaveBeenCalledExactlyOnceWith('due', expect.any(String));
+    // FL-1769: a reminder keeps the invoice's sent date
+    expect(invoices.send).toHaveBeenCalledWith(invoice.ownerId, 'due', expect.any(String), { reminder: true });
     expect(mocks.email.sendEmail).toHaveBeenCalledOnce();
     expect(mocks.email.sendEmail.mock.calls[0][0].html).toMatch(/photography\/invoice\/[a-f\d]{64}/);
   });

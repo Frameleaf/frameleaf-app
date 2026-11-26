@@ -96,9 +96,22 @@ describe('oauth-apps', () => {
       'http://127.0.0.1/callback',
       'http://127.0.0.1:33418/callback',
       'http://[::1]:8080/cb',
-      'http://localhost:6274/oauth/callback',
     ])('accepts %s', (uri) => {
       expect(checkRegisteredRedirectUri(uri)).toBe(uri);
+    });
+
+    it('refuses localhost for a new registration unless an administrator registers it (FL-1635 TM-11)', () => {
+      const uri = 'http://localhost:6274/oauth/callback';
+      expect(checkRegisteredRedirectUri(uri)).toBeNull();
+      expect(checkRegisteredRedirectUri(uri, { allowLocalhost: true })).toBe(uri);
+      expect(checkRegisteredRedirectUri('https://localhost/callback')).toBeNull();
+      expect(checkRegisteredRedirectUri('https://localhost/callback', { allowLocalhost: true })).toBe(
+        'https://localhost/callback',
+      );
+      // an app registered with localhost before FL-1635 still gets its code, on any port
+      expect(matchRedirectUri([uri], 'http://localhost:51234/oauth/callback')).toBe(
+        'http://localhost:51234/oauth/callback',
+      );
     });
 
     it.each([

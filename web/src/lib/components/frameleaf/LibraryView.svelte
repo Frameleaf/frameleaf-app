@@ -759,7 +759,7 @@
     unarchive: (asset) => void (asset.visibility = AssetVisibility.Timeline),
   };
 
-  const applyBulk = (action: BulkActionId, ids: string[]) => {
+  const applyBulk = (action: BulkActionId, ids: string[], payload?: BulkPayload) => {
     // A stack change moves the counts and which members the server hides, so the page reads it again.
     if (action === 'stack' || action === 'unstack') {
       void manager.refresh();
@@ -767,7 +767,12 @@
     }
     // FL-1410: a date set by hand is no longer one to check; the server says where each photo belongs now.
     // FL-943: a Date & Time Doctor fix moves photos on the timeline, which only the server can place.
-    if (action === 'fix-dates' || (action === 'change-date' && manager.datesToCheckCount > 0)) {
+    // FL-936: so does a year or a decade, and the undo of one.
+    if (
+      action === 'fix-dates' ||
+      (action === 'change-date' &&
+        (manager.datesToCheckCount > 0 || !!payload?.dateAccuracy || !!payload?.undoDateFixId))
+    ) {
       void manager.refresh();
       return;
     }
@@ -825,7 +830,11 @@
     isLocked: asset.visibility === AssetVisibility.Locked,
     stackId: asset.stack?.id ?? null,
     // In an Added-date view the bucket's dates are upload times, never offered as capture times.
-    ...(!addedDateSource && { localDateTime: plainDateTime(asset), utcOffsetMinutes: utcOffsetMinutes(asset) }),
+    ...(!addedDateSource && {
+      localDateTime: plainDateTime(asset),
+      utcOffsetMinutes: utcOffsetMinutes(asset),
+      dateAccuracy: asset.dateAccuracy ?? null,
+    }),
   });
 
   /** The time buckets date this view by upload (Recently added, "Added — newest"), not by capture. */
@@ -964,8 +973,11 @@
   const dispatchBulk = (id: BulkActionId, payload?: BulkPayload) => {
     if (id === 'download' && !payload?.fileName) {
       // The only action whose payload needs an async name lookup; every other action stays
-      // synchronous below exactly as before.
-      void effectiveDownloadName().then((fileName) => runDispatch(id, { ...payload, fileName }));
+      // synchronous below exactly as before. The items are the ones selected now: the selection can
+      // change while the name is looked up.
+      const target = { ids: [...session.selection], snapshot };
+      actionTargets = target.ids;
+      void effectiveDownloadName().then((fileName) => runDispatch(id, { ...payload, fileName }, target));
       return;
     }
     runDispatch(id, payload);
@@ -1020,19 +1032,27 @@
     }
   });
 
-  const runDispatch = (id: BulkActionId, payload?: BulkPayload) => {
-    if (snapshot && id === 'archive' && ownTimeline && preparesArchiveOnServer(snapshot)) {
+  const runDispatch = (
+    id: BulkActionId,
+    payload?: BulkPayload,
+    target?: { ids: readonly string[]; snapshot: typeof snapshot },
+  ) => {
+    const frozen = target ? target.snapshot : snapshot;
+    if (frozen && id === 'archive' && ownTimeline && preparesArchiveOnServer(frozen)) {
       // Counted and frozen by the server first; nothing changes until that exact count is confirmed.
       void prepareMatchingArchive();
       return;
     }
-    if (snapshot) {
+    if (frozen) {
       // Frozen at submit: editing the filter afterwards cannot change what the operation touches.
-      void bulk.runMatching(id, snapshot, { payload, submittedTotal: session.total });
-      session.clearSelection();
+      void bulk.runMatching(id, frozen, { payload, submittedTotal: session.total });
+      // A selection made while a download's name was looked up is not this action's to clear.
+      if (frozen === snapshot) {
+        session.clearSelection();
+      }
       return;
     }
-    void bulk.run(id, [...session.selection], payload);
+    void bulk.run(id, [...(target ? target.ids : session.selection)], payload);
   };
 
   /**
@@ -1046,7 +1066,13 @@
     const ids: string[] = [];
     for (const month of months) {
       if (!month.isLoaded) {
-        await manager.loadTimelineMonth(month.yearMonth);
+        // Not cancelable: scrolling away from a month would otherwise end Select all without a word.
+        try {
+          await manager.loadTimelineMonth(month.yearMonth, { cancelable: false });
+        } catch (error) {
+          handleError(error, $t('errors.failed_to_load_assets'));
+          return;
+        }
       }
       if (manager.months !== months || session.revision !== revision || !month.isLoaded) {
         return;

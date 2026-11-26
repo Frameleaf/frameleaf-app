@@ -104,10 +104,24 @@ export class EdgeCertificateRepository {
     }
   }
 
-  /** Replace a certificate and its key; each file is written aside and renamed into place. */
+  /**
+   * Replace a certificate and its key. Both are written aside before either is renamed, so a full disk leaves the
+   * working pair in place.
+   */
   async write(identityDir: string, kind: EdgeCertificateKind, pair: EdgeCertificatePair) {
-    await this.writePrivate(identityDir, keyFile(kind), pair.key);
-    await this.writePrivate(identityDir, certificateFile(kind), pair.certificate);
+    const dir = this.directory(identityDir);
+    const key = await this.writeAside(identityDir, keyFile(kind), pair.key);
+    try {
+      const certificate = await this.writeAside(identityDir, certificateFile(kind), pair.certificate);
+      try {
+        await rename(key, join(dir, keyFile(kind)));
+        await rename(certificate, join(dir, certificateFile(kind)));
+      } finally {
+        await rm(certificate, { force: true });
+      }
+    } finally {
+      await rm(key, { force: true });
+    }
   }
 
   /** Remove certificates and their keys (remote access turned off, or the server unlinked). */
@@ -196,17 +210,27 @@ export class EdgeCertificateRepository {
   }
 
   private async writePrivate(identityDir: string, name: string, content: string) {
+    const temporary = await this.writeAside(identityDir, name, content);
+    try {
+      await rename(temporary, join(this.directory(identityDir), name));
+    } finally {
+      await rm(temporary, { force: true });
+    }
+  }
+
+  /** A complete 0600 copy beside its final name; the caller renames it into place. */
+  private async writeAside(identityDir: string, name: string, content: string) {
     const dir = this.directory(identityDir);
     await mkdir(dir, { recursive: true, mode: 0o700 });
     await chmod(dir, 0o700).catch(() => {});
-    const file = join(dir, name);
-    const temporary = `${file}.${randomUUID()}.tmp`;
+    const temporary = `${join(dir, name)}.${randomUUID()}.tmp`;
     try {
       await writeFile(temporary, content, { mode: 0o600, flag: 'wx' });
       await chmod(temporary, 0o600);
-      await rename(temporary, file);
-    } finally {
+      return temporary;
+    } catch (error) {
       await rm(temporary, { force: true });
+      throw error;
     }
   }
 }

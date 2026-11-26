@@ -3,6 +3,7 @@ import { lstat, mkdir, readFile, writeFile, stat, statfs, rename, open, realpath
 import { basename, isAbsolute, join, relative } from 'node:path';
 import { z } from 'zod';
 import { Store } from './store.js';
+import { galleryImportRefused, importedGallery } from './gallery-preview.js';
 import { Docker, type ImportInspection } from './docker.js';
 import { Discovery, COMPATIBLE_SETTINGS, maskSettings, unmaskSettings, unsupportedSettings } from './discovery.js';
 import { Releases, type VerifiedRelease } from './releases.js';
@@ -200,6 +201,8 @@ type RestoreReview = {
 };
 /** FL-973: how long after an update Manager offers to go back to the release before it. */
 export const ROLLBACK_DAYS = 14;
+/** FL-1732 (owner 2026-11-21): recovery points kept automatically; older ones are pruned unless protected. */
+export const KEPT_RECOVERY_POINTS = 5;
 /** Operations after which the pre-update checkpoint no longer describes this library. */
 const ROLLBACK_INVALIDATING_KINDS: OperationKind[] = ['restore', 'import', 'move-library', 'move-thumbnails', 'thumbnails-home', 'move-database', 'rollback'];
 /** FL-973: recorded when an update finishes; going back restores `snapshot`, the checkpoint taken just before it. */
@@ -567,7 +570,7 @@ export class Operations {
       return true;
     });
     await this.step(operation, 'start', async () => {
-      await this.fencing.assertMedia(next.mounts, next);
+      await this.fencing.warnMediaWriters(next.mounts, next);
       await this.docker.compose(this.directory(), next.project, 'up');
       return true;
     });
@@ -576,9 +579,42 @@ export class Operations {
   installation(): Installation | null {
     return this.store.get('installation');
   }
-  /** Removes dumps, recovery records, restore reviews and old release bundles no open operation needs. */
-  prune(): Promise<string[]> {
-    return this.retention.sweep();
+  /**
+   * Removes dumps, recovery records, restore reviews and old release bundles no open operation needs, then
+   * (FL-1732) every recovery point beyond the newest few that nothing still needs. Never throws.
+   */
+  async prune(): Promise<string[]> {
+    const removed = await this.retention.sweep();
+    if (this.executing.size) return removed; // the running operation's own settle prunes again
+    try {
+      const keep = this.protectedRecoveryPoints();
+      const points = await this.backups.list();
+      const surplus = points.slice(KEPT_RECOVERY_POINTS).map((point) => point.id).filter((id) => !keep.has(id));
+      if (surplus.length) await this.backups.forget(surplus);
+      removed.push(...surplus);
+    } catch (error) {
+      // Not set up or locked yet, or restic failed: nothing is lost by waiting for the next settle.
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT')
+        console.error(`manager: recovery point pruning did not finish: ${error instanceof Refusal ? error.code : ((error as NodeJS.ErrnoException).code ?? error)}`);
+    }
+    return removed;
+  }
+  /** FL-1732: recovery points that are never pruned or deleted: the one rollback would restore, and any an open operation recorded. */
+  protectedRecoveryPoints(): Set<string> {
+    const ids = new Set<string>();
+    const point = this.store.get<RollbackPoint>('rollback-point');
+    if (point && this.rollbackOffer()) ids.add(point.snapshot);
+    for (const operation of [...this.store.history(), this.store.locked()])
+      if (operation && operation.state !== 'complete')
+        for (const value of Object.values(operation.receipts)) if (typeof value === 'string' && /^[a-f0-9]{64}$/.test(value)) ids.add(value);
+    return ids;
+  }
+  /** FL-1732: the owner deletes one recovery point; protected ones and any while an operation runs are refused. */
+  async deleteRecoveryPoint(id: string): Promise<void> {
+    if (this.executing.size) throw new Refusal('operation_in_progress');
+    if (this.protectedRecoveryPoints().has(id))
+      throw new Refusal('recovery_point_protected', 409, 'This recovery point is still needed to undo the last update or finish an operation.');
+    await this.backups.forget([id]);
   }
   /** A new installation id whose container number no other installation on this host uses. */
   private async newInstallationId(): Promise<string> {
@@ -656,6 +692,22 @@ export class Operations {
       ),
     );
   }
+  private summaryCache: { installation: string; until: number; value: Promise<unknown> } | null = null;
+  /** The dashboard polls every 10 seconds per tab; counting a large library that often is wasted work. */
+  dashboardSummary(): Promise<unknown> {
+    const installation = this.installation()?.id ?? '';
+    const held = this.summaryCache;
+    if (held?.installation === installation && held.until > Date.now()) return held.value;
+    const value = this.librarySummary();
+    const entry = { installation, until: Date.now() + 60_000, value };
+    this.summaryCache = entry;
+    // A failure, or a library not migrated yet, is asked again on the next poll.
+    const forget = () => {
+      if (this.summaryCache === entry) this.summaryCache = null;
+    };
+    value.then((summary) => summary ?? forget(), forget);
+    return value;
+  }
   private async reviewedSource(id: string, requireCompatible = true) {
     const stored = this.store.get<Source>(`source:${id}`);
     if (!stored) throw new Refusal('select_source_installation');
@@ -663,6 +715,8 @@ export class Operations {
     const source = this.editedSource(stored);
     // Review still opens so the administrator can see and edit the settings; cutover cannot start.
     if (requireCompatible && source.unsupportedSettings.length) throw new Refusal('incompatible_settings_require_review');
+    // FL-1752: the importer would refuse this Gallery, or Manager could not tell, so it is never stopped for an import.
+    if (requireCompatible && galleryImportRefused(source)) throw new Refusal('source_database_dump_failed');
     if (source.platform === 'unraid') {
       if (!this.autostartFile) throw new Refusal('unraid_autostart_file_required');
       await this.fencing.readAutostart(true);
@@ -883,6 +937,9 @@ export class Operations {
       this.store.save(operation);
       const image = await this.preparationImage(tag);
       await this.fencing.verify(capture.fence);
+      // The folder comes from the app's own settings: a link there would hand this container another host folder.
+      if ((await realpath(capture.originalsPath).catch(() => null)) !== capture.originalsPath)
+        throw new Refusal('import_runtime_media_invalid');
       const path = await stageCommonImportPreparation(this.directory(), operationId, request);
       const preparationSha256 = await fileHash(path);
       const inspection = await this.docker.inspectImportSource(
@@ -1199,6 +1256,19 @@ export class Operations {
       if (finding?.warning) return { value, outcome: { status: 'warning', code: 'database_on_hard_drives', facts: { ...facts, ...finding.warning } } };
       return { value, outcome: { facts } };
     });
+    await this.writersCheck(
+      checks,
+      this.folderMounts({
+        mounts: source?.mounts ?? [
+          { type: 'bind', source: input.mediaPath!, target: '', readOnly: false },
+          // A thumbnail folder of its own is one of the library's folders.
+          ...(input.thumbnailsPath ? [{ type: 'bind' as const, source: input.thumbnailsPath, target: '', readOnly: false }] : []),
+        ],
+        databaseRoot: input.databaseRoot,
+      }),
+      undefined,
+      source?.workers,
+    );
     // FL-1321: a new library's thumbnails, with the photos or in a folder of their own on a faster drive.
     if (input.kind === 'install' && !source && !common)
       await checks.run('thumbnails', async () => {
@@ -1240,6 +1310,26 @@ export class Operations {
     return checkHost();
   }
   /** FL-1318: room in Docker's own storage for the images this install downloads; less without machine learning. */
+  private folderMounts(installation: Pick<Installation, 'mounts' | 'databaseRoot'>): Mount[] {
+    return [...installation.mounts, { type: 'bind', source: installation.databaseRoot, target: '', readOnly: false }];
+  }
+  /** Who else can write to the library's folders: a warning in the review, never a reason to stop. */
+  private async writersCheck(checks: ServerCheck, folders: Mount[], installation?: Installation, workers?: string[]) {
+    // A lookup that fails is "couldn't tell", not "nobody else".
+    const containers = await this.fencing.mediaWriters(folders, installation, workers).catch(() => null);
+    if (!containers) checks.results.push({ id: 'writers', status: 'unknown' });
+    else if (containers.length)
+      checks.results.push({ id: 'writers', status: 'warning', facts: { containers: containers.join(', ') } });
+  }
+  /** Overview's warning: other containers that can write to this library's photos or database folder. */
+  async otherWriters(): Promise<string[]> {
+    const installation = this.installation();
+    if (!installation) return [];
+    return this.fencing.mediaWriters(this.folderMounts(installation), installation).catch((error) => {
+      console.warn(`manager: could not check which other containers can write to Frameleaf's folders: ${error?.message ?? error}`);
+      return [];
+    });
+  }
   private async roomCheck(checks: ServerCheck, ml: boolean): Promise<void> {
     const needed = dockerRoomNeeded(ml, ml ? await detectAcceleration() : 'cpu');
     const free = await this.probes.dockerFree().catch(() => null);
@@ -1436,7 +1526,7 @@ export class Operations {
           );
         this.executing.delete(operation.id);
         // A settled operation no longer needs its plaintext dump, recovery record or restored snapshot.
-        void this.retention.sweep();
+        void this.prune();
       });
   }
   resume(id: string, bootstrap?: unknown): Operation {
@@ -1499,7 +1589,7 @@ export class Operations {
       const sourceFence = restoring ? null : ((review as Review).common?.fence ?? (review as Review).source);
       if (sourceFence && operation.completed.includes('fence-source')) {
         await this.verifySourceUntilTakeover(sourceFence, installation ?? undefined);
-        if (installation) await this.fencing.assertMedia(installation.mounts, installation);
+        if (installation) await this.fencing.warnMediaWriters(installation.mounts, installation);
       }
       if (operation.step === 'restore-new-database' && !operation.completed.includes('restore-new-database')) {
         if (!installation || installation.mayHaveWrittenMedia) throw new Refusal('manual_media_recovery_required');
@@ -1751,7 +1841,10 @@ export class Operations {
         if (state.status !== 'activated') {
           await this.runImport(operation, review, installation, state.status === 'fresh' ? 'run' : 'resume');
           await this.fencing.verify(source);
-          await this.runImport(operation, review, installation, 'verify');
+          const report = await this.runImport(operation, review, installation, 'verify');
+          // FL-1742: what the importer carried from Noodle Gallery and what stayed behind, for "Your server is ready".
+          const gallery = importedGallery(report);
+          if (gallery) this.store.set(`import-gallery:${installation.id}`, gallery);
         }
         return true;
       });
@@ -1763,8 +1856,10 @@ export class Operations {
         const result = JSON.parse(
           await this.docker.sql(
             db,
+            // A Noodle Gallery Space arrives as an album of kind "space"; the source counted its albums only.
             `SELECT json_build_object('users',(SELECT count(*) FROM public.user),
-          'assets',(SELECT count(*) FROM public.asset),'albums',(SELECT count(*) FROM public.album));`,
+          'assets',(SELECT count(*) FROM public.asset),'albums',(SELECT count(*) FROM public.album
+            WHERE kind IS DISTINCT FROM 'space'));`,
           ),
         );
         const receipt = operation.receipts['copy-current-database'] as { summary: Record<string, number> };
@@ -1809,7 +1904,7 @@ export class Operations {
       });
     await this.step(operation, 'start-frameleaf', async () => {
       if (sourceFence) await this.verifySourceUntilTakeover(sourceFence);
-      await this.fencing.assertMedia(installation.mounts, installation);
+      await this.fencing.warnMediaWriters(installation.mounts, installation);
       await this.releases.eligible(review.input.tag);
       installation.mayHaveWrittenMedia = true;
       this.store.set('installation', installation);
@@ -2100,6 +2195,10 @@ export class Operations {
     if (kind === 'backup') {
       await this.step(operation, 'database-backup', async () => {
         await this.backups.initialize();
+        // The library keeps running while this backup is retried: a dump from the failed try would be an old
+        // database recorded as a recovery point from now.
+        delete operation.receipts['checkpoint-dump'];
+        await rm(join(this.store.directory, 'checkpoints', operation.id, 'database.dump'), { force: true });
         const checkpoint = await this.checkpoint(operation);
         return this.backups.snapshot(checkpoint, operation.id);
       });
@@ -2109,8 +2208,8 @@ export class Operations {
   }
   /**
    * FL-1263: the reviewed source must stay as reviewed until Frameleaf takes over the library (the installation may
-   * have written media). After that the owner may change or remove the original app; callers still run
-   * assertMedia, which refuses any other container that could write the media, the original app included.
+   * have written media). After that the owner may change or remove the original app; other containers
+   * that can write the media are only warned about, never refused.
    */
   private async verifySourceUntilTakeover(source: Source | SourceFence, installation?: Installation): Promise<void> {
     if (!this.installation()?.mayHaveWrittenMedia) await this.fencing.verify(source, installation);
@@ -2120,7 +2219,7 @@ export class Operations {
     if (kind !== 'stop') await this.databaseStorage.verify(installation);
     if (kind !== 'stop' && installation.sourceId)
       await this.verifySourceUntilTakeover(this.store.get<Source>(`source:${installation.sourceId}`)!, installation);
-    if (kind !== 'stop') await this.fencing.assertMedia(installation.mounts, installation);
+    if (kind !== 'stop') await this.fencing.warnMediaWriters(installation.mounts, installation);
     if (kind !== 'stop') await retuneDatabase(this.directory());
     // `restart` keeps a container's old command and shm_size; `up` recreates the database when they changed.
     if (kind === 'restart') await this.docker.compose(this.directory(), installation.project, 'up', ['database']);
@@ -2523,7 +2622,7 @@ export class Operations {
       this.store.set('previous-installation', review.current);
       const source = installation.sourceId ? this.store.get<Source>(`source:${installation.sourceId}`) : null;
       if (source) await this.verifySourceUntilTakeover(source, installation);
-      await this.fencing.assertMedia(installation.mounts, installation);
+      await this.fencing.warnMediaWriters(installation.mounts, installation);
       // A PostgreSQL image that cannot reuse the data directory was moved above (compose.json names the new image
       // by now); otherwise the signed bundle declares this exact same-major transition in place, with the
       // checkpoint above as its fallback.
@@ -2626,7 +2725,7 @@ export class Operations {
   /**
    * FL-1322: review moving the installed database to another folder, usually on another drive. The folder must
    * pass the same checks as a new install's database folder (a host bind on a local disk, outside Docker's
-   * storage, no other container writing there) and hold the database twice: the moved copy, and later the second
+   * storage) and hold the database twice: the moved copy, and later the second
    * copy an engine upgrade restores beside it.
    */
   async reviewDatabaseMove(databaseRoot: string) {
@@ -2722,7 +2821,7 @@ export class Operations {
     try {
       await this.step(operation, 'start', async () => {
         await this.databaseStorage.verify(installation);
-        await this.fencing.assertMedia(installation.mounts, installation);
+        await this.fencing.warnMediaWriters(installation.mounts, installation);
         if (!operation.receipts['start-state']) {
           operation.receipts['start-state'] = 'starting';
           this.store.save(operation); // Journaled before the server can write to the new folder.
@@ -2769,7 +2868,7 @@ export class Operations {
     });
     await this.step(operation, 'start-original-database', async () => {
       await this.databaseStorage.verify(previous);
-      await this.fencing.assertMedia(previous.mounts, previous);
+      await this.fencing.warnMediaWriters(previous.mounts, previous);
       await this.docker.compose(this.directory(), previous.project, 'up');
       return true;
     });
@@ -2975,7 +3074,7 @@ export class Operations {
       return installation;
     });
     await this.step(operation, 'rollback-start-previous', async () => {
-      await this.fencing.assertMedia(restored.mounts, restored);
+      await this.fencing.warnMediaWriters(restored.mounts, restored);
       await this.docker.compose(this.directory(), restored.project, 'up');
       return true;
     });
@@ -3135,6 +3234,8 @@ export class Operations {
       data.source = installation.databasePath.replaceAll('$', () => '$$');
       await atomicJson(join(this.directory(), 'compose.json'), compose);
       this.store.set('database-password', review.recovery.databasePassword);
+      // The compose.json above carries these settings; the next render must not bring newer ones back.
+      this.store.set('application-config', review.recovery.application);
       this.store.set('installation', installation);
       await this.docker.compose(this.directory(), installation.project, 'up', ['database']);
       const database = await this.targetDatabase();
@@ -3144,7 +3245,7 @@ export class Operations {
     });
     await this.step(operation, 'start-previous', async () => {
       await assertMountSources(restored.mounts);
-      await this.fencing.assertMedia(restored.mounts, restored);
+      await this.fencing.warnMediaWriters(restored.mounts, restored);
       await this.docker.compose(this.directory(), restored.project, 'up');
       return true;
     });
@@ -3161,9 +3262,25 @@ export class Operations {
    * because the thumbnail folder is gone (FL-1320). Without it a missing thumbnail folder is refused by name.
    */
   async reviewRestore(snapshot: string, databaseRoot: string, managerPort?: number, thumbnailFallback = false) {
-    const current = this.installation();
     const id = randomUUID(),
       checkpoint = join(this.store.directory, `restore-${id}`);
+    try {
+      return await this.prepareRestoreReview(id, checkpoint, snapshot, databaseRoot, managerPort, thumbnailFallback);
+    } catch (error) {
+      // A refused review must not leave a plaintext copy of the database on the disk.
+      await rm(checkpoint, { recursive: true, force: true });
+      throw error;
+    }
+  }
+  private async prepareRestoreReview(
+    id: string,
+    checkpoint: string,
+    snapshot: string,
+    databaseRoot: string,
+    managerPort: number | undefined,
+    thumbnailFallback: boolean,
+  ) {
+    const current = this.installation();
     await this.backups.restore(snapshot, checkpoint);
     const recovery = Recovery.parse(JSON.parse(await readFile(join(checkpoint, 'recovery.json'), 'utf8')));
     if (recovery.databaseFormat !== 'frameleaf-canonical')
@@ -3265,7 +3382,6 @@ export class Operations {
     await checks.run('media', async () => {
       // A drive that isn't mounted is named plainly (media_folder_missing) before any other folder check.
       await assertMountSources(target.mounts);
-      await this.fencing.assertMedia(target.mounts, current ?? undefined);
       const containers = await this.docker.inventory();
       for (const mount of target.mounts) {
         if (mount.type === 'bind') await storagePath(mount.source, this.roots, 0);
@@ -3285,6 +3401,7 @@ export class Operations {
       const value = await this.databaseStorage.validate(databaseRoot, databaseBytes);
       return { value, outcome: { facts: { path: databaseRoot, free: await freeBytes(databaseRoot) } } };
     });
+    await this.writersCheck(checks, this.folderMounts({ mounts: target.mounts, databaseRoot }), current ?? undefined);
     await this.portCheck(checks, target.port, current, undefined, managerPort, false);
     await this.downloadsCheck(checks);
     return Object.assign(checks, { compatibility, databaseStorage });
@@ -3407,7 +3524,7 @@ export class Operations {
     });
     await this.step(operation, 'start-frameleaf', async () => {
       if (review.current) await this.fencing.verifyInstallation(review.current);
-      await this.fencing.assertMedia(installation.mounts, installation);
+      await this.fencing.warnMediaWriters(installation.mounts, installation);
       await this.releases.eligible(review.release.nas.tag);
       await assertMountSources(installation.mounts);
       // FL-1320: the restored database says thumbnails were checked; the library's own `thumbs` folder, chosen
@@ -3484,7 +3601,7 @@ export class Operations {
       throw error;
     } finally {
       this.executing.delete(id);
-      void this.retention.sweep();
+      void this.prune();
     }
   }
   private async cancelOperation(operation: Operation): Promise<void> {
@@ -3580,7 +3697,7 @@ export class Operations {
           await this.renderServices(previous, this.application().services);
         }
         await this.databaseStorage.verify(previous);
-        await this.fencing.assertMedia(previous.mounts, previous);
+        await this.fencing.warnMediaWriters(previous.mounts, previous);
         if (previous.sourceId)
           await this.verifySourceUntilTakeover(this.store.get<Source>(`source:${previous.sourceId}`)!, previous);
         await this.docker.compose(this.directory(), previous.project, 'up');
@@ -3754,6 +3871,8 @@ export class Operations {
       databaseMove:
         operation.kind === 'update' &&
         (!!receipts['database-move-intent'] || !!this.store.get<UpdateReview>(`update:${input.reviewId}`)?.databaseMove),
+      /** FL-1770: false for a failed Start, Stop or Restart, which no longer keeps other operations from starting. */
+      holdsLock: this.store.holdsLock(operation),
       canStop: isMoveOperation(operation.kind) && operation.state === 'running' && !receipts['move-writes-intent'],
       canCancel:
         ['failed', 'interrupted', 'awaiting-review'].includes(operation.state) &&

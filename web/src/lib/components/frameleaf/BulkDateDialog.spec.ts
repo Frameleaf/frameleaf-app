@@ -137,4 +137,39 @@ describe('BulkDateDialog (FL-32, T-19)', () => {
       });
     });
   });
+
+  describe('a year or a decade (FL-936)', () => {
+    it('submits a decade for the undoable path', async () => {
+      const onSubmit = vi.fn();
+      renderWithTooltips(BulkDateDialog, { count: 1, assets: [item('a', '1975-06-01T12:00', 0)], onSubmit });
+      await fireEvent.click(screen.getByRole('radio', { name: 'frameleaf_date_precision_decade' }));
+      expect(screen.getByLabelText('frameleaf_date_precision_decade', { selector: 'select' })).toHaveValue('1970');
+      await apply();
+      expect(onSubmit).toHaveBeenCalledWith({ dateMode: 'set', dateAccuracy: 'decade', year: 1970 });
+    });
+
+    it('submits a year, and holds Apply on one out of range', async () => {
+      const onSubmit = vi.fn();
+      renderWithTooltips(BulkDateDialog, { count: 1, assets: [item('a', '1975-06-01T12:00', 0)], onSubmit });
+      await fireEvent.click(screen.getByRole('radio', { name: 'frameleaf_date_precision_year' }));
+      const year = screen.getByRole('textbox', { name: 'frameleaf_date_precision_year' });
+      await fireEvent.input(year, { target: { value: '1700' } });
+      expect(screen.getByRole('button', { name: 'frameleaf_bulk_apply_to' })).toBeDisabled();
+      await fireEvent.input(year, { target: { value: '1978' } });
+      await apply();
+      expect(onSubmit).toHaveBeenCalledWith({ dateMode: 'set', dateAccuracy: 'year', year: 1978 });
+    });
+
+    it('opens on the accuracy the whole selection shares', () => {
+      renderWithTooltips(BulkDateDialog, {
+        count: 2,
+        assets: [
+          { ...item('a', '1970-01-01T00:00', 0), dateAccuracy: 'decade' },
+          { ...item('b', '1970-01-01T00:00', 0), dateAccuracy: 'decade' },
+        ],
+        onSubmit: vi.fn(),
+      });
+      expect(screen.getByRole('radio', { name: 'frameleaf_date_precision_decade' })).toBeChecked();
+    });
+  });
 });

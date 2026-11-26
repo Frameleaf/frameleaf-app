@@ -415,5 +415,3 @@ export class PreservationRestoreItemsResponseDto extends createZodDto(Preservati
 export class PreservationDecisionsUpdateDto extends createZodDto(PreservationDecisionsUpdateSchema) {}
 
 export type PreservationSupport = z.infer<typeof PreservationSupportSchema>;
-export type PreservationPackageCounts = z.infer<typeof PreservationPackageCountsSchema>;
-export type PreservationRestoreCounts = z.infer<typeof PreservationRestoreCountsSchema>;

@@ -1,6 +1,9 @@
 import hashlib
 import json
+import os
+import time
 from pathlib import Path
+from unittest.mock import patch
 
 import numpy as np
 import onnx
@@ -162,9 +165,9 @@ def test_verified_model_uses_one_fresh_hash_scan_for_receipt_and_approved_manife
     calls = []
     original = staging.cache_hashes
 
-    def observed(path):
+    def observed(path, **kwargs):
         calls.append(path)
-        return original(path)
+        return original(path, **kwargs)
 
     monkeypatch.setattr(staging, "cache_hashes", observed)
     verify_models(spec, tmp_path / "cache", require_staged=require_staged)
@@ -173,6 +176,24 @@ def test_verified_model_uses_one_fresh_hash_scan_for_receipt_and_approved_manife
     (cache / staging.RECEIPT).write_text(json.dumps(original(cache)))
     with pytest.raises(ValueError, match="native_staged_hash_mismatch"):
         verify_models(spec, tmp_path / "cache", require_staged=require_staged)
+
+
+def test_reused_hashes_follow_any_change_to_a_file(tmp_path) -> None:
+    from frameleaf_ml import staging
+
+    (tmp_path / "model.onnx").write_bytes(b"first")
+    first = staging.cache_hashes(tmp_path, reuse=True)
+    with patch.object(staging.hashlib, "file_digest", side_effect=AssertionError("hashed again")):
+        assert staging.cache_hashes(tmp_path, reuse=True) == first
+    # Same size, and the modification time put back: the status-change time still moves.
+    stat_before = (tmp_path / "model.onnx").stat()
+    # Linux keeps these times at clock-tick resolution (up to 10 ms), so a rewrite in the same tick
+    # would leave the status-change time where it was; real replacements are never that close.
+    time.sleep(0.05)
+    (tmp_path / "model.onnx").write_bytes(b"other")
+    os.utime(tmp_path / "model.onnx", ns=(stat_before.st_atime_ns, stat_before.st_mtime_ns))
+    assert staging.cache_hashes(tmp_path, reuse=True) != first
+    assert staging.cache_hashes(tmp_path) == staging.cache_hashes(tmp_path, reuse=True)
 
 
 def test_openvino_devices_are_runtime_facts_only_where_the_provider_exists(monkeypatch: pytest.MonkeyPatch) -> None:

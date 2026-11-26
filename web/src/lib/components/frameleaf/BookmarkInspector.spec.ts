@@ -46,6 +46,15 @@ it('saves owner notes and ratings through bookmark APIs', async () => {
     }),
   );
 });
+it('keeps what is typed when a live refresh replaces the owned search record', async () => {
+  const onClose = vi.fn();
+  const view = render(BookmarkInspector, { id: bookmark.id, bookmark, onClose });
+  const note = await screen.findByRole('textbox', { name: 'frameleaf_bookmark_note' });
+  await fireEvent.input(note, { target: { value: 'Still typing' } });
+  await view.rerender({ id: bookmark.id, bookmark: { ...bookmark }, onClose });
+  expect(screen.getByRole('textbox', { name: 'frameleaf_bookmark_note' })).toHaveValue('Still typing');
+  expect(sdkMock.getBookmark).toHaveBeenCalledTimes(1);
+});
 it('rejects a saved link with the same thumbs-down files use', async () => {
   sdkMock.updateBookmark.mockResolvedValue({ ...bookmark, rating: -1 });
   render(BookmarkInspector, { id: bookmark.id, onClose: vi.fn() });

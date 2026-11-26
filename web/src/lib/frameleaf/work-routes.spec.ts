@@ -1,6 +1,8 @@
 import {
   CloudRouteMode,
   MlDestinationKind,
+  MlProcessingSource,
+  MlRouteOrigin,
   MlWorkload,
   type MlDestinationResponseDto,
   type MlWorkloadRouteDto,
@@ -11,6 +13,7 @@ import {
   choicesFor,
   CLOUD,
   currentChoice,
+  DESKTOPS,
   FOLLOW,
   followerChoice,
   followerChoices,
@@ -175,6 +178,7 @@ describe('search and faces run in one place (FL-455)', () => {
       routes: [{ workload: MlWorkload.Clip, destinationId: 'fc' }],
       cloud: {},
       follow: [],
+      desktops: [],
     });
     expect(routeWrites({ search: ASK }, {}, offered()).cloud).toEqual({});
   });
@@ -218,6 +222,7 @@ describe('saving a choice writes both records', () => {
       ],
       cloud: {},
       follow: [],
+      desktops: [],
     });
   });
 
@@ -262,6 +267,7 @@ describe('saving a choice writes both records', () => {
         routes: [{ workload: MlWorkload.Enrichment, destinationId: 'fc' }],
         cloud: { descriptions: CloudRouteMode.Cloud },
         follow: [],
+        desktops: [],
       });
     });
 
@@ -330,6 +336,7 @@ describe('saving a choice writes both records', () => {
       routes: [],
       cloud: { descriptions: CloudRouteMode.Both, upscale: CloudRouteMode.Cloud },
       follow: [],
+      desktops: [],
     });
   });
 
@@ -343,6 +350,7 @@ describe('saving a choice writes both records', () => {
       routes: [{ workload: MlWorkload.Enrichment, destinationId: 'office' }],
       cloud: { descriptions: CloudRouteMode.Local },
       follow: [],
+      desktops: [],
     });
   });
 
@@ -356,6 +364,7 @@ describe('saving a choice writes both records', () => {
       routes: [{ workload: MlWorkload.Enrichment, destinationId: null }],
       cloud: { descriptions: CloudRouteMode.Local },
       follow: [],
+      desktops: [],
     });
   });
 
@@ -397,6 +406,7 @@ describe('following the processing order (FL-456)', () => {
       ],
       cloud: {},
       follow: [],
+      desktops: [],
     });
   });
 
@@ -405,6 +415,7 @@ describe('following the processing order (FL-456)', () => {
       routes: [],
       cloud: {},
       follow: [MlWorkload.Enrichment],
+      desktops: [],
     });
     expect(hasWrites(routeWrites({ faces: FOLLOW }, {}, following()))).toBe(false);
     expect(hasWrites(routeWrites({}, {}, following()))).toBe(false);
@@ -418,5 +429,68 @@ describe('following the processing order (FL-456)', () => {
       ] as MlWorkloadRouteDto[],
     });
     expect(routeWrites({ faces: FOLLOW }, {}, pinned).follow).toEqual([MlWorkload.Face, MlWorkload.PetRecognition]);
+  });
+});
+
+describe('a Frameleaf Desktop computer as a place (FL-1762)', () => {
+  const ready = facts({ ownOrders: [], desktopHelpers: 1 });
+  const onDesktops = facts({
+    desktopHelpers: 1,
+    ownOrders: [{ workload: MlWorkload.Clip, sources: [MlProcessingSource.Desktops] }],
+  });
+
+  it('is offered only for the work a desktop can take', () => {
+    expect(choicesFor('search', ready)).toContain(DESKTOPS);
+    expect(choicesFor('faces', ready)).toContain(DESKTOPS);
+    expect(choicesFor('ocr', ready)).toContain(DESKTOPS);
+    expect(choicesFor('descriptions', ready)).not.toContain(DESKTOPS);
+  });
+
+  it('is not offered without a helper, an order to save it in, or this server to take work through', () => {
+    expect(choicesFor('search', facts({ ownOrders: [], desktopHelpers: 0 }))).not.toContain(DESKTOPS);
+    expect(choicesFor('search', facts({ desktopHelpers: 1 }))).not.toContain(DESKTOPS);
+    expect(choicesFor('search', facts({ ownOrders: [], desktopHelpers: 1, destinations: [office] }))).not.toContain(
+      DESKTOPS,
+    );
+  });
+
+  it('reads back, and stays on the row after its last helper is removed', () => {
+    expect(currentChoice('search', onDesktops)).toBe(DESKTOPS);
+    const gone = { ...onDesktops, desktopHelpers: 0 };
+    expect(currentChoice('search', gone)).toBe(DESKTOPS);
+    expect(choicesFor('search', gone)).toContain(DESKTOPS);
+  });
+
+  it('does not mistake a row pinned to a computer added by address for the desktops', () => {
+    const pinned = facts({
+      destinations: [server, office],
+      ownOrders: [{ workload: MlWorkload.Face, sources: [MlProcessingSource.Desktops] }],
+      routes: [
+        { workload: MlWorkload.Face, destinationId: 'office', origin: MlRouteOrigin.Pinned },
+      ] as MlWorkloadRouteDto[],
+    });
+    expect(currentChoice('faces', pinned)).toBe('office');
+  });
+
+  it('saves a move to the desktops, and nothing when it is already there', () => {
+    expect(routeWrites({ search: DESKTOPS }, {}, ready)).toEqual({
+      routes: [],
+      cloud: {},
+      follow: [],
+      desktops: [MlWorkload.Clip],
+    });
+    expect(hasWrites(routeWrites({ search: DESKTOPS }, {}, onDesktops))).toBe(false);
+  });
+
+  it('moving back to this server pins it, though the route already names this server', () => {
+    expect(routeWrites({ search: 'srv' }, {}, onDesktops).routes).toEqual([
+      { workload: MlWorkload.Clip, destinationId: 'srv' },
+    ]);
+  });
+
+  it('leaves pets where they are when faces move to the desktops', () => {
+    const writes = routeWrites({ faces: DESKTOPS }, {}, ready);
+    expect(writes.desktops).toEqual([MlWorkload.Face]);
+    expect(writes.routes).toEqual([]);
   });
 });

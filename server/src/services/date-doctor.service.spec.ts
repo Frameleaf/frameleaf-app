@@ -7,9 +7,16 @@ import type { EventRepository } from 'src/repositories/event.repository.js';
 import type { JobRepository } from 'src/repositories/job.repository.js';
 import type { LoggingRepository } from 'src/repositories/logging.repository.js';
 import type { PartnerOriginRepository } from 'src/repositories/partner-origin.repository.js';
+import { DateDoctorFixDto } from 'src/dtos/date-doctor.dto.js';
 import { AccountEventAction, JobName } from 'src/enum.js';
 import { DateDoctorService } from 'src/services/date-doctor.service.js';
-import { DateFindingCause, type DateScanRow, dateFromFileName, detectDateFindings } from 'src/utils/date-doctor.js';
+import {
+  type DateFinding,
+  DateFindingCause,
+  type DateScanRow,
+  dateFromFileName,
+  detectDateFindings,
+} from 'src/utils/date-doctor.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
 import { FIXTURE_NOW, buildDateDoctorFixture, scoreFindings } from 'test/fixtures/date-doctor.fixture.js';
 
@@ -153,10 +160,19 @@ describe(DateDoctorService.name, () => {
   const setup = () => {
     const repository = {
       getOwnerIds: vi.fn(),
+      getScanMonths: vi.fn(),
       getScanRows: vi.fn(),
       replaceFindings: vi.fn(),
       getFindings: vi.fn(),
       isScanning: vi.fn().mockResolvedValue(false),
+    };
+    /** The repository's month reads, over `photos` in memory. */
+    const holds = (photos: DateScanRow[]) => {
+      const months = new Set(photos.map(({ localDateTime: at }) => Date.UTC(at.getUTCFullYear(), at.getUTCMonth(), 1)));
+      repository.getScanMonths.mockResolvedValue([...months].toSorted((a, b) => a - b).map((at) => new Date(at)));
+      repository.getScanRows.mockImplementation((_ownerId: string, window: { from: Date; to: Date }) =>
+        Promise.resolve(photos.filter(({ localDateTime: at }) => at >= window.from && at < window.to)),
+      );
     };
     const jobs = { queue: vi.fn(), queueAll: vi.fn() };
     const logger = { setContext: vi.fn(), log: vi.fn() };
@@ -166,7 +182,7 @@ describe(DateDoctorService.name, () => {
       repository as unknown as DateDoctorRepository,
       ...([{}, {}, {}, {}] as unknown as FixDeps),
     );
-    return { sut, repository, jobs };
+    return { sut, repository, jobs, holds };
   };
 
   it('queues a scan of the signed-in owner', async () => {
@@ -186,17 +202,42 @@ describe(DateDoctorService.name, () => {
   });
 
   it('replaces the owner’s findings with what the scan found', async () => {
-    const { sut, repository } = setup();
+    const { sut, repository, holds } = setup();
     const photos = buildDateDoctorFixture().slice(0, 40); // the future dates
-    repository.getScanRows.mockResolvedValue(photos);
+    holds(photos);
     await sut.handleScan({ userId: 'owner' });
-    expect(repository.getScanRows).toHaveBeenCalledWith('owner');
+    expect(repository.getScanMonths).toHaveBeenCalledWith('owner');
+    expect(repository.getScanRows).toHaveBeenCalledWith('owner', expect.objectContaining({ from: expect.any(Date) }));
     const [ownerId, findings] = repository.replaceFindings.mock.calls[0];
     expect(ownerId).toBe('owner');
     expect(findings).toHaveLength(40);
     expect(new Set(findings.map(({ cause }: { cause: string }) => cause))).toEqual(
       new Set([DateFindingCause.FutureDate]),
     );
+  });
+
+  it('finds month by month exactly what a scan of the whole library finds', async () => {
+    vi.useFakeTimers({ now: FIXTURE_NOW, toFake: ['Date'] });
+    try {
+      const { sut, repository, holds } = setup();
+      const photos = buildDateDoctorFixture();
+      holds(photos);
+      await sut.handleScan({ userId: 'owner' });
+      expect(repository.getScanRows.mock.calls.length).toBeGreaterThan(1);
+      const key = ({ assetId, cause }: { assetId: string; cause: string }) => `${assetId}|${cause}`;
+      const [, monthly] = repository.replaceFindings.mock.calls[0];
+      const whole = detectDateFindings(photos, FIXTURE_NOW);
+      expect(whole.length).toBeGreaterThan(0);
+      expect(monthly.map((found: DateFinding) => key(found)).toSorted()).toEqual(
+        whole.map((found) => key(found)).toSorted(),
+      );
+      const byKey = new Map(whole.map((found) => [key(found), found]));
+      for (const found of monthly) {
+        expect(found).toEqual(byKey.get(key(found)));
+      }
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('groups findings by camera and day', async () => {
@@ -255,6 +296,7 @@ describe('DateDoctorService fixes (FL-930)', () => {
     localDateTime: new Date('2022-07-01T10:03:00Z'),
     dateTimeOriginal: new Date('2022-07-01T10:03:00Z'),
     timeZone: null,
+    dateAccuracy: null,
     locks: [],
     earlier: null,
     ...overrides,
@@ -389,6 +431,7 @@ describe('DateDoctorService fixes (FL-930)', () => {
       previousTakenAt: new Date('2000-01-01T00:00:00Z'),
       previousLocalDateTime: new Date('2000-01-01T00:00:00Z'),
       previousLocks: [],
+      previousDateAccuracy: null,
     };
     repository.getCurrent.mockResolvedValue([
       current('a', { timeZone: 'Europe/Paris', locks: ['dateTimeOriginal', 'timeZone'], earlier }),
@@ -406,7 +449,7 @@ describe('DateDoctorService fixes (FL-930)', () => {
           newZone: 'Europe/Paris',
         }),
       ],
-      { cause: null, shiftMinutes: 10, timeZone: null },
+      { cause: null, shiftMinutes: 10, timeZone: null, dateAccuracy: null, periodStart: null },
       expect.any(Function),
     );
   });
@@ -433,7 +476,7 @@ describe('DateDoctorService fixes (FL-930)', () => {
     expect(repository.applyFixes).toHaveBeenCalledWith(
       owner.user.id,
       expect.any(Array),
-      { cause: null, shiftMinutes: null, timeZone: 'Europe/Paris' },
+      { cause: null, shiftMinutes: null, timeZone: 'Europe/Paris', dateAccuracy: null, periodStart: null },
       expect.any(Function),
     );
     // partner copies and sidecars commit in the transaction that wrote the dates
@@ -470,7 +513,13 @@ describe('DateDoctorService fixes (FL-930)', () => {
     expect(repository.applyFixes).toHaveBeenCalledWith(
       owner.user.id,
       expect.any(Array),
-      { cause: DateFindingCause.GpsZoneMismatch, shiftMinutes: null, timeZone: null },
+      {
+        cause: DateFindingCause.GpsZoneMismatch,
+        shiftMinutes: null,
+        timeZone: null,
+        dateAccuracy: null,
+        periodStart: null,
+      },
       expect.any(Function),
     );
   });
@@ -489,7 +538,7 @@ describe('DateDoctorService fixes (FL-930)', () => {
     expect(repository.applyFixes).toHaveBeenCalledWith(
       owner.user.id,
       expect.any(Array),
-      { cause: null, shiftMinutes: null, timeZone: null },
+      { cause: null, shiftMinutes: null, timeZone: null, dateAccuracy: null, periodStart: null },
       expect.any(Function),
     );
   });
@@ -589,6 +638,7 @@ describe('DateDoctorService fixes (FL-930)', () => {
     localDateTime: new Date('2022-07-01T10:03:00Z'),
     dateTimeOriginal: new Date('2022-07-01T10:03:00Z'),
     timeZone: null,
+    dateAccuracy: null,
     locks: [],
     earlier: null,
     ...overrides,
@@ -723,6 +773,7 @@ describe('DateDoctorService fixes (FL-930)', () => {
       previousTakenAt: new Date('2000-01-01T00:00:00Z'),
       previousLocalDateTime: new Date('2000-01-01T00:00:00Z'),
       previousLocks: [],
+      previousDateAccuracy: null,
     };
     repository.getCurrent.mockResolvedValue([
       current('a', { timeZone: 'Europe/Paris', locks: ['dateTimeOriginal', 'timeZone'], earlier }),
@@ -740,7 +791,7 @@ describe('DateDoctorService fixes (FL-930)', () => {
           newZone: 'Europe/Paris',
         }),
       ],
-      { cause: null, shiftMinutes: 10, timeZone: null },
+      { cause: null, shiftMinutes: 10, timeZone: null, dateAccuracy: null, periodStart: null },
       expect.any(Function),
     );
   });
@@ -767,7 +818,7 @@ describe('DateDoctorService fixes (FL-930)', () => {
     expect(repository.applyFixes).toHaveBeenCalledWith(
       owner.user.id,
       expect.any(Array),
-      { cause: null, shiftMinutes: null, timeZone: 'Europe/Paris' },
+      { cause: null, shiftMinutes: null, timeZone: 'Europe/Paris', dateAccuracy: null, periodStart: null },
       expect.any(Function),
     );
     // partner copies and sidecars commit in the transaction that wrote the dates
@@ -804,7 +855,13 @@ describe('DateDoctorService fixes (FL-930)', () => {
     expect(repository.applyFixes).toHaveBeenCalledWith(
       owner.user.id,
       expect.any(Array),
-      { cause: DateFindingCause.GpsZoneMismatch, shiftMinutes: null, timeZone: null },
+      {
+        cause: DateFindingCause.GpsZoneMismatch,
+        shiftMinutes: null,
+        timeZone: null,
+        dateAccuracy: null,
+        periodStart: null,
+      },
       expect.any(Function),
     );
   });
@@ -823,7 +880,7 @@ describe('DateDoctorService fixes (FL-930)', () => {
     expect(repository.applyFixes).toHaveBeenCalledWith(
       owner.user.id,
       expect.any(Array),
-      { cause: null, shiftMinutes: null, timeZone: null },
+      { cause: null, shiftMinutes: null, timeZone: null, dateAccuracy: null, periodStart: null },
       expect.any(Function),
     );
   });
@@ -912,5 +969,30 @@ describe('DateDoctorService fixes (FL-930)', () => {
     await sut.onNightlyDatabaseCleanup();
     const [before] = repository.pruneBatches.mock.calls[0];
     expect(Date.now() - before.getTime()).toBeGreaterThanOrEqual(30 * 24 * 3_600_000 - 1000);
+  });
+});
+
+describe('a fix that dates photos to a year or a decade (FL-936)', () => {
+  const assetIds = ['3fa85f64-5717-4562-b3fc-2c963f66afa6'];
+  const accepted = (dto: object) => DateDoctorFixDto.schema.safeParse({ assetIds, ...dto }).success;
+
+  it('is a dateAccuracy with its year, from 1800 to this year, and nothing else', () => {
+    const thisYear = new Date().getUTCFullYear();
+    expect(accepted({ dateAccuracy: 'decade', year: 1975 })).toBe(true);
+    expect(accepted({ dateAccuracy: 'year', year: 1800 })).toBe(true);
+    expect(accepted({ dateAccuracy: 'year', year: thisYear })).toBe(true);
+    expect(accepted({ dateAccuracy: 'year', year: thisYear + 1 })).toBe(false);
+    expect(accepted({ dateAccuracy: 'year', year: 1799 })).toBe(false);
+    expect(accepted({ dateAccuracy: 'year' })).toBe(false);
+    expect(accepted({ year: 1975 })).toBe(false);
+    expect(accepted({ dateAccuracy: 'month', year: 1975 })).toBe(false);
+    expect(accepted({ dateAccuracy: 'year', year: 1975, shiftMinutes: 60 })).toBe(false);
+    expect(accepted({ dateAccuracy: 'year', year: 1975, timeZone: 'Europe/Paris' })).toBe(false);
+    expect(accepted({ dateAccuracy: 'year', year: 1975, useProposal: true })).toBe(false);
+    // what was accepted before still is
+    expect(accepted({ useProposal: true })).toBe(true);
+    expect(accepted({ shiftMinutes: 60 })).toBe(true);
+    expect(accepted({ timeZone: 'Europe/Paris', keepWallTime: true })).toBe(true);
+    expect(accepted({})).toBe(false);
   });
 });
