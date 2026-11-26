@@ -454,15 +454,6 @@ export const getAssetActions = (
 };
 
 export const handleDownloadAsset = async (asset: AssetResponseDto, { edited }: { edited: boolean }) => {
-  // FL-826: a photo asks which format; a video is always its original. Cancelling downloads nothing.
-  const chosen =
-    asset.type === AssetTypeEnum.Image
-      ? await askDownloadFormat({ count: 1, info: { assetIds: [asset.id] } })
-      : DownloadFormat.Original;
-  if (!chosen) {
-    return;
-  }
-  const format = chosen === DownloadFormat.Original ? undefined : chosen;
   const isCurrentSession = authManager.captureSession();
   const params = { ...authManager.params };
   const sharedLink = authManager.isSharedLink;
@@ -471,6 +462,16 @@ export const handleDownloadAsset = async (asset: AssetResponseDto, { edited }: {
     sharedLink === authManager.isSharedLink &&
     params.key === authManager.params.key &&
     params.slug === authManager.params.slug;
+  // FL-826: a photo asks which format; a video is always its original. Cancelling downloads nothing.
+  const chosen =
+    asset.type === AssetTypeEnum.Image
+      ? await askDownloadFormat({ count: 1, info: { assetIds: [asset.id] } })
+      : DownloadFormat.Original;
+  // The session is captured before the question, so signing out while it is open downloads nothing.
+  if (!chosen || !isCurrent()) {
+    return;
+  }
+  const format = chosen === DownloadFormat.Original ? undefined : chosen;
   // `edited` is the version on screen (owner, 2026-10-16). When that is the owner's develop version,
   // it is named exactly, so the file saved is the one the viewer shows even if another becomes current.
   const revisionId = (edited && currentDevelopPlaybackRevision(asset)) || undefined;

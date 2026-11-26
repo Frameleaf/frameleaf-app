@@ -140,4 +140,34 @@ describe(AlbumRepository.prototype.updateThumbnails.name, () => {
 
     await expect(coverOf(ctx.database, own.id)).resolves.toBe(sensitive.id);
   });
+
+  it('repairs only the albums holding the given items (FL-1791)', async () => {
+    const { ctx, sut } = setup();
+    const owner = await ctx.newUser();
+    const { asset: cover } = await ctx.newAsset({ ownerId: owner.user.id, fileCreatedAt: newer });
+    const { asset: other } = await ctx.newAsset({ ownerId: owner.user.id, fileCreatedAt: older });
+    const { asset: elsewhere } = await ctx.newAsset({ ownerId: owner.user.id, fileCreatedAt: older });
+    const { album } = await ctx.newAlbum({ ownerId: owner.user.id, albumThumbnailAssetId: cover.id }, [
+      cover.id,
+      other.id,
+    ]);
+    const { album: untouched } = await ctx.newAlbum({ ownerId: owner.user.id, albumThumbnailAssetId: null }, [
+      elsewhere.id,
+    ]);
+    await ctx.database
+      .updateTable('album')
+      .set({ albumThumbnailAssetId: null })
+      .where('id', '=', untouched.id)
+      .execute();
+    await ctx.database.updateTable('asset').set({ deletedAt: new Date() }).where('id', '=', cover.id).execute();
+
+    await expect(sut.updateThumbnails({ assetIds: [] })).resolves.toBe(0);
+    await expect(coverOf(ctx.database, album.id)).resolves.toBe(cover.id);
+
+    await sut.updateThumbnails({ assetIds: [cover.id] });
+
+    await expect(coverOf(ctx.database, album.id)).resolves.toBe(other.id);
+    // an album that holds none of the items is left for the hourly repair
+    await expect(coverOf(ctx.database, untouched.id)).resolves.toBeNull();
+  });
 });

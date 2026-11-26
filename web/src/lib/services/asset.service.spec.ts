@@ -461,10 +461,24 @@ it('does not add a download after the session changes during motion lookup', asy
   const motion = assetFactory.build();
   const response = deferredPromise<typeof motion>();
   vi.mocked(getAssetInfo).mockReturnValueOnce(response.promise);
-  const pending = handleDownloadAsset(assetFactory.build({ livePhotoVideoId: motion.id }), { edited: false });
+  // Not a photo, so nothing is asked first and the lookup starts at once.
+  const pending = handleDownloadAsset(assetFactory.build({ type: AssetTypeEnum.Video, livePhotoVideoId: motion.id }), {
+    edited: false,
+  });
   authManager.reset();
   response.resolve(motion);
   await pending;
+  expect(downloadAssetFile).not.toHaveBeenCalled();
+});
+
+it('does not download after the session changes while the format question is open (FL-826)', async () => {
+  vi.clearAllMocks();
+  const pending = handleDownloadAsset(assetFactory.build({ type: AssetTypeEnum.Image, livePhotoVideoId: null }), {
+    edited: false,
+  });
+  authManager.reset();
+  await pending;
+  expect(getAssetInfo).not.toHaveBeenCalled();
   expect(downloadAssetFile).not.toHaveBeenCalled();
 });
 

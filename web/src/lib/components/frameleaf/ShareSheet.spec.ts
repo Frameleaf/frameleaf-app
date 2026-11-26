@@ -20,6 +20,7 @@ vi.mock('$lib/managers/auth-manager.svelte', () => ({
   authManager: {
     authenticated: true,
     user: { id: 'me', name: 'Taylor' },
+    // FL-922: the link form reads the person's default expiry
     preferences: { sharedLinks: { defaultExpiryDays: null }, download: {} },
     params: {},
   },

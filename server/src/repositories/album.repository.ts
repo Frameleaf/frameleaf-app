@@ -92,16 +92,30 @@ export type AlbumReadOptions = HiddenContentQueryOptions & LockedVisibilityOptio
  * Which albums a cover sweep looks at: the given albums, or every album a person owns or is a member
  * of (an owner has an `album_user` row too). Left out, every album on the server.
  */
-export type AlbumCoverScope = string[] | { userId: string };
+/** Album ids, everything one person can see, or (FL-1791) every album holding one of these items. */
+export type AlbumCoverScope = string[] | { userId: string } | { assetIds: string[] };
 
-const inCoverScope = (eb: ExpressionBuilder<DB, 'album'>, scope: AlbumCoverScope) =>
-  Array.isArray(scope)
-    ? eb('album.id', '=', anyUuid(scope))
+const inCoverScope = (eb: ExpressionBuilder<DB, 'album'>, scope: AlbumCoverScope) => {
+  if (Array.isArray(scope)) {
+    return eb('album.id', '=', anyUuid(scope));
+  }
+  return 'assetIds' in scope
+    ? eb(
+        'album.id',
+        'in',
+        eb
+          .selectFrom('album_asset')
+          .select('album_asset.albumId')
+          .where('album_asset.assetId', '=', anyUuid(scope.assetIds)),
+      )
     : eb(
         'album.id',
         'in',
         eb.selectFrom('album_user').select('album_user.albumId').where('album_user.userId', '=', scope.userId),
       );
+};
+const isEmptyCoverScope = (scope?: AlbumCoverScope) =>
+  Array.isArray(scope) ? scope.length === 0 : !!scope && 'assetIds' in scope && scope.assetIds.length === 0;
 export interface AlbumInfoOptions extends AlbumReadOptions {
   withAssets: boolean;
 }
@@ -493,34 +507,13 @@ export class AlbumRepository {
         }),
       );
   }
-  @GenerateSql({ params: [DummyValue.UUID, { isOwned: true, isShared: true }] })
-  async getAll(
+  /** The albums a list shows one person: the base rule, minus `excludeIds`, inside `libraryScope`. */
+  private buildListQuery(
     ownerId: string,
-    options: {
-      id?: string;
-      isOwned?: boolean;
-      isShared?: boolean;
-      name?: string;
-      /** FL-647: only albums whose name contains this text, ignoring case */
-      search?: string;
-      take?: number;
-      /** albums to leave out before `take` applies (smart albums the person hid) */
-      excludeIds?: string[];
-      excludeLocked?: boolean;
-      libraryScope?: LibraryViewScope;
-    } = {},
-  ): Promise<MapAlbumDto[]> {
-    const rows = await this.buildAlbumBaseQuery(ownerId, options)
-      .selectAll('album')
-      .select(withAlbumUsers(ownerId))
-      .select(withSharedLink)
-      .$if(!!options.id, (qb) => qb.where('album.id', '=', options.id!))
-      .$if(!!options.name, (qb) => qb.where('album.albumName', '=', options.name!))
+    options: { isOwned?: boolean; isShared?: boolean; excludeIds?: string[]; libraryScope?: LibraryViewScope },
+  ) {
+    return this.buildAlbumBaseQuery(ownerId, options)
       .$if(!!options.excludeIds?.length, (qb) => qb.where('album.id', 'not in', options.excludeIds!))
-      .$if(options.excludeLocked === true, (qb) => qb.where('album.isLocked', '=', false))
-      .$if(!!options.search, (qb) =>
-        qb.where(sql<boolean>`strpos(lower("album"."albumName"), lower(${options.search})) > 0`),
-      )
       .$if(!!options.libraryScope, (qb) =>
         qb.where((eb) =>
           eb.or([
@@ -538,6 +531,70 @@ export class AlbumRepository {
               : []),
           ]),
         ),
+      );
+  }
+  /**
+   * FL-1791: what the library rail draws for each album, in the same order as `getAll`, without the
+   * members and shared links `getAll` reads for every album. `role` is the viewer's own.
+   */
+  @GenerateSql({ params: [DummyValue.UUID, { libraryScope: LibraryScope.Personal }] })
+  getRail(ownerId: string, options: { excludeIds?: string[]; libraryScope?: LibraryViewScope } = {}) {
+    return this.buildListQuery(ownerId, options)
+      .select([
+        'album.id',
+        'album.albumName',
+        'album.parentId',
+        'album.kind',
+        'album.icon',
+        'album.color',
+        'album.sortOrder',
+        'album.isLocked',
+        'album_user.role',
+      ])
+      .select((eb) =>
+        eb
+          .or([
+            eb.exists(
+              eb
+                .selectFrom('album_user as au')
+                .whereRef('au.albumId', '=', 'album.id')
+                .where('au.userId', '!=', ownerId),
+            ),
+            eb.exists(eb.selectFrom('shared_link').whereRef('shared_link.albumId', '=', 'album.id')),
+          ])
+          .$castTo<boolean>()
+          .as('shared'),
+      )
+      .orderBy('album.sortOrder', sql`asc nulls last`)
+      .orderBy('album.createdAt', 'desc')
+      .execute();
+  }
+  @GenerateSql({ params: [DummyValue.UUID, { isOwned: true, isShared: true }] })
+  async getAll(
+    ownerId: string,
+    options: {
+      id?: string;
+      isOwned?: boolean;
+      isShared?: boolean;
+      name?: string;
+      /** FL-647: only albums whose name contains this text, ignoring case */
+      search?: string;
+      take?: number;
+      /** albums to leave out before `take` applies (smart albums the person hid) */
+      excludeIds?: string[];
+      excludeLocked?: boolean;
+      libraryScope?: LibraryViewScope;
+    } = {},
+  ): Promise<MapAlbumDto[]> {
+    const rows = await this.buildListQuery(ownerId, options)
+      .selectAll('album')
+      .select(withAlbumUsers(ownerId))
+      .select(withSharedLink)
+      .$if(!!options.id, (qb) => qb.where('album.id', '=', options.id!))
+      .$if(!!options.name, (qb) => qb.where('album.albumName', '=', options.name!))
+      .$if(options.excludeLocked === true, (qb) => qb.where('album.isLocked', '=', false))
+      .$if(!!options.search, (qb) =>
+        qb.where(sql<boolean>`strpos(lower("album"."albumName"), lower(${options.search})) > 0`),
       )
       .orderBy('album.sortOrder', sql`asc nulls last`)
       .orderBy('album.createdAt', 'desc')
@@ -1259,7 +1316,7 @@ export class AlbumRepository {
    * @returns Amount of updated album thumbnails or undefined when unknown
    */
   async updateThumbnails(scope?: AlbumCoverScope): Promise<number | undefined> {
-    if (Array.isArray(scope) && scope.length === 0) {
+    if (isEmptyCoverScope(scope)) {
       return 0;
     }
     // Albums whose cover follows the newest item (FL-83) take it first; the rules below then only
@@ -1329,7 +1386,7 @@ export class AlbumRepository {
    * whose cover is already right are not written.
    */
   async updateNewestCovers(scope?: AlbumCoverScope, kysely: Kysely<DB> = this.db): Promise<void> {
-    if (Array.isArray(scope) && scope.length === 0) {
+    if (isEmptyCoverScope(scope)) {
       return;
     }
     await kysely
