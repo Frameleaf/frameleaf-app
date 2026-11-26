@@ -1,13 +1,12 @@
 <script lang="ts">
+  import AlbumIcon from '$lib/components/frameleaf/AlbumIcon.svelte';
   import Status from '$lib/components/frameleaf/Status.svelte';
   import {
     buildCatalogueEntries,
-    iconPathFor,
     loadIconCatalogue,
     loadIconPaths,
     searchCatalogue,
     type CatalogueEntry,
-    type IconPaths,
   } from '$lib/frameleaf/icon-catalogue';
   import type { AlbumIconCatalogueResponseDto } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
@@ -16,10 +15,10 @@
   import { t } from 'svelte-i18n';
 
   /**
-   * Searchable icon chooser over the whole Material Design Icons catalogue: the
-   * categorised suggested set first, then every icon, filtered as you type.
-   * The names and suggestions come from `GET /albums/icons`; the geometry chunk
-   * loads lazily. By default it is a popover under its anchor; `inline` renders
+   * Searchable icon chooser over the whole icon catalogue (Material Design Icons
+   * plus the extra packs): the categorised suggested set first, then every icon,
+   * filtered as you type. The names and suggestions come from `GET /albums/icons`;
+   * each pack's geometry loads lazily, the first time one of its icons is drawn. By default it is a popover under its anchor; `inline` renders
    * it as a static panel inside a form. Every icon picker in the product reuses
    * this component.
    */
@@ -36,7 +35,6 @@
   const PAGE = 240;
 
   let catalogue = $state<AlbumIconCatalogueResponseDto | undefined>();
-  let paths = $state<IconPaths | undefined>();
   let failed = $state(false);
   let query = $state('');
   let limit = $state(PAGE);
@@ -59,9 +57,10 @@
   const load = async () => {
     failed = false;
     try {
-      const [loadedCatalogue, loadedPaths] = await Promise.all([loadIconCatalogue(), loadIconPaths()]);
+      // The Material Design Icons geometry draws most of the first screen, so wait for it; AlbumIcon
+      // fetches the other packs as their icons appear.
+      const [loadedCatalogue] = await Promise.all([loadIconCatalogue(), loadIconPaths()]);
       catalogue = loadedCatalogue;
-      paths = loadedPaths;
       if (!inline) {
         // The field is disabled until the catalogue arrives, and a disabled field cannot take focus.
         await tick();
@@ -155,7 +154,7 @@
     class:chosen={value === name}
     onclick={() => choose(name)}
   >
-    <Icon icon={iconPathFor(name, paths)} size="20" />
+    <AlbumIcon {name} size="20" />
   </button>
 {/snippet}
 

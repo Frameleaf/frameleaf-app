@@ -2282,7 +2282,9 @@ describe(AlbumService.name, () => {
       expect(catalogue.version).toBe('7.4.47');
       expect(catalogue.names.length).toBeGreaterThan(7000);
       expect(catalogue.names).toContain('mdiCameraOutline');
-      expect(catalogue.suggested.flatMap(({ icons }) => icons)).toHaveLength(227);
+      expect(catalogue.names).toContain('tabler:rollercoaster');
+      expect(catalogue.names).toContain('material-symbols:stroller');
+      expect(catalogue.suggested.flatMap(({ icons }) => icons)).toHaveLength(501);
       expect(catalogue.suggested[0]).toMatchObject({ label: 'Albums and photos' });
     });
   });

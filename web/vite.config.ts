@@ -8,8 +8,9 @@ import dotenv from 'dotenv';
 import { visualizer } from 'rollup-plugin-visualizer';
 import type { compile } from 'svelte/compiler';
 import { defineConfig, type Plugin, type ProxyOptions, type UserConfig } from 'vite';
-import { writeFile } from 'node:fs/promises';
+import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { buildIconPacks } from './scripts/icon-packs.mjs';
 
 dotenv.config({ quiet: true });
 
@@ -81,6 +82,13 @@ const mdiIconPaths = (): Plugin => ({
     const mdi = await import('@mdi/js');
     const paths = Object.fromEntries(Object.entries(mdi).filter(([name]) => name !== 'default'));
     await writeFile(path.resolve(import.meta.dirname, 'static/mdi-icon-paths.json'), JSON.stringify(paths));
+    // The extra icon packs are static assets for the same reason, one per pack so a page that
+    // draws a single Tabler icon never downloads Material Symbols.
+    const directory = path.resolve(import.meta.dirname, 'static/icon-packs');
+    await mkdir(directory, { recursive: true });
+    for (const { prefix, icons } of buildIconPacks()) {
+      await writeFile(path.join(directory, `${prefix}.json`), JSON.stringify(icons));
+    }
   },
 });
 
