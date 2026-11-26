@@ -20,10 +20,15 @@ vi.mock('$lib/managers/auth-manager.svelte', () => ({
   authManager: {
     authenticated: true,
     user: { id: 'me', name: 'Taylor' },
+    preferences: { sharedLinks: { defaultExpiryDays: null }, download: {} },
     params: {},
   },
 }));
 
+// FL-922: a new link starts on the default expiry; none is set here.
+vi.mock('$lib/managers/server-config-manager.svelte', () => ({
+  serverConfigManager: { value: { sharedLinkDefaultExpiryDays: null } },
+}));
 vi.mock('$lib/services/shared-link.service', () => ({
   asDirectImageUrl: (link: { directUrl?: string | null }) =>
     link.directUrl ? `https://frameleaf.local${link.directUrl}` : '',

@@ -33,6 +33,12 @@ vi.mock('@frameleaf/sdk', async (importOriginal) => ({
 }));
 
 vi.mock('./handle-error', () => ({ handleError: vi.fn() }));
+// FL-826: every download asks which format first; these tests answer Original unless they say otherwise.
+const ask = vi.hoisted(() => ({ format: 'original' as string | undefined }));
+vi.mock('$lib/frameleaf/download-format', async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  askDownloadFormat: vi.fn(() => Promise.resolve(ask.format)),
+}));
 
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 const rows = () => [...downloadManager.assets.entries()];
@@ -62,6 +68,8 @@ describe('downloadArchive', () => {
     vi.mocked(requestArchive).mockResolvedValue(new Blob(['zip']));
 
     const started = settle(downloadArchive('trip', { assetIds: ['asset-0'] }));
+    // FL-826: the row appears once the format question is answered
+    await Promise.resolve();
     expect(rows()).toHaveLength(1);
     expect(rows()[0][1].status).toBe('preparing');
 
@@ -71,7 +79,7 @@ describe('downloadArchive', () => {
     expect(row.name).toMatch(/^trip-\d{8}_\d{6}\.zip$/);
     // Each item as it is shown: `edited` asks for the version on screen (the original when unedited)
     expect(requestArchive).toHaveBeenCalledWith(
-      { downloadArchiveDto: { assetIds: ['asset-0'], archiveName: row.archiveName, edited: true } },
+      { downloadArchiveDto: { assetIds: ['asset-0'], archiveName: row.archiveName, edited: true, format: 'original' } },
       expect.objectContaining({ signal: expect.any(AbortSignal), fetch: expect.any(Function) }),
     );
   });
@@ -93,6 +101,7 @@ describe('downloadArchive', () => {
       ['asset-0'],
       row.archiveName,
       true,
+      { format: 'original' },
     );
     expect(rows()).toHaveLength(0);
   });
@@ -133,6 +142,7 @@ describe('downloadArchive', () => {
     vi.mocked(getDownloadInfo).mockReturnValue(new Promise((resolve) => (answer = resolve)) as never);
 
     const started = settle(downloadArchive('trip', { albumId: 'album-1' }));
+    await Promise.resolve();
     const [key] = rows()[0];
     downloadManager.cancel(key);
     answer(plan(10, 20));
@@ -216,7 +226,46 @@ describe('downloadArchive', () => {
       ['asset-0'],
       expect.any(String),
       true,
+      { format: 'original' },
     );
+  });
+});
+
+describe('downloadArchive asks for a format (FL-826)', () => {
+  afterEach(() => (ask.format = 'original'));
+
+  it('plans and fetches in the chosen format', async () => {
+    ask.format = 'web';
+    vi.mocked(getDownloadInfo).mockResolvedValue(plan(20));
+    vi.mocked(requestArchive).mockResolvedValue(new Blob(['zip']));
+
+    expect(await settle(downloadArchive('trip', { assetIds: ['asset-0'] }))).toBe('resolved');
+
+    expect(vi.mocked(getDownloadInfo).mock.calls[0][0].downloadInfoDto).toMatchObject({ format: 'web' });
+    expect(vi.mocked(requestArchive).mock.calls[0][0].downloadArchiveDto).toMatchObject({ format: 'web' });
+  });
+
+  it('downloads nothing when the question is cancelled', async () => {
+    ask.format = undefined;
+
+    expect(await settle(downloadArchive('trip', { assetIds: ['asset-0'] }))).toBe('resolved');
+
+    expect(rows()).toHaveLength(0);
+    expect(getDownloadInfo).not.toHaveBeenCalled();
+  });
+
+  it('does not ask for an archive of originals, or when the format is already chosen', async () => {
+    const { askDownloadFormat } = await import('$lib/frameleaf/download-format');
+    vi.mocked(askDownloadFormat).mockClear();
+    vi.mocked(getDownloadInfo).mockResolvedValue(plan(20));
+    vi.mocked(requestArchive).mockResolvedValue(new Blob(['zip']));
+
+    await settle(downloadArchive('trip', { albumId: 'album-1' }, { originals: true }));
+    await settle(downloadArchive('trip', { albumId: 'album-1' }, { format: 'jpeg' as never }));
+
+    expect(askDownloadFormat).not.toHaveBeenCalled();
+    expect(vi.mocked(getDownloadInfo).mock.calls[0][0].downloadInfoDto).not.toHaveProperty('format');
+    expect(vi.mocked(getDownloadInfo).mock.calls[1][0].downloadInfoDto).toMatchObject({ format: 'jpeg' });
   });
 });
 

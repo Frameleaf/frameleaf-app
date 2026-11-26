@@ -51,6 +51,12 @@ vitest.mock('$lib/utils', async () => {
   };
 });
 
+// FL-826: every download asks which format first; these tests answer Original unless they say otherwise.
+const ask = vi.hoisted(() => ({ format: 'original' as string | undefined }));
+vi.mock('$lib/frameleaf/download-format', async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  askDownloadFormat: vi.fn(() => Promise.resolve(ask.format)),
+}));
 vi.mock(import('$lib/managers/feature-flags-manager.svelte'), function () {
   return {
     featureFlagsManager: { init: vi.fn(), loadFeatureFlags: vi.fn(), value: {} } as never,
@@ -328,6 +334,36 @@ describe('AssetService', () => {
         expect.objectContaining({ id: asset.id, filename: 'asset.heic', edited: false }),
       );
       expect(toastManager.primary).not.toHaveBeenCalled();
+    });
+
+    it('downloads a photo in the chosen format as a .jpg, without its motion part (FL-826)', async () => {
+      ask.format = 'web';
+      try {
+        const asset = assetFactory.build({
+          type: AssetTypeEnum.Image,
+          originalFileName: 'asset.heic',
+          livePhotoVideoId: 'motion',
+        });
+        await handleDownloadAsset(asset, { edited: true });
+        expect(getAssetInfo).not.toHaveBeenCalled();
+        expect(downloadAssetFile).toHaveBeenCalledTimes(1);
+        expect(downloadAssetFile).toHaveBeenCalledWith(
+          expect.objectContaining({ id: asset.id, filename: 'asset.jpg', format: 'web' }),
+        );
+      } finally {
+        ask.format = 'original';
+      }
+    });
+
+    it('downloads nothing when the format question is cancelled (FL-826)', async () => {
+      ask.format = undefined;
+      try {
+        const asset = assetFactory.build({ type: AssetTypeEnum.Image, livePhotoVideoId: null });
+        await handleDownloadAsset(asset, { edited: false });
+        expect(downloadAssetFile).not.toHaveBeenCalled();
+      } finally {
+        ask.format = 'original';
+      }
     });
 
     it('saves the file directly on a public share, as its lightbox does (PublicViewer.jsx:508-517)', async () => {
