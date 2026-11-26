@@ -23,38 +23,57 @@ export function workflowFromSearch(query: DiscoveryQuery, name = ''): WorkflowDr
   };
 }
 
+/**
+ * "When it runs" (FL-1815): the server stores a cron line, the screen never shows one. `custom` is a
+ * line saved earlier that these choices cannot say; it is kept as it is until it is replaced.
+ */
 export type ScheduleControls = {
-  frequency: 'hourly' | 'daily' | 'weekly' | 'advanced';
+  frequency: 'hourly' | 'daily' | 'weekly' | 'days' | 'custom';
   time: string;
   weekday: string;
+  /** Days of the week, 0 is Sunday; for `days`, and the one day of `weekly`. */
+  days: number[];
   cron: string;
 };
+
+const NUMBER = /^\d+$/;
+const within = (value: string | undefined, max: number) => NUMBER.test(value ?? '') && Number(value) <= max;
 
 export function scheduleControls(schedule: WorkflowScheduleDto): ScheduleControls {
   const cron = typeof schedule.cron === 'string' ? schedule.cron : '';
   const [minute, hour, day, month, weekday, extra] = cron.trim().split(/\s+/, 6);
-  const simple = extra === undefined && /^\d+$/.test(minute ?? '') && day === '*' && month === '*';
+  const simple = extra === undefined && within(minute, 59) && day === '*' && month === '*';
+  const timed = simple && within(hour, 23);
+  const days = /^[0-6](,[0-6])*$/.test(weekday ?? '')
+    ? [...new Set(weekday.split(',').map(Number))].sort((a, b) => a - b)
+    : [];
   return {
     frequency:
       simple && hour === '*' && weekday === '*'
         ? 'hourly'
-        : simple && /^\d+$/.test(hour ?? '') && weekday === '*'
+        : timed && weekday === '*'
           ? 'daily'
-          : simple && /^\d+$/.test(hour ?? '') && /^[0-6]$/.test(weekday ?? '')
+          : timed && days.length === 1
             ? 'weekly'
-            : 'advanced',
-    time: `${/^\d+$/.test(hour ?? '') ? hour.padStart(2, '0') : '09'}:${/^\d+$/.test(minute ?? '') ? minute.padStart(2, '0') : '00'}`,
-    weekday: /^[0-6]$/.test(weekday ?? '') ? weekday : '1',
+            : timed && days.length > 1
+              ? 'days'
+              : 'custom',
+    time: `${within(hour, 23) ? hour.padStart(2, '0') : '09'}:${within(minute, 59) ? minute.padStart(2, '0') : '00'}`,
+    weekday: String(days[0] ?? 1),
+    days: days.length > 0 ? days : [1, 3, 5],
     cron,
   };
 }
 
 export function workflowSchedule(controls: ScheduleControls): WorkflowScheduleDto {
-  if (controls.frequency === 'advanced') {
+  if (controls.frequency === 'custom') {
     return { cron: controls.cron };
   }
   const [hour, minute] = controls.time.split(':').map(Number);
+  const days = [...new Set(controls.days)].sort((a, b) => a - b).join(',');
   return {
-    cron: `${minute} ${controls.frequency === 'hourly' ? '*' : hour} * * ${controls.frequency === 'weekly' ? controls.weekday : '*'}`,
+    cron: `${minute || 0} ${controls.frequency === 'hourly' ? '*' : hour || 0} * * ${
+      controls.frequency === 'weekly' ? controls.weekday : controls.frequency === 'days' && days ? days : '*'
+    }`,
   };
 }
