@@ -46,7 +46,7 @@
   import { systemFont } from '$lib/stores/system-font.store';
   import { createDateFormatter, findLocale } from '$lib/utils';
   import { handleError } from '$lib/utils/handle-error';
-  import { convertBCP47, languageChoices, languageCodeFor } from '$lib/utils/i18n';
+  import { convertBCP47, languageChoices, languageCodeFor, setLanguage } from '$lib/utils/i18n';
   import { AssetOrder } from '@frameleaf/sdk';
   import { ThemePreference, themeManager } from '@frameleaf/ui';
   import { onMount } from 'svelte';
@@ -84,7 +84,7 @@
     try {
       await saveNotificationLanguage(value);
       $lang = value;
-      await i18nLocale.set(convertBCP47(value));
+      await setLanguage(value);
       await invalidateAll();
     } catch (error) {
       languageSelection = language ?? previousSelection;

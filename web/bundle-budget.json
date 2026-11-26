@@ -96,7 +96,22 @@
     "/photography/invoice/[token]": 457994,
     "/photography/pay/[slug]": 457701,
     "/photography/sign/[token]": 458867,
-    "/studio/[id]": 474399
+    "/studio/[id]": 474399,
+    "messages/boards": 4012,
+    "messages/clients": 22054,
+    "messages/core": 170897,
+    "messages/rest": 45430,
+    "messages/settings": 269311,
+    "messages/studio": 12391
   },
-  "raises": []
+  "raises": [
+    {
+      "added": 6,
+      "bytes": 0,
+      "date": "2026-11-26",
+      "raised": 0,
+      "reason": "FL-1797: the translated messages become measured bundles (core, settings, studio, clients, boards, rest)",
+      "removed": 0
+    }
+  ]
 }

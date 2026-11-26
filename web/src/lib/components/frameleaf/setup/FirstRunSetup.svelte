@@ -79,7 +79,7 @@
   import { lang, locale } from '$lib/stores/preferences.store';
   import { getByteUnitString } from '$lib/utils/byte-units';
   import { getServerErrorMessage } from '$lib/utils/handle-error';
-  import { convertBCP47, languageChoices, languageCodeFor } from '$lib/utils/i18n';
+  import { convertBCP47, languageChoices, languageCodeFor, setLanguage } from '$lib/utils/i18n';
   import {
     CloudTourEnding,
     finishFrameleafSetup,
@@ -144,7 +144,7 @@
     mdiWhiteBalanceSunny,
   } from '@mdi/js';
   import { onMount, tick } from 'svelte';
-  import { locale as i18nLocale, t } from 'svelte-i18n';
+  import { t } from 'svelte-i18n';
 
   /** After a failed Continue on the administrator form: the first field that needs attention. */
   const focusFirstInvalid = () =>
@@ -532,7 +532,7 @@
   const chooseLanguage = async (value: string) => {
     choose({ language: value });
     $lang = value;
-    await i18nLocale.set(convertBCP47(value));
+    await setLanguage(value);
   };
 
   const onkeydown = (event: KeyboardEvent) => {

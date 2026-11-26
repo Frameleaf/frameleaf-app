@@ -3,7 +3,8 @@
  * FL-139 (QA-103): a hardware-free performance budget for the web app. For every route it measures
  * the JavaScript and CSS the browser must load before the page can show (the client entry, the
  * route's layouts and its page, with their static imports; lazy `import()` chunks are left out),
- * gzipped, and holds it to the limit committed in web/bundle-budget.json.
+ * gzipped, and holds it to the limit committed in web/bundle-budget.json. The translated messages
+ * are measured too, each bundle as its largest language (`messages/core`, `messages/settings`, ...).
  *
  * FL-1799: the limits are limits. A route over its limit fails the check, and a limit only goes up
  * through `--raise` with a reason, which is recorded in the file for review.
@@ -111,6 +112,25 @@ export const measure = ({ manifest, dictionary, sizeOf }) => {
   return sizes;
 };
 
+/**
+ * FL-1797: the translated messages are lazy chunks, one per language and bundle (`core` at startup,
+ * an area's when its routes open). Each bundle is held to a limit as its largest language, under
+ * `messages/<bundle>`, so a growing `core` fails the check like a growing route does.
+ */
+export const measureMessages = ({ manifest, sizeOf }) => {
+  const sizes = {};
+  for (const [key, chunk] of Object.entries(manifest)) {
+    const bundle = /^virtual:frameleaf-messages\/[^/]+\/([^/]+)$/.exec(
+      key,
+    )?.[1];
+    if (bundle) {
+      const name = `messages/${bundle}`;
+      sizes[name] = Math.max(sizes[name] ?? 0, sizeOf(chunk.file));
+    }
+  }
+  return sizes;
+};
+
 /** The routes over their limit, and those added or gone since the limits were set. */
 export const compare = (limits, sizes) => {
   const over = [];
@@ -201,11 +221,11 @@ const main = () => {
   );
   if (!app) throw new Error("the manifest has no generated app entry");
   const dictionary = parseDictionary(readFileSync(join(web, app), "utf8"));
-  const sizes = measure({
-    manifest,
-    dictionary,
-    sizeOf: (file) => gzipSync(readFileSync(join(client, file))).length,
-  });
+  const sizeOf = (file) => gzipSync(readFileSync(join(client, file))).length;
+  const sizes = {
+    ...measure({ manifest, dictionary, sizeOf }),
+    ...measureMessages({ manifest, sizeOf }),
+  };
   const budgetPath = join(web, "bundle-budget.json");
   const write = (budget) =>
     writeFileSync(budgetPath, `${JSON.stringify(budget, null, 2)}\n`);

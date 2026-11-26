@@ -11,6 +11,7 @@ import { defineConfig, type Plugin, type ProxyOptions, type UserConfig } from 'v
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { buildIconPacks } from './scripts/icon-packs.mjs';
+import { analyse, AREAS, BUNDLES, bundlesFor, languageCodes, readLanguage } from './scripts/message-areas.mjs';
 
 dotenv.config({ quiet: true });
 
@@ -92,6 +93,76 @@ const mdiIconPaths = (): Plugin => ({
   },
 });
 
+/**
+ * FL-1797: the translated messages as one small module per language and part of the app, instead
+ * of one file per language holding every message. `i18n/<language>.json` stays the only place a
+ * message is written; scripts/message-areas.mjs decides which bundle each key belongs to.
+ *
+ *  - `virtual:frameleaf-messages` lists the languages and a lazy loader for each of their bundles;
+ *  - `virtual:frameleaf-messages/<language>/<bundle>` is one bundle.
+ *
+ * Only a build splits by area. The development server and unit tests put every message in `core`,
+ * so adding a key never needs a restart there.
+ */
+const MESSAGES = 'virtual:frameleaf-messages';
+const frameleafMessages = (): Plugin => {
+  const directory = path.resolve(import.meta.dirname, '../i18n');
+  let split = false;
+  let areaOf: Record<string, string> | undefined;
+  const english = () => readLanguage(directory, 'en');
+  const bundles = (code: string) => {
+    const en = english();
+    if (split) {
+      areaOf ??= analyse({ src: path.resolve(import.meta.dirname, 'src'), keys: Object.keys(en) }).areaOf;
+    }
+    return bundlesFor({ code, own: code === 'en' ? en : readLanguage(directory, code), en, areaOf });
+  };
+  return {
+    name: 'frameleaf-messages',
+    configResolved(config) {
+      split = config.command === 'build';
+    },
+    resolveId(id) {
+      if (id === MESSAGES || id.startsWith(`${MESSAGES}/`)) {
+        return `\0${id}`;
+      }
+    },
+    load(id) {
+      if (!id.startsWith(`\0${MESSAGES}`)) {
+        return;
+      }
+      const [code, bundle] = id.slice(MESSAGES.length + 2).split('/');
+      this.addWatchFile(path.join(directory, 'en.json'));
+      if (code) {
+        this.addWatchFile(path.join(directory, `${code}.json`));
+        // JSON.parse of one string is the quickest way for a browser to read a large table.
+        return `export default JSON.parse(${JSON.stringify(JSON.stringify(bundles(code).bundles[bundle] ?? {}))});`;
+      }
+      const merged: string[] = [];
+      const loaders: string[] = [];
+      for (const language of languageCodes(directory)) {
+        const built = bundles(language);
+        if (built.merged) {
+          merged.push(language);
+        }
+        const present = BUNDLES.filter((name) => built.bundles[name]);
+        loaders.push(
+          `${JSON.stringify(language)}: {${present
+            .map(
+              (name) => `${JSON.stringify(name)}: () => import(${JSON.stringify(`${MESSAGES}/${language}/${name}`)})`,
+            )
+            .join(', ')}}`,
+        );
+      }
+      return [
+        `export const areaRoutes = ${JSON.stringify(AREAS)};`,
+        `export const merged = ${JSON.stringify(merged)};`,
+        `export const loaders = {${loaders.join(',\n')}};`,
+      ].join('\n');
+    },
+  };
+};
+
 const upstream = {
   target: process.env.FRAMELEAF_SERVER_URL || process.env.IMMICH_SERVER_URL || 'http://frameleaf-server:2283/',
   secure: true,
@@ -141,6 +212,7 @@ export default defineConfig({
   plugins: [
     retainSvelteCss(),
     mdiIconPaths(),
+    frameleafMessages(),
     enhancedImages(),
     tailwindcss(),
     sveltekit({

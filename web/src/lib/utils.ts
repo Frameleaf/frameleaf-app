@@ -19,7 +19,7 @@ import {
   type UserResponseDto,
 } from '@frameleaf/sdk';
 import { toastManager, type ActionItem, type IfLike } from '@frameleaf/ui';
-import { init, register, t } from 'svelte-i18n';
+import { init, t } from 'svelte-i18n';
 import { derived, get } from 'svelte/store';
 import { defaultLang, locales } from '$lib/constants';
 import { recordOAuthRequest } from '$lib/frameleaf/auth-session-preference';
@@ -30,7 +30,7 @@ import { authManager } from '$lib/managers/auth-manager.svelte';
 import { alwaysLoadOriginalFile, lang, locale } from '$lib/stores/preferences.store';
 import { isWebCompatibleImage } from '$lib/utils/asset-utils';
 import { handleError } from '$lib/utils/handle-error';
-import { convertBCP47, langs } from '$lib/utils/i18n';
+import { handleMissingMessage, loadMessages } from '$lib/utils/i18n';
 
 interface DateFormatter {
   formatDate: (date: Date) => string;
@@ -38,13 +38,19 @@ interface DateFormatter {
   formatDateTime: (date: Date) => string;
 }
 
+/**
+ * FL-1797: startup waits for the `core` messages of the chosen language only. An area's messages
+ * arrive with its routes (`loadRouteMessages`), and a language whose bundles already hold English
+ * for the keys it lacks never fetches the English ones as well.
+ */
 export const initLanguage = async () => {
   const preferenceLang = get(lang);
-  for (const { code, loader } of langs) {
-    register(convertBCP47(code), loader);
-  }
-
-  await init({ fallbackLocale: preferenceLang === 'dev' ? 'dev' : defaultLang.code, initialLocale: preferenceLang });
+  await loadMessages('core', preferenceLang);
+  await init({
+    fallbackLocale: preferenceLang === 'dev' ? 'dev' : defaultLang.code,
+    initialLocale: preferenceLang,
+    handleMissingMessage,
+  });
 };
 
 interface UploadRequestOptions {
