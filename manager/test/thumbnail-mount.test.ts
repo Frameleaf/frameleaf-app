@@ -217,7 +217,7 @@ test('a rollback puts the previous release back with its thumbnail mount, and na
       store,
       docker,
       directory: () => directory,
-      fencing: { assertMedia: async () => {} },
+      fencing: { warnMediaWriters: async () => {} },
       step: async (operation: any, name: string, action: () => Promise<unknown>) => {
         if (operation.completed.includes(name)) return operation.receipts[name];
         operation.receipts[name] = await action();

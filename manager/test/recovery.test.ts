@@ -29,7 +29,7 @@ function container(id: string, running = true, policy = 'unless-stopped'): Conta
     NetworkSettings: { Networks: { private: { IPAddress: '172.19.0.2', Aliases: ['app'] } } },
   };
 }
-test('an unlabelled competing writer, stopped auto-restarting writer and a volume alias all block cutover', async () => {
+test('other containers that can write the media are named and never block', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'manager-fence-')),
     store = new Store(directory);
   const own = container('a', false, 'no'),
@@ -37,31 +37,28 @@ test('an unlabelled competing writer, stopped auto-restarting writer and a volum
   const docker = { inventory: async () => [own, other] } as Docker;
   const fencing = new Fencing(docker, store);
   try {
-    await assert.rejects(fencing.assertMedia(media), /other_media_writer_detected/);
+    // The check every action runs only warns.
+    await fencing.warnMediaWriters(media);
+    assert.deepEqual(await fencing.mediaWriters(media), ['worker-b']);
     other.State.Running = false;
-    await assert.rejects(fencing.assertMedia(media), /other_media_writer_detected/);
+    assert.deepEqual(await fencing.mediaWriters(media), ['worker-b']);
     other.HostConfig.RestartPolicy.Name = 'no';
-    await fencing.assertMedia(media);
+    assert.deepEqual(await fencing.mediaWriters(media), []);
     other.State.Running = true;
     own.Mounts = [{ Type: 'volume', Name: 'library', Source: '/fixture/media', Destination: '/data', RW: true }];
-    await assert.rejects(
-      fencing.assertMedia([{ ...media[0], type: 'volume', source: 'library' }]),
-      /other_media_writer_detected/,
-    );
+    assert.deepEqual(await fencing.mediaWriters([{ ...media[0], type: 'volume', source: 'library' }]), ['worker-b']);
     other.Config.Labels['app.frameleaf.manager'] = 'owned';
-    await fencing.assertMedia(media, { id: 'owned' } as Installation);
-    // FL-473: the blocker is named; a file manager mapping a whole share or pool does not block.
+    assert.deepEqual(await fencing.mediaWriters(media, { id: 'owned' } as Installation), []);
+    // FL-473: a file manager mapping a whole share or pool is not named.
     delete other.Config.Labels['app.frameleaf.manager'];
-    own.Mounts = [{ Type: 'bind', Source: '/fixture/media', Destination: '/data', RW: true }];
-    await assert.rejects(fencing.assertMedia(media), (error: any) => error.detail?.includes('worker-b'));
     const shared = [{ Type: 'bind', Source: '/mnt/user/appdata/immich/library', Destination: '/data', RW: true }];
     own.Mounts = shared;
     for (const Source of ['/mnt', '/mnt/user', '/mnt/cache']) {
       other.Mounts = [{ Type: 'bind', Source, Destination: '/srv', RW: true }];
-      await fencing.assertMedia([{ ...media[0], source: shared[0].Source }]);
+      assert.deepEqual(await fencing.mediaWriters([{ ...media[0], source: shared[0].Source }]), []);
     }
     other.Mounts = [{ Type: 'bind', Source: '/mnt/user/appdata/immich', Destination: '/srv', RW: true }];
-    await assert.rejects(fencing.assertMedia([{ ...media[0], source: shared[0].Source }]), /other_media_writer_detected/);
+    assert.deepEqual(await fencing.mediaWriters([{ ...media[0], source: shared[0].Source }]), ['worker-b']);
   } finally {
     store.close();
     await rm(directory, { recursive: true });

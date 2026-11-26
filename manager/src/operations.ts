@@ -570,7 +570,7 @@ export class Operations {
       return true;
     });
     await this.step(operation, 'start', async () => {
-      await this.fencing.assertMedia(next.mounts, next);
+      await this.fencing.warnMediaWriters(next.mounts, next);
       await this.docker.compose(this.directory(), next.project, 'up');
       return true;
     });
@@ -1256,6 +1256,15 @@ export class Operations {
       if (finding?.warning) return { value, outcome: { status: 'warning', code: 'database_on_hard_drives', facts: { ...facts, ...finding.warning } } };
       return { value, outcome: { facts } };
     });
+    await this.writersCheck(
+      checks,
+      this.folderMounts({
+        mounts: source?.mounts ?? [{ type: 'bind', source: input.mediaPath!, target: '', readOnly: false }],
+        databaseRoot: input.databaseRoot,
+      }),
+      undefined,
+      source?.workers,
+    );
     // FL-1321: a new library's thumbnails, with the photos or in a folder of their own on a faster drive.
     if (input.kind === 'install' && !source && !common)
       await checks.run('thumbnails', async () => {
@@ -1297,6 +1306,20 @@ export class Operations {
     return checkHost();
   }
   /** FL-1318: room in Docker's own storage for the images this install downloads; less without machine learning. */
+  private folderMounts(installation: Pick<Installation, 'mounts' | 'databaseRoot'>): Mount[] {
+    return [...installation.mounts, { type: 'bind', source: installation.databaseRoot, target: '', readOnly: false }];
+  }
+  /** Who else can write to the library's folders: a warning in the review, never a reason to stop. */
+  private async writersCheck(checks: ServerCheck, folders: Mount[], installation?: Installation, workers?: string[]) {
+    const containers = await this.fencing.mediaWriters(folders, installation, workers).catch(() => []);
+    if (containers.length)
+      checks.results.push({ id: 'writers', status: 'warning', facts: { containers: containers.join(', ') } });
+  }
+  /** Overview's warning: other containers that can write to this library's photos or database folder. */
+  async otherWriters(): Promise<string[]> {
+    const installation = this.installation();
+    return installation ? this.fencing.mediaWriters(this.folderMounts(installation), installation).catch(() => []) : [];
+  }
   private async roomCheck(checks: ServerCheck, ml: boolean): Promise<void> {
     const needed = dockerRoomNeeded(ml, ml ? await detectAcceleration() : 'cpu');
     const free = await this.probes.dockerFree().catch(() => null);
@@ -1556,7 +1579,7 @@ export class Operations {
       const sourceFence = restoring ? null : ((review as Review).common?.fence ?? (review as Review).source);
       if (sourceFence && operation.completed.includes('fence-source')) {
         await this.verifySourceUntilTakeover(sourceFence, installation ?? undefined);
-        if (installation) await this.fencing.assertMedia(installation.mounts, installation);
+        if (installation) await this.fencing.warnMediaWriters(installation.mounts, installation);
       }
       if (operation.step === 'restore-new-database' && !operation.completed.includes('restore-new-database')) {
         if (!installation || installation.mayHaveWrittenMedia) throw new Refusal('manual_media_recovery_required');
@@ -1871,7 +1894,7 @@ export class Operations {
       });
     await this.step(operation, 'start-frameleaf', async () => {
       if (sourceFence) await this.verifySourceUntilTakeover(sourceFence);
-      await this.fencing.assertMedia(installation.mounts, installation);
+      await this.fencing.warnMediaWriters(installation.mounts, installation);
       await this.releases.eligible(review.input.tag);
       installation.mayHaveWrittenMedia = true;
       this.store.set('installation', installation);
@@ -2175,8 +2198,8 @@ export class Operations {
   }
   /**
    * FL-1263: the reviewed source must stay as reviewed until Frameleaf takes over the library (the installation may
-   * have written media). After that the owner may change or remove the original app; callers still run
-   * assertMedia, which refuses any other container that could write the media, the original app included.
+   * have written media). After that the owner may change or remove the original app; other containers
+   * that can write the media are only warned about, never refused.
    */
   private async verifySourceUntilTakeover(source: Source | SourceFence, installation?: Installation): Promise<void> {
     if (!this.installation()?.mayHaveWrittenMedia) await this.fencing.verify(source, installation);
@@ -2186,7 +2209,7 @@ export class Operations {
     if (kind !== 'stop') await this.databaseStorage.verify(installation);
     if (kind !== 'stop' && installation.sourceId)
       await this.verifySourceUntilTakeover(this.store.get<Source>(`source:${installation.sourceId}`)!, installation);
-    if (kind !== 'stop') await this.fencing.assertMedia(installation.mounts, installation);
+    if (kind !== 'stop') await this.fencing.warnMediaWriters(installation.mounts, installation);
     if (kind !== 'stop') await retuneDatabase(this.directory());
     // `restart` keeps a container's old command and shm_size; `up` recreates the database when they changed.
     if (kind === 'restart') await this.docker.compose(this.directory(), installation.project, 'up', ['database']);
@@ -2589,7 +2612,7 @@ export class Operations {
       this.store.set('previous-installation', review.current);
       const source = installation.sourceId ? this.store.get<Source>(`source:${installation.sourceId}`) : null;
       if (source) await this.verifySourceUntilTakeover(source, installation);
-      await this.fencing.assertMedia(installation.mounts, installation);
+      await this.fencing.warnMediaWriters(installation.mounts, installation);
       // A PostgreSQL image that cannot reuse the data directory was moved above (compose.json names the new image
       // by now); otherwise the signed bundle declares this exact same-major transition in place, with the
       // checkpoint above as its fallback.
@@ -2692,7 +2715,7 @@ export class Operations {
   /**
    * FL-1322: review moving the installed database to another folder, usually on another drive. The folder must
    * pass the same checks as a new install's database folder (a host bind on a local disk, outside Docker's
-   * storage, no other container writing there) and hold the database twice: the moved copy, and later the second
+   * storage) and hold the database twice: the moved copy, and later the second
    * copy an engine upgrade restores beside it.
    */
   async reviewDatabaseMove(databaseRoot: string) {
@@ -2788,7 +2811,7 @@ export class Operations {
     try {
       await this.step(operation, 'start', async () => {
         await this.databaseStorage.verify(installation);
-        await this.fencing.assertMedia(installation.mounts, installation);
+        await this.fencing.warnMediaWriters(installation.mounts, installation);
         if (!operation.receipts['start-state']) {
           operation.receipts['start-state'] = 'starting';
           this.store.save(operation); // Journaled before the server can write to the new folder.
@@ -2835,7 +2858,7 @@ export class Operations {
     });
     await this.step(operation, 'start-original-database', async () => {
       await this.databaseStorage.verify(previous);
-      await this.fencing.assertMedia(previous.mounts, previous);
+      await this.fencing.warnMediaWriters(previous.mounts, previous);
       await this.docker.compose(this.directory(), previous.project, 'up');
       return true;
     });
@@ -3041,7 +3064,7 @@ export class Operations {
       return installation;
     });
     await this.step(operation, 'rollback-start-previous', async () => {
-      await this.fencing.assertMedia(restored.mounts, restored);
+      await this.fencing.warnMediaWriters(restored.mounts, restored);
       await this.docker.compose(this.directory(), restored.project, 'up');
       return true;
     });
@@ -3212,7 +3235,7 @@ export class Operations {
     });
     await this.step(operation, 'start-previous', async () => {
       await assertMountSources(restored.mounts);
-      await this.fencing.assertMedia(restored.mounts, restored);
+      await this.fencing.warnMediaWriters(restored.mounts, restored);
       await this.docker.compose(this.directory(), restored.project, 'up');
       return true;
     });
@@ -3349,7 +3372,6 @@ export class Operations {
     await checks.run('media', async () => {
       // A drive that isn't mounted is named plainly (media_folder_missing) before any other folder check.
       await assertMountSources(target.mounts);
-      await this.fencing.assertMedia(target.mounts, current ?? undefined);
       const containers = await this.docker.inventory();
       for (const mount of target.mounts) {
         if (mount.type === 'bind') await storagePath(mount.source, this.roots, 0);
@@ -3369,6 +3391,7 @@ export class Operations {
       const value = await this.databaseStorage.validate(databaseRoot, databaseBytes);
       return { value, outcome: { facts: { path: databaseRoot, free: await freeBytes(databaseRoot) } } };
     });
+    await this.writersCheck(checks, this.folderMounts({ mounts: target.mounts, databaseRoot }), current ?? undefined);
     await this.portCheck(checks, target.port, current, undefined, managerPort, false);
     await this.downloadsCheck(checks);
     return Object.assign(checks, { compatibility, databaseStorage });
@@ -3491,7 +3514,7 @@ export class Operations {
     });
     await this.step(operation, 'start-frameleaf', async () => {
       if (review.current) await this.fencing.verifyInstallation(review.current);
-      await this.fencing.assertMedia(installation.mounts, installation);
+      await this.fencing.warnMediaWriters(installation.mounts, installation);
       await this.releases.eligible(review.release.nas.tag);
       await assertMountSources(installation.mounts);
       // FL-1320: the restored database says thumbnails were checked; the library's own `thumbs` folder, chosen
@@ -3664,7 +3687,7 @@ export class Operations {
           await this.renderServices(previous, this.application().services);
         }
         await this.databaseStorage.verify(previous);
-        await this.fencing.assertMedia(previous.mounts, previous);
+        await this.fencing.warnMediaWriters(previous.mounts, previous);
         if (previous.sourceId)
           await this.verifySourceUntilTakeover(this.store.get<Source>(`source:${previous.sourceId}`)!, previous);
         await this.docker.compose(this.directory(), previous.project, 'up');

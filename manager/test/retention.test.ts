@@ -226,7 +226,7 @@ test('Manager prunes at start and after every operation settles, and the sweep n
     const stopped = Promise.withResolvers<void>();
     const docker = { compose: () => stopped.promise, inventory: async () => [] } as unknown as Docker;
     const operations = new Operations(store, docker, {} as never, {} as never, [], { verify: async () => {} } as never);
-    (operations as any).fencing = { assertMedia: async () => {} };
+    (operations as any).fencing = { warnMediaWriters: async () => {} };
     assert.equal((await operations.prune()).length, 2);
     const stop = operations.control('stop', 'stop-1');
     try {

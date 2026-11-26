@@ -95,7 +95,7 @@ async function fixture(options: { snapshotRelease?: string; snapshotUnreadable?:
     allocate: async () => join(directory, 'db-$rollback'),
   };
   const operations = new Operations(store, docker as never, {} as never, backups as never, [directory], databaseStorage as never);
-  (operations as any).fencing = { assertMedia: async () => {}, verify: async () => {} };
+  (operations as any).fencing = { warnMediaWriters: async () => {}, verify: async () => {} };
   const cleanup = async () => {
     store.close();
     await rm(directory, { recursive: true, force: true });

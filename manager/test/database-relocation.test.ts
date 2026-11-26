@@ -133,7 +133,7 @@ async function relocationFixture(options: Options = {}) {
   const create = () => {
     const operations = new Operations(store, docker as never, releases as never, backups as never, [], databaseStorage as never);
     (operations as any).fencing = {
-      assertMedia: async (_mounts: unknown, installation: any) => {
+      warnMediaWriters: async (_mounts: unknown, installation: any) => {
         if (options.start === 'media' && installation.databasePath !== current.databasePath) throw new Refusal('media_mount_changed');
       },
       verify: async () => {},

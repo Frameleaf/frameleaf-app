@@ -292,7 +292,7 @@ test(`update startup boundary is durable when interrupted at ${interrupt}`, asyn
         throw new Error('interrupted-starting');
       },
     } as never, { eligible: async () => {} } as never, {} as never, [], { verify: async () => {} } as never);
-    (operations as any).fencing = { assertMedia: async () => {} };
+    (operations as any).fencing = { warnMediaWriters: async () => {} };
     await assert.rejects((operations as any).applyUpdate(operation, { current, release }),
       new RegExp(`interrupted-${interrupt}`));
     // Docker could not show that the server never served, so the failed start is not rolled back.
@@ -380,7 +380,7 @@ test(`a failed update that never started its target is cancelled back to the pre
       [],
       { verify: async () => {} } as never,
     );
-    (operations as any).fencing = { assertMedia: async () => {}, verify: async () => {} };
+    (operations as any).fencing = { warnMediaWriters: async () => {}, verify: async () => {} };
     assert.equal(operations.history()[0].canCancel, true, 'cancellable before the target started');
     // Resume cannot retarget: the review expired after the release was withdrawn.
     operations.resume(operation.id);
@@ -484,7 +484,7 @@ test('an update whose server never turns healthy restores the previous release a
     const databaseStorage = { verify: async () => {}, allocate: async () => join(directory, 'db-$rollback') };
     const operations = new Operations(store, docker as never, { eligible: async () => {} } as never, {} as never, [],
       databaseStorage as never);
-    (operations as any).fencing = { assertMedia: async () => {}, verify: async () => {} };
+    (operations as any).fencing = { warnMediaWriters: async () => {}, verify: async () => {} };
 
     await (operations as any).applyUpdate(operation, { current, release, platform: 'linux/amd64' });
 
@@ -536,7 +536,7 @@ test('an update that fails after its server turned healthy is not rolled back', 
     const composed: string[] = [];
     const operations = new Operations(store, { compose: async (_d: string, _p: string, action: string) => { composed.push(action); } } as never,
       { eligible: async () => {} } as never, {} as never, [], { verify: async () => {} } as never);
-    (operations as any).fencing = { assertMedia: async () => {} };
+    (operations as any).fencing = { warnMediaWriters: async () => {} };
     (operations as any).libraryStatus = async () => { throw new Error('status request failed'); };
     await assert.rejects((operations as any).applyUpdate(operation, { current, release }), /status request failed/);
     assert.equal(operation.receipts['release-start-state'], 'started');
@@ -582,7 +582,7 @@ test('a failed start whose server passed a health probe keeps the new database',
     };
     const operations = new Operations(store, docker as never, { eligible: async () => {} } as never, {} as never, [],
       { verify: async () => {} } as never);
-    (operations as any).fencing = { assertMedia: async () => {} };
+    (operations as any).fencing = { warnMediaWriters: async () => {} };
     await assert.rejects((operations as any).applyUpdate(operation, { current, release }), /machine-learning/);
     assert.equal(operation.receipts['release-start-state'], 'started');
     assert.equal(operation.receipts['rollback-intent'], undefined);
@@ -630,7 +630,7 @@ test('a server seen healthy while starting is never rolled back after its probe 
     const operations = new Operations(store, docker as never, { eligible: async () => {} } as never, {} as never, [],
       { verify: async () => {} } as never);
     operations.serverWatchMs = 5;
-    (operations as any).fencing = { assertMedia: async () => {} };
+    (operations as any).fencing = { warnMediaWriters: async () => {} };
     // The first journal write of the receipt fails: the poll logs it, forgets the receipt and retries.
     const save = store.save.bind(store);
     let failed = false;
@@ -759,7 +759,7 @@ for (const [marker, rollsBack] of [['after-start', false], ['before-start', true
       const operations = new Operations(store, docker as never, { eligible: async () => {} } as never, {} as never, [],
         { verify: async () => {} } as never);
       operations.serverWatchMs = 60_000;
-      (operations as any).fencing = { assertMedia: async () => {} };
+      (operations as any).fencing = { warnMediaWriters: async () => {} };
       let rolledBack = false;
       (operations as any).rollbackUpdate = async () => { rolledBack = true; };
       if (rollsBack) await (operations as any).applyUpdate(operation, { current, release });
@@ -910,7 +910,7 @@ async function databaseMoveFixture(options: MoveOptions = {}) {
     acquire: async (tag: string) => (tag === current.release ? previousRelease : release) };
   const create = () => {
     const operations = new Operations(store, docker as never, releases as never, {} as never, [], databaseStorage as never);
-    (operations as any).fencing = { assertMedia: async () => {}, verify: async () => {} };
+    (operations as any).fencing = { warnMediaWriters: async () => {}, verify: async () => {} };
     (operations as any).libraryStatus = async () => null;
     operations.serverWatchMs = 60_000;
     return operations;
