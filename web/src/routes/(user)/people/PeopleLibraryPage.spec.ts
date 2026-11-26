@@ -135,7 +135,7 @@ describe('People library page loading', () => {
     // the merge starts a re-read; its first page answers and its second is still on the way
     await fireEvent.click(await screen.findByRole('button', { name: 'frameleaf_people_merge_suggestion_accept' }));
     await waitFor(() => expect(sdkMock.getAllPeople).toHaveBeenCalledTimes(2));
-    await fireEvent.click(container.querySelector('.pl-menu button')!);
+    await fireEvent.click(container.querySelector(':scope .pl-menu button')!);
     await fireEvent.click(await screen.findByRole('menuitem', { name: 'favorite' }));
     await waitFor(() => expect(container.querySelectorAll('.pl-badge.favorite')).toHaveLength(1));
 
