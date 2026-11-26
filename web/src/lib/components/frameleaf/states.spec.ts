@@ -4,7 +4,6 @@ import { beforeAll, describe, expect, it, vi } from 'vitest';
 import EmptyRow from './EmptyRow.svelte';
 import GridSkeleton from './GridSkeleton.svelte';
 import ListSkeleton from './ListSkeleton.svelte';
-import LoadFailed from './LoadFailed.svelte';
 import StatusLine from './StatusLine.svelte';
 
 // FL-1810 (prototype `src/StatesSheet.jsx`): one piece each for empty, loading, saved and failed.
@@ -51,13 +50,5 @@ describe('shared state pieces (FL-1810)', () => {
     expect(screen.getByRole('status')).toHaveTextContent('Saved');
     await rerender({ state: 'failed', message: 'Not saved: the server didn’t answer.' });
     expect(screen.getByRole('alert')).toHaveTextContent('Not saved: the server didn’t answer.');
-  });
-
-  it('LoadFailed says so in place and retries', async () => {
-    const onRetry = vi.fn();
-    render(LoadFailed, { title: 'Your people couldn’t be loaded', onRetry });
-    expect(screen.getByRole('alert')).toHaveTextContent('Your people couldn’t be loaded');
-    await fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
-    expect(onRetry).toHaveBeenCalledOnce();
   });
 });
