@@ -9,6 +9,7 @@ import { AssetFace } from 'src/database.js';
 import { Chunked, ChunkedArray, DummyValue, GenerateSql } from 'src/decorators.js';
 import { AssetFileType, AssetType, AssetVisibility, LibraryScope, SourceType, UserMetadataKey } from 'src/enum.js';
 import { publicationDatabase, publicationTransaction } from 'src/queue/transaction.js';
+import { uuidV7Floor } from 'src/repositories/album-summary.repository.js';
 import { DB } from 'src/schema/index.js';
 import { AssetFaceTable } from 'src/schema/tables/asset-face.table.js';
 import { FaceSearchTable } from 'src/schema/tables/face-search.table.js';
@@ -31,7 +32,8 @@ import { FACE_MIN_FRAME_SHARE, FACE_SIDEWAYS_RATIO } from 'src/utils/face-qualit
 import { libraryScopePredicate } from 'src/utils/library-scope.js';
 import { effectiveVisibility, revealedLockScope } from 'src/utils/locked.js';
 import { type PaginationOptions, paginationHelper } from 'src/utils/pagination.js';
-import { archivedAllowedInPeople, isPeopleVisible } from 'src/utils/people-visibility.js';
+import { archivedAllowedInPeople, isPeopleVisible, peopleIncludeArchived } from 'src/utils/people-visibility.js';
+import { personViewerKey } from 'src/utils/person-summary.js';
 
 // FL-1383: a face's box as a main photo (see `face-quality.ts` for the measurements behind the numbers).
 const faceBoxWidth = sql<number>`(asset_face."boundingBoxX2" - asset_face."boundingBoxX1")`;
@@ -61,9 +63,14 @@ const faceIsPoorMainPhoto = sql<boolean>`(
   or ${faceFrameShare} < ${sql.lit(FACE_MIN_FRAME_SHARE)}
 )`;
 
+export type PeopleSort = 'name' | 'count' | 'recent';
 export interface PersonSearchOptions extends HiddenContentQueryOptions {
   withHidden: boolean;
   closestFaceAssetId?: string;
+  /** FL-1789: only people whose name contains this, whatever the case */
+  name?: string;
+  /** FL-1789: the People grid's sorts; without one, the order the list always had */
+  sort?: PeopleSort;
 }
 export interface PersonNameSearchOptions extends HiddenContentQueryOptions {
   withHidden?: boolean;
@@ -76,6 +83,17 @@ export type PersonProfile = {
   notes: string | null;
 };
 /** `\`, `%` and `_` stand for themselves in an ILIKE pattern. */
+/** FL-1789: a summary is counted again after this long whatever was seen, for rules that change no photo. */
+const SUMMARY_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+/** A change committed after a read started can carry an earlier time; look back far enough to catch it. */
+const SUMMARY_CHANGE_MARGIN_MS = 30_000;
+/** Past this many changes of one kind since the last read the summaries are simply counted again. */
+const SUMMARY_CHANGES_CAP = 10_000;
+/** What decides which photos count for a person: the read's options without what only shapes the list. */
+const privacyOf = (options: Partial<PersonSearchOptions> = {}): HiddenContentQueryOptions => {
+  const { withHidden: _withHidden, closestFaceAssetId: _closest, name: _name, sort: _sort, ...privacy } = options;
+  return privacy;
+};
 const escapeLike = (value: string) => value.replaceAll(/[\\%_]/g, (character) => `\\${character}`);
 export interface PersonNameResponse {
   personGroupId: string;
@@ -519,10 +537,244 @@ export class PersonRepository {
       .limit(sql.lit(3))
       .execute();
   }
+  /**
+   * FL-1789: brings the stored summaries of this viewer variant up to date and returns their key. With
+   * nothing changed since they were read this is three small reads; otherwise the owner's people are
+   * counted again, once, whatever the number of pages read after it.
+   *
+   * A change is a face or a photo with faces written since the summaries were read, or one deleted. They
+   * are read over a look-back that starts a little before `computedAt`, because a change committed after
+   * the read can carry an earlier time; the digest of them stored with the rows tells a later read
+   * whether that window holds anything it did not hold then.
+   * ponytail: any change counts every person of the owner again (one aggregation, as one page cost
+   * before). Count only the people a change touched if a library's imports make this too slow; that
+   * needs the person a moved face left, which no column records today.
+   * ponytail: a variant in which nobody has a photo keeps no row, so it is counted on each read.
+   */
+  @GenerateSql({ params: [DummyValue.UUID] })
+  async syncSummaries(userId: string, options: HiddenContentQueryOptions = {}): Promise<string> {
+    const { includeArchived } = await this.db
+      .selectNoFrom(peopleIncludeArchived(userId).as('includeArchived'))
+      .executeTakeFirstOrThrow();
+    const viewerKey = personViewerKey(options, includeArchived);
+    const stored = await this.db
+      .selectFrom('person_summary')
+      .select(['computedAt', 'changeToken'])
+      .where('ownerId', '=', userId)
+      .where('viewerKey', '=', viewerKey)
+      .limit(1)
+      .executeTakeFirst();
+    const now = new Date();
+    if (stored && now.getTime() - new Date(stored.computedAt).getTime() < SUMMARY_MAX_AGE_MS) {
+      const changes = await this.peopleChangeToken(userId, new Date(stored.computedAt));
+      if (changes !== null && changes === stored.changeToken) {
+        return viewerKey;
+      }
+    }
+
+    // read before the people are counted: a change that lands in between is counted, and its absence
+    // from this digest only means one more count on the next read
+    const changeToken = (await this.peopleChangeToken(userId, now)) ?? '';
+    await this.db
+      .insertInto('person_summary')
+      .columns([
+        'ownerId',
+        'viewerKey',
+        'personGroupId',
+        'assetCount',
+        'faceCount',
+        'lastSeenAt',
+        'computedAt',
+        'changeToken',
+      ])
+      .expression(
+        this.db
+          .selectFrom('person')
+          .innerJoin('asset_face', 'asset_face.personGroupId', 'person.personGroupId')
+          .innerJoin('asset', (join) =>
+            join
+              .onRef('asset_face.assetId', '=', 'asset.id')
+              .onRef('asset.ownerId', '=', 'person.ownerId')
+              // FL-795: archived photos too when the viewer includes them in People
+              .on(isPeopleVisible(userId, 'asset', options.revealLockedOwnerId))
+              .on('asset.deletedAt', 'is', null),
+          )
+          // FL-37: only what the grid would show counts (timeline-visible, or archived when the viewer
+          // includes those; not deleted, not locked, not hidden by the viewer's rules)
+          .$call((qb) => withHiddenContentFilter(qb, options))
+          .where('person.ownerId', '=', userId)
+          .where(libraryScopePredicate(LibraryScope.Personal))
+          .where('asset_face.deletedAt', 'is', null)
+          .where('asset_face.isVisible', 'is', true)
+          .groupBy(['person.ownerId', 'person.personGroupId'])
+          .select((eb) => [
+            'person.ownerId',
+            sql<string>`${viewerKey}`.as('viewerKey'),
+            'person.personGroupId',
+            eb.fn.count<number>('asset_face.assetId').distinct().as('assetCount'),
+            eb.fn.count<number>('asset_face.assetId').as('faceCount'),
+            eb.fn.max('asset.fileCreatedAt').as('lastSeenAt'),
+            sql<Date>`${now}::timestamptz`.as('computedAt'),
+            sql<string>`${changeToken}`.as('changeToken'),
+          ]),
+      )
+      .onConflict((oc) =>
+        oc
+          .columns(['ownerId', 'viewerKey', 'personGroupId'])
+          .doUpdateSet((eb) => ({
+            assetCount: eb.ref('excluded.assetCount'),
+            faceCount: eb.ref('excluded.faceCount'),
+            lastSeenAt: eb.ref('excluded.lastSeenAt'),
+            computedAt: eb.ref('excluded.computedAt'),
+            changeToken: eb.ref('excluded.changeToken'),
+          }))
+          // two reads counting at once: the later one's rows stay
+          .whereRef('person_summary.computedAt', '<=', 'excluded.computedAt'),
+      )
+      .execute();
+    // whoever was not counted this time has no photo this variant may see any more
+    await this.db
+      .deleteFrom('person_summary')
+      .where('ownerId', '=', userId)
+      .where('viewerKey', '=', viewerKey)
+      .where('computedAt', '<', now)
+      .execute();
+    return viewerKey;
+  }
+  /**
+   * FL-1789: a digest of this owner's face and photo changes written since a little before `computedAt`:
+   * the change ids of the faces and of the photos with faces, and the ids of the deletions. A face moved
+   * again has a new change id, so the digest differs even when the number of changes does not. Null past
+   * `SUMMARY_CHANGES_CAP` changes of one kind: too many to compare, so the people are counted again.
+   */
+  private async peopleChangeToken(userId: string, computedAt: Date): Promise<string | null> {
+    const since = new Date(computedAt.getTime() - SUMMARY_CHANGE_MARGIN_MS);
+    const updateId = uuidV7Floor(since);
+    const cap = sql.lit(SUMMARY_CHANGES_CAP);
+    const { rows } = await sql<{ token: string; most: number }>`
+      select
+        md5(coalesce(string_agg(changed.id::text, ',' order by changed.kind, changed.id), '')) as token,
+        coalesce(max(changed.of_kind), 0)::integer as most
+      from (
+        select kinds.kind, kinds.id, count(*) over (partition by kinds.kind) as of_kind
+        from (
+          (select 1 as kind, asset_face."updateId" as id
+            from asset_face
+            inner join asset on asset.id = asset_face."assetId"
+            where asset_face."updateId" >= ${updateId}::uuid and asset."ownerId" = ${userId}
+            limit ${cap})
+          union all
+          (select 2, asset."updateId"
+            from asset
+            where asset."updateId" >= ${updateId}::uuid and asset."ownerId" = ${userId}
+              and exists (select 1 from asset_face where asset_face."assetId" = asset.id)
+            limit ${cap})
+          union all
+          (select 3, asset_audit.id
+            from asset_audit
+            where asset_audit."ownerId" = ${userId} and asset_audit."deletedAt" >= ${since}
+            limit ${cap})
+          union all
+          (select 4, asset_face_audit.id
+            from asset_face_audit
+            inner join asset on asset.id = asset_face_audit."assetId"
+            where asset_face_audit."deletedAt" >= ${since} and asset."ownerId" = ${userId}
+            limit ${cap})
+        ) as kinds
+      ) as changed
+    `.execute(this.db);
+    const { token, most } = rows[0];
+    return most >= SUMMARY_CHANGES_CAP ? null : token;
+  }
+  /** FL-1789: summaries of viewer variants nobody has read for a long time (see `SUMMARY_MAX_AGE_MS`). */
+  @GenerateSql({ params: [DummyValue.DATE] })
+  async deleteSummariesComputedBefore(date: Date): Promise<void> {
+    await this.db.deleteFrom('person_summary').where('computedAt', '<', date).execute();
+  }
+  /**
+   * FL-1789: the people a list shows, from the stored summaries: named people, and unnamed ones with at
+   * least the viewer's "minimum faces". No face is read here.
+   */
+  private listedPeople(userId: string, viewerKey: string, options?: PersonSearchOptions) {
+    const name = options?.name?.trim();
+    return (
+      this.db
+        .selectFrom('person')
+        .innerJoin('person_summary', (join) =>
+          join
+            .onRef('person_summary.ownerId', '=', 'person.ownerId')
+            .onRef('person_summary.personGroupId', '=', 'person.personGroupId')
+            .on('person_summary.viewerKey', '=', viewerKey),
+        )
+        .where('person.ownerId', '=', userId)
+        .where((eb) =>
+          eb.or([
+            eb('person.name', '!=', ''),
+            eb(
+              'person_summary.faceCount',
+              '>=',
+              sql<number>`COALESCE(
+              (SELECT value -> 'people' ->> 'minimumFaces'
+              FROM user_metadata
+              WHERE "userId" = ${userId}
+                AND key = ${sql.lit(UserMetadataKey.Preferences)}),
+              '3'
+            )::int `,
+            ),
+          ]),
+        )
+        .$if(!!name, (qb) => qb.where('person.name', 'ilike', `%${escapeLike(name!)}%`))
+        .$if(!options?.withHidden, (qb) => qb.where('person.isHidden', '=', false))
+        .$if(!!options?.closestFaceAssetId, (qb) =>
+          qb
+            .orderBy('person.isHidden', 'asc')
+            .orderBy('person.isFavorite', 'desc')
+            .orderBy((eb) =>
+              eb(
+                (eb) =>
+                  eb
+                    .selectFrom('face_search')
+                    .select('face_search.embedding')
+                    .whereRef('face_search.faceId', '=', 'person.faceAssetId'),
+                '<=>',
+                (eb) =>
+                  eb
+                    .selectFrom('face_search')
+                    .select('face_search.embedding')
+                    .where('face_search.faceId', '=', options!.closestFaceAssetId!),
+              ),
+            ),
+        )
+        .$if(!options?.closestFaceAssetId && !options?.sort, (qb) =>
+          qb
+            .orderBy('person.isHidden', 'asc')
+            .orderBy('person.isFavorite', 'desc')
+            .orderBy(sql`NULLIF(person.name, '') is null`, 'asc')
+            .orderBy('person_summary.faceCount', 'desc')
+            .orderBy(sql`NULLIF(person.name, '')`, (om) => om.asc().nullsLast())
+            .orderBy('person.createdAt'),
+        )
+        // the People grid's sorts (`sortPeopleForGrid` on the web): Photo count and Recently seen fall back
+        // to Name on a tie, and Name keeps unnamed people last
+        .$if(!options?.closestFaceAssetId && options?.sort === 'count', (qb) =>
+          qb.orderBy('person_summary.assetCount', 'desc'),
+        )
+        .$if(!options?.closestFaceAssetId && options?.sort === 'recent', (qb) =>
+          qb.orderBy('person_summary.lastSeenAt', (om) => om.desc().nullsLast()),
+        )
+        .$if(!options?.closestFaceAssetId && !!options?.sort, (qb) =>
+          qb
+            .orderBy(sql`NULLIF(btrim(person.name), '') is null`, 'asc')
+            .orderBy(sql`person.name collate "und-x-icu"`, 'asc'),
+        )
+        // a last word on the order, so a person is never on two pages or on none
+        .orderBy('person.personGroupId')
+    );
+  }
   @GenerateSql({ params: [{ take: 1, skip: 0 }, DummyValue.UUID] })
   async getAllForUser(pagination: PaginationOptions, userId: string, options?: PersonSearchOptions) {
-    const items = await this.db
-      .selectFrom('person')
+    const viewerKey = await this.syncSummaries(userId, privacyOf(options));
+    const items = await this.listedPeople(userId, viewerKey, options)
       .selectAll('person')
       // FL-864, FL-941: the owner's date of passing and notes, read with the page rather than per person
       .leftJoin('person_profile', (join) =>
@@ -531,74 +783,20 @@ export class PersonRepository {
           .onRef('person_profile.personId', '=', 'person.personGroupId'),
       )
       .select(['person_profile.deathDate', 'person_profile.notes'])
-      .innerJoin('asset_face', 'asset_face.personGroupId', 'person.personGroupId')
-      .innerJoin('asset', (join) =>
-        join
-          .onRef('asset_face.assetId', '=', 'asset.id')
-          .onRef('asset.ownerId', '=', 'person.ownerId')
-          // FL-795: archived photos too when the viewer includes them in People
-          .on(isPeopleVisible(userId, 'asset', options?.revealLockedOwnerId))
-          .on('asset.deletedAt', 'is', null),
-      )
-      // FL-37: the People grid shows "N items" per card and sorts by photo count or by the
-      // most recent capture. Both come from the rows this query already joins (timeline-visible,
-      // or archived when the viewer includes those; not deleted, not locked), so the counts never
-      // include content the grid would not show.
-      .select((eb) => [
-        eb.fn.count<number>('asset_face.assetId').distinct().as('assetCount'),
-        eb.fn.max('asset.fileCreatedAt').as('lastSeenAt'),
-        // FL-874: the owner's categories for each person, read with the page rather than per person
-        personCategoryIds.as('categoryIds'),
-      ])
-      .$call((qb) => withHiddenContentFilter(qb, options))
-      .where('person.ownerId', '=', userId)
-      .where(libraryScopePredicate(LibraryScope.Personal))
-      .where('asset_face.deletedAt', 'is', null)
-      .where('asset_face.isVisible', 'is', true)
-      .orderBy('person.isHidden', 'asc')
-      .orderBy('person.isFavorite', 'desc')
-      .having((eb) =>
-        eb.or([
-          eb('person.name', '!=', ''),
-          eb(
-            (innerEb) => innerEb.fn.count('asset_face.assetId'),
-            '>=',
-            sql<number>`COALESCE(
-              (SELECT value -> 'people' ->> 'minimumFaces'
-              FROM user_metadata
-              WHERE "userId" = ${userId}
-                AND key = ${sql.lit(UserMetadataKey.Preferences)}),
-              '3'
-            )::int `,
-          ),
-        ]),
-      )
-      .groupBy(['person.ownerId', 'person.personGroupId', 'person_profile.ownerId', 'person_profile.personId'])
-      .$if(!!options?.closestFaceAssetId, (qb) =>
-        qb.orderBy((eb) =>
-          eb(
-            (eb) =>
-              eb
-                .selectFrom('face_search')
-                .select('face_search.embedding')
-                .whereRef('face_search.faceId', '=', 'person.faceAssetId'),
-            '<=>',
-            (eb) =>
-              eb
-                .selectFrom('face_search')
-                .select('face_search.embedding')
-                .where('face_search.faceId', '=', options!.closestFaceAssetId!),
-          ),
-        ),
-      )
-      .$if(!options?.closestFaceAssetId, (qb) =>
-        qb
-          .orderBy(sql`NULLIF(person.name, '') is null`, 'asc')
-          .orderBy((eb) => eb.fn.count('asset_face.assetId'), 'desc')
-          .orderBy(sql`NULLIF(person.name, '')`, (om) => om.asc().nullsLast())
-          .orderBy('person.createdAt'),
-      )
-      .$if(!options?.withHidden, (qb) => qb.where('person.isHidden', '=', false))
+      // FL-37: the People grid shows "N items" per card and sorts by photo count or by the most recent
+      // capture; FL-874: the owner's categories for each person, read with the page rather than per person
+      .select(['person_summary.assetCount', 'person_summary.lastSeenAt', personCategoryIds.as('categoryIds')])
+      .offset(pagination.skip ?? 0)
+      .limit(pagination.take + 1)
+      .execute();
+    return paginationHelper(items, pagination.take);
+  }
+  /** FL-1789: the same list for a picker or a filter's vocabulary: what a row needs to be drawn, no more. */
+  @GenerateSql({ params: [{ take: 1, skip: 0 }, DummyValue.UUID] })
+  async getPickerPage(pagination: PaginationOptions, userId: string, options?: PersonSearchOptions) {
+    const viewerKey = await this.syncSummaries(userId, privacyOf(options));
+    const items = await this.listedPeople(userId, viewerKey, options)
+      .select(['person.personGroupId', 'person.name', 'person.updatedAt', 'person_summary.assetCount'])
       .offset(pagination.skip ?? 0)
       .limit(pagination.take + 1)
       .execute();
@@ -968,6 +1166,28 @@ export class PersonRepository {
               ),
             ),
         ),
+      )
+      .where('person.ownerId', '=', userId)
+      .select((eb) => eb.fn.coalesce(eb.fn.countAll<number>(), zero).as('total'))
+      .select((eb) => eb.fn.coalesce(eb.fn.countAll<number>().filterWhere('isHidden', '=', true), zero).as('hidden'))
+      .executeTakeFirstOrThrow();
+  }
+  /**
+   * FL-1789: how many of the owner's people have a photo this viewer may see, and how many of those are hidden,
+   * as the people list counts them: from the stored summaries, beside each page.
+   */
+  @GenerateSql({ params: [DummyValue.UUID] })
+  async getListedTotals(userId: string, options: HiddenContentQueryOptions = {}) {
+    const zero = sql.lit(0);
+    // a person has a row only with such a photo
+    const viewerKey = await this.syncSummaries(userId, privacyOf(options));
+    return this.db
+      .selectFrom('person')
+      .innerJoin('person_summary', (join) =>
+        join
+          .onRef('person_summary.ownerId', '=', 'person.ownerId')
+          .onRef('person_summary.personGroupId', '=', 'person.personGroupId')
+          .on('person_summary.viewerKey', '=', viewerKey),
       )
       .where('person.ownerId', '=', userId)
       .select((eb) => eb.fn.coalesce(eb.fn.countAll<number>(), zero).as('total'))

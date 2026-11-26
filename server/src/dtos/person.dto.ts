@@ -74,6 +74,13 @@ const PersonSearchSchema = z
     closestAssetId: z.uuidv4().optional().describe('Closest asset ID for similarity search'),
     page: z.coerce.number().int().min(1).default(1).describe('Page number for pagination'),
     size: z.coerce.number().int().min(1).max(1000).default(500).describe('Number of items per page'),
+    name: z.string().trim().min(1).optional().describe('Only people whose name contains this text, whatever the case'),
+    sort: z
+      .enum(['name', 'count', 'recent'])
+      .optional()
+      .describe(
+        'Order: by name (unnamed people last), by photo count, or by the most recent photo. Without it, favorites first, then named people by the number of faces. Ignored with closestPersonId or closestAssetId.',
+      ),
   })
   .meta({ id: 'PersonSearchDto' });
 
@@ -596,6 +603,24 @@ const PeopleListItemSchema = PersonResponseSchema.extend({
     .nullable()
     .describe('Capture date of the most recent timeline asset showing this person'),
 }).meta({ id: 'PeopleListItemDto' });
+
+// FL-1789: what a picker or a filter's list of people needs to draw a row, and no more.
+const PeoplePickerItemSchema = z
+  .object({
+    id: z.string().describe('Person ID'),
+    name: z.string().describe('Person name'),
+    updatedAt: z.string().meta({ format: 'date-time' }).describe('Last update date; the version of the thumbnail URL'),
+    assetCount: z.int().min(0).describe('Number of timeline assets showing this person'),
+  })
+  .meta({ id: 'PeoplePickerItemDto' });
+
+const PeoplePickerResponseSchema = z
+  .object({
+    people: z.array(PeoplePickerItemSchema),
+    hasNextPage: z.boolean().describe('Whether there are more pages'),
+  })
+  .meta({ id: 'PeoplePickerResponseDto' });
+export class PeoplePickerResponseDto extends createZodDto(PeoplePickerResponseSchema) {}
 
 const PeopleResponseSchema = z
   .object({
