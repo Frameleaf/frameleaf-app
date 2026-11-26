@@ -22,6 +22,8 @@
   import { clickOutside } from '$lib/actions/click-outside';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { tonightLabel } from '$lib/frameleaf/background-work';
+  import { isTabHidden } from '$lib/frameleaf/quiet-poll';
+  import { eventManager } from '$lib/managers/event-manager.svelte';
   import { Route } from '$lib/route';
   import { locale } from '$lib/stores/preferences.store';
   import { setupProgress } from '$lib/stores/setup-progress.svelte';
@@ -50,7 +52,7 @@
     mdiProgressClock,
     mdiRefresh,
   } from '@mdi/js';
-  import { onDestroy } from 'svelte';
+  import { onDestroy, untrack } from 'svelte';
   import { t } from 'svelte-i18n';
 
   type Stage = LibrarySetupProgressDto['stages'][number];
@@ -134,9 +136,9 @@
     if (next.completedAt && readCelebrated() !== next.completedAt) {
       celebrating = true;
     }
-    // An inactive answer can come before Manager starts setup, so only a finished setup ends polling. Servers
-    // not set up from an import answer at once without reading the database.
-    if (next.completedAt) {
+    // FL-1800: a finished setup, or a server with none running, ends the polling. An inactive answer can come
+    // before Manager starts setup, so that one is asked again when the socket reconnects or the tab is shown.
+    if (next.completedAt || !next.active) {
       stopPolling();
     }
   };
@@ -227,9 +229,31 @@
     if (!authManager.authenticated || !authManager.user?.isAdmin) {
       return;
     }
-    void load();
-    timer = setInterval(() => void load(), POLL_MS);
-    return stopPolling;
+    // FL-1800: a hidden tab asks nothing, and asks at once when it is shown again
+    const start = () => {
+      stopPolling();
+      if (isTabHidden()) {
+        return;
+      }
+      void load();
+      timer = setInterval(() => void load(), POLL_MS);
+    };
+    // a finished setup stays finished for this page; one not running yet may have been started since
+    const resume = () => {
+      if (!untrack(() => setupProgress.progress?.completedAt)) {
+        start();
+      }
+    };
+    const onVisibility = () => (isTabHidden() ? stopPolling() : resume());
+    start();
+    document.addEventListener('visibilitychange', onVisibility);
+    // subscribing reads and writes the event manager's own state, which must not re-run this effect
+    const unsubscribe = untrack(() => eventManager.on({ WebsocketConnect: resume }));
+    return () => {
+      stopPolling();
+      unsubscribe();
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
   });
 
   // Pages size themselves from --fl-topbar-height, which adds this bar's height (app.css).
