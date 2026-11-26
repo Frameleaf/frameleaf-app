@@ -34,7 +34,7 @@
   import { Icon } from '@frameleaf/ui';
   import { mdiClose, mdiImageOffOutline } from '@mdi/js';
   import { DateTime } from 'luxon';
-  import { onDestroy, onMount } from 'svelte';
+  import { onDestroy, onMount, type Snippet } from 'svelte';
   import { t } from 'svelte-i18n';
   import { SvelteMap } from 'svelte/reactivity';
 
@@ -44,9 +44,14 @@
     /** Called once when the panel closes, when a change was undone, with the people faces went back to or left. */
     onChanged?: (personIds: string[]) => void;
     close: () => void;
+    /** FL-1813: the panel's heading when it is one tab of "Fix recognition". */
+    title?: string;
+    /** FL-1813: the tabs under the heading, and what sits beside Done. */
+    tabs?: Snippet;
+    footerLink?: Snippet;
   }
 
-  let { person, onOpenAsset, onChanged, close }: Props = $props();
+  let { person, onOpenAsset, onChanged, close, title, tabs, footerLink }: Props = $props();
 
   const PAGE_SIZE = 25;
 
@@ -201,7 +206,8 @@
   <header class="pd-history-header">
     <div>
       <h2 id="pd-history-title" bind:this={heading} tabindex="-1">
-        {$t('frameleaf_people_correction_history_title', { values: { name: person.name || $t('add_a_name') } })}
+        {title ??
+          $t('frameleaf_people_correction_history_title', { values: { name: person.name || $t('add_a_name') } })}
       </h2>
       <p>{$t('frameleaf_people_correction_history_hint')}</p>
     </div>
@@ -209,6 +215,7 @@
       <Icon icon={mdiClose} size="18" aria-hidden="true" />
     </IconButton>
   </header>
+  {@render tabs?.()}
   <ul class="pd-history-list">
     {#each corrections as correction (correction.id)}
       <li class="pd-history-row" class:is-undone={!!correction.undoneAt}>
@@ -274,6 +281,7 @@
   {/if}
   <footer class="pd-history-footer">
     <span role="status" aria-live="polite">{message}</span>
+    {@render footerLink?.()}
     <Button variant="primary" onclick={finish}>{$t('done')}</Button>
   </footer>
 </div>
