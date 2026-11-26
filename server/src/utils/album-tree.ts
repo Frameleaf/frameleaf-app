@@ -1,11 +1,14 @@
-import {
-  AlbumCollectionResponseDto,
-  AlbumHierarchyNode,
-  AlbumHierarchyResponseDto,
-  AlbumResponseDto,
-  AlbumTreeResponseDto,
-} from 'src/dtos/album.dto.js';
+import { AlbumResponseDto } from 'src/dtos/album.dto.js';
 import { AlbumKind } from 'src/enum.js';
+
+type DirectoryItem = { id: string; kind: string; parentId: string | null };
+
+/** The directory shape for any album record: `AlbumTreeResponseDto` when `T` is the full album. */
+export type AlbumTreeOf<T> = {
+  collections: { collection: T; albums: T[]; albumCount: number; assetCount: number }[];
+  albums: T[];
+  spaces: T[];
+};
 
 /**
  * Arrange the albums a user can see into the directory shape the Albums page
@@ -21,10 +24,12 @@ import { AlbumKind } from 'src/enum.js';
  *   stands on its own rather than disappearing.
  * - Shared spaces are always top level.
  */
-export const buildAlbumTree = (albums: AlbumResponseDto[]): AlbumTreeResponseDto => {
-  const collections: AlbumResponseDto[] = [];
-  const spaces: AlbumResponseDto[] = [];
-  const plainAlbums: AlbumResponseDto[] = [];
+export const buildAlbumTree = <T extends DirectoryItem & { assetCount: number } = AlbumResponseDto>(
+  albums: T[],
+): AlbumTreeOf<T> => {
+  const collections: T[] = [];
+  const spaces: T[] = [];
+  const plainAlbums: T[] = [];
   const collectionIds = new Set<string>();
   // eslint-disable-next-line unicorn/no-for-each -- Match filter traversal of sparse arrays.
   albums.forEach((album) => {
@@ -45,8 +50,8 @@ export const buildAlbumTree = (albums: AlbumResponseDto[]): AlbumTreeResponseDto
     }
   });
 
-  const standalone: AlbumResponseDto[] = [];
-  const membersByParent = new Map<string, AlbumResponseDto[]>();
+  const standalone: T[] = [];
+  const membersByParent = new Map<string, T[]>();
   for (const album of plainAlbums) {
     const parentId = album.parentId;
     const hasCollection = parentId !== null && collectionIds.has(parentId);
@@ -63,7 +68,7 @@ export const buildAlbumTree = (albums: AlbumResponseDto[]): AlbumTreeResponseDto
     }
   }
 
-  const shelves: AlbumCollectionResponseDto[] = collections.map((collection) => {
+  const shelves = collections.map((collection) => {
     const members = membersByParent.get(collection.id)?.slice() ?? [];
     return {
       collection,
@@ -81,11 +86,14 @@ export const buildAlbumTree = (albums: AlbumResponseDto[]): AlbumTreeResponseDto
  * first, by position; items never placed keep the order they arrived in (the repository's display
  * order) after them, so a new album shows up at the end of its group until it is arranged.
  */
-export const orderAlbumTree = (tree: AlbumTreeResponseDto, positions: Map<string, number>): AlbumTreeResponseDto => {
+export const orderAlbumTree = <T extends { id: string } = AlbumResponseDto>(
+  tree: AlbumTreeOf<T>,
+  positions: Map<string, number>,
+): AlbumTreeOf<T> => {
   if (positions.size === 0) {
     return tree;
   }
-  const order = <T>(items: T[], idOf: (item: T) => string): T[] =>
+  const order = <I>(items: I[], idOf: (item: I) => string): I[] =>
     items
       .map((item, index) => ({ item, index, position: positions.get(idOf(item)) }))
       .sort(
@@ -104,8 +112,6 @@ export const orderAlbumTree = (tree: AlbumTreeResponseDto, positions: Map<string
     spaces: order(tree.spaces, (album) => album.id),
   };
 };
-
-type DirectoryItem = { id: string; kind: string; parentId: string | null };
 
 /**
  * The group of a person's directory an order applies to (FL-52): the albums inside one visible
@@ -165,13 +171,12 @@ export const albumOrderGroup = (
 };
 
 /** Build the recursive view without exposing absent parents or trusting legacy cycles. */
-export const buildAlbumHierarchy = (
-  albums: AlbumResponseDto[],
+export const buildAlbumHierarchy = <T extends DirectoryItem = AlbumResponseDto>(
+  albums: T[],
   positions: Map<string, number> = new Map(),
-): AlbumHierarchyResponseDto => {
-  const nodes = new Map<string, AlbumHierarchyNode>(
-    albums.map((album) => [album.id, { album: { ...album }, children: [] }]),
-  );
+): { roots: AlbumHierarchyNodeOf<T>[] } => {
+  type Node = AlbumHierarchyNodeOf<T>;
+  const nodes = new Map<string, Node>(albums.map((album) => [album.id, { album: { ...album }, children: [] }]));
   for (const { album } of nodes.values()) {
     const parent = album.parentId ? nodes.get(album.parentId) : undefined;
     if (album.kind === AlbumKind.Space || !parent || parent.album.kind === AlbumKind.Space) album.parentId = null;
@@ -181,7 +186,7 @@ export const buildAlbumHierarchy = (
     const path = new Set<string>();
     let current: string | null = id;
     while (current !== null && !checked.has(current)) {
-      const node: AlbumHierarchyNode = nodes.get(current)!;
+      const node: Node = nodes.get(current)!;
       if (path.has(current)) {
         node.album.parentId = null;
         break;
@@ -191,7 +196,7 @@ export const buildAlbumHierarchy = (
     }
     for (const visited of path) checked.add(visited);
   }
-  const roots: AlbumHierarchyNode[] = [];
+  const roots: Node[] = [];
   const ordered = nodes
     .values()
     .toArray()
@@ -205,3 +210,9 @@ export const buildAlbumHierarchy = (
   }
   return { roots };
 };
+
+export type AlbumHierarchyNodeOf<T> = { album: T; children: AlbumHierarchyNodeOf<T>[] };
+
+/** FL-1791: the hierarchy as one list, parents before their children, in display order. */
+export const flattenAlbumHierarchy = <T>(nodes: AlbumHierarchyNodeOf<T>[]): T[] =>
+  nodes.flatMap(({ album, children }) => [album, ...flattenAlbumHierarchy(children)]);

@@ -450,6 +450,87 @@ const AlbumHierarchyResponseSchema = z
 
 export class AlbumHierarchyResponseDto extends createZodDto(AlbumHierarchyResponseSchema) {}
 
+// FL-1791
+const AlbumRailItemSchema = z
+  .object({
+    id: z.string().describe('Album ID'),
+    albumName: z.string().describe('Album name'),
+    parentId: z
+      .string()
+      .nullable()
+      .describe(
+        'Parent album or collection in this list (null = top level). Never names an album the list leaves out.',
+      ),
+    kind: AlbumKindSchema,
+    icon: z.string().nullable().describe('Icon: a Material Design Icons name or legacy key (null = default icon)'),
+    color: z.string().nullable().describe('Colour name (grey, green, teal, blue, purple, pink, amber, red) or null'),
+    sortOrder: z
+      .number()
+      .meta({ format: 'double' })
+      .nullable()
+      .describe('Sibling display position. Lower values appear first.'),
+    role: AlbumUserRoleSchema.describe("The authenticated user's own role in the album"),
+    shared: z.boolean().describe('Is shared album'),
+    isLocked: z.boolean().describe('The owner chose to lock this album'),
+    isSmart: z.boolean().describe('True when the album is filled by smart album rules'),
+    smartRuleId: z
+      .string()
+      .nullable()
+      .describe('Your classification rule behind this smart album, when it is one of yours'),
+    assetCount: z.int().min(0).describe('Number of assets'),
+    bookmarkCount: z.int().min(0).describe('Number of links (Boards)'),
+    statsPending: z
+      .boolean()
+      .optional()
+      .describe("True while this album's count is still being worked out for this viewer; assetCount is 0 until then."),
+  })
+  .meta({ id: 'AlbumRailItemDto' });
+
+const AlbumRailResponseSchema = z
+  .object({
+    albums: z
+      .array(AlbumRailItemSchema)
+      .describe('Every album of the directory in display order, each parent before its children'),
+  })
+  .meta({ id: 'AlbumRailResponseDto' });
+
+const AlbumStatsSchema = z
+  .object({
+    albumIds: z.array(z.uuidv4()).min(1).max(5000).describe('Albums to read the numbers of'),
+  })
+  .meta({ id: 'AlbumStatsDto' });
+
+const AlbumStatsItemSchema = z
+  .object({
+    id: z.string().describe('Album ID'),
+    assetCount: z.int().min(0).describe('Number of assets'),
+    startDate: z.string().meta({ format: 'date-time' }).optional().describe('Start date (earliest asset)'),
+    endDate: z.string().meta({ format: 'date-time' }).optional().describe('End date (latest asset)'),
+    lastModifiedAssetTimestamp: z
+      .string()
+      .meta({ format: 'date-time' })
+      .optional()
+      .describe('Last modified asset timestamp'),
+    statsPending: z
+      .boolean()
+      .optional()
+      .describe("True while this album's count and dates are still being worked out; assetCount is 0 until then."),
+  })
+  .meta({ id: 'AlbumStatsItemDto' });
+
+const AlbumStatsResponseSchema = z
+  .object({
+    albums: z
+      .array(AlbumStatsItemSchema)
+      .describe('One entry per requested album the user can read; the others are left out'),
+  })
+  .meta({ id: 'AlbumStatsResponseDto' });
+
+export class AlbumRailItemDto extends createZodDto(AlbumRailItemSchema) {}
+export class AlbumRailResponseDto extends createZodDto(AlbumRailResponseSchema) {}
+export class AlbumStatsDto extends createZodDto(AlbumStatsSchema) {}
+export class AlbumStatsResponseDto extends createZodDto(AlbumStatsResponseSchema) {}
+
 const AlbumIconSuggestionResponseSchema = z
   .object({
     name: z.string().describe('Material Design Icons name, e.g. mdiCameraOutline'),
