@@ -43,8 +43,29 @@ export type DuplicateReviewGateway = {
   getOperation: (id: string) => Promise<MediaOperationDetailDto>;
 };
 
+/** FL-1795: how many groups one request for the review carries. */
+export const DUPLICATE_REVIEW_PAGE_SIZE = 250;
+
+/**
+ * FL-1795: the whole review, read a page at a time so no one answer carries ten thousand groups.
+ * Every figure the page shows (what is left in each lane, "Keep best copy in all") counts all the
+ * groups, so the page still waits for the last one.
+ */
+export const readDuplicateReview = async (): Promise<ReviewGroup[]> => {
+  const groups: ReviewGroup[] = [];
+  let after: string | undefined;
+  for (;;) {
+    const page = await getDuplicateReview({ take: DUPLICATE_REVIEW_PAGE_SIZE, ...(after && { after }) });
+    groups.push(...page);
+    if (page.length < DUPLICATE_REVIEW_PAGE_SIZE) {
+      return groups;
+    }
+    after = page.at(-1)!.duplicateId;
+  }
+};
+
 export const duplicateReviewGateway: DuplicateReviewGateway = {
-  getReview: () => getDuplicateReview(),
+  getReview: readDuplicateReview,
   getHistory: () => getDuplicateDecisions(),
   submit: (action, groups, requestId) =>
     createBulkMediaOperation({
@@ -88,7 +109,8 @@ export const newRequestId = (): string | undefined => {
 };
 
 export class DuplicateReviewSession {
-  groups = $state<ReviewGroup[]>([]);
+  // FL-1795: only ever replaced whole, so thousands of groups and their photos are not tracked field by field
+  groups = $state.raw<ReviewGroup[]>([]);
   history = $state<DuplicateDecisionHistoryDto>({ recent: [], active: [] });
   /** Per group, by duplicate id. Reactive: a queue row re-renders when its entry changes. */
   readonly progress = new SvelteMap<string, GroupProgress>();
@@ -315,8 +337,39 @@ export class DuplicateReviewSession {
     this.#schedule();
   }
 
+  /**
+   * FL-1795: what a finished decision job leaves behind, without reading the review again. The groups
+   * it decided have left the review on the server (`apply` already keeps them in `reviewed`), a photo
+   * belongs to one group only so no other group changed, and only the history is asked for again.
+   */
+  async #dropDecided(): Promise<void> {
+    if (this.#destroyed) {
+      return;
+    }
+    const decided = new Set<string>();
+    for (const [duplicateId, progress] of this.progress) {
+      if (progress.state === 'done') {
+        decided.add(duplicateId);
+      }
+    }
+    if (decided.size > 0) {
+      this.groups = this.groups.filter((group) => !decided.has(group.duplicateId));
+      for (const duplicateId of decided) {
+        this.progress.delete(duplicateId);
+      }
+    }
+    const history = await this.#gateway.getHistory();
+    if (this.#destroyed) {
+      return;
+    }
+    this.history = history;
+    this.#resumeActive();
+  }
+
   async #pollAll() {
     let finished = false;
+    // an undo brings groups back, which only the server can list
+    let undone = false;
     for (const [operationId, job] of this.#jobs) {
       if (this.#destroyed) {
         return;
@@ -330,6 +383,7 @@ export class DuplicateReviewSession {
       }
       if (this.apply(operationId, job, detail)) {
         finished = true;
+        undone ||= job.action === MediaOperationBulkAction.UndoDuplicates;
       }
     }
     if (finished) {
@@ -337,9 +391,9 @@ export class DuplicateReviewSession {
         this.undoing = false;
       }
       try {
-        await this.refresh();
+        await (undone ? this.refresh() : this.#dropDecided());
       } catch {
-        // the tiles already show the outcome; the next finished job reads the review again
+        // the tiles already show the outcome; the next finished job settles the review again
       }
     }
   }

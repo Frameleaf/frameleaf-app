@@ -131,6 +131,100 @@ from
 where
   json_array_length("assets") > $2
 
+-- DuplicateRepository.getAll (page)
+with
+  "duplicates" as (
+    select
+      "asset"."duplicateId",
+      json_agg(
+        "asset2"
+        order by
+          "asset"."localDateTime" asc
+      ) as "assets"
+    from
+      "asset"
+      inner join lateral (
+        select
+          "asset".*,
+          exists (
+            select
+              1
+            from
+              asset_lock
+            where
+              asset_lock."assetId" = "asset"."id"
+          ) as "isLocked",
+          to_json("asset_exif") as "exifInfo",
+          (
+            select
+              coalesce(json_agg(agg), '[]')
+            from
+              (
+                select
+                  "tag"."id",
+                  "tag"."value",
+                  "tag"."createdAt",
+                  "tag"."updatedAt",
+                  "tag"."color",
+                  "tag"."parentId"
+                from
+                  "tag"
+                  inner join "tag_asset" on "tag"."id" = "tag_asset"."tagId"
+                where
+                  "tag_asset"."assetId" = "asset"."id"
+              ) as agg
+          ) as "tags"
+        from
+          "asset_exif"
+        where
+          "asset_exif"."assetId" = "asset"."id"
+      ) as "asset2" on true
+    where
+      (
+        "asset"."visibility" in ('archive', 'timeline')
+        and not exists (
+          select
+            1
+          from
+            asset_lock
+          where
+            asset_lock."assetId" = "asset"."id"
+        )
+      )
+      and "asset"."ownerId" = $1::uuid
+      and "asset"."duplicateId" is not null
+      and "asset"."deletedAt" is null
+      and "asset"."stackId" is null
+      and not (
+        exists (
+          select
+            1
+          from
+            public.asset as nsfw_asset
+          where
+            nsfw_asset.id = "asset"."id"
+            and nsfw_asset.is_nsfw = true
+        )
+      )
+      and "asset"."duplicateId" > $2::uuid
+    group by
+      "asset"."duplicateId"
+    having
+      count(*) > $3
+    order by
+      "asset"."duplicateId"
+    limit
+      $4
+  )
+select
+  *
+from
+  "duplicates"
+where
+  json_array_length("assets") > $5
+order by
+  "duplicates"."duplicateId"
+
 -- DuplicateRepository.cleanupSingletonGroups
 with
   "singletons" as (

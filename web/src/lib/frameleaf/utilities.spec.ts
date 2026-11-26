@@ -53,7 +53,8 @@ describe('Command Center utilities', () => {
     sdk.getDuplicateReview.mockResolvedValue([]);
     sdk.getDuplicateDecisions.mockResolvedValue([]);
     await loadUtility('duplicates', new URL('https://example.test/user-settings?scope=someone-else'), false);
-    expect(sdk.getDuplicateReview).toHaveBeenCalledExactlyOnceWith();
+    // FL-1795: a page at a time, and never a scope
+    expect(sdk.getDuplicateReview).toHaveBeenCalledExactlyOnceWith({ take: 250 });
     expect(sdk.getDuplicateDecisions).toHaveBeenCalledExactlyOnceWith();
   });
   it('keeps bookmarked photo ids and review filters in the settings destination', async () => {
