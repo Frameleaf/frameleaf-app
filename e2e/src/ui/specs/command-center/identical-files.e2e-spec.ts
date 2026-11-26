@@ -169,6 +169,33 @@ test.describe('Identical files, Duplicates and Unused files (FL-416)', () => {
     await expect(page).toHaveURL(/section=unused-files/);
   });
 
+  test('Duplicates saves the order of the rules for which copy to keep (FL-832)', async ({ context, page }) => {
+    await setupIdenticalFilesMocks(context);
+    const saved: unknown[] = [];
+    await context.route('**/users/me/preferences', (route, request) => {
+      if (request.method() === 'PUT') {
+        saved.push(request.postDataJSON());
+      }
+      return route.fallback();
+    });
+    await page.goto('/user-settings?area=care&section=duplicates');
+
+    const rules = page.getByRole('list', { name: 'Which copy to suggest keeping' });
+    await expect(rules.getByRole('listitem')).toHaveCount(10);
+    await expect(page.getByText('Kept: IMG_2048.CR3, because of “RAW”, rule 1.')).toBeVisible();
+
+    await rules.getByRole('button', { name: 'Move HEIC up' }).click();
+    await expect(page.getByText('Kept: IMG_2048.CR3, because of “RAW”, rule 2.')).toBeVisible();
+    await expect.poll(() => saved.length).toBe(1);
+    expect((saved[0] as { duplicates: { keepRules: string[] } }).duplicates.keepRules.slice(0, 2)).toEqual([
+      'heic',
+      'raw',
+    ]);
+
+    await page.getByRole('button', { name: 'Reset to default order' }).click();
+    await expect.poll(() => saved.at(-1)).toEqual({ duplicates: { keepRules: [] } });
+  });
+
   test('Duplicates lists the files the check skipped', async ({ context, page }) => {
     await setupIdenticalFilesMocks(context, {
       identical: status({
