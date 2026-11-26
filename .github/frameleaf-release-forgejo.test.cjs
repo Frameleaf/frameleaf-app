@@ -33,7 +33,7 @@ function forgejoFixture(status = () => "success") {
     id: 65,
     commit_sha: sha,
     prettyref: "main",
-    trigger_event: "push",
+    trigger_event: "workflow_dispatch",
     status: jobs.some((job) => job.status === "failure")
       ? "failure"
       : "success",
@@ -96,6 +96,30 @@ test("Test qualification on Forgejo passes every lane but the Windows one it has
   );
   assert.equal(evidence.runId, 65);
   assert.equal(evidence.jobs.length, required.length - 1);
+});
+
+test("Test qualification on Forgejo accepts a lane that passed on a single-job rerun", async (t) => {
+  t.after(() => delete process.env.GITHUB_SERVER_URL);
+  process.env.GITHUB_SERVER_URL = "https://code.heroapps.ca";
+  const { request } = forgejoFixture((name) =>
+    name === "Unit Test CLI (Windows)" ? "skipped" : "success",
+  );
+  // Forgejo numbers attempts per job: only the rerun job moves to attempt 3.
+  const rerun = async (endpoint) => {
+    const result = await request(endpoint);
+    return Array.isArray(result)
+      ? result.map((job) =>
+          job.name === "Server Lane-2" ? { ...job, attempt: 3 } : job,
+        )
+      : result;
+  };
+  const evidence = await requireTestQualification(sha, (endpoint) =>
+    forgejoAsGithub(endpoint, rerun),
+  );
+  assert.equal(evidence.attempt, 3);
+  assert.equal(evidence.jobs.length, required.length - 1);
+  const stale = await forgejoAsGithub("actions/runs/65/attempts/1/jobs", rerun);
+  assert.equal(stale.jobs.length, 0);
 });
 
 test("Test qualification on Forgejo refuses a failed lane", async (t) => {

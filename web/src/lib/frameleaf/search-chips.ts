@@ -22,6 +22,7 @@ export const FILTER_ENTITY_FIELDS: Readonly<Record<string, FilterEntityKind>> = 
   tagIds: 'tag',
   albumIds: 'album',
   landmarkIds: 'landmark',
+  namedPlaceIds: 'namedPlace',
 };
 
 /** i18n keys for an entity whose name could not be read (hidden, unnamed, gone or not allowed). */
@@ -31,6 +32,7 @@ export const FILTER_ENTITY_FALLBACK_KEYS: Readonly<Record<FilterEntityKind, Tran
   tag: 'tag',
   album: 'album',
   landmark: 'frameleaf_landmark_kind_landmark',
+  namedPlace: 'frameleaf_named_places_your_place',
 };
 
 const ID_GROUPS = ['any', 'all', 'none', 'in', 'notIn'] as const;

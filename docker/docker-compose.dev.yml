@@ -149,8 +149,10 @@ services:
         frameleaf: ..
       args:
         - DEVICE=cpu # set to one of [armnn, cuda, rocm, openvino, openvino-wsl, rknn] for accelerated inference
+    # The worker has no token here, so it is published on loopback only. The server reaches it
+    # over the Compose network; for a remote worker see docs/docs/guides/remote-machine-learning.md.
     ports:
-      - 3003:3003
+      - 127.0.0.1:3003:3003
     volumes:
       - ../machine-learning/frameleaf_ml:/usr/src/frameleaf_ml
       - model_cache:/cache

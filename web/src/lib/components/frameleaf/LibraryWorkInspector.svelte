@@ -126,8 +126,12 @@
     const id = asset?.id;
     const version = generation;
     detailFailed = false;
-    detail = null;
-    rating = null;
+    // The list hands over a new object for the same item on every refresh or page: read it again
+    // behind what is shown, so a note being typed and an open viewer stay.
+    if (untrack(() => detail?.id) !== id) {
+      detail = null;
+      rating = null;
+    }
     if (!id) {
       return;
     }
@@ -140,7 +144,9 @@
 
         detail = response;
         loadedScope = response.libraryScope;
-        rating = getExifRating(response.exifInfo);
+        if (!ratingBusy) {
+          rating = getExifRating(response.exifInfo);
+        }
       })
       .catch((error) => {
         if (current && generation === version && asset?.id === id) {

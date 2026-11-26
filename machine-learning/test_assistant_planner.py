@@ -135,6 +135,35 @@ class TestPrompt:
         assert question not in messages[0]["content"]
         assert json.loads(messages[1]["content"])["question"] == question
 
+    def test_states_the_conventions_the_search_expects(self) -> None:
+        prompt = assistant_planner.SYSTEM_PROMPT
+        # FL-806: without these the measured models missed the media type and the end of a period
+        assert f"`{assistant_planner.TOOL_NAME}`" in prompt
+        assert '"IMAGE"' in prompt and '"VIDEO"' in prompt
+        assert "T23:59:59.999Z" in prompt
+
+    def test_transformers_turns_template_thinking_off(self) -> None:
+        import torch
+
+        asked: dict[str, Any] = {}
+
+        class Inputs(dict[str, Any]):
+            def to(self, _device: str) -> "Inputs":
+                return self
+
+        class Tokenizer:
+            def apply_chat_template(self, _messages: Any, **kwargs: Any) -> Inputs:
+                asked.update(kwargs)
+                return Inputs(input_ids=torch.zeros((1, 3), dtype=torch.long))
+
+            def decode(self, _ids: Any, **_: Any) -> str:
+                return "{}"
+
+        model = SimpleNamespace(generate=lambda **_: torch.zeros((1, 5), dtype=torch.long))
+        session = {"tokenizer": Tokenizer(), "model": model, "device": "cpu"}
+        assert assistant_planner._generate_transformers(session, []) == "{}"
+        assert asked["enable_thinking"] is False
+
 
 class FakePlanner:
     """Stands in for the planner model: answers each call with the next scripted output."""
@@ -260,6 +289,31 @@ class TestHardening:
                 model.load(allow_download=False)
             pipeline.assert_not_called()
         download.assert_not_called()
+
+    @pytest.mark.parametrize(
+        ("listing", "usable"),
+        [
+            ("Available devices:\n  Vulkan0: NVIDIA GeForce RTX 3060 (12288 MiB, 12000 MiB free)\n", True),
+            ("Available devices:\n  Vulkan0: llvmpipe (LLVM 19.1.7, 256 bits) (8192 MiB, 8192 MiB free)\n", False),
+            ("Available devices:\n  (none)\n", False),
+        ],
+    )
+    def test_llamacpp_needs_a_real_gpu(self, mocker: MockerFixture, listing: str, usable: bool) -> None:
+        assistant_planner._llama_gpu_devices.cache_clear()
+        mocker.patch.object(assistant_planner.shutil, "which", return_value="/opt/llama.cpp/llama-server")
+        mocker.patch.object(
+            assistant_planner.subprocess, "run", return_value=SimpleNamespace(stdout=listing, stderr="")
+        )
+        try:
+            assert assistant_planner._runtime_installed("llamacpp") is usable
+        finally:
+            assistant_planner._llama_gpu_devices.cache_clear()
+
+    def test_llamacpp_never_inherits_worker_secrets(self, mocker: MockerFixture) -> None:
+        mocker.patch.dict(
+            "os.environ", {"PATH": "/bin", "VK_ICD_FILENAMES": "/icd", "DB_PASSWORD": "x", "LD_PRELOAD": "m"}
+        )
+        assert assistant_planner._llama_env() == {"PATH": "/bin", "VK_ICD_FILENAMES": "/icd"}
 
     def test_predict_cannot_pass_options_to_the_planner(self) -> None:
         from pydantic import ValidationError

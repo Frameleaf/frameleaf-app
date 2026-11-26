@@ -1,5 +1,5 @@
 import { AssetOrder, TimeBucketDateType, type AssetResponseDto } from '@frameleaf/sdk';
-import { getOrderingDate, plainDateTimeCompare } from '$lib/utils/timeline-util';
+import { getOrderingDate, getTimelineGroupDay, plainDateTimeCompare } from '$lib/utils/timeline-util';
 import { TimelineManager } from '../timeline-manager.svelte';
 import type { TimelineMonth } from '../timeline-month.svelte';
 import type { AssetDescriptor, Direction, TimelineAsset, TimelinePageKey } from '../types';
@@ -83,6 +83,7 @@ async function getAssetByDayOffset(
 ) {
   const dateType = timelineManager.getDateType();
   const startDate = getOrderingDate(asset, dateType);
+  const startGroupDay = getTimelineGroupDay(asset, dateType);
   const timelineDay = timelineMonth.findTimelineDayForAsset(asset);
   for await (const targetAsset of timelineManager.assetsIterator({
     startTimelineMonth: timelineMonth,
@@ -94,7 +95,7 @@ async function getAssetByDayOffset(
     if (
       targetDate.year !== startDate.year ||
       targetDate.month !== startDate.month ||
-      targetDate.day !== startDate.day
+      getTimelineGroupDay(targetAsset, dateType) !== startGroupDay
     ) {
       return targetAsset;
     }
@@ -140,7 +141,7 @@ function compareTimelineOrder(order: AssetOrder, dateType: TimeBucketDateType, a
   const diff =
     aDate.year - bDate.year ||
     aDate.month - bDate.month ||
-    aDate.day - bDate.day ||
+    getTimelineGroupDay(a, dateType) - getTimelineGroupDay(b, dateType) ||
     plainDateTimeCompare(true, a.fileCreatedAt, b.fileCreatedAt);
   return order === AssetOrder.Desc ? -diff : diff;
 }

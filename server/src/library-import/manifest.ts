@@ -277,6 +277,8 @@ export const parseImportManifest = (input: unknown): ImportManifest => {
   }
   if (value.version === 5) {
     const claimed = new Set<string>();
+    // One lookup for every pair: this parse runs several times per import, on libraries of many live photos.
+    const grouped = new Set([...value.albums, ...value.stacks].flatMap((group) => group.assetIds));
     for (const pair of value.livePhotos) {
       const photo = assets.get(pair.photoAssetId),
         video = assets.get(pair.videoAssetId);
@@ -301,11 +303,7 @@ export const parseImportManifest = (input: unknown): ImportManifest => {
         video!.metadata.deletedAt !== undefined
       )
         fail('LIVE_PHOTO_STATE_UNSUPPORTED');
-      if (
-        value.albums.some((album) => album.assetIds.includes(pair.videoAssetId)) ||
-        value.stacks.some((stack) => stack.assetIds.includes(pair.videoAssetId))
-      )
-        fail('LIVE_PHOTO_MOTION_RELATIONSHIP_UNSUPPORTED');
+      if (grouped.has(pair.videoAssetId)) fail('LIVE_PHOTO_MOTION_RELATIONSHIP_UNSUPPORTED');
     }
   }
   return value;

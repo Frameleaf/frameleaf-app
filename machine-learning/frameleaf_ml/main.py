@@ -32,11 +32,12 @@ from frameleaf_ml.models import assistant_planner, get_model_deps
 from frameleaf_ml.models.base import InferenceModel, ModelRuntimeUnavailable, ModelUnavailableError
 from frameleaf_ml.models.clip.hugging_face import inspect_custom_clip_model
 from frameleaf_ml.models.constants import SUPPORTED_PROVIDERS, get_model_source, is_custom_clip_model
-from frameleaf_ml.models.facial_recognition.landmarks import FaceLandmarker, eye_scores
+from frameleaf_ml.models.facial_recognition.landmarks import FaceLandmarker, eye_scores, grey_image
 from frameleaf_ml.models.musicgen import MusicGenModel
 from frameleaf_ml.models.subject_matte import MAX_FRAME_BYTES as SUBJECT_MATTE_MAX_FRAME_BYTES
 from frameleaf_ml.models.subject_matte import MAX_FRAMES as SUBJECT_MATTE_MAX_FRAMES
-from frameleaf_ml.models.subject_matte import SubjectMatteModel, open_frame
+from frameleaf_ml.models.subject_matte import EncodedFrames, SubjectMatteModel
+from frameleaf_ml.models.subject_matte import frame_size as subject_matte_frame_size
 from frameleaf_ml.models.transcribe import (
     AudioFormatError,
     TranscribeModel,
@@ -98,13 +99,19 @@ downloading: set[Path] = set()
 downloading_lock = threading.Lock()
 active_requests = 0
 last_called: float | None = None
+# Cut-outs run one at a time (see /subject-matte).
+subject_matte_turn = asyncio.Lock()
 # Hands the memory a burst of requests used back to the system shortly after the last one finishes.
 release: asyncio.TimerHandle | None = None
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncGenerator[None, None]:
-    global thread_pool, load_pool
+    global thread_pool, load_pool, last_called
+    # A new worker has not been called yet. A `last_called` left by an earlier lifespan in this process (each
+    # test client is one) made the idle task's first poll SIGINT the process at once (FL-1733).
+    last_called = None
+    idle_task: asyncio.Task[None] | None = None
     source_url, source_setting = model_source()
     log.info(f"Downloading Frameleaf models from {source_url} ({source_setting}).")
     log.info(
@@ -124,12 +131,14 @@ async def lifespan(_: FastAPI) -> AsyncGenerator[None, None]:
             )
             log.info(f"Initialized request thread pool with {settings.request_threads} threads.")
         if settings.model_ttl > 0 and settings.model_ttl_poll_s > 0:
-            asyncio.ensure_future(idle_shutdown_task())
+            idle_task = asyncio.ensure_future(idle_shutdown_task())
         if settings.preload is not None:
             await preload_models(settings.preload)
             allocator.release()
         yield
     finally:
+        if idle_task is not None:
+            idle_task.cancel()
         # IMPORTANT ordering for actual GPU memory release:
         #   1. Quiesce the thread pool so no in-flight `predict` thread still
         #      holds a model instance via its local stack.
@@ -243,6 +252,16 @@ async def update_state() -> AsyncGenerator[None, None]:
             release = asyncio.get_running_loop().call_later(5, allocator.release)
 
 
+# Longer than any Hub `owner/name` (96 characters a side) or published model name.
+MAX_MODEL_NAME_LENGTH = 256
+
+
+def mark_called() -> None:
+    """Hold off the idle shutdown for a request whose work has started but is not counted as active yet."""
+    global last_called
+    last_called = time.time()
+
+
 def get_entries(entries: str = Form()) -> InferenceEntries:
     try:
         request: PipelineRequest = orjson.loads(entries)
@@ -260,8 +279,11 @@ def get_entries(entries: str = Form()) -> InferenceEntries:
                 if not isinstance(raw_options, dict):
                     raise HTTPException(422, "Invalid request format: options must be an object.")
                 validated_options = validate_options(task, type, raw_options)
+                model_name = entry["modelName"]
+                if not isinstance(model_name, str) or not 0 < len(model_name) <= MAX_MODEL_NAME_LENGTH:
+                    raise HTTPException(422, "Invalid request format: modelName must be a short string.")
                 parsed: InferenceEntry = {
-                    "name": entry["modelName"],
+                    "name": model_name,
                     "task": task,
                     "type": type,
                     "options": validated_options,
@@ -609,6 +631,7 @@ async def predict_bound(
 
 
 eye_landmarker: FaceLandmarker | None = None
+MAX_EYE_BOX_COORDINATE = 1_000_000
 
 
 def _eye_scores_for_boxes(image: bytes, boxes: list[list[float]]) -> list[dict[str, float | None]]:
@@ -618,7 +641,8 @@ def _eye_scores_for_boxes(image: bytes, boxes: list[list[float]]) -> list[dict[s
     pixels = np.asarray(decode_pil(image), dtype=np.uint8)
     array = np.asarray(boxes, dtype=np.float32).reshape(-1, 4)
     points = eye_landmarker.predict(pixels, array)
-    scores = [eye_scores(pixels, box, face) for box, face in zip(array, points)]
+    grey = grey_image(pixels)
+    scores = [eye_scores(grey, box, face) for box, face in zip(array, points)]
     return [{"eyesOpen": open_, "eyeSharpness": sharp} for open_, sharp in scores]
 
 
@@ -636,7 +660,9 @@ async def face_eye_scores(image: bytes = File(), boxes: str = Form()) -> ORJSONR
             not isinstance(box, list)
             or len(box) != 4
             or any(type(v) not in (int, float) or not math.isfinite(v) for v in box)
-            or not (box[0] < box[2] and box[1] < box[3])
+            # Beyond these, the 32-bit box the landmarker reads turns infinite or loses its size.
+            or any(abs(v) > MAX_EYE_BOX_COORDINATE for v in box)
+            or not (box[2] - box[0] >= 1 and box[3] - box[1] >= 1)
             for box in parsed
         )
     ):
@@ -798,6 +824,7 @@ async def music(entries: InferenceEntries = Depends(get_entries)) -> StreamingRe
         raise HTTPException(400, "A music request names exactly one music entry")
     entry = without_deps[0]
     options = dict(entry["options"])
+    mark_called()
     model = await model_cache.get(entry["name"], entry["type"], entry["task"], ttl=settings.model_ttl)
     model = await load(model)
     assert isinstance(model, MusicGenModel)
@@ -1000,7 +1027,8 @@ async def assistant_plan(body: AssistantPlanRequest) -> ORJSONResponse:
         assistant_planner.check_schema(body.tool_schema)
     except assistant_planner.SchemaError as error:
         raise HTTPException(400, str(error)) from error
-    status = assistant_planner.planner_status(body.model_name)
+    # The first check runs `llama-server --list-devices`, which can take seconds.
+    status = await asyncio.to_thread(assistant_planner.planner_status, body.model_name)
     if not status["available"]:
         return ORJSONResponse({"detail": "assistant_planner_unavailable", "reason": status["reason"]}, status_code=503)
     question = assistant_planner.clean_text(body.question, assistant_planner.MAX_QUESTION_CHARS)
@@ -1058,22 +1086,27 @@ async def subject_matte(
     entry = without_deps[0]
     options = dict(entry["options"])
     device = options.pop("device", None)
-    # Every frame is checked from its header (size, equality with the first) before it is decoded, so
-    # an oversized clip is refused for the cost of one header read, not MAX_FRAMES RGB buffers.
-    images: list[Image] = []
+    # Every frame is checked from its header (size, equality with the first), so an oversized clip is
+    # refused for the cost of one header read. Frames stay encoded and are decoded one at a time as the
+    # model follows them, never MAX_FRAMES RGB buffers at once.
+    encoded: list[bytes] = []
+    size: tuple[int, int] | None = None
     try:
         for frame in frames:
+            mark_called()
             if frame.size is not None and frame.size > SUBJECT_MATTE_MAX_FRAME_BYTES:
                 raise ValueError(f"A cut-out frame is at most {SUBJECT_MATTE_MAX_FRAME_BYTES // (1024 * 1024)} MiB")
             data = await frame.read()
-            images.append(await run(open_frame, data, images[0].size if images else None))
+            size = await run(subject_matte_frame_size, data, size)
+            encoded.append(data)
     except ValueError as error:
         raise HTTPException(400, str(error)[:512]) from error
     except Exception as error:
         raise HTTPException(400, "A cut-out frame is not an image") from error
-    sizes = {image.size for image in images}
-    if len(sizes) != 1 or min(next(iter(sizes))) <= 0:
+    if size is None or min(size) <= 0:
         raise HTTPException(400, "Every cut-out frame must be the same, non-empty size")
+    images = EncodedFrames(encoded, size)
+    mark_called()
     model = await model_cache.get(
         entry["name"], entry["type"], entry["task"], ttl=settings.model_ttl, **({"device": device} if device else {})
     )
@@ -1086,21 +1119,25 @@ async def subject_matte(
         # Counted here, as for /music: the stream outlives the handler.
         active_requests += 1
         try:
-            while True:
-                last_called = time.time()
-                try:
-                    item = await run(next, items, None)
-                except ValueError as error:
-                    # The server reads at most 512 characters of a message (its stream schema).
-                    yield _inference_stream_error(ModelTask.SUBJECT_MATTE, str(error)[:512])
-                    return
-                except Exception as error:
-                    log.error(f"Cut-out failed: {error}")
-                    yield _inference_stream_error(ModelTask.SUBJECT_MATTE, "Cut-out failed")
-                    return
-                if item is None:
-                    break
-                yield orjson.dumps(item) + b"\n"
+            last_called = time.time()
+            # One cut-out runs at a time. Later ones wait here, on the event loop, rather than in pool
+            # threads blocked on the model's lock, which could starve the running one (InferenceBusy).
+            async with subject_matte_turn:
+                while True:
+                    last_called = time.time()
+                    try:
+                        item = await run(next, items, None)
+                    except ValueError as error:
+                        # The server reads at most 512 characters of a message (its stream schema).
+                        yield _inference_stream_error(ModelTask.SUBJECT_MATTE, str(error)[:512])
+                        return
+                    except Exception as error:
+                        log.error(f"Cut-out failed: {error}")
+                        yield _inference_stream_error(ModelTask.SUBJECT_MATTE, "Cut-out failed")
+                        return
+                    if item is None:
+                        break
+                    yield orjson.dumps(item) + b"\n"
             yield orjson.dumps({"type": "done"}) + b"\n"
         finally:
             try:

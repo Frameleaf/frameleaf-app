@@ -6,6 +6,10 @@ umask 077
 : "${RUNNER_TEMP:?Hosted runner temporary directory required}"
 : "${GITHUB_ENV:?Hosted environment file required}"
 BUDDY_ROOT=$(mktemp -d "$RUNNER_TEMP/fl310-buddy.XXXXXX")
+# The server keeps max(10 GB, 10% of the disk) free for Buddy staging. On a shared 1.9 TB runner pool that is
+# ~190 GB, so the lane failed whenever the pool dipped below it. A fixed 16 GB tmpfs is real capacity the server
+# measures itself (reserve 10 GB, ~6 GB left for the few hundred MB the test writes), on any runner.
+sudo mount -t tmpfs -o "size=16g,mode=700,uid=$(id -u),gid=$(id -g)" fl310-buddy "$BUDDY_ROOT"
 printf 'BUDDY_ROOT=%s\nBUDDY_UID=%s\nBUDDY_GID=%s\n' "$BUDDY_ROOT" "$(id -u)" "$(id -g)" >> "$GITHUB_ENV"
 touch "$BUDDY_ROOT/.fl310-buddy-fixture"
 mkdir -p "$BUDDY_ROOT/tls" "$BUDDY_ROOT/evidence"

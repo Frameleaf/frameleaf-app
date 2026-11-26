@@ -15,6 +15,7 @@ import {
 import { PhotographyWorkflowRepository } from 'src/repositories/photography-workflow.repository.js';
 import { PhotographyWorkspaceRepository } from 'src/repositories/photography-workspace.repository.js';
 import { type ClientsPaymentEvent, ClientsPaymentsService } from 'src/services/clients-payments.service.js';
+import { refundsWholePayment } from 'src/utils/clients-payments.js';
 
 const SLUG = /^[A-Za-z0-9_-]{16}$/;
 const unavailable = () => new NotFoundException('This payment link is unavailable');
@@ -195,6 +196,10 @@ export class PhotographyPaymentService {
     if (event.type === 'payment.refunded') {
       // Cloud took the reference from this payment's own PaymentIntent; a different intent already on file is not it.
       if (!event.paymentIntent || (payment.providerRef && payment.providerRef !== event.paymentIntent)) return;
+      if (!refundsWholePayment(event.amount, payment.amount)) {
+        this.logger?.warn(`Payment ${payment.id} was partly refunded in Stripe; it stays recorded as paid`);
+        return;
+      }
     } else if (
       // No session on file means checkout creation failed before its id came back; the reference, which Cloud read
       // from that session's own metadata, still ties the event to this payment.

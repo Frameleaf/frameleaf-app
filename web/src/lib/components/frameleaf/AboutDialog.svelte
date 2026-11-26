@@ -13,6 +13,7 @@
    */
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import FormatMessage from '$lib/elements/FormatMessage.svelte';
+  import { providerAccountLink } from '$lib/frameleaf/personal-access';
   import {
     checkForUpdates,
     isPrereleaseVersion,
@@ -47,11 +48,13 @@
   const licenceUrl = 'https://github.com/immich-app/immich/blob/main/LICENSE';
 
   type Fact = { label: string; value?: string; href?: string; code?: boolean };
+  /** An address from the server's settings, as written, only when it is a web page. */
+  const webLink = (value?: string) => (providerAccountLink(value) ? value : undefined);
   const facts: Fact[] = $derived(
     (
       [
-        { label: $t('version'), value: info.version, href: info.versionUrl || undefined },
-        { label: $t('build'), value: info.build, href: info.buildUrl, code: true },
+        { label: $t('version'), value: info.version, href: webLink(info.versionUrl) },
+        { label: $t('build'), value: info.build, href: webLink(info.buildUrl), code: true },
         { label: $t('frameleaf_about_server'), value: location.host },
         { label: $t('frameleaf_about_runtime'), value: info.nodejs && `Node.js ${info.nodejs}` },
         {
@@ -65,11 +68,11 @@
             .join(' · '),
         },
         { label: $t('frameleaf_about_licence'), value: 'AGPL-3.0', href: licenceUrl },
-        { label: $t('repository'), value: info.repository, href: info.repositoryUrl },
+        { label: $t('repository'), value: info.repository, href: webLink(info.repositoryUrl) },
         {
           label: $t('source'),
           value: info.sourceRef && info.sourceCommit ? `${info.sourceRef}@${info.sourceCommit.slice(0, 9)}` : undefined,
-          href: info.sourceUrl,
+          href: webLink(info.sourceUrl),
           code: true,
         },
       ] satisfies Fact[]

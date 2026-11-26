@@ -30,6 +30,7 @@ import {
   fieldKey,
   isRegionInsideCrop,
   lineKey,
+  printBackSearchText,
   regionOf,
 } from 'src/utils/documents.js';
 import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
@@ -143,7 +144,7 @@ export class DocumentService {
         : this.documentRepository.create({ ...values, assetId: id }));
     });
 
-    return this.respond(await this.loadContext(auth, id));
+    return this.respondAfterLineChange(auth, id);
   }
 
   async removeLineEdit(auth: AuthDto, id: string, editId: string, revision: number): Promise<DocumentResponseDto> {
@@ -156,7 +157,16 @@ export class DocumentService {
     }
 
     await this.write(() => this.documentRepository.delete(edit.id, id, revision));
-    return this.respond(await this.loadContext(auth, id));
+    return this.respondAfterLineChange(auth, id);
+  }
+
+  /** FL-967: search reads a print's back through its corrections, so a changed line refreshes that text. */
+  private async respondAfterLineChange(auth: AuthDto, id: string) {
+    const context = await this.loadContext(auth, id);
+    if (context.asset.isPrintBack) {
+      await this.ocrRepository.setPrintBackSearchText(id, printBackSearchText(context.lines, context.edits));
+    }
+    return this.respond(context);
   }
 
   async editField(
@@ -295,7 +305,9 @@ export class DocumentService {
 
     // The hidden video part of a live photo is never read and never a document, like every hidden
     // source. A line the crop removes is left out even if its stored visibility says otherwise.
-    const recognized = asset.visibility === AssetVisibility.Hidden ? [] : await this.ocrRepository.getByAssetId(id);
+    // FL-967: the back of a print is the exception: hidden, read, and corrected here by its owner.
+    const unread = asset.visibility === AssetVisibility.Hidden && !asset.isPrintBack;
+    const recognized = unread ? [] : await this.ocrRepository.getByAssetId(id);
     const lines = recognized.filter((line) => isRegionVisible(line));
     const edits = await this.documentRepository.getEdits(id);
 

@@ -5,13 +5,11 @@ import { Kysely, type RawBuilder, type Transaction, sql } from 'kysely';
 import { Migrator } from 'kysely/migration';
 import { InjectKysely } from 'nestjs-kysely';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import * as semver from 'semver';
 import z from 'zod';
 import type { DB } from 'src/schema/index.js';
 import {
   CLIP_MODEL_INFO,
   CUSTOM_CLIP_DIM_SIZE,
-  EXTENSION_NAMES,
   POSTGRES_VERSION_RANGE,
   VECTOR_INDEX_TABLES,
   VECTOR_VERSION_RANGE,
@@ -171,35 +169,6 @@ export class DatabaseRepository {
     await sql`CREATE EXTENSION IF NOT EXISTS ${sql.id(extension)} CASCADE`.execute(this.db);
   }
 
-  async dropExtension(extension: DatabaseExtension): Promise<void> {
-    this.logger.log(`Dropping ${EXTENSION_NAMES[extension]} extension`);
-    await sql`DROP EXTENSION IF EXISTS ${sql.raw(extension)}`.execute(this.db);
-  }
-
-  async updateVectorExtension(extension: VectorExtension, targetVersion?: string): Promise<void> {
-    const [{ availableVersion, installedVersion }] = await this.getExtensionVersions([extension]);
-    if (!installedVersion) {
-      throw new Error(`${EXTENSION_NAMES[extension]} extension is not installed`);
-    }
-
-    if (!availableVersion) {
-      throw new Error(`No available version for ${EXTENSION_NAMES[extension]} extension`);
-    }
-    targetVersion ??= availableVersion;
-
-    if (!semver.diff(installedVersion, targetVersion)) {
-      return;
-    }
-
-    await Promise.all([
-      this.db.schema.dropIndex(VectorIndex.Clip).ifExists().execute(),
-      this.db.schema.dropIndex(VectorIndex.Face).ifExists().execute(),
-    ]);
-
-    await sql`ALTER EXTENSION ${sql.raw(extension)} UPDATE TO ${sql.lit(targetVersion)}`.execute(this.db);
-    await Promise.all([this.reindexVectors(VectorIndex.Clip), this.reindexVectors(VectorIndex.Face)]);
-  }
-
   async prewarm(_index: VectorIndex): Promise<void> {
     // HNSW pages are populated on demand by PostgreSQL's shared buffer cache.
   }
@@ -330,7 +299,7 @@ export class DatabaseRepository {
       .transaction()
       .setIsolationLevel('read committed')
       .execute(async (trx) => {
-        await this.assertLegacyClipIndex(trx);
+        await this.lockClipIndex(trx);
         for (const table of tables) {
           const constraint = `${table}_dim_size_constraint`;
           await sql`delete from ${sql.table(table)}`.execute(trx);
@@ -339,6 +308,8 @@ export class DatabaseRepository {
             trx,
           );
         }
+        // Every vector table is empty only when all three exist, which they do outside a partial test schema.
+        if (tables.length === CLIP_TABLES.length) await this.resetClipIndex(trx);
       });
 
     const vectorExtension = await this.getVectorExtension();
@@ -346,7 +317,7 @@ export class DatabaseRepository {
       .transaction()
       .setIsolationLevel('read committed')
       .execute(async (trx) => {
-        await this.assertLegacyClipIndex(trx);
+        await this.lockClipIndex(trx);
         if (tables.includes('smart_search')) {
           await sql`drop index if exists clip_index`.execute(trx);
         }
@@ -389,18 +360,33 @@ export class DatabaseRepository {
       .transaction()
       .setIsolationLevel('read committed')
       .execute(async (trx) => {
-        await this.assertLegacyClipIndex(trx);
+        await this.lockClipIndex(trx);
         await sql`truncate ${sql.table('smart_search')}, ${sql.table('smart_search_description')}, ${sql.table('video_moment_frame_embedding')}`.execute(
           trx,
         );
+        await this.resetClipIndex(trx);
       });
   }
 
-  private async assertLegacyClipIndex(tx: Transaction<DB>): Promise<void> {
-    // Serialize destructive legacy resets with desktop index admission.
+  /**
+   * A search model change empties the library's vectors, and the desktop vector index goes back to unadmitted
+   * with them: it was admitted for the old model's embedding space. The first desktop granted the new model
+   * admits its space again. Serialized with that admission (`DesktopClipIndexRepository.admit`); call it in
+   * the transaction that removed the vectors, so no producer is still in use.
+   */
+  private async resetClipIndex(tx: Transaction<DB>): Promise<void> {
+    await this.lockClipIndex(tx);
+    await sql`INSERT INTO desktop_clip_index (scope, "revisionId", space) VALUES ('unadmitted', uuid_generate_v4(), NULL)
+      ON CONFLICT (scope) DO NOTHING`.execute(tx);
+    await sql`UPDATE desktop_clip_producer SET scope = 'unadmitted' WHERE scope <> 'unadmitted'`.execute(tx);
+    await sql`DELETE FROM desktop_clip_index WHERE scope = 'clip'`.execute(tx);
+    await sql`DELETE FROM desktop_clip_producer WHERE key <> 'legacy'`.execute(tx);
+    await sql`INSERT INTO desktop_clip_producer (key) VALUES ('legacy') ON CONFLICT (key) DO NOTHING`.execute(tx);
+  }
+
+  /** Serialize destructive vector resets with desktop index admission. */
+  private async lockClipIndex(tx: Transaction<DB>): Promise<void> {
     await sql`SELECT pg_advisory_xact_lock(912741, 1)`.execute(tx);
-    if (await tx.selectFrom('desktop_clip_index').select('scope').where('scope', '=', 'clip').executeTakeFirst())
-      throw new Error('desktop_clip_index_admitted');
   }
 
   async vacuum({ analyze = false, table }: { analyze?: boolean; table?: keyof DB } = {}): Promise<void> {

@@ -149,7 +149,7 @@
   },
   "font": {
     "rule": "one family, the UI font; no monospace anywhere, not even for codes, paths, keys or timecodes; numbers that must line up use tabular-nums",
-    "ui": "-apple-system, BlinkMacSystemFont, system-ui, Inter, Segoe UI, sans-serif"
+    "ui": "Inter, -apple-system, BlinkMacSystemFont, system-ui, Segoe UI, sans-serif"
   },
   "icon": {
     "hero": 28,

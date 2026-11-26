@@ -31,6 +31,17 @@ function snapshot(filename) {
   };
 }
 
+const SERVER_DIGEST = "a".repeat(64);
+const ML_DIGEST = "b".repeat(64);
+const sha256 = (file) =>
+  crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex");
+const attested = (
+  compose = path.join(__dirname, "../docker/docker-compose.yml"),
+) => ({
+  "docker-compose.yml": `sha256:${sha256(compose)}`,
+  "example.env": `sha256:${sha256(path.join(__dirname, "../docker/example.env"))}`,
+});
+
 function runInstaller(parent, overrides = {}) {
   const tools = path.join(parent, "offline-tools");
   const log = path.join(parent, "commands.log");
@@ -70,7 +81,30 @@ esac
     path.join(tools, "docker"),
     `#!/usr/bin/env bash
 printf 'docker %s\\n' "$*" >> "$INSTALL_TEST_LOG"
+case "$*" in
+  'compose pull --quiet frameleaf-server frameleaf-machine-learning') exit 0 ;;
+  'compose config --images frameleaf-server') echo ghcr.io/frameleaf/frameleaf-server:latest; exit 0 ;;
+  'compose config --images frameleaf-machine-learning') echo ghcr.io/frameleaf/frameleaf-machine-learning:latest; exit 0 ;;
+  'image inspect '*frameleaf-server:latest) echo "ghcr.io/frameleaf/frameleaf-server@sha256:$INSTALL_TEST_SERVER_DIGEST"; exit 0 ;;
+  'image inspect '*frameleaf-machine-learning:latest) echo "ghcr.io/frameleaf/frameleaf-machine-learning@sha256:$INSTALL_TEST_ML_DIGEST"; exit 0 ;;
+esac
 [[ "$*" == 'compose' || "$*" == 'compose up --remove-orphans -d' ]]
+`,
+    { mode: 0o755 },
+  );
+  // Frameleaf's signatures as cosign reports them: the digests in INSTALL_TEST_SIGNED verify, and the server
+  // image's release manifest names the assets in INSTALL_TEST_ATTESTED.
+  fs.writeFileSync(
+    path.join(tools, "cosign"),
+    `#!/usr/bin/env bash
+printf 'cosign %s\\n' "$1" >> "$INSTALL_TEST_LOG"
+[[ "$2" == '--key' && -s "$3" ]] || exit 91
+digest="\${@: -1}"
+[[ " $INSTALL_TEST_SIGNED " == *" \${digest##*@sha256:} "* ]] || exit 1
+if [[ "$1" == verify-attestation ]]; then
+  payload=$(printf '{"_type":"https://in-toto.io/Statement/v0.1","predicate":{"assets":%s}}' "$INSTALL_TEST_ATTESTED" | base64 | tr -d '\\n')
+  printf '{"payload":"%s","payloadType":"application/vnd.in-toto+json"}\\n' "$payload"
+fi
 `,
     { mode: 0o755 },
   );
@@ -93,6 +127,12 @@ echo 127.0.0.1
       INSTALL_TEST_COMPOSE: compose,
       INSTALL_TEST_ENV: env,
       INSTALL_TEST_SUMS: sums,
+      INSTALL_TEST_SERVER_DIGEST: SERVER_DIGEST,
+      INSTALL_TEST_ML_DIGEST: ML_DIGEST,
+      INSTALL_TEST_SIGNED: `${SERVER_DIGEST} ${ML_DIGEST}`,
+      INSTALL_TEST_ATTESTED: JSON.stringify(attested()),
+      // The machine running the tests may have cosign; each test chooses.
+      FRAMELEAF_COSIGN: "frameleaf-test-no-cosign",
       ...overrides,
     },
   });
@@ -278,4 +318,89 @@ test("non-fresh destinations are refused before configuration, credentials or me
       fs.rmSync(parent, { recursive: true, force: true });
     }
   }
+});
+
+test("with cosign, the images must carry Frameleaf's signature and the release manifest must name the downloads", () => {
+  const signedRun = (overrides) => {
+    const parent = fs.mkdtempSync(
+      path.join(os.tmpdir(), "frameleaf-install-signed-"),
+    );
+    try {
+      return runInstaller(parent, { FRAMELEAF_COSIGN: "cosign", ...overrides });
+    } finally {
+      fs.rmSync(parent, { recursive: true, force: true });
+    }
+  };
+  const good = signedRun({});
+  assert.equal(good.status, 0, good.stderr);
+  assert.match(good.stdout, /signed by Frameleaf/);
+  assert.deepEqual(
+    good.commands.filter((line) => line.startsWith("cosign")),
+    ["cosign verify", "cosign verify-attestation", "cosign verify"],
+  );
+  assert.ok(good.commands.includes("docker compose up --remove-orphans -d"));
+
+  const other = fs.mkdtempSync(path.join(os.tmpdir(), "frameleaf-other-"));
+  try {
+    const tampered = path.join(other, "docker-compose.yml");
+    fs.writeFileSync(tampered, "services: {}\n");
+    const refused = signedRun({
+      INSTALL_TEST_ATTESTED: JSON.stringify(attested(tampered)),
+    });
+    assert.equal(refused.status, 20, refused.stderr);
+    assert.match(
+      refused.stderr,
+      /does not name these docker-compose.yml and example.env files/,
+    );
+    assert.ok(
+      !refused.commands.includes("docker compose up --remove-orphans -d"),
+    );
+  } finally {
+    fs.rmSync(other, { recursive: true, force: true });
+  }
+
+  const unsigned = signedRun({ INSTALL_TEST_SIGNED: SERVER_DIGEST });
+  assert.equal(unsigned.status, 20, unsigned.stderr);
+  assert.match(
+    unsigned.stderr,
+    /frameleaf-machine-learning@sha256:b+ does not carry Frameleaf's signature/,
+  );
+  assert.ok(
+    !unsigned.commands.includes("docker compose up --remove-orphans -d"),
+  );
+});
+
+test("without cosign the install goes on with a warning, unless signatures are required", () => {
+  const parent = fs.mkdtempSync(
+    path.join(os.tmpdir(), "frameleaf-install-unsigned-"),
+  );
+  const required = fs.mkdtempSync(
+    path.join(os.tmpdir(), "frameleaf-install-unsigned-"),
+  );
+  try {
+    const warned = runInstaller(parent);
+    assert.equal(warned.status, 0, warned.stderr);
+    assert.match(warned.stderr, /cosign is not installed/);
+    const refused = runInstaller(required, {
+      FRAMELEAF_REQUIRE_SIGNATURES: "1",
+    });
+    assert.equal(refused.status, 20, refused.stderr);
+    assert.ok(
+      !refused.commands.some((line) => line.startsWith("docker compose up")),
+    );
+  } finally {
+    fs.rmSync(parent, { recursive: true, force: true });
+    fs.rmSync(required, { recursive: true, force: true });
+  }
+});
+
+test("the installer carries the repository's signing keys", () => {
+  const script = fs.readFileSync(path.join(__dirname, "../install.sh"), "utf8");
+  for (const name of ["cosign.pub", "cosign-previous.pub"])
+    assert.ok(
+      script.includes(
+        fs.readFileSync(path.join(__dirname, "..", name), "utf8").trim(),
+      ),
+      `install.sh does not carry ${name}`,
+    );
 });

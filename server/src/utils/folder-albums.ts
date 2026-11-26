@@ -1,13 +1,15 @@
 import { sql } from 'kysely';
 import path from 'node:path';
-import { AssetType, AssetVisibility } from 'src/enum.js';
+import { AlbumKind, AssetType, AssetVisibility } from 'src/enum.js';
 import { isSameOrInside } from 'src/utils/library-paths.js';
 import { isNotLocked } from 'src/utils/locked.js';
 
 /**
  * FL-838: folder albums. A library with `folderAlbums` on keeps an album for each folder under its import folders
- * that holds photos or videos, and for each folder above one up to the import folder itself, nested as the folders
- * are. A folder holding only folders is a collection.
+ * that holds photos or videos, and for each folder above one, nested as the folders are. The import folder itself
+ * gets an album, named after the library, only for photos loose in it; it never holds the others. A top-level folder
+ * holding only folders is a collection; deeper, such a folder is an album that holds albums (collections are
+ * top-level only).
  */
 
 /** Albums nest at most 32 levels deep; a folder further down than that gets no album. */
@@ -32,7 +34,7 @@ export const isFolderPhoto = (alias: string) =>
 
 export type FolderNode = {
   folderPath: string;
-  /** null for an import folder */
+  /** null for an import folder and the folders directly in it */
   parentPath: string | null;
   /** photos and videos directly in this folder */
   photos: number;
@@ -40,12 +42,20 @@ export type FolderNode = {
   depth: number;
 };
 
-/** The album name for a folder: its own name, or `fallback` for the top of the disk. */
-export const folderName = (folderPath: string, fallback: string) => path.posix.basename(folderPath) || fallback;
+/** The album name for a folder: its own name, or `libraryName` for an import folder (`roots`). */
+export const folderName = (folderPath: string, libraryName: string, roots: string[]) =>
+  (!roots.includes(folderPath) && path.posix.basename(folderPath)) || libraryName;
+
+/** A top-level folder holding only folders is a collection; every other folder is an album. */
+export const folderKind = (node: Pick<FolderNode, 'photos' | 'depth'>) =>
+  node.photos === 0 && node.depth === 2 ? AlbumKind.Collection : AlbumKind.Album;
 
 const depthOf = (folderPath: string) => (folderPath === '/' ? 0 : folderPath.split('/').length - 1);
 
-/** Every folder that gets an album: those holding photos, and the folders above them up to their import folder. */
+/**
+ * Every folder that gets an album: those holding photos, and the folders above them up to (not including) their import
+ * folder. The import folder is in only when photos are loose in it.
+ */
 export const buildFolderTree = (
   roots: string[],
   counts: { folderPath: string; photos: number }[],
@@ -75,10 +85,13 @@ export const buildFolderTree = (
       continue;
     }
     for (const [index, current] of chain.entries()) {
+      if (index === 0 && current !== folderPath) {
+        continue;
+      }
       if (!tree.has(current)) {
         tree.set(current, {
           folderPath: current,
-          parentPath: index === 0 ? null : chain[index - 1],
+          parentPath: index <= 1 ? null : chain[index - 1],
           photos: 0,
           depth: index + 1,
         });

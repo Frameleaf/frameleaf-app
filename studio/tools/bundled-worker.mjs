@@ -13,7 +13,7 @@
 //   FRAMELEAF_STUDIO_WORKER_MAX_INPUT_BYTES       media one export may read (default 8 GiB)
 //   FRAMELEAF_STUDIO_WORKER_WORK_DIR              private scratch space (default: the OS temp dir)
 //   FRAMELEAF_STUDIO_CHROMIUM                     the browser binary (default /usr/bin/chromium)
-import { readFile, stat } from 'node:fs/promises';
+import { readFile, readdir, rm, stat } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -26,15 +26,40 @@ const GIB = 1024 ** 3;
 const SESSION_RENEW_WINDOW_MS = 10 * 60_000;
 const log = (message) => console.log(`[studio-worker] ${message}`);
 
+/** A mistyped limit keeps its default: NaN would turn the input cap off and the poll into a busy loop. */
+const positive = (value, fallback) => {
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? number : fallback;
+};
+
 export const workerConfig = (env = process.env) => ({
   enabled: !['false', '0', 'no', 'off'].includes(String(env.FRAMELEAF_STUDIO_WORKER ?? 'true').toLowerCase()),
   trustFile: path.join(env.FRAMELEAF_STUDIO_WORKER_TRUST_DIR || '/run/frameleaf/studio-worker', 'enrolment.json'),
   serverUrl: env.FRAMELEAF_STUDIO_WORKER_SERVER_URL || 'http://frameleaf-server:2283',
   memoryBytes: env.FRAMELEAF_STUDIO_WORKER_MEMORY_BYTES ? BigInt(env.FRAMELEAF_STUDIO_WORKER_MEMORY_BYTES) : null,
-  maxInputBytes: Number(env.FRAMELEAF_STUDIO_WORKER_MAX_INPUT_BYTES || 8 * GIB),
+  maxInputBytes: positive(env.FRAMELEAF_STUDIO_WORKER_MAX_INPUT_BYTES, 8 * GIB),
   workRoot: path.join(env.FRAMELEAF_STUDIO_WORKER_WORK_DIR || os.tmpdir(), 'frameleaf-studio-worker'),
-  pollMs: Number(env.FRAMELEAF_STUDIO_WORKER_POLL_MS || 5000),
+  pollMs: positive(env.FRAMELEAF_STUDIO_WORKER_POLL_MS, 5000),
 });
+
+/**
+ * When this session stops taking new exports. A claim cannot renew its session, so one started
+ * shortly before expiry loses its lease mid-render. Half the session is left for the last claim.
+ */
+export const claimDeadline = (expiresAt, now = Date.now()) => {
+  const expiry = Date.parse(expiresAt);
+  return Math.min(now + (expiry - now) / 2, expiry - SESSION_RENEW_WINDOW_MS);
+};
+
+/** Scratch left by a worker that was killed (out of memory, say); its `finally` never ran. */
+export async function clearStaleClaims(workRoot) {
+  const entries = await readdir(workRoot).catch(() => []);
+  await Promise.all(
+    entries
+      .filter((name) => name.startsWith('claim-'))
+      .map((name) => rm(path.join(workRoot, name), { recursive: true, force: true }).catch(() => {})),
+  );
+}
 
 /**
  * The working memory declared at admission. It gates resolution exactly as GPU memory does for a
@@ -181,6 +206,7 @@ export async function main(signal, report = () => {}) {
     log('Less than 4 GiB of memory is available to this container; Studio exports need at least 2 GiB to render.');
     return;
   }
+  await clearStaleClaims(config.workRoot);
   const { createEngineRenderer } = await import('./bundled-worker-renderer.mjs');
   const renderer = await createEngineRenderer({ log, signal });
   const anonymous = createWorkerClient({ serverUrl: config.serverUrl });
@@ -241,7 +267,7 @@ export async function main(signal, report = () => {}) {
     await report(readiness);
     signal.throwIfAborted();
     const client = anonymous.withSession(session.sessionToken);
-    const renewAt = Date.parse(session.expiresAt) - SESSION_RENEW_WINDOW_MS;
+    const renewAt = claimDeadline(session.expiresAt);
     while (!signal.aborted && Date.now() < renewAt) {
       let claim;
       try {

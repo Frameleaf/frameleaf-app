@@ -1,7 +1,9 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { BulkIdErrorReason } from 'src/dtos/asset-ids.response.dto.js';
 import { AlbumUserRole, Permission } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { checkAccess, isGranted, requireAccess, requireEntityAccess } from 'src/utils/access.js';
+import { addAssets } from 'src/utils/asset.util.js';
 import { AuthFactory } from 'test/factories/auth.factory.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
 import { newAccessRepositoryMock } from 'test/repositories/access.repository.mock.js';
@@ -13,6 +15,37 @@ describe('access Set contracts', () => {
   beforeEach(() => {
     mocks = newAccessRepositoryMock();
     access = mocks as unknown as AccessRepository;
+  });
+
+  it('never grants sharing the back of a print, and still grants the rest (FL-967)', async () => {
+    mocks.asset.checkOwnerAccess.mockResolvedValue(new Set(['front', 'back']));
+    mocks.asset.checkPrintBacks.mockResolvedValue(new Set(['back']));
+
+    await expect(
+      checkAccess(access, { auth: authStub.user1, permission: Permission.AssetShare, ids: ['front', 'back'] }),
+    ).resolves.toEqual(new Set(['front']));
+  });
+
+  it('reports the back of a print as not addable in the shared add-to-album path (FL-967)', async () => {
+    mocks.asset.checkOwnerAccess.mockResolvedValue(new Set(['front', 'back']));
+    mocks.asset.checkPrintBacks.mockResolvedValue(new Set(['back']));
+    const bulk = {
+      getAssetIds: vi.fn().mockResolvedValue(new Set()),
+      addAssetIds: vi.fn().mockResolvedValue(undefined),
+      removeAssetIds: vi.fn().mockResolvedValue(undefined),
+    };
+
+    await expect(
+      addAssets(
+        authStub.user1,
+        { access, bulk },
+        { parentId: 'album', assetIds: ['front', 'back'], permission: Permission.AssetShare },
+      ),
+    ).resolves.toEqual([
+      { id: 'front', success: true },
+      { id: 'back', success: false, error: BulkIdErrorReason.NO_PERMISSION },
+    ]);
+    expect(bulk.addAssetIds).toHaveBeenCalledWith('album', ['front']);
   });
 
   it.each([
@@ -98,7 +131,6 @@ describe('access Set contracts', () => {
     [Permission.AlbumAssetCreate, AlbumUserRole.Editor],
     [Permission.AlbumAssetDelete, AlbumUserRole.Editor],
     [Permission.AlbumUpdate, AlbumUserRole.Editor],
-    [Permission.AlbumShare, AlbumUserRole.Editor],
   ])('preserves shared album role and remaining IDs for %s', async (permission, role) => {
     mocks.album.checkOwnerAccess.mockResolvedValue(new Set(['b']));
     mocks.album.checkSharedAlbumAccess.mockResolvedValue(new Set(['a', 'b']));
@@ -109,6 +141,18 @@ describe('access Set contracts', () => {
       new Set(['a', 'denied']),
       role,
     );
+  });
+
+  it('keeps sharing an album, its members and its links to the owner (FL-1767)', async () => {
+    mocks.album.checkOwnerAccess.mockResolvedValue(new Set(['b']));
+    mocks.album.checkSharedAlbumAccess.mockResolvedValue(new Set(['a']));
+    const result = await checkAccess(access, {
+      auth: authStub.user1,
+      permission: Permission.AlbumShare,
+      ids: ['a', 'b', 'denied'],
+    });
+    expect([...result]).toEqual(['b']);
+    expect(mocks.album.checkSharedAlbumAccess).not.toHaveBeenCalled();
   });
 
   it('preserves activity owner and album-owner grant order', async () => {

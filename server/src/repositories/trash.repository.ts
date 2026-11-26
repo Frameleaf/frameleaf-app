@@ -403,7 +403,8 @@ export class TrashRepository {
             .selectFrom('asset')
             .select('id')
             .where('ownerId', '=', userId)
-            .where('id', 'in', locked)
+            // one array parameter: a whole-trash action can name more items than PostgreSQL allows parameters
+            .where('id', '=', anyUuid(locked))
             .orderBy('id')
             .forUpdate()
             .execute();
@@ -424,7 +425,8 @@ export class TrashRepository {
           .$if(ids !== undefined, (qb) => qb.where('asset.id', '=', anyUuid(ids ?? [])))
           .select('asset.id')
           .execute();
-        if (eligible.some((row) => !selected.includes(row.id)) || (duplicateUndo && eligible.length !== ids!.length))
+        const selectedIds = new Set(selected);
+        if (eligible.some((row) => !selectedIds.has(row.id)) || (duplicateUndo && eligible.length !== ids!.length))
           throw new ConflictException('trash_selection_changed');
         if (refreshed.items.length > 0 && action === TrashReviewAction.Trash && !binding.epoch?.trashEnabled)
           throw new ConflictException('edit_trash_disabled');

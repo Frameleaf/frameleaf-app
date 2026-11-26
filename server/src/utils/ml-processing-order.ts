@@ -24,7 +24,13 @@ import { cloudRouteAllows, hasRequiredConsent } from 'src/utils/ml-destination.j
 export const ML_PROCESSING_ORDER_DEFAULT_SCOPE = 'default';
 
 /** Work a Frameleaf Desktop helper can take, through the desktop assistance pool (FL-490). */
-export const DESKTOP_POOL_WORKLOADS: readonly MlWorkload[] = [MlWorkload.Clip, MlWorkload.Ocr, MlWorkload.Face];
+// FD-31: of enrichment, a desktop takes only descriptions (`DesktopPoolOptions.description`).
+export const DESKTOP_POOL_WORKLOADS: readonly MlWorkload[] = [
+  MlWorkload.Clip,
+  MlWorkload.Ocr,
+  MlWorkload.Face,
+  MlWorkload.Enrichment,
+];
 
 export const KIND_SOURCE: Record<MlDestinationKind, MlProcessingSource> = {
   [MlDestinationKind.Local]: MlProcessingSource.Local,
@@ -179,30 +185,40 @@ export const planMlRoute = (input: MlRoutePlanInput): MlRouteCandidate[] => {
   });
 
   const candidates: MlRouteCandidate[] = [];
+  // A desktop stands in for the home destination this server recorded, whichever route sent the work there
+  // (default, pinned or legacy). Frameleaf Cloud work stays on Frameleaf Cloud.
+  const pool = () => {
+    if (
+      DESKTOP_POOL_WORKLOADS.includes(workload) &&
+      anchor &&
+      anchor.kind !== MlDestinationKind.FrameleafCloud &&
+      configured(anchor, workload)
+    ) {
+      candidates.push({
+        source: MlProcessingSource.Desktops,
+        destinationId: anchor.id,
+        desktopPool: true,
+        available: input.desktopsReady,
+      });
+    }
+  };
+  // A route pinned to this server has no "your computers" step of its own, so its desktops follow this server.
+  const pinnedHere =
+    storedRoute?.origin === 'pinned' &&
+    input.order.overrides[workload] === undefined &&
+    anchor?.kind === MlDestinationKind.Local;
   for (const source of sourcesFor(input.order, workload, { storedRoute, destinations }, input.cloudMl)) {
     switch (source) {
       case MlProcessingSource.Local: {
         candidates.push(...ofKind(MlDestinationKind.Local).map((destination) => candidate(destination)));
+        if (pinnedHere) {
+          pool();
+        }
         break;
       }
       case MlProcessingSource.Desktops: {
         candidates.push(...ofKind(MlDestinationKind.Lan).map((destination) => candidate(destination)));
-        // The desktop assistance pool takes work only through the route this server recorded on its own
-        // (its proofs name that route's revision), so it is offered only there.
-        if (
-          DESKTOP_POOL_WORKLOADS.includes(workload) &&
-          storedRoute?.origin === 'default' &&
-          anchor &&
-          anchor.kind !== MlDestinationKind.FrameleafCloud &&
-          configured(anchor, workload)
-        ) {
-          candidates.push({
-            source,
-            destinationId: anchor.id,
-            desktopPool: true,
-            available: input.desktopsReady,
-          });
-        }
+        pool();
         break;
       }
       case MlProcessingSource.Cloud: {

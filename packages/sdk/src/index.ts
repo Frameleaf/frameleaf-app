@@ -39,13 +39,23 @@ export interface InitOptions {
   baseUrl: string;
   apiKey: string;
   headers?: Record<string, string>;
+  /** The fetch every generated call uses, for a client that must control how requests are sent. */
+  fetch?: typeof fetch;
 }
 
-export const init = ({ baseUrl, apiKey, headers }: InitOptions) => {
+export const init = ({
+  baseUrl,
+  apiKey,
+  headers,
+  fetch: request,
+}: InitOptions) => {
   setBaseUrl(baseUrl);
   setApiKey(apiKey);
   if (headers) {
     setHeaders(headers);
+  }
+  if (request) {
+    defaults.fetch = request;
   }
 };
 

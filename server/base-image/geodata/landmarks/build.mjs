@@ -185,14 +185,17 @@ for (const place of unpopulated) {
 }
 console.error(`settlements: ${populated.size} living towns left out, ${ruins} without a population considered`);
 
-// 2. Boundaries from OpenStreetMap, the widest tagged object per place.
+// 2. Boundaries from OpenStreetMap, the widest tagged object per place. A bridge or tunnel relation is
+// skipped: its geometry includes the river or road it crosses (role `across`), which made every Prague
+// bridge 15 km wide. The bridge's own ways carry the same tag.
 const ids = [...places.keys()];
 for (const [index, batch] of chunks(ids, 300).entries()) {
   const rows = await sparql(
     OSM,
     `PREFIX osmkey: <https://www.openstreetmap.org/wiki/Key:> PREFIX geo: <http://www.opengis.net/ont/geosparql#>
      SELECT ?qid ?wkt WHERE { VALUES ?qid { ${batch.map((id) => `"${id}"`).join(' ')} }
-       ?osm osmkey:wikidata ?qid ; geo:hasGeometry/geo:asWKT ?wkt }`,
+       ?osm osmkey:wikidata ?qid ; geo:hasGeometry/geo:asWKT ?wkt .
+       FILTER NOT EXISTS { ?osm osmkey:type ?type . FILTER(?type IN ("bridge", "tunnel")) } }`,
   );
   for (const [qid, literal] of rows) {
     const place = places.get(unquote(qid));

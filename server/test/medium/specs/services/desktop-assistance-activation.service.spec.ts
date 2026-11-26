@@ -101,7 +101,8 @@ it('atomically admits the paired index and grants only the accepted model, with 
 });
 it('keeps the index unadmitted and scope empty when consent is absent', async () => {
   const f = await setup(false);
-  await expect(activate(f)).rejects.toThrow('desktop_pool_policy_required');
+  // Desktop AI processing is off for the account: 403, the same as on every other worker endpoint
+  await expect(activate(f)).rejects.toMatchObject({ status: 403, message: 'desktop_pool_policy_required' });
   expect(await f.index.getActive()).toBeUndefined();
   expect(await f.workers.session(f.session.id, f.session.tokenHash)).toBeUndefined();
 });
@@ -147,19 +148,34 @@ it('grants nothing when the settings stopped asking for the profile', async () =
   expect((await f.workers.session(f.session.id, f.session.tokenHash))?.modelKeys).toEqual([]);
 });
 
-it('preserves unknown legacy vectors when index admission is incompatible', async () => {
+it('grants smart search on a library this server already embedded, keeping its vectors', async () => {
   const f = await setup();
   const asset = await new AssetRepository(db).create(mediumFactory.assetInsert({ ownerId: f.user.id }));
   const vector = JSON.stringify(Array.from({ length: 768 }, () => 0.1));
   await sql`INSERT INTO smart_search ("assetId", embedding) VALUES (${asset.id}::uuid, ${vector}::vector)`.execute(db);
+  await activate(f);
+  expect((await f.index.getActive())?.space.spaceKey).toBe(space.spaceKey);
+  expect((await f.workers.session(f.session.id, f.session.tokenHash))?.modelKeys).toEqual([space.visualModelKey]);
+  expect(
+    await db.selectFrom('smart_search').select('producerModelKey').where('assetId', '=', asset.id).executeTakeFirst(),
+  ).toEqual({ producerModelKey: null });
+});
+
+it('refuses, with a named conflict, a library holding vectors of another model', async () => {
+  const f = await setup();
+  const asset = await new AssetRepository(db).create(mediumFactory.assetInsert({ ownerId: f.user.id }));
+  const vector = JSON.stringify(Array.from({ length: 768 }, () => 0.1));
+  const other = catalogue.profiles.find(
+    (p: { workload: string; modelName: string; spec: { fixtureKind: string } }) =>
+      p.workload === 'clip' && p.spec.fixtureKind === 'image' && p.modelName === 'ViT-B-32__openai',
+  );
+  await sql`INSERT INTO smart_search ("assetId", embedding, "producerModelKey")
+    VALUES (${asset.id}::uuid, ${vector}::vector, ${other.modelKey})`.execute(db);
   const refused = activate(f);
   await expect(refused).rejects.toThrow('desktop_clip_index_incompatible');
   await expect(refused).rejects.toBeInstanceOf(ConflictException);
   expect(await f.index.getActive()).toBeUndefined();
   expect((await f.workers.session(f.session.id, f.session.tokenHash))?.modelKeys).toEqual([]);
-  expect(
-    await db.selectFrom('smart_search').select('producerModelKey').where('assetId', '=', asset.id).executeTakeFirst(),
-  ).toEqual({ producerModelKey: null });
 });
 
 it('adds separately accepted paired roles and drops expired previous scope', async () => {

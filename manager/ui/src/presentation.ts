@@ -311,8 +311,6 @@ const refusals: Record<string, string> = {
     'Manager can’t tell which container it runs in, so it can’t check this server’s drives. Make sure only one Frameleaf Manager is running, then try again.',
   dockerman_container_identity:
     'Manager couldn’t save Frameleaf’s settings for Unraid’s Docker tab, because a container in this library doesn’t match what Manager set up. Restart the library from Manager, then try again.',
-  database_overlaps_existing_container_data:
-    'Another container can write inside this database folder. Change that container’s mapping to read-only or a narrower folder, or choose a database folder outside it.',
   unraid_autostart_file_required:
     'Manager could not configure Unraid’s autostart list. Check that Unraid’s Docker service is running, then try again. The original app must stay unable to restart at boot during the import.',
   unraid_autostart_unavailable:
@@ -352,6 +350,11 @@ const refusals: Record<string, string> = {
 const states: Record<string, string> = {
   'awaiting-review': 'Waiting for your review',
 };
+/** Other containers that can write to Frameleaf's folders. A warning in the review and on Overview; it never blocks. */
+export const otherWriters = (containers: string[] | string) => ({
+  title: 'Other containers can write to Frameleaf’s folders',
+  detail: `${[containers].flat().join(', ')} can write to the folders that hold Frameleaf’s photos or database. That’s fine for external libraries and backups. Make sure nothing else changes or deletes Frameleaf’s own files.`,
+});
 export const readable = (value: string, detail?: string) => {
   if (value.startsWith('source_snapshot_') && !refusals[value])
     return `Manager couldn’t save a copy of the app’s library (${value}). The app’s own data is unchanged; cancel to start it again.${detail ? ' ' + detail : ''}`;

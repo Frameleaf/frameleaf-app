@@ -8,6 +8,8 @@ import {
   AssetRejectReason,
   AssetUploadAction,
   AssetVisibility,
+  attachAssetUploadSidecar,
+  cancelResumableUpload,
   checkBulkUpload,
   defaults,
   getSupportedMediaTypes,
@@ -203,6 +205,24 @@ describe('uploadFiles with resumable uploads (FL-849)', () => {
       expect(savedUrls()).toEqual([]);
     },
   );
+
+  it.skipIf(os.platform() === 'win32')('never resumes an upload whose XMP was not attached', async () => {
+    const sidecar = `${testFilePath}.xmp`;
+    fs.writeFileSync(sidecar, '<x:xmpmeta/>');
+    vi.mocked(attachAssetUploadSidecar).mockRejectedValueOnce(new Error('socket hang up'));
+    vi.mocked(startResumableUpload).mockImplementation(async (input) => {
+      await input.onResource?.(url);
+      return done;
+    });
+
+    await expect(run()).resolves.toEqual([{ id: done.id, filepath: testFilePath }]);
+
+    expect(cancelResumableUpload).toHaveBeenCalledWith(url, expect.anything());
+    expect(attachAssetUploadSidecar).toHaveBeenCalledTimes(2);
+    expect(startResumableUpload).toHaveBeenCalledTimes(2);
+    expect(resumeResumableUpload).not.toHaveBeenCalled();
+    fs.rmSync(sidecar);
+  });
 
   it.skipIf(os.platform() === 'win32')('--no-resume starts again even when an upload was saved', async () => {
     vi.mocked(startResumableUpload).mockImplementationOnce(async (input) => {
@@ -736,6 +756,38 @@ describe('deleteFiles', () => {
       expect(fs.existsSync(sidecar)).toBe(true);
     },
   );
+
+  it('keeps the XMP of a file found as a duplicate before upload, since it was never sent', async () => {
+    const sidecar = path.join(testDir, 'test.xmp');
+    fs.writeFileSync(sidecar, 'edits only here');
+    await deleteFiles([], [{ id: 'existing', filepath: testFilePath }], { deleteDuplicates: true, concurrency: 1 });
+    expect(fs.existsSync(testFilePath)).toBe(false);
+    expect(fs.existsSync(sidecar)).toBe(true);
+  });
+
+  it('keeps the XMP of an upload the server answered as a duplicate', async () => {
+    const sidecar = path.join(testDir, 'test.xmp');
+    fs.writeFileSync(sidecar, 'edits only here');
+    await deleteFiles([{ id: 'existing', filepath: testFilePath, duplicate: true }], [], {
+      delete: true,
+      concurrency: 1,
+    });
+    expect(fs.existsSync(testFilePath)).toBe(false);
+    expect(fs.existsSync(sidecar)).toBe(true);
+  });
+
+  it('keeps a shared XMP when one of its originals was a duplicate', async () => {
+    const raw = path.join(testDir, 'test.nef');
+    const sidecar = path.join(testDir, 'test.xmp');
+    fs.writeFileSync(raw, 'raw');
+    fs.writeFileSync(sidecar, 'metadata');
+    await deleteFiles([{ id: 'jpeg', filepath: testFilePath }], [{ id: 'raw', filepath: raw }], {
+      delete: true,
+      deleteDuplicates: true,
+      concurrency: 2,
+    });
+    expect([testFilePath, raw, sidecar].map((file) => fs.existsSync(file))).toEqual([false, false, true]);
+  });
 
   it('keeps originals and shared sidecars during dry runs', async () => {
     const sidecar = path.join(testDir, 'test.xmp');

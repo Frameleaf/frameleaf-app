@@ -3,7 +3,6 @@ import { test } from 'node:test';
 import { mkdir, mkdtemp, realpath, stat, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { overlappingWriter } from '../src/postgres-storage.js';
 import { adoptMappedFolders, assertExternalFolder, assertSeparateFolders, applyFolderDefaults, broadRoots, externalRoots, externalRuleSources, ensureChosenFolder, ensureManagerFolder, inside, isMounted, listFolders, realTarget, sameFiles } from '../src/folders.js';
 import type { Refusal } from '../src/contracts.js';
 import { externalFolderIssue, externalFolders, setExternalFolders } from '../ui/src/presentation.js';
@@ -158,13 +157,6 @@ test('a folder reached through a link is seen for where it really lands', async 
   await symlink(join(root, 'media'), join(root, 'link'));
   assert.equal(await realTarget(join(root, 'plain', 'new')), join(root, 'plain', 'new'));
   assert.equal(await realTarget(join(root, 'link', 'backups')), join(root, 'media', 'backups'));
-});
-
-test('with all of /mnt approved, a file manager on a whole share does not block the database folder', () => {
-  const app = (Source: string) => [{ Id: 'other', Name: '/krusader', Config: { Labels: {} }, Mounts: [{ RW: true, Source }] }] as never;
-  const path = '/mnt/user/appdata/frameleaf-databases';
-  assert.equal(overlappingWriter(app('/mnt/user'), path, 'manager', undefined, ['/mnt']), undefined);
-  assert.equal(overlappingWriter(app(path), path, 'manager', undefined, ['/mnt'])?.container, 'krusader');
 });
 
 test('editing External folders leaves a line the Advanced editor rejects as typed', () => {

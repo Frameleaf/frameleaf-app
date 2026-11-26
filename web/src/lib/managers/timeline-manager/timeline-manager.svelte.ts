@@ -11,10 +11,11 @@ import {
   TimelineDatesToCheck,
   type AssetResponseDto,
 } from '@frameleaf/sdk';
-import { clamp, isEqual } from 'lodash-es';
+import { clamp, debounce, isEqual } from 'lodash-es';
 import { t } from 'svelte-i18n';
 import { SvelteDate, SvelteSet } from 'svelte/reactivity';
 import { get } from 'svelte/store';
+import { LIVE_ADDITIONS_MAX_WAIT_MS, LIVE_ADDITIONS_QUIET_MS } from '$lib/constants';
 import { revealsLocks, sessionAccess, trackSessionLockRefresh } from '$lib/frameleaf/session-access.svelte';
 import { VirtualScrollManager } from '$lib/managers/VirtualScrollManager/VirtualScrollManager.svelte';
 import { authManager } from '$lib/managers/auth-manager.svelte';
@@ -243,7 +244,9 @@ export class TimelineManager extends VirtualScrollManager {
           this.initTask.cancel();
           this.disconnect();
           this.isInitialized = false;
+          this.#cancelMonthLoads();
           this.months = [];
+          this.#loadedPages.clear();
           this.albumAssets.clear();
         },
         SessionAccessChanged: () => void trackSessionLockRefresh(this.refresh()),
@@ -694,7 +697,9 @@ export class TimelineManager extends VirtualScrollManager {
       this.initTask.cancel();
       this.disconnect();
       this.isInitialized = false;
+      this.#cancelMonthLoads();
       this.months = [];
+      this.#loadedPages.clear();
       this.albumAssets.clear();
     }
     if (!this.isInitialized) {
@@ -748,9 +753,19 @@ export class TimelineManager extends VirtualScrollManager {
     return this.#refreshPromise;
   }
 
+  /** Months about to be replaced stop reading: their answers are discarded anyway. A waited-on load keeps going. */
+  #cancelMonthLoads() {
+    for (const month of this.months) {
+      if (month.loader?.loading) {
+        month.cancel();
+      }
+    }
+  }
+
   async #init(options: TimelineManagerOptions) {
     this.disconnect();
     this.isInitialized = false;
+    this.#cancelMonthLoads();
     this.months = [];
     this.#loadedPages.clear();
     this.albumAssets.clear();
@@ -766,6 +781,7 @@ export class TimelineManager extends VirtualScrollManager {
   public override destroy() {
     this.#requestedOptions = TimelineManager.#INIT_OPTIONS;
     this.invalidateLiveProjection();
+    this.#refreshWhenQuiet.cancel();
     this.initTask.cancel();
     for (const month of this.months) {
       month.loader?.cancelToken?.abort();
@@ -936,7 +952,8 @@ export class TimelineManager extends VirtualScrollManager {
     // Retain unaffected tiles while reading new boundaries; changed tiles must be re-authorized.
     const result = this.#runAssetCallbackInPlace(new Set(assets.map(({ id }) => id)), () => ({ remove: true }));
     const excluded = assets.filter((asset) => this.isExcluded(asset)).map(({ id }) => id);
-    if (result.updated.size > 0 || excluded.length > 0) {
+    const changedOnScreen = result.updated.size > 0 || excluded.length > 0;
+    if (changedOnScreen) {
       this.#summaryGeneration++;
     }
     if (excluded.length > 0) {
@@ -944,8 +961,22 @@ export class TimelineManager extends VirtualScrollManager {
         listener(excluded);
       }
     }
-    void this.refresh();
+    if (changedOnScreen) {
+      this.#refreshWhenQuiet.cancel();
+      void this.refresh();
+    } else {
+      this.#refreshWhenQuiet();
+    }
   }
+
+  /**
+   * New items only (an upload in progress): one reload once they stop arriving, not one per photo.
+   * ponytail: a time window, not the upload queue, so imports from other devices settle the same way;
+   * maxWait keeps a long import showing progress.
+   */
+  #refreshWhenQuiet = debounce(() => void this.refresh(), LIVE_ADDITIONS_QUIET_MS, {
+    maxWait: LIVE_ADDITIONS_MAX_WAIT_MS,
+  });
 
   async findTimelineMonthForAsset(asset: AssetDescriptor | AssetResponseDto) {
     if (!this.isInitialized) {
@@ -1474,10 +1505,15 @@ export class TimelineManager extends VirtualScrollManager {
   }
 
   protected postCreateSegments(): void {
+    // An oldest-first album keeps its order when a live change adds a month.
+    const direction = this.getAssetOrder() === AssetOrder.Asc ? -1 : 1;
     this.months.sort((a, b) => {
-      return a.yearMonth.year === b.yearMonth.year
-        ? b.yearMonth.month - a.yearMonth.month
-        : b.yearMonth.year - a.yearMonth.year;
+      return (
+        direction *
+        (a.yearMonth.year === b.yearMonth.year
+          ? b.yearMonth.month - a.yearMonth.month
+          : b.yearMonth.year - a.yearMonth.year)
+      );
     });
   }
 

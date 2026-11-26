@@ -1180,22 +1180,27 @@ export class MediaImportRepository {
       .execute();
   }
   async subscriptionCounts(id: string) {
-    const rows = await this.db
-      .selectFrom('media_import_item')
-      .innerJoin('media_import', 'media_import.id', 'media_import_item.importId')
-      .select(['media_import_item.sourceKey', 'media_import_item.state', 'media_import_item.suppression'])
-      .where('media_import.subscriptionId', '=', id)
-      .orderBy('media_import_item.createdAt')
-      .orderBy('media_import_item.id')
-      .execute();
-    const latest = new Map(rows.map((row) => [row.sourceKey, row.suppression ? 'skipped' : row.state]));
-    const states = latest.values().toArray();
-    return {
-      discovered: latest.size,
-      saved: states.filter((state) => state === 'saved').length,
-      skipped: states.filter((state) => state === 'skipped').length,
-      failed: states.filter((state) => state === 'failed').length,
-    };
+    return (await this.subscriptionCountsFor([id])).get(id) ?? { discovered: 0, saved: 0, skipped: 0, failed: 0 };
+  }
+  /** Each source's latest state, counted in the database: a followed account can hold many thousands of items. */
+  async subscriptionCountsFor(ids: string[]) {
+    type Counts = { discovered: number; saved: number; skipped: number; failed: number };
+    if (ids.length === 0) return new Map<string, Counts>();
+    const { rows } = await sql<Counts & { subscriptionId: string }>`
+      select "subscriptionId", count(*)::int as discovered,
+        count(*) filter (where state = 'saved')::int as saved,
+        count(*) filter (where state = 'skipped')::int as skipped,
+        count(*) filter (where state = 'failed')::int as failed
+      from (
+        select distinct on (parent."subscriptionId", item."sourceKey") parent."subscriptionId",
+          case when item.suppression is not null then 'skipped' else item.state::text end as state
+        from media_import_item item
+        join media_import parent on parent.id = item."importId"
+        where parent."subscriptionId" = any(${ids}::uuid[])
+        order by parent."subscriptionId", item."sourceKey", item."createdAt" desc, item.id desc
+      ) latest
+      group by "subscriptionId"`.execute(this.db);
+    return new Map(rows.map(({ subscriptionId, ...counts }) => [subscriptionId, counts]));
   }
   async createSubscription(auth: AuthDto, dto: MediaSubscriptionCreateDto) {
     return this.db.transaction().execute(async (tx) => {

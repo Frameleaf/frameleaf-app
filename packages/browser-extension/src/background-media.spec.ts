@@ -5,6 +5,7 @@ vi.mock('./delivery', () => ({
   wakeDelivery: vi.fn().mockResolvedValue(undefined),
   stopDelivery: vi.fn(),
   deliveryError: vi.fn().mockReturnValue(null),
+  onDeliverySettled: vi.fn(),
 }));
 
 /** FL-1427: the popup's media requests, end to end in the background, with the browser mocked. */
@@ -152,6 +153,12 @@ beforeEach(async () => {
       onClicked: event(),
     },
     alarms: { create: vi.fn().mockResolvedValue(undefined), onAlarm: event() },
+    commands: { onCommand: event() },
+    action: {
+      setBadgeText: vi.fn().mockResolvedValue(undefined),
+      setBadgeBackgroundColor: vi.fn().mockResolvedValue(undefined),
+      setTitle: vi.fn().mockResolvedValue(undefined),
+    },
   });
   media = {
     'GET /api/media-imports/capabilities': () =>
@@ -493,6 +500,30 @@ describe('media downloads from the popup (FL-1427)', () => {
       permissions: ['cookies'],
       origins: ['https://www.video.example/*'],
     });
+    expect(cookies).not.toHaveBeenCalled();
+    expect(mediaCalls().some((call) => call.method === 'POST')).toBe(false);
+  });
+
+  it('reads no cookies when the tab’s own cookie store is not found', async () => {
+    signedIn('media');
+    vi.mocked(chrome.cookies.getAllCookieStores).mockResolvedValue([
+      { id: '1', tabIds: [99] },
+      // the promise form; vi.mocked types this overload by its callback form, which returns nothing
+    ] as chrome.cookies.CookieStore[] as never);
+
+    await expect(handleMessage({ type: 'media-site' }, popup)).resolves.toEqual(
+      expect.objectContaining({
+        media: {
+          site: expect.objectContaining({
+            allowed: true,
+            reason: 'partitioned',
+          }),
+        },
+      }),
+    );
+    await expect(
+      handleMessage({ type: 'media-connect' }, popup),
+    ).resolves.toEqual(expect.objectContaining({ ok: false }));
     expect(cookies).not.toHaveBeenCalled();
     expect(mediaCalls().some((call) => call.method === 'POST')).toBe(false);
   });

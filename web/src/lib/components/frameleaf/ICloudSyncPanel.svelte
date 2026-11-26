@@ -25,17 +25,16 @@
   import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
   import {
     GB,
+    ICLOUD_MAX_CONCURRENCY,
     ICLOUD_MAX_CONNECTIONS,
     icloudAuthStep,
     icloudBlankDraft,
-    icloudConsentNeeded,
     icloudDraft,
     icloudDraftProblems,
     icloudDraftUpdate,
     icloudErrorKey,
     icloudOutcomeKey,
     icloudReviewReasonKey,
-    icloudReviewTarget,
     icloudRunControls,
     icloudRunProgress,
     icloudStatus,
@@ -56,6 +55,7 @@
     ICloudAuthAction,
     ICloudControlAction,
     ICloudLibraryArea,
+    ICloudReviewKind,
     MediaHealthStatus,
     MediaOperationStatus,
     authenticateICloudConnection,
@@ -107,16 +107,6 @@
   /** Start the sign-in again from a verification or approval step. */
   let signInAgain = $state(false);
 
-  let consentOpen = $state(false);
-  /** Consent already given for the draft restored after unlocking; saving does not ask twice. */
-  let consentGiven = $state(false);
-
-  /**
-   * The draft and its consent, kept for this tab only across the unlock detour that saving hidden
-   * photos needs. Preferences only; a password or code is never written here.
-   */
-  const PENDING_SAVE_KEY = 'frameleaf.icloud.pending-save';
-
   const selected = $derived(connections.find(({ id }) => id === selectedId));
   $effect(() => {
     // Replacing the same account's user/session presentation also retires a pending choice.
@@ -143,7 +133,8 @@
   const progress = $derived(icloudRunProgress(run));
   const problems = $derived(icloudDraftProblems(draft));
   const summary = $derived(icloudSummary(selected?.counts ?? {}));
-  const consent = $derived(selected ? icloudConsentNeeded(draft, selected) : { hidden: false });
+  // What the review page handles is reached through its button; failures and the like stay listed here.
+  const otherFindings = $derived((inventory?.review ?? []).filter(({ kind }) => kind !== ICloudReviewKind.Review));
   const libraryIds = $derived(inventory?.libraries.map(({ id }) => id) ?? []);
   const visibleAlbums = $derived(
     (inventory?.albums ?? [])
@@ -234,8 +225,6 @@
     inventory = undefined;
     albumSearch = '';
     authOpen = false;
-    consentOpen = false;
-    consentGiven = false;
     signInAgain = false;
     authError = '';
     clearSecrets();
@@ -347,29 +336,7 @@
     return () => clearInterval(handle);
   });
 
-  /** Take back a draft left before the unlock detour, once. */
-  const takePendingSave = (): { connectionId: string; draft: Partial<ICloudDraft> } | undefined => {
-    try {
-      const raw = sessionStorage.getItem(PENDING_SAVE_KEY);
-      sessionStorage.removeItem(PENDING_SAVE_KEY);
-      const parsed = raw ? JSON.parse(raw) : undefined;
-      return parsed && typeof parsed.connectionId === 'string' && parsed.draft && typeof parsed.draft === 'object'
-        ? parsed
-        : undefined;
-    } catch {
-      return undefined;
-    }
-  };
-
   onMount(() => {
-    const pending = takePendingSave();
-    if (pending && connections.some(({ id }) => id === pending.connectionId)) {
-      select(pending.connectionId);
-      draft = { ...icloudBlankDraft(), ...pending.draft };
-      consentGiven = true;
-      notice = $t('frameleaf_icloud_notice_unlocked');
-      return;
-    }
     if (selectedId) {
       void loadInventory();
     }
@@ -452,39 +419,17 @@
       if (!selected) {
         return;
       }
-      consentOpen = false;
-      // Hidden iCloud photos arrive Locked, so the server only accepts this from an unlocked session.
-      if (draft.includeHidden) {
-        const auth = await getAuthStatus();
-        if (!auth.isElevated) {
-          try {
-            sessionStorage.setItem(
-              PENDING_SAVE_KEY,
-              JSON.stringify({ connectionId: selected.id, draft: $state.snapshot(draft) }),
-            );
-          } catch {
-            // Without storage the draft is typed again after unlocking; nothing else depends on it.
-          }
-          await goto(Route.pinPrompt({ continue: page.url.pathname + page.url.search }));
-          return;
-        }
-      }
       const connection = await updateICloudConnection({
         id: selected.id,
         iCloudConnectionUpdateDto: icloudDraftUpdate(draft, selected, inventory),
       });
       accept(connection);
       draft = icloudDraft(connection);
-      consentGiven = false;
       notice = $t('frameleaf_icloud_notice_saved');
     });
 
   const save = () => {
     if (!selected || problems.length > 0) {
-      return;
-    }
-    if (consent.hidden && !consentGiven) {
-      consentOpen = true;
       return;
     }
     void persist();
@@ -504,6 +449,12 @@
       accept(await controlICloudConnection({ id: selectedId, iCloudControlDto: { action } }));
       notice = $t(NOTICES[action]);
     });
+
+  const openReview = () => {
+    const url = new URL(page.url.href);
+    url.searchParams.set('review', selectedId);
+    return goto(url);
+  };
 
   const updateDraft = (next: ICloudDraft) => {
     draft = next;
@@ -690,14 +641,7 @@
             onChange={(value) => (draft.includeEdits = value)}
           />
         </Row>
-        <Row label={$t('frameleaf_icloud_hidden')} help={$t('frameleaf_icloud_hidden_help')}>
-          <Switch
-            label={$t('frameleaf_icloud_hidden')}
-            checked={draft.includeHidden}
-            held={busy}
-            onChange={(value) => (draft.includeHidden = value)}
-          />
-        </Row>
+        <p class="ic-hint">{$t('frameleaf_icloud_hidden_always_locked')}</p>
         <p class="ic-hint">{$t('frameleaf_icloud_external_managed')}</p>
       </section>
 
@@ -747,12 +691,17 @@
         {/if}
         <Advanced summary={$t('frameleaf_icloud_download_limits')}>
           <Row label={$t('frameleaf_icloud_concurrency')} help={$t('frameleaf_icloud_at_once_help')}>
-            <SegmentedControl
-              label={$t('frameleaf_icloud_concurrency')}
+            <input
+              class="ic-amount"
+              type="number"
+              aria-label={$t('frameleaf_icloud_concurrency')}
+              min={1}
+              max={ICLOUD_MAX_CONCURRENCY}
+              step={1}
               value={draft.concurrency}
+              oninput={(event) => (draft.concurrency = event.currentTarget.value)}
               disabled={busy}
-              options={['1', '2', '3', '4'].map((value) => ({ value, label: value }))}
-              onChange={(value) => (draft.concurrency = value)}
+              aria-invalid={problems.includes('concurrency')}
             />
           </Row>
           <Row
@@ -823,13 +772,18 @@
           })}
         </p>
       {/if}
-      {#each inventory?.review ?? [] as item (item.resourceId)}
+      {#if summary.review > 0}
+        <div class="ic-result-row">
+          <span><strong>{$t('frameleaf_icloud_review_waiting', { values: { count: summary.review } })}</strong></span>
+          <span>{$t('frameleaf_icloud_review_waiting_help')}</span>
+          <Button variant="primary" onclick={() => void openReview()}>{$t('frameleaf_icloud_review_cta')}</Button>
+        </div>
+      {/if}
+      {#each otherFindings as item (item.resourceId)}
         <div class="ic-result-row">
           <span>{item.fileName ?? $t('frameleaf_icloud_untitled')}</span>
           <span>{$t(icloudReviewReasonKey(item))}</span>
-          {#if icloudReviewTarget(item) === 'live-photos'}
-            <Button onclick={() => void goto(Route.livePhotosUtility())}>{$t('frameleaf_icloud_review')}</Button>
-          {:else if icloudReviewTarget(item) === 'asset' && item.assetId}
+          {#if item.assetId}
             <a href={Route.viewAsset({ id: item.assetId })}>{$t('frameleaf_icloud_open_photo')}</a>
           {/if}
         </div>
@@ -841,7 +795,7 @@
           <a href={Route.viewAsset({ id: receipt.assetId })}>{$t('frameleaf_icloud_open_photo')}</a>
         </div>
       {/each}
-      {#if inventory && inventory.review.length === 0 && (inventory.recent?.length ?? 0) === 0}
+      {#if inventory && summary.review === 0 && otherFindings.length === 0 && (inventory.recent?.length ?? 0) === 0}
         <p class="ic-hint">{$t('frameleaf_icloud_reconciliation_empty')}</p>
       {/if}
       {#if authManager.user.isAdmin && summary.repaired > 0}
@@ -858,20 +812,6 @@
     </section>
   {/if}
 </div>
-
-<Dialog title={$t('frameleaf_icloud_consent_title')} closeLabel={$t('cancel')} bind:open={consentOpen}>
-  <div class="ic-dialog">
-    {#if consent.hidden}
-      <p>{$t('frameleaf_icloud_consent_hidden')}</p>
-    {/if}
-    <div class="ic-dialog-actions">
-      <Button onclick={() => (consentOpen = false)}>{$t('cancel')}</Button>
-      <Button variant="primary" disabled={busy} onclick={() => void persist()}>
-        {$t('frameleaf_icloud_consent_confirm')}
-      </Button>
-    </div>
-  </div>
-</Dialog>
 
 <Dialog title={$t('frameleaf_icloud_auth_title')} closeLabel={$t('cancel')} bind:open={authOpen}>
   {#if selected}

@@ -38,6 +38,9 @@ import {
   PersonMergeVerdictCreateDto,
   PersonMergeVerdictDeleteDto,
   PersonMergeVerdictResponseDto,
+  PersonRelationshipCreateDto,
+  PersonRelationshipParamDto,
+  PersonRelationshipsResponseDto,
   PersonResponseDto,
   PersonSearchDto,
   PersonSplitVerdictCreateDto,
@@ -52,6 +55,7 @@ import { Auth, Authenticated, FileResponse } from 'src/middleware/auth.guard.js'
 import { RemoteMediaCeiling } from 'src/middleware/rate-limit.guard.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { PersonCategoryService } from 'src/services/person-category.service.js';
+import { PersonRelationshipService } from 'src/services/person-relationship.service.js';
 import { PersonService } from 'src/services/person.service.js';
 import { sendFile } from 'src/utils/file.js';
 import { UUIDParamDto } from 'src/validation.js';
@@ -63,6 +67,7 @@ export class PersonController {
     private service: PersonService,
     private logger: LoggingRepository,
     private categoryService: PersonCategoryService,
+    private relationshipService: PersonRelationshipService,
   ) {
     this.logger.setContext(PersonController.name);
   }
@@ -334,6 +339,55 @@ export class PersonController {
     @Body() dto: PersonCategoriesSetDto,
   ): Promise<PersonCategoriesResponseDto> {
     return this.categoryService.setPersonCategories(auth, id, dto);
+  }
+
+  @Get(':id/relationships')
+  @Authenticated({ permission: Permission.PersonRead })
+  @Endpoint({
+    summary: "Get a person's family",
+    description:
+      "The parents, children, partners and siblings recorded for one of the caller's own people. Siblings include " +
+      'everyone who shares a parent with them; those are also listed in `inferredSiblingIds`.',
+    history: new HistoryBuilder().added('v3.2.1').alpha('v3.2.1'),
+  })
+  getPersonRelationships(
+    @Auth() auth: AuthDto,
+    @Param() { id }: UUIDParamDto,
+  ): Promise<PersonRelationshipsResponseDto> {
+    return this.relationshipService.get(auth, id);
+  }
+
+  @Post(':id/relationships')
+  @Authenticated({ permission: Permission.PersonUpdate })
+  @Endpoint({
+    summary: 'Add a relationship',
+    description:
+      "Record how another of the caller's people is related to this person. Answers 400 with a message and a " +
+      '`reason` when it would repeat or contradict what is recorded, make someone their own ancestor, or give a ' +
+      'person a second mother, a second father or a third parent.',
+    history: new HistoryBuilder().added('v3.2.1').alpha('v3.2.1'),
+  })
+  createPersonRelationship(
+    @Auth() auth: AuthDto,
+    @Param() { id }: UUIDParamDto,
+    @Body() dto: PersonRelationshipCreateDto,
+  ): Promise<PersonRelationshipsResponseDto> {
+    return this.relationshipService.create(auth, id, dto);
+  }
+
+  @Delete(':id/relationships/:relatedPersonId')
+  @Authenticated({ permission: Permission.PersonUpdate })
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Endpoint({
+    summary: 'Remove a relationship',
+    description: "Remove whatever relationship is recorded between two of the caller's people. Photos are not changed.",
+    history: new HistoryBuilder().added('v3.2.1').alpha('v3.2.1'),
+  })
+  deletePersonRelationship(
+    @Auth() auth: AuthDto,
+    @Param() { id, relatedPersonId }: PersonRelationshipParamDto,
+  ): Promise<void> {
+    return this.relationshipService.remove(auth, id, relatedPersonId);
   }
 
   @Get(':id/corrections')

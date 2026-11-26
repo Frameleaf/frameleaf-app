@@ -295,6 +295,8 @@ describe('restored MySQL source URL', () => {
     'mysql://reader:secret@127.0.0.1/',
     'mysql://reader:secret@127.0.0.1/photoprism/extra',
     'mysql://reader:secret@127.0.0.1/photoprism?ssl=false',
+    'mysql://reader:secret@db.example.com/photoprism',
+    'mysql://reader:secret@localhost/photoprism',
     'not a url',
   ])('refuses %s', (url) => {
     expect(() => mysqlSourceConfig(url, '1')).toThrow('IMPORT_PREPARATION_INPUT_INVALID');

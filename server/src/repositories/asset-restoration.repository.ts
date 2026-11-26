@@ -67,6 +67,23 @@ export class AssetRestorationRepository {
     return row as unknown as AssetRestoration;
   }
 
+  /**
+   * FL-955: whether this batch already queued this photo. Holds a lock for the transaction, so two
+   * confirmations of one estimate (a double click, a retry after a restart) can never both queue it.
+   */
+  async hasBatchItem(batchId: string, assetId: string, executor: Kysely<DB> = this.db): Promise<boolean> {
+    await sql`SELECT pg_advisory_xact_lock(hashtextextended(${`asset_restoration_batch:${batchId}:${assetId}`}, 0))`.execute(
+      executor,
+    );
+    const row = await executor
+      .selectFrom('asset_restoration')
+      .select('id')
+      .where('assetId', '=', assetId)
+      .where(sql<string>`"provenance"->>'batchId'`, '=', batchId)
+      .executeTakeFirst();
+    return !!row;
+  }
+
   async get(id: string): Promise<AssetRestoration | undefined> {
     return (await this.db.selectFrom('asset_restoration').selectAll().where('id', '=', id).executeTakeFirst()) as
       AssetRestoration | undefined;

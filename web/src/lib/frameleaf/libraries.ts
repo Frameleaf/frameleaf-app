@@ -85,6 +85,8 @@ export type LibraryRow = {
   lifecycle: LibraryLifecycle;
   scan: LibraryScanResponseDto | null;
   stats: LibraryStats | null;
+  /** FL-838: the folder keeps an album for each of its folders. */
+  folderAlbums?: boolean;
 };
 
 export const libraryKey = (id: string) => `library:${id}`;
@@ -170,6 +172,7 @@ export const buildLibraryRows = ({
       lifecycle: library.deletedAt ? 'removing' : 'active',
       scan: library.scan ?? null,
       stats: stats ? toStats(stats) : null,
+      folderAlbums: library.folderAlbums,
     };
   });
 

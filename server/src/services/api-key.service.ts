@@ -58,6 +58,10 @@ export class ApiKeyService extends BaseService {
     await this.refuseSignedIn(auth, id);
 
     const key = await this.apiKeyRepository.update(auth.user.id, id, { name: dto.name, permissions: dto.permissions });
+    if (dto.permissions) {
+      // a socket keeps what its handshake was allowed: it connects again under the new permissions
+      this.websocketRepository.clientDisconnect(id);
+    }
 
     return this.map(key, await this.lastUsed(), {});
   }
@@ -77,6 +81,7 @@ export class ApiKeyService extends BaseService {
     const token = this.cryptoRepository.randomBytesAsText(32);
     const hashed = this.cryptoRepository.hashSha256(token);
     const newKey = await this.apiKeyRepository.update(auth.user.id, id, { key: hashed });
+    this.websocketRepository.clientDisconnect(id);
     const apiKey = this.map(newKey, await this.lastUsed(), {});
 
     return { ...apiKey, secret: token, apiKey };
@@ -89,6 +94,7 @@ export class ApiKeyService extends BaseService {
     }
 
     await this.apiKeyRepository.delete(auth.user.id, id);
+    this.websocketRepository.clientDisconnect(id);
     await this.recordAccountEvent({
       userId: auth.user.id,
       sessionId: auth.session?.id ?? null,

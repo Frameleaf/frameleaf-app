@@ -749,3 +749,264 @@ describe('RestorationPanel options for the chosen mode', () => {
     });
   });
 });
+
+describe('RestorationPanel Repair & colourise (FL-955)', () => {
+  const photo = assetFactory.build({ type: AssetTypeEnum.Image, id: 'photo-1' });
+  const place = (available: boolean) => ({
+    id: 'lan',
+    kind: MlDestinationKind.Lan,
+    name: 'Garage GPU',
+    health: 'healthy',
+    available,
+    leavesNetwork: false,
+    consentRequired: false,
+    consentGranted: true,
+    refusal: available ? null : 'workload-not-served',
+    refusalDetail: null,
+    estimate: { previewSeconds: null, fullSeconds: null },
+    gpu: null,
+    models: [],
+  });
+  const optionsFor = (available: boolean, colourRefusal?: string, colourRefusalReason?: string) =>
+    (({ operation }: { operation?: string }) =>
+      Promise.resolve({
+        assetId: photo.id,
+        sourceType: AssetRestorationSourceType.Image,
+        sourceWidth: 1200,
+        sourceHeight: 800,
+        durationSeconds: null,
+        mode: AssetRestorationMode.Faithful,
+        upscale: 1,
+        outputWidth: 1200,
+        outputHeight: 800,
+        previewSeconds: null,
+        adapterInstalled: true,
+        destinations: [place(available)],
+        route: AssetRestorationRoute.Local,
+        ...(operation === 'colourise' && colourRefusal && { colourRefusal, colourRefusalReason }),
+      })) as never;
+  const renderCard = async () => {
+    render(RestorationPanel, { asset: photo, onCompare: vi.fn(), enhance: true });
+    return screen.findByTestId('repair-colourise');
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    sdkMock.getAssetRestorations.mockResolvedValue({ assetId: photo.id, currentRestorationId: null, items: [] });
+    sdkMock.getCloudMlStatus.mockResolvedValue({} as never);
+  });
+
+  it('says plainly when there is nowhere to run it and offers no way to queue', async () => {
+    sdkMock.getAssetRestorationOptions.mockImplementation(optionsFor(false));
+    const card = await renderCard();
+
+    expect(await within(card).findByTestId('repair-nowhere')).toHaveTextContent('frameleaf_repair_nowhere_repair');
+    expect(within(card).queryByRole('button', { name: /frameleaf_repair_preview/ })).not.toBeInTheDocument();
+    expect(sdkMock.requestAssetRestoration).not.toHaveBeenCalled();
+  });
+
+  it('previews a repair as a faithful, same-size request', async () => {
+    sdkMock.getAssetRestorationOptions.mockImplementation(optionsFor(true));
+    sdkMock.requestAssetRestoration.mockResolvedValue(
+      item({ id: 'repair-1', status: AssetRestorationStatus.PreviewQueued, operation: 'repair' } as never),
+    );
+    const card = await renderCard();
+
+    await fireEvent.click(await within(card).findByRole('button', { name: /frameleaf_repair_preview/ }));
+
+    expect(sdkMock.requestAssetRestoration).toHaveBeenCalledWith({
+      id: photo.id,
+      assetRestorationRequestDto: expect.objectContaining({
+        mode: AssetRestorationMode.Faithful,
+        operation: 'repair',
+        upscale: 1,
+        destinationId: 'lan',
+      }),
+    });
+    expect(await within(card).findByRole('status')).toHaveTextContent('frameleaf_repair_running_repair');
+  });
+
+  it('switches Suggested colours off for a colour photo, with no way round it', async () => {
+    sdkMock.getAssetRestorationOptions.mockImplementation(
+      optionsFor(true, 'This photo is already in colour', 'already-in-colour'),
+    );
+    const card = await renderCard();
+
+    expect(await within(card).findByText('frameleaf_repair_refused_in_colour')).toBeInTheDocument();
+    expect(within(card).getByRole('radio', { name: /frameleaf_repair_colourise/ })).toBeDisabled();
+    expect(within(card).queryByRole('button', { name: 'frameleaf_repair_anyway' })).not.toBeInTheDocument();
+  });
+
+  describe('a hand-tinted print', () => {
+    const tinted = () =>
+      optionsFor(true, 'Looks coloured by hand. A guess would replace those colours.', 'hand-tinted');
+
+    it('is refused with a secondary Suggest colours anyway', async () => {
+      sdkMock.getAssetRestorationOptions.mockImplementation(tinted());
+      const card = await renderCard();
+
+      expect(await within(card).findByText('frameleaf_repair_refused_hand_tinted')).toBeInTheDocument();
+      expect(within(card).getByRole('radio', { name: /frameleaf_repair_colourise/ })).toBeDisabled();
+      expect(within(card).getByRole('button', { name: 'frameleaf_repair_anyway' })).toBeInTheDocument();
+    });
+
+    it('sends the override only after Suggest colours anyway', async () => {
+      sdkMock.getAssetRestorationOptions.mockImplementation(tinted());
+      sdkMock.requestAssetRestoration.mockResolvedValue(
+        item({ id: 'tinted-1', status: AssetRestorationStatus.PreviewQueued, operation: 'colourise' } as never),
+      );
+      const card = await renderCard();
+
+      await fireEvent.click(await within(card).findByRole('button', { name: 'frameleaf_repair_anyway' }));
+      expect(within(card).getByText('frameleaf_repair_anyway_help')).toBeInTheDocument();
+      await fireEvent.click(within(card).getByRole('button', { name: /frameleaf_repair_preview/ }));
+
+      expect(sdkMock.requestAssetRestoration).toHaveBeenCalledWith({
+        id: photo.id,
+        assetRestorationRequestDto: expect.objectContaining({
+          mode: AssetRestorationMode.Faithful,
+          operation: 'colourise',
+          allowHandTinted: true,
+        }),
+      });
+    });
+
+    it('puts the refusal back when Repair is chosen', async () => {
+      sdkMock.getAssetRestorationOptions.mockImplementation(tinted());
+      const card = await renderCard();
+
+      await fireEvent.click(await within(card).findByRole('button', { name: 'frameleaf_repair_anyway' }));
+      await fireEvent.click(within(card).getByRole('radio', { name: /frameleaf_repair_repair/ }));
+
+      expect(within(card).getByText('frameleaf_repair_refused_hand_tinted')).toBeInTheDocument();
+      expect(within(card).getByRole('button', { name: 'frameleaf_repair_anyway' })).toBeInTheDocument();
+    });
+  });
+
+  it('accepts a sepia print with no refusal and no override', async () => {
+    sdkMock.getAssetRestorationOptions.mockImplementation(optionsFor(true));
+    sdkMock.requestAssetRestoration.mockResolvedValue(
+      item({ id: 'sepia-1', status: AssetRestorationStatus.PreviewQueued, operation: 'colourise' } as never),
+    );
+    const card = await renderCard();
+
+    await fireEvent.click(await within(card).findByRole('radio', { name: /frameleaf_repair_colourise/ }));
+    await fireEvent.click(within(card).getByRole('button', { name: /frameleaf_repair_preview/ }));
+
+    const sent = sdkMock.requestAssetRestoration.mock.calls[0][0].assetRestorationRequestDto;
+    expect(sent.operation).toBe('colourise');
+    expect(sent).not.toHaveProperty('allowHandTinted');
+  });
+
+  it('names a saved colourise result Suggested colours, numbered from the second', async () => {
+    const saved = (id: string, revision: number) =>
+      item({ id, revision, status: AssetRestorationStatus.Restored, operation: 'colourise' } as never);
+    sdkMock.getAssetRestorationOptions.mockImplementation(optionsFor(true));
+    sdkMock.getAssetRestorations.mockResolvedValue({
+      assetId: photo.id,
+      currentRestorationId: null,
+      items: [saved('second', 2), saved('first', 1)],
+    });
+    await renderCard();
+
+    expect(await screen.findByText('frameleaf_repair_version_colourise')).toBeInTheDocument();
+    expect(screen.getByText('frameleaf_repair_version_colourise 2')).toBeInTheDocument();
+  });
+
+  describe('the face warning on Enhance & upscale', () => {
+    const withModel = (id: string, name: string) =>
+      (() =>
+        Promise.resolve({
+          assetId: photo.id,
+          sourceType: AssetRestorationSourceType.Image,
+          sourceWidth: 1200,
+          sourceHeight: 800,
+          durationSeconds: null,
+          mode: AssetRestorationMode.Faithful,
+          upscale: 2,
+          outputWidth: 2400,
+          outputHeight: 1600,
+          previewSeconds: null,
+          adapterInstalled: true,
+          destinations: [
+            {
+              ...place(true),
+              models: [{ id, name, family: id, mode: AssetRestorationMode.Faithful, available: true }],
+            },
+          ],
+          route: AssetRestorationRoute.Local,
+        })) as never;
+
+    it('shows on the face model', async () => {
+      sdkMock.getAssetRestorationOptions.mockImplementation(withModel('gfpgan-v1.4', 'GFPGAN faces'));
+      await renderCard();
+
+      expect(await screen.findByTestId('enhance-face-warning')).toHaveTextContent('frameleaf_enhance_face_warning');
+    });
+
+    it('does not show on SeedVR2', async () => {
+      sdkMock.getAssetRestorationOptions.mockImplementation(withModel('seedvr2-3b', 'SeedVR2'));
+      await renderCard();
+
+      await screen.findByRole('button', { name: /frameleaf_enhance_run/ });
+      expect(screen.queryByTestId('enhance-face-warning')).not.toBeInTheDocument();
+    });
+  });
+
+  it('saves a ready preview as a new version through accept, and discards through reject', async () => {
+    const ready = item({ id: 'repair-2', status: AssetRestorationStatus.PreviewReady, operation: 'repair' } as never);
+    sdkMock.getAssetRestorationOptions.mockImplementation(optionsFor(true));
+    sdkMock.getAssetRestorations.mockResolvedValue({ assetId: photo.id, currentRestorationId: null, items: [ready] });
+    sdkMock.acceptAssetRestoration.mockResolvedValue({ ...ready, status: AssetRestorationStatus.Accepted });
+    sdkMock.rejectAssetRestoration.mockResolvedValue({ ...ready, status: AssetRestorationStatus.Rejected });
+    const card = await renderCard();
+
+    await fireEvent.click(await within(card).findByRole('button', { name: 'frameleaf_repair_discard' }));
+    await waitFor(() => expect(sdkMock.rejectAssetRestoration).toHaveBeenCalled());
+    expect(sdkMock.acceptAssetRestoration).not.toHaveBeenCalled();
+  });
+
+  it('saves through accept', async () => {
+    const ready = item({ id: 'repair-3', status: AssetRestorationStatus.PreviewReady, operation: 'repair' } as never);
+    sdkMock.getAssetRestorationOptions.mockImplementation(optionsFor(true));
+    sdkMock.getAssetRestorations.mockResolvedValue({ assetId: photo.id, currentRestorationId: null, items: [ready] });
+    sdkMock.acceptAssetRestoration.mockResolvedValue({ ...ready, status: AssetRestorationStatus.Accepted });
+    const card = await renderCard();
+
+    await fireEvent.click(await within(card).findByRole('button', { name: 'frameleaf_repair_save' }));
+
+    await waitFor(() =>
+      expect(sdkMock.acceptAssetRestoration).toHaveBeenCalledWith({ id: photo.id, restorationId: 'repair-3' }),
+    );
+  });
+
+  it('says Frameleaf Cloud is not available yet when it has no price, with no cost and no job', async () => {
+    const cloudRow = { ...place(true), id: 'cloud', kind: MlDestinationKind.FrameleafCloud, name: 'Frameleaf Cloud' };
+    sdkMock.getAssetRestorationOptions.mockImplementation((() =>
+      Promise.resolve({
+        assetId: photo.id,
+        sourceType: AssetRestorationSourceType.Image,
+        mode: AssetRestorationMode.Faithful,
+        upscale: 1,
+        destinations: [place(false), cloudRow],
+        route: AssetRestorationRoute.Local,
+      })) as never);
+    sdkMock.estimateCloudMlJob.mockRejectedValue({ status: 409, data: { code: 'photo-operation-unavailable' } });
+    const card = await renderCard();
+
+    await fireEvent.click(await within(card).findByRole('button', { name: 'frameleaf_repair_try_cloud' }));
+
+    expect(await within(card).findByText(/frameleaf_repair_cloud_unavailable/)).toBeInTheDocument();
+    expect(within(card).queryByRole('button', { name: 'frameleaf_repair_try_cloud' })).not.toBeInTheDocument();
+    expect(sdkMock.createCloudMlJob).not.toHaveBeenCalled();
+    expect(sdkMock.requestAssetRestoration).not.toHaveBeenCalled();
+  });
+
+  it('is not offered on a video', async () => {
+    sdkMock.getAssetRestorationOptions.mockImplementation(optionsFor(true));
+    render(RestorationPanel, { asset, onCompare: vi.fn(), enhance: true });
+
+    await screen.findByTestId('restoration-enhance');
+    expect(screen.queryByTestId('repair-colourise')).not.toBeInTheDocument();
+  });
+});

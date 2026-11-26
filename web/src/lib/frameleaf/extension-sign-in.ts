@@ -78,10 +78,11 @@ export const extensionBrowserName = (client: BrowserExtensionClient) =>
 
 /**
  * "Not you?" through a provider's sign-out page: the provider returns to the plain sign-in page, so
- * the Allow page to come back to is kept in this tab until then. Only the Allow page is kept.
+ * the Allow page to come back to is kept in this tab until then. Only an Allow page (the extension's
+ * or a connected app's, FL-860) is kept.
  */
 const CONTINUE_KEY = 'frameleaf.extensionSignInContinue';
-const isAllowPage = (path: string) => /^\/auth\/allow-extension(?:\?|$)/.test(path);
+const isAllowPage = (path: string) => /^\/auth\/allow-(?:extension|app)(?:\?|$)/.test(path);
 export const keepExtensionContinue = (path: string) => {
   if (!isAllowPage(path)) {
     return;

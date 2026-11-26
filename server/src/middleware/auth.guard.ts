@@ -184,7 +184,14 @@ export class AuthGuard implements CanActivate {
       await this.authService.requireSetupAvailable();
     }
 
+    const originalTransfer =
+      this.reflector.get<boolean | undefined>(MetadataKey.OriginalTransfer, context.getHandler()) === true;
     if (options.public) {
+      // FL-1767: a public route that sends originals still keeps them off the relay unless allowed
+      if (originalTransfer) {
+        const request = context.switchToHttp().getRequest<Request>();
+        await this.authService.requireOriginalTransfer(requestVia(request), request.path);
+      }
       return true;
     }
 
@@ -215,7 +222,7 @@ export class AuthGuard implements CanActivate {
       },
     });
 
-    if (this.reflector.get<boolean | undefined>(MetadataKey.OriginalTransfer, context.getHandler())) {
+    if (originalTransfer) {
       await this.authService.requireOriginalTransfer(via, request.path);
     }
 

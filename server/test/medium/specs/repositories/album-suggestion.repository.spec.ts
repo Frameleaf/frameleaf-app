@@ -1,9 +1,12 @@
 import { Kysely } from 'kysely';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { AssetLockReason, AssetVisibility, UserMetadataKey } from 'src/enum.js';
 import { AlbumSuggestionRepository } from 'src/repositories/album-suggestion.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
 import { DB } from 'src/schema/index.js';
+import { equivalentDesktopModelKeys } from 'src/utils/desktop-model-equivalents.js';
 import { mediumFactory } from 'test/medium.factory.js';
 import { getActiveForkKyselyDB } from 'test/utils.js';
 
@@ -14,6 +17,17 @@ let albumId: string;
 
 const LAKE = { latitude: 51.4254, longitude: -116.1773 };
 const modelKey = `clip:${'b'.repeat(64)}`;
+/** Two keys the release gives one image encoder (two runtime revisions): one embedding space. */
+const [keyA, keyB] = (() => {
+  const profiles: { modelKey: string; workload: string; spec: { fixtureKind: string } }[] = JSON.parse(
+    readFileSync(join(process.cwd(), 'resources/desktop/model-catalogue.json'), 'utf8'),
+  ).profiles;
+  for (const profile of profiles) {
+    const family = equivalentDesktopModelKeys(profile.modelKey);
+    if (profile.workload === 'clip' && profile.spec.fixtureKind === 'image' && family.length > 1) return family;
+  }
+  throw new Error('the catalogue has no encoder under two keys');
+})();
 const vector = (lean = 0) => JSON.stringify([1, lean, ...Array.from({ length: 766 }, () => 0)]);
 
 const makeAsset = async (
@@ -167,6 +181,25 @@ describe('album suggestions (FL-1092, FL-1093)', () => {
     expect(ids.has(camera)).toBe(false);
     expect(ids.has(unlike)).toBe(false);
     expect(found.every(({ referenceId }) => tripIds.includes(referenceId))).toBe(true);
+  });
+
+  it('compares vectors stored under two keys of one encoder (two runtime revisions) as one space', async () => {
+    const tripIds: string[] = [];
+    for (const day of [11, 12, 13]) tripIds.push(await makeAsset({ day, embedding: vector() }));
+    for (const id of tripIds) await inAlbum(id);
+    const saved = await makeAsset({
+      day: 30,
+      name: 'FB_IMG_1788540812000.jpg',
+      camera: false,
+      located: false,
+      embedding: vector(0.01),
+    });
+    await db.updateTable('smart_search').set({ producerModelKey: keyA }).where('assetId', 'in', tripIds).execute();
+    await db.updateTable('smart_search').set({ producerModelKey: keyB }).where('assetId', '=', saved).execute();
+
+    expect((await sut.getVisualDistances([saved], tripIds)).has(saved)).toBe(true);
+    const found = await sut.getUndatedNeighbours(ownerId, albumId, tripIds);
+    expect(found.map(({ assetId }) => assetId)).toContain(saved);
   });
 
   it('names the people in photos and remembers auto-add per person', async () => {

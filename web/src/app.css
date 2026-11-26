@@ -30,10 +30,10 @@
 @theme {
   /*
    * The brand reaches every Tailwind and legacy-kit surface from here (BRAND.md "Legacy kit").
-   * Type: the Frameleaf stack, SF Pro on Apple devices and the bundled Inter elsewhere
+   * Type: the Frameleaf stack, the bundled Inter on every device
    * (src/lib/frameleaf/tokens.css --fl-family-ui).
    */
-  --font-sans: -apple-system, BlinkMacSystemFont, system-ui, Inter, 'Segoe UI', sans-serif;
+  --font-sans: Inter, -apple-system, BlinkMacSystemFont, system-ui, 'Segoe UI', sans-serif;
   /* No monospace (tokens.css): Tailwind's `font-mono` and the browser's code/kbd/pre face are the UI font. */
   --font-mono: var(--fl-family-ui);
 
@@ -559,4 +559,12 @@ body:not(.asset-viewer-open) {
   to {
     transform: var(--kb-to);
   }
+}
+
+/* FL-983 "Use system font": `.frameleaf` and the viewer set the stack again, so it is overridden there too. */
+:root[data-font='system'],
+:root[data-font='system'] .fl-media-viewer,
+:root[data-font='system'] .frameleaf {
+  --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, system-ui, sans-serif;
+  --fl-family-ui: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, system-ui, sans-serif;
 }

@@ -539,11 +539,16 @@ const buildConfig = async (repos: RepoDeps, privateErrors = false) => {
       for (const [property, value] of Object.entries(priorDefaults)) {
         if (get(partial, property) === undefined) set(legacy, property, value);
       }
-      // Only the exact previously approved file configuration may retain the old defaults.
-      if (configDigest(legacy) === priorDigest) return legacy;
-      // Try the previously approved defaults, keeping any values the file actually specifies.
-      // Readers apply the default for omitted settings. The digest still rejects unrelated file edits.
-      for (const base of [config, legacy]) {
+      // FL-1632: a file approved while apps could register themselves by default keeps that default.
+      const bases = [config, legacy];
+      if (get(partial, 'connectedApps.allowRegistration') === undefined) {
+        bases.push(...bases.map((base) => set(cloneDeep(base), 'connectedApps.allowRegistration', true)));
+      }
+      for (const base of bases) {
+        // Only the exact previously approved file configuration may retain the old defaults.
+        if (configDigest(base) === priorDigest) return base;
+        // Try the previously approved defaults, keeping any values the file actually specifies.
+        // Readers apply the default for omitted settings. The digest still rejects unrelated file edits.
         const before = cloneDeep(base);
         for (const path of ADDED_CONFIG_PATHS) {
           if (get(partial, path) === undefined) {

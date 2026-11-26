@@ -1,5 +1,35 @@
+import { constants } from 'node:fs';
+import { open, realpath } from 'node:fs/promises';
+import { isAbsolute, join, relative, sep } from 'node:path';
 import { type ImportManifest, type SourceKind } from 'src/library-import/manifest.js';
 import { type ImportedPassword, type ImportedPasswordContext } from 'src/library-import/passwords.js';
+
+/**
+ * Where a path a source recorded really is. A link inside the export is followed, as for originals; a `..` or a link
+ * that leads out of it is refused, so a source cannot point the import at a file of this machine.
+ */
+export const resolveSourceFile = async (root: string, path: string): Promise<string> => {
+  const [realRoot, real] = await Promise.all([realpath(root), realpath(join(root, path))]);
+  const inside = relative(realRoot, real);
+  if (inside === '' || inside === '..' || inside.startsWith(`..${sep}`) || isAbsolute(inside)) {
+    throw new Error('Source file refused: IMPORT_SOURCE_PATH_ESCAPE');
+  }
+  return real;
+};
+
+/** A plain file of a source export whose content is kept or parsed. */
+export const readSourceFile = async (root: string, path: string): Promise<Buffer> => {
+  const real = await resolveSourceFile(root, path);
+  const file = await open(real, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+  try {
+    if (!(await file.stat()).isFile()) {
+      throw new Error('Source file refused: IMPORT_SOURCE_NOT_A_FILE');
+    }
+    return await file.readFile();
+  } finally {
+    await file.close();
+  }
+};
 
 /** Where the Manager placed the frozen source inside the offline preparation container. */
 export type PreparationSourceInput = {

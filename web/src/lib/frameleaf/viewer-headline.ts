@@ -8,6 +8,7 @@
 import { AssetTypeEnum, type AssetResponseDto, type ExifResponseDto } from '@frameleaf/sdk';
 import type { DateTime } from 'luxon';
 import { get } from 'svelte/store';
+import { formatApproximateDate } from '$lib/frameleaf/approximate-date';
 import { formatLuxon } from '$lib/frameleaf/date-format';
 import { locale } from '$lib/stores/preferences.store';
 import { fromISODateTime, fromISODateTimeUTC } from '$lib/utils/timeline-util';
@@ -134,15 +135,21 @@ export const captureDateTime = (asset: AssetResponseDto): DateTime | null => {
 export const viewerWhenWhere = (
   asset: AssetResponseDto,
   dateLocale: string | undefined = get(locale),
+  /** FL-1019: the place this person named: it comes before the town, which then stands alone. */
+  namedPlace?: string | null,
 ): { title: string; time: string } => {
   const captured = captureDateTime(asset);
-  const date = captured
-    ? formatLuxon(captured, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }, dateLocale)
-    : '';
-  const place = [asset.exifInfo?.city, asset.exifInfo?.state].filter(Boolean).join(', ');
+  // FL-936: a date known only to a year or a decade is titled with that, and has no time
+  const approximate = formatApproximateDate(asset.localDateTime, asset.dateAccuracy, dateLocale, { heading: true });
+  const date =
+    approximate ??
+    (captured
+      ? formatLuxon(captured, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }, dateLocale)
+      : '');
+  const place = [asset.exifInfo?.city, namedPlace ? null : asset.exifInfo?.state].filter(Boolean).join(', ');
   return {
-    title: [date, place].filter(Boolean).join(' · ') || asset.originalFileName,
-    time: captured ? formatLuxon(captured, { hour: 'numeric', minute: '2-digit' }, dateLocale) : '',
+    title: [date, namedPlace, place].filter(Boolean).join(' · ') || asset.originalFileName,
+    time: captured && !approximate ? formatLuxon(captured, { hour: 'numeric', minute: '2-digit' }, dateLocale) : '',
   };
 };
 

@@ -24,6 +24,7 @@ export class ActivityFactory {
       id: newUuid(),
       isLiked: false,
       userId,
+      remoteAuthorId: null,
       updatedAt: newDate(),
       updateId: newUuidV7(),
       ...dto,

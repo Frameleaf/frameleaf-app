@@ -31,6 +31,27 @@ const media = (assetId: string, kind: InterchangeMedia['kind'], durationSeconds:
   frameCount: kind === 'image' ? null : durationSeconds * 25,
   durationSeconds,
 });
+describe('crafted Final Cut Pro XML', () => {
+  const project = (resources: string) =>
+    `<fcpxml version="1.11"><resources><format id="f" frameDuration="1/30s"/>${resources}</resources><library><event>` +
+    `<project name="p"><sequence format="f"><spine><ref-clip ref="m0" offset="0s" duration="1s"/></spine></sequence>` +
+    `</project></event></library></fcpxml>`;
+  const compound = (id: number, refs: number) =>
+    `<media id="m${id}"><sequence format="f"><spine>` +
+    `<ref-clip ref="m${id + 1}" offset="0s" duration="1s"/>`.repeat(refs) +
+    `</spine></sequence></media>`;
+
+  it('refuses a compound clip that contains itself', () => {
+    const cycle = `<media id="m0"><sequence format="f"><spine><ref-clip ref="m0" offset="0s" duration="1s"/></spine></sequence></media>`;
+    expect(() => readFcpxml(project(cycle))).toThrow(/too deeply/);
+  });
+
+  it('refuses compound clips that multiply when expanded', () => {
+    const levels = Array.from({ length: 20 }, (_, id) => compound(id, 10)).join('');
+    expect(() => readFcpxml(project(levels))).toThrow(/too many clips/);
+  });
+});
+
 /** The library answers by file name, the way the matcher (FL-1543) answers by name among other things. */
 const library: Record<string, InterchangeMedia> = {
   'Lake morning.mov': media('0198a1c2-0000-7000-8000-000000000001', 'video', 60),

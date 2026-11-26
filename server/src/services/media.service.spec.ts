@@ -87,6 +87,8 @@ describe(MediaService.name, () => {
 
   beforeEach(() => {
     ({ sut, mocks } = newTestService(MediaService));
+    // a file with no picture is recorded as such, so catch-up does not queue it again (FL-1777)
+    mocks.assetJob.setNoPicture.mockResolvedValue();
     // Keep the child batch orchestration real while stubbing its native I/O. The pool tests exercise IPC.
     let decodeFailure: unknown;
     const operations = Object.assign(new SharpOperations(), {
@@ -567,10 +569,19 @@ describe(MediaService.name, () => {
 
     it('should skip thumbnail generation if asset not found', async () => {
       mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(void 0);
-      await sut.handleGenerateThumbnails({ id: 'non-existent' });
+      mocks.assetJob.isGone.mockResolvedValue(false);
+      await expect(sut.handleGenerateThumbnails({ id: 'non-existent' })).resolves.toBe(JobStatus.Failed);
 
       expect(mocks.media.generateThumbnail).not.toHaveBeenCalled();
       expect(mocks.asset.update).not.toHaveBeenCalled();
+    });
+
+    it('skips, without a retry, thumbnails for an asset deleted since the job was queued', async () => {
+      mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue(void 0);
+      mocks.assetJob.isGone.mockResolvedValue(true);
+      await expect(sut.handleGenerateThumbnails({ id: 'deleted' })).resolves.toBe(JobStatus.Skipped);
+      expect(mocks.assetJob.isGone).toHaveBeenCalledWith('deleted');
+      expect(mocks.media.generateThumbnail).not.toHaveBeenCalled();
     });
 
     it('should skip thumbnail generation if asset type is unknown', async () => {
@@ -1144,6 +1155,8 @@ describe(MediaService.name, () => {
 
       await expect(sut.handleGenerateThumbnails({ id: asset.id })).resolves.toBe(JobStatus.Skipped);
       expect(mocks.job.queue).not.toHaveBeenCalledWith(expect.objectContaining({ name: JobName.MediaHealthFixAsset }));
+      // recorded, so catching up leaves it alone until the original changes
+      expect(mocks.assetJob.setNoPicture).toHaveBeenCalledWith(asset.id, asset.checksum);
     });
 
     it('should wrap probe failures with a descriptive error preserving the cause', async () => {
@@ -1163,6 +1176,30 @@ describe(MediaService.name, () => {
       );
       await expect(promise).rejects.toMatchObject({ cause: probeError });
       expect(mocks.media.transcode).not.toHaveBeenCalled();
+    });
+
+    it('sends a video that will not open to Library care, unless care asked or only the path matches', async () => {
+      const originalPath = '/library/moov atom not found/clip.mov';
+      const asset = AssetFactory.from({ type: AssetType.Video, originalPath }).exif().build();
+      mocks.assetJob.getForGenerateThumbnailJob.mockResolvedValue({
+        ...getForGenerateThumbnail(asset),
+        videoStream: null,
+        format: null,
+      });
+      mocks.storage.checkFileExists.mockResolvedValue(true);
+      const care = { name: JobName.MediaHealthFixAsset, data: { id: asset.id, from: 'preview' } };
+
+      mocks.media.probe.mockRejectedValue(new Error(`ffprobe exited with code 1: moov atom not found ${originalPath}`));
+      await expect(sut.handleGenerateThumbnails({ id: asset.id })).resolves.toBe(JobStatus.Skipped);
+      expect(mocks.job.queue).toHaveBeenCalledExactlyOnceWith(care);
+
+      mocks.job.queue.mockClear();
+      await expect(sut.handleGenerateThumbnails({ id: asset.id, afterCare: true })).rejects.toThrow('moov atom');
+      expect(mocks.job.queue).not.toHaveBeenCalledWith(care);
+
+      mocks.media.probe.mockRejectedValue(new Error(`ffprobe exited with code 1: read failed ${originalPath}`));
+      await expect(sut.handleGenerateThumbnails({ id: asset.id })).rejects.toThrow('Failed to probe');
+      expect(mocks.job.queue).not.toHaveBeenCalledWith(care);
     });
 
     it('should throw an "original file missing" error before probing when the file does not exist', async () => {
@@ -3958,7 +3995,7 @@ describe(MediaService.name, () => {
   });
 
   describe('durable video selection', () => {
-    it.each([true, undefined])('materializes selected video IDs (force=%s)', async (force) => {
+    it.each([true, false])('materializes selected video IDs (force=%s)', async (force) => {
       const query = {};
       mocks.assetJob.selectionForVideoConversion.mockReturnValue(query as never);
       await sut.handleQueueVideoConversion({ force });
@@ -3968,9 +4005,13 @@ describe(MediaService.name, () => {
         force ? undefined : expect.stringMatching(/^[\da-f]{64}$/),
       );
       expect(mocks.job.queueSelection).toHaveBeenCalledWith(JobName.AssetEncodeVideo, query);
-      // FL-650: every video's seek-bar previews, which are a cache hit where they exist
-      expect(mocks.assetJob.selectionForVideoConversion).toHaveBeenCalledWith(true);
-      expect(mocks.job.queueSelection).toHaveBeenCalledWith(JobName.AssetWarmFilmstrip, query);
+      // FL-650: a full rerun warms every video's seek-bar previews; catching up never queues the whole library
+      if (force) {
+        expect(mocks.assetJob.selectionForVideoConversion).toHaveBeenCalledWith(true);
+        expect(mocks.job.queueSelection).toHaveBeenCalledWith(JobName.AssetWarmFilmstrip, query);
+      } else {
+        expect(mocks.job.queueSelection).not.toHaveBeenCalledWith(JobName.AssetWarmFilmstrip, expect.anything());
+      }
       expect(mocks.assetJob.streamForVideoConversion).not.toHaveBeenCalled();
     });
   });
@@ -5606,6 +5647,7 @@ describe(MediaService.name, () => {
 
     it('fails when the asset is missing', async () => {
       mocks.assetJob.getForVideoConversion.mockResolvedValue(void 0);
+      mocks.assetJob.isGone.mockResolvedValue(false);
       await expect(sut.handleStudioHdrProxy({ id: 'video-id' })).resolves.toBe(JobStatus.Failed);
       expect(mocks.media.transcode).not.toHaveBeenCalled();
     });
@@ -5932,16 +5974,25 @@ describe(MediaService.name, () => {
 
     it('should skip transcoding if asset not found', async () => {
       mocks.assetJob.getForVideoConversion.mockResolvedValue(void 0);
+      mocks.assetJob.isGone.mockResolvedValue(false);
       await expect(sut.handleVideoConversion({ id: 'video-id' })).resolves.toBe(JobStatus.Failed);
+      expect(mocks.media.transcode).not.toHaveBeenCalled();
+    });
+
+    it('skips transcoding for a video deleted since the job was queued', async () => {
+      mocks.assetJob.getForVideoConversion.mockResolvedValue(void 0);
+      mocks.assetJob.isGone.mockResolvedValue(true);
+      await expect(sut.handleVideoConversion({ id: 'video-id' })).resolves.toBe(JobStatus.Skipped);
       expect(mocks.media.transcode).not.toHaveBeenCalled();
     });
 
     it('should transcode the highest bitrate video stream', async () => {
       mocks.logger.isLevelEnabled.mockReturnValue(false);
       mocks.assetJob.getForVideoConversion.mockResolvedValue({ ...asset, ...probeStub.multipleVideoStreams });
+      mocks.mediaOperation.getLatestBySubject.mockResolvedValue([]);
 
       const context = {
-        claim: { id: 'job', token: 'attempt', name: JobName.AssetEncodeVideo },
+        claim: { id: 'job', token: 'attempt', name: JobName.AssetEncodeVideo, data: {} },
         signal: new AbortController().signal,
         adoptions: [],
         followups: [],
@@ -6040,6 +6091,7 @@ describe(MediaService.name, () => {
       });
 
       await expect(sut.handleVideoConversion({ id: 'video-id' })).resolves.toBe(JobStatus.Skipped);
+      expect(mocks.assetJob.setNoPicture).toHaveBeenCalledWith(asset.id, asset.checksum);
       expect(mocks.media.transcode).not.toHaveBeenCalled();
     });
 

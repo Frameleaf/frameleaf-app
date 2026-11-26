@@ -52,7 +52,17 @@ const command = (arguments_, options = {}) =>
   });
 const run = (arguments_, options) => {
   const result = command(arguments_, options);
-  if (result.status !== 0) throw new Error(`Fixture Docker operation failed: ${arguments_[0]}`);
+  if (result.status !== 0) {
+    // Docker's own reason, with this run's generated secrets removed, so a failed start can be diagnosed from CI.
+    const reason = Object.values(secrets).reduce(
+      (text, secret) => text.replaceAll(secret, '[secret]'),
+      String(result.stderr || result.error?.message || '')
+        .trim()
+        .split('\n')
+        .at(-1),
+    );
+    throw new Error(`Fixture Docker operation failed: ${arguments_[0]}: ${reason}`);
+  }
   return result.stdout.trim();
 };
 const state = (container) =>
@@ -249,12 +259,22 @@ try {
   const sourceUserId = String(claims.user_id);
   assert.match(sourceUserId, /^[1-9]\d*$/u);
   const request = async (route, method = 'GET', body) => {
-    const response = await fetch(origin + route, {
-      method,
-      headers: { Authorization: 'Bearer ' + token, ...(body && { 'content-type': 'application/json' }) },
-      body: body ? JSON.stringify(body) : undefined,
-      signal: AbortSignal.timeout(30_000),
-    });
+    const send = () =>
+      fetch(origin + route, {
+        method,
+        headers: { Authorization: 'Bearer ' + token, ...(body && { 'content-type': 'application/json' }) },
+        body: body ? JSON.stringify(body) : undefined,
+        signal: AbortSignal.timeout(30_000),
+      });
+    let response = await send();
+    // The source app's access token is short-lived, and a scan on a loaded runner can outlast it.
+    if (response.status === 401) {
+      await response.body?.cancel();
+      const renewed = await login(secrets.admin);
+      if (renewed.status === 200) token = (await renewed.json()).access;
+      else await renewed.body?.cancel();
+      response = await send();
+    }
     if (!response.ok) {
       await response.body?.cancel();
       throw new Error(`Native fixture API refused ${method} (HTTP ${response.status})`);

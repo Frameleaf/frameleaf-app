@@ -8,7 +8,7 @@ import {
   type CloudLibrarySnapshot,
   emptyCloudLibraryResult,
 } from 'src/utils/cloud-library-batch.js';
-import { localPinnedIdentity } from 'src/utils/cloud-model-identity.js';
+import { localPinnedIdentity, localPinnedProfile } from 'src/utils/cloud-model-identity.js';
 import { mlDestinationStub } from 'test/fixtures/ml-destination.stub.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
 
@@ -340,6 +340,33 @@ describe(CloudLibraryBatchService.name, () => {
         expect.objectContaining({ modelKey: expect.stringMatching(/^clip:[\da-f]{64}$/) }),
         { modelName: SIGLIP, previewPath: '/preview.jpeg' },
       );
+      publish.mockRestore();
+    });
+
+    it('stores it under the producer key the library already uses, not the newest key of the release', async () => {
+      const publish = vi.spyOn(SmartInfoService.prototype, 'publishClipEmbedding').mockResolvedValue(JobStatus.Success);
+      const kept = `clip:${'a'.repeat(64)}`;
+      mocks.machineLearning.cloudClipStorageKey.mockResolvedValue(kept);
+
+      const written = await writeResult()(snapshot(), item, document(localPinnedIdentity(MlWorkload.Clip, SIGLIP)));
+
+      expect(written.outcome).toBe('stored');
+      expect(mocks.machineLearning.cloudClipStorageKey).toHaveBeenCalledWith(
+        localPinnedProfile(MlWorkload.Clip, SIGLIP)!.modelKey,
+      );
+      expect(publish).toHaveBeenCalledWith('asset-1', expect.objectContaining({ modelKey: kept }), expect.anything());
+      publish.mockRestore();
+    });
+
+    it('leaves the photo to this server when the library’s index is another build of the model', async () => {
+      const publish = vi.spyOn(SmartInfoService.prototype, 'publishClipEmbedding');
+      mocks.machineLearning.cloudClipStorageKey.mockResolvedValue(undefined);
+
+      const written = await writeResult()(snapshot(), item, document(localPinnedIdentity(MlWorkload.Clip, SIGLIP)));
+
+      expect(written.outcome).toBe('local');
+      expect(written.error).toMatch(/another model build/);
+      expect(publish).not.toHaveBeenCalled();
       publish.mockRestore();
     });
 

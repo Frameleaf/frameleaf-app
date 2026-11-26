@@ -8,6 +8,7 @@ import type { DB } from 'src/schema/index.js';
 import { publicationTransaction } from 'src/queue/transaction.js';
 import { type DesktopClipSpace, parseDesktopClipSpaces } from 'src/utils/desktop-clip-space.js';
 import { parseDesktopModelCatalogue } from 'src/utils/desktop-model-catalogue.js';
+import { compatibleClipSpaces, equivalentDesktopModelKeys } from 'src/utils/desktop-model-equivalents.js';
 import { canonicalJson } from 'src/utils/object.js';
 
 export type DesktopClipIndexBinding = { revisionId: string; space: DesktopClipSpace };
@@ -18,6 +19,8 @@ export type DesktopClipReadGuard = {
 const tables = ['smart_search', 'smart_search_description', 'video_moment_frame_embedding'];
 const keys = (space: DesktopClipSpace) =>
   [`image:${space.visualModelKey}`, ...space.textModelKeys.map((key) => `text:${key}`)].sort();
+/** Vectors this server's own AI made under the configured model name: every vector from before a desktop helped. */
+const LEGACY = 'legacy';
 const identity = (space: DesktopClipSpace) =>
   canonicalJson({ ...space, textModelKeys: [...space.textModelKeys].sort() });
 
@@ -31,6 +34,26 @@ export class DesktopClipIndexRepository {
     this.models,
   );
   constructor(@InjectKysely() private db: Kysely<DB>) {}
+
+  /**
+   * Who may write vectors into an index admitted for `space`: this server's own AI (`legacy`), and every
+   * released encoder of the same embedding space. A desktop runtime revision has model keys of its own, so
+   * the same model appears as several spaces; the release shows they are one (`compatibleClipSpaces`).
+   */
+  private producers(space: DesktopClipSpace): string[] {
+    return [LEGACY, ...new Set(compatibleClipSpaces(this.spaces, this.models, space).flatMap((item) => keys(item)))];
+  }
+
+  /** The model name the admitted index holds vectors of; undefined while no desktop has been granted smart search. */
+  async modelName(): Promise<string | undefined> {
+    const row = await this.db
+      .selectFrom('desktop_clip_index')
+      .select('space')
+      .where('scope', '=', 'clip')
+      .executeTakeFirst();
+    const key = row?.space?.visualModelKey;
+    return key ? this.models.profiles.find((profile) => profile.modelKey === key)?.modelName : undefined;
+  }
 
   async getActive(target: Kysely<DB> = this.db): Promise<DesktopClipIndexBinding | undefined> {
     const row = await target
@@ -49,12 +72,12 @@ export class DesktopClipIndexRepository {
         .select('scope')
         .where('scope', '=', 'unadmitted')
         .executeTakeFirst();
+      const allowed = released && this.producers(released);
       if (
         !released ||
         identity(parsed) !== identity(released) ||
         gate ||
-        producers.some((p) => p.scope !== 'clip') ||
-        canonicalJson(producers.map((p) => p.key).sort()) !== canonicalJson(keys(released))
+        producers.some((p) => p.scope !== 'clip' || !allowed!.includes(p.key))
       )
         throw new Error('invalid');
       await this.assertDimensions(target, released);
@@ -114,7 +137,39 @@ export class DesktopClipIndexRepository {
       (p) => allowed.includes(p.modelKey) && canonicalJson(p.spec.entries) === canonicalJson(entries),
     );
     if (!profile) throw new Error('desktop_clip_profile_unavailable');
-    return { binding, profile };
+    // The same encoder under the other runtime revisions of this model: one embedding space, other keys.
+    // This server's own AI is one build, and can only answer under the key of its own revision.
+    const equivalents = equivalentDesktopModelKeys(profile.modelKey)
+      .filter((key) => key !== profile.modelKey)
+      .map((key) => this.models.profiles.find((item) => item.modelKey === key))
+      .filter((item): item is NonNullable<typeof item> => !!item);
+    return { binding, profile, equivalents };
+  }
+
+  /**
+   * The key a vector made outside this network (Frameleaf Cloud) by the image encoder `modelKey` is stored
+   * under. The features that compare photos only compare vectors of one producer key, and a release can add a
+   * newer key for the same encoder, so a library keeps the key it already has: the admitted index's, or
+   * before any desktop was granted, the one its vectors of this encoder already carry. Undefined when the
+   * admitted index is another embedding space; that vector must not be stored.
+   */
+  async storageKey(modelKey: string): Promise<string | undefined> {
+    const family = equivalentDesktopModelKeys(modelKey);
+    const binding = await this.getActive();
+    if (binding) {
+      return family.includes(binding.space.visualModelKey) ? binding.space.visualModelKey : undefined;
+    }
+    const rows = await this.db
+      .selectFrom('desktop_clip_producer')
+      .select('key')
+      .where(
+        'key',
+        'in',
+        family.map((key) => `image:${key}`),
+      )
+      .execute();
+    const used = new Set(rows.map((row) => row.key.slice('image:'.length)));
+    return family.find((key) => key !== modelKey && used.has(key)) ?? modelKey;
   }
 
   /** Call only after selected NAS producer/config verification; this does not grant worker scope. */
@@ -136,8 +191,18 @@ export class DesktopClipIndexRepository {
         await sql`SELECT pg_advisory_xact_lock(912741, 1)`.execute(tx);
         await admission?.assertAuthority();
         const current = await this.getActive(tx);
+        const admitProducers = (allowed: string[]) =>
+          tx
+            .insertInto('desktop_clip_producer')
+            .values(allowed.map((key) => ({ key, scope: 'clip' as const })))
+            .onConflict((oc) => oc.column('key').doUpdateSet({ scope: 'clip' }))
+            .execute();
         if (current) {
-          if (current.space.spaceKey !== spaceKey) throw new Error('desktop_clip_index_changed');
+          // Another desktop runtime revision's keys for the same embedding space share the index.
+          const allowed = this.producers(current.space);
+          if (keys(space).some((key) => !allowed.includes(key))) throw new Error('desktop_clip_index_changed');
+          // A later release can add encoders of this space; they become producers the first time one is granted.
+          await admitProducers(allowed);
           return current;
         }
         const gate = await tx
@@ -149,13 +214,11 @@ export class DesktopClipIndexRepository {
         if (!gate) throw new Error('desktop_clip_index_invalid');
         await this.assertDimensions(tx, space);
         await tx.insertInto('desktop_clip_index').values({ scope: 'clip', revisionId: randomUUID(), space }).execute();
-        const allowed = keys(space);
-        await tx
-          .insertInto('desktop_clip_producer')
-          .values(allowed.map((key) => ({ key, scope: 'clip' as const })))
-          .onConflict((oc) => oc.column('key').doUpdateSet({ scope: 'clip' }))
-          .execute();
-        // Foreign keys serialize concurrent publications and refuse unknown or incompatible existing vectors.
+        // The vectors already in the library stay: this server's AI made them under the configured model name
+        // (a model change empties the library's vectors), which `assertAuthority` has just checked is this
+        // space's model. Foreign keys serialize concurrent publications and refuse vectors of any other producer.
+        const allowed = this.producers(space);
+        await admitProducers(allowed);
         await tx.deleteFrom('desktop_clip_producer').where('key', 'not in', allowed).execute();
         await tx.deleteFrom('desktop_clip_index').where('scope', '=', 'unadmitted').execute();
         return (await this.getActive(tx))!;

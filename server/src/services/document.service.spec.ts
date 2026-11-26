@@ -91,6 +91,40 @@ describe(DocumentService.name, () => {
     delete: ReturnType<typeof vi.fn>;
   };
 
+  describe('the back of a print (FL-967)', () => {
+    beforeEach(() => {
+      documentRepository.getAsset.mockResolvedValue(
+        documentAsset({ visibility: AssetVisibility.Hidden, isPrintBack: true }),
+      );
+    });
+
+    it('reads the text of a hidden back', async () => {
+      const result = await sut.get(authStub.user1, assetId);
+
+      expect(result.lines.map((item) => item.text)).toEqual(['LAKE AGNES']);
+    });
+
+    it('refreshes the search text when a line is corrected', async () => {
+      documentRepository.getEdits.mockResolvedValueOnce([]).mockResolvedValue([storedEdit({ revision: 1 })]);
+
+      await sut.editLine(authStub.user1, assetId, {
+        ocrId: lineId,
+        recognizedText: 'LAKE AGNES',
+        action: DocumentEditAction.Correct,
+        value: 'Lake Agnes',
+        revision: null,
+      });
+
+      expect(mocks.ocr.setPrintBackSearchText).toHaveBeenCalledWith(assetId, 'Lake Agnes');
+    });
+
+    it('still reads nothing from a Live Photo motion part', async () => {
+      documentRepository.getAsset.mockResolvedValue(documentAsset({ visibility: AssetVisibility.Hidden }));
+
+      await expect(sut.get(authStub.user1, assetId)).resolves.toMatchObject({ lines: [] });
+    });
+  });
+
   const withFieldSuggestions = () =>
     mocks.systemMetadata.get.mockResolvedValue({ machineLearning: { ocr: { documentFields: true } } });
 

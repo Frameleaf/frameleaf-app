@@ -217,10 +217,19 @@ export class CloudLibraryBatchService extends BaseService {
     this.cronRepository.create({
       name: 'frameleafCloudLibraryBatches',
       expression: CLOUD_LIBRARY_PASS_CRON,
-      onTick: () =>
-        handlePromiseError(this.jobRepository.queue({ name: JobName.CloudMlLibraryBatch, data: {} }), this.logger),
+      onTick: () => handlePromiseError(this.queuePass(), this.logger),
       start: !!this.configRepository.getEnv().frameleafCloud.url,
     });
+  }
+
+  /**
+   * A server that never linked to Frameleaf Cloud has no batches, so no pass is queued. One that was linked keeps its
+   * passes so batches left behind by an unlink are still released.
+   */
+  private async queuePass() {
+    if (await this.systemMetadataRepository.get(SystemMetadataKey.FrameleafCloudLink)) {
+      await this.jobRepository.queue({ name: JobName.CloudMlLibraryBatch, data: {} });
+    }
   }
 
   @OnJob({ name: JobName.CloudMlLibraryBatch, queue: QueueName.BackgroundTask })
@@ -1044,10 +1053,11 @@ export class CloudLibraryBatchService extends BaseService {
         false,
       );
     const files: CloudJobInputFile[] = [];
+    const waiting = new Set(pending);
     for (const item of sent) {
       const path = join(folder, `${item.inputId}.bin`);
       const input = { inputId: item.inputId, sha256: item.sha256!, bytes: item.bytes!, path };
-      if (!pending.includes(item)) {
+      if (!waiting.has(item)) {
         files.push(input);
         continue;
       }
@@ -1356,7 +1366,16 @@ export class CloudLibraryBatchService extends BaseService {
           };
         }
         const profile = localPinnedProfile(MlWorkload.Clip, config.machineLearning.clip.modelName);
-        const embedding = acceptCloudClipResult(profile, { identity: document.result.identity, result: bound });
+        const accepted = acceptCloudClipResult(profile, { identity: document.result.identity, result: bound });
+        // The release may name this encoder under several keys (one per runtime revision); the library keeps one.
+        const modelKey = await this.machineLearningRepository.cloudClipStorageKey(accepted.modelKey);
+        if (!modelKey) {
+          throw new CloudModelIdentityMismatchError(
+            MlWorkload.Clip,
+            "this library's smart search index holds vectors of another model build",
+          );
+        }
+        const embedding = { ...accepted, modelKey };
         const status = await this.smartInfo.publishClipEmbedding(item.assetId, embedding, {
           modelName: snapshot.modelName,
           previewPath: item.previewPath ?? '',

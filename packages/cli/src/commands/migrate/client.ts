@@ -23,6 +23,7 @@ import type {
 } from '@frameleaf/sdk';
 import { createReadStream } from 'node:fs';
 import { Readable } from 'node:stream';
+import { discoverEndpoint } from 'src/utils.js';
 
 export class MigrateHttpError extends Error {
   constructor(
@@ -133,14 +134,8 @@ export class ServerClient {
 
   /** Resolve the real API endpoint via `.well-known/immich`, then verify the key. */
   static async connect(url: string, key: string): Promise<{ client: ServerClient; user: UserAdminResponseDto }> {
-    let baseUrl = url.replace(/\/+$/, '');
-    try {
-      const wellKnownResponse = await fetch(new URL('.well-known/immich', url));
-      const wellKnown = (await wellKnownResponse.json()) as { api: { endpoint: string } };
-      baseUrl = new URL(wellKnown.api.endpoint, url).href.replace(/\/+$/, '');
-    } catch {
-      // no well-known endpoint; use the URL as given
-    }
+    // Only an endpoint on the address given: the key goes to whatever this resolves to.
+    const baseUrl = ((await discoverEndpoint(url)) ?? url).replace(/\/+$/, '');
     const client = new ServerClient(baseUrl, key);
     const config = await client.json<{ frameleaf?: { cloudConfigured?: unknown } } | null>('GET', '/server/config');
     if (typeof config?.frameleaf?.cloudConfigured !== 'boolean') {

@@ -5,6 +5,7 @@ import type {
   WorkerInventoryResponseDto,
   WorkerRunnerDto,
 } from 'src/dtos/worker-inventory.dto.js';
+import type { HiddenContentFilter } from 'src/utils/hidden-content.js';
 import {
   LIBRARY_ML_WORKLOADS,
   MediaOperationDestination,
@@ -80,7 +81,8 @@ const iso = (value: unknown): string | null => (value ? new Date(value as string
  *
  * Nothing here contacts a worker or changes a route. A check is the explicit probe on the ML
  * destination API; routes and consent stay on their own endpoints. Loads are counts and runner
- * identities are process names, so an administrator never learns whose media a worker holds.
+ * identities are process names. The one exception (FL-1761) is the file name of the playback copy a
+ * desktop is making, withheld for a Locked video or one its owner's rules hide from this administrator.
  */
 @Injectable()
 export class WorkerInventoryService {
@@ -97,7 +99,7 @@ export class WorkerInventoryService {
     this.logger.setContext(WorkerInventoryService.name);
   }
 
-  async getInventory(): Promise<WorkerInventoryResponseDto> {
+  async getInventory(viewerId?: string, hiddenContent?: HiddenContentFilter): Promise<WorkerInventoryResponseDto> {
     const config = await getConfig(
       { configRepo: this.configRepository, metadataRepo: this.systemMetadataRepository, logger: this.logger },
       { withCache: true },
@@ -109,7 +111,7 @@ export class WorkerInventoryService {
       this.mediaOperationRepository.getDestinationLoad(RESTORATION_OPERATION_KINDS),
       this.mediaOperationRepository.getClaimants(RESTORATION_OPERATION_KINDS),
       readQueueBacklogs(this.jobRepository, ALL_LIBRARY_ANALYSIS_QUEUES),
-      this.mlDestinationRepository.getDesktopHelpers(),
+      this.mlDestinationRepository.getDesktopHelpers(viewerId, hiddenContent),
     ]);
 
     const backlog = libraryAnalysisBacklog(queues);
@@ -153,6 +155,10 @@ export class WorkerInventoryService {
         lastSeenAt: iso(desktop.lastSeenAt),
         ownerName: desktop.ownerName,
         household: desktop.household,
+        transcodeEnabled: desktop.transcodeEnabled,
+        transcodeEveryone: desktop.transcodeEveryone,
+        transcoding: desktop.transcoding,
+        withdrawn: desktop.withdrawn.map(({ workload, until }) => ({ workload, until: iso(until) })),
       })),
       libraryRoutes: Object.values(MlWorkload)
         .filter((workload) => LIBRARY_ML_WORKLOADS.includes(workload))

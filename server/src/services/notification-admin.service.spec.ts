@@ -10,6 +10,7 @@ import { ServiceMocks, newTestService } from 'test/utils.js';
 const smtpTransport = Object.freeze<SystemConfig>({
   ...defaults,
   notifications: {
+    ...defaults.notifications,
     smtp: {
       ...defaults.notifications.smtp,
       enabled: true,

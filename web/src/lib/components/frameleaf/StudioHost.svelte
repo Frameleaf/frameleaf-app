@@ -530,6 +530,37 @@
 
   const appTheme = $derived(themeManager.value === AppTheme.Dark ? 'dark' : 'light');
 
+  // Kept apart from the context: it is rebuilt on every preview change, and these only change with the
+  // theme or the language (a style read and a few hundred translations each time otherwise).
+  const themeTokens = $derived(readStudioThemeTokens(appTheme, root ?? null));
+  // The adapter's own chrome (its server preview panel) speaks the host's language (FL-96).
+  const engineStrings = $derived({
+    previewTitle: $t('frameleaf_studio_server_preview'),
+    previewShow: $t('frameleaf_studio_server_preview_show'),
+    previewHide: $t('frameleaf_studio_server_preview_hide'),
+    previewRendering: $t('frameleaf_studio_preview_rendering'),
+    previewStale: $t('frameleaf_studio_preview_stale'),
+    previewUnavailable: $t('frameleaf_studio_preview_unavailable'),
+    previewToneMapped: $t('frameleaf_studio_preview_tone_mapped'),
+    previewNoWorker: $t('frameleaf_studio_server_preview_no_worker'),
+    previewWithoutWebGpu: $t('frameleaf_studio_local_preview_without_webgpu'),
+    editSuperseded: $t('frameleaf_studio_edit_superseded'),
+    // The adapter fills these in; the host keeps them as markers.
+    importNotKept: $t('frameleaf_studio_import_not_kept', { values: { file: '{file}', reason: '{reason}' } }),
+    importCancelUnknown: $t('frameleaf_studio_import_cancel_unknown'),
+    relinkReload: $t('frameleaf_studio_relink_reload'),
+    relinkSaved: $t('frameleaf_studio_relink_saved'),
+    lockedTrackRefused: $t('frameleaf_studio_locked_track_refused'),
+    ...transcriptEngineStrings($t),
+    ...cutoutEngineStrings($t),
+    ...stabiliseEngineStrings($t),
+    ...captionStyleEngineStrings($t),
+    ...voiceCleanupEngineStrings($t),
+    ...captionLanguageEngineStrings($t),
+    ...cloudCaptionEngineStrings($t),
+    ...libraryPanelStrings($t),
+  });
+
   const context = (): StudioHostContext => ({
     project,
     sourceEpoch,
@@ -537,7 +568,7 @@
     projectImports,
     handoffAssetIds,
     auth,
-    theme: readStudioThemeTokens(appTheme, root ?? null),
+    theme: themeTokens,
     capabilities: capabilities ?? emptyStudioCapabilities(),
     renderEvidence,
     preview,
@@ -549,33 +580,7 @@
     handoffPlayhead,
     seekRequest,
     draftHeld,
-    // The adapter's own chrome (its server preview panel) speaks the host's language (FL-96).
-    strings: {
-      previewTitle: $t('frameleaf_studio_server_preview'),
-      previewShow: $t('frameleaf_studio_server_preview_show'),
-      previewHide: $t('frameleaf_studio_server_preview_hide'),
-      previewRendering: $t('frameleaf_studio_preview_rendering'),
-      previewStale: $t('frameleaf_studio_preview_stale'),
-      previewUnavailable: $t('frameleaf_studio_preview_unavailable'),
-      previewToneMapped: $t('frameleaf_studio_preview_tone_mapped'),
-      previewNoWorker: $t('frameleaf_studio_server_preview_no_worker'),
-      previewWithoutWebGpu: $t('frameleaf_studio_local_preview_without_webgpu'),
-      editSuperseded: $t('frameleaf_studio_edit_superseded'),
-      // The adapter fills these in; the host keeps them as markers.
-      importNotKept: $t('frameleaf_studio_import_not_kept', { values: { file: '{file}', reason: '{reason}' } }),
-      importCancelUnknown: $t('frameleaf_studio_import_cancel_unknown'),
-      relinkReload: $t('frameleaf_studio_relink_reload'),
-      relinkSaved: $t('frameleaf_studio_relink_saved'),
-      lockedTrackRefused: $t('frameleaf_studio_locked_track_refused'),
-      ...transcriptEngineStrings($t),
-      ...cutoutEngineStrings($t),
-      ...stabiliseEngineStrings($t),
-      ...captionStyleEngineStrings($t),
-      ...voiceCleanupEngineStrings($t),
-      ...captionLanguageEngineStrings($t),
-      ...cloudCaptionEngineStrings($t),
-      ...libraryPanelStrings($t),
-    },
+    strings: engineStrings,
   });
 
   const disposeEngine = async () => {

@@ -47,6 +47,10 @@ class TestController {
   @Authenticated()
   @RemoteSignInExempt()
   logoutRoute() {}
+
+  @Authenticated({ public: true })
+  @OriginalTransfer()
+  publicOriginalRoute() {}
 }
 
 const contextFor = (handler: (...args: any[]) => unknown, request: Record<string, unknown> = {}) =>
@@ -201,6 +205,19 @@ describe(AuthGuard.name, () => {
         sut.canActivate(contextFor(TestController.prototype.originalRoute, { frameleafVia: 'wan' })),
       ).resolves.toBe(true);
       await expect(sut.canActivate(contextFor(TestController.prototype.originalRoute))).resolves.toBe(true);
+    });
+
+    it('keeps originals off the relay on a public route too (FL-1767)', async () => {
+      const authenticate = vitest.spyOn(authService, 'authenticate');
+      mocks.systemMetadata.get.mockResolvedValue(null as never);
+
+      await expect(
+        sut.canActivate(contextFor(TestController.prototype.publicOriginalRoute, { frameleafVia: 'relay' })),
+      ).rejects.toThrow('not available through the Frameleaf relay');
+      await expect(
+        sut.canActivate(contextFor(TestController.prototype.publicOriginalRoute, { frameleafVia: 'lan' })),
+      ).resolves.toBe(true);
+      expect(authenticate).not.toHaveBeenCalled();
     });
 
     it('tells authentication that signing out is exempt from the remote sign-in rule, and nothing else', async () => {

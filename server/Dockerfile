@@ -91,12 +91,12 @@ FROM base-server-build AS base-server-geodata
 # Reverse-geocoding data from a fixed snapshot, listed with its checksums, capture dates and CC BY 4.0
 # attribution in server/base-image/geodata/geodata.lock. fetch.sh takes each file from Frameleaf's host
 # (static.frameleaf.cloud/geodata/$GEODATA_SNAPSHOT/) and falls back to its pinned capture URL; both must
-# match the checksum. GEODATA_DATE is the newest file in the set (the landmark place pack, built
-# 2026-10-10; the GeoNames captures are from 2026-09-11 and 2026-09-13), not the build time, so amd64 and
+# match the checksum. GEODATA_DATE is the newest file in the set (the landmark place pack, corrected
+# 2026-11-20; the GeoNames captures are from 2026-09-11 and 2026-09-13), not the build time, so amd64 and
 # arm64 builds ship identical data and a new image only re-imports geodata when the snapshot changes. Change the lock, GEODATA_SNAPSHOT and
 # GEODATA_DATE together.
 ARG GEODATA_SNAPSHOT=2026-10-11
-ARG GEODATA_DATE=2026-10-10T00:00:00+00:00
+ARG GEODATA_DATE=2026-11-20T00:00:00+00:00
 COPY server/base-image/geodata/ ./geodata/
 RUN GEODATA_SNAPSHOT="$GEODATA_SNAPSHOT" ./geodata/fetch.sh geodata/geodata.lock /build/geodata && \
   chmod 444 /build/geodata/*.txt /build/geodata/*.geojson /build/geodata/*.gz && \
@@ -410,7 +410,7 @@ RUN --mount=type=cache,id=pnpm,target=/buildcache/pnpm-store pnpm --filter 'fram
 
 COPY ./server ./server/
 COPY ./manager/package.json ./manager/package.json
-COPY ./manager/src/contracts.ts ./manager/src/import-plan.ts ./manager/src/import-source-authority.ts ./manager/src/import-sqlite.ts ./manager/src/import-transfer-journal.ts ./manager/src/import-copy.ts ./manager/src/import-file-review.ts ./manager/src/import-adoption.ts ./manager/src/import-relocation.ts ./manager/src/
+COPY ./manager/src/contracts.ts ./manager/src/gallery-preview.ts ./manager/src/gallery-reads.ts ./manager/src/gallery-required.ts ./manager/src/import-plan.ts ./manager/src/import-source-authority.ts ./manager/src/import-sqlite.ts ./manager/src/import-transfer-journal.ts ./manager/src/import-copy.ts ./manager/src/import-file-review.ts ./manager/src/import-adoption.ts ./manager/src/import-relocation.ts ./manager/src/
 COPY ./manager/import-rename.c ./manager/import-rename.c
 COPY ./studio/runtime/subtitle-sidecar.mjs ./studio/runtime/subtitle-sidecar.d.mts ./studio/runtime/
 COPY ./studio/tools/owned-subtitle-runtime.mjs ./studio/tools/prepare-server-subtitle-runtime.mjs ./studio/tools/

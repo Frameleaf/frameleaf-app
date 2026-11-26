@@ -36,7 +36,7 @@ describe(ICloudAuditService.name, () => {
     housekeeping: vi.fn(),
     stopState: vi.fn(),
   };
-  const sync = { progress: vi.fn(), get: vi.fn(), withSession: vi.fn(), resource: vi.fn(), finish: vi.fn() };
+  const sync = { progress: vi.fn(), get: vi.fn(), useSession: vi.fn(), resource: vi.fn(), finish: vi.fn() };
   const identities = { claim: vi.fn(), renew: vi.fn(), release: vi.fn() };
   const transport = { enabled: vi.fn(), download: vi.fn(), decodeSession: vi.fn(), encodeSession: vi.fn() };
   const operations = {
@@ -177,7 +177,7 @@ describe(ICloudAuditService.name, () => {
     sync.finish.mockResolvedValue(undefined);
     sync.progress.mockResolvedValue(true);
     sync.get.mockResolvedValue(connection);
-    sync.withSession.mockImplementation(async (_id, _owner, callback) => (await callback(connection)).value);
+    sync.useSession.mockImplementation(async (_id, _owner, callback) => (await callback(connection)).value);
     sync.resource.mockImplementation(() => Promise.resolve({ ...resource, status: 'committed' }));
     transport.enabled.mockReturnValue(true);
     transport.download.mockImplementation(() =>

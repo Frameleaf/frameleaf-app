@@ -1,4 +1,5 @@
 import ssl
+import time
 import unittest
 from datetime import datetime, timezone
 from http.cookiejar import CookieJar
@@ -6,9 +7,12 @@ from urllib.request import Request
 from unittest.mock import patch
 
 import requests
+from gallery_dl import config as gallery_config, exception as gallery_error, extractor as gallery_extractors
+from gallery_dl.extractor import twitter
 from gallery_dl.extractor.nozomi import NozomiExtractor
 
-from bridge import BridgeError, Extraction, creator_feed, creator_profile, gallery_entry, inspection, list_entries, public_page, youtube_candidates
+import bridge
+from bridge import BridgeError, Extraction, creator_feed, video_feed, creator_profile, gallery_entry, inspection, list_entries, public_page, youtube_candidates
 from transport import cookie_policy, gallery_session_factory, load_session_cookies
 
 
@@ -124,6 +128,10 @@ class BridgeTests(unittest.TestCase):
         self.assertEqual(creator_feed("https://bsky.app/profile/fixture.example"), "https://bsky.app/profile/fixture.example/replies")
         self.assertEqual(creator_feed("https://www.reddit.com/u/fixture/"), "https://www.reddit.com/user/fixture/submitted")
         self.assertEqual(creator_feed("https://x.com/fixture/status/123"), "https://x.com/fixture/status/123")
+        self.assertEqual(video_feed("https://www.twitch.tv/fixture"), "https://www.twitch.tv/fixture/videos")
+        self.assertEqual(video_feed("https://www.twitch.tv/videos/2000"), "https://www.twitch.tv/videos/2000")
+        self.assertEqual(video_feed("https://www.twitch.tv/directory"), "https://www.twitch.tv/directory")
+        self.assertEqual(video_feed("https://vimeo.com/fixture"), "https://vimeo.com/fixture")
         self.assertEqual(creator_feed("https://x.com/fixture/likes"), "https://x.com/fixture/likes")
 
     def test_youtube_channel_flattening_defers_live_and_keeps_archives(self):
@@ -333,6 +341,79 @@ class BridgeTests(unittest.TestCase):
                 "secure": True, "httpOnly": True, "hostOnly": True, "partitionKey": {"topLevelSite": "https://example.org"},
             }]})
         self.assertEqual(error.exception.code, "unsupported_session")
+
+    def test_a_refusal_while_signed_in_is_about_the_post_not_the_sign_in(self):
+        """A private, blocked or age-restricted post must not read as a lapsed connection."""
+        protected = gallery_error.AuthorizationError("fixture's Tweets are protected")
+        age = gallery_error.AuthRequired(message="NSFW Tweet")
+        rejected = gallery_error.AuthenticationError()
+        with patch.object(bridge, "SIGNED_IN", True):
+            self.assertEqual(bridge.error_code(protected).code, "restricted")
+            self.assertEqual(bridge.error_code(age).code, "restricted")
+            self.assertEqual(bridge.http_status(403, {}).code, "restricted")
+            # the site saying the sign-in itself is not accepted still says so
+            self.assertEqual(bridge.error_code(rejected).code, "authentication_required")
+            self.assertEqual(bridge.http_status(401, {}).code, "authentication_required")
+        with patch.object(bridge, "SIGNED_IN", False):
+            # with no sign-in, a sign-in is what could help
+            self.assertEqual(bridge.error_code(protected).code, "authentication_required")
+            self.assertEqual(bridge.http_status(403, {}).code, "authentication_required")
+
+    def test_an_attempt_knows_whether_it_carries_a_sign_in(self):
+        request = {"socketPath": "/fixture", "token": "fixture"}
+        with patch.object(bridge, "SIGNED_IN", False):
+            Extraction({**request, "session": {"domains": ["example.org"], "cookies": [{
+                "name": "a", "value": "b", "domain": ".example.org", "path": "/", "secure": True,
+                "httpOnly": True, "hostOnly": False,
+            }]}})
+            self.assertTrue(bridge.SIGNED_IN)
+            Extraction(request)
+            self.assertFalse(bridge.SIGNED_IN)
+
+    def test_x_request_is_signed_in_with_the_cookies_the_browser_extension_sends(self):
+        """The cookies Save to Frameleaf reads for x.com reach X's API as a signed-in request."""
+        later = time.time() + 86_400
+        def cookie(name, value, domain=".x.com", **change):
+            # the shape of `siteCookie` in the browser extension
+            return {"name": name, "value": value, "domain": domain, "path": "/", "secure": True, "httpOnly": False,
+                    "hostOnly": False, "expires": later, "storeId": "0", **change}
+        session = {"domains": ["twitter.com", "x.com"], "cookies": [
+            cookie("auth_token", "fixture-auth", httpOnly=True), cookie("ct0", "fixture-csrf"),
+            cookie("twid", "u%3D1"), cookie("lang", "en", domain="x.com", hostOnly=True),
+            cookie("auth_token", "other-site", domain=".twitter.com", httpOnly=True),
+        ]}
+        sent = []
+
+        def send(_self, request, **_kwargs):
+            sent.append(request)
+            response = requests.Response()
+            response.status_code = 403
+            response._content = b'{"errors":[{"message":"fixture"}]}'
+            response.request = request
+            response.url = request.url
+            return response
+
+        transaction = type("Transaction", (), {"generate_transaction_id": lambda *_: "fixture"})()
+        gallery_config.set(("cache",), "file", ":memory:")
+        gallery_config.set(("extractor",), "retries", 0)
+        original = requests.Session
+        with patch.object(requests.Session, "send", send), patch.object(twitter.TwitterAPI, "client_transaction", transaction):
+            requests.Session = gallery_session_factory("/fixture", "fixture", session)
+            try:
+                extractor = gallery_extractors.find("https://x.com/fixture/status/1")
+                extractor.initialize()
+                with self.assertRaises(gallery_error.GalleryDLException):
+                    list(extractor)
+            finally:
+                requests.Session = original
+        self.assertEqual(len(sent), 1)
+        headers = {name.lower(): value for name, value in sent[0].headers.items()}
+        self.assertTrue(sent[0].url.startswith("https://x.com/i/api/"))
+        cookies = dict(part.strip().split("=", 1) for part in headers["cookie"].split(";"))
+        self.assertEqual(cookies["auth_token"], "fixture-auth")
+        self.assertEqual(cookies["ct0"], "fixture-csrf")
+        self.assertEqual(headers["x-csrf-token"], "fixture-csrf")
+        self.assertEqual(headers["x-twitter-auth-type"], "OAuth2Session")
 
 
 if __name__ == "__main__":

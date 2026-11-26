@@ -93,12 +93,26 @@ Frameleaf is built on Immich (AGPL-3.0; see `/licenses/LICENSE.txt`). The compon
   Licence texts: licenses/texts/microsoft-mit.txt.
 - **NSFW image detection (ONNX)** — Falconsai; ONNX conversion by onnx-community. Licence: Apache-2.0. https://huggingface.co/Falconsai/nsfw_image_detection
   Licence texts: licenses/texts/apache-2.0.txt.
+- **llama.cpp** — The ggml authors. Licence: MIT. https://github.com/ggml-org/llama.cpp
+  Licence texts: licenses/texts/llama-cpp-mit.txt.
 
 ## Photo library place data
 
 - **Landmark place pack (OpenStreetMap boundaries, Wikidata places)** — OpenStreetMap contributors; Wikidata contributors. Licence: ODbL-1.0 (boundaries); CC0-1.0 (Wikidata fields). https://www.openstreetmap.org/copyright
   Place boundaries © OpenStreetMap contributors, available under the Open Database License (https://www.openstreetmap.org/copyright). The pack is a derivative database under the same licence; server/base-image/geodata/landmarks/build.mjs is the method that produces it. Place names, identifiers, kinds and ranks are from Wikidata (CC0).
   Licence texts: licenses/texts/odbl-1.0.txt.
+- **GeoNames (cities, regions, countries and their names in other languages)** — GeoNames. Licence: CC-BY-4.0. https://www.geonames.org/
+  City, region and country data © GeoNames (https://www.geonames.org/), licensed under CC BY 4.0. The places used to name where a photo was taken ship with the server. Their names in the app's other languages are a selection from GeoNames' alternate names, made by server/bin/build-place-names-pack.mjs, which the server downloads as one file.
+  Licence texts: licenses/texts/cc-by-4.0.txt.
+
+## Album and collection icons
+
+- **Tabler Icons** — Paweł Kuna and Tabler Icons contributors. Licence: MIT. https://github.com/tabler/tabler-icons
+  Licence texts: licenses/texts/tabler-icons-mit.txt.
+- **Material Symbols** — Google. Licence: Apache-2.0. https://github.com/google/material-design-icons
+  Licence texts: licenses/texts/apache-2.0.txt.
+- **IconOven (Stroke style, selected icons)** — Appic Marketing. Licence: MIT. https://iconoven.com/icons
+  Licence texts: licenses/texts/iconoven-mit.txt.
 
 ## Fonts (Studio titles)
 
@@ -1406,6 +1420,34 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
+## licenses/texts/iconoven-mit.txt
+
+Source: https://raw.githubusercontent.com/iconoven/iconoven-swift/main/LICENSE (retrieved 2026-11-26, SHA-256 3478f693d7ad620267d02f10efe093b4fa26038eafb5b03cc88dc7143d246bb2).
+
+```text
+MIT License
+
+Copyright (c) 2026 Appic Marketing LLC
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
 ## licenses/texts/insightface-model-licence.txt
 
 Source: https://raw.githubusercontent.com/deepinsight/insightface/master/python-package/README.md (retrieved 2026-09-25, SHA-256 c87de4c388290493f07cb58ec22f8dc71592c2230db97a6a6fe22b30d914e9d0).
@@ -1494,6 +1536,34 @@ You may add Your own copyright statement to Your modifications and may provide a
 11. Termination. This License will terminate automatically and immediately if You fail to comply with any of its terms and conditions. Upon termination, You must cease all use of the Work and any Derivative Works and delete all copies in Your possession.
 
 END OF TERMS AND CONDITIONS
+```
+
+## licenses/texts/llama-cpp-mit.txt
+
+Source: https://github.com/ggml-org/llama.cpp/blob/054a1babf3f57074b0f63f415fc34bdf13435a64/LICENSE (retrieved 2026-09-25, SHA-256 94f29bbed6a22c35b992c5c6ebf0e7c92f13b836b90f36f461c9cf2f0f1d010d).
+
+```text
+MIT License
+
+Copyright (c) 2023-2026 The ggml authors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
 ```
 
 ## licenses/texts/microsoft-mit.txt
@@ -2800,6 +2870,34 @@ justice, law enforcement, immigration or asylum processes, such as predicting an
 individual will commit fraud/crime commitment (e.g. by text profiling, drawing causal
 relationships between assertions made in documents, indiscriminate and
 arbitrarily-targeted use).
+```
+
+## licenses/texts/tabler-icons-mit.txt
+
+Source: https://raw.githubusercontent.com/tabler/tabler-icons/main/LICENSE (retrieved 2026-11-26, SHA-256 b740a1d46122672da62833e97f7e7c8a13fa85cbc7445b584b297cc00dde93db).
+
+```text
+MIT License
+
+Copyright (c) 2020-2026 Paweł Kuna
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
 ```
 
 ## licenses/texts/ubuntu-font-licence-1.0.txt

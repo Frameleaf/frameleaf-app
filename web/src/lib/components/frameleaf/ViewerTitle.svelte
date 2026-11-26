@@ -17,6 +17,7 @@
   import { viewerHeadline, viewerWhenWhere } from '$lib/frameleaf/viewer-headline';
   import { isLivePhoto, isPanorama, isVideoAsset } from '$lib/frameleaf/viewer-media';
   import type { ViewerPosition } from '$lib/frameleaf/viewer-position';
+  import { authManager } from '$lib/managers/auth-manager.svelte';
   import { locale } from '$lib/stores/preferences.store';
   import type { AssetResponseDto } from '@frameleaf/sdk';
   import { t } from 'svelte-i18n';
@@ -28,7 +29,8 @@
 
   let { asset, position = null }: Props = $props();
 
-  const whenWhere = $derived(viewerWhenWhere(asset, $locale));
+  // FL-1019: the server sends a name only to its owner; a shared link never shows one either way
+  const whenWhere = $derived(viewerWhenWhere(asset, $locale, authManager.isSharedLink ? null : asset.namedPlace?.name));
   const headline = $derived([whenWhere.time, ...viewerHeadline(asset)].filter(Boolean).join(' · '));
   const kind = $derived.by(() => {
     // FL-1284: the kind of shot the file records (Slo-mo, Portrait, Burst …) says the most

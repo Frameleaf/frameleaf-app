@@ -71,6 +71,8 @@ export default typescriptEslint.config(
       'build',
       '.svelte-kit',
       'static/studio-engine',
+      // Node build scripts; no tsconfig includes them, so typed linting cannot parse them (like vite.config.ts).
+      'scripts',
       'package',
       '**/.env',
       '**/.env.*',

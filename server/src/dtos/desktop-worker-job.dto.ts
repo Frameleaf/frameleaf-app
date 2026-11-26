@@ -4,6 +4,17 @@ import z from 'zod';
 export const DesktopClaimRequestSchema = z.strictObject({
   modelKeys: z.array(z.string().min(1).max(256)).max(64),
   waitMs: z.number().int().min(0).max(20_000).default(20_000),
+  /**
+   * Asks to be told when a requested model was withdrawn from this computer: the claim then answers
+   * 409 `desktop_qualification_hold` at once. Without it a claim answers as it always has.
+   */
+  reportWithdrawn: z.boolean().optional(),
+  /**
+   * How many more tasks this desktop can take now. With it a desktop may hold several leases: each claim
+   * returns one new lease (never one it already holds), while it holds fewer tasks of that kind of work than
+   * the queue's Jobs setting. Without it a desktop holds one lease, as it always has.
+   */
+  slots: z.number().int().min(1).max(64).optional(),
 });
 export const DesktopHeartbeatSchema = z.strictObject({ id: z.uuid() });
 export const DesktopResultSchema = z.strictObject({ result: z.record(z.string(), z.json()) });

@@ -82,9 +82,6 @@ const PhysicalDeduplicationCopyStateSchema = z.object({
   ...mediaDetail,
 });
 
-export type PhysicalDeduplicationRetainedState = z.infer<typeof PhysicalDeduplicationRetainedStateSchema>;
-export type PhysicalDeduplicationCopyState = z.infer<typeof PhysicalDeduplicationCopyStateSchema>;
-
 const PhysicalDeduplicationRetainedResponseSchema = PhysicalDeduplicationRetainedStateSchema.extend({
   ...mediaDetailResponse,
   ownerName: z.string().describe('Display name of the retained account'),
@@ -331,8 +328,6 @@ const PhysicalDeduplicationVerificationSchema = z
 const PhysicalDeduplicationRestoreRequestSchema = z
   .object({ assetId: z.uuidv4().describe('A copy of the applied plan whose own file is still on disk') })
   .meta({ id: 'PhysicalDeduplicationRestoreRequestDto' });
-
-export type PhysicalDeduplicationVerificationItem = z.infer<typeof PhysicalDeduplicationVerificationItemSchema>;
 
 export class PhysicalDeduplicationVerificationDto extends createZodDto(PhysicalDeduplicationVerificationSchema) {}
 export class PhysicalDeduplicationRestoreRequestDto extends createZodDto(PhysicalDeduplicationRestoreRequestSchema) {}

@@ -71,7 +71,9 @@
   const tidyOn = $derived(baseline?.nightlyTasks.databaseCleanup ?? true);
 
   let everyone = $state<TrashEveryoneResponseDto | null>(null);
-  let proposed = $state<TrashEveryoneResponseDto | null>(null);
+  let proposedAnswer = $state<{ length: number; value: TrashEveryoneResponseDto } | null>(null);
+  // FL-1771: a count is shown only against the length it was read for, never while the next one loads
+  const proposed = $derived(proposedAnswer?.length === days ? proposedAnswer.value : null);
   let waitingAccounts = $state<UserAdminResponseDto[]>([]);
   let said = $state('');
 
@@ -93,17 +95,22 @@
   $effect(() => {
     const length = days;
     if (length <= 0 || length >= savedDays || savedDays === 0) {
-      proposed = null;
+      proposedAnswer = null;
       return;
     }
     let cancelled = false;
     void getTrashEveryone({ days: length })
       .then((value) => {
         if (!cancelled) {
-          proposed = value;
+          proposedAnswer = { length, value };
         }
       })
-      .catch(() => {});
+      .catch(() => {
+        // The last answer was for another length: its count must not be shown against this one.
+        if (!cancelled) {
+          proposedAnswer = null;
+        }
+      });
     return () => {
       cancelled = true;
     };

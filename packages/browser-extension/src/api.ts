@@ -20,7 +20,7 @@ const messages = {
   album:
     'Could not confirm the new collection. Refresh collections and check where you are saving before trying again.',
   address:
-    'Use an HTTPS server address without a user name, password, “?” or “#”.',
+    'Use an HTTPS server address (plain http only for a home-network server, with the switch on) without a user name, password, “?” or “#”.',
   connection:
     'Could not connect to your server. Check the address, its certificate and site access. Redirects are not followed.',
   authorization:
@@ -50,7 +50,7 @@ const uuid =
  * switched on: loopback, private and link-local addresses, a bare name (`tower`) and the names no
  * public DNS serves. `URL` has already written any IPv4 form as four decimal parts.
  */
-function homeHost(hostname: string): boolean {
+export function homeHost(hostname: string): boolean {
   const host = hostname.toLowerCase();
   const v4 = /^(\d+)\.(\d+)\.\d+\.\d+$/.exec(host);
   if (v4) {

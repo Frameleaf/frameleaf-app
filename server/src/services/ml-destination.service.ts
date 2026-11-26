@@ -556,7 +556,8 @@ export class MlDestinationService extends BaseService {
     if (
       !endpoint.cloud &&
       probe.reachable &&
-      probe.workloads.some((workload) => RESTORATION_ML_WORKLOADS.includes(workload))
+      (probe.workloads.some((workload) => RESTORATION_ML_WORKLOADS.includes(workload)) ||
+        (probe.photoOperations?.length ?? 0) > 0)
     ) {
       try {
         const report = await this.machineLearningRepository.getRestorationModels(endpoint);

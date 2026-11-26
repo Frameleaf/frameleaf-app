@@ -351,6 +351,9 @@
     if (petName) {
       return $t('frameleaf_library_filter_pet', { values: { name: petName } });
     }
+    if (chip.detailOnly && chip.detailText) {
+      return $t(chip.detailText.key, { values: chip.detailText.values });
+    }
     const name = $t(chip.labelKey);
     const base = chip.negated ? $t('frameleaf_library_filter_not', { values: { name } }) : name;
     if (chip.count > 1) {

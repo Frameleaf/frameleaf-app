@@ -26,6 +26,8 @@ const fakeWorld = (mocks: ServiceMocks, importPaths: string[]) => {
   const assets: FakeAsset[] = [];
   const albums = new Map<string, FakeAlbum>();
   const members = new Map<string, Set<string>>();
+  // library_folder_album_asset: the photos the sync has put in each album once
+  const seen = new Map<string, Set<string>>();
   const links: FakeLink[] = [];
   const folderOf = (asset: FakeAsset) => path.posix.dirname(asset.originalPath);
   const ofLibrary = (asset: FakeAsset) => asset.libraryId === library.id;
@@ -147,14 +149,14 @@ const fakeWorld = (mocks: ServiceMocks, importPaths: string[]) => {
     const removed: { albumId: string; assetId: string }[] = [];
     for (const asset of assets) {
       for (const { albumId, folderPath } of add) {
-        if (
-          ofLibrary(asset) &&
-          !asset.isOffline &&
-          folderPath === folderOf(asset) &&
-          !members.get(albumId)!.has(asset.id)
-        ) {
-          members.get(albumId)!.add(asset.id);
-          added.push({ albumId, assetId: asset.id });
+        const once = seen.get(albumId) ?? new Set<string>();
+        seen.set(albumId, once);
+        if (ofLibrary(asset) && !asset.isOffline && folderPath === folderOf(asset) && !once.has(asset.id)) {
+          once.add(asset.id);
+          if (!members.get(albumId)!.has(asset.id)) {
+            members.get(albumId)!.add(asset.id);
+            added.push({ albumId, assetId: asset.id });
+          }
         }
       }
     }
@@ -163,6 +165,7 @@ const fakeWorld = (mocks: ServiceMocks, importPaths: string[]) => {
         const asset = assets.find(({ id }) => id === assetId)!;
         if (ofLibrary(asset) && asset.isOffline && folderOf(asset) === folderPath) {
           members.get(albumId)!.delete(assetId);
+          seen.get(albumId)?.delete(assetId);
           removed.push({ albumId, assetId });
         }
       }
@@ -227,7 +230,7 @@ describe(FolderAlbumService.name, () => {
   });
 
   describe('sync', () => {
-    it('makes three nested albums for three nested folders, each with its own photos', async () => {
+    it("makes an album for each folder, with the import folder's own photos in one named after the library", async () => {
       const world = fakeWorld(mocks, ['/photos/2020']);
       world.addFile('/photos/2020/a.jpg');
       world.addFile('/photos/2020/trip/b.jpg');
@@ -245,8 +248,9 @@ describe(FolderAlbumService.name, () => {
       const top = world.albumFor('/photos/2020')!;
       const trip = world.albumFor('/photos/2020/trip')!;
       const day1 = world.albumFor('/photos/2020/trip/day1')!;
-      expect(top).toMatchObject({ albumName: '2020', parentId: null, kind: AlbumKind.Album });
-      expect(trip).toMatchObject({ albumName: 'trip', parentId: top.id, kind: AlbumKind.Album });
+      // FL-838 decision 2: the library's own photos sit beside the folders' albums, not above them
+      expect(top).toMatchObject({ albumName: 'Photos', parentId: null, kind: AlbumKind.Album });
+      expect(trip).toMatchObject({ albumName: 'trip', parentId: null, kind: AlbumKind.Album });
       expect(day1).toMatchObject({ albumName: 'day1', parentId: trip.id, kind: AlbumKind.Album });
       expect(world.photosOf('/photos/2020')).toEqual(['/photos/2020/a.jpg']);
       expect(world.photosOf('/photos/2020/trip')).toEqual(['/photos/2020/trip/b.jpg']);
@@ -255,25 +259,96 @@ describe(FolderAlbumService.name, () => {
         '/photos/2020/trip/day1/d.jpg',
       ]);
       expect(mocks.album.create).toHaveBeenCalledWith(
-        expect.objectContaining({ albumName: '2020' }),
+        expect.objectContaining({ albumName: 'Photos' }),
         [],
         [{ userId: world.library.ownerId, role: 'owner' }],
         world.library.ownerId,
       );
     });
 
-    it('makes a folder holding only folders a collection, and an album once photos arrive in it', async () => {
+    it('makes a top-level folder of folders a collection, a deeper one an album of albums', async () => {
       const world = fakeWorld(mocks, ['/photos']);
-      world.addFile('/photos/2020/a.jpg');
+      world.addFile('/photos/2020/trip/a.jpg');
+      world.addFile('/photos/2020/summer/camping/b.jpg');
 
       await sut.sync(world.library.id);
-      expect(world.albumFor('/photos')).toMatchObject({ albumName: 'photos', kind: AlbumKind.Collection });
+      // the import folder holds no photos of its own, so it makes nothing
+      expect(world.albumFor('/photos')).toBeUndefined();
+      const year = world.albumFor('/photos/2020')!;
+      const summer = world.albumFor('/photos/2020/summer')!;
+      expect(year).toMatchObject({ albumName: '2020', parentId: null, kind: AlbumKind.Collection });
+      expect(world.albumFor('/photos/2020/trip')).toMatchObject({ parentId: year.id, kind: AlbumKind.Album });
+      expect(summer).toMatchObject({ parentId: year.id, kind: AlbumKind.Album });
+      expect(world.albumFor('/photos/2020/summer/camping')).toMatchObject({ parentId: summer.id });
+
+      world.addFile('/photos/2020/cover.jpg');
+      world.addFile('/photos/loose.jpg');
+      await sut.sync(world.library.id);
       expect(world.albumFor('/photos/2020')).toMatchObject({ kind: AlbumKind.Album });
+      expect(world.photosOf('/photos/2020')).toEqual(['/photos/2020/cover.jpg']);
+      expect(world.albumFor('/photos')).toMatchObject({ albumName: 'Photos', parentId: null });
+      expect(world.photosOf('/photos')).toEqual(['/photos/loose.jpg']);
+    });
 
-      world.addFile('/photos/cover.jpg');
+    it("drops the library's own album once no photo is loose in the import folder", async () => {
+      const world = fakeWorld(mocks, ['/photos']);
+      world.addFile('/photos/loose.jpg');
+      world.addFile('/photos/trip/a.jpg');
       await sut.sync(world.library.id);
-      expect(world.albumFor('/photos')).toMatchObject({ kind: AlbumKind.Album });
-      expect(world.photosOf('/photos')).toEqual(['/photos/cover.jpg']);
+      const trip = world.albumFor('/photos/trip')!;
+
+      world.removeFile('/photos/loose.jpg');
+      await expect(sut.sync(world.library.id)).resolves.toMatchObject({ removed: 1 });
+
+      expect(world.albumFor('/photos')).toBeUndefined();
+      expect(world.albumFor('/photos/trip')).toMatchObject({ id: trip.id, parentId: null });
+    });
+
+    it('brings albums made before the change in line: the library name, no collection below the top', async () => {
+      const world = fakeWorld(mocks, ['/photos']);
+      world.addFile('/photos/loose.jpg');
+      world.addFile('/photos/2020/x/y/b.jpg');
+      await sut.sync(world.library.id);
+      // as the first release left them: the import folder's album named after the folder, and every folder of
+      // folders a collection (moving the top-level albums out of it is the migration's)
+      const root = world.albumFor('/photos')!;
+      root.albumName = 'photos';
+      const x = world.albumFor('/photos/2020/x')!;
+      x.kind = AlbumKind.Collection;
+
+      await sut.sync(world.library.id);
+
+      expect(root.albumName).toBe('Photos');
+      expect(world.links.find((link) => link.folderPath === '/photos')?.isUserEdited).toBe(false);
+      expect(x.kind).toBe(AlbumKind.Album);
+    });
+
+    it('leaves out a photo the owner took out of the album, and still adds new ones', async () => {
+      const world = fakeWorld(mocks, ['/photos']);
+      const removed = world.addFile('/photos/trip/a.jpg');
+      world.addFile('/photos/trip/b.jpg');
+      await sut.sync(world.library.id);
+      const trip = world.albumFor('/photos/trip')!;
+      world.members.get(trip.id)!.delete(removed.id);
+
+      world.addFile('/photos/trip/c.jpg');
+      await expect(sut.sync(world.library.id)).resolves.toMatchObject({ photosAdded: 1 });
+
+      expect(world.photosOf('/photos/trip')).toEqual(['/photos/trip/b.jpg', '/photos/trip/c.jpg']);
+    });
+
+    it('puts a photo back when its file comes back after going missing', async () => {
+      const world = fakeWorld(mocks, ['/photos']);
+      const photo = world.addFile('/photos/trip/a.jpg');
+      world.addFile('/photos/trip/b.jpg');
+      await sut.sync(world.library.id);
+
+      world.removeFile('/photos/trip/a.jpg');
+      await sut.sync(world.library.id);
+      photo.isOffline = false;
+      await sut.sync(world.library.id);
+
+      expect(world.photosOf('/photos/trip')).toEqual(['/photos/trip/a.jpg', '/photos/trip/b.jpg']);
     });
 
     it('puts a new file in its album after a rescan, without making albums again', async () => {
@@ -399,7 +474,7 @@ describe(FolderAlbumService.name, () => {
   describe('removeAll', () => {
     it('keeps the albums as ordinary albums', async () => {
       const world = fakeWorld(mocks, ['/photos']);
-      world.addFile('/photos/trip/a.jpg');
+      world.addFile('/photos/trip/day1/a.jpg');
       await sut.sync(world.library.id);
 
       await expect(sut.removeAll(world.library.id, { removeAlbums: false })).resolves.toBe(0);
@@ -411,15 +486,15 @@ describe(FolderAlbumService.name, () => {
 
     it('deletes the albums, deepest first, and never a photo', async () => {
       const world = fakeWorld(mocks, ['/photos']);
-      world.addFile('/photos/trip/a.jpg');
+      world.addFile('/photos/trip/day1/a.jpg');
       await sut.sync(world.library.id);
-      const root = world.albumFor('/photos')!;
       const trip = world.albumFor('/photos/trip')!;
+      const day1 = world.albumFor('/photos/trip/day1')!;
 
       await expect(sut.removeAll(world.library.id, { removeAlbums: true })).resolves.toBe(2);
 
       expect(world.albums.size).toBe(0);
-      expect(mocks.album.delete.mock.calls).toEqual([[trip.id], [root.id]]);
+      expect(mocks.album.delete.mock.calls).toEqual([[day1.id], [trip.id]]);
       expect(world.assets).toHaveLength(1);
       expect(mocks.asset.deleteAll).not.toHaveBeenCalled();
       expect(mocks.asset.updateAll).not.toHaveBeenCalled();
@@ -443,9 +518,15 @@ describe('folder album planning', () => {
       ],
       4,
     );
-    // '/photos/a/b/c/d' would be the fifth level
-    expect(tree.keys().toArray().toSorted()).toEqual(['/photos', '/photos/a', '/photos/a/b']);
+    // '/photos/a/b/c/d' would be the fifth level; '/photos' holds no photo of its own
+    expect(tree.keys().toArray().toSorted()).toEqual(['/photos/a', '/photos/a/b']);
+    expect(tree.get('/photos/a')).toMatchObject({ parentPath: null, photos: 0, depth: 2 });
     expect(tree.get('/photos/a/b')).toMatchObject({ parentPath: '/photos/a', photos: 2, depth: 3 });
+    expect(buildFolderTree(['/photos'], [{ folderPath: '/photos', photos: 3 }]).get('/photos')).toMatchObject({
+      parentPath: null,
+      photos: 3,
+      depth: 1,
+    });
     expect(buildFolderTree(['/photos'], [{ folderPath: '/photos/a/b/c/d', photos: 1 }], 4).size).toBe(0);
   });
 

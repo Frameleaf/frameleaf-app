@@ -208,7 +208,10 @@ export class ClientsPaymentsService {
         body: { returnUrl: dto.returnUrl, refreshUrl: dto.returnUrl },
       });
       const parsed = new URL(url);
-      if (parsed.protocol !== 'https:' || !parsed.hostname.endsWith('stripe.com'))
+      if (
+        parsed.protocol !== 'https:' ||
+        !(parsed.hostname === 'stripe.com' || parsed.hostname.endsWith('.stripe.com'))
+      )
         throw new ServiceUnavailableException('Unexpected payment account link');
       const state = await this.state();
       if (!state.accounts[ownerId])
@@ -296,7 +299,15 @@ export class ClientsPaymentsService {
           handled.push(event.id);
         }
       } catch (error) {
-        this.logger.warn(`Payment event ${event.id} left for the next collection: ${(error as Error).message}`);
+        // FL-1769: one whose handler has failed for a week is let go too, or it would hold back newer payments
+        if (Date.now() - Date.parse(event.createdAt) > UNHANDLED_EVENT_LIMIT_MS) {
+          this.logger.error(
+            `Payment event ${event.id} (${event.type}) failed for a week; letting it go: ${(error as Error).message}`,
+          );
+          handled.push(event.id);
+        } else {
+          this.logger.warn(`Payment event ${event.id} left for the next collection: ${(error as Error).message}`);
+        }
       }
     }
     if (handled.length > 0)

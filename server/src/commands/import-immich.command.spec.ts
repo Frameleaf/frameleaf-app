@@ -16,6 +16,11 @@ const fixture = vi.hoisted(() => {
     verify: vi.fn(async (dispatch: (config: ImportConfig) => Promise<unknown>) => dispatch(config)),
     status: vi.fn().mockResolvedValue({ status: 'activated', derivedRunId: 'retained-import-run' }),
     close: vi.fn().mockResolvedValue(undefined),
+    source: {
+      gallery: false,
+      galleryCounts: null as Record<string, number | null> | null,
+      notImported: [] as string[],
+    },
   };
 });
 vi.mock('node:fs/promises', () => ({
@@ -35,6 +40,7 @@ vi.mock('src/immich-import/importer.js', () => ({
   ImmichImportService: class {
     verify = fixture.verify;
     status = fixture.status;
+    source = fixture.source;
   },
 }));
 
@@ -51,6 +57,39 @@ it('finishes verification after one durable transfer and reports its run without
     expect(output).toHaveBeenCalledWith(JSON.stringify({ status: 'activated', derivedRunId: 'retained-import-run' }));
     expect(fixture.close).toHaveBeenCalledTimes(2);
   } finally {
+    output.mockRestore();
+    vi.unstubAllEnvs();
+  }
+});
+
+it('reports what a Noodle Gallery import carried and what stayed behind when it finishes', async () => {
+  vi.stubEnv('DB_URL', 'postgres://fixture/destination');
+  vi.stubEnv('FRAMELEAF_IMPORT_SOURCE_URL', 'postgres://fixture/source');
+  const output = vi.spyOn(console, 'log').mockImplementation(() => {});
+  const galleryCounts = {
+    spaces: 4,
+    members: 11,
+    memberships: 18,
+    spacePhotos: 6120,
+    people: 23,
+    favourites: 1284,
+    pets: null,
+  };
+  Object.assign(fixture.source, { gallery: true, galleryCounts, notImported: ['pets', 'user groups'] });
+  try {
+    const command = new ImportImmichCommand({ dispatchImportedWork: vi.fn() } as unknown as JobRepository);
+    await command.run(['verify'], { config: 'fixture.json' });
+    expect(output).toHaveBeenCalledExactlyOnceWith(
+      JSON.stringify({
+        status: 'activated',
+        derivedRunId: 'retained-import-run',
+        sourceKind: 'gallery',
+        gallery: galleryCounts,
+        notImported: ['pets', 'user groups'],
+      }),
+    );
+  } finally {
+    Object.assign(fixture.source, { gallery: false, galleryCounts: null, notImported: [] });
     output.mockRestore();
     vi.unstubAllEnvs();
   }

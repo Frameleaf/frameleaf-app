@@ -18,6 +18,8 @@ import {
   asset_library_scope_refresh,
   asset_metadata_audit,
   asset_ocr_delete_audit,
+  asset_print_back_not_shared,
+  asset_print_back_released,
   desktop_clip_producer_guard,
   f_concat_ws,
   f_unaccent,
@@ -74,6 +76,7 @@ import { AssetFaceTable } from 'src/schema/tables/asset-face.table.js';
 import { AssetFavoriteTable } from 'src/schema/tables/asset-favorite.table.js';
 import { AssetFileTable } from 'src/schema/tables/asset-file.table.js';
 import { AssetFontTable } from 'src/schema/tables/asset-font.table.js';
+import { AssetGeonameTable } from 'src/schema/tables/asset-geoname.table.js';
 import {
   AssetHealthCandidateTable,
   AssetHealthRunTable,
@@ -95,8 +98,10 @@ import { AssetOcrAuditTable } from 'src/schema/tables/asset-ocr-audit.table.js';
 import { AssetOcrTable } from 'src/schema/tables/asset-ocr.table.js';
 import { AssetOriginalTable } from 'src/schema/tables/asset-original.table.js';
 import { AssetPaletteSwatchTable, AssetPaletteTable } from 'src/schema/tables/asset-palette.table.js';
+import { AssetPrintBackTable } from 'src/schema/tables/asset-print-back.table.js';
 import { AssetProcessingFailureTable } from 'src/schema/tables/asset-processing-failure.table.js';
 import { AssetRestorationTable } from 'src/schema/tables/asset-restoration.table.js';
+import { AssetScanCropTable } from 'src/schema/tables/asset-scan-crop.table.js';
 import { AssetSourceTable } from 'src/schema/tables/asset-source.table.js';
 import { AssetUploadPartTable, AssetUploadResourceTable } from 'src/schema/tables/asset-upload-resource.table.js';
 import { AssetUploadSkipExceptionTable } from 'src/schema/tables/asset-upload-skip-exception.table.js';
@@ -157,7 +162,21 @@ import { DuplicateDecisionTable } from 'src/schema/tables/duplicate-decision.tab
 import { EagleImportItemTable, EagleImportTable } from 'src/schema/tables/eagle-import.table.js';
 import { FaceSearchTable } from 'src/schema/tables/face-search.table.js';
 import { FoundFileTable } from 'src/schema/tables/found-file.table.js';
+import { GeodataPlaceNameTable } from 'src/schema/tables/geodata-place-name.table.js';
 import { GeodataPlacesTable } from 'src/schema/tables/geodata-places.table.js';
+import { HouseholdCommentTable, HouseholdRemoteAuthorTable } from 'src/schema/tables/household-comment.table.js';
+import { HouseholdLinkTable, HouseholdPeerRequestTable } from 'src/schema/tables/household-link.table.js';
+import {
+  HouseholdInboundShareTable,
+  HouseholdOriginTable,
+  HouseholdPersonPendingTable,
+  HouseholdReceivedFileTable,
+} from 'src/schema/tables/household-receive.table.js';
+import {
+  HouseholdShareChangeTable,
+  HouseholdShareMemberTable,
+  HouseholdShareTable,
+} from 'src/schema/tables/household-share.table.js';
 import {
   ICloudEditAliasTable,
   ICloudEditAuthorityTable,
@@ -165,10 +184,14 @@ import {
   ICloudEditVersionTable,
 } from 'src/schema/tables/icloud-edit-authority.table.js';
 import { IdenticalFileChangeTable } from 'src/schema/tables/identical-file-change.table.js';
+import { ImportConnectionItemTable, ImportConnectionTable } from 'src/schema/tables/import-connection.table.js';
 import { IntegrityReportTable } from 'src/schema/tables/integrity-report.table.js';
 import { AssetLandmarkTable, LandmarkAreaTable, LandmarkTable } from 'src/schema/tables/landmark.table.js';
+import { LibraryFolderAlbumAssetTable } from 'src/schema/tables/library-folder-album-asset.table.js';
 import { LibraryFolderAlbumTable } from 'src/schema/tables/library-folder-album.table.js';
 import { LibraryTable } from 'src/schema/tables/library.table.js';
+import { LocationFillProposalTable, LocationFillRunTable } from 'src/schema/tables/location-fill.table.js';
+import { LocationHistorySourceTable, LocationPointTable } from 'src/schema/tables/location-history.table.js';
 import { LockedEncryptionTable } from 'src/schema/tables/locked-encryption.table.js';
 import {
   MediaConnectionTable,
@@ -216,6 +239,7 @@ import { PersonGroupAuditTable } from 'src/schema/tables/person-group-audit.tabl
 import { PersonGroupTable } from 'src/schema/tables/person-group.table.js';
 import { PersonMergeCandidateTable } from 'src/schema/tables/person-merge-candidate.table.js';
 import { PersonProfileTable } from 'src/schema/tables/person-profile.table.js';
+import { PersonRelationshipTable } from 'src/schema/tables/person-relationship.table.js';
 import { PersonSplitCandidateTable } from 'src/schema/tables/person-split-candidate.table.js';
 import { PersonTable } from 'src/schema/tables/person.table.js';
 import { PetAuditTable } from 'src/schema/tables/pet-audit.table.js';
@@ -331,6 +355,7 @@ import {
   UserCredentialVersionTable,
   UserPasskeyTable,
 } from 'src/schema/tables/user-passkey.table.js';
+import { UserPlaceTable } from 'src/schema/tables/user-place.table.js';
 import { UserRecoveryCodeTable, UserTwoFactorTable } from 'src/schema/tables/user-two-factor.table.js';
 import { UserTable } from 'src/schema/tables/user.table.js';
 import { VersionHistoryTable } from 'src/schema/tables/version-history.table.js';
@@ -438,6 +463,11 @@ export class ImmichDatabase {
     AssetDateFindingTable,
     DateFixBatchTable,
     DateFixItemTable,
+    LocationHistorySourceTable,
+    LocationPointTable,
+    LocationFillRunTable,
+    LocationFillProposalTable,
+    UserPlaceTable,
     AssetLedgerTable,
     FoundFileTable,
     BookmarkTagTable,
@@ -500,6 +530,8 @@ export class ImmichDatabase {
     DuplicateDecisionTable,
     FaceSearchTable,
     GeodataPlacesTable,
+    GeodataPlaceNameTable,
+    AssetGeonameTable,
     LandmarkTable,
     LandmarkAreaTable,
     AssetLandmarkTable,
@@ -507,6 +539,20 @@ export class ImmichDatabase {
     BackupRestoreReportTable,
     LibraryTable,
     LibraryFolderAlbumTable,
+    LibraryFolderAlbumAssetTable,
+    AssetScanCropTable,
+    AssetPrintBackTable,
+    HouseholdLinkTable,
+    HouseholdPeerRequestTable,
+    HouseholdShareTable,
+    HouseholdShareMemberTable,
+    HouseholdShareChangeTable,
+    HouseholdInboundShareTable,
+    HouseholdOriginTable,
+    HouseholdReceivedFileTable,
+    HouseholdPersonPendingTable,
+    HouseholdRemoteAuthorTable,
+    HouseholdCommentTable,
     MediaOperationTable,
     MediaOperationCheckpointTable,
     RenderWorkerTable,
@@ -540,6 +586,7 @@ export class ImmichDatabase {
     PersonCategoryMemberTable,
     PersonCategorySeedTable,
     PersonProfileTable,
+    PersonRelationshipTable,
     PersonSplitCandidateTable,
     PersonGroupAuditTable,
     PetAuditTable,
@@ -596,6 +643,8 @@ export class ImmichDatabase {
     TakeoutItemTable,
     TakeoutPairTable,
     TakeoutAlbumTable,
+    ImportConnectionTable,
+    ImportConnectionItemTable,
     DevelopPresetTable,
     DevelopExportTable,
     SessionSyncCheckpointTable,
@@ -663,6 +712,8 @@ export class ImmichDatabase {
     user_delete_audit,
     partner_delete_audit,
     asset_delete_audit,
+    asset_print_back_not_shared,
+    asset_print_back_released,
     media_import_asset_removed,
     media_import_collection_removed,
     asset_library_scope_refresh,
@@ -806,8 +857,15 @@ export interface DB extends QueueDatabase {
   asset_date_finding: AssetDateFindingTable;
   date_fix_batch: DateFixBatchTable;
   date_fix_item: DateFixItemTable;
+  location_history_source: LocationHistorySourceTable;
+  location_point: LocationPointTable;
+  location_fill_run: LocationFillRunTable;
+  location_fill_proposal: LocationFillProposalTable;
+  user_place: UserPlaceTable;
   asset_ledger: AssetLedgerTable;
   found_file: FoundFileTable;
+  import_connection: ImportConnectionTable;
+  import_connection_item: ImportConnectionItemTable;
   ocr_search: OcrSearchTable;
 
   duplicate_decision: DuplicateDecisionTable;
@@ -815,6 +873,8 @@ export interface DB extends QueueDatabase {
   face_search: FaceSearchTable;
 
   geodata_places: GeodataPlacesTable;
+  geodata_place_name: GeodataPlaceNameTable;
+  asset_geoname: AssetGeonameTable;
   landmark: LandmarkTable;
   landmark_area: LandmarkAreaTable;
   asset_landmark: AssetLandmarkTable;
@@ -826,6 +886,21 @@ export interface DB extends QueueDatabase {
 
   library: LibraryTable;
   library_folder_album: LibraryFolderAlbumTable;
+  library_folder_album_asset: LibraryFolderAlbumAssetTable;
+  asset_scan_crop: AssetScanCropTable;
+  asset_print_back: AssetPrintBackTable;
+
+  household_comment: HouseholdCommentTable;
+  household_inbound_share: HouseholdInboundShareTable;
+  household_link: HouseholdLinkTable;
+  household_origin: HouseholdOriginTable;
+  household_peer_request: HouseholdPeerRequestTable;
+  household_person_pending: HouseholdPersonPendingTable;
+  household_received_file: HouseholdReceivedFileTable;
+  household_remote_author: HouseholdRemoteAuthorTable;
+  household_share: HouseholdShareTable;
+  household_share_change: HouseholdShareChangeTable;
+  household_share_member: HouseholdShareMemberTable;
 
   media_operation: MediaOperationTable;
   media_operation_checkpoint: MediaOperationCheckpointTable;
@@ -863,6 +938,7 @@ export interface DB extends QueueDatabase {
   person_category_member: PersonCategoryMemberTable;
   person_category_seed: PersonCategorySeedTable;
   person_profile: PersonProfileTable;
+  person_relationship: PersonRelationshipTable;
   person_split_candidate: PersonSplitCandidateTable;
   person_group_audit: PersonGroupAuditTable;
 

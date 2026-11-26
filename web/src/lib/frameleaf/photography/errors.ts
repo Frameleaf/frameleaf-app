@@ -6,6 +6,7 @@
 export const photographyErrorCodes = [
   'settings_changed',
   'collection_changed',
+  'selection_closed',
   'access_ended',
   'wait',
   'logo_unavailable',

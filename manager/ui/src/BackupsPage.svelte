@@ -5,14 +5,16 @@
   import { formatBytes } from './presentation';
   import { ageDays, when } from './OverviewPage.svelte';
 
-  let { snapshots, status, backupRoot, storage, disabled, backUp, restore, exportKey, unlock, refresh } = $props<{
+  let { snapshots, status, backupRoot, storage, disabled, backUp, restore, remove, exportKey, unlock, refresh } = $props<{
     snapshots: { id: string; time: string }[];
-    status: { unlocked: boolean; keyAvailable: boolean };
+    /** FL-1732: `protected` points are kept to undo the last update or finish an operation, and can't be deleted. */
+    status: { unlocked: boolean; keyAvailable: boolean; protected?: string[] };
     backupRoot: string;
     storage: { path: string; uses: string[]; device?: string | null; availableBytes: number | null }[];
     disabled: boolean;
     backUp: () => void;
     restore: (id: string) => void;
+    remove: (item: { id: string; time: string }) => void;
     exportKey: () => void;
     unlock: () => void;
     refresh: () => void;
@@ -38,7 +40,7 @@
       <p class="meta">
         {#if !latest}Make one now. Manager also makes one before every update, restore and import.
         {:else if old}That’s {Math.floor(ageDays(latest.time))} days ago. Manager makes one when you ask, and before every update, restore and import.
-        {:else}{snapshots.length} kept. Manager also makes one before every update, restore and import.{/if}
+        {:else}{snapshots.length} kept. Manager also makes one before every update, restore and import, and keeps the newest 5.{/if}
       </p>
     </div>
     <button class="button primary" {disabled} onclick={backUp}><Icon name="shield" />Make one now</button>
@@ -69,8 +71,11 @@
   {#each shown as item, i (item.id)}
     <div class="list-row">
       <Icon name={i === 0 ? 'check-circle' : 'clock'} />
-      <div><strong>{when(item.time)}</strong><p>{fullDate(item.time)}</p></div>
-      <button class="button quiet" {disabled} onclick={() => restore(item.id)}>Restore…</button>
+      <div><strong>{when(item.time)}</strong><p>{fullDate(item.time)}{#if status.protected?.includes(item.id)}{' · Kept to undo the last update'}{/if}</p></div>
+      <div class="bk-actions">
+        <button class="button quiet" {disabled} onclick={() => restore(item.id)}>Restore…</button>
+        {#if !status.protected?.includes(item.id)}<button class="button quiet bk-delete" {disabled} aria-label={`Delete the recovery point from ${fullDate(item.time)}`} title="Delete" onclick={() => remove(item)}><Icon name="trash" /></button>{:else}<span class="bk-delete-space"></span>{/if}
+      </div>
     </div>
   {:else}
     <div class="card-body">
@@ -82,6 +87,11 @@
     <div class="card-footer"><button class="text-button" onclick={() => (showAll = !showAll)}>{showAll ? 'Show fewer' : `Show all ${snapshots.length}`}</button></div>
   {/if}
 </section>
+
+<div class="notice mt16">
+  <Icon name="info" />
+  <div><strong>Older recovery points are removed on their own</strong><p>Manager keeps the newest 5 and removes older ones to save space. The one from just before an update stays while you can still undo it.</p></div>
+</div>
 
 <div class="notice mt16">
   <Icon name="info" />
@@ -101,6 +111,10 @@
   .button :global(svg) { width: 15px; height: 15px; }
   .list-row > div > strong { overflow-wrap: anywhere; }
   .bk-warn > :global(svg) { color: var(--amber) !important; }
+  .bk-actions { display: flex; gap: 8px; align-items: center; }
+  .bk-delete { padding-inline: 10px; }
+  .bk-delete-space { width: 35px; flex-shrink: 0; }
+  .bk-delete:hover:not(:disabled) { color: var(--red); }
   .card-footer { padding: 14px 20px; border-top: 1px solid var(--border); }
   @media (max-width: 640px) {
     .bk-status-body { grid-template-columns: auto minmax(0, 1fr); }

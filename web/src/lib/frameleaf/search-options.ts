@@ -4,6 +4,7 @@ import {
   getAllPets,
   getAllTags,
   getSearchSuggestions,
+  getUserPlaces,
   getVisitedLandmarks,
   ImageEnrichmentFilter,
   searchAssets,
@@ -34,6 +35,7 @@ import {
   type HistogramUnit,
   type PaletteFacets,
 } from '$lib/frameleaf/search-palette';
+import { authManager } from '$lib/managers/auth-manager.svelte';
 import { eventManager } from '$lib/managers/event-manager.svelte';
 
 export type FilterPanelOptions = {
@@ -44,6 +46,8 @@ export type FilterPanelOptions = {
   cities: string[];
   /** The landmarks the account has photos at, with how many (FL-354). */
   landmarks: { id: string; name: string; count: number }[];
+  /** FL-1019: the places this person named; `place:` offers them first. Never on a shared link. */
+  namedPlaces: { id: string; name: string }[];
   states: string[];
   countries: string[];
   makes: string[];
@@ -77,6 +81,7 @@ export const emptyFilterPanelOptions = (): FilterPanelOptions => ({
   albums: [],
   cities: [],
   landmarks: [],
+  namedPlaces: [],
   states: [],
   countries: [],
   makes: [],
@@ -200,20 +205,22 @@ export const loadFilterPanelOptions = async (
   signal?: AbortSignal,
   libraryScope?: LibraryViewScope,
 ): Promise<FilterPanelOptions> => {
-  const [people, pets, tags, albums, cities, states, countries, makes, models, lenses, landmarks] = await Promise.all([
-    settle<PersonResponseDto[]>(loadAllPeople(signal), [], signal),
-    // Hidden pets are left out for the same reason hidden people are: hiding is a display choice
-    settle<PetResponseDto[]>(getAllPets({ withHidden: false }, { signal }), [], signal),
-    settle(getAllTags({ signal }), [], signal),
-    settle(getAllAlbums(libraryScope ? { libraryScope } : {}, { signal }), [], signal),
-    settle(sharedSearchSuggestions(SearchSuggestionType.City, signal), [], signal),
-    settle(sharedSearchSuggestions(SearchSuggestionType.State, signal), [], signal),
-    settle(sharedSearchSuggestions(SearchSuggestionType.Country, signal), [], signal),
-    settle(getSearchSuggestions({ $type: SearchSuggestionType.CameraMake }, { signal }), [], signal),
-    settle(getSearchSuggestions({ $type: SearchSuggestionType.CameraModel }, { signal }), [], signal),
-    settle(getSearchSuggestions({ $type: SearchSuggestionType.CameraLensModel }, { signal }), [], signal),
-    settle(getVisitedLandmarks({ signal }), [], signal),
-  ]);
+  const [people, pets, tags, albums, cities, states, countries, makes, models, lenses, landmarks, places] =
+    await Promise.all([
+      settle<PersonResponseDto[]>(loadAllPeople(signal), [], signal),
+      // Hidden pets are left out for the same reason hidden people are: hiding is a display choice
+      settle<PetResponseDto[]>(getAllPets({ withHidden: false }, { signal }), [], signal),
+      settle(getAllTags({ signal }), [], signal),
+      settle(getAllAlbums(libraryScope ? { libraryScope } : {}, { signal }), [], signal),
+      settle(sharedSearchSuggestions(SearchSuggestionType.City, signal), [], signal),
+      settle(sharedSearchSuggestions(SearchSuggestionType.State, signal), [], signal),
+      settle(sharedSearchSuggestions(SearchSuggestionType.Country, signal), [], signal),
+      settle(getSearchSuggestions({ $type: SearchSuggestionType.CameraMake }, { signal }), [], signal),
+      settle(getSearchSuggestions({ $type: SearchSuggestionType.CameraModel }, { signal }), [], signal),
+      settle(getSearchSuggestions({ $type: SearchSuggestionType.CameraLensModel }, { signal }), [], signal),
+      settle(getVisitedLandmarks({ signal }), [], signal),
+      authManager.isSharedLink ? [] : settle(getUserPlaces({ signal }), [], signal),
+    ]);
 
   return {
     people,
@@ -223,6 +230,7 @@ export const loadFilterPanelOptions = async (
     albums: albumSelectionOptions(albums),
     cities: cities.filter(Boolean),
     landmarks: landmarks.map(({ id, name, assetCount }) => ({ id, name, count: assetCount })),
+    namedPlaces: (places ?? []).map(({ id, name }) => ({ id, name })),
     states: states.filter(Boolean),
     countries: countries.filter(Boolean),
     makes: makes.filter(Boolean),

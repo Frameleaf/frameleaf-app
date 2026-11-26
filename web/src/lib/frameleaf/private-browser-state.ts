@@ -31,8 +31,12 @@ const AUTH_PREFIX = 'frameleaf.auth.';
 let privateStateGeneration = 0;
 export const getPrivateBrowserStateGeneration = () => privateStateGeneration;
 
+// Written before the prefix rule covered them; cleared like the rest (FL-1771).
+const LEGACY_PRIVATE_PREFIXES = ['fl-best-photos-later:'];
+
 export const isPrivateBrowserKey = (key: string) =>
-  key.startsWith('frameleaf') && !key.startsWith(AUTH_PREFIX) && !DEVICE_PREFERENCE_KEYS.has(key);
+  (key.startsWith('frameleaf') && !key.startsWith(AUTH_PREFIX) && !DEVICE_PREFERENCE_KEYS.has(key)) ||
+  LEGACY_PRIVATE_PREFIXES.some((prefix) => key.startsWith(prefix));
 
 const clearStore = (store: Storage | undefined) => {
   if (!store) {

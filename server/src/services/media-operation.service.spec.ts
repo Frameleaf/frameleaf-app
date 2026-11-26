@@ -162,10 +162,15 @@ describe(MediaOperationService.name, () => {
       );
     });
 
-    it.each(Object.values(MediaOperationKind).filter((kind) => kind !== MediaOperationKind.SpeechTranscription))(
-      'preserves public kind %s through the shared mapper',
+    it.each(MediaOperationKindSchema.options)('preserves public kind %s through the shared mapper', (kind) => {
+      expect(mapOperation(operationStub({ kind })).kind).toBe(kind);
+    });
+
+    it.each([MediaOperationKind.SpeechTranscription, MediaOperationKind.PlaybackTranscode])(
+      'fails closed on internal kind %s at the shared mapper',
       (kind) => {
-        expect(mapOperation(operationStub({ kind })).kind).toBe(kind);
+        expect(MediaOperationKindSchema.safeParse(kind).success).toBe(false);
+        expect(() => mapOperation(operationStub({ kind }))).toThrow(NotFoundException);
       },
     );
 

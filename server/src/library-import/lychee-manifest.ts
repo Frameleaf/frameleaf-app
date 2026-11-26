@@ -114,15 +114,18 @@ export function readLycheeManifest(snapshot: ReturnType<typeof openLycheeSnapsho
   for (const id of albums.keys())
     if (Number(regular.has(id)) + Number(tagAlbums.has(id)) + Number(personAlbums.has(id)) !== 1)
       return refuse('LYCHEE_ALBUM_TYPE_UNQUALIFIED');
+  // An album whose chain already reached the top is not walked again, so deep trees stay linear.
+  const rooted = new Set<string>();
   for (const id of regular.keys()) {
     const seen = new Set<string>();
     let current: string | undefined = id;
-    while (current !== undefined) {
+    while (current !== undefined && !rooted.has(current)) {
       if (seen.has(current) || !regular.has(current)) return refuse('LYCHEE_ALBUM_HIERARCHY_INVALID');
       seen.add(current);
       const parent: LycheeRow['parent_id'] = regular.get(current)!.parent_id;
       current = parent === null ? undefined : key(parent);
     }
+    for (const album of seen) rooted.add(album);
   }
   if (Object.keys(input.materializedAlbums).some((id) => !dynamic.has(id))) return refuse('LYCHEE_MAPPING_CHANGED');
   const losses: ImportManifest['losses'] = [];

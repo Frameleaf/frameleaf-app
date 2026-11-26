@@ -227,13 +227,25 @@ const clipsOf = (tracks: readonly Track[], into: Clip[] = []): Clip[] => {
 export const applySidecars = (project: InterchangeProject, sidecars: readonly InterchangeSidecar[]) => {
   const notices: InterchangeNotice[] = [];
   const clips = project.timelines.flatMap((timeline) => clipsOf(timeline.tracks));
+  // One index: a CDL file can hold many corrections, and each must not walk every clip.
+  const byName = new Map<string, Clip[]>();
+  for (const clip of clips) {
+    for (const name of namesOf(clip)) {
+      const named = byName.get(name);
+      if (named) {
+        named.push(clip);
+      } else {
+        byName.set(name, [clip]);
+      }
+    }
+  }
   const apply = (id: string, grade: (current: ClipGrade) => ClipGrade) => {
     const key = id.toLowerCase();
-    const matched = clips.filter((clip) => namesOf(clip).has(key) || namesOf(clip).has(stem(key)));
+    const matched = new Set([...(byName.get(key) ?? []), ...(byName.get(stem(key)) ?? [])]);
     for (const clip of matched) {
       clip.frameleaf = { ...clip.frameleaf, grade: grade(clip.frameleaf?.grade ?? {}) };
     }
-    return matched.length;
+    return matched.size;
   };
   for (const sidecar of sidecars) {
     const extension = sidecar.name.split('.').at(-1)?.toLowerCase();

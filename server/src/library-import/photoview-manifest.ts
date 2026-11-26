@@ -88,16 +88,25 @@ export function readPhotoviewManifest(snapshot: ReturnType<typeof openPhotoviewS
   )
     return refuse('PHOTOVIEW_MAPPING_CHANGED');
   const grants = Map.groupBy(rows('user_albums'), (row) => key(row.album_id));
-  const albumReaders = (id: string) => {
-    const readers = new Set<string>();
+  // Each album's readers are worked out once, from its parent's, so deep trees stay linear. Callers only read them.
+  const readersOf = new Map<string, Set<string>>();
+  const albumReaders = (id: string): Set<string> => {
+    const chain: string[] = [];
     let current: string | undefined = id;
     // Parent integrity and cycles were checked by normalizePhotoviewAccess.
-    while (current !== undefined) {
-      for (const row of grants.get(current) ?? []) readers.add(key(row.user_id));
+    while (current !== undefined && !readersOf.has(current)) {
+      chain.push(current);
       const parent: PhotoviewRow['parent_album_id'] = albums.get(current)!.parent_album_id;
       current = parent === null ? undefined : key(parent);
     }
-    return readers;
+    let inherited = current === undefined ? new Set<string>() : readersOf.get(current)!;
+    for (const album of chain.toReversed()) {
+      const readers = new Set(inherited);
+      for (const row of grants.get(album) ?? []) readers.add(key(row.user_id));
+      readersOf.set(album, readers);
+      inherited = readers;
+    }
+    return readersOf.get(id)!;
   };
   const albumOwner = (id: string) => {
     const owner = Object.hasOwn(input.albumOwners, id) ? input.albumOwners[id] : undefined;

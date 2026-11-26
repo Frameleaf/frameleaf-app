@@ -93,24 +93,36 @@ describe(SmartInfoService.name, () => {
         }),
       ).rejects.toThrow('Unknown CLIP model: test-model');
     });
-    it('refuses changing the model of an admitted index', async () => {
-      mocks.machineLearning.assertClipModel.mockRejectedValue(new Error('desktop_clip_profile_unavailable'));
+    it('stops a save while the desktop vector index cannot be read', async () => {
+      mocks.machineLearning.assertClipModel.mockRejectedValue(new Error('desktop_clip_index_invalid'));
       await expect(
         sut.onConfigValidate({
           newConfig: systemConfigStub.machineLearningEnabled as SystemConfig,
           oldConfig: {} as SystemConfig,
         }),
-      ).rejects.toThrow('desktop_clip_profile_unavailable');
+      ).rejects.toThrow('desktop_clip_index_invalid');
     });
   });
 
-  it('refuses an incompatible admitted model before initialization can clear or resize vectors', async () => {
-    mocks.machineLearning.assertClipModel.mockRejectedValue(new Error('desktop_clip_profile_unavailable'));
+  it('never clears or resizes vectors while the desktop vector index cannot be read', async () => {
+    mocks.machineLearning.assertClipModel.mockRejectedValue(new Error('desktop_clip_index_invalid'));
     await expect(
       sut.onConfigInit({ newConfig: systemConfigStub.machineLearningEnabled as SystemConfig }),
-    ).rejects.toThrow('desktop_clip_profile_unavailable');
+    ).rejects.toThrow('desktop_clip_index_invalid');
     expect(mocks.database.setDimensionSize).not.toHaveBeenCalled();
     expect(mocks.database.deleteAllSearchEmbeddings).not.toHaveBeenCalled();
+  });
+
+  it('empties the vectors when the desktop index is still admitted for a model the settings no longer ask for', async () => {
+    // a model change saved while this server was down: same vector size, nothing else to notice it by
+    mocks.database.getDimensionSize.mockResolvedValue(512);
+    mocks.machineLearning.clipIndexStale.mockResolvedValue(true);
+    await sut.onConfigInit({ newConfig: systemConfigStub.machineLearningEnabled as SystemConfig });
+    expect(mocks.machineLearning.clipIndexStale).toHaveBeenCalledWith(
+      systemConfigStub.machineLearningEnabled.machineLearning!.clip!.modelName,
+    );
+    expect(mocks.database.deleteAllSearchEmbeddings).toHaveBeenCalledOnce();
+    expect(mocks.database.setDimensionSize).not.toHaveBeenCalled();
   });
 
   describe('onConfigInit', () => {
@@ -440,6 +452,7 @@ describe(SmartInfoService.name, () => {
 
     it('should fail if asset could not be found', async () => {
       mocks.assetJob.getForClipEncoding.mockResolvedValue(void 0);
+      mocks.assetJob.isGone.mockResolvedValue(false);
 
       expect(await sut.handleEncodeClip({ id: 'non-existent' })).toEqual(JobStatus.Failed);
 

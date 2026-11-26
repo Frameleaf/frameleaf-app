@@ -91,10 +91,3 @@ limit
   $6
 offset
   $7
-
--- BestPhotosRepository.deleteForAssets
-begin
-delete from "public"."asset_best_photo_score"
-where
-  "assetId" = any ($1::uuid[])
-commit

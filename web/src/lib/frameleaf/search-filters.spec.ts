@@ -2,6 +2,8 @@ import { AssetTypeEnum, ImageEnrichmentFilter } from '@frameleaf/sdk';
 import type { MessageFormatter } from 'svelte-i18n';
 import { emptyDiscoveryQuery, type DiscoveryQuery } from '$lib/components/discovery/query';
 import {
+  albumCountAtLeast,
+  albumCountConditionForValue,
   captureDateControlValue,
   captureDateHasCustomCondition,
   CUSTOM_CONDITION,
@@ -181,6 +183,32 @@ describe('withFilterCondition', () => {
   });
 });
 
+describe('album count (FL-976)', () => {
+  it('reads only a plain "at least" condition', () => {
+    expect(albumCountAtLeast({ gte: 3 })).toBe(3);
+    expect(albumCountAtLeast({ gte: 0 })).toBeNull();
+    expect(albumCountAtLeast({ gte: 2, lte: 4 })).toBeNull();
+    expect(albumCountAtLeast({ eq: 2 })).toBeNull();
+    expect(albumCountAtLeast(undefined)).toBeNull();
+  });
+
+  it('clears on empty or below one and stops at 50', () => {
+    expect(albumCountConditionForValue('')).toBeNull();
+    expect(albumCountConditionForValue('0')).toBeNull();
+    expect(albumCountConditionForValue('4')).toEqual({ gte: 4 });
+    expect(albumCountConditionForValue('99')).toEqual({ gte: 50 });
+  });
+
+  it('names the chip in plain language', () => {
+    expect(describeFilterChips($t, query({ albumCount: { gte: 2 } }))[0].label).toBe(
+      'frameleaf_search_in_more_than_one_album',
+    );
+    expect(describeFilterChips($t, query({ albumCount: { gte: 3 } }))[0].label).toContain(
+      'frameleaf_search_in_albums_at_least',
+    );
+  });
+});
+
 describe('describeFilterChips', () => {
   it('reads a boolean field in plain language rather than as "field: false"', () => {
     expect(describeFilterChips($t, query({ hasAlbums: { eq: false } }))[0].label).toBe('not_in_any_album');
@@ -229,5 +257,11 @@ describe('describeFilterChips', () => {
     // An empty or malformed condition is not an active filter, so it produces no chip.
     expect(describeFilterChips($t, query({ city: {} }))).toEqual([]);
     expect(describeFilterChips($t, emptyDiscoveryQuery())).toEqual([]);
+  });
+
+  it('names a decade (FL-936)', () => {
+    const [chip] = describeFilterChips($t, query({ takenDecade: { eq: 1970 } }));
+    expect(chip.label).toContain('frameleaf_date_precision_decade');
+    expect(chip.label).toContain('1970');
   });
 });

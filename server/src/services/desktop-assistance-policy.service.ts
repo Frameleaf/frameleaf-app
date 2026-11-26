@@ -1,4 +1,10 @@
-import { ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { type Transaction, sql } from 'kysely';
 import { randomUUID } from 'node:crypto';
 import z from 'zod';
@@ -95,7 +101,13 @@ export class DesktopAssistancePolicyService {
         if (devices.size >= 64) throw new ConflictException('desktop_household_capacity');
         devices.add(deviceId);
       }
-      policy.household = { revisionId: randomUUID(), devices: [...devices] };
+      // FL-1758: a computer that leaves the household loses its video permission with it
+      const transcodeDevices = policy.household?.transcodeDevices?.filter((id) => devices.has(id));
+      policy.household = {
+        revisionId: randomUUID(),
+        devices: [...devices],
+        ...(transcodeDevices?.length ? { transcodeDevices } : {}),
+      };
       await metadata.set(SystemMetadataKey.FrameleafDesktopAssistance, policy);
       if (device) {
         await tx
@@ -110,6 +122,66 @@ export class DesktopAssistancePolicyService {
           .execute();
       }
       return { enabled };
+    });
+  }
+
+  /**
+   * FL-1761: whether a computer makes playback copies, and whether of other people's videos too. Every claim,
+   * heartbeat and upload reads these lists live, so a change takes effect at the next one: the computer stays signed
+   * in and the household revision is kept, because its AI work is not affected.
+   */
+  async setTranscode(auth: AuthDto, deviceId: string, { enabled, everyone }: { enabled: boolean; everyone: boolean }) {
+    z.uuid().parse(deviceId);
+    if (everyone && !enabled) throw new BadRequestException('desktop_transcode_everyone_needs_enabled');
+    return this.asAdministrator(auth, async (metadata, tx) => {
+      const device = await tx
+        .selectFrom('desktop_device')
+        .select(['id', 'revokedAt'])
+        .where('id', '=', deviceId)
+        .where('mode', '=', 'client-worker')
+        .forUpdate()
+        .executeTakeFirst();
+      const policy = await this.registry(metadata);
+      const on = new Set(policy.transcodeEnabledDevices);
+      const all = new Set(policy.household?.transcodeDevices);
+      // as with the household list, a computer that is gone or revoked can still be taken off
+      const removable = !enabled && (on.has(deviceId) || all.has(deviceId));
+      if ((!device || (enabled && device.revokedAt)) && !removable) throw new NotFoundException('Computer not found');
+      if (everyone && !policy.household?.devices.includes(deviceId)) {
+        throw new ConflictException('desktop_transcode_household_required');
+      }
+      if (on.has(deviceId) === enabled && all.has(deviceId) === everyone) return { enabled, everyone };
+
+      const known = [...new Set([...on, ...all])];
+      const live = new Set(
+        known.length === 0
+          ? []
+          : (
+              await tx
+                .selectFrom('desktop_device')
+                .select('id')
+                .where('id', 'in', known)
+                .where('mode', '=', 'client-worker')
+                .where('revokedAt', 'is', null)
+                .execute()
+            ).map(({ id }) => id),
+      );
+      const nextOn = new Set([...on].filter((id) => live.has(id) && id !== deviceId));
+      if (enabled) {
+        if (nextOn.size >= 64) throw new ConflictException('desktop_transcode_capacity');
+        nextOn.add(deviceId);
+      }
+      const nextAll = [...all].filter((id) => id !== deviceId && nextOn.has(id));
+      if (everyone) nextAll.push(deviceId);
+
+      if (nextOn.size > 0) policy.transcodeEnabledDevices = [...nextOn];
+      else delete policy.transcodeEnabledDevices;
+      if (policy.household) {
+        if (nextAll.length > 0) policy.household.transcodeDevices = nextAll;
+        else delete policy.household.transcodeDevices;
+      }
+      await metadata.set(SystemMetadataKey.FrameleafDesktopAssistance, policy);
+      return { enabled, everyone };
     });
   }
 

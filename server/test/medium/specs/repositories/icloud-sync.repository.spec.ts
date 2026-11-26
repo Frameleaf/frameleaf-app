@@ -85,6 +85,143 @@ describe(ICloudSyncRepository.name, () => {
     },
   );
 
+  describe('photo review', () => {
+    const held = async (reason: string) => {
+      await repository.savePage(connection.id, 'assets:library', 'library', [asset, master], null, true);
+      await repository.materialize(connection, 'library', library);
+      const resource = (await repository.claim(connection.id, 1000))!;
+      await repository.finish(resource, 'needs-review', reason);
+      return resource.id;
+    };
+    const page = (includePrivate = true) =>
+      repository.reviewPage(connection.id, connection.ownerId, includePrivate, { page: 1, size: 48 });
+
+    it('keeps what is here on accept, and the photo stays settled across a new listing', async () => {
+      const id = await held('retained_edit_limit');
+      expect(await page()).toMatchObject({
+        total: 1,
+        groups: [{ group: 'edits', count: 1 }],
+        effects: { keepCurrent: 1 },
+        items: [{ resourceId: id, group: 'edits', effect: 'keep-current', reason: 'retained_edit_limit' }],
+      });
+      expect((await repository.counts(connection.id))['needs-review']).toBe(1);
+
+      await expect(
+        repository.acceptReview(connection.id, connection.ownerId, true, { resourceIds: [id] }),
+      ).resolves.toEqual({ accepted: 1, requeued: 0 });
+
+      await repository.materialize(connection, 'library', library);
+      expect((await repository.resource(id))!.status).toBe('needs-review');
+      expect((await page()).total).toBe(0);
+      expect((await repository.counts(connection.id))['needs-review']).toBe(0);
+    });
+
+    it('tries storage again without recording an answer, so it can come back', async () => {
+      const id = await held('quota_exceeded');
+      await repository.acceptReview(connection.id, connection.ownerId, true, { all: true, group: 'storage' });
+      const resource = (await repository.resource(id))!;
+      expect(resource.status).toBe('pending');
+      expect((resource.source as { _sync?: { acceptedReasons?: unknown } })._sync?.acceptedReasons).toBeUndefined();
+    });
+
+    it('leaves a photo marked for later out of accept all', async () => {
+      const id = await held('retained_edit_limit');
+      await expect(
+        repository.acceptReview(connection.id, connection.ownerId, true, { all: true, exceptResourceIds: [id] }),
+      ).resolves.toEqual({ accepted: 0, requeued: 0 });
+      expect((await page()).total).toBe(1);
+    });
+
+    it('keeps a hidden photo out of an unlocked-only view and out of accept all', async () => {
+      const id = await held('retained_edit_limit');
+      await sql`UPDATE public.icloud_resource SET source = source || '{"isHidden":true}'::jsonb WHERE id = ${id}::uuid`.execute(
+        db,
+      );
+      expect(await page(false)).toMatchObject({ total: 0, privateWaiting: 1, items: [] });
+      await expect(repository.acceptReview(connection.id, connection.ownerId, false, { all: true })).resolves.toEqual({
+        accepted: 0,
+        requeued: 0,
+      });
+      expect((await page()).total).toBe(1);
+    });
+
+    it.each(['source_hidden_requires_consent', 'multiple_content_matches'])(
+      'no longer holds a photo for %s: the next run imports it',
+      async (reason) => {
+        const id = await held(reason);
+        expect((await page()).total).toBe(0);
+        await repository.startRun(connection);
+        expect(await repository.resource(id)).toMatchObject({ status: 'pending', lastError: null });
+      },
+    );
+
+    it('shows a held photo with the matching library photo noted when it was held, whatever its name', async () => {
+      await repository.savePage(connection.id, 'assets:library', 'library', [asset, master], null, true);
+      await repository.materialize(connection, 'library', library);
+      const photo = await seedCanonicalAsset(db, { ownerId: connection.ownerId, originalFileName: 'renamed.jpg' });
+      const resource = (await repository.claim(connection.id, 1000))!;
+      await repository.finish(resource, 'needs-review', 'saved_checksum_conflict', undefined, [randomUUID(), photo.id]);
+      expect((await page()).items).toEqual([
+        expect.objectContaining({
+          resourceId: resource.id,
+          group: 'other',
+          effect: 'try-again',
+          previewAssetId: photo.id,
+          icloudAssetId: null,
+          relatedAssetIds: [],
+          differences: [],
+        }),
+      ]);
+      await repository.materialize(connection, 'library', library);
+      expect((await page()).items[0].previewAssetId).toBe(photo.id);
+    });
+
+    it('lists what differs from the library for changed details, and keeps the library version', async () => {
+      const id = await held('source_metadata_conflict');
+      const photo = await seedCanonicalAsset(db, {
+        ownerId: connection.ownerId,
+        fileCreatedAt: new Date('2026-08-02T10:00:00.000Z'),
+        isFavorite: false,
+      });
+      await sql`UPDATE public.icloud_resource SET "assetId" = ${photo.id}::uuid,
+        source = source || '{"fileCreatedAt":"2026-08-01T10:00:00.000Z","isFavorite":true}'::jsonb
+        WHERE id = ${id}::uuid`.execute(db);
+      expect((await page()).items[0]).toMatchObject({
+        group: 'details',
+        effect: 'keep-current',
+        icloudAssetId: photo.id,
+        previewAssetId: photo.id,
+        differences: [
+          { field: 'date-taken', icloud: '2026-08-01T10:00:00.000Z', library: '2026-08-02T10:00:00.000Z' },
+          { field: 'favorite', icloud: 'true', library: 'false' },
+        ],
+      });
+    });
+
+    it('shows the photos a changed stack sits with in the library', async () => {
+      const id = await held('local_stack_membership_override');
+      const [photo, other] = [
+        await seedCanonicalAsset(db, { ownerId: connection.ownerId }),
+        await seedCanonicalAsset(db, { ownerId: connection.ownerId }),
+      ];
+      const { rows } = await sql<{ id: string }>`INSERT INTO public.stack ("ownerId", "primaryAssetId")
+        VALUES (${connection.ownerId}::uuid, ${photo.id}::uuid) RETURNING id`.execute(db);
+      await sql`UPDATE public.asset SET "stackId" = ${rows[0].id}::uuid WHERE id IN (${photo.id}::uuid, ${other.id}::uuid)`.execute(
+        db,
+      );
+      await sql`UPDATE public.icloud_resource SET "assetId" = ${photo.id}::uuid WHERE id = ${id}::uuid`.execute(db);
+      expect((await page()).items[0]).toMatchObject({ group: 'stack', relatedAssetIds: [other.id] });
+    });
+
+    it('lists a hidden source for import whatever the saved setting says', async () => {
+      const hiddenAsset = { ...asset, fields: { ...asset.fields, isHidden: field(1) } };
+      await repository.savePage(connection.id, 'assets:library', 'library', [hiddenAsset, master], null, true);
+      await repository.materialize(connection, 'library', library);
+      const resource = (await repository.claim(connection.id, 1000))!;
+      expect(resource.source.isHidden).toBe(true);
+    });
+  });
+
   describe('a photo Library care asks iCloud for (FL-1472)', () => {
     /** The item mapped to a library photo with an open problem, finished as `status`. */
     const mappedItem = async (status: string) => {
@@ -241,7 +378,8 @@ describe(ICloudSyncRepository.name, () => {
     expect(await repository.claim(connection.id, 1000)).toMatchObject({ status: 'committed' });
   });
   it('roundtrips typed JSON, keeps split-page master joins and opaque checkpoints, and materializes idempotently', async () => {
-    expect(connection.config.concurrency).toBe(1);
+    // FL-1724: a new connection downloads 10 at a time
+    expect(connection.config.concurrency).toBe(10);
     await repository.savePage(connection.id, 'assets:library', 'library', [asset], 'cursor-page-2', false);
     expect(await repository.checkpoint(connection.id, 'assets:library')).toMatchObject({
       cursor: 'cursor-page-2',
@@ -412,6 +550,39 @@ describe(ICloudSyncRepository.name, () => {
       cursor: '',
       complete: true,
     });
+  });
+
+  it('a slow download holds no lock, so the listing goes on, and an older session never replaces a newer one (FL-1728)', async () => {
+    let answer!: () => void;
+    const apple = new Promise<void>((resolve) => (answer = resolve));
+    let asked!: () => void;
+    const waiting = new Promise<void>((resolve) => (asked = resolve));
+    const read = (await repository.get(connection.id))!.encryptedSession;
+    // a download waiting on Apple
+    const download = repository.useSession(connection.id, connection.ownerId, async (current) => {
+      expect(current.encryptedSession).toBe(read);
+      asked();
+      await apple;
+      return { value: 'downloaded', encryptedSession: 'from-download' };
+    });
+    await waiting;
+    // the listing takes the session and refreshes it while the download still waits
+    await expect(
+      repository.withSession(connection.id, connection.ownerId, () =>
+        Promise.resolve({ value: 'listed', encryptedSession: 'from-listing' }),
+      ),
+    ).resolves.toBe('listed');
+    answer();
+    await expect(download).resolves.toBe('downloaded');
+    expect((await repository.get(connection.id))?.encryptedSession).toBe('from-listing');
+
+    // nobody changed it meanwhile: the download's session is kept
+    await expect(
+      repository.useSession(connection.id, connection.ownerId, () =>
+        Promise.resolve({ value: 'downloaded', encryptedSession: 'from-download' }),
+      ),
+    ).resolves.toBe('downloaded');
+    expect((await repository.get(connection.id))?.encryptedSession).toBe('from-download');
   });
 
   it('selection changes revoke pending leases and cleanup cannot run for a stale lease', async () => {

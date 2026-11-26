@@ -260,21 +260,34 @@ export const renderHelpArticle = (markdown: string, origin: string, ids: Readonl
   for (const heading of root.querySelectorAll('h2, h3')) {
     heading.id = headingAnchor(heading.textContent ?? '');
   }
+  // One malformed address costs that image or link, never the whole article.
+  const parse = (value: string) => {
+    try {
+      return new URL(value, origin);
+    } catch {
+      return null;
+    }
+  };
+  const helpOrigin = new URL(origin).origin;
   for (const image of root.querySelectorAll('img')) {
-    const source = image.getAttribute('src');
-    if (source) {
-      image.setAttribute('src', new URL(source, origin).href);
+    const value = image.getAttribute('src');
+    const source = value ? parse(value) : null;
+    // FL-1771: an image loads from the help website only, so reading an article never contacts another host
+    if (source?.origin === helpOrigin) {
+      image.setAttribute('src', source.href);
       image.setAttribute('loading', 'lazy');
     } else {
       image.remove();
     }
   }
   for (const link of root.querySelectorAll('a')) {
-    const target = new URL(link.getAttribute('href') ?? '', origin);
+    const target = parse(link.getAttribute('href') ?? '');
+    if (!target) {
+      link.replaceWith(...link.childNodes);
+      continue;
+    }
     const id =
-      target.origin === new URL(origin).origin
-        ? /^\/docs\/([a-z0-9-]+\/[a-z0-9-]+)\/$/.exec(target.pathname)?.[1]
-        : undefined;
+      target.origin === helpOrigin ? /^\/docs\/([a-z0-9-]+\/[a-z0-9-]+)\/$/.exec(target.pathname)?.[1] : undefined;
     if (id && ids.has(id)) {
       link.dataset.helpArticle = id;
       if (target.hash) {

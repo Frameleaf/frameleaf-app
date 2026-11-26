@@ -66,6 +66,19 @@ describe('service worker asset requests', () => {
     await text(second);
   });
 
+  it('never hands a request after an access change the response of one sent before it', async () => {
+    const before = handleFetch(url('locked'));
+    handleAccessChange();
+    const after = handleFetch(url('locked'));
+    expect(fetch).toHaveBeenCalledTimes(2);
+
+    resolvers[0](new Response('from before the lock'));
+    resolvers[1](new Response('denied', { status: 403 }));
+
+    await expect(text(before)).resolves.toBe('from before the lock');
+    await expect(text(after)).resolves.toBe('denied');
+  });
+
   it('always reauthorizes a shared link and a refused URL', async () => {
     const shared = new URL('https://frameleaf.test/api/assets/s/thumbnail?key=abc');
     for (let index = 0; index < 2; index++) {

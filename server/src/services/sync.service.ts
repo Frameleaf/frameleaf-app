@@ -17,7 +17,7 @@ import { getHiddenContentQueryOptions, getOthersRulesQueryOptions } from 'src/ut
 
 import { withoutStoredLockedRuleIds } from 'src/utils/preferences.js';
 import { ClientDisconnectedError, waitForDrain } from 'src/utils/response.js';
-import { SerializeOptions, fromAck, mapSyncAssetV2, serialize, toAck, withPartnerOrigin } from 'src/utils/sync.js';
+import { SerializeOptions, fromAck, mapOwnSyncAsset, serialize, toAck, withPartnerOrigin } from 'src/utils/sync.js';
 
 const parseAssetBootstrapAck = (ack: string, type = SyncEntityType.AssetBootstrapV1) => {
   const parts = ack.split('|');
@@ -114,7 +114,6 @@ export const SYNC_TYPES_ORDER = [
   SyncRequestType.AlbumAssetAccessV1,
   SyncRequestType.PartnerAssetAccessV1,
   SyncRequestType.PinnedCollectionEventsV1,
-  SyncRequestType.AssetTrashStatesV1,
   SyncRequestType.DuplicateGroupsV1,
   SyncRequestType.SharedSpacesV1,
   SyncRequestType.SharedSpaceMembersV1,
@@ -122,8 +121,6 @@ export const SYNC_TYPES_ORDER = [
   SyncRequestType.SharedSpacePeopleV1,
   SyncRequestType.PetsV1,
   SyncRequestType.PetObservationsV1,
-  SyncRequestType.TagsV1,
-  SyncRequestType.AssetTagsV1,
   SyncRequestType.AuthUsersV1,
   SyncRequestType.AuthUsersV2,
   SyncRequestType.UsersV1,
@@ -157,6 +154,12 @@ export const SYNC_TYPES_ORDER = [
   SyncRequestType.PinnedCollectionsV1,
   SyncRequestType.AssetMetadataV1,
   SyncRequestType.AssetEditsV1,
+  // Trash states and tags are sent one transaction per item (about 300 a second), and a library can carry a large
+  // trash or a million tags: last, so the photos and their details arrive first. Asset lines carry deletedAt, so a
+  // trashed photo never shows in the meantime.
+  SyncRequestType.AssetTrashStatesV1,
+  SyncRequestType.TagsV1,
+  SyncRequestType.AssetTagsV1,
 ];
 
 const throwSessionRequired = () => {
@@ -554,7 +557,7 @@ export class SyncService extends BaseService {
     const upsertType = SyncEntityType.AssetV2;
     const upserts = this.syncRepository.asset.getUpserts({ ...options, ack: checkpointMap[upsertType] });
     for await (const { updateId, ...data } of upserts) {
-      await send(response, { type: upsertType, ids: [updateId], data: mapSyncAssetV2(data) });
+      await send(response, { type: upsertType, ids: [updateId], data: mapOwnSyncAsset(data) });
     }
   }
 
@@ -571,7 +574,7 @@ export class SyncService extends BaseService {
           type: SyncEntityType.AssetV3,
           ackType: bootstrapType,
           ids: [watermark, cursor],
-          data: mapSyncAssetV2(data),
+          data: mapOwnSyncAsset(data),
         });
       }
       await sendEntityBackfillCompleteAck(response, bootstrapType, watermark);
@@ -591,7 +594,7 @@ export class SyncService extends BaseService {
       ...options,
       ack: checkpointMap[upsertType] ?? floor,
     })) {
-      await send(response, { type: upsertType, ids: [updateId], data: mapSyncAssetV2(data) });
+      await send(response, { type: upsertType, ids: [updateId], data: mapOwnSyncAsset(data) });
     }
   }
 
@@ -803,7 +806,7 @@ export class SyncService extends BaseService {
       );
 
       for await (const { updateId, ...data } of backfill) {
-        await send(response, { type: backfillType, ids: [createId, updateId], data: mapSyncAssetV2(data) });
+        await send(response, { type: backfillType, ids: [createId, updateId], data: mapOwnSyncAsset(data) });
       }
     }
 
@@ -813,7 +816,7 @@ export class SyncService extends BaseService {
         createCheckpoint,
       );
       for await (const { updateId, ...data } of updates) {
-        await send(response, { type: updateType, ids: [updateId], data: mapSyncAssetV2(data) });
+        await send(response, { type: updateType, ids: [updateId], data: mapOwnSyncAsset(data) });
       }
     }
 
@@ -829,7 +832,7 @@ export class SyncService extends BaseService {
         });
         isFirst = false;
       }
-      await send(response, { type: createType, ids: [updateId], data: mapSyncAssetV2(data) });
+      await send(response, { type: createType, ids: [updateId], data: mapOwnSyncAsset(data) });
     }
   }
 

@@ -11,7 +11,12 @@ import type { AssetJobRepository } from 'src/repositories/asset-job.repository.j
 import type { AssetRepository } from 'src/repositories/asset.repository.js';
 import type { ArgOf } from 'src/repositories/event.repository.js';
 import type { JobOf } from 'src/types.js';
-import { LANDMARK_ICON_PACK } from 'src/constants.js';
+import {
+  LANDMARK_ICON_PACK,
+  PLACE_NAME_BACKFILL_PAUSE_MS,
+  PLACE_NAME_BACKFILL_SLICE,
+  PLACE_NAME_PACK,
+} from 'src/constants.js';
 import { StorageCore } from 'src/cores/storage.core.js';
 import { Asset, AssetFile, placeProperties } from 'src/database.js';
 import { OnEvent, OnJob } from 'src/decorators.js';
@@ -32,7 +37,14 @@ import {
   SourceType,
   StorageFolder,
 } from 'src/enum.js';
-import { afterJobCommit, attemptOutputPath, jobSignal, publishJobResult, queueExecution } from 'src/queue/context.js';
+import {
+  advanceJobProgress,
+  afterJobCommit,
+  attemptOutputPath,
+  jobSignal,
+  publishJobResult,
+  queueExecution,
+} from 'src/queue/context.js';
 import { processingSetAsideOverride } from 'src/queue/processing-failure.js';
 import { SharpResourceLimitError } from 'src/queue/sharp-protocol.js';
 import { assertPublicationSource, lockLivePhotoPairing } from 'src/queue/transaction.js';
@@ -210,6 +222,8 @@ export class MetadataService extends BaseService {
       }
       // Not awaited: a download of tens of megabytes must not hold up the worker's start.
       void this.syncLandmarkIcons();
+      void this.syncPlaceNames();
+      await this.queuePlaceNameBackfill();
 
       this.logger.log(`Initialized local reverse geocoder`);
     } catch (error: Error | any) {
@@ -236,6 +250,65 @@ export class MetadataService extends BaseService {
       }
     } catch (error) {
       this.logger.warn(`The landmark icon pack was not installed; the next start tries again: ${error}`);
+    }
+  }
+
+  /**
+   * Fetches the place-name pack when this server does not hold the current one (FL-987). Like the icon
+   * pack it is taken whole, follows the reverse geocoding switch, and only a production server fetches it.
+   * Without it every place keeps its English name, and the next start tries again.
+   */
+  private async syncPlaceNames(): Promise<void> {
+    try {
+      const { reverseGeocoding } = await this.getConfig({ withCache: true });
+      if (!reverseGeocoding.enabled || this.configRepository.getEnv().environment !== FrameleafEnvironment.Production) {
+        return;
+      }
+      if (await this.mapRepository.installPlaceNames(PLACE_NAME_PACK)) {
+        this.logger.log('Installed the place-name pack');
+      }
+    } catch (error) {
+      this.logger.warn(
+        `The place-name pack was not installed; place names stay in English and the next start tries again: ${error}`,
+      );
+    }
+  }
+
+  private async queuePlaceNameBackfill(): Promise<void> {
+    const { reverseGeocoding } = await this.getConfig({ withCache: true });
+    if (reverseGeocoding.enabled) {
+      await this.jobRepository.queue({ name: JobName.PlaceNameBackfill });
+    }
+  }
+
+  /** Items that reached the library without metadata extraction (a partner's copies, an import) are linked overnight. */
+  @OnEvent({ name: 'NightlyDatabaseCleanup', workers: [FrameleafWorker.Microservices] })
+  async onNightlyPlaceNameBackfill(): Promise<void> {
+    await this.queuePlaceNameBackfill();
+  }
+
+  /**
+   * FL-987: links every located item that has no `asset_geoname` row yet to the places its stored names came
+   * from. It works through the items once in id order, a slice at a time with a pause between slices, and
+   * only ever adds rows, so a run that is stopped loses nothing and the next one carries on with what is
+   * left. The queue keeps one run at a time.
+   */
+  @OnJob({ name: JobName.PlaceNameBackfill, queue: QueueName.BackgroundTask })
+  async handlePlaceNameBackfill(): Promise<JobStatus> {
+    const { reverseGeocoding } = await this.getConfig({ withCache: true });
+    if (!reverseGeocoding.enabled) {
+      return JobStatus.Skipped;
+    }
+    let after: string | undefined;
+    for (;;) {
+      jobSignal()?.throwIfAborted();
+      const { count, last } = await this.mapRepository.linkAssetGeonames({ after, limit: PLACE_NAME_BACKFILL_SLICE });
+      advanceJobProgress(count);
+      if (count < PLACE_NAME_BACKFILL_SLICE) {
+        return JobStatus.Success;
+      }
+      after = last;
+      await new Promise((resolve) => setTimeout(resolve, PLACE_NAME_BACKFILL_PAUSE_MS));
     }
   }
 
@@ -741,6 +814,16 @@ export class MetadataService extends BaseService {
       }
     });
 
+    // FL-987: the places behind the names just stored, for showing them in other languages. A side table:
+    // a failure here must never fail the extraction.
+    if (!locationLocked || named) {
+      try {
+        await this.mapRepository.linkAssetGeonames({ assetId: asset.id });
+      } catch (error) {
+        this.logger.warn(`Place names not linked for ${asset.id}: ${error instanceof Error ? error.message : error}`);
+      }
+    }
+
     // FL-1284: a burst shows as one tile, as the camera app shows it. Only the first time the scan learns
     // the file is a burst frame, so a burst the owner has unstacked or rearranged is left as they made it.
     const firstKindScan = previous?.mediaKinds === null || previous?.mediaKinds === undefined;
@@ -824,7 +907,8 @@ export class MetadataService extends BaseService {
     }
 
     let sidecarPath = null;
-    for (const candidate of await this.getSidecarCandidates(asset)) {
+    const candidates = await this.getSidecarCandidates(asset);
+    for (const candidate of candidates) {
       const isExists = await this.storageRepository.checkFileExists(candidate, constants.R_OK);
       if (!isExists) {
         continue;
@@ -837,6 +921,19 @@ export class MetadataService extends BaseService {
     const { sidecarFile } = getAssetFiles(asset.files);
 
     const isChanged = sidecarPath !== sidecarFile?.path;
+
+    // A sidecar that cannot be read right now (a drive offline, EIO, EACCES) is not gone: forgetting it would
+    // lose the only record of a replaced sidecar's path. Only "no such file" lets it go.
+    if (isChanged && sidecarFile?.path && candidates.includes(sidecarFile.path)) {
+      const isGone = await this.storageRepository
+        .stat(sidecarFile.path)
+        .then(() => false)
+        .catch((error: NodeJS.ErrnoException) => error?.code === 'ENOENT' || error?.code === 'ENOTDIR');
+      if (!isGone) {
+        this.logger.warn(`Keeping sidecar ${sidecarFile.path} of asset ${asset.id}: it cannot be read right now`);
+        return JobStatus.Skipped;
+      }
+    }
 
     if (sidecarFile?.path || sidecarPath) {
       this.logger.debug(

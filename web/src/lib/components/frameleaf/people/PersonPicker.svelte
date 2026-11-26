@@ -12,6 +12,8 @@
   import { isUnnamedPerson } from '$lib/frameleaf/people';
   import { handleError } from '$lib/utils/handle-error';
   import { getAllPeople, searchPerson, type PersonResponseDto } from '@frameleaf/sdk';
+  import { Icon } from '@frameleaf/ui';
+  import { mdiCheck } from '@mdi/js';
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';
 
@@ -20,10 +22,15 @@
     excludeId: string;
     label: string;
     onPick: (person: PersonResponseDto) => void;
-    onCancel: () => void;
+    /** Without it there is no Cancel button, and Escape is left to the surrounding dialog. */
+    onCancel?: () => void;
+    /** FL-842: the person currently chosen, when picking does not end the step. */
+    selectedId?: string;
+    /** FL-842: leave out people who have no name yet. */
+    namedOnly?: boolean;
   }
 
-  let { excludeId, label, onPick, onCancel }: Props = $props();
+  let { excludeId, label, onPick, onCancel, selectedId, namedOnly = false }: Props = $props();
 
   const PAGE_SIZE = 50;
 
@@ -52,7 +59,7 @@
       if (current !== request) {
         return;
       }
-      const rows = found.filter((person) => person.id !== excludeId);
+      const rows = found.filter((person) => person.id !== excludeId && !(namedOnly && isUnnamedPerson(person)));
       // a later page can repeat someone when the list shifted meanwhile
       const known = new Set(next.page === 1 ? [] : people.map(({ id }) => id));
       people = [...(next.page === 1 ? [] : people), ...rows.filter(({ id }) => !known.has(id))];
@@ -75,7 +82,7 @@
   const onInput = () => void load({ query, page: 1 });
 
   const onKeydown = (event: KeyboardEvent) => {
-    if (event.key !== 'Escape') {
+    if (event.key !== 'Escape' || !onCancel) {
       return;
     }
     event.preventDefault();
@@ -100,9 +107,17 @@
   <ul class="list" aria-label={$t('people')}>
     {#each people as person (person.id)}
       <li>
-        <button type="button" onclick={() => onPick(person)}>
+        <button
+          type="button"
+          class:selected={person.id === selectedId}
+          aria-pressed={selectedId === undefined ? undefined : person.id === selectedId}
+          onclick={() => onPick(person)}
+        >
           <PersonAvatar {person} size={32} />
           <span class="name" class:unnamed={isUnnamedPerson(person)}>{nameOf(person)}</span>
+          {#if person.id === selectedId}
+            <Icon icon={mdiCheck} size="18" aria-hidden="true" />
+          {/if}
         </button>
       </li>
     {:else}
@@ -117,7 +132,9 @@
         {$t('frameleaf_people_show_more')}
       </Button>
     {/if}
-    <Button variant="quiet" onclick={onCancel}>{$t('cancel')}</Button>
+    {#if onCancel}
+      <Button variant="quiet" onclick={onCancel}>{$t('cancel')}</Button>
+    {/if}
   </div>
 </div>
 
@@ -160,6 +177,14 @@
   .list button:hover,
   .list button:focus-visible {
     background: var(--fl-raised);
+  }
+  .list button.selected {
+    background: var(--fl-accent-soft);
+    box-shadow: inset 0 0 0 1px var(--fl-accent);
+  }
+  .name {
+    flex: 1;
+    min-width: 0;
   }
   .name.unnamed {
     color: var(--fl-muted);

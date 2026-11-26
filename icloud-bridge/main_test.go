@@ -403,6 +403,19 @@ func TestPCSRateLimitIsNotReauthentication(t *testing.T) {
 	}
 }
 
+func TestPCSUpstreamFailureIsNotReauthentication(t *testing.T) {
+	b := newBridge([]byte(testToken))
+	b.http = &http.Client{Transport: transportFunc(func(*http.Request) (*http.Response, error) {
+		r := response("SECRET")
+		r.StatusCode = 503
+		return r, nil
+	})}
+	w := call(t, b, "/v1/auth", request{Session: testSession(t), Action: "device-approval"})
+	if w.Code != 502 || !strings.Contains(w.Body.String(), `"code":"upstream_error"`) || strings.Contains(w.Body.String(), "SECRET") {
+		t.Fatalf("transient approval failure forced a new sign-in: %d %s", w.Code, w.Body)
+	}
+}
+
 func TestPCSHTTP423PreservesApprovalSession(t *testing.T) {
 	for _, state := range []string{"awaiting-device-approval", "connected"} {
 		t.Run(state, func(t *testing.T) {

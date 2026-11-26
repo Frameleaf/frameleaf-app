@@ -166,10 +166,10 @@ export const requireMentionableMembers = (album: SpaceLike, userIds: string[]): 
 };
 
 /** Only its author may change what a comment says. */
-export const canEditSpaceComment = (comment: { userId: string }, actorId: string): boolean =>
+export const canEditSpaceComment = (comment: { userId: string | null }, actorId: string): boolean =>
   comment.userId === actorId;
 
-export const requireCommentEditRights = (comment: { userId: string }, actorId: string): void => {
+export const requireCommentEditRights = (comment: { userId: string | null }, actorId: string): void => {
   if (!canEditSpaceComment(comment, actorId)) {
     throw new ForbiddenException('Only the author can edit this comment');
   }
@@ -180,10 +180,14 @@ export const requireCommentEditRights = (comment: { userId: string }, actorId: s
  * space. Moderation is an owner's and an editor's duty; a viewer can remove
  * only what they said themselves.
  */
-export const canDeleteSpaceComment = (album: SpaceLike, comment: { userId: string }, actorId: string): boolean =>
+export const canDeleteSpaceComment = (album: SpaceLike, comment: { userId: string | null }, actorId: string): boolean =>
   comment.userId === actorId || canContributeToSpace(album, actorId);
 
-export const requireCommentDeleteRights = (album: SpaceLike, comment: { userId: string }, actorId: string): void => {
+export const requireCommentDeleteRights = (
+  album: SpaceLike,
+  comment: { userId: string | null },
+  actorId: string,
+): void => {
   if (!canDeleteSpaceComment(album, comment, actorId)) {
     throw new ForbiddenException('Only the author, or a shared space owner or editor, can remove this comment');
   }
@@ -268,11 +272,17 @@ export const threadComments = (
  */
 export const replyRecipient = (
   album: SpaceLike,
-  root: { userId: string },
+  root: { userId: string | null },
   actorId: string,
   mentioned: readonly string[],
 ): string | null => {
-  if (root.userId === actorId || !isSpaceMember(album, root.userId) || mentioned.includes(root.userId)) {
+  // a comment from another household has no local author to tell
+  if (
+    !root.userId ||
+    root.userId === actorId ||
+    !isSpaceMember(album, root.userId) ||
+    mentioned.includes(root.userId)
+  ) {
     return null;
   }
   return root.userId;

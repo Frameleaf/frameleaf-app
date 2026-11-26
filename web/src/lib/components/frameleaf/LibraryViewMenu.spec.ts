@@ -41,6 +41,8 @@ describe(LibraryViewMenu.name, () => {
     vi.spyOn(authManager, 'isSharedLink', 'get').mockReturnValue(false);
     vi.spyOn(authManager, 'preferences', 'get').mockReturnValue({} as UserPreferencesResponseDto);
     sdkMock.getPartners.mockResolvedValue([]);
+    // A changed option saves after a delay, which can land after this file's page is gone.
+    sdkMock.updateMyPreferences.mockResolvedValue({} as UserPreferencesResponseDto);
   });
 
   it('is the information panel switch alone where a page offers nothing else', async () => {

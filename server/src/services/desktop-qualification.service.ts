@@ -2,7 +2,6 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
-  HttpException,
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -21,24 +20,25 @@ import {
 } from 'src/dtos/desktop-qualification.dto.js';
 import { DesktopWorkerAckDto } from 'src/dtos/desktop-worker-job.dto.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
+import { DesktopMlRepository } from 'src/repositories/desktop-ml.repository.js';
 import { DesktopWorkerChallengeRepository } from 'src/repositories/desktop-worker-challenge.repository.js';
 import { DesktopWorkerRepository } from 'src/repositories/desktop-worker.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
 import { DesktopAssistanceActivationService } from 'src/services/desktop-assistance-activation.service.js';
 import { DesktopAssistancePolicyService } from 'src/services/desktop-assistance-policy.service.js';
-import { DesktopWorkerAuthService } from 'src/services/desktop-worker-auth.service.js';
+import { DesktopWorkerAuthService, proofSessionId } from 'src/services/desktop-worker-auth.service.js';
 import { getConfig } from 'src/utils/config.js';
 import { findDesktopClipSpace, parseDesktopClipSpaces } from 'src/utils/desktop-clip-space.js';
-import { faceEntries } from 'src/utils/desktop-face.js';
 import {
   type DesktopModelProfile,
   createDesktopModelChallenge,
   parseDesktopModelCatalogue,
 } from 'src/utils/desktop-model-catalogue.js';
+import { equivalentDesktopModelKeys } from 'src/utils/desktop-model-equivalents.js';
 import { selectDesktopModelInventory } from 'src/utils/desktop-model-inventory.js';
-import { ocrEntries } from 'src/utils/desktop-ocr.js';
 import { DesktopQualificationReceipt } from 'src/utils/desktop-qualification.js';
+import { logDesktopNotAccepted, logDesktopRefusals } from 'src/utils/desktop-refusal-log.js';
 import { desktopRuntimeMinimumEpoch, verifyDesktopRuntimeAttestation } from 'src/utils/desktop-runtime-attestation.js';
 import { canonicalJson } from 'src/utils/object.js';
 
@@ -71,21 +71,26 @@ export class DesktopQualificationService {
     private activation: DesktopAssistanceActivationService,
     private workers: DesktopWorkerRepository,
     private policies: DesktopAssistancePolicyService,
+    private broker: DesktopMlRepository,
   ) {}
 
+  /**
+   * A desktop that lost a model for failing it waits a few minutes before it can qualify for it again.
+   * A conflict it retries, like the rest of the challenge bookkeeping.
+   */
+  private async assertNotHeld(deviceId: string, modelKey: string) {
+    if (await this.broker.heldUntil(deviceId, equivalentDesktopModelKeys(modelKey)))
+      throw new ConflictException('desktop_qualification_hold');
+  }
+
   /** Every refusal a desktop sees is also in the server log, with the code it was given. */
-  private async logged<T>(step: string, subject: () => string, work: () => Promise<T>): Promise<T> {
-    try {
-      return await work();
-    } catch (error) {
-      if (error instanceof HttpException)
-        this.logger.warn(`Desktop worker ${step} refused (${subject()}): ${error.getStatus()} ${error.message}`);
-      throw error;
-    }
+  private logged<T>(step: string, subject: () => string, work: () => Promise<T>): Promise<T> {
+    return logDesktopRefusals(this.logger, step, subject, work);
   }
 
   inventory(authorization: string | undefined, proof: string | undefined, payload: string) {
-    let subject = 'unauthenticated';
+    const session = proofSessionId(proof);
+    let subject = session ? `unauthenticated, session ${session}` : 'unauthenticated';
     return this.logged(
       'inventory',
       () => subject,
@@ -105,7 +110,18 @@ export class DesktopQualificationService {
           provider,
           runtimeSourceRevision,
         });
-        if (request.protocolVersion !== 2) return { protocolVersion: 1, provider, runtimeSourceRevision, workloads };
+        // A desktop that can hold several leases is told how many of each kind of work the administrator
+        // allows it at once: the Jobs setting of that work's queue.
+        const limits = request.concurrentLeases ? await this.broker.workloadConcurrency() : undefined;
+        const limited = (item: (typeof workloads)[number]) =>
+          limits && item.state === 'eligible' ? { ...item, concurrency: limits[item.workload] ?? 1 } : item;
+        if (request.protocolVersion !== 2)
+          return {
+            protocolVersion: 1,
+            provider,
+            runtimeSourceRevision,
+            workloads: workloads.map((item) => limited(item)),
+          };
         // The desktop runs exactly these profiles: the server's catalogue is the only one.
         const served = (modelKey: string) =>
           this.catalogueJson.profiles.find(
@@ -119,7 +135,7 @@ export class DesktopQualificationService {
           provider,
           runtimeSourceRevision,
           workloads: workloads.map((item) =>
-            item.state === 'eligible' ? { ...item, profiles: item.modelKeys.map((key) => served(key)) } : item,
+            item.state === 'eligible' ? { ...limited(item), profiles: item.modelKeys.map((key) => served(key)) } : item,
           ),
         };
       },
@@ -131,7 +147,8 @@ export class DesktopQualificationService {
     proof: string | undefined,
     payload: string,
   ): Promise<DesktopQualificationChallengeDto> {
-    let subject = 'unauthenticated';
+    const session = proofSessionId(proof);
+    let subject = session ? `unauthenticated, session ${session}` : 'unauthenticated';
     return this.logged(
       'challenge',
       () => subject,
@@ -141,6 +158,7 @@ export class DesktopQualificationService {
         const request = parse(DesktopQualificationRequestSchema, payload);
         subject += `, ${request.modelKey} on ${request.provider}`;
         const profile = await this.selected(request.modelKey, request.provider, request.runtimeSourceRevision);
+        await this.assertNotHeld(grant.deviceId, profile.modelKey);
         let runtime;
         try {
           runtime = verifyDesktopRuntimeAttestation(request.runtime, profile);
@@ -169,16 +187,25 @@ export class DesktopQualificationService {
     );
   }
 
-  async read(
+  read(
     authorization: string | undefined,
     proof: string | undefined,
     id: string,
   ): Promise<DesktopQualificationChallengeDto> {
-    const grant = await this.auth.authenticate(authorization, proof, `challenge:${id}`, '');
-    const row = await this.challenges.read(grant, id);
-    if (!row) throw new UnauthorizedException('desktop_challenge_invalid');
-    const profile = await this.selected(row.modelKey, row.runtime.provider, row.runtime.sourceRevision);
-    return this.response(row, profile);
+    let subject = `challenge ${id}`;
+    return this.logged(
+      'challenge read',
+      () => subject,
+      async () => {
+        const grant = await this.auth.authenticate(authorization, proof, `challenge:${id}`, '');
+        subject += `, device ${grant.deviceId}`;
+        const row = await this.challenges.read(grant, id);
+        if (!row) throw new UnauthorizedException('desktop_challenge_invalid');
+        subject += `, ${row.modelKey}`;
+        const profile = await this.selected(row.modelKey, row.runtime.provider, row.runtime.sourceRevision);
+        return this.response(row, profile);
+      },
+    );
   }
 
   record(
@@ -215,7 +242,20 @@ export class DesktopQualificationService {
         } catch {
           throw new BadRequestException('desktop_qualification_report_invalid');
         }
-        if (!(await this.challenges.record(grant, id, receipt))) return { accepted: false };
+        await this.assertNotHeld(grant.deviceId, profile.modelKey);
+        let recorded: boolean;
+        try {
+          recorded = await this.challenges.record(grant, id, receipt);
+        } catch (error) {
+          // The desktop already holds its limit of qualifications; it can report again once one runs out.
+          if (error instanceof Error && error.message === 'desktop_qualification_capacity')
+            throw new ConflictException(error.message);
+          throw error;
+        }
+        if (!recorded) {
+          logDesktopNotAccepted(this.logger, 'report', subject);
+          return { accepted: false };
+        }
         const qualification = await this.challenges.readAccepted(grant, id);
         if (!qualification) throw new UnauthorizedException('desktop_qualification_invalid');
         this.assertAccepted(qualification, profile);
@@ -229,36 +269,47 @@ export class DesktopQualificationService {
             current,
           );
         else await this.activation.activateModel(grant, qualification, profile.modelKey, current);
+        // Granted again: a model that had been taken away from this computer is its own once more.
+        await this.broker.clearWithdrawal(grant.deviceId, profile.modelKey);
         return { accepted: true };
       },
     );
   }
 
-  async accepted(
+  accepted(
     authorization: string | undefined,
     proof: string | undefined,
     id: string,
   ): Promise<DesktopAcceptedQualificationDto> {
-    const grant = await this.auth.authenticate(authorization, proof, `accepted-qualification:${id}`, '');
-    const row = await this.challenges.readAccepted(grant, id);
-    if (!row) throw new UnauthorizedException('desktop_qualification_invalid');
-    const profile = await this.selected(row.modelKey, row.runtime.provider, row.runtime.sourceRevision);
-    this.assertAccepted(row, profile);
-    return {
-      id: row.id,
-      deviceId: row.deviceId,
-      sessionId: row.sessionId,
-      authorizationEpoch: row.authorizationEpoch,
-      modelKey: row.modelKey,
-      configSha256: row.configSha256,
-      inputKind: row.inputKind,
-      bindingSha256: createDesktopModelChallenge(profile, row.id).bindingSha256,
-      manifestSha256: row.runtime.manifestSha256,
-      runtimeFingerprint: row.runtimeFingerprint,
-      reportSha256: row.reportSha256,
-      qualifiedAt: new Date(row.createdAt).toISOString(),
-      expiresAt: new Date(row.expiresAt).toISOString(),
-    };
+    let subject = `qualification ${id}`;
+    return this.logged(
+      'qualification read',
+      () => subject,
+      async () => {
+        const grant = await this.auth.authenticate(authorization, proof, `accepted-qualification:${id}`, '');
+        subject += `, device ${grant.deviceId}`;
+        const row = await this.challenges.readAccepted(grant, id);
+        if (!row) throw new UnauthorizedException('desktop_qualification_invalid');
+        subject += `, ${row.modelKey}`;
+        const profile = await this.selected(row.modelKey, row.runtime.provider, row.runtime.sourceRevision);
+        this.assertAccepted(row, profile);
+        return {
+          id: row.id,
+          deviceId: row.deviceId,
+          sessionId: row.sessionId,
+          authorizationEpoch: row.authorizationEpoch,
+          modelKey: row.modelKey,
+          configSha256: row.configSha256,
+          inputKind: row.inputKind,
+          bindingSha256: createDesktopModelChallenge(profile, row.id).bindingSha256,
+          manifestSha256: row.runtime.manifestSha256,
+          runtimeFingerprint: row.runtimeFingerprint,
+          reportSha256: row.reportSha256,
+          qualifiedAt: new Date(row.createdAt).toISOString(),
+          expiresAt: new Date(row.expiresAt).toISOString(),
+        };
+      },
+    );
   }
 
   private assertAccepted(row: AcceptedQualification, profile: DesktopModelProfile) {
@@ -283,20 +334,18 @@ export class DesktopQualificationService {
     );
   }
 
-  /** Whether the server's machine-learning settings still ask for this profile. */
+  /**
+   * Whether the server's machine-learning settings still ask for this profile: exactly the keys the inventory
+   * lists for the profile's runtime, so a key no task will use can never be challenged or granted.
+   */
   private configures(config: Awaited<ReturnType<typeof getConfig>>, profile: DesktopModelProfile) {
-    const ml = config.machineLearning;
-    return (
-      ml.enabled &&
-      (profile.workload === 'clip'
-        ? ml.clip.enabled &&
-          !!findDesktopClipSpace(this.spaces, profile.modelKey) &&
-          ml.clip.modelName === profile.modelName
-        : profile.workload === 'face'
-          ? ml.facialRecognition.enabled &&
-            canonicalJson(faceEntries(ml.facialRecognition)) === canonicalJson(profile.spec.entries)
-          : ml.ocr.enabled && canonicalJson(ocrEntries(ml.ocr)) === canonicalJson(profile.spec.entries))
-    );
+    return selectDesktopModelInventory({
+      config: config.machineLearning,
+      catalogue: this.catalogue,
+      spaces: this.spaces,
+      provider: profile.spec.provider,
+      runtimeSourceRevision: profile.runtimeSourceRevision,
+    }).some((item) => item.state === 'eligible' && item.modelKeys.includes(profile.modelKey));
   }
 
   private async assertProfileCurrent(profile: DesktopModelProfile, tx: Transaction<DB>) {

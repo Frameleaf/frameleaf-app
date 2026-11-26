@@ -48,6 +48,7 @@ import { FileDownloadResponse } from 'src/utils/file.js';
 import { getHiddenContentQueryOptions, getPrivacyQueryOptions } from 'src/utils/hidden-content.js';
 import { getLockedOwnerId, getLockedVisibilityOptions } from 'src/utils/locked-visibility.js';
 import { isSmartSearchEnabled } from 'src/utils/misc.js';
+import { placeNameSpellings } from 'src/utils/place-names.js';
 import { fromChecksum } from 'src/utils/request.js';
 import { decodeSearchCursor, encodeSearchCursor } from 'src/utils/search-cursor.js';
 import {
@@ -115,9 +116,21 @@ export class SearchService extends BaseService {
     return people.map((person) => mapPerson(person));
   }
 
-  async searchPlaces(dto: SearchPlacesDto): Promise<PlacesResponseDto[]> {
-    const places = await this.searchRepository.searchPlaces(dto.name);
-    return places.map((place) => mapPlaces(place));
+  async searchPlaces(auth: AuthDto, dto: SearchPlacesDto): Promise<PlacesResponseDto[]> {
+    const english = await this.searchRepository.searchPlaces(dto.name);
+    // FL-1027: names in the viewer's language come first; a failure there leaves the English results
+    const inLanguage = await this.getPlaceNameLanguage(auth)
+      .then((lang) =>
+        lang ? this.searchRepository.searchPlacesByLocalName(lang, placeNameSpellings(dto.name, lang)) : [],
+      )
+      .catch(() => []);
+    const seen = new Set<number>();
+    const places = [...inLanguage, ...english].filter(({ id }) => !seen.has(id) && !!seen.add(id)).slice(0, 20);
+    const localized = await this.getLocalizedPlaces(auth, places);
+    return places.map((place) => {
+      const placeNamesLocalized = localized.get(place.id);
+      return { ...mapPlaces(place), ...(placeNamesLocalized && { placeNamesLocalized }) };
+    });
   }
 
   async getExploreData(auth: AuthDto) {
@@ -146,6 +159,12 @@ export class SearchService extends BaseService {
       value: asset.createdAt.toISOString(),
       data: mapAsset(asset, { auth }),
     }));
+
+    // FL-987: `value` stays the stored English city, which is what the city filter matches
+    await this.localizeAssetPlaces(
+      auth,
+      [...cityItems, ...recentItems].map(({ data }) => data),
+    );
 
     return [
       { fieldName: cities.fieldName, items: cityItems },
@@ -203,7 +222,7 @@ export class SearchService extends BaseService {
       orderDirection: dto.order ?? AssetOrder.Desc,
     };
     const { hasNextPage, items } = await this.searchRepository.searchMetadata({ page, size }, options);
-    const response = this.mapResponse(items, { auth }, { nextPage: hasNextPage ? (page + 1).toString() : null });
+    const response = await this.mapResponse(items, { auth }, { nextPage: hasNextPage ? (page + 1).toString() : null });
     // FL-232: an internal count projection reuses the cover's exact authorized legacy predicate.
     // Public callers retain the existing page-sized total unless they explicitly opt in.
     if (withTotal) {
@@ -357,7 +376,10 @@ export class SearchService extends BaseService {
       userIds,
       viewingUserId: auth.user.id,
     });
-    return items.map((item) => mapAsset(item, { auth }));
+    return this.localizeAssetPlaces(
+      auth,
+      items.map((item) => mapAsset(item, { auth })),
+    );
   }
 
   async searchLargeAssets(auth: AuthDto, dto: LargeAssetSearchDto): Promise<AssetResponseDto[]> {
@@ -377,7 +399,10 @@ export class SearchService extends BaseService {
       userIds,
       viewingUserId: auth.user.id,
     });
-    return items.map((item) => mapAsset(item, { auth }));
+    return this.localizeAssetPlaces(
+      auth,
+      items.map((item) => mapAsset(item, { auth })),
+    );
   }
 
   async searchSmart(auth: AuthDto, dto: SmartSearchDto): Promise<SearchResponseDto> {
@@ -436,7 +461,10 @@ export class SearchService extends BaseService {
     // grouped by place, so partners who hide their locations contribute nothing here
     const userIds = this.getUserIdsToSearch(auth);
     const assets = await this.searchRepository.getAssetsByCity(userIds, getHiddenContentQueryOptions(auth));
-    return assets.map((asset) => mapAsset(asset));
+    return this.localizeAssetPlaces(
+      auth,
+      assets.map((asset) => mapAsset(asset)),
+    );
   }
 
   async getCityAssetCounts(auth: AuthDto): Promise<SearchCityCountResponseDto[]> {
@@ -463,13 +491,21 @@ export class SearchService extends BaseService {
     const userIds = this.getUserIdsToSearch(auth);
     const rows = await this.landmarkReads({ userIds, options: getHiddenContentQueryOptions(auth) });
     const icons = this.mapRepository.getLandmarkIcons();
-    return rows.map((row) => ({
-      ...row,
-      icon: icons.get(row.id),
-      assetCount: Number(row.assetCount),
-      firstTakenAt: new Date(row.firstTakenAt).toISOString(),
-      lastTakenAt: new Date(row.lastTakenAt).toISOString(),
-    }));
+    // Overlapping places (a resort and its park, the Eiffel Tower and Champ de Mars) share their best photo:
+    // in list order, each takes its best cover that an earlier card has not already shown.
+    const shown = new Set<string>();
+    return rows.map(({ coverAssetIds, ...row }) => {
+      const coverAssetId = coverAssetIds.find((id) => !shown.has(id)) ?? coverAssetIds[0];
+      shown.add(coverAssetId);
+      return {
+        ...row,
+        coverAssetId,
+        icon: icons.get(row.id),
+        assetCount: Number(row.assetCount),
+        firstTakenAt: new Date(row.firstTakenAt).toISOString(),
+        lastTakenAt: new Date(row.lastTakenAt).toISOString(),
+      };
+    });
   }
 
   /** A landmark's brand icon. The pack is the same for everyone, so any signed-in caller may read it. */
@@ -549,7 +585,7 @@ export class SearchService extends BaseService {
       options,
       scope,
     );
-    const response = this.mapResponse(
+    const response = await this.mapResponse(
       items,
       { auth },
       { nextCursor: hasNextPage ? encodeSearchCursor(offset + size) : null },
@@ -582,7 +618,10 @@ export class SearchService extends BaseService {
       },
       scope,
     );
-    return items.map((item) => mapAsset(item, { auth }));
+    return this.localizeAssetPlaces(
+      auth,
+      items.map((item) => mapAsset(item, { auth })),
+    );
   }
 
   private async searchSmartV3(auth: AuthDto, dto: SmartSearchDto): Promise<SearchResponseDto> {
@@ -733,12 +772,15 @@ export class SearchService extends BaseService {
     return [auth.user.id];
   }
 
-  private mapResponse(
+  private async mapResponse(
     assets: MapAsset[],
-    options: AssetMapOptions,
+    options: AssetMapOptions & { auth: AuthDto },
     page: { nextPage?: string | null; nextCursor?: string | null; closeMatches?: number } = {},
-  ): SearchResponseDto {
-    const items = assets.map((asset) => mapAsset(asset, options));
+  ): Promise<SearchResponseDto> {
+    const items = await this.localizeAssetPlaces(
+      options.auth,
+      assets.map((asset) => mapAsset(asset, options)),
+    );
     return {
       albums: { total: 0, count: 0, items: [], facets: [] },
       assets: {

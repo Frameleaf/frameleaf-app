@@ -79,6 +79,7 @@ export class AssetFactory {
       height: null,
       isEdited: false,
       is_nsfw: false,
+      dateAccuracy: null,
       ...dto,
     });
   }

@@ -93,6 +93,7 @@ export type MediaDownloadErrorCode =
   | 'unsupported'
   | 'unsupported_session'
   | 'authentication_required'
+  | 'restricted'
   | 'rate_limited'
   | 'no_media'
   | 'incomplete'
@@ -108,6 +109,9 @@ const errorMessages: Record<MediaDownloadErrorCode, string> = {
   unsupported: 'The extraction engines do not support this media.',
   unsupported_session: 'The extraction engine cannot use this session for the requested media.',
   authentication_required: 'The provider requires a valid connection or session.',
+  // The sign-in was used and the site still said no: about this post or account, so the connection is left alone.
+  restricted:
+    'The site would not show this to the connected account. It may be private, blocked or age-restricted. If other downloads from this site fail too, connect the site again.',
   rate_limited: 'The provider is temporarily limiting requests.',
   no_media: 'The provider returned no downloadable media.',
   incomplete: 'The provider did not return a complete media file.',

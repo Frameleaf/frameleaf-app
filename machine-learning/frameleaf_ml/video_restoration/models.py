@@ -1,4 +1,5 @@
-"""Restoration and Smooth motion model adapters and their qualification gate (FL-114, FL-162).
+"""Restoration, Smooth motion and photo model adapters and their qualification gate (FL-114, FL-162,
+FL-933).
 
 Three families back the three modes:
 
@@ -11,6 +12,15 @@ Three families back the three modes:
 * **Smooth motion** — RIFE (https://github.com/hzwer/Practical-RIFE). It makes the in-between
   frames of a folder of frames at 2x, 4x or 8x; the pipeline encodes them at that many times the
   source frame rate, so the clip keeps its length and its audio (FL-162).
+
+Two more families serve stills only, as photo operations rather than modes (FL-933):
+
+* **Photo repair** — LaMa fills the scratches and dust of an old print. RetinaFace (facexlib,
+  https://github.com/xinntao/facexlib) only finds the faces, which stay byte-identical to the scan.
+* **Colourise** — DDColor (https://github.com/piddnad/DDColor) suggests colours for a black-and-white
+  or toned photo, and refuses one that already has colour.
+
+Both return a still of exactly the source's size and need a qualified NVIDIA GPU.
 
 Each family runs in its own pinned, isolated runtime (an upstream checkout at an exact
 commit with its own Python environment) that this worker invokes as a subprocess from the
@@ -52,7 +62,7 @@ import threading
 import time
 from abc import ABC, abstractmethod
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date, datetime, timezone
 from enum import StrEnum
 from pathlib import Path
@@ -65,12 +75,14 @@ from .gpu import VramSampler, query_gpus
 from .schemas import (
     RESTORATION_PROTOCOL,
     WORKLOAD_BY_MODE,
+    WORKLOAD_BY_OPERATION,
     CapabilityReport,
     DynamicRange,
     GpuDescription,
     MeasuredThroughput,
     ModelCapability,
     ModelState,
+    PhotoOperation,
     RestorationErrorCode,
     RestorationMode,
 )
@@ -100,7 +112,25 @@ RUNTIME_PLACEHOLDERS = frozenset(
     }
 )
 
-ModelFamily = Literal["realbasicvsr", "seedvr2", "rife", "realesrgan"]
+ModelFamily = Literal["realbasicvsr", "seedvr2", "rife", "realesrgan", "lama-repair", "ddcolor"]
+# The photo families (FL-933), the operation each serves and the weights its runtime loads.
+PHOTO_OPERATIONS: dict[str, PhotoOperation] = {
+    "lama-repair": PhotoOperation.REPAIR,
+    "ddcolor": PhotoOperation.COLOURISE,
+}
+PHOTO_WEIGHT_ROLES: dict[str, frozenset[str]] = {
+    "lama-repair": frozenset({"detection", "lama"}),
+    "ddcolor": frozenset({"ddcolor"}),
+}
+# Decimal on purpose: cards sold as 8 GB report slightly under 8 GiB (8188 MiB, for example).
+ANY_NVIDIA_MIN_VRAM_BYTES = 8_000_000_000
+# A runtime exits with this when it refuses its input for a reason the person should read.
+RUNTIME_REFUSED_INPUT_EXIT = 65
+# FL-955: tells the colourise runtime the owner chose to replace a hand-tinted print's colours.
+ALLOW_HAND_TINTED_ENV = "FRAMELEAF_ALLOW_HAND_TINTED"
+# What a photo runtime may leave beside its frame: counts and plain-language warnings.
+PHOTO_REPORT = "report.json"
+PHOTO_REPORT_MAX_BYTES = 16 * 1024
 STILL_FAMILY = "realesrgan"
 STILL_MAX_PIXELS = 1_048_576
 STILL_SCRIPT = "machine-learning/video-restoration/runtimes/realesrgan_still.py"
@@ -227,7 +257,9 @@ class LimitsSpec(ConfigModel):
 class ModelSpec(ConfigModel):
     id: str = Field(pattern=MODEL_ID_PATTERN)
     family: ModelFamily
-    mode: RestorationMode
+    # A restoration model names a mode; a photo model (FL-933) names an operation instead.
+    mode: RestorationMode | None = None
+    operation: PhotoOperation | None = None
     displayName: str = Field(min_length=1, max_length=80)
     repository: str
     revision: str
@@ -274,6 +306,22 @@ class ModelSpec(ConfigModel):
                         raise ValueError(f"model {self.id} argv names an undeclared weight: {{{name}}}")
                 elif name not in RUNTIME_PLACEHOLDERS:
                     raise ValueError(f"model {self.id} argv uses an unknown placeholder: {{{name}}}")
+        if (self.mode is None) == (self.operation is None):
+            raise ValueError(f"model {self.id} names either a mode or an operation")
+        if self.operation != PHOTO_OPERATIONS.get(self.family):
+            raise ValueError(f"model {self.id}: the {self.family} family does not serve {self.operation or self.mode}")
+        if self.operation is not None and (
+            # Photo models are CUDA-only: there is no processor fallback to qualify.
+            not self.requiresGpu
+            or self.nativeScale not in (None, 1)
+            or self.dynamicRanges != [DynamicRange.SDR]
+            or self.limits.maxFrames != 1
+            or self.limits.maxFramesPerChunk != 1
+            or self.runtime.protocol != "process"
+            or "--allow-cpu" in self.runtime.argv
+            or not PHOTO_WEIGHT_ROLES[self.family] <= roles
+        ):
+            raise ValueError(f"model {self.id}: invalid photo runtime configuration")
         if (self.family == "rife") != (self.mode == RestorationMode.SMOOTH_MOTION):
             raise ValueError(f"model {self.id}: only the rife family serves smooth_motion")
         if self.family == STILL_FAMILY and (
@@ -362,6 +410,16 @@ class EvidenceItem(StrEnum):
     # RIFE: ghosting and warping around occlusions, fast motion and scene cuts, judged against
     # plain frame blending of the same source at the same rate.
     INTERPOLATION_ARTIFACTS = "interpolation-artifacts"
+    # Photo models (FL-933): every output has exactly its source's pixel size, and a source with an
+    # orientation tag comes back with the same stored pixels and the same tag.
+    OUTPUT_SIZE = "output-size"
+    ORIENTATION = "orientation"
+    # Photo repair: faces come back byte-identical to the source (compare-faces and this item); and
+    # the scratch mask stays off faces and under its area limit across the scan set.
+    FACE_IDENTITY_DRIFT = "face-identity-drift"
+    SCRATCH_MASK = "scratch-mask"
+    # Colourise: skin, sky, foliage and clothing come out in believable colours, without colour blocks.
+    COLOUR_PLAUSIBILITY = "colour-plausibility"
 
 
 COMMON_EVIDENCE: frozenset[EvidenceItem] = frozenset(
@@ -387,6 +445,23 @@ COMMON_EVIDENCE: frozenset[EvidenceItem] = frozenset(
     }
 )
 
+# A still has no motion, cuts, chunks, timing or audio to keep.
+PHOTO_EVIDENCE: frozenset[EvidenceItem] = frozenset(
+    {
+        EvidenceItem.WEIGHTS_HASHED,
+        EvidenceItem.RESOURCE_PROFILE,
+        EvidenceItem.OUTPUT_SIZE,
+        EvidenceItem.ORIENTATION,
+        EvidenceItem.HALLUCINATION,
+        EvidenceItem.DETERMINISTIC_REPEAT,
+        EvidenceItem.FAULT_OUT_OF_MEMORY,
+        EvidenceItem.FAULT_NAN,
+        EvidenceItem.FAULT_CHANGED_WEIGHTS,
+        EvidenceItem.FAULT_DIRTY_CHECKOUT,
+        EvidenceItem.FAULT_UNSUPPORTED_INPUT,
+    }
+)
+
 REQUIRED_EVIDENCE: dict[str, frozenset[EvidenceItem]] = {
     "realbasicvsr": COMMON_EVIDENCE | {EvidenceItem.X4_TO_REQUESTED_2X},
     "seedvr2": COMMON_EVIDENCE | {EvidenceItem.INTERMEDIATE_COMPRESSION, EvidenceItem.FRAME_COUNT},
@@ -401,6 +476,14 @@ REQUIRED_EVIDENCE: dict[str, frozenset[EvidenceItem]] = {
         EvidenceItem.TEMPORAL_STABILITY,
     }
     | {EvidenceItem.X4_TO_REQUESTED_2X, EvidenceItem.TILE_SEAMS},
+    "lama-repair": PHOTO_EVIDENCE
+    | {
+        EvidenceItem.COMPARE_FACES,
+        EvidenceItem.FACE_IDENTITY_DRIFT,
+        EvidenceItem.SCRATCH_MASK,
+        EvidenceItem.TILE_SEAMS,
+    },
+    "ddcolor": PHOTO_EVIDENCE | {EvidenceItem.COLOUR_PLAUSIBILITY},
 }
 
 
@@ -452,6 +535,8 @@ class QualificationRecord(ConfigModel):
     # Worker image revisions (``FRAMELEAF_RESTORATION_IMAGE_REVISION``) the evidence covers.
     containerRevisions: list[str] = Field(default_factory=list)
     hardware: list[QualifiedHardware] = Field(default_factory=list)
+    # Photo models only: accept any NVIDIA GPU of at least 8 GB on a driver branch in ``hardware``.
+    anyNvidiaGpu: bool = False
     measurements: list[MeasuredThroughput] = Field(default_factory=list)
     evidence: list[EvidenceRecord] = Field(default_factory=list)
     license: LicenseApproval = Field(default_factory=LicenseApproval)
@@ -670,6 +755,32 @@ def allowed_dynamic_ranges(spec: ModelSpec, record: QualificationRecord | None) 
     return ranges
 
 
+def any_nvidia_gpu_findings(
+    spec: ModelSpec, gpus: list[GpuDescription], tested_branches: set[str]
+) -> list[tuple[ModelState, str]]:
+    """A photo record's ``anyNvidiaGpu`` policy: any NVIDIA GPU with at least 8 GB on a tested driver
+    branch. The card itself may never have been tested; the owner accepted that on 2026-11-22."""
+    if not gpus:
+        return [(ModelState.NO_GPU, "no NVIDIA GPU is visible to the worker")]
+    present = ", ".join(f"{gpu.name} (driver {gpu.driverVersion})" for gpu in gpus)
+    nvidia = [gpu for gpu in gpus if gpu.name.upper().startswith("NVIDIA")]
+    if not nvidia:
+        return [(ModelState.GPU_UNQUALIFIED, f"{present} is not an NVIDIA GPU")]
+    tested = [gpu for gpu in nvidia if driver_branch(gpu.driverVersion) in tested_branches]
+    if not tested:
+        branches = ", ".join(sorted(tested_branches)) or "none"
+        return [
+            (
+                ModelState.GPU_UNQUALIFIED,
+                f"{present} is not on a driver branch tested for {spec.id} (tested: {branches})",
+            )
+        ]
+    needed = max(spec.limits.minVramBytes, ANY_NVIDIA_MIN_VRAM_BYTES)
+    if max(gpu.memoryTotalBytes for gpu in tested) < needed:
+        return [(ModelState.INSUFFICIENT_VRAM, f"{spec.id} needs {needed} bytes of GPU memory")]
+    return []
+
+
 def gpu_findings(
     spec: ModelSpec, gpus: list[GpuDescription], qualified: set[tuple[str, str]]
 ) -> list[tuple[ModelState, str]]:
@@ -722,13 +833,18 @@ def evaluate_model(
     hardware = record.hardware if record else []
     qualified = {(entry.gpu, driver_branch(entry.driverVersion)) for entry in hardware}
     if spec.requiresGpu:
-        findings += gpu_findings(spec, gpus, qualified)
+        # Only a photo model's record can widen the rule; every other workload keeps the exact match.
+        if record is not None and record.anyNvidiaGpu and spec.operation is not None:
+            findings += any_nvidia_gpu_findings(spec, gpus, {branch for _, branch in qualified})
+        else:
+            findings += gpu_findings(spec, gpus, qualified)
 
     verified = weights.verified and not is_pinned(spec)
     return ModelCapability(
         id=spec.id,
         family=spec.family,
         mode=spec.mode,
+        operation=spec.operation,
         displayName=spec.displayName,
         revision=spec.revision,
         fingerprint=model_fingerprint(spec) if verified else None,
@@ -748,6 +864,7 @@ def verifying_capability(spec: ModelSpec) -> ModelCapability:
         id=spec.id,
         family=spec.family,
         mode=spec.mode,
+        operation=spec.operation,
         displayName=spec.displayName,
         revision=spec.revision,
         fingerprint=None,
@@ -834,6 +951,8 @@ def classify_runtime_failure(returncode: int, stderr: str) -> RestorationFailure
     lowered = tail.lower()
     if any(marker in lowered for marker in OOM_MARKERS):
         return RestorationFailure(RestorationErrorCode.OUT_OF_MEMORY, f"the runtime ran out of GPU memory: {tail}")
+    if returncode == RUNTIME_REFUSED_INPUT_EXIT:
+        return RestorationFailure(RestorationErrorCode.UNSUPPORTED_INPUT, tail)
     return RestorationFailure(RestorationErrorCode.RUNTIME_FAILED, f"the runtime exited with {returncode}: {tail}")
 
 
@@ -888,6 +1007,8 @@ class RuntimeJob:
     # SeedVR2 consumes the validated video segment without a PNG/re-encode round trip.
     source_video: Path | None = None
     kind: Literal["image", "video"] = "video"
+    # Colourise only (FL-955): the owner's explicit override for a hand-tinted print.
+    allow_hand_tinted: bool = False
 
 
 @dataclass(frozen=True)
@@ -1083,7 +1204,67 @@ class RifeAdapter(RestorationAdapter):
         )
 
 
+def photo_warnings(output_dir: Path) -> list[str]:
+    """The warnings a photo runtime left in its report, if it left a sane one. The report is an
+    aid for the person, never a gate: anything unexpected in it is ignored."""
+    report = output_dir / PHOTO_REPORT
+    try:
+        if report.is_symlink() or not report.is_file() or report.stat().st_size > PHOTO_REPORT_MAX_BYTES:
+            return []
+        warnings = json.loads(report.read_text(encoding="utf-8")).get("warnings")
+    except (OSError, ValueError, AttributeError):
+        return []
+    if not isinstance(warnings, list):
+        return []
+    return [warning[:300] for warning in warnings[:8] if isinstance(warning, str)]
+
+
+class PhotoAdapter(RestorationAdapter):
+    """A photo operation (FL-933): one decoded still in, one still of exactly the same size out.
+    The runtime reads ``00000001.png`` from the input directory and writes the same name."""
+
+    label: ClassVar[str]
+
+    def run(self, job: RuntimeJob) -> AdapterRun:
+        if job.kind != "image" or job.frame_count != 1:
+            raise RestorationFailure(
+                RestorationErrorCode.UNSUPPORTED_INPUT, f"{self.label} needs a still image", model_id=self.spec.id
+            )
+        output_dir = job.work_dir / "runtime-output"
+        output_dir.mkdir()
+        values = {**self.base_values(job), "input_dir": str(job.source_frames), "output_dir": str(output_dir)}
+        invocation = self.invocation(values)
+        if job.allow_hand_tinted and self.family == "ddcolor":
+            invocation = replace(invocation, env={**invocation.env, ALLOW_HAND_TINTED_ENV: "1"})
+        outcome = self.runner(invocation)
+        return AdapterRun(
+            frames_dir=output_dir,
+            expected_size=job.source_size,
+            runtime_ms=outcome.duration_ms,
+            peak_vram_bytes=outcome.peak_vram_bytes,
+            warnings=photo_warnings(output_dir),
+        )
+
+
+class LamaRepairAdapter(PhotoAdapter):
+    """Photo repair: LaMa on scratches and dust, faces left exactly as scanned
+    (``video-restoration/runtimes/photo_repair.py``)."""
+
+    family = "lama-repair"
+    label = "photo repair"
+
+
+class DdColorAdapter(PhotoAdapter):
+    """Colourise: DDColor's colour joined to the photo's own lightness
+    (``video-restoration/runtimes/colourise.py``)."""
+
+    family = "ddcolor"
+    label = "colourise"
+
+
 ADAPTERS: dict[str, type[RestorationAdapter]] = {
+    LamaRepairAdapter.family: LamaRepairAdapter,
+    DdColorAdapter.family: DdColorAdapter,
     RealBasicVsrAdapter.family: RealBasicVsrAdapter,
     RealEsrganStillAdapter.family: RealEsrganStillAdapter,
     SeedVr2Adapter.family: SeedVr2Adapter,
@@ -1183,11 +1364,15 @@ class RestorationRegistry:
     def _build_report(
         models: list[ModelCapability], gpus: list[GpuDescription], problems: list[str]
     ) -> CapabilityReport:
-        available_modes = {model.mode for model in models if model.state == ModelState.AVAILABLE}
+        available = [model for model in models if model.state == ModelState.AVAILABLE]
+        available_modes = {model.mode for model in available}
+        available_operations = {model.operation for model in available}
         return CapabilityReport(
             protocol=RESTORATION_PROTOCOL,
-            workloads=[WORKLOAD_BY_MODE[mode] for mode in RestorationMode if mode in available_modes],
-            models=models,
+            workloads=[WORKLOAD_BY_MODE[mode] for mode in RestorationMode if mode in available_modes]
+            + [WORKLOAD_BY_OPERATION[operation] for operation in PhotoOperation if operation in available_operations],
+            models=[model for model in models if model.operation is None],
+            photoModels=[model for model in models if model.operation is not None],
             gpus=gpus,
             configurationProblems=problems,
             checkedAt=datetime.now(timezone.utc).isoformat(),
@@ -1210,7 +1395,7 @@ class RestorationRegistry:
         with self._lock:
             self._report = report
             self._candidate_limits = candidate_limits
-        for model in report.models:
+        for model in [*report.models, *report.photoModels]:
             log.info("Restoration model %s is %s: %s", model.id, model.state, "; ".join(model.reasons) or "ready")
         for problem in report.configurationProblems:
             log.warning("Restoration configuration problem: %s", problem)
@@ -1235,11 +1420,12 @@ class RestorationRegistry:
 
     def select(
         self,
-        mode: RestorationMode,
+        mode: RestorationMode | None,
         model_id: str | None,
         fingerprint: str | None,
         *,
         kind: Literal["image", "video"] = "video",
+        operation: PhotoOperation | None = None,
     ) -> SelectedModel:
         """Choose the model for one request and verify it again now, so weights or a checkout
         changed since the last report are caught before any frame is decoded.
@@ -1257,6 +1443,7 @@ class RestorationRegistry:
             spec
             for spec in manifest.models
             if spec.mode == mode
+            and spec.operation == operation
             and (
                 spec.signed_candidate is None
                 or (spec.id == model_id and kind == ("image" if spec.signed_candidate == "still" else "video"))
@@ -1264,8 +1451,11 @@ class RestorationRegistry:
         ]
         if model_id is not None:
             candidates = [spec for spec in candidates if spec.id == model_id]
+        wanted = operation or mode
         if not candidates:
-            detail = f"no {mode} model named {model_id} is configured" if model_id else f"no {mode} model is configured"
+            detail = (
+                f"no {wanted} model named {model_id} is configured" if model_id else f"no {wanted} model is configured"
+            )
             raise RestorationFailure(RestorationErrorCode.MODEL_UNAVAILABLE, detail, model_id=model_id)
 
         gpus = self.gpu_query()
@@ -1291,7 +1481,7 @@ class RestorationRegistry:
         if not available:
             raise RestorationFailure(
                 RestorationErrorCode.MODEL_UNAVAILABLE,
-                f"no {mode} model is available: " + " | ".join(reasons),
+                f"no {wanted} model is available: " + " | ".join(reasons),
                 model_id=model_id,
             )
         if fingerprint is not None:

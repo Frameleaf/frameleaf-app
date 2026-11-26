@@ -1,0 +1,4 @@
+# A synthetic extract in the layout of GeoNames countryInfo.txt (FL-987).
+#ISO	ISO3	ISO-Numeric	fips	Country	Capital	Area	Population	Continent	tld	CurrencyCode	CurrencyName	Phone	Postal Code Format	Postal Code Regex	Languages	geonameid	neighbours	EquivalentFipsCode
+DE	DEU	276	DE	Germany	Capital	1	1	XX	.de	CUR	Currency	1			de	2921044		
+JP	JPN	392	JP	Japan	Capital	1	1	XX	.jp	CUR	Currency	1			jp	1861060		

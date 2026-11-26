@@ -7,6 +7,7 @@ import { AuthDto } from 'src/dtos/auth.dto.js';
 import { AssetEditActionItem } from 'src/dtos/editing.dto.js';
 import { SourceTypeSchema } from 'src/enum.js';
 import { asDateString, asDateTimeString } from 'src/utils/date.js';
+import { PERSON_RELATIONS } from 'src/utils/person-relationship.js';
 import { transformFaceBoundingBox } from 'src/utils/transform.js';
 import { hexColor, stringToBool } from 'src/validation.js';
 
@@ -76,6 +77,63 @@ const PersonSearchSchema = z
   })
   .meta({ id: 'PersonSearchDto' });
 
+// FL-842: a relative as the Family section lists them: the small person shape, never their notes or categories.
+const PersonRelativeSchema = z
+  .object({
+    id: z.uuidv4().describe('Person ID'),
+    name: z.string().describe('Person name'),
+    birthDate: z.string().meta({ format: 'date' }).describe('Person date of birth').nullable(),
+    thumbnailPath: z.string().describe('Thumbnail path'),
+    isHidden: z.boolean().describe('Is hidden'),
+    updatedAt: z.string().meta({ format: 'date-time' }).optional().describe('Last update date'),
+  })
+  .meta({ id: 'PersonRelativeDto' });
+
+const PersonParentRelativeSchema = z
+  .object({
+    person: PersonRelativeSchema,
+    // a plain string, not an enum: a response enum can never gain a value without breaking the native apps
+    parentRole: z
+      .string()
+      .describe('Which parent the parent is to the child: mother, father or parent. Unknown values may be added'),
+  })
+  .meta({ id: 'PersonParentRelativeDto' });
+
+const PersonRelationshipsResponseSchema = z
+  .object({
+    parents: z.array(PersonParentRelativeSchema).describe("The person's parents, each with which parent they are"),
+    children: z
+      .array(PersonParentRelativeSchema)
+      .describe("The person's children; `parentRole` is which parent the person is to that child"),
+    partners: z.array(PersonRelativeSchema).describe("The person's partners"),
+    siblings: z
+      .array(PersonRelativeSchema)
+      .describe("The person's siblings: the ones recorded, and everyone who shares a parent with them"),
+    inferredSiblingIds: z
+      .array(z.uuidv4())
+      .describe(
+        'The siblings listed only because they share a parent. There is no recorded relationship with them to remove',
+      ),
+  })
+  .meta({ id: 'PersonRelationshipsResponseDto' });
+
+const PersonRelationshipCreateSchema = z
+  .object({
+    relatedPersonId: z.uuidv4().describe("The other person; one of the caller's own people"),
+    relation: z
+      .enum(PERSON_RELATIONS)
+      .describe(
+        'What the other person is to the person in the path: "mother" records that the other person is their mother, "child" that the other person is their child',
+      )
+      .meta({ id: 'PersonRelationshipRelation' }),
+  })
+  .meta({ id: 'PersonRelationshipCreateDto' });
+
+const PersonRelationshipParamSchema = z.object({
+  id: z.uuidv4().describe('Person ID'),
+  relatedPersonId: z.uuidv4().describe('The other person in the relationship'),
+});
+
 export const PersonResponseSchema = z
   .object({
     id: z.uuidv4().describe('Person ID'),
@@ -134,6 +192,11 @@ export const PersonResponseSchema = z
       .describe(
         "The owner's private notes about the person (FL-941); null when there are none. Only ever returned to the person's owner",
       ),
+    relationships: PersonRelationshipsResponseSchema.optional()
+      .describe(
+        "The person's family (FL-842). Returned only to the person's owner, and only by GET /people/:id; never in a list",
+      )
+      .meta(new HistoryBuilder().added('v3.2.1').alpha('v3.2.1').getExtensions()),
   })
   .meta({ id: 'PersonResponseDto' });
 
@@ -143,6 +206,10 @@ export class PeopleUpdateDto extends createZodDto(PeopleUpdateSchema) {}
 export class MergePersonDto extends createZodDto(MergePersonSchema) {}
 export class PersonSearchDto extends createZodDto(PersonSearchSchema) {}
 export class PersonResponseDto extends createZodDto(PersonResponseSchema) {}
+export class PersonRelativeDto extends createZodDto(PersonRelativeSchema) {}
+export class PersonRelationshipsResponseDto extends createZodDto(PersonRelationshipsResponseSchema) {}
+export class PersonRelationshipCreateDto extends createZodDto(PersonRelationshipCreateSchema) {}
+export class PersonRelationshipParamDto extends createZodDto(PersonRelationshipParamSchema) {}
 
 // FL-57: a face shown as evidence: the photo (always one the viewer may see: their own, not trashed,
 // not Locked, not hidden by their suppression rules) and where the face is in it, as fractions of the
@@ -560,6 +627,18 @@ export function mapPerson(person: MaybeDehydrated<Person> & PersonProfileFields)
     updatedAt: asDateTimeString(person.updatedAt),
     ...(person.deathDate !== undefined && { deathDate: asDateString(person.deathDate) }),
     ...(person.notes !== undefined && { notes: person.notes }),
+  };
+}
+
+/** FL-842: a relative as the Family section lists them. */
+export function mapPersonRelative(person: MaybeDehydrated<Person>): PersonRelativeDto {
+  return {
+    id: person.personGroupId,
+    name: person.name,
+    birthDate: asDateString(person.birthDate),
+    thumbnailPath: person.thumbnailPath,
+    isHidden: person.isHidden,
+    updatedAt: asDateTimeString(person.updatedAt),
   };
 }
 

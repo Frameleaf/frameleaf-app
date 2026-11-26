@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
+import type { GalleryPreview } from './gallery-preview.js';
 
 export class Refusal extends Error {
   constructor(
@@ -24,7 +25,6 @@ export const releaseTag = z
 export const imageDigest = z
   .string()
   .regex(/^[a-z0-9./:_-]+@sha256:[a-f0-9]{64}$/);
-export const secureToken = z.string().regex(/^[a-f0-9]{64}$/);
 
 export type Mount = {
   type: 'bind' | 'volume';
@@ -71,6 +71,8 @@ export type Source = {
     databaseBytes: number;
   };
   restart: Record<string, { Name: string; MaximumRetryCount: number }>;
+  /** FL-1742: what a Noodle Gallery import brings across, counted in the running source. Absent when it could not be read. */
+  gallery?: GalleryPreview;
 };
 /** Reviewed Docker identities only; schema, ownership and privacy qualification remain source-specific. */
 export type SourceFence = Pick<Source, 'id' | 'workers' | 'mounts' | 'fingerprint' | 'platform' | 'restart'> & {
@@ -226,9 +228,11 @@ export function databaseImageMove(current: string, release: Pick<NasManifest, 'i
   return from !== null && to !== null && to >= from;
 }
 export function publicSource(source: Source) {
-  const { database, environment, settings, restart, settingsBase, ...safe } = source;
+  const { database, environment, settings, restart, settingsBase, gallery, ...safe } = source;
   return {
     ...safe,
+    // FL-1752: without counts the review has nothing true to list, so it keeps its no-preview notice.
+    ...(gallery && !gallery.uncounted && { gallery }),
     settingsEdited: !!settingsBase,
     configuration: [
       {

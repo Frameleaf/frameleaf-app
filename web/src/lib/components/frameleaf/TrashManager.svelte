@@ -125,6 +125,8 @@
 
   /** Discards answers to requests a newer one has replaced. */
   let generation = 0;
+  /** Bumped only when the view starts over (filters, lock): background reloads do not cancel a review. */
+  let viewGeneration = 0;
   const localSequences = new Map<string, bigint>();
   let queryTimer: ReturnType<typeof setTimeout> | undefined;
   let reloadTimer: ReturnType<typeof setTimeout> | undefined;
@@ -165,8 +167,13 @@
   const typedConfirmation = $derived(
     !!review && (review.action === TrashReviewAction.Empty || review.count >= TYPED_CONFIRMATION_FROM),
   );
+  /** FL-1771: the server refused this review's token (the items changed); only a new review can delete. */
+  let reviewStale = $state(false);
   const canConfirm = $derived(
-    !!review && !busy && (!typedConfirmation || matchesTyped(deleteConfirmationPhrase(review.count), confirmation)),
+    !!review &&
+      !busy &&
+      !reviewStale &&
+      (!typedConfirmation || matchesTyped(deleteConfirmationPhrase(review.count), confirmation)),
   );
   let gridElement = $state<HTMLElement>();
   /** Above this many rows at once, they are simply removed: a move that large is noise. */
@@ -298,6 +305,7 @@
 
   /** A filter change starts over: new list, no selection, no open review (as in the template). */
   const resetView = () => {
+    viewGeneration++;
     selected = [];
     review = null;
     reviewOpen = false;
@@ -465,13 +473,16 @@
     }
     busy = true;
     error = '';
-    const run = generation;
+    // Not `generation`: any trash event bumps that, and the person's Delete would then do nothing. The
+    // reviewed set is frozen by the server, and its token is refused if the items changed.
+    const run = viewGeneration;
     try {
       const reviewed = await reviewTrash({ trashReviewDto: { action, ids } });
-      if (run !== generation) {
+      if (run !== viewGeneration) {
         return;
       }
       review = { ...reviewed, ids };
+      reviewStale = false;
       confirmation = '';
       reviewError = '';
       reviewOpen = true;
@@ -510,6 +521,7 @@
       undoIds = null;
     } catch (error_) {
       reviewError = failureMessage(error_);
+      reviewStale = review === current && isStaleReview(error_);
     } finally {
       busy = false;
       void refresh();

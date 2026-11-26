@@ -100,11 +100,37 @@ const WorkerDesktopHelperSchema = z
     platform: DesktopPlatformSchema,
     ready: z
       .boolean()
-      .describe('Online in the last 90 seconds with a current qualification, so it can take AI work now'),
+      .describe(
+        'Online now (seen within the last few minutes) with a current qualification, so it can take AI work now',
+      ),
     lastSeenAt: z.string().meta({ format: 'date-time' }).nullable().describe('Last check-in, or null'),
     // optional in the schema so clients built before FL-1484 keep compiling; always sent
     ownerName: z.string().optional().describe('Name of the account signed in on it'),
     household: z.boolean().optional().describe("Works on everyone's photos at home, not only its own account's"),
+    transcodeEnabled: z.boolean().optional().describe('Makes playback copies of videos'),
+    transcodeEveryone: z.boolean().optional().describe("Its playback copies include other people's videos"),
+    transcoding: z
+      .object({
+        fileName: z.string().nullable().describe('Null for a Locked video or one hidden by its owner'),
+        progress: z.int().min(0).max(100),
+      })
+      .meta({ id: 'WorkerDesktopTranscodingDto' })
+      .nullable()
+      .optional()
+      .describe('The playback copy it is making now, or null'),
+    withdrawn: z
+      .array(
+        z.object({
+          workload: z.enum(['clip', 'face', 'ocr']).meta({ id: 'DesktopWithdrawnWorkload' }),
+          until: z
+            .string()
+            .meta({ format: 'date-time' })
+            .nullable()
+            .describe('Held back from qualifying again until then; null once it only has to qualify again'),
+        }),
+      )
+      .optional()
+      .describe('Work taken away from it after it failed that work three times in a row'),
   })
   .meta({ id: 'WorkerDesktopHelperDto' });
 

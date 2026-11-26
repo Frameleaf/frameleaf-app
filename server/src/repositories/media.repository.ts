@@ -49,6 +49,7 @@ import { superviseMediaProcess } from 'src/queue/process-lifetime.js';
 import { SharpOperationError, imageWorkerDiagnostics, sharpProcessPool } from 'src/queue/sharp-pool.js';
 import { SharpResourceLimitError } from 'src/queue/sharp-protocol.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { type PacketFacts, packetSummary } from 'src/utils/cloud-ml-job.js';
 import { renderDarktable } from 'src/utils/darktable-renderer.js';
 import {
   DESIGN_PREVIEW_TAGS,
@@ -131,6 +132,25 @@ type ProgressEvent = {
 export type ExtractResult = {
   buffer: Buffer;
   format: RawExtractedFormat;
+};
+
+/**
+ * exiftool reads `%f`, `%d`, `%e` and the like in a `-TagsFromFile` path as parts of the target's name, and `%%` does
+ * not escape them: a source named `%fx.jpg` is read as `<target>x.jpg`. A source path with a `%` is handed over as a
+ * `%`-free link to it in a private temporary folder, removed afterwards.
+ */
+export const withPercentFreePath = async <T>(source: string, use: (path: string) => Promise<T>): Promise<T> => {
+  if (!source.includes('%')) {
+    return use(source);
+  }
+  const folder = await fs.mkdtemp(join(tmpdir(), 'frameleaf-exif-'));
+  try {
+    const link = join(folder, `source${extname(source).replaceAll('%', '')}`);
+    await fs.symlink(source, link);
+    return await use(link);
+  } finally {
+    await fs.rm(folder, { recursive: true, force: true });
+  }
 };
 
 @Injectable()
@@ -413,13 +433,15 @@ export class MediaRepository {
 
   async copyTagGroup(tagGroup: string, source: string, target: string): Promise<boolean> {
     try {
-      await exiftool.write(
-        target,
-        {},
-        {
-          ignoreMinorErrors: true,
-          writeArgs: ['-TagsFromFile', source, `-${tagGroup}:all>${tagGroup}:all`, '-overwrite_original'],
-        },
+      await withPercentFreePath(source, (from) =>
+        exiftool.write(
+          target,
+          {},
+          {
+            ignoreMinorErrors: true,
+            writeArgs: ['-TagsFromFile', from, `-${tagGroup}:all>${tagGroup}:all`, '-overwrite_original'],
+          },
+        ),
       );
       return true;
     } catch (error: any) {
@@ -626,6 +648,11 @@ export class MediaRepository {
     return sharpProcessPool.run('renderDownloadJpeg', [input, output, maxEdge], signal);
   }
 
+  /** FL-923: one straightened print of a flatbed scan as a full-resolution JPEG; answers the photo's size. */
+  renderScanCrop(...args: SharpArguments<'renderScanCrop'>): Promise<ImageDimensions> {
+    return sharpProcessPool.run('renderScanCrop', args, executionSignal());
+  }
+
   /**
    * FL-826: copies the original's EXIF, XMP and IPTC into a rendered download JPEG, leaving out what no
    * longer describes it (orientation, the embedded thumbnail, the colour profile) and, with
@@ -634,25 +661,27 @@ export class MediaRepository {
    */
   async copyDownloadMetadata(source: string, target: string, { removeLocation }: { removeLocation: boolean }) {
     try {
-      await exiftool.write(
-        target,
-        {},
-        {
-          ignoreMinorErrors: true,
-          writeArgs: [
-            '-TagsFromFile',
-            source,
-            '-EXIF:all',
-            '-XMP:all',
-            '-IPTC:all',
-            '--Orientation',
-            '--IFD1:all',
-            '--ICC_Profile:all',
-            // `--` leaves a tag out of the copy
-            ...(removeLocation ? LOCATION_TAG_SELECTORS.map((selector) => `-${selector}`) : []),
-            '-overwrite_original',
-          ],
-        },
+      await withPercentFreePath(source, (from) =>
+        exiftool.write(
+          target,
+          {},
+          {
+            ignoreMinorErrors: true,
+            writeArgs: [
+              '-TagsFromFile',
+              from,
+              '-EXIF:all',
+              '-XMP:all',
+              '-IPTC:all',
+              '--Orientation',
+              '--IFD1:all',
+              '--ICC_Profile:all',
+              // `--` leaves a tag out of the copy
+              ...(removeLocation ? LOCATION_TAG_SELECTORS.map((selector) => `-${selector}`) : []),
+              '-overwrite_original',
+            ],
+          },
+        ),
       );
     } catch (error: any) {
       this.logger.warn(`Could not copy metadata into a download: ${error.message}`);
@@ -785,6 +814,7 @@ export class MediaRepository {
             index: stream.index,
             height,
             width: dar ? Math.round(height * dar) : this.parseInt(stream.width),
+            codedWidth: this.parseInt(stream.width),
             codecName: stream.codec_name === 'h265' ? 'hevc' : (stream.codec_name ?? null),
             profile: this.parseVideoProfile(stream.codec_name, stream.profile as string | undefined) ?? null,
             level: this.parseOptionalInt(stream.level),
@@ -974,6 +1004,77 @@ export class MediaRepository {
    * Needed for accurate segments, especially when remuxing, seeking and/or VFR is involved.
    * Scanning packets for keyframes in JS is much faster than -skip_frame nokey since it avoids decoding the video.
    */
+  /**
+   * FL-1725: what a stream's packets say about copying it for Frameleaf Cloud (`packetSummary`): how many
+   * there are, how many its edit list hides, whether its shown frames sit on an even grid with real
+   * presentation times, and how far apart its keyframes are.
+   */
+  countPackets(
+    input: string,
+    streamIndex: number,
+    signal: AbortSignal | undefined = executionSignal(),
+  ): Promise<Required<PacketFacts>> {
+    signal?.throwIfAborted();
+    const ffprobe = spawn(
+      'ffprobe',
+      [
+        '-v',
+        'error',
+        '-select_streams',
+        String(streamIndex),
+        '-show_entries',
+        'stream=has_b_frames:packet=pts_time,dts_time,flags',
+        '-of',
+        'csv=p=1',
+        input,
+      ],
+      { stdio: ['ignore', 'pipe', 'pipe'] },
+    );
+    const lifetime = superviseMediaProcess(ffprobe, { signal });
+    const summary = packetSummary();
+    let stderr = '';
+    let remainder = '';
+    let failure: Error | undefined;
+    const count = (line: string) => {
+      if (line) {
+        summary.add(line);
+        lifetime.progress(1);
+      }
+    };
+    ffprobe.stderr.setEncoding('utf8');
+    ffprobe.stderr.on('data', (chunk: string) => {
+      stderr = (stderr + chunk).slice(-65_536);
+    });
+    ffprobe.stdout.setEncoding('utf8');
+    ffprobe.stdout.on('data', (chunk: string) => {
+      const lines = chunk.split('\n');
+      lines[0] = remainder + lines[0];
+      remainder = lines.pop() as string;
+      for (const line of lines) {
+        count(line);
+      }
+    });
+    return new Promise((resolve, reject) => {
+      ffprobe.on('error', (error) => {
+        failure = error;
+      });
+      ffprobe.on('close', (code) => {
+        if (lifetime.error() || failure) {
+          return reject(lifetime.error() ?? failure);
+        }
+        if (code !== 0) {
+          return reject(new Error(`ffprobe exited with code ${code}: ${stderr.trim()}`));
+        }
+        try {
+          count(remainder);
+          resolve(summary.done());
+        } catch (error) {
+          reject(error);
+        }
+      });
+    });
+  }
+
   probePackets(
     input: string,
     streamIndex: number,

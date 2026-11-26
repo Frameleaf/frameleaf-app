@@ -2310,6 +2310,47 @@ describe(MetadataService.name, () => {
       },
     );
 
+    it('FL-936: writes the first day of a decade to the sidecar, and reading it back changes no date or accuracy', async () => {
+      // 1 January 1970 at midnight: the epoch itself, and a day a camera resets to
+      const start = new Date('1970-01-01T00:00:00.000Z');
+      const asset = AssetFactory.from({ fileCreatedAt: start, localDateTime: start })
+        .file({ type: AssetFileType.Sidecar })
+        .exif({ dateTimeOriginal: start, timeZone: 'UTC' })
+        .build();
+      mocks.assetJob.getLockedPropertiesForMetadataExtraction.mockResolvedValue(['dateTimeOriginal', 'timeZone']);
+      mocks.assetJob.getForSidecarWriteJob.mockResolvedValue(getForSidecarWrite(asset));
+      await expect(sut.handleSidecarWrite({ id: asset.id })).resolves.toBe(JobStatus.Success);
+      expect(mocks.metadata.writeTags).toHaveBeenCalledWith(
+        asset.files[0].path,
+        expect.objectContaining({
+          DateTimeOriginal: expect.stringMatching(/^1970-01-01T00:00:00(\.000)?(Z|\+00:00)$/),
+        }),
+      );
+
+      mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
+      mocks.asset.getForMetadataExtractionTags.mockResolvedValue({
+        ...noPlace,
+        tags: null,
+        updateId: 'revision',
+        timeZone: 'UTC',
+      });
+      mocks.job.isImportedMetadataJob.mockResolvedValue(false);
+      mockReadTags({ DateTimeOriginal: ExifDateTime.fromISO(start.toISOString()), zone: 'UTC' });
+      await sut.handleMetadataExtraction({ id: asset.id });
+
+      const written = mocks.asset.update.mock.calls[0][0];
+      expect(written).not.toHaveProperty('fileCreatedAt');
+      expect(written).not.toHaveProperty('localDateTime');
+      expect(written).not.toHaveProperty('dateAccuracy');
+      // the date read from the file is the epoch: a valid date, kept behind the lock rather than refused
+      expect(mocks.asset.upsertExif).toHaveBeenCalledWith(
+        expect.objectContaining({
+          exif: expect.objectContaining({ dateTimeOriginal: start, timeZone: 'UTC' }),
+          lockedPropertiesBehavior: 'skip',
+        }),
+      );
+    });
+
     it('does not publish capture clocks from a metadata revision changed while reading the file', async () => {
       const asset = AssetFactory.create();
       mocks.assetJob.getForMetadataExtraction.mockResolvedValue(getForMetadataExtraction(asset));
@@ -3552,10 +3593,26 @@ describe(MetadataService.name, () => {
       });
       mocks.assetJob.getForSidecarCheckJob.mockResolvedValue(asset);
       mocks.storage.checkFileExists.mockResolvedValue(false);
+      mocks.storage.stat.mockRejectedValue(Object.assign(new Error('gone'), { code: 'ENOENT' }));
 
       await expect(sut.handleSidecarCheck({ id: asset.id })).resolves.toBe(JobStatus.Success);
 
       expect(mocks.asset.deleteFile).toHaveBeenCalledWith({ assetId: asset.id, type: AssetFileType.Sidecar });
+    });
+
+    it('keeps the sidecar record while its drive cannot be read', async () => {
+      const asset = forSidecarJob({
+        originalPath: '/path/to/IMG_123.jpg',
+        files: [{ id: 'sidecar', path: '/path/to/IMG_123.jpg.xmp', type: AssetFileType.Sidecar, isEdited: false }],
+      });
+      mocks.assetJob.getForSidecarCheckJob.mockResolvedValue(asset);
+      mocks.storage.checkFileExists.mockResolvedValue(false);
+      mocks.storage.stat.mockRejectedValue(Object.assign(new Error('offline'), { code: 'EIO' }));
+
+      await expect(sut.handleSidecarCheck({ id: asset.id })).resolves.toBe(JobStatus.Skipped);
+
+      expect(mocks.asset.deleteFile).not.toHaveBeenCalled();
+      expect(mocks.asset.upsertFile).not.toHaveBeenCalled();
     });
 
     it('should do nothing if the sidecar file still exists', async () => {

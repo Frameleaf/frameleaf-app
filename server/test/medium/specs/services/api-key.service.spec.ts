@@ -4,6 +4,7 @@ import { ApiKeyRepository } from 'src/repositories/api-key.repository.js';
 import { CryptoRepository } from 'src/repositories/crypto.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { SystemMetadataRepository } from 'src/repositories/system-metadata.repository.js';
+import { WebsocketRepository } from 'src/repositories/websocket.repository.js';
 import { DB } from 'src/schema/index.js';
 import { ApiKeyService } from 'src/services/api-key.service.js';
 import { newMediumService } from 'test/medium.factory.js';
@@ -17,7 +18,7 @@ const setup = (db?: Kysely<DB>) => {
     database: db || defaultDatabase,
     // FL-367: "last used" is read from system metadata
     real: [ApiKeyRepository, CryptoRepository, SystemMetadataRepository],
-    mock: [LoggingRepository],
+    mock: [LoggingRepository, WebsocketRepository],
   });
 };
 

@@ -55,6 +55,7 @@ export const VIEWER_ACTIONS = [
   'refresh-metadata',
   'refresh-thumbnails',
   'repair-photo',
+  'split-scan',
   'refresh-encoded',
   'transcode',
   'tag-people',
@@ -127,6 +128,8 @@ export interface ViewerMenuContext {
   slideshowPlaying: boolean;
   /** The user's own JPEG, which Library Care can check and repair from the viewer (FL-1273). */
   canRepair: boolean;
+  /** The user's own photo, which can be reviewed and split into the prints on it (FL-923). */
+  canSplitScan?: boolean;
 }
 
 const compact = (items: (ViewerActionId | false | null | undefined)[]): ViewerActionId[] =>
@@ -248,6 +251,7 @@ export function viewerMenuGroups(context: ViewerMenuContext): ViewerMenuGroup[] 
           isOwner && 'refresh-metadata',
           isOwner && 'refresh-thumbnails',
           context.canRepair && 'repair-photo',
+          context.canSplitScan && 'split-scan',
           isOwner && isVideo && 'refresh-encoded',
           isOwner && isVideo && 'transcode',
         ]),
@@ -376,6 +380,9 @@ export function viewerMenuLabelKey(id: ViewerActionId, context: ViewerMenuContex
     }
     case 'repair-photo': {
       return 'frameleaf_viewer_menu_repair_photo';
+    }
+    case 'split-scan': {
+      return 'frameleaf_viewer_menu_split_scan';
     }
     case 'refresh-encoded': {
       return 'frameleaf_viewer_menu_refresh_encoded';

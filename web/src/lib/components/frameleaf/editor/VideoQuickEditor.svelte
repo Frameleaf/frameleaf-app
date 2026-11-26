@@ -516,6 +516,15 @@
     probe.src = playbackUrl;
     const canvas = document.createElement('canvas');
     const captured: string[] = [];
+    // `preload=auto` keeps buffering the whole clip, so the probe lets go as soon as the strip is drawn.
+    const releaseProbe = () => {
+      probe.removeAttribute('src');
+      try {
+        probe.load();
+      } catch {
+        // best effort
+      }
+    };
     const seekTo = (at: number) =>
       new Promise<void>((resolve, reject) => {
         const timer = setTimeout(() => reject(new Error('timeout')), 2500);
@@ -558,18 +567,14 @@
       } finally {
         if (!cancelled) {
           stripLoading = false;
+          releaseProbe();
         }
       }
     };
     void run();
     return () => {
       cancelled = true;
-      probe.removeAttribute('src');
-      try {
-        probe.load();
-      } catch {
-        // best effort
-      }
+      releaseProbe();
     };
   });
 
@@ -988,9 +993,12 @@
           libraryScope: asset.libraryScope,
           isLockedAssets: asset.visibility === AssetVisibility.Locked,
         })
-          .then(() =>
-            toastManager.primary($t('frameleaf_video_editor_frame_saved', { values: { time: preciseTime(at) } })),
-          )
+          // A failed upload resolves with no id and has already reported itself: it was not saved.
+          .then((ids) => {
+            if (ids.length > 0) {
+              toastManager.primary($t('frameleaf_video_editor_frame_saved', { values: { time: preciseTime(at) } }));
+            }
+          })
           .catch((error: unknown) => handleError(error, $t('frameleaf_video_editor_frame_error')));
       },
       'image/jpeg',
@@ -1028,11 +1036,16 @@
         ? removeAssetEdits({ id: asset.id })
         : editAsset({ id: asset.id, assetEditsCreateDto: { edits } }));
       eventManager.emit('AssetEditsApplied', asset.id);
+      toastManager.primary($t('frameleaf_video_editor_saved'));
+      // Cancel or Escape during the save already closed this editor; closing again could close the
+      // next one the person opened.
+      if (closing) {
+        return;
+      }
       opened = edit;
       closing = true;
       draftReady = false;
       clearEditorContinuity(asset.id);
-      toastManager.primary($t('frameleaf_video_editor_saved'));
       onClose(true);
     } catch (error) {
       handleError(error, $t('frameleaf_editor_save_error'));
