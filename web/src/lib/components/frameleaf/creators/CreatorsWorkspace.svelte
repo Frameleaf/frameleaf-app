@@ -7,6 +7,7 @@
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
   import InlineError from '$lib/components/frameleaf/InlineError.svelte';
+  import ListSkeleton from '$lib/components/frameleaf/ListSkeleton.svelte';
   import { creatorsHref, readCreatorsLocation, type CreatorsLocation } from '$lib/frameleaf/creators';
   import { creatorsDownloads, downloadShow } from '$lib/frameleaf/creators-downloads.svelte';
   import { creatorsStore } from '$lib/frameleaf/creators-store.svelte';
@@ -135,7 +136,7 @@
         />
       </div>
     {:else if creatorsStore.status !== 'ready'}
-      <p class="cr-notice" role="status">{$t('loading')}</p>
+      <ListSkeleton rows={4} />
     {:else if where.creator}
       {#if creator}
         <CreatorPage

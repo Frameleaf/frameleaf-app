@@ -4,6 +4,7 @@
   import { mdiPause, mdiPlay } from '@mdi/js';
   import { locale, t } from 'svelte-i18n';
   import Button from '$lib/components/frameleaf/Button.svelte';
+  import EmptyRow from '$lib/components/frameleaf/EmptyRow.svelte';
   import InlineError from '$lib/components/frameleaf/InlineError.svelte';
   import { MEDIA_INTERVALS, type MediaInterval } from '$lib/components/frameleaf/media/boards-media';
   import { creatorPlatform, creatorsHref, creatorState, creatorStatus, platformName } from '$lib/frameleaf/creators';
@@ -47,7 +48,7 @@
 <div class="cr-scroll">
   {#if failed}<InlineError compact message={$t('frameleaf_creators_action_error')} />{/if}
   {#if creatorsStore.following.length === 0}
-    <p class="cr-empty">{$t('frameleaf_creators_subscriptions_empty')}</p>
+    <EmptyRow title={$t('frameleaf_creators_subscriptions_empty')} />
   {:else}
     <table class="cr-manage">
       <thead>
