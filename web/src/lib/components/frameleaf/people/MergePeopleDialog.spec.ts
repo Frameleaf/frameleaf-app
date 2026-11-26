@@ -39,6 +39,46 @@ describe('MergePeopleDialog (PD-4)', () => {
     expect((screen.getByRole('button', { name: 'Merge' }) as HTMLButtonElement).disabled).toBe(true);
   });
 
+  // FL-1803: opened without the caller's list (the person page), the dialog read the first 1,000 people
+  // and searched only those, so anyone after them could not be merged into.
+  it('finds someone past the first page by asking the server for the name typed', async () => {
+    const everyone = Array.from({ length: 1500 }, (_, index) => ({
+      ...personFactory.build({ id: `p${index}`, name: `Person ${String(index).padStart(4, '0')}` }),
+      assetCount: 1,
+      lastSeenAt: null,
+    }));
+    // a page here is 40 people, whatever size is asked for: enough to stand for "more than one page"
+    const PAGE = 40;
+    sdkMock.getAllPeople.mockImplementation(({ name } = {}) => {
+      const matching = name
+        ? everyone.filter((person) => person.name.toLowerCase().includes(name.toLowerCase()))
+        : everyone;
+      return Promise.resolve({
+        people: matching.slice(0, PAGE),
+        total: everyone.length,
+        hidden: 0,
+        hasNextPage: matching.length > PAGE,
+      });
+    });
+    render(MergePeopleDialog, { person: ada, open: true, onMerged: vi.fn() });
+    await waitFor(() => expect(screen.getByRole('button', { name: /Person 0039/ })).toBeTruthy());
+    expect(screen.queryByRole('button', { name: /Person 1400/ })).toBeNull();
+
+    await fireEvent.input(screen.getByRole('searchbox'), { target: { value: 'person 1400' } });
+
+    await waitFor(() => expect(screen.getByRole('button', { name: /Person 1400/ })).toBeTruthy());
+    expect(sdkMock.getAllPeople).toHaveBeenLastCalledWith({ withHidden: true, size: 1000, name: 'person 1400' });
+  });
+
+  it('keeps to the caller’s list when it is given one, without reading people', async () => {
+    render(MergePeopleDialog, { person: ada, candidates: [ada, grace], open: true, onMerged: vi.fn() });
+
+    await fireEvent.input(screen.getByRole('searchbox'), { target: { value: 'gra' } });
+
+    expect(screen.getByRole('button', { name: /Grace/ })).toBeTruthy();
+    expect(sdkMock.getAllPeople).not.toHaveBeenCalled();
+  });
+
   it('merges the person into the chosen one, which survives', async () => {
     sdkMock.mergePeople.mockResolvedValue([]);
     const onMerged = vi.fn();

@@ -19,6 +19,7 @@
     getAllPeople,
     getFaces,
     isHttpError,
+    PeopleSort,
     searchAssets,
     SourceType,
     type AssetFaceResponseDto,
@@ -82,6 +83,8 @@
 
   type Row = { asset: AssetResponseDto; face: AssetFaceResponseDto };
   let rows: Row[] = $state([]);
+  /** How many people "Not this person" offers before "Someone else…". */
+  const OTHERS_SHOWN = 6;
   let others: PeopleListItemDto[] = $state([]);
   let hasMore = $state(false);
   let loading = $state(false);
@@ -182,11 +185,25 @@
 
   const loadOthers = async () => {
     try {
-      const { people } = await getAllPeople({ withHidden: false });
-      others = people
-        .filter((candidate) => candidate.id !== person.id && !isUnnamedPerson(candidate))
-        .sort((a, b) => b.assetCount - a.assetCount)
-        .slice(0, 6);
+      // FL-1803: the six named people with the most photos, whoever they are: the list comes sorted by
+      // photo count and is read until it has given six, not cut from whatever the first page held.
+      const found: PeopleListItemDto[] = [];
+      const known = new Set<string>([person.id]);
+      for (let page = 1; found.length < OTHERS_SHOWN; page++) {
+        const result = await getAllPeople({ withHidden: false, sort: PeopleSort.Count, page, size: 50 });
+        const added = result.people.filter(({ id }) => !known.has(id));
+        for (const candidate of added) {
+          known.add(candidate.id);
+          if (!isUnnamedPerson(candidate)) {
+            found.push(candidate);
+          }
+        }
+        // A page that adds nobody new means the list shifted under us; stop rather than loop.
+        if (!result.hasNextPage || added.length === 0) {
+          break;
+        }
+      }
+      others = found.sort((a, b) => b.assetCount - a.assetCount).slice(0, OTHERS_SHOWN);
     } catch {
       others = [];
     }

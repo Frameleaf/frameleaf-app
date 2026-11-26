@@ -19,7 +19,7 @@
    *
    * Candidates are the caller's already-loaded people when it has them (the People grid);
    * otherwise the dialog reads them with `getAllPeople`, hidden people included, as the
-   * prototype lists them.
+   * prototype lists them, and asks the server for the name being typed (FL-1803).
    */
   interface Props {
     person: PersonResponseDto & { assetCount?: number };
@@ -61,7 +61,7 @@
     void (async () => {
       try {
         if (!candidates) {
-          loaded = (await getAllPeople({ withHidden: true, size: 1000 })).people;
+          await load('');
         }
         if (initialChoice && (candidates ?? loaded).every(({ id }) => id !== initialChoice)) {
           preselected = await getPerson({ id: initialChoice });
@@ -71,6 +71,26 @@
       }
     })();
   });
+
+  // only the newest read may answer, so a slow earlier search never replaces a later one
+  let request = 0;
+  /**
+   * FL-1803: the list the dialog reads itself. With a name typed the server finds the people (hidden
+   * ones included), so someone past the first page can be chosen; with none it is the first page.
+   */
+  const load = async (name: string) => {
+    const current = ++request;
+    const { people } = await getAllPeople({ withHidden: true, size: 1000, ...(name && { name }) });
+    if (current === request) {
+      loaded = people;
+    }
+  };
+  const onSearch = () => {
+    if (candidates) {
+      return;
+    }
+    load(query.trim()).catch((error: unknown) => handleError(error, $t('errors.failed_to_load_people')));
+  };
 
   const merge = async () => {
     if (!target || busy) {
@@ -119,6 +139,7 @@
     aria-label={$t('frameleaf_people_merge_find')}
     placeholder={$t('frameleaf_people_find_a_person')}
     bind:value={query}
+    oninput={onSearch}
     data-initial-focus
   />
   <ul class="list" aria-label={$t('people')}>
