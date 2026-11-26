@@ -30,6 +30,12 @@
   let passed = $state('');
   let showPassed = $state(false);
   let busy = $state(false);
+  // A half-typed date reads as empty; saving it would clear the stored date, so Save waits.
+  let fields: HTMLElement | undefined = $state();
+  let incomplete = $state(false);
+  const checkInputs = () => {
+    incomplete = [...(fields?.querySelectorAll('input') ?? [])].some((input) => input.validity.badInput);
+  };
   const today = DateTime.now().toISODate();
   const name = $derived(isUnnamedPerson(person) ? $t('unnamed_person') : person.name);
   const passing = $derived(showPassed ? passed : '');
@@ -45,6 +51,7 @@
       value = person.birthDate ?? '';
       passed = person.deathDate ?? '';
       showPassed = !!person.deathDate;
+      incomplete = false;
     }
   });
 
@@ -71,7 +78,7 @@
 </script>
 
 <Dialog title={$t('frameleaf_people_dates')} closeLabel={$t('close')} bind:open>
-  <div class="dates">
+  <div class="dates" bind:this={fields} oninput={checkInputs}>
     <label class="field">
       <span>{$t('frameleaf_people_birthday_label', { values: { name } })}</span>
       <input type="date" max={today} bind:value data-initial-focus />
@@ -82,7 +89,13 @@
           <span>{$t('frameleaf_people_passing_label')}</span>
           <input type="date" min={value || undefined} max={today} bind:value={passed} />
         </label>
-        <IconButton label={$t('frameleaf_people_passing_remove')} onclick={() => (showPassed = false)}>
+        <IconButton
+          label={$t('frameleaf_people_passing_remove')}
+          onclick={() => {
+            showPassed = false;
+            incomplete = false;
+          }}
+        >
           <Icon icon={mdiClose} size="18" aria-hidden="true" />
         </IconButton>
       </div>
@@ -114,7 +127,7 @@
     {/if}
     <Button
       variant="primary"
-      disabled={!!problem || unchanged || busy}
+      disabled={!!problem || incomplete || unchanged || busy}
       onclick={() => save(value || null, passing || null)}
     >
       {$t('save')}

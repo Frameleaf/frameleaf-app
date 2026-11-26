@@ -14958,7 +14958,7 @@
   "frameleaf_people_none_to_manage": "Noch keine Personen zu verwalten.",
   "frameleaf_people_open_person": "{name} öffnen",
   "frameleaf_people_passing_add": "Sterbedatum hinzufügen",
-  "frameleaf_people_passing_before_birth": "Das Sterbedatum liegt nach dem Geburtsdatum.",
+  "frameleaf_people_passing_before_birth": "Das Sterbedatum darf nicht vor dem Geburtsdatum liegen.",
   "frameleaf_people_passing_future": "Wähle ein Sterbedatum, das nicht in der Zukunft liegt.",
   "frameleaf_people_passing_hint": "Die Seite von {name} zeigt {years} statt eines Alters. Erinnerungen gedenkt {name} am Geburtstag, nie als Feier „vor X Jahren“.",
   "frameleaf_people_passing_label": "Sterbedatum (optional)",

@@ -55,7 +55,7 @@ describe('BirthdayDialog (PD-5, FL-864)', () => {
     const passing = screen.getByLabelText('Date of passing (optional)');
 
     await fireEvent.input(passing, { target: { value: '1938-04-01' } });
-    expect(screen.getByText('The date of passing comes after the date of birth.')).toBeTruthy();
+    expect(screen.getByText('The date of passing can’t be before the date of birth.')).toBeTruthy();
     expect((screen.getByRole('button', { name: 'Save' }) as HTMLButtonElement).disabled).toBe(true);
 
     await fireEvent.input(passing, { target: { value: '2021-10-09' } });
@@ -77,5 +77,17 @@ describe('BirthdayDialog (PD-5, FL-864)', () => {
 
     await waitFor(() => expect(onSaved).toHaveBeenCalledWith(expect.anything(), true));
     expect(sdkMock.updatePerson).toHaveBeenCalledWith({ id: person.id, personUpdateDto: { deathDate: null } });
+  });
+
+  it('does not save a half-typed date as a removal', async () => {
+    const person = personFactory.build({ name: 'Ada', birthDate: '1938-04-02', deathDate: '2021-10-09' });
+    render(BirthdayDialog, { person, open: true });
+
+    // A date field with a segment missing reports an empty value and `badInput`.
+    const passing = screen.getByLabelText('Date of passing (optional)');
+    Object.defineProperty(passing, 'validity', { configurable: true, value: { badInput: true } });
+    await fireEvent.input(passing, { target: { value: '' } });
+
+    expect((screen.getByRole('button', { name: 'Save' }) as HTMLButtonElement).disabled).toBe(true);
   });
 });

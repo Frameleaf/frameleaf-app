@@ -14952,7 +14952,7 @@
   "frameleaf_people_none_to_manage": "Ingen personer at administrere endnu.",
   "frameleaf_people_open_person": "Åbn {name}",
   "frameleaf_people_passing_add": "Tilføj en dødsdato",
-  "frameleaf_people_passing_before_birth": "Dødsdatoen kommer efter fødselsdatoen.",
+  "frameleaf_people_passing_before_birth": "Dødsdatoen kan ikke ligge før fødselsdatoen.",
   "frameleaf_people_passing_future": "Vælg en dødsdato, der ikke ligger i fremtiden.",
   "frameleaf_people_passing_hint": "Siden for {name} viser {years} i stedet for en alder. Minder mindes {name} på fødselsdagen, aldrig som en fejring af “år siden”.",
   "frameleaf_people_passing_label": "Dødsdato (valgfrit)",

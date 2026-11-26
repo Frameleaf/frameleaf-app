@@ -14861,7 +14861,7 @@
   "frameleaf_people_none_to_manage": "No people to manage yet.",
   "frameleaf_people_open_person": "Open {name}",
   "frameleaf_people_passing_add": "Add a date of passing",
-  "frameleaf_people_passing_before_birth": "The date of passing comes after the date of birth.",
+  "frameleaf_people_passing_before_birth": "The date of passing can’t be before the date of birth.",
   "frameleaf_people_passing_future": "Choose a date of passing that is not in the future.",
   "frameleaf_people_passing_hint": "{name}’s page shows {years} instead of an age. Memories remembers {name} on their birthday, never as a “years ago” celebration.",
   "frameleaf_people_passing_label": "Date of passing (optional)",

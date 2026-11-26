@@ -14958,7 +14958,7 @@
   "frameleaf_people_none_to_manage": "Nog geen mensen om te beheren.",
   "frameleaf_people_open_person": "{name} openen",
   "frameleaf_people_passing_add": "Overlijdensdatum toevoegen",
-  "frameleaf_people_passing_before_birth": "De overlijdensdatum komt na de geboortedatum.",
+  "frameleaf_people_passing_before_birth": "De overlijdensdatum kan niet vóór de geboortedatum liggen.",
   "frameleaf_people_passing_future": "Kies een overlijdensdatum die niet in de toekomst ligt.",
   "frameleaf_people_passing_hint": "De pagina van {name} toont {years} in plaats van een leeftijd. Herinneringen herdenkt {name} op de verjaardag, nooit als een viering van ‘jaren geleden’.",
   "frameleaf_people_passing_label": "Overlijdensdatum (optioneel)",

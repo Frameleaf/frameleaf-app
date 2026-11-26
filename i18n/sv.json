@@ -14954,7 +14954,7 @@
   "frameleaf_people_none_to_manage": "Inga personer att hantera än.",
   "frameleaf_people_open_person": "Öppna {name}",
   "frameleaf_people_passing_add": "Lägg till ett dödsdatum",
-  "frameleaf_people_passing_before_birth": "Dödsdatumet kommer efter födelsedatumet.",
+  "frameleaf_people_passing_before_birth": "Dödsdatumet får inte vara före födelsedatumet.",
   "frameleaf_people_passing_future": "Välj ett dödsdatum som inte ligger i framtiden.",
   "frameleaf_people_passing_hint": "Sidan för {name} visar {years} i stället för en ålder. Minnen minns {name} på födelsedagen, aldrig som ett firande av ”år sedan”.",
   "frameleaf_people_passing_label": "Dödsdatum (valfritt)",

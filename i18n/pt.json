@@ -14958,7 +14958,7 @@
   "frameleaf_people_none_to_manage": "Ainda sem pessoas para gerir.",
   "frameleaf_people_open_person": "Abrir {name}",
   "frameleaf_people_passing_add": "Adicionar uma data de falecimento",
-  "frameleaf_people_passing_before_birth": "A data de falecimento vem depois da data de nascimento.",
+  "frameleaf_people_passing_before_birth": "A data de falecimento não pode ser anterior à data de nascimento.",
   "frameleaf_people_passing_future": "Escolha uma data de falecimento que não esteja no futuro.",
   "frameleaf_people_passing_hint": "A página de {name} mostra {years} em vez de uma idade. Memórias recorda {name} no dia do aniversário, nunca como uma celebração de «há X anos».",
   "frameleaf_people_passing_label": "Data de falecimento (opcional)",

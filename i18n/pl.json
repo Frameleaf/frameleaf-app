@@ -14959,7 +14959,7 @@
   "frameleaf_people_none_to_manage": "Jeszcze brak osób do zarządzania.",
   "frameleaf_people_open_person": "Otwórz: {name}",
   "frameleaf_people_passing_add": "Dodaj datę śmierci",
-  "frameleaf_people_passing_before_birth": "Data śmierci przypada po dacie urodzenia.",
+  "frameleaf_people_passing_before_birth": "Data śmierci nie może przypadać przed datą urodzenia.",
   "frameleaf_people_passing_future": "Wybierz datę śmierci, która nie jest w przyszłości.",
   "frameleaf_people_passing_hint": "Strona osoby {name} pokazuje {years} zamiast wieku. Wspomnienia upamiętniają tę osobę w dniu urodzin, nigdy jako świętowanie „lat temu”.",
   "frameleaf_people_passing_label": "Data śmierci (opcjonalnie)",
