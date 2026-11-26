@@ -4,12 +4,15 @@ import { ALBUM_ICONS } from '$lib/utils/album-icons';
 import {
   buildCatalogueEntries,
   derivedIconLabel,
-  iconPathFor,
+  iconPackOf,
+  iconShapeFor,
+  loadedIconPaths,
   loadIconCatalogue,
   loadIconPaths,
   needsIconPaths,
   resetIconCatalogueCache,
   searchCatalogue,
+  type IconPaths,
 } from './icon-catalogue';
 
 const catalogue = {
@@ -93,14 +96,14 @@ it('retries a failed SDK catalogue request', async () => {
 it('keeps legacy icon paths local and falls back for unknown or inherited keys', () => {
   expect(Object.keys(ALBUM_ICONS)).toHaveLength(31);
   for (const [key, path] of Object.entries(ALBUM_ICONS)) {
-    expect(iconPathFor(key)).toBe(path);
+    expect(iconShapeFor(key)).toBe(path);
     expect(needsIconPaths(key)).toBe(false);
   }
-  expect(iconPathFor('folder')).toBe(mdiFolderOutline);
-  expect(iconPathFor('heart')).toBe(mdiHeartOutline);
+  expect(iconShapeFor('folder')).toBe(mdiFolderOutline);
+  expect(iconShapeFor('heart')).toBe(mdiHeartOutline);
   expect(needsIconPaths('heart')).toBe(false);
   for (const key of [null, undefined, '', 'unknown', '__proto__', 'constructor']) {
-    expect(iconPathFor(key)).toBe(mdiFolderOutline);
+    expect(iconShapeFor(key)).toBe(mdiFolderOutline);
     expect(needsIconPaths(key)).toBe(false);
   }
   expect(fetchPaths).not.toHaveBeenCalled();
@@ -108,13 +111,50 @@ it('keeps legacy icon paths local and falls back for unknown or inherited keys',
 
 it('uses known MDI geometry only when loaded and retains valid-name fallback', () => {
   expect(needsIconPaths('mdiCameraBurst')).toBe(true);
-  expect(iconPathFor('mdiCameraBurst')).toBe(mdiFolderOutline);
-  expect(iconPathFor('mdiCameraBurst', paths)).toBe(mdiCameraBurst);
-  expect(iconPathFor('mdiUnknown', paths)).toBe(mdiFolderOutline);
+  expect(iconShapeFor('mdiCameraBurst')).toBe(mdiFolderOutline);
+  expect(iconShapeFor('mdiCameraBurst', paths)).toBe(mdiCameraBurst);
+  expect(iconShapeFor('mdiUnknown', paths)).toBe(mdiFolderOutline);
   for (const name of ['mdi', 'mdi1bad', 'mdiCamera<script>', 'mdi' + 'A'.repeat(81)]) {
     expect(needsIconPaths(name)).toBe(false);
-    expect(iconPathFor(name, paths)).toBe(mdiFolderOutline);
+    expect(iconShapeFor(name, paths)).toBe(mdiFolderOutline);
   }
+});
+
+it('draws pack icons from their own pack asset and never builds a URL from an unsafe name', async () => {
+  const tabler: IconPaths = { rollercoaster: { strokes: [[2, 'M3 21a5 5 0 0 1 5-5']] }, 'star-filled': 'M8 4l4 8' };
+  fetchPaths.mockResolvedValueOnce(Response.json(tabler));
+
+  expect(iconPackOf('tabler:rollercoaster')).toBe('tabler');
+  expect(iconPackOf('material-symbols:castle-outline')).toBe('material-symbols');
+  expect(iconPackOf('mdiCameraBurst')).toBe('mdi');
+  expect(needsIconPaths('tabler:rollercoaster')).toBe(true);
+  for (const name of ['tabler:', ':x', '../x:y', 'Tabler:x', 'tabler:x/y', 'tabler:x:y', `tabler:${'a'.repeat(80)}`]) {
+    expect(iconPackOf(name)).toBeUndefined();
+    expect(iconShapeFor(name, tabler)).toBe(mdiFolderOutline);
+  }
+
+  expect(loadedIconPaths('tabler')).toBeUndefined();
+  const loaded = await loadIconPaths('tabler');
+  expect(fetchPaths).toHaveBeenCalledExactlyOnceWith('/icon-packs/tabler.json');
+  expect(loadedIconPaths('tabler')).toBe(loaded);
+  expect(iconShapeFor('tabler:rollercoaster')).toBe(mdiFolderOutline);
+  expect(iconShapeFor('tabler:rollercoaster', loaded)).toEqual(tabler.rollercoaster);
+  expect(iconShapeFor('tabler:star-filled', loaded)).toBe('M8 4l4 8');
+  expect(iconShapeFor('tabler:unknown', loaded)).toBe(mdiFolderOutline);
+  expect(iconShapeFor('tabler:constructor', loaded)).toBe(mdiFolderOutline);
+});
+
+it('labels and finds pack icons by their words and keywords', () => {
+  expect(derivedIconLabel('tabler:beach-bag')).toBe('beach bag');
+  const entries = buildCatalogueEntries({
+    version: '7.4.47',
+    names: ['mdiCastle', 'tabler:mickey', 'material-symbols:castle-outline', 'iconoven:drum-kit'],
+    suggested: [{ label: 'Shows', icons: [{ name: 'iconoven:drum-kit', label: 'Drum kit' }] }],
+  });
+  const names = (query: string) => searchCatalogue(entries, query).map(({ name }) => name);
+  expect(names('castle')).toEqual(['mdiCastle', 'material-symbols:castle-outline']);
+  expect(names('disney')).toEqual(['mdiCastle', 'tabler:mickey']);
+  expect(names('drums')).toEqual(['iconoven:drum-kit']);
 });
 
 it('retains curated labels and derives searchable words for other catalogue names', () => {

@@ -618,11 +618,11 @@ try {
     await nav('Storage');
     await mainButton('Choose another folder…').click();
     await page.getByRole('dialog', { name: 'Choose a folder for thumbnails' }).getByRole('button', { name: '/fixture/new-drive' }).click();
-    const first = page.getByRole('dialog', { name: 'Move thumbnails' });
+    const first = page.getByRole('dialog', { name: 'Change the thumbnails folder' });
     await first.getByText('Checking the folder…').waitFor();
     await first.getByRole('button', { name: 'Cancel' }).click();
     await mainButton('Move to Cache pool…').click();
-    const review = page.getByRole('dialog', { name: 'Move thumbnails' });
+    const review = page.getByRole('dialog', { name: 'Change the thumbnails folder' });
     await review.getByText('412,880 files · 86 GB to copy').waitFor();
     // The first folder's review arrives now; the open dialog keeps the folder it was opened for.
     await page.waitForTimeout(1800);
@@ -635,16 +635,16 @@ try {
   await check('thumbnails move straight to the suggested drive, with the real file count in the review', async () => {
     await nav('Storage');
     await mainButton('Move to Cache pool…').click();
-    const review = page.getByRole('dialog', { name: 'Move thumbnails' });
+    const review = page.getByRole('dialog', { name: 'Change the thumbnails folder' });
     await review.getByText('412,880 files · 86 GB to copy').waitFor();
     assert.ok((await review.innerText()).includes('/fixture/appdata/frameleaf-thumbnails'));
     assert.equal(requests.findLast((r) => r.path === 'review-thumbnail-move').body.root, '/fixture/appdata/frameleaf-thumbnails');
     await screenshot('storage-move-thumbnails');
     expectedHttpErrors = 1;
-    await review.getByRole('button', { name: 'Move thumbnails' }).click();
+    await review.getByRole('button', { name: 'Use this folder' }).click();
     await review.getByRole('alert').waitFor();
     // Trying again sends the same key, so Manager answers with the move it already started.
-    await review.getByRole('button', { name: 'Move thumbnails' }).click();
+    await review.getByRole('button', { name: 'Use this folder' }).click();
     await page.getByRole('heading', { name: 'Moving thumbnails' }).waitFor();
     const starts = requests.filter((r) => r.path === 'move-thumbnails');
     assert.equal(starts.length, 2);

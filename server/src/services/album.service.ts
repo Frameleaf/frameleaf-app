@@ -12,7 +12,7 @@ import type { SmartAlbumBuiltInKind } from 'src/dtos/system-config.dto.js';
 import type { AlbumSummary } from 'src/repositories/album-summary.repository.js';
 import type { AlbumMapMarkerSearchOptions } from 'src/repositories/map.repository.js';
 import type { DB } from 'src/schema/index.js';
-import { ALBUM_ICON_GROUPS, MDI_ICON_CATALOGUE_VERSION, MDI_ICON_NAMES } from 'src/constants/album-icons.js';
+import { ALBUM_ICON_GROUPS, ALBUM_ICON_NAMES, MDI_ICON_CATALOGUE_VERSION } from 'src/constants/album-icons.js';
 import { OnEvent } from 'src/decorators.js';
 import {
   AddUsersDto,
@@ -504,7 +504,7 @@ export class AlbumService extends BaseService {
   getIconCatalogue(): AlbumIconCatalogueResponseDto {
     return {
       version: MDI_ICON_CATALOGUE_VERSION,
-      names: [...MDI_ICON_NAMES],
+      names: [...ALBUM_ICON_NAMES],
       suggested: ALBUM_ICON_GROUPS.map((group) => ({
         label: group.label,
         icons: group.icons.map(({ name, label }) => ({ name, label })),

@@ -105,6 +105,15 @@ Frameleaf is built on Immich (AGPL-3.0; see `/licenses/LICENSE.txt`). The compon
   City, region and country data © GeoNames (https://www.geonames.org/), licensed under CC BY 4.0. The places used to name where a photo was taken ship with the server. Their names in the app's other languages are a selection from GeoNames' alternate names, made by server/bin/build-place-names-pack.mjs, which the server downloads as one file.
   Licence texts: licenses/texts/cc-by-4.0.txt.
 
+## Album and collection icons
+
+- **Tabler Icons** — Paweł Kuna and Tabler Icons contributors. Licence: MIT. https://github.com/tabler/tabler-icons
+  Licence texts: licenses/texts/tabler-icons-mit.txt.
+- **Material Symbols** — Google. Licence: Apache-2.0. https://github.com/google/material-design-icons
+  Licence texts: licenses/texts/apache-2.0.txt.
+- **IconOven (Stroke style, selected icons)** — Appic Marketing. Licence: MIT. https://iconoven.com/icons
+  Licence texts: licenses/texts/iconoven-mit.txt.
+
 ## Fonts (Studio titles)
 
 google/fonts @ 23e54b51ddffbc7713c583748e3bd86f62b1fa4a (licence directory and METADATA.pb designer per family), retrieved 2026-09-25; loaded from Google Fonts when a title uses them; not bundled, except the seven title families marked bundled, whose files ship with the server from the named @fontsource package, as WOFF2 and decompressed to TrueType with no other change, and are served to the native apps.
@@ -1391,6 +1400,34 @@ Source: https://raw.githubusercontent.com/facebookresearch/fairseq/main/LICENSE 
 MIT License
 
 Copyright (c) Facebook, Inc. and its affiliates.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+## licenses/texts/iconoven-mit.txt
+
+Source: https://raw.githubusercontent.com/iconoven/iconoven-swift/main/LICENSE (retrieved 2026-11-26, SHA-256 3478f693d7ad620267d02f10efe093b4fa26038eafb5b03cc88dc7143d246bb2).
+
+```text
+MIT License
+
+Copyright (c) 2026 Appic Marketing LLC
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -2833,6 +2870,34 @@ justice, law enforcement, immigration or asylum processes, such as predicting an
 individual will commit fraud/crime commitment (e.g. by text profiling, drawing causal
 relationships between assertions made in documents, indiscriminate and
 arbitrarily-targeted use).
+```
+
+## licenses/texts/tabler-icons-mit.txt
+
+Source: https://raw.githubusercontent.com/tabler/tabler-icons/main/LICENSE (retrieved 2026-11-26, SHA-256 b740a1d46122672da62833e97f7e7c8a13fa85cbc7445b584b297cc00dde93db).
+
+```text
+MIT License
+
+Copyright (c) 2020-2026 Paweł Kuna
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
 ```
 
 ## licenses/texts/ubuntu-font-licence-1.0.txt

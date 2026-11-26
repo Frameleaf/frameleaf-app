@@ -83,7 +83,7 @@ export class BrowserExtensionSignInController {
     operationId: 'exchangeBrowserExtensionSignIn',
     summary: 'Finish a Save to Frameleaf sign-in',
     description:
-      'Public: the code is the proof. Exchanges the code with its code verifier and the same return address for a new API key that can only save captures and list collections and tags (capture.create and capture.catalog.read), listed in API keys as “Save to Frameleaf · Chrome” or “· Edge” and added by signing in. It replaces this extension’s previous access to the account. The code is used up by the first attempt.',
+      'Public: the code is the proof. Exchanges the code with its code verifier and the same return address for a new API key that can only save captures and list collections and tags (capture.create and capture.catalog.read), plus the media download permissions (media-import.*, media-connection.*, media-subscription.*) when the sign-in asked for grant=media, listed in API keys as “Save to Frameleaf · Chrome” or “· Edge” and added by signing in. It replaces this extension’s previous access to the account. The code is used up by the first attempt.',
     history: new HistoryBuilder().added('v3.2.0').alpha('v3.2.0'),
   })
   @ApiResponse({

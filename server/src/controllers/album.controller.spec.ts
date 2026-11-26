@@ -87,7 +87,7 @@ describe(AlbumController.name, () => {
       expect(status).toEqual(400);
       expect(body).toEqual(
         factory.responses.validationError([
-          { path: ['icon'], message: 'Invalid album icon: expected a Material Design Icons name' },
+          { path: ['icon'], message: 'Invalid album icon: expected a name from the icon catalogue' },
         ]),
       );
       expect(service.create).not.toHaveBeenCalled();
