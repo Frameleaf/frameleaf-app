@@ -555,13 +555,14 @@
     display: flex;
     flex-wrap: wrap;
     grid-area: actions;
-    gap: var(--fl-space-3) var(--fl-space-2);
+    /* 12px between buttons, the scale's minimum (FL-1813 follow-up). */
+    gap: var(--fl-space-3);
   }
   /* FL-1813: the two recognition lists share one panel (prototype people.css `.pd-fix-tabs`, `.pd-fix-link`). */
   .pd-fix-tabs {
     display: flex;
     align-items: center;
-    gap: var(--fl-space-2);
+    gap: var(--fl-space-3);
     padding: var(--fl-space-3) var(--fl-space-5);
     border-bottom: 1px solid var(--fl-border);
   }
