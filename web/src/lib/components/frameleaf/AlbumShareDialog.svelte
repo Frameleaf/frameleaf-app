@@ -65,9 +65,9 @@
    * members are and can leave.
    *
    * Several people can be invited in one go: tick them in the list, choose the role they all get
-   * and press Invite. This album's public links are listed here too, each with copy, edit and
-   * delete, next to Create link, so links are managed where the album is shared; the header's
-   * Shared links button opens this dialog at that section (`section="links"`).
+   * and press Invite. The owner sees two tabs (FL-1812, prototype `ShareDialog` `cl-tabs`): People,
+   * and Link with the number of this album's public links, each with copy, edit and delete, next to
+   * Create link. Anyone else sees the members only.
    */
   interface Props {
     album: AlbumResponseDto;
@@ -75,7 +75,7 @@
     /** Re-reads the album so roles and `hasSharedLink` reflect what the server now holds. */
     onChanged: () => Promise<void> | void;
     onLeave: () => void;
-    /** The part to bring into view when the dialog opens. */
+    /** The tab the dialog opens on. */
     section?: 'people' | 'links';
   }
 
@@ -89,6 +89,18 @@
   let query = $state('');
   let inviteRole = $state<AlbumUserRole>(AlbumUserRole.Editor);
   let linkFormOpen = $state(false);
+  let tab = $state<'people' | 'links'>('people');
+  let tabButtons = $state<Record<string, HTMLButtonElement>>({});
+  /** Two tabs: either arrow goes to the other one, and it is selected as it takes focus (APG tabs). */
+  const onTabKeydown = (event: KeyboardEvent) => {
+    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    tab = event.key === 'Home' ? 'people' : event.key === 'End' ? 'links' : tab === 'people' ? 'links' : 'people';
+    tabButtons[tab]?.focus();
+  };
   let household = $state<HouseholdShareState>();
 
   const currentUserId = $derived(authManager.user.id);
@@ -211,6 +223,7 @@
       invitees = [];
       query = '';
       inviteRole = AlbumUserRole.Editor;
+      tab = opening;
       void loadCandidates();
       void loadLinks();
       void loadInvited();
@@ -219,9 +232,6 @@
         album.kind === AlbumKind.Space && isOwner ? new HouseholdShareState(album.id, onChanged) : undefined;
       household = nextHousehold;
       void nextHousehold?.load();
-      if (opening === 'links') {
-        void tick().then(() => linksSection?.scrollIntoView({ block: 'nearest' }));
-      }
     });
   });
 
@@ -255,7 +265,6 @@
   /* ---- this album's public links ---- */
   let links = $state<SharedLinkResponseDto[]>([]);
   let linksState = $state<'idle' | 'loading' | 'ready' | 'failed'>('idle');
-  let linksSection = $state<HTMLElement>();
   let editing = $state<{ open: boolean; link?: SharedLinkResponseDto }>({ open: false });
 
   const loadLinks = async () => {
@@ -374,224 +383,262 @@
   {/snippet}
   <div class="share">
     {#if isOwner}
-      <section aria-label={$t('invite_people')}>
-        {#if loading}
-          <!-- The people list at its final size, so the dialog does not jump when it arrives. -->
-          <div class="people-loading" aria-busy="true" aria-label={$t('loading')}>
-            {#each [0, 1, 2] as row (row)}
-              <span class="person-loading">
-                <Skeleton variant="circle" width="1.75rem" height="1.75rem" />
-                <Skeleton variant="text" width="60%" />
-              </span>
-            {/each}
-          </div>
-        {:else}
-          <div class="invite fl-reveal">
-            <label class="field">
-              <span>{$t('frameleaf_album_share_invite_label')}</span>
-              <input
-                type="search"
-                bind:this={inviteInput}
-                bind:value={query}
-                data-initial-focus
-                placeholder={$t('frameleaf_album_share_invite_search')}
-                disabled={busy}
-              />
-            </label>
-            <ul
-              class="people"
-              role="listbox"
-              aria-multiselectable="true"
-              use:rovingFocus
-              aria-label={$t('frameleaf_album_share_people')}
-            >
-              {#each matches as user (user.id)}
-                {@const picked = invitees.includes(user.id)}
-                <li>
-                  <button type="button" role="option" aria-selected={picked} onclick={() => toggleInvitee(user.id)}>
-                    <span class="avatar" aria-hidden="true"><UserAvatar {user} size="sm" /></span>
-                    <span class="who">
-                      <strong>{user.name}</strong>
-                      <small>{user.email}</small>
-                    </span>
-                    {#if picked}
-                      <span class="picked" aria-hidden="true"><Icon icon={mdiCheck} size={ICON_SIZE.lg} /></span>
-                    {/if}
+      <div
+        class="tabs"
+        role="tablist"
+        tabindex="-1"
+        aria-label={$t('frameleaf_album_share_tabs')}
+        onkeydown={onTabKeydown}
+      >
+        {#each ['people', 'links'] as const as id (id)}
+          <button
+            bind:this={tabButtons[id]}
+            type="button"
+            role="tab"
+            class="tab fl-control"
+            id={`album-share-tab-${id}`}
+            aria-selected={tab === id}
+            aria-controls="album-share-panel"
+            tabindex={tab === id ? 0 : -1}
+            onclick={() => (tab = id)}
+          >
+            {id === 'people'
+              ? $t('people')
+              : links.length > 0
+                ? $t('frameleaf_album_share_tab_link_count', { values: { count: links.length } })
+                : $t('link')}
+          </button>
+        {/each}
+      </div>
+    {/if}
+    <div
+      class="panel"
+      id="album-share-panel"
+      role={isOwner ? 'tabpanel' : undefined}
+      aria-labelledby={isOwner ? `album-share-tab-${tab}` : undefined}
+    >
+      {#if isOwner && tab === 'people'}
+        <section aria-label={$t('invite_people')}>
+          {#if loading}
+            <!-- The people list at its final size, so the dialog does not jump when it arrives. -->
+            <div class="people-loading" aria-busy="true" aria-label={$t('loading')}>
+              {#each [0, 1, 2] as row (row)}
+                <span class="person-loading">
+                  <Skeleton variant="circle" width="1.75rem" height="1.75rem" />
+                  <Skeleton variant="text" width="60%" />
+                </span>
+              {/each}
+            </div>
+          {:else}
+            <div class="invite fl-reveal">
+              <label class="field">
+                <span>{$t('frameleaf_album_share_invite_label')}</span>
+                <input
+                  type="search"
+                  bind:this={inviteInput}
+                  bind:value={query}
+                  data-initial-focus
+                  placeholder={$t('frameleaf_album_share_invite_search')}
+                  disabled={busy}
+                />
+              </label>
+              <ul
+                class="people"
+                role="listbox"
+                aria-multiselectable="true"
+                use:rovingFocus
+                aria-label={$t('frameleaf_album_share_people')}
+              >
+                {#each matches as user (user.id)}
+                  {@const picked = invitees.includes(user.id)}
+                  <li>
+                    <button type="button" role="option" aria-selected={picked} onclick={() => toggleInvitee(user.id)}>
+                      <span class="avatar" aria-hidden="true"><UserAvatar {user} size="sm" /></span>
+                      <span class="who">
+                        <strong>{user.name}</strong>
+                        <small>{user.email}</small>
+                      </span>
+                      {#if picked}
+                        <span class="picked" aria-hidden="true"><Icon icon={mdiCheck} size={ICON_SIZE.lg} /></span>
+                      {/if}
+                    </button>
+                  </li>
+                {:else}
+                  <li class="empty-row">
+                    {needle ? $t('frameleaf_album_share_no_match') : $t('frameleaf_album_share_everyone')}
+                  </li>
+                {/each}
+              </ul>
+              <div class="invite-row">
+                <label>
+                  {$t('role')}
+                  <select bind:value={inviteRole} disabled={busy}>
+                    <option value={AlbumUserRole.Editor}>{$t('frameleaf_album_role_editor')}</option>
+                    <option value={AlbumUserRole.Viewer}>{$t('frameleaf_album_role_viewer')}</option>
+                  </select>
+                </label>
+                <button
+                  type="button"
+                  class="primary fl-control"
+                  disabled={busy || chosen.length === 0}
+                  onclick={() => void invite()}
+                >
+                  <span aria-hidden="true"><Icon icon={mdiAccountPlusOutline} size={ICON_SIZE.lg} /></span>
+                  {chosen.length > 1
+                    ? $t('frameleaf_album_share_invite_count', { values: { count: chosen.length } })
+                    : $t('frameleaf_album_share_invite')}
+                </button>
+              </div>
+            </div>
+          {/if}
+        </section>
+      {/if}
+
+      {#if !isOwner || tab === 'people'}
+        {#if household?.loaded}
+          <HouseholdSharePicker share={household} />
+        {/if}
+
+        <section aria-label={$t('frameleaf_album_share_access')}>
+          <h3>{$t('frameleaf_album_share_access')}</h3>
+          <ul class="members">
+            {#each members as member (member.user.id)}
+              {@const self = member.user.id === currentUserId}
+              <li>
+                <span class="avatar" aria-hidden="true"><UserAvatar user={member.user} size="md" /></span>
+                <span class="who">
+                  <span class="who-name">
+                    <strong>{self ? $t('frameleaf_album_you') : member.user.name}</strong>
+                    {#if member.supporter}<SupporterTag />{/if}
+                  </span>
+                </span>
+                {#if member.role === AlbumUserRole.Owner || !isOwner}
+                  <span class="role-static">{roleLabel(member.role)}</span>
+                {:else}
+                  <label class="role">
+                    <span class="sr-only">{$t('role')}</span>
+                    <select
+                      value={member.role}
+                      disabled={busy}
+                      onchange={(event) => void changeRole(member.user.id, event.currentTarget.value as AlbumUserRole)}
+                    >
+                      <option value={AlbumUserRole.Editor}>{$t('frameleaf_album_role_editor')}</option>
+                      <option value={AlbumUserRole.Viewer}>{$t('frameleaf_album_role_viewer')}</option>
+                    </select>
+                  </label>
+                  <button
+                    type="button"
+                    class="remove icon fl-control"
+                    disabled={busy}
+                    aria-label={$t('frameleaf_album_share_remove', { values: { name: member.user.name } })}
+                    title={$t('frameleaf_album_share_remove', { values: { name: member.user.name } })}
+                    onclick={() => (removing = { open: true, user: member.user })}
+                  >
+                    <Icon icon={mdiClose} size={ICON_SIZE.lg} />
                   </button>
-                </li>
-              {:else}
-                <li class="empty-row">
-                  {needle ? $t('frameleaf_album_share_no_match') : $t('frameleaf_album_share_everyone')}
+                {/if}
+                {#if self && member.role !== AlbumUserRole.Owner}
+                  <button
+                    type="button"
+                    class="remove fl-control"
+                    onclick={() => {
+                      open = false;
+                      onLeave();
+                    }}
+                  >
+                    {$t('leave')}
+                  </button>
+                {/if}
+              </li>
+            {/each}
+            {#each invited as member (member.user.id)}
+              <li class="invited">
+                <span class="avatar" aria-hidden="true"><UserAvatar user={member.user} size="md" /></span>
+                <span class="who">
+                  <strong>{member.user.name}</strong>
+                </span>
+                <span class="role-static pending-tag">
+                  <Icon icon={mdiClockOutline} size="14" aria-hidden />
+                  {$t('frameleaf_spaces_member_pending')}
+                </span>
+                {#if isOwner}
+                  <button
+                    type="button"
+                    class="remove icon fl-control"
+                    disabled={busy}
+                    aria-label={$t('frameleaf_spaces_withdraw_for', { values: { name: member.user.name } })}
+                    title={$t('frameleaf_spaces_withdraw_for', { values: { name: member.user.name } })}
+                    onclick={() => void withdraw(member)}
+                  >
+                    <Icon icon={mdiClose} size={ICON_SIZE.lg} />
+                  </button>
+                {/if}
+              </li>
+            {/each}
+            {#if household?.loaded}
+              <HouseholdMemberRows share={household} />
+            {/if}
+          </ul>
+        </section>
+      {/if}
+
+      {#if isOwner && tab === 'links'}
+        <section aria-label={$t('shared_links')}>
+          <h3>{$t('shared_links')}</h3>
+          <p class="hint">{$t('frameleaf_album_links_description')}</p>
+          {#if linksState === 'loading'}
+            <div class="link-loading" aria-busy="true" aria-label={$t('loading')}>
+              <Skeleton variant="block" height="var(--fl-control-height)" />
+            </div>
+          {:else if linksState === 'failed'}
+            <InlineError message={$t('frameleaf_sharing.links_load_failed')} onRetry={() => void loadLinks()} compact />
+          {:else if links.length > 0}
+            <ul class="link-list fl-reveal" aria-label={$t('frameleaf_album_links_list')}>
+              {#each links as link (link.id)}
+                {@const address = addressOf(link)}
+                <li class:expired={isLinkExpired(link)}>
+                  <span class="link-text">
+                    <strong>{address}</strong>
+                    <small>{link.description ? `${link.description} · ${detailOf(link)}` : detailOf(link)}</small>
+                  </span>
+                  <SharedLinkCopyButton
+                    value={asUrl(link)}
+                    label={$t('frameleaf_album_links_copy', { values: { address } })}
+                  />
+                  <button
+                    type="button"
+                    class="remove icon fl-control"
+                    aria-label={$t('frameleaf_album_links_edit', { values: { address } })}
+                    title={$t('edit')}
+                    onclick={() => (editing = { open: true, link })}
+                  >
+                    <Icon icon={mdiPencilOutline} size={ICON_SIZE.lg} />
+                  </button>
+                  <button
+                    type="button"
+                    class="remove icon fl-control"
+                    aria-label={$t('frameleaf_album_links_delete', { values: { address } })}
+                    title={$t('delete')}
+                    onclick={() => void deleteLink(link)}
+                  >
+                    <Icon icon={mdiDeleteOutline} size={ICON_SIZE.lg} />
+                  </button>
                 </li>
               {/each}
             </ul>
-            <div class="invite-row">
-              <label>
-                {$t('role')}
-                <select bind:value={inviteRole} disabled={busy}>
-                  <option value={AlbumUserRole.Editor}>{$t('frameleaf_album_role_editor')}</option>
-                  <option value={AlbumUserRole.Viewer}>{$t('frameleaf_album_role_viewer')}</option>
-                </select>
-              </label>
-              <button
-                type="button"
-                class="primary fl-control"
-                disabled={busy || chosen.length === 0}
-                onclick={() => void invite()}
-              >
-                <span aria-hidden="true"><Icon icon={mdiAccountPlusOutline} size={ICON_SIZE.lg} /></span>
-                {chosen.length > 1
-                  ? $t('frameleaf_album_share_invite_count', { values: { count: chosen.length } })
-                  : $t('frameleaf_album_share_invite')}
-              </button>
-            </div>
-          </div>
-        {/if}
-      </section>
-    {/if}
-
-    {#if household?.loaded}
-      <HouseholdSharePicker share={household} />
-    {/if}
-
-    <section aria-label={$t('frameleaf_album_share_access')}>
-      <h3>{$t('frameleaf_album_share_access')}</h3>
-      <ul class="members">
-        {#each members as member (member.user.id)}
-          {@const self = member.user.id === currentUserId}
-          <li>
-            <span class="avatar" aria-hidden="true"><UserAvatar user={member.user} size="md" /></span>
-            <span class="who">
-              <span class="who-name">
-                <strong>{self ? $t('frameleaf_album_you') : member.user.name}</strong>
-                {#if member.supporter}<SupporterTag />{/if}
-              </span>
-            </span>
-            {#if member.role === AlbumUserRole.Owner || !isOwner}
-              <span class="role-static">{roleLabel(member.role)}</span>
-            {:else}
-              <label class="role">
-                <span class="sr-only">{$t('role')}</span>
-                <select
-                  value={member.role}
-                  disabled={busy}
-                  onchange={(event) => void changeRole(member.user.id, event.currentTarget.value as AlbumUserRole)}
-                >
-                  <option value={AlbumUserRole.Editor}>{$t('frameleaf_album_role_editor')}</option>
-                  <option value={AlbumUserRole.Viewer}>{$t('frameleaf_album_role_viewer')}</option>
-                </select>
-              </label>
-              <button
-                type="button"
-                class="remove icon fl-control"
-                disabled={busy}
-                aria-label={$t('frameleaf_album_share_remove', { values: { name: member.user.name } })}
-                title={$t('frameleaf_album_share_remove', { values: { name: member.user.name } })}
-                onclick={() => (removing = { open: true, user: member.user })}
-              >
-                <Icon icon={mdiClose} size={ICON_SIZE.lg} />
-              </button>
-            {/if}
-            {#if self && member.role !== AlbumUserRole.Owner}
-              <button
-                type="button"
-                class="remove fl-control"
-                onclick={() => {
-                  open = false;
-                  onLeave();
-                }}
-              >
-                {$t('leave')}
-              </button>
-            {/if}
-          </li>
-        {/each}
-        {#each invited as member (member.user.id)}
-          <li class="invited">
-            <span class="avatar" aria-hidden="true"><UserAvatar user={member.user} size="md" /></span>
-            <span class="who">
-              <strong>{member.user.name}</strong>
-            </span>
-            <span class="role-static pending-tag">
-              <Icon icon={mdiClockOutline} size="14" aria-hidden />
-              {$t('frameleaf_spaces_member_pending')}
-            </span>
-            {#if isOwner}
-              <button
-                type="button"
-                class="remove icon fl-control"
-                disabled={busy}
-                aria-label={$t('frameleaf_spaces_withdraw_for', { values: { name: member.user.name } })}
-                title={$t('frameleaf_spaces_withdraw_for', { values: { name: member.user.name } })}
-                onclick={() => void withdraw(member)}
-              >
-                <Icon icon={mdiClose} size={ICON_SIZE.lg} />
-              </button>
-            {/if}
-          </li>
-        {/each}
-        {#if household?.loaded}
-          <HouseholdMemberRows share={household} />
-        {/if}
-      </ul>
-    </section>
-
-    {#if isOwner}
-      <section aria-label={$t('shared_links')} bind:this={linksSection}>
-        <h3>{$t('shared_links')}</h3>
-        <p class="hint">{$t('frameleaf_album_links_description')}</p>
-        {#if linksState === 'loading'}
-          <div class="link-loading" aria-busy="true" aria-label={$t('loading')}>
-            <Skeleton variant="block" height="var(--fl-control-height)" />
-          </div>
-        {:else if linksState === 'failed'}
-          <InlineError message={$t('frameleaf_sharing.links_load_failed')} onRetry={() => void loadLinks()} compact />
-        {:else if links.length > 0}
-          <ul class="link-list fl-reveal" aria-label={$t('frameleaf_album_links_list')}>
-            {#each links as link (link.id)}
-              {@const address = addressOf(link)}
-              <li class:expired={isLinkExpired(link)}>
-                <span class="link-text">
-                  <strong>{address}</strong>
-                  <small>{link.description ? `${link.description} · ${detailOf(link)}` : detailOf(link)}</small>
-                </span>
-                <SharedLinkCopyButton
-                  value={asUrl(link)}
-                  label={$t('frameleaf_album_links_copy', { values: { address } })}
-                />
-                <button
-                  type="button"
-                  class="remove icon fl-control"
-                  aria-label={$t('frameleaf_album_links_edit', { values: { address } })}
-                  title={$t('edit')}
-                  onclick={() => (editing = { open: true, link })}
-                >
-                  <Icon icon={mdiPencilOutline} size={ICON_SIZE.lg} />
-                </button>
-                <button
-                  type="button"
-                  class="remove icon fl-control"
-                  aria-label={$t('frameleaf_album_links_delete', { values: { address } })}
-                  title={$t('delete')}
-                  onclick={() => void deleteLink(link)}
-                >
-                  <Icon icon={mdiDeleteOutline} size={ICON_SIZE.lg} />
-                </button>
-              </li>
-            {/each}
-          </ul>
-        {/if}
-        <div class="links">
-          <button type="button" class="fl-control" onclick={() => (linkFormOpen = true)}>
-            <span aria-hidden="true"><Icon icon={mdiLinkVariant} size={ICON_SIZE.lg} /></span>
-            {links.length > 0 ? $t('frameleaf_album_links_create_another') : $t('create_link')}
-          </button>
-          {#if links.length > 0}
-            <a class="manage fl-control" href={Route.sharedLinks()}>{$t('frameleaf_album_links_all')}</a>
           {/if}
-        </div>
-      </section>
-    {/if}
+          <div class="links">
+            <button type="button" class="fl-control" onclick={() => (linkFormOpen = true)}>
+              <span aria-hidden="true"><Icon icon={mdiLinkVariant} size={ICON_SIZE.lg} /></span>
+              {links.length > 0 ? $t('frameleaf_album_links_create_another') : $t('create_link')}
+            </button>
+            {#if links.length > 0}
+              <a class="manage fl-control" href={Route.sharedLinks()}>{$t('frameleaf_album_links_all')}</a>
+            {/if}
+          </div>
+        </section>
+      {/if}
+    </div>
   </div>
 </Dialog>
 
@@ -615,8 +662,35 @@
   .share {
     display: flex;
     flex-direction: column;
-    gap: 1.25rem;
+    gap: var(--fl-space-4);
     width: min(32rem, 100%);
+  }
+  .panel {
+    display: flex;
+    flex-direction: column;
+    gap: var(--fl-space-6);
+  }
+  /* collections.css .cl-tabs: two pills over a hairline. */
+  .tabs {
+    display: flex;
+    gap: var(--fl-space-2);
+    padding-bottom: var(--fl-space-3);
+    border-bottom: 1px solid var(--fl-border);
+  }
+  .tab {
+    padding: 0 var(--fl-space-4);
+    border-color: transparent;
+    border-radius: var(--fl-radius-pill);
+    background: transparent;
+    color: var(--fl-muted);
+    font-size: var(--fl-font-small);
+    cursor: pointer;
+  }
+  .tab[aria-selected='true'] {
+    border-color: var(--fl-border);
+    background: var(--fl-raised);
+    color: var(--fl-text);
+    font-weight: 600;
   }
   /* collections.css .cl-subhead: a small sentence-case label, not a shouted eyebrow. */
   h3 {
@@ -632,14 +706,14 @@
     padding: 0;
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: var(--fl-space-2);
     max-height: 16rem;
     overflow-y: auto;
   }
   .members li {
     display: flex;
     align-items: center;
-    gap: 0.625rem;
+    gap: var(--fl-space-3);
   }
   .avatar {
     display: inline-flex;
@@ -695,7 +769,7 @@
   .people {
     list-style: none;
     margin: 0;
-    padding: 0.25rem;
+    padding: var(--fl-space-1);
     max-height: 12rem;
     overflow-y: auto;
     border: 1px solid var(--fl-border);
@@ -707,7 +781,7 @@
     border: 0;
     background: transparent;
     text-align: start;
-    gap: 0.625rem;
+    gap: var(--fl-space-3);
   }
   .people button[aria-selected='true'] {
     background: var(--fl-accent-soft);
@@ -782,7 +856,7 @@
     background: transparent;
   }
   .empty-row {
-    padding: 0.5rem;
+    padding: var(--fl-space-2);
     color: var(--fl-muted);
     font-size: 0.875rem;
   }
@@ -813,21 +887,21 @@
     font: inherit;
   }
   .hint {
-    margin: 0 0 0.5rem;
+    margin: 0 0 var(--fl-space-2);
     color: var(--fl-muted);
     font-size: 0.875rem;
   }
   .links {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--fl-space-2);
   }
   button,
   .manage {
     display: inline-flex;
     align-items: center;
-    gap: 0.375rem;
-    padding: 0 0.75rem;
+    gap: var(--fl-space-2);
+    padding: 0 var(--fl-space-3);
     min-height: var(--fl-control-height);
     color: var(--fl-text);
     background: var(--fl-raised);

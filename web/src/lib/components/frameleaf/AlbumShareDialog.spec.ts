@@ -152,7 +152,15 @@ describe('AlbumShareDialog', () => {
     sdkMock.getAllSharedLinks.mockResolvedValue([
       { id: 'link-1', key: 'abc', slug: 'summer', album, assets: [], createdAt: new Date().toISOString() } as never,
     ]);
-    render(AlbumShareDialog, { album, open: true, section: 'links', onChanged: vi.fn(), onLeave: vi.fn() });
+    render(AlbumShareDialog, { album, open: true, onChanged: vi.fn(), onLeave: vi.fn() });
+
+    // FL-1812: the links are the Link tab, which carries their number
+    const tab = await screen.findByRole('tab', { name: 'Link (1)' });
+    expect(screen.getByRole('tab', { name: 'People' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.queryByRole('list', { name: 'Public links' })).toBeNull();
+    await fireEvent.click(tab);
+    expect(tab).toHaveAttribute('aria-selected', 'true');
+    expect(screen.queryByRole('region', { name: 'Who has access' })).toBeNull();
 
     const links = within(await screen.findByRole('list', { name: 'Public links' }));
     expect(sdkMock.getAllSharedLinks).toHaveBeenCalledWith({ albumId: 'album-1' });
@@ -161,5 +169,39 @@ describe('AlbumShareDialog', () => {
     expect(links.getByRole('button', { name: 'Edit link /s/summer' })).toBeInTheDocument();
     expect(links.getByRole('button', { name: 'Delete link /s/summer' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Create another link' })).toBeInTheDocument();
+  });
+
+  it('opens on People with the cursor in the invite field, and the arrow keys change tab', async () => {
+    sdkMock.searchUsers.mockResolvedValue([jamie]);
+    sdkMock.getAllSharedLinks.mockResolvedValue([]);
+    const album = albumFactory.build({ id: 'album-1', albumUsers: [{ user: me, role: AlbumUserRole.Owner }] });
+    render(AlbumShareDialog, { album, open: true, onChanged: vi.fn(), onLeave: vi.fn() });
+
+    await waitFor(() => expect(screen.getByRole('searchbox', { name: 'Invite someone' })).toHaveFocus());
+    // no links yet: the tab has no number
+    const link = screen.getByRole('tab', { name: 'Link' });
+    const people = screen.getByRole('tab', { name: 'People' });
+    people.focus();
+    await fireEvent.keyDown(people, { key: 'ArrowRight' });
+    expect(link).toHaveAttribute('aria-selected', 'true');
+    expect(link).toHaveFocus();
+    expect(screen.getByRole('button', { name: 'Create link' })).toBeInTheDocument();
+    await fireEvent.keyDown(link, { key: 'ArrowLeft' });
+    expect(people).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('searchbox', { name: 'Invite someone' })).toBeInTheDocument();
+  });
+
+  it('shows someone who is not the owner the members only, without tabs', () => {
+    const album = albumFactory.build({
+      id: 'album-1',
+      albumUsers: [
+        { user: jamie, role: AlbumUserRole.Owner },
+        { user: me, role: AlbumUserRole.Viewer },
+      ],
+    });
+    render(AlbumShareDialog, { album, open: true, onChanged: vi.fn(), onLeave: vi.fn() });
+
+    expect(screen.queryByRole('tablist')).toBeNull();
+    expect(screen.getByRole('region', { name: 'Who has access' })).toBeInTheDocument();
   });
 });
