@@ -5605,6 +5605,41 @@ export type AlbumOrderDto = {
     /** Collection whose albums are ordered, or null for a top-level group (collections, albums on their own, or shared spaces) */
     parentId: string | null;
 };
+export type AlbumRailItemDto = {
+    /** Album name */
+    albumName: string;
+    /** Number of assets */
+    assetCount: number;
+    /** Number of links (Boards) */
+    bookmarkCount: number;
+    /** Colour name (grey, green, teal, blue, purple, pink, amber, red) or null */
+    color: string | null;
+    /** Icon: a Material Design Icons name or legacy key (null = default icon) */
+    icon: string | null;
+    /** Album ID */
+    id: string;
+    /** The owner chose to lock this album */
+    isLocked: boolean;
+    /** True when the album is filled by smart album rules */
+    isSmart: boolean;
+    kind: AlbumKind;
+    /** Parent album or collection in this list (null = top level). Never names an album the list leaves out. */
+    parentId: string | null;
+    /** The authenticated user's own role in the album */
+    role: AlbumUserRole;
+    /** Is shared album */
+    shared: boolean;
+    /** Your classification rule behind this smart album, when it is one of yours */
+    smartRuleId: string | null;
+    /** Sibling display position. Lower values appear first. */
+    sortOrder: number | null;
+    /** True while this album's count is still being worked out for this viewer; assetCount is 0 until then. */
+    statsPending?: boolean;
+};
+export type AlbumRailResponseDto = {
+    /** Every album of the directory in display order, each parent before its children */
+    albums: AlbumRailItemDto[];
+};
 export type AlbumRecentlyAddedResponseDto = {
     /** Albums the user may add to, the one that most recently received an item first */
     albumIds: string[];
@@ -5616,6 +5651,28 @@ export type AlbumStatisticsResponseDto = {
     owned: number;
     /** Number of shared albums */
     shared: number;
+};
+export type AlbumStatsDto = {
+    /** Albums to read the numbers of */
+    albumIds: string[];
+};
+export type AlbumStatsItemDto = {
+    /** Number of assets */
+    assetCount: number;
+    /** End date (latest asset) */
+    endDate?: string;
+    /** Album ID */
+    id: string;
+    /** Last modified asset timestamp */
+    lastModifiedAssetTimestamp?: string;
+    /** Start date (earliest asset) */
+    startDate?: string;
+    /** True while this album's count and dates are still being worked out; assetCount is 0 until then. */
+    statsPending?: boolean;
+};
+export type AlbumStatsResponseDto = {
+    /** One entry per requested album the user can read; the others are left out */
+    albums: AlbumStatsItemDto[];
 };
 export type AlbumCollectionResponseDto = {
     /** Number of albums inside the collection */
@@ -29363,6 +29420,21 @@ export function setAlbumOrder({ albumOrderDto }: {
     })));
 }
 /**
+ * Retrieve the album directory for navigation
+ */
+export function getAlbumRail({ libraryScope }: {
+    libraryScope?: LibraryViewScope;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AlbumRailResponseDto;
+    }>(`/albums/rail${QS.query(QS.explode({
+        libraryScope
+    }))}`, {
+        ...opts
+    }));
+}
+/**
  * List albums that recently received items
  */
 export function getRecentlyAddedAlbums({ libraryScope }: {
@@ -29387,6 +29459,21 @@ export function getAlbumStatistics(opts?: Oazapfts.RequestOpts) {
     }>("/albums/statistics", {
         ...opts
     }));
+}
+/**
+ * Retrieve the counts and dates of some albums
+ */
+export function getAlbumStats({ albumStatsDto }: {
+    albumStatsDto: AlbumStatsDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AlbumStatsResponseDto;
+    }>("/albums/stats", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: albumStatsDto
+    })));
 }
 /**
  * Retrieve the album directory
