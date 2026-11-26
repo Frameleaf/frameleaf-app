@@ -1005,6 +1005,54 @@ describe(ICloudSyncService.name, () => {
       );
     });
 
+    it('queues a new run when a sign-in cleared the listing as this run finished (FL-1724)', async () => {
+      // listed when the last step reads it; gone by the time the run has completed
+      let reads = 0;
+      repository.checkpoint.mockImplementation((_id: string, scope: string) =>
+        Promise.resolve(scope === 'inventory-complete' && reads++ > 0 ? undefined : { complete: true }),
+      );
+      repository.claim.mockReset();
+      repository.claim.mockResolvedValue(undefined);
+      await sut.run(operation(), 'token');
+      expect(operations.complete).toHaveBeenCalled();
+      expect(repository.queueOperation).toHaveBeenCalledWith('connection', 'owner', {
+        trigger: 'authenticated',
+        retryOfId: null,
+      });
+    });
+
+    it('stops admitting once the next record is due, however slow claims are (FL-1724)', async () => {
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+      try {
+        repository.get.mockResolvedValue({ ...connection, config: { ...connection.config, concurrency: 100 } });
+        let claims = 0;
+        repository.claim.mockReset();
+        // each claim takes two seconds; transfers finish at once
+        repository.claim.mockImplementation(() => {
+          vi.advanceTimersByTime(2000);
+          claims++;
+          return Promise.resolve(
+            claims <= 20 ? { ...resource, id: `r${claims}`, sourceAssetId: `r${claims}` } : undefined,
+          );
+        });
+        const claimsAtRecord: number[] = [];
+        operations.setBulkResult.mockImplementation(() => {
+          claimsAtRecord.push(claims);
+          return Promise.resolve(working);
+        });
+        const done = sut.run(operation(), 'token');
+        await vi.runAllTimersAsync();
+        await done;
+        // claims made before each record, counted from the run's start
+        const marks = [0, ...claimsAtRecord];
+        const between = marks.slice(1).map((count, index) => count - marks[index]);
+        expect(claims).toBeGreaterThan(20);
+        expect(Math.max(...between)).toBeLessThanOrEqual(3);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
     it('does not list the library again behind a download that holds the session (FL-1724)', async () => {
       vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
       try {

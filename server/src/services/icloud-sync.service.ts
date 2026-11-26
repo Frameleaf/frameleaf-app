@@ -900,6 +900,13 @@ export class ICloudSyncService {
           (await this.operations.complete(id, claimToken, { resultAssetId: null }))
         ) {
           this.logger.log(`iCloud sync run ${id} finished`);
+          // A sign-in that cleared the listing just before this run finished found it still active and queued
+          // nothing; the listing is gone, so the new account gets its run now (the sign-in's own queue covers later).
+          if (!(await this.repository.checkpoint(connectionId, 'inventory-complete'))?.complete) {
+            await this.queue(current, 'authenticated').catch((error) =>
+              this.logger.warn(`iCloud connection ${connectionId}: run not queued after sign-in: ${message(error)}`),
+            );
+          }
           return;
         }
         await this.acknowledgeCancel(claim, connectionId);
@@ -929,11 +936,13 @@ export class ICloudSyncService {
     const inventoryComplete = listed || (await this.enumerate(connection));
     let claimed = 0;
     // At most one pool's worth of claims per step: transfers that settle faster than a claim must not keep the
-    // step admitting forever, past pause, cancel and error checks.
+    // step admitting forever, past pause, cancel and error checks. Claims are slow at 100 (each takes a shared
+    // lock), so admission also stops once the next record is due; the next step fills the free slots.
     while (
       !pool.error &&
       claimed < connection.config.concurrency &&
-      pool.running.size < connection.config.concurrency
+      pool.running.size < connection.config.concurrency &&
+      (claimed === 0 || Date.now() < pool.recordedAt + ICLOUD_RECORD_INTERVAL_MS)
     ) {
       const resource = await this.repository.claim(id, connection.config.stagingBytes);
       if (!resource) {
