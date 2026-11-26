@@ -2,7 +2,7 @@ import { mkdir, readFile, readdir, realpath, stat } from 'node:fs/promises';
 import { dirname, join, relative, resolve } from 'node:path';
 import { Refusal } from './contracts.js';
 import { folderDetail } from './host-paths.js';
-import { filesystemMounts } from './postgres-storage.js';
+import { NETWORK_FILESYSTEMS, filesystemMounts } from './postgres-storage.js';
 import { managerPlatform } from './server-check.js';
 
 /**
@@ -51,6 +51,22 @@ export function inside(path: string, parent: string): boolean {
 }
 /** Unraid's exclusive shares (6.12+) make /mnt/user/<share> a link to the pool, e.g. /mnt/user/appdata -> /mnt/cache/appdata. */
 export const sameFiles = (a: string, b: string) => inside(a, b) && inside(b, a);
+/**
+ * FL-1784: where a folder reached through an Unraid share (/mnt/user/…) is on the server's drives, when exactly one
+ * pool or disk has it: that drive then holds all of it, and the folder can be used there directly. Null when several
+ * drives have part of it, when none Manager can see does, or off Unraid. `mnt` is /mnt, a parameter for tests.
+ */
+export async function directShareFolder(path: string, mnt = MNT): Promise<{ drive: string; share: string; path: string } | null> {
+  if (!unraid() || !path.startsWith(`${mnt}/user/`)) return null;
+  const [share, ...rest] = path.slice(`${mnt}/user/`.length).split('/');
+  const found: { drive: string; share: string; path: string }[] = [];
+  for (const drive of await readdir(mnt).catch(() => [] as string[])) {
+    if (drive.startsWith('.') || combined(drive) || INDEPENDENT.includes(drive)) continue;
+    const candidate = join(mnt, drive, share, ...rest);
+    if (await stat(candidate).then((s) => s.isDirectory(), () => false)) found.push({ drive, share, path: candidate });
+  }
+  return found.length === 1 ? found[0] : null;
+}
 /** The share, pool or drive holding `path`. On Unraid /mnt/disks/UD01 is one drive and /mnt/remotes/nas one share, a level deeper than /mnt/user. */
 const volume = (path: string) => {
   const roots = broadRootList();
@@ -175,8 +191,6 @@ export async function ensureManagerFolder(path: string): Promise<void> {
   });
 }
 
-/** Filesystems whose files live on another machine. */
-const NETWORK_FILESYSTEMS = /^(?:nfs4?|cifs|smb3?|smbfs|9p|afs|ceph|glusterfs|fuse\.(?:sshfs|rclone|glusterfs|s3fs))$/;
 /**
  * FL-1321: whether `path` is on a network share, from the mount table Manager sees (`mountinfo` text). Unraid's
  * Unassigned Devices mounts remote shares under /mnt/remotes. Thumbnails and the database need a drive inside this
@@ -227,6 +241,18 @@ export const FOLDER_TOP = '/';
  * The folders directly inside `requested`, or inside its nearest existing parent, so a default not yet created still opens.
  * With one broad folder, anything outside it opens that folder. With several, it opens the list of them.
  */
+/**
+ * FL-1784: a folder made from the folder browser, inside the open one. The name is a single plain folder name; the
+ * folder itself passes the same checks as any folder chosen there.
+ */
+export async function createFolder(parent: string, name: string): Promise<FolderListing> {
+  if (!name.trim() || name !== name.trim() || name.startsWith('.') || /[/\\\n\0,:]/.test(name)) throw new Refusal('folder_name_invalid');
+  const path = join(resolve(parent), name);
+  await ensureChosenFolder(path).catch((error: NodeJS.ErrnoException) => {
+    throw error instanceof Refusal ? error : new Refusal('storage_permissions', 409, folderDetail(path));
+  });
+  return listFolders(path);
+}
 export async function listFolders(requested: string): Promise<FolderListing> {
   const roots = broadRootList();
   let path = resolve(requested);

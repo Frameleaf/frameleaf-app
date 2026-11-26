@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { mkdir, mkdtemp, realpath, stat, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { adoptMappedFolders, assertExternalFolder, assertSeparateFolders, applyFolderDefaults, broadRoots, externalRoots, browsedOnEarlierInstall, externalRuleSources, ensureChosenFolder, readOnlyMapping, moveRoots, ensureManagerFolder, inside, isMounted, listFolders, realTarget, sameFiles } from '../src/folders.js';
+import { adoptMappedFolders, assertExternalFolder, assertSeparateFolders, applyFolderDefaults, broadRoots, externalRoots, browsedOnEarlierInstall, createFolder, directShareFolder, externalRuleSources, ensureChosenFolder, readOnlyMapping, moveRoots, ensureManagerFolder, inside, isMounted, listFolders, realTarget, sameFiles } from '../src/folders.js';
 import type { Refusal } from '../src/contracts.js';
 import { externalFolderIssue, externalFolders, setExternalFolders } from '../ui/src/presentation.js';
 
@@ -265,4 +265,32 @@ test('an Unraid exclusive share is the same folder as its pool, and no other lin
   assert.ok(!sameFiles('/mnt/user/appdata/frameleaf-manager', '/mnt/cache/other/frameleaf-manager'));
   assert.ok(!sameFiles('/mnt/user/appdata/x', '/mnt/user/appdata'), 'a parent is not the same folder');
   assert.ok(!sameFiles('/mnt/user/appdata/x', '/etc/x'));
+});
+
+test('a share folder that one drive holds whole can be used on that drive; one spread over drives cannot', async () => {
+  const mnt = await mkdtemp(join(tmpdir(), 'manager-direct-'));
+  await mkdir(join(mnt, 'user', 'photo', 'thumbs'), { recursive: true });
+  await mkdir(join(mnt, 'cache', 'photo', 'thumbs'), { recursive: true });
+  await mkdir(join(mnt, 'disk1', 'photo', 'library'), { recursive: true });
+  await mkdir(join(mnt, 'remotes', 'photo', 'thumbs'), { recursive: true });
+  const thumbs = join(mnt, 'user', 'photo', 'thumbs');
+  assert.deepEqual(await directShareFolder(thumbs, mnt), { drive: 'cache', share: 'photo', path: join(mnt, 'cache', 'photo', 'thumbs') });
+  // The photos folder itself is on two drives, so neither holds all of it.
+  assert.equal(await directShareFolder(join(mnt, 'user', 'photo'), mnt), null);
+  assert.equal(await directShareFolder(join(mnt, 'cache', 'photo', 'thumbs'), mnt), null);
+  await mkdir(join(mnt, 'disk1', 'photo', 'thumbs'));
+  assert.equal(await directShareFolder(thumbs, mnt), null);
+  await on('truenas', null, async () => assert.equal(await directShareFolder(thumbs, mnt), null));
+});
+
+test('a new folder from the folder browser takes a plain name and passes the chosen-folder checks', async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'manager-new-folder-')));
+  await mkdir(join(root, 'pool', 'share'), { recursive: true });
+  await on('linux', root, async () => {
+    const made = await createFolder(join(root, 'pool', 'share'), 'thumbs fast');
+    assert.equal(made.path, join(root, 'pool', 'share', 'thumbs fast'));
+    assert.ok((await stat(made.path)).isDirectory());
+    for (const name of ['a/b', '.hidden', ' padded', 'a:b', 'a,b', '..'])
+      await assert.rejects(createFolder(join(root, 'pool', 'share'), name), /folder_name_invalid/);
+  });
 });

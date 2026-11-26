@@ -17,6 +17,8 @@ export type FilesystemMount = {
   source: string;
   options: string[];
 };
+/** Filesystems whose files live on another machine. */
+export const NETWORK_FILESYSTEMS = /^(?:nfs4?|cifs|smb3?|smbfs|9p|afs|ceph|glusterfs|fuse\.(?:sshfs|rclone|glusterfs|s3fs))$/;
 export function filesystemMounts(contents: string): FilesystemMount[] {
   return contents
     .trim()
@@ -47,6 +49,8 @@ export function databaseMount(
   mounts: FilesystemMount[],
   hostMounts: FilesystemMount[],
   unraid: boolean,
+  /** FL-1784: a folder for thumbnails may be on a network share (the review warns); the database never may. */
+  network = false,
 ): FilesystemMount {
   if (!path.startsWith('/') || path !== resolve(path) || /[\x00-\x1f\x7f,:]/.test(path))
     throw new Refusal('invalid_database_path', 409, folderDetail(path, roots));
@@ -77,7 +81,7 @@ export function databaseMount(
     ['ext4', 'xfs', 'btrfs', 'zfs'].includes(mount.type) &&
     (mount.source.startsWith('/dev/') || mount.type === 'zfs') &&
     !/^\/dev\/(?:loop|ram|zram)/.test(mount.source);
-  if (!localDisk && !share) throw new Refusal('database_requires_disk_storage', 409, folderDetail(path));
+  if (!localDisk && !share && !(network && NETWORK_FILESYSTEMS.test(mount.type))) throw new Refusal('database_requires_disk_storage', 409, folderDetail(path));
   // Reject aliases of Docker's mounted image and bind paths into the Docker data root.
   if (
     mounts.some(
@@ -97,7 +101,7 @@ export class PostgresStorage {
     readonly roots: string[],
     readonly unraid: boolean,
   ) {}
-  private async evidence(path: string, installationId?: string): Promise<FilesystemMount> {
+  private async evidence(path: string, installationId?: string, network = false): Promise<FilesystemMount> {
     const [containers, compatibility, mountinfo] = await Promise.all([
       this.docker.inventory(),
       this.docker.compatibility(),
@@ -124,14 +128,17 @@ export class PostgresStorage {
       filesystemMounts(mountinfo),
       hostMounts,
       this.unraid,
+      network,
     );
   }
   async validate(
     path: string,
     bytes: number,
     installationId?: string,
+    /** FL-1784: true for a folder picked for thumbnails, which may be on a network share. */
+    network = false,
   ): Promise<{ root: string; filesystem: string; device: string }> {
-    const mount = await this.evidence(path, installationId);
+    const mount = await this.evidence(path, installationId, network);
     // Resolve only the explicitly selected folder. Never enumerate a share or follow a path outside a mounted root.
     const actual = await realpath(path).catch(() => {
       throw new Refusal('database_directory_missing', 409, folderDetail(path, this.roots));
