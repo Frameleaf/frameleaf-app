@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { formatLuxon } from '$lib/frameleaf/date-format';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import { photographyErrorKey } from '$lib/components/frameleaf/PhotographyStatus.svelte';
   import StudioDomainStatus from '$lib/components/frameleaf/StudioDomainStatus.svelte';
@@ -876,11 +877,7 @@
                       <a href={`mailto:${item.email}`}>{item.email}</a>
                       <small>{item.message}</small>
                     {/if}
-                    <small
-                      >{DateTime.fromISO(item.createdAt).toLocaleString(DateTime.DATETIME_MED, {
-                        locale: $locale,
-                      })}</small
-                    >
+                    <small>{formatLuxon(DateTime.fromISO(item.createdAt), DateTime.DATETIME_MED, $locale)}</small>
                   </li>
                 {/each}
               </ul>

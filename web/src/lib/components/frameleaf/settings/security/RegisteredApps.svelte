@@ -11,6 +11,7 @@
   import Said from '$lib/components/frameleaf/settings/kit/Said.svelte';
   import Field from '$lib/components/frameleaf/settings/kit/Field.svelte';
   import Select from '$lib/components/frameleaf/settings/kit/Select.svelte';
+  import { formatLuxon } from '$lib/frameleaf/date-format';
   import { locale } from '$lib/stores/preferences.store';
   import {
     createOAuthAppClient,
@@ -74,7 +75,7 @@
     chatgpt: mdiChatOutline,
     homeassistant: mdiHomeAutomation,
   };
-  const date = (iso: string) => DateTime.fromISO(iso, { locale: $locale }).toLocaleString(DateTime.DATE_MED);
+  const date = (iso: string) => formatLuxon(DateTime.fromISO(iso, { locale: $locale }), DateTime.DATE_MED);
 
   const ask = (app: OAuthAppAdminClientDto) => {
     removing = app;

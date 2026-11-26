@@ -25,6 +25,8 @@
     mdiImageCheckOutline,
     mdiLockOutline,
   } from '@mdi/js';
+  import { formatDate } from '$lib/frameleaf/date-format';
+  import { formatMoney } from '$lib/frameleaf/number-format';
   import { locale } from '$lib/stores/preferences.store';
   import {
     galleryRequest,
@@ -144,8 +146,7 @@
       .slice(0, 2)
       .map((word) => word.charAt(0).toUpperCase())
       .join('');
-  const money = (total: number, currency: string) =>
-    new Intl.NumberFormat($locale, { style: 'currency', currency }).format(total / 100);
+  const money = (total: number, currency: string) => formatMoney(total, currency, $locale);
   /** The selection tray (PhotographyClient.jsx `pc-selection-tray`): what's chosen and what it adds. */
   const hasPackage = $derived(!!gallery && (gallery.pricing.includedCount > 0 || gallery.pricing.additionalPrice > 0));
   const includedChosen = $derived(gallery ? Math.min(choices.length, gallery.pricing.includedCount) : 0);
@@ -1107,7 +1108,7 @@
         <p class="pc-cover-meta">
           {[
             gallery.recipient.name,
-            gallery.date ? new Date(`${gallery.date}T12:00:00`).toLocaleDateString($locale, { dateStyle: 'long' }) : '',
+            gallery.date ? formatDate(new Date(`${gallery.date}T12:00:00`), { dateStyle: 'long' }, $locale) : '',
           ]
             .filter(Boolean)
             .join(' · ')}
@@ -1193,7 +1194,13 @@
               : '',
             gallery.pricing.selectionDeadline
               ? $t('frameleaf_photography_client_choose_by', {
-                  values: { date: new Date(gallery.pricing.selectionDeadline).toLocaleDateString($locale) },
+                  values: {
+                    date: formatDate(
+                      new Date(gallery.pricing.selectionDeadline),
+                      { year: 'numeric', month: 'numeric', day: 'numeric' },
+                      $locale,
+                    ),
+                  },
                 })
               : '',
           ]
@@ -1357,7 +1364,14 @@
         <div>
           {#each gallery.rounds as round (round.id)}<p>
               {$t('frameleaf_photography_client_round_sent', {
-                values: { count: round.captureIds.length, date: new Date(round.createdAt).toLocaleDateString($locale) },
+                values: {
+                  count: round.captureIds.length,
+                  date: formatDate(
+                    new Date(round.createdAt),
+                    { year: 'numeric', month: 'numeric', day: 'numeric' },
+                    $locale,
+                  ),
+                },
               })}
             </p>{/each}{#each gallery.orders as order (order.id)}<article class="pc-order">
               <strong

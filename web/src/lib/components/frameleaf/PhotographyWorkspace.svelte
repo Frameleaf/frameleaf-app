@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { formatDate } from '$lib/frameleaf/date-format';
+  import { formatMoney } from '$lib/frameleaf/number-format';
   import { developLabel } from '$lib/frameleaf/develop-label';
   /**
    * The photography workspace: a photographer's shoots, each linked to an album they own, with
@@ -372,7 +374,7 @@
   );
   const cover = (id: string) => getAssetMediaUrl({ id, size: AssetMediaSize.Thumbnail });
   const dateLabel = (date: string) =>
-    new Date(`${date}T12:00:00`).toLocaleDateString($locale, { month: 'short', day: 'numeric', year: 'numeric' });
+    formatDate(new Date(`${date}T12:00:00`), { month: 'short', day: 'numeric', year: 'numeric' }, $locale);
   const failure = (cause: unknown) => $t(photographyErrorKey(cause));
   const photoFilters: readonly PhotoFilter[] = ['all', 'selected', 'edited'];
   const photoFilterLabel = (filter: PhotoFilter) =>
@@ -482,7 +484,7 @@
     }
     if (summary?.published) {
       const due = summary.selectionDeadline
-        ? ` · ${$t('frameleaf_photography_selections_due', { values: { date: new Date(summary.selectionDeadline).toLocaleDateString($locale) } })}`
+        ? ` · ${$t('frameleaf_photography_selections_due', { values: { date: formatDate(new Date(summary.selectionDeadline), { year: 'numeric', month: 'numeric', day: 'numeric' }, $locale) } })}`
         : '';
       return {
         label: `${$t('frameleaf_photography_next_waiting')}${due}`,
@@ -529,11 +531,7 @@
   /** `narrow`: the label already names the currency, so "$0.00" rather than "CA$0.00", as in the prototype. */
   const money = (amount: number, currency: string, narrow = false) => {
     try {
-      return new Intl.NumberFormat($locale, {
-        style: 'currency',
-        currency,
-        currencyDisplay: narrow ? 'narrowSymbol' : 'symbol',
-      }).format(amount / 100);
+      return formatMoney(amount, currency, $locale, { currencyDisplay: narrow ? 'narrowSymbol' : 'symbol' });
     } catch {
       return `${amount / 100} ${currency}`;
     }

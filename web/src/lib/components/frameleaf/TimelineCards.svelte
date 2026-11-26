@@ -17,6 +17,7 @@
     type TimelineCard,
     type TimelineCardTarget,
   } from '$lib/frameleaf/timeline-cards';
+  import { formatLuxon } from '$lib/frameleaf/date-format';
   import { onLibraryAccessChange } from '$lib/frameleaf/library-access';
   import { eventManager } from '$lib/managers/event-manager.svelte';
   import type { TimelineManager } from '$lib/managers/timeline-manager/timeline-manager.svelte';
@@ -214,9 +215,10 @@
   const titleOf = (card: TimelineCard) =>
     card.kind === 'year'
       ? String(card.year)
-      : DateTime.fromObject({ year: card.year, month: card.month ?? 1 }).toLocaleString(
+      : formatLuxon(
+          DateTime.fromObject({ year: card.year, month: card.month ?? 1 }),
           { month: 'long', year: 'numeric' },
-          { locale: $locale ?? undefined },
+          $locale ?? undefined,
         );
 
   const metaOf = (card: TimelineCard) =>

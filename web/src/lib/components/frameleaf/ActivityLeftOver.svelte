@@ -10,6 +10,7 @@
   import { uploadRunTitle } from '$lib/frameleaf/arrivals';
   import { runTitleKey } from '$lib/frameleaf/durable-runs';
   import { jobQueue } from '$lib/frameleaf/job-queues';
+  import { formatCount } from '$lib/frameleaf/number-format';
   import { CAUSE_VIEW, knowsCauses, leftOver, runCauses } from '$lib/frameleaf/run-failures';
   import { runHeadline } from '$lib/frameleaf/run-headline';
   import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
@@ -27,7 +28,7 @@
     onChanged: () => void;
   } = $props();
 
-  const number = (value: number) => value.toLocaleString($locale ?? undefined);
+  const number = (value: number) => formatCount(value, $locale ?? null);
   const title = (run: DurableJobRun) =>
     uploadRunTitle(run, $t) ??
     (run.nightly

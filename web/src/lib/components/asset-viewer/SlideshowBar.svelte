@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { formatLuxon } from '$lib/frameleaf/date-format';
   import { formatApproximateDate } from '$lib/frameleaf/approximate-date';
   import { isForwardKey } from '$lib/frameleaf/reading-direction';
   /**
@@ -199,7 +200,7 @@
       artist: title || MEDIA_SESSION_ARTIST,
       album: [
         formatApproximateDate(asset.localDateTime, asset.dateAccuracy, $locale, { heading: true }) ??
-          (date.isValid ? date.toLocaleString(DateTime.DATE_MED, { locale: $locale }) : ''),
+          (date.isValid ? formatLuxon(date, DateTime.DATE_MED, $locale) : ''),
         asset.exifInfo?.city,
       ]
         .filter(Boolean)

@@ -6,6 +6,7 @@
    * them), lists the passkeys with where each is saved, when it was added and last used, and adds,
    * renames and removes them. Adding asks for the password if it wasn't checked in the last 10 minutes.
    */
+  import { formatDateTime } from '$lib/frameleaf/date-format';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import PasskeyAddDialog from '$lib/components/frameleaf/access/PasskeyAddDialog.svelte';
   import PasskeyRemoveDialog from '$lib/components/frameleaf/access/PasskeyRemoveDialog.svelte';
@@ -72,10 +73,11 @@
   });
 
   const date = (value: string, withTime = false) =>
-    new Intl.DateTimeFormat(
-      $locale,
+    formatDateTime(
+      new Date(value),
       withTime ? { dateStyle: 'medium', timeStyle: 'short' } : { dateStyle: 'medium' },
-    ).format(new Date(value));
+      $locale,
+    );
 
   /** Where a passkey is saved, as the list says it. */
   const savedIn = (passkey: PasskeyResponseDto) =>

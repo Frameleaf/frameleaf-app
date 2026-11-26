@@ -14,6 +14,7 @@
    * change before the job is confirmed, the dialog estimates again and asks for a fresh confirmation.
    */
   import './cloud-job.css';
+  import { formatTime } from '$lib/frameleaf/date-format';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import CloudGpuUpgrade from '$lib/components/frameleaf/cloud/CloudGpuUpgrade.svelte';
@@ -283,7 +284,7 @@
   );
   const upscale = $derived(estimate ? upscaleFact(estimate) : null);
   const expiresAt = $derived(
-    estimate ? new Date(estimate.expiresAt).toLocaleTimeString($locale ?? undefined, { timeStyle: 'short' }) : '',
+    estimate ? formatTime(new Date(estimate.expiresAt), { timeStyle: 'short' }, $locale ?? 'default') : '',
   );
 
   const close = () => {

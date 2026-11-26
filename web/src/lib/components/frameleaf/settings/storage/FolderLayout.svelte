@@ -29,6 +29,7 @@
     TAG_GROUPS,
   } from '$lib/components/frameleaf/settings/storage/storage';
   import { confirmFrameleaf } from '$lib/frameleaf/confirm';
+  import { formatCount } from '$lib/frameleaf/number-format';
   import { getSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
@@ -84,7 +85,7 @@
     return () => clearInterval(timer);
   });
 
-  const count = (value: number) => new Intl.NumberFormat($locale).format(value);
+  const count = (value: number) => formatCount(value, $locale);
   const layoutName = (id: string) => $t(`frameleaf_layout_${id}` as Translations);
   const pathWords = (value: string) => placeSample(value).parts.join(' › ');
   const example = $derived(placeSample(template));

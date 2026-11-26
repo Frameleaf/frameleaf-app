@@ -1,4 +1,5 @@
 <script lang="ts" module>
+  import { formatDateTime } from '$lib/frameleaf/date-format';
   import { locale } from '$lib/stores/preferences.store';
   import type { EditorSettings } from '$lib/frameleaf/editor-draft';
 
@@ -1896,9 +1897,18 @@
                       {revision.isCurrent ? $t('frameleaf_editor_current') : statusLabel(revision)}
                     </span>
                     <small>
-                      {new Date(revision.createdAt).toLocaleString($locale)}{revision.width && revision.height
-                        ? ` · ${revision.width} × ${revision.height}`
-                        : ''}
+                      {formatDateTime(
+                        new Date(revision.createdAt),
+                        {
+                          year: 'numeric',
+                          month: 'numeric',
+                          day: 'numeric',
+                          hour: 'numeric',
+                          minute: 'numeric',
+                          second: 'numeric',
+                        },
+                        $locale,
+                      )}{revision.width && revision.height ? ` · ${revision.width} × ${revision.height}` : ''}
                     </small>
                     {#if revision.kind === AssetDevelopRevisionKind.External}
                       <small>

@@ -23,6 +23,7 @@
   import Section from '$lib/components/frameleaf/settings/kit/Section.svelte';
   import Select from '$lib/components/frameleaf/settings/kit/Select.svelte';
   import TextLink from '$lib/components/frameleaf/settings/kit/TextLink.svelte';
+  import { formatLuxon } from '$lib/frameleaf/date-format';
   import {
     DOWNLOAD_SPANS,
     LOG_SHOW,
@@ -360,8 +361,8 @@
   const time = (at: string) => {
     const when = DateTime.fromISO(at).setLocale($locale ?? 'en');
     return when.hasSame(DateTime.now(), 'day')
-      ? when.toLocaleString(DateTime.TIME_WITH_SECONDS)
-      : when.toLocaleString({ month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', second: '2-digit' });
+      ? formatLuxon(when, DateTime.TIME_WITH_SECONDS)
+      : formatLuxon(when, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', second: '2-digit' });
   };
 
   // ------------------------------------------------------------------ a line's details
@@ -389,9 +390,10 @@
       ? [
           {
             label: $t('frameleaf_logs_field_when'),
-            value: DateTime.fromISO(opened.at)
-              .setLocale($locale ?? 'en')
-              .toLocaleString(DateTime.DATETIME_MED_WITH_SECONDS),
+            value: formatLuxon(
+              DateTime.fromISO(opened.at).setLocale($locale ?? 'en'),
+              DateTime.DATETIME_MED_WITH_SECONDS,
+            ),
           },
           { label: $t('frameleaf_logs_field_level'), value: $t(levelWord(opened.level).word), detail: opened.level },
           { label: $t('frameleaf_logs_field_from'), value: $t(sourceWord(opened.worker)), detail: opened.context },

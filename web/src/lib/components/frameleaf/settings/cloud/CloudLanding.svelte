@@ -9,6 +9,7 @@
    * FL-542: current Cloud Backup account cover comes from Cloud's grant, not the local key kind.
    */
   import { goto } from '$app/navigation';
+  import { formatDate } from '$lib/frameleaf/date-format';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Hero from '$lib/components/frameleaf/settings/kit/Hero.svelte';
   import Item from '$lib/components/frameleaf/settings/kit/Item.svelte';
@@ -54,7 +55,7 @@
   const licenceKind = $derived(license?.key?.kind ?? null);
   const backupCover = $derived(backupLicenceCoverage(cloudManager.backupCoverage, $locale));
   const date = (iso: string | null | undefined) =>
-    iso ? new Intl.DateTimeFormat($locale, { dateStyle: 'long' }).format(new Date(iso)) : '';
+    iso ? formatDate(new Date(iso), { dateStyle: 'long' }, $locale) : '';
 
   const hero = $derived.by(() => {
     if (off) {

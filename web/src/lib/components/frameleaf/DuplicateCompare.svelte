@@ -18,6 +18,7 @@
     qualityReasonKey,
     type ReviewGroup,
   } from '$lib/frameleaf/duplicate-review';
+  import { formatDateTime } from '$lib/frameleaf/date-format';
   import { locale } from '$lib/stores/preferences.store';
   import { getAssetMediaUrl, getAssetPlaybackUrl } from '$lib/utils';
   import { getByteUnitString } from '$lib/utils/byte-units';
@@ -53,7 +54,7 @@
     const date = value ? new Date(value) : null;
     // local capture times are stored as UTC wall-clock time, so they are shown in UTC
     return date && Number.isFinite(date.getTime())
-      ? date.toLocaleString($locale, { dateStyle: 'medium', timeStyle: 'medium', timeZone: 'UTC' })
+      ? formatDateTime(date, { dateStyle: 'medium', timeStyle: 'medium', timeZone: 'UTC' }, $locale)
       : NONE;
   };
   const sizeOf = (asset: Asset) => {

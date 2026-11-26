@@ -8,6 +8,7 @@
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Pill, { type KitTone } from '$lib/components/frameleaf/settings/kit/Pill.svelte';
   import Row from '$lib/components/frameleaf/settings/kit/Row.svelte';
+  import { formatLuxon } from '$lib/frameleaf/date-format';
   import { locale } from '$lib/stores/preferences.store';
   import { handleError } from '$lib/utils/handle-error';
   import { HDR_CASES, hdrCheckState } from '$lib/components/frameleaf/settings/editing/hdr-playback-check';
@@ -78,7 +79,7 @@
     return finished.hasSame(DateTime.now(), 'day')
       ? $t('frameleaf_play_hdr_hardware_help_today', { values: { card } })
       : $t('frameleaf_play_hdr_hardware_help_on', {
-          values: { card, date: finished.toLocaleString({ month: 'short', day: 'numeric' }) },
+          values: { card, date: formatLuxon(finished, { month: 'short', day: 'numeric' }) },
         });
   });
 

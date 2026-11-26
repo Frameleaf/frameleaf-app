@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { formatLuxon } from '$lib/frameleaf/date-format';
   import Spinner from '$lib/components/frameleaf/Spinner.svelte';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import IconButton from '$lib/components/frameleaf/IconButton.svelte';
@@ -381,7 +382,7 @@
   const nameOf = (candidate: { name: string }) => (isUnnamedPerson(candidate) ? $t('unnamed_person') : candidate.name);
 
   const shortDate = (asset: AssetResponseDto) =>
-    DateTime.fromISO(asset.localDateTime, { zone: 'utc' }).toLocaleString(DateTime.DATE_MED);
+    formatLuxon(DateTime.fromISO(asset.localDateTime, { zone: 'utc' }), DateTime.DATE_MED);
 </script>
 
 <div class="pd-fix" role="dialog" aria-labelledby="pd-fix-title" aria-modal="false">

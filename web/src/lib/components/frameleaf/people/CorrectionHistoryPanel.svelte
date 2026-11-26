@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { formatLuxon } from '$lib/frameleaf/date-format';
   import Spinner from '$lib/components/frameleaf/Spinner.svelte';
   /**
    * Frameleaf FL-57: the correction history of a person, over `GET /people/:id/corrections`
@@ -194,7 +195,7 @@
     }
   };
 
-  const formatAt = (value: string) => DateTime.fromISO(value).toLocaleString(DateTime.DATETIME_MED);
+  const formatAt = (value: string) => formatLuxon(DateTime.fromISO(value), DateTime.DATETIME_MED);
 </script>
 
 <div class="pd-history" role="dialog" aria-labelledby="pd-history-title" aria-modal="false">

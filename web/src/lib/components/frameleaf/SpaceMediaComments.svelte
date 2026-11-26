@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { formatDateTime } from '$lib/frameleaf/date-format';
   import SpaceCommentComposer from '$lib/components/frameleaf/SpaceCommentComposer.svelte';
   import Status from '$lib/components/frameleaf/Status.svelte';
   import UserAvatar from '$lib/components/shared-components/UserAvatar.svelte';
@@ -271,6 +272,12 @@
     }
   };
 
+  const exactTime = (value: string) =>
+    formatDateTime(
+      new Date(value),
+      { year: 'numeric', month: 'numeric', day: 'numeric', hour: 'numeric', minute: 'numeric', second: 'numeric' },
+      $locale,
+    );
   const relative = $derived(new Intl.RelativeTimeFormat($locale, { numeric: 'auto' }));
   const UNITS: Intl.RelativeTimeFormatUnit[] = ['year', 'month', 'day', 'hour', 'minute'];
   const SECONDS: Record<string, number> = { year: 31_536_000, month: 2_592_000, day: 86_400, hour: 3600, minute: 60 };
@@ -295,7 +302,7 @@
     <div class="body">
       <p class="meta">
         <strong>{comment.user.name}</strong>
-        <time datetime={comment.createdAt} title={new Date(comment.createdAt).toLocaleString($locale)}>
+        <time datetime={comment.createdAt} title={exactTime(comment.createdAt)}>
           {timeAgo(comment.createdAt)}
         </time>
         {#if wasEdited(comment)}

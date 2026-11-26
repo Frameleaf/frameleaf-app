@@ -1,5 +1,6 @@
 <script lang="ts">
   import Button from '$lib/components/frameleaf/Button.svelte';
+  import { formatMoney } from '$lib/frameleaf/number-format';
   import { locale } from '$lib/stores/preferences.store';
   import {
     photographyPayCheckout,
@@ -29,8 +30,7 @@
     clearTimeout(timer);
   });
 
-  const money = (cents: number, currency: string) =>
-    new Intl.NumberFormat($locale, { style: 'currency', currency }).format(cents / 100);
+  const money = (cents: number, currency: string) => formatMoney(cents, currency, $locale);
 
   /** Waits for the studio's server to hear from Stripe: about two minutes, then the page says to check later. */
   async function check(id: string, tries = 0) {

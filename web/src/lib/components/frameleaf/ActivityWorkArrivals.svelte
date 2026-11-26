@@ -5,6 +5,8 @@
    * where, when, its state in Recent work's words, and how far each feature has got with it. `arrivals.ts` says what
    * the server reports.
    */
+  import { formatDateTime } from '$lib/frameleaf/date-format';
+  import { formatCount } from '$lib/frameleaf/number-format';
   import { arrivalTitle, type Arrival, type ArrivalStep, type ArrivalStepState } from '$lib/frameleaf/arrivals';
   import { Icon } from '@frameleaf/ui';
   import {
@@ -43,7 +45,7 @@
     failed: mdiAlertCircle,
   };
 
-  const number = (value: number) => value.toLocaleString($locale ?? undefined);
+  const number = (value: number) => formatCount(value, $locale ?? null);
 
   const titleOf = (arrival: Arrival) => arrivalTitle(arrival, $t);
 
@@ -51,11 +53,15 @@
   const timeOf = (iso: string) => {
     const at = new Date(iso);
     const today = new Date().toDateString() === at.toDateString();
-    return new Intl.DateTimeFormat($locale ?? undefined, {
-      ...(!today && { weekday: 'short' as const }),
-      hour: 'numeric',
-      minute: '2-digit',
-    }).format(at);
+    return formatDateTime(
+      at,
+      {
+        ...(!today && { weekday: 'short' as const }),
+        hour: 'numeric',
+        minute: '2-digit',
+      },
+      $locale ?? 'default',
+    );
   };
 
   /** "Taylor · Uploaded 9:41 AM · Running"; the viewer's own photos leave the owner out. */

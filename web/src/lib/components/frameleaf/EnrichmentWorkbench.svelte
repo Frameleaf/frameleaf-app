@@ -19,6 +19,7 @@
    * skipped, failed, completed, cancelled) with pause, cancel and retry. Closing the page does
    * not stop it, and reopening the dialog returns to it.
    */
+  import { formatDateTime } from '$lib/frameleaf/date-format';
   import Badge from '$lib/components/frameleaf/Badge.svelte';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
@@ -130,7 +131,7 @@
     getAssetMediaUrl({ id, size: AssetMediaSize.Thumbnail, cacheKey });
 
   const formatDate = (value: string) =>
-    new Date(value).toLocaleString($locale ?? undefined, { dateStyle: 'medium', timeStyle: 'short' });
+    formatDateTime(new Date(value), { dateStyle: 'medium', timeStyle: 'short' }, $locale ?? 'default');
 
   /* ---------------------------------------------------------------- */
   /* Loading                                                           */

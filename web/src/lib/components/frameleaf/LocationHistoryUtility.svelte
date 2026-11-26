@@ -5,6 +5,7 @@
    * they have been; Frameleaf offers a place for photos that have none, and nothing is filled before
    * they have seen it. Reading and filling run on the server, so this page asks how they are doing.
    */
+  import { formatLuxon } from '$lib/frameleaf/date-format';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import InlineError from '$lib/components/frameleaf/InlineError.svelte';
@@ -160,7 +161,7 @@
               : '',
   );
 
-  const date = (iso: string) => DateTime.fromISO(iso, { locale: $locale }).toLocaleString(DateTime.DATE_FULL);
+  const date = (iso: string) => formatLuxon(DateTime.fromISO(iso, { locale: $locale }), DateTime.DATE_FULL);
   const range = (from: string, to: string) =>
     $t('frameleaf_location_history_range', { values: { from: date(from), to: date(to) } });
   const selectedFn = (id: string) => isSelected(selection, id);

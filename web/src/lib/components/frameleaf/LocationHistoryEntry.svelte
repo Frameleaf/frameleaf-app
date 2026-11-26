@@ -1,6 +1,7 @@
 <script lang="ts">
   /** FL-999: the short "Use your location history" section at the foot of Fix locations. */
   import { goto } from '$app/navigation';
+  import { formatLuxon } from '$lib/frameleaf/date-format';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import KitPage from '$lib/components/frameleaf/settings/kit/KitPage.svelte';
   import Row from '$lib/components/frameleaf/settings/kit/Row.svelte';
@@ -24,7 +25,7 @@
 
   const added = $derived(sources.filter((source) => sourceState(source) === 'added'));
   const span = $derived(historySpan(added));
-  const date = (iso: string) => DateTime.fromISO(iso, { locale: $locale }).toLocaleString(DateTime.DATE_FULL);
+  const date = (iso: string) => formatLuxon(DateTime.fromISO(iso, { locale: $locale }), DateTime.DATE_FULL);
 
   const load = async () => {
     // The section is an extra on this page: if it cannot be read it still offers the way in.

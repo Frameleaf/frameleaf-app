@@ -9,6 +9,7 @@
    *
    * While a scan runs the page says so and reads the findings again every few seconds until it ends.
    */
+  import { formatLuxon } from '$lib/frameleaf/date-format';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import LockedUnlockDialog from '$lib/components/frameleaf/LockedUnlockDialog.svelte';
   import DateDoctorCard from '$lib/components/frameleaf/settings/care/DateDoctorCard.svelte';
@@ -168,9 +169,7 @@
   };
 
   const when = (value: string) =>
-    DateTime.fromISO(value)
-      .setLocale($locale ?? 'en')
-      .toLocaleString(DateTime.DATETIME_MED);
+    formatLuxon(DateTime.fromISO(value).setLocale($locale ?? 'en'), DateTime.DATETIME_MED);
 
   const hero = $derived.by(() => {
     if (status === 'error' || failed) {

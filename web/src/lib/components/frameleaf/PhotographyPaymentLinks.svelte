@@ -1,6 +1,7 @@
 <script lang="ts">
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
+  import { formatMoney } from '$lib/frameleaf/number-format';
   import { locale } from '$lib/stores/preferences.store';
   import { handleError } from '$lib/utils/handle-error';
   import {
@@ -32,8 +33,7 @@
   let busy = $state(false);
   let draft = $state(blank());
 
-  const money = (cents: number, currency: string) =>
-    new Intl.NumberFormat($locale, { style: 'currency', currency }).format(cents / 100);
+  const money = (cents: number, currency: string) => formatMoney(cents, currency, $locale);
 
   async function load() {
     failed = false;

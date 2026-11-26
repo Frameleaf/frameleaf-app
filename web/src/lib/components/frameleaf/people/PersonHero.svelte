@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { formatLuxon } from '$lib/frameleaf/date-format';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import IconButton from '$lib/components/frameleaf/IconButton.svelte';
   import PersonAvatar from '$lib/components/frameleaf/PersonAvatar.svelte';
@@ -107,9 +108,7 @@
   const span = $derived(lifespan(person.birthDate, person.deathDate));
   const age = $derived(ageInYears(person.birthDate));
   const birthday = $derived(
-    person.birthDate
-      ? DateTime.fromISO(person.birthDate).toLocaleString(DateTime.DATE_FULL, { locale: $locale })
-      : undefined,
+    person.birthDate ? formatLuxon(DateTime.fromISO(person.birthDate), DateTime.DATE_FULL, $locale) : undefined,
   );
 
   /** Says what happened in a toast (a live region); `undo` offers to put it back. */

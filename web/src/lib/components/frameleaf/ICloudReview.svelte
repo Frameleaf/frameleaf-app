@@ -9,7 +9,9 @@
   import { page as appPage } from '$app/state';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
+  import { formatDateTime } from '$lib/frameleaf/date-format';
   import { icloudErrorKey } from '$lib/frameleaf/icloud-sync';
+  import { formatCount } from '$lib/frameleaf/number-format';
   import { Route } from '$lib/route';
   import { getAssetMediaUrl } from '$lib/utils';
   import { getByteUnitString } from '$lib/utils/byte-units';
@@ -122,7 +124,7 @@
     }
     return effects;
   });
-  const number = (value: number) => value.toLocaleString($locale);
+  const number = (value: number) => formatCount(value, $locale);
 
   const load = async (nextPage = current) => {
     const mine = ++request;
@@ -248,13 +250,17 @@
   const takenOn = (value: string | null) => {
     const date = value ? new Date(value) : undefined;
     return date && !Number.isNaN(date.getTime())
-      ? date.toLocaleString($locale, {
-          day: 'numeric',
-          month: 'short',
-          year: 'numeric',
-          hour: 'numeric',
-          minute: '2-digit',
-        })
+      ? formatDateTime(
+          date,
+          {
+            day: 'numeric',
+            month: 'short',
+            year: 'numeric',
+            hour: 'numeric',
+            minute: '2-digit',
+          },
+          $locale,
+        )
       : '';
   };
   type Difference = Item['differences'][number];

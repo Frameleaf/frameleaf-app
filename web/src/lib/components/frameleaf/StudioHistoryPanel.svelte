@@ -1,4 +1,5 @@
 <script lang="ts" module>
+  import { formatDateTime, formatTime } from '$lib/frameleaf/date-format';
   import type { StudioCommentDto } from '@frameleaf/sdk';
   import { studioTimecode } from '$lib/frameleaf/studio/chrome';
   import { coerceRational } from '$lib/frameleaf/studio/rational-time';
@@ -211,16 +212,14 @@
   const canResolve = (comment: StudioCommentDto) => access === 'owner' || comment.authorId === userId;
 
   const days = $derived(groupStudioByDay(revisions, (item) => item.createdAt));
-  const dayFormat = $derived(
-    new Intl.DateTimeFormat($locale ?? undefined, { weekday: 'long', month: 'long', day: 'numeric' }),
-  );
-  const clockFormat = $derived(new Intl.DateTimeFormat($locale ?? undefined, { timeStyle: 'short' }));
+  const dayFormat = (date: Date) => formatDateTime(date, { weekday: 'long', month: 'long', day: 'numeric' }, $locale);
+  const clockFormat = (date: Date) => formatTime(date, { timeStyle: 'short' }, $locale);
   const dayLabel = (group: { daysAgo: number; date: Date }) =>
     group.daysAgo === 0
       ? $t('frameleaf_studio_history_today')
       : group.daysAgo === 1
         ? $t('frameleaf_studio_history_yesterday')
-        : dayFormat.format(group.date);
+        : dayFormat(group.date);
 
   // The head changing means the lists are stale: rebuild rather than patch.
   $effect(() => {
@@ -296,9 +295,7 @@
             {#each group.items as item (item.id)}
               <li in:dock={{ y: -8 }}>
                 <div class="fl-studio-row-head">
-                  <time class="fl-studio-clock" datetime={item.createdAt}
-                    >{clockFormat.format(new Date(item.createdAt))}</time
-                  >
+                  <time class="fl-studio-clock" datetime={item.createdAt}>{clockFormat(new Date(item.createdAt))}</time>
                   {#if item.revision === revision}
                     <span class="fl-studio-tag">{$t('frameleaf_studio_history_current')}</span>
                   {/if}

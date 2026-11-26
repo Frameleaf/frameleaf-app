@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { formatDateTime } from '$lib/frameleaf/date-format';
   import FilterPanel from './FilterPanel.svelte';
   import Button from './Button.svelte';
   import { emptyDiscoveryQuery, type DiscoveryQuery } from '$lib/components/discovery/query';
@@ -209,7 +210,21 @@
     <p>
       {nextRunAt
         ? $t('frameleaf_workflows.next_run', {
-            values: { at: new Date(nextRunAt).toLocaleString(undefined, { timeZone: timezone }) },
+            values: {
+              at: formatDateTime(
+                new Date(nextRunAt),
+                {
+                  year: 'numeric',
+                  month: 'numeric',
+                  day: 'numeric',
+                  hour: 'numeric',
+                  minute: 'numeric',
+                  second: 'numeric',
+                  timeZone: timezone,
+                },
+                'default',
+              ),
+            },
           })
         : $t('frameleaf_workflows.next_run_after_save')}
     </p>
