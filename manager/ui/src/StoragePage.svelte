@@ -27,15 +27,15 @@
       ],
       confirm: 'Move the database',
     },
+    // The folder is the one the administrator picks, as it is: no folder of Manager's own is added inside it.
     thumbs: {
-      title: 'Move thumbnails',
+      title: 'Change the thumbnails folder',
       pick: 'Choose a folder for thumbnails',
-      folder: 'frameleaf-thumbnails',
       notes: [
         'Frameleaf is unavailable until the copy finishes. Uploads and background work pause first.',
         'Manager checks every copy before switching. If that drive ever fails, Frameleaf can make new thumbnails from your photos.',
       ],
-      confirm: 'Move thumbnails',
+      confirm: 'Use this folder',
     },
     rebuild: {
       title: 'Put thumbnails back with your photos',
@@ -46,6 +46,12 @@
       confirm: 'Put back and rebuild',
     },
   };
+  /** The chosen folder already holds these thumbnails (the same files, reached another way): nothing is copied. */
+  const SAME_FOLDER_NOTES = [
+    'Frameleaf restarts, which takes about a minute. Nothing is copied: these are the thumbnails you already have, reached at this folder.',
+    'If thumbnails are ever missing from this folder, Frameleaf makes them again from your photos.',
+  ];
+  const NETWORK_SHARE_NOTE = 'This is a network share. Thumbnails load more slowly from one, and Frameleaf can’t start while it is offline.';
   /** Which review and start each move uses on the Manager API. */
   const ROUTES: Record<MoveKind, { review: string; start: string }> = {
     media: { review: 'review-move', start: 'move-library' },
@@ -62,13 +68,17 @@
   import DriveSuggestion from './DriveSuggestion.svelte';
   import Icon from './Icon.svelte';
   import { startKey } from './request-key';
-  import { formatBytes, readable } from './presentation';
+  import { folderOverlap, formatBytes, readable } from './presentation';
   import { driveHint, fastFolderIssue, gigabytes, type Drive, type Suggestion } from './drives';
 
   type Usage = {
     media: { path: string; bytes: number | null };
     database: { path: string; bytes: number | null };
-    thumbnails: { path: string | null; own: boolean; missing: boolean | null; bytes: number | null; files: number | null };
+    thumbnails: {
+      path: string | null; own: boolean; missing: boolean | null; bytes: number | null; files: number | null;
+      /** Unraid: the same thumbnails folder on the one drive that holds all of it, when it is reached through a share today. */
+      direct?: { drive: string; share: string; path: string } | null;
+    };
     drives: Drive[] | null;
     suggestions: { database: Suggestion | null; thumbs: Suggestion | null } | null;
   };
@@ -103,7 +113,7 @@
     loadError = $state(''),
     checking = $state(false),
     picking = $state<MoveKind | null>(null),
-    moving = $state<{ kind: MoveKind; path?: string } | null>(null),
+    moving = $state<{ kind: MoveKind; path?: string; from?: string } | null>(null),
     review = $state<any>(null),
     reviewError = $state(''),
     accepted = $state(false),
@@ -164,7 +174,30 @@
 
   /** The folder the review shows and creates: inside the chosen one when folders are browsed. */
   const browses = (kind: MoveKind) => !!folders && (kind !== 'database' || databaseBrowse);
-  const destination = (kind: MoveKind, path: string) => (browses(kind) ? `${path}/${MOVES[kind].folder}` : path);
+  const destination = (kind: MoveKind, path: string) => (browses(kind) && MOVES[kind].folder ? `${path}/${MOVES[kind].folder}` : path);
+  /** Thumbnails go wherever the administrator says. Only a folder that would damage something else is refused. */
+  const thumbsIssue = (path: string): string | null => {
+    if (!folders) return null;
+    if (path.split('/').length < 4) return 'Choose a folder inside this one, or make a new one.';
+    if (folderOverlap(path, folders.manager)) return 'This folder holds Frameleaf Manager’s own settings. Choose a folder of its own.';
+    if (folders.backups && folderOverlap(path, folders.backups)) return 'This folder holds your Frameleaf backups. Choose a folder of its own.';
+    if (folders.database && folderOverlap(path, folders.database)) return 'This folder holds your Frameleaf database. Choose a folder of its own.';
+    if (folders.media && folderOverlap(path, folders.media) && path.split('/').length <= folders.media.split('/').length)
+      return 'This is your whole photos and videos folder. Choose a folder inside it, or one elsewhere.';
+    if (folders.media && path !== usage?.thumbnails.path && within(path, folders.media))
+      return 'This folder is inside your photos and videos folder. Choose a folder outside it, or the same folder on the drive itself.';
+    return null;
+  };
+  /** Worth knowing before using a folder; never a reason to refuse it. */
+  const thumbsNote = (path: string): string | null => {
+    if (!usage) return null;
+    if (path === usage.thumbnails.path) return 'Thumbnails are in this folder now.';
+    if (path === usage.thumbnails.direct?.path || (usage.thumbnails.path && folderOverlap(path, usage.thumbnails.path) && path.split('/').length === usage.thumbnails.path.split('/').length))
+      return 'This looks like the folder your thumbnails are in now. Manager checks when you use it, and copies nothing if it is.';
+    if (path.startsWith('/mnt/remotes/')) return NETWORK_SHARE_NOTE;
+    if (folders?.media && folderOverlap(path, folders.media)) return 'This folder is inside your photos and videos share.';
+    return null;
+  };
   const pickerStart = (kind: MoveKind) => {
     const suggestion = kind === 'database' ? usage?.suggestions?.database : kind === 'thumbs' ? usage?.suggestions?.thumbs : null;
     if (suggestion?.status === 'found' || suggestion?.status === 'too_full') return suggestion.drive.base;
@@ -181,11 +214,11 @@
   }
   /** Which open() the dialog belongs to: a review answered after its dialog closed is never shown in another. */
   let opened = 0;
-  async function open(kind: MoveKind, path?: string) {
+  async function open(kind: MoveKind, path?: string, from?: string) {
     const request = ++opened;
     picking = null;
     rootDialog?.close();
-    moving = { kind, path };
+    moving = { kind, path, from };
     review = null;
     reviewError = '';
     accepted = false;
@@ -195,7 +228,8 @@
       const route = ROUTES[kind].review;
       const answer = await api(
         route,
-        kind === 'rebuild' ? {} : kind === 'database' ? { databaseRoot: path } : { root: path },
+        // FL-1784: a browsed thumbnails folder is used as it is; a saved root still gets a folder of Manager's own inside it.
+        kind === 'rebuild' ? {} : kind === 'database' ? { databaseRoot: path } : kind === 'thumbs' && browses(kind) ? { root: path, exact: true } : { root: path },
       );
       if (request === opened) review = answer;
     } catch (e) {
@@ -232,7 +266,7 @@
   }
   /** What the review measured, in the prototype's words. */
   const size = (kind: MoveKind, value: any) => {
-    if (kind === 'thumbs') return `${value.files.toLocaleString()} files · ${amount(value.bytes)} to copy`;
+    if (kind === 'thumbs') return value.same ? `${value.files.toLocaleString()} files already here · nothing to copy` : `${value.files.toLocaleString()} files · ${amount(value.bytes)} to copy`;
     if (kind === 'database') return `${amount(value.databaseBytes)} to copy`;
     if (kind === 'rebuild') return value.assets == null ? '' : `${value.assets.toLocaleString()} thumbnails to make again`;
     return `${amount(value.bytes)} to copy`;
@@ -301,12 +335,17 @@
       {/snippet}
       {@render place('image-outline', 'The thumbnail drive isn’t connected', usage.thumbnails.path, '', 'Frameleaf can’t start without it. Your photos are safe. Connect the drive and check again, or put thumbnails back with your photos and make them again.', true, null, missingActions)}
     {:else if view === 'fast'}
-      {#snippet fastActions()}<button type="button" class="button quiet" {disabled} onclick={() => choose('thumbs')}>Move…</button>{/snippet}
+      {#snippet fastActions()}<button type="button" class="button quiet" {disabled} onclick={() => choose('thumbs')}>Change folder…</button>{/snippet}
       {@render place('image-outline', 'Thumbnails', usage.thumbnails.path, used(usage.thumbnails.bytes), 'If this drive fails, Frameleaf can make new thumbnails from your photos.', false, null, fastActions)}
     {:else}
-      {#snippet thumbsAdvice()}{@render suggestion('thumbs', usage!.suggestions?.thumbs)}{/snippet}
-      {#snippet thumbsActions()}<button type="button" class="button quiet" {disabled} onclick={() => choose('thumbs')}>{usage!.suggestions?.thumbs?.status === 'found' ? 'Choose another folder…' : 'Move…'}</button>{/snippet}
-      {@render place('image-outline', 'Thumbnails', usage.media.path, used(usage.thumbnails.bytes, ', with your photos and videos'), '', false, thumbsAdvice, thumbsActions)}
+      {@const direct = usage.thumbnails.direct}
+      {#snippet thumbsAdvice()}
+        {#if direct}
+          <div class="st-suggest"><Icon name="bulb" /><div><strong>Your thumbnails are all on {direct.drive}</strong><p>Frameleaf reaches them through the {direct.share} share, which is slower than the drive itself. It can use {direct.path} instead, with nothing to copy.</p></div><button type="button" class="button" {disabled} onclick={() => open('thumbs', direct.path, usage!.thumbnails.path ?? undefined)}>Use {direct.drive} directly…</button></div>
+        {:else}{@render suggestion('thumbs', usage!.suggestions?.thumbs)}{/if}
+      {/snippet}
+      {#snippet thumbsActions()}<button type="button" class="button quiet" {disabled} onclick={() => choose('thumbs')}>{direct || usage!.suggestions?.thumbs?.status === 'found' ? 'Choose another folder…' : 'Change folder…'}</button>{/snippet}
+      {@render place('image-outline', 'Thumbnails', usage.thumbnails.path ?? usage.media.path, used(usage.thumbnails.bytes, ', with your photos and videos'), '', false, thumbsAdvice, thumbsActions)}
     {/if}
   </ul>
   <section class="sp-also" aria-labelledby="sp-also-title">
@@ -329,8 +368,10 @@
     title={MOVES[picking].pick ?? ''}
     start={pickerStart(picking)}
     {api}
-    issue={picking === 'media' ? undefined : (path: string) => fastFolderIssue(path, folders!, picking === 'database' ? 'database' : 'thumbnails')}
-    use={(path: string) => open(picking!, destination(picking!, path))}
+    issue={picking === 'media' ? undefined : picking === 'thumbs' ? thumbsIssue : (path: string) => fastFolderIssue(path, folders!, 'database')}
+    note={picking === 'thumbs' ? thumbsNote : undefined}
+    create={picking === 'thumbs'}
+    use={(path: string) => open(picking!, destination(picking!, path), picking === 'thumbs' ? (usage?.thumbnails.path ?? undefined) : undefined)}
     close={() => (picking = null)}
   />
 {:else if picking}
@@ -350,7 +391,7 @@
     <header><h2>{move.title}</h2></header>
     {#if moving.path}
       {@const drive = driveHint(moving.path, drives)}
-      <dl class="sp-facts"><div><dt>New folder</dt><dd>{moving.path}</dd></div>{#if drive}<div><dt>Drive</dt><dd>{drive.text}</dd></div>{/if}</dl>
+      <dl class="sp-facts">{#if moving.from}<div><dt>Now</dt><dd>{moving.from}</dd></div>{/if}<div><dt>New folder</dt><dd>{moving.path}</dd></div>{#if drive}<div><dt>Drive</dt><dd>{drive.text}</dd></div>{/if}</dl>
     {/if}
     {#if review}
       {@const measured = size(moving.kind, review)}
@@ -358,7 +399,13 @@
     {:else if !reviewError}
       <strong class="sp-move-size checking">Checking the folder…</strong>
     {/if}
-    <div class="sp-move-notes">{#each move.notes as note (note)}<p>{note}</p>{/each}</div>
+    <div class="sp-move-notes">{#each moving.kind === 'thumbs' && review?.same ? SAME_FOLDER_NOTES : move.notes as note (note)}<p>{note}</p>{/each}</div>
+    {#if review?.missingFiles}
+      <p class="sp-move-problem" role="status"><Icon name="info-outline" /><span>{review.missingFiles.toLocaleString()} of your thumbnails aren’t in this folder: they are on another drive. Frameleaf makes those again from your photos.</span></p>
+    {/if}
+    {#if review?.networkShare}
+      <p class="sp-move-problem" role="status"><Icon name="info-outline" /><span>{NETWORK_SHARE_NOTE}</span></p>
+    {/if}
     {#if waitsForPause(moving.kind)}
       <p class="sp-move-problem" role="status"><Icon name="info-outline" /><span>This server can’t yet confirm that uploads and background work have stopped, so moving isn’t available. Nothing was stopped or moved.</span></p>
     {/if}

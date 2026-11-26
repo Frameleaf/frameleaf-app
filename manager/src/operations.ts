@@ -9,7 +9,7 @@ import { Discovery, COMPATIBLE_SETTINGS, maskSettings, unmaskSettings, unsupport
 import { Releases, type VerifiedRelease } from './releases.js';
 import { compareReleases, isNewerRelease } from './release-order.js';
 import { Backups, sourceBackups } from './backups.js';
-import { assertExternalFolder, assertSeparateFolders, broadRoots, ensureChosenFolder, externalRoots, externalRuleSources, inside, moveRoots, onNetworkShare, overlaps } from './folders.js';
+import { assertExternalFolder, assertSeparateFolders, broadRoots, ensureChosenFolder, externalRoots, directShareFolder, externalRuleSources, inside, moveRoots, onNetworkShare, overlaps } from './folders.js';
 import { databaseDriveFinding, driveOf, type DriveReport } from './drives.js';
 import { Fencing } from './fencing.js';
 import { detectPhotoApps, identifyPhotoApp, photoAppKind, photoAppNames, type ContainerFileReader, type PhotoAppKind, type PhotoAppPlan } from './photo-app-sources.js';
@@ -402,12 +402,14 @@ export class Operations {
     return operation;
   }
   /** FL-1323: review moving thumbnails to a folder on another drive; the file count and size are measured. */
-  async reviewThumbnailMove(root: string) {
+  async reviewThumbnailMove(root: string, exact = false) {
     if (this.store.locked()) throw new Refusal('operation_in_progress');
     this.checkMoveDestination(root);
-    const review = await this.mediaMove.review(root, 'thumbs');
-    this.thumbnailSizes.set(review.source!, { files: review.files, bytes: review.bytes, measuredAt: Date.now() });
-    return review;
+    const review = await this.mediaMove.review(root, 'thumbs', exact);
+    // A folder that already holds the thumbnails was counted, not measured: its size stays as last walked.
+    if (!review.same) this.thumbnailSizes.set(review.source!, { files: review.files, bytes: review.bytes, measuredAt: Date.now() });
+    // FL-1784: worth knowing, never a refusal: thumbnails on a network share load slowly and go with the share.
+    return { ...review, networkShare: onNetworkShare(root, await readFile('/proc/self/mountinfo', 'utf8').catch(() => '')) };
   }
   moveThumbnails(id: string, key: string): Operation {
     const { operation, created } = this.mediaMove.start(id, key, 'thumbs');
@@ -460,6 +462,7 @@ export class Operations {
     const own = thumbnailMount(installation.mounts);
     const thumbs = thumbnailFolder(installation.mounts);
     const missing = own ? (visible(own.source) ? !(await folderExists(own.source)) : null) : false;
+    const direct = !own && thumbs ? await directShareFolder(thumbs) : null;
     const database = await this.targetDatabase(installation).catch(() => null);
     const sql = async (query: string): Promise<number | null> => {
       if (!database) return null;
@@ -497,6 +500,8 @@ export class Operations {
         missing,
         bytes: measured?.bytes ?? null,
         files: measured?.files ?? null,
+        /** FL-1784: on Unraid, the one pool or disk holding this whole folder, when it is reached through a share. */
+        ...(direct && { direct }),
       },
     };
   }
