@@ -33684,7 +33684,30 @@
       "get": {
         "description": "Your duplicate groups, each read as a whole: whether it holds copies of one photo or frames of a burst, the evidence behind the suggested keeper, and whether this session may decide it. A group with photos this session does not see, or with another account’s photo, is listed but cannot be decided.",
         "operationId": "getDuplicateReview",
-        "parameters": [],
+        "parameters": [
+          {
+            "name": "after",
+            "required": false,
+            "in": "query",
+            "description": "duplicateId of the last group of the page before; only with take",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "take",
+            "required": false,
+            "in": "query",
+            "description": "Most groups to return. With it the review is read a page at a time, in group ID order: a page shorter than this is the last one. Without it every group is returned.",
+            "schema": {
+              "minimum": 1,
+              "maximum": 500,
+              "type": "integer"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -33723,6 +33746,11 @@
           {
             "version": "v3.0.0",
             "state": "Alpha"
+          },
+          {
+            "version": "v3.5.0",
+            "state": "Updated",
+            "description": "Added take and after, to read the review a page at a time"
           }
         ],
         "x-immich-permission": "duplicate.read",
@@ -114389,6 +114417,23 @@
           "suggestedKeepAssetIds",
           "totalBytes"
         ],
+        "type": "object"
+      },
+      "DuplicateReviewPageDto": {
+        "properties": {
+          "after": {
+            "description": "duplicateId of the last group of the page before; only with take",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "take": {
+            "description": "Most groups to return. With it the review is read a page at a time, in group ID order: a page shorter than this is the last one. Without it every group is returned.",
+            "maximum": 500,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
         "type": "object"
       },
       "DuplicateReviewQualityDto": {

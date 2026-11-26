@@ -23860,6 +23860,12 @@ export type DuplicateEstimateQueryDto = {
     /** The distances to estimate groups for, from 0.001 (nearly identical) to 0.1 */
     maxDistances: number[];
 };
+export type DuplicateReviewPageDto = {
+    /** duplicateId of the last group of the page before; only with take */
+    after?: string;
+    /** Most groups to return. With it the review is read a page at a time, in group ID order: a page shorter than this is the last one. Without it every group is returned. */
+    take?: number;
+};
 export type EagleImportQueryDto = {
     /** Include what became of every item, for the finish report */
     outcomes?: boolean;
@@ -34170,11 +34176,17 @@ export function resolveDuplicates({ duplicateResolveDto }: {
 /**
  * Retrieve the duplicate review
  */
-export function getDuplicateReview(opts?: Oazapfts.RequestOpts) {
+export function getDuplicateReview({ after, take }: {
+    after?: string;
+    take?: number;
+}, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
         status: 200;
         data: DuplicateReviewGroupDto[];
-    }>("/duplicates/review", {
+    }>(`/duplicates/review${QS.query(QS.explode({
+        after,
+        take
+    }))}`, {
         ...opts
     }));
 }
