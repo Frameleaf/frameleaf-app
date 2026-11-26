@@ -191,30 +191,34 @@ export const onThisDayYears = (memory: MemoryResponseDto): string[] =>
       ].sort((a, b) => b.localeCompare(a))
     : [];
 
-export type MemoryEntry = {
-  memory: MemoryResponseDto;
+export type MemoryEntry<M extends MemoryResponseDto = MemoryResponseDto> = {
+  memory: M;
   /** Days until an upcoming memory's day (1 is tomorrow). */
   inDays?: number;
   /** Days since a recently passed memory's day, within the window (1 is yesterday). */
   passedDays?: number;
 };
 
-export type MemorySections = { today: MemoryEntry[]; upcoming: MemoryEntry[]; earlier: MemoryEntry[] };
+export type MemorySections<M extends MemoryResponseDto = MemoryResponseDto> = {
+  today: MemoryEntry<M>[];
+  upcoming: MemoryEntry<M>[];
+  earlier: MemoryEntry<M>[];
+};
 
 /**
  * Splits the index into Today, Upcoming and Earlier (Memories.jsx:260-360), from the viewer's local
  * date. A memory for a later day is Upcoming only within the next two weeks and only when the owner
  * shows upcoming memories; trips, highlights and recaps, which are not tied to a day, are Earlier.
  */
-export const groupMemories = (
-  memories: MemoryResponseDto[],
+export const groupMemories = <M extends MemoryResponseDto>(
+  memories: M[],
   {
     today,
     showUpcoming = true,
     windowDays = MEMORY_WINDOW_DAYS,
   }: { today: string; showUpcoming?: boolean; windowDays?: number },
-): MemorySections => {
-  const sections: MemorySections = { today: [], upcoming: [], earlier: [] };
+): MemorySections<M> => {
+  const sections: MemorySections<M> = { today: [], upcoming: [], earlier: [] };
   for (const memory of memories) {
     const day = memoryLocalDay(memory);
     if (!day) {
@@ -234,7 +238,7 @@ export const groupMemories = (
   }
   sections.upcoming.sort((a, b) => (a.inDays ?? 0) - (b.inDays ?? 0));
   // FL-1408: the card that gathers several years leads the day (discovery-data.mjs "FL-1405 M8")
-  const gathers = ({ memory }: MemoryEntry) => Number(onThisDayYears(memory).length > 1);
+  const gathers = ({ memory }: MemoryEntry<M>) => Number(onThisDayYears(memory).length > 1);
   sections.today.sort((a, b) => gathers(b) - gathers(a));
   return sections;
 };

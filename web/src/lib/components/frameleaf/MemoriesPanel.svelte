@@ -294,7 +294,7 @@
     element.querySelector<HTMLElement>('[role="switch"]')?.focus();
   };
 
-  const badge = (entry: MemoryEntry) => {
+  const badge = (entry: MemoryEntry<LoadedMemory>) => {
     if (entry.inDays) {
       return $t('frameleaf_memories_in_days', { values: { count: entry.inDays } });
     }
@@ -322,7 +322,7 @@
   {/if}
 {/snippet}
 
-{#snippet card(entry: MemoryEntry, size: 'hero' | 'regular')}
+{#snippet card(entry: MemoryEntry<LoadedMemory>, size: 'hero' | 'regular')}
   {@const memory = entry.memory}
   {@const headline = $memoryHeadline(memory)}
   {@const count = $t('frameleaf_memories_item_count', { values: { count: memory.slimAssets.length } })}
