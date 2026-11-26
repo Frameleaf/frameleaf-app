@@ -81816,15 +81816,38 @@
     },
     "/view/folder": {
       "get": {
-        "description": "Retrieve assets that are children of a specific folder.",
+        "description": "Retrieve assets that are children of a specific folder. Pass take (and after, from the second page on) to read a large folder a page at a time.",
         "operationId": "getAssetsByOriginalPath",
         "parameters": [
+          {
+            "name": "after",
+            "required": false,
+            "in": "query",
+            "description": "ID of the last asset of the page before; only with take",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
           {
             "name": "path",
             "required": true,
             "in": "query",
+            "description": "Folder path",
             "schema": {
               "type": "string"
+            }
+          },
+          {
+            "name": "take",
+            "required": false,
+            "in": "query",
+            "description": "Most assets to return. With it the folder is read a page at a time, in asset ID order: a page shorter than this is the last one. Without it every asset is returned, in file name order.",
+            "schema": {
+              "minimum": 1,
+              "maximum": 1000,
+              "type": "integer"
             }
           }
         ],
@@ -81870,6 +81893,11 @@
           {
             "version": "v2",
             "state": "Stable"
+          },
+          {
+            "version": "v3.5.0",
+            "state": "Updated",
+            "description": "Added take and after, to read a folder a page at a time"
           }
         ],
         "x-immich-permission": "folder.read",
@@ -116509,6 +116537,30 @@
           "previewsReady",
           "receipt",
           "revision"
+        ],
+        "type": "object"
+      },
+      "FolderAssetsDto": {
+        "properties": {
+          "after": {
+            "description": "ID of the last asset of the page before; only with take",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "path": {
+            "description": "Folder path",
+            "type": "string"
+          },
+          "take": {
+            "description": "Most assets to return. With it the folder is read a page at a time, in asset ID order: a page shorter than this is the last one. Without it every asset is returned, in file name order.",
+            "maximum": 1000,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "path"
         ],
         "type": "object"
       },
