@@ -37,6 +37,7 @@ import {
   MergeSuggestionsResponseDto,
   PERSON_NOTES_MAX_LENGTH,
   PeoplePickerResponseDto,
+  PeoplePickerSearchDto,
   PeopleResponseDto,
   PeopleUpdateDto,
   PersonCorrectionDto,
@@ -269,7 +270,7 @@ export class PersonService extends BaseService {
    * FL-1789: the people list for a picker or a filter's vocabulary: id, name, thumbnail version and
    * photo count, with the same name search, order and pages as `getAll`.
    */
-  async getPicker(auth: AuthDto, dto: PersonSearchDto): Promise<PeoplePickerResponseDto> {
+  async getPicker(auth: AuthDto, dto: PeoplePickerSearchDto): Promise<PeoplePickerResponseDto> {
     const { withHidden = false, page, size, name, sort } = dto;
     const { items, hasNextPage } = await this.personRepository.getPickerPage(
       { take: size, skip: (page - 1) * size },
