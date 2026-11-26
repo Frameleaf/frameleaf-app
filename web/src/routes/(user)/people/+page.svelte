@@ -59,7 +59,7 @@
   import { onDestroy, onMount, untrack } from 'svelte';
   import { t } from 'svelte-i18n';
   import PeopleInfiniteScroll from './PeopleInfiniteScroll.svelte';
-  import { PEOPLE_CAP, PEOPLE_PAGE_SIZE, WAITING_REFRESH_MS } from './people-page';
+  import { PEOPLE_PAGE_SIZE, WAITING_REFRESH_MS } from './people-page';
   import type { PageData } from './$types';
 
   /**
@@ -178,8 +178,7 @@
   );
 
   // Sorting and search run over the whole list, so every page is read up front, in the largest
-  // pages the API allows, up to a cap that keeps a very large library responsive.
-  let truncated = $state(false);
+  // pages the API allows. The grid mounts only the cards near the viewport, so the list has no cap.
   let loadGeneration = 0;
   let loadRequest: AbortController | undefined;
 
@@ -198,11 +197,6 @@
     const current = () => isCurrentView() && generation === loadGeneration && !request.signal.aborted;
     try {
       while (nextPage && current()) {
-        if (people.length >= PEOPLE_CAP) {
-          truncated = true;
-          nextPage = null;
-          break;
-        }
         const pageNumber = nextPage;
         const result = await getAllPeople(
           { withHidden: true, page: pageNumber, size: PEOPLE_PAGE_SIZE },
@@ -226,31 +220,58 @@
   };
 
   /**
-   * `quiet`: a background re-read. Its first read gives up after a while and says nothing when it
-   * fails: the page keeps what it has and the next turn asks again. Once that read has replaced the
-   * list, a later page that fails is said as on any other load, since the grid is then incomplete.
+   * Reads the whole list again and shows it in one step (FL-1801): the pages are gathered first and
+   * `people` is replaced once, so a card whose person is still there stays mounted. Replacing the list
+   * with the first page and adding the rest back destroyed and rebuilt every card past that page.
+   *
+   * `quiet`: a background re-read. Its first read gives up after a while, and it says nothing when it
+   * fails: the page keeps what it has and the next turn asks again.
    */
   const reloadPeople = async ({ quiet = false }: { quiet?: boolean } = {}) => {
     if (!isCurrentView()) {
       return;
     }
     loadRequest?.abort();
+    const request = new AbortController();
+    loadRequest = request;
     const generation = ++loadGeneration;
+    const current = () => isCurrentView() && generation === loadGeneration && !request.signal.aborted;
     try {
-      const result = await getAllPeople(
-        { withHidden: true, size: PEOPLE_PAGE_SIZE },
-        quiet ? { signal: AbortSignal.timeout(WAITING_REFRESH_MS * 2) } : undefined,
-      );
-      if (!isCurrentView() || generation !== loadGeneration) {
-        return;
+      const all: PeopleListItemDto[] = [];
+      const known = new Set<string>();
+      let stillScanning = false;
+      for (let pageNumber = 1; ; pageNumber++) {
+        const first = pageNumber === 1;
+        const result = await getAllPeople(
+          { withHidden: true, ...(!first && { page: pageNumber }), size: PEOPLE_PAGE_SIZE },
+          {
+            signal:
+              quiet && first
+                ? AbortSignal.any([request.signal, AbortSignal.timeout(WAITING_REFRESH_MS * 2)])
+                : request.signal,
+          },
+        );
+        if (!current()) {
+          return;
+        }
+        if (first) {
+          stillScanning = result.scanning ?? false;
+        }
+        const added = result.people.filter(({ id }) => !known.has(id));
+        for (const person of added) {
+          known.add(person.id);
+          all.push(person);
+        }
+        // A page that adds nobody new means the list shifted under us; stop rather than loop.
+        if (!result.hasNextPage || added.length === 0) {
+          break;
+        }
       }
-      people = result.people;
-      scanning = result.scanning ?? false;
-      truncated = false;
-      nextPage = result.hasNextPage ? 2 : null;
-      await loadAllPages();
+      people = all;
+      scanning = stillScanning;
+      nextPage = null;
     } catch (error) {
-      if (!quiet && isCurrentView() && generation === loadGeneration) {
+      if (!quiet && current()) {
         handleError(error, $t('errors.failed_to_load_people'));
       }
     }
@@ -732,9 +753,6 @@
         onSkip={() => answerSplit(splitSuggestions[0], PersonSplitVerdict.Later)}
       />
     {/if}
-    {#if truncated}
-      <p class="pl-status" role="status">{$t('frameleaf_people_truncated', { values: { count: people.length } })}</p>
-    {/if}
     {#if cards.length > 0}
       <PeopleInfiniteScroll people={cards} hasNextPage={false} loadNextPage={() => {}}>
         {#snippet children({ person })}
@@ -816,7 +834,7 @@
 {/if}
 
 <style>
-  /* template/src/people.css `.pl-page`, `.pl-toolbar`, `.pl-status`; styles.css `.people-header`. */
+  /* template/src/people.css `.pl-page`, `.pl-toolbar`; styles.css `.people-header`. */
   .pl-header {
     display: flex;
     flex-wrap: wrap;
@@ -881,11 +899,6 @@
     gap: var(--fl-space-3);
     /* The one page gutter: the page area's 8px + --fl-page-inline = 24px desktop, 16px phone. */
     padding: 0 var(--fl-page-inline) 2.5rem;
-  }
-  .pl-status {
-    margin: 0;
-    color: var(--fl-muted);
-    font-size: var(--fl-font-small);
   }
   @media (max-width: 700px) {
     /* people.css:1011-1016: the controls take the row under the title, the search field its own line. */
