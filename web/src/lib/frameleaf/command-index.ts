@@ -16,6 +16,7 @@ import {
   mdiBellOutline,
   mdiBookshelf,
   mdiBroom,
+  mdiClipboardCheckOutline,
   mdiCalendarClock,
   mdiCellphoneKey,
   mdiClockOutline,
@@ -180,6 +181,16 @@ export const buildPageCommands = ($t: MessageFormatter, context: CommandIndexCon
       title: $t('frameleaf_tidy_title'),
       icon: mdiBroom,
       href: commandCenterUrl('care', 'tidy-up'),
+    },
+    // FL-940: Library care's Nothing lost, every account's own originals.
+    {
+      id: 'care-nothing-lost',
+      title: $t('frameleaf_ledger_title'),
+      icon: mdiClipboardCheckOutline,
+      href: commandCenterUrl('care', 'nothing-lost'),
+      // Every account has this page, so its search words go on the command, not only on the
+      // administrators' settings sections.
+      keywords: [$t('frameleaf_ledger_search_keywords')],
     },
   ];
   for (const extra of extras) {
@@ -385,6 +396,8 @@ export const SETTINGS_SECTION_KEYWORDS: Readonly<Record<string, readonly Transla
   server: ['frameleaf_server_identity_zone', 'frameleaf_remote_public_url_title'],
   // FL-421: the prototype finds "What needs your attention" by its alerts.
   signals: ['frameleaf_attention_search_keywords'],
+  // FL-940: Nothing lost is found by what people fear ("deleted", "missing", "who deleted").
+  'nothing-lost': ['frameleaf_ledger_search_keywords'],
   // FL-893: the log viewer is found by the words people use for it.
   logs: ['frameleaf_logs_search_keywords'],
   // Deleted items holds the Trash's retention, so searching "trash" finds it beside the Trash pages.

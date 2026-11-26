@@ -49,6 +49,7 @@
     getIntegrityCheckRuns,
     getIntegrityOverview,
     getLocationScanStatus,
+    getLedgerSummary,
     getTidyUp,
     getQueue,
     getServerStatistics,
@@ -62,6 +63,7 @@
     type IntegrityCheckRunsResponseDto,
     type IntegrityOverviewResponseDto,
     type LocationScanStatusResponseDto,
+    type AssetLedgerSummaryResponseDto,
     type TidyUpStatusDto,
     type MediaHealthSummaryResponseDto,
   } from '@frameleaf/sdk';
@@ -69,6 +71,7 @@
   import {
     mdiAutoFix,
     mdiBroom,
+    mdiClipboardCheckOutline,
     mdiChevronRight,
     mdiClockOutline,
     mdiContentCopy,
@@ -480,6 +483,31 @@
   });
   const tidyOn = $derived(!!tidy?.kinds.some((kind) => kind.enabled));
 
+  // FL-940 Nothing lost: the reader's own originals, and whether any can't be accounted for.
+  let ledger = $state<AssetLedgerSummaryResponseDto | null>();
+  $effect(() => {
+    if (!authManager.authenticated || authManager.isSharedLink) {
+      return;
+    }
+    let current = true;
+    ledger = undefined;
+    void (async () => {
+      try {
+        const result = await getLedgerSummary();
+        if (current) {
+          ledger = result;
+        }
+      } catch {
+        if (current) {
+          ledger = null;
+        }
+      }
+    })();
+    return () => {
+      current = false;
+    };
+  });
+
   // Identify photo locations (prototype `care/landing.jsx`): one "Place names" row here, with the scan
   // on its own page. The row says where the last scan stands, as the prototype's `scanSummary` does.
   let placeScan = $state<LocationScanStatusResponseDto | null>();
@@ -700,6 +728,28 @@
       >
         {#snippet action()}
           <Button label={openLabel('frameleaf_tidy_title')} onclick={() => open('tidy-up')}>
+            {$t('frameleaf_carehome_open')}<Icon icon={mdiChevronRight} size="1em" aria-hidden />
+          </Button>
+        {/snippet}
+      </Item>
+      <Item
+        icon={mdiClipboardCheckOutline}
+        name={$t('frameleaf_ledger_title')}
+        detail={$t('frameleaf_ledger_row_detail')}
+        tone={ledger && ledger.states.missing > 0 ? 'warn' : ledger ? 'good' : 'off'}
+        status={ledger
+          ? ledger.states.missing > 0
+            ? $t('frameleaf_ledger_count_missing', {
+                values: { count: ledger.states.missing.toLocaleString($locale) },
+              })
+            : $t('frameleaf_ledger_row_all', { values: { count: ledger.total.toLocaleString($locale) } })
+          : undefined}
+        note={ledger && ledger.states.missing > 0
+          ? $t('frameleaf_ledger_row_note_missing')
+          : $t('frameleaf_ledger_row_note_ok')}
+      >
+        {#snippet action()}
+          <Button label={openLabel('frameleaf_ledger_title')} onclick={() => open('nothing-lost')}>
             {$t('frameleaf_carehome_open')}<Icon icon={mdiChevronRight} size="1em" aria-hidden />
           </Button>
         {/snippet}

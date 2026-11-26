@@ -15,6 +15,7 @@
   import FileChecks from '$lib/components/frameleaf/settings/care/FileChecks.svelte';
   import CouldntProcess from '$lib/components/frameleaf/settings/care/CouldntProcess.svelte';
   import DateDoctor from '$lib/components/frameleaf/settings/care/DateDoctor.svelte';
+  import NothingLost from '$lib/components/frameleaf/settings/care/NothingLost.svelte';
   import TidyUp from '$lib/components/frameleaf/settings/care/TidyUp.svelte';
   import TidyUpReview from '$lib/components/frameleaf/settings/care/TidyUpReview.svelte';
   import FileProblems from '$lib/components/frameleaf/settings/care/FileProblems.svelte';
@@ -87,6 +88,8 @@
   <TidyUp />
 {:else if section.key === 'tidy-up-review'}
   <TidyUpReview />
+{:else if section.key === 'nothing-lost'}
+  <NothingLost />
 {:else if section.key === 'contents'}
   <TrashSection />
 {:else if section.key === 'location-scan'}

@@ -320,6 +320,8 @@ describe('Frameleaf settings areas', () => {
         // FL-1470: Tidy up and its review, account pages every account has
         'tidy-up',
         'tidy-up-review',
+        // FL-940: Nothing lost, an account page every account has
+        'nothing-lost',
         'duplicates',
         'enrichment-care',
         'unused-files',
