@@ -59,6 +59,8 @@ describe('DownloadFormatDialog (FL-826)', () => {
     expect(radio(/High-quality JPEG/)).toHaveAttribute('aria-checked', 'true');
 
     await fireEvent.click(radio(/Web size/));
+    expect(radio(/Web size/).className).toContain('on');
+    expect(radio(/Original/).className).not.toMatch(/\bon\b/);
     await fireEvent.click(screen.getByRole('button', { name: 'Download' }));
 
     await waitFor(() => expect(onClose).toHaveBeenCalledWith(DownloadFormat.Web));
