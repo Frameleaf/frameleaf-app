@@ -3352,7 +3352,7 @@ export class AssetRepository {
             timeBucket,
             userId,
             fingerprint,
-            pages: JSON.stringify(pages),
+            pages: sql<unknown>`${JSON.stringify(pages)}::text::jsonb`,
             computedAt,
           })),
         )
