@@ -4,6 +4,10 @@
   import AddRelationshipDialog from '$lib/components/frameleaf/people/AddRelationshipDialog.svelte';
   import { isUnnamedPerson } from '$lib/frameleaf/people';
   import { Route } from '$lib/route';
+  import EmptyRow from '$lib/components/frameleaf/EmptyRow.svelte';
+  import InlineError from '$lib/components/frameleaf/InlineError.svelte';
+  import ListSkeleton from '$lib/components/frameleaf/ListSkeleton.svelte';
+  import StatusLine from '$lib/components/frameleaf/StatusLine.svelte';
   import { handleError } from '$lib/utils/handle-error';
   import {
     deletePersonRelationship,
@@ -33,6 +37,7 @@
   let fetched = $state<{ id: string; family: PersonRelationshipsResponseDto }>();
   let adding = $state(false);
   let status = $state('');
+  let loadFailed = $state(false);
   let request = 0;
 
   const family = $derived(fetched?.id === person.id ? fetched.family : person.relationships);
@@ -101,9 +106,13 @@
       const loaded = await getPersonRelationships({ id });
       if (current === request) {
         fetched = { id, family: loaded };
+        loadFailed = false;
       }
-    } catch (error) {
-      handleError(error, $t('frameleaf_people_family_load_failed'));
+    } catch {
+      // FL-1810: content that could not be read says so in place, with Try again
+      if (current === request) {
+        loadFailed = true;
+      }
     }
   };
 
@@ -142,18 +151,20 @@
         </Button>
       {/if}
     </header>
-    {#if family && total === 0}
-      <div class="empty">
-        <span class="empty-icon" aria-hidden="true"><Icon icon={mdiFamilyTree} size="24" /></span>
-        <div>
-          <strong>{$t('frameleaf_people_family_empty_title')}</strong>
-          <p>{$t('frameleaf_people_family_empty_body', { values: { person: name } })}</p>
-        </div>
-        <Button variant="primary" onclick={() => (adding = true)}>
-          <Icon icon={mdiPlus} size="18" aria-hidden="true" />
-          {$t('frameleaf_people_family_add')}
-        </Button>
-      </div>
+    {#if loadFailed}
+      <InlineError
+        compact
+        title={$t('frameleaf_people_family_load_failed')}
+        message={$t('frameleaf_state_load_failed_body')}
+        onRetry={() => load(person.id)}
+      />
+    {:else if family && total === 0}
+      <EmptyRow
+        icon={mdiFamilyTree}
+        title={$t('frameleaf_people_family_empty_title')}
+        message={$t('frameleaf_people_family_empty_body', { values: { person: name } })}
+        action={{ label: $t('frameleaf_people_family_add'), onClick: () => (adding = true) }}
+      />
     {:else if total > 0}
       <div class="groups">
         {#each groups as group (group.id)}
@@ -191,8 +202,10 @@
           </div>
         {/each}
       </div>
+    {:else if !family}
+      <ListSkeleton rows={2} />
     {/if}
-    <p class="status" role="status" aria-live="polite">{status}</p>
+    {#if status}<div class="status"><StatusLine state="saved" message={status} /></div>{/if}
     {#if adding}
       <AddRelationshipDialog
         {person}
@@ -306,44 +319,8 @@
     color: var(--fl-text);
     background: var(--fl-hover);
   }
-  .empty {
-    display: flex;
-    align-items: center;
-    gap: 16px;
-    padding: 20px 24px;
-    border: 1px dashed var(--fl-border-strong);
-    border-radius: var(--fl-radius-card);
-  }
-  .empty > div {
-    flex: 1;
-    min-width: 0;
-  }
-  .empty strong {
-    font-weight: var(--fl-weight-semibold);
-  }
-  .empty p {
-    margin: 4px 0 0;
-    color: var(--fl-muted);
-    line-height: 1.5;
-  }
-  .empty-icon {
-    display: inline-flex;
-    flex-shrink: 0;
-    align-items: center;
-    justify-content: center;
-    width: 48px;
-    height: 48px;
-    color: var(--fl-muted);
-    background: var(--fl-raised);
-    border-radius: 50%;
-  }
   .status {
-    margin: 16px 0 0;
-    color: var(--fl-muted);
-    font-size: var(--fl-font-small);
-  }
-  .status:empty {
-    display: none;
+    margin-top: var(--fl-space-4);
   }
   @media (max-width: 640px) {
     .family {
@@ -361,10 +338,6 @@
     }
     .chip-main {
       flex: 1;
-    }
-    .empty {
-      flex-direction: column;
-      align-items: flex-start;
     }
   }
 </style>

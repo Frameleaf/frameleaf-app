@@ -4,8 +4,11 @@
    * Change and Delete. Counts come from the same search filter that finds the photos.
    */
   import Button from '$lib/components/frameleaf/Button.svelte';
+  import EmptyRow from '$lib/components/frameleaf/EmptyRow.svelte';
   import InlineError from '$lib/components/frameleaf/InlineError.svelte';
+  import ListSkeleton from '$lib/components/frameleaf/ListSkeleton.svelte';
   import NamedPlaceDialog from '$lib/components/frameleaf/NamedPlaceDialog.svelte';
+  import StatusLine from '$lib/components/frameleaf/StatusLine.svelte';
   import { confirmFrameleaf } from '$lib/frameleaf/confirm';
   import { formatRadius, nearestTown } from '$lib/frameleaf/named-places';
   import { namedPlaces } from '$lib/frameleaf/named-places.svelte';
@@ -112,8 +115,9 @@
     </a>
   </div>
 
-  {#if message}<p class="np-said" role="status">{message}</p>{/if}
-  {#if failure}<p class="np-said np-failed" role="alert">{failure}</p>{/if}
+  {#if failure || message}
+    <StatusLine state={failure ? 'failed' : 'saved'} message={failure || message} />
+  {/if}
 
   {#if namedPlaces.failed && !namedPlaces.loaded}
     <InlineError compact message={$t('frameleaf_named_places_error_load')} onRetry={retry} {retrying} />
@@ -167,13 +171,13 @@
       {/each}
     </ul>
   {:else if namedPlaces.loaded}
-    <div class="np-empty" role="status">
-      <Icon icon={mdiMapMarkerRadiusOutline} size="28" aria-hidden={true} />
-      <div>
-        <strong>{$t('frameleaf_named_places_empty_title')}</strong>
-        <p>{$t('frameleaf_named_places_empty_body')}</p>
-      </div>
-    </div>
+    <EmptyRow
+      icon={mdiMapMarkerRadiusOutline}
+      title={$t('frameleaf_named_places_empty_title')}
+      message={$t('frameleaf_named_places_empty_body')}
+    />
+  {:else}
+    <ListSkeleton rows={3} />
   {/if}
 </section>
 
@@ -224,16 +228,6 @@
   .np-map {
     width: 36px;
     padding: 0;
-  }
-  .np-said {
-    padding: var(--fl-space-3) var(--fl-space-4);
-    border: 1px solid var(--fl-border);
-    border-radius: var(--fl-radius-control);
-    background: var(--fl-raised);
-    font-size: var(--fl-font-callout);
-  }
-  .np-failed {
-    color: var(--fl-danger);
   }
   .np-list {
     margin: 0;
@@ -292,27 +286,6 @@
     display: flex;
     align-items: center;
     gap: var(--fl-space-2);
-  }
-  .np-empty {
-    display: grid;
-    grid-template-columns: auto minmax(0, 1fr);
-    align-items: center;
-    gap: var(--fl-space-4);
-    padding: var(--fl-space-6);
-    border: 1px dashed var(--fl-muted);
-    border-radius: var(--fl-radius-card);
-    color: var(--fl-muted);
-  }
-  .np-empty strong {
-    display: block;
-    color: var(--fl-text);
-    font-weight: 600;
-  }
-  .np-empty p {
-    max-width: 62ch;
-    margin-top: var(--fl-space-1);
-    font-size: var(--fl-font-callout);
-    line-height: 1.5;
   }
   @media (max-width: 700px) {
     li {
