@@ -25,8 +25,8 @@
   import { handleError } from '$lib/utils/handle-error';
   import {
     getAllAlbums,
-    getAllSharedLinks,
     getSharedLinkById,
+    getSharedLinkPage,
     removeSharedLink,
     SharedLinkType,
     type AlbumResponseDto,
@@ -64,7 +64,12 @@
     { id: 'individual', label: () => $t('individual_shares') },
   ];
 
-  let links: SharedLinkResponseDto[] = $state([]);
+  // FL-1795: the links read so far. Only ever replaced whole, so the cards need no deep tracking.
+  let links = $state.raw<SharedLinkResponseDto[]>([]);
+  /** Where the next page starts; null once every link is here. */
+  let nextCursor = $state<string | null>(null);
+  /** How many links there are of each type on every page, from the server: the tabs count links not read yet. */
+  let totals = $state({ album: 0, individual: 0 });
   let loading = $state(true);
   let tab: 'all' | 'album' | 'individual' = $state('all');
   let query = $state('');
@@ -94,17 +99,62 @@
   let albums: AlbumResponseDto[] = $state([]);
   let pickAlbumId = $state('');
 
-  // AL-21: the one read of the page. Every link in it says what its card's cover shows and how many items it shares.
+  const PAGE_SIZE = 60;
+  // AL-21: every link read says what its card's cover shows and how many items it shares.
   const refresh = async () => {
     loading = true;
     try {
-      links = await getAllSharedLinks({});
+      const page = await getSharedLinkPage({ take: PAGE_SIZE });
+      links = page.links;
+      nextCursor = page.nextCursor;
+      totals = { album: page.albumCount, individual: page.individualCount };
     } catch (error) {
       handleError(error, $t('frameleaf_sharing.links_load_failed'));
     } finally {
       loading = false;
     }
   };
+
+  /**
+   * FL-1795: the next page, asked for when the end of the list scrolls into view. A tab or a search
+   * that shows too few of the links read keeps the end in view, so pages keep coming until the
+   * screen is full or there are no more: the filters stay exact without the server knowing them.
+   */
+  let loadingMore = false;
+  const loadMore = async () => {
+    const cursor = nextCursor;
+    if (!cursor || loadingMore) {
+      return;
+    }
+    loadingMore = true;
+    try {
+      const page = await getSharedLinkPage({ take: PAGE_SIZE, cursor });
+      const have = new Set(links.map(({ id }) => id));
+      links = [...links, ...page.links.filter(({ id }) => !have.has(id))];
+      nextCursor = page.nextCursor;
+      totals = { album: page.albumCount, individual: page.individualCount };
+    } catch (error) {
+      // stop asking: the links already here stay, and a reload starts again
+      nextCursor = null;
+      handleError(error, $t('frameleaf_sharing.links_load_failed'));
+    } finally {
+      loadingMore = false;
+    }
+  };
+  let listEnd = $state<HTMLElement>();
+  $effect(() => {
+    const element = listEnd;
+    if (!element || typeof IntersectionObserver === 'undefined') {
+      return;
+    }
+    const observer = new IntersectionObserver((entries) => {
+      if (entries.some((entry) => entry.isIntersecting)) {
+        void loadMore();
+      }
+    });
+    observer.observe(element);
+    return () => observer.disconnect();
+  });
 
   let loaded = $state(false);
 
@@ -153,14 +203,22 @@
   const onSharedLinkCreate = (link: SharedLinkResponseDto) => {
     if (links.every((entry) => entry.id !== link.id)) {
       links = [link, ...links];
+      totals = countedWith(link, 1);
     }
   };
   const onSharedLinkUpdate = (link: SharedLinkResponseDto) => {
     links = links.map((entry) => (entry.id === link.id ? link : entry));
   };
   const onSharedLinkDelete = (link: SharedLinkResponseDto) => {
-    links = links.filter((entry) => entry.id !== link.id);
+    if (links.some((entry) => entry.id === link.id)) {
+      links = links.filter((entry) => entry.id !== link.id);
+      totals = countedWith(link, -1);
+    }
   };
+  const countedWith = (link: SharedLinkResponseDto, change: number) =>
+    link.type === SharedLinkType.Album
+      ? { ...totals, album: Math.max(0, totals.album + change) }
+      : { ...totals, individual: Math.max(0, totals.individual + change) };
 
   const titleOf = (link: SharedLinkResponseDto) => {
     if (link.album) {
@@ -187,16 +245,11 @@
       return [titleOf(link), link.description ?? '', link.slug ?? ''].join(' ').toLowerCase().includes(needle);
     }),
   );
-  const counts = $derived(
-    Object.fromEntries(
-      TABS.map(({ id }) => [
-        id,
-        links.filter(
-          (link) => id === 'all' || link.type === (id === 'album' ? SharedLinkType.Album : SharedLinkType.Individual),
-        ).length,
-      ]),
-    ),
-  );
+  const counts = $derived<Record<string, number>>({
+    all: totals.album + totals.individual,
+    album: totals.album,
+    individual: totals.individual,
+  });
 
   const isExpired = (link: SharedLinkResponseDto) => isLinkExpired(link);
 
@@ -390,7 +443,7 @@
   <p class="sr-only" role="status" aria-live="polite">{status}</p>
 
   <div id="sl-panel" role="tabpanel" aria-labelledby={`sl-tab-${tab}`}>
-    {#if loading}
+    {#if loading || (visible.length === 0 && nextCursor)}
       <!-- Cards at their final size while the links load, so the page does not jump. -->
       <ul class="sl-grid" aria-busy="true" aria-label={$t('loading')}>
         {#each [0, 1, 2] as placeholder (placeholder)}
@@ -509,6 +562,12 @@
           : $t('frameleaf_sharing.empty_links_body')}
       />
     {/if}
+    {#if !loading && nextCursor}
+      <!-- FL-1795: made again for each page, so an end still in view asks for the page after. -->
+      {#key nextCursor}
+        <div bind:this={listEnd} class="sl-end" aria-hidden="true"></div>
+      {/key}
+    {/if}
   </div>
 </section>
 
@@ -575,6 +634,12 @@
 {/if}
 
 <style>
+  /* Takes no room: the page is exactly as tall as without it. */
+  .sl-end {
+    height: 1px;
+    margin-top: -1px;
+  }
+
   /* Ported from the design's sharing.css (Shared links screen, lines 4-300 and 1297-1330). */
   .sl-screen {
     color: var(--fl-text);

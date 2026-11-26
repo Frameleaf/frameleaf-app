@@ -1,12 +1,12 @@
 import {
   getDuplicateDecisions,
-  getDuplicateReview,
   getLivePhotoCandidates,
   listICloudConnections,
   MediaHealthCategory,
   searchLargeAssets,
 } from '@frameleaf/sdk';
 import { error } from '@sveltejs/kit';
+import { readDuplicateReview } from '$lib/frameleaf/duplicate-review-session.svelte';
 import { loadLibraryCareHealth } from '$lib/frameleaf/library-care-load';
 import { utilityTool, type UtilityId } from '$lib/frameleaf/utilities';
 
@@ -17,7 +17,7 @@ export const loadUtility = async (tool: UtilityId, url: URL, isAdmin: boolean) =
   }
   switch (tool) {
     case 'duplicates': {
-      const [groups, history] = await Promise.all([getDuplicateReview(), getDuplicateDecisions()]);
+      const [groups, history] = await Promise.all([readDuplicateReview(), getDuplicateDecisions()]);
       return { tool, groups, history };
     }
     case 'large-files': {

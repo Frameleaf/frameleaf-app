@@ -141,6 +141,19 @@ describe(DuplicateDecisionService.name, () => {
   });
 
   describe('getReview', () => {
+    it('reads every group without a page, and only one page with one (FL-1795)', async () => {
+      await sut.getReview(owner);
+      expect(duplicates.getDuplicates).toHaveBeenLastCalledWith(owner);
+
+      await sut.getReview(owner, { take: 250 });
+      expect(duplicates.getDuplicates).toHaveBeenLastCalledWith(owner, { take: 250, after: undefined });
+
+      await sut.getReview(owner, { take: 250, after: duplicateId });
+      expect(duplicates.getDuplicates).toHaveBeenLastCalledWith(owner, { take: 250, after: duplicateId });
+      // a page reads the members and album names of its own groups only
+      expect(repository.getGroupMembers).toHaveBeenLastCalledWith([]);
+    });
+
     it('lists a group the session sees completely as decidable, with its suggestion and evidence', async () => {
       duplicates.getDuplicates.mockResolvedValue([
         { duplicateId, assets: members.map((id) => asset(id)), suggestedKeepAssetIds: [keeper] },

@@ -165,6 +165,7 @@
       bind:value={query}
       oninput={() => (active = 0)}
       onkeydown={onKeyDown}
+      data-initial-focus
     />
   </label>
   <!-- A listbox of buttons: each option is one focusable element, so an option never wraps an
