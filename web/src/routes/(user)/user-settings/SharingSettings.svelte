@@ -37,6 +37,7 @@
   import Skeleton from '$lib/components/frameleaf/Skeleton.svelte';
   import UserAvatar from '$lib/components/shared-components/UserAvatar.svelte';
   import { confirmFrameleaf } from '$lib/frameleaf/confirm';
+  import { formatCount } from '$lib/frameleaf/number-format';
   import { createOwnPreferencesDraft } from '$lib/frameleaf/own-preferences-draft';
   import { backfillProgress } from '$lib/frameleaf/partner-sharing';
   import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
@@ -537,7 +538,7 @@
   );
   const selectId = $props.id();
   const serverExpiry = $derived(settingsDraft?.draft.sharedLinks?.defaultExpiryDays ?? null);
-  const count = (value: number) => value.toLocaleString($locale ?? 'en-US');
+  const count = (value: number) => formatCount(value, $locale ?? 'en-US');
   const progressLabel = (progress: NonNullable<ReturnType<typeof backfillProgress>>) =>
     progress.state === 'running'
       ? $t('frameleaf_partner_sharing.progress_running', {

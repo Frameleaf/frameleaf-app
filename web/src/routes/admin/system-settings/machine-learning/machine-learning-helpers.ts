@@ -1,5 +1,6 @@
 import { MachineLearningHardwareAcceleration, type AdminConfigMachineLearningDto } from '@frameleaf/sdk';
 import { get } from 'svelte/store';
+import { formatDateTime } from '$lib/frameleaf/date-format';
 import { locale } from '$lib/stores/preferences.store';
 
 /**
@@ -131,7 +132,13 @@ export const formatDuration = (seconds: number): string => {
 
 /** Local-format ISO timestamps, with a dash for null/undefined. */
 export const formatTimestamp = (iso: string | null | undefined): string =>
-  iso ? new Date(iso).toLocaleString(get(locale)) : '—';
+  iso
+    ? formatDateTime(
+        new Date(iso),
+        { year: 'numeric', month: 'numeric', day: 'numeric', hour: 'numeric', minute: 'numeric', second: 'numeric' },
+        get(locale),
+      )
+    : '—';
 
 /**
  * Caps the matching frames of enhanced video duplicate detection at the frame count. Applied once

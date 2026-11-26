@@ -18,6 +18,7 @@ import {
 import type { Translations } from 'svelte-i18n';
 import { backupStamp, backupTime } from '$lib/components/frameleaf/settings/backup-time';
 import { buddyBackupPresentation } from '$lib/frameleaf/buddy-backup';
+import { formatDate, formatTime } from '$lib/frameleaf/date-format';
 
 /** A place a backup is kept. Cloud Backup and Buddy Backup are away from home; `local` is this server. */
 export type BackupPlaceId = 'cloud' | 'buddy' | 'local';
@@ -415,14 +416,14 @@ export const backupWhen = (
   date: Date,
   { locale, now = new Date(), sentence = false }: { locale?: string; now?: Date; sentence?: boolean } = {},
 ): Words => {
-  const time = new Intl.DateTimeFormat(locale, { hour: 'numeric', minute: '2-digit' }).format(date);
+  const time = formatTime(date, { hour: 'numeric', minute: '2-digit' }, locale ?? 'default');
   const dayOf = (value: Date) => new Date(value.getFullYear(), value.getMonth(), value.getDate()).getTime();
   const days = Math.round((dayOf(now) - dayOf(date)) / DAY_MS);
-  const day = new Intl.DateTimeFormat(locale, {
-    day: 'numeric',
-    month: 'short',
-    year: date.getFullYear() === now.getFullYear() ? undefined : 'numeric',
-  }).format(date);
+  const day = formatDate(
+    date,
+    { day: 'numeric', month: 'short', year: date.getFullYear() === now.getFullYear() ? undefined : 'numeric' },
+    locale ?? 'default',
+  );
   const kind = days === 0 ? 'today' : days === 1 ? 'yesterday' : 'day';
   return {
     key: `frameleaf_backup_when_${kind}${sentence ? '_sentence' : ''}` as Translations,
