@@ -1,6 +1,7 @@
 import {
   mdiArchiveLockOutline,
   mdiBroom,
+  mdiClipboardCheckOutline,
   mdiCalendarClock,
   mdiCloudOutline,
   mdiDeleteOutline,
@@ -119,6 +120,13 @@ export const personalSections = (
     title: $t('frameleaf_tidy_review_title'),
     subtitle: $t('frameleaf_cc_section_tidy_up_review_description'),
     icon: mdiBroom,
+  },
+  // FL-940: Library care → Nothing lost, every account's own originals and where each one is now.
+  {
+    key: 'nothing-lost',
+    title: $t('frameleaf_ledger_title'),
+    subtitle: $t('frameleaf_cc_section_nothing_lost_description'),
+    icon: mdiClipboardCheckOutline,
   },
   // Library care → Identify photo locations, for every account (its own library).
   {

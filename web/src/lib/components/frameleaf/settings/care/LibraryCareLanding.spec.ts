@@ -9,6 +9,7 @@ import {
   getIntegrityOverview,
   getProcessingFailures,
   getLatestAlbumChangeRun,
+  getLedgerSummary,
   getLocationScanStatus,
   getServerStatistics,
   getSummary,
@@ -49,6 +50,7 @@ vi.mock('@frameleaf/sdk', async (original) => ({
   getLocationScanStatus: vi.fn(),
   getAlbumCleanupStatus: vi.fn(),
   getLatestAlbumChangeRun: vi.fn(),
+  getLedgerSummary: vi.fn(),
   undoLatestAlbumChangeRun: vi.fn(),
 }));
 vi.mock('$app/navigation', () => ({ goto: vi.fn() }));
@@ -121,6 +123,12 @@ const importCheck = (overrides: Record<string, unknown> = {}) =>
     ...overrides,
   }) as never;
 
+const ledger = (missing = 0) => ({
+  total: 24_968,
+  states: { kept: 24_410 - missing, merged: 270, trashed: 96, removed: 192, missing },
+  months: [],
+});
+
 describe('Library care landing (FL-366)', () => {
   beforeAll(() => addMessages('dev', en));
   beforeEach(() => {
@@ -141,6 +149,7 @@ describe('Library care landing (FL-366)', () => {
       apply: null,
     });
     vi.mocked(getLatestAlbumChangeRun).mockResolvedValue({ run: null });
+    vi.mocked(getLedgerSummary).mockResolvedValue(ledger());
     unusedFilesAccess.reset();
     vi.mocked(getProcessingFailures).mockResolvedValue([]);
   });
@@ -341,6 +350,21 @@ describe('Library care landing (FL-366)', () => {
     expect(await hero().findByText(en.frameleaf_carehome_hero_ok)).toBeInTheDocument();
     expect(screen.queryByRole('region', { name: en.frameleaf_import_check_title })).toBeNull();
     expect(await screen.findByText('Identical files stored once · 3.2 GB saved')).toBeInTheDocument();
+  });
+
+  it('offers Nothing lost to everyone, and says when something can’t be accounted for (FL-940)', async () => {
+    user.isAdmin = false;
+    vi.mocked(getSummary).mockResolvedValue(summary());
+    const { unmount } = render(LibraryCareLanding);
+    expect(await screen.findByText('All 24,968 accounted for')).toBeInTheDocument();
+    await fireEvent.click(screen.getByRole('button', { name: `Open ${en.frameleaf_ledger_title}` }));
+    expect(goto).toHaveBeenCalledWith(expect.stringContaining('nothing-lost'));
+    unmount();
+
+    vi.mocked(getLedgerSummary).mockResolvedValue(ledger(3));
+    render(LibraryCareLanding);
+    expect(await screen.findByText('3 can’t be accounted for')).toBeInTheDocument();
+    expect(screen.getByText(en.frameleaf_ledger_row_note_missing)).toBeInTheDocument();
   });
 
   it('lists Unused files among the tools for the server owner only (FL-416)', async () => {

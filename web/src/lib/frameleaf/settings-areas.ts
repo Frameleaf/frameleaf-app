@@ -123,7 +123,17 @@ export const SETTINGS_AREAS: readonly SettingsAreaDefinition[] = Object.freeze([
     // FL-862: Couldn't process, every account's own list, opened from Things to fix and the landing page.
     // FL-943: the Date & Time Doctor, every account's own photos, opened from Things to fix.
     // FL-1470: Tidy up, every account's own photos, opened from the landing; its review page stays out of the navigation.
-    personal: ['repair', 'files', 'couldnt-process', 'dates', 'tidy-up', 'tidy-up-review', 'location-scan'],
+    // FL-940: Nothing lost, every account's own originals and where each one is now.
+    personal: [
+      'repair',
+      'files',
+      'couldnt-process',
+      'dates',
+      'tidy-up',
+      'tidy-up-review',
+      'nothing-lost',
+      'location-scan',
+    ],
     order: [
       'integrity-checks',
       'found-files',
@@ -133,6 +143,7 @@ export const SETTINGS_AREAS: readonly SettingsAreaDefinition[] = Object.freeze([
       'dates',
       'tidy-up',
       'tidy-up-review',
+      'nothing-lost',
       'duplicates',
       'enrichment-care',
       'unused-files',
@@ -341,6 +352,7 @@ export const PAGE_DESCRIPTIONS: Readonly<Record<string, Translations>> = Object.
   dates: 'frameleaf_page_date_doctor_description',
   'tidy-up': 'frameleaf_page_tidy_up_description',
   'tidy-up-review': 'frameleaf_page_tidy_up_review_description',
+  'nothing-lost': 'frameleaf_page_nothing_lost_description',
   'enrichment-care': 'frameleaf_page_enrichment_description',
   duplicates: 'frameleaf_page_duplicates_description',
   'unused-files': 'frameleaf_page_unused_files_description',
@@ -766,6 +778,7 @@ const DIRECTORY_GROUPS: Partial<Record<SettingsAreaId, Record<string, DirectoryG
     dates: 'repairs',
     'tidy-up': 'repairs',
     'tidy-up-review': 'repairs',
+    'nothing-lost': 'health',
     duplicates: 'identical_files',
     deduplication: 'identical_files',
     'unused-files': 'identical_files',
