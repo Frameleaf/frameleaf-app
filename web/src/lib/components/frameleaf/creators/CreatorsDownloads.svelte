@@ -200,9 +200,9 @@
                   <Button disabled={busy} onclick={() => void creatorsDownloads.change(job, false)}>
                     {$t('frameleaf_creators_tray_stop')}
                   </Button>
-                {:else if !job.subscriptionId && mediaImportRetryable(job.state)}
+                {:else if mediaImportRetryable(job.state)}
                   <Button disabled={busy} onclick={() => void creatorsDownloads.change(job, true)}>
-                    {$t('retry')}
+                    {job.subscriptionId ? $t('frameleaf_creators_carry_on') : $t('retry')}
                   </Button>
                 {/if}
               </td>

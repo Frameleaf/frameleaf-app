@@ -7895,6 +7895,7 @@
   "frameleaf_creators_sort_oldest": "Les plus anciennes d’abord",
   "frameleaf_creators_source": "Source",
   "frameleaf_creators_state_attention": "Votre intervention est requise : reconnectez-vous pour reprendre",
+  "frameleaf_creators_state_attention_reason": "Votre intervention est requise : {reason}",
   "frameleaf_creators_state_on": "Vérifié {checked} · prochaine vérification {next}",
   "frameleaf_creators_state_on_unchecked": "Pas encore vérifié · prochaine vérification {next}",
   "frameleaf_creators_state_paused": "En pause · dernière vérification {checked}",

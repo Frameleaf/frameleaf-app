@@ -3,7 +3,9 @@ import {
   getMediaImports,
   MediaImportItemState,
   MediaImportState,
+  MediaSubscriptionAction,
   retryMediaImport,
+  updateMediaSubscription,
   type MediaImportItemResponse,
   type MediaImportResponseDto,
 } from '@frameleaf/sdk';
@@ -137,8 +139,22 @@ class CreatorsDownloads {
     return this.jobs.filter(({ state }) => mediaImportNeedsOwner(state)).length;
   }
 
+  /** Downloads to try again; a subscription carries on once, however many of its runs stopped. */
   get retryable() {
-    return this.jobs.filter(({ state, subscriptionId }) => !subscriptionId && mediaImportNeedsOwner(state));
+    const subscriptions = new Set<string>();
+    return this.jobs.filter(({ state, subscriptionId }) => {
+      if (!mediaImportNeedsOwner(state)) {
+        return false;
+      }
+      if (!subscriptionId) {
+        return true;
+      }
+      if (subscriptions.has(subscriptionId)) {
+        return false;
+      }
+      subscriptions.add(subscriptionId);
+      return true;
+    });
   }
 
   private announce(list: MediaImportResponseDto[]) {
@@ -200,8 +216,16 @@ class CreatorsDownloads {
     this.first = true;
   }
 
-  private async send(job: MediaImportResponseDto, retry: boolean) {
-    const { id, updatedAt } = job;
+  private async send(job: MediaImportResponseDto, retry: boolean): Promise<MediaImportResponseDto | undefined> {
+    const { id, updatedAt, subscriptionId } = job;
+    // The Library refuses to retry a subscription's run; carrying on the subscription looks again and fetches what is left.
+    if (retry && subscriptionId) {
+      await updateMediaSubscription({
+        id: subscriptionId,
+        mediaSubscriptionUpdateDto: { action: MediaSubscriptionAction.Resume },
+      });
+      return;
+    }
     const updated = retry
       ? await retryMediaImport({
           id,
@@ -253,7 +277,7 @@ class CreatorsDownloads {
       return;
     }
     for (const result of results) {
-      if (result.status === 'fulfilled') {
+      if (result.status === 'fulfilled' && result.value) {
         this.replace(result.value);
       }
     }

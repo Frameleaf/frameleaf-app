@@ -182,6 +182,17 @@ describe('a download the site or the Library refuses', () => {
       false,
     );
   });
+
+  it('waits and tries again when a busy library outlasts the lock timeout', async () => {
+    const { repository, service, row, authority } = setup();
+    repository.assertAuthority.mockRejectedValue(
+      Object.assign(new Error('canceling statement due to lock timeout'), { code: '55P03' }),
+    );
+    repository.defer.mockResolvedValue(undefined as never);
+    expect(await service.handleImport({ id: row.id })).toBe(JobStatus.Success);
+    expect(repository.defer).toHaveBeenCalledWith(authority, 30, expect.any(String), false);
+    expect(repository.failAttempt).not.toHaveBeenCalled();
+  });
 });
 
 it('returns source provenance without private media URLs', async () => {

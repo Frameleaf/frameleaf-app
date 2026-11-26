@@ -276,7 +276,10 @@ export const creatorStatus = (
   const state = creatorState(creator);
   const subscription = creator.subscription;
   if (state === 'attention') {
-    return { key: 'frameleaf_creators_state_attention' };
+    // What actually stopped it; only a subscription with no saved reason falls back to "sign in again".
+    return subscription?.error
+      ? { key: 'frameleaf_creators_state_attention_reason', values: { reason: subscription.error } }
+      : { key: 'frameleaf_creators_state_attention' };
   }
   if (state === 'saved' || !subscription) {
     return { key: 'frameleaf_creators_state_saved' };

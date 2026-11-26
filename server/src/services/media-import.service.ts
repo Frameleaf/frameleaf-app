@@ -38,6 +38,7 @@ import {
   QueueName,
   StorageFolder,
 } from 'src/enum.js';
+import { isLockContention } from 'src/queue/catalogue.js';
 import { advanceJobProgress, jobSignal } from 'src/queue/context.js';
 import { CronRepository } from 'src/repositories/cron.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
@@ -506,6 +507,11 @@ export class MediaImportService {
         await this.repository.defer(authority, 30, 'Waiting for download capacity', false);
         return JobStatus.Success;
       }
+      // A row lock that outlasted lock_timeout while the library was busy: nothing is wrong, so it waits and tries again.
+      if (isLockContention(error)) {
+        await this.repository.defer(authority, 30, 'Waiting for the library to be less busy', false).catch(() => {});
+        return JobStatus.Success;
+      }
       // The owner is shown a general message; the cause is kept here, or a paused import cannot be explained.
       if (!(error instanceof MediaDownloadError))
         this.logger.warn(
@@ -562,7 +568,8 @@ export class MediaImportService {
           .assertAuthority(authority)
           .then(() => {})
           .catch((error: unknown) => {
-            controller.abort(error);
+            // A busy database is not a revoked import; the next check (or publication) decides.
+            if (!isLockContention(error)) controller.abort(error);
           })
           .finally(() => {
             checking = undefined;
@@ -707,7 +714,7 @@ export class MediaImportService {
         if (poster) await this.repository.setPoster(row.ownerId, assetId, item.entry, poster);
       } catch (error) {
         await pendingProgress;
-        if (signal?.aborted || error instanceof MediaCapacityWait) throw error;
+        if (signal?.aborted || error instanceof MediaCapacityWait || isLockContention(error)) throw error;
         await this.repository.progress(
           itemAuthority,
           'failed',

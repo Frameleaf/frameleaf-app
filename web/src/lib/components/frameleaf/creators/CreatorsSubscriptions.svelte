@@ -93,7 +93,7 @@
             </td>
             <td>{creator.savedCount}</td>
             <td>
-              {#if standing === 'paused'}
+              {#if standing === 'paused' || standing === 'attention'}
                 <Button
                   disabled={pending !== ''}
                   onclick={() =>

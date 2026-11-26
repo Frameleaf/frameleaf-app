@@ -7897,6 +7897,7 @@
   "frameleaf_creators_sort_oldest": "Oudste eerst",
   "frameleaf_creators_source": "Bron",
   "frameleaf_creators_state_attention": "Actie nodig: log opnieuw in om door te gaan",
+  "frameleaf_creators_state_attention_reason": "Actie nodig: {reason}",
   "frameleaf_creators_state_on": "Gecontroleerd {checked} · volgende {next}",
   "frameleaf_creators_state_on_unchecked": "Nog niet gecontroleerd · volgende {next}",
   "frameleaf_creators_state_paused": "Onderbroken · laatst gecontroleerd {checked}",

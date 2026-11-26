@@ -7891,6 +7891,7 @@
   "frameleaf_creators_sort_oldest": "Ældste først",
   "frameleaf_creators_source": "Kilde",
   "frameleaf_creators_state_attention": "Kræver din handling: log ind igen for at fortsætte",
+  "frameleaf_creators_state_attention_reason": "Kræver din handling: {reason}",
   "frameleaf_creators_state_on": "Tjekket {checked} · næste {next}",
   "frameleaf_creators_state_on_unchecked": "Endnu ikke tjekket · næste {next}",
   "frameleaf_creators_state_paused": "På pause · sidst tjekket {checked}",

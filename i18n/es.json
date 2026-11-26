@@ -7897,6 +7897,7 @@
   "frameleaf_creators_sort_oldest": "Más antiguos primero",
   "frameleaf_creators_source": "Origen",
   "frameleaf_creators_state_attention": "Te necesita: vuelve a iniciar sesión para continuar",
+  "frameleaf_creators_state_attention_reason": "Te necesita: {reason}",
   "frameleaf_creators_state_on": "Comprobado {checked} · próxima {next}",
   "frameleaf_creators_state_on_unchecked": "Aún sin comprobar · próxima {next}",
   "frameleaf_creators_state_paused": "En pausa · última comprobación {checked}",

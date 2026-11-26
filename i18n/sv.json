@@ -7893,6 +7893,7 @@
   "frameleaf_creators_sort_oldest": "Äldst först",
   "frameleaf_creators_source": "Källa",
   "frameleaf_creators_state_attention": "Behöver dig: logga in igen för att fortsätta",
+  "frameleaf_creators_state_attention_reason": "Behöver dig: {reason}",
   "frameleaf_creators_state_on": "Kontrollerad {checked} · nästa {next}",
   "frameleaf_creators_state_on_unchecked": "Inte kontrollerad ännu · nästa {next}",
   "frameleaf_creators_state_paused": "Pausad · senast kontrollerad {checked}",
