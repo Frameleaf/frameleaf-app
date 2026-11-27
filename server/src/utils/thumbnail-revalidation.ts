@@ -15,7 +15,8 @@ import { requestVia } from 'src/middleware/frameleaf-via.middleware.js';
  * A lock, sign-out or session removal forgets everything at once (`forgetThumbnailRevalidations`,
  * called by the session repository's writes).
  * Anything else that ends access (a share removed, an asset deleted, an elevation timing out) stops
- * the 304s when the entry runs out, at most `THUMBNAIL_REVALIDATION_TTL_MS` later.
+ * the 304s when the entry runs out, at most `THUMBNAIL_REVALIDATION_TTL_MS` after the full path last
+ * checked access (counted from the request's arrival, so a slow response never extends it).
  */
 export const THUMBNAIL_REVALIDATION_TTL_MS = 30_000;
 // ponytail: one Map, oldest dropped first; ~300 bytes an entry. An LRU if this ever shows in a profile.
@@ -64,8 +65,10 @@ export const thumbnailRevalidation =
     }
 
     const startedIn = generation;
+    // Access is checked as the request arrives, so the record runs out that long after then, never later.
+    const expiresAt = now() + THUMBNAIL_REVALIDATION_TTL_MS;
     res.once('finish', () => {
-      if (startedIn !== generation) {
+      if (startedIn !== generation || expiresAt <= now()) {
         return;
       }
       const etag = res.getHeader('ETag');
@@ -84,7 +87,7 @@ export const thumbnailRevalidation =
       const headers = REPLAYED_HEADERS.map((name) => [name, res.getHeader(name)] as const).filter(
         (pair): pair is [(typeof REPLAYED_HEADERS)[number], string] => typeof pair[1] === 'string',
       );
-      entries.set(key, { etag, headers, expiresAt: now() + THUMBNAIL_REVALIDATION_TTL_MS });
+      entries.set(key, { etag, headers, expiresAt });
     });
     next();
   };

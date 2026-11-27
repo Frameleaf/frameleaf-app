@@ -79,6 +79,28 @@ describe('thumbnailRevalidation (FL-1787)', () => {
     expect(run().reachedFullPath).toBe(true);
   });
 
+  it('counts the time from when the request arrived, not from when its response finished', () => {
+    const slow = response();
+    handler(request() as never, slow as never, vi.fn());
+    now += THUMBNAIL_REVALIDATION_TTL_MS - 1000;
+    slow.statusCode = 304;
+    slow.setHeader('ETag', ETAG);
+    slow.emit('finish');
+    expect(run(request(), null).reachedFullPath).toBe(false);
+    now += 1000;
+    expect(run(request(), null).reachedFullPath).toBe(true);
+  });
+
+  it('never records a response that finished after its whole window had passed', () => {
+    const stalled = response();
+    handler(request() as never, stalled as never, vi.fn());
+    now += THUMBNAIL_REVALIDATION_TTL_MS;
+    stalled.statusCode = 304;
+    stalled.setHeader('ETag', ETAG);
+    stalled.emit('finish');
+    expect(run(request(), null).reachedFullPath).toBe(true);
+  });
+
   it('stops at once when a session is locked or removed', () => {
     run();
     forgetThumbnailRevalidations();
