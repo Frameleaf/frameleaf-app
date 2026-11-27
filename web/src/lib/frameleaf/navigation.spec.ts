@@ -171,7 +171,6 @@ describe('Frameleaf rail destinations', () => {
     const hrefs = flatten(allCapabilities()).map((destination) => destination.href);
 
     expect(hrefs.filter((href) => href === Route.libraryCare())).toHaveLength(1);
-    expect(hrefs).not.toContain(Route.utilities());
     expect(hrefs).not.toContain(Route.duplicatesUtility());
     expect(hrefs).not.toContain(Route.largeFileUtility());
     expect(hrefs).not.toContain(Route.livePhotosUtility());

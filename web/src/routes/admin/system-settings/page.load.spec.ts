@@ -19,9 +19,9 @@ describe('the old administrator settings address (FL-71)', () => {
     });
     expect(getAdminConfigWithRevision).not.toHaveBeenCalled();
   });
-  it('drops an unknown utility section instead of carrying it across', async () => {
+  it('drops an unknown utility section and opens Library care, where the Tools directory was (FL-1807)', async () => {
     await expect(open('?area=utilities&section=nope')).rejects.toMatchObject({
-      location: '/user-settings?area=utilities',
+      location: '/user-settings?area=care',
     });
   });
   it.each([

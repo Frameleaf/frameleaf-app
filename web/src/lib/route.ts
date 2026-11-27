@@ -264,7 +264,8 @@ export const Route = {
     commandCenterUrl('users', 'accounts', { show: 'activity', who: params.who }),
 
   // utilities
-  utilities: () => utilitiesUrl(),
+  // FL-1807: the Tools directory is gone; its address opens Library care.
+  utilities: () => commandCenterUrl('care'),
   // The rail's Library care opens the Library care area, the hub for fixes (September 24).
   libraryCare: () => commandCenterUrl('care'),
   // FL-1808: the one Import page, every way to bring photos in (the rail footer's Import).
