@@ -176,6 +176,3 @@
 </PublicViewerShell>
 
 <ResultsAssetViewer {assets} onRemove={(id) => handleRemoved([id])} emptyRoute={Route.photos()} />
-
-<style>
-</style>

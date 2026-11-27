@@ -1216,7 +1216,7 @@
           />{/if}
         {#if results.loading && !results.refreshing && results.items.length === 0}<GridSkeleton
             tiles={12}
-            minTile="10rem"
+            minTile={`${preferences.thumbnailSize * (isBoards ? 1.2 : 0.8)}px`}
           />{/if}
         {#snippet emptyState()}{#if (!results.loading || results.refreshing) && !failed}
             {#if emptyKind === 'first'}
