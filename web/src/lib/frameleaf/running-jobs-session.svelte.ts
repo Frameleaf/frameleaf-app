@@ -6,6 +6,7 @@ import {
   type QueueName,
   type DurableRunningJobs,
 } from '@frameleaf/sdk';
+import { isPushConnected, isTabHidden } from '$lib/frameleaf/quiet-poll';
 import { buildRunningJobRows, countActiveRunningJobs, type RunningJobRow } from '$lib/frameleaf/running-jobs';
 import { eventManager } from '$lib/managers/event-manager.svelte';
 
@@ -20,10 +21,15 @@ import { eventManager } from '$lib/managers/event-manager.svelte';
  *
  * The pace follows what is worth watching:
  *
- * - every 2.5 s while the panel is open or anything is running, because totals grow while a queue
- *   runs and the bar is only honest if it keeps up;
+ * - every 2.5 s while the panel is open, because the person is watching the bars move;
+ * - every 2.5 s while anything is running and the server is not saying so itself;
  * - every 30 s when nothing is running, or everything is paused, in case something new starts;
  * - not at all while the tab is hidden: the tab asks again the moment it is shown.
+ *
+ * FL-1794: for an administrator with the socket connected the server says when the queues move
+ * (`on_queue_progress`) and when one of the account's own jobs changes (`on_media_operation_update`).
+ * Each asks the summary again, at most once per fast interval, so running work costs no more
+ * requests than the poll did and an idle server costs one every five minutes as a safeguard.
  *
  * Polling stops entirely when nothing is subscribed.
  */
@@ -32,10 +38,10 @@ import { eventManager } from '$lib/managers/event-manager.svelte';
 export const RUNNING_POLL_MS = 2500;
 /** When everything has settled and the panel is closed. */
 export const IDLE_POLL_MS = 30_000;
+/** With the server announcing queue changes: the safeguard against an announcement that never arrived. */
+export const PUSHED_POLL_MS = 300_000;
 
 const EMPTY: DurableRunningJobs = { operations: [], memoryExports: [], queues: [], canManageQueues: false };
-
-const isHidden = () => typeof document !== 'undefined' && document.visibilityState === 'hidden';
 
 export class RunningJobsSession {
   summary = $state<DurableRunningJobs>(EMPTY);
@@ -55,9 +61,12 @@ export class RunningJobsSession {
   #subscribers = 0;
   #inFlight: Promise<void> | null = null;
   #unlisten: (() => void) | null = null;
+  #nudge: ReturnType<typeof setTimeout> | null = null;
+  #lastAsked = 0;
 
   /** Ask the server now. Concurrent callers share the one request. */
   refresh(): Promise<void> {
+    this.#lastAsked = Date.now();
     this.#inFlight ??= this.#load().finally(() => {
       this.#inFlight = null;
     });
@@ -134,10 +143,38 @@ export class RunningJobsSession {
 
   /** How long until the next look, or null for "not until the tab is shown again". */
   nextDelay(): number | null {
-    if (isHidden()) {
+    if (isTabHidden()) {
       return null;
     }
-    return this.panelOpen || this.activeCount > 0 ? RUNNING_POLL_MS : IDLE_POLL_MS;
+    if (this.panelOpen) {
+      return RUNNING_POLL_MS;
+    }
+    // Queue announcements go to administrators only; everyone else's running work is still polled.
+    if (isPushConnected() && this.summary.canManageQueues) {
+      return PUSHED_POLL_MS;
+    }
+    return this.activeCount > 0 ? RUNNING_POLL_MS : IDLE_POLL_MS;
+  }
+
+  /** The server said something changed: ask again, but never more often than the fast poll would. */
+  #onPush() {
+    if (this.#nudge !== null || isTabHidden()) {
+      return;
+    }
+    this.#nudge = setTimeout(
+      () => {
+        this.#nudge = null;
+        void this.refresh().then(() => this.#schedule());
+      },
+      Math.max(0, this.#lastAsked + RUNNING_POLL_MS - Date.now()),
+    );
+  }
+
+  #stopNudge() {
+    if (this.#nudge !== null) {
+      clearTimeout(this.#nudge);
+      this.#nudge = null;
+    }
   }
 
   #schedule() {
@@ -164,14 +201,23 @@ export class RunningJobsSession {
   }
 
   #listen() {
-    const offAuth = eventManager.on({
+    const offEvents = eventManager.on({
       AuthLogout: () => {
         this.#epoch++;
         this.unreachable = false;
         this.summary = EMPTY;
         this.loading = true;
       },
+      QueueProgress: () => this.#onPush(),
+      MediaOperationUpdate: () => this.#onPush(),
+      // announcements stop or start with the socket, and so does the pace
+      WebsocketConnect: () => this.#onPush(),
+      WebsocketDisconnect: () => this.#schedule(),
     });
+    const offAuth = () => {
+      offEvents();
+      this.#stopNudge();
+    };
 
     if (typeof document === 'undefined') {
       this.#unlisten = offAuth;
@@ -179,8 +225,9 @@ export class RunningJobsSession {
     }
 
     const onVisibility = () => {
-      if (isHidden()) {
+      if (isTabHidden()) {
         this.#stop();
+        this.#stopNudge();
       } else {
         void this.refresh().then(() => this.#schedule());
       }

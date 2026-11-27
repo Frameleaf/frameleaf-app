@@ -1,4 +1,4 @@
-import { AlbumKind, type AlbumResponseDto, type AlbumTreeResponseDto } from '@frameleaf/sdk';
+import { AlbumKind, AlbumUserRole, type AlbumResponseDto, type AlbumTreeResponseDto } from '@frameleaf/sdk';
 import { describe, expect, it } from 'vitest';
 import {
   ALBUM_COLORS,
@@ -8,6 +8,7 @@ import {
   albumPickerTree,
   albumSelectionOptions,
   buildAlbumTree,
+  buildRailAlbumTree,
   descendantIds,
   flattenAlbumTree,
   moveRefusal,
@@ -244,5 +245,47 @@ describe('album pickers', () => {
     expect(searchAlbums(albums, 'MOOD').map(({ id }) => id)).toEqual(['mood', 'deep']);
     expect(searchAlbums(albums, 'deep mood').map(({ id }) => id)).toEqual(['deep']);
     expect(searchAlbums(albums, '  ')).toHaveLength(albums.length);
+  });
+});
+
+/** FL-1796: the slim rail list is flat, every parent before its children, siblings in list order. */
+describe('buildRailAlbumTree', () => {
+  const item = (id: string, kind: AlbumKind, parentId: string | null = null) => ({
+    id,
+    albumName: id,
+    parentId,
+    kind,
+    icon: null,
+    color: 'teal',
+    sortOrder: null,
+    role: AlbumUserRole.Owner,
+    shared: false,
+    isLocked: false,
+    isSmart: false,
+    smartRuleId: null,
+    assetCount: 2,
+    bookmarkCount: 3,
+  });
+
+  it('nests each album under its parent and splits the roots as the hierarchy does', () => {
+    const tree = buildRailAlbumTree([
+      item('family', AlbumKind.Collection),
+      item('rockies', AlbumKind.Album, 'family'),
+      item('banff', AlbumKind.Album, 'rockies'),
+      item('loose', AlbumKind.Album),
+      item('house', AlbumKind.Space),
+    ]);
+    expect(tree.roots?.map(({ id }) => id)).toEqual(['family', 'loose', 'house']);
+    expect(tree.collections.map(({ id }) => id)).toEqual(['family']);
+    expect(tree.albums.map(({ id }) => id)).toEqual(['loose']);
+    expect(tree.spaces.map(({ id }) => id)).toEqual(['house']);
+    const [rockies] = tree.collections[0].children;
+    expect(rockies).toMatchObject({ id: 'rockies', kind: 'album', color: 'teal', assetCount: 2, itemCount: 5 });
+    expect(rockies.children.map(({ id }) => id)).toEqual(['banff']);
+  });
+
+  it('makes an album whose parent the list leaves out a root', () => {
+    const tree = buildRailAlbumTree([item('orphan', AlbumKind.Album, 'gone')]);
+    expect(tree.roots?.map(({ id }) => id)).toEqual(['orphan']);
   });
 });

@@ -1,4 +1,5 @@
 import type {
+  AlbumRailItemDto,
   AlbumCollectionResponseDto,
   AlbumHierarchyNode,
   AlbumHierarchyResponseDto,
@@ -107,6 +108,41 @@ export const buildAlbumTree = (tree: AlbumTreeResponseDto | AlbumHierarchyRespon
     collections: tree.collections.map((entry) => toCollectionNode(entry)),
     albums: tree.albums.map((album) => toNode(album, 'album')),
     spaces: tree.spaces.map((album) => toNode(album, 'space')),
+  };
+};
+
+/**
+ * FL-1796: the tree from the slim rail list (`GET /albums/rail`): one flat list, every parent before its
+ * children, siblings in list order. A parent the list leaves out makes its child a root.
+ */
+export const buildRailAlbumTree = (albums: AlbumRailItemDto[]): FrameleafAlbumTree => {
+  const nodes = new Map<string, FrameleafAlbumNode>();
+  const roots: FrameleafAlbumNode[] = [];
+  for (const album of albums) {
+    const node: FrameleafAlbumNode = {
+      id: album.id,
+      name: album.albumName,
+      icon: album.icon,
+      color: albumColor(album.color),
+      kind: album.kind as FrameleafAlbumKind,
+      assetCount: album.assetCount,
+      itemCount: album.assetCount + album.bookmarkCount,
+      shared: album.shared,
+      children: [],
+    };
+    nodes.set(album.id, node);
+    const parent = album.parentId ? nodes.get(album.parentId) : undefined;
+    if (parent) {
+      parent.children.push(node);
+    } else {
+      roots.push(node);
+    }
+  }
+  return {
+    roots,
+    collections: roots.filter(({ kind }) => kind === 'collection'),
+    albums: roots.filter(({ kind }) => kind === 'album'),
+    spaces: roots.filter(({ kind }) => kind === 'space'),
   };
 };
 

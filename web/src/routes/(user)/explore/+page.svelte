@@ -17,11 +17,12 @@
   import { restoreScroll } from '$lib/utils/restore-scroll';
   import { getAltText } from '$lib/utils/thumbnail-util';
   import { getNextAsset, getPreviousAsset } from '$lib/utils/asset-utils';
-  import { toTimelineAsset } from '$lib/utils/timeline-util';
+  import { fromISODateTimeUTCToObject, toTimelineAsset } from '$lib/utils/timeline-util';
+  import type { TimelineAsset } from '$lib/managers/timeline-manager/types';
   import { onDestroy } from 'svelte';
   import { t } from 'svelte-i18n';
   import { handleError } from '$lib/utils/handle-error';
-  import { getAssetInfo, type AssetResponseDto } from '@frameleaf/sdk';
+  import { AssetTypeEnum, getAssetInfo, type AssetResponseDto, type MemorySlimAssetDto } from '@frameleaf/sdk';
   import { invalidateAll } from '$app/navigation';
   import Portal from '$lib/elements/Portal.svelte';
   import type { ExploreFacetSection, ExploreLandmarkSection } from './+page';
@@ -75,15 +76,22 @@
     );
   };
 
+  // The strip's memories come slim (FL-1793); the alt text reads only the date and whether it is a video.
+  const memoryCoverForAlt = (asset: MemorySlimAssetDto) =>
+    ({
+      localDateTime: fromISODateTimeUTCToObject(asset.localDateTime),
+      isVideo: asset.type === AssetTypeEnum.Video,
+    }) as TimelineAsset;
+
   let memories = $derived(
     data.memories.map((memory) => ({
       id: memory.id,
       // FL-1457 (N3): named as the Memories page names it ("One year ago in Jasper").
       title: $memoryHeadline(memory).title,
-      href: Route.viewMemory({ id: memory.id, assetId: memory.assets[0].id }),
-      alt: $getAltText(toTimelineAsset(memory.assets[0])),
-      src: getAssetMediaUrl({ id: memory.assets[0].id }),
-      count: memory.assets.length,
+      href: Route.viewMemory({ id: memory.id, assetId: memory.slimAssets[0].id }),
+      alt: $getAltText(memoryCoverForAlt(memory.slimAssets[0])),
+      src: getAssetMediaUrl({ id: memory.slimAssets[0].id }),
+      count: memory.slimAssets.length,
     })),
   );
 

@@ -1,7 +1,7 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
-  import AlbumConfirmDialog from '$lib/components/frameleaf/AlbumConfirmDialog.svelte';
+  import ConfirmDialog from '$lib/components/frameleaf/ConfirmDialog.svelte';
   import AlbumCreateDialog from '$lib/components/frameleaf/AlbumCreateDialog.svelte';
   import AlbumMergeDialog from '$lib/components/frameleaf/AlbumMergeDialog.svelte';
   import AlbumMergeIntoDialog from '$lib/components/frameleaf/AlbumMergeIntoDialog.svelte';
@@ -397,7 +397,7 @@
     }
   };
 
-  /** Delete and Leave confirm in the Frameleaf dialog (AlbumConfirmDialog), as the album header does. */
+  /** Delete and Leave confirm in the Frameleaf dialog (ConfirmDialog), as the album header does. */
   export const remove = (album: AlbumResponseDto) => {
     deleteDialog = { open: true, album };
   };
@@ -540,10 +540,11 @@
 
 {#if bulkDeleteDialog.albums.length > 0}
   {@const count = bulkDeleteDialog.albums.length}
-  <AlbumConfirmDialog
+  <ConfirmDialog
     title={$t('frameleaf_albums_delete_many_title', { values: { count } })}
-    body={$t('frameleaf_albums_delete_many_body')}
-    confirmLabel={$t('frameleaf_albums_delete_many', { values: { count } })}
+    prompt={$t('frameleaf_albums_delete_many_body')}
+    confirmText={$t('frameleaf_albums_delete_many', { values: { count } })}
+    danger
     bind:open={bulkDeleteDialog.open}
     onConfirm={confirmDeleteMany}
   />
@@ -551,10 +552,10 @@
 
 {#if bulkLockDialog.albums.length > 0}
   {@const albums = bulkLockDialog.albums}
-  <AlbumConfirmDialog
+  <ConfirmDialog
     title={$t('frameleaf_albums_lock_many_title', { values: { count: albums.length } })}
-    body={$t('frameleaf_album_lock_body')}
-    confirmLabel={$t('frameleaf_album_options_locked')}
+    prompt={$t('frameleaf_album_lock_body')}
+    confirmText={$t('frameleaf_album_options_locked')}
     bind:open={bulkLockDialog.open}
     onConfirm={() => setLockedMany(albums, true)}
   />
@@ -573,9 +574,9 @@
 
 {#if deleteDialog.album}
   {@const album = deleteDialog.album}
-  <AlbumConfirmDialog
+  <ConfirmDialog
     title={$t('frameleaf_album_delete_title', { values: { name: nameOf(album) } })}
-    body={album.kind === AlbumKind.Collection
+    prompt={album.kind === AlbumKind.Collection
       ? $t('frameleaf_album_delete_collection_body')
       : isSpace(album)
         ? $t('frameleaf_album_delete_space_body')
@@ -583,7 +584,8 @@
     keepNote={album.kind === AlbumKind.Collection
       ? $t('frameleaf_album_delete_collection_keep', { values: { count: albumCountOf(album) } })
       : $t('frameleaf_album_delete_keep', { values: { count: album.assetCount } })}
-    confirmLabel={$t('frameleaf_album_delete', { values: { kind: kindOf(album) } })}
+    confirmText={$t('frameleaf_album_delete', { values: { kind: kindOf(album) } })}
+    danger
     bind:open={deleteDialog.open}
     onConfirm={confirmDelete}
   />
@@ -591,10 +593,11 @@
 
 {#if leaveDialog.album}
   {@const album = leaveDialog.album}
-  <AlbumConfirmDialog
+  <ConfirmDialog
     title={$t('frameleaf_album_leave_title', { values: { name: nameOf(album) } })}
-    body={$t('frameleaf_album_leave_body')}
-    confirmLabel={$t('frameleaf_album_leave', { values: { kind: kindOf(album) } })}
+    prompt={$t('frameleaf_album_leave_body')}
+    confirmText={$t('frameleaf_album_leave', { values: { kind: kindOf(album) } })}
+    danger
     bind:open={leaveDialog.open}
     onConfirm={confirmLeave}
   />
@@ -602,10 +605,10 @@
 
 {#if lockDialog.album}
   {@const album = lockDialog.album}
-  <AlbumConfirmDialog
+  <ConfirmDialog
     title={$t('frameleaf_album_lock_title', { values: { name: nameOf(album) } })}
-    body={$t('frameleaf_album_lock_body')}
-    confirmLabel={$t('frameleaf_album_options_locked')}
+    prompt={$t('frameleaf_album_lock_body')}
+    confirmText={$t('frameleaf_album_options_locked')}
     bind:open={lockDialog.open}
     onConfirm={() => setLocked(album, true)}
   />
