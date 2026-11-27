@@ -112,6 +112,7 @@ export const analyse = ({ src, keys }) => {
   const imports = new Map();
   const literal = new Map(); // file -> keys
   const patterns = []; // [file, RegExp]
+  const joins = []; // [file, prefix, suffix, words]: a template with one placeholder, too short for a pattern
   for (const file of files) {
     const text = readFileSync(file, 'utf8');
     const targets = new Set();
@@ -129,10 +130,19 @@ export const analyse = ({ src, keys }) => {
       }
     }
     literal.set(file, found);
+    let words;
     for (const [, body] of text.matchAll(TEMPLATE)) {
       const pattern = templatePattern(body);
       if (pattern) {
         patterns.push([file, pattern]);
+        continue;
+      }
+      // `${base}_by`: too short to match keys on its own, so join it to the words of the same file,
+      // where its base is written out (`'frameleaf_ledger_deleted'`).
+      const parts = body.split(/\$\{[^}]*\}/);
+      if (parts.length === 2 && /^[A-Za-z0-9_.]*$/.test(parts.join('')) && parts.join('').length > 0) {
+        words ??= new Set(text.match(TOKEN) ?? []);
+        joins.push([file, parts[0], parts[1], words]);
       }
     }
   }
@@ -166,6 +176,15 @@ export const analyse = ({ src, keys }) => {
         for (const file of patternFiles) {
           use(key, file);
         }
+      }
+    }
+  }
+
+  for (const [file, prefix, suffix, words] of joins) {
+    for (const word of words) {
+      const key = `${prefix}${word}${suffix}`;
+      if (keySet.has(key)) {
+        use(key, file);
       }
     }
   }

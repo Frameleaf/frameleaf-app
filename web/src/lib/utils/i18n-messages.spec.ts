@@ -123,4 +123,20 @@ describe('messages in bundles (FL-1797)', () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(fetched).toHaveLength(3);
   });
+
+  it('tries a failed repair again on the next miss instead of using it up', async () => {
+    const { handleMissingMessage } = await load();
+    const messages = await import('virtual:frameleaf-messages');
+    const rest = messages.loaders.en.rest;
+    messages.loaders.en.rest = () => Promise.reject(new Error('offline'));
+    try {
+      handleMissingMessage({ id: 'somewhere_else' });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(fetched).toEqual([]);
+    } finally {
+      messages.loaders.en.rest = rest;
+    }
+    handleMissingMessage({ id: 'somewhere_else' });
+    await vi.waitFor(() => expect(fetched).toEqual(['en/rest']));
+  });
 });

@@ -8,6 +8,7 @@ import dotenv from 'dotenv';
 import { visualizer } from 'rollup-plugin-visualizer';
 import type { compile } from 'svelte/compiler';
 import { defineConfig, type Plugin, type ProxyOptions, type UserConfig } from 'vite';
+import { statSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { buildIconPacks } from './scripts/icon-packs.mjs';
@@ -109,18 +110,41 @@ const frameleafMessages = (): Plugin => {
   const directory = path.resolve(import.meta.dirname, '../i18n');
   let split = false;
   let areaOf: Record<string, string> | undefined;
-  const english = () => readLanguage(directory, 'en');
+  // Each language file is read once per change of the file, not once per module that needs it.
+  const read = new Map<string, { mtime: number; messages: Record<string, string> }>();
+  const language = (code: string) => {
+    const mtime = statSync(path.join(directory, `${code}.json`)).mtimeMs;
+    let cached = read.get(code);
+    if (cached?.mtime !== mtime) {
+      cached = { mtime, messages: readLanguage(directory, code) };
+      read.set(code, cached);
+    }
+    return cached.messages;
+  };
+  const built = new Map<string, ReturnType<typeof bundlesFor>>();
   const bundles = (code: string) => {
-    const en = english();
+    const en = language('en');
     if (split) {
       areaOf ??= analyse({ src: path.resolve(import.meta.dirname, 'src'), keys: Object.keys(en) }).areaOf;
     }
-    return bundlesFor({ code, own: code === 'en' ? en : readLanguage(directory, code), en, areaOf });
+    const own = code === 'en' ? en : language(code);
+    const key = `${code}|${read.get('en')?.mtime}|${read.get(code)?.mtime}`;
+    let result = built.get(key);
+    if (!result) {
+      result = bundlesFor({ code, own, en, areaOf });
+      built.set(key, result);
+    }
+    return result;
   };
   return {
     name: 'frameleaf-messages',
     configResolved(config) {
       split = config.command === 'build';
+    },
+    buildStart() {
+      // `vite build --watch`: each rebuild places the keys again, from the source as it is now.
+      areaOf = undefined;
+      built.clear();
     },
     resolveId(id) {
       if (id === MESSAGES || id.startsWith(`${MESSAGES}/`)) {

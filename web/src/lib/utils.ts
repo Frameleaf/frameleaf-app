@@ -30,7 +30,7 @@ import { authManager } from '$lib/managers/auth-manager.svelte';
 import { alwaysLoadOriginalFile, lang, locale } from '$lib/stores/preferences.store';
 import { isWebCompatibleImage } from '$lib/utils/asset-utils';
 import { handleError } from '$lib/utils/handle-error';
-import { handleMissingMessage, loadMessages } from '$lib/utils/i18n';
+import { convertBCP47, handleMissingMessage, loadMessages } from '$lib/utils/i18n';
 
 interface DateFormatter {
   formatDate: (date: Date) => string;
@@ -44,7 +44,9 @@ interface DateFormatter {
  * for the keys it lacks never fetches the English ones as well.
  */
 export const initLanguage = async () => {
-  const preferenceLang = get(lang);
+  // A saved `nb_NO` is not a locale svelte-i18n accepts (it would quietly use English, with no
+  // messages loaded for it); its BCP 47 form is.
+  const preferenceLang = convertBCP47(get(lang));
   await loadMessages('core', preferenceLang);
   await init({
     fallbackLocale: preferenceLang === 'dev' ? 'dev' : defaultLang.code,

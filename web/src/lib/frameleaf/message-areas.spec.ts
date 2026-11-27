@@ -73,6 +73,14 @@ describe('messages split by area (FL-1797)', () => {
     }
   });
 
+  it('finds keys built from a short suffix joined to a word written out in the same file', () => {
+    // nothing-lost.ts builds `${base}_by` from `'frameleaf_ledger_deleted'`; `_by` alone is too short to match.
+    for (const base of ['frameleaf_ledger_deleted', 'frameleaf_ledger_trashed']) {
+      expect(areaOf[`${base}_by`], base).toBe(areaOf[`${base}_you`]);
+      expect(areaOf[`${base}_by`], base).not.toBe('rest');
+    }
+  });
+
   it('finds keys built with a template literal', () => {
     // SystemSettings.svelte names these as `${titleKey}_description`.
     expect(areaOf.frameleaf_cc_section_signals_description).toBe('settings');

@@ -275,7 +275,9 @@ let recovering = false;
 
 /**
  * svelte-i18n calls this for a key it cannot find. The missing bundles are fetched in the
- * background and the text corrects itself; a key that exists nowhere costs at most one pass.
+ * background and the text corrects itself. A pass that fails (offline, or files from a release the
+ * tab predates) is tried again on the next miss instead of being used up. A page that only wants
+ * to know whether a key exists asks `$json`, which never comes here.
  */
 export const handleMissingMessage = ({ id }: { id: string }) => {
   if (recovering || recovered >= RECOVERY.length) {
@@ -285,7 +287,8 @@ export const handleMissingMessage = ({ id }: { id: string }) => {
   if (import.meta.env.DEV) {
     console.warn(`[i18n] "${id}" is not in the messages loaded for this page; fetching more.`);
   }
-  void Promise.all(RECOVERY[recovered++].map((bundle) => loadMessages(bundle)))
+  void Promise.all(RECOVERY[recovered].map((bundle) => loadMessages(bundle)))
+    .then(() => recovered++)
     .catch(() => {})
     .finally(() => (recovering = false));
 };
