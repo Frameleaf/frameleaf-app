@@ -5,7 +5,8 @@ import { confirmICloudOff } from './confirm-icloud-off';
 const activity = vi.hoisted(() => vi.fn());
 const show = vi.hoisted(() => vi.fn());
 vi.mock('@frameleaf/sdk', () => ({ getICloudSyncActivity: activity }));
-vi.mock('@frameleaf/ui', () => ({ modalManager: { show } }));
+// FL-1814: the warning is the shared confirm dialog, opened through confirmFrameleaf
+vi.mock('$lib/frameleaf/confirm', () => ({ confirmFrameleaf: show }));
 
 describe(confirmICloudOff.name, () => {
   beforeAll(async () => {
@@ -27,7 +28,8 @@ describe(confirmICloudOff.name, () => {
     activity.mockResolvedValue({ running: 2 });
     show.mockResolvedValue(answer);
     await expect(confirmICloudOff()).resolves.toBe(answer);
-    expect(show.mock.calls[0][1].prompt).toContain('2 iCloud syncs');
+    expect(show.mock.calls[0][0].prompt).toContain('2 iCloud syncs');
+    expect(show.mock.calls[0][0]).toMatchObject({ danger: true });
   });
 
   it('allows turning off when the count cannot be read', async () => {
