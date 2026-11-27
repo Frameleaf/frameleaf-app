@@ -185,6 +185,7 @@ import { PrintBackService } from 'src/services/print-back.service.js';
 import { PrivateLogsService } from 'src/services/private-logs.service.js';
 import { PrivateMlLogsService } from 'src/services/private-ml-logs.service.js';
 import { PushService } from 'src/services/push.service.js';
+import { QueueProgressEventService } from 'src/services/queue-progress-event.service.js';
 import { QueueService } from 'src/services/queue.service.js';
 import { RawSupportService } from 'src/services/raw-support.service.js';
 import { RenderWorkerService } from 'src/services/render-worker.service.js';
@@ -434,6 +435,7 @@ export const services = [
   PluginService,
   PreservationService,
   PreservationWorkerService,
+  QueueProgressEventService,
   QueueService,
   RestorationWorkerService,
   RunningJobService,

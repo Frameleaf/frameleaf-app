@@ -1,6 +1,8 @@
 <script lang="ts" module>
   const CELEBRATED = 'frameleaf-setup-celebrated';
   const POLL_MS = 15_000;
+  /** FL-1794: while the server's queues move and no setup is known, how often to ask whether one started. */
+  const STARTED_CHECK_MS = 60_000;
 
   const readCelebrated = () => {
     try {
@@ -165,11 +167,13 @@
     }
   };
 
+  let lastAsked = 0;
   const load = async () => {
     if (loading) {
       return;
     }
     loading = true;
+    lastAsked = Date.now();
     try {
       await latest(getLibrarySetupProgress());
     } catch {
@@ -249,7 +253,13 @@
     start();
     document.addEventListener('visibilitychange', onVisibility);
     // subscribing reads and writes the event manager's own state, which must not re-run this effect
-    const unsubscribe = untrack(() => eventManager.on({ WebsocketConnect: resume }));
+    // FL-1794: setup starting puts work in the queues, which the server announces; ask then, but rarely
+    const onQueues = () => {
+      if (timer === undefined && !isTabHidden() && Date.now() - lastAsked >= STARTED_CHECK_MS) {
+        resume();
+      }
+    };
+    const unsubscribe = untrack(() => eventManager.on({ WebsocketConnect: resume, QueueProgress: onQueues }));
     return () => {
       stopPolling();
       unsubscribe();
