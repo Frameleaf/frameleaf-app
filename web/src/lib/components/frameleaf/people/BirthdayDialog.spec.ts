@@ -146,4 +146,25 @@ describe('BirthdayDialog (PD-5, FL-864)', () => {
     expect(born.queryByLabelText('Day')).toBeNull();
     expect(save().disabled).toBe(true);
   });
+
+  it('gives a lifespan from approximate dates, takes years before 1800, and moves the cursor with the fields', async () => {
+    const person = {
+      ...personFactory.build({ name: 'Ada', birthDate: '1700-01-01', deathDate: '1760-01-01' }),
+      birthDatePrecision: 'about',
+      deathDatePrecision: 'year',
+    };
+    render(BirthdayDialog, { person, open: true });
+
+    expect(screen.getByText(/1700 – 1760/)).toBeTruthy();
+    expect(save().disabled).toBe(true);
+    await fireEvent.input(field('Date of passing (optional)').getByLabelText('Year'), { target: { value: '1761' } });
+    expect(save().disabled).toBe(false);
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Remove date of passing' }));
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Add a date of passing' })));
+    await fireEvent.click(screen.getByRole('button', { name: 'Add a date of passing' }));
+    await waitFor(() =>
+      expect(document.activeElement).toBe(field('Date of passing (optional)').getByLabelText('How sure are you?')),
+    );
+  });
 });

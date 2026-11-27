@@ -17,6 +17,7 @@
   import { Icon } from '@frameleaf/ui';
   import { mdiClose, mdiDeleteOutline, mdiPlus } from '@mdi/js';
   import { DateTime } from 'luxon';
+  import { tick } from 'svelte';
   import { t } from 'svelte-i18n';
 
   /**
@@ -48,11 +49,24 @@
     value.date && !value.precision ? value.date : '';
   // a half-typed day or year is never saved (it would read as no date, or the wrong one)
   const incomplete = $derived(
-    (showBorn && !isDateFieldValid(born, 1800, thisYear)) || (showPassed && !isDateFieldValid(passed, 1800, thisYear)),
+    (showBorn && !isDateFieldValid(born, 1, thisYear)) || (showPassed && !isDateFieldValid(passed, 1, thisYear)),
   );
   const problem = $derived(incomplete ? null : datesProblem(birth.date ?? '', passing.date ?? '', today));
-  const span = $derived(problem ? null : lifespan(exact(birth), exact(passing)));
+  // a lifespan reads years only, so any precision gives one; an age needs the exact birthday
+  const span = $derived(problem ? null : lifespan(birth.date, passing.date));
   const age = $derived(!problem && exact(birth) && !span ? ageInYears(exact(birth)) : null);
+  const fieldId = $props.id();
+
+  /** Adding a date puts the cursor on its first question; removing one puts it back on the add button. */
+  const show = async (which: 'born' | 'passed', on: boolean) => {
+    if (which === 'born') {
+      showBorn = on;
+    } else {
+      showPassed = on;
+    }
+    await tick();
+    document.getElementById(on ? `${fieldId}-${which}` : `${fieldId}-add-${which}`)?.focus();
+  };
   const unchanged = $derived(
     birth.date === (person.birthDate || null) &&
       birth.precision === (person.birthDatePrecision ?? null) &&
@@ -106,16 +120,19 @@
       <div class="row">
         <DateField
           label={$t('frameleaf_people_birthday_label', { values: { name } })}
+          id="{fieldId}-born"
+          focusOnOpen
           value={born}
+          minYear={1}
           maxYear={thisYear}
           onChange={(value) => (born = value)}
         />
-        <IconButton label={$t('frameleaf_people_birthday_remove')} onclick={() => (showBorn = false)}>
+        <IconButton label={$t('frameleaf_people_birthday_remove')} onclick={() => show('born', false)}>
           <Icon icon={mdiClose} size="18" aria-hidden="true" />
         </IconButton>
       </div>
     {:else}
-      <button type="button" class="add" data-initial-focus onclick={() => (showBorn = true)}>
+      <button type="button" class="add" id="{fieldId}-add-born" data-initial-focus onclick={() => show('born', true)}>
         <Icon icon={mdiPlus} size="16" aria-hidden="true" />
         {$t('frameleaf_people_birthday_label', { values: { name } })}
       </button>
@@ -124,16 +141,18 @@
       <div class="row">
         <DateField
           label={$t('frameleaf_people_passing_label')}
+          id="{fieldId}-passed"
           value={passed}
+          minYear={1}
           maxYear={thisYear}
           onChange={(value) => (passed = value)}
         />
-        <IconButton label={$t('frameleaf_people_passing_remove')} onclick={() => (showPassed = false)}>
+        <IconButton label={$t('frameleaf_people_passing_remove')} onclick={() => show('passed', false)}>
           <Icon icon={mdiClose} size="18" aria-hidden="true" />
         </IconButton>
       </div>
     {:else}
-      <button type="button" class="add" onclick={() => (showPassed = true)}>
+      <button type="button" class="add" id="{fieldId}-add-passed" onclick={() => show('passed', true)}>
         <Icon icon={mdiPlus} size="16" aria-hidden="true" />
         {$t('frameleaf_people_passing_add')}
       </button>

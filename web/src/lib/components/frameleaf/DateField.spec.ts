@@ -76,4 +76,20 @@ describe('DateField', () => {
     expect(isDateFieldValid(value({ year: 1799, sure: 'year' }))).toBe(false);
     expect(isDateFieldValid(value({ year: NaN, sure: 'year' }))).toBe(false);
   });
+
+  it('refuses a month that has not begun, as the server does', async () => {
+    const now = new Date();
+    const next = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+    const ahead = value({ sure: 'month', year: next.getFullYear(), month: next.getMonth() + 1 });
+    expect(isDateFieldValid(ahead, 1800, next.getFullYear())).toBe(false);
+    expect(isDateFieldValid(value({ sure: 'month', year: now.getFullYear(), month: now.getMonth() + 1 }))).toBe(true);
+    render(DateField, { label: 'Born', value: ahead, maxYear: next.getFullYear(), onChange: vi.fn() });
+    expect(screen.getByText('Choose a date that is not in the future.', { exact: false })).toBeInTheDocument();
+  });
+
+  it('marks a year out of range and can take the cursor as its dialog opens', () => {
+    render(DateField, { label: 'Taken', value: value({ year: 1700 }), focusOnOpen: true, onChange: vi.fn() });
+    expect(screen.getByLabelText('Year')).toHaveAttribute('aria-invalid', 'true');
+    expect(screen.getByLabelText('How sure are you?')).toHaveAttribute('data-initial-focus');
+  });
 });

@@ -8,7 +8,7 @@
    * changes nothing until something else is picked.
    */
   import { formatDate, formatTime } from '$lib/frameleaf/date-format';
-  import { isRealDay, type DateFieldValue, type DateSure } from '$lib/frameleaf/date-field';
+  import { isFutureMonth, isRealDay, type DateFieldValue, type DateSure } from '$lib/frameleaf/date-field';
   import { Icon } from '@frameleaf/ui';
   import { mdiCalendarClock } from '@mdi/js';
   import { t } from 'svelte-i18n';
@@ -20,6 +20,8 @@
     withTime = false,
     minYear = 1800,
     maxYear = new Date().getFullYear(),
+    focusOnOpen = false,
+    id: givenId,
   }: {
     label: string;
     value: DateFieldValue;
@@ -27,9 +29,14 @@
     withTime?: boolean;
     minYear?: number;
     maxYear?: number;
+    /** The dialog this field opens in puts the cursor on its first question (FL-1823). */
+    focusOnOpen?: boolean;
+    /** The first question's id, for a caller that moves the focus to it. */
+    id?: string;
   } = $props();
 
-  const id = $props.id();
+  const ownId = $props.id();
+  const id = $derived(givenId ?? ownId);
   const set = (patch: Partial<DateFieldValue>) => onChange({ ...value, ...patch });
 
   const choices = $derived<{ value: DateSure; label: string }[]>([
@@ -64,6 +71,9 @@
         return $t('frameleaf_date_field_day_at', { values: { day, time } });
       }
       case 'month': {
+        if (isFutureMonth(value)) {
+          return $t('frameleaf_people_birthday_future');
+        }
         return formatDate(at, { year: 'numeric', month: 'long' });
       }
       case 'year': {
@@ -85,7 +95,12 @@
   <legend>{label}</legend>
   <label class="field">
     <span>{$t('frameleaf_date_field_how_sure')}</span>
-    <select value={value.sure} onchange={(event) => set({ sure: event.currentTarget.value as DateSure })}>
+    <select
+      {id}
+      value={value.sure}
+      data-initial-focus={focusOnOpen || undefined}
+      onchange={(event) => set({ sure: event.currentTarget.value as DateSure })}
+    >
       {#each choices as choice (choice.value)}
         <option value={choice.value}>{choice.label}</option>
       {/each}
@@ -124,6 +139,7 @@
         min={minYear}
         max={maxYear}
         value={value.year}
+        aria-invalid={!yearOk}
         oninput={(event) => set({ year: event.currentTarget.valueAsNumber })}
       />
     </label>

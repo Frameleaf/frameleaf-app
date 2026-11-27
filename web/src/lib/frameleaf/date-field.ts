@@ -32,7 +32,12 @@ export const isDateFieldValid = (value: DateFieldValue, minYear = 1800, maxYear 
   Number.isSafeInteger(value.year) &&
   value.year >= minYear &&
   value.year <= maxYear &&
-  (value.sure !== 'day' || isRealDay(value));
+  (value.sure !== 'day' || isRealDay(value)) &&
+  !isFutureMonth(value);
+
+/** A month, or a day of one, that has not begun yet: the server refuses a month date after this one. */
+export const isFutureMonth = ({ sure, year, month }: DateFieldValue, now = new Date()) =>
+  sure === 'month' && year * 12 + month > now.getFullYear() * 12 + now.getMonth() + 1;
 
 /** Whether the value names a real day (no 31 April, no 29 February outside a leap year). */
 export const isRealDay = ({ year, month, day }: Pick<DateFieldValue, 'year' | 'month' | 'day'>) => {

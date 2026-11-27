@@ -63,7 +63,11 @@
     ),
     time: initial.time || '00:00',
   });
-  const date = $derived(field.sure === 'day' && isDateFieldValid(field) ? dateFieldStart(field) : '');
+  // an exact day keeps the wide range the old date field allowed; approximate dates are for 1800 to now
+  const minYear = $derived(field.sure === 'day' ? 1 : 1800);
+  const maxYear = $derived(field.sure === 'day' ? 9999 : new Date().getFullYear());
+  const valid = $derived(isDateFieldValid(field, minYear, maxYear));
+  const date = $derived(field.sure === 'day' && valid ? dateFieldStart(field) : '');
   const time = $derived(field.time ?? '00:00');
   /** An empty value keeps the current time zone. */
   let zone = $state('');
@@ -134,7 +138,7 @@
 
   const save = async () => {
     if (field.sure !== 'day') {
-      if (isDateFieldValid(field)) {
+      if (valid) {
         await saveApproximate();
       }
       return;
@@ -173,7 +177,15 @@
       void save();
     }}
   >
-    <DateField label={$t('edit_date_and_time')} withTime value={field} onChange={(value) => (field = value)} />
+    <DateField
+      label={$t('edit_date_and_time')}
+      withTime
+      focusOnOpen
+      {minYear}
+      {maxYear}
+      value={field}
+      onChange={(value) => (field = value)}
+    />
     {#if field.sure === 'day'}
       <label>
         {$t('frameleaf_info_time_zone')}
@@ -204,7 +216,7 @@
       type="submit"
       form="fl-viewer-date-form"
       class="button primary"
-      disabled={(field.sure === 'day' ? !takenAt || !targetZone : !isDateFieldValid(field)) || saving}
+      disabled={(field.sure === 'day' ? !takenAt || !targetZone : !valid) || saving}
     >
       {$t('save')}
     </button>
