@@ -10,6 +10,7 @@
    * refused rather than applied to the wrong entry. The inventory refreshes while the page is
    * open and says so when it could not, instead of presenting an old snapshot as current.
    */
+  import { formatDateTime } from '$lib/frameleaf/date-format';
   import Badge from '$lib/components/frameleaf/Badge.svelte';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Chip from '$lib/components/frameleaf/Chip.svelte';
@@ -94,11 +95,7 @@
   const stale = $derived(refreshFailed || isStaleSnapshot(inventory.checkedAt, now));
 
   const formatTime = (value: string | null) =>
-    value
-      ? new Intl.DateTimeFormat($locale ?? undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(
-          new Date(value),
-        )
-      : null;
+    value ? formatDateTime(new Date(value), { dateStyle: 'medium', timeStyle: 'short' }, $locale ?? 'default') : null;
 
   const reload = async () => {
     refreshing = true;

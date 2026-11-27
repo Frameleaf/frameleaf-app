@@ -23,6 +23,7 @@
     type DatePrecision,
     toSdkDateAccuracy,
   } from '$lib/frameleaf/approximate-date';
+  import { formatLuxon } from '$lib/frameleaf/date-format';
   import { joinDateTime, splitDateTime, timezoneChoices } from '$lib/frameleaf/viewer-date';
   import {
     getModernOffsetForZoneAndDate,
@@ -113,11 +114,8 @@
     }
     const wallClock = DateTime.fromISO(takenAt);
     return {
-      date: wallClock.toLocaleString(
-        { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' },
-        { locale: $locale },
-      ),
-      time: wallClock.toLocaleString({ hour: 'numeric', minute: '2-digit' }, { locale: $locale }),
+      date: formatLuxon(wallClock, { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' }, $locale),
+      time: formatLuxon(wallClock, { hour: 'numeric', minute: '2-digit' }, $locale),
     };
   });
 

@@ -13,6 +13,7 @@
    */
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import FormatMessage from '$lib/elements/FormatMessage.svelte';
+  import { formatLuxon } from '$lib/frameleaf/date-format';
   import { providerAccountLink } from '$lib/frameleaf/personal-access';
   import {
     checkForUpdates,
@@ -99,7 +100,7 @@
     (iso && DateTime.fromISO(iso).toRelative({ locale: $locale })) || $t('frameleaf_about_update_just_now');
 
   const longDate = (iso: string) =>
-    DateTime.fromISO(iso).toLocaleString({ day: 'numeric', month: 'short', year: 'numeric' }, { locale: $locale });
+    formatLuxon(DateTime.fromISO(iso), { day: 'numeric', month: 'short', year: 'numeric' }, $locale);
 </script>
 
 <Dialog title={$t('frameleaf_about_menu_item')} closeLabel={$t('close')} bind:open>

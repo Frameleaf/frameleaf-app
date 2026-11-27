@@ -15,6 +15,7 @@
    * Everything goes through the enrichment endpoints; a Locked video's moments are only ever
    * returned to its owner's unlocked session, so the panel simply shows nothing otherwise.
    */
+  import { formatDateTime } from '$lib/frameleaf/date-format';
   import IconButton from '$lib/components/frameleaf/IconButton.svelte';
   import VideoMomentHits from '$lib/components/frameleaf/VideoMomentHits.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
@@ -277,7 +278,7 @@
       : 'frameleaf_moments_source_generated';
 
   const formatDate = (value: string | null) =>
-    value ? new Date(value).toLocaleString($locale ?? undefined, { dateStyle: 'medium', timeStyle: 'short' }) : '';
+    value ? formatDateTime(new Date(value), { dateStyle: 'medium', timeStyle: 'short' }, $locale ?? 'default') : '';
 
   $effect(() => {
     const id = asset.id;

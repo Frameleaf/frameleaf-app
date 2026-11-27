@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { formatDate, formatDateTime } from '$lib/frameleaf/date-format';
+  import { formatMoney } from '$lib/frameleaf/number-format';
   import { developLabel } from '$lib/frameleaf/develop-label';
   /**
    * One shoot's client work: the shoot strip (cover, counts, Client preview), the tabs for its
@@ -257,7 +259,7 @@
 
   const money = (amount: number, currency = draft?.config.currency ?? 'USD') => {
     try {
-      return new Intl.NumberFormat($locale, { style: 'currency', currency }).format(amount / 100);
+      return formatMoney(amount, currency, $locale);
     } catch {
       return `${amount / 100} ${currency}`;
     }
@@ -1774,7 +1776,20 @@
                         value={version.revisionId}
                         >{versionChoices[capture.id]?.find((choice) => choice.id === version.revisionId)?.label ??
                           $t('frameleaf_photography_approved_at', {
-                            values: { date: new Date(version.approvedAt).toLocaleString($locale) },
+                            values: {
+                              date: formatDateTime(
+                                new Date(version.approvedAt),
+                                {
+                                  year: 'numeric',
+                                  month: 'numeric',
+                                  day: 'numeric',
+                                  hour: 'numeric',
+                                  minute: 'numeric',
+                                  second: 'numeric',
+                                },
+                                $locale,
+                              ),
+                            },
                           })}</option
                       >{/each}</select
                   ></label
@@ -1823,7 +1838,20 @@
         </div>
         {#each draft.rounds as round (round.id)}<article class="phd-order">
             <div class="phd-row">
-              <strong>{recipient(round.recipientId)} · {new Date(round.createdAt).toLocaleString($locale)}</strong><span
+              <strong
+                >{recipient(round.recipientId)} · {formatDateTime(
+                  new Date(round.createdAt),
+                  {
+                    year: 'numeric',
+                    month: 'numeric',
+                    day: 'numeric',
+                    hour: 'numeric',
+                    minute: 'numeric',
+                    second: 'numeric',
+                  },
+                  $locale,
+                )}</strong
+              ><span
                 >{$t('frameleaf_photography_photographs_count', { values: { count: round.captureIds.length } })}</span
               >
             </div>
@@ -1926,7 +1954,18 @@
           </article>{:else}<p>
             {$t('frameleaf_photography_no_orders')}
           </p>{/each}{#each draft.receipts as receipt (receipt.id)}<small
-            >{new Date(receipt.createdAt).toLocaleString($locale)} · {named('receipt', receipt.action)} · {receipt.reference}</small
+            >{formatDateTime(
+              new Date(receipt.createdAt),
+              {
+                year: 'numeric',
+                month: 'numeric',
+                day: 'numeric',
+                hour: 'numeric',
+                minute: 'numeric',
+                second: 'numeric',
+              },
+              $locale,
+            )} · {named('receipt', receipt.action)} · {receipt.reference}</small
           >{/each}
       </section>
       <section class="phd-card">
@@ -2100,7 +2139,7 @@
                   {row.canProof ? $t('frameleaf_photography_proofing_on') : $t('frameleaf_photography_proofing_off')} · {row.canDownload
                     ? $t('frameleaf_photography_downloads_on')
                     : $t('frameleaf_photography_downloads_off')}{row.expiresAt
-                    ? ` · ${$t('frameleaf_photography_expires_on', { values: { date: new Date(row.expiresAt).toLocaleDateString($locale) } })}`
+                    ? ` · ${$t('frameleaf_photography_expires_on', { values: { date: formatDate(new Date(row.expiresAt), { year: 'numeric', month: 'numeric', day: 'numeric' }, $locale) } })}`
                     : ''}
                 </p>
                 <div class="phd-actions">

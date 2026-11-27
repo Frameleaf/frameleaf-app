@@ -20,6 +20,7 @@
   import Said from '$lib/components/frameleaf/settings/kit/Said.svelte';
   import Section from '$lib/components/frameleaf/settings/kit/Section.svelte';
   import { confirmFrameleaf } from '$lib/frameleaf/confirm';
+  import { formatLuxon } from '$lib/frameleaf/date-format';
   import { formatBytes } from '$lib/frameleaf/format-bytes';
   import { unusedFilesAccess } from '$lib/frameleaf/unused-files.svelte';
   import { locale } from '$lib/stores/preferences.store';
@@ -84,7 +85,7 @@
     const when = DateTime.fromISO(value).setLocale($locale ?? 'en');
     return when.hasSame(DateTime.now(), 'day')
       ? $t('frameleaf_unused_today')
-      : when.toLocaleString({ day: 'numeric', month: 'short' });
+      : formatLuxon(when, { day: 'numeric', month: 'short' });
   };
 
   const restore = async (item: FileTrashItemResponseDto) => {

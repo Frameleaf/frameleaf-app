@@ -6,6 +6,7 @@
    * photo back out of the Trash (the decision job's own undo); across people it puts the photo back on
    * its own file (`undoIdenticalFileChange`, an administrator's).
    */
+  import { formatLuxon } from '$lib/frameleaf/date-format';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import { formatBytes } from '$lib/frameleaf/format-bytes';
   import { MERGED_ROWS, mergedRows, type MergedRow } from '$lib/frameleaf/merged-for-you';
@@ -75,12 +76,12 @@
   const when = (value: string) => {
     const at = DateTime.fromISO(value).setLocale($locale ?? 'en');
     if (at.hasSame(DateTime.now(), 'day')) {
-      return $t('frameleaf_merged_today', { values: { time: at.toLocaleString(DateTime.TIME_SIMPLE) } });
+      return $t('frameleaf_merged_today', { values: { time: formatLuxon(at, DateTime.TIME_SIMPLE) } });
     }
     if (at.hasSame(DateTime.now().minus({ days: 1 }), 'day')) {
       return $t('frameleaf_merged_yesterday');
     }
-    return at.toLocaleString({ day: 'numeric', month: 'short' });
+    return formatLuxon(at, { day: 'numeric', month: 'short' });
   };
 
   const what = (row: MergedRow) => {

@@ -5,6 +5,7 @@
  * in that zone and shown in the viewer's local time, in one style everywhere.
  */
 import { DateTime } from 'luxon';
+import { formatLuxon } from '$lib/frameleaf/date-format';
 
 export type BackupTime = {
   /** The moment the backup was made, in the viewer's zone. */
@@ -48,8 +49,8 @@ export const backupTime = (
   const timeOptions: Intl.DateTimeFormatOptions = { hour: '2-digit', minute: '2-digit' };
   return {
     at,
-    time: at.toLocaleString(timeOptions),
-    date: at.toLocaleString(dateOptions),
-    label: at.toLocaleString({ ...dateOptions, ...timeOptions }),
+    time: formatLuxon(at, timeOptions),
+    date: formatLuxon(at, dateOptions),
+    label: formatLuxon(at, { ...dateOptions, ...timeOptions }),
   };
 };
