@@ -128189,11 +128189,18 @@
           "path": {
             "description": "A folder holding photos or videos, without a trailing slash",
             "type": "string"
+          },
+          "skipped": {
+            "description": "Photos and videos directly in it that the exclusion patterns skip (FL-1837); count may then be 0",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
           }
         },
         "required": [
           "count",
-          "path"
+          "path",
+          "skipped"
         ],
         "type": "object"
       },
