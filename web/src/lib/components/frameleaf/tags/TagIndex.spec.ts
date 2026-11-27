@@ -111,6 +111,41 @@ describe('TagIndex', () => {
   });
 
   describe('cards', () => {
+    /** FL-1802 */
+    it('draws the cards a batch at a time, the next batch as the end of the list nears the view', async () => {
+      const callbacks: IntersectionObserverCallback[] = [];
+      vi.stubGlobal(
+        'IntersectionObserver',
+        class {
+          constructor(callback: IntersectionObserverCallback) {
+            callbacks.push(callback);
+          }
+          observe() {}
+          disconnect() {}
+        },
+      );
+      try {
+        const many = Array.from({ length: 150 }, (_, index) =>
+          tag({ id: `tag-${index}`, name: `Tag ${String(index).padStart(3, '0')}` }),
+        );
+        renderIndex(many, []);
+        expect(cards()).toHaveLength(60);
+        // every tag is still counted and findable
+        expect(screen.getByText('150 tags')).toBeInTheDocument();
+
+        const near = [{ isIntersecting: true }] as unknown as IntersectionObserverEntry[];
+        callbacks.at(-1)!(near, {} as IntersectionObserver);
+        await waitFor(() => expect(cards()).toHaveLength(120));
+        callbacks.at(-1)!(near, {} as IntersectionObserver);
+        await waitFor(() => expect(cards()).toHaveLength(150));
+
+        await fireEvent.input(find(), { target: { value: 'Tag 149' } });
+        await waitFor(() => expect(cardNames()).toEqual(['Tag 149']));
+      } finally {
+        vi.unstubAllGlobals();
+      }
+    });
+
     it('draws one card per top-level tag, busiest first, each a link to the tag', () => {
       renderIndex();
       expect(cardNames()).toEqual(['Family', 'Travel', 'To sort']);
