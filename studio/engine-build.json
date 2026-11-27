@@ -929,7 +929,12 @@
       "path": "patches/0206-studio-not-upstream.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "5a1f3cb0504a4f40679ea72c67017801f0e4fae55c8a188b9f9e7f04569e9f86"
+    },
+    {
+      "path": "patches/0207-studio-tab-bar.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "c0954f32adfe366acccb0003f4d6ecae655f47c94cc46f331c831904e6c5ca73"
     }
   ],
-  "sourceSha256": "62f1f7453d93e5dd309986dee2894c76b4fee07c7a4c2e3a8d27abf98694d1e0"
+  "sourceSha256": "0191c4d7a611fd2fba5aefd4985be309aa397db7188da8a790893adf31e72f70"
 }
