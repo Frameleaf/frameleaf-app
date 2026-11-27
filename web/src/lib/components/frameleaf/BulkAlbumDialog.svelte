@@ -1,6 +1,7 @@
 <script lang="ts">
   import AlbumMark from '$lib/components/frameleaf/AlbumMark.svelte';
-  import Spinner from '$lib/components/frameleaf/Spinner.svelte';
+  import InlineError from '$lib/components/frameleaf/InlineError.svelte';
+  import ListSkeleton from '$lib/components/frameleaf/ListSkeleton.svelte';
   import BulkFormDialog from '$lib/components/frameleaf/BulkFormDialog.svelte';
   import {
     albumTargetRows,
@@ -19,7 +20,7 @@
   import { eventManager } from '$lib/managers/event-manager.svelte';
   import { getAssetMediaUrl } from '$lib/utils';
   import { handleError } from '$lib/utils/handle-error';
-  import { onMount, onDestroy } from 'svelte';
+  import { onMount, onDestroy, tick } from 'svelte';
   import { onLibraryAccessChange } from '$lib/frameleaf/library-access';
   import {
     createAlbum,
@@ -118,6 +119,14 @@
     }
   };
 
+  // Try again unmounts its own button; the cursor goes back to the search field (pickers focus their field).
+  const retry = async () => {
+    const reading = load();
+    await tick();
+    searchInput?.focus();
+    await reading;
+  };
+
   onMount(() => {
     void load();
     return onLibraryAccessChange(() => {
@@ -151,13 +160,8 @@
     albumTargetRows(searching ? matches : withoutAlbumTargets(directory, new Set(recent.map(({ id }) => id))), limit),
   );
   let albumTotal = $derived(countAlbumTargets(directory));
-  let preview = $derived(
-    status === 'failed'
-      ? $t('frameleaf_bulk_album_load_failed')
-      : status === 'ready' && albumTotal === 0
-        ? $t('frameleaf_bulk_album_none')
-        : undefined,
-  );
+  // FL-1810: a failed read is said once, in place of the list; the line under it is for "no albums".
+  let preview = $derived(status === 'ready' && albumTotal === 0 ? $t('frameleaf_bulk_album_none') : undefined);
 
   const typed = $derived(query.trim());
   const exact = $derived(typed ? targets.find((target) => sameName(target.name, typed)) : undefined);
@@ -291,12 +295,12 @@
       data-initial-focus
     />
   </label>
-  <ul aria-busy={status === 'loading'}>
+  <ul>
     {#if status === 'loading'}
-      <li class="empty"><Spinner /></li>
+      <li class="empty"><ListSkeleton rows={3} /></li>
     {:else if status === 'failed'}
       <li class="empty">
-        <button type="button" class="more" onclick={() => void load()}>{$t('retry')}</button>
+        <InlineError compact message={$t('frameleaf_bulk_album_load_failed')} onRetry={retry} />
       </li>
     {:else}
       {#if canCreate}
