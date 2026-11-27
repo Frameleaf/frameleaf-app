@@ -1,5 +1,4 @@
 <script lang="ts">
-  import type { Translations } from 'svelte-i18n';
   /**
    * Library Care: Missing media and Damaged media (FL-69).
    *
@@ -24,6 +23,9 @@
    *   or recovery changed the original itself; putting the old path back is not a status change, so
    *   those notices offer none.
    */
+  import EmptyState from '$lib/components/frameleaf/EmptyState.svelte';
+  import type { Translations } from 'svelte-i18n';
+  import InlineError from '$lib/components/frameleaf/InlineError.svelte';
   import { formatLuxon } from '$lib/frameleaf/date-format';
   import Badge from '$lib/components/frameleaf/Badge.svelte';
   import Button from '$lib/components/frameleaf/Button.svelte';
@@ -136,6 +138,7 @@
   const isAdmin = $derived(authManager.user.isAdmin);
   const selfId = $derived(authManager.user.id);
 
+  let loadFailed = $state(false);
   let list = $state(initial);
   let summary = $state(initialSummary);
   let owner = $state<string>(initialOwner ?? authManager.user.id);
@@ -205,8 +208,11 @@
       summary = nextSummary;
       const available = new Set(toRows(nextList).map(({ id }) => id));
       selected = selected.filter((id) => available.has(id));
+      loadFailed = false;
     } catch (error) {
-      handleError(error, $t('library_care_unable_to_load'));
+      // FL-1810: a failed read is said in place of the list, with Try again; still logged
+      loadFailed = true;
+      handleError(error, $t('library_care_unable_to_load'), { notify: false });
     }
   };
 
@@ -862,18 +868,19 @@
         {/each}
       </tbody>
     </table>
-    {#if visible.length === 0}
-      <div class="empty">
-        <Icon icon={mdiCheckCircleOutline} size="1.75rem" aria-hidden={true} />
-        <h3>{$t('library_care_empty_title')}</h3>
-        <p>
-          {list.total === 0 && !query
-            ? isMissing
-              ? $t('library_care_empty_missing')
-              : $t('library_care_empty_damaged')
-            : $t('library_care_empty_filtered')}
-        </p>
-      </div>
+    {#if loadFailed}
+      <InlineError message={$t('library_care_unable_to_load')} onRetry={refresh} />
+    {:else if visible.length === 0}
+      <EmptyState
+        compact
+        icon={mdiCheckCircleOutline}
+        title={$t('library_care_empty_title')}
+        message={list.total === 0 && !query
+          ? isMissing
+            ? $t('library_care_empty_missing')
+            : $t('library_care_empty_damaged')
+          : $t('library_care_empty_filtered')}
+      />
     {/if}
     {#if list.total > rows.length}
       <p class="more">{$t('library_care_showing', { values: { shown: rows.length, total: list.total } })}</p>
@@ -1267,18 +1274,6 @@
     display: flex;
     flex-wrap: wrap;
     gap: 8px;
-  }
-  .empty {
-    display: grid;
-    justify-items: center;
-    gap: 0.375rem;
-    padding: 2rem 1rem;
-    text-align: center;
-    color: var(--fl-muted);
-  }
-  .empty h3 {
-    color: var(--fl-text);
-    font-size: 0.9375rem;
   }
   .more {
     padding: 0.5rem 0.75rem;

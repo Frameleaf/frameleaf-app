@@ -949,7 +949,12 @@
       "path": "patches/0210-studio-timeline-toolbar.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "c0e4a354a5ba5ba5d637a20d751ba75be8660f308bf23aec8efba2f9e133649c"
+    },
+    {
+      "path": "patches/0211-studio-track-heads.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "050799e98bee4d2c32227da852b6c228874afc93f0ae5d427f2986d1edf7d27e"
     }
   ],
-  "sourceSha256": "0bc63badd42ed7735d32c4c6e479bc1f88908274ee00d100b2378e1d027ee843"
+  "sourceSha256": "926bc6200a4c1221056b19ff3b2878dc65605b0e12eaecce65e825075bb9fc67"
 }
