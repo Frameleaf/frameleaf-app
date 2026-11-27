@@ -135,15 +135,15 @@ describe('PhotographyWorkspace', () => {
     expect(screen.getByRole('combobox', { name: 'Current shoot' })).toHaveValue('shoot');
   });
 
-  it('offers "Remove from the top bar" at the rail foot only when the page passes it', async () => {
+  it('offers "Stop using Clients" at the rail foot only when the page passes it', async () => {
     const onRemoveFromTopBar = vi.fn();
     const view = render(PhotographyWorkspace);
     await screen.findByRole('button', { name: 'New shoot' });
-    expect(screen.queryByRole('button', { name: /Remove from the top bar/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /Stop using Clients/ })).toBeNull();
     view.unmount();
 
     render(PhotographyWorkspace, { onRemoveFromTopBar });
-    await fireEvent.click(await screen.findByRole('button', { name: /Remove from the top bar/ }));
+    await fireEvent.click(await screen.findByRole('button', { name: /Stop using Clients/ }));
     expect(onRemoveFromTopBar).toHaveBeenCalledOnce();
   });
 

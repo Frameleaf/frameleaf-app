@@ -91,6 +91,6 @@ describe('Clients page (opt-in, owner October 28)', () => {
       userPreferencesUpdateDto: { clients: { enabled: false } },
     });
     expect(authManager.preferences.clients?.enabled).toBe(false);
-    expect(toast).toHaveBeenCalledWith('Clients is back under Tools. Your shoots and galleries are kept.');
+    expect(toast).toHaveBeenCalledWith('Clients is off. Your shoots and galleries are kept for when you start it again.');
   });
 });

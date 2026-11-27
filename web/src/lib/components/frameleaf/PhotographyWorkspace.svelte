@@ -15,7 +15,7 @@
    * make it current, then arrows move (Up/Down by row), 1-5 rate, X rejects and 0 clears.
    *
    * Clients is opt-in (owner, October 28): while it is in the top bar the rail's foot offers
-   * "Remove from the top bar", which puts it back under Tools; the page owns that action.
+   * "Stop using Clients", which shows the introduction again; the page owns that action.
    */
   import { developFileUrl } from '$lib/frameleaf/develop-api';
   import { newRequestKey } from '$lib/frameleaf/request-key';
@@ -182,7 +182,7 @@
     initialShoot?: string;
     /** `galleries`: the editor's Proof opens the shoot's galleries; `website`: an inquiry email's link (FL-702). */
     initialSection?: 'galleries' | 'website' | 'payments' | 'booking-types';
-    /** Take Clients out of the top bar (back under Tools); omitted, the rail offers no such action. */
+    /** Stop using Clients (the page shows its introduction again); omitted, the rail offers no such action. */
     onRemoveFromTopBar?: () => void;
     /** Removing is being saved. */
     removing?: boolean;

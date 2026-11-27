@@ -98,12 +98,12 @@
 
   const context = $derived({
     isAdmin,
+    map: featureFlagsManager.value.map,
     capabilities: {
       // The palette reaches every page; only the rail follows the "in navigation" choices.
       recentlyAdded: true,
       pets: true,
       search: featureFlagsManager.value.search || currentQuery.filter.libraryScope === LibraryViewScope.Design,
-      map: featureFlagsManager.value.map,
       trash: featureFlagsManager.value.trash,
       people: !!preferences?.people.enabled,
       memories: !!preferences?.memories.enabled,

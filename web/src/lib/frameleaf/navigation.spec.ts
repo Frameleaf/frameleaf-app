@@ -22,7 +22,6 @@ import { Route } from '$lib/route';
 const allCapabilities = (): RailCapabilities => ({
   recentlyAdded: true,
   search: true,
-  map: true,
   trash: true,
   people: true,
   pets: true,
@@ -39,15 +38,47 @@ const find = (capabilities: RailCapabilities, id: RailDestination['id']) =>
   flatten(capabilities).find((destination) => destination.id === id);
 
 describe('Frameleaf rail destinations', () => {
-  it('keeps the September 24 section order: Library, Explore, Albums, Shared spaces, Tools', () => {
+  it('keeps the section order Library, Explore, Albums, Shared spaces, with no Tools section (FL-1806)', () => {
     expect(buildRailSections(allCapabilities()).map((section) => section.id)).toEqual([
       'library',
       'explore',
       'albums',
       'spaces',
-      'tools',
       'footer',
     ]);
+  });
+
+  it('lists Explore as Explore, People & pets, Places & map, Memories, Documents, Tags, Folders', () => {
+    const explore = buildRailSections(allCapabilities()).find((section) => section.id === 'explore');
+
+    expect(explore?.destinations.map(({ id, labelKey }) => [id, labelKey])).toEqual([
+      ['explore', 'explore'],
+      ['people', 'frameleaf_rail_people_pets'],
+      ['places', 'frameleaf_rail_places_map'],
+      ['memories', 'memories'],
+      ['documents', 'frameleaf_documents_title'],
+      ['tags', 'tags'],
+      ['folders', 'folders'],
+    ]);
+  });
+
+  it('puts All shared under All albums, above Shared links (FL-1809)', () => {
+    const albums = buildRailSections(allCapabilities()).find((section) => section.id === 'albums');
+
+    expect(albums?.destinations.map(({ id }) => id)).toEqual(['allAlbums', 'allShared', 'sharedLinks']);
+    expect(find(allCapabilities(), 'allShared')?.href).toBe(Route.sharing());
+    // A shared space's own page belongs to its rail row, not to All shared.
+    expect(isDestinationCurrent(Route.viewSharedSpace({ id: 'space-id' }), find(allCapabilities(), 'allShared')!)).toBe(
+      false,
+    );
+  });
+
+  it('ends with Import, Library care, Trash, Settings and Support in the footer', () => {
+    const footer = buildRailSections(allCapabilities()).find((section) => section.id === 'footer');
+
+    expect(footer?.destinations.map(({ id }) => id)).toEqual(['import', 'libraryCare', 'trash', 'settings', 'support']);
+    expect(find(allCapabilities(), 'import')?.href).toBe(Route.importPlace());
+    expect(find({ ...allCapabilities(), trash: false }, 'trash')).toBeUndefined();
   });
 
   it('opens with Library, Favorites, Recently added, Best Photos, Archive and Locked', () => {
@@ -83,23 +114,31 @@ describe('Frameleaf rail destinations', () => {
   });
 
   it('hides destinations the account has turned off, without touching the rest', () => {
-    const capabilities = { ...allCapabilities(), map: false, tags: false, sharedLinks: false };
+    const capabilities = { ...allCapabilities(), tags: false, sharedLinks: false };
     const ids = new Set(flatten(capabilities).map((destination) => destination.id));
 
-    expect(ids.has('map')).toBe(false);
     expect(ids.has('tags')).toBe(false);
     expect(ids.has('sharedLinks')).toBe(false);
     expect(ids.has('people')).toBe(true);
     expect(ids.has('allAlbums')).toBe(true);
   });
 
-  it('keeps Pets next to People, and drops it only when the account hid it from the sidebar', () => {
-    const explore = buildRailSections(allCapabilities()).find((section) => section.id === 'explore');
-    const ids = explore?.destinations.map((destination) => destination.id) ?? [];
+  it('keeps People & pets while either People or Pets is in the sidebar, and current on both pages', () => {
+    expect(find({ ...allCapabilities(), people: false }, 'people')?.href).toBe(Route.people());
+    expect(find({ ...allCapabilities(), pets: false }, 'people')?.href).toBe(Route.people());
+    expect(find({ ...allCapabilities(), people: false, pets: false }, 'people')).toBeUndefined();
 
-    expect(ids.indexOf('pets')).toBe(ids.indexOf('people') + 1);
-    expect(find(allCapabilities(), 'pets')?.href).toBe(Route.pets());
-    expect(find({ ...allCapabilities(), pets: false }, 'pets')).toBeUndefined();
+    const people = find(allCapabilities(), 'people')!;
+    expect(isDestinationCurrent(Route.people(), people)).toBe(true);
+    expect(isDestinationCurrent(Route.pets(), people)).toBe(true);
+    expect(isDestinationCurrent(Route.viewPet({ id: 'pet-id' }), people)).toBe(true);
+  });
+
+  it('keeps Places & map current on the map', () => {
+    const places = find(allCapabilities(), 'places')!;
+
+    expect(isDestinationCurrent(Route.places(), places)).toBe(true);
+    expect(isDestinationCurrent(Route.map(), places)).toBe(true);
   });
 
   it('always keeps the destinations that do not depend on a capability', () => {
@@ -114,9 +153,8 @@ describe('Frameleaf rail destinations', () => {
       'places',
       'documents',
       'allAlbums',
-      'photography',
-      'rawSupport',
-      'workflows',
+      'allShared',
+      'import',
       'libraryCare',
       'settings',
       'support',
@@ -157,16 +195,22 @@ describe('Frameleaf rail destinations', () => {
     expect(active('/searching')).toEqual([]);
   });
 
-  it('distinguishes utilities, workflows, Care and personal settings on their shared pathname', () => {
-    const destinations = (['settings', 'libraryCare', 'workflows'] as const).map((id) => find(allCapabilities(), id)!);
+  it('tells the places (Import, Library care, Trash) from Settings on their shared pathname', () => {
+    const destinations = flatten(allCapabilities()).filter(({ id }) =>
+      ['import', 'libraryCare', 'trash', 'settings'].includes(id),
+    );
     const active = (url: string) =>
       destinations.filter((item) => isDestinationCurrent(url, item)).map((item) => item.id);
     expect(active(Route.utilities())).toEqual(['libraryCare']);
     expect(active(Route.duplicatesUtility())).toEqual(['libraryCare']);
     expect(active(Route.libraryCare())).toEqual(['libraryCare']);
     expect(active(commandCenterUrl('care', 'repair'))).toEqual(['libraryCare']);
-    expect(active(Route.workflows())).toEqual(['workflows']);
+    expect(active(Route.workflows())).toEqual(['libraryCare']);
+    expect(active(Route.importPlace())).toEqual(['import']);
+    expect(active(Route.takeout())).toEqual(['import']);
+    expect(active(Route.trash())).toEqual(['trash']);
     expect(active(Route.userSettings())).toEqual(['settings']);
+    expect(active(commandCenterUrl('preferences'))).toEqual(['settings']);
   });
 
   it('leaves an album page to its tree item instead of All albums', () => {
@@ -176,26 +220,21 @@ describe('Frameleaf rail destinations', () => {
     expect(isDestinationCurrent(Route.viewAlbum({ id: 'album-id' }), allAlbums)).toBe(false);
   });
 
-  it('keeps Studio and Activity out of the rail; Tools holds Photography, RAW support, Workflows and Trash', () => {
-    const tools = buildRailSections(allCapabilities()).find((section) => section.id === 'tools');
+  it('keeps Studio, Activity, Clients, RAW support and Workflows out of the rail', () => {
     const hrefs = flatten(allCapabilities()).map((destination) => destination.href);
 
-    expect(tools?.destinations.map((destination) => destination.id)).toEqual([
-      'photography',
-      'rawSupport',
-      'workflows',
-      'trash',
-    ]);
-    expect(find(allCapabilities(), 'rawSupport')?.href).toBe(Route.rawSupport());
-    expect(hrefs).not.toContain(Route.studioProjects());
-    expect(hrefs).not.toContain(Route.studio());
-    expect(hrefs).not.toContain(Route.activity());
-  });
-
-  it('takes Clients out of Tools once the account uses it, keeping RAW support', () => {
-    const tools = buildRailSections({ ...allCapabilities(), clients: true }).find((section) => section.id === 'tools');
-
-    expect(tools?.destinations.map((destination) => destination.id)).toEqual(['rawSupport', 'workflows', 'trash']);
+    for (const href of [
+      Route.studioProjects(),
+      Route.studio(),
+      Route.activity(),
+      Route.photography(),
+      Route.rawSupport(),
+      Route.workflows(),
+      Route.pets(),
+      Route.map(),
+    ]) {
+      expect(hrefs).not.toContain(href);
+    }
   });
 
   it('reads Clients as off when the preference is missing', () => {
@@ -207,17 +246,8 @@ describe('Frameleaf rail destinations', () => {
 });
 
 describe('Frameleaf primary destinations', () => {
-  it('offers the free Pro workspace beside Library, Studio and Activity', () => {
-    expect(buildPrimaryDestinations().map((destination) => destination.id)).toEqual([
-      'library',
-      'pro',
-      'studio',
-      'activity',
-    ]);
-  });
-
-  it('puts Clients between Boards and Studio once the account uses it', () => {
-    const destinations = buildPrimaryDestinations({ clients: true });
+  it('always puts Clients between Boards and Studio (FL-1806)', () => {
+    const destinations = buildPrimaryDestinations();
 
     expect(destinations.map((destination) => destination.id)).toEqual([
       'library',
@@ -233,13 +263,7 @@ describe('Frameleaf primary destinations', () => {
   });
 
   it('heads the phone menu with every section but Library (UI review 2026-10-30 #8)', () => {
-    expect(buildPhoneMenuDestinations().map(({ id }) => id)).toEqual(['pro', 'studio', 'activity']);
-    expect(buildPhoneMenuDestinations({ clients: true }).map(({ id }) => id)).toEqual([
-      'pro',
-      'clients',
-      'studio',
-      'activity',
-    ]);
+    expect(buildPhoneMenuDestinations().map(({ id }) => id)).toEqual(['pro', 'clients', 'studio', 'activity']);
   });
 
   it('keeps Clients current in its workspace and the RAW develop editor', () => {
@@ -254,6 +278,7 @@ describe('Frameleaf primary destinations', () => {
     expect(hrefs).toEqual({
       library: Route.photos(),
       pro: '/pro',
+      clients: Route.photography(),
       studio: Route.studioProjects(),
       activity: Route.activity(),
     });
@@ -370,7 +395,7 @@ describe('Frameleaf rail folding', () => {
   it('ignores unreadable or foreign values instead of hiding the rail', () => {
     expect(readClosedRailSections(memoryStorage('not json'))).toEqual([]);
     expect(readClosedRailSections(memoryStorage('{"albums":true}'))).toEqual([]);
-    expect(readClosedRailSections(memoryStorage('["library","footer","tools","tools"]'))).toEqual(['tools']);
+    expect(readClosedRailSections(memoryStorage('["library","footer","tools","albums","albums"]'))).toEqual(['albums']);
   });
 
   it('still folds for this visit when storage refuses the write', () => {

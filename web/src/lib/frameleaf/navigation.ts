@@ -1,7 +1,7 @@
 import {
+  mdiAccountMultipleOutline,
   mdiAccountOutline,
   mdiCameraIris,
-  mdiCameraOutline,
   mdiArchiveOutline,
   mdiClockOutline,
   mdiCogOutline,
@@ -15,16 +15,14 @@ import {
   mdiImageSearchOutline,
   mdiLinkVariant,
   mdiMapMarkerMultipleOutline,
-  mdiMapOutline,
   mdiMovieEditOutline,
-  mdiPawOutline,
   mdiProgressClock,
   mdiShieldCheckOutline,
   mdiShieldLockOutline,
   mdiStarOutline,
   mdiTagMultipleOutline,
   mdiTextBoxSearchOutline,
-  mdiTuneVariant,
+  mdiTrayArrowDown,
   mdiViewDashboardOutline,
 } from '@mdi/js';
 import type { Translations } from 'svelte-i18n';
@@ -45,10 +43,9 @@ import { Route } from '$lib/route';
  * The icons are the ones the prototype's command index gives the same pages; the switcher itself
  * shows only the labels.
  *
- * Clients (the photography-studio suite, formerly Photography) is opt-in (owner, October 28;
- * `ClientsIntro.jsx`): until the account starts using it, it lives under Tools in the rail and
- * opens an introduction. Once started (the account's `clients.enabled` preference) it sits in the
- * top bar between Boards and Studio and leaves Tools.
+ * Clients (the photography-studio suite, formerly Photography) always sits in the top bar between
+ * Boards and Studio (FL-1806, approved 2026-11-26): until the account starts using it, the page
+ * opens its introduction (`ClientsIntro.jsx`).
  */
 
 export type PrimaryDestinationId = 'library' | 'pro' | 'clients' | 'studio' | 'activity';
@@ -61,24 +58,10 @@ export interface PrimaryDestination {
   href: string;
 }
 
-export interface PrimaryDestinationOptions {
-  /** The account uses Clients, so it is a top-bar section rather than a Tools entry. */
-  clients?: boolean;
-}
-
-export const buildPrimaryDestinations = ({ clients = false }: PrimaryDestinationOptions = {}): PrimaryDestination[] => [
+export const buildPrimaryDestinations = (): PrimaryDestination[] => [
   { id: 'library', labelKey: 'library', icon: mdiImageMultipleOutline, href: Route.photos() },
   { id: 'pro', labelKey: 'frameleaf_pro_title', icon: mdiViewDashboardOutline, href: '/pro' },
-  ...(clients
-    ? [
-        {
-          id: 'clients' as const,
-          labelKey: 'frameleaf_photography' as Translations,
-          icon: mdiCameraIris,
-          href: Route.photography(),
-        },
-      ]
-    : []),
+  { id: 'clients', labelKey: 'frameleaf_photography', icon: mdiCameraIris, href: Route.photography() },
   { id: 'studio', labelKey: 'frameleaf_studio_title', icon: mdiMovieEditOutline, href: Route.studioProjects() },
   { id: 'activity', labelKey: 'activity', icon: mdiProgressClock, href: Route.activity() },
 ];
@@ -87,8 +70,8 @@ export const buildPrimaryDestinations = ({ clients = false }: PrimaryDestination
  * The sections that head the phone ☰ menu (UI review 2026-10-30 #8): phones have no top tabs, so
  * every section but Library (which the tab bar and the rail below already cover) opens from here.
  */
-export const buildPhoneMenuDestinations = (options: PrimaryDestinationOptions = {}): PrimaryDestination[] =>
-  buildPrimaryDestinations(options).filter(({ id }) => id !== 'library');
+export const buildPhoneMenuDestinations = (): PrimaryDestination[] =>
+  buildPrimaryDestinations().filter(({ id }) => id !== 'library');
 
 /**
  * Whether the account has started using Clients. Missing from preferences written before Clients
@@ -168,7 +151,7 @@ export const currentPrimaryDestination = (pathname: string, proContext = false):
   if (isWithin(pathname, '/pro')) {
     return 'pro';
   }
-  // Clients and its RAW develop editor; only shown as current while Clients is in the top bar.
+  // Clients and its RAW develop editor.
   if (isWithin(pathname, pathOf(Route.photography()))) {
     return 'clients';
   }
@@ -203,17 +186,20 @@ export const currentPrimaryDestination = (pathname: string, proContext = false):
  * requirements ("Navigation rail") and from `design/frameleaf/template/src/LibraryRail.jsx`:
  *
  *   Library, Favorites, Recently added, Best Photos, Archive, Locked
- *   Explore: Explore, People, Pets, Memories, Places, Map, Tags, Folders, Documents
- *   Albums (+ New album): All albums, each collection with its albums, Shared links
+ *   Explore: Explore, People & pets, Places & map, Memories, Documents, Tags, Folders
+ *   Albums (+ New album): All albums, each collection with its albums, All shared, Shared links
  *   Shared spaces (+ New shared space)
- *   Tools: Clients (until it is in the top bar), RAW support, Workflows, Trash
- *   Library Care, Settings, Support
+ *   Import, Library care, Trash, Settings, Support
+ *
+ * FL-1806 (approved 2026-11-26): the rail has no Tools section. Clients is always in the top bar
+ * and RAW support opens from Clients; Workflows is part of Library care. "People & pets" opens
+ * People and "Places & map" opens Places (Pets and the Map are one click from each). Import,
+ * Library care and Trash are places: they open beside this rail, not inside Settings.
  *
  * Each labelled section folds away from its heading, remembered per device
  * (`RAIL_CLOSED_SECTIONS_KEY`); the icon-only rail always shows everything.
  *
  * Studio and Activity are primary destinations in the top bar (see above), not rail entries.
- * Clients is in Tools only until the account starts using it, as in the prototype.
  *
  * Every entry points at a route that exists in production, so the rail never renders a
  * dead link. Pets landed with the identity model in FL-58 and is always on; an account can
@@ -237,16 +223,13 @@ export type RailDestinationId =
   | 'sharedLinks'
   | 'explore'
   | 'people'
-  | 'pets'
   | 'memories'
   | 'places'
-  | 'map'
   | 'tags'
   | 'folders'
   | 'documents'
-  | 'photography'
-  | 'rawSupport'
-  | 'workflows'
+  | 'allShared'
+  | 'import'
   | 'trash'
   | 'libraryCare'
   | 'settings'
@@ -262,7 +245,7 @@ export interface RailDestination {
   exact?: boolean;
 }
 
-export type RailSectionId = 'library' | 'albums' | 'spaces' | 'explore' | 'tools' | 'footer';
+export type RailSectionId = 'library' | 'albums' | 'spaces' | 'explore' | 'footer';
 
 export interface RailSection {
   id: RailSectionId;
@@ -281,7 +264,6 @@ export interface RailCapabilities {
   /** FL-146: the account's "Recently added in navigation" choice (on by default, as in the prototype). */
   recentlyAdded: boolean;
   search: boolean;
-  map: boolean;
   trash: boolean;
   people: boolean;
   /** The account's "show Pets in sidebar" choice (on by default). */
@@ -290,17 +272,11 @@ export interface RailCapabilities {
   tags: boolean;
   folders: boolean;
   sharedLinks: boolean;
-  /**
-   * The account uses Clients, so it is in the top bar and leaves the Tools section. Optional: a
-   * rail that does not pass it keeps Clients under Tools, where it opens the introduction.
-   */
-  clients?: boolean;
 }
 
 export const defaultRailCapabilities = (): RailCapabilities => ({
   recentlyAdded: false,
   search: false,
-  map: false,
   trash: false,
   people: false,
   pets: false,
@@ -344,14 +320,17 @@ export const buildRailSections = (capabilities: RailCapabilities): RailSection[]
       labelKey: 'explore',
       destinations: [
         ...keep(capabilities.search, destination('explore', 'explore', mdiImageSearchOutline, Route.explore())),
-        ...keep(capabilities.people, destination('people', 'people', mdiAccountOutline, Route.people())),
-        ...keep(capabilities.pets, destination('pets', 'frameleaf_pets_title', mdiPawOutline, Route.pets())),
+        // People & pets opens People, which links to Pets; it shows while either is on in the sidebar.
+        ...keep(
+          capabilities.people || capabilities.pets,
+          destination('people', 'frameleaf_rail_people_pets', mdiAccountOutline, Route.people()),
+        ),
+        // Places & map opens Places, which links to the Map.
+        destination('places', 'frameleaf_rail_places_map', mdiMapMarkerMultipleOutline, Route.places()),
         ...keep(capabilities.memories, destination('memories', 'memories', mdiHistory, Route.memories())),
-        destination('places', 'places', mdiMapMarkerMultipleOutline, Route.places()),
-        ...keep(capabilities.map, destination('map', 'map', mdiMapOutline, Route.map())),
+        destination('documents', 'frameleaf_documents_title', mdiTextBoxSearchOutline, Route.documents()),
         ...keep(capabilities.tags, destination('tags', 'tags', mdiTagMultipleOutline, Route.tags())),
         ...keep(capabilities.folders, destination('folders', 'folders', mdiFolderMultipleOutline, Route.folders())),
-        destination('documents', 'frameleaf_documents_title', mdiTextBoxSearchOutline, Route.documents()),
       ],
     },
     {
@@ -359,6 +338,10 @@ export const buildRailSections = (capabilities: RailCapabilities): RailSection[]
       labelKey: 'albums',
       destinations: [
         destination('allAlbums', 'all_albums', mdiImageAlbum, Route.albums(), { exact: true }),
+        // FL-1809: everything shared with you (spaces, partners, albums) had no way in from the rail.
+        destination('allShared', 'frameleaf_rail_all_shared', mdiAccountMultipleOutline, Route.sharing(), {
+          exact: true,
+        }),
         ...keep(
           capabilities.sharedLinks,
           destination('sharedLinks', 'shared_links', mdiLinkVariant, Route.sharedLinks()),
@@ -374,32 +357,38 @@ export const buildRailSections = (capabilities: RailCapabilities): RailSection[]
       destinations: [],
     },
     {
-      id: 'tools',
-      labelKey: 'frameleaf_tools',
-      destinations: [
-        // Clients sits here until the account starts using it; then it is in the top bar instead
-        // (`clientsInTopBar` in LibraryRail.jsx).
-        ...keep(
-          !capabilities.clients,
-          destination('photography', 'frameleaf_photography', mdiCameraIris, Route.photography()),
-        ),
-        // FL-420: LibraryRail.jsx lists RAW support right under Clients.
-        destination('rawSupport', 'frameleaf_raw_support_nav', mdiCameraOutline, Route.rawSupport()),
-        destination('workflows', 'workflows', mdiTuneVariant, Route.workflows()),
-        ...keep(capabilities.trash, destination('trash', 'trash', mdiDeleteOutline, Route.trash())),
-      ],
-    },
-    {
       id: 'footer',
       destinations: [
-        // One entry into the Library care hub (the settings area that also lists the repair
-        // tools), so the rail never repeats them.
+        destination('import', 'frameleaf_settings_area_backup', mdiTrayArrowDown, Route.importPlace()),
+        // One entry into Library care, the page that lists every repair and tidying tool.
         destination('libraryCare', 'frameleaf_library_care', mdiShieldCheckOutline, Route.libraryCare()),
+        ...keep(capabilities.trash, destination('trash', 'trash', mdiDeleteOutline, Route.trash())),
         destination('settings', 'settings', mdiCogOutline, Route.userSettings()),
         destination('support', 'frameleaf_support_product', mdiHandHeartOutline, Route.buy()),
       ],
     },
   ];
+};
+
+const ALSO_CURRENT: Partial<Record<RailDestinationId, string[]>> = {
+  people: [pathOf(Route.pets())],
+  places: [pathOf(Route.map())],
+};
+
+/** The rail entry a Command Center area belongs to when it is a place rather than a setting (FL-1806). */
+const placeOfArea = (area: string | null): RailDestinationId | undefined => {
+  switch (area) {
+    case 'backup': {
+      return 'import';
+    }
+    case 'care':
+    case 'utilities': {
+      return 'libraryCare';
+    }
+    case 'trash': {
+      return 'trash';
+    }
+  }
 };
 
 /**
@@ -412,17 +401,20 @@ export const isDestinationCurrent = (current: string | URL, destination: RailDes
   const url = new URL(current, 'https://frameleaf.local');
   const target = new URL(destination.href, url);
   if (url.pathname === '/user-settings') {
-    const area = url.searchParams.get('area');
-    const utilities = area === 'utilities';
-    // The Library care hub (the `care` area) and its tools under Utilities belong to the rail's
-    // Library Care entry.
-    const care = area === 'care';
+    // FL-1806: Import, Library care and Trash are places with their own rail entries; Settings is
+    // current everywhere else in the Command Center.
+    const place = placeOfArea(url.searchParams.get('area'));
     if (destination.id === 'settings') {
-      return !utilities && !care;
+      return !place;
     }
-    if (destination.id === 'libraryCare') {
-      return care || (utilities && url.searchParams.get('section') !== 'workflows');
+    if (destination.id === 'import' || destination.id === 'libraryCare' || destination.id === 'trash') {
+      return place === destination.id;
     }
+  }
+  // People & pets and Places & map stand for both pages.
+  const alsoCurrent = ALSO_CURRENT[destination.id];
+  if (alsoCurrent?.some((root) => isWithin(url.pathname, root))) {
+    return true;
   }
   // A search is the Library narrowed by it (prototype App.jsx; owner, 2026-11-05), so the rail's
   // Library entry stays current on the results and the viewer opened from them.
@@ -443,7 +435,7 @@ export const isDestinationCurrent = (current: string | URL, destination: RailDes
 /* -------------------------------------------------------------------------- */
 
 /** The sections whose heading folds them away (`heading()` in LibraryRail.jsx). */
-export const FOLDABLE_RAIL_SECTIONS: readonly RailSectionId[] = Object.freeze(['explore', 'albums', 'spaces', 'tools']);
+export const FOLDABLE_RAIL_SECTIONS: readonly RailSectionId[] = Object.freeze(['explore', 'albums', 'spaces']);
 
 /** The prototype's per-device key (`CLOSED_KEY` in LibraryRail.jsx). */
 export const RAIL_CLOSED_SECTIONS_KEY = 'frameleaf.rail.closedSections';

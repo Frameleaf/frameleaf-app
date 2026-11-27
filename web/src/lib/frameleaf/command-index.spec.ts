@@ -12,6 +12,7 @@ import {
 } from '$lib/frameleaf/command-index';
 import { buildCommandIndex } from '$lib/frameleaf/command-palette';
 import { defaultRailCapabilities } from '$lib/frameleaf/navigation';
+import { Route } from '$lib/route';
 
 const $t = ((key: string) => key) as unknown as MessageFormatter;
 
@@ -23,10 +24,10 @@ const context = (overrides: Partial<CommandIndexContext> = {}): CommandIndexCont
 
 const everything = (): CommandIndexContext =>
   context({
+    map: true,
     capabilities: {
       recentlyAdded: true,
       search: true,
-      map: true,
       trash: true,
       people: true,
       pets: true,
@@ -61,10 +62,21 @@ describe('buildPageCommands', () => {
     const pages = buildPageCommands($t, context());
     const hrefOf = (id: string) => pages.find((page) => page.id === id)?.href;
 
-    expect(pages.slice(0, 3).map((page) => page.id)).toEqual(['primary:library', 'primary:pro', 'primary:studio']);
+    expect(pages.slice(0, 4).map((page) => page.id)).toEqual([
+      'primary:library',
+      'primary:pro',
+      'primary:clients',
+      'primary:studio',
+    ]);
     expect(hrefOf('primary:library')).toBe('/photos');
     expect(hrefOf('primary:studio')).toBe('/studio/projects');
     expect(hrefOf('primary:activity')).toBe('/activity');
+  });
+
+  it('still opens Pets, the Map, RAW support and Workflows, which left the rail (FL-1806)', () => {
+    const hrefs = buildPageCommands($t, everything()).map((page) => page.href);
+
+    expect(hrefs).toEqual(expect.arrayContaining(['/pets', '/map', '/raw-support', Route.workflows()]));
   });
 
   it('offers Library once and no Studio rail entry', () => {

@@ -294,10 +294,10 @@ describe('LibraryRail', () => {
     expect(sdkMock.getAlbumHierarchy).toHaveBeenCalledTimes(2);
   });
 
-  it('lists the sections in the September 24 order: Explore, Albums, Shared spaces, Tools', () => {
+  it('lists the sections Explore, Albums, Shared spaces, with no Tools section (FL-1806)', () => {
     render(LibraryRail);
 
-    expect(headings()).toEqual(['Explore', 'Albums', 'Shared spaces', 'Tools']);
+    expect(headings()).toEqual(['Explore', 'Albums', 'Shared spaces']);
   });
 
   it('is the "Library navigation" landmark, as LibraryRail.jsx names it, not a second "Primary"', () => {
@@ -323,7 +323,7 @@ describe('LibraryRail', () => {
     await section.findByRole('link', { name: 'Porto' });
     await section.findByRole('link', { name: 'Lisbon' });
     const names = section.getAllByRole('link').map((link) => link.textContent?.trim());
-    expect(names).toEqual(['All albums', 'Porto', 'Lisbon', 'Shared links']);
+    expect(names).toEqual(['All albums', 'Porto', 'Lisbon', 'All shared', 'Shared links']);
     sdkMock.getMyPreferences.mockResolvedValue({ savedSearches: [], revision: 'r2' } as never);
     await savedSearchesStore.load(true);
   });
@@ -342,19 +342,28 @@ describe('LibraryRail', () => {
     authManager.setPreferences(preferencesFactory.build(prototypeDefaults as never));
     render(LibraryRail);
 
-    for (const name of ['Recently added', 'People', 'Memories', 'Tags', 'Folders', 'Shared links']) {
+    for (const name of [
+      'Recently added',
+      'People & pets',
+      'Places & map',
+      'Memories',
+      'Tags',
+      'Folders',
+      'All shared',
+      'Shared links',
+    ]) {
       expect(screen.getByRole('link', { name }), name).toBeInTheDocument();
     }
   });
 
-  it('leaves out Pets when the account hid it from the sidebar', () => {
+  it('keeps People & pets while either is in the sidebar, and opens People', () => {
     authManager.setPreferences(
       preferencesFactory.build({ ...prototypeDefaults, pets: { sidebarWeb: false } } as never),
     );
     render(LibraryRail);
 
     expect(screen.queryByRole('link', { name: 'Pets' })).toBeNull();
-    expect(screen.getByRole('link', { name: 'People' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'People & pets' })).toHaveAttribute('href', Route.people());
   });
 
   it('leaves out Recently added, Tags and Folders when the account or an administrator hid them', () => {
@@ -372,27 +381,27 @@ describe('LibraryRail', () => {
     expect(screen.queryByRole('link', { name: 'Tags' })).toBeNull();
     expect(screen.queryByRole('link', { name: 'Folders' })).toBeNull();
     expect(screen.getByRole('link', { name: 'Favorites' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'People' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'People & pets' })).toBeInTheDocument();
   });
 
   it('folds a section from its heading and remembers it on this device', async () => {
     render(LibraryRail);
     const explore = screen.getByRole('button', { name: 'Explore' });
-    expect(screen.getByRole('link', { name: 'Places' })).toBeVisible();
+    expect(screen.getByRole('link', { name: 'Places & map' })).toBeVisible();
 
     await fireEvent.click(explore);
 
     expect(explore).toHaveAttribute('aria-expanded', 'false');
-    expect(screen.queryByRole('link', { name: 'Places' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Places & map' })).toBeNull();
     expect(JSON.parse(localStorage.getItem(RAIL_CLOSED_SECTIONS_KEY) ?? '[]')).toEqual(['explore']);
   });
 
   it('opens a section folded on an earlier visit closed', () => {
-    localStorage.setItem(RAIL_CLOSED_SECTIONS_KEY, JSON.stringify(['tools']));
+    localStorage.setItem(RAIL_CLOSED_SECTIONS_KEY, JSON.stringify(['albums']));
     render(LibraryRail);
 
-    expect(screen.getByRole('button', { name: 'Tools' })).toHaveAttribute('aria-expanded', 'false');
-    expect(screen.queryByRole('link', { name: 'Workflows' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Albums' })).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByRole('link', { name: 'All albums' })).toBeNull();
   });
 
   it('offers New album and New shared space as requests to the Albums page', () => {
@@ -407,22 +416,22 @@ describe('LibraryRail', () => {
     expect(screen.getByRole('link', { name: 'All albums' })).toHaveAttribute('href', Route.albums());
   });
 
-  it('opens Library Care at the Library care hub', () => {
+  it('opens Library care at the Library care hub', () => {
     render(LibraryRail);
 
-    expect(screen.getByRole('link', { name: 'Library Care' })).toHaveAttribute('href', Route.libraryCare());
+    expect(screen.getByRole('link', { name: 'Library care' })).toHaveAttribute('href', Route.libraryCare());
   });
 
   it('shows every section in the icon-only rail, whatever was folded', () => {
-    localStorage.setItem(RAIL_CLOSED_SECTIONS_KEY, JSON.stringify(['explore', 'tools']));
+    localStorage.setItem(RAIL_CLOSED_SECTIONS_KEY, JSON.stringify(['explore', 'albums']));
     sidebarCollapsed.set(true);
     const { container } = render(LibraryRail);
 
     // No headings to reopen a section from, so nothing stays folded.
     expect(container.querySelectorAll('.fl-heading-toggle')).toHaveLength(0);
     const rail = within(container as HTMLElement);
-    expect(rail.getByRole('link', { name: 'Places' })).toBeInTheDocument();
-    expect(rail.getByRole('link', { name: 'Workflows' })).toBeInTheDocument();
+    expect(rail.getByRole('link', { name: 'Places & map' })).toBeInTheDocument();
+    expect(rail.getByRole('link', { name: 'All albums' })).toBeInTheDocument();
   });
 
   it('heads the rail with "Library" and the double-chevron collapse toggle', async () => {
@@ -437,7 +446,7 @@ describe('LibraryRail', () => {
     await waitFor(() => expect(container.querySelector('.fl-rail-title')).toBeNull());
   });
 
-  it('keeps Library Care, Settings and Support in the footer, after the list that scrolls', () => {
+  it('keeps Import, Library care, Trash, Settings and Support in the footer, after the list that scrolls', () => {
     const { container } = render(LibraryRail);
     const list = container.querySelector<HTMLElement>('.fl-sidebar-list')!;
     const footer = container.querySelector<HTMLElement>('.fl-rail-footer')!;
@@ -446,7 +455,7 @@ describe('LibraryRail', () => {
       within(footer)
         .getAllByRole('link')
         .map((link) => link.textContent?.trim()),
-    ).toEqual(['Library Care', 'Settings', 'Support Frameleaf']);
+    ).toEqual(['Import', 'Library care', 'Trash', 'Settings', 'Support Frameleaf']);
     expect(list).not.toContainElement(footer);
     expect(within(list).queryByRole('link', { name: 'Settings' })).toBeNull();
     // Reading and tab order stay list first, footer last.

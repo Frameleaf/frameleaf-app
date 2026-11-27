@@ -59,6 +59,8 @@
     directoryGroup,
     isAreaAvailable,
     isPlainArea,
+    defaultSettingsArea,
+    isPlaceArea,
     isScreenArea,
     PAGE_DESCRIPTIONS,
     resolveSettingsArea,
@@ -314,7 +316,7 @@
   // An area this account may not open falls back to the first one it may. This is the area the
   // address names; `area` below is the one the page is shown in.
   const addressArea = $derived(
-    visibleAreas.some((item) => item.id === requestedArea) ? requestedArea : (visibleAreas[0]?.id ?? 'utilities'),
+    visibleAreas.some((item) => item.id === requestedArea) ? requestedArea : defaultSettingsArea(isAdmin),
   );
   const selectedKey = $derived(
     resolveSettingsSection(addressArea, { section: page.url.searchParams.get('section'), isOpen: legacyOpen }),
@@ -335,6 +337,10 @@
    * of Backup (design review finding 66) and a repair tool opened from Library care stays there.
    */
   const area = $derived(careTool ? 'care' : presentedArea(addressArea, selected?.key));
+  /** FL-1806: Import, Library care and Trash are places beside the library rail, not Settings. */
+  const place = $derived(isPlaceArea(area));
+  /** The Settings list holds preferences only. */
+  const navAreas = $derived(visibleAreas.filter((item) => !isPlaceArea(item.id)));
   const backupPage = $derived(
     area === 'backups'
       ? backupPageFor(addressArea, selected?.key, {
@@ -792,75 +798,77 @@
 </script>
 
 <div class="command-center" class:cc-collapsed={$sidebarCollapsed} class:cc-nav-open={sidebarStore.isOpen}>
-  <aside class="cc-nav">
-    <div class="cc-nav-title">
-      <span>{$t('settings')}</span>
-      <button
-        type="button"
-        aria-label={$sidebarCollapsed ? $t('frameleaf_cc_expand') : $t('frameleaf_cc_collapse')}
-        title={$sidebarCollapsed ? $t('frameleaf_cc_expand') : $t('frameleaf_cc_collapse')}
-        onclick={() => ($sidebarCollapsed = !$sidebarCollapsed)}
-      >
-        <Icon icon={$sidebarCollapsed ? mdiChevronDoubleRight : mdiChevronDoubleLeft} size="1.125rem" aria-hidden />
-      </button>
-    </div>
-    <a class="cc-back" href={Route.photos()} title={$t('frameleaf_cc_back')}>
-      <Icon icon={mdiArrowLeft} size="1.125rem" aria-hidden />
-      <span>{$t('frameleaf_cc_back')}</span>
-    </a>
-    <nav id="settings-navigation" aria-label={$t('frameleaf_settings_nav_label')}>
-      {#each SETTINGS_GROUP_ORDER.filter((group) => visibleAreas.some((item) => item.group === group)) as group (group)}
-        <div class="cc-nav-group">
-          <p>{groupCopy[group]}</p>
-          {#each visibleAreas.filter((item) => item.group === group) as item (item.id)}
-            <button
-              type="button"
-              class="area"
-              class:selected={item.id === area}
-              aria-label={areaCopy[item.id].title}
-              title={areaCopy[item.id].title}
-              aria-current={item.id === area ? 'page' : undefined}
-              onclick={() => navigate(item.id)}
-            >
-              <!-- UI review 2026-10-30 P3: a plain icon, as in the main rail (green when selected or hovered). -->
-              <span class="tile">
-                <Icon icon={areaCopy[item.id].icon} size="16" aria-hidden />
-              </span>
-              <span>{areaCopy[item.id].title}</span>
-              {#if pendingAreas.has(item.id)}
-                <span class="pending" title={$t('unsaved_change')}></span>
-              {/if}
-            </button>
-            {#if item.id === area && !$sidebarCollapsed && children.length > 0}
-              <div
-                class="cc-nav-children"
-                role="group"
-                aria-label={$t('frameleaf_settings_nav_pages', { values: { area: areaCopy[item.id].title } })}
-                transition:motionSlide={{ duration: DURATION.base }}
+  {#if !place}
+    <aside class="cc-nav">
+      <div class="cc-nav-title">
+        <span>{$t('settings')}</span>
+        <button
+          type="button"
+          aria-label={$sidebarCollapsed ? $t('frameleaf_cc_expand') : $t('frameleaf_cc_collapse')}
+          title={$sidebarCollapsed ? $t('frameleaf_cc_expand') : $t('frameleaf_cc_collapse')}
+          onclick={() => ($sidebarCollapsed = !$sidebarCollapsed)}
+        >
+          <Icon icon={$sidebarCollapsed ? mdiChevronDoubleRight : mdiChevronDoubleLeft} size="1.125rem" aria-hidden />
+        </button>
+      </div>
+      <a class="cc-back" href={Route.photos()} title={$t('frameleaf_cc_back')}>
+        <Icon icon={mdiArrowLeft} size="1.125rem" aria-hidden />
+        <span>{$t('frameleaf_cc_back')}</span>
+      </a>
+      <nav id="settings-navigation" aria-label={$t('frameleaf_settings_nav_label')}>
+        {#each SETTINGS_GROUP_ORDER.filter((group) => navAreas.some((item) => item.group === group)) as group (group)}
+          <div class="cc-nav-group">
+            <p>{groupCopy[group]}</p>
+            {#each navAreas.filter((item) => item.group === group) as item (item.id)}
+              <button
+                type="button"
+                class="area"
+                class:selected={item.id === area}
+                aria-label={areaCopy[item.id].title}
+                title={areaCopy[item.id].title}
+                aria-current={item.id === area ? 'page' : undefined}
+                onclick={() => navigate(item.id)}
               >
-                {#each children as child (child.key)}
-                  <button
-                    type="button"
-                    aria-current={activeChild === child.key ? 'page' : undefined}
-                    class:has-pending={isChildPending(child)}
-                    onclick={() => navigate(child.area, child.section)}>{child.title}</button
-                  >
-                {/each}
-              </div>
-            {/if}
-          {/each}
-        </div>
-      {/each}
-    </nav>
-    <div class="cc-nav-foot">
-      <Icon icon={isAdmin ? mdiShieldCheckOutline : mdiAccountOutline} size="1.125rem" aria-hidden />
-      <span>
-        {isAdmin ? $t('frameleaf_cc_administrator') : authManager.user.name}
-        <small>{isAdmin ? serverName : $t('frameleaf_cc_own')}</small>
-      </span>
-    </div>
-  </aside>
-  {#if sidebarStore.isOpen}
+                <!-- UI review 2026-10-30 P3: a plain icon, as in the main rail (green when selected or hovered). -->
+                <span class="tile">
+                  <Icon icon={areaCopy[item.id].icon} size="16" aria-hidden />
+                </span>
+                <span>{areaCopy[item.id].title}</span>
+                {#if pendingAreas.has(item.id)}
+                  <span class="pending" title={$t('unsaved_change')}></span>
+                {/if}
+              </button>
+              {#if item.id === area && !$sidebarCollapsed && children.length > 0}
+                <div
+                  class="cc-nav-children"
+                  role="group"
+                  aria-label={$t('frameleaf_settings_nav_pages', { values: { area: areaCopy[item.id].title } })}
+                  transition:motionSlide={{ duration: DURATION.base }}
+                >
+                  {#each children as child (child.key)}
+                    <button
+                      type="button"
+                      aria-current={activeChild === child.key ? 'page' : undefined}
+                      class:has-pending={isChildPending(child)}
+                      onclick={() => navigate(child.area, child.section)}>{child.title}</button
+                    >
+                  {/each}
+                </div>
+              {/if}
+            {/each}
+          </div>
+        {/each}
+      </nav>
+      <div class="cc-nav-foot">
+        <Icon icon={isAdmin ? mdiShieldCheckOutline : mdiAccountOutline} size="1.125rem" aria-hidden />
+        <span>
+          {isAdmin ? $t('frameleaf_cc_administrator') : authManager.user.name}
+          <small>{isAdmin ? serverName : $t('frameleaf_cc_own')}</small>
+        </span>
+      </div>
+    </aside>
+  {/if}
+  {#if sidebarStore.isOpen && !place}
     <button
       type="button"
       class="cc-nav-scrim"
@@ -876,7 +884,7 @@
         <Icon icon={mdiServerOutline} size="1rem" aria-hidden />
         {serverName}
         <span class="cc-context-divider">/</span>
-        {$t('settings')}
+        {place ? areaCopy[area].title : $t('settings')}
       </span>
       {#if scoped}
         <label class="cc-account-scope">
