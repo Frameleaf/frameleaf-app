@@ -70,9 +70,14 @@ try {
     );
     const initial = await state();
     assert.equal(initial.items.length, 6);
-    await page
-      .getByRole("button", { name: "Disable Linked Selection", exact: true })
-      .click();
+    const toggleLinkedSelection = async () => {
+      // FL-1822: linked selection is a checkable item in the timeline's More menu.
+      await page.getByRole("button", { name: "More timeline options", exact: true }).click();
+      await page.getByRole("menuitemcheckbox", { name: /^Linked selection/ }).click();
+      // Shortcuts pressed while the menu is still closing would go to the menu, not the timeline.
+      await page.getByRole("menu").waitFor({ state: "detached" });
+    };
+    await toggleLinkedSelection();
     assert.equal((await state()).linkedSelectionEnabled, false);
     for (const index of [2, 0, 1]) {
       await page
@@ -85,9 +90,7 @@ try {
       "chain-v-1",
       "chain-v-2",
     ]);
-    await page
-      .getByRole("button", { name: "Enable Linked Selection", exact: true })
-      .click();
+    await toggleLinkedSelection();
     assert.equal((await state()).linkedSelectionEnabled, true);
     await page.keyboard.press("Shift+j");
     const joined = await state();

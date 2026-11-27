@@ -24,7 +24,7 @@ index 8d2f7b6..5e62e14 100644
          </Button>
          <MicDevicePicker disabled={isRequesting} />
 diff --git a/src/features/timeline/components/timeline-header.tsx b/src/features/timeline/components/timeline-header.tsx
-index d6ecf2f..d5c2d2a 100644
+index d6ecf2f..7fe937a 100644
 --- a/src/features/timeline/components/timeline-header.tsx
 +++ b/src/features/timeline/components/timeline-header.tsx
 @@ -9,13 +9,14 @@ import { resolveEffectiveTrackStates } from '../utils/group-utils'
@@ -120,7 +120,7 @@ index d6ecf2f..d5c2d2a 100644
  export const TimelineHeader = memo(function TimelineHeader({
    onZoomChange,
    onZoomIn,
-@@ -662,366 +682,259 @@ export const TimelineHeader = memo(function TimelineHeader({
+@@ -662,366 +682,264 @@ export const TimelineHeader = memo(function TimelineHeader({
    const canRedo = useTimelineCommandStore((s) => s.canRedo)
    const undoLabel = useTimelineCommandStore((s) => s.getUndoLabel())
    const redoLabel = useTimelineCommandStore((s) => s.getRedoLabel())
@@ -270,7 +270,10 @@ index d6ecf2f..d5c2d2a 100644
 +                  <DropdownMenuCheckboxItem
 +                    key={tool.id}
 +                    checked={activeTool === tool.id}
-+                    onSelect={() => setActiveTool(tool.id)}
++                    // As the old tool buttons did: choosing the current tool again goes back to Select.
++                    onSelect={() =>
++                      setActiveTool(activeTool === tool.id && tool.id !== 'select' ? 'select' : tool.id)
++                    }
 +                    className="min-h-11 gap-3 py-1.5 pr-3 text-sm"
                    >
 -                    <span className="flex items-center gap-1">
@@ -365,8 +368,7 @@ index d6ecf2f..d5c2d2a 100644
 -          </div>
 -
 -          <Separator orientation="vertical" className="h-5 mx-1.5" />
-+          <Separator orientation="vertical" className="h-5" />
- 
+-
 -          {/* In/Out Points */}
 -          <div className="flex items-center gap-1">
 -            <Button
@@ -409,7 +411,8 @@ index d6ecf2f..d5c2d2a 100644
 -          </div>
 -
 -          <Separator orientation="vertical" className="h-5 mx-1.5" />
--
++          <Separator orientation="vertical" className="h-5" />
+ 
 -          {/* Markers */}
 -          <div className="flex items-center gap-1">
 -            <Button
@@ -556,7 +559,7 @@ index d6ecf2f..d5c2d2a 100644
            >
 -            <Link2 className="w-3.5 h-3.5" />
 +            <Magnet className="h-4 w-4" />
-           </Button>
++          </Button>
 +          <Button
 +            variant="ghost"
 +            size="icon"
@@ -566,7 +569,7 @@ index d6ecf2f..d5c2d2a 100644
 +            data-tooltip={t('timeline.header.addMarkerTooltip')}
 +          >
 +            <Flag className="h-4 w-4" />
-+          </Button>
+           </Button>
 +          <InlineKeyframesToggle isOpen={inlineKeyframesOpen} onToggle={toggleEditKeyframePanel} />
 +
 +          <Separator orientation="vertical" className="h-5" />
@@ -576,9 +579,12 @@ index d6ecf2f..d5c2d2a 100644
 +            <Button
 +              variant="ghost"
 +              className={`h-8 gap-1.5 px-2.5 text-sm ${inPoint !== null ? PRESSED : ''}`}
-+              aria-pressed={inPoint !== null}
 +              onClick={() => setInPoint(usePlaybackStore.getState().currentFrame)}
-+              aria-label={t('timeline.header.setInPoint')}
++              aria-label={
++                inPoint === null
++                  ? t('timeline.header.setInPoint')
++                  : `${t('timeline.header.setInPoint')}, ${pointLabel(inPoint)}`
++              }
 +              data-tooltip={t('timeline.header.setInPointTooltip')}
 +            >
 +              {t('timeline.header.in')}
@@ -591,9 +597,12 @@ index d6ecf2f..d5c2d2a 100644
 +            <Button
 +              variant="ghost"
 +              className={`h-8 gap-1.5 px-2.5 text-sm ${outPoint !== null ? PRESSED : ''}`}
-+              aria-pressed={outPoint !== null}
 +              onClick={() => setOutPoint(usePlaybackStore.getState().currentFrame)}
-+              aria-label={t('timeline.header.setOutPoint')}
++              aria-label={
++                outPoint === null
++                  ? t('timeline.header.setOutPoint')
++                  : `${t('timeline.header.setOutPoint')}, ${pointLabel(outPoint)}`
++              }
 +              data-tooltip={t('timeline.header.setOutPointTooltip')}
 +            >
 +              {t('timeline.header.out')}
@@ -626,10 +635,9 @@ index d6ecf2f..d5c2d2a 100644
 +            <DropdownMenuContent align="start" className="min-w-80">
 +              <DropdownMenuCheckboxItem
 +                checked={linkedSelectionEnabled}
-+                onSelect={(event) => {
-+                  event.preventDefault()
-+                  setLinkedSelectionEnabled(!linkedSelectionEnabled)
-+                }}
++                // Closes on choice like every item: keeping it open made Escape, which closes it,
++                // also reach the editor's Escape shortcut and clear the timeline selection.
++                onSelect={() => setLinkedSelectionEnabled(!linkedSelectionEnabled)}
 +                className="min-h-11 gap-4 py-1.5 text-sm"
 +              >
 +                <span className="flex flex-1 flex-col">
@@ -644,10 +652,7 @@ index d6ecf2f..d5c2d2a 100644
 +              </DropdownMenuCheckboxItem>
 +              <DropdownMenuCheckboxItem
 +                checked={audioSkimmingEnabled}
-+                onSelect={(event) => {
-+                  event.preventDefault()
-+                  toggleAudioSkimming()
-+                }}
++                onSelect={() => toggleAudioSkimming()}
 +                className="min-h-11 gap-4 py-1.5 text-sm"
 +              >
 +                <span className="flex flex-1 flex-col">

@@ -943,13 +943,13 @@
     {
       "path": "patches/0209-studio-selection-handles.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
-      "sha256": "a938f906ef3c8147886e1a8f18562022e5e1569c8140ecb1e2089a98aedc3053"
+      "sha256": "247d53c6a390687823b324bebf0171efb7b2e3b8a16da65a553f65983c62cccb"
     },
     {
       "path": "patches/0210-studio-timeline-toolbar.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
-      "sha256": "33df308627a5c8d18b8ae4e71baa3de98e12425f985aa21ee13acd7e1c2760a5"
+      "sha256": "c0e4a354a5ba5ba5d637a20d751ba75be8660f308bf23aec8efba2f9e133649c"
     }
   ],
-  "sourceSha256": "1cc2f65efd513fb417533c3d08856d4299ae611e167d7cf8ce0614fe8cafa304"
+  "sourceSha256": "0bc63badd42ed7735d32c4c6e479bc1f88908274ee00d100b2378e1d027ee843"
 }

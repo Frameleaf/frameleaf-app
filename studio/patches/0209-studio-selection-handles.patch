@@ -1,5 +1,5 @@
 diff --git a/src/features/preview/components/gizmo-handles.tsx b/src/features/preview/components/gizmo-handles.tsx
-index 100f3a0..f59ca4f 100644
+index 100f3a0..6920113 100644
 --- a/src/features/preview/components/gizmo-handles.tsx
 +++ b/src/features/preview/components/gizmo-handles.tsx
 @@ -94,7 +94,8 @@ export function GizmoHandles({
@@ -23,25 +23,46 @@ index 100f3a0..f59ca4f 100644
            boxSizing: 'border-box',
            zIndex: 101,
          }}
-@@ -145,7 +146,7 @@ export function GizmoHandles({
+@@ -145,14 +146,16 @@ export function GizmoHandles({
            return (
              <div
                key={handle}
 -              className="bg-white border border-primary"
-+              className="rounded-full bg-white shadow-[0_0_0_1px_rgba(0,0,0,0.55)]"
                style={{ ...getHandleStyle(handle), zIndex: 102 }}
                role="button"
                aria-label={handleLabels[handle]}
-@@ -188,7 +189,7 @@ export function GizmoHandles({
+               tabIndex={0}
+               data-gizmo={`scale-${handle}`}
+               onMouseDown={(e) => onScaleStart(handle, e)}
+-            />
++            >
++              {/* A round dot drawn inside the square hit target, so the whole square stays grabbable. */}
++              <span className="pointer-events-none block h-full w-full rounded-full bg-white shadow-[0_0_0_1px_rgba(0,0,0,0.55)]" />
++            </div>
+           )
+         },
+       )}
+@@ -188,7 +191,7 @@ export function GizmoHandles({
              return (
                <div
                  key={edge}
 -                className="absolute border border-white bg-primary shadow-sm"
-+                className="absolute rounded-full bg-white shadow-[0_0_0_1px_rgba(0,0,0,0.55)]"
++                className="absolute"
                  style={{
                    left,
                    top,
-@@ -213,7 +214,7 @@ export function GizmoHandles({
+@@ -205,7 +208,9 @@ export function GizmoHandles({
+                 tabIndex={0}
+                 data-gizmo={`crop-${edge}`}
+                 onMouseDown={(e) => onCropStart(edge, e)}
+-              />
++              >
++                <span className="pointer-events-none block h-full w-full rounded-full bg-white shadow-[0_0_0_1px_rgba(0,0,0,0.55)]" />
++              </div>
+             )
+           })}
+         </>
+@@ -213,7 +218,7 @@ export function GizmoHandles({
  
        {/* Rotation handle */}
        <div
@@ -50,7 +71,7 @@ index 100f3a0..f59ca4f 100644
          style={{
            width: 10,
            height: 10,
-@@ -231,7 +232,7 @@ export function GizmoHandles({
+@@ -231,7 +236,7 @@ export function GizmoHandles({
  
        {/* Rotation guide line */}
        <div
