@@ -2,6 +2,7 @@
   import PersonAvatar from '$lib/components/frameleaf/PersonAvatar.svelte';
   import OnEvents from '$lib/components/OnEvents.svelte';
   import PersonFaceActions from '$lib/components/frameleaf/PersonFaceActions.svelte';
+  import { formatLuxon } from '$lib/frameleaf/date-format';
   import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { Route } from '$lib/route';
@@ -128,13 +129,14 @@
         formattedAge = $t('age_years', { values: { years: ageInYears } });
       }
 
-      const formattedBirthDate = personBirthDate.toLocaleString(
+      const formattedBirthDate = formatLuxon(
+        personBirthDate,
         {
           month: 'long',
           day: 'numeric',
           year: 'numeric',
         },
-        { locale: $locale },
+        $locale,
       );
       visible.push({ formattedBirthDate, formattedAge, ...person });
     }

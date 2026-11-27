@@ -8,6 +8,7 @@ import {
 import type { MessageFormatter, Translations } from 'svelte-i18n';
 import { ACTIVITY_STAGE_KEYS } from '$lib/frameleaf/activity';
 import { UPLOAD_ORIGINS } from '$lib/frameleaf/arrivals';
+import { formatDate, formatTime } from '$lib/frameleaf/date-format';
 import { isImportRunKind, isRunSettled, runStateKey, settledItems } from '$lib/frameleaf/durable-runs';
 import { JOB_QUEUES } from '$lib/frameleaf/job-queues';
 import { leftOver } from '$lib/frameleaf/run-failures';
@@ -96,11 +97,11 @@ export const tonightLabel = (startsAt: string | null, $t: MessageFormatter, loca
     return $t('frameleaf_activity_bg_tonight_unscheduled');
   }
   const at = new Date(startsAt);
-  const time = new Intl.DateTimeFormat(locale, { hour: 'numeric', minute: '2-digit' }).format(at);
+  const time = formatTime(at, { hour: 'numeric', minute: '2-digit' }, locale ?? 'default');
   if (when === 'tonight') {
     return $t('frameleaf_activity_bg_tonight', { values: { time } });
   }
-  const day = new Intl.DateTimeFormat(locale, { weekday: 'long' }).format(at);
+  const day = formatDate(at, { weekday: 'long' }, locale ?? 'default');
   return $t('frameleaf_activity_bg_tonight_day', { values: { day, time } });
 };
 

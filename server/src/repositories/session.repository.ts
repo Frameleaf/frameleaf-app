@@ -10,6 +10,7 @@ import { DB } from 'src/schema/index.js';
 import { SessionSignInTable } from 'src/schema/tables/session-sign-in.table.js';
 import { SessionTable } from 'src/schema/tables/session.table.js';
 import { asUuid } from 'src/utils/database.js';
+import { forgetThumbnailRevalidations } from 'src/utils/thumbnail-revalidation.js';
 
 @Injectable()
 export class SessionRepository {
@@ -235,13 +236,18 @@ export class SessionRepository {
     });
   }
 
-  update(id: string, dto: Updateable<SessionTable>) {
-    return this.db
+  async update(id: string, dto: Updateable<SessionTable>) {
+    const session = await this.db
       .updateTable('session')
       .set(dto)
       .where('session.id', '=', asUuid(id))
       .returningAll()
       .executeTakeFirstOrThrow();
+    if (dto.pinExpiresAt === null) {
+      // FL-1787: a lock ends the quick 304s at once
+      forgetThumbnailRevalidations();
+    }
+    return session;
   }
 
   /**
@@ -347,6 +353,7 @@ export class SessionRepository {
   @GenerateSql({ params: [DummyValue.UUID] })
   async delete(id: string) {
     await this.db.deleteFrom('session').where('id', '=', asUuid(id)).execute();
+    forgetThumbnailRevalidations();
   }
 
   @GenerateSql({ params: [{ userId: DummyValue.UUID, excludeId: DummyValue.UUID }] })
@@ -358,6 +365,7 @@ export class SessionRepository {
       .$if(!!excludeId, (qb) => qb.where('id', '!=', excludeId!))
       .returning('id')
       .execute();
+    forgetThumbnailRevalidations();
     return deleted.map(({ id }) => id);
   }
 
@@ -380,6 +388,7 @@ export class SessionRepository {
     }
 
     const deletedRows = await query.execute();
+    forgetThumbnailRevalidations();
     return deletedRows.map((row) => row.id);
   }
 
@@ -394,6 +403,7 @@ export class SessionRepository {
       .where('userId', '=', userId)
       .where('pinExpiresAt', '>', sql<Date>`clock_timestamp()`)
       .execute();
+    forgetThumbnailRevalidations();
   }
 
   @GenerateSql({ params: [DummyValue.UUID] })

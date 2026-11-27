@@ -151,7 +151,8 @@
   const zone = $derived(server?.timezone ?? '');
   const yourTime = $derived(
     zone && 'time' in schedule
-      ? viewerTime(schedule.time, zone, new Intl.DateTimeFormat().resolvedOptions().timeZone)
+      ? // eslint-disable-next-line no-restricted-syntax -- reads the browser's time zone, formats nothing
+        viewerTime(schedule.time, zone, new Intl.DateTimeFormat().resolvedOptions().timeZone)
       : undefined,
   );
   const sentence = $derived.by(() => {

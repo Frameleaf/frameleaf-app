@@ -25,6 +25,7 @@
   import { jobQueue } from '$lib/frameleaf/job-queues';
   import { backupWhen } from '$lib/frameleaf/backup-overview';
   import { fileCheckView } from '$lib/frameleaf/file-check';
+  import { formatCount } from '$lib/frameleaf/number-format';
   import { CAUSE_VIEW, knowsCauses, leftOver, runCauses } from '$lib/frameleaf/run-failures';
   import { runHeadline } from '$lib/frameleaf/run-headline';
   import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
@@ -74,7 +75,7 @@
     }
   };
   const visible = $derived(runs.filter((run) => matchesRunFilter(run, filter)));
-  const number = (value: number) => value.toLocaleString($locale ?? undefined);
+  const number = (value: number) => formatCount(value, $locale ?? null);
   /** As the rest of the app says a moment: "today at 4:06 AM", "Nov 9, 4:06 AM", the year only when it isn't this one. */
   const when = (iso: string, sentence = true) => {
     const words = backupWhen(new Date(iso), { locale: $locale ?? undefined, sentence });

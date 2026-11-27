@@ -1,12 +1,11 @@
 import { t } from 'svelte-i18n';
 import { derived, get } from 'svelte/store';
+import { formatDate } from '$lib/frameleaf/date-format';
 import type { TimelineAsset } from '$lib/managers/timeline-manager/types';
 import { locale } from '$lib/stores/preferences.store';
 import { fromTimelinePlainDateTime } from '$lib/utils/timeline-util';
 
 export const getAltText = derived(t, ($t) => {
-  let formatter: Intl.DateTimeFormat | undefined;
-  let formatterLocale: string | undefined;
   // The plain date-time is built in the local zone (`fromTimelinePlainDateTime`), so it is formatted
   // there too: formatting it in UTC moved evening photos west of UTC to the next day (LIB-01).
   const dateOptions = { dateStyle: 'long' } as const;
@@ -15,17 +14,8 @@ export const getAltText = derived(t, ($t) => {
   return (asset: TimelineAsset) => {
     const jsDate = fromTimelinePlainDateTime(asset.localDateTime).toJSDate();
     const currentLocale = get(locale);
-    let date: string;
-    if (Number.isNaN(jsDate.getTime())) {
-      // Date.toLocaleString returns Invalid Date before checking locale; Intl.format throws instead.
-      date = jsDate.toLocaleString(currentLocale, dateOptions);
-    } else {
-      if (!formatter || formatterLocale !== currentLocale) {
-        formatter = new Intl.DateTimeFormat(currentLocale, dateOptions);
-        formatterLocale = currentLocale;
-      }
-      date = formatter.format(jsDate);
-    }
+    // An invalid date keeps reading "Invalid Date", as Date.toLocaleString said; the date helper gives ''.
+    const date = Number.isNaN(jsDate.getTime()) ? 'Invalid Date' : formatDate(jsDate, dateOptions, currentLocale);
     const hasPlace = asset.city && asset.country;
 
     const peopleCount = asset.people?.length ?? 0;
