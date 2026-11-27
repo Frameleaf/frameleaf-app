@@ -1791,6 +1791,7 @@
     data-viewer-content
     class="fl-viewer-canvas relative z-[-1] col-span-4 col-start-1 row-span-full row-start-1"
     class:fl-viewer-video={VIDEO_VIEWERS.has(viewerKind)}
+    class:slideshow={slideshowActive}
     class:following={swipePhase === 'following' || swipePhase === 'snapping'}
     class:leaving={swipePhase === 'leaving'}
     style:transform={canvasTransform}
@@ -2167,6 +2168,11 @@
     transition:
       transform var(--fl-duration) var(--fl-spring),
       opacity var(--fl-motion-slow) var(--fl-ease);
+  }
+
+  /* FL-1832: during a slideshow a touch on the photo is a tap or a swipe, never a page pan or zoom. */
+  .fl-viewer-canvas.slideshow {
+    touch-action: none;
   }
 
   .fl-viewer-stage {
