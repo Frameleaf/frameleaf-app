@@ -58,7 +58,7 @@ describe('AssetAddToAlbumModal', () => {
     const latest = albumFactory.build({ albumName: 'Latest', albumUsers: member });
     const created = albumFactory.build({ albumName: 'Banff', albumUsers: member });
     sdkMock.getAllAlbums.mockResolvedValueOnce([older, latest]);
-    sdkMock.getRecentlyAddedAlbums.mockResolvedValueOnce({ albumIds: [latest.id] });
+    sdkMock.getRecentlyAddedAlbums.mockResolvedValueOnce({ albumIds: [latest.id], usedAlbumIds: [] });
     sdkMock.createAlbum.mockResolvedValueOnce(created);
     sdkMock.addAssetsToAlbums.mockResolvedValueOnce({ success: true });
     const onClose = vi.fn();
