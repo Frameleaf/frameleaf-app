@@ -36,6 +36,8 @@ import {
   MergePersonDto,
   MergeSuggestionsResponseDto,
   PERSON_NOTES_MAX_LENGTH,
+  PeoplePickerResponseDto,
+  PeoplePickerSearchDto,
   PeopleResponseDto,
   PeopleUpdateDto,
   PersonCorrectionDto,
@@ -192,6 +194,9 @@ export const mergeProfiles = (
   return Object.keys(changes).length > 0 ? changes : undefined;
 };
 
+/** FL-1789: a viewer variant in use is counted again daily, so summaries this old belong to one nobody reads. */
+const SUMMARY_ABANDONED_AFTER_MS = 30 * 24 * 60 * 60 * 1000;
+
 @Injectable()
 export class PersonService extends BaseService {
   /** FL-455: photos whose face detection is routed to Frameleaf Cloud wait here for a batch. */
@@ -210,7 +215,7 @@ export class PersonService extends BaseService {
   }
 
   async getAll(auth: AuthDto, dto: PersonSearchDto): Promise<PeopleResponseDto> {
-    const { withHidden = false, closestAssetId, closestPersonId, page, size } = dto;
+    const { withHidden = false, closestAssetId, closestPersonId, page, size, name, sort } = dto;
     let closestFaceAssetId = closestAssetId;
     const pagination = {
       take: size,
@@ -227,14 +232,15 @@ export class PersonService extends BaseService {
       closestFaceAssetId = person.faceAssetId;
     }
     const privacyOptions = getHiddenContentQueryOptions(auth);
-    const [{ items, hasNextPage }, { total, hidden }] = await Promise.all([
-      this.personRepository.getAllForUser(pagination, auth.user.id, {
-        withHidden,
-        closestFaceAssetId,
-        ...privacyOptions,
-      }),
-      this.personRepository.getNumberOfPeople(auth.user.id, privacyOptions),
-    ]);
+    // FL-1789: both read the stored summaries, brought up to date once for the request
+    const viewerKey = await this.personRepository.syncSummaries(auth.user.id, privacyOptions);
+    const { items, hasNextPage } = await this.personRepository.getAllForUser(
+      pagination,
+      auth.user.id,
+      { withHidden, closestFaceAssetId, ...(name && { name }), ...(sort && { sort }), ...privacyOptions },
+      viewerKey,
+    );
+    const { total, hidden } = await this.personRepository.getListedTotals(auth.user.id, privacyOptions, viewerKey);
 
     // FL-1408 (M9): with nobody found yet, say whether face recognition is still working through
     // this account's photos, so the page does not read "no people" halfway through a first scan
@@ -256,6 +262,28 @@ export class PersonService extends BaseService {
       total,
       hidden,
       ...(scanning && { scanning }),
+    };
+  }
+
+  /**
+   * FL-1789: the people list for a picker or a filter's vocabulary: id, name, thumbnail version and
+   * photo count, with the same name search, order and pages as `getAll`.
+   */
+  async getPicker(auth: AuthDto, dto: PeoplePickerSearchDto): Promise<PeoplePickerResponseDto> {
+    const { withHidden = false, page, size, name, sort } = dto;
+    const { items, hasNextPage } = await this.personRepository.getPickerPage(
+      { take: size, skip: (page - 1) * size },
+      auth.user.id,
+      { withHidden, ...(name && { name }), ...(sort && { sort }), ...getHiddenContentQueryOptions(auth) },
+    );
+    return {
+      people: items.map((person) => ({
+        id: person.personGroupId,
+        name: person.name,
+        updatedAt: asDateTimeString(person.updatedAt),
+        assetCount: Number(person.assetCount),
+      })),
+      hasNextPage,
     };
   }
 
@@ -1311,6 +1339,8 @@ export class PersonService extends BaseService {
 
     this.logger.debug(`Deleted ${personGroups} empty person groups and ${clusterGroups} orphaned cluster groups`);
 
+    // FL-1789: stored counts of viewer variants nobody has read for a month
+    await this.personRepository.deleteSummariesComputedBefore(new Date(Date.now() - SUMMARY_ABANDONED_AFTER_MS));
     await this.refreshPoorMainPhotos();
     await this.refreshMergeCandidates();
     await this.refreshSplitCandidates();

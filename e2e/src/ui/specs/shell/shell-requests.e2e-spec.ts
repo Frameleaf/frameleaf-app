@@ -48,6 +48,7 @@ const settled = async (page: Page, total: () => number, quiet = 1500) => {
 
 /** FL-1796: what the top bar and the rail read. A page change must not ask for any of them again. */
 const SHELL_REQUESTS = [
+  'GET albums/rail',
   'GET albums/hierarchy',
   'GET partners',
   'GET notifications',
@@ -56,16 +57,29 @@ const SHELL_REQUESTS = [
   'GET server/library-setup/progress',
 ];
 
-const album = (ownerId: string, id: string, albumName: string) => ({
-  album: { id, albumName, kind: 'album', parentId: null, ownerId, albumUsers: [], icon: null },
-  children: [],
+/** One album as the slim rail list (`GET /albums/rail`, FL-1796) sends it. */
+const railAlbum = (id: string, albumName: string) => ({
+  id,
+  albumName,
+  parentId: null,
+  kind: 'album',
+  icon: null,
+  color: null,
+  sortOrder: null,
+  role: 'owner',
+  shared: false,
+  isLocked: false,
+  isSmart: false,
+  smartRuleId: null,
+  assetCount: 0,
+  bookmarkCount: 0,
 });
 
 const json = (body: unknown) => (route: Route) => route.fulfill({ json: body });
 
 /** What the shell reads beyond `setupBaseMockApiRoutes`; anything else answers 404 and is still counted. */
 const setupShellRoutes = async (context: BrowserContext) => {
-  await context.route('**/api/albums/hierarchy*', json({ roots: [] }));
+  await context.route('**/api/albums/rail*', json({ albums: [] }));
   await context.route('**/api/partners*', json([]));
   await context.route('**/api/media-operations*', json({ items: [], total: 0 }));
   await context.route(
@@ -162,9 +176,9 @@ test.describe('app shell requests', () => {
 
   // FL-1796
   test('never empties the album list in the rail while a page opens', async ({ context, page }) => {
-    await context.route('**/api/albums/hierarchy*', (route) =>
+    await context.route('**/api/albums/rail*', (route) =>
       route.fulfill({
-        json: { roots: [album(testContext.adminId, '3f0c1c1e-0000-4000-8000-000000000001', 'Summer in the Rockies')] },
+        json: { albums: [railAlbum('3f0c1c1e-0000-4000-8000-000000000001', 'Summer in the Rockies')] },
       }),
     );
     await page.goto('/photos');

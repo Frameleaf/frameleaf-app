@@ -10,6 +10,7 @@
    */
   import { page } from '$app/state';
   import { formatLuxon } from '$lib/frameleaf/date-format';
+  import LightViewer from '$lib/components/frameleaf/LightViewer.svelte';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import SegmentedControl from '$lib/components/frameleaf/SegmentedControl.svelte';
   import Hero from '$lib/components/frameleaf/settings/kit/Hero.svelte';
@@ -33,16 +34,8 @@
     type TidyUpStatusDto,
   } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
-  import {
-    mdiArchiveArrowDownOutline,
-    mdiCheckCircleOutline,
-    mdiChevronLeft,
-    mdiChevronRight,
-    mdiClose,
-    mdiImageOutline,
-  } from '@mdi/js';
+  import { mdiArchiveArrowDownOutline, mdiCheckCircleOutline, mdiImageOutline } from '@mdi/js';
   import { DateTime } from 'luxon';
-  import { tick } from 'svelte';
   import { t } from 'svelte-i18n';
 
   /** Tiles per kind when every kind is shown; "Show all" opens one kind with the rest. */
@@ -222,7 +215,6 @@
   const list = $derived(tab === 'tidied' ? tidied : groups.flatMap((group) => group.items));
   let open = $state(-1);
   let info = $state<AssetResponseDto>();
-  let closeButton = $state<HTMLButtonElement>();
   const current = $derived(open >= 0 ? list[open] : undefined);
 
   $effect(() => {
@@ -247,11 +239,6 @@
     };
   });
 
-  const show = async (index: number) => {
-    open = index;
-    await tick();
-    closeButton?.focus();
-  };
   const step = (by: number) => {
     const next = open + by;
     if (next >= 0 && next < list.length) {
@@ -275,29 +262,13 @@
     if (open < 0 || event.metaKey || event.ctrlKey || event.altKey) {
       return;
     }
-    switch (event.key) {
-      case 'Escape': {
-        open = -1;
-        break;
-      }
-      case 'ArrowRight': {
-        step(1);
-        break;
-      }
-      case 'ArrowLeft': {
-        step(-1);
-        break;
-      }
-      default: {
-        // K keeps the photo, A archives it, while suggestions are being reviewed
-        const key = event.key.toLowerCase();
-        if (tab !== 'waiting' || (key !== 'k' && key !== 'a')) {
-          return;
-        }
-        void decideOpen(key === 'k');
-      }
+    // K keeps the photo, A archives it, while suggestions are being reviewed
+    const key = event.key.toLowerCase();
+    if (tab !== 'waiting' || (key !== 'k' && key !== 'a')) {
+      return;
     }
     event.preventDefault();
+    void decideOpen(key === 'k');
   };
 
   const day = (value?: string) =>
@@ -388,7 +359,7 @@
                   type="button"
                   class="open"
                   aria-label={$t('frameleaf_tidy_open_large')}
-                  onclick={() => void show(list.indexOf(item))}
+                  onclick={() => (open = list.indexOf(item))}
                 >
                   <img src={thumb(item.assetId)} alt="" loading="lazy" />
                 </button>
@@ -435,7 +406,7 @@
             type="button"
             class="open"
             aria-label={$t('frameleaf_tidy_open_large')}
-            onclick={() => void show(list.indexOf(item))}
+            onclick={() => (open = list.indexOf(item))}
           >
             <img src={thumb(item.assetId)} alt="" loading="lazy" />
           </button>
@@ -454,47 +425,21 @@
 
 {#if current}
   {@const why = current.kinds.map((kind) => $t(kindWhy(kind)))}
-  <div class="viewer" role="dialog" aria-modal="true" aria-label={$t('frameleaf_tidy_large_view')}>
-    <header>
-      <div>
-        <strong>{$t(kindName(current.kinds[0] ?? 'memes'))}</strong>
-        <span>{$t('frameleaf_tidy_position', { values: { index: open + 1, count: list.length } })}</span>
-      </div>
-      <button
-        bind:this={closeButton}
-        type="button"
-        class="round"
-        aria-label={$t('frameleaf_tidy_close')}
-        onclick={() => (open = -1)}
-      >
-        <Icon icon={mdiClose} size="22" aria-hidden />
-      </button>
-    </header>
-    <div class="stage">
-      <button
-        type="button"
-        class="round step"
-        aria-label={$t('frameleaf_tidy_previous')}
-        disabled={open === 0}
-        onclick={() => step(-1)}
-      >
-        <Icon icon={mdiChevronLeft} size="28" aria-hidden />
-      </button>
-      <img
-        src={getAssetMediaUrl({ id: current.assetId, size: AssetMediaSize.Preview })}
-        alt={info?.originalFileName ?? ''}
-      />
-      <button
-        type="button"
-        class="round step"
-        aria-label={$t('frameleaf_tidy_next')}
-        disabled={open === list.length - 1}
-        onclick={() => step(1)}
-      >
-        <Icon icon={mdiChevronRight} size="28" aria-hidden />
-      </button>
-    </div>
-    <footer>
+  <LightViewer
+    label={$t('frameleaf_tidy_large_view')}
+    heading={$t(kindName(current.kinds[0] ?? 'memes'))}
+    position={$t('frameleaf_tidy_position', { values: { index: open + 1, count: list.length } })}
+    hasPrevious={open > 0}
+    hasNext={open < list.length - 1}
+    onPrevious={() => step(-1)}
+    onNext={() => step(1)}
+    onClose={() => (open = -1)}
+  >
+    <img
+      src={getAssetMediaUrl({ id: current.assetId, size: AssetMediaSize.Preview })}
+      alt={info?.originalFileName ?? ''}
+    />
+    {#snippet footer()}
       <div class="why">
         <p>{[info?.originalFileName, day(info?.localDateTime)].filter(Boolean).join(' · ')}</p>
         <ul aria-label={$t('frameleaf_tidy_why')}>
@@ -519,8 +464,8 @@
           </Button>
         {/if}
       </div>
-    </footer>
-  </div>
+    {/snippet}
+  </LightViewer>
 {/if}
 
 <style>
@@ -657,65 +602,9 @@
     flex-wrap: wrap;
     gap: var(--fl-space-2);
   }
-  .viewer {
-    position: fixed;
-    inset: 0;
-    z-index: 60;
-    display: grid;
-    grid-template-rows: auto 1fr auto;
-    color: #fff;
-    background: rgb(8 8 9 / 0.96);
-  }
-  .viewer header,
-  .viewer footer {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--fl-space-4);
-    padding: var(--fl-space-4) var(--fl-space-6);
-  }
-  .viewer header div {
-    display: flex;
-    align-items: baseline;
-    gap: var(--fl-space-3);
-  }
-  .viewer header span,
-  .why p {
-    color: rgb(255 255 255 / 0.72);
-  }
-  .stage {
-    display: grid;
-    grid-template-columns: auto 1fr auto;
-    align-items: center;
-    gap: var(--fl-space-4);
-    min-height: 0;
-    padding: 0 var(--fl-space-6);
-  }
-  .stage img {
-    justify-self: center;
-    max-width: 100%;
-    max-height: 72vh;
-    object-fit: contain;
-    border-radius: var(--fl-radius-lg);
-  }
-  .round {
-    display: grid;
-    place-items: center;
-    width: 44px;
-    height: 44px;
-    color: #fff;
-    background: rgb(255 255 255 / 0.12);
-    border: 0;
-    border-radius: 50%;
-    cursor: pointer;
-  }
-  .round:disabled {
-    cursor: default;
-    opacity: 0.3;
-  }
   .why p {
     margin: 0 0 var(--fl-space-2);
+    color: var(--fl-muted);
   }
   .why ul {
     display: flex;
@@ -728,7 +617,7 @@
   .why li {
     padding: 4px 12px;
     font-size: var(--fl-font-small);
-    background: rgb(255 255 255 / 0.14);
+    background: var(--fl-raised);
     border-radius: var(--fl-radius-pill);
   }
   .actions {
@@ -760,15 +649,6 @@
     }
   }
   @media (max-width: 640px) {
-    .viewer header,
-    .viewer footer {
-      padding: var(--fl-space-3) var(--fl-space-4);
-    }
-    .stage {
-      grid-template-columns: 1fr;
-      padding: 0 var(--fl-space-4);
-    }
-    .step,
     kbd {
       display: none;
     }

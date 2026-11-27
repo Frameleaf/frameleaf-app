@@ -8,6 +8,8 @@ import { LandmarkSummarySchema } from 'src/dtos/landmark.dto.js';
 import { StudioExportResolutionSchema } from 'src/dtos/studio-export.dto.js';
 import {
   AssetOrderWithRandomSchema,
+  AssetTypeSchema,
+  AssetVisibilitySchema,
   MediaOperationDestination,
   MemoryExportFormat,
   MemoryExportFormatSchema,
@@ -19,6 +21,9 @@ import {
   MemoryType,
   MemoryTypeSchema,
 } from 'src/enum.js';
+import { hexOrBufferToBase64 } from 'src/utils/bytes.js';
+import { asDateTimeString } from 'src/utils/date.js';
+import { effectiveVisibilityOf } from 'src/utils/locked.js';
 import { isoDateToDate, isoDatetimeToDate, nonEmptyPartial, stringToBool } from 'src/validation.js';
 
 const MemorySearchSchema = z
@@ -36,6 +41,10 @@ const MemorySearchSchema = z
     size: z.coerce.number().int().min(1).optional().describe('Number of memories to return'),
     page: z.coerce.number().int().min(1).optional().describe('Page number'),
     order: AssetOrderWithRandomSchema.optional(),
+    slim: stringToBool
+      .optional()
+      .describe('Leave `assets` empty and list each item in `slimAssets` instead, for lists that only draw covers')
+      .meta(new HistoryBuilder().added('v3').getExtensions()),
   })
   .meta({ id: 'MemorySearchDto' });
 
@@ -231,6 +240,20 @@ const MemoryOccasionsStatusSchema = z
   })
   .meta({ id: 'MemoryOccasionsStatusDto' });
 
+/** FL-1793: what a memory list draws of each item (cover, count, link), without the whole asset. */
+const MemorySlimAssetSchema = z
+  .object({
+    id: z.uuidv4().describe('Asset ID'),
+    type: AssetTypeSchema,
+    thumbhash: z.string().nullable().describe('Thumbhash (base64), also the thumbnail cache key'),
+    fileCreatedAt: z.string().meta({ format: 'date-time' }).describe('When the file was captured (UTC)'),
+    localDateTime: z.string().meta({ format: 'date-time' }).describe('Local date and time of capture'),
+    width: z.int().min(0).nullable().describe('Asset width'),
+    height: z.int().min(0).nullable().describe('Asset height'),
+    visibility: AssetVisibilitySchema,
+  })
+  .meta({ id: 'MemorySlimAssetDto' });
+
 const MemoryResponseSchema = z
   .object({
     id: z.uuidv4().describe('Memory ID'),
@@ -257,7 +280,12 @@ const MemoryResponseSchema = z
     occasion: MemoryOccasionSchema.optional()
       .describe("The occasion this memory was made for, such as Mother's Day")
       .meta(new HistoryBuilder().added('v3').getExtensions()),
-    assets: z.array(AssetResponseSchema),
+    assets: z.array(AssetResponseSchema).describe('The items; empty when the search asked for `slim`'),
+    slimAssets: z
+      .array(MemorySlimAssetSchema)
+      .optional()
+      .describe('The items in the same order, when the search asked for `slim`')
+      .meta(new HistoryBuilder().added('v3').getExtensions()),
   })
   .meta({ id: 'MemoryResponseDto' });
 
@@ -462,7 +490,12 @@ export const memoryPlaces = (assets: { city?: string | null }[]): string[] => {
   return [...counts].toSorted((a, b) => b[1] - a[1]).map(([place]) => place);
 };
 
-export const mapMemory = (entity: Memory, auth: AuthDto, curation?: MemoryCuration | null): MemoryResponseDto => {
+export const mapMemory = (
+  entity: Memory,
+  auth: AuthDto,
+  curation?: MemoryCuration | null,
+  { slim = false }: { slim?: boolean } = {},
+): MemoryResponseDto => {
   const assets = applyMemoryAssetOrder('assets' in entity ? entity.assets : [], curation?.assetOrder);
   const subjectId = entity.data?.subjectId;
   return {
@@ -484,6 +517,20 @@ export const mapMemory = (entity: Memory, auth: AuthDto, curation?: MemoryCurati
     title: curation?.title ?? null,
     ...(entity.occasion &&
       typeof subjectId === 'string' && { occasion: { kind: entity.occasion, personId: subjectId } }),
-    assets: assets.map((asset) => mapAsset(asset, { auth })),
+    ...(slim
+      ? {
+          assets: [],
+          slimAssets: assets.map((asset) => ({
+            id: asset.id,
+            type: asset.type,
+            thumbhash: asset.thumbhash ? hexOrBufferToBase64(asset.thumbhash) : null,
+            fileCreatedAt: asDateTimeString(asset.fileCreatedAt),
+            localDateTime: asDateTimeString(asset.localDateTime),
+            width: asset.width,
+            height: asset.height,
+            visibility: effectiveVisibilityOf(asset),
+          })),
+        }
+      : { assets: assets.map((asset) => mapAsset(asset, { auth })) }),
   };
 };

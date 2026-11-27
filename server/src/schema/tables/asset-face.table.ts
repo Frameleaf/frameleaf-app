@@ -96,7 +96,8 @@ export class AssetFaceTable {
   @UpdateDateColumn()
   updatedAt!: Generated<Timestamp>;
 
-  @UpdateIdColumn()
+  // FL-1789: indexed so the faces changed since a moment are found without reading them all
+  @UpdateIdColumn({ index: true })
   updateId!: Generated<string>;
 
   @Column({ type: 'boolean', default: true })

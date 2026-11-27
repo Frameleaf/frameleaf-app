@@ -239,6 +239,8 @@ import { PersonGroupAuditTable } from 'src/schema/tables/person-group-audit.tabl
 import { PersonGroupTable } from 'src/schema/tables/person-group.table.js';
 import { PersonMergeCandidateTable } from 'src/schema/tables/person-merge-candidate.table.js';
 import { PersonProfileTable } from 'src/schema/tables/person-profile.table.js';
+import { PersonSummaryStateTable } from 'src/schema/tables/person-summary-state.table.js';
+import { PersonSummaryTable } from 'src/schema/tables/person-summary.table.js';
 import { PersonRelationshipTable } from 'src/schema/tables/person-relationship.table.js';
 import { PersonSplitCandidateTable } from 'src/schema/tables/person-split-candidate.table.js';
 import { PersonTable } from 'src/schema/tables/person.table.js';
@@ -586,6 +588,8 @@ export class ImmichDatabase {
     PersonCategoryMemberTable,
     PersonCategorySeedTable,
     PersonProfileTable,
+    PersonSummaryTable,
+    PersonSummaryStateTable,
     PersonRelationshipTable,
     PersonSplitCandidateTable,
     PersonGroupAuditTable,
@@ -938,6 +942,8 @@ export interface DB extends QueueDatabase {
   person_category_member: PersonCategoryMemberTable;
   person_category_seed: PersonCategorySeedTable;
   person_profile: PersonProfileTable;
+  person_summary: PersonSummaryTable;
+  person_summary_state: PersonSummaryStateTable;
   person_relationship: PersonRelationshipTable;
   person_split_candidate: PersonSplitCandidateTable;
   person_group_audit: PersonGroupAuditTable;
