@@ -20,6 +20,8 @@ test.describe('slideshow keys and states', () => {
   const openPhoto = async (page: Page) => {
     await page.goto(`/photos/${fixture.primaryAsset.id}`);
     await assetViewerUtils.waitForViewerLoad(page, fixture.primaryAsset);
+    // S plays only once the neighbours are known, as the footer's Play does
+    await expect(footer(page).getByRole('button', { name: 'Play slideshow' })).toBeEnabled();
   };
 
   test('S and Space pause and resume a slideshow started with S', async ({ page }) => {
@@ -57,6 +59,7 @@ test.describe('slideshow keys and states', () => {
     await pageUtils.deepLinkPhotosPage(page, fixture.primaryAsset.id);
     await thumbnailUtils.clickAssetId(page, fixture.primaryAsset.id);
     await assetViewerUtils.waitForViewerLoad(page, fixture.primaryAsset);
+    await expect(footer(page).getByRole('button', { name: 'Play slideshow' })).toBeEnabled();
     await page.keyboard.press('s');
     await expect(page.getByTestId('slideshow-progress')).toBeAttached();
 

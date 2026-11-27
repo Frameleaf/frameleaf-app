@@ -1450,7 +1450,9 @@
     if (gesturesEnabled) {
       return;
     }
-    chromeHidden = untrack(() => pageFullscreen);
+    // the viewer's own full screen re-hides the controls only for a slideshow: an editor or the OCR
+    // overlay switches the tap off, and its controls must stay reachable
+    chromeHidden = untrack(() => pageFullscreen && $slideshowState !== SlideshowState.None);
     gesture.cancel();
     untrack(() => swipe.cancel());
   });
@@ -1518,6 +1520,7 @@
   let fullscreenLeftAt = -Infinity;
   /** The viewer itself is leaving full screen (the footer toggle, a slideshow ending), not Escape. */
   let leavingFullscreenOurselves = false;
+  let fullscreenExitToken = 0;
 
   const exitFullscreenOurselves = async () => {
     if (!currentFullscreenElement()) {
@@ -1533,8 +1536,21 @@
       leavingFullscreenOurselves = false;
       throw error;
     }
-    // a browser that never reports the change must not leave the mark on for the next exit
-    setTimeout(() => (leavingFullscreenOurselves = false), 1000);
+    // A browser that never reports the change must not leave the mark on for the next exit. Each exit
+    // owns its timer, and the mark is cleared only once full screen is really gone (iPadOS before 16.4
+    // settles at once and animates out afterwards).
+    const exit = ++fullscreenExitToken;
+    const clearMark = () => {
+      if (exit !== fullscreenExitToken) {
+        return;
+      }
+      if (currentFullscreenElement()) {
+        setTimeout(clearMark, 500);
+        return;
+      }
+      leavingFullscreenOurselves = false;
+    };
+    setTimeout(clearMark, 1000);
   };
 
   const onFullscreenChange = () => {
@@ -1564,8 +1580,9 @@
     if (event.key !== 'Escape' || event.defaultPrevented) {
       return;
     }
-    if (pageFullscreen) {
-      // The viewer's own full screen leaves as a real one does on Escape, ending a slideshow with it.
+    if (pageFullscreen && !isDialogOpen() && !assetViewerHtmlElement?.querySelector('[aria-expanded="true"]')) {
+      // The viewer's own full screen leaves as a real one does on Escape, ending a slideshow with it
+      // (an open dialog or menu takes the key first).
       event.preventDefault();
       event.stopImmediatePropagation();
       setPageFullscreen(false);
@@ -1593,6 +1610,17 @@
   // renders `SlideshowSettingsPanel` for it (below), which returns focus to the control that opened it.
 
   /** Hidden chrome comes back as soon as the keyboard is used, so nothing focusable stays invisible. */
+  /*
+   * FL-1833: focus moving inside the viewer brings the controls back only when the keyboard moved it.
+   * A menu returns focus to its button when it closes, so choosing Full screen from the phone's More
+   * menu (the viewer's own full screen on an iPhone) brought the controls straight back.
+   */
+  let lastInputWasKey = false;
+  const revealChromeOnFocus = () => {
+    if (lastInputWasKey) {
+      revealChrome();
+    }
+  };
   const revealChrome = () => {
     if (chromeHidden) {
       chromeHidden = false;
@@ -1763,11 +1791,15 @@
 
 <svelte:window
   onkeydowncapture={(event) => {
+    lastInputWasKey = true;
     closeSettingsOnEscape(event);
     leaveFullscreenOnEscape(event);
   }}
   onkeydown={revealChrome}
-  onpointerdowncapture={(event) => activePointers.add(event.pointerId)}
+  onpointerdowncapture={(event) => {
+    lastInputWasKey = false;
+    activePointers.add(event.pointerId);
+  }}
   onpointerupcapture={releasePointer}
   onpointercancelcapture={releasePointer}
   onpointerdown={onWindowPointerDown}
@@ -1816,7 +1848,7 @@
   data-theme="dark"
   use:focusTrap
   bind:this={assetViewerHtmlElement}
-  onfocusin={revealChrome}
+  onfocusin={revealChromeOnFocus}
 >
   <!--
     Top navigation bar. The header and the footer stack at the same level, z-2, as in the template

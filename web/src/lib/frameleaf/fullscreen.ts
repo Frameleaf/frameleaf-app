@@ -30,11 +30,40 @@ export const requestFullscreen = async (element: HTMLElement): Promise<void> => 
   if (typeof target.requestFullscreen === 'function') {
     await target.requestFullscreen({ navigationUI: 'hide' });
   } else if (typeof target.webkitRequestFullscreen === 'function') {
-    await target.webkitRequestFullscreen();
+    await webkitRequest(target as PrefixedElement & { webkitRequestFullscreen: () => Promise<void> | void });
   } else {
     throw new TypeError('Full screen is not supported');
   }
 };
+
+/**
+ * The prefixed request returns nothing and reports a refusal only as `webkitfullscreenerror`, so the
+ * promise settles on the change or the error (or rejects if neither arrives), letting the caller
+ * fall back when the browser says no.
+ */
+const webkitRequest = (target: PrefixedElement & { webkitRequestFullscreen: () => Promise<void> | void }) =>
+  new Promise<void>((resolve, reject) => {
+    const settle = (ok: boolean) => {
+      clearTimeout(timer);
+      document.removeEventListener('webkitfullscreenchange', onChange);
+      document.removeEventListener('webkitfullscreenerror', onError);
+      if (ok) {
+        resolve();
+      } else {
+        reject(new TypeError('Full screen was refused'));
+      }
+    };
+    const onChange = () => settle(true);
+    const onError = () => settle(false);
+    const timer = setTimeout(() => settle(!!fullscreenElement()), 1000);
+    document.addEventListener('webkitfullscreenchange', onChange);
+    document.addEventListener('webkitfullscreenerror', onError);
+    try {
+      void target.webkitRequestFullscreen();
+    } catch {
+      settle(false);
+    }
+  });
 
 export const exitFullscreen = async (): Promise<void> => {
   const d = doc();

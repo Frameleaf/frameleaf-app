@@ -630,7 +630,8 @@
       if (held) {
         player.pause();
       } else if (resumable) {
-        player.play().catch(() => {});
+        // a resume the browser refuses would leave the slideshow waiting on this video for good
+        player.play().catch(() => skipStalledSlide());
       }
     });
   });
@@ -659,7 +660,14 @@
     clearTimeout(skipTimer);
     const stalledId = assetId;
     skipTimer = setTimeout(() => {
-      if (!destroyed && assetId === stalledId && slideshowPlaying() && (playbackFailed || videoPlayer?.paused)) {
+      // an ended video has already moved the slideshow on
+      if (
+        !destroyed &&
+        assetId === stalledId &&
+        slideshowPlaying() &&
+        !videoPlayer?.ended &&
+        (playbackFailed || videoPlayer?.paused)
+      ) {
         onVideoEnded();
       }
     }, SKIP_STALLED_SLIDE_MS);
@@ -674,6 +682,7 @@
       if (!video.paused || slideshowPlaying()) {
         await video.play();
         if (!signal?.aborted && video === videoPlayer && !playbackFailed) {
+          clearTimeout(skipTimer);
           onVideoStarted();
         }
       }

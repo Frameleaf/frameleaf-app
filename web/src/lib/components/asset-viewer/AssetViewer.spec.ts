@@ -1653,6 +1653,51 @@ describe('AssetViewer', () => {
       expect(onClose).not.toHaveBeenCalled();
     });
 
+    it('keeps the slideshow when its own exit is reported after the exit settles (Chromium)', async () => {
+      const previousExit = document.exitFullscreen;
+      const element = Object.getOwnPropertyDescriptor(document, 'fullscreenElement');
+      onTestFinished(() => {
+        document.exitFullscreen = previousExit;
+        if (element) {
+          Object.defineProperty(document, 'fullscreenElement', element);
+        } else {
+          Reflect.deleteProperty(document, 'fullscreenElement');
+        }
+      });
+      const setFullscreen = (value: Element | null) => {
+        Object.defineProperty(document, 'fullscreenElement', { configurable: true, value });
+        document.dispatchEvent(new Event('fullscreenchange'));
+      };
+      // the exit settles at once; the change event follows on a later task
+      document.exitFullscreen = vi.fn(() => {
+        setTimeout(() => setFullscreen(null), 0);
+        return Promise.resolve();
+      });
+      const { view } = open();
+      setFullscreen(view.container);
+      slideshowStore.slideshowState.set(SlideshowState.PlaySlideshow);
+      await view.findByTestId('slideshow-progress');
+
+      await fireEvent.click(await view.findByLabelText('frameleaf_viewer_exit_fullscreen'));
+      await waitFor(() => expect(view.getByLabelText('frameleaf_viewer_enter_fullscreen')).toBeInTheDocument());
+      expect(get(slideshowStore.slideshowState)).toBe(SlideshowState.PlaySlideshow);
+    });
+
+    it('in its own full screen, hides the controls for a slideshow and brings them back when it ends', async () => {
+      Reflect.deleteProperty(HTMLElement.prototype, 'requestFullscreen');
+      Object.defineProperty(document, 'fullscreenEnabled', { value: false, configurable: true });
+      const { view, viewer } = open();
+      await fireEvent.click(view.getByLabelText('frameleaf_viewer_enter_fullscreen'));
+      await waitFor(() => expect(viewer).toHaveClass('chrome-hidden'));
+
+      // a slideshow switches the viewer's tap off; the controls stay tucked away for it, then return
+      slideshowStore.slideshowState.set(SlideshowState.PlaySlideshow);
+      await view.findByTestId('slideshow-progress');
+      await waitFor(() => expect(viewer).toHaveClass('chrome-hidden'));
+      slideshowStore.slideshowState.set(SlideshowState.StopSlideshow);
+      await waitFor(() => expect(viewer).not.toHaveClass('chrome-hidden'));
+    });
+
     it('falls back to its own full screen when the browser refuses the request', async () => {
       HTMLElement.prototype.requestFullscreen = vi.fn().mockRejectedValue(new TypeError('not allowed'));
       Object.defineProperty(document, 'fullscreenEnabled', { value: true, configurable: true });
