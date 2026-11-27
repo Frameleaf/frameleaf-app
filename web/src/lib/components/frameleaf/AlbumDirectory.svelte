@@ -10,6 +10,7 @@
   import AlbumCleanupBanner from '$lib/components/frameleaf/album-cleanup/AlbumCleanupBanner.svelte';
   import AlbumTile from '$lib/components/frameleaf/AlbumTile.svelte';
   import EmptyState from '$lib/components/frameleaf/EmptyState.svelte';
+  import FolderAlbumsNotice from '$lib/components/frameleaf/FolderAlbumsNotice.svelte';
   import { listEnter, listFlip, listLeave } from '$lib/components/frameleaf/people/list-motion';
   import Menu from '$lib/components/frameleaf/Menu.svelte';
   import MenuItem from '$lib/components/frameleaf/MenuItem.svelte';
@@ -1077,6 +1078,12 @@
       </div>
     </div>
   </header>
+
+  {#if !here}
+    <!-- FL-1837: the one-time offer of one album for each event folder, between the header and the toolbar
+         at the top level, as the approved design places it. -->
+    <FolderAlbumsNotice onChanged={refresh} />
+  {/if}
 
   {#if here}
     {@const editor = canEdit(here, currentUserId)}

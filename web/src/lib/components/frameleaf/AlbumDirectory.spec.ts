@@ -155,6 +155,24 @@ describe('AlbumDirectory', () => {
     expect(screen.queryByRole('article', { name: 'Summer in the Rockies' })).toBeNull();
   });
 
+  it('offers the folder-albums notice at the top level, and not inside a collection (FL-1837)', async () => {
+    const { authManager } = await import('$lib/managers/auth-manager.svelte');
+    const user = authManager.user as { isAdmin: boolean };
+    user.isAdmin = true;
+    sdkMock.getFolderAlbumSuggestions.mockResolvedValue([]);
+    try {
+      const top = renderWithTooltips(AlbumDirectory, { tree, onRefresh: vi.fn() });
+      expect(sdkMock.getFolderAlbumSuggestions).toHaveBeenCalledTimes(1);
+      top.unmount();
+
+      app.page.url = new URL('http://localhost/albums?in=family');
+      renderWithTooltips(AlbumDirectory, { tree, onRefresh: vi.fn() });
+      expect(sdkMock.getFolderAlbumSuggestions).toHaveBeenCalledTimes(1);
+    } finally {
+      user.isAdmin = false;
+    }
+  });
+
   it('hides empty albums by default and says how many (FL-1836)', () => {
     albumDirectoryView.set({ ...defaultAlbumDirectoryView });
     renderWithTooltips(AlbumDirectory, { tree, onRefresh: vi.fn() });
