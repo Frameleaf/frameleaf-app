@@ -1,22 +1,29 @@
 <script lang="ts">
   import Button from '$lib/components/frameleaf/Button.svelte';
+  import DateField, { isDateFieldValid } from '$lib/components/frameleaf/DateField.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import IconButton from '$lib/components/frameleaf/IconButton.svelte';
+  import { lifeDateField, lifeDateUpdate } from '$lib/frameleaf/date-field';
   import { ageInYears, datesProblem, isUnnamedPerson, lifespan } from '$lib/frameleaf/people';
   import { eventManager } from '$lib/managers/event-manager.svelte';
   import { handleError } from '$lib/utils/handle-error';
-  import { updatePerson, type PersonResponseDto, type PersonUpdateDto } from '@frameleaf/sdk';
+  import {
+    updatePerson,
+    type BirthDatePrecision,
+    type DeathDatePrecision,
+    type PersonResponseDto,
+    type PersonUpdateDto,
+  } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
   import { mdiClose, mdiDeleteOutline, mdiPlus } from '@mdi/js';
   import { DateTime } from 'luxon';
   import { t } from 'svelte-i18n';
 
   /**
-   * "Dates" (FL-37 PD-5, FL-864), after `BirthdayDialog` in the prototype's `People.jsx`: the date of
-   * birth and an optional date of passing, each a native date field capped at today. With a date of
-   * passing the person's page shows a lifespan instead of an age. Saving sends only the dates that
-   * changed through `updatePerson` and announces the change with the existing `PersonUpdate` event;
-   * `onSaved` hears whether any date is left.
+   * "Dates" (FL-37 PD-5, FL-864), after `BirthdayDialog` in the prototype's `People.jsx`: the date of birth and an
+   * optional date of passing, each in the one date field (FL-1814), which asks how sure you are first, so "around
+   * 1950" is as easy to enter as a full date. With a date of passing the person's page shows a lifespan instead of
+   * an age. Saving sends only what changed through `updatePerson` and announces it with `PersonUpdate`.
    */
   interface Props {
     person: PersonResponseDto;
@@ -26,49 +33,65 @@
 
   let { person, open = $bindable(false), onSaved }: Props = $props();
 
-  let value = $state('');
-  let passed = $state('');
+  let born = $state(lifeDateField(null, null));
+  let passed = $state(lifeDateField(null, null));
+  let showBorn = $state(false);
   let showPassed = $state(false);
   let busy = $state(false);
-  // A half-typed date reads as empty; saving it would clear the stored date, so Save waits.
-  let fields: HTMLElement | undefined = $state();
-  let incomplete = $state(false);
-  const checkInputs = () => {
-    incomplete = [...(fields?.querySelectorAll('input') ?? [])].some((input) => input.validity.badInput);
-  };
   const today = DateTime.now().toISODate();
+  const thisYear = DateTime.now().year;
   const name = $derived(isUnnamedPerson(person) ? $t('unnamed_person') : person.name);
-  const passing = $derived(showPassed ? passed : '');
-  const problem = $derived(datesProblem(value, passing, today));
-  const span = $derived(problem ? null : lifespan(value, passing));
-  const age = $derived(!problem && value && !span ? ageInYears(value) : null);
+
+  const birth = $derived(showBorn ? lifeDateUpdate(born) : { date: null, precision: null });
+  const passing = $derived(showPassed ? lifeDateUpdate(passed) : { date: null, precision: null });
+  const exact = (value: { date: string | null; precision: string | null }) =>
+    value.date && !value.precision ? value.date : '';
+  // a half-typed day or year is never saved (it would read as no date, or the wrong one)
+  const incomplete = $derived(
+    (showBorn && !isDateFieldValid(born, 1800, thisYear)) || (showPassed && !isDateFieldValid(passed, 1800, thisYear)),
+  );
+  const problem = $derived(incomplete ? null : datesProblem(birth.date ?? '', passing.date ?? '', today));
+  const span = $derived(problem ? null : lifespan(exact(birth), exact(passing)));
+  const age = $derived(!problem && exact(birth) && !span ? ageInYears(exact(birth)) : null);
   const unchanged = $derived(
-    (value || null) === (person.birthDate || null) && (passing || null) === (person.deathDate || null),
+    birth.date === (person.birthDate || null) &&
+      birth.precision === (person.birthDatePrecision ?? null) &&
+      passing.date === (person.deathDate || null) &&
+      passing.precision === (person.deathDatePrecision ?? null),
   );
 
   $effect(() => {
     if (open) {
-      value = person.birthDate ?? '';
-      passed = person.deathDate ?? '';
+      born = lifeDateField(person.birthDate, person.birthDatePrecision);
+      passed = lifeDateField(person.deathDate, person.deathDatePrecision);
+      showBorn = !!person.birthDate;
       showPassed = !!person.deathDate;
-      incomplete = false;
     }
   });
 
-  const save = async (birthDate: string | null, deathDate: string | null) => {
+  const save = async (clear = false) => {
+    const nextBirth = clear ? { date: null, precision: null } : birth;
+    const nextPassing = clear ? { date: null, precision: null } : passing;
     const personUpdateDto: PersonUpdateDto = {};
-    if (birthDate !== (person.birthDate || null)) {
-      personUpdateDto.birthDate = birthDate;
+    if (nextBirth.date !== (person.birthDate || null) || nextBirth.precision !== (person.birthDatePrecision ?? null)) {
+      personUpdateDto.birthDate = nextBirth.date;
+      personUpdateDto.birthDatePrecision = (nextBirth.date ? nextBirth.precision : null) as BirthDatePrecision | null;
     }
-    if (deathDate !== (person.deathDate || null)) {
-      personUpdateDto.deathDate = deathDate;
+    if (
+      nextPassing.date !== (person.deathDate || null) ||
+      nextPassing.precision !== (person.deathDatePrecision ?? null)
+    ) {
+      personUpdateDto.deathDate = nextPassing.date;
+      personUpdateDto.deathDatePrecision = (
+        nextPassing.date ? nextPassing.precision : null
+      ) as DeathDatePrecision | null;
     }
     busy = true;
     try {
       const updated = await updatePerson({ id: person.id, personUpdateDto });
       eventManager.emit('PersonUpdate', updated);
       open = false;
-      onSaved?.(updated, !!(birthDate || deathDate));
+      onSaved?.(updated, !!(nextBirth.date || nextPassing.date));
     } catch (error) {
       handleError(error, $t('frameleaf_people_dates_save_failed'));
     } finally {
@@ -78,24 +101,34 @@
 </script>
 
 <Dialog title={$t('frameleaf_people_dates')} closeLabel={$t('close')} bind:open>
-  <div class="dates" bind:this={fields} oninput={checkInputs}>
-    <label class="field">
-      <span>{$t('frameleaf_people_birthday_label', { values: { name } })}</span>
-      <input type="date" max={today} bind:value data-initial-focus />
-    </label>
+  <div class="dates">
+    {#if showBorn}
+      <div class="row">
+        <DateField
+          label={$t('frameleaf_people_birthday_label', { values: { name } })}
+          value={born}
+          maxYear={thisYear}
+          onChange={(value) => (born = value)}
+        />
+        <IconButton label={$t('frameleaf_people_birthday_remove')} onclick={() => (showBorn = false)}>
+          <Icon icon={mdiClose} size="18" aria-hidden="true" />
+        </IconButton>
+      </div>
+    {:else}
+      <button type="button" class="add" data-initial-focus onclick={() => (showBorn = true)}>
+        <Icon icon={mdiPlus} size="16" aria-hidden="true" />
+        {$t('frameleaf_people_birthday_label', { values: { name } })}
+      </button>
+    {/if}
     {#if showPassed}
       <div class="row">
-        <label class="field">
-          <span>{$t('frameleaf_people_passing_label')}</span>
-          <input type="date" min={value || undefined} max={today} bind:value={passed} />
-        </label>
-        <IconButton
-          label={$t('frameleaf_people_passing_remove')}
-          onclick={() => {
-            showPassed = false;
-            incomplete = false;
-          }}
-        >
+        <DateField
+          label={$t('frameleaf_people_passing_label')}
+          value={passed}
+          maxYear={thisYear}
+          onChange={(value) => (passed = value)}
+        />
+        <IconButton label={$t('frameleaf_people_passing_remove')} onclick={() => (showPassed = false)}>
           <Icon icon={mdiClose} size="18" aria-hidden="true" />
         </IconButton>
       </div>
@@ -111,7 +144,7 @@
       {$t(problem)}
     {:else if span}
       {$t('frameleaf_people_passing_hint', { values: { name, years: span.years } })}
-    {:else if value && age !== null}
+    {:else if age !== null}
       {$t('frameleaf_people_birthday_age', { values: { name, age } })}
     {:else}
       {$t('frameleaf_people_birthday_hint')}
@@ -120,16 +153,12 @@
   {#snippet actions()}
     <Button onclick={() => (open = false)}>{$t('cancel')}</Button>
     {#if person.birthDate || person.deathDate}
-      <Button disabled={busy} onclick={() => save(null, null)}>
+      <Button disabled={busy} onclick={() => save(true)}>
         <Icon icon={mdiDeleteOutline} size="18" aria-hidden="true" />
         {$t('frameleaf_people_dates_remove')}
       </Button>
     {/if}
-    <Button
-      variant="primary"
-      disabled={!!problem || incomplete || unchanged || busy}
-      onclick={() => save(value || null, passing || null)}
-    >
+    <Button variant="primary" disabled={incomplete || !!problem || unchanged || busy} onclick={() => save()}>
       {$t('save')}
     </Button>
   {/snippet}
@@ -139,22 +168,22 @@
   /* The prototype's `.pp-dates`, `.pp-date-row`, `.pp-add-date`, `.pp-field`, `.pp-dialog-hint`. */
   .dates {
     display: grid;
-    gap: 16px;
+    gap: var(--fl-space-6);
   }
   .row {
     display: flex;
-    align-items: flex-end;
-    gap: 8px;
+    align-items: flex-start;
+    gap: var(--fl-space-2);
   }
-  .row .field {
+  .row > :global(.date-field) {
     flex: 1;
   }
   .add {
     display: inline-flex;
     align-items: center;
     justify-self: start;
-    gap: 8px;
-    min-height: 40px;
+    gap: var(--fl-space-2);
+    min-height: 44px;
     padding: 0;
     border: 0;
     background: none;
@@ -162,21 +191,8 @@
     font: inherit;
     cursor: pointer;
   }
-  .field {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-  }
-  .field span {
-    color: var(--fl-muted);
-    font-size: var(--fl-font-small);
-  }
-  .field input {
-    min-height: var(--fl-control-height);
-    font-size: var(--fl-font-size);
-  }
   .hint {
-    margin: 16px 0 0;
+    margin: var(--fl-space-4) 0 0;
     color: var(--fl-muted);
     line-height: 1.5;
   }
