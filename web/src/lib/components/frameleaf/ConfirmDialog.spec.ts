@@ -120,18 +120,24 @@ describe('ConfirmDialog', () => {
   });
 
   it('gives the focus back to the action after a failure', async () => {
+    let fail!: (error: Error) => void;
     render(ConfirmDialog, {
       title: 'Delete?',
       confirmText: 'Delete album',
       danger: true,
-      onConfirm: vi.fn().mockRejectedValue(new Error('offline')),
+      onConfirm: () => new Promise<void>((_, reject) => (fail = reject)),
       onClose: vi.fn(),
     });
     const action = screen.getByRole('button', { name: 'Delete album' });
     action.focus();
     await fireEvent.click(action);
-    // a browser drops the focus from a button that becomes disabled; jsdom does not, so do it here
-    action.blur();
+    // a browser drops the focus from a button that becomes disabled; jsdom does not, so move it away here
+    const elsewhere = document.createElement('button');
+    document.body.append(elsewhere);
+    elsewhere.focus();
+    expect(action).not.toHaveFocus();
+    fail(new Error('offline'));
     await vi.waitFor(() => expect(action).toHaveFocus());
+    elsewhere.remove();
   });
 });
