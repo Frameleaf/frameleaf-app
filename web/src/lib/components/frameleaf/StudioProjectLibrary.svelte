@@ -14,7 +14,7 @@
   import { goto, onNavigate } from '$app/navigation';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
-  import BulkConfirmDialog from '$lib/components/frameleaf/BulkConfirmDialog.svelte';
+  import ConfirmDialog from '$lib/components/frameleaf/ConfirmDialog.svelte';
   import EmptyState from '$lib/components/frameleaf/EmptyState.svelte';
   import StudioEditorImportDialog from '$lib/components/frameleaf/StudioEditorImportDialog.svelte';
   import InlineError from '$lib/components/frameleaf/InlineError.svelte';
@@ -755,11 +755,12 @@
 </main>
 
 {#if confirmDelete}
-  <BulkConfirmDialog
+  <ConfirmDialog
+    title={$t('frameleaf_studio_library_delete_permanently')}
+    prompt={$t('frameleaf_studio_library_delete_permanently_confirm', { values: { count: 1 } })}
+    confirmText={$t('frameleaf_studio_library_delete_permanently')}
+    danger
     bind:open={confirmDeleteOpen}
-    count={1}
-    labelKey="frameleaf_studio_library_delete_permanently"
-    messageKey="frameleaf_studio_library_delete_permanently_confirm"
     onConfirm={() => {
       const project = confirmDelete;
       if (project) {
@@ -774,11 +775,12 @@
 {/if}
 
 <!-- The count is the whole trash, not only the cards on screen: that is what the server empties. -->
-<BulkConfirmDialog
+<ConfirmDialog
+  title={$t('frameleaf_studio_library_empty_trash')}
+  prompt={$t('frameleaf_studio_library_empty_trash_confirm', { values: { count: total } })}
+  confirmText={$t('frameleaf_studio_library_empty_trash')}
+  danger
   bind:open={confirmEmptyOpen}
-  count={total}
-  labelKey="frameleaf_studio_library_empty_trash"
-  messageKey="frameleaf_studio_library_empty_trash_confirm"
   onConfirm={async () => {
     try {
       const { count } = await emptyStudioProjectTrash();

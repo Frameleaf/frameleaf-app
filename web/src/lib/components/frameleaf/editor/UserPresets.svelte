@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { confirmFrameleaf } from '$lib/frameleaf/confirm';
   /**
    * "Your presets" in the Presets panel (FL-64). A preset saves the current develop settings —
    * sliders, look, strength and masks, never the crop — under a name, and applies them to any
@@ -19,7 +20,7 @@
     updateDevelopPreset,
     type DevelopPresetResponseDto,
   } from '@frameleaf/sdk';
-  import { Icon, modalManager, toastManager } from '@frameleaf/ui';
+  import { Icon, toastManager } from '@frameleaf/ui';
   import { mdiContentSaveOutline, mdiDeleteOutline, mdiPlus } from '@mdi/js';
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';
@@ -103,10 +104,11 @@
   };
 
   const remove = async (preset: DevelopPresetResponseDto) => {
-    const confirmed = await modalManager.showDialog({
+    const confirmed = await confirmFrameleaf({
       title: $t('frameleaf_editor_preset_delete_title'),
       prompt: $t('frameleaf_editor_preset_delete_prompt', { values: { name: preset.name } }),
-      confirmText: $t('delete'),
+      confirmText: $t('frameleaf_editor_preset_delete_title'),
+      danger: true,
     });
     if (!confirmed) {
       return;

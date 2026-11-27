@@ -11,6 +11,7 @@
 </script>
 
 <script lang="ts">
+  import { confirmFrameleaf } from '$lib/frameleaf/confirm';
   /**
    * The restoration panel of the quick editor (FL-115), ported from the prototype's `RestorePanel`.
    *
@@ -109,7 +110,7 @@
     type CloudMlModelDto,
     MlAdmissionRefusal,
   } from '@frameleaf/sdk';
-  import { Icon, modalManager, toastManager } from '@frameleaf/ui';
+  import { Icon, toastManager } from '@frameleaf/ui';
   import {
     mdiAutoFix,
     mdiCheck,
@@ -804,10 +805,11 @@
     );
 
   const discard = async (item: AssetRestorationResponseDto) => {
-    const confirmed = await modalManager.showDialog({
+    const confirmed = await confirmFrameleaf({
       title: $t('frameleaf_restoration_discard_title'),
       prompt: $t('frameleaf_restoration_discard_prompt', { values: { revision: item.revision } }),
       confirmText: $t('frameleaf_restoration_discard_confirm'),
+      danger: true,
     });
     if (!confirmed) {
       return;

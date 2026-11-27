@@ -30,7 +30,7 @@
   import { browser } from '$app/env';
   import { afterNavigate, goto, replaceState } from '$app/navigation';
   import { page } from '$app/state';
-  import BulkConfirmDialog from '$lib/components/frameleaf/BulkConfirmDialog.svelte';
+  import ConfirmDialog from '$lib/components/frameleaf/ConfirmDialog.svelte';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import LibraryEmptyState from '$lib/components/frameleaf/LibraryEmptyState.svelte';
@@ -2233,12 +2233,11 @@
 </div>
 
 {#if archiveConfirm}
-  <BulkConfirmDialog
-    count={archiveConfirm.count}
+  <ConfirmDialog
+    title={$t('frameleaf_bulk_archive')}
+    prompt={$t('frameleaf_bulk_archive_matching_confirm', { values: { count: archiveConfirm.count } })}
+    confirmText={$t('frameleaf_bulk_archive')}
     bind:open={archiveConfirmOpen}
-    labelKey="frameleaf_bulk_archive"
-    messageKey="frameleaf_bulk_archive_matching_confirm"
-    danger={false}
     onConfirm={() => void confirmMatchingArchive()}
   />
 {/if}

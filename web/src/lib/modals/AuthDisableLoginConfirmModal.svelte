@@ -14,7 +14,7 @@
   const commandsDocs = $derived(helpLinks.docs('administration/server-commands'));
 </script>
 
-<ConfirmDialog title={$t('admin.disable_login')} confirmText={$t('confirm')} danger {onClose}>
+<ConfirmDialog title={$t('admin.disable_login')} confirmText={$t('admin.disable_login')} danger {onClose}>
   {#snippet prompt()}
     <div class="prompt">
       <p>{$t('admin.authentication_settings_disable_all')}</p>

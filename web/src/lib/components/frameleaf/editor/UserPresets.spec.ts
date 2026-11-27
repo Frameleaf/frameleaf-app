@@ -20,7 +20,7 @@ vi.mock('@frameleaf/ui', async () => {
   return {
     ...actual,
     Icon,
-    modalManager: { showDialog: vi.fn() },
+    modalManager: { show: vi.fn() },
     toastManager: { primary: vi.fn(), danger: vi.fn() },
   };
 });

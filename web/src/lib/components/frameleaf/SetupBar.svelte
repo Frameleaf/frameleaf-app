@@ -12,6 +12,7 @@
 </script>
 
 <script lang="ts">
+  import { confirmFrameleaf } from '$lib/frameleaf/confirm';
   /*
    * Setup bar (FL-1146, owner 2026-11-02; prototype SetupBar.jsx): an Immich import opens the library as soon as its
    * rows are in. Until the work behind it is done, administrators see this row above the top bar on every page:
@@ -38,7 +39,7 @@
     LibrarySetupStageId,
     LibrarySetupStageStatus,
   } from '@frameleaf/sdk';
-  import { Icon, modalManager } from '@frameleaf/ui';
+  import { Icon } from '@frameleaf/ui';
   import {
     mdiAlertCircleOutline,
     mdiCheckCircle,
@@ -203,7 +204,7 @@
   // The owner would rather let the server run: held work starts, and this bar and the phone step stop asking.
   const dismiss = () =>
     act(async () => {
-      const confirmed = await modalManager.showDialog({
+      const confirmed = await confirmFrameleaf({
         title: $t('setup_bar_dismiss_title'),
         prompt: $t('setup_bar_dismiss_prompt'),
         confirmText: $t('setup_bar_dismiss'),
