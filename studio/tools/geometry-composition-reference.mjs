@@ -180,7 +180,7 @@ export function compositionSourcesFor(sourceSha256) {
     // FL-1822 the keyframes lane's header and labels; changes no composition or raster producer.
     sourceSha256 === '7bf91610b9e5169164d516910acd08a18ff905506bcbfd597f2216a4248d761b' ||
     // FL-1822 the colour workspace's grading rows, wheel values, curves and scopes header; changes no composition or raster producer.
-    sourceSha256 === '5314d5b161ff2fed20a0a954d05aef9cba1dad32f114c0bfe8365d3b4bf7f446'
+    sourceSha256 === '3e370166b4723cebd729da3d0a5be033f003ade966dfbdcd9b48c2edbafc367d'
   )
     return {
       ...COMPOSITION_SOURCES,

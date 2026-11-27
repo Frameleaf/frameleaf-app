@@ -23,10 +23,10 @@ index 1909170..8434f90 100644
              {channelControls}
            </div>
 diff --git a/src/features/effects/components/panels/gpu-wheels-panel.test.tsx b/src/features/effects/components/panels/gpu-wheels-panel.test.tsx
-index d90fdaa..4528cd4 100644
+index d90fdaa..ccbb808 100644
 --- a/src/features/effects/components/panels/gpu-wheels-panel.test.tsx
 +++ b/src/features/effects/components/panels/gpu-wheels-panel.test.tsx
-@@ -102,7 +102,8 @@ describe('GpuWheelsPanel', () => {
+@@ -102,10 +102,21 @@ describe('GpuWheelsPanel', () => {
      fireEvent.click(screen.getByRole('button', { name: 'Reset Temperature to default' }))
      expect(props.onParamChange).toHaveBeenCalledWith('fx-wheels', 'temperature', 0)
      expect(screen.getByRole('button', { name: 'Reset Tint to default' })).toBeDisabled()
@@ -36,8 +36,21 @@ index d90fdaa..4528cd4 100644
      expect(screen.getByText('Mid/Detail')).toHaveAttribute('title', 'Mid/Detail')
    })
  
++  it('types a wheel master level in the wheel header; Offset has none', () => {
++    render(<GpuWheelsPanel {...makeProps({})} layout="dock" />)
++    for (const wheel of ['Lift', 'Gamma', 'Gain']) {
++      const master = screen.getByLabelText(wheel)
++      expect(master.closest('div')?.textContent).toContain(wheel)
++    }
++    expect(screen.queryByLabelText('Offset')).not.toBeInTheDocument()
++    expect(screen.getByLabelText('Offset Red')).toBeInTheDocument()
++  })
++
+   it('keeps definition-driven resets beside sidebar numeric parameters', () => {
+     const props = makeProps({ exposure: 1.2 })
+     render(<GpuWheelsPanel {...props} layout="sidebar" />)
 diff --git a/src/features/effects/components/panels/gpu-wheels-panel.tsx b/src/features/effects/components/panels/gpu-wheels-panel.tsx
-index e6f2fa4..c68d0f8 100644
+index e6f2fa4..9a215ea 100644
 --- a/src/features/effects/components/panels/gpu-wheels-panel.tsx
 +++ b/src/features/effects/components/panels/gpu-wheels-panel.tsx
 @@ -41,7 +41,7 @@ const MAX_DOCK_WHEEL_SIZE = 200
@@ -218,7 +231,7 @@ index e6f2fa4..c68d0f8 100644
 +        disabled={!effect.enabled}
 +        onLive={(raw) => updateLevelFromDisplay(raw, 'live')}
 +        onCommit={(raw) => updateLevelFromDisplay(raw, 'commit')}
-+        className={cn(chipClass, 'w-9 shrink-0')}
++        className={cn(chipClass, 'w-9 min-w-7 shrink')}
 +      />
 +    ) : null
 +
@@ -294,7 +307,7 @@ index e6f2fa4..c68d0f8 100644
 -                    }}
 -                  />
 -                ))}
-+            <div ref={wheelGridRef} className="min-h-0 flex-1 overflow-y-auto px-6 py-1.5">
++            <div ref={wheelGridRef} className="min-h-0 flex-1 overflow-y-auto px-6 py-1.5 [scrollbar-gutter:stable]">
 +              <div className="grid min-h-full grid-cols-[repeat(4,minmax(3rem,1fr))] items-center gap-4">
 +                {DOCK_WHEEL_DESCRIPTORS.map((desc) => {
 +                  const { header, fields } = renderDockWheelFields(desc, t(desc.labelKey))
@@ -362,10 +375,10 @@ index 16c9f2c..d1ca50b 100644
            <Input
 diff --git a/src/features/keyframes/components/dopesheet-editor/dopesheet-helpers.test.ts b/src/features/keyframes/components/dopesheet-editor/dopesheet-helpers.test.ts
 new file mode 100644
-index 0000000..8cfa038
+index 0000000..946d094
 --- /dev/null
 +++ b/src/features/keyframes/components/dopesheet-editor/dopesheet-helpers.test.ts
-@@ -0,0 +1,16 @@
+@@ -0,0 +1,20 @@
 +import { describe, expect, it } from 'vite-plus/test'
 +import { getNiceTickStep, MIN_RULER_LABEL_SPACING_PX } from './dopesheet-helpers'
 +
@@ -373,6 +386,10 @@ index 0000000..8cfa038
 +  it('keeps about ten ticks when the ruler is wide', () => {
 +    expect(getNiceTickStep(200)).toBe(20)
 +    expect(getNiceTickStep(200, 1200)).toBe(20)
++  })
++
++  it('ignores a width that has not been measured yet', () => {
++    expect(getNiceTickStep(200, 1)).toBe(20)
 +  })
 +
 +  it('takes a coarser step so ruler numbers stay apart on a narrow ruler', () => {
@@ -383,10 +400,10 @@ index 0000000..8cfa038
 +  })
 +})
 diff --git a/src/features/keyframes/components/dopesheet-editor/dopesheet-helpers.ts b/src/features/keyframes/components/dopesheet-editor/dopesheet-helpers.ts
-index 9478763..480de9b 100644
+index 9478763..a25bb37 100644
 --- a/src/features/keyframes/components/dopesheet-editor/dopesheet-helpers.ts
 +++ b/src/features/keyframes/components/dopesheet-editor/dopesheet-helpers.ts
-@@ -29,8 +29,17 @@ interface GroupFrameState {
+@@ -29,8 +29,20 @@ interface GroupFrameState {
    nextKeyframe: { property: AnimatableProperty; keyframe: Keyframe } | null
  }
  
@@ -400,8 +417,11 @@ index 9478763..480de9b 100644
 + * numbers to sit apart.
 + */
 +export function getNiceTickStep(frameRange: number, widthPx?: number): number {
++  // A width under two labels is not measured yet (the lane starts at 1px), so keep the usual ten.
 +  const maxTicks =
-+    widthPx && widthPx > 0 ? Math.max(2, Math.min(10, Math.floor(widthPx / MIN_RULER_LABEL_SPACING_PX))) : 10
++    widthPx && widthPx >= MIN_RULER_LABEL_SPACING_PX * 2
++      ? Math.min(10, Math.floor(widthPx / MIN_RULER_LABEL_SPACING_PX))
++      : 10
 +  const rough = Math.max(1, frameRange / maxTicks)
    const magnitude = Math.pow(10, Math.floor(Math.log10(rough)))
    const normalized = rough / magnitude
@@ -458,11 +478,33 @@ index c193e85..6a1ac58 100644
              {t('timeline.keyframeEditor.keyframes', {
                count: visibleKeyframes.length,
              })}
+diff --git a/src/features/preview/components/color-scopes-view.test.tsx b/src/features/preview/components/color-scopes-view.test.tsx
+index 742429d..65e90b4 100644
+--- a/src/features/preview/components/color-scopes-view.test.tsx
++++ b/src/features/preview/components/color-scopes-view.test.tsx
+@@ -196,6 +196,10 @@ describe('scope capture seek correspondence', () => {
+     expect(path === 'cpu' ? context.putImageData : renderer.uploadFromCanvas).toHaveBeenCalledTimes(calls)
+     expect(header).not.toHaveTextContent('base revision 4')
+     expect(header).toHaveTextContent('stale (revision unknown)')
++    expect(screen.getByTestId('scope-warning')).toHaveAttribute(
++      'aria-label',
++      'These readings may not match the current frame.',
++    )
+   })
+ 
+   it.each(['gpu-canvas', 'gpu-image', 'cpu'] as const)(
 diff --git a/src/features/preview/components/color-scopes-view.tsx b/src/features/preview/components/color-scopes-view.tsx
-index af6f9d2..00103b2 100644
+index af6f9d2..9a50f20 100644
 --- a/src/features/preview/components/color-scopes-view.tsx
 +++ b/src/features/preview/components/color-scopes-view.tsx
-@@ -1172,10 +1172,7 @@ export const ColorScopesView = memo(function ColorScopesView({
+@@ -1,5 +1,5 @@
+ import { memo, useCallback, useEffect, useRef, useState } from 'react'
+-import { Activity } from 'lucide-react'
++import { Activity, TriangleAlert } from 'lucide-react'
+ import { getResolvedPlaybackFrame, usePlaybackStore } from '@/shared/state/playback'
+ import { usePreviewBridgeStore, type PreviewScopeSample } from '@/shared/state/preview-bridge'
+ import {
+@@ -1172,16 +1172,40 @@ export const ColorScopesView = memo(function ColorScopesView({
      >
        <div className="flex items-center justify-between mb-2">
          <div className="flex items-center gap-2">
@@ -474,3 +516,36 @@ index af6f9d2..00103b2 100644
              Scopes · {SCOPE_SIGNAL_LABELS[measured.signal]}
              {measured.fallback ? ' · float capture unavailable' : ''}
              {measured.frame !== null ? ` · frame ${measured.frame}` : ''}
+             {measured.owner ? ` · base revision ${measured.owner.baseRevision}${measured.owner.localEdits ? ' · local edits' : ''}` : ' · revision unknown'}
+             {measured.owner && (!publishedOwner || publishedOwner.baseRevision !== measured.owner.baseRevision || publishedOwner.mountGeneration !== measured.owner.mountGeneration || publishedOwner.graphVersion !== measured.owner.graphVersion) ? ' · stale (revision unknown)' : ''}
+           </div>
++          {(() => {
++            // The diagnostic line is out of view (FL-1822), but the two states that change how far
++            // the readings can be trusted stay visible as a warning.
++            const stale =
++              !!measured.owner &&
++              (!publishedOwner ||
++                publishedOwner.baseRevision !== measured.owner.baseRevision ||
++                publishedOwner.mountGeneration !== measured.owner.mountGeneration ||
++                publishedOwner.graphVersion !== measured.owner.graphVersion)
++            const warning = [
++              measured.fallback ? 'Float capture unavailable: HDR readings may be clipped.' : null,
++              stale ? 'These readings may not match the current frame.' : null,
++            ]
++              .filter(Boolean)
++              .join(' ')
++            return warning ? (
++              <span
++                role="img"
++                aria-label={warning}
++                title={warning}
++                data-testid="scope-warning"
++                className="flex items-center text-amber-400"
++              >
++                <TriangleAlert className="h-3.5 w-3.5" aria-hidden="true" />
++              </span>
++            ) : null
++          })()}
+           {isEmbeddedStackLayout && (
+             <Select
+               value={stackView}
