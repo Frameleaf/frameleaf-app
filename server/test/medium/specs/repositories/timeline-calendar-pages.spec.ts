@@ -1,11 +1,12 @@
 import { Kysely, sql } from 'kysely';
+import { AuthDto } from 'src/dtos/auth.dto.js';
 import { AssetOrder, AssetVisibility, TimeBucketDateType } from 'src/enum.js';
 import { AssetRepository, TimeBucketItem } from 'src/repositories/asset.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { DB } from 'src/schema/index.js';
 import { BaseService } from 'src/services/base.service.js';
 import { newMediumService } from 'test/medium.factory.js';
-import { factory } from 'test/small.factory.js';
+import { factory, newUuid } from 'test/small.factory.js';
 import { getActiveForkKyselyDB } from 'test/utils.js';
 
 let db: Kysely<DB>;
@@ -329,6 +330,83 @@ describe('bounded calendar pages', () => {
       select count(distinct key)::integer as keys from timeline_summary where "userId" = ${user.id}::uuid
     `.execute(db);
     expect(rows[0].keys).toBe(8);
+  });
+
+  it('never lets one viewer read months stored for another, and never stores a shared link (FL-1792)', async () => {
+    const { ctx } = newMediumService(BaseService, {
+      database: db,
+      real: [AssetRepository],
+      mock: [LoggingRepository],
+    });
+    const { user } = await ctx.newUser();
+    const auth = factory.auth({ user: { id: user.id } });
+    for (const at of ['2024-05-02', '2024-04-01']) {
+      const date = new Date(`${at}T12:00:00Z`);
+      const { asset } = await ctx.newAsset({
+        ownerId: user.id,
+        fileCreatedAt: date,
+        localDateTime: date,
+        visibility: AssetVisibility.Timeline,
+      });
+      await ctx.newExif({ assetId: asset.id, timeZone: 'UTC' });
+    }
+    const locked = { userIds: [user.id], visibility: AssetVisibility.Timeline, order: AssetOrder.Desc };
+    const unlocked = { ...locked, revealLockedOwnerId: user.id };
+    const counts = (summary: TimeBucketItem[]) => summary.map(({ count }) => count);
+
+    // The unlocked session's months are stored, then marked; a locked session after a start never reads them.
+    await new AssetRepository(db).getTimeBuckets(unlocked, auth, { pageSize: 2 });
+    await sql`update timeline_summary set pages = jsonb_build_array(pages -> 0 || '{"count": 99}'::jsonb)
+      where "userId" = ${user.id}::uuid`.execute(db);
+    expect(counts(await new AssetRepository(db).getTimeBuckets(unlocked, auth, { pageSize: 2 }))).toEqual([99, 99]);
+    expect(counts(await new AssetRepository(db).getTimeBuckets(locked, auth, { pageSize: 2 }))).toEqual([1, 1]);
+
+    // Another person asking with the same options has their own key.
+    const { user: other } = await ctx.newUser();
+    const otherAuth = factory.auth({ user: { id: other.id } });
+    const theirs = await new AssetRepository(db).getTimeBuckets({ ...unlocked, userIds: [user.id] }, otherAuth, {
+      pageSize: 2,
+    });
+    expect(counts(theirs)).toEqual([1, 1]);
+
+    // A shared link's view is answered, never stored.
+    const before = await sql<{ n: number }>`select count(*)::integer as n from timeline_summary`.execute(db);
+    const linkAuth = { ...auth, sharedLink: { id: newUuid() } } as unknown as AuthDto;
+    await new AssetRepository(db).getTimeBuckets({ ...locked, order: AssetOrder.Asc }, linkAuth, { pageSize: 3 });
+    const after = await sql<{ n: number }>`select count(*)::integer as n from timeline_summary`.execute(db);
+    expect(after.rows[0].n).toBe(before.rows[0].n);
+  });
+
+  it('keeps the summaries a person reads, not only the ones last ranked (FL-1792)', async () => {
+    const { ctx } = newMediumService(BaseService, {
+      database: db,
+      real: [AssetRepository],
+      mock: [LoggingRepository],
+    });
+    const { user } = await ctx.newUser();
+    const auth = factory.auth({ user: { id: user.id } });
+    const { asset } = await ctx.newAsset({ ownerId: user.id, visibility: AssetVisibility.Timeline });
+    await ctx.newExif({ assetId: asset.id, timeZone: 'UTC' });
+    const photos = { userIds: [user.id], visibility: AssetVisibility.Timeline };
+    await new AssetRepository(db).getTimeBuckets(photos, auth, { pageSize: 50 });
+    const photosKey = await sql<{ key: string }>`select key from timeline_summary where "userId" = ${user.id}::uuid`
+      .execute(db)
+      .then(({ rows }) => rows[0].key);
+    await sql`update timeline_summary set "usedAt" = now() - interval '1 day' where key = ${photosKey}`.execute(db);
+
+    // Seven other summaries are ranked, then Photos is read back after a start, unchanged: that counts as a
+    // use, so the next summary pushes out the oldest of the others, not Photos.
+    const repository = new AssetRepository(db);
+    for (let pageSize = 1; pageSize <= 7; pageSize++) {
+      await repository.getTimeBuckets(photos, auth, { pageSize });
+    }
+    await new AssetRepository(db).getTimeBuckets(photos, auth, { pageSize: 50 });
+    await repository.getTimeBuckets(photos, auth, { pageSize: 8 });
+    const { rows } = await sql<{ key: string }>`
+      select distinct key from timeline_summary where "userId" = ${user.id}::uuid
+    `.execute(db);
+    expect(rows).toHaveLength(8);
+    expect(rows.map(({ key }) => key)).toContain(photosKey);
   });
 
   it.each([TimeBucketDateType.Taken, TimeBucketDateType.Added])(
