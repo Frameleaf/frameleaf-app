@@ -1,0 +1,491 @@
+diff --git a/src/features/editor/components/media-sidebar.test.tsx b/src/features/editor/components/media-sidebar.test.tsx
+new file mode 100644
+index 0000000..4fdc345
+--- /dev/null
++++ b/src/features/editor/components/media-sidebar.test.tsx
+@@ -0,0 +1,47 @@
++import { fireEvent, render, screen } from '@testing-library/react'
++import { beforeEach, describe, expect, it, vi } from 'vite-plus/test'
++import { useEditorStore } from '@/shared/state/editor'
++
++vi.mock('@/features/editor/deps/media-library', async (importOriginal) => ({
++  ...(await importOriginal<typeof import('@/features/editor/deps/media-library')>()),
++  MediaLibrary: () => <div data-testid="media-library" />,
++}))
++vi.mock('./transitions-panel', () => ({ TransitionsPanel: () => <div data-testid="transitions" /> }))
++
++const { MediaSidebar } = await import('./media-sidebar')
++
++describe('Add panel (FL-1822)', () => {
++  beforeEach(() => {
++    useEditorStore.setState({ activeTab: 'media', leftSidebarOpen: true })
++  })
++
++  it('keeps the rail to Media, Add, Transcript and AI', () => {
++    render(<MediaSidebar />)
++    for (const name of ['Media', 'Add', 'Transcript', 'AI']) {
++      expect(screen.getByRole('button', { name })).toBeInTheDocument()
++    }
++    expect(screen.queryByRole('button', { name: 'Shapes' })).not.toBeInTheDocument()
++  })
++
++  it('opens Add on titles and switches category with the chips', () => {
++    render(<MediaSidebar />)
++    fireEvent.click(screen.getByRole('button', { name: 'Add' }))
++
++    expect(screen.getByRole('button', { name: 'Add' })).toHaveAttribute('aria-pressed', 'true')
++    const chips = screen.getByRole('tablist', { name: 'What to add' })
++    expect([...chips.querySelectorAll('[role="tab"]')].map((tab) => tab.textContent)).toEqual([
++      'Titles',
++      'Shapes',
++      'Effects',
++      'Transitions',
++      'Animations',
++    ])
++    expect(screen.getByRole('tab', { name: 'Titles' })).toHaveAttribute('aria-selected', 'true')
++    expect(screen.getByText('Drag a title onto the timeline, or click to add it at the playhead.')).toBeInTheDocument()
++
++    fireEvent.click(screen.getByRole('tab', { name: 'Transitions' }))
++    expect(useEditorStore.getState().activeTab).toBe('transitions')
++    expect(screen.getByRole('tab', { name: 'Transitions' })).toHaveAttribute('aria-selected', 'true')
++    expect(screen.getByRole('button', { name: 'Add' })).toHaveAttribute('aria-pressed', 'true')
++  })
++})
+diff --git a/src/features/editor/components/media-sidebar.tsx b/src/features/editor/components/media-sidebar.tsx
+index 5a02fbe..09e2533 100644
+--- a/src/features/editor/components/media-sidebar.tsx
++++ b/src/features/editor/components/media-sidebar.tsx
+@@ -8,6 +8,7 @@ import {
+   Film,
+   Layers,
+   Type,
++  Plus,
+   Square,
+   Circle,
+   Triangle,
+@@ -533,14 +534,27 @@ export const MediaSidebar = memo(function MediaSidebar() {
+     return grouped
+   }, [])
+ 
++  // The approved Studio's Add (FL-1822): titles, shapes, effects, transitions and animations sit
++  // behind one rail entry and switch with chips, instead of five icons of their own.
++  const addCategories = [
++    { id: 'text' as const, icon: Type, label: t('editor.mediaSidebar.text'), hint: t('editor.mediaSidebar.addHint.text') },
++    { id: 'shapes' as const, icon: Pentagon, label: t('editor.mediaSidebar.shapes'), hint: t('editor.mediaSidebar.addHint.shapes') },
++    { id: 'effects' as const, icon: Layers, label: t('editor.mediaSidebar.effects'), hint: t('editor.mediaSidebar.addHint.effects') },
++    { id: 'transitions' as const, icon: Blend, label: t('editor.mediaSidebar.transitions'), hint: t('editor.mediaSidebar.addHint.transitions') },
++    { id: 'lottie' as const, icon: Sticker, label: t('lottieBrowser.tabLabel'), hint: t('editor.mediaSidebar.addHint.lottie') },
++  ]
++  const activeAddCategory = addCategories.find((category) => category.id === activeTab)
++  const [lastAddTab, setLastAddTab] = useState<(typeof addCategories)[number]['id']>('text')
++  const openAddCategory = (id: (typeof addCategories)[number]['id']) => {
++    setActiveTab(id)
++    setLastAddTab(id)
++    if (id === 'effects') triggerPreviews()
++  }
++
+   // Category items for the vertical nav
+   const categories = [
+     { id: 'media' as const, icon: Film, label: t('editor.mediaSidebar.media') },
+-    { id: 'text' as const, icon: Type, label: t('editor.mediaSidebar.text') },
+-    { id: 'shapes' as const, icon: Pentagon, label: t('editor.mediaSidebar.shapes') },
+-    { id: 'effects' as const, icon: Layers, label: t('editor.mediaSidebar.effects') },
+-    { id: 'transitions' as const, icon: Blend, label: t('editor.mediaSidebar.transitions') },
+-    { id: 'lottie' as const, icon: Sticker, label: t('lottieBrowser.tabLabel') },
++    { id: 'add' as const, icon: Plus, label: t('editor.mediaSidebar.add') },
+     { id: 'transcript' as const, icon: Captions, label: t('transcript.tabLabel') },
+     { id: 'ai' as const, icon: WandSparkles, label: t('editor.mediaSidebar.ai') },
+   ]
+@@ -620,32 +634,37 @@ export const MediaSidebar = memo(function MediaSidebar() {
+ 
+         {/* Category Icons */}
+         <div className="flex flex-col gap-1 py-1.5">
+-          {categories.map(({ id, icon: Icon, label }) => (
++          {categories.map(({ id, icon: Icon, label }) => {
++            const isActive = (id === 'add' ? !!activeAddCategory : activeTab === id) && leftSidebarOpen
++            return (
+             <button
+               key={id}
+               onClick={() => {
+-                if (activeTab === id && leftSidebarOpen) {
++                if (isActive) {
+                   toggleLeftSidebar()
+                 } else {
+-                  setActiveTab(id)
++                  if (id === 'add') openAddCategory(lastAddTab)
++                  else setActiveTab(id)
+                   if (!leftSidebarOpen) toggleLeftSidebar()
+-                  if (id === 'effects') triggerPreviews()
+                 }
+               }}
+               className={`
+                 w-9 h-9 rounded-lg flex items-center justify-center transition-[transform,background-color,color] duration-150 active:scale-95
+                 ${
+-                  activeTab === id && leftSidebarOpen
+-                    ? 'bg-primary text-primary-foreground hover:bg-primary/90'
++                  isActive
++                    ? 'bg-secondary text-foreground'
+                     : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50'
+                 }
+               `}
++              aria-label={label}
++              aria-pressed={isActive}
+               data-tooltip={label}
+               data-tooltip-side="right"
+             >
+               <Icon className="w-4 h-4" />
+             </button>
+-          ))}
++            )
++          })}
+         </div>
+       </div>
+ 
+@@ -686,7 +705,9 @@ export const MediaSidebar = memo(function MediaSidebar() {
+               style={{ height: EDITOR_LAYOUT_CSS_VALUES.sidebarHeaderHeight }}
+             >
+               <span className="text-sm font-medium text-foreground">
+-                {categories.find((c) => c.id === activeTab)?.label}
++                {activeAddCategory
++                  ? t('editor.mediaSidebar.add')
++                  : categories.find((c) => c.id === activeTab)?.label}
+               </span>
+               <Button
+                 variant="ghost"
+@@ -717,6 +738,31 @@ export const MediaSidebar = memo(function MediaSidebar() {
+               </Button>
+             </div>
+ 
++            {activeAddCategory && (
++              <div className="flex-shrink-0 border-b border-border px-3 pt-3 pb-3 space-y-2.5">
++                <div className="flex flex-wrap gap-2" role="tablist" aria-label={t('editor.mediaSidebar.addWhat')}>
++                  {addCategories.map((category) => (
++                    <button
++                      key={category.id}
++                      type="button"
++                      role="tab"
++                      aria-selected={category.id === activeTab}
++                      onClick={() => openAddCategory(category.id)}
++                      className={cn(
++                        'inline-flex h-8 items-center rounded-md border px-2.5 text-[13px] transition-colors',
++                        category.id === activeTab
++                          ? 'border-muted-foreground bg-secondary text-foreground'
++                          : 'border-border text-muted-foreground hover:text-foreground',
++                      )}
++                    >
++                      {category.label}
++                    </button>
++                  ))}
++                </div>
++                <p className="text-xs leading-snug text-muted-foreground">{activeAddCategory.hint}</p>
++              </div>
++            )}
++
+             {/* Media Tab - Full Media Library */}
+             <div
+               className={`min-h-0 flex-1 overflow-hidden ${activeTab === 'media' ? 'block' : 'hidden'}`}
+@@ -746,7 +792,7 @@ export const MediaSidebar = memo(function MediaSidebar() {
+                         <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
+                           {t(group.labelKey)}
+                         </div>
+-                        <div className="grid grid-cols-3 gap-1.5">
++                        <div className="grid grid-cols-2 gap-3">
+                           {showAddText ? (
+                             <button
+                               draggable={true}
+@@ -762,7 +808,7 @@ export const MediaSidebar = memo(function MediaSidebar() {
+                               className="flex flex-col items-center gap-1 p-1.5 rounded-md border border-border bg-secondary/30 hover:bg-secondary/50 hover:border-primary/50 transition-[transform,background-color,border-color,color] duration-150 active:scale-[0.98] group"
+                             >
+                               {renderTextTemplatePreview()}
+-                              <span className="text-[9px] text-muted-foreground group-hover:text-foreground text-center leading-tight w-full">
++                              <span className="text-xs text-muted-foreground group-hover:text-foreground text-center leading-tight w-full">
+                                 {ADD_TEXT_TEMPLATE_LABEL}
+                               </span>
+                             </button>
+@@ -788,7 +834,7 @@ export const MediaSidebar = memo(function MediaSidebar() {
+                               )}
+                             >
+                               {renderTextTemplatePreview(preset)}
+-                              <span className="text-[9px] text-muted-foreground group-hover:text-foreground text-center leading-tight w-full">
++                              <span className="text-xs text-muted-foreground group-hover:text-foreground text-center leading-tight w-full">
+                                 {preset.label}
+                               </span>
+                             </button>
+@@ -805,7 +851,7 @@ export const MediaSidebar = memo(function MediaSidebar() {
+             <div
+               className={`min-h-0 flex-1 overflow-y-auto p-3 ${activeTab === 'shapes' ? 'block' : 'hidden'}`}
+             >
+-              <div className="grid grid-cols-3 gap-1.5">
++              <div className="grid grid-cols-2 gap-3">
+                 <button
+                   draggable={true}
+                   onDragStart={handleTemplateDragStart({
+@@ -822,7 +868,7 @@ export const MediaSidebar = memo(function MediaSidebar() {
+                   className="flex flex-col items-center justify-center gap-1 p-2 rounded-lg border border-border bg-secondary/30 hover:bg-secondary/50 hover:border-primary/50 transition-[transform,background-color,border-color,color] duration-150 active:scale-[0.98] group"
+                 >
+                   <div className="w-7 h-7 rounded border border-border bg-[#2d2d2d] shadow-inner group-hover:border-primary/50" />
+-                  <span className="text-[9px] text-muted-foreground group-hover:text-foreground">
++                  <span className="text-xs text-muted-foreground group-hover:text-foreground">
+                     {t('editor.shapeSection.solidColor')}
+                   </span>
+                 </button>
+@@ -843,7 +889,7 @@ export const MediaSidebar = memo(function MediaSidebar() {
+                   className="flex flex-col items-center justify-center gap-1 p-2 rounded-lg border border-border bg-secondary/30 hover:bg-secondary/50 hover:border-primary/50 transition-[transform,background-color,border-color,color] duration-150 active:scale-[0.98] group"
+                 >
+                   <div className="w-7 h-7 rounded border border-border bg-gradient-to-r from-blue-500 to-violet-500 shadow-inner group-hover:border-primary/50" />
+-                  <span className="text-[9px] text-muted-foreground group-hover:text-foreground">
++                  <span className="text-xs text-muted-foreground group-hover:text-foreground">
+                     {t('editor.shapeSection.gradient')}
+                   </span>
+                 </button>
+@@ -865,7 +911,7 @@ export const MediaSidebar = memo(function MediaSidebar() {
+                   <div className="w-7 h-7 rounded border border-border bg-secondary/50 flex items-center justify-center group-hover:bg-secondary/70">
+                     <Square className="w-3.5 h-3.5 text-muted-foreground group-hover:text-foreground" />
+                   </div>
+-                  <span className="text-[9px] text-muted-foreground group-hover:text-foreground">
++                  <span className="text-xs text-muted-foreground group-hover:text-foreground">
+                     {t('editor.shapeSection.typeRectangle')}
+                   </span>
+                 </button>
+@@ -887,7 +933,7 @@ export const MediaSidebar = memo(function MediaSidebar() {
+                   <div className="w-7 h-7 rounded border border-border bg-secondary/50 flex items-center justify-center group-hover:bg-secondary/70">
+                     <Circle className="w-3.5 h-3.5 text-muted-foreground group-hover:text-foreground" />
+                   </div>
+-                  <span className="text-[9px] text-muted-foreground group-hover:text-foreground">
++                  <span className="text-xs text-muted-foreground group-hover:text-foreground">
+                     {t('editor.shapeSection.typeCircle')}
+                   </span>
+                 </button>
+@@ -909,7 +955,7 @@ export const MediaSidebar = memo(function MediaSidebar() {
+                   <div className="w-7 h-7 rounded border border-border bg-secondary/50 flex items-center justify-center group-hover:bg-secondary/70">
+                     <Triangle className="w-3.5 h-3.5 text-muted-foreground group-hover:text-foreground" />
+                   </div>
+-                  <span className="text-[9px] text-muted-foreground group-hover:text-foreground">
++                  <span className="text-xs text-muted-foreground group-hover:text-foreground">
+                     {t('editor.shapeSection.typeTriangle')}
+                   </span>
+                 </button>
+@@ -931,7 +977,7 @@ export const MediaSidebar = memo(function MediaSidebar() {
+                   <div className="w-7 h-7 rounded border border-border bg-secondary/50 flex items-center justify-center group-hover:bg-secondary/70">
+                     <Circle className="w-3.5 h-2.5 text-muted-foreground group-hover:text-foreground" />
+                   </div>
+-                  <span className="text-[9px] text-muted-foreground group-hover:text-foreground">
++                  <span className="text-xs text-muted-foreground group-hover:text-foreground">
+                     {t('editor.shapeSection.typeEllipse')}
+                   </span>
+                 </button>
+@@ -953,7 +999,7 @@ export const MediaSidebar = memo(function MediaSidebar() {
+                   <div className="w-7 h-7 rounded border border-border bg-secondary/50 flex items-center justify-center group-hover:bg-secondary/70">
+                     <Star className="w-3.5 h-3.5 text-muted-foreground group-hover:text-foreground" />
+                   </div>
+-                  <span className="text-[9px] text-muted-foreground group-hover:text-foreground">
++                  <span className="text-xs text-muted-foreground group-hover:text-foreground">
+                     {t('editor.shapeSection.typeStar')}
+                   </span>
+                 </button>
+@@ -975,7 +1021,7 @@ export const MediaSidebar = memo(function MediaSidebar() {
+                   <div className="w-7 h-7 rounded border border-border bg-secondary/50 flex items-center justify-center group-hover:bg-secondary/70">
+                     <Hexagon className="w-3.5 h-3.5 text-muted-foreground group-hover:text-foreground" />
+                   </div>
+-                  <span className="text-[9px] text-muted-foreground group-hover:text-foreground">
++                  <span className="text-xs text-muted-foreground group-hover:text-foreground">
+                     {t('editor.shapeSection.typePolygon')}
+                   </span>
+                 </button>
+@@ -997,7 +1043,7 @@ export const MediaSidebar = memo(function MediaSidebar() {
+                   <div className="w-7 h-7 rounded border border-border bg-secondary/50 flex items-center justify-center group-hover:bg-secondary/70">
+                     <Heart className="w-3.5 h-3.5 text-muted-foreground group-hover:text-foreground" />
+                   </div>
+-                  <span className="text-[9px] text-muted-foreground group-hover:text-foreground">
++                  <span className="text-xs text-muted-foreground group-hover:text-foreground">
+                     {t('editor.shapeSection.typeHeart')}
+                   </span>
+                 </button>
+@@ -1010,7 +1056,7 @@ export const MediaSidebar = memo(function MediaSidebar() {
+                   <div className="w-7 h-7 rounded border border-border bg-secondary/50 flex items-center justify-center group-hover:bg-secondary/70">
+                     <Pen className="w-3.5 h-3.5 text-muted-foreground group-hover:text-foreground" />
+                   </div>
+-                  <span className="text-[9px] text-muted-foreground group-hover:text-foreground">
++                  <span className="text-xs text-muted-foreground group-hover:text-foreground">
+                     {t('editor.mediaSidebar.pen')}
+                   </span>
+                 </button>
+@@ -1051,7 +1097,7 @@ export const MediaSidebar = memo(function MediaSidebar() {
+                   <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-1.5">
+                     {t('editor.mediaSidebar.presets')}
+                   </div>
+-                  <div className="grid grid-cols-3 gap-1.5">
++                  <div className="grid grid-cols-2 gap-3">
+                     {EFFECT_PRESETS.map((preset) => (
+                       <button
+                         key={preset.id}
+@@ -1077,7 +1123,7 @@ export const MediaSidebar = memo(function MediaSidebar() {
+                           active={hoveredEffectKey === `preset:${preset.id}`}
+                           className="w-full aspect-video rounded-sm"
+                         />
+-                        <span className="text-[9px] text-muted-foreground group-hover:text-foreground text-center leading-tight">
++                        <span className="text-xs text-muted-foreground group-hover:text-foreground text-center leading-tight">
+                           {preset.name}
+                         </span>
+                       </button>
+@@ -1091,7 +1137,7 @@ export const MediaSidebar = memo(function MediaSidebar() {
+                     <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-1.5">
+                       {category}
+                     </div>
+-                    <div className="grid grid-cols-3 gap-1.5">
++                    <div className="grid grid-cols-2 gap-3">
+                       {catEffects.map((def) => (
+                         <button
+                           key={def.id}
+@@ -1121,7 +1167,7 @@ export const MediaSidebar = memo(function MediaSidebar() {
+                             active={hoveredEffectKey === def.id}
+                             className="w-full aspect-video rounded-sm"
+                           />
+-                          <span className="text-[9px] text-muted-foreground group-hover:text-foreground text-center leading-tight truncate w-full">
++                          <span className="text-xs text-muted-foreground group-hover:text-foreground text-center leading-snug w-full">
+                             {def.name}
+                           </span>
+                         </button>
+diff --git a/src/features/editor/components/transition-preview/frame-a.svg b/src/features/editor/components/transition-preview/frame-a.svg
+index 1006555..6cf50c1 100644
+--- a/src/features/editor/components/transition-preview/frame-a.svg
++++ b/src/features/editor/components/transition-preview/frame-a.svg
+@@ -1,14 +1,5 @@
+ <svg xmlns="http://www.w3.org/2000/svg" width="320" height="180" viewBox="0 0 320 180">
+-  <defs>
+-    <linearGradient id="skyA" x1="0" y1="0" x2="0" y2="1">
+-      <stop offset="0" stop-color="#ff6a2c" />
+-      <stop offset="0.5" stop-color="#ffa94d" />
+-      <stop offset="1" stop-color="#ffe39a" />
+-    </linearGradient>
+-  </defs>
+-  <rect width="320" height="180" fill="url(#skyA)" />
+-  <circle cx="208" cy="66" r="36" fill="#fff4c9" opacity="0.95" />
+-  <circle cx="208" cy="66" r="50" fill="#fff4c9" opacity="0.18" />
+-  <path d="M0 134 L70 116 L140 130 L210 108 L320 128 L320 180 L0 180 Z" fill="#7a2e1c" />
+-  <path d="M0 150 L90 138 L180 150 L260 136 L320 150 L320 180 L0 180 Z" fill="#4f1c12" />
++  <rect width="320" height="180" fill="#2a4d66" />
++  <circle cx="232" cy="46" r="17" fill="#e8ecee" opacity="0.8" />
++  <path d="M0 126 L93 86 L173 120 L247 73 L320 113 L320 180 L0 180 Z" fill="#2f5a4a" />
+ </svg>
+diff --git a/src/features/editor/components/transition-preview/frame-b.svg b/src/features/editor/components/transition-preview/frame-b.svg
+index 0fba8cb..3695ab0 100644
+--- a/src/features/editor/components/transition-preview/frame-b.svg
++++ b/src/features/editor/components/transition-preview/frame-b.svg
+@@ -1,21 +1,6 @@
+ <svg xmlns="http://www.w3.org/2000/svg" width="320" height="180" viewBox="0 0 320 180">
+-  <defs>
+-    <linearGradient id="skyB" x1="0" y1="0" x2="0" y2="1">
+-      <stop offset="0" stop-color="#0a2540" />
+-      <stop offset="0.6" stop-color="#155070" />
+-      <stop offset="1" stop-color="#2f8fa6" />
+-    </linearGradient>
+-  </defs>
+-  <rect width="320" height="180" fill="url(#skyB)" />
+-  <circle cx="104" cy="56" r="26" fill="#dbeaf2" />
+-  <circle cx="93" cy="50" r="26" fill="#11405c" opacity="0.55" />
+-  <g fill="#cfe6f0">
+-    <circle cx="232" cy="38" r="1.6" />
+-    <circle cx="268" cy="66" r="1.2" />
+-    <circle cx="198" cy="28" r="1.3" />
+-    <circle cx="290" cy="44" r="1.1" />
+-  </g>
+-  <rect y="120" width="320" height="60" fill="#0c3a51" />
+-  <rect y="120" width="320" height="3" fill="#3fa3bd" opacity="0.6" />
+-  <rect y="138" width="320" height="2" fill="#2a7d95" opacity="0.4" />
++  <rect width="320" height="180" fill="#4f3f75" />
++  <rect x="88" y="44" width="144" height="92" rx="10" fill="#34506b" />
++  <rect x="112" y="78" width="96" height="12" rx="3" fill="#e8ecee" opacity="0.85" />
++  <rect x="132" y="98" width="56" height="7" rx="2" fill="#e8ecee" opacity="0.55" />
+ </svg>
+diff --git a/src/features/editor/components/transition-preview/sample-frames.ts b/src/features/editor/components/transition-preview/sample-frames.ts
+index cfa40a6..3148bd1 100644
+--- a/src/features/editor/components/transition-preview/sample-frames.ts
++++ b/src/features/editor/components/transition-preview/sample-frames.ts
+@@ -1,7 +1,7 @@
+ /**
+  * Sample A/B stills for transition previews.
+  *
+- * Two contrasting bundled images (warm sunset vs. cool night sea) are decoded
++ * Two contrasting two-tone stills in the Frameleaf clip colours (FL-1822) are decoded
+  * once into offscreen canvases sized to the preview, then fed as the outgoing
+  * (A) and incoming (B) frames to a renderer's `renderCanvas()`. Like an NLE
+  * picker, the contrast makes wipes/dissolves/slides actually read.
+diff --git a/src/features/editor/components/transitions-panel.tsx b/src/features/editor/components/transitions-panel.tsx
+index ec6933b..a59bf02 100644
+--- a/src/features/editor/components/transitions-panel.tsx
++++ b/src/features/editor/components/transitions-panel.tsx
+@@ -95,7 +95,7 @@ const TransitionCard = memo(function TransitionCard({
+           <Icon className="w-4 h-4 text-muted-foreground group-hover:text-foreground" />
+         </div>
+       )}
+-      <span className="text-[10px] text-muted-foreground group-hover:text-foreground truncate w-full">
++      <span className="text-xs leading-snug text-muted-foreground group-hover:text-foreground w-full">
+         {config.label}
+       </span>
+     </button>
+@@ -135,7 +135,7 @@ const CategorySection = memo(function CategorySection({
+       <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
+         {title}
+       </div>
+-      <div className="grid grid-cols-3 gap-1.5">
++      <div className="grid grid-cols-2 gap-3">
+         {configs.map((config, index) => (
+           <TransitionCard
+             key={`${config.id}-${config.direction || index}`}
+diff --git a/src/i18n/locales/partials/en/editor.json b/src/i18n/locales/partials/en/editor.json
+index e016249..c6f7ae7 100644
+--- a/src/i18n/locales/partials/en/editor.json
++++ b/src/i18n/locales/partials/en/editor.json
+@@ -796,7 +796,7 @@
+     },
+     "mediaSidebar": {
+       "media": "Media",
+-      "text": "Text",
++      "text": "Titles",
+       "shapes": "Shapes",
+       "effects": "Effects",
+       "transitions": "Transitions",
+@@ -815,7 +815,16 @@
+       "penToolHint": "Draw a custom path shape with the pen tool",
+       "adjustmentLayer": "Adjustment layer",
+       "blankAdjustmentLayer": "Blank adjustment layer",
+-      "presets": "Presets"
++      "presets": "Presets",
++      "add": "Add",
++      "addWhat": "What to add",
++      "addHint": {
++        "text": "Drag a title onto the timeline, or click to add it at the playhead.",
++        "shapes": "Shapes sit on their own track, above your video.",
++        "effects": "Drag an effect onto a clip, or select a clip and click.",
++        "transitions": "Drag a transition onto a cut, or select a clip and click to add it at its start.",
++        "lottie": "Animated stickers and overlays. They sit on their own track, above your video."
++      }
+     },
+     "textSection": {
+       "sectionTitle": "Text",
+diff --git a/src/i18n/locales/partials/en/lottie-browser.json b/src/i18n/locales/partials/en/lottie-browser.json
+index 8471e97..467f99e 100644
+--- a/src/i18n/locales/partials/en/lottie-browser.json
++++ b/src/i18n/locales/partials/en/lottie-browser.json
+@@ -1,6 +1,6 @@
+ {
+   "lottieBrowser": {
+-    "tabLabel": "Lottie",
++    "tabLabel": "Animations",
+     "searchPlaceholder": "Search animations",
+     "clearSearch": "Clear search",
+     "categories": {
+diff --git a/src/i18n/locales/partials/en/remaining-ui.json b/src/i18n/locales/partials/en/remaining-ui.json
+index c2a18b4..d5095e5 100644
+--- a/src/i18n/locales/partials/en/remaining-ui.json
++++ b/src/i18n/locales/partials/en/remaining-ui.json
+@@ -2,7 +2,7 @@
+   "editor": {
+     "mediaSidebar": {
+       "media": "Media",
+-      "text": "Text",
++      "text": "Titles",
+       "shapes": "Shapes",
+       "effects": "Effects",
+       "transitions": "Transitions",

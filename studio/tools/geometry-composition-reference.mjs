@@ -174,7 +174,9 @@ export function compositionSourcesFor(sourceSha256) {
     // FL-1822 track heads and the Align row in Transform; changes no composition or raster producer.
     sourceSha256 === '926bc6200a4c1221056b19ff3b2878dc65605b0e12eaecce65e825075bb9fc67' ||
     // FL-1822 the media bin laid out as the approved Studio; changes no composition or raster producer.
-    sourceSha256 === '23af4f1aabfd81a53909eb907a3d51acb51392b0b98bca06b748c6eca080536d'
+    sourceSha256 === '23af4f1aabfd81a53909eb907a3d51acb51392b0b98bca06b748c6eca080536d' ||
+    // FL-1822 the Add panel and two-tone transition previews; changes no composition or raster producer.
+    sourceSha256 === 'bbde8835aadaf99e4a6e33017b220ddc8cb69da0e224cd15086e9a8fec69e1a0'
   )
     return {
       ...COMPOSITION_SOURCES,

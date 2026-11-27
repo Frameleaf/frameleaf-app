@@ -1,9 +1,10 @@
 /**
- * The words of the editor's media bin (FL-1822): Add files and its menu, the web address dialog, the Library, Project and
- * Scenes switch, search, the type filter and sort, the view toggles and the group headings.
- * Translated by the host, as for the timeline strings (`timeline-strings.ts`): the engine speaks
- * fewer languages than the host, so the host sends its translation in `context.strings` and the
- * adapter writes it over the engine key. Several engine keys can share one host message.
+ * The words of the editor's media bin and Add panel (FL-1822): Add files and its menu, the web
+ * address dialog, the Library, Project and Scenes switch, search, the type filter and sort, the view
+ * toggles, the group headings, and the Add panel's chips and hints. Translated by the host, as for
+ * the timeline strings (`timeline-strings.ts`): the engine speaks fewer languages than the host, so
+ * the host sends its translation in `context.strings` and the adapter writes it over the engine
+ * key. Several engine keys can share one host message.
  */
 export const BIN_STRINGS = {
   binAdd: { host: 'frameleaf_studio_bin_add', engine: 'media.library.import' },
@@ -44,6 +45,27 @@ export const BIN_STRINGS = {
   binTypeLabel: { host: 'frameleaf_studio_bin_type_label', engine: 'media.library.filterByType' },
   binSortLabel: { host: 'frameleaf_studio_bin_sort_label', engine: 'media.library.sortBy' },
   binDropFiles: { host: 'frameleaf_studio_bin_drop_files', engine: 'media.library.dropFilesHere' },
+  addPanel: { host: 'frameleaf_studio_add_panel_add', engine: 'editor.mediaSidebar.add' },
+  addPanelWhat: { host: 'frameleaf_studio_add_panel_what', engine: 'editor.mediaSidebar.addWhat' },
+  addPanelTitles: { host: 'frameleaf_studio_add_panel_titles', engine: 'editor.mediaSidebar.text' },
+  addPanelShapes: { host: 'frameleaf_studio_add_panel_shapes', engine: 'editor.mediaSidebar.shapes' },
+  addPanelEffects: { host: 'frameleaf_studio_add_panel_effects', engine: 'editor.mediaSidebar.effects' },
+  addPanelTransitions: { host: 'frameleaf_studio_add_panel_transitions', engine: 'editor.mediaSidebar.transitions' },
+  addPanelAnimations: { host: 'frameleaf_studio_add_panel_animations', engine: 'lottieBrowser.tabLabel' },
+  addPanelHintTitles: { host: 'frameleaf_studio_add_panel_hint_titles', engine: 'editor.mediaSidebar.addHint.text' },
+  addPanelHintShapes: { host: 'frameleaf_studio_add_panel_hint_shapes', engine: 'editor.mediaSidebar.addHint.shapes' },
+  addPanelHintEffects: {
+    host: 'frameleaf_studio_add_panel_hint_effects',
+    engine: 'editor.mediaSidebar.addHint.effects',
+  },
+  addPanelHintTransitions: {
+    host: 'frameleaf_studio_add_panel_hint_transitions',
+    engine: 'editor.mediaSidebar.addHint.transitions',
+  },
+  addPanelHintAnimations: {
+    host: 'frameleaf_studio_add_panel_hint_animations',
+    engine: 'editor.mediaSidebar.addHint.lottie',
+  },
 } as const satisfies Record<string, { host: string; engine: string }>;
 
 export type BinString = keyof typeof BIN_STRINGS;

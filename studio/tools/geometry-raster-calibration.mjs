@@ -312,7 +312,10 @@ export function validateBaseRaster(capture, envelope, binding) {
             '926bc6200a4c1221056b19ff3b2878dc65605b0e12eaecce65e825075bb9fc67' ||
           // FL-1822 the media bin laid out as the approved Studio; raster producer bytes unchanged.
           binding.sourceSha256 ===
-            '23af4f1aabfd81a53909eb907a3d51acb51392b0b98bca06b748c6eca080536d')),
+            '23af4f1aabfd81a53909eb907a3d51acb51392b0b98bca06b748c6eca080536d' ||
+          // FL-1822 the Add panel and two-tone transition previews; raster producer bytes unchanged.
+          binding.sourceSha256 ===
+            'bbde8835aadaf99e4a6e33017b220ddc8cb69da0e224cd15086e9a8fec69e1a0')),
     'SOURCE_BROWSER',
   )
   check(
