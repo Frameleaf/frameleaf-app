@@ -81,4 +81,21 @@ describe('LightViewer', () => {
     expect(opener).toHaveFocus();
     opener.remove();
   });
+
+  it('moves the focus to Close when the focused Next button becomes disabled', async () => {
+    const { view } = open();
+    await tick();
+    const next = screen.getByRole('button', { name: 'Next photo' });
+    next.focus();
+    await view.rerender({ hasNext: false });
+    await vi.waitFor(() => expect(screen.getByRole('button', { name: 'Close' })).toHaveFocus());
+  });
+
+  it('leaves the arrow keys to a field being typed in', async () => {
+    const field = createRawSnippet(() => ({ render: () => '<input aria-label="Caption" />' }));
+    const { props } = open({ footer: field });
+    const input = screen.getByRole('textbox', { name: 'Caption' });
+    await fireEvent.keyDown(input, { key: 'ArrowRight' });
+    expect(props.onNext).not.toHaveBeenCalled();
+  });
 });

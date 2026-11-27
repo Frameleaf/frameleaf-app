@@ -112,6 +112,17 @@
   const items = $derived(review?.items ?? []);
   const openIndex = $derived(items.findIndex(({ resourceId }) => resourceId === openId));
   const open = $derived(openIndex === -1 ? undefined : items[openIndex]);
+  // FL-1814: while the next page loads the item leaves `items` for a moment; keep showing the last one, so
+  // the viewer is not closed and reopened (which would lose the focus and announce the dialog again).
+  let lastOpen = $state<(typeof items)[number]>();
+  $effect(() => {
+    if (open) {
+      lastOpen = open;
+    } else if (openId === null) {
+      lastOpen = undefined;
+    }
+  });
+  const viewing = $derived(open ?? (openId === null ? undefined : lastOpen));
   const laterInView = $derived(Object.values(later).filter((item) => !group || item.group === group));
   const pageToAccept = $derived(items.filter(({ resourceId }) => !Object.hasOwn(later, resourceId)));
   const allToAccept = $derived(Math.max(0, (review?.total ?? 0) - laterInView.length));
@@ -450,15 +461,18 @@
   {/if}
 </div>
 
-{#if open}
+{#if viewing}
+  {@const open = viewing}
   <LightViewer
     label={open.fileName ?? $t('frameleaf_icloud_untitled')}
-    position={$t('frameleaf_icloud_review_position', {
-      values: {
-        position: number((current - 1) * (review?.size ?? PAGE_SIZE) + openIndex + 1),
-        total: number(review?.total ?? 0),
-      },
-    })}
+    position={openIndex === -1
+      ? undefined
+      : $t('frameleaf_icloud_review_position', {
+          values: {
+            position: number((current - 1) * (review?.size ?? PAGE_SIZE) + openIndex + 1),
+            total: number(review?.total ?? 0),
+          },
+        })}
     {hasPrevious}
     {hasNext}
     onPrevious={() => void step(-1)}
@@ -872,7 +886,7 @@
   .icr-shot img {
     display: block;
     max-width: 100%;
-    max-height: calc(100vh - 148px);
+    max-height: calc(100vh - 180px);
     object-fit: contain;
     border-radius: var(--fl-radius-md);
   }

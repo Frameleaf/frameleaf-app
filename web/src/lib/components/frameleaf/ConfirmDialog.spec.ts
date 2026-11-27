@@ -96,4 +96,48 @@ describe('ConfirmDialog', () => {
     expect(handleError).toHaveBeenCalledOnce();
     expect(onClose).not.toHaveBeenCalled();
   });
+
+  it('keeps Escape and the close button from closing it while the action runs', async () => {
+    let finish!: () => void;
+    const onClose = vi.fn();
+    render(ConfirmDialog, {
+      title: 'Leave “Lake days”?',
+      confirmText: 'Leave album',
+      onConfirm: () => new Promise<void>((resolve) => (finish = resolve)),
+      onClose,
+    });
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Leave album' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+    const escape = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+    document.body.dispatchEvent(escape);
+    expect(escape.defaultPrevented).toBe(true);
+    expect(screen.getByRole('heading', { name: 'Leave “Lake days”?' })).toBeInTheDocument();
+    expect(onClose).not.toHaveBeenCalled();
+
+    finish();
+    await vi.waitFor(() => expect(onClose).toHaveBeenCalledWith(true));
+  });
+
+  it('gives the focus back to the action after a failure', async () => {
+    let fail!: (error: Error) => void;
+    render(ConfirmDialog, {
+      title: 'Delete?',
+      confirmText: 'Delete album',
+      danger: true,
+      onConfirm: () => new Promise<void>((_, reject) => (fail = reject)),
+      onClose: vi.fn(),
+    });
+    const action = screen.getByRole('button', { name: 'Delete album' });
+    action.focus();
+    await fireEvent.click(action);
+    // a browser drops the focus from a button that becomes disabled; jsdom does not, so move it away here
+    const elsewhere = document.createElement('button');
+    document.body.append(elsewhere);
+    elsewhere.focus();
+    expect(action).not.toHaveFocus();
+    fail(new Error('offline'));
+    await vi.waitFor(() => expect(action).toHaveFocus());
+    elsewhere.remove();
+  });
 });

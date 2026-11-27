@@ -29,7 +29,7 @@
     isImportPathFormatValid,
     isScanActive,
   } from '$lib/frameleaf/libraries';
-  import { libraryFolderReader } from '$lib/frameleaf/folder-readers';
+  import { libraryFolderReader, pathTrail } from '$lib/frameleaf/folder-readers';
   import { getServerErrorMessage } from '$lib/utils/handle-error';
   import {
     createLibrary,
@@ -279,8 +279,10 @@
           {$t('frameleaf_libraries_choose_folder')}
         </button>
         {#if browseOpen}
+          <!-- Opens where the last folder in the list is, as the old inline browser did. -->
           <FolderChooser
             rootName={$t('frameleaf_cc_group_this_server')}
+            start={pathTrail(importPaths.findLast((path) => path.trim() !== ''))}
             read={libraryFolderReader($t)}
             onClose={() => (browseOpen = false)}
             onChoose={(_, listing) => useFolder(listing.extra!)}
