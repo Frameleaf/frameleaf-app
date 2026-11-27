@@ -1088,6 +1088,8 @@ describe(PersonService.name, () => {
         updatedAt: expect.any(String),
         featuredAssetId: null,
         deathDate: null,
+        birthDatePrecision: null,
+        deathDatePrecision: null,
       });
       expect(mocks.person.update).toHaveBeenCalledWith({
         ownerId: person.ownerId,
@@ -1311,7 +1313,22 @@ describe(PersonService.name, () => {
       );
     });
 
+    it('returns the precisions it saved, so a client reads them back (FL-1814)', async () => {
+      const { auth, person } = setup();
+      mocks.person.upsertProfile.mockResolvedValue({
+        deathDate: null,
+        notes: null,
+        birthDatePrecision: 'month',
+        deathDatePrecision: null,
+      });
+
+      await expect(
+        sut.update(auth, person.personGroupId, { birthDate: '1987-03-01', birthDatePrecision: 'month' }),
+      ).resolves.toMatchObject({ birthDatePrecision: 'month', deathDatePrecision: null });
+    });
+
     it.each([
+      [{ deathDate: null, deathDatePrecision: 'month' as const }],
       [{ birthDate: '1987-03-14', birthDatePrecision: 'month' as const }],
       [{ birthDate: '1987-03-01', birthDatePrecision: 'year' as const }],
       [{ deathDate: '2020-06-01', deathDatePrecision: 'about' as const }],
@@ -2434,6 +2451,51 @@ describe(PersonService.name, () => {
 
       await merge();
 
+      expect(mocks.person.upsertProfile).not.toHaveBeenCalled();
+    });
+
+    // FL-1814
+    const setupBirthMerge = (survivorBirth: Date | null, survivorPrecision: string | null) => {
+      const auth = AuthFactory.create();
+      const survivor = PersonFactory.create({ ownerId: auth.user.id, name: 'Rose', birthDate: survivorBirth });
+      const removed = PersonFactory.create({ ownerId: auth.user.id, name: 'Rosie', birthDate: new Date('1987-03-01') });
+      mocks.access.person.checkOwnerAccess.mockResolvedValue(new Set([survivor.personGroupId, removed.personGroupId]));
+      mocks.person.getForMergePerson.mockResolvedValue([survivor, removed]);
+      mocks.person.update.mockResolvedValue({ ...survivor, birthDate: removed.birthDate });
+      mocks.person.getByGroupId.mockImplementation(({ personGroupId }) =>
+        Promise.resolve(personGroupId === survivor.personGroupId ? survivor : removed),
+      );
+      const profile = (birthDatePrecision: string | null) => ({ deathDate: null, notes: null, birthDatePrecision });
+      mocks.person.getProfile.mockImplementation(({ personGroupId }) =>
+        Promise.resolve(
+          (personGroupId === survivor.personGroupId ? profile(survivorPrecision) : profile('month')) as never,
+        ),
+      );
+      mocks.person.delete.mockResolvedValue([removed]);
+      return () => sut.mergePeople(auth, { ids: [survivor.personGroupId, removed.personGroupId] });
+    };
+
+    it('writes a date of birth taken over inside the merge, with its precision', async () => {
+      const merge = setupBirthMerge(null, null);
+
+      await expect(merge()).resolves.toEqual([expect.objectContaining({ success: true })]);
+
+      expect(mocks.person.update).toHaveBeenCalledWith(expect.objectContaining({ birthDate: new Date('1987-03-01') }));
+      expect(mocks.person.withMergeWrite.mock.invocationCallOrder[0]).toBeLessThan(
+        mocks.person.update.mock.invocationCallOrder[0],
+      );
+      expect(mocks.person.upsertProfile).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ birthDatePrecision: 'month' }),
+      );
+    });
+
+    it('keeps an exact date of birth the survivor already had, even on the same day', async () => {
+      const merge = setupBirthMerge(new Date('1987-03-01'), null);
+
+      await merge();
+
+      expect(mocks.person.update).not.toHaveBeenCalled();
       expect(mocks.person.upsertProfile).not.toHaveBeenCalled();
     });
 
