@@ -45,6 +45,7 @@ import {
   clearLutReferences,
   installProjectLutKeeper,
 } from '@/infrastructure/gpu-effects/lut/lut-references'
+import { installProjectFontKeeper } from '@/shared/typography/project-fonts'
 import { useTimelineSettingsStore } from '@/features/timeline/stores/timeline-settings-store'
 import { watchLocalImports, type LocalImportWatch } from './project-imports'
 import { createCompletionRetention } from './import-retention'
@@ -62,6 +63,7 @@ import type { Project } from '@/types/project'
 import type { StudioHostToFrameMessage } from '@frameleaf/host/frame-protocol'
 import { STUDIO_FRAME_PROTOCOL_VERSION } from '@frameleaf/host/frame-protocol'
 import type { StudioHostContext } from '@frameleaf/host/host-contract'
+import { engineThemeVariables } from './theme-map'
 import {
   cadenceFromDecimal,
   nearestTimelineFrame,
@@ -161,24 +163,9 @@ const engineProjectIdOf = (context: StudioHostContext): string => {
   return `frameleaf-${context.project.id.replace(/[^A-Za-z0-9_-]/g, '')}`
 }
 
-const THEME_MAP: Record<string, string> = {
-  '--primary': '--fl-accent',
-  '--primary-foreground': '--fl-accent-text',
-  '--ring': '--fl-accent',
-  '--background': '--fl-viewer-canvas',
-  '--card': '--fl-viewer-panel',
-  '--popover': '--fl-viewer-raised',
-  '--foreground': '--fl-viewer-text',
-  '--card-foreground': '--fl-viewer-text',
-  '--popover-foreground': '--fl-viewer-text',
-  '--muted-foreground': '--fl-viewer-muted',
-  '--border': '--fl-viewer-border',
-  '--destructive': '--fl-danger',
-}
-
 /**
- * Frameleaf's tokens on this document's root. The editor is a dark, monitor-style surface in
- * both themes (`design/frameleaf/template/src/studio.css`), so the viewer tokens drive it.
+ * Frameleaf's tokens on this document's root, and the engine's variables set from them
+ * (`theme-map.ts`). The engine's own classes are dark, so the document stays `dark` in both themes.
  */
 function applyTheme(context: StudioHostContext) {
   const root = document.documentElement
@@ -186,10 +173,8 @@ function applyTheme(context: StudioHostContext) {
   root.dataset.frameleafTheme = context.theme.theme
   for (const [name, value] of Object.entries(context.theme.tokens))
     root.style.setProperty(name, value)
-  for (const [engineName, hostName] of Object.entries(THEME_MAP)) {
-    const value = context.theme.tokens[hostName]
-    if (value) root.style.setProperty(engineName, value)
-  }
+  for (const [name, value] of Object.entries(engineThemeVariables(context.theme)))
+    root.style.setProperty(name, value)
 }
 
 /** The editor frame's session; `mount` and the draft rules live in `draft-sync.ts`. */
@@ -502,6 +487,33 @@ function keepImportedLuts(state: Session) {
       },
     }),
     clearLutReferences,
+  )
+}
+
+/**
+ * FL-1562: a font file added in the title inspector is kept with the project under a new id. The
+ * server reads its family, weight and style, and the editor lists that face in `metadata.fonts`; a
+ * refusal leaves the project's fonts as they were.
+ */
+function keepAddedFonts(state: Session) {
+  state.unsubscribe.push(
+    installProjectFontKeeper({
+      // Only where the host keeps font files, and not in a read-only editor (another person holds the project).
+      available: () =>
+        !state.disposed && state.context.projectFonts === true && acceptsWrite(state, state.mount),
+      async keep(file) {
+        const mount = state.mount
+        if (state.disposed || !acceptsWrite(state, mount)) throw new Error('origin_retired')
+        // A save as a copy can change the project while the file uploads; the font stays with the
+        // project it went to and is not listed in this one.
+        const project = studioProjectUuidOf(state.context)
+        const kept = await call('uploadProjectFont', { id: crypto.randomUUID(), fileName: file.name, file })
+        if (state.disposed || state.mount !== mount || studioProjectUuidOf(state.context) !== project)
+          throw new Error('origin_retired')
+        blobUrlManager.registerUrl(kept.id, kept.url)
+        return { importId: kept.id, family: kept.family, weight: kept.weight, style: kept.style }
+      },
+    }),
   )
 }
 
@@ -1125,6 +1137,7 @@ async function mount(context: StudioHostContext): Promise<void> {
   watchImports(state)
   watchLocalImportsFor(state)
   keepImportedLuts(state)
+  keepAddedFonts(state)
   // FL-637: the voice clean-up card talks to this project's server and puts its result in this bin.
   registerVoiceCleanupHost({
     projectId: () => (session === state && !state.disposed ? state.context.project.id : null),

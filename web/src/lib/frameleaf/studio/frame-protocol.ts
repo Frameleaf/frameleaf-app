@@ -120,7 +120,7 @@ export interface StudioFrameHello {
 const UUID = /^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/i;
 
 /** Bytes, recognised by shape: a Blob cloned across a port can come from another realm. */
-const isBlobLike = (value: unknown): value is Blob =>
+export const isBlobLike = (value: unknown): value is Blob =>
   !!value &&
   typeof value === 'object' &&
   typeof (value as Blob).size === 'number' &&

@@ -164,6 +164,9 @@ export const LIBRARY_CARE_TOOLS: readonly UtilityId[] = Object.freeze([
 ]);
 export const libraryCareToolsFor = (isAdmin: boolean) =>
   utilityToolsFor(isAdmin).filter((tool) => LIBRARY_CARE_TOOLS.includes(tool.id));
+/** FL-1808: the tools that bring photos in. Their home is Import, not Library care. */
+export const IMPORT_TOOLS: readonly UtilityId[] = Object.freeze(['icloud', 'downloads', 'phones']);
+export const isImportTool = (id: string | null | undefined) => IMPORT_TOOLS.includes(id as UtilityId);
 export const utilityTool = (id: string | null) => UTILITY_TOOLS.find((tool) => tool.id === id);
 export const utilitiesUrl = (section?: UtilityId, params: Record<string, string | number | undefined> = {}) => {
   const search = new URLSearchParams({ area: 'utilities' });

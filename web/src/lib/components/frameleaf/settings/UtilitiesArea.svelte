@@ -15,39 +15,18 @@
   import ICloudReview from '$lib/components/frameleaf/ICloudReview.svelte';
   import ICloudSyncPanel from '$lib/components/frameleaf/ICloudSyncPanel.svelte';
   import LibraryCareHealth from '$lib/components/frameleaf/LibraryCareHealth.svelte';
-  import Button from '$lib/components/frameleaf/Button.svelte';
-  import type { DirectoryRow } from '$lib/components/frameleaf/settings/SettingsDirectory.svelte';
-  import Item from '$lib/components/frameleaf/settings/kit/Item.svelte';
-  import ItemList from '$lib/components/frameleaf/settings/kit/ItemList.svelte';
-  import KitPage from '$lib/components/frameleaf/settings/kit/KitPage.svelte';
-  import Section from '$lib/components/frameleaf/settings/kit/Section.svelte';
   import SettingsOverline from '$lib/components/frameleaf/settings/SettingsOverline.svelte';
   import UtilityHistory from '$lib/components/frameleaf/UtilityHistory.svelte';
-  import Hero from '$lib/components/frameleaf/settings/kit/Hero.svelte';
-  import { formatBytes } from '$lib/frameleaf/format-bytes';
   import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
-  import {
-    LIBRARY_CARE_TOOLS,
-    UTILITY_GROUPS,
-    utilityStates,
-    utilityTool,
-    utilityToolsFor,
-    type UtilityId,
-    type UtilityState,
-  } from '$lib/frameleaf/utilities';
+  import { isImportTool, utilityTool } from '$lib/frameleaf/utilities';
   import { loadUtility, type UtilityData } from '$lib/frameleaf/utilities-load';
-  import { checkedLastNight, loadUtilityExtras, type UtilityExtras } from '$lib/frameleaf/utilities-extras';
-  import { locale } from '$lib/stores/preferences.store';
-  import { DateTime } from 'luxon';
   import { authManager } from '$lib/managers/auth-manager.svelte';
-  import { getUtilitiesSummary, type UtilitiesSummaryResponseDto } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
-  import { mdiChevronRight, mdiClipboardAlertOutline, mdiClipboardCheckOutline } from '@mdi/js';
+  import { mdiChevronRight } from '@mdi/js';
   import { untrack } from 'svelte';
   import { t } from 'svelte-i18n';
 
-  let { query = '', onNavigate }: { query?: string; onNavigate?: () => void } = $props();
-  const tools = $derived(utilityToolsFor(authManager.user.isAdmin));
+  let { onNavigate }: { onNavigate?: () => void } = $props();
   const requestedStatus = $derived(page.url.searchParams.get('status'));
   const selected = $derived(utilityTool(page.url.searchParams.get('section')));
   // FL-416: File trash is Library care › Unused files now; an old address opens it there.
@@ -58,15 +37,6 @@
   });
   const parentTool = $derived(selected?.parent ? utilityTool(selected.parent) : undefined);
   const denied = $derived(selected?.adminOnly && !authManager.user.isAdmin);
-  // A repair tool opened from Library care says so and goes back there (design review finding 67).
-  const fromCare = $derived(
-    page.url.searchParams.get('from') === 'care' && !!selected && LIBRARY_CARE_TOOLS.includes(selected.id),
-  );
-  const matches = $derived(
-    tools.filter((tool) =>
-      `${$t(tool.titleKey)} ${$t(tool.descriptionKey)}`.toLowerCase().includes(query.trim().toLowerCase()),
-    ),
-  );
   let data = $state<UtilityData | null>(null);
   let failed = $state(false);
   let retry = $state(0);
@@ -78,7 +48,7 @@
     void retry;
     data = null;
     failed = false;
-    if (!tool || (tool.adminOnly && !isAdmin) || query.trim()) {
+    if (!tool || (tool.adminOnly && !isAdmin)) {
       return;
     }
     let active = true;
@@ -114,250 +84,55 @@
     retry++; // the counts changed
   };
 
-  // FL-519: one cheap call says what each tool has waiting; the directory works without it.
-  let summary = $state<UtilitiesSummaryResponseDto | null>(null);
-  const loadSummary = async () => {
-    try {
-      summary = await getUtilitiesSummary();
-    } catch {
-      summary = null;
-    }
-  };
-  // FL-539: the other tools' states, each read on its own; a tool shows none when it cannot be read.
-  let extras = $state<UtilityExtras | null>(null);
-  const loadExtras = async () => {
-    try {
-      extras = await loadUtilityExtras(authManager.user.isAdmin);
-    } catch {
-      extras = null;
-    }
-  };
+  /**
+   * FL-1807: the Tools directory is gone. Every tool has one home its heading leads back to: Import
+   * for the ways photos come in (FL-1808), Library care for the rest.
+   */
+  const home = $derived(
+    isImportTool(selected?.id)
+      ? { title: $t('frameleaf_settings_area_backup'), href: commandCenterUrl('backup') }
+      : {
+          title: $t('frameleaf_library_care'),
+          href: commandCenterUrl('care', undefined, { scope: page.url.searchParams.get('scope') ?? undefined }),
+        },
+  );
+  // An old link to the directory, or to a tool that no longer exists, opens Library care.
   $effect(() => {
-    if (!selected) {
-      void loadSummary();
-      void loadExtras();
+    if (!selected && page.url.searchParams.get('section') !== 'file-trash') {
+      void goto(home.href, { replaceState: true });
     }
   });
-  const states = $derived.by(() => {
-    const all: Partial<Record<UtilityId, UtilityState>> = summary ? utilityStates(summary) : {};
-    const toPair = extras?.toPair;
-    if (toPair !== null && toPair !== undefined) {
-      all['live-photos'] = { count: toPair, waiting: toPair > 0 };
-    }
-    return all;
-  });
-  /** The tools the overnight checks look at, which say "Checked last night" after one. */
-  const CHECKED_OVERNIGHT: ReadonlySet<UtilityId> = new Set<UtilityId>([
-    'duplicates',
-    'missing-media',
-    'corrupt-media',
-    'live-photos',
-  ]);
-  const lastNight = $derived(checkedLastNight(extras?.checkedAt ?? null));
-  const ago = (iso: string) => DateTime.fromISO(iso, { locale: $locale }).toRelative() ?? '';
-  /** FL-539: the states the summary does not carry: largest file, iCloud, workflows and phones. */
-  const extraStatus = (id: UtilityId): { text: string; tone: 'good' | 'off' } | undefined => {
-    if (!extras) {
-      return undefined;
-    }
-    switch (id) {
-      case 'large-files': {
-        return extras.largestBytes === null
-          ? undefined
-          : {
-              text: $t('frameleaf_utilities_state_largest', { values: { size: formatBytes(extras.largestBytes) } }),
-              tone: 'off',
-            };
-      }
-      case 'icloud': {
-        if (!extras.icloudConnected) {
-          return { text: $t('frameleaf_utilities_state_icloud_none'), tone: 'off' };
-        }
-        return extras.icloudCheckedAt
-          ? {
-              text: $t('frameleaf_utilities_state_icloud_checked', { values: { ago: ago(extras.icloudCheckedAt) } }),
-              tone: 'good',
-            }
-          : undefined;
-      }
-      case 'workflows': {
-        return extras.workflows === null
-          ? undefined
-          : { text: $t('frameleaf_utilities_state_workflows', { values: { count: extras.workflows } }), tone: 'off' };
-      }
-      case 'downloads': {
-        return extras.phones === null
-          ? undefined
-          : {
-              text: $t('frameleaf_utilities_state_phones', { values: { count: extras.phones } }),
-              tone: extras.phones > 0 ? 'good' : 'off',
-            };
-      }
-      default: {
-        return undefined;
-      }
-    }
-  };
-  const waiting = $derived(tools.filter((tool) => states[tool.id]?.waiting));
-  const statusText = (id: UtilityId, state: UtilityState) => {
-    switch (id) {
-      case 'duplicates': {
-        return $t('frameleaf_utilities_state_duplicates', { values: { count: state.count } });
-      }
-      case 'geolocation': {
-        return $t('frameleaf_utilities_state_no_place', { values: { count: state.count } });
-      }
-      case 'missing-media': {
-        return $t('frameleaf_utilities_state_missing', { values: { count: state.count } });
-      }
-      case 'live-photos': {
-        return $t('frameleaf_utilities_state_pair', { values: { count: state.count } });
-      }
-      default: {
-        return $t('frameleaf_utilities_state_damaged', { values: { count: state.count } });
-      }
-    }
-  };
-  // As the prototype's Tools (settings-v2/library/utilities.jsx): a tool with something waiting is
-  // amber; a tool the overnight checks look at with nothing waiting is green ("No duplicates
-  // waiting", "All paired"); a plain fact ("2 photos have no place") stays neutral.
-  const statusOf = (id: UtilityId) => {
-    const state = states[id];
-    if (!state) {
-      return extraStatus(id);
-    }
-    const tone = state.waiting ? ('warn' as const) : CHECKED_OVERNIGHT.has(id) ? ('good' as const) : ('off' as const);
-    return { text: statusText(id, state), tone };
-  };
 
-  // The template lists Utilities as an ordinary area directory: grouped rows, each with its tool's
-  // icon (UT-12; CommandCenter.jsx:2739, utilities-data.mjs:15-87), no scope tag (every tool works
-  // on the signed-in account's own library).
-  // FL-519: tools with something waiting come first, under "Needs a look".
-  const searching = $derived(query.trim() !== '');
-  const rowOf = (tool: (typeof tools)[number], group: string): DirectoryRow => ({
-    id: tool.id,
-    title: $t(tool.titleKey),
-    description: $t(tool.descriptionKey),
-    group,
-    icon: tool.icon,
-    status: statusOf(tool.id),
-    note:
-      lastNight && CHECKED_OVERNIGHT.has(tool.id) && statusOf(tool.id) !== undefined
-        ? $t('frameleaf_utilities_checked_last_night')
-        : undefined,
-    onSelect: () => void select(tool.id),
-  });
-  const rows = $derived([
-    ...(searching ? [] : waiting.map((tool) => rowOf(tool, $t('frameleaf_utilities_needs_look')))),
-    ...UTILITY_GROUPS.flatMap((group) =>
-      matches
-        .filter((tool) => tool.group === group)
-        .filter((tool) => searching || !waiting.includes(tool))
-        .map((tool) => rowOf(tool, $t(`library_care_group_${group}`))),
-    ),
-  ]);
-  const groups = $derived([...new Set(rows.map((row) => row.group ?? ''))]);
-
-  const select = (section?: UtilityId) => {
+  const back = () => {
     onNavigate?.();
-    if (!section && fromCare) {
-      return goto(commandCenterUrl('care', undefined, { scope: page.url.searchParams.get('scope') ?? undefined }));
+    if (!parentTool) {
+      return goto(home.href);
     }
     const url = new URL(page.url.href);
-    for (const key of [
-      'section',
-      'assetId',
-      'status',
-      'at',
-      'index',
-      'workflowId',
-      'workflowQuery',
-      'workflowName',
-      'from',
-      'phone',
-      'review',
-    ]) {
+    for (const key of ['assetId', 'status', 'at', 'index', 'from', 'phone', 'review']) {
       url.searchParams.delete(key);
     }
-    if (section) {
-      url.searchParams.set('section', section);
-    }
+    url.searchParams.set('section', parentTool.id);
     return goto(`${url.pathname}${url.search}`, { reset: false });
   };
 </script>
 
 <header class="heading">
-  <SettingsOverline>
-    {#if selected && !query.trim()}
-      <button type="button" onclick={() => select(parentTool?.id)}
-        >{parentTool
-          ? $t(parentTool.titleKey)
-          : fromCare
-            ? $t('frameleaf_settings_area_care')
-            : $t('frameleaf_tools')}</button
-      >
+  {#if selected}
+    <SettingsOverline>
+      <button type="button" onclick={back}>{parentTool ? $t(parentTool.titleKey) : home.title}</button>
       <Icon icon={mdiChevronRight} size="0.875rem" aria-hidden={true} />
       {$t(selected.titleKey)}
-    {:else}
-      {$t('frameleaf_settings_group_library')}
-    {/if}
-  </SettingsOverline>
-  <h1>{selected && !query.trim() ? $t(selected.titleKey) : $t('frameleaf_tools')}</h1>
-  <p>{selected && !query.trim() ? $t(selected.descriptionKey) : $t('frameleaf_utilities_description')}</p>
+    </SettingsOverline>
+    <h1>{$t(selected.titleKey)}</h1>
+    <p>{$t(selected.descriptionKey)}</p>
+  {/if}
 </header>
 
-{#if denied}
+{#if !selected}
+  <div class="tool-loading" role="status" aria-busy="true"><span class="sr-only">{$t('loading')}</span></div>
+{:else if denied}
   <InlineError compact message={$t('frameleaf_utilities_admin_required')} />
-{:else if !selected || query.trim()}
-  <!-- The prototype's Tools (settings-v2 utilities): the answer, then one kit Section per group whose
-       rows are kit Items — the tool's icon, what it does, its state, and "Open ›". -->
-  <KitPage>
-    {#if summary && !query.trim()}
-      {#if waiting.length > 0}
-        <Hero
-          tone="warn"
-          icon={mdiClipboardAlertOutline}
-          label={$t('frameleaf_tools')}
-          title={$t('frameleaf_utilities_waiting_title', { values: { count: waiting.length } })}
-          body={$t('frameleaf_utilities_waiting_body')}
-        />
-      {:else}
-        <Hero
-          icon={mdiClipboardCheckOutline}
-          label={$t('frameleaf_tools')}
-          title={$t('frameleaf_utilities_calm_title')}
-          body={$t('frameleaf_utilities_calm_body')}
-        />
-      {/if}
-    {/if}
-    {#each groups as group (group)}
-      <Section title={group}>
-        <ItemList wideName>
-          {#each rows.filter((row) => row.group === group) as row (row.id)}
-            <Item
-              icon={row.icon}
-              quiet={row.status?.tone !== 'warn'}
-              name={row.title}
-              detail={row.description}
-              tone={row.status?.tone}
-              status={row.status?.text}
-              note={row.note}
-            >
-              {#snippet action()}
-                <Button
-                  variant={row.status?.tone === 'warn' ? 'primary' : 'default'}
-                  label={$t('frameleaf_utilities_open_tool', { values: { name: row.title } })}
-                  onclick={row.onSelect}>{$t('open')}<Icon icon={mdiChevronRight} size="1em" aria-hidden /></Button
-                >
-              {/snippet}
-            </Item>
-          {/each}
-        </ItemList>
-      </Section>
-    {/each}
-    {#if matches.length === 0}<p role="status">{$t('frameleaf_settings_search_empty', { values: { query } })}</p>{/if}
-  </KitPage>
 {:else if failed}
   <InlineError message={$t('frameleaf_utilities_load_error')} onRetry={() => retry++} />
 {:else if data}

@@ -171,7 +171,6 @@ describe('Frameleaf rail destinations', () => {
     const hrefs = flatten(allCapabilities()).map((destination) => destination.href);
 
     expect(hrefs.filter((href) => href === Route.libraryCare())).toHaveLength(1);
-    expect(hrefs).not.toContain(Route.utilities());
     expect(hrefs).not.toContain(Route.duplicatesUtility());
     expect(hrefs).not.toContain(Route.largeFileUtility());
     expect(hrefs).not.toContain(Route.livePhotosUtility());
@@ -213,6 +212,9 @@ describe('Frameleaf rail destinations', () => {
     expect(active(commandCenterUrl('care', 'repair'))).toEqual(['libraryCare']);
     expect(active(Route.workflows())).toEqual(['libraryCare']);
     expect(active(Route.importPlace())).toEqual(['import']);
+    // FL-1808: iCloud Photos and the phone apps are ways photos come in.
+    expect(active(Route.icloudSyncUtility())).toEqual(['import']);
+    expect(active(Route.downloadsUtility())).toEqual(['import']);
     expect(active(Route.takeout())).toEqual(['import']);
     expect(active(Route.trash())).toEqual(['trash']);
     expect(active(Route.userSettings())).toEqual(['settings']);

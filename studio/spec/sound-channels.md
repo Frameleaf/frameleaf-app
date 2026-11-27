@@ -67,4 +67,4 @@ Dual mono means each source channel goes to its own side unchanged; for a two-ch
 
 **Native rule.** A client that cannot apply a channel map must refuse to export a graph in which an audible clip carries `audioChannelMap`, and must preserve the object unchanged. A writer writes only indexes the source has, and drops the field instead of writing the stereo identity when no mapping is wanted.
 
-**Not in this page.** Sample-accurate sound edits and the sound effect stack (compressor, limiter, gate, de-esser, reverb, noise reduction, parametric EQ) are separate parts of FL-1561. There is no editor control for the map at this revision; the field is written by the editor's future control or by a client.
+**Not in this page.** Sample-accurate sound edits and the sound effect stack (compressor, limiter, gate, de-esser, reverb, noise reduction, parametric EQ) are separate parts of FL-1561. The editor's Channels choice writes the presets of M5 and removes the field for Stereo; a client may write any map that meets M1.

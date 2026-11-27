@@ -4,6 +4,7 @@ import { TRANSCRIPT_ENGINE_STRINGS, transcriptEngineStrings } from '@frameleaf/h
 import { CUTOUT_ENGINE_STRINGS } from '@frameleaf/host/cutout-strings'
 import { STABILISE_ENGINE_STRINGS } from '@frameleaf/host/stabilise-strings'
 import { CAPTION_STYLE_ENGINE_STRINGS } from '@frameleaf/host/caption-style-strings'
+import { ENGINE_CONTROLS_STRINGS } from '@frameleaf/host/engine-controls-strings'
 import { applyHostEngineStrings } from '../src/host-engine-strings'
 
 describe('FL-450 host-translated engine messages', () => {
@@ -89,5 +90,16 @@ describe('FL-450 host-translated engine messages', () => {
     applyHostEngineStrings(engine, undefined)
     applyHostEngineStrings(engine, { lockedTrackRefused: '' })
     expect(writes).toEqual([])
+  })
+
+  it('FL-1562 and the controls of the same pass: every string has engine English with the same run-time values', async () => {
+    await changeAppLanguage('en')
+    for (const entry of Object.values(ENGINE_CONTROLS_STRINGS)) {
+      expect(i18n.t(entry.engine), entry.engine).not.toBe(entry.engine)
+      const markers = [...(i18n.getResource('en', 'translation', entry.engine) as string).matchAll(/\{\{(\w+)\}\}/g)]
+        .map((match) => match[1])
+        .toSorted()
+      expect(markers, entry.engine).toEqual([...('values' in entry ? entry.values : [])].toSorted())
+    }
   })
 })

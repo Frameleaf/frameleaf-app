@@ -65,7 +65,7 @@ describe('suppressed content page load', () => {
       ownedAlbums: [],
       sharedAlbums: [],
       tab: 'albums',
-      meta: { title: 'suppressed_content' },
+      meta: { title: 'frameleaf_suppressed_gate_title' },
     });
 
     expect(redirect).not.toHaveBeenCalled();
@@ -88,7 +88,7 @@ describe('suppressed content page load', () => {
       sharedAlbums: [sharedVisible],
       tab: 'albums',
       meta: {
-        title: 'suppressed_content',
+        title: 'frameleaf_suppressed_gate_title',
       },
     });
 

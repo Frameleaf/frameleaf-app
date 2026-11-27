@@ -15,6 +15,11 @@ The owner unparked the engine on 2026-09-25, and the web application now mounts 
   asset id, forwards the editor's saves to the host as drafts, and routes Export, the exports list
   and the project bundle to Frameleaf's export dialog, Activity and portable bundles. Nothing in
   `studio/vendor/freecut` is edited; three editor modules are substituted by alias in the adapter build.
+- The engine wears Frameleaf's tokens (FL-1822): `src/theme-map.ts` sets every engine CSS variable
+  (surfaces, text, accent, radius, and the timeline's playhead, guides, markers and clip colours) from
+  the host's theme snapshot, and `src/frameleaf-theme.css` gives it the web app's Inter. No engine patch
+  is involved; colours the engine hard-codes as classes or literals change by patch instead.
+  `test/theme-map.test.ts` fails if an engine variable is left on the upstream accent.
 - `web/src/lib/frameleaf/studio/host-contract.ts` is the typed `mount` / `update` / `dispose`
   contract; `frame-protocol.ts` is the message protocol over one `MessageChannel` per mount;
   `frame-engine.ts` registers the built editor with `engine-loader.ts`, which refuses any engine

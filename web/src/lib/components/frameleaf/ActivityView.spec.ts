@@ -121,6 +121,46 @@ describe('Frameleaf Activity page', () => {
     expect(screen.getByText('Authorized maximum')).toBeInTheDocument();
   });
 
+  it('lists edits sent to another app, each with its state and the way back in (FL-1809)', async () => {
+    sdkMock.getDevelopBatches.mockResolvedValue({
+      items: [
+        { id: 'b1', itemCount: 12, status: 'open', createdAt: new Date().toISOString(), includeSidecars: false },
+        { id: 'b2', itemCount: 4, status: 'completed', createdAt: new Date().toISOString(), includeSidecars: false },
+        { id: 'b3', itemCount: 2, status: 'cancelled', createdAt: new Date().toISOString(), includeSidecars: false },
+      ],
+      nextCursor: null,
+    } as never);
+    await mount([]);
+    const section = await screen.findByRole('region', { name: /^Edits in another app/ });
+    expect(section).toHaveTextContent('12 photos');
+    expect(section).toHaveTextContent('waiting for the edited files');
+    expect(section.querySelectorAll('li')).toHaveLength(2);
+    expect(screen.getByRole('button', { name: 'Bring files back: 12 photos' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Open: 4 photos' })).toBeInTheDocument();
+  });
+
+  it('narrows the edits to the tab: open ones under In progress, none under Failed', async () => {
+    sdkMock.getDevelopBatches.mockResolvedValue({
+      items: [
+        { id: 'b1', itemCount: 12, status: 'open', createdAt: new Date().toISOString(), includeSidecars: false },
+        { id: 'b2', itemCount: 4, status: 'completed', createdAt: new Date().toISOString(), includeSidecars: false },
+      ],
+      nextCursor: null,
+    } as never);
+    sdkMock.searchMediaOperations.mockResolvedValue({ items: [], total: 0 });
+    render(ActivityView, { props: { filter: 'running' } });
+    const section = await screen.findByRole('region', { name: /^Edits in another app/ });
+    expect(section.querySelectorAll('li')).toHaveLength(1);
+    expect(section).toHaveTextContent('12 photos');
+  });
+
+  it('shows no edits section when nothing was sent out', async () => {
+    sdkMock.getDevelopBatches.mockResolvedValue({ items: [], nextCursor: null } as never);
+    await mount([]);
+    await vi.waitFor(() => expect(sdkMock.getDevelopBatches).toHaveBeenCalled());
+    expect(screen.queryByRole('region', { name: /^Edits in another app/ })).toBeNull();
+  });
+
   it('names the destination on every job so cloud work is never implicit', async () => {
     await mount([operation()]);
 

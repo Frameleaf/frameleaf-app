@@ -62,10 +62,13 @@
   import { handleError } from '$lib/utils/handle-error';
   import {
     AssetMediaSize,
+    DevelopBatchStatus,
     getBaseUrl,
+    getDevelopBatches,
     getStudioBundleOperation,
     scanLibrary,
     updateQueue,
+    type DevelopBatchSummaryDto,
     type QueueName,
   } from '@frameleaf/sdk';
   import { Icon, Theme, themeManager } from '@frameleaf/ui';
@@ -93,6 +96,7 @@
     mdiWifi,
     mdiWifiOff,
   } from '@mdi/js';
+  import { DateTime } from 'luxon';
   import { onMount, untrack } from 'svelte';
   import { locale, t } from 'svelte-i18n';
   import { SvelteSet } from 'svelte/reactivity';
@@ -394,6 +398,42 @@
 
   onMount(() => activitySession.watch());
   onMount(() => runningJobsSession.watch());
+
+  /**
+   * FL-1809 (approved 2026-11-26, prototype `Activity.jsx` behind `nav=v2`): photos sent out to edit in
+   * another app were reachable only from a selection's More menu. They are work in progress, so each
+   * open or finished batch is listed here, below Finished, with the way back into it.
+   */
+  let editBatches = $state<DevelopBatchSummaryDto[]>([]);
+  const loadEditBatches = async () => {
+    try {
+      const { items } = await getDevelopBatches({});
+      editBatches = items.filter((batch) => batch.status !== DevelopBatchStatus.Cancelled);
+    } catch {
+      // Older servers and a failed read show no section; the batches page still lists them.
+      editBatches = [];
+    }
+  };
+  onMount(() => void loadEditBatches());
+  // The tabs narrow it too: an open batch is in progress, a finished one is done, none ever failed.
+  const shownEditBatches = $derived(
+    editBatches.filter(
+      (batch) =>
+        filter === 'all' ||
+        (filter === 'running' && batch.status === DevelopBatchStatus.Open) ||
+        (filter === 'done' && batch.status === DevelopBatchStatus.Completed),
+    ),
+  );
+  // "2 days ago" reads in the middle of a sentence, in every language, where "Yesterday, 3:04 PM" does not.
+  const sentOut = (batch: DevelopBatchSummaryDto) =>
+    $t(
+      batch.status === DevelopBatchStatus.Open ? 'frameleaf_activity_edits_waiting' : 'frameleaf_activity_edits_done',
+      {
+        values: {
+          when: DateTime.fromISO(batch.createdAt, { locale: $locale ?? undefined }).toRelative() ?? '',
+        },
+      },
+    );
 
   /**
    * Announce a job that finishes by itself while the page is open (`Activity.jsx`: "Export of
@@ -1098,6 +1138,34 @@
     </section>
   {/if}
 
+  {#if shownEditBatches.length > 0}
+    <section class="fla-section" aria-labelledby="{rowIdPrefix}-edits">
+      <h2 id="{rowIdPrefix}-edits" class="fla-section-title">
+        {$t('frameleaf_activity_edits_title')} <span class="fla-edits-count">{shownEditBatches.length}</span>
+      </h2>
+      <p class="fla-edits-hint">{$t('frameleaf_activity_edits_hint')}</p>
+      <ul class="fla-edits">
+        {#each shownEditBatches as batch (batch.id)}
+          {@const action =
+            batch.status === DevelopBatchStatus.Open ? $t('frameleaf_activity_edits_bring_back') : $t('open')}
+          <li>
+            <Icon icon={mdiExportVariant} size="20" aria-hidden="true" />
+            <span class="fla-edits-text">
+              <strong>{$t('frameleaf_batch.photo_count', { values: { count: batch.itemCount } })}</strong>
+              <small>{sentOut(batch)}</small>
+            </span>
+            <Button
+              label={$t('frameleaf_activity_edits_label', {
+                values: { action, name: $t('frameleaf_batch.photo_count', { values: { count: batch.itemCount } }) },
+              })}
+              onclick={() => goto(`/develop-batches?batch=${batch.id}`)}>{action}</Button
+            >
+          </li>
+        {/each}
+      </ul>
+    </section>
+  {/if}
+
   <!-- FL-1457 (N8): an empty page has nothing for the footnote to be about. -->
   {#if !allQuiet}
     <footer class="fla-footer">
@@ -1276,6 +1344,50 @@
     font-size: var(--fl-font-callout);
     border: 1px dashed var(--fl-border);
     border-radius: var(--fl-radius-card);
+  }
+  /* FL-1809: one row per batch sent out to another app, with its state and the way back in. */
+  .fla-edits-hint {
+    margin: 0 0 var(--fl-space-3);
+    color: var(--fl-muted);
+    font-size: var(--fl-font-small);
+  }
+  .fla-edits-count {
+    margin-inline-start: var(--fl-space-2);
+    color: var(--fl-muted);
+    font-weight: 500;
+  }
+  /* findable-pages.css `.fla-batches`: one card per batch, 8 apart. */
+  .fla-edits {
+    display: grid;
+    gap: var(--fl-space-2);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .fla-edits li {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: var(--fl-space-4);
+    min-height: 44px;
+    padding: var(--fl-space-4);
+    border: 1px solid var(--fl-border);
+    border-radius: var(--fl-radius-card);
+    background: var(--fl-panel);
+    color: var(--fl-muted);
+  }
+  .fla-edits-text {
+    display: grid;
+    gap: var(--fl-space-1);
+    min-width: 0;
+  }
+  .fla-edits-text strong {
+    color: var(--fl-text);
+    font-size: var(--fl-font-callout);
+    font-weight: 600;
+  }
+  .fla-edits-text small {
+    font-size: var(--fl-font-small);
   }
   /* activity.css `.fw3-finished`: one line per thing that finished, a rule between them. */
   .fw3-finished {

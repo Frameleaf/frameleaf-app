@@ -12,7 +12,8 @@ export const load = (async ({ url, depends }) => {
   const unlocked = isElevated && pinCode;
   const tab = url.searchParams.get('tab') === 'albums' ? 'albums' : 'timeline';
   const $t = await getFormatter();
-  const meta = { title: $t('suppressed_content') };
+  // FL-1809: named on screen as Locked's "Hidden by your rules" row names it.
+  const meta = { title: $t('frameleaf_suppressed_gate_title') };
 
   // LIB-P2: until the session is unlocked the page opens inside the app with a card that asks for
   // the PIN in a dialog; nothing suppressed is loaded before then.

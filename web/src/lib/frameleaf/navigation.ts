@@ -26,6 +26,7 @@ import {
   mdiViewDashboardOutline,
 } from '@mdi/js';
 import type { Translations } from 'svelte-i18n';
+import { isImportTool } from '$lib/frameleaf/utilities';
 import { Route } from '$lib/route';
 
 /**
@@ -396,7 +397,13 @@ const PLACE_OF_AREA: Partial<Record<string, RailDestinationId>> = {
   utilities: 'libraryCare',
   trash: 'trash',
 };
-const placeOfArea = (area: string | null): RailDestinationId | undefined => (area ? PLACE_OF_AREA[area] : undefined);
+const placeOfArea = (area: string | null, section: string | null): RailDestinationId | undefined => {
+  // FL-1808: iCloud Photos and the phone apps are ways photos come in, so they belong to Import.
+  if (area === 'utilities' && isImportTool(section)) {
+    return 'import';
+  }
+  return area ? PLACE_OF_AREA[area] : undefined;
+};
 
 /**
  * Whether a destination is the current page. Child routes keep their parent current
@@ -410,7 +417,7 @@ export const isDestinationCurrent = (current: string | URL, destination: RailDes
   if (url.pathname === '/user-settings') {
     // FL-1806: Import, Library care and Trash are places with their own rail entries; Settings is
     // current everywhere else in the Command Center.
-    const place = placeOfArea(url.searchParams.get('area'));
+    const place = placeOfArea(url.searchParams.get('area'), url.searchParams.get('section'));
     if (destination.id === 'settings') {
       return !place;
     }
