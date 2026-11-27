@@ -295,9 +295,12 @@ export function validateBaseRaster(capture, envelope, binding) {
           // FL-1819/FL-1822 upstream fixes, theme accent and Studio wording; raster producer bytes unchanged.
           binding.sourceSha256 ===
             'dc26d4a87723f78a97719cf9ed71afa535620c1be044c57502ec83cace9610d4' ||
+          // FL-1830 resource policy for the Frameleaf model mirror; raster producer bytes unchanged.
+          binding.sourceSha256 ===
+            '62f1f7453d93e5dd309986dee2894c76b4fee07c7a4c2e3a8d27abf98694d1e0' ||
           // FL-1822 the editor's tab bar in place of its header; raster producer bytes unchanged.
           binding.sourceSha256 ===
-            '6cacd721babe9fb6a670c5694e9fb7b5c90ca108d6887dfe18bf27f33da9f9bb')),
+            '6bc6ecc794b2e1957bd048c71d87e42ca9491fd3c8ed046122d3e6bd4a73ff5c')),
     'SOURCE_BROWSER',
   )
   check(
