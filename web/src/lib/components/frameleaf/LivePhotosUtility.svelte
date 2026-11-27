@@ -14,6 +14,7 @@
   import ToolButton from '$lib/components/frameleaf/Button.svelte';
   import BulkFormDialog from '$lib/components/frameleaf/BulkFormDialog.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
+  import EmptyRow from '$lib/components/frameleaf/EmptyRow.svelte';
   import IconButton from '$lib/components/frameleaf/IconButton.svelte';
   import TileJobState from '$lib/components/frameleaf/TileJobState.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
@@ -310,8 +311,8 @@
   </div>
   {#if !data.candidates.suggestionsEnabled}
     <!-- Library care → "Suggest Live Photo relinking" is off (FL-69): nothing was looked for. -->
-    <p class="empty" role="status">{$t('library_care_live_photos_off')}</p>
-  {:else if rows.length === 0}<p class="empty">{$t('frameleaf_live_photos_no_candidates')}</p>{/if}
+    <EmptyRow title={$t('library_care_live_photos_off')} />
+  {:else if rows.length === 0}<EmptyRow title={$t('frameleaf_live_photos_no_candidates')} />{/if}
 </div>
 
 {#if inspect}
@@ -503,11 +504,6 @@
     gap: 0.5rem;
     flex-wrap: wrap;
     font-size: 0.6875rem;
-  }
-  .empty {
-    padding: 2.8125rem 1.25rem;
-    text-align: center;
-    color: var(--fl-muted);
   }
   @media (max-width: 68.75rem) {
     article {
