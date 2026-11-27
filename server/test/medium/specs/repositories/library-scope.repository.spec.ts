@@ -214,13 +214,68 @@ describe('library scope persistence and personal defaults', () => {
     const jobs = ctx.get(AssetJobRepository);
     expect(await jobs.getForBestPhotoScoring(asset.id)).toBeUndefined();
     expect(
-      (await jobs.selectionForBestPhotosScoring({ force: true, scoreVersion: 1 }).execute()).some(
-        ({ id }) => id === asset.id,
-      ),
+      (await jobs.selectionForBestPhotosScoring({ force: true }).execute()).some(({ id }) => id === asset.id),
     ).toBe(false);
     expect((await scores.getBestPhotos({ ownerId: user.id, limit: 20, page: 1 })).total).toBe(0);
     await scores.upsertScore({ ...score, score: 0.9 });
     expect((await scores.getScore(asset.id))?.score).toBe(0.8);
+  });
+
+  it('picks for the Best Photos scan only photos never scored whose search and faces are ready (FL-1827)', async () => {
+    const ctx = setup();
+    const { user } = await ctx.newUser();
+    const photo = async (ready: { search?: boolean; faces?: boolean } = {}, type = AssetType.Image) => {
+      const { asset } = await ctx.newAsset({ ownerId: user.id, type });
+      await ctx.newAssetFile({ assetId: asset.id, type: AssetFileType.Preview, path: `${asset.id}.jpg` });
+      if (ready.search) {
+        await db
+          .insertInto('smart_search')
+          .values({ assetId: asset.id, embedding: JSON.stringify(Array.from({ length: 768 }, () => 0.125)) })
+          .execute();
+      }
+      if (ready.faces) await ctx.newJobStatus({ assetId: asset.id, facesRecognizedAt: new Date() });
+      return asset.id;
+    };
+    const ready = await photo({ search: true, faces: true });
+    const scored = await photo({ search: true, faces: true });
+    await new BestPhotosRepository(db).upsertScore({
+      assetId: scored,
+      ownerId: user.id,
+      score: 0.8,
+      scoreVersion: 1,
+      computedAt: new Date(),
+    });
+    const noSearch = await photo({ faces: true });
+    const noFaces = await photo({ search: true });
+    // a video's score reads its frames only
+    const video = await photo({}, AssetType.Video);
+    const jobs = ctx.get(AssetJobRepository);
+    const mine = new Set([ready, scored, noSearch, noFaces, video]);
+    const pick = async (options: Parameters<AssetJobRepository['selectionForBestPhotosScoring']>[0]) =>
+      (await jobs.selectionForBestPhotosScoring(options).execute()).map(({ id }) => id).filter((id) => mine.has(id));
+    const sorted = (ids: string[]) => ids.toSorted((a, b) => a.localeCompare(b));
+
+    expect(sorted(await pick({ ready: { search: true, faces: true } }))).toEqual(sorted([ready, video]));
+    // with a feature off, nothing is waited for
+    expect(sorted(await pick({ ready: { search: false, faces: true } }))).toEqual(sorted([ready, noSearch, video]));
+    expect(sorted(await pick({ ready: { search: false, faces: false } }))).toEqual(
+      sorted([ready, noSearch, noFaces, video]),
+    );
+    // Recalculate: every photo, the scored one too
+    expect(sorted(await pick({ force: true }))).toEqual(sorted([...mine]));
+    // a photo whose search never arrives is scored without it after a week
+    await db
+      .updateTable('asset')
+      .set({ createdAt: new Date(Date.now() - 8 * 86_400_000) })
+      .where('id', '=', noSearch)
+      .execute();
+    expect(await pick({ ready: { search: true, faces: true } })).toContain(noSearch);
+    // one share, in id order
+    const all = await jobs.selectionForBestPhotosScoring({ ready: { search: false, faces: false } }).execute();
+    const share = await jobs
+      .selectionForBestPhotosScoring({ ready: { search: false, faces: false }, limit: 2 })
+      .execute();
+    expect(share.map(({ id }) => id)).toEqual(sorted(all.map(({ id }) => id)).slice(0, 2));
   });
 
   it('excludes design-only pet recognition candidates, worker inputs and similarity neighbours', async () => {

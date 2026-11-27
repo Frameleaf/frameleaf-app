@@ -774,6 +774,14 @@ export class JobRepository {
   async getQueuesWithUnfinishedWork(names: readonly QueueName[]): Promise<Set<string>> {
     return new Set(await this.store.queuesWithUnfinishedWork(names));
   }
+  /** FL-1827: whether any of these jobs is still waiting or running in the queue. */
+  async hasLiveJobs(queue: QueueName, names: JobName[]): Promise<boolean> {
+    const {
+      rows: [row],
+    } = await sql<{ live: boolean }>`select exists (select 1 from job where queue = ${queue}
+      and state in ('pending','waiting','active') and name = any(${names}::text[])) live`.execute(this.store.db);
+    return row.live;
+  }
   hasDedupJob(name: QueueName, id: string) {
     return this.store.hasDedup(name, id);
   }
@@ -959,10 +967,7 @@ export class JobRepository {
     const identity =
       options?.deduplication?.id ??
       options?.jobId ??
-      (item.name === JobName.LandmarkInfer ? item.data?.trigger : undefined) ??
-      // the re-score once the embedding is stored is its own item: keyed by the photo alone it hit the score queued
-      // earlier (after thumbnails or faces) and was dropped, so the learned aesthetic never reached the score
-      (item.name === JobName.BestPhotosScore && item.data?.embeddingChanged ? 'embedding' : undefined);
+      (item.name === JobName.LandmarkInfer ? item.data?.trigger : undefined);
     // One run can publish an asset's files more than once. A completed seal must not consume a
     // later publication's obligation; live deduplication still coalesces sealing by asset.
     const publication =

@@ -3,7 +3,7 @@ import { rm } from 'node:fs/promises';
 import path from 'node:path';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { JobOf } from 'src/types.js';
-import { OnJob } from 'src/decorators.js';
+import { OnEvent, OnJob } from 'src/decorators.js';
 import { mapAsset } from 'src/dtos/asset-response.dto.js';
 import {
   BEST_PHOTO_SCORE_VERSION,
@@ -11,7 +11,17 @@ import {
   BestPhotosQueryDto,
   BestPhotosResponseDto,
 } from 'src/dtos/best-photos.dto.js';
-import { AssetStatus, AssetType, AssetVisibility, JobName, JobStatus, QueueName, TranscodeTarget } from 'src/enum.js';
+import {
+  AssetStatus,
+  AssetType,
+  AssetVisibility,
+  FrameleafEnvironment,
+  FrameleafWorker,
+  JobName,
+  JobStatus,
+  QueueName,
+  TranscodeTarget,
+} from 'src/enum.js';
 import { deferJobUntilDependency } from 'src/queue/dependency.js';
 import { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
 import { BestPhotoScoreUpsert, BestPhotosRepository } from 'src/repositories/best-photos.repository.js';
@@ -26,6 +36,8 @@ import { asDateTimeString } from 'src/utils/date.js';
 import { getHiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { isLockedKeyUnavailable, makeWorkDirFor, withPlainCopy } from 'src/utils/locked-read.js';
 import { ThumbnailConfig } from 'src/utils/media.js';
+import { isFacialRecognitionEnabled, isSmartSearchEnabled } from 'src/utils/misc.js';
+import { QUIET_HOURS_FEEDERS } from 'src/utils/overnight.js';
 
 type BestPhotoScoringAsset = NonNullable<Awaited<ReturnType<AssetJobRepository['getForBestPhotoScoring']>>>;
 type ImageQuality = Awaited<ReturnType<MediaRepository['measureImageQuality']>>;
@@ -70,14 +82,14 @@ const VIDEO_FRAME_SAMPLE_COUNT = 5;
 // than monopolizing the background queue.
 const VIDEO_SCORE_MAX_DURATION_SECONDS = 15 * 60;
 
-/** FL-978: the image statistics a score stored, so an embedding-only re-score does not read the preview again. */
-const storedQuality = (metadata: Record<string, unknown> | null): ImageQuality | null => {
-  const { brightness: mean, contrast, entropy, sharpness, thumbnailScore } = metadata ?? {};
-  const values = [mean, contrast, entropy, sharpness, thumbnailScore];
-  return values.every((value) => typeof value === 'number' && Number.isFinite(value))
-    ? ({ mean, contrast, entropy, sharpness, thumbnailScore } as ImageQuality)
-    : null;
-};
+/**
+ * FL-1827 (owner, 2026-11-26): the paced scan. One share of unscored photos at a time, the next no sooner than the
+ * rest after it, and only once the last share is done, so scoring never piles up behind an import.
+ */
+const BEST_PHOTOS_SHARE = 1000;
+const BEST_PHOTOS_SHARE_REST_MS = 5 * 60 * 1000;
+/** With nothing left to score, the library is looked through again this often. */
+const BEST_PHOTOS_IDLE_REST_MS = 60 * 60 * 1000;
 
 /** FL-978: sigmoid(head(embedding)) for the visual search model that made the embedding, or null. */
 type LearnedAesthetic = { score: number; modelName: string };
@@ -85,6 +97,8 @@ type LearnedAesthetic = { score: number; modelName: string };
 @Injectable()
 export class BestPhotosService {
   private readonly modelsWithoutHead = new Set<string>();
+  private timer?: NodeJS.Timeout;
+  private restUntil = 0;
 
   constructor(
     private logger: LoggingRepository,
@@ -116,23 +130,86 @@ export class BestPhotosService {
     };
   }
 
+  @OnEvent({ name: 'ConfigInit', workers: [FrameleafWorker.Microservices] })
+  onConfigInit() {
+    // E2E servers are never scored in the background: a test that needs no scores must find none (as quiet hours
+    // never hold work there)
+    if (this.configRepository.getEnv().environment === FrameleafEnvironment.Testing) {
+      return;
+    }
+    this.timer = setInterval(() => {
+      this.queueNextShare().catch((error: unknown) =>
+        this.logger.warn(`Best Photos could not look for photos to score: ${error}`),
+      );
+    }, BEST_PHOTOS_SHARE_REST_MS);
+  }
+
+  @OnEvent({ name: 'AppShutdown' })
+  onShutdown() {
+    clearInterval(this.timer);
+  }
+
+  /** What a photo's score reads besides its preview, with the features that make it switched on. */
+  private async inputs() {
+    const { machineLearning } = await getConfig(
+      { configRepo: this.configRepository, metadataRepo: this.systemMetadataRepository, logger: this.logger },
+      { withCache: true },
+    );
+    return { search: isSmartSearchEnabled(machineLearning), faces: isFacialRecognitionEnabled(machineLearning) };
+  }
+
+  /**
+   * FL-1827: the paced scan's tick. A share is queued only when the library is set up: nothing is being scanned in,
+   * read or given a thumbnail, and the last share is done. Each photo also waits for its own search and faces
+   * (`selectionForBestPhotosScoring`). Returns whether a share was queued.
+   * ponytail: the rest is kept in memory; a restart looks again at once, which queues at most one share early.
+   */
+  async queueNextShare(now = Date.now()): Promise<boolean> {
+    if (now < this.restUntil) {
+      return false;
+    }
+    const feeders = await Promise.all(QUIET_HOURS_FEEDERS.map((name) => this.jobRepository.getJobCounts(name)));
+    if (feeders.some(({ active, waiting, delayed, paused }) => active + waiting + delayed + paused > 0)) {
+      return false;
+    }
+    const scoring = [JobName.BestPhotosScore, JobName.BestPhotosScoreQueueAll];
+    if (await this.jobRepository.hasLiveJobs(QueueName.BackgroundTask, scoring)) {
+      return false;
+    }
+    const next = await this.assetJobRepository
+      .selectionForBestPhotosScoring({ ready: await this.inputs(), limit: 1 })
+      .executeTakeFirst();
+    if (!next) {
+      this.restUntil = now + BEST_PHOTOS_IDLE_REST_MS;
+      return false;
+    }
+    await this.jobRepository.queue({
+      name: JobName.BestPhotosScoreQueueAll,
+      data: { force: false, limit: BEST_PHOTOS_SHARE },
+    });
+    return true;
+  }
+
   @OnJob({ name: JobName.BestPhotosScoreQueueAll, queue: QueueName.BackgroundTask })
-  async handleQueueAll({ force }: JobOf<JobName.BestPhotosScoreQueueAll>): Promise<JobStatus> {
+  async handleQueueAll({ force, limit }: JobOf<JobName.BestPhotosScoreQueueAll>): Promise<JobStatus> {
+    // Recalculate (`force`) scores every photo again; the scan takes a share of those never scored and ready
     await this.jobRepository.queueSelection(
       JobName.BestPhotosScore,
-      this.assetJobRepository.selectionForBestPhotosScoring({
-        force,
-        scoreVersion: BEST_PHOTO_SCORE_VERSION,
-      }),
+      this.assetJobRepository.selectionForBestPhotosScoring(force ? { force } : { ready: await this.inputs(), limit }),
+      force ? { force: true } : {},
     );
     return JobStatus.Success;
   }
 
   @OnJob({ name: JobName.BestPhotosScore, queue: QueueName.BackgroundTask })
-  async handleScore({ id, embeddingChanged }: JobOf<JobName.BestPhotosScore>): Promise<JobStatus> {
+  async handleScore({ id, force }: JobOf<JobName.BestPhotosScore>): Promise<JobStatus> {
     await this.jobRepository.guardAssetSource(id);
     const asset = await this.assetJobRepository.getForBestPhotoScoring(id);
     if (!asset || !this.isEligible(asset)) {
+      return JobStatus.Skipped;
+    }
+    // FL-1827: scored once. Only Recalculate scores a photo again
+    if (asset.scored && !force) {
       return JobStatus.Skipped;
     }
 
@@ -145,9 +222,7 @@ export class BestPhotosService {
 
     try {
       const upsert =
-        asset.type === AssetType.Video
-          ? await this.scoreVideoAsset(asset)
-          : await this.scoreImageAsset(asset, embeddingChanged);
+        asset.type === AssetType.Video ? await this.scoreVideoAsset(asset) : await this.scoreImageAsset(asset);
       if (!upsert) {
         return JobStatus.Skipped;
       }
@@ -173,11 +248,9 @@ export class BestPhotosService {
     );
   }
 
-  private async scoreImageAsset(asset: BestPhotoScoringAsset, embeddingChanged = false): Promise<BestPhotoScoreUpsert> {
-    const stored = embeddingChanged ? storedQuality(asset.scoreMetadata) : null;
+  private async scoreImageAsset(asset: BestPhotoScoringAsset): Promise<BestPhotoScoreUpsert> {
     // FL-721: an encrypted Locked preview is read through a plain copy
-    const quality =
-      stored ?? (await withPlainCopy(asset.previewFile!, (path) => this.mediaRepository.measureImageQuality(path)));
+    const quality = await withPlainCopy(asset.previewFile!, (path) => this.mediaRepository.measureImageQuality(path));
     return this.buildScoreUpsert(asset, quality, asset.width, asset.height, await this.learnedAesthetic(asset));
   }
 
