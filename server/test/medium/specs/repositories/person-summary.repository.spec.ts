@@ -218,8 +218,9 @@ describe('people list from stored summaries (FL-1789)', () => {
     const { user } = await ctx.newUser();
     await personIn(ctx, user.id, 'Ada', 1);
     await counts(sut, user.id);
-    // as if the summaries were counted an hour ago and nothing has changed since
-    await sql`update person_summary_state set "checkedFrom" = now() - interval '1 hour', "computedAt" = now() - interval '40 minutes' where "ownerId" = ${user.id}`.execute(
+    // as if the summaries were counted 40 minutes ago and nothing has changed since (stored to the
+    // millisecond, as the server writes them)
+    await sql`update person_summary_state set "checkedFrom" = date_trunc('milliseconds', now() - interval '1 hour'), "computedAt" = date_trunc('milliseconds', now() - interval '40 minutes') where "ownerId" = ${user.id}`.execute(
       database,
     );
     const [before] = await states(user.id);

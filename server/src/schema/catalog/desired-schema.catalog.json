@@ -60830,24 +60830,6 @@
           "nullable": true,
           "isArray": false,
           "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "computedAt",
-          "tableName": "person_summary",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "text",
-          "primary": false,
-          "name": "changeToken",
-          "tableName": "person_summary",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
         }
       ],
       "indexes": [
@@ -60902,6 +60884,88 @@
             "personGroupId"
           ],
           "referenceTableName": "person_group",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
+    },
+    {
+      "name": "person_summary_state",
+      "columns": [
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "ownerId",
+          "tableName": "person_summary_state",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "viewerKey",
+          "tableName": "person_summary_state",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "computedAt",
+          "tableName": "person_summary_state",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "checkedFrom",
+          "tableName": "person_summary_state",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "changeToken",
+          "tableName": "person_summary_state",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        }
+      ],
+      "indexes": [],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "primary-key",
+          "name": "person_summary_state_pkey",
+          "definition": "PRIMARY KEY (\"ownerId\", \"viewerKey\")",
+          "tableName": "person_summary_state",
+          "columnNames": [
+            "ownerId",
+            "viewerKey"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "person_summary_state_ownerId_fkey",
+          "definition": "FOREIGN KEY (\"ownerId\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "person_summary_state",
+          "columnNames": [
+            "ownerId"
+          ],
+          "referenceTableName": "user",
           "referenceColumnNames": [
             "id"
           ],

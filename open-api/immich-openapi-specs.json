@@ -47948,9 +47948,8 @@
             "name": "name",
             "required": false,
             "in": "query",
-            "description": "Only people whose name contains this text, whatever the case",
+            "description": "Only people whose name contains this text, whatever the case; empty matches everyone",
             "schema": {
-              "minLength": 1,
               "type": "string"
             }
           },
@@ -48653,9 +48652,8 @@
             "name": "name",
             "required": false,
             "in": "query",
-            "description": "Only people whose name contains this text, whatever the case",
+            "description": "Only people whose name contains this text, whatever the case; empty matches everyone",
             "schema": {
-              "minLength": 1,
               "type": "string"
             }
           },
@@ -141449,8 +141447,7 @@
       "PeoplePickerSearchDto": {
         "properties": {
           "name": {
-            "description": "Only people whose name contains this text, whatever the case",
-            "minLength": 1,
+            "description": "Only people whose name contains this text, whatever the case; empty matches everyone",
             "type": "string"
           },
           "page": {
@@ -142667,8 +142664,7 @@
             "type": "string"
           },
           "name": {
-            "description": "Only people whose name contains this text, whatever the case",
-            "minLength": 1,
+            "description": "Only people whose name contains this text, whatever the case; empty matches everyone",
             "type": "string"
           },
           "page": {
