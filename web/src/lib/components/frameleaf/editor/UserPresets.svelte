@@ -51,8 +51,10 @@
     loadError = null;
     try {
       presets = await getDevelopPresets();
-    } catch {
+    } catch (error) {
       loadError = $t('frameleaf_editor_presets_load_error');
+      // logs, and handles a sign-in that has expired, without the toast
+      handleError(error, loadError, { notify: false });
     } finally {
       loading = false;
     }

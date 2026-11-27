@@ -42,6 +42,7 @@ describe('UserPresets', () => {
   it('says in place that the presets could not be read, without a toast, and tries again (FL-1810)', async () => {
     vi.mocked(getDevelopPresets).mockRejectedValueOnce(new Error('offline')).mockResolvedValueOnce([stored]);
     render(UserPresets, { current: warm, onApply: vi.fn() });
+    expect(screen.getByTestId('frameleaf-list-skeleton')).toBeInTheDocument();
 
     expect(await screen.findByTestId('frameleaf-inline-error')).toHaveTextContent(
       'frameleaf_editor_presets_load_error',

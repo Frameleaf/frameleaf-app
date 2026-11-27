@@ -15,6 +15,8 @@
   import { page } from '$app/state';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import EmptyRow from '$lib/components/frameleaf/EmptyRow.svelte';
+  import InlineError from '$lib/components/frameleaf/InlineError.svelte';
+  import ListSkeleton from '$lib/components/frameleaf/ListSkeleton.svelte';
   import SegmentedControl from '$lib/components/frameleaf/SegmentedControl.svelte';
   import FileStory from '$lib/components/frameleaf/settings/care/FileStory.svelte';
   import Hero from '$lib/components/frameleaf/settings/kit/Hero.svelte';
@@ -70,8 +72,14 @@
   });
   let loaded = $state(false);
   let failed = $state(false);
+  let retrying = $state(false);
   let loadingMore = $state(false);
   let said = $state('');
+  const retry = async () => {
+    retrying = true;
+    await load();
+    retrying = false;
+  };
   /** The problem whose What happened sheet is open, and its row when it was opened from the list. */
   let openId = $state<string | null>(null);
   let opened = $state<FileProblemRowDto>();
@@ -291,7 +299,14 @@
       {#snippet action()}
         <SegmentedControl label={$t('frameleaf_files_show')} options={tabs} bind:value={tab} />
       {/snippet}
-      {#if loaded && list.items.length === 0}
+      {#if !loaded}
+        <div class="empty"><ListSkeleton rows={3} /></div>
+      {:else if failed}
+        <!-- FL-1810: the hero says what failed; the place of the list offers Try again. -->
+        <div class="empty">
+          <InlineError compact message={$t('frameleaf_state_load_failed_body')} onRetry={retry} {retrying} />
+        </div>
+      {:else if list.items.length === 0}
         <div class="empty">
           <EmptyRow
             title={tab === FileProblemTab.Needs ? $t('frameleaf_files_empty_needs') : $t('frameleaf_files_empty')}
