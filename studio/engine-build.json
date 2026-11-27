@@ -963,8 +963,8 @@
     {
       "path": "patches/0213-studio-add-panel.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
-      "sha256": "7b9798e5d8e9eb92448e6e82caae1d418eb139271ed004ce85099538adbb17de"
+      "sha256": "3677a0a1325ca0f9c9bae9c6a02bf2711c8a4281b06b95e5ee0b555320a508eb"
     }
   ],
-  "sourceSha256": "bbde8835aadaf99e4a6e33017b220ddc8cb69da0e224cd15086e9a8fec69e1a0"
+  "sourceSha256": "3ac1e51c2bb62cdd299b8912a1080fc8dc4e559eb439eabf59368bba1b90b25c"
 }

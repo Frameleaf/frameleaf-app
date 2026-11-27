@@ -19923,7 +19923,7 @@
   "frameleaf_studio_add_panel_hint_effects": "Drag an effect onto a clip, or select a clip and click.",
   "frameleaf_studio_add_panel_hint_shapes": "Shapes sit on their own track, above your video.",
   "frameleaf_studio_add_panel_hint_titles": "Drag a title onto the timeline, or click to add it at the playhead.",
-  "frameleaf_studio_add_panel_hint_transitions": "Drag a transition onto a cut, or select a clip and click to add it at its start.",
+  "frameleaf_studio_add_panel_hint_transitions": "Drag a transition onto a cut between two clips, or select a clip and click.",
   "frameleaf_studio_add_panel_shapes": "Shapes",
   "frameleaf_studio_add_panel_titles": "Titles",
   "frameleaf_studio_add_panel_transitions": "Transitions",

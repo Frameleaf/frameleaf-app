@@ -176,7 +176,7 @@ export function compositionSourcesFor(sourceSha256) {
     // FL-1822 the media bin laid out as the approved Studio; changes no composition or raster producer.
     sourceSha256 === '23af4f1aabfd81a53909eb907a3d51acb51392b0b98bca06b748c6eca080536d' ||
     // FL-1822 the Add panel and two-tone transition previews; changes no composition or raster producer.
-    sourceSha256 === 'bbde8835aadaf99e4a6e33017b220ddc8cb69da0e224cd15086e9a8fec69e1a0'
+    sourceSha256 === '3ac1e51c2bb62cdd299b8912a1080fc8dc4e559eb439eabf59368bba1b90b25c'
   )
     return {
       ...COMPOSITION_SOURCES,

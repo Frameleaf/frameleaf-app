@@ -1,9 +1,9 @@
 diff --git a/src/features/editor/components/media-sidebar.test.tsx b/src/features/editor/components/media-sidebar.test.tsx
 new file mode 100644
-index 0000000..4fdc345
+index 0000000..e61cf30
 --- /dev/null
 +++ b/src/features/editor/components/media-sidebar.test.tsx
-@@ -0,0 +1,47 @@
+@@ -0,0 +1,60 @@
 +import { fireEvent, render, screen } from '@testing-library/react'
 +import { beforeEach, describe, expect, it, vi } from 'vite-plus/test'
 +import { useEditorStore } from '@/shared/state/editor'
@@ -26,33 +26,46 @@ index 0000000..4fdc345
 +    for (const name of ['Media', 'Add', 'Transcript', 'AI']) {
 +      expect(screen.getByRole('button', { name })).toBeInTheDocument()
 +    }
-+    expect(screen.queryByRole('button', { name: 'Shapes' })).not.toBeInTheDocument()
++    expect(screen.queryByRole('button', { name: 'Lottie' })).not.toBeInTheDocument()
 +  })
 +
-+  it('opens Add on titles and switches category with the chips', () => {
++  it('opens Add on titles, switches category with the chips and closes on a second click', () => {
 +    render(<MediaSidebar />)
-+    fireEvent.click(screen.getByRole('button', { name: 'Add' }))
++    const add = screen.getByRole('button', { name: 'Add' })
++    fireEvent.click(add)
 +
-+    expect(screen.getByRole('button', { name: 'Add' })).toHaveAttribute('aria-pressed', 'true')
-+    const chips = screen.getByRole('tablist', { name: 'What to add' })
-+    expect([...chips.querySelectorAll('[role="tab"]')].map((tab) => tab.textContent)).toEqual([
++    expect(add).toHaveAttribute('aria-pressed', 'true')
++    const chips = screen.getByRole('group', { name: 'What to add' })
++    expect([...chips.querySelectorAll('button')].map((chip) => chip.textContent)).toEqual([
 +      'Titles',
 +      'Shapes',
 +      'Effects',
 +      'Transitions',
 +      'Animations',
 +    ])
-+    expect(screen.getByRole('tab', { name: 'Titles' })).toHaveAttribute('aria-selected', 'true')
++    expect(screen.getByRole('button', { name: 'Titles' })).toHaveAttribute('aria-pressed', 'true')
 +    expect(screen.getByText('Drag a title onto the timeline, or click to add it at the playhead.')).toBeInTheDocument()
 +
-+    fireEvent.click(screen.getByRole('tab', { name: 'Transitions' }))
++    fireEvent.click(screen.getByRole('button', { name: 'Transitions' }))
 +    expect(useEditorStore.getState().activeTab).toBe('transitions')
-+    expect(screen.getByRole('tab', { name: 'Transitions' })).toHaveAttribute('aria-selected', 'true')
-+    expect(screen.getByRole('button', { name: 'Add' })).toHaveAttribute('aria-pressed', 'true')
++    expect(screen.getByRole('button', { name: 'Transitions' })).toHaveAttribute('aria-pressed', 'true')
++    expect(screen.getByTestId('transitions')).toBeInTheDocument()
++    expect(add).toHaveAttribute('aria-pressed', 'true')
++
++    fireEvent.click(add)
++    expect(useEditorStore.getState().leftSidebarOpen).toBe(false)
++  })
++
++  it('remembers a category opened elsewhere, such as by a workspace', () => {
++    useEditorStore.setState({ activeTab: 'effects' })
++    render(<MediaSidebar />)
++    fireEvent.click(screen.getByRole('button', { name: 'Media' }))
++    fireEvent.click(screen.getByRole('button', { name: 'Add' }))
++    expect(useEditorStore.getState().activeTab).toBe('effects')
 +  })
 +})
 diff --git a/src/features/editor/components/media-sidebar.tsx b/src/features/editor/components/media-sidebar.tsx
-index 5a02fbe..09e2533 100644
+index 5a02fbe..0bf1199 100644
 --- a/src/features/editor/components/media-sidebar.tsx
 +++ b/src/features/editor/components/media-sidebar.tsx
 @@ -8,6 +8,7 @@ import {
@@ -63,7 +76,7 @@ index 5a02fbe..09e2533 100644
    Square,
    Circle,
    Triangle,
-@@ -533,14 +534,27 @@ export const MediaSidebar = memo(function MediaSidebar() {
+@@ -533,14 +534,29 @@ export const MediaSidebar = memo(function MediaSidebar() {
      return grouped
    }, [])
  
@@ -78,11 +91,13 @@ index 5a02fbe..09e2533 100644
 +  ]
 +  const activeAddCategory = addCategories.find((category) => category.id === activeTab)
 +  const [lastAddTab, setLastAddTab] = useState<(typeof addCategories)[number]['id']>('text')
-+  const openAddCategory = (id: (typeof addCategories)[number]['id']) => {
-+    setActiveTab(id)
-+    setLastAddTab(id)
-+    if (id === 'effects') triggerPreviews()
-+  }
++  // However a category opens (a chip, the rail, a workspace), Add remembers it and Effects starts
++  // its previews.
++  if (activeAddCategory && activeAddCategory.id !== lastAddTab) setLastAddTab(activeAddCategory.id)
++  useEffect(() => {
++    if (activeTab === 'effects') triggerPreviews()
++  }, [activeTab]) // eslint-disable-line react-hooks/exhaustive-deps
++  const openAddCategory = (id: (typeof addCategories)[number]['id']) => setActiveTab(id)
 +
    // Category items for the vertical nav
    const categories = [
@@ -96,7 +111,7 @@ index 5a02fbe..09e2533 100644
      { id: 'transcript' as const, icon: Captions, label: t('transcript.tabLabel') },
      { id: 'ai' as const, icon: WandSparkles, label: t('editor.mediaSidebar.ai') },
    ]
-@@ -620,32 +634,37 @@ export const MediaSidebar = memo(function MediaSidebar() {
+@@ -620,32 +636,37 @@ export const MediaSidebar = memo(function MediaSidebar() {
  
          {/* Category Icons */}
          <div className="flex flex-col gap-1 py-1.5">
@@ -141,7 +156,7 @@ index 5a02fbe..09e2533 100644
          </div>
        </div>
  
-@@ -686,7 +705,9 @@ export const MediaSidebar = memo(function MediaSidebar() {
+@@ -686,7 +707,9 @@ export const MediaSidebar = memo(function MediaSidebar() {
                style={{ height: EDITOR_LAYOUT_CSS_VALUES.sidebarHeaderHeight }}
              >
                <span className="text-sm font-medium text-foreground">
@@ -152,19 +167,18 @@ index 5a02fbe..09e2533 100644
                </span>
                <Button
                  variant="ghost"
-@@ -717,6 +738,31 @@ export const MediaSidebar = memo(function MediaSidebar() {
+@@ -717,6 +740,30 @@ export const MediaSidebar = memo(function MediaSidebar() {
                </Button>
              </div>
  
 +            {activeAddCategory && (
 +              <div className="flex-shrink-0 border-b border-border px-3 pt-3 pb-3 space-y-2.5">
-+                <div className="flex flex-wrap gap-2" role="tablist" aria-label={t('editor.mediaSidebar.addWhat')}>
++                <div className="flex flex-wrap gap-2" role="group" aria-label={t('editor.mediaSidebar.addWhat')}>
 +                  {addCategories.map((category) => (
 +                    <button
 +                      key={category.id}
 +                      type="button"
-+                      role="tab"
-+                      aria-selected={category.id === activeTab}
++                      aria-pressed={category.id === activeTab}
 +                      onClick={() => openAddCategory(category.id)}
 +                      className={cn(
 +                        'inline-flex h-8 items-center rounded-md border px-2.5 text-[13px] transition-colors',
@@ -184,7 +198,7 @@ index 5a02fbe..09e2533 100644
              {/* Media Tab - Full Media Library */}
              <div
                className={`min-h-0 flex-1 overflow-hidden ${activeTab === 'media' ? 'block' : 'hidden'}`}
-@@ -746,7 +792,7 @@ export const MediaSidebar = memo(function MediaSidebar() {
+@@ -746,7 +793,7 @@ export const MediaSidebar = memo(function MediaSidebar() {
                          <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
                            {t(group.labelKey)}
                          </div>
@@ -193,7 +207,7 @@ index 5a02fbe..09e2533 100644
                            {showAddText ? (
                              <button
                                draggable={true}
-@@ -762,7 +808,7 @@ export const MediaSidebar = memo(function MediaSidebar() {
+@@ -762,7 +809,7 @@ export const MediaSidebar = memo(function MediaSidebar() {
                                className="flex flex-col items-center gap-1 p-1.5 rounded-md border border-border bg-secondary/30 hover:bg-secondary/50 hover:border-primary/50 transition-[transform,background-color,border-color,color] duration-150 active:scale-[0.98] group"
                              >
                                {renderTextTemplatePreview()}
@@ -202,7 +216,7 @@ index 5a02fbe..09e2533 100644
                                  {ADD_TEXT_TEMPLATE_LABEL}
                                </span>
                              </button>
-@@ -788,7 +834,7 @@ export const MediaSidebar = memo(function MediaSidebar() {
+@@ -788,7 +835,7 @@ export const MediaSidebar = memo(function MediaSidebar() {
                                )}
                              >
                                {renderTextTemplatePreview(preset)}
@@ -211,7 +225,7 @@ index 5a02fbe..09e2533 100644
                                  {preset.label}
                                </span>
                              </button>
-@@ -805,7 +851,7 @@ export const MediaSidebar = memo(function MediaSidebar() {
+@@ -805,7 +852,7 @@ export const MediaSidebar = memo(function MediaSidebar() {
              <div
                className={`min-h-0 flex-1 overflow-y-auto p-3 ${activeTab === 'shapes' ? 'block' : 'hidden'}`}
              >
@@ -220,7 +234,7 @@ index 5a02fbe..09e2533 100644
                  <button
                    draggable={true}
                    onDragStart={handleTemplateDragStart({
-@@ -822,7 +868,7 @@ export const MediaSidebar = memo(function MediaSidebar() {
+@@ -822,7 +869,7 @@ export const MediaSidebar = memo(function MediaSidebar() {
                    className="flex flex-col items-center justify-center gap-1 p-2 rounded-lg border border-border bg-secondary/30 hover:bg-secondary/50 hover:border-primary/50 transition-[transform,background-color,border-color,color] duration-150 active:scale-[0.98] group"
                  >
                    <div className="w-7 h-7 rounded border border-border bg-[#2d2d2d] shadow-inner group-hover:border-primary/50" />
@@ -229,7 +243,7 @@ index 5a02fbe..09e2533 100644
                      {t('editor.shapeSection.solidColor')}
                    </span>
                  </button>
-@@ -843,7 +889,7 @@ export const MediaSidebar = memo(function MediaSidebar() {
+@@ -843,7 +890,7 @@ export const MediaSidebar = memo(function MediaSidebar() {
                    className="flex flex-col items-center justify-center gap-1 p-2 rounded-lg border border-border bg-secondary/30 hover:bg-secondary/50 hover:border-primary/50 transition-[transform,background-color,border-color,color] duration-150 active:scale-[0.98] group"
                  >
                    <div className="w-7 h-7 rounded border border-border bg-gradient-to-r from-blue-500 to-violet-500 shadow-inner group-hover:border-primary/50" />
@@ -238,7 +252,7 @@ index 5a02fbe..09e2533 100644
                      {t('editor.shapeSection.gradient')}
                    </span>
                  </button>
-@@ -865,7 +911,7 @@ export const MediaSidebar = memo(function MediaSidebar() {
+@@ -865,7 +912,7 @@ export const MediaSidebar = memo(function MediaSidebar() {
                    <div className="w-7 h-7 rounded border border-border bg-secondary/50 flex items-center justify-center group-hover:bg-secondary/70">
                      <Square className="w-3.5 h-3.5 text-muted-foreground group-hover:text-foreground" />
                    </div>
@@ -247,7 +261,7 @@ index 5a02fbe..09e2533 100644
                      {t('editor.shapeSection.typeRectangle')}
                    </span>
                  </button>
-@@ -887,7 +933,7 @@ export const MediaSidebar = memo(function MediaSidebar() {
+@@ -887,7 +934,7 @@ export const MediaSidebar = memo(function MediaSidebar() {
                    <div className="w-7 h-7 rounded border border-border bg-secondary/50 flex items-center justify-center group-hover:bg-secondary/70">
                      <Circle className="w-3.5 h-3.5 text-muted-foreground group-hover:text-foreground" />
                    </div>
@@ -256,7 +270,7 @@ index 5a02fbe..09e2533 100644
                      {t('editor.shapeSection.typeCircle')}
                    </span>
                  </button>
-@@ -909,7 +955,7 @@ export const MediaSidebar = memo(function MediaSidebar() {
+@@ -909,7 +956,7 @@ export const MediaSidebar = memo(function MediaSidebar() {
                    <div className="w-7 h-7 rounded border border-border bg-secondary/50 flex items-center justify-center group-hover:bg-secondary/70">
                      <Triangle className="w-3.5 h-3.5 text-muted-foreground group-hover:text-foreground" />
                    </div>
@@ -265,7 +279,7 @@ index 5a02fbe..09e2533 100644
                      {t('editor.shapeSection.typeTriangle')}
                    </span>
                  </button>
-@@ -931,7 +977,7 @@ export const MediaSidebar = memo(function MediaSidebar() {
+@@ -931,7 +978,7 @@ export const MediaSidebar = memo(function MediaSidebar() {
                    <div className="w-7 h-7 rounded border border-border bg-secondary/50 flex items-center justify-center group-hover:bg-secondary/70">
                      <Circle className="w-3.5 h-2.5 text-muted-foreground group-hover:text-foreground" />
                    </div>
@@ -274,7 +288,7 @@ index 5a02fbe..09e2533 100644
                      {t('editor.shapeSection.typeEllipse')}
                    </span>
                  </button>
-@@ -953,7 +999,7 @@ export const MediaSidebar = memo(function MediaSidebar() {
+@@ -953,7 +1000,7 @@ export const MediaSidebar = memo(function MediaSidebar() {
                    <div className="w-7 h-7 rounded border border-border bg-secondary/50 flex items-center justify-center group-hover:bg-secondary/70">
                      <Star className="w-3.5 h-3.5 text-muted-foreground group-hover:text-foreground" />
                    </div>
@@ -283,7 +297,7 @@ index 5a02fbe..09e2533 100644
                      {t('editor.shapeSection.typeStar')}
                    </span>
                  </button>
-@@ -975,7 +1021,7 @@ export const MediaSidebar = memo(function MediaSidebar() {
+@@ -975,7 +1022,7 @@ export const MediaSidebar = memo(function MediaSidebar() {
                    <div className="w-7 h-7 rounded border border-border bg-secondary/50 flex items-center justify-center group-hover:bg-secondary/70">
                      <Hexagon className="w-3.5 h-3.5 text-muted-foreground group-hover:text-foreground" />
                    </div>
@@ -292,7 +306,7 @@ index 5a02fbe..09e2533 100644
                      {t('editor.shapeSection.typePolygon')}
                    </span>
                  </button>
-@@ -997,7 +1043,7 @@ export const MediaSidebar = memo(function MediaSidebar() {
+@@ -997,7 +1044,7 @@ export const MediaSidebar = memo(function MediaSidebar() {
                    <div className="w-7 h-7 rounded border border-border bg-secondary/50 flex items-center justify-center group-hover:bg-secondary/70">
                      <Heart className="w-3.5 h-3.5 text-muted-foreground group-hover:text-foreground" />
                    </div>
@@ -301,7 +315,7 @@ index 5a02fbe..09e2533 100644
                      {t('editor.shapeSection.typeHeart')}
                    </span>
                  </button>
-@@ -1010,7 +1056,7 @@ export const MediaSidebar = memo(function MediaSidebar() {
+@@ -1010,7 +1057,7 @@ export const MediaSidebar = memo(function MediaSidebar() {
                    <div className="w-7 h-7 rounded border border-border bg-secondary/50 flex items-center justify-center group-hover:bg-secondary/70">
                      <Pen className="w-3.5 h-3.5 text-muted-foreground group-hover:text-foreground" />
                    </div>
@@ -310,7 +324,7 @@ index 5a02fbe..09e2533 100644
                      {t('editor.mediaSidebar.pen')}
                    </span>
                  </button>
-@@ -1051,7 +1097,7 @@ export const MediaSidebar = memo(function MediaSidebar() {
+@@ -1051,7 +1098,7 @@ export const MediaSidebar = memo(function MediaSidebar() {
                    <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-1.5">
                      {t('editor.mediaSidebar.presets')}
                    </div>
@@ -319,7 +333,7 @@ index 5a02fbe..09e2533 100644
                      {EFFECT_PRESETS.map((preset) => (
                        <button
                          key={preset.id}
-@@ -1077,7 +1123,7 @@ export const MediaSidebar = memo(function MediaSidebar() {
+@@ -1077,7 +1124,7 @@ export const MediaSidebar = memo(function MediaSidebar() {
                            active={hoveredEffectKey === `preset:${preset.id}`}
                            className="w-full aspect-video rounded-sm"
                          />
@@ -328,7 +342,7 @@ index 5a02fbe..09e2533 100644
                            {preset.name}
                          </span>
                        </button>
-@@ -1091,7 +1137,7 @@ export const MediaSidebar = memo(function MediaSidebar() {
+@@ -1091,7 +1138,7 @@ export const MediaSidebar = memo(function MediaSidebar() {
                      <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-1.5">
                        {category}
                      </div>
@@ -337,7 +351,7 @@ index 5a02fbe..09e2533 100644
                        {catEffects.map((def) => (
                          <button
                            key={def.id}
-@@ -1121,7 +1167,7 @@ export const MediaSidebar = memo(function MediaSidebar() {
+@@ -1121,7 +1168,7 @@ export const MediaSidebar = memo(function MediaSidebar() {
                              active={hoveredEffectKey === def.id}
                              className="w-full aspect-video rounded-sm"
                            />
@@ -434,7 +448,7 @@ index ec6933b..a59bf02 100644
            <TransitionCard
              key={`${config.id}-${config.direction || index}`}
 diff --git a/src/i18n/locales/partials/en/editor.json b/src/i18n/locales/partials/en/editor.json
-index e016249..c6f7ae7 100644
+index e016249..6ea8262 100644
 --- a/src/i18n/locales/partials/en/editor.json
 +++ b/src/i18n/locales/partials/en/editor.json
 @@ -796,7 +796,7 @@
@@ -458,7 +472,7 @@ index e016249..c6f7ae7 100644
 +        "text": "Drag a title onto the timeline, or click to add it at the playhead.",
 +        "shapes": "Shapes sit on their own track, above your video.",
 +        "effects": "Drag an effect onto a clip, or select a clip and click.",
-+        "transitions": "Drag a transition onto a cut, or select a clip and click to add it at its start.",
++        "transitions": "Drag a transition onto a cut between two clips, or select a clip and click.",
 +        "lottie": "Animated stickers and overlays. They sit on their own track, above your video."
 +      }
      },

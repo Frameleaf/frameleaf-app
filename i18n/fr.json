@@ -20018,7 +20018,7 @@
   "frameleaf_studio_add_panel_hint_effects": "Faites glisser un effet sur un clip, ou sélectionnez un clip et cliquez.",
   "frameleaf_studio_add_panel_hint_shapes": "Les formes ont leur propre piste, au-dessus de votre vidéo.",
   "frameleaf_studio_add_panel_hint_titles": "Faites glisser un titre sur la timeline, ou cliquez pour l'ajouter à la tête de lecture.",
-  "frameleaf_studio_add_panel_hint_transitions": "Faites glisser une transition sur une coupe, ou sélectionnez un clip et cliquez pour l'ajouter à son début.",
+  "frameleaf_studio_add_panel_hint_transitions": "Faites glisser une transition sur une coupe entre deux clips, ou sélectionnez un clip et cliquez.",
   "frameleaf_studio_add_panel_shapes": "Formes",
   "frameleaf_studio_add_panel_titles": "Titres",
   "frameleaf_studio_add_panel_transitions": "Transitions",

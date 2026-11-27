@@ -20020,7 +20020,7 @@
   "frameleaf_studio_add_panel_hint_effects": "Arrastra un efecto a un clip, o selecciona un clip y haz clic.",
   "frameleaf_studio_add_panel_hint_shapes": "Las formas van en su propia pista, sobre tu vídeo.",
   "frameleaf_studio_add_panel_hint_titles": "Arrastra un título a la línea de tiempo o haz clic para añadirlo en el cabezal.",
-  "frameleaf_studio_add_panel_hint_transitions": "Arrastra una transición a un corte, o selecciona un clip y haz clic para añadirla al principio.",
+  "frameleaf_studio_add_panel_hint_transitions": "Arrastra una transición a un corte entre dos clips, o selecciona un clip y haz clic.",
   "frameleaf_studio_add_panel_shapes": "Formas",
   "frameleaf_studio_add_panel_titles": "Títulos",
   "frameleaf_studio_add_panel_transitions": "Transiciones",
