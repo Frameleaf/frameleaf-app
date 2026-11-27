@@ -290,7 +290,7 @@ describe('Library care landing (FL-366)', () => {
 
     const rows = async (group: string) => {
       const section = await screen.findByRole('region', { name: group });
-      return [...section.querySelectorAll('li strong')].map((name) => name.textContent?.trim());
+      return [...section.querySelectorAll(':scope li strong')].map((name) => name.textContent?.trim());
     };
     expect(await rows('Fix')).toEqual(['File checks', 'Things to fix', 'Fix locations', 'Place names']);
     expect(await rows('Tidy')).toEqual(['Duplicates', 'Tidy up', 'Album cleanup', 'Large files']);

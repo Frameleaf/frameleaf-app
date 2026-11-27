@@ -2,7 +2,7 @@ import { render, screen, waitFor } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import { addMessages } from 'svelte-i18n';
 import { SvelteURL } from 'svelte/reactivity';
-import { sdkMock } from '$lib/__mocks__/sdk.mock';
+import '$lib/__mocks__/sdk.mock';
 import UtilitiesArea from '$lib/components/frameleaf/settings/UtilitiesArea.svelte';
 import en from '../../../../../../i18n/en.json';
 
