@@ -17,6 +17,7 @@ import { AssetVisibility, Permission } from 'src/enum.js';
 import { TimeBucketOptions, TimelineOrderedPage } from 'src/repositories/asset.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { requireElevatedPermission } from 'src/utils/access.js';
+import { albumFolderView, resolveAlbumFolderChoices } from 'src/utils/album-folders.js';
 import { TimelineDatesToCheck } from 'src/utils/date-sanity.js';
 import {
   getOthersRulesQueryOptions,
@@ -40,7 +41,7 @@ export class TimelineService extends BaseService {
     }
     await this.timeBucketChecks(auth, dto);
     const { pageSize, locateAssetId, sort, ...bucketDto } = dto;
-    const timeBucketOptions = this.buildTimeBucketOptions(auth, bucketDto);
+    const timeBucketOptions = await this.buildTimeBucketOptions(auth, bucketDto);
     return pageSize === undefined
       ? this.assetRepository.getTimeBuckets(timeBucketOptions, auth)
       : this.assetRepository.getTimeBuckets(timeBucketOptions, auth, {
@@ -57,7 +58,7 @@ export class TimelineService extends BaseService {
     if (membershipAlbumId) {
       await this.requireAccess({ auth, permission: Permission.AlbumRead, ids: [membershipAlbumId] });
     }
-    const timeBucketOptions = this.buildTimeBucketOptions(auth, bucketDto);
+    const timeBucketOptions = await this.buildTimeBucketOptions(auth, bucketDto);
     const bucket =
       take === undefined
         ? await this.assetRepository.getTimeBucket(dto.timeBucket, timeBucketOptions, auth)
@@ -112,7 +113,7 @@ export class TimelineService extends BaseService {
       throw new BadRequestException('This link does not allow sorting by file name or rating');
     }
     await this.timeBucketChecks(auth, bucketDto);
-    const timeBucketOptions = this.buildTimeBucketOptions(auth, bucketDto);
+    const timeBucketOptions = await this.buildTimeBucketOptions(auth, bucketDto);
     const page = await this.assetRepository.getTimelineOrdered(timeBucketOptions, auth, {
       sort,
       skip,
@@ -129,7 +130,7 @@ export class TimelineService extends BaseService {
   async getTimelineHighlights(auth: AuthDto, dto: TimelineHighlightsDto): Promise<TimelineHighlightResponseDto[]> {
     const { grouping, highlightCount, ...bucketDto } = dto;
     await this.timeBucketChecks(auth, bucketDto);
-    const timeBucketOptions = this.buildTimeBucketOptions(auth, bucketDto);
+    const timeBucketOptions = await this.buildTimeBucketOptions(auth, bucketDto);
     return this.assetRepository.getTimelineHighlights(timeBucketOptions, auth, {
       grouping,
       highlightCount: grouping === 'year' ? 0 : (highlightCount ?? TIMELINE_HIGHLIGHT_DEFAULT),
@@ -145,7 +146,7 @@ export class TimelineService extends BaseService {
   async getDatesToCheck(auth: AuthDto, dto: TimelineDatesToCheckDto): Promise<TimelineDatesToCheckResponseDto> {
     await this.timeBucketChecks(auth, dto);
     const { pageSize, ...bucketDto } = dto;
-    const options = this.buildTimeBucketOptions(auth, { ...bucketDto, datesToCheck: TimelineDatesToCheck.Only });
+    const options = await this.buildTimeBucketOptions(auth, { ...bucketDto, datesToCheck: TimelineDatesToCheck.Only });
     // FL-1452: with pageSize, the pages are the buckets: one read gives the counts and where to read them
     const buckets =
       pageSize === undefined
@@ -160,8 +161,9 @@ export class TimelineService extends BaseService {
     };
   }
 
-  private buildTimeBucketOptions(auth: AuthDto, dto: TimeBucketDto): TimeBucketOptions {
-    const { userId, suppressedOnly, lockReason, bestPhotos, ...options } = dto;
+  private async buildTimeBucketOptions(auth: AuthDto, dto: TimeBucketDto): Promise<TimeBucketOptions> {
+    const { userId, suppressedOnly, lockReason, bestPhotos, albumFolder, ...options } = dto;
+    const albumView = await this.albumFolderViewFor(dto.albumId, albumFolder);
     let userIds: string[] | undefined;
 
     // FL-326 (spec §4.8): a timeline holds only its owner's rows; what partners share arrives as copies
@@ -184,6 +186,7 @@ export class TimelineService extends BaseService {
       ...((dto.albumId || dto.personId || filterNamesPeople(dto.filter) || dto.isFavorite === true) &&
         getOthersRulesQueryOptions(auth)),
       userIds,
+      ...(albumView && { albumView }),
       ...(lockReason && { lockReasons: [lockReason] }),
       // LIB-P3: the caller's own Best Photos, at the Best Photos page's threshold (checked in timeBucketChecks)
       ...(bestPhotos && { bestPhotos: { ownerId: auth.user.id, minScore: BEST_PHOTOS_MIN_SCORE } }),
@@ -193,6 +196,25 @@ export class TimelineService extends BaseService {
         !lockReason &&
         auth.suppressedContent && { lockedRuleMatches: auth.suppressedContent }),
     };
+  }
+
+  /** FL-1838: what an album made from a folder shows of itself, from its folder choices (or its library's). */
+  private async albumFolderViewFor(albumId: string | undefined, albumFolder: string | undefined) {
+    if (!albumId) {
+      if (albumFolder !== undefined) {
+        throw new BadRequestException('albumFolder requires albumId');
+      }
+      return;
+    }
+    const link = await this.albumRepository.getFolderAlbumLink(albumId);
+    if (!link) {
+      if (albumFolder !== undefined) {
+        throw new BadRequestException('This album was not made from a folder');
+      }
+      return;
+    }
+    const choices = resolveAlbumFolderChoices(link.displayChoices ?? link.libraryDisplay);
+    return albumFolderView(albumId, link.folderPath, choices, albumFolder);
   }
 
   private async timeBucketChecks(auth: AuthDto, dto: TimeBucketDto) {

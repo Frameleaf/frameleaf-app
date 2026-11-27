@@ -694,3 +694,133 @@ export const mapAlbum = (entity: MaybeDehydrated<MapAlbumDto>): AlbumResponseDto
     kind: asAlbumKind(entity.kind),
   };
 };
+
+/** FL-1838: how a folder inside an album made from a folder shows in it. */
+const AlbumFolderDisplaySchema = z
+  .enum(['with', 'section', 'album', 'hidden'])
+  .describe(
+    'with: its photos sit with the others; section: in a headed section of their own below them; album: as an album inside this one; hidden: not shown in the album (they stay in the library, in search and in the folder)',
+  )
+  .meta({ id: 'AlbumFolderDisplay' });
+const AlbumFolderVersionsSchema = z
+  .enum(['one', 'each'])
+  .describe(
+    'The same photo in more than one folder. one: the version from the folder first in `prefer` stands in front, the others behind it; each: every file shows',
+  )
+  .meta({ id: 'AlbumFolderVersions' });
+const FolderNameSchema = z.string().min(1).max(255);
+
+const AlbumFolderChoicesFields = {
+  folders: z
+    .record(FolderNameSchema, AlbumFolderDisplaySchema)
+    .refine((value) => Object.keys(value).length <= 100, 'At most 100 folders')
+    .describe(
+      'Per folder name (matched without regard to case). A folder left out uses the default: RAW hidden, Video and Videos in their own section, any other with the others',
+    ),
+  versions: AlbumFolderVersionsSchema,
+  prefer: z.array(FolderNameSchema).max(100).describe('The folders whose version stands in front, first wins'),
+};
+
+const AlbumFolderSchema = z
+  .object({
+    name: z.string().describe("The folder inside the album's folder"),
+    photos: z.int().min(0).describe('Photos in it'),
+    videos: z.int().min(0).describe('Videos in it'),
+    display: AlbumFolderDisplaySchema,
+  })
+  .meta({ id: 'AlbumFolderDto' });
+
+const AlbumFolderItemSchema = z
+  .object({
+    id: z.uuidv4().describe('Asset ID'),
+    isVideo: z.boolean(),
+  })
+  .meta({ id: 'AlbumFolderItemDto' });
+
+const AlbumFolderSectionSchema = z
+  .object({
+    name: z.string().describe('The folder'),
+    count: z.int().min(0).describe('Photos and videos in the section'),
+    items: z.array(AlbumFolderItemSchema).describe('The first 21 of them, oldest first'),
+  })
+  .meta({ id: 'AlbumFolderSectionDto' });
+
+export const ALBUM_FOLDER_SECTION_ITEMS = 21;
+
+const AlbumFoldersResponseSchema = z
+  .object({
+    libraryId: z.uuidv4().optional().describe("The library the album's folder is in; told only to its owner"),
+    libraryName: z.string().optional().describe("The library's name; told only to its owner"),
+    folderPath: z.string().optional().describe("The album's folder on the server; told only to the library's owner"),
+    canEdit: z.boolean().describe("Whether you may change these choices (the library's owner)"),
+    usesLibraryChoice: z.boolean().describe("The album has no choice of its own and follows its library's"),
+    folders: z
+      .array(AlbumFolderSchema)
+      .describe("The folders inside the album's folder, by name, each with how it shows"),
+    versions: AlbumFolderChoicesFields.versions,
+    prefer: AlbumFolderChoicesFields.prefer,
+    matchedByName: z.int().min(0).describe('Photos found in more than one file that matched by file name'),
+    matchedByTime: z
+      .int()
+      .min(0)
+      .describe('Photos found in more than one file that needed the capture time, for an edit saved under a new name'),
+    shownPhotos: z.int().min(0).describe('Photos the album shows with these choices'),
+    shownVideos: z.int().min(0).describe('Videos the album shows with these choices'),
+    sections: z
+      .array(AlbumFolderSectionSchema)
+      .describe('The folders shown in a section of their own, in folder order'),
+    albums: z
+      .array(
+        z
+          .object({
+            name: z.string(),
+            count: z.int().min(0),
+            coverAssetId: z.uuidv4().nullable(),
+          })
+          .meta({ id: 'AlbumFolderInsideDto' }),
+      )
+      .describe("The folders shown as albums inside this one; open one with the timeline's albumFolder"),
+    versionsChanged: z
+      .boolean()
+      .describe('The versions were worked out again just now, so a timeline read before this is out of date'),
+  })
+  .meta({ id: 'AlbumFoldersResponseDto' });
+
+const AlbumFoldersUpdateSchema = z
+  .object({
+    ...AlbumFolderChoicesFields,
+    applyToLibrary: z
+      .boolean()
+      .optional()
+      .describe(
+        "Use these for every album from the album's library: they become the library's choice, which this album then follows. Albums with a choice of their own keep it.",
+      ),
+  })
+  .meta({ id: 'AlbumFoldersUpdateDto' });
+
+const AlbumVersionsQuerySchema = z
+  .object({ assetId: z.uuidv4().describe('A photo in the album') })
+  .meta({ id: 'AlbumVersionsDto' });
+
+const AlbumVersionsResponseSchema = z
+  .object({
+    versions: z
+      .array(
+        z
+          .object({
+            id: z.uuidv4().describe('Asset ID'),
+            originalFileName: z.string(),
+            folder: z.string().describe("The folder inside the album's folder holding it ('' for the album's folder)"),
+            matchedBy: z.string().describe('name or time: how it was matched'),
+            isFront: z.boolean().describe('The version the album shows in front'),
+          })
+          .meta({ id: 'AlbumVersionDto' }),
+      )
+      .describe('The versions of the photo, the one in front first; empty when it has none'),
+  })
+  .meta({ id: 'AlbumVersionsResponseDto' });
+
+export class AlbumFoldersResponseDto extends createZodDto(AlbumFoldersResponseSchema) {}
+export class AlbumFoldersUpdateDto extends createZodDto(AlbumFoldersUpdateSchema) {}
+export class AlbumVersionsDto extends createZodDto(AlbumVersionsQuerySchema) {}
+export class AlbumVersionsResponseDto extends createZodDto(AlbumVersionsResponseSchema) {}

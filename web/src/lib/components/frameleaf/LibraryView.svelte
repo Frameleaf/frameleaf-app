@@ -250,6 +250,8 @@
      */
     sidePanelOpen?: boolean;
     empty?: Snippet;
+    /** FL-1838: drawn below the last photo, inside the scroll area. */
+    footer?: Snippet;
     /**
      * A public shared-link page (prototype `PublicViewer.jsx`): header, select bar and grid only. The
      * results toolbar (Timeline/Browse/Work, Filter) and the Work information panel are private-library
@@ -304,6 +306,7 @@
     infoPanel,
     sidePanelOpen = false,
     empty,
+    footer,
     publicView = false,
     statusBar = true,
     ranked = false,
@@ -2070,6 +2073,7 @@
           quickActions={quickActionsFor}
           timelineCaptions={gridLayout === 'timeline' && (captions.time || captions.names)}
           empty={emptyState}
+          {footer}
           onFixDates={canFixDates ? () => void fixDates() : undefined}
           {gutter}
           groupingInHeader={!publicView && !bare && mainWidth >= GROUPING_IN_TOOLBAR}

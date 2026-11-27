@@ -6,7 +6,7 @@
  * measures itself, so the same numbers give the same row: 1440px of window leaves 1212px, which
  * shows Add photos, Share, Slideshow and Comments.
  */
-export type FoldableAction = 'matching' | 'map' | 'slideshow' | 'movie' | 'download' | 'activity';
+export type FoldableAction = 'matching' | 'map' | 'slideshow' | 'movie' | 'download' | 'activity' | 'folders';
 
 /** Phones, and Boards collections, keep every secondary action in the menu. */
 export const EVERY_FOLDABLE_ACTION: readonly FoldableAction[] = [
@@ -16,6 +16,8 @@ export const EVERY_FOLDABLE_ACTION: readonly FoldableAction[] = [
   'movie',
   'download',
   'activity',
+  // FL-1838: "Folders in this album", on an album made from a folder; it folds only with everything else
+  'folders',
 ];
 
 const WIDTH_FOLDS: readonly (readonly [number, readonly FoldableAction[]])[] = [

@@ -898,4 +898,45 @@ describe(TimelineService.name, () => {
       expect(mocks.asset.getTimeBuckets).not.toHaveBeenCalled();
     });
   });
+
+  describe('albums made from a folder (FL-1838)', () => {
+    const albumId = '00000000-0000-4000-8000-0000000000a1';
+
+    it("shows the album's main photos as its folder choices say", async () => {
+      mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set([albumId]));
+      mocks.album.getFolderAlbumLink.mockResolvedValue({
+        id: 'link',
+        albumId,
+        libraryId: 'library',
+        folderPath: '/photos/Event',
+        displayChoices: { folders: { Edits: 'album' }, versions: 'one', prefer: ['Edits'] },
+        libraryName: 'Family photos',
+        libraryOwnerId: authStub.admin.user.id,
+        libraryDisplay: null,
+      });
+      mocks.asset.getTimeBuckets.mockResolvedValue([]);
+      await sut.getTimeBuckets(authStub.admin, { albumId });
+      const [options] = mocks.asset.getTimeBuckets.mock.calls[0];
+      expect(options.albumView).toEqual({
+        albumId,
+        folderPath: '/photos/Event',
+        exclude: expect.arrayContaining(['raw', 'video', 'videos', 'edits']),
+        oneVersion: true,
+      });
+    });
+
+    it('needs an album for albumFolder', async () => {
+      await expect(sut.getTimeBuckets(authStub.admin, { albumFolder: 'RAW' })).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+    });
+
+    it('refuses albumFolder for an album not made from a folder', async () => {
+      mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set([albumId]));
+      mocks.album.getFolderAlbumLink.mockResolvedValue(undefined);
+      await expect(sut.getTimeBuckets(authStub.admin, { albumId, albumFolder: 'RAW' })).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+    });
+  });
 });

@@ -43,6 +43,7 @@ import { ActivityTable } from 'src/schema/tables/activity.table.js';
 import { AdminAuditEventTable } from 'src/schema/tables/admin-audit-event.table.js';
 import { AlbumAssetAuditTable } from 'src/schema/tables/album-asset-audit.table.js';
 import { AlbumAssetTable } from 'src/schema/tables/album-asset.table.js';
+import { AlbumFolderVersionTable } from 'src/schema/tables/album-folder-version.table.js';
 import { AlbumAuditTable } from 'src/schema/tables/album-audit.table.js';
 import { AlbumBookmarkTable } from 'src/schema/tables/album-bookmark.table.js';
 import { AlbumChangeRunTable } from 'src/schema/tables/album-change-run.table.js';
@@ -549,6 +550,7 @@ export class ImmichDatabase {
     LibraryTable,
     LibraryFolderAlbumTable,
     LibraryFolderAlbumAssetTable,
+    AlbumFolderVersionTable,
     AssetScanCropTable,
     AssetPrintBackTable,
     HouseholdLinkTable,
@@ -902,6 +904,7 @@ export interface DB extends QueueDatabase {
   library: LibraryTable;
   library_folder_album: LibraryFolderAlbumTable;
   library_folder_album_asset: LibraryFolderAlbumAssetTable;
+  album_folder_version: AlbumFolderVersionTable;
   asset_scan_crop: AssetScanCropTable;
   asset_print_back: AssetPrintBackTable;
 

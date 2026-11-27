@@ -19,6 +19,7 @@ import {
   planFolderAlbums,
   resolveFolderAlbumOptions,
 } from 'src/utils/folder-albums.js';
+import { refreshAlbumFolderVersions, resolveAlbumFolderChoices } from 'src/utils/album-folders.js';
 import { isSameOrInside, normalizeImportPath } from 'src/utils/library-paths.js';
 import { getPreferences } from 'src/utils/preferences.js';
 
@@ -584,6 +585,14 @@ export class FolderAlbumService extends BaseService {
     }
     await this.albumRepository.updateThumbnails(albumIds);
     await this.albumRepository.updateNewestCovers(albumIds);
+    // FL-1838: the same photo in more than one of an album's folders, worked out again for the photos that came in
+    for (const albumId of albumIds) {
+      const link = await this.albumRepository.getFolderAlbumLink(albumId);
+      if (link) {
+        const choices = resolveAlbumFolderChoices(link.displayChoices ?? link.libraryDisplay);
+        await refreshAlbumFolderVersions(this.albumRepository, albumId, link.folderPath, choices);
+      }
+    }
     // FL-1837: an album list that read these albums while the membership write was running stored them as empty, and
     // that write's change time (its start) can be too old for the list to notice. Their numbers are read again.
     await this.albumSummaryRepository.deleteByAlbumIds(albumIds);

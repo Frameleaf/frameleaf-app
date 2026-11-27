@@ -4211,4 +4211,146 @@ describe(AlbumService.name, () => {
       );
     });
   });
+
+  describe('folders in this album (FL-1838)', () => {
+    const albumId = newUuid();
+    const libraryId = newUuid();
+    const link = (overrides: Record<string, unknown> = {}) => ({
+      id: newUuid(),
+      albumId,
+      libraryId,
+      folderPath: '/photos/2026-11-19 - Event',
+      displayChoices: null,
+      libraryName: 'Family photos',
+      libraryOwnerId: authStub.admin.user.id,
+      libraryDisplay: null,
+      ...overrides,
+    });
+    const items = [
+      {
+        id: 'raw-1',
+        folder: 'RAW',
+        originalFileName: 'IMG_1.CR3',
+        takenAt: new Date('2026-11-19T10:00:00Z'),
+        isVideo: false,
+      },
+      {
+        id: 'orig-1',
+        folder: 'Original',
+        originalFileName: 'IMG_1.JPG',
+        takenAt: new Date('2026-11-19T10:00:00Z'),
+        isVideo: false,
+      },
+      {
+        id: 'orig-2',
+        folder: 'Original',
+        originalFileName: 'IMG_2.JPG',
+        takenAt: new Date('2026-11-19T11:00:00Z'),
+        isVideo: false,
+      },
+      {
+        id: 'video-1',
+        folder: 'Video',
+        originalFileName: 'clip.MOV',
+        takenAt: new Date('2026-11-19T12:00:00Z'),
+        isVideo: true,
+      },
+    ];
+
+    beforeEach(() => {
+      mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set([albumId]));
+      mocks.album.getFolderAlbumItems.mockResolvedValue(items);
+      mocks.album.getFolderVersionRows.mockResolvedValue([]);
+    });
+
+    it('lists the folders with the photographer defaults and works the versions out', async () => {
+      mocks.album.getFolderAlbumLink.mockResolvedValue(link());
+      const result = await sut.getFolders(authStub.admin, albumId);
+      expect(result.folders).toEqual([
+        { name: 'Original', photos: 2, videos: 0, display: 'with' },
+        { name: 'RAW', photos: 1, videos: 0, display: 'hidden' },
+        { name: 'Video', photos: 0, videos: 1, display: 'section' },
+      ]);
+      expect(result).toMatchObject({
+        canEdit: true,
+        usesLibraryChoice: true,
+        libraryName: 'Family photos',
+        matchedByName: 1,
+        matchedByTime: 0,
+        shownPhotos: 2,
+        shownVideos: 1,
+        versionsChanged: true,
+        sections: [{ name: 'Video', count: 1, items: [{ id: 'video-1', isVideo: true }] }],
+        albums: [],
+      });
+      expect(mocks.album.replaceFolderVersions).toHaveBeenCalledWith(albumId, [
+        { assetId: 'raw-1', frontAssetId: 'orig-1', matchedBy: 'name' },
+        { assetId: 'orig-1', frontAssetId: 'orig-1', matchedBy: 'name' },
+      ]);
+    });
+
+    it('does not write versions that have not changed', async () => {
+      mocks.album.getFolderAlbumLink.mockResolvedValue(link());
+      mocks.album.getFolderVersionRows.mockResolvedValue([
+        { assetId: 'orig-1', frontAssetId: 'orig-1', matchedBy: 'name' },
+        { assetId: 'raw-1', frontAssetId: 'orig-1', matchedBy: 'name' },
+      ]);
+      await expect(sut.getFolders(authStub.admin, albumId)).resolves.toMatchObject({ versionsChanged: false });
+      expect(mocks.album.replaceFolderVersions).not.toHaveBeenCalled();
+    });
+
+    it('tells someone else the choices but not the folder', async () => {
+      mocks.album.getFolderAlbumLink.mockResolvedValue(link({ libraryOwnerId: newUuid() }));
+      const result = await sut.getFolders(authStub.admin, albumId);
+      expect(result.canEdit).toBe(false);
+      expect(result.folderPath).toBeUndefined();
+      expect(result.libraryName).toBeUndefined();
+    });
+
+    it('refuses an album not made from a folder', async () => {
+      mocks.album.getFolderAlbumLink.mockResolvedValue(undefined);
+      await expect(sut.getFolders(authStub.admin, albumId)).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it("saves the album's own choice", async () => {
+      const saved = link();
+      mocks.album.getFolderAlbumLink.mockResolvedValue(saved);
+      await sut.updateFolders(authStub.admin, albumId, {
+        folders: { RAW: 'with' },
+        versions: 'each',
+        prefer: ['Original'],
+      });
+      expect(mocks.album.setFolderAlbumChoices).toHaveBeenCalledWith(saved.id, {
+        folders: { RAW: 'with' },
+        versions: 'each',
+        prefer: ['Original'],
+      });
+      expect(mocks.album.setLibraryFolderChoices).not.toHaveBeenCalled();
+    });
+
+    it("makes them the library's choice for every album without one of its own", async () => {
+      const saved = link();
+      const otherAlbumId = newUuid();
+      mocks.album.getFolderAlbumLink.mockResolvedValue(saved);
+      mocks.album.getFolderAlbumsFollowingLibrary.mockResolvedValue([
+        { albumId, folderPath: saved.folderPath },
+        { albumId: otherAlbumId, folderPath: '/photos/2026-11-20 - Other' },
+      ]);
+      const choices = { folders: { Edits: 'section' as const }, versions: 'one' as const, prefer: ['Edits'] };
+      await sut.updateFolders(authStub.admin, albumId, { ...choices, applyToLibrary: true });
+      expect(mocks.album.setLibraryFolderChoices).toHaveBeenCalledWith(libraryId, choices);
+      expect(mocks.album.setFolderAlbumChoices).toHaveBeenCalledWith(saved.id, null);
+      expect(mocks.album.getFolderAlbumItems).toHaveBeenCalledWith(otherAlbumId, '/photos/2026-11-20 - Other');
+      expect(mocks.event.emit).toHaveBeenCalledWith('AlbumUpdate', expect.objectContaining({ id: otherAlbumId }));
+    });
+
+    it("lets only the library's owner change them", async () => {
+      mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set([albumId]));
+      mocks.album.getFolderAlbumLink.mockResolvedValue(link({ libraryOwnerId: newUuid() }));
+      await expect(
+        sut.updateFolders(authStub.admin, albumId, { folders: {}, versions: 'one', prefer: [] }),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(mocks.album.setFolderAlbumChoices).not.toHaveBeenCalled();
+    });
+  });
 });
