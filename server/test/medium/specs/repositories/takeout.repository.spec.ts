@@ -495,6 +495,17 @@ describe(TakeoutRepository.name, () => {
     await expect(sut.setAlbumFor(user.id, '', 'Trip', replacement.id)).resolves.toBeNull();
   });
 
+  it('tells a run racing a move to the trash to drop the album it made (FL-1840)', async () => {
+    const { ctx, sut } = setup();
+    const { user } = await ctx.newUser();
+    const { album } = await ctx.newAlbum({ ownerId: user.id, albumName: 'Trip' });
+    const { album: replacement } = await ctx.newAlbum({ ownerId: user.id, albumName: 'Trip' });
+    await sut.setAlbumFor(user.id, '', 'Trip', album.id);
+    await ctx.database.updateTable('album').set({ deletedAt: new Date() }).where('id', '=', album.id).execute();
+
+    await expect(sut.setAlbumFor(user.id, '', 'Trip', replacement.id)).resolves.toBeNull();
+  });
+
   it('keeps each source’s albums apart: a Dropbox "Trips" and a Drive "Trips" (FL-1840)', async () => {
     const { ctx, sut } = setup();
     const { user } = await ctx.newUser();

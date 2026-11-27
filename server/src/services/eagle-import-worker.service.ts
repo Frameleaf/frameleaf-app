@@ -252,7 +252,7 @@ export class EagleImportWorkerService {
     const rootAlbumId = target.mode === 'inside' && target.inside !== 'new' ? target.inside : row.rootAlbumId;
     // FL-1840: a resumed run checks the albums it made before. One the person deleted meanwhile stays gone: its
     // folder keeps an empty id, so it is neither made again nor filed into.
-    const live = await this.repository.liveAlbumIds(row.ownerId, [
+    const live = await this.repository.liveAlbumIds([
       ...new Set([...Object.values(albums).filter(Boolean), ...(rootAlbumId ? [rootAlbumId] : [])]),
     ]);
     for (const [folderId, albumId] of Object.entries(albums)) {

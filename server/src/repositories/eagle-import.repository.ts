@@ -1,7 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { Insertable, Kysely, Updateable, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
-import { AlbumUserRole } from 'src/enum.js';
 import { DB } from 'src/schema/index.js';
 import { EagleImportTable } from 'src/schema/tables/eagle-import.table.js';
 
@@ -173,19 +172,16 @@ export class EagleImportRepository {
   }
 
   /** Writes what the run has done so far, while it still holds the lease. */
-  /** FL-1840: which of these albums are still the owner's and not deleted. */
-  async liveAlbumIds(ownerId: string, albumIds: string[]): Promise<Set<string>> {
+  /**
+   * FL-1840: which of these albums are still there and not deleted. Only deletion counts: the album the import goes
+   * inside may be one shared with the person, and adding to it is checked when the import adds.
+   */
+  async liveAlbumIds(albumIds: string[]): Promise<Set<string>> {
     if (albumIds.length === 0) {
       return new Set();
     }
     const rows = await this.db
       .selectFrom('album')
-      .innerJoin('album_user', (join) =>
-        join
-          .onRef('album_user.albumId', '=', 'album.id')
-          .on('album_user.userId', '=', ownerId)
-          .on('album_user.role', '=', AlbumUserRole.Owner),
-      )
       .select('album.id')
       .where('album.id', 'in', albumIds)
       .where('album.deletedAt', 'is', null)

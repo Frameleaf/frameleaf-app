@@ -1100,10 +1100,13 @@ export class TakeoutRepository {
       if (rows[0]) {
         return rows[0].albumId;
       }
+      // the album recorded first; null when the person removed it (deleted, or put in the trash) meanwhile
       const { rows: existing } = await sql<{
         albumId: string | null;
       }>`
-        select "albumId" from takeout_album where "ownerId" = ${ownerId}::uuid and source = ${source} and folder = ${folder}
+        select case when album."deletedAt" is null then mapping."albumId" end as "albumId"
+        from takeout_album mapping left join album on album.id = mapping."albumId"
+        where mapping."ownerId" = ${ownerId}::uuid and mapping.source = ${source} and mapping.folder = ${folder}
       `.execute(tx);
       return existing.length > 0 ? existing[0].albumId : albumId;
     });

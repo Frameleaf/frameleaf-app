@@ -8,8 +8,8 @@ import {
   Unique,
 } from '@frameleaf/sql-tools';
 import type { Generated, Timestamp } from '@frameleaf/sql-tools';
-import { PrimaryGeneratedUuidV7Column } from 'src/decorators.js';
 import type { Int8Writable } from 'src/schema/int8-writable.js';
+import { PrimaryGeneratedUuidV7Column } from 'src/decorators.js';
 import { AlbumTable } from 'src/schema/tables/album.table.js';
 import { DesktopDeviceTable } from 'src/schema/tables/desktop-device.table.js';
 import { UserTable } from 'src/schema/tables/user.table.js';

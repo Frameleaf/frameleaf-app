@@ -42,13 +42,13 @@ export interface MergeAlbumRow {
  */
 type ImportAlbumTable =
   'media_creator' | 'media_subscription' | 'media_import' | 'photo_source_album' | 'preservation_album';
-const IMPORT_ALBUM_TABLES: ImportAlbumTable[] = [
+const IMPORT_ALBUM_TABLES = new Set<ImportAlbumTable>([
   'media_creator',
   'media_subscription',
   'media_import',
   'photo_source_album',
   'preservation_album',
-];
+]);
 
 /** Lists a person picks albums for: what they chose must not silently drop out when an album goes. */
 type ChoiceTable = 'cloud_backup_selection' | 'speech_settings';
@@ -290,38 +290,41 @@ export class AlbumMergeRepository {
       SELECT EXISTS (
         SELECT 1 FROM eagle_import
         WHERE status IN ('running', 'stopping') AND "leaseExpiresAt" > now()
-          AND ("rootAlbumId" = ${loserId}::uuid
+          AND ("rootAlbumId" = ${loserId}::uuid OR target->>'inside' = ${loserId}::text
             OR EXISTS (SELECT 1 FROM jsonb_each_text(albums) entry WHERE entry.value = ${loserId}::text))
       ) AS busy
     `.execute(this.db);
     if (busy[0]?.busy) {
       throw new ConflictException('An Eagle import is adding to this album. Try again when it has finished.');
     }
-    const { rows } = await sql<{ id: string; folders: string[] | null; root: boolean }>`
+    const { rows } = await sql<{ id: string; folders: string[] | null; root: boolean; inside: boolean }>`
       WITH found AS (
-        SELECT id, "rootAlbumId" = ${loserId}::uuid AS root,
+        SELECT id, "rootAlbumId" = ${loserId}::uuid AS root, target->>'inside' = ${loserId}::text AS inside,
           (SELECT array_agg(entry.key ORDER BY entry.key) FROM jsonb_each_text(albums) entry WHERE entry.value = ${loserId}::text)
             AS folders
         FROM eagle_import
-        WHERE "rootAlbumId" = ${loserId}::uuid
+        WHERE "rootAlbumId" = ${loserId}::uuid OR target->>'inside' = ${loserId}::text
           OR EXISTS (SELECT 1 FROM jsonb_each_text(albums) entry WHERE entry.value = ${loserId}::text)
         FOR UPDATE
       ), moved AS (
         UPDATE eagle_import SET
           "rootAlbumId" = CASE WHEN found.root THEN ${winnerId}::uuid ELSE eagle_import."rootAlbumId" END,
+          target = CASE WHEN found.inside THEN jsonb_set(eagle_import.target, '{inside}', to_jsonb(${winnerId}::text))
+            ELSE eagle_import.target END,
           albums = CASE WHEN found.folders IS NULL THEN eagle_import.albums ELSE (
             SELECT jsonb_object_agg(entry.key, CASE WHEN entry.value = ${loserId}::text THEN ${winnerId}::text ELSE entry.value END)
             FROM jsonb_each_text(eagle_import.albums) entry) END
         FROM found WHERE eagle_import.id = found.id
         RETURNING eagle_import.id
       )
-      SELECT found.id, found.folders, coalesce(found.root, false) AS root FROM found JOIN moved ON moved.id = found.id
+      SELECT found.id, found.folders, coalesce(found.root, false) AS root, coalesce(found.inside, false) AS inside
+      FROM found JOIN moved ON moved.id = found.id
     `.execute(this.db);
-    return rows.map(({ id, folders, root }) => ({
+    return rows.map(({ id, folders, root, inside }) => ({
       kind: AlbumChangeKind.EagleAlbumMoved,
       albumId: winnerId,
       before: { albumId: loserId },
-      after: { id, folders: folders ?? [], root },
+      after: { id, folders: folders ?? [], root, inside },
     }));
   }
 
@@ -531,7 +534,7 @@ export class AlbumMergeRepository {
     for (const change of changes) {
       const { table, albumId } = change.before as { table: ImportAlbumTable; albumId: string };
       const { id } = change.after as { id: string };
-      if (!change.albumId || !IMPORT_ALBUM_TABLES.includes(table)) {
+      if (!change.albumId || !IMPORT_ALBUM_TABLES.has(table)) {
         continue;
       }
       const { numAffectedRows } = await sql`
@@ -551,11 +554,18 @@ export class AlbumMergeRepository {
         continue;
       }
       const { albumId } = change.before as { albumId: string };
-      const { id, folders, root } = change.after as { id: string; folders: string[]; root: boolean };
+      const { id, folders, root, inside } = change.after as {
+        id: string;
+        folders: string[];
+        root: boolean;
+        inside?: boolean;
+      };
       const { numAffectedRows } = await sql`
         UPDATE eagle_import SET
           "rootAlbumId" = CASE WHEN ${root} AND "rootAlbumId" = ${change.albumId}::uuid THEN ${albumId}::uuid
             ELSE "rootAlbumId" END,
+          target = CASE WHEN ${inside ?? false} AND target->>'inside' = ${change.albumId}::text
+            THEN jsonb_set(target, '{inside}', to_jsonb(${albumId}::text)) ELSE target END,
           albums = coalesce((
             SELECT jsonb_object_agg(entry.key,
               CASE WHEN entry.key = ANY(${folders}::text[]) AND entry.value = ${change.albumId}::text THEN ${albumId}::text

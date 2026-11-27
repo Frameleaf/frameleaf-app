@@ -288,7 +288,7 @@ describe('FL-653 Eagle import from a server folder', () => {
         release: vitest.fn().mockResolvedValue(undefined),
         renew: vitest.fn(() => Promise.resolve(status)),
         addOutcome: vitest.fn().mockResolvedValue(true),
-        liveAlbumIds: vitest.fn((_owner: string, ids: string[]) => Promise.resolve(new Set(ids))),
+        liveAlbumIds: vitest.fn((ids: string[]) => Promise.resolve(new Set(ids))),
       });
       let album = 0;
       albums = {
@@ -445,14 +445,14 @@ describe('FL-653 Eagle import from a server folder', () => {
     });
 
     it('leaves a collection the person deleted while paused gone, and files nothing into it (FL-1840)', async () => {
-      repository.liveAlbumIds.mockImplementation((_owner: string, ids: string[]) =>
+      repository.liveAlbumIds.mockImplementation((ids: string[]) =>
         Promise.resolve(new Set(ids.filter((id) => id !== 'a3'))),
       );
       await worker.run(
         row({ fingerprint, rootAlbumId: 'album-root', albums: { F1: 'a1', F2: 'a2', F3: 'a3' }, tagIds: {} }) as never,
       );
 
-      expect(repository.liveAlbumIds).toHaveBeenCalledWith(expect.any(String), ['a1', 'a2', 'a3', 'album-root']);
+      expect(repository.liveAlbumIds).toHaveBeenCalledWith(['a1', 'a2', 'a3', 'album-root']);
       expect(albums.create).not.toHaveBeenCalled();
       expect(albums.addAssetsToAlbums).toHaveBeenCalledWith(expect.anything(), {
         albumIds: ['a2'],

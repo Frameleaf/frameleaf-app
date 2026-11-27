@@ -5,8 +5,8 @@ import { Kysely, sql } from 'kysely';
  *
  * - `takeout_album` keeps its row when the album is deleted (`albumId` becomes null: removed on purpose) and is keyed
  *   by `source` as well: '' for a Google Photos export, else the import connection's id. A mapping a connection's
- *   import already used is copied to that connection, so nothing an earlier import made is made again; the '' row
- *   stays only where a Google Photos export used the folder too.
+ *   import already used is copied to that connection, so nothing an earlier import made is made again; the '' row is
+ *   kept for a later Google Photos export.
  * - `photo_source_album`: the album a catalog collection became, by the catalog's own collection id.
  * - `preservation_album`: the album a package's album became, so a merge moves where a later restore goes.
  * - A phone album link outlives its album: an album that is gone means the link stays removed.
@@ -31,17 +31,6 @@ export async function up(db: Kysely<any>): Promise<void> {
     WHERE mapping.source = ''
       AND EXISTS (SELECT 1 FROM takeout_file file WHERE file."importId" = run.id AND file.folder = mapping.folder)
     ON CONFLICT DO NOTHING
-  `.execute(db);
-  await sql`
-    DELETE FROM takeout_album mapping
-    WHERE mapping.source = ''
-      AND EXISTS (
-        SELECT 1 FROM takeout_album copied
-        WHERE copied."ownerId" = mapping."ownerId" AND copied.folder = mapping.folder AND copied.source <> '')
-      AND NOT EXISTS (
-        SELECT 1 FROM takeout_import run
-        WHERE run."ownerId" = mapping."ownerId" AND run."connectionId" IS NULL
-          AND EXISTS (SELECT 1 FROM takeout_file file WHERE file."importId" = run.id AND file.folder = mapping.folder))
   `.execute(db);
 
   await sql`

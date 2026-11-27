@@ -660,7 +660,7 @@ describe(AlbumMergeService.name, () => {
           libraryPath: '/import/Design.library',
           libraryName: 'Design',
           fingerprint: 'f',
-          target: sql<never>`'{"mode":"top"}'::text::jsonb`,
+          target: sql<never>`${JSON.stringify({ mode: 'inside', inside: loser.album.id })}::text::jsonb`,
           albums: sql<never>`${JSON.stringify({ F1: loser.album.id, F2: other.id })}::text::jsonb`,
         })
         .returning('id')
@@ -681,13 +681,11 @@ describe(AlbumMergeService.name, () => {
             .where('id', '=', creatorId)
             .executeTakeFirstOrThrow()
         ).albumId,
-        eagle: (
-          await ctx.database
-            .selectFrom('eagle_import')
-            .select('albums')
-            .where('id', '=', eagleId)
-            .executeTakeFirstOrThrow()
-        ).albums,
+        eagle: await ctx.database
+          .selectFrom('eagle_import')
+          .select(['albums', 'target'])
+          .where('id', '=', eagleId)
+          .executeTakeFirstOrThrow(),
         catalog: (
           await ctx.database
             .selectFrom('photo_source_album')
@@ -707,7 +705,7 @@ describe(AlbumMergeService.name, () => {
       await sut.merge(auth, winner.album.id, { otherId: loser.album.id });
       await expect(read()).resolves.toEqual({
         creator: winner.album.id,
-        eagle: { F1: winner.album.id, F2: other.id },
+        eagle: { albums: { F1: winner.album.id, F2: other.id }, target: { mode: 'inside', inside: winner.album.id } },
         catalog: winner.album.id,
         preservation: winner.album.id,
       });
@@ -715,7 +713,7 @@ describe(AlbumMergeService.name, () => {
       await runs.undoLatest(auth);
       await expect(read()).resolves.toEqual({
         creator: loser.album.id,
-        eagle: { F1: loser.album.id, F2: other.id },
+        eagle: { albums: { F1: loser.album.id, F2: other.id }, target: { mode: 'inside', inside: loser.album.id } },
         catalog: loser.album.id,
         preservation: loser.album.id,
       });
