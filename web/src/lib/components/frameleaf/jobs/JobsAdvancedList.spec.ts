@@ -109,7 +109,7 @@ describe('Needs a look (FL-1486)', () => {
     }),
   ];
 
-  it('shows the three biggest reasons, most photos first, and folds the rest', async () => {
+  it('shows the four biggest reasons, most photos first, and folds the rest', async () => {
     sdkMock.getQueueOverview.mockResolvedValue(overview(seven));
     show([row(QueueName.FaceDetection, { failed: 3 }), row(QueueName.FacialRecognition, { failed: 9 })]);
 
@@ -119,6 +119,7 @@ describe('Needs a look (FL-1486)', () => {
       expect.stringContaining('The face and search helper didn’t answer'),
       expect.stringContaining('The original file is missing'),
       expect.stringContaining('It took too long'),
+      expect.stringContaining('The file is damaged'),
     ]);
     expect(problemRow('The face and search helper').getByText('80,909 photos')).toBeInTheDocument();
     expect(problemRow('It took too long').getByText('7,348 videos')).toBeInTheDocument();
@@ -128,14 +129,14 @@ describe('Needs a look (FL-1486)', () => {
     // the summary counts everything that needs a look, folded or not
     expect(screen.getByText('118,032 need a look')).toBeInTheDocument();
 
-    const fold = screen.getByRole('button', { name: '4 more reasons, 6,275 items' });
+    const fold = screen.getByRole('button', { name: '3 more reasons, 1,019 items' });
     expect(fold).toHaveAttribute('aria-expanded', 'false');
     await fireEvent.click(fold);
     expect(screen.getAllByRole('heading', { level: 4 })).toHaveLength(7);
     // files that can't be opened are files, not photos
     expect(problemRow('A kind of file').getByText('428 files')).toBeInTheDocument();
-    await fireEvent.click(screen.getByRole('button', { name: 'Show the three biggest only' }));
-    expect(screen.getAllByRole('heading', { level: 4 })).toHaveLength(3);
+    await fireEvent.click(screen.getByRole('button', { name: 'Show the four biggest only' }));
+    expect(screen.getAllByRole('heading', { level: 4 })).toHaveLength(4);
   });
 
   it('gives each reason its one action, the first one primary', async () => {
@@ -152,18 +153,37 @@ describe('Needs a look (FL-1486)', () => {
     for (const heading of ['The original file is missing', 'The file is damaged']) {
       expect(problemRow(heading).getByRole('link', { name: 'Open Library care' })).toHaveAttribute('href', '/care');
     }
-    await fireEvent.click(action('Something else', 'See the jobs'));
+    // FL-1785: a problem the server did not recognise can be tried again; its jobs are a click away
+    expect(action('A problem Frameleaf didn’t recognise', 'Try again')).toBeInTheDocument();
+    await fireEvent.click(action('A problem Frameleaf didn’t recognise', 'See the jobs'));
     expect(onOpen).toHaveBeenCalledWith(QueueName.BackgroundTask, 'failed');
     expect(sdkMock.actOnQueueProblem).not.toHaveBeenCalled();
   });
 
-  it('shows the server’s words on request, and at once for a problem it did not recognise', async () => {
+  it('says what each reason means for the photos (FL-1785)', async () => {
+    sdkMock.getQueueOverview.mockResolvedValue(overview(seven));
+    show([row(QueueName.FaceDetection, { failed: 3 })]);
+    await screen.findByText('The face and search helper didn’t answer');
+    expect(
+      problemRow('The face and search helper').getByText(
+        'Your photos are safe. Only their face and search results are waiting.',
+      ),
+    ).toBeInTheDocument();
+    // a missing file is not reassured away: it says what is affected
+    const missing = problemRow('The original file is missing').getByText(/can’t be opened until their files are found/);
+    expect(missing.closest('p')).toHaveClass('ja-risk');
+    expect(screen.getByText(/A job that fails never changes or deletes an original/)).toBeInTheDocument();
+  });
+
+  it('shows the server’s words on request, for every reason', async () => {
     sdkMock.getQueueOverview.mockResolvedValue(overview([seven[0], seven[6]]));
     show([row(QueueName.FaceDetection, { failed: 3 })]);
-    await screen.findByText('Something else');
+    await screen.findByText('A problem Frameleaf didn’t recognise');
 
+    expect(screen.queryByText(/duplicate key value/)).toBeNull();
+    await fireEvent.click(problemRow('A problem Frameleaf').getByRole('button', { name: 'What the server said' }));
     expect(screen.getByText(/duplicate key value/)).toBeInTheDocument();
-    expect(problemRow('Something else').queryByRole('button', { name: /What the server said/ })).toBeNull();
+    await fireEvent.click(screen.getByRole('button', { name: 'Hide what the server said' }));
     expect(screen.queryByText(/status 503/)).toBeNull();
     const toggle = problemRow('The face and search helper').getByRole('button', { name: 'What the server said' });
     await fireEvent.click(toggle);
@@ -226,7 +246,8 @@ describe('Needs a look (FL-1486)', () => {
   it('says nothing has failed when nothing has', async () => {
     show([row(QueueName.Library)]);
     expect(await screen.findByText('Nothing has failed.')).toBeInTheDocument();
-    expect(screen.getByText('0 need a look')).toBeInTheDocument();
+    expect(screen.getByText('All caught up.')).toBeInTheDocument();
+    expect(screen.queryByText(/need a look/)).toBeNull();
     expect(screen.queryByRole('heading', { level: 4 })).toBeNull();
   });
 
@@ -247,7 +268,12 @@ describe('Tasks with work (FL-1486)', () => {
       overview(
         [],
         [
-          task(QueueName.FacialRecognition, { reason: QueueIdleReason.Paused, pausedAt: '2026-11-10T15:00:00.000Z' }),
+          task(QueueName.VideoConversion, { done: 61_840, perHour: 3400 }),
+          task(QueueName.FacialRecognition, {
+            reason: QueueIdleReason.Paused,
+            pausedAt: '2026-11-10T15:00:00.000Z',
+            done: 512_400,
+          }),
           task(QueueName.SmartSearch, {
             reason: QueueIdleReason.QuietHours,
             closedUntil: new Date(Date.now() + 3 * 3_600_000).toISOString(),
@@ -273,8 +299,11 @@ describe('Tasks with work (FL-1486)', () => {
     await screen.findByText(/You paused this on/);
 
     const running = taskRow('Converting videos');
-    expect(running.getByText('Running 5 at once')).toBeInTheDocument();
-    expect(running.getByText('142,922 waiting')).toBeInTheDocument();
+    // FL-1785: how far along it is, and about how long is left at the pace of the last ten minutes
+    expect(running.getByText('Running 5 at once · about 2 days left')).toBeInTheDocument();
+    expect(running.getByText('61,840 of 204,767')).toBeInTheDocument();
+    expect(running.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '30');
+    expect(running.getByRole('progressbar')).toHaveAttribute('data-state', 'running');
     expect(running.getByText('7,348 failed')).toBeInTheDocument();
     await fireEvent.click(running.getByRole('button', { name: 'Pause Converting videos' }));
     expect(onCommand).toHaveBeenLastCalledWith('pause', rows[0]);
@@ -282,6 +311,8 @@ describe('Tasks with work (FL-1486)', () => {
     // a pause someone made says since when, and its button resumes
     const paused = taskRow('Recognising people');
     expect(paused.getByText(/^You paused this on .*10/)).toBeInTheDocument();
+    expect(paused.getByText('512,400 of 663,383')).toBeInTheDocument();
+    expect(paused.getByRole('progressbar')).toHaveAttribute('data-state', 'held');
     await fireEvent.click(paused.getByRole('button', { name: 'Resume Recognising people' }));
     expect(onCommand).toHaveBeenLastCalledWith('resume', rows[1]);
 
@@ -302,8 +333,11 @@ describe('Tasks with work (FL-1486)', () => {
 
     expect(taskRow('Reading photo details').getByText('Next in line')).toBeInTheDocument();
     const stopped = taskRow('Making thumbnails');
-    expect(stopped.getByText('Only failures left')).toBeInTheDocument();
+    // only failures left is not an alarm: the task finished, and its failures are counted beside it
+    expect(stopped.getByText('Finished')).toBeInTheDocument();
     expect(stopped.getByText('None waiting')).toBeInTheDocument();
+    expect(stopped.getByText('6,928 failed')).toBeInTheDocument();
+    expect(stopped.queryByRole('progressbar')).toBeNull();
   });
 
   it('a task paused a moment ago says Paused before the overview is read again', async () => {
@@ -352,12 +386,26 @@ describe('the head and the foot (FL-1486)', () => {
       row(QueueName.FaceDetection, { paused: 7 }, true),
       row(QueueName.FacialRecognition, {}, true),
     ]);
-    expect(screen.getByText('5 running')).toBeInTheDocument();
-    expect(screen.getByText('17 waiting')).toBeInTheDocument();
+    // nothing finished yet: the bar is never empty while there is work
+    expect(screen.getByText('1% done')).toBeInTheDocument();
+    expect(screen.getByText('22 left')).toBeInTheDocument();
+    expect(screen.getByText('5 running now')).toBeInTheDocument();
     await fireEvent.click(screen.getByRole('button', { name: 'Resume the 2 you paused' }));
     expect(onResumeAll).toHaveBeenCalledOnce();
     await fireEvent.click(screen.getByRole('button', { name: 'Pause everything' }));
     expect(onPauseAll).toHaveBeenCalledOnce();
+  });
+
+  it('says so when nothing is running, and what the waiting jobs wait for (FL-1785)', async () => {
+    sdkMock.getQueueOverview.mockResolvedValue(
+      overview([], [{ name: QueueName.FaceDetection, reason: QueueIdleReason.Paused, done: 30 }]),
+    );
+    show([row(QueueName.FaceDetection, { paused: 10 }, true), row(QueueName.FacialRecognition, {}, true)]);
+    const summary = (await screen.findByText('Nothing is running.')).closest('p')!;
+    expect(summary).toHaveTextContent('Nothing is running. 10 jobs are waiting. You paused 2 tasks.');
+    const [overall] = screen.getAllByRole('progressbar');
+    expect(overall).toHaveAttribute('aria-valuenow', '75');
+    expect(overall).toHaveAttribute('data-state', 'held');
   });
 
   it('keeps the tools at the foot and sends recent work to Activity', async () => {

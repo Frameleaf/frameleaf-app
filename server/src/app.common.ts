@@ -19,6 +19,7 @@ import { DatabaseService } from 'src/services/database.service.js';
 import { useSwagger } from 'src/utils/misc.js';
 import { privateLogContext, startPrivateLogs } from 'src/utils/private-log-runtime.js';
 import { STUDIO_DOCUMENT_BODY_MAX_BYTES, STUDIO_DOCUMENT_ROUTES } from 'src/utils/studio-project.js';
+import { thumbnailRevalidation } from 'src/utils/thumbnail-revalidation.js';
 
 /** Sets up middleware (request log, cookies, body parsing, web assets) and starts listening, then logs the ready line. */
 export async function configureExpress(
@@ -73,6 +74,8 @@ export async function configureExpress(
       network.trustedProxies.filter((proxy) => proxy !== 'linklocal' && proxy !== 'uniquelocal'),
     ),
   );
+  // FL-1787: after the arrival is known, before anything reads the database
+  app.use(thumbnailRevalidation());
   const requireMcpJson: RequestHandler = (req, res, next) => {
     if (req.method === 'POST' && !req.is('application/json')) {
       res.sendStatus(415);

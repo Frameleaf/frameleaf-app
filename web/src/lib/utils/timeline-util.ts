@@ -1,8 +1,9 @@
 import { AssetTypeEnum, TimeBucketDateType, type AssetResponseDto } from '@frameleaf/sdk';
-import { DateTime, type LocaleOptions } from 'luxon';
+import { DateTime } from 'luxon';
 import { SvelteSet } from 'svelte/reactivity';
 import { get } from 'svelte/store';
 import { approximateGroupDay, dateAccuracyOf } from '$lib/frameleaf/approximate-date';
+import { formatLuxon } from '$lib/frameleaf/date-format';
 import { getExifRating } from '$lib/frameleaf/rating';
 import type { AssetDescriptor, TimelineAsset, ViewportTopMonth } from '$lib/managers/timeline-manager/types';
 import { locale } from '$lib/stores/preferences.store';
@@ -82,12 +83,13 @@ export function formatTimelineMonthTitle(_date: DateTime): string {
     return _date.toString();
   }
   const date = _date as DateTime<true>;
-  return date.toLocaleString(
+  return formatLuxon(
+    date,
     {
       month: 'short',
       year: 'numeric',
     },
-    { locale: get(locale) },
+    get(locale),
   );
 }
 
@@ -100,7 +102,7 @@ export function formatTimelineMonthHeading(_date: DateTime): string {
     return _date.toString();
   }
   const date = _date as DateTime<true>;
-  return date.toLocaleString({ month: 'long', year: 'numeric' }, { locale: get(locale) });
+  return formatLuxon(date, { month: 'long', year: 'numeric' }, get(locale));
 }
 
 export function formatGroupTitle(_date: DateTime): string {
@@ -122,26 +124,27 @@ export function formatGroupTitle(_date: DateTime): string {
 
   // Last week
   if (date >= today.minus({ days: 6 }) && date < today) {
-    return date.toLocaleString({ weekday: 'long' }, { locale: get(locale) });
+    return formatLuxon(date, { weekday: 'long' }, get(locale));
   }
 
   // This year
   if (today.hasSame(date, 'year')) {
-    return date.toLocaleString(
+    return formatLuxon(
+      date,
       {
         weekday: 'short',
         month: 'short',
         day: 'numeric',
       },
-      { locale: get(locale) },
+      get(locale),
     );
   }
 
-  return getDateLocaleString(date, { locale: get(locale) });
+  return getDateLocaleString(date, get(locale));
 }
 
-export const getDateLocaleString = (date: DateTime, opts?: LocaleOptions): string =>
-  date.toLocaleString(DateTime.DATE_MED_WITH_WEEKDAY, opts);
+export const getDateLocaleString = (date: DateTime, locale?: string): string =>
+  formatLuxon(date, DateTime.DATE_MED_WITH_WEEKDAY, locale);
 
 export const toTimelineAsset = (unknownAsset: AssetResponseDto | TimelineAsset): TimelineAsset => {
   if (isTimelineAsset(unknownAsset)) {

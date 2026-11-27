@@ -10,8 +10,14 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { durableRun } from '$lib/__mocks__/durable-runs.mock';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
-import { IDLE_POLL_MS, RUNNING_POLL_MS, RunningJobsSession } from '$lib/frameleaf/running-jobs-session.svelte';
+import {
+  IDLE_POLL_MS,
+  PUSHED_POLL_MS,
+  RUNNING_POLL_MS,
+  RunningJobsSession,
+} from '$lib/frameleaf/running-jobs-session.svelte';
 import { eventManager } from '$lib/managers/event-manager.svelte';
+import { websocketStore } from '$lib/stores/websocket';
 
 const operation = (overrides: Partial<MediaOperationDto> = {}): MediaOperationDto =>
   ({
@@ -69,6 +75,110 @@ describe('RunningJobsSession', () => {
 
   afterEach(() => {
     vi.useRealTimers();
+    websocketStore.connected.set(false);
+  });
+
+  /** FL-1794: with the socket connected the server says when the queues move, and the poll steps back. */
+  describe('with queue changes announced by the server', () => {
+    const queue = {
+      name: QueueName.ThumbnailGeneration,
+      isPaused: false,
+      active: 2,
+      waiting: 40,
+      processed: 10,
+      total: 52,
+    };
+    const busy = () => summary({ canManageQueues: true, queues: [queue as never] });
+
+    beforeEach(() => websocketStore.connected.set(true));
+
+    it('does not poll an administrator’s running queues, and asks when the server says they moved', async () => {
+      sdkMock.getRunningJobs.mockResolvedValue(busy());
+      const session = new RunningJobsSession();
+      const stop = session.watch();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(session.activeCount).toBeGreaterThan(0);
+      expect(session.nextDelay()).toBe(PUSHED_POLL_MS);
+
+      await vi.advanceTimersByTimeAsync(RUNNING_POLL_MS * 20);
+      expect(sdkMock.getRunningJobs).toHaveBeenCalledTimes(1);
+
+      eventManager.emit('QueueProgress');
+      await vi.advanceTimersByTimeAsync(0);
+      expect(sdkMock.getRunningJobs).toHaveBeenCalledTimes(2);
+      stop();
+    });
+
+    it('asks at most once per fast interval however often the server announces', async () => {
+      sdkMock.getRunningJobs.mockResolvedValue(busy());
+      const session = new RunningJobsSession();
+      const stop = session.watch();
+      await vi.advanceTimersByTimeAsync(0);
+
+      // one announcement a second for ten seconds
+      for (let second = 0; second < 10; second++) {
+        eventManager.emit('QueueProgress');
+        await vi.advanceTimersByTimeAsync(1000);
+      }
+      const asked = sdkMock.getRunningJobs.mock.calls.length - 1;
+      expect(asked).toBeGreaterThanOrEqual(3);
+      expect(asked).toBeLessThanOrEqual(10_000 / RUNNING_POLL_MS + 1);
+      stop();
+    });
+
+    it('asks when one of the account’s own jobs changes', async () => {
+      sdkMock.getRunningJobs.mockResolvedValue(busy());
+      const session = new RunningJobsSession();
+      const stop = session.watch();
+      await vi.advanceTimersByTimeAsync(RUNNING_POLL_MS);
+      eventManager.emit('MediaOperationUpdate', { id: operation().id });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(sdkMock.getRunningJobs).toHaveBeenCalledTimes(2);
+      stop();
+    });
+
+    it('keeps the safeguard poll, and the fast one while the panel is open', async () => {
+      sdkMock.getRunningJobs.mockResolvedValue(busy());
+      const session = new RunningJobsSession();
+      const stop = session.watch();
+      await vi.advanceTimersByTimeAsync(PUSHED_POLL_MS);
+      expect(sdkMock.getRunningJobs).toHaveBeenCalledTimes(2);
+
+      session.setPanelOpen(true);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(session.nextDelay()).toBe(RUNNING_POLL_MS);
+      stop();
+    });
+
+    it('still polls running work for an account the server sends no queue changes to', async () => {
+      sdkMock.getRunningJobs.mockResolvedValue(summary({ operations: [operation()] }));
+      const session = new RunningJobsSession();
+      const stop = session.watch();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(session.nextDelay()).toBe(RUNNING_POLL_MS);
+      stop();
+    });
+
+    it('goes back to polling when the socket drops, and ignores announcements in a hidden tab', async () => {
+      sdkMock.getRunningJobs.mockResolvedValue(busy());
+      const session = new RunningJobsSession();
+      const stop = session.watch();
+      await vi.advanceTimersByTimeAsync(0);
+
+      websocketStore.connected.set(false);
+      eventManager.emit('WebsocketDisconnect');
+      await vi.advanceTimersByTimeAsync(RUNNING_POLL_MS);
+      expect(sdkMock.getRunningJobs).toHaveBeenCalledTimes(2);
+
+      const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden');
+      document.dispatchEvent(new Event('visibilitychange'));
+      const asked = sdkMock.getRunningJobs.mock.calls.length;
+      eventManager.emit('QueueProgress');
+      await vi.advanceTimersByTimeAsync(PUSHED_POLL_MS);
+      expect(sdkMock.getRunningJobs.mock.calls.length).toBe(asked);
+      visibility.mockRestore();
+      stop();
+    });
   });
 
   it('asks one route for everything, sharing concurrent refreshes', async () => {

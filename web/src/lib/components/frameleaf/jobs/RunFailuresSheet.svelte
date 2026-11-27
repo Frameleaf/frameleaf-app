@@ -20,6 +20,7 @@
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import { jobQueue } from '$lib/frameleaf/job-queues';
+  import { formatCount } from '$lib/frameleaf/number-format';
   import { CAUSE_VIEW, causeBody } from '$lib/frameleaf/run-failures';
   import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
   import { Route } from '$lib/route';
@@ -55,7 +56,7 @@
   /** The causes whose photos are shown. */
   let shown = $state<Record<string, boolean>>({});
 
-  const number = (value: number) => value.toLocaleString($locale ?? undefined);
+  const number = (value: number) => formatCount(value, $locale ?? null);
   /** Only causes with photos still needing a look; stopped ones have nothing left to do. */
   const live = $derived((failures?.causes ?? []).filter((group) => group.count > 0));
   const total = $derived(live.reduce((sum, group) => sum + group.count, 0));

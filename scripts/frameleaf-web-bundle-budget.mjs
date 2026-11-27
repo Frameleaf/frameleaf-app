@@ -160,7 +160,8 @@ const sorted = (limits) =>
  * how many routes rose and by how much.
  */
 export const raise = (budget, sizes, reason, date) => {
-  if (!/[A-Z]+-\d+\b.*\S/.test(reason ?? "")) {
+  // "FL-123: what grew and why": the issue first, then a few words of reason.
+  if (!/^[A-Z]+-\d+: *\S.{4,}/.test(reason ?? "")) {
     throw new Error(
       'a raise needs a reason that names its issue, e.g. --raise "FL-123: the new editor toolbar"',
     );
@@ -171,9 +172,11 @@ export const raise = (budget, sizes, reason, date) => {
   }
   const limits = { ...budget.limits };
   let bytes = 0;
+  const routes = {};
   for (const { route, size, limit } of over) {
     limits[route] = limitFor(size);
     bytes += limits[route] - limit;
+    routes[route] = limits[route] - limit;
   }
   for (const route of added) {
     limits[route] = limitFor(sizes[route]);
@@ -182,6 +185,7 @@ export const raise = (budget, sizes, reason, date) => {
     delete limits[route];
   }
   return {
+    ...budget,
     limits: sorted(limits),
     raises: [
       ...(budget.raises ?? []),
@@ -192,6 +196,8 @@ export const raise = (budget, sizes, reason, date) => {
         bytes,
         added: added.length,
         removed: removed.length,
+        // which limits rose, and by how much, so unrelated growth cannot pass unseen under one reason
+        routes,
       },
     ],
   };
@@ -242,6 +248,11 @@ const main = () => {
   }
 
   const budget = JSON.parse(readFileSync(budgetPath, "utf8"));
+  if (!budget.limits) {
+    throw new Error(
+      "web/bundle-budget.json is in the old format (one size per route). Merge main and take its file, then run --raise for your change.",
+    );
+  }
   const reason = option("--raise");
   if (reason !== undefined) {
     const raised = raise(

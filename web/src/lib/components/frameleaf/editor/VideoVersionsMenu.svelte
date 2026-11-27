@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { formatDateTime } from '$lib/frameleaf/date-format';
   import { locale } from '$lib/stores/preferences.store';
   /**
    * The video Versions menu (FL-39), ported from the Versions popover in
@@ -263,7 +264,12 @@
     return `${getBaseUrl()}/assets/${encodeURIComponent(asset.id)}/edit-versions/${encodeURIComponent(versionId)}/download?${search.toString()}`;
   }
 
-  const date = (version: VideoEditVersionResponseDto) => new Date(version.createdAt).toLocaleString($locale);
+  const date = (version: VideoEditVersionResponseDto) =>
+    formatDateTime(
+      new Date(version.createdAt),
+      { year: 'numeric', month: 'numeric', day: 'numeric', hour: 'numeric', minute: 'numeric', second: 'numeric' },
+      $locale,
+    );
 
   const note = (version: VideoEditVersionResponseDto) => {
     if (version.isCurrent) {

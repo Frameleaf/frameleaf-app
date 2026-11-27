@@ -2,7 +2,7 @@
   import { shortcuts } from '$lib/actions/shortcut';
   import DevelopBatchPanel from '$lib/components/frameleaf/DevelopBatchPanel.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
-  import BulkConfirmDialog from '$lib/components/frameleaf/BulkConfirmDialog.svelte';
+  import ConfirmDialog from '$lib/components/frameleaf/ConfirmDialog.svelte';
   import BulkDateDialog from '$lib/components/frameleaf/BulkDateDialog.svelte';
   import DateFixDialog from '$lib/components/frameleaf/DateFixDialog.svelte';
   import BulkCreditsDialog from './BulkCreditsDialog.svelte';
@@ -773,7 +773,14 @@
     <BulkAlbumDialog {count} bind:open={dialogOpen} onSubmit={(payload) => submitDialog('add-to-album', payload)} />
   {/await}
 {:else if dialog === 'delete-permanently'}
-  <BulkConfirmDialog {count} bind:open={dialogOpen} onConfirm={() => submitDialog('delete-permanently')} />
+  <ConfirmDialog
+    title={$t('frameleaf_bulk_delete_permanently')}
+    prompt={$t('frameleaf_bulk_delete_permanently_confirm', { values: { count } })}
+    confirmText={$t('frameleaf_bulk_delete_permanently')}
+    danger
+    bind:open={dialogOpen}
+    onConfirm={() => submitDialog('delete-permanently')}
+  />
 {:else if dialog === 'export-preservation'}
   <!--
     FL-74: the Preservation export workflow (CommandCenter.jsx `preservation`, settings-catalog.mjs

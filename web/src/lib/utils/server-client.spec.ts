@@ -37,16 +37,35 @@ describe('server client initialization', () => {
     const first = init(fetch);
     expect(init(vi.fn())).toBe(first);
     expect(mocks.setFetch).toHaveBeenCalledExactlyOnceWith(fetch);
-    expect(mocks.config).not.toHaveBeenCalled();
+    // FL-1798: config and the account are asked for without waiting for the language
+    expect(mocks.config).toHaveBeenCalledOnce();
+    expect(mocks.auth).toHaveBeenCalledOnce();
+    await Promise.resolve();
+    expect(mocks.flags).not.toHaveBeenCalled();
     ready();
     await first;
     expect(init(vi.fn())).toBe(first);
     for (const stage of ['language', 'config', 'auth', 'flags'] as const) {
       expect(mocks[stage]).toHaveBeenCalledOnce();
     }
-    expect(mocks.language.mock.invocationCallOrder[0]).toBeLessThan(mocks.config.mock.invocationCallOrder[0]);
-    expect(mocks.config.mock.invocationCallOrder[0]).toBeLessThan(mocks.auth.mock.invocationCallOrder[0]);
-    expect(mocks.auth.mock.invocationCallOrder[0]).toBeLessThan(mocks.flags.mock.invocationCallOrder[0]);
+  });
+
+  it('waits for config and the account before asking for feature flags', async () => {
+    let configured!: () => void;
+    mocks.config.mockReturnValueOnce(
+      new Promise<void>((resolve) => {
+        configured = resolve;
+      }),
+    );
+    const { init } = await import('$lib/utils/server-client');
+    const pending = init(vi.fn());
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(mocks.flags).not.toHaveBeenCalled();
+    // maintenance mode is only known once config answers
+    mocks.value.maintenanceMode = true;
+    configured();
+    await pending;
+    expect(mocks.flags).not.toHaveBeenCalled();
   });
 
   it.each(['language', 'config', 'auth', 'flags'] as const)('allows a fresh attempt after %s fails', async (stage) => {

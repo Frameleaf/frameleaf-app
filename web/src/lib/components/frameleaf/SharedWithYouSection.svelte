@@ -1,6 +1,7 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
+  import EmptyRow from '$lib/components/frameleaf/EmptyRow.svelte';
   import InlineError from '$lib/components/frameleaf/InlineError.svelte';
   import Portal from '$lib/elements/Portal.svelte';
   import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
@@ -155,7 +156,7 @@
       />
     </div>
   {:else if loaded && items.length === 0}
-    <p class="swy-empty" role="status">{$t('frameleaf_sharing.shared_with_you_empty')}</p>
+    <div class="swy-empty"><EmptyRow title={$t('frameleaf_sharing.shared_with_you_empty')} /></div>
   {/if}
 
   {#each groups as group (group.owner.id)}
@@ -219,11 +220,13 @@
     font-size: 1.125rem;
     font-weight: 600;
   }
-  .swy header p,
-  .swy-empty {
+  .swy header p {
     margin: var(--fl-space-2) 0 0;
     color: var(--fl-muted);
     font-size: 0.875rem;
+  }
+  .swy-empty {
+    margin-top: var(--fl-space-4);
   }
   .swy-error {
     margin-top: 1rem;

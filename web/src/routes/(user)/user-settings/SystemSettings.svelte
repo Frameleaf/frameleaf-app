@@ -1,3 +1,38 @@
+<script lang="ts" module>
+  // FL-1799: one loader per page, made once, so a page is not rebuilt when the section list is.
+  const loadAuthSettings = () => import('../../admin/system-settings/AuthSettings.svelte');
+  const loadPhonesList = () => import('$lib/components/frameleaf/settings/PhonesList.svelte');
+  const loadImageSettings = () => import('../../admin/system-settings/ImageSettings.svelte');
+  const loadFileChecks = () => import('$lib/components/frameleaf/settings/care/FileChecks.svelte');
+  const loadFoundFiles = () => import('$lib/components/frameleaf/settings/care/FoundFiles.svelte');
+  const loadLibrarySettings = () => import('../../admin/system-settings/LibrarySettings.svelte');
+  const loadLoggingSettings = () => import('../../admin/system-settings/LoggingSettings.svelte');
+  const loadLogViewer = () => import('$lib/components/frameleaf/settings/server-settings/LogViewer.svelte');
+  const loadVisualSearch = () => import('$lib/components/frameleaf/settings/intelligence/VisualSearch.svelte');
+  const loadFaces = () => import('$lib/components/frameleaf/settings/intelligence/Faces.svelte');
+  const loadTextInPhotos = () => import('$lib/components/frameleaf/settings/intelligence/TextInPhotos.svelte');
+  const loadLockedDetection = () => import('$lib/components/frameleaf/settings/intelligence/LockedDetection.svelte');
+  const loadDescriptions = () => import('$lib/components/frameleaf/settings/intelligence/Descriptions.svelte');
+  const loadDuplicates = () => import('$lib/components/frameleaf/settings/care/Duplicates.svelte');
+  const loadUnusedFiles = () => import('$lib/components/frameleaf/settings/care/UnusedFiles.svelte');
+  const loadMapSettings = () => import('../../admin/system-settings/MapSettings.svelte');
+  const loadMoveOrExport = () => import('$lib/components/frameleaf/settings/storage/MoveOrExport.svelte');
+  const loadOvernightSchedule = () => import('$lib/components/frameleaf/settings/overnight/OvernightSchedule.svelte');
+  const loadNotificationSettings = () => import('../../admin/system-settings/NotificationSettings.svelte');
+  const loadServerSettings = () => import('../../admin/system-settings/ServerSettings.svelte');
+  const loadSmartAlbums = () => import('$lib/components/frameleaf/settings/intelligence/SmartAlbums.svelte');
+  const loadFolderLayout = () => import('$lib/components/frameleaf/settings/storage/FolderLayout.svelte');
+  const loadThemeSettings = () => import('../../admin/system-settings/ThemeSettings.svelte');
+  const loadDeletedItems = () => import('$lib/components/frameleaf/settings/storage/DeletedItems.svelte');
+  const loadNewVersionCheckSettings = () => import('../../admin/system-settings/NewVersionCheckSettings.svelte');
+  const loadFFmpegSettings = () => import('../../admin/system-settings/FFmpegSettings.svelte');
+  const loadEditedMasters = () => import('$lib/components/frameleaf/settings/editing/EditedMasters.svelte');
+  const loadAiRestoration = () => import('$lib/components/frameleaf/settings/editing/AiRestoration.svelte');
+  const loadStudioStatus = () => import('$lib/components/frameleaf/settings/editing/StudioStatus.svelte');
+  const loadConfigurationTransferSection = () =>
+    import('$lib/components/frameleaf/settings/ConfigurationTransferSection.svelte');
+</script>
+
 <script lang="ts">
   /**
    * The administrator's Command Center (FL-71): the one Command Center with the server settings
@@ -180,7 +215,7 @@
   const serverSections: SettingsHostSection[] = $derived([
     {
       admin: true,
-      load: () => import('../../admin/system-settings/AuthSettings.svelte'),
+      load: loadAuthSettings,
       title: $t('frameleaf_cc_section_signin'),
       subtitle: $t('frameleaf_cc_section_signin_description'),
       key: 'authentication',
@@ -197,7 +232,7 @@
     {
       // FL-540: every account's phones that back up here, and which stopped sending photos
       admin: true,
-      load: () => import('$lib/components/frameleaf/settings/PhonesList.svelte'),
+      load: loadPhonesList,
       title: $t('frameleaf_cc_section_phones'),
       subtitle: $t('frameleaf_cc_section_phones_description'),
       key: 'devices-backup',
@@ -205,7 +240,7 @@
     },
     {
       admin: true,
-      load: () => import('../../admin/system-settings/ImageSettings.svelte'),
+      load: loadImageSettings,
       title: $t('frameleaf_cc_section_previews'),
       subtitle: $t('frameleaf_cc_section_previews_description'),
       key: 'image',
@@ -214,7 +249,7 @@
     {
       // FL-366: Library care → File checks, the one checker (Maintenance's address opens it too).
       admin: true,
-      load: () => import('$lib/components/frameleaf/settings/care/FileChecks.svelte'),
+      load: loadFileChecks,
       title: $t('frameleaf_cc_section_health'),
       subtitle: $t('frameleaf_cc_section_health_description'),
       key: 'integrity-checks',
@@ -223,7 +258,7 @@
     {
       // FL-1533: Library care → Photos found on the drive, opened from File checks.
       admin: true,
-      load: () => import('$lib/components/frameleaf/settings/care/FoundFiles.svelte'),
+      load: loadFoundFiles,
       title: $t('frameleaf_cc_section_found_files'),
       subtitle: $t('frameleaf_cc_section_found_files_description'),
       key: 'found-files',
@@ -231,7 +266,7 @@
     },
     {
       admin: true,
-      load: () => import('../../admin/system-settings/LibrarySettings.svelte'),
+      load: loadLibrarySettings,
       // FL-539: the prototype's Folder checks (folders.jsx), a page of its own under Libraries
       title: $t('frameleaf_checks_label'),
       subtitle: $t('frameleaf_checks_description'),
@@ -240,7 +275,7 @@
     },
     {
       admin: true,
-      load: () => import('../../admin/system-settings/LoggingSettings.svelte'),
+      load: loadLoggingSettings,
       title: $t('frameleaf_cc_section_diagnostics'),
       subtitle: $t('frameleaf_cc_section_diagnostics_description'),
       key: 'logging',
@@ -249,7 +284,7 @@
     {
       // FL-893: Server & updates › Advanced › Server logs (prototype `server/operator.jsx` Logs).
       admin: true,
-      load: () => import('$lib/components/frameleaf/settings/server-settings/LogViewer.svelte'),
+      load: loadLogViewer,
       title: $t('frameleaf_cc_section_logs'),
       subtitle: $t('frameleaf_cc_section_logs_description'),
       key: 'logs',
@@ -259,7 +294,7 @@
     // FL-366: Search & intelligence, one page per feature under the area's landing page.
     {
       admin: true,
-      load: () => import('$lib/components/frameleaf/settings/intelligence/VisualSearch.svelte'),
+      load: loadVisualSearch,
       title: $t('frameleaf_cc_section_visual_search'),
       subtitle: $t('frameleaf_cc_section_visual_search_description'),
       key: 'smart-search',
@@ -267,7 +302,7 @@
     },
     {
       admin: true,
-      load: () => import('$lib/components/frameleaf/settings/intelligence/Faces.svelte'),
+      load: loadFaces,
       title: $t('frameleaf_cc_section_faces'),
       subtitle: $t('frameleaf_cc_section_faces_description'),
       key: 'faces',
@@ -275,7 +310,7 @@
     },
     {
       admin: true,
-      load: () => import('$lib/components/frameleaf/settings/intelligence/TextInPhotos.svelte'),
+      load: loadTextInPhotos,
       title: $t('frameleaf_cc_section_documents'),
       subtitle: $t('frameleaf_cc_section_documents_description'),
       key: 'documents',
@@ -283,7 +318,7 @@
     },
     {
       admin: true,
-      load: () => import('$lib/components/frameleaf/settings/intelligence/LockedDetection.svelte'),
+      load: loadLockedDetection,
       title: $t('frameleaf_cc_section_locked_detection'),
       subtitle: $t('frameleaf_cc_section_locked_detection_description'),
       key: 'sensitive-detection',
@@ -291,7 +326,7 @@
     },
     {
       admin: true,
-      load: () => import('$lib/components/frameleaf/settings/intelligence/Descriptions.svelte'),
+      load: loadDescriptions,
       title: $t('frameleaf_cc_section_descriptions'),
       subtitle: $t('frameleaf_cc_section_descriptions_description'),
       key: 'descriptions',
@@ -300,7 +335,7 @@
     {
       // FL-366: Library care → Duplicates (identical files, stored once by themselves, and look-alike matching).
       admin: true,
-      load: () => import('$lib/components/frameleaf/settings/care/Duplicates.svelte'),
+      load: loadDuplicates,
       title: $t('frameleaf_cc_section_duplicates'),
       subtitle: $t('frameleaf_cc_section_duplicates_description'),
       key: 'duplicates',
@@ -312,7 +347,7 @@
       ? [
           {
             admin: true,
-            load: () => import('$lib/components/frameleaf/settings/care/UnusedFiles.svelte'),
+            load: loadUnusedFiles,
             title: $t('frameleaf_cc_section_unused_files'),
             subtitle: $t('frameleaf_cc_section_unused_files_description'),
             key: 'unused-files',
@@ -322,7 +357,7 @@
       : []),
     {
       admin: true,
-      load: () => import('../../admin/system-settings/MapSettings.svelte'),
+      load: loadMapSettings,
       title: $t('frameleaf_cc_section_maps'),
       subtitle: $t('frameleaf_cc_section_maps_description'),
       key: 'location',
@@ -330,7 +365,7 @@
     },
     {
       admin: true,
-      load: () => import('$lib/components/frameleaf/settings/storage/MoveOrExport.svelte'),
+      load: loadMoveOrExport,
       title: $t('admin.frameleaf_migration_settings_title'),
       subtitle: $t('admin.frameleaf_migration_settings_subtitle'),
       key: 'migration',
@@ -338,7 +373,7 @@
     },
     {
       admin: true,
-      load: () => import('$lib/components/frameleaf/settings/overnight/OvernightSchedule.svelte'),
+      load: loadOvernightSchedule,
       title: $t('frameleaf_computers_page_overnight'),
       subtitle: $t('frameleaf_computers_page_overnight_description'),
       key: 'nightly-tasks',
@@ -346,7 +381,7 @@
     },
     {
       admin: true,
-      load: () => import('../../admin/system-settings/NotificationSettings.svelte'),
+      load: loadNotificationSettings,
       title: $t('frameleaf_cc_section_email'),
       subtitle: $t('frameleaf_cc_section_email_description'),
       key: 'notifications',
@@ -354,7 +389,7 @@
     },
     {
       admin: true,
-      load: () => import('../../admin/system-settings/ServerSettings.svelte'),
+      load: loadServerSettings,
       title: $t('frameleaf_cc_section_identity'),
       subtitle: $t('frameleaf_cc_section_identity_description'),
       key: 'server',
@@ -362,7 +397,7 @@
     },
     {
       admin: true,
-      load: () => import('$lib/components/frameleaf/settings/intelligence/SmartAlbums.svelte'),
+      load: loadSmartAlbums,
       title: $t('frameleaf_cc_section_smart_albums'),
       subtitle: $t('frameleaf_cc_section_smart_albums_description'),
       key: 'smart-albums',
@@ -370,7 +405,7 @@
     },
     {
       admin: true,
-      load: () => import('$lib/components/frameleaf/settings/storage/FolderLayout.svelte'),
+      load: loadFolderLayout,
       title: $t('frameleaf_cc_section_organization'),
       subtitle: $t('frameleaf_cc_section_organization_description'),
       key: 'storage-template',
@@ -378,7 +413,7 @@
     },
     {
       admin: true,
-      load: () => import('../../admin/system-settings/ThemeSettings.svelte'),
+      load: loadThemeSettings,
       title: $t('frameleaf_cc_section_branding'),
       subtitle: $t('frameleaf_cc_section_branding_description'),
       key: 'theme',
@@ -386,7 +421,7 @@
     },
     {
       admin: true,
-      load: () => import('$lib/components/frameleaf/settings/storage/DeletedItems.svelte'),
+      load: loadDeletedItems,
       title: $t('frameleaf_cc_section_retention'),
       subtitle: $t('frameleaf_cc_section_retention_description'),
       key: 'trash',
@@ -394,7 +429,7 @@
     },
     {
       admin: true,
-      load: () => import('../../admin/system-settings/NewVersionCheckSettings.svelte'),
+      load: loadNewVersionCheckSettings,
       title: $t('frameleaf_cc_section_versions'),
       subtitle: $t('frameleaf_cc_section_versions_description'),
       key: 'version-check',
@@ -402,7 +437,7 @@
     },
     {
       admin: true,
-      load: () => import('../../admin/system-settings/FFmpegSettings.svelte'),
+      load: loadFFmpegSettings,
       title: $t('frameleaf_cc_section_playback'),
       subtitle: $t('frameleaf_cc_section_playback_description'),
       key: 'video-transcoding',
@@ -411,7 +446,7 @@
     // FL-422: Editing & playback's Editing group (settings-catalog.mjs:740-822).
     {
       admin: true,
-      load: () => import('$lib/components/frameleaf/settings/editing/EditedMasters.svelte'),
+      load: loadEditedMasters,
       title: $t('frameleaf_cc_section_masters'),
       subtitle: $t('frameleaf_cc_section_masters_description'),
       key: 'masters',
@@ -419,7 +454,7 @@
     },
     {
       admin: true,
-      load: () => import('$lib/components/frameleaf/settings/editing/AiRestoration.svelte'),
+      load: loadAiRestoration,
       title: $t('frameleaf_cc_section_restoration'),
       subtitle: $t('frameleaf_cc_section_restoration_description'),
       key: 'restoration',
@@ -427,7 +462,7 @@
     },
     {
       admin: true,
-      load: () => import('$lib/components/frameleaf/settings/editing/StudioStatus.svelte'),
+      load: loadStudioStatus,
       title: $t('frameleaf_cc_section_studio'),
       subtitle: $t('frameleaf_cc_section_studio_description'),
       key: 'studio',
@@ -436,7 +471,7 @@
     {
       // The template's Server & updates → "Configuration transfer" (`ConfigurationTransfer.jsx`).
       admin: true,
-      load: () => import('$lib/components/frameleaf/settings/ConfigurationTransferSection.svelte'),
+      load: loadConfigurationTransferSection,
       title: $t('frameleaf_cc_config_transfer_title'),
       subtitle: $t('frameleaf_cc_config_transfer_description'),
       key: 'configuration',

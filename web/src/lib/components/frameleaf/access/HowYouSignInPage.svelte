@@ -10,6 +10,7 @@
    * The server does not record when a password last changed, so the password row says whether one
    * is set rather than when (the prototype's "Changed 3 months ago").
    */
+  import { formatDate } from '$lib/frameleaf/date-format';
   import { goto } from '$app/navigation';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import FrameleafAccountSection from '$lib/components/frameleaf/access/FrameleafAccountSection.svelte';
@@ -91,7 +92,7 @@
         ? $t(passkeysHere.reason === 'http' ? 'frameleaf_passkey_row_http' : 'frameleaf_passkey_row_unsupported')
         : lastUsed
           ? $t('frameleaf_passkey_row_last_used', {
-              values: { when: new Intl.DateTimeFormat($locale, { dateStyle: 'medium' }).format(new Date(lastUsed)) },
+              values: { when: formatDate(new Date(lastUsed), { dateStyle: 'medium' }, $locale) },
             })
           : undefined,
       button: $t('frameleaf_security_who_open'),

@@ -53,7 +53,7 @@ describe('Command Center utilities', () => {
     sdk.getDuplicateReview.mockResolvedValue([]);
     sdk.getDuplicateDecisions.mockResolvedValue([]);
     await loadUtility('duplicates', new URL('https://example.test/user-settings?scope=someone-else'), false);
-    expect(sdk.getDuplicateReview).toHaveBeenCalledExactlyOnceWith();
+    expect(sdk.getDuplicateReview).toHaveBeenCalledExactlyOnceWith({});
     expect(sdk.getDuplicateDecisions).toHaveBeenCalledExactlyOnceWith();
   });
   it('keeps bookmarked photo ids and review filters in the settings destination', async () => {

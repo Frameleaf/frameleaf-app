@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { formatLuxon } from '$lib/frameleaf/date-format';
   import Spinner from '$lib/components/frameleaf/Spinner.svelte';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import IconButton from '$lib/components/frameleaf/IconButton.svelte';
@@ -19,6 +20,7 @@
     getAllPeople,
     getFaces,
     isHttpError,
+    PeopleSort,
     searchAssets,
     SourceType,
     type AssetFaceResponseDto,
@@ -37,7 +39,7 @@
     mdiClose,
   } from '@mdi/js';
   import { DateTime } from 'luxon';
-  import { onDestroy, onMount } from 'svelte';
+  import { onDestroy, onMount, type Snippet } from 'svelte';
   import { t } from 'svelte-i18n';
   import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 
@@ -67,9 +69,14 @@
     /** Called once when the panel closes, when at least one face moved, with the people faces moved to. */
     onChanged?: (personIds: string[]) => void;
     close: () => void;
+    /** FL-1813: the panel's heading when it is one tab of "Fix recognition". */
+    title?: string;
+    /** FL-1813: the tabs under the heading, and what sits beside Done. */
+    tabs?: Snippet;
+    footerLink?: Snippet;
   }
 
-  let { person, onOpenAsset, onChanged, close }: Props = $props();
+  let { person, onOpenAsset, onChanged, close, title, tabs, footerLink }: Props = $props();
 
   const PAGE_SIZE = 25;
   // at most this many photos' faces are read at once, as in FeaturedPhotoDialog
@@ -77,6 +84,10 @@
 
   type Row = { asset: AssetResponseDto; face: AssetFaceResponseDto };
   let rows: Row[] = $state([]);
+  /** How many people "Not this person" offers before "Someone else…". */
+  const OTHERS_SHOWN = 6;
+  /** At most this many pages of 200 are read to find them. */
+  const OTHERS_PAGES = 5;
   let others: PeopleListItemDto[] = $state([]);
   let hasMore = $state(false);
   let loading = $state(false);
@@ -177,11 +188,27 @@
 
   const loadOthers = async () => {
     try {
-      const { people } = await getAllPeople({ withHidden: false });
-      others = people
-        .filter((candidate) => candidate.id !== person.id && !isUnnamedPerson(candidate))
-        .sort((a, b) => b.assetCount - a.assetCount)
-        .slice(0, 6);
+      // FL-1803: the six named people with the most photos, whoever they are: the list comes sorted by
+      // photo count and is read until it has given six, not cut from whatever the first page held.
+      const found: PeopleListItemDto[] = [];
+      const known = new Set<string>([person.id]);
+      // ponytail: stops after OTHERS_PAGES pages, so a library whose biggest groups are unnamed costs at most
+      // that many reads; a server "named only" filter would make the bound unnecessary
+      for (let page = 1; found.length < OTHERS_SHOWN && page <= OTHERS_PAGES; page++) {
+        const result = await getAllPeople({ withHidden: false, sort: PeopleSort.Count, page, size: 200 });
+        const added = result.people.filter(({ id }) => !known.has(id));
+        for (const candidate of added) {
+          known.add(candidate.id);
+          if (!isUnnamedPerson(candidate)) {
+            found.push(candidate);
+          }
+        }
+        // A page that adds nobody new means the list shifted under us; stop rather than loop.
+        if (!result.hasNextPage || added.length === 0) {
+          break;
+        }
+      }
+      others = found.sort((a, b) => b.assetCount - a.assetCount).slice(0, OTHERS_SHOWN);
     } catch {
       others = [];
     }
@@ -381,19 +408,20 @@
   const nameOf = (candidate: { name: string }) => (isUnnamedPerson(candidate) ? $t('unnamed_person') : candidate.name);
 
   const shortDate = (asset: AssetResponseDto) =>
-    DateTime.fromISO(asset.localDateTime, { zone: 'utc' }).toLocaleString(DateTime.DATE_MED);
+    formatLuxon(DateTime.fromISO(asset.localDateTime, { zone: 'utc' }), DateTime.DATE_MED);
 </script>
 
 <div class="pd-fix" role="dialog" aria-labelledby="pd-fix-title" aria-modal="false">
   <header class="pd-fix-header">
     <div>
-      <h2 id="pd-fix-title" bind:this={heading} tabindex="-1">{$t('fix_incorrect_match')}</h2>
+      <h2 id="pd-fix-title" bind:this={heading} tabindex="-1">{title ?? $t('fix_incorrect_match')}</h2>
       <p>{$t('frameleaf_people_fix_description', { values: { name } })}</p>
     </div>
     <IconButton label={$t('frameleaf_people_fix_close')} onclick={finish}>
       <Icon icon={mdiClose} size="18" aria-hidden="true" />
     </IconButton>
   </header>
+  {@render tabs?.()}
   <ul class="pd-fix-list">
     {#each rows as row (row.face.id)}
       {@const done = resolved.get(row.face.id)}
@@ -539,6 +567,7 @@
           ? $t('frameleaf_people_fix_to_review', { values: { count: open } })
           : $t('frameleaf_people_fix_done'))}
     </span>
+    {@render footerLink?.()}
     <Button variant="primary" onclick={finish}>{$t('done')}</Button>
   </footer>
 </div>

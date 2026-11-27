@@ -2,6 +2,7 @@ import { modalManager } from '@frameleaf/ui';
 import { render, screen, waitFor, within } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
+import ConfirmDialog from '$lib/components/frameleaf/ConfirmDialog.svelte';
 import {
   sessionAccess,
   setSessionLockPending,
@@ -11,7 +12,6 @@ import {
 import { requestSessionLock } from '$lib/frameleaf/session-lock';
 import { authManager } from '$lib/managers/auth-manager.svelte';
 import { eventManager } from '$lib/managers/event-manager.svelte';
-import AssetDeleteConfirmModal from '$lib/modals/AssetDeleteConfirmModal.svelte';
 import { discardAuthStatusReads } from '$lib/utils/auth-status-read';
 import { preferencesFactory } from '@test-data/factories/preferences-factory';
 import { userAdminFactory } from '@test-data/factories/user-factory';
@@ -30,7 +30,7 @@ vi.mock('$lib/utils/session-privacy', () => ({ clearSessionMedia: vi.fn(), revok
 vi.mock('$app/state', () => ({ page: app.page }));
 vi.mock('$lib/managers/feature-flags-manager.svelte', () => ({ featureFlagsManager: { value: { search: false } } }));
 vi.mock('$lib/stores/notification-manager.svelte', () => ({
-  notificationManager: { notifications: [], refresh: vi.fn().mockResolvedValue(undefined) },
+  notificationManager: { notifications: [], load: vi.fn().mockResolvedValue(undefined) },
 }));
 
 const authStatus = (isElevated: boolean) => ({ isElevated, password: true, pinCode: true });
@@ -162,9 +162,10 @@ describe('TopBar session privacy', () => {
     sdkMock.lockAuthSession.mockReturnValueOnce(lock.promise as never).mockResolvedValueOnce(undefined as never);
     const view = render(TopBarTestHarness);
     await screen.findByRole('button', { name: en.frameleaf_locked_hide_content });
-    const deletion = modalManager.open(AssetDeleteConfirmModal, {
-      size: 1,
-      suppressible: false,
+    const deletion = modalManager.open(ConfirmDialog, {
+      title: 'Permanently delete asset',
+      confirmText: 'Delete',
+      danger: true,
     });
     await waitFor(() => expect(document.body).toHaveTextContent('Permanently delete asset'));
 
@@ -224,9 +225,10 @@ describe('TopBar session privacy', () => {
     app.invalidateAll.mockReturnValue(refreshed.promise);
     const view = render(TopBarTestHarness);
     await screen.findByRole('button', { name: en.frameleaf_locked_hide_content });
-    const deletion = modalManager.open(AssetDeleteConfirmModal, {
-      size: 1,
-      suppressible: false,
+    const deletion = modalManager.open(ConfirmDialog, {
+      title: 'Permanently delete asset',
+      confirmText: 'Delete',
+      danger: true,
     });
     await waitFor(() => expect(document.body).toHaveTextContent('Permanently delete asset'));
 

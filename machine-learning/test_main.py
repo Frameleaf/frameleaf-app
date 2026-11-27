@@ -23,6 +23,7 @@ from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from huggingface_hub.errors import HfHubHTTPError, LocalEntryNotFoundError, RepositoryNotFoundError
 from PIL import Image
+from pydantic import SecretStr
 from pytest import MonkeyPatch
 from pytest_mock import MockerFixture
 
@@ -212,7 +213,7 @@ class TestBase:
             cache_dir=encoder.cache_dir,
             local_dir=encoder.cache_dir,
             ignore_patterns=["*.armnn", "*.rknn"],
-            endpoint="https://models.frameleaf.cloud",
+            endpoint="https://huggingface.co",
             token=False,
         )
 
@@ -225,7 +226,7 @@ class TestBase:
             cache_dir=encoder.cache_dir,
             local_dir=encoder.cache_dir,
             ignore_patterns=["*.rknn"],
-            endpoint="https://models.frameleaf.cloud",
+            endpoint="https://huggingface.co",
             token=False,
         )
 
@@ -238,9 +239,44 @@ class TestBase:
             cache_dir=encoder.cache_dir,
             local_dir=encoder.cache_dir,
             ignore_patterns=["*.armnn"],
-            endpoint="https://models.frameleaf.cloud",
+            endpoint="https://huggingface.co",
             token=False,
         )
+
+    def test_download_sends_the_hugging_face_token_to_hugging_face(
+        self, snapshot_download: mock.Mock, mocker: MockerFixture
+    ) -> None:
+        mocker.patch.object(settings, "hugging_face_token", SecretStr("fake-hf-token"))
+        OpenClipTextualEncoder("ViT-B-32__openai", cache_dir="/path/to/cache").download()
+
+        assert snapshot_download.call_args.kwargs["endpoint"] == "https://huggingface.co"
+        assert snapshot_download.call_args.kwargs["token"] == "fake-hf-token"
+
+    def test_hugging_face_token_never_goes_to_another_source(
+        self, snapshot_download: mock.Mock, mocker: MockerFixture
+    ) -> None:
+        mocker.patch.object(settings, "hugging_face_token", SecretStr("fake-hf-token"))
+        mocker.patch.object(settings, "model_source_url", "https://models.example.com")
+        OpenClipTextualEncoder("ViT-B-32__openai", cache_dir="/path/to/cache").download()
+
+        assert snapshot_download.call_args.kwargs["token"] is False
+
+    def test_download_says_when_the_token_was_refused(
+        self, snapshot_download: mock.Mock, mocker: MockerFixture
+    ) -> None:
+        mocker.patch.object(settings, "hugging_face_token", SecretStr("fake-hf-token"))
+        mocker.patch.object(log, "error")
+        request = httpx.Request("GET", "https://huggingface.co/api/models/frameleaf/buffalo_l/revision/main")
+        snapshot_download.side_effect = RepositoryNotFoundError(
+            "Invalid credentials", response=httpx.Response(401, request=request)
+        )
+
+        with pytest.raises(ModelUnavailableError) as raised:
+            FaceRecognizer("buffalo_l", cache_dir="/path/to/cache").download()
+
+        assert "refused the access token" in str(raised.value)
+        assert "MACHINE_LEARNING_HUGGING_FACE_TOKEN" in str(raised.value)
+        assert "fake-hf-token" not in str(raised.value)
 
     def test_download_uses_configured_model_source(self, snapshot_download: mock.Mock, mocker: MockerFixture) -> None:
         mocker.patch.object(settings, "model_source_url", "https://models.example.com/")
@@ -278,15 +314,15 @@ class TestBase:
         assert snapshot_download.call_args.kwargs["endpoint"] == "https://models.example.com"
         assert model_source() == ("https://models.example.com", "MACHINE_LEARNING_MODEL_SOURCE_URL")
 
-    def test_model_source_defaults_to_the_frameleaf_mirror(self) -> None:
-        assert model_source() == ("https://models.frameleaf.cloud", "default")
+    def test_model_source_defaults_to_hugging_face(self) -> None:
+        assert model_source() == ("https://huggingface.co", "default")
 
     @pytest.mark.parametrize("status", [401, 404])
     def test_download_names_missing_model_and_model_source(
         self, snapshot_download: mock.Mock, mocker: MockerFixture, status: int
     ) -> None:
         error = mocker.patch.object(log, "error")
-        request = httpx.Request("GET", "https://models.frameleaf.cloud/api/models/frameleaf/buffalo_l/revision/main")
+        request = httpx.Request("GET", "https://huggingface.co/api/models/frameleaf/buffalo_l/revision/main")
         snapshot_download.side_effect = RepositoryNotFoundError(
             "Repository not found", response=httpx.Response(status, request=request)
         )
@@ -297,7 +333,7 @@ class TestBase:
 
         message = str(raised.value)
         assert "'buffalo_l'" in message
-        assert "https://models.frameleaf.cloud" in message
+        assert "https://huggingface.co" in message
         assert "frameleaf/buffalo_l" in message
         assert "MACHINE_LEARNING_MODEL_SOURCE_URL" in message
         assert "immich" not in message.lower()
@@ -305,7 +341,7 @@ class TestBase:
         snapshot_download.assert_called_once()
 
     def test_download_treats_uncached_not_found_as_missing_model(self, snapshot_download: mock.Mock) -> None:
-        request = httpx.Request("GET", "https://models.frameleaf.cloud/api/models/frameleaf/antelopev2/revision/main")
+        request = httpx.Request("GET", "https://huggingface.co/api/models/frameleaf/antelopev2/revision/main")
         not_found = HfHubHTTPError("Not found", response=httpx.Response(404, request=request))
         missing = LocalEntryNotFoundError("Cannot find an appropriate cached snapshot folder")
         missing.__cause__ = not_found
@@ -316,7 +352,7 @@ class TestBase:
             detector.download()
 
     def test_download_keeps_other_source_errors(self, snapshot_download: mock.Mock) -> None:
-        request = httpx.Request("GET", "https://models.frameleaf.cloud/api/models/frameleaf/buffalo_l/revision/main")
+        request = httpx.Request("GET", "https://huggingface.co/api/models/frameleaf/buffalo_l/revision/main")
         outage = HfHubHTTPError("Service unavailable", response=httpx.Response(503, request=request))
         snapshot_download.side_effect = outage
         recognizer = FaceRecognizer("buffalo_l", cache_dir="/path/to/cache")
@@ -2297,7 +2333,7 @@ class TestOcr:
             model.download()
 
         assert "frameleaf/EN__PP-OCRv5_mobile" in str(raised.value)
-        assert "https://models.frameleaf.cloud" in str(raised.value)
+        assert "https://huggingface.co" in str(raised.value)
 
     def test_every_ocr_model_has_pinned_files(self) -> None:
         for model_name in _PADDLE_MODELS:

@@ -1,10 +1,9 @@
 <script lang="ts">
+  import { formatLuxon } from '$lib/frameleaf/date-format';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import IconButton from '$lib/components/frameleaf/IconButton.svelte';
   import PersonAvatar from '$lib/components/frameleaf/PersonAvatar.svelte';
   import BirthdayDialog from '$lib/components/frameleaf/people/BirthdayDialog.svelte';
-  import Menu from '$lib/components/frameleaf/Menu.svelte';
-  import MenuItem from '$lib/components/frameleaf/MenuItem.svelte';
   import CorrectionHistoryPanel from '$lib/components/frameleaf/people/CorrectionHistoryPanel.svelte';
   import FeaturedPhotoDialog from '$lib/components/frameleaf/people/FeaturedPhotoDialog.svelte';
   import FixMatchPanel from '$lib/components/frameleaf/people/FixMatchPanel.svelte';
@@ -21,7 +20,6 @@
   import { searchPerson, updatePerson, type PersonResponseDto, type PersonStatisticsResponseDto } from '@frameleaf/sdk';
   import { Icon, toastManager } from '@frameleaf/ui';
   import {
-    mdiAccountGroupOutline,
     mdiArrowLeft,
     mdiCakeVariantOutline,
     mdiFlowerTulipOutline,
@@ -32,10 +30,7 @@
     mdiFaceRecognition,
     mdiHeart,
     mdiHeartOutline,
-    mdiDotsHorizontal,
-    mdiHistory,
     mdiImageMultipleOutline,
-    mdiImageOutline,
     mdiPencilOutline,
   } from '@mdi/js';
   import { DateTime } from 'luxon';
@@ -45,20 +40,23 @@
    * The person page hero (FL-37, PD-1/PD-2/PD-7/PD-8), ported from `PersonHeader` in
    * design/frameleaf/template/src/PersonDetail.jsx:214-499: back button, featured-face avatar
    * (opens the featured photo dialog), inline name editor, facts line (count, date of birth
-   * with age or "Add date of birth", "Hidden from People") and the seven-button toolbar. The dialogs and the "Fix incorrect match" panel are the Frameleaf ports.
+   * with age or "Add date of birth", "Hidden from People") and the toolbar. The dialogs and the "Fix incorrect match" panel are the Frameleaf ports.
    *
    * The count reads "N photos · N videos" (PersonDetail.jsx:257-264) from the person statistics.
    * Every change here is announced: `PersonUpdate` for an edit, `PersonFacesChange` when faces
    * moved (Fix incorrect match) or a merge folded this person into someone else, so the People
    * grid, open viewer face chips and search chips re-read what they show.
    *
-   * "Correction history" is not in the prototype (PD-9). Owner decision 2026-09-29: it lives in a
-   * "…" menu after the toolbar, so the toolbar itself is exactly the prototype's.
+   * FL-1813 (owner 2026-11-26, prototype `personV2`): four buttons and no "…" menu: Merge people,
+   * Hide, Favorite and Fix recognition. Each task has one way in: the featured photo is changed by
+   * clicking the photo, and dates from the line under the name. Fix recognition opens one side panel
+   * with two tabs, "Wrong faces" (FixMatchPanel) and "Changes made" (CorrectionHistoryPanel), and a
+   * "How faces are grouped" link beside Done.
    *
    * The buttons are one row (DISCOVERY-P6): the hero spans the page, edge to edge as the prototype's
-   * does, so they fit on a desktop; on a phone the row scrolls sideways (people.css:1081-1087) rather
-   * than tucking buttons into the "…" menu. What an action did is said in a toast (with Undo for hide
-   * and favorite), which is also what a screen reader hears.
+   * does, so they fit on a desktop; on a phone the row scrolls sideways (people.css:1081-1087). What
+   * an action did is said in a toast (with Undo for hide and favorite), which is also what a screen
+   * reader hears.
    */
   interface Props {
     person: PersonResponseDto;
@@ -89,8 +87,12 @@
   let mergeOpen = $state(false);
   let mergeChoice: string | null = $state(null);
   let birthdayOpen = $state(false);
-  let fixOpen = $state(false);
-  let historyOpen = $state(false);
+  /** Which tab of the "Fix recognition" panel is open, if it is. */
+  let recognition = $state<'faces' | 'history'>();
+  const RECOGNITION_TABS = [
+    ['faces', 'frameleaf_people_fix_tab_faces'],
+    ['history', 'frameleaf_people_fix_tab_history'],
+  ] as const;
 
   const assetCount = $derived(statistics.assets);
   const countLabel = $derived(
@@ -107,9 +109,7 @@
   const span = $derived(lifespan(person.birthDate, person.deathDate));
   const age = $derived(ageInYears(person.birthDate));
   const birthday = $derived(
-    person.birthDate
-      ? DateTime.fromISO(person.birthDate).toLocaleString(DateTime.DATE_FULL, { locale: $locale })
-      : undefined,
+    person.birthDate ? formatLuxon(DateTime.fromISO(person.birthDate), DateTime.DATE_FULL, $locale) : undefined,
   );
 
   /** Says what happened in a toast (a live region); `undo` offers to put it back. */
@@ -278,50 +278,25 @@
       </div>
     </div>
     <div class="pd-actions" role="toolbar" aria-label={$t('frameleaf_people_person_actions', { values: { name } })}>
-      <!-- The buttons that scroll sideways on a phone; the "…" menu stays put at the end, so it is never clipped. -->
-      <div class="pd-actions-scroll">
-        <Button disabled={assetCount === 0} onclick={() => (featuredOpen = true)}>
-          <Icon icon={mdiImageOutline} size={ICON_SIZE.lg} aria-hidden="true" />
-          {$t('frameleaf_people_featured_photo')}
-        </Button>
-        <Button onclick={openMerge}>
-          <Icon icon={mdiCallMerge} size={ICON_SIZE.lg} aria-hidden="true" />
-          {$t('merge_people')}
-        </Button>
-        <Button onclick={() => void toggleHidden()}>
-          <Icon icon={person.isHidden ? mdiEyeOutline : mdiEyeOffOutline} size={ICON_SIZE.lg} aria-hidden="true" />
-          {person.isHidden ? $t('frameleaf_people_unhide') : $t('frameleaf_people_hide')}
-        </Button>
-        <Button onclick={() => void toggleFavorite()}>
-          <span class="pd-favorite" class:is-on={person.isFavorite}>
-            <Icon icon={person.isFavorite ? mdiHeart : mdiHeartOutline} size={ICON_SIZE.lg} aria-hidden="true" />
-          </span>
-          {person.isFavorite ? $t('unfavorite') : $t('favorite')}
-        </Button>
-      </div>
-      <!-- The everyday actions stay in the row; the rest wait in "…" so the row never runs to eight
-           buttons (date of birth is also the "Add date of birth" fact above). -->
-      <Menu label={$t('frameleaf_people_more_actions_for', { values: { name } })} align="end">
-        {#snippet trigger()}
-          <Icon icon={mdiDotsHorizontal} size={ICON_SIZE.lg} aria-hidden="true" />
-        {/snippet}
-        <MenuItem onSelect={() => (birthdayOpen = true)}>
-          <Icon icon={mdiCakeVariantOutline} size={ICON_SIZE.lg} aria-hidden="true" />
-          {person.birthDate || person.deathDate ? $t('frameleaf_people_dates') : $t('frameleaf_people_dates_add')}
-        </MenuItem>
-        <MenuItem disabled={assetCount === 0} onSelect={() => (fixOpen = true)}>
-          <Icon icon={mdiFaceRecognition} size={ICON_SIZE.lg} aria-hidden="true" />
-          {$t('fix_incorrect_match')}
-        </MenuItem>
-        <MenuItem onSelect={() => (historyOpen = true)}>
-          <Icon icon={mdiHistory} size={ICON_SIZE.lg} aria-hidden="true" />
-          {$t('frameleaf_people_correction_history')}
-        </MenuItem>
-        <MenuItem onSelect={onOpenRecognitionGroups}>
-          <Icon icon={mdiAccountGroupOutline} size={ICON_SIZE.lg} aria-hidden="true" />
-          {$t('frameleaf_people_recognition_groups')}
-        </MenuItem>
-      </Menu>
+      <Button onclick={openMerge}>
+        <Icon icon={mdiCallMerge} size={ICON_SIZE.lg} aria-hidden="true" />
+        {$t('merge_people')}
+      </Button>
+      <Button onclick={() => void toggleHidden()}>
+        <Icon icon={person.isHidden ? mdiEyeOutline : mdiEyeOffOutline} size={ICON_SIZE.lg} aria-hidden="true" />
+        {person.isHidden ? $t('frameleaf_people_unhide') : $t('frameleaf_people_hide')}
+      </Button>
+      <Button onclick={() => void toggleFavorite()}>
+        <span class="pd-favorite" class:is-on={person.isFavorite}>
+          <Icon icon={person.isFavorite ? mdiHeart : mdiHeartOutline} size={ICON_SIZE.lg} aria-hidden="true" />
+        </span>
+        {person.isFavorite ? $t('unfavorite') : $t('favorite')}
+      </Button>
+      <!-- With no photos there are no faces to look through, but past changes can still be undone. -->
+      <Button onclick={() => (recognition = assetCount === 0 ? 'history' : 'faces')}>
+        <Icon icon={mdiFaceRecognition} size={ICON_SIZE.lg} aria-hidden="true" />
+        {$t('frameleaf_people_fix_recognition')}
+      </Button>
     </div>
   </div>
 </section>
@@ -348,11 +323,40 @@
     announce(hasDates ? $t('frameleaf_people_dates_saved') : $t('frameleaf_people_dates_removed'));
   }}
 />
-{#if fixOpen}
-  <FixMatchPanel {person} {onOpenAsset} onChanged={announceFaceChanges} close={() => (fixOpen = false)} />
-{/if}
-{#if historyOpen}
-  <CorrectionHistoryPanel {person} {onOpenAsset} onChanged={announceFaceChanges} close={() => (historyOpen = false)} />
+{#snippet recognitionTabs()}
+  <div class="pd-fix-tabs" role="tablist" aria-label={$t('frameleaf_people_fix_recognition')}>
+    {#each RECOGNITION_TABS as [id, label] (id)}
+      <button type="button" role="tab" aria-selected={recognition === id} onclick={() => (recognition = id)}>
+        {$t(label)}
+      </button>
+    {/each}
+  </div>
+{/snippet}
+{#snippet groupsLink()}
+  <button type="button" class="pd-fix-link" onclick={onOpenRecognitionGroups}>
+    {$t('frameleaf_people_how_faces_grouped')}
+  </button>
+{/snippet}
+{#if recognition === 'faces'}
+  <FixMatchPanel
+    {person}
+    {onOpenAsset}
+    onChanged={announceFaceChanges}
+    close={() => (recognition = undefined)}
+    title={$t('frameleaf_people_fix_recognition')}
+    tabs={recognitionTabs}
+    footerLink={groupsLink}
+  />
+{:else if recognition === 'history'}
+  <CorrectionHistoryPanel
+    {person}
+    {onOpenAsset}
+    onChanged={announceFaceChanges}
+    close={() => (recognition = undefined)}
+    title={$t('frameleaf_people_fix_recognition')}
+    tabs={recognitionTabs}
+    footerLink={groupsLink}
+  />
 {/if}
 
 <style>
@@ -368,11 +372,6 @@
     margin-bottom: calc(-1 * var(--fl-space-3));
     background: var(--fl-panel);
   }
-  /* The hero is its own stacking context, so its open "…" menu would sit under the library toolbar
-     that follows (sticky, z-index 5); lift the hero above it only while the menu is open. */
-  .pd-hero:has(:global([role='menu'])) {
-    z-index: 6;
-  }
   .pd-backdrop {
     position: absolute;
     inset: -40px;
@@ -384,7 +383,6 @@
     pointer-events: none;
     /*
      * Cut back to the hero's own box (it reaches 40px past each edge so the blur has no soft rim).
-     * The hero itself does not clip, so the "…" menu can open below it.
      */
     clip-path: inset(40px);
   }
@@ -556,11 +554,56 @@
     display: flex;
     flex-wrap: wrap;
     grid-area: actions;
-    gap: var(--fl-space-3) var(--fl-space-2);
+    /* 12px between buttons, the scale's minimum (FL-1813 follow-up). */
+    gap: var(--fl-space-3);
   }
-  /* On a wider screen the scroller is no box at all: its buttons sit in the row beside the menu. */
-  .pd-actions-scroll {
-    display: contents;
+  /* FL-1813: the two recognition lists share one panel (prototype people.css `.pd-fix-tabs`, `.pd-fix-link`). */
+  .pd-fix-tabs {
+    display: flex;
+    align-items: center;
+    gap: var(--fl-space-3);
+    padding: var(--fl-space-3) var(--fl-space-5);
+    border-bottom: 1px solid var(--fl-border);
+  }
+  .pd-fix-tabs button {
+    position: relative;
+    padding: var(--fl-space-2) var(--fl-space-3);
+    border: 1px solid transparent;
+    border-radius: var(--fl-radius-pill);
+    background: transparent;
+    color: var(--fl-muted);
+    font: inherit;
+    font-size: var(--fl-font-small);
+    cursor: pointer;
+  }
+  /* The pill is drawn small; what can be pressed is 44 high. */
+  .pd-fix-tabs button::after {
+    content: '';
+    position: absolute;
+    inset: 50% 0 auto;
+    height: 44px;
+    transform: translateY(-50%);
+  }
+  .pd-fix-tabs button[aria-selected='true'] {
+    border-color: var(--fl-border);
+    background: var(--fl-raised);
+    color: var(--fl-text);
+    font-weight: var(--fl-weight-semibold);
+  }
+  .pd-fix-link {
+    min-height: 44px;
+    margin-inline-start: auto;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--fl-muted);
+    font: inherit;
+    font-size: var(--fl-font-small);
+    text-decoration: underline;
+    cursor: pointer;
+  }
+  .pd-fix-link:hover {
+    color: var(--fl-text);
   }
   /* Phones: the library header also insets its content by 8px (LibraryView `.fl-library-header`); out through that too. */
   @media (max-width: 767px) {
@@ -592,28 +635,18 @@
       font-size: 20px;
       white-space: normal;
     }
-    /*
-     * people.css:1081-1087: one row whose buttons scroll sideways from the screen's edge; the "…"
-     * menu stays at the end of the row.
-     */
+    /* people.css:1081-1087: one row whose buttons scroll sideways from the screen's edge. */
     .pd-actions {
       flex-wrap: nowrap;
-      align-items: center;
-    }
-    .pd-actions-scroll {
-      display: flex;
-      flex: 1 1 auto;
-      gap: var(--fl-space-2);
-      min-width: 0;
       margin-inline-start: calc(-1 * var(--fl-space-4));
       padding: 2px 0 2px var(--fl-space-4);
       overflow-x: auto;
       scrollbar-width: none;
     }
-    .pd-actions-scroll::-webkit-scrollbar {
+    .pd-actions::-webkit-scrollbar {
       display: none;
     }
-    .pd-actions-scroll > :global(*) {
+    .pd-actions > :global(*) {
       flex-shrink: 0;
     }
   }

@@ -154,6 +154,23 @@ describe(DuplicateService.name, () => {
       expect(group.assets.find(({ id }) => id === heic.id)?.livePhotoVideoId).toBeNull();
     });
 
+    it('reads one page of groups, cleaning up groups of one only before the first page (FL-1795)', async () => {
+      mocks.duplicateRepository.cleanupSingletonGroups.mockResolvedValue();
+      mocks.duplicateRepository.getAll.mockResolvedValue([]);
+
+      await sut.getDuplicates(authStub.admin, { take: 250 });
+      expect(mocks.duplicateRepository.cleanupSingletonGroups).toHaveBeenCalledTimes(1);
+      expect(mocks.duplicateRepository.getAll).toHaveBeenLastCalledWith(authStub.admin.user.id, {}, { take: 250 });
+
+      await sut.getDuplicates(authStub.admin, { take: 250, after: 'group-250' });
+      expect(mocks.duplicateRepository.cleanupSingletonGroups).toHaveBeenCalledTimes(1);
+      expect(mocks.duplicateRepository.getAll).toHaveBeenLastCalledWith(
+        authStub.admin.user.id,
+        {},
+        { take: 250, after: 'group-250' },
+      );
+    });
+
     it('should hide private NSFW duplicate assets when requested', async () => {
       mocks.duplicateRepository.cleanupSingletonGroups.mockResolvedValue();
       mocks.duplicateRepository.getAll.mockResolvedValue([]);

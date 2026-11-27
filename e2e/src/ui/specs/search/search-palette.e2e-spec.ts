@@ -22,8 +22,10 @@ const JAMIE = '00000000-0000-4000-8000-000000000001';
 
 const json = (body: unknown) => ({ status: 200, contentType: 'application/json', json: body });
 
-const openPalette = async (page: Page) => {
-  await page.goto('/photos');
+const openPalette = async (page: Page, load = true) => {
+  if (load) {
+    await page.goto('/photos');
+  }
   await page.getByTestId('search-entry').click();
   const palette = page.getByRole('dialog', { name: 'Search your library' });
   await expect(palette).toBeVisible();
@@ -106,6 +108,32 @@ test.describe('search palette', () => {
     await setupBaseMockApiRoutes(context, adminUserId);
     await setupTimelineMockApiRoutes(context, timelineRestData, changes, testContext);
     await setupSearchRoutes(context);
+  });
+
+  // FL-1802: the people, pets, tags, albums, places and cameras are kept for the session.
+  test('asks for the vocabularies once, however often the palette opens', async ({ page }) => {
+    const VOCABULARIES = /\/api\/(people|pets|tags|albums|search\/suggestions|landmarks|places)(\?|$)/;
+    const asked: string[] = [];
+    page.on('request', (request) => {
+      // the palette's own short list of people (`size=40`) is not one of the filter vocabularies
+      if (request.method() === 'GET' && VOCABULARIES.test(request.url()) && !request.url().includes('size=')) {
+        asked.push(new URL(request.url()).pathname + new URL(request.url()).search);
+      }
+    });
+    const palette = await openPalette(page);
+    await expect(palette.getByRole('combobox', { name: 'Search query' })).toBeVisible();
+    await page.waitForTimeout(1000);
+    const first = asked.length;
+    test.info().annotations.push({ type: 'first opening', description: JSON.stringify(asked) });
+    expect(first).toBeGreaterThan(0);
+
+    await page.keyboard.press('Escape');
+    await expect(palette).toBeHidden();
+    const again = await openPalette(page, false);
+    await expect(again.getByRole('combobox', { name: 'Search query' })).toBeVisible();
+    await page.waitForTimeout(1000);
+    test.info().annotations.push({ type: 'second opening', description: JSON.stringify(asked.slice(first)) });
+    expect(asked.slice(first)).toEqual([]);
   });
 
   test('a typed operator becomes a chip and searches with the structured filter', async ({ page }) => {

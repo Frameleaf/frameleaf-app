@@ -4,6 +4,8 @@ import {
   AlbumUserRole,
   MediaConnectionStatus,
   MediaSubscriptionState,
+  type AlbumRailItemDto,
+  type AlbumResponseDto,
 } from '@frameleaf/sdk';
 import { mdiCameraBurst, mdiFolderOutline, mdiHeartOutline } from '@mdi/js';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
@@ -15,6 +17,7 @@ import { creatorsStore } from '$lib/frameleaf/creators-store.svelte';
 import { helpPanel } from '$lib/frameleaf/help-panel.svelte';
 import { resetIconCatalogueCache } from '$lib/frameleaf/icon-catalogue';
 import { RAIL_CLOSED_SECTIONS_KEY } from '$lib/frameleaf/navigation';
+import { railSession } from '$lib/frameleaf/rail-session.svelte';
 import { authManager } from '$lib/managers/auth-manager.svelte';
 import { eventManager } from '$lib/managers/event-manager.svelte';
 import { Route } from '$lib/route';
@@ -38,6 +41,48 @@ vi.mock('$lib/managers/feature-flags-manager.svelte', () => ({
   featureFlagsManager: { value: { search: true, map: true, trash: true } },
 }));
 
+/**
+ * FL-1796: the rail reads the slim `GET /albums/rail` for its tree and the full hierarchy only for the
+ * right-click menu's dialogs. Specs describe the albums once, as a hierarchy, and serve both.
+ */
+type HierarchyFixture = { roots: Array<{ album: AlbumResponseDto; children: HierarchyFixture['roots'] }> };
+const asRail = ({ roots }: HierarchyFixture) => {
+  const albums: AlbumRailItemDto[] = [];
+  const visit = (node: HierarchyFixture['roots'][number], parentId: string | null) => {
+    const { album } = node;
+    albums.push({
+      id: album.id,
+      albumName: album.albumName,
+      parentId,
+      kind: album.kind,
+      icon: album.icon,
+      color: album.color ?? null,
+      sortOrder: album.sortOrder ?? null,
+      role:
+        album.albumUsers?.find(({ user }) => user.id === authManager.user.id)?.role ??
+        (album.albumUsers?.length ? AlbumUserRole.Viewer : AlbumUserRole.Owner),
+      shared: album.shared,
+      isLocked: album.isLocked ?? false,
+      isSmart: album.isSmart ?? false,
+      smartRuleId: album.smartRuleId ?? null,
+      assetCount: album.assetCount,
+      bookmarkCount: album.bookmarkCount ?? 0,
+      statsPending: album.statsPending,
+    });
+    for (const child of node.children) {
+      visit(child, album.id);
+    }
+  };
+  for (const root of roots) {
+    visit(root, null);
+  }
+  return { albums };
+};
+const serve = (hierarchy: HierarchyFixture | unknown) => {
+  sdkMock.getAlbumRail.mockImplementation(() => Promise.resolve(asRail(hierarchy as HierarchyFixture)));
+  sdkMock.getAlbumHierarchy.mockResolvedValue(hierarchy as never);
+};
+
 const headings = () =>
   screen
     .getAllByRole('button', { expanded: true })
@@ -47,13 +92,14 @@ const headings = () =>
 
 beforeEach(() => {
   addMessages('dev', en);
+  railSession.reset();
   localStorage.clear();
   sidebarCollapsed.set(false);
   albumTreeDropdown.set(false);
   resetIconCatalogueCache();
   app.page.url = new URL('http://localhost/photos');
   authManager.setUser(userAdminFactory.build());
-  sdkMock.getAlbumHierarchy.mockResolvedValue({ roots: [] });
+  serve({ roots: [] });
   sdkMock.getPartners.mockResolvedValue([]);
   sdkMock.getMyPreferences.mockResolvedValue({ savedSearches: [], revision: 'r0' } as never);
   sdkMock.searchLibraryItems.mockResolvedValue({ count: 0, countCapped: false, items: [], nextCursor: null });
@@ -87,6 +133,27 @@ const treeWithIcon = (icon: string | null) => ({
 });
 
 describe('LibraryRail', () => {
+  it('draws the last album tree at once when it mounts again, and reads it again behind it (FL-1796)', async () => {
+    serve(treeWithIcon(null));
+    const first = render(LibraryRail);
+    expect(await screen.findByRole('link', { name: 'Album' })).toBeInTheDocument();
+    first.unmount();
+
+    let answer!: (value: never) => void;
+    sdkMock.getAlbumRail.mockReturnValue(
+      new Promise((resolve) => {
+        answer = resolve;
+      }),
+    );
+    render(LibraryRail);
+    // no blank rail while the read is out
+    expect(screen.getByRole('link', { name: 'Album' })).toBeInTheDocument();
+    expect(sdkMock.getAlbumRail).toHaveBeenCalledTimes(2);
+
+    answer({ albums: [] } as never);
+    await waitFor(() => expect(screen.queryByRole('link', { name: 'Album' })).not.toBeInTheDocument());
+  });
+
   it('heads the phone menu with Boards, Studio, Activity and Help (UI review 2026-10-30 #8)', async () => {
     const { container } = render(LibraryRail);
     const group = container.querySelector<HTMLElement>('.fl-phone-sections')!;
@@ -102,10 +169,10 @@ describe('LibraryRail', () => {
 
   it('uses the shared Design hierarchy and keeps Pro context on album/create links', async () => {
     app.page.url = new URL('http://localhost/pro');
-    sdkMock.getAlbumHierarchy.mockResolvedValue(treeWithIcon(null));
+    serve(treeWithIcon(null));
     render(LibraryRail);
     const album = await screen.findByRole('link', { name: /^Album/ });
-    expect(sdkMock.getAlbumHierarchy).toHaveBeenCalledWith({ libraryScope: LibraryViewScope.Design });
+    expect(sdkMock.getAlbumRail).toHaveBeenCalledWith({ libraryScope: LibraryViewScope.Design });
     const url = new URL(album.getAttribute('href')!, 'http://localhost');
     expect(url.pathname).toBe('/albums/album');
     expect(url.searchParams.has('fl')).toBe(true);
@@ -119,7 +186,7 @@ describe('LibraryRail', () => {
     ['mdiUnknown', mdiFolderOutline],
   ])('renders stored %s geometry for every tree node while preserving its link', async (icon, expected) => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(Response.json({ mdiCameraBurst })));
-    sdkMock.getAlbumHierarchy.mockResolvedValue(treeWithIcon(icon));
+    serve(treeWithIcon(icon));
     albumTreeDropdown.set(true);
     app.page.url = new URL(Route.viewAlbum({ id: 'child' }), 'http://localhost');
     render(LibraryRail);
@@ -151,7 +218,7 @@ describe('LibraryRail', () => {
         sortOrder,
         albumUsers: [{ user: me, role: AlbumUserRole.Owner }],
       } as never);
-    sdkMock.getAlbumHierarchy.mockResolvedValue({
+    serve({
       roots: [
         { album: owned('Hikes', 1024), children: [] },
         { album: owned('Summer', 2048), children: [] },
@@ -159,6 +226,8 @@ describe('LibraryRail', () => {
     });
     sdkMock.updateAlbumInfo.mockResolvedValue({ ...owned('Summer', 0) } as never);
     sdkMock.setAlbumOrder.mockResolvedValue(undefined as never);
+    // the announcement carries the full album, read for it because no album was rewritten (FL-1796)
+    sdkMock.getAlbumInfo.mockResolvedValue(owned('Trips', 3072));
     const updated = vi.fn();
     const off = eventManager.on({ AlbumUpdate: updated });
     render(LibraryRail);
@@ -176,7 +245,7 @@ describe('LibraryRail', () => {
     );
     // An open Albums page hears of it, and the sidebar reads the tree again to show the new order.
     expect(updated).toHaveBeenCalledWith(expect.objectContaining({ id: 'Summer' }));
-    await waitFor(() => expect(sdkMock.getAlbumHierarchy.mock.calls.length).toBeGreaterThanOrEqual(2));
+    await waitFor(() => expect(sdkMock.getAlbumRail.mock.calls.length).toBeGreaterThanOrEqual(2));
     off();
   });
 
@@ -192,7 +261,7 @@ describe('LibraryRail', () => {
         albumUsers: [{ user: me, role: AlbumUserRole.Owner }],
       } as never);
     // The person's own order shows Summer first although its shared sortOrder is higher.
-    sdkMock.getAlbumHierarchy.mockResolvedValue({
+    serve({
       roots: [
         { album: owned('Summer', 2048), children: [] },
         { album: owned('Hikes', 1024), children: [] },
@@ -216,7 +285,7 @@ describe('LibraryRail', () => {
   });
 
   it('expands each nested branch without hiding its own page link', async () => {
-    sdkMock.getAlbumHierarchy.mockResolvedValue({
+    serve({
       roots: [
         {
           album: albumFactory.build({ id: 'root', albumName: 'Root', kind: AlbumKind.Album }),
@@ -256,19 +325,19 @@ describe('LibraryRail', () => {
 
   it('updates stored icon geometry after an album event and releases the subscription on unmount', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(Response.json({ mdiCameraBurst, mdiHeartOutline })));
-    sdkMock.getAlbumHierarchy.mockResolvedValue(treeWithIcon('mdiCameraBurst'));
+    serve(treeWithIcon('mdiCameraBurst'));
     const { unmount } = render(LibraryRail);
     const link = await screen.findByRole('link', { name: 'Album' });
     await waitFor(() => expect(link.querySelector('path')).toHaveAttribute('d', mdiCameraBurst));
 
-    sdkMock.getAlbumHierarchy.mockResolvedValue(treeWithIcon('mdiHeartOutline'));
+    serve(treeWithIcon('mdiHeartOutline'));
     eventManager.emit('AlbumUpdate', albumFactory.build({ icon: 'mdiHeartOutline' }));
     await waitFor(() => expect(link.querySelector('path')).toHaveAttribute('d', mdiHeartOutline));
     expect(fetch).toHaveBeenCalledTimes(1);
-    expect(sdkMock.getAlbumHierarchy).toHaveBeenCalledTimes(2);
+    expect(sdkMock.getAlbumRail).toHaveBeenCalledTimes(2);
     unmount();
     eventManager.emit('AlbumUpdate', albumFactory.build());
-    expect(sdkMock.getAlbumHierarchy).toHaveBeenCalledTimes(2);
+    expect(sdkMock.getAlbumRail).toHaveBeenCalledTimes(2);
   });
 
   it('lists the sections in the September 24 order: Explore, Albums, Shared spaces, Tools', () => {
@@ -286,7 +355,7 @@ describe('LibraryRail', () => {
 
   it('lists saved searches in Albums, after the album tree and before Shared links', async () => {
     authManager.setPreferences(preferencesFactory.build({ sharedLinks: { enabled: true, sidebarWeb: true } } as never));
-    sdkMock.getAlbumHierarchy.mockResolvedValue({
+    serve({
       roots: [{ album: { id: 'album-1', albumName: 'Porto', kind: AlbumKind.Album }, children: [] }],
     } as never);
     sdkMock.getMyPreferences.mockResolvedValue({
@@ -485,7 +554,7 @@ describe('LibraryRail in Boards', () => {
 
   beforeEach(() => {
     app.page.url = new URL('http://localhost/pro');
-    sdkMock.getAlbumHierarchy.mockResolvedValue(boardsTree as never);
+    serve(boardsTree as never);
   });
 
   afterEach(async () => {
@@ -702,7 +771,7 @@ describe('LibraryRail right-click menu (approved design, 2026-11-04)', () => {
   beforeEach(() => {
     authManager.setUser(me);
     albumTreeDropdown.set(true);
-    sdkMock.getAlbumHierarchy.mockResolvedValue({
+    serve({
       roots: [{ album: family, children: [{ album: rockies, children: [] }] }],
     });
   });
@@ -714,6 +783,10 @@ describe('LibraryRail right-click menu (approved design, 2026-11-04)', () => {
     const menu = await screen.findByRole('menu', { name: 'Actions for Rockies' });
     expect(menu.parentElement).toBe(document.body);
     expect(menu.style.left).toBe('50px');
+    // Merge holds its place, disabled, until the full album says it is not a partner's copy (FL-1796)
+    await waitFor(() =>
+      expect(within(menu).getByRole('menuitem', { name: 'Merge with…' })).not.toHaveAttribute('aria-disabled'),
+    );
     expect(
       within(menu)
         .getAllByRole('menuitem')
@@ -732,6 +805,40 @@ describe('LibraryRail right-click menu (approved design, 2026-11-04)', () => {
       'Create link',
       'Delete',
     ]);
+  });
+
+  it('reads the tree from the slim list and the full albums only once a menu opens (FL-1796)', async () => {
+    render(LibraryRail);
+    await screen.findByRole('link', { name: 'Rockies' });
+    expect(sdkMock.getAlbumRail).toHaveBeenCalled();
+    expect(sdkMock.getAlbumHierarchy).not.toHaveBeenCalled();
+
+    await fireEvent.contextMenu(screen.getByRole('link', { name: 'Rockies' }), { clientX: 50, clientY: 60 });
+    await waitFor(() => expect(sdkMock.getAlbumHierarchy).toHaveBeenCalledTimes(1));
+  });
+
+  it('never offers to merge a partner’s copy, which only the full album reveals (FL-1796)', async () => {
+    const copy = { ...rockies, origin: { rootOwnerId: 'partner', rootOwnerName: 'Sam' } };
+    serve({ roots: [{ album: family, children: [{ album: copy, children: [] }] }] });
+    render(LibraryRail);
+    await fireEvent.contextMenu(await screen.findByRole('link', { name: 'Rockies' }), { clientX: 50, clientY: 60 });
+    const menu = await screen.findByRole('menu', { name: 'Actions for Rockies' });
+    await waitFor(() => expect(within(menu).queryByRole('menuitem', { name: 'Merge with…' })).not.toBeInTheDocument());
+    expect(within(menu).getByRole('menuitem', { name: 'Move to…' })).toBeInTheDocument();
+  });
+
+  it('runs a command on an album the full list does not hold yet, reading it on its own (FL-1796)', async () => {
+    sdkMock.getAlbumHierarchy.mockResolvedValue({ roots: [{ album: family, children: [] }] } as never);
+    sdkMock.getAlbumInfo.mockResolvedValue(rockies);
+    render(LibraryRail);
+    await fireEvent.contextMenu(await screen.findByRole('link', { name: 'Rockies' }), { clientX: 50, clientY: 60 });
+    await fireEvent.click(
+      within(await screen.findByRole('menu', { name: 'Actions for Rockies' })).getByRole('menuitem', {
+        name: 'Delete',
+      }),
+    );
+    expect(await screen.findByRole('dialog', { name: 'Delete “Rockies”?' })).toBeInTheDocument();
+    expect(sdkMock.getAlbumInfo).toHaveBeenCalledWith({ id: 'rockies' });
   });
 
   it('deletes from the sidebar through the same confirmation as the Albums page, without leaving the page', async () => {

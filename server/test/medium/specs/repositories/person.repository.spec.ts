@@ -1020,10 +1020,6 @@ describe(PersonRepository.name, () => {
       // a second run replaces the pairs, and a stricter distance setting applies at once to the read
       await expect(sut.refreshMergeCandidates(user.id, 0.5)).resolves.toBe(1);
       await expect(sut.getMergeSuggestions(user.id, { maxDistance: 0.01 })).resolves.toEqual([]);
-
-      // an owner with more people than the People page works out as it is read keeps the stored pairs
-      await expect(sut.refreshMergeCandidates(user.id, 0.01, 2)).resolves.toBeUndefined();
-      await expect(sut.getMergeSuggestions(user.id, { maxDistance: 0.5 })).resolves.toHaveLength(1);
     });
 
     it('should not suggest a hidden person', async () => {

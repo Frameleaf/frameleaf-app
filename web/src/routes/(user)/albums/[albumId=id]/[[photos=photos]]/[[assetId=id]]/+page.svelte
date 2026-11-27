@@ -56,10 +56,10 @@
   import { handleError } from '$lib/utils/handle-error';
   import { isAlbumsRoute, navigate } from '$lib/utils/navigation';
   import { toTimelineAsset } from '$lib/utils/timeline-util';
+  import { loadAllTags } from '$lib/frameleaf/tag-store';
   import {
     AlbumKind,
     AlbumUserRole,
-    getAllTags,
     getAlbumInfo,
     getAlbumItems,
     getTimelineDatesToCheck,
@@ -308,7 +308,7 @@
   });
 
   $effect(() => {
-    void getAllTags()
+    void loadAllTags()
       .then((tags: TagResponseDto[]) => (tagOptions = tags.map(({ id, value }) => ({ id, name: value }))))
       .catch(() => {
         // Tagging simply offers no existing tags if they cannot be read.

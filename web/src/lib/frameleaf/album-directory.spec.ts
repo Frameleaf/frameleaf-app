@@ -5,6 +5,8 @@ import { userAdminFactory } from '@test-data/factories/user-factory';
 import {
   albumAncestors,
   arrangeAlbumDirectory,
+  canEdit,
+  isOwner,
   canDropOnCollection,
   canTakeOut,
   compareAlbums,
@@ -252,5 +254,17 @@ describe('nested album organization', () => {
   it('builds full breadcrumbs and stops at unavailable ancestors', () => {
     expect(albumAncestors(nested, leaf).map(({ id }) => id)).toEqual(['root', 'child']);
     expect(albumAncestors(tree({ albums: [leaf] }), leaf)).toEqual([]);
+  });
+});
+
+/** FL-1796: the slim rail list carries only the viewer's own role, and edit rights read it. */
+describe('edit rights from a slim rail item', () => {
+  it.each([
+    [AlbumUserRole.Owner, true, true],
+    [AlbumUserRole.Editor, true, false],
+    [AlbumUserRole.Viewer, false, false],
+  ])('a %s may edit: %s, owns it: %s', (role, edit, own) => {
+    expect(canEdit({ role }, 'me')).toBe(edit);
+    expect(isOwner({ role }, 'me')).toBe(own);
   });
 });

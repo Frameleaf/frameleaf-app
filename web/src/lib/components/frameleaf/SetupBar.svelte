@@ -1,6 +1,8 @@
 <script lang="ts" module>
   const CELEBRATED = 'frameleaf-setup-celebrated';
   const POLL_MS = 15_000;
+  /** FL-1794: while the server's queues move and no setup is known, how often to ask whether one started. */
+  const STARTED_CHECK_MS = 60_000;
 
   const readCelebrated = () => {
     try {
@@ -12,6 +14,7 @@
 </script>
 
 <script lang="ts">
+  import { confirmFrameleaf } from '$lib/frameleaf/confirm';
   /*
    * Setup bar (FL-1146, owner 2026-11-02; prototype SetupBar.jsx): an Immich import opens the library as soon as its
    * rows are in. Until the work behind it is done, administrators see this row above the top bar on every page:
@@ -22,6 +25,8 @@
   import { clickOutside } from '$lib/actions/click-outside';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { tonightLabel } from '$lib/frameleaf/background-work';
+  import { isTabHidden } from '$lib/frameleaf/quiet-poll';
+  import { eventManager } from '$lib/managers/event-manager.svelte';
   import { Route } from '$lib/route';
   import { locale } from '$lib/stores/preferences.store';
   import { setupProgress } from '$lib/stores/setup-progress.svelte';
@@ -36,7 +41,7 @@
     LibrarySetupStageId,
     LibrarySetupStageStatus,
   } from '@frameleaf/sdk';
-  import { Icon, modalManager } from '@frameleaf/ui';
+  import { Icon } from '@frameleaf/ui';
   import {
     mdiAlertCircleOutline,
     mdiCheckCircle,
@@ -50,7 +55,7 @@
     mdiProgressClock,
     mdiRefresh,
   } from '@mdi/js';
-  import { onDestroy } from 'svelte';
+  import { onDestroy, untrack } from 'svelte';
   import { t } from 'svelte-i18n';
 
   type Stage = LibrarySetupProgressDto['stages'][number];
@@ -134,9 +139,9 @@
     if (next.completedAt && readCelebrated() !== next.completedAt) {
       celebrating = true;
     }
-    // An inactive answer can come before Manager starts setup, so only a finished setup ends polling. Servers
-    // not set up from an import answer at once without reading the database.
-    if (next.completedAt) {
+    // FL-1800: a finished setup, or a server with none running, ends the polling. An inactive answer can come
+    // before Manager starts setup, so that one is asked again when the socket reconnects or the tab is shown.
+    if (next.completedAt || !next.active) {
       stopPolling();
     }
   };
@@ -162,11 +167,13 @@
     }
   };
 
+  let lastAsked = 0;
   const load = async () => {
     if (loading) {
       return;
     }
     loading = true;
+    lastAsked = Date.now();
     try {
       await latest(getLibrarySetupProgress());
     } catch {
@@ -201,7 +208,7 @@
   // The owner would rather let the server run: held work starts, and this bar and the phone step stop asking.
   const dismiss = () =>
     act(async () => {
-      const confirmed = await modalManager.showDialog({
+      const confirmed = await confirmFrameleaf({
         title: $t('setup_bar_dismiss_title'),
         prompt: $t('setup_bar_dismiss_prompt'),
         confirmText: $t('setup_bar_dismiss'),
@@ -227,9 +234,37 @@
     if (!authManager.authenticated || !authManager.user?.isAdmin) {
       return;
     }
-    void load();
-    timer = setInterval(() => void load(), POLL_MS);
-    return stopPolling;
+    // FL-1800: a hidden tab asks nothing, and asks at once when it is shown again
+    const start = () => {
+      stopPolling();
+      if (isTabHidden()) {
+        return;
+      }
+      void load();
+      timer = setInterval(() => void load(), POLL_MS);
+    };
+    // a finished setup stays finished for this page; one not running yet may have been started since
+    const resume = () => {
+      if (!untrack(() => setupProgress.progress?.completedAt)) {
+        start();
+      }
+    };
+    const onVisibility = () => (isTabHidden() ? stopPolling() : resume());
+    start();
+    document.addEventListener('visibilitychange', onVisibility);
+    // subscribing reads and writes the event manager's own state, which must not re-run this effect
+    // FL-1794: setup starting puts work in the queues, which the server announces; ask then, but rarely
+    const onQueues = () => {
+      if (timer === undefined && !isTabHidden() && Date.now() - lastAsked >= STARTED_CHECK_MS) {
+        resume();
+      }
+    };
+    const unsubscribe = untrack(() => eventManager.on({ WebsocketConnect: resume, QueueProgress: onQueues }));
+    return () => {
+      stopPolling();
+      unsubscribe();
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
   });
 
   // Pages size themselves from --fl-topbar-height, which adds this bar's height (app.css).

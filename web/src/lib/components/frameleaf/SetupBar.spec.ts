@@ -3,6 +3,7 @@ import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import SetupBar from '$lib/components/frameleaf/SetupBar.svelte';
+import { eventManager } from '$lib/managers/event-manager.svelte';
 import { locale } from '$lib/stores/preferences.store';
 import { setupProgress } from '$lib/stores/setup-progress.svelte';
 import { handleError } from '$lib/utils/handle-error';
@@ -11,7 +12,7 @@ import en from '../../../../../i18n/en.json';
 const auth = vi.hoisted(() => ({ authenticated: true, user: { isAdmin: true } }));
 vi.mock('$lib/managers/auth-manager.svelte', () => ({ authManager: auth }));
 vi.mock('$lib/utils/handle-error', () => ({ handleError: vi.fn() }));
-const dialog = vi.hoisted(() => ({ showDialog: vi.fn() }));
+const dialog = vi.hoisted(() => ({ show: vi.fn() }));
 vi.mock('@frameleaf/ui', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@frameleaf/ui')>()),
   modalManager: dialog,
@@ -70,12 +71,12 @@ describe('SetupBar', () => {
     expect(await screen.findByText('Setup needs attention')).toBeInTheDocument();
     await fireEvent.click(screen.getByRole('button', { name: /Details/ }));
 
-    dialog.showDialog.mockResolvedValueOnce(false);
+    dialog.show.mockResolvedValueOnce(false);
     await fireEvent.click(screen.getByRole('button', { name: 'Stop setup' }));
-    expect(dialog.showDialog).toHaveBeenCalledOnce();
+    expect(dialog.show).toHaveBeenCalledOnce();
     expect(sdkMock.dismissLibrarySetup).not.toHaveBeenCalled();
 
-    dialog.showDialog.mockResolvedValueOnce(true);
+    dialog.show.mockResolvedValueOnce(true);
     sdkMock.getLibrarySetupProgress.mockResolvedValue(progress({ active: false, phase: null, stages: [] }));
     await fireEvent.click(screen.getByRole('button', { name: 'Stop setup' }));
     await vi.waitFor(() => expect(screen.queryByText('Setup needs attention')).not.toBeInTheDocument());
@@ -417,6 +418,75 @@ describe('SetupBar', () => {
       await vi.advanceTimersByTimeAsync(15_000);
       expect(screen.getByText('Setting up your library')).toBeInTheDocument();
     } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  /** FL-1800 */
+  it('stops asking on a server with no setup running, and asks again when the socket reconnects', async () => {
+    vi.useFakeTimers();
+    try {
+      sdkMock.getLibrarySetupProgress.mockResolvedValue(progress({ active: false }));
+      render(SetupBar);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(sdkMock.getLibrarySetupProgress).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(10 * 15_000);
+      expect(sdkMock.getLibrarySetupProgress).toHaveBeenCalledTimes(1);
+
+      sdkMock.getLibrarySetupProgress.mockResolvedValue(progress());
+      eventManager.emit('WebsocketConnect');
+      await vi.advanceTimersByTimeAsync(0);
+      expect(screen.getByText('Setting up your library')).toBeInTheDocument();
+      await vi.advanceTimersByTimeAsync(15_000);
+      expect(sdkMock.getLibrarySetupProgress).toHaveBeenCalledTimes(3);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  /** FL-1794 */
+  it('asks whether setup started while the server says its queues are moving, once a minute at most', async () => {
+    vi.useFakeTimers();
+    try {
+      sdkMock.getLibrarySetupProgress.mockResolvedValue(progress({ active: false }));
+      render(SetupBar);
+      await vi.advanceTimersByTimeAsync(0);
+      for (let second = 0; second < 59; second++) {
+        eventManager.emit('QueueProgress');
+        await vi.advanceTimersByTimeAsync(1000);
+      }
+      expect(sdkMock.getLibrarySetupProgress).toHaveBeenCalledTimes(1);
+
+      sdkMock.getLibrarySetupProgress.mockResolvedValue(progress());
+      await vi.advanceTimersByTimeAsync(1000);
+      eventManager.emit('QueueProgress');
+      await vi.advanceTimersByTimeAsync(0);
+      expect(sdkMock.getLibrarySetupProgress).toHaveBeenCalledTimes(2);
+      expect(screen.getByText('Setting up your library')).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('asks nothing while the tab is hidden, and asks at once when it is shown', async () => {
+    const show = (state: DocumentVisibilityState) => {
+      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => state });
+      document.dispatchEvent(new Event('visibilitychange'));
+    };
+    vi.useFakeTimers();
+    try {
+      sdkMock.getLibrarySetupProgress.mockResolvedValue(progress());
+      render(SetupBar);
+      await vi.advanceTimersByTimeAsync(0);
+      show('hidden');
+      await vi.advanceTimersByTimeAsync(10 * 15_000);
+      expect(sdkMock.getLibrarySetupProgress).toHaveBeenCalledTimes(1);
+
+      show('visible');
+      await vi.advanceTimersByTimeAsync(0);
+      expect(sdkMock.getLibrarySetupProgress).toHaveBeenCalledTimes(2);
+    } finally {
+      show('visible');
       vi.useRealTimers();
     }
   });

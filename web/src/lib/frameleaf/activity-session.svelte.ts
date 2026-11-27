@@ -7,6 +7,7 @@ import {
   searchMediaOperations,
 } from '@frameleaf/sdk';
 import type { MediaOperationDto } from '@frameleaf/sdk';
+import { isPushConnected, isTabHidden } from '$lib/frameleaf/quiet-poll';
 import { eventManager } from '$lib/managers/event-manager.svelte';
 
 /**
@@ -18,12 +19,14 @@ import { eventManager } from '$lib/managers/event-manager.svelte';
  * the story — the prototype's one-second timer that moved jobs along has no counterpart here.
  *
  * Polling only runs while something is actually in flight, and only while a subscriber wants it,
- * so an idle Activity page and an idle top bar make no requests at all.
+ * so an idle Activity page and an idle top bar make no requests at all (FL-1800): the server says
+ * when one of this account's jobs changes, and that is what wakes an idle list. Only a tab whose
+ * socket is down keeps the slow look, and a hidden tab asks nothing until it is shown again.
  */
 
 /** How often to ask the server for fresh state while something is running. */
 const ACTIVE_POLL_MS = 3000;
-/** How often to look again once everything has settled, in case something new was submitted. */
+/** With the socket down: how often to look again once everything has settled, in case something new was submitted. */
 const IDLE_POLL_MS = 30_000;
 /**
  * The page shows the recent history, not the whole archive. The server lists unfinished jobs first
@@ -135,7 +138,12 @@ export class ActivitySession {
    * (`on_media_operation_update`, the job's id and nothing else), and the list is read again then.
    */
   #listen() {
-    const again = () => void this.refresh().then(() => this.#schedule());
+    const again = () => {
+      // a hidden tab waits: being shown again asks at once
+      if (!isTabHidden()) {
+        void this.refresh().then(() => this.#schedule());
+      }
+    };
     const soon = () => {
       if (this.#nudge !== null) {
         return;
@@ -145,7 +153,12 @@ export class ActivitySession {
         again();
       }, UPDATE_COALESCE_MS);
     };
-    const unsubscribe = eventManager.on({ WebsocketConnect: again, MediaOperationUpdate: soon });
+    const unsubscribe = eventManager.on({
+      WebsocketConnect: again,
+      MediaOperationUpdate: soon,
+      // the socket no longer says when work starts: the slow look takes over
+      WebsocketDisconnect: () => this.#schedule(),
+    });
     const stopNudge = () => {
       if (this.#nudge === null) {
         return;
@@ -165,6 +178,8 @@ export class ActivitySession {
     const onVisibility = () => {
       if (document.visibilityState === 'visible') {
         again();
+      } else {
+        this.#stop();
       }
     };
     addEventListener('online', again);
@@ -180,6 +195,10 @@ export class ActivitySession {
   #schedule() {
     this.#stop();
     if (this.#subscribers <= 0) {
+      return;
+    }
+
+    if (isTabHidden() || (this.runningCount === 0 && isPushConnected())) {
       return;
     }
 

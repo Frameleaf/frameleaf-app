@@ -1,6 +1,6 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
-  import AlbumConfirmDialog from '$lib/components/frameleaf/AlbumConfirmDialog.svelte';
+  import ConfirmDialog from '$lib/components/frameleaf/ConfirmDialog.svelte';
   import AlbumCreateDialog from '$lib/components/frameleaf/AlbumCreateDialog.svelte';
   import AlbumShareDialog from '$lib/components/frameleaf/AlbumShareDialog.svelte';
   import AlbumTile from '$lib/components/frameleaf/AlbumTile.svelte';
@@ -306,21 +306,23 @@
 {/if}
 
 {#if deleteDialog.space}
-  <AlbumConfirmDialog
+  <ConfirmDialog
     title={$t('frameleaf_album_delete_title', { values: { name: nameOf(deleteDialog.space) } })}
-    body={$t('frameleaf_album_delete_space_body')}
+    prompt={$t('frameleaf_album_delete_space_body')}
     keepNote={$t('frameleaf_album_delete_keep', { values: { count: deleteDialog.space.assetCount } })}
-    confirmLabel={$t('frameleaf_album_delete', { values: { kind: $t('frameleaf_album_kind_space') } })}
+    confirmText={$t('frameleaf_album_delete', { values: { kind: $t('frameleaf_album_kind_space') } })}
+    danger
     bind:open={deleteDialog.open}
     onConfirm={confirmDelete}
   />
 {/if}
 
 {#if leaveDialog.space}
-  <AlbumConfirmDialog
+  <ConfirmDialog
     title={$t('frameleaf_album_leave_title', { values: { name: nameOf(leaveDialog.space) } })}
-    body={$t('frameleaf_album_leave_body')}
-    confirmLabel={$t('frameleaf_album_leave', { values: { kind: $t('frameleaf_album_kind_space') } })}
+    prompt={$t('frameleaf_album_leave_body')}
+    confirmText={$t('frameleaf_album_leave', { values: { kind: $t('frameleaf_album_kind_space') } })}
+    danger
     bind:open={leaveDialog.open}
     onConfirm={confirmLeave}
   />

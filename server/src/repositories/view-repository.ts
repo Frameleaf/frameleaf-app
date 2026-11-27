@@ -65,8 +65,17 @@ export class ViewRepository {
     return results.map((row) => row.directoryPath.replaceAll(/\/$/g, ''));
   }
 
-  @GenerateSql({ params: [DummyValue.UUID, DummyValue.STRING] })
-  async getAssetsByOriginalPath(userId: string, partialPath: string, options?: HiddenContentQueryOptions) {
+  @GenerateSql(
+    { params: [DummyValue.UUID, DummyValue.STRING] },
+    { name: 'page', params: [DummyValue.UUID, DummyValue.STRING, {}, { take: 500, after: DummyValue.UUID }] },
+  )
+  async getAssetsByOriginalPath(
+    userId: string,
+    partialPath: string,
+    options?: HiddenContentQueryOptions,
+    /** FL-1795: one page of the folder, in asset id order, starting after `after`. */
+    page?: { take: number; after?: string },
+  ) {
     const normalizedPath = escapeLikeTerm(partialPath.replaceAll(/\/$/g, ''));
     // An absolute path names one folder: anchored, so `/photos` never lists `/backup/photos`. A
     // relative one keeps matching a folder of that name wherever it is.
@@ -88,7 +97,18 @@ export class ViewRepository {
         .where(displayPathSql(), 'like', `${prefix}${normalizedPath}/%`)
         .where(displayPathSql(), 'not like', `${prefix}${normalizedPath}/%/%`)
         .$call((qb) => withHiddenContentFilter(qb, options))
-        .orderBy((eb) => eb.fn('regexp_replace', [displayPathSql(), eb.val('.*/(.+)'), eb.val(String.raw`\1`)]), 'asc')
+        .$if(!page, (qb) =>
+          qb.orderBy(
+            (eb) => eb.fn('regexp_replace', [displayPathSql(), eb.val('.*/(.+)'), eb.val(String.raw`\1`)]),
+            'asc',
+          ),
+        )
+        // a page is cut by id, which no file's name or date can reorder between two reads
+        // ponytail: no index covers the folder match, so every page scans the owner's files; add an
+        // (ownerId, coalesce(libraryPath, originalPath) text_pattern_ops) index before a client pages
+        // through a folder. The web reads a folder whole for now (FL-1795 review).
+        .$if(!!page, (qb) => qb.orderBy('asset.id', 'asc').limit(page!.take))
+        .$if(!!page?.after, (qb) => qb.where('asset.id', '>', asUuid(page!.after!)))
         .execute()
     );
   }

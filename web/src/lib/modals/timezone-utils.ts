@@ -37,6 +37,7 @@ export type ZoneOption = {
   valid: boolean;
 };
 
+// eslint-disable-next-line no-restricted-syntax -- reads the browser's time zone, formats nothing
 const userTimeZone = new Intl.DateTimeFormat().resolvedOptions().timeZone;
 const knownTimezones = Intl.supportedValuesOf('timeZone');
 

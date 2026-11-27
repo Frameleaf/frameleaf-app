@@ -177,6 +177,9 @@ export const memoryLocalDay = (memory: MemoryResponseDto): string | undefined =>
   return DateTime.fromMillis((start + end) / 2, { zone: 'utc' }).toISODate() ?? undefined;
 };
 
+/** A memory's items: its full assets when it was read with them, else the slim list a memory list carries (FL-1793). */
+const itemsOf = (memory: MemoryResponseDto) => (memory.assets.length > 0 ? memory.assets : (memory.slimAssets ?? []));
+
 /**
  * FL-1408 (M8): the years an "on this day" memory's items were taken in, newest first. More than one
  * means the server gave years with only a photo or two each one memory to share.
@@ -184,34 +187,38 @@ export const memoryLocalDay = (memory: MemoryResponseDto): string | undefined =>
 export const onThisDayYears = (memory: MemoryResponseDto): string[] =>
   memory.type === MemoryType.OnThisDay
     ? [
-        ...new Set(memory.assets.flatMap(({ localDateTime }) => (localDateTime ? [localDateTime.slice(0, 4)] : []))),
+        ...new Set(itemsOf(memory).flatMap(({ localDateTime }) => (localDateTime ? [localDateTime.slice(0, 4)] : []))),
       ].sort((a, b) => b.localeCompare(a))
     : [];
 
-export type MemoryEntry = {
-  memory: MemoryResponseDto;
+export type MemoryEntry<M extends MemoryResponseDto = MemoryResponseDto> = {
+  memory: M;
   /** Days until an upcoming memory's day (1 is tomorrow). */
   inDays?: number;
   /** Days since a recently passed memory's day, within the window (1 is yesterday). */
   passedDays?: number;
 };
 
-export type MemorySections = { today: MemoryEntry[]; upcoming: MemoryEntry[]; earlier: MemoryEntry[] };
+export type MemorySections<M extends MemoryResponseDto = MemoryResponseDto> = {
+  today: MemoryEntry<M>[];
+  upcoming: MemoryEntry<M>[];
+  earlier: MemoryEntry<M>[];
+};
 
 /**
  * Splits the index into Today, Upcoming and Earlier (Memories.jsx:260-360), from the viewer's local
  * date. A memory for a later day is Upcoming only within the next two weeks and only when the owner
  * shows upcoming memories; trips, highlights and recaps, which are not tied to a day, are Earlier.
  */
-export const groupMemories = (
-  memories: MemoryResponseDto[],
+export const groupMemories = <M extends MemoryResponseDto>(
+  memories: M[],
   {
     today,
     showUpcoming = true,
     windowDays = MEMORY_WINDOW_DAYS,
   }: { today: string; showUpcoming?: boolean; windowDays?: number },
-): MemorySections => {
-  const sections: MemorySections = { today: [], upcoming: [], earlier: [] };
+): MemorySections<M> => {
+  const sections: MemorySections<M> = { today: [], upcoming: [], earlier: [] };
   for (const memory of memories) {
     const day = memoryLocalDay(memory);
     if (!day) {
@@ -231,7 +238,7 @@ export const groupMemories = (
   }
   sections.upcoming.sort((a, b) => (a.inDays ?? 0) - (b.inDays ?? 0));
   // FL-1408: the card that gathers several years leads the day (discovery-data.mjs "FL-1405 M8")
-  const gathers = ({ memory }: MemoryEntry) => Number(onThisDayYears(memory).length > 1);
+  const gathers = ({ memory }: MemoryEntry<M>) => Number(onThisDayYears(memory).length > 1);
   sections.today.sort((a, b) => gathers(b) - gathers(a));
   return sections;
 };
@@ -257,7 +264,7 @@ export type MemoryHeadline = { title: string; subtitle: string };
 
 /** "August 2026" for a pet story's local month ('yyyy-MM'). */
 const monthLabel = (month: string, locale?: string) =>
-  DateTime.fromFormat(month, 'yyyy-MM', { zone: 'utc', ...(locale && { locale }) }).toLocaleString({
+  formatLuxon(DateTime.fromFormat(month, 'yyyy-MM', { zone: 'utc', ...(locale && { locale }) }), {
     month: 'long',
     year: 'numeric',
   });
@@ -279,7 +286,7 @@ const generatedHeadline = (
   memory: MemoryResponseDto,
   { t, locale, today }: { t: Translate; locale?: string; today: string },
 ): MemoryHeadline => {
-  const count = t('frameleaf_memories_item_count', { values: { count: memory.assets.length } });
+  const count = t('frameleaf_memories_item_count', { values: { count: itemsOf(memory).length } });
   if (isEventStory(memory)) {
     const range = formatLocalDateRange(memory.data.startDate, memory.data.endDate, locale);
     const { landmark, dayCount } = memory.data;

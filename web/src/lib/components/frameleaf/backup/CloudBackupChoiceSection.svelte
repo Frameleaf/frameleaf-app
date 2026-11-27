@@ -8,6 +8,7 @@
    * server; an administrator sees only how much of each library is covered. Every change is saved at
    * once and the server says back how many of the person's photos and videos it keeps now.
    */
+  import { readEveryPage } from '$lib/frameleaf/all-people';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import InlineError from '$lib/components/frameleaf/InlineError.svelte';
@@ -18,6 +19,7 @@
   import Select from '$lib/components/frameleaf/settings/kit/Select.svelte';
   import Switch from '$lib/components/frameleaf/settings/kit/Switch.svelte';
   import Tiles from '$lib/components/frameleaf/settings/kit/Tiles.svelte';
+  import { formatCount } from '$lib/frameleaf/number-format';
   import { locale } from '$lib/stores/preferences.store';
   import { getServerErrorMessage } from '$lib/utils/handle-error';
   import {
@@ -25,7 +27,7 @@
     CloudBackupDateRangeKind,
     CloudBackupSelectionMode,
     getAllAlbums,
-    getAllPeople,
+    getPeoplePicker,
     getAllTags,
     getOwnCloudBackupSelection,
     getUniqueOriginalPaths,
@@ -105,7 +107,7 @@
   let draft = $state<string[]>([]);
   let filter = $state('');
 
-  const count = (value: number) => new Intl.NumberFormat($locale).format(value);
+  const count = (value: number) => formatCount(value, $locale);
 
   const load = async () => {
     loadFailed = false;
@@ -141,7 +143,8 @@
           break;
         }
         case 'people': {
-          const { people } = await getAllPeople({ withHidden: false });
+          // FL-1803: every page of the picker list, so anyone can be chosen
+          const people = await readEveryPage((page) => getPeoplePicker({ withHidden: false, page, size: 1000 }));
           found = people.map((person) => ({
             id: person.id,
             name: person.name || $t('frameleaf_backup_keeps_unnamed_person'),

@@ -203,14 +203,22 @@
 
   let showNavigationLoadingBar = $state(false);
 
-  // FL-1799: the transfer panels' code is fetched with the first upload or download, then stays
-  // mounted so each panel can finish its own leaving animation.
+  // FL-1799: the transfer panels are not part of the first load. Their code is fetched once the page
+  // is idle (or at the first upload or download, if that comes sooner), so it arrives from the same
+  // release as the rest of the page long before it is needed, then they stay mounted as before.
   const { isUploading } = uploadAssetsStore;
-  let uploadPanelWanted = $state(false);
-  let downloadPanelWanted = $state(false);
+  let panelsWanted = $state(false);
   $effect(() => {
-    uploadPanelWanted ||= $isUploading;
-    downloadPanelWanted ||= downloadManager.isDownloading;
+    panelsWanted ||= $isUploading || downloadManager.isDownloading;
+  });
+  onMount(() => {
+    const want = () => (panelsWanted = true);
+    if ('requestIdleCallback' in globalThis) {
+      const id = requestIdleCallback(want, { timeout: 5000 });
+      return () => cancelIdleCallback(id);
+    }
+    const timer = setTimeout(want, 2000);
+    return () => clearTimeout(timer);
   });
   // Settings waits for its settings before it draws: its shape shows meanwhile (approved design, 2026-11-04).
   const SETTINGS_ROUTE = '/(user)/user-settings';
@@ -364,12 +372,12 @@
 
       <!-- App.jsx PanelDock: uploads above downloads. -->
       <PanelDock>
-        {#if uploadPanelWanted}
+        {#if panelsWanted}
           {#await import('$lib/components/frameleaf/UploadPanel.svelte') then { default: UploadPanel }}
             <UploadPanel />
           {/await}
         {/if}
-        {#if downloadPanelWanted}
+        {#if panelsWanted}
           {#await import('$lib/components/frameleaf/DownloadPanel.svelte') then { default: DownloadPanel }}
             <DownloadPanel />
           {/await}

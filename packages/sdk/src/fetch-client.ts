@@ -13777,7 +13777,24 @@ export type MemoryOccasionDto = {
     /** The person the memory is about */
     personId: string;
 };
+export type MemorySlimAssetDto = {
+    /** When the file was captured (UTC) */
+    fileCreatedAt: string;
+    /** Asset height */
+    height: number | null;
+    /** Asset ID */
+    id: string;
+    /** Local date and time of capture */
+    localDateTime: string;
+    /** Thumbhash (base64), also the thumbnail cache key */
+    thumbhash: string | null;
+    "type": AssetTypeEnum;
+    visibility: AssetVisibility;
+    /** Asset width */
+    width: number | null;
+};
 export type MemoryResponseDto = {
+    /** The items; empty when the search asked for `slim` */
     assets: AssetResponseDto[];
     /** Creation date */
     createdAt: string;
@@ -13802,6 +13819,8 @@ export type MemoryResponseDto = {
     seenAt?: string;
     /** Date when memory should be shown */
     showAt?: string;
+    /** The items in the same order, when the search asked for `slim` */
+    slimAssets?: MemorySlimAssetDto[];
     /** The owner's own title, when they set one */
     title: string | null;
     "type": MemoryType;
@@ -14678,6 +14697,21 @@ export type PersonMergeVerdictResponseDto = {
     /** The other person of the pair; the ignored person again for "ignore"; the merged person for "same" */
     suggestionId: string;
     verdict: PersonMergeVerdict;
+};
+export type PeoplePickerItemDto = {
+    /** Number of timeline assets showing this person */
+    assetCount: number;
+    /** Person ID */
+    id: string;
+    /** Person name */
+    name: string;
+    /** Last update date; the version of the thumbnail URL */
+    updatedAt: string;
+};
+export type PeoplePickerResponseDto = {
+    /** Whether there are more pages */
+    hasNextPage: boolean;
+    people: PeoplePickerItemDto[];
 };
 export type PersonSplitSuggestionDto = {
     /** Face embedding distance between the two groups of faces (higher is less alike) */
@@ -18638,9 +18672,13 @@ export type QueueProblemDto = {
 export type QueueTaskDto = {
     /** For quietHours: when it opens again */
     closedUntil?: string;
+    /** Jobs of this queue finished since it last had nothing to do (FL-1785). With what is running and waiting, how far along it is */
+    done?: number;
     name: QueueName;
     /** For paused: when a person paused it; absent when the server did */
     pausedAt?: string;
+    /** Jobs finished an hour at the pace of the last ten minutes; absent when none finished */
+    perHour?: number;
     /** Why it is not running; null when nothing holds it */
     reason: (QueueIdleReason) | null;
     /** For waitingFor: the queue it waits for */
@@ -18684,6 +18722,8 @@ export type QueueJobResponseDto = {
     account?: QueueJobAccountDto;
     /** How many times the job has been attempted */
     attemptsMade?: number;
+    /** What went wrong, for a failed job (FL-1785) */
+    cause?: QueueProblemCause;
     /** Job data payload */
     data: {
         [key: string]: any;
@@ -20224,6 +20264,16 @@ export type SharedLinkCreateDto = {
 export type SharedLinkLoginDto = {
     /** Shared link password */
     password: string;
+};
+export type SharedLinkPageResponseDto = {
+    /** All your album links, on every page */
+    albumCount: number;
+    /** All your links to chosen items, on every page */
+    individualCount: number;
+    /** Newest first */
+    links: SharedLinkResponseDto[];
+    /** Pass as cursor for the next page; null when there are no more */
+    nextCursor: string | null;
 };
 export type SharedLinkEditDto = {
     /** Allow downloads */
@@ -23917,6 +23967,12 @@ export type DuplicateEstimateQueryDto = {
     /** The distances to estimate groups for, from 0.001 (nearly identical) to 0.1 */
     maxDistances: number[];
 };
+export type DuplicateReviewPageDto = {
+    /** duplicateId of the last group of the page before; only with take */
+    after?: string;
+    /** Most groups to return. With it the review is read a page at a time, in group ID order: a page shorter than this is the last one. Without it every group is returned. */
+    take?: number;
+};
 export type EagleImportQueryDto = {
     /** Include what became of every item, for the finish report */
     outcomes?: boolean;
@@ -23939,6 +23995,14 @@ export type FileTrashListQueryDto = {
     page?: number;
     /** Entries per page */
     size?: number;
+};
+export type FolderAssetsDto = {
+    /** ID of the last asset of the page before; only with take */
+    after?: string;
+    /** Folder path */
+    path: string;
+    /** Most assets to return. With it the folder is read a page at a time, in asset ID order: a page shorter than this is the last one. Without it every asset is returned, in file name order. */
+    take?: number;
 };
 export type FoundFileListDto = {
     /** The id of the last file of the page before */
@@ -24667,6 +24731,8 @@ export type MemorySearchDto = {
     page?: number;
     /** Number of memories to return */
     size?: number;
+    /** Leave `assets` empty and list each item in `slimAssets` instead, for lists that only draw covers */
+    slim?: boolean;
     "type"?: MemoryType;
 };
 export type NotificationSearchDto = {
@@ -24697,6 +24763,18 @@ export type OwnerBackupPageDto = {
 export type PartnerSearchDto = {
     direction: PartnerDirection;
 };
+export type PeoplePickerSearchDto = {
+    /** Only people whose name contains this text, whatever the case; empty matches everyone */
+    name?: string;
+    /** Page number for pagination */
+    page?: number;
+    /** Number of items per page */
+    size?: number;
+    /** Order: by name (unnamed people last), by photo count, or by the most recent photo. Without it, favorites first, then named people by the number of faces. Ignored with closestPersonId or closestAssetId. */
+    sort?: PeopleSort;
+    /** Include hidden people */
+    withHidden?: boolean;
+};
 export type PersonCorrectionSearchDto = {
     /** Page number */
     page?: number;
@@ -24708,10 +24786,14 @@ export type PersonSearchDto = {
     closestAssetId?: string;
     /** Closest person ID for similarity search */
     closestPersonId?: string;
+    /** Only people whose name contains this text, whatever the case; empty matches everyone */
+    name?: string;
     /** Page number for pagination */
     page?: number;
     /** Number of items per page */
     size?: number;
+    /** Order: by name (unnamed people last), by photo count, or by the most recent photo. Without it, favorites first, then named people by the number of faces. Ignored with closestPersonId or closestAssetId. */
+    sort?: PeopleSort;
     /** Include hidden people */
     withHidden?: boolean;
 };
@@ -24848,6 +24930,12 @@ export type SearchSuggestionRequestDto = {
 };
 export type SharedLinkDirectImageDto = {
     size?: SharedLinkDirectImageSize;
+};
+export type SharedLinkPageDto = {
+    /** nextCursor of the page before; omitted for the first page */
+    cursor?: string;
+    /** Most links to return */
+    take?: number;
 };
 export type SharedLinkSearchDto = {
     /** Filter by album ID */
@@ -34261,11 +34349,17 @@ export function resolveDuplicates({ duplicateResolveDto }: {
 /**
  * Retrieve the duplicate review
  */
-export function getDuplicateReview(opts?: Oazapfts.RequestOpts) {
+export function getDuplicateReview({ after, take }: {
+    after?: string;
+    take?: number;
+}, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
         status: 200;
         data: DuplicateReviewGroupDto[];
-    }>("/duplicates/review", {
+    }>(`/duplicates/review${QS.query(QS.explode({
+        after,
+        take
+    }))}`, {
         ...opts
     }));
 }
@@ -36674,7 +36768,7 @@ export function updateMediaWatch({ assetId, mediaWatchUpdateDto }: {
 /**
  * Retrieve memories
  */
-export function searchMemories({ $for, id, isHidden, isSaved, isTrashed, isUpcoming, order, page, size, $type }: {
+export function searchMemories({ $for, id, isHidden, isSaved, isTrashed, isUpcoming, order, page, size, slim, $type }: {
     $for?: string;
     id?: string;
     isHidden?: boolean;
@@ -36684,6 +36778,7 @@ export function searchMemories({ $for, id, isHidden, isSaved, isTrashed, isUpcom
     order?: MemorySearchOrder;
     page?: number;
     size?: number;
+    slim?: boolean;
     $type?: MemoryType;
 }, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
@@ -36699,6 +36794,7 @@ export function searchMemories({ $for, id, isHidden, isSaved, isTrashed, isUpcom
         order,
         page,
         size,
+        slim,
         "type": $type
     }))}`, {
         ...opts
@@ -36854,7 +36950,7 @@ export function addMemoryShowLess({ memoryShowLessDto }: {
 /**
  * Retrieve memories statistics
  */
-export function memoriesStatistics({ $for, id, isHidden, isSaved, isTrashed, isUpcoming, order, page, size, $type }: {
+export function memoriesStatistics({ $for, id, isHidden, isSaved, isTrashed, isUpcoming, order, page, size, slim, $type }: {
     $for?: string;
     id?: string;
     isHidden?: boolean;
@@ -36864,6 +36960,7 @@ export function memoriesStatistics({ $for, id, isHidden, isSaved, isTrashed, isU
     order?: MemorySearchOrder;
     page?: number;
     size?: number;
+    slim?: boolean;
     $type?: MemoryType;
 }, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
@@ -36879,6 +36976,7 @@ export function memoriesStatistics({ $for, id, isHidden, isSaved, isTrashed, isU
         order,
         page,
         size,
+        slim,
         "type": $type
     }))}`, {
         ...opts
@@ -37734,11 +37832,13 @@ export function deletePeople({ bulkIdsDto }: {
 /**
  * Get all people
  */
-export function getAllPeople({ closestAssetId, closestPersonId, page, size, withHidden }: {
+export function getAllPeople({ closestAssetId, closestPersonId, name, page, size, sort, withHidden }: {
     closestAssetId?: string;
     closestPersonId?: string;
+    name?: string;
     page?: number;
     size?: number;
+    sort?: PeopleSort;
     withHidden?: boolean;
 }, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
@@ -37747,8 +37847,10 @@ export function getAllPeople({ closestAssetId, closestPersonId, page, size, with
     }>(`/people${QS.query(QS.explode({
         closestAssetId,
         closestPersonId,
+        name,
         page,
         size,
+        sort,
         withHidden
     }))}`, {
         ...opts
@@ -37903,6 +38005,29 @@ export function setMergeVerdict({ personMergeVerdictCreateDto }: {
         method: "PUT",
         body: personMergeVerdictCreateDto
     })));
+}
+/**
+ * Get people for a picker
+ */
+export function getPeoplePicker({ name, page, size, sort, withHidden }: {
+    name?: string;
+    page?: number;
+    size?: number;
+    sort?: PeopleSort;
+    withHidden?: boolean;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PeoplePickerResponseDto;
+    }>(`/people/picker${QS.query(QS.explode({
+        name,
+        page,
+        size,
+        sort,
+        withHidden
+    }))}`, {
+        ...opts
+    }));
 }
 /**
  * Get split suggestions
@@ -41815,6 +41940,23 @@ export function getMySharedLink({ key, slug }: {
     }>(`/shared-links/me${QS.query(QS.explode({
         key,
         slug
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Retrieve shared links a page at a time
+ */
+export function getSharedLinkPage({ cursor, take }: {
+    cursor?: string;
+    take?: number;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: SharedLinkPageResponseDto;
+    }>(`/shared-links/page${QS.query(QS.explode({
+        cursor,
+        take
     }))}`, {
         ...opts
     }));
@@ -46065,14 +46207,18 @@ export function getUtilitiesSummary(opts?: Oazapfts.RequestOpts) {
 /**
  * Retrieve assets by original path
  */
-export function getAssetsByOriginalPath({ path }: {
+export function getAssetsByOriginalPath({ after, path, take }: {
+    after?: string;
     path: string;
+    take?: number;
 }, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
         status: 200;
         data: AssetResponseDto[];
     }>(`/view/folder${QS.query(QS.explode({
-        path
+        after,
+        path,
+        take
     }))}`, {
         ...opts
     }));
@@ -49603,6 +49749,11 @@ export enum State5 {
 export enum PartnerScopeMode {
     Everything = "everything",
     Chosen = "chosen"
+}
+export enum PeopleSort {
+    Name = "name",
+    Count = "count",
+    Recent = "recent"
 }
 export enum PersonCorrectionAction {
     Reassign = "reassign",

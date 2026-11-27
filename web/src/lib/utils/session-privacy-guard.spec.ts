@@ -522,7 +522,11 @@ describe('watchSessionPrivacy', () => {
     eventManager.emit('SessionDelete');
     expect(sessionAccess.revision).toBeGreaterThan(revision);
     expect(sessionAccess.isElevated).toBe(false);
-    // the auth manager owns the sign-out navigation; the guard's deadline no longer fires
+    // The auth manager owns the sign-out navigation. It is part of this spec's modules since the date
+    // helper reads the account's format from it (FL-1805), so its own sign-out is let through first.
+    await vi.advanceTimersByTimeAsync(0);
+    vi.mocked(revokeSessionView).mockClear();
+    // the guard's deadline no longer fires
     await vi.advanceTimersByTimeAsync(20_000);
     expect(revokeSessionView).not.toHaveBeenCalled();
   });

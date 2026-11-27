@@ -93,7 +93,7 @@ describe('How many run at once (FL-71, ConcurrencyDialog in JobsManager.jsx; Bac
     expect(recognition).toBeDisabled();
     expect(screen.getAllByText('Fixed at one to keep operations ordered').length).toBeGreaterThan(0);
 
-    await fireEvent.input(screen.getByRole('searchbox', { name: 'Find queue concurrency' }), {
+    await fireEvent.input(screen.getByRole('searchbox', { name: 'Find a task' }), {
       target: { value: 'text' },
     });
     expect(screen.getByLabelText('Text recognition simultaneous jobs')).toBeInTheDocument();

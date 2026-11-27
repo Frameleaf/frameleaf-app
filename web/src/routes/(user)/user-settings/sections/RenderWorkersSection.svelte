@@ -24,6 +24,7 @@
   import Pill from '$lib/components/frameleaf/settings/kit/Pill.svelte';
   import Row from '$lib/components/frameleaf/settings/kit/Row.svelte';
   import Section from '$lib/components/frameleaf/settings/kit/Section.svelte';
+  import { formatLuxon } from '$lib/frameleaf/date-format';
   import { auditEventIsRefusal, bytesToGB, msToMinutes, refusalReasonKey } from '$lib/frameleaf/render-workers';
   import { handleDeleteRenderUserLimit } from '$lib/services/render-worker.service';
   import { locale } from '$lib/stores/preferences.store';
@@ -148,7 +149,7 @@
     [RenderWorkerAuditEvent.Updated]: 'frameleaf_computers_history_changed',
     [RenderWorkerAuditEvent.DeviceLost]: 'frameleaf_computers_history_card_lost',
   };
-  const when = (value: string) => DateTime.fromISO(value, { locale: $locale }).toLocaleString(DateTime.DATETIME_MED);
+  const when = (value: string) => formatLuxon(DateTime.fromISO(value, { locale: $locale }), DateTime.DATETIME_MED);
   const HISTORY_SHOWN = 10;
 </script>
 

@@ -733,11 +733,26 @@
   /** Moves focus to the page's heading, so a keyboard or screen reader hears that the page changed. */
   const focusHeading = async () => {
     await tick();
-    const heading = main?.querySelector('h1');
-    if (heading instanceof HTMLElement) {
+    const focus = () => {
+      const heading = main?.querySelector('h1');
+      if (!(heading instanceof HTMLElement)) {
+        return false;
+      }
       heading.tabIndex = -1;
       heading.focus({ preventScroll: true });
+      return true;
+    };
+    if (focus() || !main) {
+      return;
     }
+    // FL-1799: a page fetched on demand draws its own heading a moment later; focus it when it appears.
+    const observer = new MutationObserver(() => focus() && stop());
+    const timer = setTimeout(() => stop(), 5000);
+    const stop = () => {
+      observer.disconnect();
+      clearTimeout(timer);
+    };
+    observer.observe(main, { childList: true, subtree: true });
   };
 
   /** Opens an area, or one of its sections, keeping the "Viewing" scope. */

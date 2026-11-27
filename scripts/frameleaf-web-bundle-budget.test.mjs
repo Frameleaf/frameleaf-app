@@ -149,6 +149,11 @@ test("raises only what is over, with a reason that names its issue, and records 
     /reason/,
   );
   assert.throws(() => raise(budget, sizes, "FL-1", "2026-11-26"), /reason/);
+  assert.throws(() => raise(budget, sizes, "FL-1:", "2026-11-26"), /reason/);
+  assert.throws(
+    () => raise(budget, sizes, "oops FL-1 grew", "2026-11-26"),
+    /reason/,
+  );
   const raised = raise(budget, sizes, "FL-1: the new toolbar", "2026-11-26");
   // the route with room keeps its limit; the others get today's size plus the headroom
   assert.deepEqual(raised.limits, { "/a": 10_000, "/b": 11_220, "/new": 102 });
@@ -160,6 +165,7 @@ test("raises only what is over, with a reason that names its issue, and records 
       bytes: 1220,
       added: 1,
       removed: 1,
+      routes: { "/b": 1220 },
     },
   ]);
   // nothing over: nothing changes and nothing is recorded

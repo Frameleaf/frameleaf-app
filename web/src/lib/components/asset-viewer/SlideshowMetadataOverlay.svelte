@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { formatLuxon } from '$lib/frameleaf/date-format';
   import { formatApproximateDate } from '$lib/frameleaf/approximate-date';
   import { SlideshowMetadataOverlayMode, slideshowStore } from '$lib/stores/slideshow.store';
   import { fromISODateTime, fromISODateTimeUTC } from '$lib/utils/timeline-util';
@@ -26,7 +27,7 @@
   // FL-936: a photo dated to a year or a decade never shows a made-up day
   const dateString = $derived(
     formatApproximateDate(asset.localDateTime, asset.dateAccuracy, undefined, { heading: true }) ??
-      dateTime.toLocaleString(DateTime.DATE_MED_WITH_WEEKDAY),
+      formatLuxon(dateTime, DateTime.DATE_MED_WITH_WEEKDAY),
   );
 
   const locationString = $derived(

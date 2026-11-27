@@ -71,8 +71,9 @@ class MaxBatchSize(BaseModel):
     ocr: int | None = None
 
 
-DEFAULT_MODEL_SOURCE_URL = "https://models.frameleaf.cloud"
 HUGGING_FACE_HOST = "huggingface.co"
+# The frameleaf/<model> repositories live in the Frameleaf organisation on Hugging Face.
+DEFAULT_MODEL_SOURCE_URL = "https://huggingface.co"
 
 
 def default_worker_timeout() -> int:
@@ -108,10 +109,13 @@ class Settings(BaseSettings):
     # Online standalone/remote workers keep their existing download workflow.
     model_downloads: bool = True
     # Hub-compatible host serving the frameleaf/<model> repositories. Unset means
-    # HF_ENDPOINT if that is set, otherwise the Frameleaf mirror (see model_source()).
+    # HF_ENDPOINT if that is set, otherwise Hugging Face (see model_source()).
     model_source_url: str | None = None
     # Token for a custom model source that needs authentication. Never logged.
     model_source_token: SecretStr | None = None
+    # Optional Hugging Face access token: faster, less rate-limited downloads. Sent only to
+    # https://huggingface.co, and only when set here; HF_TOKEN and saved logins are never inherited.
+    hugging_face_token: SecretStr | None = None
     model_ttl: int = 300
     model_ttl_poll_s: int = 10
     workers: int = 1
@@ -164,7 +168,7 @@ def model_source() -> tuple[str, str]:
     """The model source URL and the setting it came from.
 
     Precedence: MACHINE_LEARNING_MODEL_SOURCE_URL, then HF_ENDPOINT (an admin who
-    already chose a Hub mirror keeps it), then the Frameleaf model mirror.
+    already chose a Hub mirror keeps it), then Hugging Face.
     """
     if settings.model_source_url and settings.model_source_url.strip():
         return settings.model_source_url.strip().rstrip("/"), "MACHINE_LEARNING_MODEL_SOURCE_URL"
@@ -190,16 +194,27 @@ def model_source_token(endpoint: str | None = None) -> str | bool:
     Public downloads never inherit HF_TOKEN or a saved login. An intentional
     private source requires an explicit token, bound to its exact HTTPS origin.
     """
-    source = urlsplit(model_source_url())
-    destination = urlsplit(endpoint or model_source_url())
+    url, setting = model_source()
+    source = urlsplit(url)
+    destination = urlsplit(endpoint or url)
     if (
-        source.scheme == destination.scheme == "https"
+        # The custom-source token belongs to a source an admin chose, never to the default.
+        setting != "default"
+        and source.scheme == destination.scheme == "https"
         and source.hostname == destination.hostname
         and (source.port or 443) == (destination.port or 443)
         and settings.model_source_token is not None
         and settings.model_source_token.get_secret_value()
     ):
         return settings.model_source_token.get_secret_value()
+    if (
+        destination.scheme == "https"
+        and destination.hostname == HUGGING_FACE_HOST
+        and (destination.port or 443) == 443
+        and settings.hugging_face_token is not None
+        and settings.hugging_face_token.get_secret_value()
+    ):
+        return settings.hugging_face_token.get_secret_value()
     return False
 
 
