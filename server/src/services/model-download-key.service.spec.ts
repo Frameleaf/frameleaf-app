@@ -21,6 +21,13 @@ describe(ModelDownloadKeyService.name, () => {
       stored = value as ModelDownloadKeyState;
       return Promise.resolve();
     });
+    mocks.systemMetadata.setModelDownloadKeyCheck.mockImplementation((checked, next) => {
+      if (stored?.sealed !== checked.sealed || stored?.savedAt !== checked.savedAt) {
+        return Promise.resolve(false);
+      }
+      stored = next;
+      return Promise.resolve(true);
+    });
     mocks.systemMetadata.delete.mockImplementation(() => {
       stored = undefined;
       return Promise.resolve();
@@ -67,6 +74,17 @@ describe(ModelDownloadKeyService.name, () => {
     await expect(sut.getStatus()).resolves.toMatchObject({ status: 'refused' });
     expect(check).toHaveBeenCalledWith(KEY);
     expect(stored?.state).toBe('refused');
+  });
+
+  it('never brings back a key removed while it was being checked', async () => {
+    const old = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
+    stored = { sealed: sealModelDownloadKey(HASH, KEY), savedAt: old, state: 'accepted', checkedAt: old };
+    sut.check = vi.fn().mockImplementation(async () => {
+      await sut.remove();
+      return 'accepted';
+    });
+    await expect(sut.getStatus()).resolves.toEqual({ status: 'none', savedAt: null, checkedAt: null });
+    expect(stored).toBeUndefined();
   });
 
   it('keeps the last answer when Hugging Face cannot be reached', async () => {

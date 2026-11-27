@@ -2,6 +2,7 @@ import { Injectable, ServiceUnavailableException } from '@nestjs/common';
 import { createHash } from 'node:crypto';
 import { openAsBlob } from 'node:fs';
 import { open, rm, stat } from 'node:fs/promises';
+import { isIPv4 } from 'node:net';
 import { basename, resolve } from 'node:path';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
@@ -711,14 +712,18 @@ const keyMayTravelTo = (url: string) => {
     return true;
   }
   const host = parsed.hostname.replaceAll(/^\[|\]$/g, '');
-  return (
-    parsed.protocol === 'http:' &&
-    (['frameleaf-machine-learning', 'immich-machine-learning', 'localhost', '127.0.0.1', '::1'].includes(host) ||
-      /^10\./.test(host) ||
-      /^192\.168\./.test(host) ||
-      /^172\.(1[6-9]|2\d|3[01])\./.test(host) ||
-      (!host.includes('.') && !host.includes(':')))
-  );
+  if (parsed.protocol !== 'http:') {
+    return false;
+  }
+  if (['frameleaf-machine-learning', 'immich-machine-learning', 'localhost', '127.0.0.1', '::1'].includes(host)) {
+    return true;
+  }
+  // Private ranges only for an IPv4 literal: a name such as 10.ml.example.com can resolve anywhere.
+  if (isIPv4(host)) {
+    return /^10\./.test(host) || /^192\.168\./.test(host) || /^172\.(1[6-9]|2\d|3[01])\./.test(host);
+  }
+  // A single-label name (a container or a host on the home network), never a dotted name or an IPv6 literal.
+  return !host.includes('.') && !host.includes(':');
 };
 
 /** The same URL and credentials; endpoints are compared by value, never by object identity. */
@@ -945,6 +950,8 @@ export class MachineLearningRepository implements RestorationInference {
     const response = await fetch(endpoint, {
       method: 'POST',
       body: form,
+      // the bundled worker's auth and, from FL-1825, the model download key (the inpaint model downloads too)
+      headers: this.authHeaders({ url, authToken: process.env.FRAMELEAF_ML_AUTH_TOKEN?.trim() }),
       redirect: 'error',
       signal: signal ? AbortSignal.any([deadline, signal]) : deadline,
     });

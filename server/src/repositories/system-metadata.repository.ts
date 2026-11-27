@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { type Insertable, type Kysely, type Transaction, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { readFile } from 'node:fs/promises';
-import type { IntegrityCheckRun, SystemMetadata } from 'src/types.js';
+import type { IntegrityCheckRun, ModelDownloadKeyState, SystemMetadata } from 'src/types.js';
 import { GenerateSql } from 'src/decorators.js';
 import { IntegrityReport, SystemMetadataKey } from 'src/enum.js';
 import { publicationDatabase } from 'src/queue/transaction.js';
@@ -183,6 +183,25 @@ export class SystemMetadataRepository {
       .set({ value: sql`jsonb_set("value", ARRAY[${type}::text], ("value" -> ${type}::text) - 'current')` } as never)
       .where('key', '=', SystemMetadataKey.IntegrityCheckRuns)
       .where(sql<boolean>`${current} ->> 'runId' = ${runId}`)
+      .executeTakeFirst();
+    return Number(result.numUpdatedRows) > 0;
+  }
+
+  /**
+   * FL-1835: record a check of the model download key only while the stored key is still the one that was
+   * checked (same seal and save time), so a check that finishes after Remove or Replace cannot bring the
+   * earlier key back.
+   */
+  async setModelDownloadKeyCheck(
+    checked: Pick<ModelDownloadKeyState, 'sealed' | 'savedAt'>,
+    next: ModelDownloadKeyState,
+  ): Promise<boolean> {
+    const result = await this.db
+      .updateTable('system_metadata')
+      .set({ value: sql`${JSON.stringify(next)}::jsonb` } as never)
+      .where('key', '=', SystemMetadataKey.ModelDownloadKey)
+      .where(sql<boolean>`"value" ->> 'sealed' = ${checked.sealed}`)
+      .where(sql<boolean>`"value" ->> 'savedAt' = ${checked.savedAt}`)
       .executeTakeFirst();
     return Number(result.numUpdatedRows) > 0;
   }

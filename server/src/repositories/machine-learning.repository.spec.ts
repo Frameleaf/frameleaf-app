@@ -498,6 +498,21 @@ describe(MachineLearningRepository.name, () => {
       const last = fetch.mock.lastCall!;
       expect(String(last[0])).toContain('ml.example.com');
       expect(new Headers(last[1].headers).has('x-frameleaf-model-download-key')).toBe(false);
+
+      // a dotted name with a private-looking prefix can resolve anywhere
+      // eslint-disable-next-line unicorn/prefer-https -- the plain-HTTP case is the one under test
+      const lookalike = 'http://10.ml.example.com:3003';
+      sut.setup({ ...defaults.machineLearning, urls: [lookalike] });
+      sut.setModelDownloadKey(key);
+      await sut.encodeImage(selection(MlDestinationKind.Local, lookalike), imagePath, clip);
+      expect(new Headers(fetch.mock.lastCall![1].headers).has('x-frameleaf-model-download-key')).toBe(false);
+
+      // a private IPv4 address on the home network
+      const lan = 'http://192.168.1.20:3003';
+      sut.setup({ ...defaults.machineLearning, urls: [lan] });
+      sut.setModelDownloadKey(key);
+      await sut.encodeImage(selection(MlDestinationKind.Local, lan), imagePath, clip);
+      expect(new Headers(fetch.mock.lastCall![1].headers).get('x-frameleaf-model-download-key')).toBe(key);
     });
 
     it('records usage once per request with bytes sent, bytes received and the outcome', async () => {

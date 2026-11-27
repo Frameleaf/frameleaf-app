@@ -109,7 +109,10 @@ export class ModelDownloadKeyService extends BaseService {
       state: answer === 'accepted' ? 'accepted' : 'refused',
       checkedAt: new Date().toISOString(),
     };
-    await this.systemMetadataRepository.set(SystemMetadataKey.ModelDownloadKey, next);
+    // Only while the stored key is still the one checked: a Remove or Replace during the check wins.
+    if (!(await this.systemMetadataRepository.setModelDownloadKeyCheck(stored, next))) {
+      return this.stored();
+    }
     if (next.state === 'refused') {
       this.machineLearningRepository.setModelDownloadKey(null);
     }
