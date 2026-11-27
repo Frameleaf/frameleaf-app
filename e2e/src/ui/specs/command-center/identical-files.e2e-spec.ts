@@ -244,7 +244,7 @@ test.describe('Identical files, Duplicates and Unused files (FL-416)', () => {
   test('Unused files restores a file and empties with a confirm that states the size', async ({ context, page }) => {
     const server = await setupIdenticalFilesMocks(context);
     await page.goto('/user-settings?area=care');
-    await page.getByRole('link', { name: /Unused files/ }).click();
+    await page.getByRole('button', { name: 'Open Unused files' }).click();
     await expect(page).toHaveURL(/section=unused-files/);
 
     await expect(page.getByRole('heading', { name: '23 files are waiting, using 4.6 GB' })).toBeVisible();
@@ -271,7 +271,7 @@ test.describe('Identical files, Duplicates and Unused files (FL-416)', () => {
     await page.goto('/user-settings?area=care');
 
     await expect(page.getByRole('heading', { name: 'Tidy' })).toBeVisible();
-    await expect(page.getByRole('link', { name: /Unused files/ })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Open Unused files' })).toHaveCount(0);
 
     await page.goto('/user-settings?area=care&section=duplicates');
     const block = section(page, 'Identical files are stored once');
