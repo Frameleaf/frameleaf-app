@@ -424,7 +424,7 @@ describe('the Best Photos scan waits', () => {
     // held: by setup it counts, by anything else it does not
     const runId = randomUUID();
     await sql`insert into job_run(id, kind, selection, "enumerationDone")
-      values (${runId}::uuid, 'import', ${JSON.stringify({ holds: { [JobName.AssetGenerateThumbnails]: 'setup' } })}::jsonb, true)`.execute(
+      values (${runId}::uuid, 'import', ${JSON.stringify({ holds: { [JobName.AssetGenerateThumbnails]: 'setup' } })}::text::jsonb, true)`.execute(
       db,
     );
     await sql`update job set "availableAt" = 'infinity', "runId" = ${runId}::uuid where id = ${thumbnail}::uuid`.execute(
