@@ -11913,7 +11913,7 @@
   "frameleaf_jobs_tab_active": "Aktywne",
   "frameleaf_jobs_tab_failed": "Niepowodzenia",
   "frameleaf_jobs_tab_help_active": "Aktywne zadania kończą się, nawet gdy ich kolejka jest wstrzymana.",
-  "frameleaf_jobs_tab_help_failed": "Co poszło nie tak w każdym zadaniu i czy dotyczy to zdjęcia. Spróbuj ponownie, gdy przyczyna zostanie usunięta.",
+  "frameleaf_jobs_tab_help_failed": "Co poszło nie tak w każdym zadaniu i czy dotyczy to zdjęcia lub filmu. Spróbuj ponownie, gdy przyczyna zostanie usunięta.",
   "frameleaf_jobs_tab_help_history": "Ukończona praca zachowana w tym widoku aktywności.",
   "frameleaf_jobs_tab_help_waiting": "Zaplanowane zadania pozostają osobno, gdy oczekująca praca jest czyszczona.",
   "frameleaf_jobs_tab_history": "Historia",

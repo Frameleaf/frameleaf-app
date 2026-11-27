@@ -11912,7 +11912,7 @@
   "frameleaf_jobs_tab_active": "Activas",
   "frameleaf_jobs_tab_failed": "Fallidas",
   "frameleaf_jobs_tab_help_active": "Las tareas activas terminan aunque su cola esté en pausa.",
-  "frameleaf_jobs_tab_help_failed": "Qué salió mal en cada trabajo y si la foto está afectada. Reintenta cuando la causa esté resuelta.",
+  "frameleaf_jobs_tab_help_failed": "Qué salió mal en cada trabajo y si la foto o el vídeo están afectados. Reintenta cuando la causa esté resuelta.",
   "frameleaf_jobs_tab_help_history": "Trabajo completado conservado en esta vista de actividad.",
   "frameleaf_jobs_tab_help_waiting": "Las tareas programadas permanecen aparte cuando se borra el trabajo en espera.",
   "frameleaf_jobs_tab_history": "Historial",

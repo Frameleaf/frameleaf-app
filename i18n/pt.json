@@ -11912,7 +11912,7 @@
   "frameleaf_jobs_tab_active": "Ativas",
   "frameleaf_jobs_tab_failed": "Falhadas",
   "frameleaf_jobs_tab_help_active": "As tarefas ativas terminam mesmo quando a respetiva fila está em pausa.",
-  "frameleaf_jobs_tab_help_failed": "O que correu mal em cada trabalho e se a foto foi afetada. Tente novamente quando a causa estiver resolvida.",
+  "frameleaf_jobs_tab_help_failed": "O que correu mal em cada trabalho e se a foto ou o vídeo foram afetados. Tente novamente quando a causa estiver resolvida.",
   "frameleaf_jobs_tab_help_history": "Trabalho concluído mantido nesta vista de atividade.",
   "frameleaf_jobs_tab_help_waiting": "As tarefas agendadas permanecem separadas quando o trabalho em espera é limpo.",
   "frameleaf_jobs_tab_history": "Histórico",
