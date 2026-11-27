@@ -1,7 +1,7 @@
 <script lang="ts">
   import { goto, replaceState } from '$app/navigation';
   import { page } from '$app/state';
-  import AlbumConfirmDialog from '$lib/components/frameleaf/AlbumConfirmDialog.svelte';
+  import ConfirmDialog from '$lib/components/frameleaf/ConfirmDialog.svelte';
   import AlbumCreateDialog from '$lib/components/frameleaf/AlbumCreateDialog.svelte';
   import AlbumAvatarStack from '$lib/components/frameleaf/AlbumAvatarStack.svelte';
   import AlbumIcon from '$lib/components/frameleaf/AlbumIcon.svelte';
@@ -827,19 +827,21 @@
   <SharedLinkForm bind:open={linkFormOpen} target={linkTarget} />
 {/if}
 
-<AlbumConfirmDialog
+<ConfirmDialog
   title={$t('frameleaf_album_delete_title', { values: { name: space.albumName || $t('unnamed_album') } })}
-  body={$t('frameleaf_album_delete_space_body')}
+  prompt={$t('frameleaf_album_delete_space_body')}
   keepNote={$t('frameleaf_album_delete_keep', { values: { count: space.assetCount } })}
-  confirmLabel={$t('frameleaf_album_delete', { values: { kind: $t('frameleaf_album_kind_space') } })}
+  confirmText={$t('frameleaf_album_delete', { values: { kind: $t('frameleaf_album_kind_space') } })}
+  danger
   bind:open={deleteOpen}
   onConfirm={confirmDelete}
 />
 
-<AlbumConfirmDialog
+<ConfirmDialog
   title={$t('frameleaf_album_leave_title', { values: { name: space.albumName || $t('unnamed_album') } })}
-  body={$t('frameleaf_album_leave_body')}
-  confirmLabel={$t('frameleaf_album_leave', { values: { kind: $t('frameleaf_album_kind_space') } })}
+  prompt={$t('frameleaf_album_leave_body')}
+  confirmText={$t('frameleaf_album_leave', { values: { kind: $t('frameleaf_album_kind_space') } })}
+  danger
   bind:open={leaveOpen}
   onConfirm={confirmLeave}
 />
