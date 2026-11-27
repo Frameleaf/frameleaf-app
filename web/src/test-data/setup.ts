@@ -140,3 +140,10 @@ HTMLSelectElement.prototype.querySelectorAll = function (this: HTMLSelectElement
   }
   return nativeSelectQueryAll.call(this, selector);
 } as typeof HTMLSelectElement.prototype.querySelectorAll;
+
+// FL-1802: lists kept for the session (the tags, the filter panel's vocabularies) never carry from one
+// test to the next. Imported here, not at the top, so a spec's own module mocks are in place first.
+beforeEach(async () => {
+  const { resetSessionCaches } = await import('$lib/frameleaf/session-cache');
+  resetSessionCaches();
+});

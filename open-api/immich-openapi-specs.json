@@ -14266,6 +14266,61 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/albums/rail": {
+      "get": {
+        "description": "The same albums, parents and order as /albums/hierarchy, as one list with only what a navigation rail draws: name, parent, icon, colour, counts and your own role. No members, shared links, covers or dates.",
+        "operationId": "getAlbumRail",
+        "parameters": [
+          {
+            "name": "libraryScope",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/LibraryViewScope"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AlbumRailResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Retrieve the album directory for navigation",
+        "tags": [
+          "Albums"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.5.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.5.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "album.read",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/albums/recently-added": {
       "get": {
         "description": "Returns the albums the user may add to, the one that most recently received an item first.",
@@ -14369,6 +14424,62 @@
         ],
         "x-immich-permission": "album.statistics",
         "x-immich-state": "Stable"
+      }
+    },
+    "/albums/stats": {
+      "post": {
+        "description": "The numbers an album list shows, for the given albums only. Use it to ask again for albums a list reported as statsPending instead of reading the whole list again.",
+        "operationId": "getAlbumStats",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AlbumStatsDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AlbumStatsResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Retrieve the counts and dates of some albums",
+        "tags": [
+          "Albums"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.5.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.5.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "album.read",
+        "x-immich-state": "Alpha"
       }
     },
     "/albums/tree": {
@@ -33684,7 +33795,30 @@
       "get": {
         "description": "Your duplicate groups, each read as a whole: whether it holds copies of one photo or frames of a burst, the evidence behind the suggested keeper, and whether this session may decide it. A group with photos this session does not see, or with another account’s photo, is listed but cannot be decided.",
         "operationId": "getDuplicateReview",
-        "parameters": [],
+        "parameters": [
+          {
+            "name": "after",
+            "required": false,
+            "in": "query",
+            "description": "duplicateId of the last group of the page before; only with take",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "take",
+            "required": false,
+            "in": "query",
+            "description": "Most groups to return. With it the review is read a page at a time, in group ID order: a page shorter than this is the last one. Without it every group is returned.",
+            "schema": {
+              "minimum": 1,
+              "maximum": 500,
+              "type": "integer"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -33723,6 +33857,11 @@
           {
             "version": "v3.0.0",
             "state": "Alpha"
+          },
+          {
+            "version": "v3.5.0",
+            "state": "Updated",
+            "description": "Added take and after, to read the review a page at a time"
           }
         ],
         "x-immich-permission": "duplicate.read",
@@ -49416,6 +49555,15 @@
               "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
               "type": "string"
             }
+          },
+          {
+            "name": "updatedAt",
+            "required": false,
+            "in": "query",
+            "description": "Cache version: the person's current updatedAt. A matching thumbnail is served as immutable.",
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -63912,6 +64060,75 @@
           }
         ],
         "x-immich-state": "Stable"
+      }
+    },
+    "/shared-links/page": {
+      "get": {
+        "description": "Your shared links, newest first, a page at a time, with how many album links and links to chosen items you have in all.",
+        "operationId": "getSharedLinkPage",
+        "parameters": [
+          {
+            "name": "cursor",
+            "required": false,
+            "in": "query",
+            "description": "nextCursor of the page before; omitted for the first page",
+            "schema": {
+              "maxLength": 200,
+              "type": "string"
+            }
+          },
+          {
+            "name": "take",
+            "required": false,
+            "in": "query",
+            "description": "Most links to return",
+            "schema": {
+              "minimum": 1,
+              "maximum": 200,
+              "default": 60,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SharedLinkPageResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Retrieve shared links a page at a time",
+        "tags": [
+          "Shared links"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.5.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.5.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "sharedLink.read",
+        "x-immich-state": "Alpha"
       }
     },
     "/shared-links/{id}": {
@@ -81846,15 +82063,38 @@
     },
     "/view/folder": {
       "get": {
-        "description": "Retrieve assets that are children of a specific folder.",
+        "description": "Retrieve assets that are children of a specific folder. Pass take (and after, from the second page on) to read a large folder a page at a time.",
         "operationId": "getAssetsByOriginalPath",
         "parameters": [
+          {
+            "name": "after",
+            "required": false,
+            "in": "query",
+            "description": "ID of the last asset of the page before; only with take",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
           {
             "name": "path",
             "required": true,
             "in": "query",
+            "description": "Folder path",
             "schema": {
               "type": "string"
+            }
+          },
+          {
+            "name": "take",
+            "required": false,
+            "in": "query",
+            "description": "Most assets to return. With it the folder is read a page at a time, in asset ID order: a page shorter than this is the last one. Without it every asset is returned, in file name order.",
+            "schema": {
+              "minimum": 1,
+              "maximum": 1000,
+              "type": "integer"
             }
           }
         ],
@@ -81900,6 +82140,11 @@
           {
             "version": "v2",
             "state": "Stable"
+          },
+          {
+            "version": "v3.5.0",
+            "state": "Updated",
+            "description": "Added take and after, to read a folder a page at a time"
           }
         ],
         "x-immich-permission": "folder.read",
@@ -87888,6 +88133,111 @@
         ],
         "type": "object"
       },
+      "AlbumRailItemDto": {
+        "properties": {
+          "albumName": {
+            "description": "Album name",
+            "type": "string"
+          },
+          "assetCount": {
+            "description": "Number of assets",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "bookmarkCount": {
+            "description": "Number of links (Boards)",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "color": {
+            "description": "Colour name (grey, green, teal, blue, purple, pink, amber, red) or null",
+            "nullable": true,
+            "type": "string"
+          },
+          "icon": {
+            "description": "Icon: a Material Design Icons name or legacy key (null = default icon)",
+            "nullable": true,
+            "type": "string"
+          },
+          "id": {
+            "description": "Album ID",
+            "type": "string"
+          },
+          "isLocked": {
+            "description": "The owner chose to lock this album",
+            "type": "boolean"
+          },
+          "isSmart": {
+            "description": "True when the album is filled by smart album rules",
+            "type": "boolean"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/AlbumKind"
+          },
+          "parentId": {
+            "description": "Parent album or collection in this list (null = top level). Never names an album the list leaves out.",
+            "nullable": true,
+            "type": "string"
+          },
+          "role": {
+            "$ref": "#/components/schemas/AlbumUserRole",
+            "description": "The authenticated user's own role in the album"
+          },
+          "shared": {
+            "description": "Is shared album",
+            "type": "boolean"
+          },
+          "smartRuleId": {
+            "description": "Your classification rule behind this smart album, when it is one of yours",
+            "nullable": true,
+            "type": "string"
+          },
+          "sortOrder": {
+            "description": "Sibling display position. Lower values appear first.",
+            "format": "double",
+            "nullable": true,
+            "type": "number"
+          },
+          "statsPending": {
+            "description": "True while this album's count is still being worked out for this viewer; assetCount is 0 until then.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "albumName",
+          "assetCount",
+          "bookmarkCount",
+          "color",
+          "icon",
+          "id",
+          "isLocked",
+          "isSmart",
+          "kind",
+          "parentId",
+          "role",
+          "shared",
+          "smartRuleId",
+          "sortOrder"
+        ],
+        "type": "object"
+      },
+      "AlbumRailResponseDto": {
+        "properties": {
+          "albums": {
+            "description": "Every album of the directory in display order, each parent before its children",
+            "items": {
+              "$ref": "#/components/schemas/AlbumRailItemDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "albums"
+        ],
+        "type": "object"
+      },
       "AlbumRecentlyAddedResponseDto": {
         "properties": {
           "albumIds": {
@@ -88419,6 +88769,78 @@
           "notShared",
           "owned",
           "shared"
+        ],
+        "type": "object"
+      },
+      "AlbumStatsDto": {
+        "properties": {
+          "albumIds": {
+            "description": "Albums to read the numbers of",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "maxItems": 5000,
+            "minItems": 1,
+            "type": "array"
+          }
+        },
+        "required": [
+          "albumIds"
+        ],
+        "type": "object"
+      },
+      "AlbumStatsItemDto": {
+        "properties": {
+          "assetCount": {
+            "description": "Number of assets",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "endDate": {
+            "description": "End date (latest asset)",
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "description": "Album ID",
+            "type": "string"
+          },
+          "lastModifiedAssetTimestamp": {
+            "description": "Last modified asset timestamp",
+            "format": "date-time",
+            "type": "string"
+          },
+          "startDate": {
+            "description": "Start date (earliest asset)",
+            "format": "date-time",
+            "type": "string"
+          },
+          "statsPending": {
+            "description": "True while this album's count and dates are still being worked out; assetCount is 0 until then.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "assetCount",
+          "id"
+        ],
+        "type": "object"
+      },
+      "AlbumStatsResponseDto": {
+        "properties": {
+          "albums": {
+            "description": "One entry per requested album the user can read; the others are left out",
+            "items": {
+              "$ref": "#/components/schemas/AlbumStatsItemDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "albums"
         ],
         "type": "object"
       },
@@ -114421,6 +114843,23 @@
         ],
         "type": "object"
       },
+      "DuplicateReviewPageDto": {
+        "properties": {
+          "after": {
+            "description": "duplicateId of the last group of the page before; only with take",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "take": {
+            "description": "Most groups to return. With it the review is read a page at a time, in group ID order: a page shorter than this is the last one. Without it every group is returned.",
+            "maximum": 500,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
       "DuplicateReviewQualityDto": {
         "properties": {
           "assetId": {
@@ -116539,6 +116978,30 @@
           "previewsReady",
           "receipt",
           "revision"
+        ],
+        "type": "object"
+      },
+      "FolderAssetsDto": {
+        "properties": {
+          "after": {
+            "description": "ID of the last asset of the page before; only with take",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "path": {
+            "description": "Folder path",
+            "type": "string"
+          },
+          "take": {
+            "description": "Most assets to return. With it the folder is read a page at a time, in asset ID order: a page shorter than this is the last one. Without it every asset is returned, in file name order.",
+            "maximum": 1000,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "path"
         ],
         "type": "object"
       },
@@ -142278,6 +142741,15 @@
         ],
         "type": "object"
       },
+      "PersonThumbnailDto": {
+        "properties": {
+          "updatedAt": {
+            "description": "Cache version: the person's current updatedAt. A matching thumbnail is served as immutable.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "PersonUpdateDto": {
         "properties": {
           "birthDate": {
@@ -165164,6 +165636,10 @@
             "minimum": -9007199254740991,
             "type": "integer"
           },
+          "cause": {
+            "$ref": "#/components/schemas/QueueProblemCause",
+            "description": "What went wrong, for a failed job (FL-1785)"
+          },
           "data": {
             "additionalProperties": {},
             "description": "Job data payload",
@@ -165771,6 +166247,12 @@
             "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
             "type": "string"
           },
+          "done": {
+            "description": "Jobs of this queue finished since it last had nothing to do (FL-1785). With what is running and waiting, how far along it is",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
           "name": {
             "$ref": "#/components/schemas/QueueName"
           },
@@ -165779,6 +166261,12 @@
             "format": "date-time",
             "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
             "type": "string"
+          },
+          "perHour": {
+            "description": "Jobs finished an hour at the pace of the last ten minutes; absent when none finished",
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
           },
           "reason": {
             "allOf": [
@@ -174493,6 +174981,58 @@
         },
         "required": [
           "name"
+        ],
+        "type": "object"
+      },
+      "SharedLinkPageDto": {
+        "properties": {
+          "cursor": {
+            "description": "nextCursor of the page before; omitted for the first page",
+            "maxLength": 200,
+            "type": "string"
+          },
+          "take": {
+            "default": 60,
+            "description": "Most links to return",
+            "maximum": 200,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "SharedLinkPageResponseDto": {
+        "properties": {
+          "albumCount": {
+            "description": "All your album links, on every page",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "individualCount": {
+            "description": "All your links to chosen items, on every page",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "links": {
+            "description": "Newest first",
+            "items": {
+              "$ref": "#/components/schemas/SharedLinkResponseDto"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "description": "Pass as cursor for the next page; null when there are no more",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "albumCount",
+          "individualCount",
+          "links",
+          "nextCursor"
         ],
         "type": "object"
       },

@@ -4,10 +4,14 @@
   import AppCard from '$lib/components/frameleaf/AppCard.svelte';
   import UploadCover from '$lib/components/frameleaf/DragDropUploadOverlay.svelte';
   import GetCloudHost from '$lib/components/frameleaf/cloud/GetCloudHost.svelte';
+  import { provideUserShell } from '$lib/components/layouts/user-shell.svelte';
+  import UserShell from '$lib/components/layouts/UserShell.svelte';
   import { arrivedFromSetup, offerNextSteps } from '$lib/components/timeline/next-steps.svelte';
   import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { createDropUploadContext } from '$lib/stores/drag-and-drop-files.store';
+  import { mediaQueryManager } from '$lib/stores/media-query-manager.svelte';
+  import { sidebarStore } from '$lib/stores/sidebar.svelte';
   import type { Snippet } from 'svelte';
   interface Props {
     children?: Snippet;
@@ -15,12 +19,18 @@
 
   let { children }: Props = $props();
   createDropUploadContext();
+  // FL-1796: the top bar and the library rail are drawn here, once, for whichever page asks for them.
+  const shell = provideUserShell();
 
   // First-run setup hands off into the app: the administrator who arrives that way is offered the
   // library's one-time "Next steps" card (LibraryNextSteps), wherever setup sent them first.
   afterNavigate(({ from }) => {
     if (arrivedFromSetup(from) && authManager.authenticated && authManager.user.isAdmin) {
       offerNextSteps(authManager.user.id);
+    }
+    // The rail used to be rebuilt with each page, which closed the phone menu; it still closes.
+    if (sidebarStore.isOpen && !mediaQueryManager.isFullSidebar) {
+      sidebarStore.reset();
     }
   });
 
@@ -48,7 +58,9 @@
 </script>
 
 <div class:display-none={assetViewerManager.isViewing}>
-  {@render children?.()}
+  <UserShell page={shell.current}>
+    {@render children?.()}
+  </UserShell>
 </div>
 <UploadCover />
 <!-- The phone "Get the app" sheet: it opens only on the Photos library (rules in app-card.ts). -->

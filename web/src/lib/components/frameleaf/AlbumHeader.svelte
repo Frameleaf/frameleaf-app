@@ -94,7 +94,6 @@
     mdiFolderMultipleOutline,
     mdiImageMultipleOutline,
     mdiImageOutline,
-    mdiLinkVariant,
     mdiLogoutVariant,
     mdiMapOutline,
     mdiPencilOutline,
@@ -129,8 +128,8 @@
    * server returned in `albumUsers`, so a revoked role removes the control on the next read.
    *
    * What an action did is said in a toast. The line under the toolbar is only for what stays
-   * true: that this person's role on the album changed while the page was open. "Shared links"
-   * opens the Share dialog at this album's links, where they are listed, edited and created.
+   * true: that this person's role on the album changed while the page was open. Share opens one
+   * dialog for the people and for this album's public links (FL-1812).
    */
   interface Props {
     album: AlbumResponseDto;
@@ -374,9 +373,7 @@
   let preservationExportOpen = $state(false);
   const canExportAlbum = $derived(owner && album.kind === AlbumKind.Album && !album.isLocked);
   let shareOpen = $state(false);
-  let shareSection = $state<'people' | 'links'>('people');
-  const openShare = (section: 'people' | 'links' = 'people') => {
-    shareSection = section;
+  const openShare = () => {
     shareOpen = true;
   };
   let coverOpen = $state(false);
@@ -420,7 +417,37 @@
   /** Edit details, owner badges, rule, cover and options: the "…" menu's middle group. */
   /** FL-707 item 11: "New album" (a sub-album here) in the … menu, where the empty shelf's tile was. */
   const canCreateChild = $derived(editor && !boards && album.kind !== AlbumKind.Space);
-  const hasMiddleItems = $derived(editor || canShowOwnerBadges || !!rule || album.kind === AlbumKind.Space);
+  /** The "…" menu's groups (FL-1812); a heading is drawn only over at least one item. */
+  const canAutomate = $derived(editor && !rule && !album.isSmart && !isCollection && automationAvailable);
+  const organiseGroup = $derived(canCreateChild || canAutomate || !!rule);
+  const settingsGroup = $derived(editor || canShowOwnerBadges || !!rule);
+  const keepOfflineOffered = $derived(
+    (desktopOffline || localDesktopOffline) &&
+      owner &&
+      album.kind === AlbumKind.Album &&
+      album.isLocked === false &&
+      assetCount > 0,
+  );
+  /** Whether a folded action really puts an item in the menu: some depend on the album or the server. */
+  const foldedShown = $derived(
+    [...foldedActions].some((action) =>
+      action === 'map'
+        ? mapEnabled
+        : action === 'matching'
+          ? canAddMatching
+          : action === 'activity'
+            ? !!onToggleActivity
+            : true,
+    ),
+  );
+  const aboveDanger = $derived(
+    keepOfflineOffered ||
+      foldedShown ||
+      album.kind === AlbumKind.Space ||
+      organiseGroup ||
+      canExportAlbum ||
+      settingsGroup,
+  );
 
   const loadRule = async (id: string) => {
     let answer: ClassificationRuleResponseDto | undefined;
@@ -625,9 +652,6 @@
       handleError(error, $t('errors.unable_to_upload_file'));
     }
   };
-
-  /** This album's links are listed, edited and created in the Share dialog. */
-  const openLinks = () => openShare('links');
 </script>
 
 <header
@@ -869,13 +893,6 @@
       (CollectionHeader.jsx:1142-1154, 1410-1510; apple-style.css:872-877): only Add photos (or New
       album), Re-evaluate and Share stay in the row. Wider, the header's width folds some of them.
     -->
-    {#if owner && inRow('links')}
-      <button type="button" class="action fl-control" onclick={openLinks}>
-        <Icon icon={mdiLinkVariant} size="18" />
-        <span>{$t('frameleaf_spaces_links')}</span>
-      </button>
-    {/if}
-
     {#if mapEnabled && inRow('map')}
       <button type="button" class="action fl-control" disabled={mapMarkers.length === 0} onclick={() => void openMap()}>
         <Icon icon={mdiMapOutline} size="18" />
@@ -928,7 +945,7 @@
       {#snippet trigger()}
         <span class="trigger-content"><Icon icon={mdiDotsHorizontal} size="18" /></span>
       {/snippet}
-      {#if (desktopOffline || localDesktopOffline) && owner && album.kind === AlbumKind.Album && album.isLocked === false && assetCount > 0}
+      {#if keepOfflineOffered}
         <MenuItem disabled={requestingOffline} onSelect={keepOffline}>
           <Icon icon={mdiDownloadOutline} size="18" />
           {$t('frameleaf_album_keep_offline')}
@@ -985,71 +1002,53 @@
           </MenuItem>
         {/if}
       {:else}
-        {#if foldedActions.size > 0}
-          {#if folded && boards && editor && !isCollection && !addMenu}
-            <MenuItem onSelect={() => boardsCollectionUi.newCollection(album.id)}>
-              <Icon icon={mdiPlus} size="18" />
-              {$t('frameleaf_boards_new_collection')}
-            </MenuItem>
-          {/if}
-          {#if canAddMatching && !inRow('matching')}
-            <MenuItem onSelect={() => (addMatchingOpen = true)}>
-              <Icon icon={mdiPlaylistPlus} size="18" />
-              {$t('frameleaf_spaces_add_matching_open')}
-            </MenuItem>
-          {/if}
-          {#if owner && !inRow('links')}
-            <MenuItem onSelect={openLinks}>
-              <Icon icon={mdiLinkVariant} size="18" />
-              {$t('frameleaf_spaces_links')}
-            </MenuItem>
-          {/if}
-          {#if mapEnabled && !inRow('map')}
-            <MenuItem disabled={mapMarkers.length === 0} onSelect={() => void openMap()}>
-              <Icon icon={mdiMapOutline} size="18" />
-              {$t('map')}
-            </MenuItem>
-          {/if}
-          {#if !inRow('slideshow')}
-            <MenuItem disabled={assetCount === 0} onSelect={() => onSlideshow?.()}>
-              <Icon icon={mdiPlayCircleOutline} size="18" />
-              {$t('slideshow')}
-            </MenuItem>
-          {/if}
-          {#if !inRow('movie')}
-            <MenuItem disabled={assetCount === 0} onSelect={() => (movieOpen = true)}>
-              <Icon icon={mdiMovieOpenPlayOutline} size="18" />
-              {$t('frameleaf_movie_make')}
-            </MenuItem>
-          {/if}
-          {#if !inRow('download')}
-            <MenuItem disabled={assetCount === 0} onSelect={download}>
-              <Icon icon={mdiDownloadOutline} size="18" />
-              {$t('download')}
-            </MenuItem>
-          {/if}
-          {#if onToggleActivity && !inRow('activity')}
-            <MenuItem checked={activityOpen} onSelect={() => onToggleActivity?.()}>
-              <Icon icon={mdiCommentTextOutline} size="18" />
-              {likeCount + commentCount > 0
-                ? $t('frameleaf_album_activity_menu', { values: { count: likeCount + commentCount } })
-                : $t('frameleaf_album_comments_title')}
-            </MenuItem>
-          {/if}
-          <div class="menu-separator" role="separator"></div>
-        {/if}
-        {#if canExportAlbum}
-          <MenuItem disabled={assetCount === 0} onSelect={() => (preservationExportOpen = true)}>
-            <Icon icon={mdiDownloadOutline} size="18" />
-            {$t('frameleaf_preservation_album_export')}
+        <!--
+          FL-1812 (prototype CollectionHeader.jsx `group(`): what the button row has no room for stays at the
+          top, then the album's own commands under Organise, Export and Album settings. Sharing, links
+          included, is the Share button's dialog.
+        -->
+        {#if folded && boards && editor && !isCollection && !addMenu}
+          <MenuItem onSelect={() => boardsCollectionUi.newCollection(album.id)}>
+            <Icon icon={mdiPlus} size="18" />
+            {$t('frameleaf_boards_new_collection')}
           </MenuItem>
         {/if}
-        {#if canCreateChild}
-          <!-- CollectionHeader.jsx "new-album": from a plain album it goes next to it, in the same collection
-             when you can add to that collection; otherwise at the top level. -->
-          <MenuItem onSelect={() => openCreate(isCollection ? album.id : siblingParentId)}>
-            <Icon icon={mdiPlus} size="18" />
-            {$t('frameleaf_albums_create_album')}
+        {#if canAddMatching && !inRow('matching')}
+          <MenuItem onSelect={() => (addMatchingOpen = true)}>
+            <Icon icon={mdiPlaylistPlus} size="18" />
+            {$t('frameleaf_spaces_add_matching_open')}
+          </MenuItem>
+        {/if}
+        {#if mapEnabled && !inRow('map')}
+          <MenuItem disabled={mapMarkers.length === 0} onSelect={() => void openMap()}>
+            <Icon icon={mdiMapOutline} size="18" />
+            {$t('map')}
+          </MenuItem>
+        {/if}
+        {#if !inRow('slideshow')}
+          <MenuItem disabled={assetCount === 0} onSelect={() => onSlideshow?.()}>
+            <Icon icon={mdiPlayCircleOutline} size="18" />
+            {$t('slideshow')}
+          </MenuItem>
+        {/if}
+        {#if !inRow('movie')}
+          <MenuItem disabled={assetCount === 0} onSelect={() => (movieOpen = true)}>
+            <Icon icon={mdiMovieOpenPlayOutline} size="18" />
+            {$t('frameleaf_movie_make')}
+          </MenuItem>
+        {/if}
+        {#if !inRow('download')}
+          <MenuItem disabled={assetCount === 0} onSelect={download}>
+            <Icon icon={mdiDownloadOutline} size="18" />
+            {$t('download')}
+          </MenuItem>
+        {/if}
+        {#if onToggleActivity && !inRow('activity')}
+          <MenuItem checked={activityOpen} onSelect={() => onToggleActivity?.()}>
+            <Icon icon={mdiCommentTextOutline} size="18" />
+            {likeCount + commentCount > 0
+              ? $t('frameleaf_album_activity_menu', { values: { count: likeCount + commentCount } })
+              : $t('frameleaf_album_comments_title')}
           </MenuItem>
         {/if}
         {#if album.kind === AlbumKind.Space}
@@ -1060,59 +1059,87 @@
             {$t('frameleaf_spaces_open_details')}
           </MenuItem>
         {/if}
-        {#if editor && !rule && !album.isSmart}
-          {#if !isCollection && automationAvailable}
-            <MenuItem
-              onSelect={() =>
-                void goto(
-                  `${Route.workflows()}&${new URLSearchParams({ workflowAlbum: album.id, workflowName: name })}`,
-                )}
-            >
-              <Icon icon={mdiAutoFix} size="18" />
-              {$t('frameleaf_workflows.automate_album')}
+        {#if organiseGroup}
+          <div role="group" aria-label={$t('frameleaf_album_menu_organise')}>
+            <div class="menu-heading" aria-hidden="true">{$t('frameleaf_album_menu_organise')}</div>
+            {#if canCreateChild}
+              <!-- CollectionHeader.jsx "new-album": from a plain album it goes next to it, in the same collection
+                 when you can add to that collection; otherwise at the top level. -->
+              <MenuItem onSelect={() => openCreate(isCollection ? album.id : siblingParentId)}>
+                <Icon icon={mdiPlus} size="18" />
+                {$t('frameleaf_albums_create_album')}
+              </MenuItem>
+            {/if}
+            {#if canAutomate}
+              <MenuItem
+                onSelect={() =>
+                  void goto(
+                    `${Route.workflows()}&${new URLSearchParams({ workflowAlbum: album.id, workflowName: name })}`,
+                  )}
+              >
+                <Icon icon={mdiAutoFix} size="18" />
+                {$t('frameleaf_workflows.automate_album')}
+              </MenuItem>
+            {/if}
+            {#if rule}
+              <MenuItem disabled={rule.counts.suggested === 0} onSelect={() => (reviewOpen = true)}>
+                <Icon icon={mdiTextBoxCheckOutline} size="18" />
+                {$t('frameleaf_rules_review')}
+              </MenuItem>
+            {/if}
+          </div>
+        {/if}
+        {#if canExportAlbum}
+          <div role="group" aria-label={$t('export')}>
+            <div class="menu-heading" aria-hidden="true">{$t('export')}</div>
+            <MenuItem disabled={assetCount === 0} onSelect={() => (preservationExportOpen = true)}>
+              <Icon icon={mdiDownloadOutline} size="18" />
+              {$t('frameleaf_preservation_album_export')}
             </MenuItem>
-          {/if}
-          <MenuItem onSelect={() => (editOpen = true)}>
-            <Icon icon={mdiPencilOutline} size="18" />
-            {$t('frameleaf_album_edit_details')}
-          </MenuItem>
+          </div>
         {/if}
-        {#if editor && album.kind !== AlbumKind.Space}
-          <MenuItem onSelect={() => (iconOpen = true)}>
-            <Icon icon={mdiPaletteOutline} size="18" />
-            {$t('frameleaf_album_color_menu')}
-          </MenuItem>
+        {#if settingsGroup}
+          <div role="group" aria-label={$t('frameleaf_album_menu_settings')}>
+            <div class="menu-heading" aria-hidden="true">{$t('frameleaf_album_menu_settings')}</div>
+            {#if rule}
+              <MenuItem onSelect={() => (ruleOpen = true)}>
+                <Icon icon={mdiPencilOutline} size="18" />
+                {$t('frameleaf_album_edit_details')}
+              </MenuItem>
+            {:else if editor && !album.isSmart}
+              <MenuItem onSelect={() => (editOpen = true)}>
+                <Icon icon={mdiPencilOutline} size="18" />
+                {$t('frameleaf_album_edit_details')}
+              </MenuItem>
+            {/if}
+            {#if editor && album.kind !== AlbumKind.Space}
+              <MenuItem onSelect={() => (iconOpen = true)}>
+                <Icon icon={mdiPaletteOutline} size="18" />
+                {$t('frameleaf_album_color_menu')}
+              </MenuItem>
+            {/if}
+            {#if editor && !album.isSmart}
+              <MenuItem disabled={coverSourceIds.length === 0} onSelect={() => (coverOpen = true)}>
+                <Icon icon={mdiImageOutline} size="18" />
+                {$t('frameleaf_album_cover_title')}
+              </MenuItem>
+            {/if}
+            {#if canShowOwnerBadges}
+              <MenuItem checked={ownerBadges} onSelect={() => onToggleOwnerBadges?.()}>
+                <Icon icon={mdiAccountCircleOutline} size="18" />
+                {$t('frameleaf_album_owner_badges')}
+              </MenuItem>
+            {/if}
+            {#if editor}
+              <MenuItem onSelect={() => (optionsOpen = true)}>
+                <Icon icon={mdiTuneVariant} size="18" />
+                {$t('options')}
+              </MenuItem>
+            {/if}
+          </div>
         {/if}
-        {#if canShowOwnerBadges}
-          <MenuItem checked={ownerBadges} onSelect={() => onToggleOwnerBadges?.()}>
-            <Icon icon={mdiAccountCircleOutline} size="18" />
-            {$t('frameleaf_album_owner_badges')}
-          </MenuItem>
-        {/if}
-        {#if rule}
-          <MenuItem onSelect={() => (ruleOpen = true)}>
-            <Icon icon={mdiPencilOutline} size="18" />
-            {$t('frameleaf_album_edit_details')}
-          </MenuItem>
-          <MenuItem disabled={rule.counts.suggested === 0} onSelect={() => (reviewOpen = true)}>
-            <Icon icon={mdiTextBoxCheckOutline} size="18" />
-            {$t('frameleaf_rules_review')}
-          </MenuItem>
-        {/if}
-        {#if editor && !album.isSmart}
-          <MenuItem disabled={coverSourceIds.length === 0} onSelect={() => (coverOpen = true)}>
-            <Icon icon={mdiImageOutline} size="18" />
-            {$t('frameleaf_album_cover_title')}
-          </MenuItem>
-        {/if}
-        {#if editor}
-          <MenuItem onSelect={() => (optionsOpen = true)}>
-            <Icon icon={mdiTuneVariant} size="18" />
-            {$t('options')}
-          </MenuItem>
-        {/if}
-        <!-- A separator only between two groups: never doubled, never first. -->
-        {#if hasMiddleItems}
+        <!-- One separator, above the danger item, and only when something is above it. -->
+        {#if aboveDanger}
           <div class="menu-separator" role="separator"></div>
         {/if}
         <!-- Delete and Leave are the danger items (CollectionHeader.jsx:1520-1536). -->
@@ -1195,13 +1222,7 @@
   <SharedSpaceAddMatching space={album} {albums} bind:open={addMatchingOpen} />
 {/if}
 
-<AlbumShareDialog
-  {album}
-  section={shareSection}
-  bind:open={shareOpen}
-  onChanged={onRefresh}
-  onLeave={() => (leaveOpen = true)}
-/>
+<AlbumShareDialog {album} bind:open={shareOpen} onChanged={onRefresh} onLeave={() => (leaveOpen = true)} />
 {#if moveOpen}
   <AlbumMoveDialog
     bind:open={moveOpen}
@@ -1895,8 +1916,17 @@
   }
   .menu-separator {
     height: 1px;
-    margin: 0.25rem 0.375rem;
+    margin: var(--fl-space-1) var(--fl-space-2);
     background: var(--fl-border);
+  }
+  /* collections.css .cl-menu-heading */
+  .menu-heading {
+    padding: var(--fl-space-3) var(--fl-space-3) var(--fl-space-1);
+    color: var(--fl-muted);
+    font: var(--fl-type-micro);
+    letter-spacing: var(--fl-tracking-micro);
+    text-transform: uppercase;
+    user-select: none;
   }
   .danger-item {
     display: inline-flex;

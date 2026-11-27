@@ -8,6 +8,10 @@ import { handleCreateSharedLink, handleUpdateSharedLink } from '$lib/services/sh
 import en from '../../../../../i18n/en.json';
 import SharedLinkForm from './SharedLinkForm.svelte';
 
+// FL-922: a new link starts on the default expiry; none is set here.
+vi.mock('$lib/managers/server-config-manager.svelte', () => ({
+  serverConfigManager: { value: { sharedLinkDefaultExpiryDays: null } },
+}));
 vi.mock('$lib/services/shared-link.service', () => ({
   asDirectImageUrl: (link: { directUrl?: string | null }) =>
     link.directUrl ? `https://frameleaf.local${link.directUrl}` : '',
@@ -121,6 +125,24 @@ describe('SharedLinkForm', () => {
     await fireEvent.click(screen.getByRole('button', { name: en.create_link }));
     expect(handleCreateSharedLink).toHaveBeenCalledWith(
       expect.objectContaining({ showMetadata: false, allowDownload: false }),
+      saveOptions,
+    );
+  });
+
+  it('offers web size only once downloads are allowed, and saves it (FL-826)', async () => {
+    render(SharedLinkForm, {
+      props: { open: true, target: { type: SharedLinkType.Individual, assetIds: ['a1'], name: '1 item' } },
+    });
+    const webSize = () => screen.queryByRole('switch', { name: new RegExp(`^${en.frameleaf_sharing.web_size_only}`) });
+    expect(webSize()).toBeNull();
+
+    await fireEvent.click(screen.getByRole('switch', { name: new RegExp(`^${en.show_metadata}`) }));
+    await fireEvent.click(screen.getByRole('switch', { name: new RegExp(`^${en.frameleaf_sharing.allow_download}`) }));
+    await fireEvent.click(webSize()!);
+    await fireEvent.click(screen.getByRole('button', { name: en.create_link }));
+
+    expect(handleCreateSharedLink).toHaveBeenCalledWith(
+      expect.objectContaining({ allowDownload: true, webSizeOnly: true }),
       saveOptions,
     );
   });

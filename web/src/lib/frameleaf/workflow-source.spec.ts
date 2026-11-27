@@ -27,19 +27,29 @@ describe('workflow search copy', () => {
 });
 
 describe('workflow schedule controls', () => {
-  it('round trips presets and preserves advanced schedules', () => {
-    for (const frequency of ['hourly', 'daily', 'weekly'] as const) {
-      const schedule = workflowSchedule({ frequency, time: '14:35', weekday: '2', cron: '' });
+  it('round trips every choice of the picker', () => {
+    for (const frequency of ['hourly', 'daily', 'weekly', 'days'] as const) {
+      const schedule = workflowSchedule({ frequency, time: '14:35', weekday: '2', days: [5, 1, 3], cron: '' });
       expect(scheduleControls(schedule).frequency).toBe(frequency);
       expect(workflowSchedule(scheduleControls(schedule))).toEqual(schedule);
     }
-    expect(scheduleControls({ cron: '15 1,8 * * 1-5' })).toMatchObject({
-      frequency: 'advanced',
-      cron: '15 1,8 * * 1-5',
+    expect(workflowSchedule({ frequency: 'days', time: '09:00', weekday: '1', days: [5, 1, 3], cron: '' })).toEqual({
+      cron: '0 9 * * 1,3,5',
     });
-    expect(scheduleControls({ cron: '0 9 * * * extra' })).toMatchObject({
-      frequency: 'advanced',
-      cron: '0 9 * * * extra',
+    expect(scheduleControls({ cron: '30 7 * * 0,6' })).toMatchObject({
+      frequency: 'days',
+      days: [0, 6],
+      time: '07:30',
     });
+    // one chosen day is the same schedule as "every week"
+    expect(scheduleControls({ cron: '0 9 * * 3' })).toMatchObject({ frequency: 'weekly', weekday: '3', days: [3] });
+  });
+
+  it('keeps a schedule the picker cannot say exactly as it was saved (FL-1815)', () => {
+    for (const cron of ['15 1,8 * * 1-5', '0 9 * * * extra', '0 9 1 * *', '*/5 * * * *', '0 9 * * 7', '0 25 * * *']) {
+      const controls = scheduleControls({ cron });
+      expect(controls.frequency).toBe('custom');
+      expect(workflowSchedule(controls)).toEqual({ cron });
+    }
   });
 });

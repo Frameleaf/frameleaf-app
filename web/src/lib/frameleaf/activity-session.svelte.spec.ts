@@ -8,6 +8,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import { ActivitySession } from '$lib/frameleaf/activity-session.svelte';
 import { eventManager } from '$lib/managers/event-manager.svelte';
+import { websocketStore } from '$lib/stores/websocket';
 
 const operation = (overrides: Partial<MediaOperationDto> = {}): MediaOperationDto =>
   ({
@@ -50,9 +51,70 @@ const operation = (overrides: Partial<MediaOperationDto> = {}): MediaOperationDt
  * matter: nothing advances a job locally, and a lost connection leaves the last answer on screen.
  */
 describe('ActivitySession', () => {
+  const show = (state: DocumentVisibilityState) => {
+    Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => state });
+    document.dispatchEvent(new Event('visibilitychange'));
+  };
+
   beforeEach(() => {
     vi.resetAllMocks();
     vi.useRealTimers();
+    websocketStore.connected.set(false);
+    show('visible');
+  });
+
+  /** FL-1800 */
+  it('asks nothing while idle with the socket connected, and shows work the moment it starts', async () => {
+    vi.useFakeTimers();
+    websocketStore.connected.set(true);
+    sdkMock.searchMediaOperations.mockResolvedValue({ items: [], total: 0 });
+    const session = new ActivitySession();
+    const stop = session.watch();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(sdkMock.searchMediaOperations).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(10 * 60_000);
+    expect(sdkMock.searchMediaOperations).toHaveBeenCalledTimes(1);
+
+    sdkMock.searchMediaOperations.mockResolvedValue({ items: [operation()], total: 1 });
+    eventManager.emit('MediaOperationUpdate', { id: operation().id });
+    await vi.advanceTimersByTimeAsync(250);
+    expect(session.runningCount).toBe(1);
+    // running work is polled again
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(sdkMock.searchMediaOperations).toHaveBeenCalledTimes(3);
+    stop();
+  });
+
+  it('keeps the slow look while the socket is down', async () => {
+    vi.useFakeTimers();
+    sdkMock.searchMediaOperations.mockResolvedValue({ items: [], total: 0 });
+    const session = new ActivitySession();
+    const stop = session.watch();
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(sdkMock.searchMediaOperations).toHaveBeenCalledTimes(2);
+    stop();
+  });
+
+  it('asks nothing while the tab is hidden, and asks at once when it is shown', async () => {
+    vi.useFakeTimers();
+    sdkMock.searchMediaOperations.mockResolvedValue({ items: [operation()], total: 1 });
+    const session = new ActivitySession();
+    const stop = session.watch();
+    await vi.advanceTimersByTimeAsync(0);
+    show('hidden');
+    const asked = sdkMock.searchMediaOperations.mock.calls.length;
+
+    eventManager.emit('MediaOperationUpdate', { id: operation().id });
+    eventManager.emit('WebsocketConnect');
+    await vi.advanceTimersByTimeAsync(5 * 60_000);
+    expect(sdkMock.searchMediaOperations.mock.calls.length).toBe(asked);
+
+    show('visible');
+    await vi.advanceTimersByTimeAsync(0);
+    expect(sdkMock.searchMediaOperations.mock.calls.length).toBe(asked + 1);
+    stop();
   });
 
   it('shares one request between concurrent refreshes', async () => {
