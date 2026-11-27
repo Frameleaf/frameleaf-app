@@ -285,9 +285,10 @@
             Show filmstrip) are never under the frosted footer, on phones too.
           -->
           <!--
-            FL-35: the complete grouped menu (Download, Organize, Stack, Set as, Go to, Jobs,
-            Viewer). Every entry maps to an existing asset action and a group that has no
-            supported entry in this context is not rendered at all.
+            FL-35, FL-1811: the complete menu, as a short list of everyday actions and sections
+            that open in place (Share and export, Stack, Set as, Go to, Fix, Viewer). Every entry
+            maps to an existing asset action and a section that has no supported entry in this
+            context is not rendered at all.
           -->
           <ViewerMoreMenu
             {asset}

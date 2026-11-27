@@ -4,6 +4,7 @@
   import { getContextMenu } from '$lib/stores/context-menu.store';
   import { generateId } from '$lib/utils/generate-id';
   import { Icon, type IconLike } from '@frameleaf/ui';
+  import { mdiChevronDown } from '@mdi/js';
   import { writable } from 'svelte/store';
 
   interface Props {
@@ -15,9 +16,20 @@
     onClick: () => void;
     shortcut?: Shortcut | null;
     shortcutLabel?: string;
+    /** Set on a row that opens more rows in place (FL-1811): it shows a chevron and leaves the menu open. */
+    expanded?: boolean;
   }
 
-  let { text, subtitle = '', icon, danger = false, onClick, shortcut = null, shortcutLabel = '' }: Props = $props();
+  let {
+    text,
+    subtitle = '',
+    icon,
+    danger = false,
+    onClick,
+    shortcut = null,
+    shortcutLabel = '',
+    expanded = undefined,
+  }: Props = $props();
 
   let id: string = generateId();
   const context = getContextMenu();
@@ -25,8 +37,13 @@
 
   let isActive = $derived($selectedIdStore === id);
 
-  const handleClick = () => {
-    context?.onOptionClick();
+  const handleClick = (event: MouseEvent) => {
+    if (expanded === undefined) {
+      context?.onOptionClick();
+    } else {
+      // The menu closes on any click that reaches the document; this row only opens its section.
+      event.stopPropagation();
+    }
     onClick();
   };
 
@@ -51,6 +68,7 @@
   class:active={isActive}
   class:danger
   role="menuitem"
+  aria-expanded={expanded}
 >
   <!-- The slot stays when a row has no icon (a choice that is not ticked), so every label starts on the same line. -->
   <span class="fl-menu-option-icon" aria-hidden="true">
@@ -73,6 +91,9 @@
       </p>
     {/if}
   </div>
+  {#if expanded !== undefined}
+    <span class="fl-menu-option-chevron" aria-hidden="true"><Icon icon={mdiChevronDown} aria-hidden size="16" /></span>
+  {/if}
 </li>
 
 <style>
@@ -130,6 +151,19 @@
 
   p.fl-menu-option-hint {
     font-size: var(--fl-font-micro);
+  }
+
+  /* FL-1811 (.mv-menu-section): the chevron turns when the section is open, and its rows sit under its label. */
+  .fl-menu-option-chevron {
+    display: inline-flex;
+    flex: none;
+    transition: rotate var(--fl-motion) var(--fl-ease);
+  }
+  .fl-menu-option[aria-expanded='true'] .fl-menu-option-chevron {
+    rotate: 180deg;
+  }
+  :global(.fl-menu-option[aria-expanded='true']) ~ .fl-menu-option:not([aria-expanded]) {
+    padding-inline-start: var(--fl-space-10);
   }
 
   /* Touch: the row is the tap target (tokens.css --fl-control-height). */

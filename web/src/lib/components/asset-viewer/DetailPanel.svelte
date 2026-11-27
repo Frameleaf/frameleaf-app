@@ -3,6 +3,7 @@
   import DetailPanelAllMetadata from '$lib/components/asset-viewer/DetailPanelAllMetadata.svelte';
   import DetailPanelCameraIdentification from '$lib/components/asset-viewer/DetailPanelCameraIdentification.svelte';
   import DetailPanelDate from '$lib/components/asset-viewer/DetailPanelDate.svelte';
+  import DetailPanelFold from '$lib/components/asset-viewer/DetailPanelFold.svelte';
   import DetailPanelDescription from '$lib/components/asset-viewer/DetailPanelDescription.svelte';
   import DetailPanelImageEnrichment from '$lib/components/asset-viewer/DetailPanelImageEnrichment.svelte';
   import DetailPanelLocation from '$lib/components/asset-viewer/DetailPanelLocation.svelte';
@@ -136,6 +137,10 @@
 <!--
   VIEWER-P7 (.mv-info-scroll, .mv-info section, .mv-info h3; media-viewer.css:967-990): every part of
   the card is a band with a divider under it and a small uppercase label (`fl-info-heading`) on top.
+
+  FL-1811 (prototype PR 102): when, where, the rating, who, albums, tags and words stay open; the file
+  and camera facts, credits, the sensitive-content check, the scan and the text fold away
+  (`DetailPanelFold`), each remembering whether it was left open.
 -->
 <div class="fl-info">
   <!-- V-6: a missing original is explained by the viewer's offline banner (ViewerOfflineBanner), not again here. -->
@@ -153,152 +158,64 @@
     <DetailPanelDate {asset} onAssetRefresh={(updatedAsset) => onAssetUpdate?.(updatedAsset)} />
 
     <DetailPanelLocation {isOwner} {asset} onAssetRefresh={(updatedAsset) => onAssetUpdate?.(updatedAsset)} />
+
+    {#if latlng && featureFlagsManager.value.map}
+      <div class="fl-info-map h-90">
+        {#await import('$lib/components/shared-components/map/Map.svelte')}
+          {#await delay(timeToLoadTheMap) then}
+            <!-- show the loading spinner only if loading the map takes too much time -->
+            <div class="flex size-full items-center justify-center">
+              <LoadingSpinner />
+            </div>
+          {/await}
+        {:then { default: Map }}
+          <Map
+            mapMarkers={[
+              {
+                lat: latlng.lat,
+                lon: latlng.lng,
+                id: asset.id,
+                city: asset.exifInfo?.city ?? null,
+                state: asset.exifInfo?.state ?? null,
+                country: asset.exifInfo?.country ?? null,
+              },
+            ]}
+            center={latlng}
+            zoom={12.5}
+            simplified
+            useLocationPin
+            showSimpleControls
+            onOpenInMapView={() => goto(Route.map({ ...latlng, zoom: 12.5 }))}
+          >
+            {#snippet popup({ marker })}
+              {@const { lat, lon } = marker}
+              <div class="flex flex-col items-center gap-1">
+                <Text fontWeight="bold">{lat.toPrecision(6)}, {lon.toPrecision(6)}</Text>
+                <Link
+                  href="https://www.openstreetmap.org/?mlat={lat}&mlon={lon}&zoom=13#map=15/{lat}/{lon}"
+                  class="text-primary"
+                >
+                  {$t('open_in_openstreetmap')}
+                </Link>
+              </div>
+            {/snippet}
+          </Map>
+        {/await}
+      </div>
+    {/if}
   </section>
+
+  <!-- FL-1811: the rating sits directly under Captured (owner, 2026-11-26). -->
+  <DetailPanelRating {asset} {isOwner} onAssetRefresh={(updatedAsset) => onAssetUpdate?.(updatedAsset)} />
 
   <!-- A Boards item's Source (Saved with, Page, the saved note, Added), as the Boards inspector shows it. -->
   {#if asset.libraryScope === LibraryScope.Design || asset.libraryScope === LibraryScope.Both}
     <AssetSources assetId={asset.id} canRead={isOwner} added={asset.createdAt} headingClass="fl-info-heading" />
   {/if}
 
-  {#if isOwner && !authManager.isSharedLink && asset.type === AssetTypeEnum.Image}
-    <DetailPanelScanSplit {asset} />
-  {/if}
-  {#if !authManager.isSharedLink && asset.type === AssetTypeEnum.Image}
-    <DetailPanelPrintBack {asset} {isOwner} />
-  {/if}
-
-  <!--
-      FL-36: the file, path, image, camera, lens, exposure, video and checksum rows the design
-      puts under Details. `infoDetailRows` decides which of them this asset can fill and keeps
-      the path and the checksum owner-only.
-    -->
-  <ViewerDetailRows {asset} {isOwner} />
-  <DetailPanelCameraIdentification {asset} {isOwner} />
-  {#if isOwner && !authManager.isSharedLink && asset.type === AssetTypeEnum.Image && !asset.isOffline && asset.visibility !== AssetVisibility.Locked}
-    {#key asset.id}<DetailPanelReplaceSidecar {asset} />{/key}
-  {/if}
-  {#if !asset.isOffline && (!authManager.isSharedLink || asset.hasMetadata)}
-    {#key asset.id}<DetailPanelAllMetadata {asset} />{/key}
-  {/if}
-
-  <!-- FL-707 item 13: people, rating, then the description (once, with its AI evidence) and the
-       sensitive-content check, after when, where, file and camera. -->
   <DetailPanelPeople {asset} {isOwner} {previousRoute} onFacesChanged={handleRefreshPeople} />
   <!-- FL-58: the owner's pets in this photo, with add, draw and undo. -->
   <DetailPanelPets {asset} {isOwner} />
-  <DetailPanelRating {asset} {isOwner} onAssetRefresh={(updatedAsset) => onAssetUpdate?.(updatedAsset)} />
-  {#if asset.hasMetadata && (isOwner || asset.exifInfo?.title)}
-    <section>
-      <h2>{$t('frameleaf_metadata_title')}</h2>
-      {#key asset.id}
-        <DetailPanelCreditField
-          {asset}
-          field="title"
-          label={$t('frameleaf_metadata_title')}
-          isOwner={isOwner && !authManager.isSharedLink}
-          onAssetRefresh={onAssetUpdate}
-        />
-      {/key}
-    </section>
-  {/if}
-  <DetailPanelImageEnrichment
-    {asset}
-    {isOwner}
-    onAssetRefresh={(updatedAsset) => onAssetUpdate?.(updatedAsset)}
-    {onAssetSuppressed}
-    onDescriptionReview={(review) => (descriptionReview = review)}
-  >
-    {#snippet descriptionEditor(evidence)}
-      <DetailPanelDescription
-        {asset}
-        {isOwner}
-        review={descriptionReview}
-        {evidence}
-        onAssetRefresh={(updatedAsset) => onAssetUpdate?.(updatedAsset)}
-      />
-    {/snippet}
-  </DetailPanelImageEnrichment>
-  {#if asset.hasMetadata && (isOwner || asset.exifInfo?.artist || asset.exifInfo?.copyright)}
-    <section>
-      <h2>{$t('frameleaf_metadata_credits')}</h2>
-      {#key asset.id}
-        {#if !authManager.isSharedLink && (isOwner || asset.exifInfo?.artist)}
-          <h3>{$t('frameleaf_metadata_artist')}</h3>
-          <DetailPanelCreditField
-            {asset}
-            field="artist"
-            label={$t('frameleaf_metadata_artist')}
-            {isOwner}
-            onAssetRefresh={onAssetUpdate}
-          />
-        {/if}
-        {#if isOwner || asset.exifInfo?.copyright}
-          <h3>{$t('frameleaf_metadata_copyright')}</h3>
-          <DetailPanelCreditField
-            {asset}
-            field="copyright"
-            label={$t('frameleaf_metadata_copyright')}
-            isOwner={isOwner && !authManager.isSharedLink}
-            onAssetRefresh={onAssetUpdate}
-          />
-        {/if}
-      {/key}
-    </section>
-  {/if}
-  <!-- FL-59: a video's reusable frames, cover and timestamped moments. -->
-  <VideoMomentsPanel {asset} {isOwner} />
-
-  {#if authManager.authenticated && authManager.preferences.tags.enabled}
-    <DetailPanelTags {asset} {isOwner} onAssetRefresh={(updatedAsset) => onAssetUpdate?.(updatedAsset)} />
-  {/if}
-  {#if authManager.authenticated}
-    <DetailPanelClassification {asset} {isOwner} />
-  {/if}
-
-  {#if latlng && featureFlagsManager.value.map}
-    <div class="fl-info-map h-90">
-      {#await import('$lib/components/shared-components/map/Map.svelte')}
-        {#await delay(timeToLoadTheMap) then}
-          <!-- show the loading spinner only if loading the map takes too much time -->
-          <div class="flex size-full items-center justify-center">
-            <LoadingSpinner />
-          </div>
-        {/await}
-      {:then { default: Map }}
-        <Map
-          mapMarkers={[
-            {
-              lat: latlng.lat,
-              lon: latlng.lng,
-              id: asset.id,
-              city: asset.exifInfo?.city ?? null,
-              state: asset.exifInfo?.state ?? null,
-              country: asset.exifInfo?.country ?? null,
-            },
-          ]}
-          center={latlng}
-          zoom={12.5}
-          simplified
-          useLocationPin
-          showSimpleControls
-          onOpenInMapView={() => goto(Route.map({ ...latlng, zoom: 12.5 }))}
-        >
-          {#snippet popup({ marker })}
-            {@const { lat, lon } = marker}
-            <div class="flex flex-col items-center gap-1">
-              <Text fontWeight="bold">{lat.toPrecision(6)}, {lon.toPrecision(6)}</Text>
-              <Link
-                href="https://www.openstreetmap.org/?mlat={lat}&mlon={lon}&zoom=13#map=15/{lat}/{lon}"
-                class="text-primary"
-              >
-                {$t('open_in_openstreetmap')}
-              </Link>
-            </div>
-          {/snippet}
-        </Map>
-      {/await}
-    </div>
-  {/if}
 
   {#await albums then albums}
     {#if albums.length > 0}
@@ -331,6 +248,113 @@
     {/if}
   {/await}
 
+  <!-- Smart albums: the rules that put this item in an album. -->
+  {#if authManager.authenticated}
+    <DetailPanelClassification {asset} {isOwner} />
+  {/if}
+
+  {#if authManager.authenticated && authManager.preferences.tags.enabled}
+    <DetailPanelTags {asset} {isOwner} onAssetRefresh={(updatedAsset) => onAssetUpdate?.(updatedAsset)} />
+  {/if}
+
+  {#if asset.hasMetadata && (isOwner || asset.exifInfo?.title)}
+    <section>
+      <h2>{$t('frameleaf_metadata_title')}</h2>
+      {#key asset.id}
+        <DetailPanelCreditField
+          {asset}
+          field="title"
+          label={$t('frameleaf_metadata_title')}
+          isOwner={isOwner && !authManager.isSharedLink}
+          onAssetRefresh={onAssetUpdate}
+        />
+      {/key}
+    </section>
+  {/if}
+
+  <!-- The description, once, with its AI evidence; the card also places everything down to its own fold. -->
+  <DetailPanelImageEnrichment
+    {asset}
+    {isOwner}
+    onAssetRefresh={(updatedAsset) => onAssetUpdate?.(updatedAsset)}
+    {onAssetSuppressed}
+    onDescriptionReview={(review) => (descriptionReview = review)}
+  >
+    {#snippet descriptionEditor(evidence)}
+      <DetailPanelDescription
+        {asset}
+        {isOwner}
+        review={descriptionReview}
+        {evidence}
+        onAssetRefresh={(updatedAsset) => onAssetUpdate?.(updatedAsset)}
+      />
+    {/snippet}
+    {#snippet beforeSensitivity()}
+      <!-- FL-59: a video's reusable frames, cover and timestamped moments. -->
+      <VideoMomentsPanel {asset} {isOwner} />
+
+      <!--
+        FL-36: the file, path, image, camera, lens, exposure, video and checksum rows the design
+        puts under Details. `infoDetailRows` decides which of them this asset can fill and keeps
+        the path and the checksum owner-only.
+      -->
+      <DetailPanelFold id="details" label={$t('frameleaf_info_fold_file_camera')}>
+        <ViewerDetailRows {asset} {isOwner} />
+        <DetailPanelCameraIdentification {asset} {isOwner} />
+        {#if isOwner && !authManager.isSharedLink && asset.type === AssetTypeEnum.Image && !asset.isOffline && asset.visibility !== AssetVisibility.Locked}
+          {#key asset.id}<DetailPanelReplaceSidecar {asset} />{/key}
+        {/if}
+        {#if !asset.isOffline && (!authManager.isSharedLink || asset.hasMetadata)}
+          {#key asset.id}<DetailPanelAllMetadata {asset} />{/key}
+        {/if}
+      </DetailPanelFold>
+
+      <!-- A shared link never shows the artist, so an artist alone leaves nothing to fold there. -->
+      {#if asset.hasMetadata && (isOwner || (!authManager.isSharedLink && asset.exifInfo?.artist) || asset.exifInfo?.copyright)}
+        <DetailPanelFold id="credits" label={$t('frameleaf_metadata_credits')}>
+          <section>
+            {#key asset.id}
+              {#if !authManager.isSharedLink && (isOwner || asset.exifInfo?.artist)}
+                <h3>{$t('frameleaf_metadata_artist')}</h3>
+                <DetailPanelCreditField
+                  {asset}
+                  field="artist"
+                  label={$t('frameleaf_metadata_artist')}
+                  {isOwner}
+                  onAssetRefresh={onAssetUpdate}
+                />
+              {/if}
+              {#if isOwner || asset.exifInfo?.copyright}
+                <h3>{$t('frameleaf_metadata_copyright')}</h3>
+                <DetailPanelCreditField
+                  {asset}
+                  field="copyright"
+                  label={$t('frameleaf_metadata_copyright')}
+                  isOwner={isOwner && !authManager.isSharedLink}
+                  onAssetRefresh={onAssetUpdate}
+                />
+              {/if}
+            {/key}
+          </section>
+        </DetailPanelFold>
+      {/if}
+    {/snippet}
+  </DetailPanelImageEnrichment>
+
+  <DetailPanelFold id="scan" label={$t('frameleaf_info_fold_scan')} headings>
+    {#if isOwner && !authManager.isSharedLink && asset.type === AssetTypeEnum.Image}
+      <DetailPanelScanSplit {asset} />
+    {/if}
+    {#if !authManager.isSharedLink && asset.type === AssetTypeEnum.Image}
+      <DetailPanelPrintBack {asset} {isOwner} />
+    {/if}
+  </DetailPanelFold>
+
+  <!-- FL-63: "Text in this photo". -->
+  <DetailPanelFold id="text" label={$t('frameleaf_documents_text_in_photo')}>
+    <DocumentTextSection {asset} />
+  </DetailPanelFold>
+
   <!-- V-27: who owns or shared someone else's item, under the albums (MediaViewer.jsx:2514-2519). -->
   {#if owner}
     <p class="fl-owner" data-testid="detail-panel-owner">
@@ -347,9 +371,6 @@
       {$t('frameleaf_partner_origin', { values: { name: originName } })}
     </p>
   {/if}
-
-  <!-- FL-63: the design puts "Text in this photo" last, after the albums and the owner. -->
-  <DocumentTextSection {asset} />
 </div>
 
 <style>
@@ -366,7 +387,7 @@
   }
 
   .fl-info-map {
-    margin-block: var(--fl-space-4);
+    margin-top: var(--fl-space-4);
     overflow: hidden;
     border-radius: var(--fl-radius-card);
   }

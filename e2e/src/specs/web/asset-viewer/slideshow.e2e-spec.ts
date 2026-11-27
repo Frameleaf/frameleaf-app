@@ -25,6 +25,8 @@ test.describe('Slideshow', () => {
     // More menu grows by that entry while it is open and the entries under the pointer move.
     await expect(page.getByTestId('viewer-footer').getByRole('button', { name: 'Play slideshow' })).toBeEnabled();
     await page.getByRole('button', { name: /^More( actions)?$/ }).click();
+    // FL-1811: the slideshow entries sit in the Viewer section, which opens in place.
+    await page.getByRole('menuitem', { name: 'Viewer', exact: true }).click();
     await page.getByRole('menuitem', { name: 'Play slideshow' }).click();
   };
 
