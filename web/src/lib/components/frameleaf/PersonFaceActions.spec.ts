@@ -44,7 +44,7 @@ vi.mock('@frameleaf/ui', async () => {
   return {
     ...actual,
     Icon,
-    modalManager: { showDialog: vi.fn() },
+    modalManager: { show: vi.fn() },
     toastManager: { primary: vi.fn(), danger: vi.fn(), warning: vi.fn() },
   };
 });
@@ -170,7 +170,7 @@ describe('PersonFaceActions', () => {
   it('permanently deletes the face on Remove face, after confirming', async () => {
     const person = personFactory.build({ name: 'Alex', isHidden: false });
     const onFacesChanged = vi.fn();
-    vi.mocked(modalManager.showDialog).mockResolvedValue(true);
+    vi.mocked(modalManager.show).mockResolvedValue(true as never);
     vi.mocked(deleteFace).mockResolvedValue(undefined as never);
 
     render(PersonFaceActions, { person, face, previousRoute: '/photos', onFacesChanged });
@@ -178,7 +178,7 @@ describe('PersonFaceActions', () => {
     await openMenu();
     await fireEvent.click(screen.getByRole('menuitem', { name: 'frameleaf_faces_remove_face' }));
 
-    await waitFor(() => expect(modalManager.showDialog).toHaveBeenCalled());
+    await waitFor(() => expect(modalManager.show).toHaveBeenCalled());
     await waitFor(() =>
       expect(deleteFace).toHaveBeenCalledWith({
         id: face.id,
@@ -191,14 +191,14 @@ describe('PersonFaceActions', () => {
   it('does not delete the face when Remove face is cancelled', async () => {
     const person = personFactory.build({ name: 'Alex', isHidden: false });
     const onFacesChanged = vi.fn();
-    vi.mocked(modalManager.showDialog).mockResolvedValue(false);
+    vi.mocked(modalManager.show).mockResolvedValue(false as never);
 
     render(PersonFaceActions, { person, face, previousRoute: '/photos', onFacesChanged });
 
     await openMenu();
     await fireEvent.click(screen.getByRole('menuitem', { name: 'frameleaf_faces_remove_face' }));
 
-    await waitFor(() => expect(modalManager.showDialog).toHaveBeenCalled());
+    await waitFor(() => expect(modalManager.show).toHaveBeenCalled());
     expect(deleteFace).not.toHaveBeenCalled();
     expect(onFacesChanged).not.toHaveBeenCalled();
   });
@@ -213,7 +213,7 @@ describe('PersonFaceActions', () => {
     await openMenu();
     await fireEvent.click(screen.getByRole('menuitem', { name: 'frameleaf_faces_hide_face' }));
 
-    expect(modalManager.showDialog).not.toHaveBeenCalled();
+    expect(modalManager.show).not.toHaveBeenCalled();
     await waitFor(() =>
       expect(correctFace).toHaveBeenCalledWith({
         id: face.id,

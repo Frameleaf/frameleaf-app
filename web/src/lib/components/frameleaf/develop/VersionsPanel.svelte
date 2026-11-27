@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { formatDateTime } from '$lib/frameleaf/date-format';
   import { developLabel } from '$lib/frameleaf/develop-label';
   /**
    * The Versions tab (PhotographyEditor.jsx): the untouched original and every version saved on the
@@ -31,7 +32,7 @@
   const record = $derived(session.record(id));
   const original = $derived(getAssetMediaUrl({ id, size: AssetMediaSize.Thumbnail, edited: false }));
   const time = (value: string) =>
-    new Date(value).toLocaleString($locale, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+    formatDateTime(new Date(value), { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }, $locale);
   const status = (version: AssetDevelopRevisionResponseDto) =>
     version.isCurrent && version.status === 'rendered'
       ? $t('frameleaf_develop_version_current')

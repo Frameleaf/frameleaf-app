@@ -104,6 +104,9 @@ export class ViewRepository {
           ),
         )
         // a page is cut by id, which no file's name or date can reorder between two reads
+        // ponytail: no index covers the folder match, so every page scans the owner's files; add an
+        // (ownerId, coalesce(libraryPath, originalPath) text_pattern_ops) index before a client pages
+        // through a folder. The web reads a folder whole for now (FL-1795 review).
         .$if(!!page, (qb) => qb.orderBy('asset.id', 'asc').limit(page!.take))
         .$if(!!page?.after, (qb) => qb.where('asset.id', '>', asUuid(page!.after!)))
         .execute()

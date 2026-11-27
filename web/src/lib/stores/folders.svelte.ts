@@ -28,8 +28,6 @@ type AssetCache = {
   [path: string]: AssetResponseDto[];
 };
 
-/** FL-1795: how many files one request for a folder's files carries. */
-export const FOLDER_FILES_PAGE_SIZE = 500;
 /** FL-1795: how many folders' files are kept; opening one more lets go of the one opened longest ago. */
 export const FOLDER_FILES_KEPT = 5;
 
@@ -92,30 +90,16 @@ class FoldersStore {
 
   refreshAssetsByPath(path: string): Promise<AssetResponseDto[]> {
     const cache = this.assets;
-    // FL-1795: a page at a time, so no one answer carries a whole folder of 20,000 files. The pages come
-    // in id order; the browser sorts the files it shows, so the order they arrive in is never seen.
-    const readPages = async (folder: string) => {
-      const assets: AssetResponseDto[] = [];
-      let after: string | undefined;
-      for (;;) {
+    // ponytail: one read per folder. The server can page it (`take`, `after`), but without an index on
+    // the folder path every page scans the owner's files, so paging made a big folder slower (FL-1795
+    // review). Page it once that index exists.
+    const pending = Promise.resolve({ path })
+      .then((request) => {
         if (cache !== this.assets) {
           throw new DOMException('Folder file read retired', 'AbortError');
         }
-        const page = await getAssetsByOriginalPath({
-          path: folder,
-          take: FOLDER_FILES_PAGE_SIZE,
-          ...(after && { after }),
-        });
-        assets.push(...page);
-        if (page.length < FOLDER_FILES_PAGE_SIZE) {
-          return assets;
-        }
-        after = page.at(-1)!.id;
-      }
-    };
-    // a turn later, as before: an access change made in the same turn retires the read before it is sent
-    const pending = Promise.resolve(path)
-      .then(readPages)
+        return getAssetsByOriginalPath(request);
+      })
       .then((assets) => {
         if (cache === this.assets && this.assetLoads.get(path) === pending) {
           // Prefix keys so reserved object names stay data, using ordinary assignment for deep Svelte reactivity.

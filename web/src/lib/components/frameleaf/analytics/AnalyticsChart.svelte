@@ -17,6 +17,7 @@
    * when asked. Every value is also in the data table under the chart, which is what assistive
    * technology is pointed to — the drawing itself is one labelled image.
    */
+  import { formatCount } from '$lib/frameleaf/number-format';
   import { locale } from '$lib/stores/preferences.store';
   import { t } from 'svelte-i18n';
 
@@ -52,7 +53,7 @@
   const PAD = { top: 10, right: 10, bottom: 24, left: 56 };
   const LABEL_WIDTH = 170;
 
-  const format = (value: number) => new Intl.NumberFormat($locale, { maximumFractionDigits: 2 }).format(value);
+  const format = (value: number) => formatCount(value, $locale, { maximumFractionDigits: 2 });
 
   const totals = $derived(
     labels.map((_, index) =>

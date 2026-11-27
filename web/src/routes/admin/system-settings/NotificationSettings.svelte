@@ -59,6 +59,7 @@
   import MailSignInPanel from '$lib/components/frameleaf/settings/notifications/MailSignInPanel.svelte';
   import SettingActions from '$lib/components/frameleaf/settings/SettingActions.svelte';
   import { isCredentialConfigured } from '$lib/frameleaf/credentials';
+  import { formatTime } from '$lib/frameleaf/date-format';
   import { requireSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
@@ -586,7 +587,7 @@
               title={$t('frameleaf_notify_test_sent', {
                 values: {
                   email: authManager.user.email,
-                  time: result.at.toLocaleTimeString($locale, { hour: 'numeric', minute: '2-digit' }),
+                  time: formatTime(result.at, { hour: 'numeric', minute: '2-digit' }, $locale),
                 },
               })}
             >

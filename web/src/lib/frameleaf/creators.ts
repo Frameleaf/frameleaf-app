@@ -28,6 +28,7 @@ import {
   mdiYoutube,
 } from '@mdi/js';
 import type { Translations } from 'svelte-i18n';
+import { formatDate } from '$lib/frameleaf/date-format';
 import { readMediaAddress, type MediaAddress, type MediaPlatform } from '$lib/frameleaf/media-address';
 import { getAssetMediaUrl } from '$lib/utils';
 
@@ -344,11 +345,11 @@ export const postedDate = (value: string | null | undefined, locale?: string | n
     return '';
   }
   const date = new Date(value);
-  return date.toLocaleDateString(locale ?? undefined, {
-    month: 'short',
-    day: 'numeric',
-    year: date.getFullYear() === now.getFullYear() ? undefined : 'numeric',
-  });
+  return formatDate(
+    date,
+    { month: 'short', day: 'numeric', year: date.getFullYear() === now.getFullYear() ? undefined : 'numeric' },
+    locale ?? 'default',
+  );
 };
 
 /** How much of an item has been watched, 0–100. */

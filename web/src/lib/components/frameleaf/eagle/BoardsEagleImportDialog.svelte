@@ -1,4 +1,6 @@
 <script module lang="ts">
+  import { formatDate } from '$lib/frameleaf/date-format';
+  import { formatCount } from '$lib/frameleaf/number-format';
   import type { EaglePlan, EagleLibrary } from '$lib/frameleaf/eagle/eagle-import';
   import type { EagleImportRun } from '$lib/frameleaf/eagle/eagle-import-run.svelte';
   import type { EagleServerLocation, ServerEagleImportRun } from '$lib/frameleaf/eagle/eagle-server-import.svelte';
@@ -131,7 +133,7 @@
     session = undefined;
     eagleImportUi.run = undefined;
   }
-  const number = (value: number) => value.toLocaleString($locale ?? undefined);
+  const number = (value: number) => formatCount(value, $locale ?? null);
 
   /** Opening the dialog again shows the import where it is. */
   const initialStep = (): Step => {
@@ -350,11 +352,7 @@
 
   const changed = $derived(
     library?.changed
-      ? new Date(library.changed).toLocaleDateString($locale ?? undefined, {
-          month: 'short',
-          day: 'numeric',
-          year: 'numeric',
-        })
+      ? formatDate(new Date(library.changed), { month: 'short', day: 'numeric', year: 'numeric' }, $locale ?? 'default')
       : undefined,
   );
 

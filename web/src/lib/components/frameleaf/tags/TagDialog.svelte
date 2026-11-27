@@ -1,4 +1,5 @@
 <script lang="ts" module>
+  import { invalidateTags } from '$lib/frameleaf/tag-store';
   import type { TagDialogResult } from '$lib/components/frameleaf/tags/tag-messages';
   import type { FrameleafTagNode } from '$lib/frameleaf/tag-tree';
 
@@ -149,7 +150,7 @@
     return clean;
   };
 
-  const run = async (): Promise<TagDialogResult | null> => {
+  const write = async (): Promise<TagDialogResult | null> => {
     switch (initial.type) {
       case 'create': {
         const under = parentId || null;
@@ -223,6 +224,15 @@
         await deleteTag({ id: initial.node.id });
         return { type: 'deleted', node: initial.node };
       }
+    }
+  };
+
+  /** FL-1802: whatever was written, the kept tag list is read again by the next screen that needs it. */
+  const run = async () => {
+    try {
+      return await write();
+    } finally {
+      invalidateTags();
     }
   };
 

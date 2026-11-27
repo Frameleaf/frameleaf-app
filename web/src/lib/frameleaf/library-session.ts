@@ -42,7 +42,12 @@ export type LibraryView = 'grid' | 'list' | 'detail' | 'compare' | 'map' | 'mome
 export type LibrarySort =
   'captured-desc' | 'captured-asc' | 'imported-desc' | 'modified-desc' | 'filename' | 'rating' | 'quality';
 export type LibraryGrouping = 'all' | 'days' | 'months' | 'years';
-export type LibraryScope = { kind: 'library' | 'album' | 'space'; id?: string };
+/**
+ * `library`, `album` and `space` are what a page's session carries. `tag`, `pet` and `archive` exist
+ * only on a "select everything matching" snapshot (FL-1804): they name the page the selection was
+ * made on, so a bulk action resolves that page's items on the server instead of from loaded months.
+ */
+export type LibraryScope = { kind: 'library' | 'album' | 'space' | 'tag' | 'pet' | 'archive'; id?: string };
 
 export const LIBRARY_LAYOUTS: readonly LibraryLayout[] = ['timeline', 'browse', 'work'];
 export const LIBRARY_VIEWS: readonly LibraryView[] = ['grid', 'list', 'detail', 'compare', 'map', 'moments'];
@@ -167,7 +172,12 @@ export type LibrarySessionAction =
   | { type: 'layout'; layout: LibraryLayout }
   | { type: 'view'; patch: Partial<Omit<LibraryViewState, 'version'>> }
   | { type: 'scope'; scope: LibraryScope }
-  | { type: 'selection'; ids: string[]; allMatching?: boolean }
+  | {
+      type: 'selection';
+      ids: string[];
+      allMatching?: boolean;
+      /** The page's own scope, for the snapshot. */ scope?: LibraryScope;
+    }
   | { type: 'select'; id: string; additive?: boolean }
   | { type: 'select-range'; orderedIds: string[]; id: string }
   | { type: 'select-group'; ids: string[]; checked: boolean }
@@ -395,7 +405,9 @@ export const reduceLibrarySession = (session: LibrarySession, action: LibrarySes
       return {
         ...session,
         selection: [...new Set(action.ids)],
-        selectionSnapshot: action.allMatching ? structuredClone(session.state) : undefined,
+        selectionSnapshot: action.allMatching
+          ? structuredClone({ ...session.state, ...(action.scope && { scope: action.scope }) })
+          : undefined,
       };
     }
     case 'select': {
@@ -696,14 +708,22 @@ export const toStoredLibrarySession = (session: LibrarySession): StoredLibrarySe
   state: structuredClone(session.state),
 });
 
+/** The most selected ids kept in the tab's storage. */
+export const STORED_SELECTION_LIMIT = 5000;
+
 /** Recoverable UI state for this account and tab; never resource authority. */
 export const toStoredLibraryTransient = (session: LibrarySession, context = '') => ({
   version: 1,
   context,
   state: structuredClone(session.state),
-  selection: [...session.selection],
-  anchorId: session.anchorId,
-  selectionSnapshot: session.selectionSnapshot && structuredClone(session.selectionSnapshot),
+  // FL-1804: a very large selection is not written to the tab's storage (it would not fit, and
+  // every change would write it again); after a reload the selection is simply empty.
+  selection: session.selection.length > STORED_SELECTION_LIMIT ? [] : [...session.selection],
+  anchorId: session.selection.length > STORED_SELECTION_LIMIT ? null : session.anchorId,
+  selectionSnapshot:
+    session.selection.length > STORED_SELECTION_LIMIT || !session.selectionSnapshot
+      ? undefined
+      : structuredClone(session.selectionSnapshot),
   scrollAnchor: session.scrollAnchor,
   draft: session.draft && structuredClone(session.draft),
   page: session.page,

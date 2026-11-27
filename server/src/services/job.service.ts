@@ -418,10 +418,7 @@ export class JobService extends BaseService {
       }
 
       case JobName.AssetEditThumbnailGeneration: {
-        const asset = await this.sendAssetEditReady(item.data.id);
-        if (asset && asset.libraryScope !== LibraryScope.Design) {
-          await this.jobRepository.queue({ name: JobName.BestPhotosScore, data: item.data });
-        }
+        await this.sendAssetEditReady(item.data.id);
         break;
       }
 
@@ -487,18 +484,13 @@ export class JobService extends BaseService {
           jobs.push({ name: JobName.Ocr, data: item.data });
         }
 
+        // FL-1827: Best Photos is no longer scored here, or after faces, search or an edit: a paced scan scores each
+        // photo once, when the library is set up (`BestPhotosService.queueNextShare`)
         if (asset.type === AssetType.Video) {
-          // Videos are scored for Best Photos too (via sampled frames).
           jobs.push({ name: JobName.AssetEncodeVideo, data: item.data });
-          if (asset.libraryScope !== LibraryScope.Design) jobs.push({ name: JobName.BestPhotosScore, data: item.data });
         }
 
         if (asset.type === AssetType.Image) {
-          // with faces on, face detection queues the score once the face count it uses is known
-          if (asset.libraryScope !== LibraryScope.Design && !isFacialRecognitionEnabled(machineLearning)) {
-            jobs.push({ name: JobName.BestPhotosScore, data: item.data });
-          }
-
           if (isImageDescriptionEnabled(machineLearning)) {
             jobs.push({ name: JobName.ImageDescription, data: item.data });
           } else if (isNsfwDetectionEnabled(machineLearning)) {
@@ -599,13 +591,6 @@ export class JobService extends BaseService {
         const asset = await this.assetRepository.getById(item.data.id);
         if (asset && asset.libraryScope !== LibraryScope.Design) {
           await this.jobRepository.queue({ name: JobName.PetRecognition, data: { id: item.data.id } });
-          // FL-978: a new embedding (a new upload or a visual search model change) re-scores its aesthetics
-          if (asset.type === AssetType.Image) {
-            await this.jobRepository.queue({
-              name: JobName.BestPhotosScore,
-              data: { id: item.data.id, embeddingChanged: true },
-            });
-          }
         }
         break;
       }
@@ -630,16 +615,15 @@ export class JobService extends BaseService {
       case JobName.AssetDetectFaces: {
         const { machineLearning } = await this.getConfig({ withCache: true });
         const asset = await this.assetRepository.getById(item.data.id);
-        if (asset && asset.libraryScope !== LibraryScope.Design && isFacialRecognitionEnabled(machineLearning)) {
-          // FL-863: the faces just found get their eye scores
-          if (response === JobStatus.Success && machineLearning.eyeScores.enabled) {
-            await this.jobRepository.queueAll([
-              { name: JobName.BestPhotosScore, data: item.data },
-              { name: JobName.FaceEyeScore, data: { id: item.data.id } },
-            ]);
-          } else {
-            await this.jobRepository.queue({ name: JobName.BestPhotosScore, data: item.data });
-          }
+        // FL-863: the faces just found get their eye scores
+        if (
+          asset &&
+          asset.libraryScope !== LibraryScope.Design &&
+          isFacialRecognitionEnabled(machineLearning) &&
+          response === JobStatus.Success &&
+          machineLearning.eyeScores.enabled
+        ) {
+          await this.jobRepository.queue({ name: JobName.FaceEyeScore, data: { id: item.data.id } });
         }
         break;
       }
