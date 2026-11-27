@@ -13790,7 +13790,7 @@
   "frameleaf_model_download_key_replace_title": "Replace your Hugging Face key",
   "frameleaf_model_download_key_saved": "Key saved",
   "frameleaf_model_download_key_saved_toast": "Key saved. Models download with it from now on.",
-  "frameleaf_model_download_key_stopped_body": "It may have been deleted or have expired, so models can’t download until you replace or remove it. Models already downloaded keep working.",
+  "frameleaf_model_download_key_stopped_body": "It may have been deleted or have expired. Models keep downloading without it, but may be slower, until you replace or remove it.",
   "frameleaf_model_download_key_stopped_title": "Hugging Face stopped accepting your key",
   "frameleaf_model_download_key_unreachable": "Couldn’t reach Hugging Face to check the key. Try again in a moment.",
   "frameleaf_model_home_label": "On your computers",

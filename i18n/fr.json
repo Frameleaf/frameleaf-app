@@ -13885,7 +13885,7 @@
   "frameleaf_model_download_key_replace_title": "Remplacer votre clé Hugging Face",
   "frameleaf_model_download_key_saved": "Clé enregistrée",
   "frameleaf_model_download_key_saved_toast": "Clé enregistrée. Les modèles se téléchargent désormais avec elle.",
-  "frameleaf_model_download_key_stopped_body": "Elle a peut-être été supprimée ou a expiré : les modèles ne peuvent pas se télécharger tant que vous ne la remplacez ou ne la supprimez pas. Les modèles déjà téléchargés continuent de fonctionner.",
+  "frameleaf_model_download_key_stopped_body": "Elle a peut-être été supprimée ou a expiré. Les modèles continuent de se télécharger sans elle, mais peut-être plus lentement, jusqu’à ce que vous la remplaciez ou la supprimiez.",
   "frameleaf_model_download_key_stopped_title": "Hugging Face n’accepte plus votre clé",
   "frameleaf_model_download_key_unreachable": "Impossible de joindre Hugging Face pour vérifier la clé. Réessayez dans un instant.",
   "frameleaf_model_home_label": "Sur vos ordinateurs",

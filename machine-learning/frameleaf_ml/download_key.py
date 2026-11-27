@@ -14,6 +14,8 @@ import re
 import secrets
 from typing import Any
 
+from .env_aliases import read_env
+
 HEADER = b"x-frameleaf-model-download-key"
 _PATTERN = re.compile(r"^hf_[A-Za-z0-9]{20,200}$")
 _server_key: str | None = None
@@ -38,7 +40,7 @@ class ModelDownloadKeyMiddleware:
 
     def __init__(self, app: Any, expected_token: str | None = None) -> None:
         self.app = app
-        token = expected_token if expected_token is not None else os.environ.get("FRAMELEAF_ML_AUTH_TOKEN", "")
+        token = expected_token if expected_token is not None else read_env(os.environ, "FRAMELEAF_ML_AUTH_TOKEN")
         self._expected = token.strip().encode() or None
 
     async def __call__(self, scope: dict[str, Any], receive: Any, send: Any) -> None:

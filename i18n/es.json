@@ -13887,7 +13887,7 @@
   "frameleaf_model_download_key_replace_title": "Sustituir tu clave de Hugging Face",
   "frameleaf_model_download_key_saved": "Clave guardada",
   "frameleaf_model_download_key_saved_toast": "Clave guardada. A partir de ahora, los modelos se descargan con ella.",
-  "frameleaf_model_download_key_stopped_body": "Puede que se haya eliminado o haya caducado, así que los modelos no pueden descargarse hasta que la sustituyas o la elimines. Los modelos ya descargados siguen funcionando.",
+  "frameleaf_model_download_key_stopped_body": "Puede que se haya eliminado o haya caducado. Los modelos se siguen descargando sin ella, aunque quizá más despacio, hasta que la sustituyas o la elimines.",
   "frameleaf_model_download_key_stopped_title": "Hugging Face ha dejado de aceptar tu clave",
   "frameleaf_model_download_key_unreachable": "No se ha podido contactar con Hugging Face para comprobar la clave. Vuelve a intentarlo en un momento.",
   "frameleaf_model_home_label": "En tus ordenadores",

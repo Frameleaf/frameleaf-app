@@ -13887,7 +13887,7 @@
   "frameleaf_model_download_key_replace_title": "Je Hugging Face-sleutel vervangen",
   "frameleaf_model_download_key_saved": "Sleutel opgeslagen",
   "frameleaf_model_download_key_saved_toast": "Sleutel opgeslagen. Modellen worden vanaf nu daarmee gedownload.",
-  "frameleaf_model_download_key_stopped_body": "Misschien is hij verwijderd of verlopen. Modellen kunnen pas weer worden gedownload als je hem vervangt of verwijdert. Al gedownloade modellen blijven werken.",
+  "frameleaf_model_download_key_stopped_body": "Misschien is hij verwijderd of verlopen. Modellen worden zonder sleutel verder gedownload, mogelijk trager, tot je hem vervangt of verwijdert.",
   "frameleaf_model_download_key_stopped_title": "Hugging Face accepteert je sleutel niet meer",
   "frameleaf_model_download_key_unreachable": "Hugging Face was niet bereikbaar om de sleutel te controleren. Probeer het zo opnieuw.",
   "frameleaf_model_home_label": "Op je computers",

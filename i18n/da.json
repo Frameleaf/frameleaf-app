@@ -13881,7 +13881,7 @@
   "frameleaf_model_download_key_replace_title": "Erstat din Hugging Face-nøgle",
   "frameleaf_model_download_key_saved": "Nøglen er gemt",
   "frameleaf_model_download_key_saved_toast": "Nøglen er gemt. Modeller downloades med den fra nu af.",
-  "frameleaf_model_download_key_stopped_body": "Den er måske blevet slettet eller er udløbet, så modeller kan ikke downloades, før du erstatter eller fjerner den. Modeller, der allerede er downloadet, virker stadig.",
+  "frameleaf_model_download_key_stopped_body": "Den er måske blevet slettet eller er udløbet. Modeller downloades fortsat uden den, måske langsommere, indtil du erstatter eller fjerner den.",
   "frameleaf_model_download_key_stopped_title": "Hugging Face accepterer ikke længere din nøgle",
   "frameleaf_model_download_key_unreachable": "Hugging Face kunne ikke nås for at tjekke nøglen. Prøv igen om lidt.",
   "frameleaf_model_home_label": "På dine computere",

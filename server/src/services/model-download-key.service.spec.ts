@@ -1,6 +1,5 @@
 import { BadRequestException, ServiceUnavailableException } from '@nestjs/common';
 import type { ModelDownloadKeyState } from 'src/types.js';
-import { SystemMetadataKey } from 'src/enum.js';
 import { ModelDownloadKeyService } from 'src/services/model-download-key.service.js';
 import { openModelDownloadKey, sealModelDownloadKey } from 'src/utils/model-download-key.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
@@ -77,11 +76,34 @@ describe(ModelDownloadKeyService.name, () => {
     await expect(sut.getStatus()).resolves.toMatchObject({ status: 'saved', checkedAt: old });
   });
 
-  it('forgets a key sealed by another server', async () => {
+  it('never uses, but keeps, a key sealed under another key file', async () => {
     const old = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
     stored = { sealed: sealModelDownloadKey('another-server', KEY), savedAt: old, state: 'accepted', checkedAt: old };
     await expect(sut.getStatus()).resolves.toEqual({ status: 'none', savedAt: null, checkedAt: null });
-    expect(mocks.systemMetadata.delete).toHaveBeenCalledWith(SystemMetadataKey.ModelDownloadKey);
+    expect(mocks.systemMetadata.delete).not.toHaveBeenCalled();
+    await sut.onBootstrap();
+    sut.onShutdown();
+    expect(mocks.machineLearning.setModelDownloadKey).toHaveBeenLastCalledWith(null);
+  });
+
+  it('does not pass on a key Hugging Face refused', async () => {
+    const now = new Date().toISOString();
+    stored = { sealed: sealModelDownloadKey(HASH, KEY), savedAt: now, state: 'refused', checkedAt: now };
+    await sut.onBootstrap();
+    sut.onShutdown();
+    expect(mocks.machineLearning.setModelDownloadKey).toHaveBeenLastCalledWith(null);
+  });
+
+  it('checks an hour-old key again in the background and stops using it once refused', async () => {
+    const check = vi.fn().mockResolvedValue('refused');
+    sut.check = check;
+    const old = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
+    stored = { sealed: sealModelDownloadKey(HASH, KEY), savedAt: old, state: 'accepted', checkedAt: old };
+    await sut.onBootstrap();
+    sut.onShutdown();
+    expect(check).toHaveBeenCalledWith(KEY);
+    expect(stored?.state).toBe('refused');
+    expect(mocks.machineLearning.setModelDownloadKey).toHaveBeenLastCalledWith(null);
   });
 
   it('removes the key and takes it from the ML service', async () => {

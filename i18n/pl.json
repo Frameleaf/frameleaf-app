@@ -13888,7 +13888,7 @@
   "frameleaf_model_download_key_replace_title": "Zastąp swój klucz Hugging Face",
   "frameleaf_model_download_key_saved": "Klucz zapisany",
   "frameleaf_model_download_key_saved_toast": "Klucz zapisany. Od teraz modele są pobierane z jego użyciem.",
-  "frameleaf_model_download_key_stopped_body": "Mógł zostać usunięty albo wygasnąć, więc modeli nie da się pobrać, dopóki go nie zastąpisz lub nie usuniesz. Już pobrane modele nadal działają.",
+  "frameleaf_model_download_key_stopped_body": "Mógł zostać usunięty albo wygasnąć. Modele są nadal pobierane bez niego, choć może to trwać dłużej, dopóki go nie zastąpisz lub nie usuniesz.",
   "frameleaf_model_download_key_stopped_title": "Hugging Face przestał akceptować Twój klucz",
   "frameleaf_model_download_key_unreachable": "Nie udało się połączyć z Hugging Face, aby sprawdzić klucz. Spróbuj ponownie za chwilę.",
   "frameleaf_model_home_label": "Na Twoich komputerach",

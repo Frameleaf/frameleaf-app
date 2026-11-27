@@ -488,6 +488,16 @@ describe(MachineLearningRepository.name, () => {
         clip,
       );
       expect(new Headers(fetch.mock.calls[2][1].headers).has('x-frameleaf-model-download-key')).toBe(false);
+
+      // never in plain text across the internet, even to a configured worker
+      // eslint-disable-next-line unicorn/prefer-https -- the plain-HTTP case is the one under test
+      const remote = 'http://ml.example.com:3003';
+      sut.setup({ ...defaults.machineLearning, urls: [remote] });
+      sut.setModelDownloadKey(key);
+      await sut.encodeImage(selection(MlDestinationKind.Local, remote), imagePath, clip);
+      const last = fetch.mock.lastCall!;
+      expect(String(last[0])).toContain('ml.example.com');
+      expect(new Headers(last[1].headers).has('x-frameleaf-model-download-key')).toBe(false);
     });
 
     it('records usage once per request with bytes sent, bytes received and the outcome', async () => {

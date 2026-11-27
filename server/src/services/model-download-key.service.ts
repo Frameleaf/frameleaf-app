@@ -14,8 +14,8 @@ import {
   sealModelDownloadKey,
 } from 'src/utils/model-download-key.js';
 
-/** How often each server process reads the saved key again, so a change reaches every worker. */
-const RELOAD_MS = 60_000;
+/** How often each server process reads the saved key again, so a change reaches every worker soon. */
+const RELOAD_MS = 10_000;
 
 /**
  * Settings → Computers → Advanced → Connections → Faster model downloads (FL-1825). Keeps the optional
@@ -43,30 +43,7 @@ export class ModelDownloadKeyService extends BaseService {
   }
 
   async getStatus(): Promise<ModelDownloadKeyResponseDto> {
-    const stored = await this.stored();
-    if (!stored) {
-      return toDto(null);
-    }
-    if (Date.now() - Date.parse(stored.checkedAt) < MODEL_DOWNLOAD_KEY_RECHECK_MS) {
-      return toDto(stored);
-    }
-    const key = openModelDownloadKey(await this.keyedHash(), stored.sealed);
-    if (!key) {
-      // Sealed by another server's key file (a restored database): nothing usable is kept.
-      await this.remove();
-      return toDto(null);
-    }
-    const answer = await this.check(key);
-    if (answer === 'unreachable') {
-      return toDto(stored);
-    }
-    const next: ModelDownloadKeyState = {
-      ...stored,
-      state: answer === 'accepted' ? 'accepted' : 'refused',
-      checkedAt: new Date().toISOString(),
-    };
-    await this.systemMetadataRepository.set(SystemMetadataKey.ModelDownloadKey, next);
-    return toDto(next);
+    return toDto(await this.refresh());
   }
 
   async save({ key }: ModelDownloadKeyUpdateDto): Promise<ModelDownloadKeyResponseDto> {
@@ -95,14 +72,48 @@ export class ModelDownloadKeyService extends BaseService {
     this.machineLearningRepository.setModelDownloadKey(null);
   }
 
+  /**
+   * Each process reads the saved key again every few seconds. A key Hugging Face refused is not passed on
+   * (Hugging Face answers 401 to a refused key even for public models, so it would stop every download),
+   * and a key last checked an hour or more ago is checked again, so a revoked key stops being used
+   * without anyone opening Settings.
+   */
   private async reload() {
     try {
-      const stored = await this.stored();
-      const key = stored ? openModelDownloadKey(await this.keyedHash(), stored.sealed) : null;
+      const stored = await this.refresh();
+      const key = stored?.state === 'accepted' ? openModelDownloadKey(await this.keyedHash(), stored.sealed) : null;
       this.machineLearningRepository.setModelDownloadKey(key);
     } catch (error) {
       this.logger.warn(`Could not read the model download key: ${error}`);
     }
+  }
+
+  /** The saved key's state, checked with Hugging Face again when the last answer is an hour old. */
+  private async refresh(): Promise<ModelDownloadKeyState | null> {
+    const stored = await this.stored();
+    if (!stored || Date.now() - Date.parse(stored.checkedAt) < MODEL_DOWNLOAD_KEY_RECHECK_MS) {
+      return stored;
+    }
+    const key = openModelDownloadKey(await this.keyedHash(), stored.sealed);
+    if (!key) {
+      // Sealed under another key file (a restored database, or a volume not mounted yet): kept as it is,
+      // never used, and shown as no key until it is replaced or removed.
+      return null;
+    }
+    const answer = await this.check(key);
+    if (answer === 'unreachable') {
+      return stored;
+    }
+    const next: ModelDownloadKeyState = {
+      ...stored,
+      state: answer === 'accepted' ? 'accepted' : 'refused',
+      checkedAt: new Date().toISOString(),
+    };
+    await this.systemMetadataRepository.set(SystemMetadataKey.ModelDownloadKey, next);
+    if (next.state === 'refused') {
+      this.machineLearningRepository.setModelDownloadKey(null);
+    }
+    return next;
   }
 
   private async stored(): Promise<ModelDownloadKeyState | null> {

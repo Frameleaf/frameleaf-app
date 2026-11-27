@@ -13887,7 +13887,7 @@
   "frameleaf_model_download_key_replace_title": "Deinen Hugging-Face-Schlüssel ersetzen",
   "frameleaf_model_download_key_saved": "Schlüssel gespeichert",
   "frameleaf_model_download_key_saved_toast": "Schlüssel gespeichert. Modelle werden ab jetzt damit heruntergeladen.",
-  "frameleaf_model_download_key_stopped_body": "Er wurde vielleicht gelöscht oder ist abgelaufen. Modelle können erst wieder heruntergeladen werden, wenn du ihn ersetzt oder entfernst. Bereits heruntergeladene Modelle funktionieren weiter.",
+  "frameleaf_model_download_key_stopped_body": "Er wurde vielleicht gelöscht oder ist abgelaufen. Modelle werden ohne ihn weiter heruntergeladen, eventuell langsamer, bis du ihn ersetzt oder entfernst.",
   "frameleaf_model_download_key_stopped_title": "Hugging Face akzeptiert deinen Schlüssel nicht mehr",
   "frameleaf_model_download_key_unreachable": "Hugging Face war nicht erreichbar, um den Schlüssel zu prüfen. Versuche es gleich noch einmal.",
   "frameleaf_model_home_label": "Auf deinen Computern",

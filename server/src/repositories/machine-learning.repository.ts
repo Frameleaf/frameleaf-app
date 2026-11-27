@@ -698,6 +698,29 @@ const readDetail = (body: string): unknown => {
   }
 };
 
+/**
+ * FL-1825: the model download key goes over https, or over http only to the bundled container, the loopback
+ * address or a private network address, never in plain text across the internet.
+ */
+const keyMayTravelTo = (url: string) => {
+  const parsed = URL.parse(url);
+  if (!parsed || parsed.username || parsed.password) {
+    return false;
+  }
+  if (parsed.protocol === 'https:') {
+    return true;
+  }
+  const host = parsed.hostname.replaceAll(/^\[|\]$/g, '');
+  return (
+    parsed.protocol === 'http:' &&
+    (['frameleaf-machine-learning', 'immich-machine-learning', 'localhost', '127.0.0.1', '::1'].includes(host) ||
+      /^10\./.test(host) ||
+      /^192\.168\./.test(host) ||
+      /^172\.(1[6-9]|2\d|3[01])\./.test(host) ||
+      (!host.includes('.') && !host.includes(':')))
+  );
+};
+
 /** The same URL and credentials; endpoints are compared by value, never by object identity. */
 export const sameEndpoint = (a: MlEndpoint | null, b: MlEndpoint | null) =>
   !!a && !!b && a.url === b.url && (a.authToken ?? null) === (b.authToken ?? null);
@@ -1721,7 +1744,7 @@ export class MachineLearningRepository implements RestorationInference {
     const headers: Record<string, string> = endpoint.authToken ? { Authorization: `Bearer ${endpoint.authToken}` } : {};
     // FL-1825: only this server's own ML service gets the Hugging Face key (empty: none saved); never a
     // home-network computer, a desktop or Frameleaf Cloud.
-    if (!endpoint.cloud && this._config?.urls.includes(endpoint.url)) {
+    if (!endpoint.cloud && this._config?.urls.includes(endpoint.url) && keyMayTravelTo(endpoint.url)) {
       headers[MODEL_DOWNLOAD_KEY_HEADER] = this.modelDownloadKey ?? '';
     }
     return headers;
