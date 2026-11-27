@@ -12,6 +12,7 @@
    *
    * On a phone only "Tag photos" stays in the row; Colour, Move and Merge join the "…" menu.
    */
+  import { invalidateTags } from '$lib/frameleaf/tag-store';
   import { goto, invalidateAll } from '$app/navigation';
   import DatesToCheckLink from '$lib/components/frameleaf/DatesToCheckLink.svelte';
   import Menu from '$lib/components/frameleaf/Menu.svelte';
@@ -90,6 +91,7 @@
     let updated;
     try {
       updated = await updateTag({ id: node.id, tagUpdateDto: { name } });
+      invalidateTags();
     } catch (error) {
       handleError(error, $t('errors.frameleaf_tags_unable_to_save'));
       return false;
@@ -102,6 +104,7 @@
   const recolor = async (color: TagColorId, hex: string) => {
     try {
       await updateTag({ id: node.id, tagUpdateDto: { color: hex } });
+      invalidateTags();
       await invalidateAll();
       status = $t('frameleaf_tags_color_changed', { values: { color: tagColorLabel($t, color) } });
     } catch (error) {

@@ -16,6 +16,7 @@ import {
   type LibraryItemDto,
 } from '@frameleaf/sdk';
 import { chunk, type BulkPayload } from '$lib/frameleaf/bulk-operations';
+import { invalidateTags } from '$lib/frameleaf/tag-store';
 
 /** Mixed organization changes memberships and tags, never original files or media identity. */
 export const organizeLibraryItems = async (
@@ -85,6 +86,7 @@ export const organizeLibraryItems = async (
   const names = payload.newTagNames?.map((name) => name.trim()).filter(Boolean) ?? [];
   if (names.length > 0) {
     const tags = await upsertTags({ tagUpsertDto: { tags: names } });
+    invalidateTags();
     assertCurrent();
     tagIds = [...new Set([...tagIds, ...tags.map((tag) => tag.id)])];
   }

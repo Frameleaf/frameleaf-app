@@ -53,6 +53,15 @@ def _is_missing_model(error: BaseException) -> bool:
     return False
 
 
+def _refused_credentials(error: BaseException) -> bool:
+    current: BaseException | None = error
+    while current is not None:
+        if isinstance(current, HfHubHTTPError) and current.response.status_code in (401, 403):
+            return True
+        current = current.__cause__
+    return False
+
+
 class InferenceModel(ABC):
     depends: ClassVar[list[ModelIdentity]]
     identity: ClassVar[ModelIdentity]
@@ -160,6 +169,15 @@ class InferenceModel(ABC):
         except Exception as error:
             if not _is_missing_model(error):
                 raise
+            if model_source_token() and _refused_credentials(error):
+                # A token was sent and the source answered 401/403: the model may well exist.
+                message = (
+                    f"The model source {endpoint} refused the access token while downloading '{self.model_name}'. "
+                    "Check MACHINE_LEARNING_HUGGING_FACE_TOKEN (or MACHINE_LEARNING_MODEL_SOURCE_TOKEN for your own "
+                    "source), or remove it to download without an account."
+                )
+                log.error(message)
+                raise ModelUnavailableError(message) from error
             raise self._unavailable(repo_id, endpoint) from error
 
     def _unavailable(self, repo_id: str, endpoint: str, reason: str = "isn't available") -> ModelUnavailableError:

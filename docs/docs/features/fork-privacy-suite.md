@@ -53,7 +53,7 @@ comes from:
   plain icon for their kind.
 - Smart search, face recognition and text recognition (OCR) models (`frameleaf/<model>`): the model source, which is
   `MACHINE_LEARNING_MODEL_SOURCE_URL` if set, otherwise `HF_ENDPOINT` if set, otherwise
-  `models.frameleaf.cloud`. A Hugging Face token is only ever sent to `huggingface.co`.
+  `huggingface.co`. A Hugging Face token is only ever sent to `huggingface.co`.
 - Image descriptions (on by default) and NSFW detection (off by default): their models come
   straight from `huggingface.co`, or from `HF_ENDPOINT` if you set it. To keep these downloads off
   `huggingface.co`, point `HF_ENDPOINT` at your own mirror, or fill the model cache yourself and set

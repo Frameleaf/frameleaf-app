@@ -52,6 +52,7 @@ import { toSdkDateAccuracy, type DateAccuracy } from '$lib/frameleaf/approximate
 import type { BulkActionId } from '$lib/frameleaf/bulk-actions';
 import type { LibraryViewState } from '$lib/frameleaf/library-session';
 import { handledLockedKeyError } from '$lib/frameleaf/locked-key-prompt';
+import { invalidateTags } from '$lib/frameleaf/tag-store';
 
 /**
  * Execution of the Frameleaf selection bar's bulk actions (FL-32).
@@ -705,6 +706,7 @@ const resolveTagIds = async (payload: BulkPayload | undefined, gateway: BulkGate
     return distinct(existing);
   }
   const created = await gateway.upsertTags({ tagUpsertDto: { tags: names } });
+  invalidateTags();
   return distinct([...existing, ...created.map((tag) => tag.id)]);
 };
 
