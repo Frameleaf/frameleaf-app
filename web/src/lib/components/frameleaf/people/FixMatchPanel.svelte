@@ -210,7 +210,7 @@
           break;
         }
       }
-      others = found.sort((a, b) => b.assetCount - a.assetCount).slice(0, OTHERS_SHOWN);
+      others = found.sort((a, b) => (b.assetCount ?? 0) - (a.assetCount ?? 0)).slice(0, OTHERS_SHOWN);
     } catch {
       others = [];
     }

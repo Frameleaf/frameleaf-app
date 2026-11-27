@@ -110,7 +110,7 @@ describe('FixMatchPanel (PD-3)', () => {
       const { sort, page = 1, size = 500 } = options ?? {};
       const ordered = sort === 'count' ? [...everyone].sort((a, b) => b.assetCount - a.assetCount) : everyone;
       return Promise.resolve({
-        people: ordered.slice((page - 1) * size, page * size).map(pick),
+        people: ordered.slice((page - 1) * size, page * size).map((row) => pick(row)),
         hasNextPage: page * size < everyone.length,
       });
     });

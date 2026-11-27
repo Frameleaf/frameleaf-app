@@ -64,7 +64,7 @@
     onBack: () => void;
     onPersonChange: (person: PersonResponseDto) => void;
     /** A merge moved this person into `target`; the page follows them. */
-    onMergedAway: (target: PersonResponseDto) => void;
+    onMergedAway: (target: Pick<PersonResponseDto, 'id' | 'name'>) => void;
     /** Faces moved away from this person; the page re-reads its photos and count. */
     onFacesChanged: () => void;
     onOpenAsset: (assetId: string) => void;
