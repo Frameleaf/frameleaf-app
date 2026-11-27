@@ -6,6 +6,7 @@
    * Type 1), or one whose file may not be sent (a shared link with downloads off), shows the
    * specimen picture made on the server instead. Details sit in the same panel other Boards items use.
    */
+  import Skeleton from '$lib/components/frameleaf/Skeleton.svelte';
   import LibraryWorkInspector from '$lib/components/frameleaf/LibraryWorkInspector.svelte';
   import { portal } from '$lib/elements/Portal.svelte';
   import {
@@ -216,7 +217,7 @@
   <div class="stage">
     <div class="column">
       {#if family === null}
-        <p class="muted" role="status">{$t('loading')}</p>
+        <div aria-busy="true"><Skeleton variant="block" height="14rem" /></div>
       {:else if family && font}
         <section class="card" aria-labelledby="{headingId}-try">
           <div class="card-row">

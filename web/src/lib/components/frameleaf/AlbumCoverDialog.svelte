@@ -1,6 +1,6 @@
 <script lang="ts">
+  import GridSkeleton from '$lib/components/frameleaf/GridSkeleton.svelte';
   import InlineError from '$lib/components/frameleaf/InlineError.svelte';
-  import Spinner from '$lib/components/frameleaf/Spinner.svelte';
   import { rovingFocus } from '$lib/frameleaf/roving-focus';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import Status from '$lib/components/frameleaf/Status.svelte';
@@ -104,7 +104,7 @@
 <Dialog title={$t('frameleaf_album_cover_title')} closeLabel={$t('close')} bind:open>
   <div class="cover">
     {#if loading}
-      <div class="loading"><Spinner /></div>
+      <div class="loading"><GridSkeleton tiles={8} /></div>
     {:else if failed}
       <InlineError
         message={$t('frameleaf_album_cover_load_failed')}
@@ -223,9 +223,6 @@
     opacity: 0.6;
   }
   .loading {
-    display: flex;
-    justify-content: center;
-    padding: var(--fl-space-6) 0;
-    color: var(--fl-muted);
+    padding-top: var(--fl-space-2);
   }
 </style>

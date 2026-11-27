@@ -1,4 +1,5 @@
 <script lang="ts">
+  import ListSkeleton from '$lib/components/frameleaf/ListSkeleton.svelte';
   import type { Translations } from 'svelte-i18n';
   import { goto } from '$app/navigation';
   import CloudGpuUpgrade from '$lib/components/frameleaf/cloud/CloudGpuUpgrade.svelte';
@@ -791,7 +792,7 @@
   {/if}
 
   {#if activitySession.loading && items.length === 0}
-    <p class="fla-empty" role="status" aria-busy="true">{$t('loading')}</p>
+    <ListSkeleton rows={4} />
   {:else if !showProgress && visible.length + leftOver.length + stuckShown.length === 0}
     <EmptyState
       icon={filter === 'failed' ? mdiCheckCircleOutline : mdiProgressClock}
@@ -1737,17 +1738,6 @@
     gap: 6px;
     flex-wrap: wrap;
     justify-content: flex-end;
-  }
-  .fla-empty {
-    text-align: center;
-    padding: 48px 20px 40px;
-    color: var(--fl-muted);
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 10px;
-    max-width: 900px;
-    margin: 0;
   }
   .fla-footer {
     display: flex;

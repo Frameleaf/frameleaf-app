@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Skeleton from '$lib/components/frameleaf/Skeleton.svelte';
   import BoardsRating from '$lib/components/frameleaf/BoardsRating.svelte';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import InlineError from '$lib/components/frameleaf/InlineError.svelte';
@@ -243,7 +244,9 @@
         given={bookmarkSources(detail)}
         fallbackVia={{ icon: mdiLinkVariantPlus, label: $t('frameleaf_boards_save_link') }}
       />
-    {:else if !failed}<p role="status">{$t('loading')}</p>{/if}
+    {:else if !failed}<div aria-busy="true">
+        <Skeleton variant="block" aspect="4 / 3" /><Skeleton variant="text" lines={4} />
+      </div>{/if}
   </div>
 </aside>
 

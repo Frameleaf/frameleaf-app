@@ -7,6 +7,7 @@
    * choices, and nothing changes until the person presses the button. FL-1299 adds a third tab: photos
    * already in the album whose date was lost, healed from the album around them.
    */
+  import EmptyRow from '$lib/components/frameleaf/EmptyRow.svelte';
   import { formatDate, formatTime } from '$lib/frameleaf/date-format';
   import AlbumLostDates from '$lib/components/frameleaf/AlbumLostDates.svelte';
   import Button from '$lib/components/frameleaf/Button.svelte';
@@ -605,7 +606,7 @@
           </ul>
         </section>
       {:else}
-        <p class="empty">{$t('frameleaf_album_suggestions_trip_empty')}</p>
+        <div class="empty"><EmptyRow title={$t('frameleaf_album_suggestions_trip_empty')} /></div>
       {/each}
     {:else if needDate.length > 0}
       <p class="note">
@@ -670,7 +671,7 @@
         {/each}
       </ul>
     {:else}
-      <p class="empty">{$t('frameleaf_album_suggestions_dates_empty')}</p>
+      <div class="empty"><EmptyRow title={$t('frameleaf_album_suggestions_dates_empty')} /></div>
     {/if}
   </div>
 
