@@ -177,6 +177,18 @@
     }
   };
 
+  // FL-1834: the slideshow's ends of the collection, in screen order (Ascending starts from the last,
+  // Repeat goes back to the start of the run).
+  const getEdgeAsset = async (edge: 'first' | 'last') => {
+    const manager = timelineManager;
+    const count = manager.assetCount;
+    if (!count) {
+      return;
+    }
+    const found = await manager.getRandomAsset(edge === 'first' ? 0 : count - 1);
+    return found && manager === timelineManager ? { id: found.id } : undefined;
+  };
+
   const handleClose = async (assetId: string) => {
     invisible = true;
     assetViewerManager.gridScrollTarget = { at: assetId };
@@ -389,6 +401,7 @@
     }}
     onUndoDelete={handleUndoDelete}
     onRandom={handleRandom}
+    {getEdgeAsset}
     onAssetSuppressed={handleAssetSuppressed}
     onClose={handleClose}
     {filmstripAssets}

@@ -131,6 +131,12 @@
     onClose?: (assetId: string) => void;
     onRandom?: () => Promise<{ id: string } | undefined>;
     /**
+     * FL-1834: the first or last item of the collection on screen. A slideshow uses it to play
+     * Ascending from the end and to repeat from the start of the collection; without it, Repeat goes
+     * back to the item it started on.
+     */
+    getEdgeAsset?: (edge: 'first' | 'last') => Promise<{ id: string } | undefined>;
+    /**
      * FL-35: the neighbours the caller already holds, for the filmstrip. The viewer never
      * loads a list of its own, so a caller that cannot supply one simply has no filmstrip.
      */
@@ -164,6 +170,7 @@
     onUndoDelete,
     onClose,
     onRandom,
+    getEdgeAsset,
     filmstripAssets = [],
     onNavigateToAsset,
     activityPanel,
@@ -760,6 +767,22 @@
           if (!isCurrentSlideshow()) {
             return;
           }
+          // FL-1834: Repeat starts the run again from the collection's own start in the run's
+          // direction (its first item going forward, its last going back), not from the item the
+          // slideshow began on, so items before that one are shown too.
+          if (!hasNext && $slideshowRepeat && getEdgeAsset && !isShuffle) {
+            const edge = await getEdgeAsset(order === 'previous' ? 'last' : 'first');
+            if (!isCurrentSlideshow() || (!isCurrentView() && asset.id !== edge?.id)) {
+              return;
+            }
+            if (edge) {
+              await assetViewerManager.setAssetId(edge.id, {
+                isCurrent: () => isCurrentView() && isCurrentSlideshow(),
+                onSet: () => ($restartSlideshowProgress = true),
+              });
+              return;
+            }
+          }
           if (!hasNext && $slideshowRepeat && slideshowStartAssetId) {
             await assetViewerManager.setAssetId(slideshowStartAssetId, {
               isCurrent: () => isCurrentView() && isCurrentSlideshow(),
@@ -899,6 +922,33 @@
   // pauses (MediaViewer.jsx:1706-1717); the old Autoplay preference no longer holds a new run paused.
   const handlePlaySlideshow = () => {
     slideshowStartAssetId = asset.id;
+    // FL-1834: Ascending runs backwards through the collection. Started on its first item (where the
+    // pages' Slideshow buttons start), it would stop after one slide; it begins at the last one.
+    if ($slideshowNavigation !== SlideshowNavigation.AscendingOrder || !getEdgeAsset) {
+      return;
+    }
+    const startId = asset.id;
+    const lookup = getEdgeAsset;
+    const isCurrentSlideshow = captureSlideshow();
+    const isCurrentView = captureView();
+    const isCurrent = () => isCurrentSlideshow() && isCurrentView() && asset.id === startId;
+    handlePromiseError(
+      (async () => {
+        const first = await lookup('first');
+        if (!isCurrent() || first?.id !== startId) {
+          return;
+        }
+        const last = await lookup('last');
+        if (!isCurrent() || !last || last.id === startId) {
+          return;
+        }
+        slideshowStartAssetId = last.id;
+        await assetViewerManager.setAssetId(last.id, {
+          isCurrent,
+          onSet: () => ($restartSlideshowProgress = true),
+        });
+      })(),
+    );
   };
 
   /** VIEWER-P1: the header's back arrow (and Escape) close the viewer, ending a slideshow on the way. */
