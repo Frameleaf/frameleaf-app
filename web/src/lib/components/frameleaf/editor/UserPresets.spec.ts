@@ -1,4 +1,5 @@
 import { AssetDevelopPreset, createDevelopPreset, getDevelopPresets, updateDevelopPreset } from '@frameleaf/sdk';
+import { toastManager } from '@frameleaf/ui';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { presetSettingsFrom, toPresetDto } from '$lib/frameleaf/photo-tools';
 import UserPresets from './UserPresets.svelte';
@@ -37,6 +38,20 @@ describe('UserPresets', () => {
   };
 
   afterEach(() => vi.clearAllMocks());
+
+  it('says in place that the presets could not be read, without a toast, and tries again (FL-1810)', async () => {
+    vi.mocked(getDevelopPresets).mockRejectedValueOnce(new Error('offline')).mockResolvedValueOnce([stored]);
+    render(UserPresets, { current: warm, onApply: vi.fn() });
+    expect(screen.getByTestId('frameleaf-list-skeleton')).toBeInTheDocument();
+
+    expect(await screen.findByTestId('frameleaf-inline-error')).toHaveTextContent(
+      'frameleaf_editor_presets_load_error',
+    );
+    expect(toastManager.danger).not.toHaveBeenCalled();
+    await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_error_retry' }));
+    expect(await screen.findByText('Golden hour')).toBeInTheDocument();
+    expect(screen.queryByTestId('frameleaf-inline-error')).toBeNull();
+  });
 
   it('saves the current settings under a name', async () => {
     vi.mocked(getDevelopPresets).mockResolvedValue([]);
