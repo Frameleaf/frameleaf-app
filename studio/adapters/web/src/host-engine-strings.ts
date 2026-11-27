@@ -34,6 +34,7 @@ import {
 } from '@frameleaf/host/engine-controls-strings'
 import { SHELL_STRINGS, type ShellString } from '@frameleaf/host/shell-strings'
 import { TIMELINE_STRINGS, type TimelineString } from '@frameleaf/host/timeline-strings'
+import { BIN_STRINGS, type BinString } from '@frameleaf/host/bin-strings'
 import {
   CLOUD_CAPTION_ENGINE_STRINGS,
   type CloudCaptionEngineString,
@@ -88,6 +89,10 @@ export const HOST_ENGINE_STRINGS = {
   ...(Object.fromEntries(
     Object.entries(TIMELINE_STRINGS).map(([name, entry]) => [name, entry.engine]),
   ) as Record<TimelineString, string>),
+  // The editor's media bin (FL-1822).
+  ...(Object.fromEntries(
+    Object.entries(BIN_STRINGS).map(([name, entry]) => [name, entry.engine]),
+  ) as Record<BinString, string>),
 } as const
 
 export function applyHostEngineStrings(i18n: EngineI18n, strings: StudioHostContext['strings']): void {

@@ -28,6 +28,7 @@
  */
 import type { StudioSourceResolutionRequestDto, StudioSourceResolutionDto } from '@frameleaf/sdk';
 import type { StudioRenderCandidateDto } from '@frameleaf/sdk';
+import type { BinString } from './bin-strings';
 import type { CaptionLanguageEngineString } from './caption-language-strings';
 import type { StudioCaptionTranslationRequest, StudioCaptionTranslationResult } from './caption-languages';
 import type { CaptionStyleEngineString } from './caption-style-strings';
@@ -475,6 +476,8 @@ export type StudioAdapterString =
   | ShellString
   /** The editor's timeline toolbar (FL-1822), the same way. */
   | TimelineString
+  /** The editor's media bin (FL-1822), the same way. */
+  | BinString
   /** The bin's Library view (FL-636), drawn by the adapter. */
   | LibraryPanelString;
 
