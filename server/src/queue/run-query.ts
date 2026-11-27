@@ -373,9 +373,10 @@ async function retryingTasks(
  * FL-1826: the part of an open run whose jobs are gone. A photo whose every task finished over an hour ago is deleted
  * from `job` by the coordinator (`foldOpenRunsPage`) and counted here instead, in `job_run.selection.folded`, so a
  * long import no longer keeps millions of finished rows. `roots`: photos; `tasks`: their tasks by name, with the queue
- * each ran in (no job may be left to say it). Everything that counts a run's jobs adds this.
+ * each ran in (no job may be left to say it) and when the earliest was queued. Everything that counts a run's jobs
+ * adds this.
  */
-export type RunFolded = { roots: number; tasks: Record<string, { n: number; queue: string }> };
+export type RunFolded = { roots: number; tasks: Record<string, { n: number; queue: string; since?: string }> };
 export const foldedOf = (value: unknown): RunFolded => {
   const folded = value as Partial<RunFolded> | null | undefined;
   return folded && typeof folded === 'object' && typeof folded.roots === 'number' && folded.tasks
@@ -1252,6 +1253,11 @@ export async function observeQueueRun(db: QueryExecutorProvider, name: string, i
   );
   const foldedDone = folded.reduce((sum, [, task]) => sum + task.n, 0);
   const foldedItems = folded.filter(([task]) => task === itemJob).reduce((sum, [, task]) => sum + task.n, 0);
+  // their pace is measured from the earliest of them, folded or not
+  const foldedSince = folded
+    .filter(([task, { since }]) => task === itemJob && since)
+    .map(([, { since }]) => new Date(since!))
+    .reduce<Date | null>((earliest, at) => (earliest && earliest <= at ? earliest : at), null);
   const {
     rows: [{ itemsDone, itemsLeft, itemsStartedAt, ...row }],
   } = await sql<{
@@ -1315,7 +1321,9 @@ export async function observeQueueRun(db: QueryExecutorProvider, name: string, i
         and coalesce(max(greatest("progressAt", "startedAt", "finishedAt")), min("createdAt")) < now() - interval '2 minutes', false) "noDispatchBacklog"
       from current_jobs`.execute(db);
   const done = itemsDone + foldedItems;
-  const items = { done, total: done + itemsLeft, startedAt: itemsStartedAt };
+  const startedAt =
+    foldedSince && (!itemsStartedAt || foldedSince < new Date(itemsStartedAt)) ? foldedSince : itemsStartedAt;
+  const items = { done, total: done + itemsLeft, startedAt };
   return { ...row, processed: row.processed + foldedDone, items: itemJob ? items : null };
 }
 

@@ -92,7 +92,7 @@ describe('bounded PostgreSQL queue history', () => {
     };
 
     it('moves photos whose every task finished over an hour ago into its totals, and counts the same', async () => {
-      const runId = await store.createRun('fold-fixture', {});
+      const runId = await store.createRun('immich-import-derived', {});
       // finished long ago: goes
       await task(runId, 'a', 'thumbnail', 'completed', '2 hours');
       await task(runId, 'a', 'faces', 'completed', '3 hours');
@@ -113,7 +113,10 @@ describe('bounded PostgreSQL queue history', () => {
       expect(await left(runId)).toEqual(['b faces', 'b thumbnail', 'c faces', 'c thumbnail', 'd faces', 'd thumbnail']);
       expect(await readFolded(db, runId)).toEqual({
         roots: 1,
-        tasks: { thumbnail: { n: 1, queue }, faces: { n: 1, queue } },
+        tasks: {
+          thumbnail: { n: 1, queue, since: expect.any(String) },
+          faces: { n: 1, queue, since: expect.any(String) },
+        },
       });
       expect(await counted(runId)).toEqual(before);
       expect(await store.runStageProgress(runId)).toEqual([
@@ -128,7 +131,7 @@ describe('bounded PostgreSQL queue history', () => {
     });
 
     it('keeps a stage whose every job is gone, and the totals once the run is finished', async () => {
-      const runId = await store.createRun('fold-all', {});
+      const runId = await store.createRun('immich-import-derived', {});
       await task(runId, 'a', 'thumbnail', 'completed', '2 hours');
       await task(runId, 'b', 'thumbnail', 'completed', '2 hours');
       await task(runId, 'c', 'thumbnail', 'pending', null);
@@ -143,10 +146,57 @@ describe('bounded PostgreSQL queue history', () => {
       expect(run).toMatchObject({ total: 3, completed: 3, failed: 0, waiting: 0 });
     });
 
+    it('keeps its place while a worker holds the run, and folds once the run is free', async () => {
+      const runId = await store.createRun('immich-import-derived', {});
+      await task(runId, 'a', 'thumbnail', 'completed', '2 hours');
+      await store.finishEnumeration(runId);
+      // a worker queueing follow-up work holds the run row (for share) on another connection
+      const worker = await getKyselyDB();
+      let release!: () => void;
+      const held = new Promise<void>((resolve) => (release = resolve));
+      let holding!: () => void;
+      const ready = new Promise<void>((resolve) => (holding = resolve));
+      const hold = worker.transaction().execute(async (tx) => {
+        await sql`select 1 from job_run where id = ${runId}::uuid for share`.execute(tx);
+        holding();
+        await held;
+      });
+      await ready;
+      await sql`delete from system_metadata where key = 'frameleaf-queue-fold-cursor'`.execute(db);
+      expect(await foldOpenRunsPage(db)).toEqual({ folded: 0, more: false });
+      expect(await left(runId)).toEqual(['a thumbnail']);
+      release();
+      await hold;
+      await worker.destroy();
+      expect((await foldOpenRunsPage(db)).folded).toBe(1);
+      expect(await left(runId)).toEqual([]);
+    });
+
+    it('leaves an upload run, whose photos may come again', async () => {
+      const runId = await store.createRun('upload', {});
+      await task(runId, 'a', 'thumbnail', 'completed', '2 hours');
+      await task(runId, 'b', 'thumbnail', 'pending', null);
+      await store.finishEnumeration(runId);
+      await fold();
+      expect(await left(runId)).toEqual(['a thumbnail', 'b thumbnail']);
+    });
+
+    it('keeps the queue’s pace from the earliest of its tasks, folded or not', async () => {
+      const runId = await store.createRun('immich-import-derived', {});
+      await task(runId, 'a', 'thumbnail', 'completed', '2 hours');
+      await sql`update job set "createdAt" = now() - interval '5 hours' where "runId" = ${runId}::uuid`.execute(db);
+      await task(runId, 'b', 'thumbnail', 'pending', null);
+      await store.finishEnumeration(runId);
+      await fold();
+      expect((await readFolded(db, runId)).tasks.thumbnail).toMatchObject({ n: 1, queue });
+      const since = new Date((await readFolded(db, runId)).tasks.thumbnail.since!);
+      expect(Date.now() - since.getTime()).toBeGreaterThan(4 * 3_600_000);
+    });
+
     it('leaves a run that is still being enumerated or has a parked stage', async () => {
-      const enumerating = await store.createRun('fold-enumerating', {});
+      const enumerating = await store.createRun('immich-import-derived', {});
       await task(enumerating, 'a', 'thumbnail', 'completed', '2 hours');
-      const parked = await store.createRun('fold-parked', {});
+      const parked = await store.createRun('library-import-derived', {});
       await task(parked, 'a', 'thumbnail', 'completed', '2 hours');
       await task(parked, 'b', 'faces', 'pending', null);
       await store.finishEnumeration(parked);
