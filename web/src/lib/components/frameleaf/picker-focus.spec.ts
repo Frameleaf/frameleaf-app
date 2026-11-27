@@ -31,7 +31,8 @@ describe('pickers focus their search field on open', () => {
   });
 
   it('Add to album (FL-1814)', async () => {
-    sdkMock.getAllAlbums.mockResolvedValue(albums);
+    // the albums are still loading when the dialog opens: the field takes the cursor anyway
+    sdkMock.getAllAlbums.mockReturnValue(new Promise(() => {}));
     sdkMock.getRecentlyAddedAlbums.mockResolvedValue({ albumIds: [], usedAlbumIds: [albums[1].id] });
     authManager.setUser(userAdminFactory.build());
     render(BulkAlbumDialog, { count: 3, onSubmit: vi.fn() });
