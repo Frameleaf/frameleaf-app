@@ -240,6 +240,23 @@ describe('bulk actions bind to existing endpoints', () => {
     expect(undone.undo).toBeUndefined();
   });
 
+  it('sends a month or "around" with the Doctor batch (FL-1814)', async () => {
+    await runBulkAction('change-date', ['a'], {
+      gateway: api,
+      payload: { dateMode: 'set', dateAccuracy: 'year', year: 1987, dateDetail: 'month', month: 3 },
+    });
+    await runBulkAction('change-date', ['a'], {
+      gateway: api,
+      payload: { dateMode: 'set', dateAccuracy: 'year', year: 1987, dateDetail: 'about' },
+    });
+    expect(api.applyDateFix).toHaveBeenNthCalledWith(1, {
+      dateDoctorFixDto: { assetIds: ['a'], dateAccuracy: 'year', year: 1987, dateDetail: 'month', month: 3 },
+    });
+    expect(api.applyDateFix).toHaveBeenNthCalledWith(2, {
+      dateDoctorFixDto: { assetIds: ['a'], dateAccuracy: 'year', year: 1987, dateDetail: 'about' },
+    });
+  });
+
   it('fixes dates as one Date & Time Doctor fix, a zone keeping the clock time, and reports a fix the server refused (FL-943)', async () => {
     await runBulkAction('fix-dates', ['a', 'b'], { gateway: api, payload: { timeZone: 'Europe/Paris' } });
     expect(api.applyDateFix).toHaveBeenCalledWith({
