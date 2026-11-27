@@ -4,6 +4,7 @@
    * revocations, newest first, with the stable refusal code turned into a sentence. The server
    * never writes a secret or a file path into an audit row, so `detail` is shown in full.
    */
+  import EmptyState from '$lib/components/frameleaf/EmptyState.svelte';
   import { formatLuxon } from '$lib/frameleaf/date-format';
   import Badge from '$lib/components/frameleaf/Badge.svelte';
   import Button from '$lib/components/frameleaf/Button.svelte';
@@ -66,7 +67,7 @@
   </div>
 
   {#if entries.length === 0}
-    <p class="empty">{$t('frameleaf_render_workers_audit_empty')}</p>
+    <EmptyState compact message={$t('frameleaf_render_workers_audit_empty')} />
   {:else}
     <ol aria-label={$t('frameleaf_render_workers_audit_list_label')}>
       {#each entries as entry (entry.id)}
@@ -204,10 +205,5 @@
   dd {
     margin: 0;
     overflow-wrap: anywhere;
-  }
-  .empty {
-    margin: 0;
-    padding: 1.5rem 0.875rem;
-    color: var(--fl-muted);
   }
 </style>
