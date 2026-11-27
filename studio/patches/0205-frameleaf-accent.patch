@@ -351,6 +351,21 @@ index 4868bd2..100f3a0 100644
          style={{
            left: '50%',
            top: -ROTATION_HANDLE_OFFSET + 10,
+diff --git a/src/features/preview/components/selectable-item.tsx b/src/features/preview/components/selectable-item.tsx
+index f8462e4..e9035d9 100644
+--- a/src/features/preview/components/selectable-item.tsx
++++ b/src/features/preview/components/selectable-item.tsx
+@@ -102,7 +102,9 @@ export function SelectableItem({
+         // Z-index to render above GroupGizmo border but below handles
+         zIndex: 5,
+         // Subtle hover indicator (only for unselected items) - outline only
+-        border: showHover ? '3px solid rgba(249, 115, 22, 0.4)' : '2px solid transparent',
++        border: showHover
++          ? '3px solid color-mix(in oklab, var(--primary) 40%, transparent)'
++          : '2px solid transparent',
+       }}
+       data-gizmo="selectable-item"
+       data-translate-blocked={translateBlocked || undefined}
 diff --git a/src/features/timeline/components/timeline-drop-ghost-previews.test.tsx b/src/features/timeline/components/timeline-drop-ghost-previews.test.tsx
 index a08d07e..a4731dd 100644
 --- a/src/features/timeline/components/timeline-drop-ghost-previews.test.tsx
@@ -364,6 +379,25 @@ index a08d07e..a4731dd 100644
      expect(ghost).toHaveStyle({ left: '12px', width: '48px' })
    })
  
+diff --git a/src/features/timeline/components/timeline-item-canvas-rendering.ts b/src/features/timeline/components/timeline-item-canvas-rendering.ts
+index c4a3420..4c8250e 100644
+--- a/src/features/timeline/components/timeline-item-canvas-rendering.ts
++++ b/src/features/timeline/components/timeline-item-canvas-rendering.ts
+@@ -52,10 +52,10 @@ const PALETTE_BY_TYPE: Partial<Record<TimelineItem['type'], TimelineCanvasClipPa
+     text: 'rgba(250, 250, 250, 0.94)',
+   },
+   shape: {
+-    fill: 'rgba(249, 115, 22, 0.34)',
+-    stroke: 'rgba(251, 146, 60, 0.84)',
+-    labelFill: 'rgba(154, 52, 18, 0.3)',
+-    text: 'rgba(255, 247, 237, 0.96)',
++    fill: 'rgba(52, 80, 107, 0.34)',
++    stroke: 'rgba(107, 143, 181, 0.84)',
++    labelFill: 'rgba(30, 48, 66, 0.32)',
++    text: 'rgba(238, 243, 247, 0.96)',
+   },
+   adjustment: {
+     fill: 'rgba(168, 85, 247, 0.34)',
 diff --git a/src/features/timeline/components/timeline-item/audio-fade-handles.tsx b/src/features/timeline/components/timeline-item/audio-fade-handles.tsx
 index 4ced9fb..9195dd6 100644
 --- a/src/features/timeline/components/timeline-item/audio-fade-handles.tsx

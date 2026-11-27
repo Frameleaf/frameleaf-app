@@ -918,18 +918,18 @@
     {
       "path": "patches/0204-upstream-fixes.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
-      "sha256": "1046de12a901b7e2b868c600bf4c1ea3e4c67569b2b45302e0069ee016e4ef5c"
+      "sha256": "a3a4c6bd29839ba09049c87e508ef2f42bc1e80193c9b5cb85b5f821e896a15c"
     },
     {
       "path": "patches/0205-frameleaf-accent.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
-      "sha256": "0bf12fb4b6e9a233ee8e2108c55428ba2fae971e54b31483a4271b6194b72a9d"
+      "sha256": "69bfdf1d85fbe3257d4d86c6341553fa4d223487d489218fb350c1dc59421c80"
     },
     {
       "path": "patches/0206-studio-not-upstream.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
-      "sha256": "82df7390ef1cde121aecbaff4086f07b229bfd28b21627cfb542511992290535"
+      "sha256": "5a1f3cb0504a4f40679ea72c67017801f0e4fae55c8a188b9f9e7f04569e9f86"
     }
   ],
-  "sourceSha256": "7b54c81d96dee9d329eb0301047ac31dc4572d5df82be2db53e3b2009cfec375"
+  "sourceSha256": "dc26d4a87723f78a97719cf9ed71afa535620c1be044c57502ec83cace9610d4"
 }

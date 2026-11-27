@@ -95,6 +95,78 @@ index 2d51a3a..8c69de6 100644
      ),
    )
    const selectedItem = selectedItems[0] ?? null
+diff --git a/src/features/editor/components/properties-sidebar/clip-panel/index.test.tsx b/src/features/editor/components/properties-sidebar/clip-panel/index.test.tsx
+index c307a6a..d6319c1 100644
+--- a/src/features/editor/components/properties-sidebar/clip-panel/index.test.tsx
++++ b/src/features/editor/components/properties-sidebar/clip-panel/index.test.tsx
+@@ -1,9 +1,11 @@
+ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+ import { flushSync } from 'react-dom'
++import { TooltipProvider } from '@/components/ui/tooltip'
+ import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
+ import { useEditorStore } from '@/shared/state/editor'
+ import { useSelectionStore } from '@/shared/state/selection'
+ import { useItemsStore, useTimelineStore } from '@/features/editor/deps/timeline-store'
++import { updateItem } from '@/features/timeline/stores/actions/item-actions'
+ import { useGizmoStore } from '@/features/editor/deps/preview'
+ import type {
+   AudioItem,
+@@ -59,7 +61,18 @@ vi.mock('./audio-section', () => ({
+ 
+ vi.mock('./text-section', () => ({
+   TextSection: () => <div>Text Body</div>,
+-  TextContentSection: () => <div>Text Content Body</div>,
++  TextContentSection: ({ items }: { items: TimelineItem[] }) => {
++    const item = items[0]
++    return item?.type === 'text' ? (
++      <textarea
++        aria-label="Text content"
++        value={item.text}
++        onChange={(event) => updateItem(item.id, { text: event.target.value })}
++      />
++    ) : (
++      <div>Text Content Body</div>
++    )
++  },
+   TextEffectsSection: () => <div>Text Effects Body</div>,
+ }))
+ 
+@@ -194,6 +207,35 @@ describe('ClipPanel inspector tabs', () => {
+     vi.unstubAllGlobals()
+   })
+ 
++  it('preserves the caret when text is edited in the middle', async () => {
++    const item = {
++      id: 'text-1',
++      type: 'text' as const,
++      trackId: 'track-1',
++      from: 0,
++      durationInFrames: 90,
++      label: 'Hello',
++      text: 'Hello',
++      color: '#ffffff',
++    }
++    resetStores([item], [item.id])
++    render(
++      <TooltipProvider>
++        <ClipPanel />
++      </TooltipProvider>,
++    )
++
++    const field = (await screen.findByRole('textbox', {
++      name: 'Text content',
++    })) as HTMLTextAreaElement
++    field.focus()
++    fireEvent.change(field, { target: { value: 'HeXllo', selectionStart: 3, selectionEnd: 3 } })
++
++    expect(field.value).toBe('HeXllo')
++    expect(field.selectionStart).toBe(3)
++    expect(field.selectionEnd).toBe(3)
++  })
++
+   it('keeps the full inspector idle across repeated gizmo translate commits', async () => {
+     resetStores([NULL_OBJECT], [NULL_OBJECT.id])
+     render(<ClipPanel />)
 diff --git a/src/features/editor/components/properties-sidebar/clip-panel/index.tsx b/src/features/editor/components/properties-sidebar/clip-panel/index.tsx
 index 472f3b7..4a1cdf6 100644
 --- a/src/features/editor/components/properties-sidebar/clip-panel/index.tsx
@@ -120,10 +192,10 @@ index 472f3b7..4a1cdf6 100644
      />
    )
 diff --git a/src/features/editor/components/properties-sidebar/clip-panel/text-section.tsx b/src/features/editor/components/properties-sidebar/clip-panel/text-section.tsx
-index c41040c..399ab7e 100644
+index 5f673b7..856301d 100644
 --- a/src/features/editor/components/properties-sidebar/clip-panel/text-section.tsx
 +++ b/src/features/editor/components/properties-sidebar/clip-panel/text-section.tsx
-@@ -1202,7 +1202,7 @@ function TextSectionComposer({ items, canvas, slots }: TextSectionComposerProps)
+@@ -1204,7 +1204,7 @@ function TextSectionComposer({ items, canvas, slots }: TextSectionComposerProps)
                <div className="space-y-2">
                  {activeEditorSpans.map((span, index) => (
                    <div
@@ -465,10 +537,10 @@ index 63ec029..d8541d0 100644
        })
      },
 diff --git a/src/features/media-library/utils/audio-scrub-preview.test.ts b/src/features/media-library/utils/audio-scrub-preview.test.ts
-index a5ad7b3..2015658 100644
+index a5ad7b3..bcacbad 100644
 --- a/src/features/media-library/utils/audio-scrub-preview.test.ts
 +++ b/src/features/media-library/utils/audio-scrub-preview.test.ts
-@@ -82,4 +82,67 @@ describe('audio scrub preview', () => {
+@@ -82,4 +82,110 @@ describe('audio scrub preview', () => {
  
      expect(first.source.stop).toHaveBeenCalledTimes(1)
    })
@@ -508,6 +580,49 @@ index a5ad7b3..2015658 100644
 +    expect(decodeAudioData).toHaveBeenCalledTimes(3)
 +  })
 +
++  it('keeps a buffer that alone is over budget while it is being scrubbed', async () => {
++    const fake = makeFakeAudioContext()
++    // A long track: 1,000 frames × 2 channels × 4 bytes = 8,000 bytes against an 800-byte budget.
++    const decodeAudioData = vi.fn(async () => ({ duration: 300, length: 1000, numberOfChannels: 2 }) as AudioBuffer)
++    const fetchArrayBuffer = vi.fn(async () => new ArrayBuffer(8))
++    const scrub = createAudioScrubPreview({
++      createAudioContext: () => ({ ...fake.context, decodeAudioData }) as unknown as AudioContext,
++      fetchArrayBuffer,
++      maxCachedBufferBytes: 800,
++    })
++
++    for (const timeSeconds of [1, 2, 3, 4]) {
++      await scrub.scrub({ mediaId: 'long', mediaUrl: 'blob:long', timeSeconds })
++    }
++
++    expect(fetchArrayBuffer).toHaveBeenCalledTimes(1)
++    expect(decodeAudioData).toHaveBeenCalledTimes(1)
++  })
++
++  it('evicts the least recently scrubbed buffer first', async () => {
++    const fake = makeFakeAudioContext()
++    const decodeAudioData = vi.fn(async () => ({ duration: 10, length: 100, numberOfChannels: 2 }) as AudioBuffer)
++    const fetchArrayBuffer = vi.fn(async () => new ArrayBuffer(8))
++    const scrub = createAudioScrubPreview({
++      createAudioContext: () => ({ ...fake.context, decodeAudioData }) as unknown as AudioContext,
++      fetchArrayBuffer,
++      // Room for two 800-byte buffers.
++      maxCachedBufferBytes: 1600,
++    })
++
++    await scrub.scrub({ mediaId: 'a', mediaUrl: 'blob:a', timeSeconds: 1 })
++    await scrub.scrub({ mediaId: 'b', mediaUrl: 'blob:b', timeSeconds: 1 })
++    await scrub.scrub({ mediaId: 'a', mediaUrl: 'blob:a', timeSeconds: 2 })
++    await scrub.scrub({ mediaId: 'c', mediaUrl: 'blob:c', timeSeconds: 1 })
++    // b was used least recently, so c pushed it out; a is still cached.
++    await scrub.scrub({ mediaId: 'a', mediaUrl: 'blob:a', timeSeconds: 3 })
++
++    const fetched = fetchArrayBuffer.mock.calls.map(([url]) => url)
++    expect(fetched.filter((url) => url === 'blob:a')).toHaveLength(1)
++    await scrub.scrub({ mediaId: 'b', mediaUrl: 'blob:b', timeSeconds: 2 })
++    expect(fetchArrayBuffer.mock.calls.filter(([url]) => url === 'blob:b')).toHaveLength(2)
++  })
++
 +  it('drops failed decodes so a later scrub can retry', async () => {
 +    const fake = makeFakeAudioContext()
 +    let remainingFailures = 1
@@ -537,7 +652,7 @@ index a5ad7b3..2015658 100644
 +  })
  })
 diff --git a/src/features/media-library/utils/audio-scrub-preview.ts b/src/features/media-library/utils/audio-scrub-preview.ts
-index a611f54..a4fe2ff 100644
+index a611f54..33eba46 100644
 --- a/src/features/media-library/utils/audio-scrub-preview.ts
 +++ b/src/features/media-library/utils/audio-scrub-preview.ts
 @@ -16,11 +16,14 @@ interface AudioScrubPreviewOptions {
@@ -568,20 +683,24 @@ index a611f54..a4fe2ff 100644
  
    const getContext = () => {
      if (!context) {
-@@ -58,6 +63,24 @@ export function createAudioScrubPreview(options: AudioScrubPreviewOptions = {})
+@@ -58,17 +63,53 @@ export function createAudioScrubPreview(options: AudioScrubPreviewOptions = {})
      return context
    }
  
 +  // Scrubbing only ever plays one buffer at a time; a full-song decoded PCM is
 +  // ~230 MB, so keep the cache under a byte budget instead of retaining every
 +  // media ever scrubbed for the lifetime of the session.
-+  const evictOverBudgetBuffers = () => {
++  // Least recently used first (`loadBuffer` moves a reused entry to the end). The buffer being
++  // scrubbed is never evicted, even when it alone is over budget: evicting it would re-fetch and
++  // re-decode the whole file on every scrub event.
++  const evictOverBudgetBuffers = (keepMediaId: string) => {
 +    let totalBytes = 0
 +    for (const bytes of bufferBytesById.values()) {
 +      totalBytes += bytes
 +    }
 +    for (const mediaId of buffers.keys()) {
 +      if (totalBytes <= maxCachedBufferBytes) break
++      if (mediaId === keepMediaId) continue
 +      const bytes = bufferBytesById.get(mediaId)
 +      if (bytes === undefined) continue
 +      buffers.delete(mediaId)
@@ -592,15 +711,20 @@ index a611f54..a4fe2ff 100644
 +
    const loadBuffer = (mediaId: string, mediaUrl: string) => {
      const existing = buffers.get(mediaId)
-     if (existing) return existing
-@@ -65,10 +88,20 @@ export function createAudioScrubPreview(options: AudioScrubPreviewOptions = {})
+-    if (existing) return existing
++    if (existing) {
++      buffers.delete(mediaId)
++      buffers.set(mediaId, existing)
++      return existing
++    }
+ 
      const bufferPromise = (async () => {
        const ctx = getContext()
        const arrayBuffer = await fetchArrayBuffer(mediaUrl)
 -      return ctx.decodeAudioData(arrayBuffer.slice(0))
 +      const decoded = await ctx.decodeAudioData(arrayBuffer.slice(0))
 +      bufferBytesById.set(mediaId, decoded.length * decoded.numberOfChannels * 4)
-+      evictOverBudgetBuffers()
++      evictOverBudgetBuffers(mediaId)
 +      return decoded
      })()
  
@@ -615,7 +739,7 @@ index a611f54..a4fe2ff 100644
      return bufferPromise
    }
  
-@@ -146,6 +179,7 @@ export function createAudioScrubPreview(options: AudioScrubPreviewOptions = {})
+@@ -146,6 +187,7 @@ export function createAudioScrubPreview(options: AudioScrubPreviewOptions = {})
    const dispose = () => {
      stop()
      buffers.clear()
@@ -768,75 +892,3 @@ index cc0db97..10be6ea 100644
    }
  
    /**
-diff --git a/src/features/editor/components/properties-sidebar/clip-panel/index.test.tsx b/src/features/editor/components/properties-sidebar/clip-panel/index.test.tsx
-index c307a6a..d6319c1 100644
---- a/src/features/editor/components/properties-sidebar/clip-panel/index.test.tsx
-+++ b/src/features/editor/components/properties-sidebar/clip-panel/index.test.tsx
-@@ -1,9 +1,11 @@
- import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
- import { flushSync } from 'react-dom'
-+import { TooltipProvider } from '@/components/ui/tooltip'
- import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
- import { useEditorStore } from '@/shared/state/editor'
- import { useSelectionStore } from '@/shared/state/selection'
- import { useItemsStore, useTimelineStore } from '@/features/editor/deps/timeline-store'
-+import { updateItem } from '@/features/timeline/stores/actions/item-actions'
- import { useGizmoStore } from '@/features/editor/deps/preview'
- import type {
-   AudioItem,
-@@ -59,7 +61,18 @@ vi.mock('./audio-section', () => ({
- 
- vi.mock('./text-section', () => ({
-   TextSection: () => <div>Text Body</div>,
--  TextContentSection: () => <div>Text Content Body</div>,
-+  TextContentSection: ({ items }: { items: TimelineItem[] }) => {
-+    const item = items[0]
-+    return item?.type === 'text' ? (
-+      <textarea
-+        aria-label="Text content"
-+        value={item.text}
-+        onChange={(event) => updateItem(item.id, { text: event.target.value })}
-+      />
-+    ) : (
-+      <div>Text Content Body</div>
-+    )
-+  },
-   TextEffectsSection: () => <div>Text Effects Body</div>,
- }))
- 
-@@ -194,6 +207,35 @@ describe('ClipPanel inspector tabs', () => {
-     vi.unstubAllGlobals()
-   })
- 
-+  it('preserves the caret when text is edited in the middle', async () => {
-+    const item = {
-+      id: 'text-1',
-+      type: 'text' as const,
-+      trackId: 'track-1',
-+      from: 0,
-+      durationInFrames: 90,
-+      label: 'Hello',
-+      text: 'Hello',
-+      color: '#ffffff',
-+    }
-+    resetStores([item], [item.id])
-+    render(
-+      <TooltipProvider>
-+        <ClipPanel />
-+      </TooltipProvider>,
-+    )
-+
-+    const field = (await screen.findByRole('textbox', {
-+      name: 'Text content',
-+    })) as HTMLTextAreaElement
-+    field.focus()
-+    fireEvent.change(field, { target: { value: 'HeXllo', selectionStart: 3, selectionEnd: 3 } })
-+
-+    expect(field.value).toBe('HeXllo')
-+    expect(field.selectionStart).toBe(3)
-+    expect(field.selectionEnd).toBe(3)
-+  })
-+
-   it('keeps the full inspector idle across repeated gizmo translate commits', async () => {
-     resetStores([NULL_OBJECT], [NULL_OBJECT.id])
-     render(<ClipPanel />)

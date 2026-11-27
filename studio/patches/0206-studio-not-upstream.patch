@@ -135,6 +135,28 @@ index 67e4c8f..8e21aad 100644
  
          <Separator orientation="vertical" className="h-5" />
  
+diff --git a/src/features/media-library/components/media-card.test.tsx b/src/features/media-library/components/media-card.test.tsx
+index 69f027d..4ab1f56 100644
+--- a/src/features/media-library/components/media-card.test.tsx
++++ b/src/features/media-library/components/media-card.test.tsx
+@@ -591,7 +591,7 @@ describe('MediaCard', () => {
+     expect(mediaStoreState.openMissingMediaDialog).toHaveBeenCalledTimes(1)
+     expect(mediaStoreState.showNotification).toHaveBeenCalledWith({
+       type: 'error',
+-      message: 'FreeCut needs permission to read "movie.mkv" before extracting subtitles.',
++      message: 'Studio needs permission to read "movie.mkv" before extracting subtitles.',
+     })
+   })
+ 
+@@ -619,7 +619,7 @@ describe('MediaCard', () => {
+       expect(mediaStoreState.showNotification).toHaveBeenCalledWith({
+         type: 'error',
+         message:
+-          'FreeCut could not read "movie.mkv" right now. Close any app using it and try again.',
++          'Studio could not read "movie.mkv" right now. Close any app using it and try again.',
+       })
+     })
+     expect(embeddedSubtitlePickerStoreMocks.open).not.toHaveBeenCalled()
 diff --git a/src/i18n/locales/de.json b/src/i18n/locales/de.json
 index 2a9197a..a2e16ed 100644
 --- a/src/i18n/locales/de.json
@@ -1419,7 +1441,7 @@ index 08f2e34..7e15012 100644
          "lofiChillLabel": "Lo-fi チル",
          "lofiChillPrompt": "温かい lo-fi ビート、ダスティなドラム、メロウなベース、夢のようなシンセリード",
 diff --git a/src/i18n/locales/partials/ko/changelog.json b/src/i18n/locales/partials/ko/changelog.json
-index fb93efe..e7f5a21 100644
+index fb93efe..b4bea13 100644
 --- a/src/i18n/locales/partials/ko/changelog.json
 +++ b/src/i18n/locales/partials/ko/changelog.json
 @@ -1,16 +1,16 @@
@@ -1439,12 +1461,12 @@ index fb93efe..e7f5a21 100644
      "ctaTitle": "무언가 만들어 볼 준비가 되셨나요?",
 -    "ctaDescription": "FreeCut을 열고 최신 도구를 활용해 보세요.",
 -    "openFreeCut": "FreeCut 열기"
-+    "ctaDescription": "Studio을 열고 최신 도구를 활용해 보세요.",
++    "ctaDescription": "Studio를 열고 최신 도구를 활용해 보세요.",
 +    "openFreeCut": "Studio 열기"
    }
  }
 diff --git a/src/i18n/locales/partials/ko/editor.json b/src/i18n/locales/partials/ko/editor.json
-index c40b104..1f8d548 100644
+index c40b104..1eb5474 100644
 --- a/src/i18n/locales/partials/ko/editor.json
 +++ b/src/i18n/locales/partials/ko/editor.json
 @@ -281,7 +281,7 @@
@@ -1452,7 +1474,7 @@ index c40b104..1f8d548 100644
        "title": "열기 전에 프로젝트 업그레이드",
        "versionMismatch": "<strong>{{projectName}}</strong>은(는) 프로젝트 스키마 v{{storedSchemaVersion}}으로 저장되었지만 이 빌드는 v{{currentSchemaVersion}}을(를) 필요로 합니다.",
 -      "explanation": "FreeCut은 편집기를 로드하기 전에 업그레이드할 수 있습니다. 문제가 있을 경우 이전 데이터를 복원할 수 있도록 먼저 업그레이드 전 백업이 생성됩니다.",
-+      "explanation": "Studio은 편집기를 로드하기 전에 업그레이드할 수 있습니다. 문제가 있을 경우 이전 데이터를 복원할 수 있도록 먼저 업그레이드 전 백업이 생성됩니다.",
++      "explanation": "Studio는 편집기를 로드하기 전에 업그레이드할 수 있습니다. 문제가 있을 경우 이전 데이터를 복원할 수 있도록 먼저 업그레이드 전 백업이 생성됩니다.",
        "backupCopy": "백업 사본: <strong>{{backupName}}</strong>",
        "creatingBackup": "백업 생성 중...",
        "confirm": "백업 생성 후 업그레이드"
@@ -1461,7 +1483,7 @@ index c40b104..1f8d548 100644
        "size": "크기",
        "frameRate": "프레임 레이트",
 -      "fpsRoundedHint": "FreeCut은 가져온 비디오를 가장 가까운 지원 프로젝트 프레임 레이트에 맞춥니다. 이 클립은 {{fps}} fps를 사용합니다.",
-+      "fpsRoundedHint": "Studio은 가져온 비디오를 가장 가까운 지원 프로젝트 프레임 레이트에 맞춥니다. 이 클립은 {{fps}} fps를 사용합니다.",
++      "fpsRoundedHint": "Studio는 가져온 비디오를 가장 가까운 지원 프로젝트 프레임 레이트에 맞춥니다. 이 클립은 {{fps}} fps를 사용합니다.",
        "keepCurrent": "현재 유지",
        "fpsOnly": "FPS만",
        "sizeOnly": "크기만",
@@ -1492,7 +1514,7 @@ index c40b104..1f8d548 100644
          "lofiChillLabel": "Lo-fi 칠",
          "lofiChillPrompt": "따뜻한 lo-fi 비트, 먼지 느낌의 드럼, 부드러운 베이스, 꿈같은 신스 리드",
 diff --git a/src/i18n/locales/partials/ko/export.json b/src/i18n/locales/partials/ko/export.json
-index ab0a818..315b853 100644
+index ab0a818..290268d 100644
 --- a/src/i18n/locales/partials/ko/export.json
 +++ b/src/i18n/locales/partials/ko/export.json
 @@ -132,7 +132,7 @@
@@ -1500,7 +1522,7 @@ index ab0a818..315b853 100644
          "video-codec-fallback": {
            "title": "대체 코덱이 사용됩니다",
 -          "detail": "선택한 코덱을 여기에서 사용할 수 없습니다. FreeCut은 대신 {{container}}에서 {{codec}}로 내보냅니다.",
-+          "detail": "선택한 코덱을 여기에서 사용할 수 없습니다. Studio은 대신 {{container}}에서 {{codec}}로 내보냅니다.",
++          "detail": "선택한 코덱을 여기에서 사용할 수 없습니다. Studio는 대신 {{container}}에서 {{codec}}로 내보냅니다.",
            "fix": "이 대체 설정을 유지하거나 지원되는 다른 코덱을 직접 선택하세요."
          },
          "video-codec-supported": {
@@ -1509,7 +1531,7 @@ index ab0a818..315b853 100644
          "worker-animated-image-fallback": {
            "title": "애니메이션 이미지는 메인 스레드 내보내기가 필요합니다",
 -          "detail": "GIF/WebP 이미지 항목은 아직 내보내기 워커에서 렌더링할 수 없습니다. FreeCut이 자동으로 폴백합니다.",
-+          "detail": "GIF/WebP 이미지 항목은 아직 내보내기 워커에서 렌더링할 수 없습니다. Studio이 자동으로 폴백합니다.",
++          "detail": "GIF/WebP 이미지 항목은 아직 내보내기 워커에서 렌더링할 수 없습니다. Studio가 자동으로 폴백합니다.",
            "fix": "더 빠른 워커 내보내기를 위해 내보내기 전에 애니메이션 이미지를 비디오 클립으로 바꾸세요."
          },
          "worker-audio-context-fallback": {
@@ -1543,7 +1565,7 @@ index 5a49958..0e1b27d 100644
        "needPermission_one": "{{count}}개 권한 필요",
        "needPermission_other": "{{count}}개 권한 필요",
 diff --git a/src/i18n/locales/partials/ko/projects.json b/src/i18n/locales/partials/ko/projects.json
-index d55ae52..9639ede 100644
+index d55ae52..eddd0da 100644
 --- a/src/i18n/locales/partials/ko/projects.json
 +++ b/src/i18n/locales/partials/ko/projects.json
 @@ -112,7 +112,7 @@
@@ -1563,7 +1585,7 @@ index d55ae52..9639ede 100644
 +      "unsupportedBrowserDescription": "Studio의 작업 공간 폴더 저장소에는 Chromium 기반 브라우저(Chrome, Edge, Brave, Arc)가 필요합니다. Firefox와 Safari는 아직 File System Access API를 지원하지 않습니다.",
        "pickTitle": "작업 공간 폴더 선택",
 -      "pickDescription": "FreeCut은 모든 프로젝트, 미디어, 캐시를 사용자가 관리하는 폴더에 일반 파일로 저장합니다. 디스크의 아무 폴더나 선택하세요 — 프로젝트가 그곳에 저장됩니다.",
-+      "pickDescription": "Studio은 모든 프로젝트, 미디어, 캐시를 사용자가 관리하는 폴더에 일반 파일로 저장합니다. 디스크의 아무 폴더나 선택하세요 — 프로젝트가 그곳에 저장됩니다.",
++      "pickDescription": "Studio는 모든 프로젝트, 미디어, 캐시를 사용자가 관리하는 폴더에 일반 파일로 저장합니다. 디스크의 아무 폴더나 선택하세요 — 프로젝트가 그곳에 저장됩니다.",
        "chooseFolder": "폴더 선택",
        "workspaceGuide": "작업 공간 가이드",
        "pickTip": "팁: Dropbox, iCloud, Google Drive 내의 폴더를 선택하면 기기 간에 프로젝트를 동기화할 수 있습니다. 나중에 옮길 수 있습니다.",
@@ -1572,7 +1594,7 @@ index d55ae52..9639ede 100644
        "reconnect": "다시 연결",
        "folderPermissionDenied": "권한이 부여되지 않았습니다. 계속하려면 폴더를 선택하고 읽기/쓰기 접근을 허용하세요.",
 -      "folderPickFailed": "FreeCut이 해당 폴더를 열 수 없습니다. 편집할 수 있는 일반 폴더를 선택한 뒤 읽기/쓰기 접근을 허용하세요.",
-+      "folderPickFailed": "Studio이 해당 폴더를 열 수 없습니다. 편집할 수 있는 일반 폴더를 선택한 뒤 읽기/쓰기 접근을 허용하세요.",
++      "folderPickFailed": "Studio가 해당 폴더를 열 수 없습니다. 편집할 수 있는 일반 폴더를 선택한 뒤 읽기/쓰기 접근을 허용하세요.",
        "reconnectPermissionDenied": "권한이 거부되었습니다. 워크스페이스를 다시 연결하거나 다른 폴더를 선택하세요."
      },
      "workspaceIndicator": {
@@ -1602,13 +1624,13 @@ index d55ae52..9639ede 100644
          "free": {
 -          "question": "FreeCut은 정말 무료인가요?",
 -          "answer": "네, FreeCut은 MIT 라이선스 하에 완전히 무료이며 오픈 소스입니다. 숨겨진 요금, 구독, 워터마크가 없습니다."
-+          "question": "Studio은 정말 무료인가요?",
-+          "answer": "네, Studio은 MIT 라이선스 하에 완전히 무료이며 오픈 소스입니다. 숨겨진 요금, 구독, 워터마크가 없습니다."
++          "question": "Studio는 정말 무료인가요?",
++          "answer": "네, Studio는 MIT 라이선스 하에 완전히 무료이며 오픈 소스입니다. 숨겨진 요금, 구독, 워터마크가 없습니다."
          },
          "install": {
            "question": "설치해야 하는 것이 있나요?",
 -          "answer": "설치가 필요 없습니다. FreeCut은 전적으로 브라우저에서 실행됩니다. 웹사이트를 열고 편집을 시작하기만 하면 됩니다."
-+          "answer": "설치가 필요 없습니다. Studio은 전적으로 브라우저에서 실행됩니다. 웹사이트를 열고 편집을 시작하기만 하면 됩니다."
++          "answer": "설치가 필요 없습니다. Studio는 전적으로 브라우저에서 실행됩니다. 웹사이트를 열고 편집을 시작하기만 하면 됩니다."
          },
          "storage": {
            "question": "내 동영상은 어디에 저장되나요?",
@@ -1617,7 +1639,7 @@ index d55ae52..9639ede 100644
          "browsers": {
            "question": "어떤 브라우저가 지원되나요?",
 -          "answerP1": "FreeCut은 현재 Chrome 또는 Edge 113 이상에서 가장 잘 작동합니다. WebGPU, WebCodecs, OPFS, File System Access 같은 최신 브라우저 API에 의존하므로 현재 전체 워크플로는 Chromium 우선입니다.",
-+          "answerP1": "Studio은 현재 Chrome 또는 Edge 113 이상에서 가장 잘 작동합니다. WebGPU, WebCodecs, OPFS, File System Access 같은 최신 브라우저 API에 의존하므로 현재 전체 워크플로는 Chromium 우선입니다.",
++          "answerP1": "Studio는 현재 Chrome 또는 Edge 113 이상에서 가장 잘 작동합니다. WebGPU, WebCodecs, OPFS, File System Access 같은 최신 브라우저 API에 의존하므로 현재 전체 워크플로는 Chromium 우선입니다.",
            "answerP2": "<strong>Brave 사용자:</strong> File System Access API는 기본적으로 비활성화되어 있습니다. 활성화하려면 <code>brave://flags/#file-system-access-api</code>로 이동하여 <strong>Enabled</strong>로 설정한 다음 브라우저를 다시 시작하세요."
          },
          "exportFormats": {
@@ -1626,7 +1648,7 @@ index d55ae52..9639ede 100644
      "routeError": {
        "title": "문제가 발생했습니다",
 -      "description": "FreeCut이 이 페이지를 모두 불러오지 못했습니다.",
-+      "description": "Studio이 이 페이지를 모두 불러오지 못했습니다.",
++      "description": "Studio가 이 페이지를 모두 불러오지 못했습니다.",
        "projectNotFoundTitle": "이 프로젝트를 찾을 수 없습니다",
        "projectNotFoundDescription": "프로젝트가 이동 또는 삭제되었거나 오래된 링크에서 열렸을 수 있습니다. 다른 프로젝트는 작업 공간에서 계속 사용할 수 있습니다.",
        "backToProjects": "프로젝트로 돌아가기",
@@ -1895,7 +1917,7 @@ index 8a93161..9280661 100644
          "lofiChillLabel": "Lo-fi tranquilo",
          "lofiChillPrompt": "Batida lo-fi quente com bateria vintage, baixo suave e lead de sintetizador sonhador",
 diff --git a/src/i18n/locales/partials/tr/changelog.json b/src/i18n/locales/partials/tr/changelog.json
-index 3bc3065..4259073 100644
+index 3bc3065..41b1729 100644
 --- a/src/i18n/locales/partials/tr/changelog.json
 +++ b/src/i18n/locales/partials/tr/changelog.json
 @@ -1,16 +1,16 @@
@@ -1906,7 +1928,7 @@ index 3bc3065..4259073 100644
      "backToHome": "Ana sayfaya dön",
      "releaseNotes": "Sürüm notları",
 -    "title": "FreeCut'taki yenilikler",
-+    "title": "Studio'taki yenilikler",
++    "title": "Studio'daki yenilikler",
      "description": "Yeni düzenleme araçları, iş akışı iyileştirmeleri ve düzeltmelerden oluşan haftalık bir derleme. En yeni sürüm açık; değişikliklerin tam listesini görmek için önceki haftalardan birini genişletin.",
      "latest": "En yeni",
      "changeCount_one": "{{count}} değişiklik",
@@ -1915,12 +1937,12 @@ index 3bc3065..4259073 100644
      "ctaTitle": "Bir şeyler üretmeye hazır mısınız?",
 -    "ctaDescription": "FreeCut'i açın ve en yeni araçları kullanmaya başlayın.",
 -    "openFreeCut": "FreeCut'i aç"
-+    "ctaDescription": "Studio'i açın ve en yeni araçları kullanmaya başlayın.",
-+    "openFreeCut": "Studio'i aç"
++    "ctaDescription": "Studio'yu açın ve en yeni araçları kullanmaya başlayın.",
++    "openFreeCut": "Studio'yu aç"
    }
  }
 diff --git a/src/i18n/locales/partials/tr/editor.json b/src/i18n/locales/partials/tr/editor.json
-index 82eeca5..9c04f00 100644
+index 82eeca5..5e33c73 100644
 --- a/src/i18n/locales/partials/tr/editor.json
 +++ b/src/i18n/locales/partials/tr/editor.json
 @@ -281,7 +281,7 @@
@@ -1963,7 +1985,7 @@ index 82eeca5..9c04f00 100644
          "savedAndAdded": "\"{{fileName}}\" kaydedildi ve zaman çizelgesine eklendi."
        },
 -      "defaultTtsPrompt": "FreeCut'a hoş geldiniz. Bu ses tarayıcıda yerel olarak oluşturuldu.",
-+      "defaultTtsPrompt": "Studio'a hoş geldiniz. Bu ses tarayıcıda yerel olarak oluşturuldu.",
++      "defaultTtsPrompt": "Studio'ya hoş geldiniz. Bu ses tarayıcıda yerel olarak oluşturuldu.",
        "musicPresets": {
          "lofiChillLabel": "Lo-fi Rahat",
          "lofiChillPrompt": "Tozlu davullar, yumuşak bas ve rüya gibi synth melodisiyle sıcak lo-fi beat",
@@ -1990,7 +2012,7 @@ index 6c13673..2af6e91 100644
          },
          "worker-audio-context-fallback": {
 diff --git a/src/i18n/locales/partials/tr/media.json b/src/i18n/locales/partials/tr/media.json
-index 6e45614..1dc3d7a 100644
+index 6e45614..0819357 100644
 --- a/src/i18n/locales/partials/tr/media.json
 +++ b/src/i18n/locales/partials/tr/media.json
 @@ -27,10 +27,10 @@
@@ -2003,7 +2025,7 @@ index 6e45614..1dc3d7a 100644
 -      "subtitlesFileMissing": "FreeCut artık \"{{name}}\" dosyasını bulamıyor.",
 -      "subtitlesNeedPermission": "Altyazıları çıkarmadan önce FreeCut'ın \"{{name}}\" dosyasını okuma iznine ihtiyacı var.",
 +      "subtitlesFileMissing": "Studio artık \"{{name}}\" dosyasını bulamıyor.",
-+      "subtitlesNeedPermission": "Altyazıları çıkarmadan önce Studio'ın \"{{name}}\" dosyasını okuma iznine ihtiyacı var.",
++      "subtitlesNeedPermission": "Altyazıları çıkarmadan önce Studio'nun \"{{name}}\" dosyasını okuma iznine ihtiyacı var.",
        "subtitlesScanFailed": "Altyazı taraması başarısız",
        "transcribeFailed": "Transkripsiyon başarısız",
        "transcribing": "Transkripsiyon yapılıyor",
@@ -2021,7 +2043,7 @@ index 6e45614..1dc3d7a 100644
        "needPermission_one": "{{count}} izin gerektiriyor",
        "needPermission_other": "{{count}} izin gerektiriyor",
 diff --git a/src/i18n/locales/partials/tr/projects.json b/src/i18n/locales/partials/tr/projects.json
-index d5fd71d..24a4d11 100644
+index d5fd71d..cbc0cec 100644
 --- a/src/i18n/locales/partials/tr/projects.json
 +++ b/src/i18n/locales/partials/tr/projects.json
 @@ -112,7 +112,7 @@
@@ -2029,7 +2051,7 @@ index d5fd71d..24a4d11 100644
        "deleteN_one": "{{count}} sil",
        "deleteN_other": "{{count}} sil",
 -      "welcomeTitle": "FreeCut'a Hoş Geldiniz",
-+      "welcomeTitle": "Studio'a Hoş Geldiniz",
++      "welcomeTitle": "Studio'ya Hoş Geldiniz",
        "welcomeDescription": "İlk video projenizi oluşturarak başlayın. Çözünürlüğünüzü ve kare hızınızı seçin, sonra düzenlemeye başlayın!",
        "noResultsTitle": "Proje bulunamadı",
        "noResultsDescription": "Arama ölçütlerinizle eşleşen proje bulamadık. Filtreleri veya arama terimlerini değiştirmeyi deneyin.",
@@ -2039,7 +2061,7 @@ index d5fd71d..24a4d11 100644
        "seeItInAction": "Çalışırken Gör",
 -      "seeItInActionSubheading": "FreeCut'ın düzenleme yeteneklerinin kısa bir demosunu izleyin.",
 -      "demoPreviewAlt": "FreeCut demo önizlemesi",
-+      "seeItInActionSubheading": "Studio'ın düzenleme yeteneklerinin kısa bir demosunu izleyin.",
++      "seeItInActionSubheading": "Studio'nun düzenleme yeteneklerinin kısa bir demosunu izleyin.",
 +      "demoPreviewAlt": "Studio demo önizlemesi",
        "watchDemoOnYouTube": "Demoyu YouTube'da İzle",
        "faqHeading": "Sık Sorulan Sorular",
@@ -2116,12 +2138,12 @@ index d5fd71d..24a4d11 100644
 +      "causePermission": "Studio artık çalışma klasörünüzü kullanma iznine sahip değil. Yeniden bağlayın veya başka bir klasör seçin.",
        "causeMissing": "Çalışma klasörünüz bulunamadı. Taşınmış, yeniden adlandırılmış veya silinmiş olabilir.",
 -      "causeUnsupported": "Çalışma klasörünüz, FreeCut'ın ihtiyaç duyduğu her şeyi desteklemeyen bir sürücüde. Buluta eşitlenen klasörler ve ağ klasörleri genellikle böyle davranır. Yerel bir diskteki klasörü seçmek sorunu genellikle çözer."
-+      "causeUnsupported": "Çalışma klasörünüz, Studio'ın ihtiyaç duyduğu her şeyi desteklemeyen bir sürücüde. Buluta eşitlenen klasörler ve ağ klasörleri genellikle böyle davranır. Yerel bir diskteki klasörü seçmek sorunu genellikle çözer."
++      "causeUnsupported": "Çalışma klasörünüz, Studio'nun ihtiyaç duyduğu her şeyi desteklemeyen bir sürücüde. Buluta eşitlenen klasörler ve ağ klasörleri genellikle böyle davranır. Yerel bir diskteki klasörü seçmek sorunu genellikle çözer."
      }
    }
  }
 diff --git a/src/i18n/locales/partials/tr/remaining-ui.json b/src/i18n/locales/partials/tr/remaining-ui.json
-index c169781..fc979d0 100644
+index c169781..1ec592f 100644
 --- a/src/i18n/locales/partials/tr/remaining-ui.json
 +++ b/src/i18n/locales/partials/tr/remaining-ui.json
 @@ -186,7 +186,7 @@
@@ -2129,7 +2151,7 @@ index c169781..fc979d0 100644
          "savedAndAdded": "\"{{fileName}}\" kaydedildi ve zaman çizelgesine eklendi."
        },
 -      "defaultTtsPrompt": "FreeCut'a hoş geldiniz. Bu ses tarayıcıda yerel olarak oluşturuldu.",
-+      "defaultTtsPrompt": "Studio'a hoş geldiniz. Bu ses tarayıcıda yerel olarak oluşturuldu.",
++      "defaultTtsPrompt": "Studio'ya hoş geldiniz. Bu ses tarayıcıda yerel olarak oluşturuldu.",
        "musicPresets": {
          "lofiChillLabel": "Lo-fi Rahat",
          "lofiChillPrompt": "Tozlu davullar, yumuşak bas ve rüya gibi synth melodisiyle sıcak lo-fi beat",
@@ -2388,7 +2410,7 @@ index ffed477..24aef2c 100644
        "install": "Instalar",
        "notNow": "Agora não",
 diff --git a/src/i18n/locales/tr.json b/src/i18n/locales/tr.json
-index e588d2c..77d954a 100644
+index e588d2c..f6080e1 100644
 --- a/src/i18n/locales/tr.json
 +++ b/src/i18n/locales/tr.json
 @@ -11,8 +11,8 @@
@@ -2397,8 +2419,8 @@ index e588d2c..77d954a 100644
      "installPrompt": {
 -      "label": "FreeCut’ı yükle",
 -      "title": "FreeCut’ı yükle",
-+      "label": "Studio’ı yükle",
-+      "title": "Studio’ı yükle",
++      "label": "Studio'yu yükle",
++      "title": "Studio'yu yükle",
        "description": "Masaüstünden veya ana ekrandan aç.",
        "install": "Yükle",
        "notNow": "Şimdi değil",
@@ -2417,25 +2439,3 @@ index ad79200..d0a1765 100644
        "description": "从桌面或主屏幕启动。",
        "install": "安装",
        "notNow": "暂不",
-diff --git a/src/features/media-library/components/media-card.test.tsx b/src/features/media-library/components/media-card.test.tsx
-index 69f027d..4ab1f56 100644
---- a/src/features/media-library/components/media-card.test.tsx
-+++ b/src/features/media-library/components/media-card.test.tsx
-@@ -591,7 +591,7 @@ describe('MediaCard', () => {
-     expect(mediaStoreState.openMissingMediaDialog).toHaveBeenCalledTimes(1)
-     expect(mediaStoreState.showNotification).toHaveBeenCalledWith({
-       type: 'error',
--      message: 'FreeCut needs permission to read "movie.mkv" before extracting subtitles.',
-+      message: 'Studio needs permission to read "movie.mkv" before extracting subtitles.',
-     })
-   })
- 
-@@ -619,7 +619,7 @@ describe('MediaCard', () => {
-       expect(mediaStoreState.showNotification).toHaveBeenCalledWith({
-         type: 'error',
-         message:
--          'FreeCut could not read "movie.mkv" right now. Close any app using it and try again.',
-+          'Studio could not read "movie.mkv" right now. Close any app using it and try again.',
-       })
-     })
-     expect(embeddedSubtitlePickerStoreMocks.open).not.toHaveBeenCalled()
