@@ -315,7 +315,7 @@ describe('Library care landing (FL-366)', () => {
     expect(screen.queryByRole('button', { name: en.frameleaf_carehome_check_now })).not.toBeInTheDocument();
   });
 
-  it("sends a member's missing and damaged files, Review it and Things to fix to Damaged and missing files (FL-1338)", async () => {
+  it("sends a member's missing and damaged files and Review it to Damaged and missing files (FL-1338), Things to fix to its page", async () => {
     user.isAdmin = false;
     vi.mocked(getSummary).mockResolvedValue(summary({ missing: 2, damagedConfirmed: 1 }, new Date().toISOString()));
     const needs = '/user-settings?area=care&section=files&tab=needs';
@@ -329,9 +329,9 @@ describe('Library care landing (FL-366)', () => {
     const damaged = screen.getByText('1 damaged file').closest('li')!;
     await fireEvent.click(within(damaged).getByRole('button', { name: en.frameleaf_carehome_review }));
     expect(goto).toHaveBeenLastCalledWith(needs);
+    // FL-1807: Things to fix is every account's way to Live Photo pairing and their file lists.
     await fireEvent.click(screen.getByRole('button', { name: 'Open Things to fix' }));
-    expect(goto).toHaveBeenLastCalledWith(needs);
-    expect(goto).not.toHaveBeenCalledWith(expect.stringContaining('section=repair'));
+    expect(goto).toHaveBeenLastCalledWith(expect.stringContaining('section=repair'));
   });
 
   it('shows the check after an Immich import, with what it found, and pauses it (FL-416)', async () => {

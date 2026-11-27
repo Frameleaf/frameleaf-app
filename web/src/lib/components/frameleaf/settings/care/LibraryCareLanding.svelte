@@ -50,6 +50,7 @@
     getLocationScanStatus,
     getLedgerSummary,
     getTidyUp,
+    getUtilitiesSummary,
     getQueue,
     getServerStatistics,
     getSummary,
@@ -80,9 +81,9 @@
     mdiFileQuestionOutline,
     mdiFileSearchOutline,
     mdiImageSearchOutline,
-    mdiHarddisk,
+    mdiFileImageOutline,
     mdiMapMarkerOutline,
-    mdiMapMarkerRadiusOutline,
+    mdiMapMarkerPlusOutline,
     mdiTuneVariant,
     mdiPlayOutline,
     mdiShieldAlertOutline,
@@ -121,6 +122,19 @@
       identical = undefined;
     }
   };
+
+  // FL-1807: Fix locations says how many photos have no place, as the Tools directory did (FL-519).
+  let withoutPlace = $state<number>();
+  const readWithoutPlace = async () => {
+    try {
+      withoutPlace = (await getUtilitiesSummary()).withoutPlace;
+    } catch {
+      withoutPlace = undefined;
+    }
+  };
+  $effect(() => {
+    void readWithoutPlace();
+  });
 
   $effect(() => {
     if (!isAdmin) {
@@ -681,18 +695,18 @@
         note={$t('frameleaf_carehome_row_fix_note')}
       >
         {#snippet action()}
-          <Button
-            label={openLabel('frameleaf_carehome_row_fix')}
-            onclick={() => (isAdmin ? open('repair') : goto(memberFiles))}
-          >
+          <Button label={openLabel('frameleaf_carehome_row_fix')} onclick={() => open('repair')}>
             {$t('frameleaf_carehome_open')}<Icon icon={mdiChevronRight} size="1em" aria-hidden />
           </Button>
         {/snippet}
       </Item>
       <Item
-        icon={mdiMapMarkerRadiusOutline}
+        icon={mdiMapMarkerPlusOutline}
         name={$t('library_care_tool_geolocation')}
         detail={$t('library_care_tool_geolocation_description')}
+        status={withoutPlace === undefined
+          ? undefined
+          : $t('frameleaf_utilities_state_no_place', { values: { count: withoutPlace } })}
       >
         {#snippet action()}
           <Button
@@ -795,7 +809,7 @@
         {/snippet}
       </Item>
       <Item
-        icon={mdiHarddisk}
+        icon={mdiFileImageOutline}
         name={$t('library_care_tool_large_files')}
         detail={$t('library_care_tool_large_files_description')}
       >

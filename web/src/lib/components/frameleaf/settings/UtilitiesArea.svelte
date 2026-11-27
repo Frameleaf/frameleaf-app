@@ -100,7 +100,7 @@
   // An old link to the directory, or to a tool that no longer exists, opens Library care.
   $effect(() => {
     if (!selected && page.url.searchParams.get('section') !== 'file-trash') {
-      void goto(commandCenterUrl('care'), { replaceState: true });
+      void goto(home.href, { replaceState: true });
     }
   });
 
