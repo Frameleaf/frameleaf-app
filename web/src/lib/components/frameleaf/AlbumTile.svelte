@@ -16,6 +16,8 @@
     mdiAutoFix,
     mdiBackupRestore,
     mdiFolderOutline,
+    mdiImageMultipleOutline,
+    mdiSubdirectoryArrowRight,
   } from '@mdi/js';
   import type { Snippet } from 'svelte';
   import { locale, t } from 'svelte-i18n';
@@ -45,6 +47,15 @@
     href?: string;
     /** Just moved by Move earlier / Move later: the tile shows a ring that fades, so the eye finds it. */
     moved?: boolean;
+    /**
+     * FL-1836: albums shown inside this one. A collection, or an album holding albums, is one tile drawn as a
+     * stack with "3 albums" on its cover; its albums never appear outside it.
+     */
+    inside?: number;
+    /** FL-1836: a search result's parent, shown as "in Family" under the name. */
+    where?: string;
+    /** FL-1836: for a collection, its items with everything inside it; the album's own count otherwise. */
+    total?: number;
   }
 
   let {
@@ -62,6 +73,9 @@
     actions,
     href: hrefOverride,
     moved = false,
+    inside = 0,
+    where,
+    total,
   }: Props = $props();
 
   let over = $state(false);
@@ -84,7 +98,7 @@
   // FL-416: a Recovered Media album (files Immich had lost track of, brought back after an Immich import)
   // carries a small mark of its own and says so under its name, as the approved prototype does.
   const recoveredLabel = $derived(album.recovered ? $t('frameleaf_albums_recovered_mark') : undefined);
-  const meta = $derived(
+  const metaLine = $derived(
     [
       // FL-1297: while its numbers are still being worked out, a tile shows its name and cover and no count.
       album.statsPending ? undefined : $t('frameleaf_albums_items', { values: { count: album.assetCount } }),
@@ -93,6 +107,19 @@
     ]
       .filter(Boolean)
       .join(' · '),
+  );
+  const holds = $derived(inside > 0 || album.kind === AlbumKind.Collection);
+  const meta = $derived(
+    holds
+      ? [
+          $t('frameleaf_albums_count', { values: { count: inside } }),
+          album.statsPending || !(total ?? album.assetCount)
+            ? undefined
+            : $t('frameleaf_albums_items', { values: { count: total ?? album.assetCount } }),
+        ]
+          .filter(Boolean)
+          .join(' · ')
+      : metaLine,
   );
 
   const handleDragStart = (event: DragEvent) => {
@@ -150,79 +177,91 @@
   ondragleave={() => (over = false)}
   ondrop={handleDrop}
 >
-  <a class="cover" {href} aria-label={$t('frameleaf_albums_open', { values: { name } })}>
-    <!-- A cover whose thumbnail is not made yet (or failed) shows the album icon, never a broken image. -->
-    {#if cover && failedCover !== cover}
-      <img
-        src={cover}
-        alt=""
-        loading="lazy"
-        draggable="false"
-        data-fl-shared="album:{album.id}"
-        onerror={() => (failedCover = cover)}
-      />
-    {:else}
-      <span class="cover-empty" aria-hidden="true">
-        <AlbumIcon name={album.icon ?? defaultIconFor(album.kind)} size={layout === 'grid' ? '30' : '20'} />
-      </span>
+  <div class="stack" class:stacked={holds}>
+    {#if holds && layout === 'grid'}
+      <span class="sheet two" aria-hidden="true"></span>
+      <span class="sheet one" aria-hidden="true"></span>
     {/if}
-    <!-- Top leading corner (collections.css .al-smart); the top trailing corner belongs to the "…" button. -->
-    <span class="marks">
-      {#if album.isSmart}
-        <span class="mark" title={$t('frameleaf_albums_smart_mark')} aria-hidden="true">
-          <Icon icon={mdiAutoFix} size={ICON_SIZE.xs} />
+    <a class="cover" {href} aria-label={$t('frameleaf_albums_open', { values: { name } })}>
+      <!-- A cover whose thumbnail is not made yet (or failed) shows the album icon, never a broken image. -->
+      {#if cover && failedCover !== cover}
+        <img
+          src={cover}
+          alt=""
+          loading="lazy"
+          draggable="false"
+          data-fl-shared="album:{album.id}"
+          onerror={() => (failedCover = cover)}
+        />
+      {:else}
+        <span class="cover-empty" aria-hidden="true">
+          <AlbumIcon name={album.icon ?? defaultIconFor(album.kind)} size={layout === 'grid' ? '30' : '20'} />
         </span>
       {/if}
-      {#if album.folderAlbum}
-        <!-- FL-838: made from a folder in the viewer's library; worded like the header badge -->
-        <span
-          class="mark folder"
-          class:labelled={layout === 'grid'}
-          title={$t('frameleaf_album_folder_mark')}
-          data-testid="album-folder-mark"
-        >
-          <Icon icon={mdiFolderOutline} size={ICON_SIZE.xs} aria-hidden />
-          {#if layout === 'grid'}<span>{$t('frameleaf_album_folder_badge')}</span>{/if}
+      <!-- Top leading corner (collections.css .al-smart); the top trailing corner belongs to the "…" button. -->
+      <span class="marks">
+        {#if album.isSmart}
+          <span class="mark" title={$t('frameleaf_albums_smart_mark')} aria-hidden="true">
+            <Icon icon={mdiAutoFix} size={ICON_SIZE.xs} />
+          </span>
+        {/if}
+        {#if album.kind === AlbumKind.Space}
+          <span class="mark space" title={$t('frameleaf_albums_space_mark')} aria-hidden="true">
+            <Icon icon={mdiAccountMultipleOutline} size={ICON_SIZE.xs} />
+          </span>
+        {/if}
+        {#if recoveredLabel}
+          <span
+            class="mark recovered"
+            role="img"
+            title={recoveredLabel}
+            aria-label={recoveredLabel}
+            data-testid="album-recovered-mark"
+          >
+            <Icon icon={mdiBackupRestore} size={ICON_SIZE.xs} aria-hidden />
+          </span>
+        {/if}
+        {#if originLabel}
+          <span
+            class="mark origin"
+            role="img"
+            title={originLabel}
+            aria-label={originLabel}
+            data-testid="album-origin-mark"
+          >
+            <Icon icon={mdiAccountArrowLeftOutline} size={ICON_SIZE.xs} aria-hidden />
+          </span>
+        {/if}
+      </span>
+      {#if holds && layout === 'grid'}
+        <span class="inside-badge">
+          <Icon icon={mdiImageMultipleOutline} size={ICON_SIZE.xs} aria-hidden />
+          {$t('frameleaf_albums_count', { values: { count: inside } })}
         </span>
       {/if}
-      {#if album.kind === AlbumKind.Space}
-        <span class="mark space" title={$t('frameleaf_albums_space_mark')} aria-hidden="true">
-          <Icon icon={mdiAccountMultipleOutline} size={ICON_SIZE.xs} />
-        </span>
-      {/if}
-      {#if recoveredLabel}
-        <span
-          class="mark recovered"
-          role="img"
-          title={recoveredLabel}
-          aria-label={recoveredLabel}
-          data-testid="album-recovered-mark"
-        >
-          <Icon icon={mdiBackupRestore} size={ICON_SIZE.xs} aria-hidden />
-        </span>
-      {/if}
-      {#if originLabel}
-        <span
-          class="mark origin"
-          role="img"
-          title={originLabel}
-          aria-label={originLabel}
-          data-testid="album-origin-mark"
-        >
-          <Icon icon={mdiAccountArrowLeftOutline} size={ICON_SIZE.xs} aria-hidden />
-        </span>
-      {/if}
-    </span>
-  </a>
+    </a>
+  </div>
   <div class="text">
     <a class="name" {href}
       >{#if album.color}<AlbumMark icon={album.icon} color={album.color} kind={album.kind} size="16" />
       {/if}{name}</a
     >
     <div class="meta">
+      {#if album.folderAlbum}
+        <!-- FL-838: made from a folder in the viewer's library (FL-1836: an icon by the count, not a badge) -->
+        <span class="folder" title={$t('frameleaf_album_folder_mark')} data-testid="album-folder-mark">
+          <Icon icon={mdiFolderOutline} size={ICON_SIZE.xs} aria-label={$t('frameleaf_album_folder_mark')} />
+        </span>
+      {/if}
       <small>{meta}</small>
       <AlbumAvatarStack users={others} />
     </div>
+    {#if where}
+      <span class="where">
+        <Icon icon={mdiSubdirectoryArrowRight} size={ICON_SIZE.xs} aria-hidden />
+        <span>{$t('frameleaf_albums_lives_in', { values: { name: where } })}</span>
+      </span>
+    {/if}
   </div>
   {#if actions}
     <div class="actions">{@render actions()}</div>
@@ -366,6 +405,7 @@
   .actions {
     position: absolute;
     top: var(--fl-space-2);
+    margin-top: var(--fl-space-2); /* the stack's room above every grid cover */
     inset-inline-end: var(--fl-space-2);
     opacity: 0;
     transition: opacity var(--fl-motion-fast) var(--fl-ease);
@@ -395,15 +435,76 @@
   }
   .tile.list .actions {
     position: static;
+    margin-top: 0;
     opacity: 1;
   }
-  .mark.folder.labelled {
+  /*
+   * FL-1836: a collection is a stack, two sheets peeking above its cover. Every grid tile keeps the 8px the
+   * sheets need, so covers line up across a row.
+   */
+  .stack {
+    position: relative;
+  }
+  .tile.grid .stack {
+    padding-top: var(--fl-space-2);
+  }
+  .sheet {
+    position: absolute;
+    left: 10%;
+    right: 10%;
+    height: 12px;
+    border-radius: var(--fl-radius-card) var(--fl-radius-card) 0 0;
+    background: color-mix(in srgb, var(--fl-text), transparent 62%);
+  }
+  .sheet.two {
+    top: 0;
+    left: 18%;
+    right: 18%;
+    background: color-mix(in srgb, var(--fl-text), transparent 80%);
+  }
+  .sheet.one {
+    top: var(--fl-space-1);
+  }
+  .inside-badge {
+    position: absolute;
+    left: var(--fl-space-2);
+    bottom: var(--fl-space-2);
+    display: inline-flex;
+    align-items: center;
     gap: var(--fl-space-1);
-    width: auto;
-    padding-inline: var(--fl-space-2);
+    min-height: 24px;
+    padding: 0 var(--fl-space-2);
     border-radius: 999px;
+    background: color-mix(in srgb, var(--fl-viewer-canvas), transparent 30%);
+    color: var(--fl-viewer-text);
     font-size: var(--fl-font-small);
     font-weight: 600;
+    pointer-events: none;
+  }
+  .meta .folder {
+    display: inline-flex;
+    flex: none;
+    margin-inline-end: calc(-1 * var(--fl-space-1));
+  }
+  .meta small {
+    flex: 1;
+    min-width: 0;
+  }
+  .where {
+    display: flex;
+    align-items: center;
+    gap: var(--fl-space-1);
+    min-width: 0;
+    color: var(--fl-muted);
+    font-size: var(--fl-font-small);
+  }
+  .where > span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .tile.list .stack {
+    flex: 0 0 3rem;
   }
   .tile.list .marks {
     top: auto;

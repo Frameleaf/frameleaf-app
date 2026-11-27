@@ -1,7 +1,6 @@
 <script lang="ts">
   import { scrollMemory } from '$lib/actions/scroll-memory';
   import AlbumDirectory, { albumDirectoryHeadingId } from '$lib/components/frameleaf/AlbumDirectory.svelte';
-  import FolderAlbumsNotice from '$lib/components/frameleaf/FolderAlbumsNotice.svelte';
   import Theme from '$lib/components/frameleaf/Theme.svelte';
   import UserPageLayout from '$lib/components/layouts/UserPageLayout.svelte';
   import SkipLink from '$lib/elements/SkipLink.svelte';
@@ -31,8 +30,6 @@
   <Theme theme={themeManager.value === AppTheme.Dark ? 'dark' : 'light'}>
     <!-- The page surface reaches the foot of the window however few albums there are. -->
     <div class="fl-page-fill">
-      <!-- FL-1837: a one-time offer of one album for each event folder; kept outside AlbumDirectory on purpose -->
-      <FolderAlbumsNotice onChanged={refresh} />
       <AlbumDirectory tree={data.tree} spaceInvitations={data.spaceInvitations} onRefresh={refresh} />
     </div>
   </Theme>

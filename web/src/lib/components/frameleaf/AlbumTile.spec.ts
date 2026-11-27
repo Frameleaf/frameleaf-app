@@ -67,7 +67,7 @@ describe('AlbumTile', () => {
     render(AlbumTile, { album, currentUserId: 'me' });
     expect(screen.queryByTestId('album-recovered-mark')).toBeNull();
   });
-  it('marks an album made from a folder "Folder album" on its cover (FL-838)', () => {
+  it('marks an album made from a folder with a folder icon by its count, not a badge (FL-838, FL-1836)', () => {
     const album = albumFactory.build({
       albumThumbnailAssetId: null,
       folderAlbum: { libraryId: 'library-1', folderPath: '/mnt/photos/Banff' },
@@ -75,7 +75,25 @@ describe('AlbumTile', () => {
     render(AlbumTile, { album, currentUserId: 'me' });
 
     const mark = screen.getByTestId('album-folder-mark');
-    expect(mark).toHaveTextContent('Folder album');
+    expect(mark).not.toHaveTextContent('Folder album');
     expect(mark.getAttribute('title')).toBe('Made from a folder in your library');
+    expect(screen.getByLabelText('Made from a folder in your library')).toBeInTheDocument();
+  });
+
+  it('draws a collection as a stack that says how many albums it holds (FL-1836)', () => {
+    const album = albumFactory.build({ albumThumbnailAssetId: null, assetCount: 412 });
+    const { container } = render(AlbumTile, { album, currentUserId: 'me', inside: 3, href: '/albums?in=x' });
+
+    expect(container.querySelector('.stack.stacked')).not.toBeNull();
+    expect(container.querySelectorAll('.sheet')).toHaveLength(2);
+    expect(container.querySelector('.inside-badge')).toHaveTextContent('3 albums');
+    expect(screen.getByRole('article')).toHaveTextContent('3 albums · 412 items');
+    expect(screen.getByRole('link', { name: /Open/ })).toHaveAttribute('href', '/albums?in=x');
+  });
+
+  it('says where a search result lives (FL-1836)', () => {
+    const album = albumFactory.build({ albumThumbnailAssetId: null });
+    render(AlbumTile, { album, currentUserId: 'me', where: 'Family' });
+    expect(screen.getByText('in Family')).toBeInTheDocument();
   });
 });

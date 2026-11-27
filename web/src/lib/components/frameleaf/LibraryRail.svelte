@@ -30,7 +30,20 @@
   import { menuButtonId } from '$lib/components/shared-components/navigation-bar/NavigationBar.svelte';
   import { sidebarStore } from '$lib/stores/sidebar.svelte';
   import { websocketEvents } from '$lib/stores/websocket';
-  import { emptyAlbumTree, type FrameleafAlbumNode, type FrameleafAlbumTree } from '$lib/frameleaf/album-tree';
+  import {
+    emptyAlbumTree,
+    flattenAlbumTree,
+    type FrameleafAlbumNode,
+    type FrameleafAlbumTree,
+  } from '$lib/frameleaf/album-tree';
+  import {
+    pinnedInOrder,
+    placePinned,
+    recentAlbumIds,
+    pendingPins,
+    savePinnedOrder,
+    sortPinnedByName,
+  } from '$lib/frameleaf/pinned-albums';
   import {
     buildPhoneMenuDestinations,
     buildRailSections,
@@ -110,7 +123,7 @@
   import { debounce } from 'lodash-es';
   import { onMount, onDestroy, tick, untrack, type Snippet } from 'svelte';
   import type { Translations } from 'svelte-i18n';
-  import { t } from 'svelte-i18n';
+  import { locale, t } from 'svelte-i18n';
   import { SvelteSet } from 'svelte/reactivity';
 
   /**
@@ -453,6 +466,109 @@
   });
 
   const preferences = $derived(authManager.authenticated ? authManager.preferences : undefined);
+
+  /*
+   * FL-1836 (owner-approved design, 2026-11-27): the Albums section lists the pinned albums and the
+   * ones opened recently on this device instead of the whole tree; the Albums page browses the rest.
+   * Pinned albums are A to Z until someone drags one (or moves it with ⌥↑ ⌥↓); from then on that
+   * order is kept, and Sort A to Z goes back. Pins and recents whose album this rail cannot see
+   * (gone, out of reach, another workspace) are left out.
+   */
+  const RAIL_RECENT_ALBUMS = 5;
+  const albumNodes = $derived(new Map(flattenAlbumTree(tree).map((node) => [node.id, node])));
+  const findAlbumNode = (id: string) => albumNodes.get(id);
+  // The pins as they will be once any save in flight lands, so a reorder never drops a pin made a moment ago.
+  const pinnedIds = $derived($pendingPins ?? preferences?.albums.pinned ?? []);
+  const pinnedCustomOrder = $derived(preferences?.albums.pinnedCustomOrder ?? false);
+  /** The order on screen while a pinned album is dragged or a new order is being saved. */
+  let pinDraft = $state<string[] | null>(null);
+  let pinDragId = $state<string | null>(null);
+  const pinnedNodes = $derived(
+    pinDraft
+      ? pinnedInOrder(pinDraft, true, findAlbumNode, $locale ?? undefined)
+      : pinnedInOrder(pinnedIds, pinnedCustomOrder, findAlbumNode, $locale ?? undefined),
+  );
+  const recentNodes = $derived.by(() => {
+    const pinned = new Set(pinnedIds);
+    return $recentAlbumIds
+      .filter((id) => !pinned.has(id))
+      .map((id) => albumNodes.get(id))
+      .filter((node): node is FrameleafAlbumNode => !!node)
+      .slice(0, RAIL_RECENT_ALBUMS);
+  });
+  const savePinOrder = async (shown: string[], focusId?: string) => {
+    // Pins this rail cannot see keep their place at the end.
+    const order = [...shown, ...pinnedIds.filter((id) => !shown.includes(id))];
+    pinDraft = order;
+    await savePinnedOrder(order);
+    pinDraft = null;
+    if (focusId) {
+      await tick();
+      railElement?.querySelector<HTMLElement>(`a[data-pinned][data-album-id="${CSS.escape(focusId)}"]`)?.focus();
+    }
+  };
+  const finishPinDrag = (dropped: boolean) => {
+    if (!pinDragId) {
+      return;
+    }
+    pinDragId = null;
+    const shown = pinnedNodes.map(({ id }) => id);
+    const saved = pinnedInOrder(pinnedIds, pinnedCustomOrder, findAlbumNode, $locale ?? undefined).map(({ id }) => id);
+    if (dropped && shown.join('\n') !== saved.join('\n')) {
+      void savePinOrder(shown);
+    } else {
+      pinDraft = null;
+    }
+  };
+  const pinAttrs = (node: FrameleafAlbumNode) =>
+    iconOnly
+      ? {}
+      : {
+          'data-pinned': '',
+          draggable: true,
+          ondragstart: (event: DragEvent) => {
+            event.dataTransfer?.setData('text/plain', node.name);
+            if (event.dataTransfer) {
+              event.dataTransfer.effectAllowed = 'move';
+            }
+            pinDraft = pinnedNodes.map(({ id }) => id);
+            pinDragId = node.id;
+          },
+          ondragover: (event: DragEvent) => {
+            if (!pinDragId || !pinDraft) {
+              return;
+            }
+            event.preventDefault();
+            if (event.dataTransfer) {
+              event.dataTransfer.dropEffect = 'move';
+            }
+            if (pinDragId !== node.id) {
+              pinDraft = placePinned(pinDraft, pinDragId, pinDraft.indexOf(node.id));
+            }
+          },
+          ondrop: (event: DragEvent) => {
+            if (pinDragId) {
+              event.preventDefault();
+              finishPinDrag(true);
+            }
+          },
+          ondragend: () => finishPinDrag(false),
+          onkeydown: (event: KeyboardEvent) => {
+            if (!event.altKey || (event.key !== 'ArrowUp' && event.key !== 'ArrowDown')) {
+              return;
+            }
+            event.preventDefault();
+            const shown = pinnedNodes.map(({ id }) => id);
+            const index = shown.indexOf(node.id) + (event.key === 'ArrowUp' ? -1 : 1);
+            if (index >= 0 && index < shown.length) {
+              void savePinOrder(placePinned(shown, node.id, index), node.id);
+            }
+          },
+        };
+  const shortcutHref = (node: FrameleafAlbumNode) =>
+    node.kind === 'space' ? Route.viewAlbum({ id: node.id }) : scopedHref(Route.viewAlbum({ id: node.id }));
+  const isShortcutCurrent = (node: FrameleafAlbumNode) =>
+    node.kind === 'space' ? isSpaceCurrent(node) : isAlbumCurrent(node);
 
   const sections = $derived(
     buildRailSections({
@@ -904,7 +1020,14 @@
   </div>
 {/snippet}
 
-{#snippet railLink(label: string, icon: string | FrameleafAlbumNode, href: string, current: boolean, nested: boolean)}
+{#snippet railLink(
+  label: string,
+  icon: string | FrameleafAlbumNode,
+  href: string,
+  current: boolean,
+  nested: boolean,
+  attrs?: Record<string, unknown>,
+)}
   {#if typeof icon !== 'string' && renaming === icon.id}
     {@render renameRow(icon, nested && !iconOnly)}
   {:else}
@@ -918,8 +1041,8 @@
       aria-label={iconOnly ? label : undefined}
       data-album-id={typeof icon === 'string' ? undefined : icon.id}
       data-sveltekit-preload-data="hover"
-      {...typeof icon === 'string' ? {} : moveAttrs(icon)}
-      class:fl-dragging={typeof icon !== 'string' && dragId === icon.id}
+      {...typeof icon === 'string' ? {} : (attrs ?? moveAttrs(icon))}
+      class:fl-dragging={typeof icon !== 'string' && (dragId === icon.id || pinDragId === icon.id)}
       data-drop={typeof icon === 'string' ? undefined : dropClass(icon.id) || undefined}
     >
       {#if typeof icon === 'string'}
@@ -992,13 +1115,8 @@
   {/if}
 {/snippet}
 
-{#snippet albumIcons(node: FrameleafAlbumNode)}
-  {@render albumLink(node)}
-  {#if node.children.length > 0 && isCollectionOpen(node.id)}
-    {#each node.children as album (album.id)}
-      {@render albumIcons(album)}
-    {/each}
-  {/if}
+{#snippet shortcutLink(node: FrameleafAlbumNode, attrs: Record<string, unknown>)}
+  {@render railLink(node.name, node, shortcutHref(node), isShortcutCurrent(node), true, attrs)}
 {/snippet}
 
 {#snippet albumLink(node: FrameleafAlbumNode)}
@@ -1460,19 +1578,31 @@
             {#each section.destinations as destination (destination.id)}
               {@render destinationLink(destination)}
 
-              {#if destination.id === 'allAlbums' && !iconOnly}
-                {#if albumRoots.length > 0}<p class="sr-only">{$t('frameleaf_rail_move_hint')}</p>{/if}
-                {#each albumRoots as node (node.id)}
-                  {@render albumBranch(node)}
-                {/each}
-              {:else if destination.id === 'allAlbums'}
-                <!-- LibraryRail.jsx: the collapsed rail keeps each shown album as an icon (named on hover). -->
-                {#each albumRoots as node (node.id)}
-                  {@render albumIcons(node)}
-                {/each}
-              {/if}
               {#if destination.id === 'allAlbums'}
-                <!-- LibraryRail.jsx: saved searches follow the album tree, before Shared links. -->
+                <!-- FL-1836: Pinned, then Recent; the collapsed rail keeps the rows as icons (named on hover). -->
+                {#if pinnedNodes.length > 0}
+                  {#if !iconOnly}
+                    <div class="fl-subhead-row">
+                      <h3 class="fl-subhead">{$t('frameleaf_rail_pinned')}</h3>
+                      {#if pinnedCustomOrder}
+                        <button type="button" class="fl-subhead-action" onclick={() => void sortPinnedByName()}>
+                          {$t('frameleaf_rail_sort_az')}
+                        </button>
+                      {/if}
+                    </div>
+                    <p class="sr-only">{$t('frameleaf_rail_pinned_hint')}</p>
+                  {/if}
+                  {#each pinnedNodes as node (node.id)}
+                    {@render shortcutLink(node, pinAttrs(node))}
+                  {/each}
+                {/if}
+                {#if recentNodes.length > 0}
+                  {#if !iconOnly}<h3 class="fl-subhead">{$t('frameleaf_rail_recent')}</h3>{/if}
+                  {#each recentNodes as node (node.id)}
+                    {@render shortcutLink(node, {})}
+                  {/each}
+                {/if}
+                <!-- LibraryRail.jsx: saved searches follow the albums, before Shared links. -->
                 <RailSavedSearches {iconOnly} />
               {/if}
             {/each}
@@ -1554,6 +1684,46 @@
   }
   .nested-branch .nested-branch {
     margin-inline-start: 12px;
+  }
+  /*
+   * FL-1836 sub-headings (prototype .rail-subhead): text on the rail's 22px inset, in line with the
+   * icons; Sort A to Z ends where the Albums heading's "+" ends.
+   */
+  .fl-subhead {
+    margin: var(--fl-space-3) 0 var(--fl-space-1);
+    padding: 0 22px;
+    color: var(--fl-muted);
+    font-size: var(--fl-font-micro);
+    font-weight: 600;
+    letter-spacing: 0.02em;
+  }
+  .fl-subhead-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--fl-space-2);
+    padding-inline-end: 22px;
+  }
+  .fl-subhead-row .fl-subhead {
+    flex: 1;
+    min-width: 0;
+  }
+  .fl-subhead-action {
+    flex: none;
+    min-height: 28px;
+    margin-top: var(--fl-space-2);
+    padding: 0 var(--fl-space-2);
+    border: 0;
+    border-radius: var(--fl-radius-control);
+    background: none;
+    color: var(--fl-accent);
+    font: inherit;
+    font-size: var(--fl-font-micro);
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .fl-subhead-action:hover {
+    background: var(--fl-raised);
   }
   /*
    * Boards' tree (prototype .pro-tree: 16px a level, the twisty's column kept on every row): a

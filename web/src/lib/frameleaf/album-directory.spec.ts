@@ -4,7 +4,8 @@ import { albumFactory } from '@test-data/factories/album-factory';
 import { userAdminFactory } from '@test-data/factories/user-factory';
 import {
   albumAncestors,
-  arrangeAlbumDirectory,
+  arrangeInGroup,
+  browseAlbumDirectory,
   canEdit,
   isOwner,
   canDropOnCollection,
@@ -81,60 +82,147 @@ describe('album directory rules', () => {
     spaces: [space],
   });
 
-  it('lays out shelves, standalone albums and spaces with totals', () => {
-    const result = arrangeAlbumDirectory(directory, { filter: 'all', sort: 'modified', search: '', userId: 'me' });
-    expect(result.shelves.map(({ collection, albums }) => [collection.id, albums.map(({ id }) => id)])).toEqual([
-      ['family', ['rockies', 'winter']],
+  const browse = (options: Partial<Parameters<typeof browseAlbumDirectory>[1]> = {}) =>
+    browseAlbumDirectory(directory, {
+      inside: null,
+      filter: 'all',
+      sort: 'modified',
+      order: 'desc',
+      group: 'kind',
+      hideEmpty: true,
+      collectionsFirst: false,
+      search: '',
+      userId: 'me',
+      ...options,
+    });
+  const sections = (result: ReturnType<typeof browseAlbumDirectory>) =>
+    result.groups.map(({ id, albums }) => [id, albums.map((album) => album.id)]);
+
+  it('lists the top level grouped by kind, with a collection as one item and totals (FL-1836)', () => {
+    const result = browse();
+    expect(sections(result)).toEqual([
+      ['kind:collections', ['family']],
+      ['kind:smart', ['trail']],
+      ['kind:spaces', ['space']],
     ]);
-    expect(result.albums.map(({ id }) => id)).toEqual(['trail']);
-    expect(result.spaces.map(({ id }) => id)).toEqual(['space']);
-    expect(result.totals).toEqual({ albums: 3, collections: 1, shared: 2 });
+    expect(result.inside.get('family')).toBe(2);
+    // A collection's items are the server's total for it, everything inside included.
+    expect(result.items.get('family')).toBe(14);
+    expect(result.totals).toEqual({ albums: 3, collections: 1, spaces: 1, emptyHidden: 0 });
+    expect(result.path).toEqual([]);
     expect(result.empty).toBe(false);
   });
 
-  it('applies the filter pills', () => {
+  it('opens a collection in place, with the path down to it (FL-1836)', () => {
+    const result = browse({ inside: 'family', group: 'none' });
+    expect(result.here?.id).toBe('family');
+    expect(result.path.map(({ id }) => id)).toEqual(['family']);
+    expect(sections(result)).toEqual([['none', ['rockies', 'winter']]]);
+  });
+
+  it('applies the filter pills, including albums made from folders', () => {
     expect(matchesFilter(trail, 'owned', 'me')).toBe(false);
     expect(matchesFilter(trail, 'shared', 'me')).toBe(true);
     expect(matchesFilter(trail, 'smart', 'me')).toBe(true);
     expect(matchesFilter(rockies, 'smart', 'me')).toBe(false);
+    expect(matchesFilter(rockies, 'folders', 'me')).toBe(false);
+    expect(matchesFilter(owned({ folderAlbum: { libraryId: 'l', folderPath: '/p' } }), 'folders', 'me')).toBe(true);
 
-    const smart = arrangeAlbumDirectory(directory, { filter: 'smart', sort: 'title', search: '', userId: 'me' });
-    expect(smart.shelves).toEqual([]);
-    expect(smart.albums.map(({ id }) => id)).toEqual(['trail']);
-    expect(smart.spaces).toEqual([]);
-
-    const mine = arrangeAlbumDirectory(directory, { filter: 'owned', sort: 'title', search: '', userId: 'me' });
-    expect(mine.shelves[0].albums).toHaveLength(2);
-    expect(mine.albums).toEqual([]);
+    expect(sections(browse({ filter: 'smart' }))).toEqual([['kind:smart', ['trail']]]);
+    expect(sections(browse({ filter: 'owned' }))).toEqual([
+      ['kind:collections', ['family']],
+      ['kind:spaces', ['space']],
+    ]);
   });
 
-  it('keeps a shelf while searching when the collection itself matches, and hides it otherwise', () => {
-    const byAlbum = arrangeAlbumDirectory(directory, { filter: 'all', sort: 'title', search: 'winter', userId: 'me' });
-    expect(byAlbum.shelves[0].albums.map(({ id }) => id)).toEqual(['winter']);
-    expect(byAlbum.albums).toEqual([]);
+  it('searches every level below where you are, and says when nothing matches', () => {
+    const byAlbum = browse({ search: 'winter', group: 'none' });
+    expect(byAlbum.searching).toBe(true);
+    expect(sections(byAlbum)).toEqual([['none', ['winter']]]);
 
-    const byCollection = arrangeAlbumDirectory(directory, {
-      filter: 'all',
-      sort: 'title',
-      search: 'family',
-      userId: 'me',
-    });
-    expect(byCollection.shelves[0].albums).toHaveLength(2);
-    expect(byCollection.spaces.map(({ id }) => id)).toEqual(['space']);
+    const insideFamily = browse({ inside: 'family', search: 'summer', group: 'none' });
+    expect(sections(insideFamily)).toEqual([['none', ['rockies']]]);
 
-    const miss = arrangeAlbumDirectory(directory, { filter: 'all', sort: 'title', search: 'zzz', userId: 'me' });
+    const miss = browse({ search: 'zzz' });
     expect(miss.empty).toBe(true);
-    expect(miss.searching).toBe(true);
   });
 
-  it('offers one sort menu whose orders put missing dates last', () => {
-    const a = owned({ id: 'a', albumName: 'B', assetCount: 1, endDate: '2026-08-01T00:00:00.000Z' });
-    const b = owned({ id: 'b', albumName: 'A', assetCount: 5, endDate: undefined });
-    const c = owned({ id: 'c', albumName: 'C', assetCount: 3, endDate: '2026-09-01T00:00:00.000Z' });
-    const ids = (sort: Parameters<typeof compareAlbums>[0]) => [a, b, c].sort(compareAlbums(sort)).map(({ id }) => id);
-    expect(ids('title')).toEqual(['b', 'a', 'c']);
-    expect(ids('items')).toEqual(['b', 'c', 'a']);
-    expect(ids('recent-photo')).toEqual(['c', 'a', 'b']);
+  it('hides empty albums, and collections holding only empty albums, unless asked (FL-1836)', () => {
+    const empty = owned({ id: 'empty', albumName: 'Empty', assetCount: 0 });
+    const shell = owned({ id: 'shell', albumName: 'Shell', kind: AlbumKind.Collection, assetCount: 0 });
+    const hollow = owned({ id: 'hollow', albumName: 'Hollow', parentId: 'shell', assetCount: 0 });
+    const withEmpties = tree({
+      ...directory,
+      collections: [...directory.collections, { collection: shell, albums: [hollow], albumCount: 1, assetCount: 0 }],
+      albums: [...directory.albums, empty],
+    });
+    const options = {
+      inside: null,
+      filter: 'all' as const,
+      sort: 'title' as const,
+      order: 'asc' as const,
+      group: 'none' as const,
+      collectionsFirst: false,
+      search: '',
+      userId: 'me',
+    };
+    const hidden = browseAlbumDirectory(withEmpties, { ...options, hideEmpty: true });
+    expect(hidden.listed.map(({ id }) => id)).toEqual(['family', 'space', 'trail']);
+    expect(hidden.totals.emptyHidden).toBe(2);
+    const shown = browseAlbumDirectory(withEmpties, { ...options, hideEmpty: false });
+    expect(shown.listed.map(({ id }) => id)).toEqual(['empty', 'family', 'space', 'shell', 'trail']);
+    expect(shown.totals.emptyHidden).toBe(0);
+  });
+
+  it('groups by source, year, month and owner, with sections in a fixed or dated order (FL-1836)', () => {
+    const folder = owned({
+      id: 'folder',
+      albumName: '2026-11-19 - Event',
+      assetCount: 4,
+      endDate: '2026-11-19T00:00:00.000Z',
+      folderAlbum: { libraryId: 'l', folderPath: '/photos/2026-11-19 - Event' },
+    });
+    const old = owned({ id: 'old', albumName: 'Old', assetCount: 2, endDate: '2019-05-01T00:00:00.000Z' });
+    const mixed = tree({ ...directory, albums: [...directory.albums, folder, old] });
+    const by = (group: 'source' | 'year' | 'month' | 'owner') =>
+      browseAlbumDirectory(mixed, {
+        inside: null,
+        filter: 'all',
+        sort: 'title',
+        order: 'desc',
+        group,
+        hideEmpty: true,
+        collectionsFirst: false,
+        search: '',
+        userId: 'me',
+      }).groups.map(({ id }) => id);
+    expect(by('source')).toEqual(['source:made', 'source:folders', 'source:smart', 'source:spaces']);
+    expect(by('year').slice(0, 2)).toEqual(['year:2026', 'year:2019']);
+    expect(by('year').at(-1)).toBe('year:none');
+    expect(by('month').slice(0, 2)).toEqual(['month:2026-11', 'month:2019-05']);
+    expect(by('owner')).toEqual(['owner:me', 'owner:jamie']);
+  });
+
+  it('puts collections first when asked', () => {
+    const result = browse({ group: 'none', sort: 'title', order: 'desc', collectionsFirst: true });
+    expect(result.listed[0].id).toBe('family');
+  });
+
+  it('sorts by date of photos, name (as people read numbers), recently opened, changes and item count', () => {
+    const a = owned({ id: 'a', albumName: 'Album 10', assetCount: 1, endDate: '2026-08-01T00:00:00.000Z' });
+    const b = owned({ id: 'b', albumName: 'Album 9', assetCount: 5, endDate: undefined });
+    const c = owned({ id: 'c', albumName: 'Album 11', assetCount: 3, endDate: '2026-09-01T00:00:00.000Z' });
+    const ids = (...args: Parameters<typeof compareAlbums>) =>
+      [a, b, c].sort(compareAlbums(...args)).map(({ id }) => id);
+    expect(ids('title', 'asc')).toEqual(['b', 'a', 'c']);
+    expect(ids('title', 'desc')).toEqual(['c', 'a', 'b']);
+    expect(ids('items', 'desc')).toEqual(['b', 'c', 'a']);
+    expect(ids('items', 'asc')).toEqual(['a', 'c', 'b']);
+    expect(ids('date', 'desc')).toEqual(['c', 'a', 'b']);
+    expect(ids('date', 'asc')).toEqual(['a', 'c', 'b']);
+    expect(ids('opened', 'desc', ['c', 'b'])).toEqual(['c', 'b', 'a']);
+    // Never opened here goes last whichever way the list runs.
+    expect(ids('opened', 'asc', ['c', 'b'])).toEqual(['b', 'c', 'a']);
   });
 
   it('lets only the owner drag an album onto a collection they can edit', () => {
@@ -181,15 +269,16 @@ describe('album directory rules', () => {
   });
 
   it('keeps the server\'s own order under "Custom order" (FL-52)', () => {
-    const result = arrangeAlbumDirectory(directory, { filter: 'all', sort: 'custom', search: '', userId: 'me' });
-    expect(result.shelves[0].albums.map(({ id }) => id)).toEqual(['winter', 'rockies']);
+    const result = browse({ inside: 'family', group: 'none', sort: 'custom' });
+    expect(result.listed.map(({ id }) => id)).toEqual(['winter', 'rockies']);
     expect(normalizeAlbumDirectoryView({ sort: 'custom' }).sort).toBe('custom');
   });
 
   it('names the group a custom order applies to (FL-52)', () => {
-    expect(orderGroupOf(directory, 'family')).toEqual({ parentId: null, ids: ['family'] });
+    // FL-1836: the siblings the page shows together, as the server's hierarchy groups them.
+    expect(orderGroupOf(directory, 'family')).toEqual({ parentId: null, ids: ['family', 'trail'] });
     expect(orderGroupOf(directory, 'rockies')).toEqual({ parentId: 'family', ids: ['winter', 'rockies'] });
-    expect(orderGroupOf(directory, 'trail')).toEqual({ parentId: null, ids: ['trail'] });
+    expect(orderGroupOf(directory, 'trail')).toEqual({ parentId: null, ids: ['family', 'trail'] });
     expect(orderGroupOf(directory, 'space')).toEqual({ parentId: null, ids: ['space'] });
     expect(orderGroupOf(directory, 'missing')).toBeUndefined();
   });
@@ -210,14 +299,16 @@ describe('album directory rules', () => {
     expect(placeBefore(['a', 'b'], 'x', 'a')).toBeUndefined();
   });
 
-  it('repairs a persisted view', () => {
+  it('repairs a persisted view, and reads a sort saved before FL-1836', () => {
     expect(normalizeAlbumDirectoryView(null)).toEqual(defaultAlbumDirectoryView);
-    expect(normalizeAlbumDirectoryView({ filter: 'smart', sort: 'nope', view: 'list', collapsed: ['a', 1] })).toEqual({
-      filter: 'smart',
-      sort: 'modified',
-      view: 'list',
-      collapsed: ['a'],
-    });
+    expect(defaultAlbumDirectoryView.group).toBe('kind');
+    expect(
+      normalizeAlbumDirectoryView({ filter: 'smart', sort: 'nope', view: 'list', group: 'x', collapsed: ['a', 1] }),
+    ).toEqual({ ...defaultAlbumDirectoryView, filter: 'smart', view: 'list', collapsed: ['a'] });
+    expect(normalizeAlbumDirectoryView({ sort: 'oldest-photo' })).toMatchObject({ sort: 'date', order: 'asc' });
+    expect(normalizeAlbumDirectoryView({ sort: 'recent-photo' })).toMatchObject({ sort: 'date', order: 'desc' });
+    expect(normalizeAlbumDirectoryView({ sort: 'title' })).toMatchObject({ sort: 'title', order: 'asc' });
+    expect(normalizeAlbumDirectoryView({ hideEmpty: false }).hideEmpty).toBe(false);
   });
 
   it('navigates once when someone leaves: the leave action, never the removal echo (FL-53)', () => {
@@ -229,6 +320,129 @@ describe('album directory rules', () => {
     // Left from this tab: the local announcement and the server echo are both ignored.
     expect(removalOutcome({ albumId: 'a', userId: 'me' }, { ...page, leftLocally: true })).toBe('ignore');
     expect(removalOutcome({ albumId: 'a', userId: 'me' }, { ...page, isOwner: true })).toBe('refresh');
+  });
+});
+
+describe('the hierarchy the Albums page browses (FL-1836)', () => {
+  const base = {
+    inside: null,
+    filter: 'all' as const,
+    sort: 'title' as const,
+    order: 'asc' as const,
+    group: 'none' as const,
+    hideEmpty: true,
+    collectionsFirst: false,
+    search: '',
+    userId: 'me',
+  };
+  const ids = (result: ReturnType<typeof browseAlbumDirectory>) => result.listed.map(({ id }) => id);
+
+  it('keeps an album under a plain album inside it, and orders it with its real siblings', () => {
+    const parent = owned({ id: 'parent', albumName: 'Parent', assetCount: 1 });
+    const child = owned({ id: 'child', albumName: 'Child', parentId: 'parent', assetCount: 2 });
+    const other = owned({ id: 'other', albumName: 'Other', assetCount: 1 });
+    const directory = tree({ albums: [parent, child, other] });
+    expect(ids(browseAlbumDirectory(directory, base))).toEqual(['other', 'parent']);
+    expect(ids(browseAlbumDirectory(directory, { ...base, inside: 'parent' }))).toEqual(['child']);
+    expect(orderGroupOf(directory, 'child')).toEqual({ parentId: 'parent', ids: ['child'] });
+    expect(orderGroupOf(directory, 'other')).toEqual({ parentId: null, ids: ['parent', 'other'] });
+  });
+
+  it('treats an album under a shared space, and a parent cycle, as top level', () => {
+    const space = owned({ id: 'space', albumName: 'Space', kind: AlbumKind.Space });
+    const under = owned({ id: 'under', albumName: 'Under', parentId: 'space', assetCount: 1 });
+    const a = owned({ id: 'a', albumName: 'A', parentId: 'b', assetCount: 1 });
+    const b = owned({ id: 'b', albumName: 'B', parentId: 'a', assetCount: 1 });
+    const directory = tree({ albums: [under, a, b], spaces: [space] });
+    const result = browseAlbumDirectory(directory, base);
+    // The cycle is broken at one point, so both stay reachable: B now opens inside A.
+    expect(ids(result)).toEqual(['a', 'space', 'under']);
+    expect(ids(browseAlbumDirectory(directory, { ...base, inside: 'a' }))).toEqual(['b']);
+    expect(result.inside.get('space')).toBeUndefined();
+  });
+
+  it('keeps a collection under a filter when something inside it matches', () => {
+    const shelf = owned({ id: 'shelf', albumName: 'Shelf', kind: AlbumKind.Collection });
+    const smart = owned({ id: 'smart', albumName: 'Smart one', parentId: 'shelf', isSmart: true, assetCount: 3 });
+    const directory = tree({ collections: [{ collection: shelf, albums: [smart], albumCount: 1, assetCount: 3 }] });
+    expect(ids(browseAlbumDirectory(directory, { ...base, filter: 'smart' }))).toEqual(['shelf']);
+  });
+
+  it('adds up items through every level, and keeps an empty new collection in view', () => {
+    const top = owned({ id: 'top', albumName: 'Top', kind: AlbumKind.Collection, assetCount: 0 });
+    const mid = owned({ id: 'mid', albumName: 'Mid', parentId: 'top', assetCount: 2 });
+    const deep = owned({ id: 'deep', albumName: 'Deep', parentId: 'mid', assetCount: 5 });
+    const fresh = owned({ id: 'fresh', albumName: 'Fresh', kind: AlbumKind.Collection, assetCount: 0 });
+    const result = browseAlbumDirectory(
+      tree({
+        collections: [
+          { collection: top, albums: [mid], albumCount: 1, assetCount: 2 },
+          { collection: fresh, albums: [], albumCount: 0, assetCount: 0 },
+        ],
+        albums: [deep],
+      }),
+      base,
+    );
+    expect(result.items.get('top')).toBe(7);
+    expect(result.items.get('mid')).toBe(7);
+    expect(ids(result)).toEqual(['fresh', 'top']);
+  });
+
+  it('groups and sorts a collection by the photos inside it, not its own empty numbers (recheck)', () => {
+    const shelf = owned({ id: 'shelf', albumName: 'Shelf', kind: AlbumKind.Collection, assetCount: 0 });
+    const inside = owned({
+      id: 'inside',
+      albumName: 'Inside',
+      parentId: 'shelf',
+      assetCount: 1240,
+      startDate: '2024-03-01T00:00:00.000Z',
+      endDate: '2024-06-01T00:00:00.000Z',
+    });
+    const small = owned({ id: 'small', albumName: 'Small', assetCount: 3, endDate: '2026-01-01T00:00:00.000Z' });
+    const directory = tree({
+      collections: [{ collection: shelf, albums: [inside], albumCount: 1, assetCount: 1240 }],
+      albums: [small],
+    });
+    expect(
+      browseAlbumDirectory(directory, { ...base, group: 'year', order: 'desc' }).groups.map(({ id }) => id),
+    ).toEqual(['year:2026', 'year:2024']);
+    expect(ids(browseAlbumDirectory(directory, { ...base, sort: 'items', order: 'desc' }))).toEqual(['shelf', 'small']);
+  });
+
+  it('arranges the top level kind by kind, keeping collections ahead of albums as shown (recheck)', () => {
+    const c1 = owned({ id: 'c1', albumName: 'C1', kind: AlbumKind.Collection });
+    const c2 = owned({ id: 'c2', albumName: 'C2', kind: AlbumKind.Collection });
+    const a1 = owned({ id: 'a1', albumName: 'A1' });
+    const a2 = owned({ id: 'a2', albumName: 'A2' });
+    const directory = tree({
+      collections: [
+        { collection: c1, albums: [], albumCount: 0, assetCount: 0 },
+        { collection: c2, albums: [], albumCount: 0, assetCount: 0 },
+      ],
+      albums: [a1, a2],
+    });
+    expect(arrangeInGroup(directory, 'a2', (band) => moveInOrder(band, 'a2', -1))).toEqual({
+      parentId: null,
+      ids: ['c1', 'c2', 'a2', 'a1'],
+    });
+    expect(arrangeInGroup(directory, 'c2', (band) => moveInOrder(band, 'c2', -1))).toEqual({
+      parentId: null,
+      ids: ['c2', 'c1', 'a1', 'a2'],
+    });
+    // An album can't be placed among the collections: they are listed apart.
+    expect(arrangeInGroup(directory, 'a1', (band) => placeBefore(band, 'a1', 'c1'))).toBeUndefined();
+  });
+
+  it('marks a level that holds a broken parent cycle, which the server cannot arrange', () => {
+    const a = owned({ id: 'a', albumName: 'A', parentId: 'b', assetCount: 1 });
+    const b = owned({ id: 'b', albumName: 'B', parentId: 'a', assetCount: 1 });
+    expect(browseAlbumDirectory(tree({ albums: [a, b] }), base).cycleHere).toBe(true);
+  });
+
+  it('counts what hiding empty albums leaves out at this level', () => {
+    const empty = owned({ id: 'empty', albumName: 'Empty', assetCount: 0 });
+    const full = owned({ id: 'full', albumName: 'Full', assetCount: 1 });
+    expect(browseAlbumDirectory(tree({ albums: [empty, full] }), base).hiddenHere).toBe(1);
   });
 });
 

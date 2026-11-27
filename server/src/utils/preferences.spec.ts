@@ -655,3 +655,28 @@ describe('shared link default expiry preference (FL-922)', () => {
     }
   });
 });
+
+describe('Pinned albums (FL-1836)', () => {
+  const a = '00000000-0000-4000-8000-00000000000a';
+  const b = '00000000-0000-4000-8000-00000000000b';
+
+  it('starts with nothing pinned, listed A to Z', () => {
+    expect(getPreferences([]).albums).toMatchObject({ pinned: [], pinnedCustomOrder: false });
+  });
+
+  it('stores the list as sent, so unpinning shortens it, and drops it again once empty', () => {
+    const two = mergePreferences(getPreferences([]), { albums: { pinned: [a, b], pinnedCustomOrder: true } }, 'user');
+    expect(getPreferencesPartial(two)).toEqual({ albums: { pinned: [a, b], pinnedCustomOrder: true } });
+    const one = mergePreferences(two, { albums: { pinned: [b] } }, 'user');
+    expect(one.albums.pinned).toEqual([b]);
+    const none = mergePreferences(one, { albums: { pinned: [], pinnedCustomOrder: false } }, 'user');
+    expect(getPreferencesPartial(none)).toEqual({});
+  });
+
+  it('accepts album ids only, and at most 50', () => {
+    const parse = (pinned: unknown) => UserPreferencesUpdateDto.schema.safeParse({ albums: { pinned } }).success;
+    expect(parse([a])).toBe(true);
+    expect(parse(['not-an-id'])).toBe(false);
+    expect(parse(Array.from({ length: 51 }, () => a))).toBe(false);
+  });
+});

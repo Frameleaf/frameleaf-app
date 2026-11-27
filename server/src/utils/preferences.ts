@@ -134,6 +134,8 @@ const getDefaultPreferences = (): FrameleafUserPreferences => {
       defaultAssetOrder: AssetOrder.Desc,
       showPartnerAlbums: true,
       cleanupBannerDismissed: false,
+      pinned: [],
+      pinnedCustomOrder: false,
     },
     folders: {
       enabled: true,
