@@ -283,6 +283,16 @@ it('binds a fresh canonical NAS nonce with the same digest as the native contrac
       ),
     '41abae7572292327a31bf47a4f9262eadd170b91646c95b7220c3e9c64b472d6',
     'de56abfb20b6b32791d113beb300deb815ca0c70e5c0191acddca71572c700b6',
+    // epoch 21 (FL-1831): the nine processor profiles of the 594a747f build
+    'd5cf8f268724d73ca94befa7689c50352c1c450d193d389651a445753feca68a',
+    '68cae3aec553cb1ae089a368a33fe815d115f7844c981d234e552bd4a6dd0b9f',
+    '120b6870ca750805364d093442aad33b978dd9ff0c2e8b2c68b9556f1539df32',
+    '1d4b87d865656b9e72023d6f93b1b2b5ed5a71b48fb4fca14da5f85b549f0a27',
+    'd06e6fb0246f5c82c7fd8e036be0986178d50ff852982c667dea7d63c9dfaf49',
+    'ed4bfb583a462bb039c9576ebeebebaf19ad6fbdfcfaf02080d5db826242fc65',
+    'c81792e3a7388ad55dedafb82daa59bd61488f83ee44733d40cc3af4a9c076dc',
+    '54773c5263a84366438f825a10ec5d226a48ed34b2c90909ba4df2a91fcdc0e7',
+    '4e307cc81ab3153a483377eacc4dafe21f4aa476594d040f645278ca65c05330',
   ];
   expect(catalogue.profiles).toHaveLength(pinned.length);
   for (const [index, profile] of catalogue.profiles.entries()) {
