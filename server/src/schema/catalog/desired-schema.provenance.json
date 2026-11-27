@@ -1,5 +1,5 @@
 {
-  "sourceCommit": "20ed602d8b3135967d1b13a133e0a2e382c25869",
+  "sourceCommit": "898815847298bcac2c53689268450013d775270d",
   "sourceHashes": {
     "src/enum.ts": "3ae9134b12467772d407dee97ba6845499b1aef88daf21a5cebce1f8df585cae",
     "src/immich-import/state.ts": "0c553f994130d9f6a37600aab0a4a3c51a5785783dc658fa6bb638d1acb86092",
@@ -82,7 +82,7 @@
     "src/schema/tables/cluster-group.table.ts": "57b156f30aafb96a7fa754795270129e0b4eb7c9aed7af96646ba343bb5c4a30",
     "src/schema/tables/connect-event.table.ts": "f47a28ea1694ef20dc03a9068dc8682b08ea4a85eba559b09a14c3e26d0a356d",
     "src/schema/tables/connect-media.table.ts": "2d8757af6e0f1053172d53d517772b2e62752df25a50ffbe69fb8a93165e8e52",
-    "src/schema/tables/date-fix.table.ts": "49ad8ba68567539f1a1bba5a5cb06d1e3b0c3de1df917300a451f70353ff154a",
+    "src/schema/tables/date-fix.table.ts": "dac01dd25bd25d0e76ef259de969490bb8c7a607178056e0c7c12ff58501756a",
     "src/schema/tables/desktop-clip-index.table.ts": "cf15fc0dfa735f4944ecb22f6c912969c6a78bf5ea2db70413944332a9771a26",
     "src/schema/tables/desktop-device.table.ts": "0995b5f099f41e6e4fbb3b39ac50b71f194fdffbaad08cad64ad78fb2d452d80",
     "src/schema/tables/desktop-ml-task.table.ts": "2601eaf52edd78f90c772c402e141348b0f841f36bd330a88c223b1397acd240",
@@ -216,6 +216,6 @@
   },
   "serverVersion": 190000,
   "baselineSha256": "b57bd944096b45f516bb29a336033410d24b145e89b708575786aa09e1a6bfbf",
-  "dumpSha256": "49207d05f24814571be65a289470787e6c2e875cbe0ac7e1f4145079d03e9054",
+  "dumpSha256": "023481ea2aef55377b55b28d33abe95e35709dc690795f19034711bbdb148ce5",
   "rawMetadataSha256": "b910068c2ce7438d3ed909caa1adf21d025accb08d50658cfde2e04c4cd99918"
 }

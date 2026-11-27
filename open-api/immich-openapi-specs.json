@@ -111551,7 +111551,7 @@
         "type": "object"
       },
       "DateDoctorFixDto": {
-        "description": "Send `useProposal: true` alone, or a `timeZone` and/or a non-zero `shiftMinutes` (`keepWallTime` only with `timeZone`), or a `dateAccuracy` with its `year`. Any other combination is refused (400). A zone or shift leaves photos dated to a year or a decade as they are.",
+        "description": "Send `useProposal: true` alone, or a `timeZone` and/or a non-zero `shiftMinutes` (`keepWallTime` only with `timeZone`), or a `dateAccuracy` with its `year` (and with `year`, optionally a `dateDetail`; `month` needs its `month`). Any other combination is refused (400). A zone or shift leaves photos dated to a year or a decade as they are.",
         "properties": {
           "assetIds": {
             "description": "The photos to fix",
@@ -111572,9 +111572,23 @@
             ],
             "type": "string"
           },
+          "dateDetail": {
+            "description": "With dateAccuracy `year` only: `month` dates them to the 1st of `month` (midnight UTC), `about` says the year is a guess",
+            "enum": [
+              "month",
+              "about"
+            ],
+            "type": "string"
+          },
           "keepWallTime": {
             "description": "With timeZone: keep the clock time shown and read it in the new zone; otherwise the moment stays",
             "type": "boolean"
+          },
+          "month": {
+            "description": "With dateDetail `month` only: the month, 1 to 12",
+            "maximum": 12,
+            "minimum": 1,
+            "type": "integer"
           },
           "shiftMinutes": {
             "description": "Move their dates this many minutes (a camera clock that was off)",

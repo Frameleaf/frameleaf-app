@@ -180,6 +180,7 @@ select
   "asset_exif"."dateTimeOriginal",
   "asset_exif"."timeZone",
   "asset"."dateAccuracy",
+  "asset"."dateDetail",
   array(
     select
       property
@@ -195,7 +196,8 @@ select
   "earlier"."previousTakenAt",
   "earlier"."previousLocalDateTime",
   "earlier"."previousLocks",
-  "earlier"."previousDateAccuracy"
+  "earlier"."previousDateAccuracy",
+  "earlier"."previousDateDetail"
 from
   "asset"
   inner join "asset_exif" on "asset_exif"."assetId" = "asset"."id"
@@ -206,7 +208,8 @@ from
       "date_fix_item"."previousTakenAt",
       "date_fix_item"."previousLocalDateTime",
       "date_fix_item"."previousLocks",
-      "date_fix_item"."previousDateAccuracy"
+      "date_fix_item"."previousDateAccuracy",
+      "date_fix_item"."previousDateDetail"
     from
       "date_fix_item"
       inner join "date_fix_batch" on "date_fix_batch"."id" = "date_fix_item"."batchId"
@@ -217,6 +220,8 @@ from
       and "date_fix_item"."newDate" = "asset"."fileCreatedAt"
       and "date_fix_item"."newLocalDateTime" = "asset"."localDateTime"
       and date_fix_item."newZone" is not distinct from asset_exif."timeZone"
+      and date_fix_item."newDateAccuracy" is not distinct from asset."dateAccuracy"
+      and date_fix_item."newDateDetail" is not distinct from asset."dateDetail"
     order by
       "date_fix_batch"."createdAt" desc
     limit
