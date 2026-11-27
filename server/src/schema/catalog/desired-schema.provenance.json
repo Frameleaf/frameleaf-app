@@ -1,5 +1,5 @@
 {
-  "sourceCommit": "876ea164e7be4ba329bd2bab9a5f351f6e7ed9e3",
+  "sourceCommit": "7f7d18916ba57e46f62841ee315d989ee36fa97c",
   "sourceHashes": {
     "src/enum.ts": "514092b4e8048a90b100389accfaabf5c82dcb52e22e52255fd5c0268b7a140c",
     "src/immich-import/state.ts": "0c553f994130d9f6a37600aab0a4a3c51a5785783dc658fa6bb638d1acb86092",
@@ -136,7 +136,7 @@
     "src/schema/tables/person-group-audit.table.ts": "19bf276917c6883284d334f0a53c30761073d0b5af57f3b97562e8298faa9e0e",
     "src/schema/tables/person-group.table.ts": "20d0bc1efac183db55decff5d872755c351a54a3e3f180280a64aef02f1a79c8",
     "src/schema/tables/person-merge-candidate.table.ts": "9437449b380d13540219f8128eaaf987cd603141f90efb42fdd1a426d9005538",
-    "src/schema/tables/person-profile.table.ts": "2c63553c477b7fe6e48b1161c7b11fa696dded382d9031a76e878f6c40ae5db9",
+    "src/schema/tables/person-profile.table.ts": "a96415d81784ef573c6e13898bd8f797672d0ba7c5eff9570c41aee4b3abcf06",
     "src/schema/tables/person-relationship.table.ts": "8ccb7f5bd8c34f02980fef1f2ffda16e8e8f06d9ddfec503f50e279309e91c4e",
     "src/schema/tables/person-split-candidate.table.ts": "8b83192e0ec5b8b4e24cea748075ebc9ff61c5a0d1422d9678d6cd3445093a74",
     "src/schema/tables/person-summary-state.table.ts": "d46fabc09a3e788e3c3f806bfa98ae03963d77bf0d1874356430c72b5583ef1d",
@@ -216,6 +216,6 @@
   },
   "serverVersion": 190000,
   "baselineSha256": "b57bd944096b45f516bb29a336033410d24b145e89b708575786aa09e1a6bfbf",
-  "dumpSha256": "397feb629f0536440df1e92f4cf9f5638dabf719f2d055d25429a643f4717c09",
+  "dumpSha256": "d24907c5bf891880fb8b84519a852e3f65bbdc2b4cd03b3c6a6d5a8af8ea7a25",
   "rawMetadataSha256": "b910068c2ce7438d3ed909caa1adf21d025accb08d50658cfde2e04c4cd99918"
 }
