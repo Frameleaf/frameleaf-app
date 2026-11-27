@@ -103,6 +103,8 @@
   let failure = $state('');
   /** The names the pickers offer, read once a picker or a summary needs them. */
   let options = $state<Partial<Record<Kind, Option[]>>>({});
+  // FL-1810: a picker whose choices could not be read says so, rather than "nothing to choose"
+  let optionsFailed = $state<Partial<Record<Kind, boolean>>>({});
   let picking = $state<Kind | null>(null);
   let pickerOpen = $state(false);
   let draft = $state<string[]>([]);
@@ -167,8 +169,10 @@
         ...options,
         [kind]: [...found].sort((a, b) => a.name.localeCompare(b.name, $locale) || a.id.localeCompare(b.id)),
       };
+      optionsFailed = { ...optionsFailed, [kind]: false };
     } catch {
       options = { ...options, [kind]: [] };
+      optionsFailed = { ...optionsFailed, [kind]: true };
     }
   };
 
@@ -425,6 +429,19 @@
     />
     {#if options[picking] === undefined}
       <ListSkeleton rows={3} avatar={false} />
+    {:else if optionsFailed[picking]}
+      <InlineError
+        compact
+        message={$t('frameleaf_state_load_failed_body')}
+        onRetry={() => {
+          const kind = picking;
+          if (kind) {
+            const { [kind]: _, ...rest } = options;
+            options = rest;
+            void loadOptions(kind);
+          }
+        }}
+      />
     {:else if shown.length === 0}
       <p class="muted">{$t('frameleaf_backup_keeps_pick_empty')}</p>
     {:else}

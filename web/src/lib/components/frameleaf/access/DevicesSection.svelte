@@ -12,7 +12,6 @@
    * how many devices are signed in (or that some have not been used for a while, with "Sign those
    * out"), the devices as rows, "Sign out everywhere else…" on the list, and API keys linked below.
    */
-  import EmptyRow from '$lib/components/frameleaf/EmptyRow.svelte';
   import { formatLuxon } from '$lib/frameleaf/date-format';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import { idleDevices } from '$lib/components/frameleaf/settings/security/sign-in';
@@ -221,7 +220,7 @@
     {#if recent.length > 0}
       {@render rows(recent, false)}
     {:else}
-      <div class="empty"><EmptyRow title={$t('frameleaf_access_devices_empty')} /></div>
+      <p class="empty">{$t('frameleaf_access_devices_empty')}</p>
     {/if}
   </Section>
 
@@ -247,6 +246,8 @@
 
 <style>
   .empty {
+    margin: 0;
     padding-bottom: var(--fl-space-5);
+    color: var(--fl-muted);
   }
 </style>

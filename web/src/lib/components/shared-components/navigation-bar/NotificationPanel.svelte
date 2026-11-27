@@ -360,6 +360,8 @@
     color: var(--fl-text);
   }
   .fl-notif-body {
+    /* prototype system.css `.notif-empty` */
+    --fl-empty-compact-padding: 36px var(--fl-space-6);
     min-height: 0;
     overflow: auto;
     overscroll-behavior: contain;
