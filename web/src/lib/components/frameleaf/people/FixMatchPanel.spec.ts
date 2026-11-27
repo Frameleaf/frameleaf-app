@@ -319,6 +319,30 @@ describe('FixMatchPanel (PD-3)', () => {
       await fireEvent.click(screen.getByRole('button', { name: 'Someone new called “Noor”' }));
 
       await waitFor(() => expect(sdkMock.correctFace).toHaveBeenCalledTimes(2));
+      for (const id of ['f-one', 'f-two']) {
+        expect(sdkMock.correctFace).toHaveBeenCalledWith(
+          expect.objectContaining({ id, assetFaceCorrectionDto: expect.objectContaining({ personId: 'new-one' }) }),
+        );
+      }
+    });
+
+    it('names someone new for the faces the picker opened for, even after the selection changes (FL-1814)', async () => {
+      twoFaces();
+      sdkMock.createPerson.mockResolvedValue(personFactory.build({ id: 'new-one', name: 'Noor' }));
+      sdkMock.correctFace.mockResolvedValue({} as never);
+      render(FixMatchPanel, { person, close: vi.fn() });
+
+      await fireEvent.click(await screen.findByRole('checkbox', { name: 'Select the face in one.jpg' }));
+      await fireEvent.click(screen.getByRole('checkbox', { name: 'Select the face in two.jpg' }));
+      await fireEvent.click(screen.getByRole('button', { name: 'Move to…' }));
+      await fireEvent.click(await screen.findByRole('button', { name: 'Someone new…' }));
+      // the selection changes while the name is being typed
+      await fireEvent.click(screen.getByRole('checkbox', { name: 'Select the face in two.jpg' }));
+      const name = await screen.findByRole('combobox', { name: 'Name for the new person' });
+      await fireEvent.input(name, { target: { value: 'Noor' } });
+      await fireEvent.submit(name.closest('form')!);
+
+      await waitFor(() => expect(sdkMock.correctFace).toHaveBeenCalledTimes(2));
     });
 
     it('asks for the name when someone new is chosen in the picker with nothing typed (FL-1814)', async () => {
