@@ -30,6 +30,9 @@ export type PersonEdit = {
   name?: string;
   birthDate?: string | null;
   deathDate?: string | null;
+  /** FL-1814: how sure each date is; it follows, and stops following, with its date */
+  birthDatePrecision?: string | null;
+  deathDatePrecision?: string | null;
   isHidden?: boolean;
   isFavorite?: boolean;
   color?: string | null;
@@ -40,7 +43,8 @@ export type PersonEdit = {
  * Fields of a person copy that follow the partner's person until the recipient changes them. The cover
  * (featured face), favorite and color are always the recipient's own: their copy has other faces, and
  * favorites never follow (spec §4.2 default for assets, kept for people). The date of passing follows like
- * the birth date (FL-864); the owner's notes never leave their own person (FL-941).
+ * the birth date (FL-864); the owner's notes never leave their own person (FL-941). How sure each date is
+ * (FL-1814) goes with its date.
  */
 const FOLLOWED_PERSON_FIELDS = ['name', 'birthDate', 'deathDate', 'hidden'] as const;
 
@@ -182,15 +186,29 @@ export class PartnerPeopleService extends BaseService {
             const source = await this.personRepository.getByGroupId(current);
             if (!source) return false;
             const overridden = new Set(origin.overriddenFields);
-            // FL-864: the date of passing follows like the birth date; notes are never read here (FL-941)
-            if (!overridden.has('deathDate')) {
+            // FL-864: the date of passing follows like the birth date; notes are never read here (FL-941).
+            // FL-1814: how sure each date is follows with that date
+            const followBirth = !overridden.has('birthDate');
+            const followDeath = !overridden.has('deathDate');
+            if (followBirth || followDeath) {
               const [sourceProfile, followerProfile] = await Promise.all([
                 this.personRepository.getProfile(current),
                 this.personRepository.getProfile(follower),
               ]);
               const deathDate = asDateString(sourceProfile?.deathDate ?? null);
-              if (deathDate !== asDateString(followerProfile?.deathDate ?? null)) {
-                await this.personRepository.upsertProfile(follower, { deathDate });
+              const patch = {
+                ...(followDeath && deathDate !== asDateString(followerProfile?.deathDate ?? null) && { deathDate }),
+                ...(followDeath &&
+                  (sourceProfile?.deathDatePrecision ?? null) !== (followerProfile?.deathDatePrecision ?? null) && {
+                    deathDatePrecision: sourceProfile?.deathDatePrecision ?? null,
+                  }),
+                ...(followBirth &&
+                  (sourceProfile?.birthDatePrecision ?? null) !== (followerProfile?.birthDatePrecision ?? null) && {
+                    birthDatePrecision: sourceProfile?.birthDatePrecision ?? null,
+                  }),
+              };
+              if (Object.keys(patch).length > 0) {
+                await this.personRepository.upsertProfile(follower, patch);
                 changed = true;
               }
             }
@@ -234,8 +252,8 @@ export class PartnerPeopleService extends BaseService {
   async noteEdit(ownerId: string, personGroupId: string, edit: PersonEdit): Promise<void> {
     const fields = [
       edit.name !== undefined && 'name',
-      edit.birthDate !== undefined && 'birthDate',
-      edit.deathDate !== undefined && 'deathDate',
+      (edit.birthDate !== undefined || edit.birthDatePrecision !== undefined) && 'birthDate',
+      (edit.deathDate !== undefined || edit.deathDatePrecision !== undefined) && 'deathDate',
       edit.isHidden !== undefined && 'hidden',
       edit.featureFaceAssetId !== undefined && 'cover',
       edit.isFavorite !== undefined && 'favorite',
@@ -325,7 +343,11 @@ export class PartnerPeopleService extends BaseService {
 
   /** Whether a person edit touched a detail its copies follow. */
   static touchesFollowedFields(edit: PersonEdit): boolean {
-    return FOLLOWED_PERSON_FIELDS.some((field) => edit[field === 'hidden' ? 'isHidden' : field] !== undefined);
+    return (
+      FOLLOWED_PERSON_FIELDS.some((field) => edit[field === 'hidden' ? 'isHidden' : field] !== undefined) ||
+      edit.birthDatePrecision !== undefined ||
+      edit.deathDatePrecision !== undefined
+    );
   }
 
   private async resolvePerson(input: {
@@ -488,12 +510,20 @@ export class PartnerPeopleService extends BaseService {
           : 'The partner person this merge came from is no longer linked',
       );
     }
-    // FL-864: the copy starts with the partner's date of passing, as it does with their birth date; never their notes
+    // FL-864: the copy starts with the partner's date of passing, as it does with their birth date; never their notes.
+    // FL-1814: and with how sure each date is
     const sourceProfile = source ? await this.personRepository.getProfile(source) : undefined;
-    if (sourceProfile?.deathDate) {
+    if (sourceProfile?.deathDate || (sourceProfile?.birthDatePrecision && source?.birthDate)) {
       await this.personRepository.upsertProfile(
         { ownerId: targetOwnerId, personGroupId: result.personGroupId },
-        { deathDate: asDateString(sourceProfile.deathDate) },
+        {
+          ...(sourceProfile.deathDate && {
+            deathDate: asDateString(sourceProfile.deathDate),
+            deathDatePrecision: sourceProfile.deathDatePrecision ?? null,
+          }),
+          ...(sourceProfile.birthDatePrecision &&
+            source?.birthDate && { birthDatePrecision: sourceProfile.birthDatePrecision }),
+        },
       );
     }
     // FL-842: the copy starts with the partner's relationships between this person and the others already copied
