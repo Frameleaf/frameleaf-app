@@ -613,6 +613,7 @@ it('epoch 14 appended a twin of every f2c451a6 profile; epoch 16 names the runti
 it.each([
   [17, 162, 171, '95593fc6887c74a705c85b0ab8c9685c79afb0e4'],
   [18, 171, 180, '24ea593e19ce160b2e1dd8cdafb0c15ff34240d0'],
+  [21, 206, 215, '594a747fc8c50e6b7108cd0a58e21cae775ed381'],
 ])(
   "epoch %i adds the server's own AI build as a smart-search revision and changes nothing before it",
   (_epoch, start, end, revision) => {

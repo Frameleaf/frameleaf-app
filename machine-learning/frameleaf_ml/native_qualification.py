@@ -237,9 +237,9 @@ def verify_models(
         if model.model_path.suffix != ".onnx":
             raise ValueError("native_engine_qualification_not_supported")
         if reuse_checks:
-            _validate_external_weights_once(model.model_path, model.cache_dir, item.artifacts)
+            _validate_external_weights_once(model.model_path, model.cache_dir, decisive_files(item.artifacts))
         else:
-            validate_external_weights(model.model_path, model.cache_dir, item.artifacts)
+            validate_external_weights(model.model_path, model.cache_dir, decisive_files(item.artifacts))
         models.append(model)
     return entries, models
 
