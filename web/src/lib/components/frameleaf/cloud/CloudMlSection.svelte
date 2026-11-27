@@ -17,6 +17,7 @@
    * Every figure comes from the server; amounts are USD for everyone. Turning Cloud on is saved at once,
    * with the terms it needs; turning it off and automatic descriptions are saved with the settings bar.
    */
+  import EmptyRow from '$lib/components/frameleaf/EmptyRow.svelte';
   import './frameleaf-cloud.css';
   import { goto } from '$app/navigation';
   import { formatTime } from '$lib/frameleaf/date-format';
@@ -739,7 +740,7 @@
           >
         {/snippet}
         {#if settlements.length === 0}
-          <p class="empty">{$t('admin.frameleaf_cloud_ml_jobs_empty')}</p>
+          <div class="empty"><EmptyRow title={$t('admin.frameleaf_cloud_ml_jobs_empty')} /></div>
         {:else}
           <HistoryList>
             {#each settlements as job (job.cloudJobId)}
@@ -833,10 +834,6 @@
     padding: var(--fl-space-2) 0 var(--fl-space-5);
   }
   .empty {
-    margin: 0;
-    padding: var(--fl-space-4) 0 var(--fl-space-5);
-    border-top: 1px solid var(--fl-border);
-    color: var(--fl-muted);
-    font-size: var(--fl-font-callout);
+    padding-bottom: var(--fl-space-5);
   }
 </style>

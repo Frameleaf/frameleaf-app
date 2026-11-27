@@ -1,4 +1,5 @@
 <script lang="ts">
+  import ListSkeleton from '$lib/components/frameleaf/ListSkeleton.svelte';
   import { DateTime } from 'luxon';
   /**
    * Each person's own Backup page, Cloud Backup (FL-362), after the approved prototype's `WhatsBackedUp`
@@ -423,7 +424,7 @@
       oninput={(event) => (filter = event.currentTarget.value)}
     />
     {#if options[picking] === undefined}
-      <p class="muted" role="status">{$t('loading')}</p>
+      <ListSkeleton rows={3} avatar={false} />
     {:else if shown.length === 0}
       <p class="muted">{$t('frameleaf_backup_keeps_pick_empty')}</p>
     {:else}

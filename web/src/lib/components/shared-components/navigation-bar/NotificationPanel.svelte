@@ -1,4 +1,5 @@
 <script lang="ts">
+  import EmptyState from '$lib/components/frameleaf/EmptyState.svelte';
   import { goto } from '$app/navigation';
   import { focusTrap } from '$lib/actions/focus-trap';
   import NotificationItem from '$lib/components/shared-components/navigation-bar/NotificationItem.svelte';
@@ -240,11 +241,12 @@
 
   <div class="fl-notif-body">
     {#if noUnreadNotifications}
-      <div class="fl-notif-empty">
-        <Icon icon={mdiBellOutline} size="28" aria-hidden="true" />
-        <p>{$t('frameleaf_notifications_empty')}</p>
-        <span>{$t('frameleaf_notifications_empty_help')}</span>
-      </div>
+      <EmptyState
+        compact
+        icon={mdiBellOutline}
+        title={$t('frameleaf_notifications_empty')}
+        message={$t('frameleaf_notifications_empty_help')}
+      />
     {:else}
       <ul class="fl-notif-list">
         {#each notificationManager.notifications as notification (notification.id)}
@@ -392,22 +394,6 @@
     .fl-notif-dismiss {
       opacity: 1;
     }
-  }
-  .fl-notif-empty {
-    display: grid;
-    justify-items: center;
-    gap: 0.375rem;
-    padding: 2.25rem 1.5rem;
-    text-align: center;
-    color: var(--fl-muted);
-  }
-  .fl-notif-empty p {
-    margin: 0.25rem 0 0;
-    color: var(--fl-text);
-    font-weight: 600;
-  }
-  .fl-notif-empty span {
-    font-size: var(--fl-font-small);
   }
   /* Phones: the prototype's bottom sheet. */
   @media (max-width: 700px) {

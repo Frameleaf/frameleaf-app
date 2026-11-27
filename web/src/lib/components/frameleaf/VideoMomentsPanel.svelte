@@ -15,6 +15,7 @@
    * Everything goes through the enrichment endpoints; a Locked video's moments are only ever
    * returned to its owner's unlocked session, so the panel simply shows nothing otherwise.
    */
+  import Skeleton from '$lib/components/frameleaf/Skeleton.svelte';
   import { formatDateTime } from '$lib/frameleaf/date-format';
   import IconButton from '$lib/components/frameleaf/IconButton.svelte';
   import VideoMomentHits from '$lib/components/frameleaf/VideoMomentHits.svelte';
@@ -53,7 +54,7 @@
     type VideoMomentSearchHitDto,
     type VideoMomentsResponseDto,
   } from '@frameleaf/sdk';
-  import { Button, Icon, LoadingSpinner } from '@frameleaf/ui';
+  import { Button, Icon } from '@frameleaf/ui';
   import { mdiClose, mdiImageCheckOutline, mdiPlus, mdiRefresh, mdiTextBoxPlusOutline } from '@mdi/js';
   import { onDestroy } from 'svelte';
   import { locale, t } from 'svelte-i18n';
@@ -299,10 +300,10 @@
   <section data-testid="frameleaf-video-moments" aria-label={$t('frameleaf_moments_title')}>
     <div class="fl-info-heading-row">
       <h3 class="fl-info-heading">{$t('frameleaf_moments_title')}</h3>
-      {#if loading}
-        <LoadingSpinner />
-      {/if}
     </div>
+    {#if loading && !moments}
+      <div role="status" aria-busy="true" aria-label={$t('loading')}><Skeleton variant="text" lines={3} /></div>
+    {/if}
 
     {#if moments}
       <div class="space-y-3 text-sm">
