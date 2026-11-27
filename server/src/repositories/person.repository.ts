@@ -11,6 +11,7 @@ import { AssetFileType, AssetType, AssetVisibility, LibraryScope, SourceType, Us
 import { publicationDatabase, publicationTransaction } from 'src/queue/transaction.js';
 import { uuidV7Floor } from 'src/repositories/album-summary.repository.js';
 import { DB } from 'src/schema/index.js';
+import type { LifeDatePrecision } from 'src/utils/date.js';
 import { AssetFaceTable } from 'src/schema/tables/asset-face.table.js';
 import { FaceSearchTable } from 'src/schema/tables/face-search.table.js';
 import { PersonGroupTable } from 'src/schema/tables/person-group.table.js';
@@ -81,6 +82,9 @@ export interface PersonNameSearchOptions extends HiddenContentQueryOptions {
 export type PersonProfile = {
   deathDate: Date | string | null;
   notes: string | null;
+  /** FL-1814: null is the exact day */
+  birthDatePrecision?: LifeDatePrecision | null;
+  deathDatePrecision?: LifeDatePrecision | null;
 };
 /** `\`, `%` and `_` stand for themselves in an ILIKE pattern. */
 /** FL-1789: a summary is counted again after this long whatever was seen, for rules that change no photo. */
@@ -850,7 +854,12 @@ export class PersonRepository {
           .onRef('person_profile.ownerId', '=', 'person.ownerId')
           .onRef('person_profile.personId', '=', 'person.personGroupId'),
       )
-      .select(['person_profile.deathDate', 'person_profile.notes'])
+      .select([
+        'person_profile.deathDate',
+        'person_profile.notes',
+        'person_profile.birthDatePrecision',
+        'person_profile.deathDatePrecision',
+      ])
       // FL-37: the People grid shows "N items" per card and sorts by photo count or by the most recent
       // capture; FL-874: the owner's categories for each person, read with the page rather than per person
       .select(['person_summary.assetCount', 'person_summary.lastSeenAt', personCategoryIds.as('categoryIds')])
@@ -1102,7 +1111,12 @@ export class PersonRepository {
   getProfile({ ownerId, personGroupId }: PersonId): Promise<PersonProfile | undefined> {
     return this.db
       .selectFrom('person_profile')
-      .select(['person_profile.deathDate', 'person_profile.notes'])
+      .select([
+        'person_profile.deathDate',
+        'person_profile.notes',
+        'person_profile.birthDatePrecision',
+        'person_profile.deathDatePrecision',
+      ])
       .where('person_profile.ownerId', '=', ownerId)
       .where('person_profile.personId', '=', personGroupId)
       .executeTakeFirst();
@@ -1112,12 +1126,19 @@ export class PersonRepository {
     const changes = {
       ...(values.deathDate !== undefined && { deathDate: values.deathDate }),
       ...(values.notes !== undefined && { notes: values.notes }),
+      ...(values.birthDatePrecision !== undefined && { birthDatePrecision: values.birthDatePrecision }),
+      ...(values.deathDatePrecision !== undefined && { deathDatePrecision: values.deathDatePrecision }),
     };
     return this.db
       .insertInto('person_profile')
       .values({ ownerId, personId: personGroupId, ...changes })
       .onConflict((oc) => oc.columns(['ownerId', 'personId']).doUpdateSet({ ...changes, updatedAt: sql<Date>`now()` }))
-      .returning(['person_profile.deathDate', 'person_profile.notes'])
+      .returning([
+        'person_profile.deathDate',
+        'person_profile.notes',
+        'person_profile.birthDatePrecision',
+        'person_profile.deathDatePrecision',
+      ])
       .executeTakeFirstOrThrow();
   }
   @GenerateSql({ params: [DummyValue.UUID, DummyValue.STRING, { withHidden: true }] })
@@ -1133,7 +1154,12 @@ export class PersonRepository {
           .onRef('person_profile.ownerId', '=', 'person.ownerId')
           .onRef('person_profile.personId', '=', 'person.personGroupId'),
       )
-      .select(['person_profile.deathDate', 'person_profile.notes'])
+      .select([
+        'person_profile.deathDate',
+        'person_profile.notes',
+        'person_profile.birthDatePrecision',
+        'person_profile.deathDatePrecision',
+      ])
       .where('person.ownerId', '=', userId)
       .where((eb) =>
         options.matchNotes

@@ -13,7 +13,13 @@ import {
 } from 'src/enum.js';
 import { AssetStats } from 'src/repositories/asset.repository.js';
 import { PHOTOGRAPHY_INTAKE_CREDITS_KEY } from 'src/utils/capture-details.js';
-import { DATE_ACCURACIES, MIN_APPROXIMATE_YEAR, getCaptureYear, isApproximateYear } from 'src/utils/date.js';
+import {
+  DATE_ACCURACIES,
+  DATE_DETAILS,
+  MIN_APPROXIMATE_YEAR,
+  getCaptureYear,
+  isApproximateYear,
+} from 'src/utils/date.js';
 import { IsNotSiblingOf, isoDatetimeToDate, latitudeSchema, longitudeSchema, stringToBool } from 'src/validation.js';
 
 const UpdateAssetBaseSchema = z
@@ -47,6 +53,14 @@ const UpdateAssetBaseSchema = z
       .optional()
       .describe(
         'With dateTimeOriginal: only its year (`year`) or its decade (`decade`) is known. The date is then stored as the start of that period, 1 January at midnight, and no time zone is applied. A dateTimeOriginal sent without it, or with null, is an exact date. Null on its own keeps the date and makes it exact.',
+      ),
+    // FL-1814: a new field beside dateAccuracy, so a client that knows only dateAccuracy reads the year as before
+    dateDetail: z
+      .enum(DATE_DETAILS)
+      .nullable()
+      .optional()
+      .describe(
+        'With dateAccuracy `year` only: `month` when the month is known too (the date is then stored as the 1st of that month, midnight UTC) or `about` when the year itself is a guess. Absent or null: the year is all that is known. Any other date edit clears it.',
       ),
     latitude: latitudeSchema
       .nullable()
@@ -84,6 +98,10 @@ const UpdateAssetBaseSchema = z
       (typeof data.latitude === 'number' && typeof data.longitude === 'number'),
     { message: 'Latitude and longitude must be provided together, both as numbers or both as null' },
   )
+  .refine((data) => !data.dateDetail || data.dateAccuracy === 'year', {
+    message: 'dateDetail goes with dateAccuracy year',
+    path: ['dateDetail'],
+  })
   .refine((data) => !data.dateAccuracy || data.dateTimeOriginal !== undefined, {
     message: 'dateAccuracy needs a dateTimeOriginal in that year or decade',
     path: ['dateAccuracy'],
@@ -104,7 +122,7 @@ const AssetBulkUpdateBaseSchema = UpdateAssetBaseSchema.extend({
 });
 
 const AssetBulkUpdateSchema = AssetBulkUpdateBaseSchema.pipe(
-  IsNotSiblingOf(AssetBulkUpdateBaseSchema, 'dateTimeRelative', ['dateTimeOriginal', 'dateAccuracy']),
+  IsNotSiblingOf(AssetBulkUpdateBaseSchema, 'dateTimeRelative', ['dateTimeOriginal', 'dateAccuracy', 'dateDetail']),
 ).meta({ id: 'AssetBulkUpdateDto' });
 
 /** FL-36 (V-24): a place name the owner types; an empty or null value clears it. */

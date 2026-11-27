@@ -88,7 +88,7 @@ import { PersonRelationshipService } from 'src/services/person-relationship.serv
 import { requireEntityAccess } from 'src/utils/access.js';
 import { getDimensions } from 'src/utils/asset.util.js';
 import { CloudLibraryQueueWriter, cloudLibraryDestination } from 'src/utils/cloud-library-batch.js';
-import { asDateString, asDateTimeString } from 'src/utils/date.js';
+import { type LifeDatePrecision, asDateString, asDateTimeString, isLifeDatePeriodStart } from 'src/utils/date.js';
 import { checkFaceVisibility } from 'src/utils/editor.js';
 import {
   FaceBoundingBoxRow,
@@ -172,12 +172,20 @@ export const mergeProfiles = (
   survivorBirthDate: Date | string | null,
   survivor: PersonProfile | undefined,
   removed: PersonProfile | undefined,
+  /** FL-1814: the survivor took the merged-away person's date of birth, so it takes how sure it is too */
+  tookBirthDate = false,
 ): Partial<PersonProfile> | undefined => {
   const changes: Partial<PersonProfile> = {};
   const removedDeathDate = asDateString(removed?.deathDate ?? null)?.slice(0, 10);
   const born = asDateString(survivorBirthDate)?.slice(0, 10);
   if (!survivor?.deathDate && removedDeathDate && (!born || removedDeathDate >= born)) {
     changes.deathDate = removedDeathDate;
+    if (removed?.deathDatePrecision) {
+      changes.deathDatePrecision = removed.deathDatePrecision;
+    }
+  }
+  if (tookBirthDate && removed?.birthDatePrecision) {
+    changes.birthDatePrecision = removed.birthDatePrecision;
   }
   const removedNotes = removed?.notes?.trim() ? removed.notes : null;
   if (removedNotes) {
@@ -1170,6 +1178,9 @@ export class PersonService extends BaseService {
     const current = await this.findOrFail(auth, personGroupId);
     const { ownerId } = current;
     const { name, birthDate, isHidden, featureFaceAssetId: assetId, isFavorite, color, deathDate } = dto;
+    // FL-1814: a date sent without a precision is an exact day; a precision is only taken with its date
+    const birthDatePrecision = PersonService.lifeDatePrecision(birthDate, dto.birthDatePrecision, 'birthDate');
+    const deathDatePrecision = PersonService.lifeDatePrecision(deathDate, dto.deathDatePrecision, 'deathDate');
     // FL-941: an empty note clears it
     const notes = dto.notes === undefined ? undefined : dto.notes?.trim() ? dto.notes : null;
     const currentProfile = await this.personRepository.getProfile(current);
@@ -1216,8 +1227,16 @@ export class PersonService extends BaseService {
         isFavorite,
         color,
       });
-      if (deathDate !== undefined || notes !== undefined) {
-        profile = await this.personRepository.upsertProfile({ ownerId, personGroupId }, { deathDate, notes });
+      if (
+        deathDate !== undefined ||
+        notes !== undefined ||
+        birthDatePrecision !== undefined ||
+        deathDatePrecision !== undefined
+      ) {
+        profile = await this.personRepository.upsertProfile(
+          { ownerId, personGroupId },
+          { deathDate, notes, birthDatePrecision, deathDatePrecision },
+        );
       }
       await partnerPeople.noteEdit(ownerId, personGroupId, dto);
       return person;
@@ -1250,6 +1269,31 @@ export class PersonService extends BaseService {
     }
 
     return this.mapOwnPerson(auth, person, profile ?? { deathDate: null, notes: null });
+  }
+
+  /**
+   * FL-1814: the precision stored with a date that is being set: null (the exact day) when none is sent, the one
+   * sent when it fits the date, and nothing to change when the date is not being set. Refuses a precision sent
+   * without its date, or with a date that is not where its month or year starts.
+   */
+  private static lifeDatePrecision(
+    date: string | null | undefined,
+    precision: LifeDatePrecision | null | undefined,
+    field: 'birthDate' | 'deathDate',
+  ): LifeDatePrecision | null | undefined {
+    if (date === undefined) {
+      if (precision) {
+        throw new BadRequestException(`${field}Precision goes with a ${field}`);
+      }
+      return undefined;
+    }
+    if (!date || !precision) {
+      return null;
+    }
+    if (!isLifeDatePeriodStart(date.slice(0, 10), precision)) {
+      throw new BadRequestException(`${field} must be where that ${precision === 'month' ? 'month' : 'year'} starts`);
+    }
+    return precision;
   }
 
   /** FL-864: refuses a date of passing before the date of birth. Either may be missing. */
@@ -2255,7 +2299,12 @@ export class PersonService extends BaseService {
               this.personRepository.getProfile(survivor),
               this.personRepository.getProfile(removed),
             ]);
-            const profileChanges = mergeProfiles(survivor.birthDate, survivorProfile, removedProfile);
+            const profileChanges = mergeProfiles(
+              survivor.birthDate,
+              survivorProfile,
+              removedProfile,
+              changes.birthDate !== undefined,
+            );
             if (profileChanges) {
               await this.personRepository.upsertProfile(survivor, profileChanges);
             }

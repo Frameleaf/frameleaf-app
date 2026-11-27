@@ -3650,6 +3650,7 @@ export class AssetRepository {
             // FL-33 (T-17): the tile's Offline badge (AssetTile.jsx `asset.isOffline`).
             'asset.isOffline',
             'asset.dateAccuracy',
+            'asset.dateDetail',
             livePhotoVideoId,
             localOffsetHours.as('localOffsetHours'),
             'asset.ownerId',

@@ -6,7 +6,7 @@ import { HistoryBuilder } from 'src/decorators.js';
 import { AuthDto } from 'src/dtos/auth.dto.js';
 import { AssetEditActionItem } from 'src/dtos/editing.dto.js';
 import { SourceTypeSchema } from 'src/enum.js';
-import { asDateString, asDateTimeString } from 'src/utils/date.js';
+import { LIFE_DATE_PRECISIONS, asDateString, asDateTimeString } from 'src/utils/date.js';
 import { PERSON_RELATIONS } from 'src/utils/person-relationship.js';
 import { transformFaceBoundingBox } from 'src/utils/transform.js';
 import { hexColor, stringToBool } from 'src/validation.js';
@@ -41,6 +41,19 @@ const PersonUpdateSchema = PersonCreateSchema.extend({
     .describe(
       'Date of passing (FL-864). Null clears it. Refused when it is before the date of birth (the one sent, or the stored one)',
     ),
+  // FL-1814: new fields, so a client that never sends them keeps exact dates as before
+  birthDatePrecision: z
+    .enum(LIFE_DATE_PRECISIONS)
+    .nullable()
+    .optional()
+    .describe(
+      'How much of the date of birth is known (FL-1814): `month`, `year`, or `about` (around that year); null is the exact day. Sent with birthDate, which is then the start of that period (the 1st of the month, or 1 January). A birthDate sent without it is an exact day.',
+    ),
+  deathDatePrecision: z
+    .enum(LIFE_DATE_PRECISIONS)
+    .nullable()
+    .optional()
+    .describe('As birthDatePrecision, for the date of passing; sent with deathDate.'),
   notes: z
     .string()
     .max(PERSON_NOTES_MAX_LENGTH)
@@ -196,6 +209,13 @@ export const PersonResponseSchema = z
       .describe(
         'Date of passing (FL-864); null when none is set. Returned by the People endpoints, wherever the person is returned to the caller',
       ),
+    birthDatePrecision: z
+      .string()
+      .nullish()
+      .describe(
+        "How much of the date of birth is known (FL-1814): `month`, `year` or `about`; absent or null for the exact day. Returned to the person's owner with the profile. Other values may be added: treat an unknown one as approximate.",
+      ),
+    deathDatePrecision: z.string().nullish().describe('As birthDatePrecision, for the date of passing.'),
     notes: z
       .string()
       .nullable()
@@ -656,6 +676,8 @@ export class PeopleResponseDto extends createZodDto(PeopleResponseSchema) {}
 export type PersonProfileFields = {
   deathDate?: Date | string | null;
   notes?: string | null;
+  birthDatePrecision?: string | null;
+  deathDatePrecision?: string | null;
 };
 
 export function mapPerson(person: MaybeDehydrated<Person> & PersonProfileFields): PersonResponseDto {
@@ -670,6 +692,8 @@ export function mapPerson(person: MaybeDehydrated<Person> & PersonProfileFields)
     updatedAt: asDateTimeString(person.updatedAt),
     ...(person.deathDate !== undefined && { deathDate: asDateString(person.deathDate) }),
     ...(person.notes !== undefined && { notes: person.notes }),
+    ...(person.birthDatePrecision !== undefined && { birthDatePrecision: person.birthDatePrecision }),
+    ...(person.deathDatePrecision !== undefined && { deathDatePrecision: person.deathDatePrecision }),
   };
 }
 

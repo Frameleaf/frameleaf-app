@@ -133,6 +133,10 @@ const MediaOperationBulkPayloadSchema = z
       .string()
       .optional()
       .describe('With `dateTimeOriginal`: `year` or `decade` when only that much of the date is known'),
+    dateDetail: z
+      .string()
+      .optional()
+      .describe('With `dateAccuracy: year`: `month` when the month is known too, or `about` when the year is a guess'),
     timeZone: z.string().optional(),
     minutes: z.int().optional().describe('Relative shift in minutes, for `dateMode: shift`'),
     description: z.string().max(10_000).optional(),

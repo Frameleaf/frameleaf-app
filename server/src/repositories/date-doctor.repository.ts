@@ -365,7 +365,7 @@ export class DateDoctorRepository {
       const { rows } = await sql<{
         id: string;
       }>`update asset set "fileCreatedAt" = v."newDate", "localDateTime" = v."newLocalDateTime",
-          "dateAccuracy" = v."newDateAccuracy"
+          "dateAccuracy" = v."newDateAccuracy", "dateDetail" = null
         from jsonb_to_recordset(${asJson(items)}::text::jsonb) as v("assetId" uuid, "currentTakenAt" timestamptz,
           "currentLocalDateTime" timestamptz, "currentZone" text, "newDate" timestamptz, "newLocalDateTime" timestamptz,
           "newDateAccuracy" text)

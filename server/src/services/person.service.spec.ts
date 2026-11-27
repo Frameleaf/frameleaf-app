@@ -1269,8 +1269,47 @@ describe(PersonService.name, () => {
       });
       expect(mocks.person.upsertProfile).toHaveBeenCalledWith(
         { ownerId: person.ownerId, personGroupId: person.personGroupId },
-        { deathDate: '2020-05-06', notes: undefined },
+        { deathDate: '2020-05-06', notes: undefined, birthDatePrecision: undefined, deathDatePrecision: null },
       );
+    });
+
+    // FL-1814: how much of each date is known
+    it('keeps a month or a year with its date, and makes a date sent alone exact again', async () => {
+      const { auth, person } = setup();
+
+      await sut.update(auth, person.personGroupId, { birthDate: '1987-03-01', birthDatePrecision: 'month' });
+      expect(mocks.person.upsertProfile).toHaveBeenLastCalledWith(
+        { ownerId: person.ownerId, personGroupId: person.personGroupId },
+        expect.objectContaining({ birthDatePrecision: 'month', deathDatePrecision: undefined }),
+      );
+
+      await sut.update(auth, person.personGroupId, { deathDate: '2020-01-01', deathDatePrecision: 'about' });
+      expect(mocks.person.upsertProfile).toHaveBeenLastCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          deathDate: '2020-01-01',
+          deathDatePrecision: 'about',
+          birthDatePrecision: undefined,
+        }),
+      );
+
+      await sut.update(auth, person.personGroupId, { birthDate: '1987-03-14' });
+      expect(mocks.person.upsertProfile).toHaveBeenLastCalledWith(
+        expect.anything(),
+        expect.objectContaining({ birthDatePrecision: null }),
+      );
+    });
+
+    it.each([
+      [{ birthDate: '1987-03-14', birthDatePrecision: 'month' as const }],
+      [{ birthDate: '1987-03-01', birthDatePrecision: 'year' as const }],
+      [{ deathDate: '2020-06-01', deathDatePrecision: 'about' as const }],
+      [{ birthDatePrecision: 'year' as const }],
+    ])('refuses a precision without its date or off the start of its period (%o)', async (dto) => {
+      const { auth, person } = setup();
+
+      await expect(sut.update(auth, person.personGroupId, dto)).rejects.toBeInstanceOf(BadRequestException);
+      expect(mocks.person.update).not.toHaveBeenCalled();
     });
 
     it('refuses a date of passing before the stored date of birth', async () => {

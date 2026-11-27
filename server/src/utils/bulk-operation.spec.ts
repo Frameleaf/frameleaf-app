@@ -298,6 +298,27 @@ describe('bulk-operation', () => {
       expect(problem({ dateTimeOriginal: '1799-06-15T10:00:00' })).not.toBeNull();
       expect(problem({ dateTimeOriginal: '2999-06-15T10:00:00' })).not.toBeNull();
     });
+
+    it('FL-1814: carries a month or "around" with a year date, and refuses one with anything else', () => {
+      const payload = {
+        dateMode: 'set' as const,
+        dateTimeOriginal: '1987-03-15T10:00:00',
+        dateAccuracy: 'year',
+        dateDetail: 'month',
+      };
+      expect(bulkAssetUpdate(MediaOperationBulkAction.ChangeDate, payload)).toEqual({
+        dateTimeOriginal: '1987-03-15T10:00:00',
+        dateAccuracy: 'year',
+        dateDetail: 'month',
+      });
+      const problem = (change: object) =>
+        bulkPayloadProblem(MediaOperationBulkAction.ChangeDate, { ...payload, ...change }, ['a']);
+      expect(problem({})).toBeNull();
+      expect(problem({ dateDetail: 'about' })).toBeNull();
+      expect(problem({ dateDetail: 'week' })).not.toBeNull();
+      expect(problem({ dateAccuracy: 'decade' })).not.toBeNull();
+      expect(problem({ dateAccuracy: undefined })).not.toBeNull();
+    });
   });
 
   describe(bulkPayloadProblem.name, () => {
