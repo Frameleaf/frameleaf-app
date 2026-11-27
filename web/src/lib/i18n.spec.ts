@@ -57,28 +57,20 @@ describe('i18n', () => {
     });
   });
 
-  describe('loaders', () => {
-    const languageFiles = readdirSync('../i18n').sort();
-    for (const filename of languageFiles) {
-      test(`${filename} should have a loader`, async () => {
-        if (!filename.endsWith('.json') || filename === 'package.json') {
-          return;
-        }
-
-        const code = filename.replaceAll('.json', '');
-        const item = langs.find((lang) => lang.code === code);
-        expect(item, `${filename} has no loader`).toBeDefined();
-        if (!item) {
-          return;
-        }
-
-        // verify it loads the right file
-        const module: { default?: unknown } = await item.loader();
-        const translations = JSON.stringify(module.default, null, 2).trim();
-        const content = readFileSync(`../i18n/${filename}`).toString().trim();
-        expect(translations === content, `${item.name} did not load ${filename}`).toEqual(true);
-      });
-    }
+  describe('language files', () => {
+    // What each language's bundles hold is checked in frameleaf/message-areas.spec.ts (FL-1797).
+    it('offers every language file', () => {
+      const codes = readdirSync('../i18n')
+        .filter((filename) => /^\w+\.json$/.test(filename))
+        .map((filename) => filename.replace('.json', ''));
+      expect(codes.length).toBeGreaterThan(10);
+      for (const code of codes) {
+        expect(
+          langs.some((entry) => entry.code === code),
+          `${code}.json is not offered`,
+        ).toBe(true);
+      }
+    });
   });
 
   describe('getClosestAvailableLocale', () => {
