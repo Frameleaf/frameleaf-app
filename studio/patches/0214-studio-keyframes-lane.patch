@@ -154,7 +154,7 @@ index 81d2b32..36aa7b5 100644
      fireEvent.blur(input)
  
 diff --git a/src/features/keyframes/components/dopesheet-editor/index.tsx b/src/features/keyframes/components/dopesheet-editor/index.tsx
-index 96e8bad..d4344f5 100644
+index 96e8bad..c193e85 100644
 --- a/src/features/keyframes/components/dopesheet-editor/index.tsx
 +++ b/src/features/keyframes/components/dopesheet-editor/index.tsx
 @@ -3920,8 +3920,8 @@ export const DopesheetEditor = memo(function DopesheetEditor({
@@ -163,11 +163,20 @@ index 96e8bad..d4344f5 100644
              className={cn(
 -              'flex h-full min-w-0 items-center overflow-hidden pr-1 text-[9px] font-medium leading-none text-foreground/90',
 -              compoundRow ? 'w-[54px] shrink-0 pl-1' : classic ? 'flex-1 pl-1' : 'flex-1 pl-[10px]',
-+              'flex h-full min-w-0 items-center overflow-hidden pr-1 text-[11px] font-medium leading-none text-foreground/90',
-+              compoundRow ? 'w-[72px] shrink-0 pl-1' : classic ? 'flex-1 pl-1' : 'flex-1 pl-[10px]',
++              'flex h-full min-w-0 items-center overflow-hidden text-[11px] font-medium leading-none text-foreground/90',
++              compoundRow ? 'w-[72px] shrink-0 pl-1' : classic ? 'flex-1 pl-1 pr-1' : 'flex-1 pl-[10px] pr-1',
              )}
              title={rowLabel}
            >
+@@ -3933,7 +3933,7 @@ export const DopesheetEditor = memo(function DopesheetEditor({
+                 size="sm"
+                 className={cn(
+                   MINI_ICON_BUTTON_CLASS,
+-                  'ml-0.5 self-center text-muted-foreground hover:text-foreground',
++                  'self-center text-muted-foreground hover:text-foreground',
+                   axisConstraint.constrained && 'text-primary hover:text-primary/80',
+                 )}
+                 onClick={(event) => {
 @@ -4445,7 +4445,7 @@ export const DopesheetEditor = memo(function DopesheetEditor({
                  )}
                />
