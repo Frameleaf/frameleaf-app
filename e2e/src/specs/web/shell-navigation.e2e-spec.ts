@@ -105,8 +105,7 @@ test.describe('Frameleaf shell navigation (FL-30)', () => {
           // LIB-P2: without an unlocked session Locked opens in the app, the rail in place, and its
           // card asks for the PIN.
           await expect(page.getByTestId('library-locked-gate')).toBeVisible();
-        }
-        if (name === 'Settings' || name === 'Support Frameleaf') {
+        } else if (name === 'Settings' || name === 'Support Frameleaf') {
           // Settings brings its own navigation in place of the library rail; Back returns to the rail.
           // Import, Library care and Trash are places: they keep the rail and are current in it.
           await expect(page.getByRole('navigation', { name: 'Settings navigation' })).toBeVisible();

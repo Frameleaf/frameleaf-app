@@ -20,7 +20,8 @@ const setupShellRoutes = async (context: BrowserContext) => {
 
 const rail = (page: Page) => page.getByRole('navigation', { name: 'Library navigation' });
 /** The rail's own link, current or not; a page may link the same place too. */
-const railLink = (page: Page, name: string) => page.getByTestId('sidebar-parent').getByRole('link', { name, exact: true });
+const railLink = (page: Page, name: string) =>
+  page.getByTestId('sidebar-parent').getByRole('link', { name, exact: true });
 
 test.describe('Navigation and Settings regroup (FL-1806)', () => {
   test.beforeEach(async ({ context }) => {
@@ -42,10 +43,7 @@ test.describe('Navigation and Settings regroup (FL-1806)', () => {
     for (const name of ['Import', 'Library care', 'Trash', 'Settings']) {
       await expect(railLink(page, name)).toBeVisible();
     }
-    await expect(railLink(page, 'Library care')).toHaveAttribute(
-      'aria-current',
-      'page',
-    );
+    await expect(railLink(page, 'Library care')).toHaveAttribute('aria-current', 'page');
   });
 
   test('Import, Library care and Trash open beside the rail, without the Settings list', async ({ page }) => {
@@ -84,10 +82,7 @@ test.describe('Navigation and Settings regroup (FL-1806)', () => {
 
     await page.goto('/workflows');
     await expect(page).toHaveURL(/area=utilities&section=workflows/);
-    await expect(railLink(page, 'Library care')).toHaveAttribute(
-      'aria-current',
-      'page',
-    );
+    await expect(railLink(page, 'Library care')).toHaveAttribute('aria-current', 'page');
   });
 
   test('Clients is always in the top bar', async ({ page }) => {

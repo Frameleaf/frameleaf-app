@@ -390,20 +390,13 @@ const ALSO_CURRENT: Partial<Record<RailDestinationId, string[]>> = {
 };
 
 /** The rail entry a Command Center area belongs to when it is a place rather than a setting (FL-1806). */
-const placeOfArea = (area: string | null): RailDestinationId | undefined => {
-  switch (area) {
-    case 'backup': {
-      return 'import';
-    }
-    case 'care':
-    case 'utilities': {
-      return 'libraryCare';
-    }
-    case 'trash': {
-      return 'trash';
-    }
-  }
+const PLACE_OF_AREA: Partial<Record<string, RailDestinationId>> = {
+  backup: 'import',
+  care: 'libraryCare',
+  utilities: 'libraryCare',
+  trash: 'trash',
 };
+const placeOfArea = (area: string | null): RailDestinationId | undefined => (area ? PLACE_OF_AREA[area] : undefined);
 
 /**
  * Whether a destination is the current page. Child routes keep their parent current
@@ -421,7 +414,7 @@ export const isDestinationCurrent = (current: string | URL, destination: RailDes
     if (destination.id === 'settings') {
       return !place;
     }
-    if (destination.id === 'import' || destination.id === 'libraryCare' || destination.id === 'trash') {
+    if (['import', 'libraryCare', 'trash'].includes(destination.id)) {
       return place === destination.id;
     }
   }

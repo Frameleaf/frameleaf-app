@@ -148,7 +148,7 @@ const open = (href: string, isAdmin = true) => {
 };
 
 const groupNames = () =>
-  [...screen.getByRole('navigation', { name: 'Settings navigation' }).querySelectorAll('.cc-nav-group > p')].map(
+  [...screen.getByRole('navigation', { name: 'Settings navigation' }).querySelectorAll(':scope .cc-nav-group > p')].map(
     (heading) => heading.textContent?.trim(),
   );
 const areaNames = () =>
