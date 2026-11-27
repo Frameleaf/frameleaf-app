@@ -27,6 +27,7 @@ export class ModelDownloadKeyService extends BaseService {
   private timer?: NodeJS.Timeout;
   /** Bumped by Save and Remove, so a background read that started earlier never undoes them. */
   private generation = 0;
+  private reloading = false;
   /** Replaced in tests; the one outbound call this feature makes. */
   check: (key: string) => Promise<ModelDownloadKeyCheck> = (key) => checkModelDownloadKey(key);
 
@@ -83,19 +84,30 @@ export class ModelDownloadKeyService extends BaseService {
    * without anyone opening Settings.
    */
   private async reload() {
+    // One read at a time per process: a slow Hugging Face check never overlaps the next tick's read.
+    if (this.reloading) {
+      return;
+    }
+    this.reloading = true;
     try {
       const generation = this.generation;
       const before = await this.stored();
-      const stored = await this.refresh();
-      const key = stored?.state === 'accepted' ? openModelDownloadKey(await this.keyedHash(), stored.sealed) : null;
-      // A Save or Remove here, or in another server process, while this read was running wins: the
-      // answer is applied only if nothing changed since, so an older read never brings a key back.
+      await this.refresh();
+      const hash = await this.keyedHash();
+      // The key is decided from the record as it is now, after any check: a Save, Remove or "refused"
+      // written here or in another server process while this read ran wins, and nothing is applied when
+      // the key itself was removed or replaced meanwhile. No await separates this read from the hand-over.
       const current = await this.stored();
-      if (generation === this.generation && sameRecord(current, before)) {
-        this.machineLearningRepository.setModelDownloadKey(key);
+      if (generation !== this.generation || !sameRecord(current, before)) {
+        return;
       }
+      this.machineLearningRepository.setModelDownloadKey(
+        current?.state === 'accepted' ? openModelDownloadKey(hash, current.sealed) : null,
+      );
     } catch (error) {
       this.logger.warn(`Could not read the model download key: ${error}`);
+    } finally {
+      this.reloading = false;
     }
   }
 
