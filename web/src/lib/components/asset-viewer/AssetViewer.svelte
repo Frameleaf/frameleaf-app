@@ -769,25 +769,38 @@
           }
           // FL-1834: Repeat starts the run again from the collection's own start in the run's
           // direction (its first item going forward, its last going back), not from the item the
-          // slideshow began on, so items before that one are shown too.
-          if (!hasNext && $slideshowRepeat && getEdgeAsset && !isShuffle) {
+          // slideshow began on, so items before that one are shown too. An Ascending run still on
+          // the first item it started from (its start jump to the end lost the race with this
+          // advance) makes that move now instead of stopping. The move goes through the route like
+          // any step: moving the viewer alone left the address on the old item, and the next step
+          // to that item then did nothing (a two-item collection froze).
+          const ascendingFromStart =
+            wasSlideshow &&
+            order === 'previous' &&
+            $slideshowNavigation === SlideshowNavigation.AscendingOrder &&
+            asset.id === slideshowStartAssetId;
+          if (!hasNext && getEdgeAsset && !isShuffle && ($slideshowRepeat || ascendingFromStart)) {
             const edge = await getEdgeAsset(order === 'previous' ? 'last' : 'first');
-            if (!isCurrentSlideshow() || (!isCurrentView() && asset.id !== edge?.id)) {
+            if (!isCurrentSlideshow() || !isCurrentView()) {
               return;
             }
-            if (edge) {
-              await assetViewerManager.setAssetId(edge.id, {
-                isCurrent: () => isCurrentView() && isCurrentSlideshow(),
-                onSet: () => ($restartSlideshowProgress = true),
-              });
+            if (edge && edge.id !== asset.id && (await goToAsset(edge))) {
+              if (isCurrentSlideshow()) {
+                $restartSlideshowProgress = true;
+              }
               return;
             }
           }
           if (!hasNext && $slideshowRepeat && slideshowStartAssetId) {
-            await assetViewerManager.setAssetId(slideshowStartAssetId, {
-              isCurrent: () => isCurrentView() && isCurrentSlideshow(),
-              onSet: () => ($restartSlideshowProgress = true),
-            });
+            // already on the start item (its address is right): reload it in place; otherwise route there
+            if (slideshowStartAssetId === asset.id) {
+              await assetViewerManager.setAssetId(slideshowStartAssetId, {
+                isCurrent: () => isCurrentView() && isCurrentSlideshow(),
+                onSet: () => ($restartSlideshowProgress = true),
+              });
+            } else if ((await goToAsset({ id: slideshowStartAssetId })) && isCurrentSlideshow()) {
+              $restartSlideshowProgress = true;
+            }
             return;
           }
           if (hasNext) {
@@ -942,11 +955,10 @@
         if (!isCurrent() || !last || last.id === startId) {
           return;
         }
-        slideshowStartAssetId = last.id;
-        await assetViewerManager.setAssetId(last.id, {
-          isCurrent,
-          onSet: () => ($restartSlideshowProgress = true),
-        });
+        if ((await goToAsset(last)) && isCurrentSlideshow()) {
+          slideshowStartAssetId = last.id;
+          $restartSlideshowProgress = true;
+        }
       })(),
     );
   };

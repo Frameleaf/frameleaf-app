@@ -90,6 +90,8 @@ test.describe('slideshow keys and states', () => {
     await openFromTimeline(page, first.id);
     await page.keyboard.press('s');
     await expect(page.locator('#immich-asset-viewer')).toHaveAttribute('data-asset-id', last.id, { timeout: 15_000 });
+    // the address follows, so the next step and a reload both start from here
+    await expect.poll(() => new URL(page.url()).pathname).toBe(`/photos/${last.id}`);
     await expect(footer(page).getByRole('button', { name: 'Pause slideshow' })).toBeVisible();
   });
 
@@ -98,7 +100,7 @@ test.describe('slideshow keys and states', () => {
     page,
   }) => {
     await context.addInitScript(() => {
-      localStorage.setItem('slideshow-delay', '1');
+      localStorage.setItem('slideshow-delay', '3');
       localStorage.setItem('slideshow-repeat', 'true');
       localStorage.setItem('slideshow-navigation', JSON.stringify('descending-order'));
     });
@@ -106,7 +108,12 @@ test.describe('slideshow keys and states', () => {
     const last = fixture.assets.at(-1)!;
     await openFromTimeline(page, last.id);
     await page.keyboard.press('s');
-    await expect(page.locator('#immich-asset-viewer')).toHaveAttribute('data-asset-id', first.id, { timeout: 15_000 });
-    await expect(footer(page).getByRole('button', { name: 'Pause slideshow' })).toBeVisible();
+    // the first item stays for one slide (3 s); poll often enough not to miss it
+    await page.waitForFunction(
+      (id) => document.querySelector<HTMLElement>('#immich-asset-viewer')?.dataset.assetId === id,
+      first.id,
+      { polling: 50, timeout: 15_000 },
+    );
+    await expect.poll(() => new URL(page.url()).pathname, { intervals: [50] }).toBe(`/photos/${first.id}`);
   });
 });
