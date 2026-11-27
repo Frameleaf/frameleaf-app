@@ -1543,7 +1543,9 @@ where
 -- PersonRepository.getProfile
 select
   "person_profile"."deathDate",
-  "person_profile"."notes"
+  "person_profile"."notes",
+  "person_profile"."birthDatePrecision",
+  "person_profile"."deathDatePrecision"
 from
   "person_profile"
 where
@@ -1559,7 +1561,9 @@ with
 select
   "person".*,
   "person_profile"."deathDate",
-  "person_profile"."notes"
+  "person_profile"."notes",
+  "person_profile"."birthDatePrecision",
+  "person_profile"."deathDatePrecision"
 from
   "similarity_threshold",
   "person"

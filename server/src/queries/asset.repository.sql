@@ -1234,6 +1234,7 @@ with
       asset."deletedAt" is not null as "isTrashed",
       "asset"."isOffline",
       "asset"."dateAccuracy",
+      "asset"."dateDetail",
       "asset"."livePhotoVideoId",
       extract(
         epoch
@@ -1407,6 +1408,7 @@ with
       asset."deletedAt" is not null as "isTrashed",
       "asset"."isOffline",
       "asset"."dateAccuracy",
+      "asset"."dateDetail",
       "asset"."livePhotoVideoId",
       extract(
         epoch
@@ -1626,6 +1628,7 @@ with
       asset."deletedAt" is not null as "isTrashed",
       "asset"."isOffline",
       "asset"."dateAccuracy",
+      "asset"."dateDetail",
       "asset"."livePhotoVideoId",
       extract(
         epoch

@@ -93329,6 +93329,16 @@
             "nullable": true,
             "type": "string"
           },
+          "dateDetail": {
+            "description": "With dateAccuracy `year` only: `month` when the month is known too (the date is then stored as the 1st of that month, midnight UTC) or `about` when the year itself is a guess. Absent or null: the year is all that is known. Any other date edit clears it.",
+            "enum": [
+              "month",
+              "about",
+              null
+            ],
+            "nullable": true,
+            "type": "string"
+          },
           "dateTimeOriginal": {
             "description": "Original date and time",
             "type": "string"
@@ -96996,6 +97006,11 @@
             "nullable": true,
             "type": "string"
           },
+          "dateDetail": {
+            "description": "With dateAccuracy `year` only: `month` when the month is known too (localDateTime is then the 1st of it) or `about` when the year itself is a guess. Absent or null otherwise. Other values may be added: treat an unknown one as absent.",
+            "nullable": true,
+            "type": "string"
+          },
           "duplicateId": {
             "description": "Duplicate group ID",
             "format": "uuid",
@@ -100486,6 +100501,11 @@
           },
           "dateAccuracy": {
             "description": "Set when only the year (`year`) or the decade (`decade`) of the capture date is known; localDateTime is then the start of that period. Absent or null for an exact date. Other values may be added: treat an unknown one as approximate.",
+            "nullable": true,
+            "type": "string"
+          },
+          "dateDetail": {
+            "description": "With dateAccuracy `year` only: `month` when the month is known too (localDateTime is then the 1st of it) or `about` when the year itself is a guess. Absent or null otherwise. Other values may be added: treat an unknown one as absent.",
             "nullable": true,
             "type": "string"
           },
@@ -134755,6 +134775,10 @@
             "description": "With `dateTimeOriginal`: `year` or `decade` when only that much of the date is known",
             "type": "string"
           },
+          "dateDetail": {
+            "description": "With `dateAccuracy: year`: `month` when the month is known too, or `about` when the year is a guess",
+            "type": "string"
+          },
           "dateMode": {
             "enum": [
               "set",
@@ -141369,6 +141393,11 @@
             "nullable": true,
             "type": "string"
           },
+          "birthDatePrecision": {
+            "description": "How much of the date of birth is known (FL-1814): `month`, `year` or `about`; absent or null for the exact day. Returned to the person's owner with the profile. Other values may be added: treat an unknown one as approximate.",
+            "nullable": true,
+            "type": "string"
+          },
           "categoryIds": {
             "description": "The caller's categories the person is in (FL-874), such as Family, Friends or Work. Returned only to the person's owner, by GET /people and by GET and PUT /people/:id; never to anyone else",
             "items": {
@@ -141407,6 +141436,11 @@
           "deathDate": {
             "description": "Date of passing (FL-864); null when none is set. Returned by the People endpoints, wherever the person is returned to the caller",
             "format": "date",
+            "nullable": true,
+            "type": "string"
+          },
+          "deathDatePrecision": {
+            "description": "As birthDatePrecision, for the date of passing.",
             "nullable": true,
             "type": "string"
           },
@@ -141758,6 +141792,17 @@
             "nullable": true,
             "type": "string"
           },
+          "birthDatePrecision": {
+            "description": "How much of the date of birth is known (FL-1814): `month`, `year`, or `about` (around that year); null is the exact day. Sent with birthDate, which is then the start of that period (the 1st of the month, or 1 January). A birthDate sent without it is an exact day.",
+            "enum": [
+              "month",
+              "year",
+              "about",
+              null
+            ],
+            "nullable": true,
+            "type": "string"
+          },
           "color": {
             "description": "Person color (hex)",
             "nullable": true,
@@ -141767,6 +141812,17 @@
           "deathDate": {
             "description": "Date of passing (FL-864). Null clears it. Refused when it is before the date of birth (the one sent, or the stored one)",
             "format": "date",
+            "nullable": true,
+            "type": "string"
+          },
+          "deathDatePrecision": {
+            "description": "As birthDatePrecision, for the date of passing; sent with deathDate.",
+            "enum": [
+              "month",
+              "year",
+              "about",
+              null
+            ],
             "nullable": true,
             "type": "string"
           },
@@ -142631,6 +142687,11 @@
             "nullable": true,
             "type": "string"
           },
+          "birthDatePrecision": {
+            "description": "How much of the date of birth is known (FL-1814): `month`, `year` or `about`; absent or null for the exact day. Returned to the person's owner with the profile. Other values may be added: treat an unknown one as approximate.",
+            "nullable": true,
+            "type": "string"
+          },
           "categoryIds": {
             "description": "The caller's categories the person is in (FL-874), such as Family, Friends or Work. Returned only to the person's owner, by GET /people and by GET and PUT /people/:id; never to anyone else",
             "items": {
@@ -142669,6 +142730,11 @@
           "deathDate": {
             "description": "Date of passing (FL-864); null when none is set. Returned by the People endpoints, wherever the person is returned to the caller",
             "format": "date",
+            "nullable": true,
+            "type": "string"
+          },
+          "deathDatePrecision": {
+            "description": "As birthDatePrecision, for the date of passing.",
             "nullable": true,
             "type": "string"
           },
@@ -142980,6 +143046,17 @@
             "nullable": true,
             "type": "string"
           },
+          "birthDatePrecision": {
+            "description": "How much of the date of birth is known (FL-1814): `month`, `year`, or `about` (around that year); null is the exact day. Sent with birthDate, which is then the start of that period (the 1st of the month, or 1 January). A birthDate sent without it is an exact day.",
+            "enum": [
+              "month",
+              "year",
+              "about",
+              null
+            ],
+            "nullable": true,
+            "type": "string"
+          },
           "color": {
             "description": "Person color (hex)",
             "nullable": true,
@@ -142989,6 +143066,17 @@
           "deathDate": {
             "description": "Date of passing (FL-864). Null clears it. Refused when it is before the date of birth (the one sent, or the stored one)",
             "format": "date",
+            "nullable": true,
+            "type": "string"
+          },
+          "deathDatePrecision": {
+            "description": "As birthDatePrecision, for the date of passing; sent with deathDate.",
+            "enum": [
+              "month",
+              "year",
+              "about",
+              null
+            ],
             "nullable": true,
             "type": "string"
           },
@@ -171252,6 +171340,11 @@
             "nullable": true,
             "type": "string"
           },
+          "dateDetail": {
+            "description": "With dateAccuracy `year` only: `month` when the month is known too (localDateTime is then the 1st of it) or `about` when the year itself is a guess. Absent or null otherwise. Other values may be added: treat an unknown one as absent.",
+            "nullable": true,
+            "type": "string"
+          },
           "duration": {
             "description": "Video/gif duration in milliseconds (null for static images)",
             "maximum": 2147483647,
@@ -191991,6 +192084,16 @@
             "enum": [
               "year",
               "decade",
+              null
+            ],
+            "nullable": true,
+            "type": "string"
+          },
+          "dateDetail": {
+            "description": "With dateAccuracy `year` only: `month` when the month is known too (the date is then stored as the 1st of that month, midnight UTC) or `about` when the year itself is a guess. Absent or null: the year is all that is known. Any other date edit clears it.",
+            "enum": [
+              "month",
+              "about",
               null
             ],
             "nullable": true,

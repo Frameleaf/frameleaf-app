@@ -1,7 +1,7 @@
 {
-  "sourceCommit": "d1b48ba517ce09cc3a2691b7f50f4f7658d32cac",
+  "sourceCommit": "876ea164e7be4ba329bd2bab9a5f351f6e7ed9e3",
   "sourceHashes": {
-    "src/enum.ts": "85140a03a4567d51e8bfc58f6602a3b45b4dedbec71b91d4f3ef4d3a2faa10ef",
+    "src/enum.ts": "514092b4e8048a90b100389accfaabf5c82dcb52e22e52255fd5c0268b7a140c",
     "src/immich-import/state.ts": "0c553f994130d9f6a37600aab0a4a3c51a5785783dc658fa6bb638d1acb86092",
     "src/library-import/state-schema.ts": "b4d13d8e68b85c68a14257f56062df1f4efdd7a929918f21af225fa6b4998408",
     "src/queue/schema.ts": "a7562b1877064164778469c46c67f4f16c284d7d2e91d27df0e137ff4f587401",
@@ -66,7 +66,7 @@
     "src/schema/tables/asset-upload-skip-exception.table.ts": "dae4baaf4a0f6ac7f124240ef00abab7a627e9fa0c70c796ce1fdb31be77f9c3",
     "src/schema/tables/asset-video-fingerprint.table.ts": "6eb73330cc4a52680d49b055a42ee7c8a9987dce91cb6b4a0310aa3040ccbec1",
     "src/schema/tables/asset-view.table.ts": "b5092f3fc59cf93d0ddc84186381f3fd50309d17434a3f32e1774b111fad2c73",
-    "src/schema/tables/asset.table.ts": "9ba5af69405d4c290a85f9fb552725e59d292dff01d28492d700c40c05b519d0",
+    "src/schema/tables/asset.table.ts": "fe9281d702edfea435485ff9acc05f58e2247fca9fe6ced9da37dcd8dd3475f4",
     "src/schema/tables/assistant-action.table.ts": "8bd089e65b410f597b795cf1b77830ae65d562061ccc335a83b2185c75c21b57",
     "src/schema/tables/backup-device.table.ts": "9daba89f4a60d835a39e787e59841ace98f2505a3261a6f5a3065e36c5a7b4d7",
     "src/schema/tables/backup-restore-report.table.ts": "a3a19775b34c67a7d2080a706261f56af46cd7a07052d8f81ff7c875a7b1bb16",
@@ -136,7 +136,7 @@
     "src/schema/tables/person-group-audit.table.ts": "19bf276917c6883284d334f0a53c30761073d0b5af57f3b97562e8298faa9e0e",
     "src/schema/tables/person-group.table.ts": "20d0bc1efac183db55decff5d872755c351a54a3e3f180280a64aef02f1a79c8",
     "src/schema/tables/person-merge-candidate.table.ts": "9437449b380d13540219f8128eaaf987cd603141f90efb42fdd1a426d9005538",
-    "src/schema/tables/person-profile.table.ts": "98506690d902233db0e3309e4c5723e27fb787083eb6556eafebfdcb5c9e6c99",
+    "src/schema/tables/person-profile.table.ts": "2c63553c477b7fe6e48b1161c7b11fa696dded382d9031a76e878f6c40ae5db9",
     "src/schema/tables/person-relationship.table.ts": "8ccb7f5bd8c34f02980fef1f2ffda16e8e8f06d9ddfec503f50e279309e91c4e",
     "src/schema/tables/person-split-candidate.table.ts": "8b83192e0ec5b8b4e24cea748075ebc9ff61c5a0d1422d9678d6cd3445093a74",
     "src/schema/tables/person-summary-state.table.ts": "d46fabc09a3e788e3c3f806bfa98ae03963d77bf0d1874356430c72b5583ef1d",
@@ -216,6 +216,6 @@
   },
   "serverVersion": 190000,
   "baselineSha256": "b57bd944096b45f516bb29a336033410d24b145e89b708575786aa09e1a6bfbf",
-  "dumpSha256": "650b863680739ff342c83c122acaed355413d74c3fbfdda65800628388b41d51",
-  "rawMetadataSha256": "cfd747f580ca4c38fd15960b4a5661423486b40263b35d0eae05ca9b40b708a4"
+  "dumpSha256": "397feb629f0536440df1e92f4cf9f5638dabf719f2d055d25429a643f4717c09",
+  "rawMetadataSha256": "b910068c2ce7438d3ed909caa1adf21d025accb08d50658cfde2e04c4cd99918"
 }
