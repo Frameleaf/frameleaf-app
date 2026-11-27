@@ -38452,129 +38452,6 @@
       "synchronize": true
     },
     {
-      "name": "takeout_album",
-      "columns": [
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "id",
-          "tableName": "takeout_album",
-          "nullable": false,
-          "isArray": false,
-          "default": "immich_uuid_v7()",
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "ownerId",
-          "tableName": "takeout_album",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "folder",
-          "tableName": "takeout_album",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "albumId",
-          "tableName": "takeout_album",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        }
-      ],
-      "indexes": [
-        {
-          "name": "takeout_album_ownerId_idx",
-          "definition": "CREATE INDEX \"takeout_album_ownerId_idx\" ON public.takeout_album USING btree (\"ownerId\")",
-          "tableName": "takeout_album",
-          "columnNames": [
-            "ownerId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "takeout_album_albumId_idx",
-          "definition": "CREATE INDEX \"takeout_album_albumId_idx\" ON public.takeout_album USING btree (\"albumId\")",
-          "tableName": "takeout_album",
-          "columnNames": [
-            "albumId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        }
-      ],
-      "triggers": [],
-      "constraints": [
-        {
-          "type": "unique",
-          "name": "takeout_album_ownerId_folder_uq",
-          "definition": "UNIQUE (\"ownerId\", folder)",
-          "tableName": "takeout_album",
-          "columnNames": [
-            "ownerId",
-            "folder"
-          ],
-          "synchronize": true
-        },
-        {
-          "type": "primary-key",
-          "name": "takeout_album_pkey",
-          "definition": "PRIMARY KEY (id)",
-          "tableName": "takeout_album",
-          "columnNames": [
-            "id"
-          ],
-          "synchronize": true
-        },
-        {
-          "type": "foreign-key",
-          "name": "takeout_album_albumId_fkey",
-          "definition": "FOREIGN KEY (\"albumId\") REFERENCES album(id) ON UPDATE CASCADE ON DELETE CASCADE",
-          "tableName": "takeout_album",
-          "columnNames": [
-            "albumId"
-          ],
-          "referenceTableName": "album",
-          "referenceColumnNames": [
-            "id"
-          ],
-          "onUpdate": "CASCADE",
-          "onDelete": "CASCADE",
-          "synchronize": true
-        },
-        {
-          "type": "foreign-key",
-          "name": "takeout_album_ownerId_fkey",
-          "definition": "FOREIGN KEY (\"ownerId\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
-          "tableName": "takeout_album",
-          "columnNames": [
-            "ownerId"
-          ],
-          "referenceTableName": "user",
-          "referenceColumnNames": [
-            "id"
-          ],
-          "onUpdate": "CASCADE",
-          "onDelete": "CASCADE",
-          "synchronize": true
-        }
-      ],
-      "synchronize": true
-    },
-    {
       "name": "takeout_file",
       "columns": [
         {
@@ -42090,22 +41967,6 @@
           "columnNames": [
             "id"
           ],
-          "synchronize": true
-        },
-        {
-          "type": "foreign-key",
-          "name": "album_source_link_album_fkey",
-          "definition": "FOREIGN KEY (\"albumId\") REFERENCES album(id) ON DELETE CASCADE",
-          "tableName": "album_source_link",
-          "columnNames": [
-            "albumId"
-          ],
-          "referenceTableName": "album",
-          "referenceColumnNames": [
-            "id"
-          ],
-          "onUpdate": "NO ACTION",
-          "onDelete": "CASCADE",
           "synchronize": true
         },
         {
@@ -61266,6 +61127,384 @@
             "id"
           ],
           "onUpdate": "NO ACTION",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
+    },
+    {
+      "name": "takeout_album",
+      "columns": [
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "id",
+          "tableName": "takeout_album",
+          "nullable": false,
+          "isArray": false,
+          "default": "immich_uuid_v7()",
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "ownerId",
+          "tableName": "takeout_album",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "folder",
+          "tableName": "takeout_album",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "albumId",
+          "tableName": "takeout_album",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "source",
+          "tableName": "takeout_album",
+          "nullable": false,
+          "isArray": false,
+          "default": "''::text",
+          "synchronize": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "takeout_album_ownerId_idx",
+          "definition": "CREATE INDEX \"takeout_album_ownerId_idx\" ON public.takeout_album USING btree (\"ownerId\")",
+          "tableName": "takeout_album",
+          "columnNames": [
+            "ownerId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "takeout_album_albumId_idx",
+          "definition": "CREATE INDEX \"takeout_album_albumId_idx\" ON public.takeout_album USING btree (\"albumId\")",
+          "tableName": "takeout_album",
+          "columnNames": [
+            "albumId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        }
+      ],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "primary-key",
+          "name": "takeout_album_pkey",
+          "definition": "PRIMARY KEY (id)",
+          "tableName": "takeout_album",
+          "columnNames": [
+            "id"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "takeout_album_ownerId_fkey",
+          "definition": "FOREIGN KEY (\"ownerId\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "takeout_album",
+          "columnNames": [
+            "ownerId"
+          ],
+          "referenceTableName": "user",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "takeout_album_albumId_fkey",
+          "definition": "FOREIGN KEY (\"albumId\") REFERENCES album(id) ON UPDATE CASCADE ON DELETE SET NULL",
+          "tableName": "takeout_album",
+          "columnNames": [
+            "albumId"
+          ],
+          "referenceTableName": "album",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "SET NULL",
+          "synchronize": true
+        },
+        {
+          "type": "unique",
+          "name": "takeout_album_ownerId_source_folder_uq",
+          "definition": "UNIQUE (\"ownerId\", source, folder)",
+          "tableName": "takeout_album",
+          "columnNames": [
+            "ownerId",
+            "source",
+            "folder"
+          ],
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
+    },
+    {
+      "name": "photo_source_album",
+      "columns": [
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "id",
+          "tableName": "photo_source_album",
+          "nullable": false,
+          "isArray": false,
+          "default": "immich_uuid_v7()",
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "ownerId",
+          "tableName": "photo_source_album",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "catalog",
+          "tableName": "photo_source_album",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "collectionId",
+          "tableName": "photo_source_album",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "albumId",
+          "tableName": "photo_source_album",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "photo_source_album_albumId_idx",
+          "definition": "CREATE INDEX \"photo_source_album_albumId_idx\" ON public.photo_source_album USING btree (\"albumId\")",
+          "tableName": "photo_source_album",
+          "columnNames": [
+            "albumId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        }
+      ],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "primary-key",
+          "name": "photo_source_album_pkey",
+          "definition": "PRIMARY KEY (id)",
+          "tableName": "photo_source_album",
+          "columnNames": [
+            "id"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "unique",
+          "name": "photo_source_album_ownerId_catalog_collectionId_uq",
+          "definition": "UNIQUE (\"ownerId\", catalog, \"collectionId\")",
+          "tableName": "photo_source_album",
+          "columnNames": [
+            "ownerId",
+            "catalog",
+            "collectionId"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "photo_source_album_ownerId_fkey",
+          "definition": "FOREIGN KEY (\"ownerId\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "photo_source_album",
+          "columnNames": [
+            "ownerId"
+          ],
+          "referenceTableName": "user",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "photo_source_album_albumId_fkey",
+          "definition": "FOREIGN KEY (\"albumId\") REFERENCES album(id) ON UPDATE CASCADE ON DELETE SET NULL",
+          "tableName": "photo_source_album",
+          "columnNames": [
+            "albumId"
+          ],
+          "referenceTableName": "album",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "SET NULL",
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
+    },
+    {
+      "name": "preservation_album",
+      "columns": [
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "id",
+          "tableName": "preservation_album",
+          "nullable": false,
+          "isArray": false,
+          "default": "immich_uuid_v7()",
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "ownerId",
+          "tableName": "preservation_album",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "packageIdentity",
+          "tableName": "preservation_album",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "sourceAlbumId",
+          "tableName": "preservation_album",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "albumId",
+          "tableName": "preservation_album",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "preservation_album_albumId_idx",
+          "definition": "CREATE INDEX \"preservation_album_albumId_idx\" ON public.preservation_album USING btree (\"albumId\")",
+          "tableName": "preservation_album",
+          "columnNames": [
+            "albumId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        }
+      ],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "primary-key",
+          "name": "preservation_album_pkey",
+          "definition": "PRIMARY KEY (id)",
+          "tableName": "preservation_album",
+          "columnNames": [
+            "id"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "unique",
+          "name": "preservation_album_ownerId_packageIdentity_sourceAlbumId_uq",
+          "definition": "UNIQUE (\"ownerId\", \"packageIdentity\", \"sourceAlbumId\")",
+          "tableName": "preservation_album",
+          "columnNames": [
+            "ownerId",
+            "packageIdentity",
+            "sourceAlbumId"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "preservation_album_ownerId_fkey",
+          "definition": "FOREIGN KEY (\"ownerId\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "preservation_album",
+          "columnNames": [
+            "ownerId"
+          ],
+          "referenceTableName": "user",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "preservation_album_albumId_fkey",
+          "definition": "FOREIGN KEY (\"albumId\") REFERENCES album(id) ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "preservation_album",
+          "columnNames": [
+            "albumId"
+          ],
+          "referenceTableName": "album",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
           "onDelete": "CASCADE",
           "synchronize": true
         }
