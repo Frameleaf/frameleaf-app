@@ -72,6 +72,19 @@ const decodePageCursor = (cursor: string): { at: string; id: string } => {
   ) {
     throw new BadRequestException('Invalid cursor');
   }
+  // A time that cannot exist (month 13, February 30) would reach Postgres and fail there.
+  const [year, month, day, hour, minute, second] = at.split(/[ :.+-]/).map(Number);
+  const time = new Date(Date.UTC(year, month - 1, day, hour, minute, second));
+  if (
+    time.getUTCFullYear() !== year ||
+    time.getUTCMonth() !== month - 1 ||
+    time.getUTCDate() !== day ||
+    time.getUTCHours() !== hour ||
+    time.getUTCMinutes() !== minute ||
+    time.getUTCSeconds() !== second
+  ) {
+    throw new BadRequestException('Invalid cursor');
+  }
   return { at, id };
 };
 

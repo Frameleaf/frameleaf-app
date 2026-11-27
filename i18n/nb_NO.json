@@ -11912,7 +11912,7 @@
   "frameleaf_jobs_tab_active": "Aktive",
   "frameleaf_jobs_tab_failed": "Mislyktes",
   "frameleaf_jobs_tab_help_active": "Aktive oppgaver blir ferdige selv om køen er satt på pause.",
-  "frameleaf_jobs_tab_help_failed": "Les feilen og løs årsaken før du prøver på nytt.",
+  "frameleaf_jobs_tab_help_failed": "Hva som gikk galt for hver jobb, og om bildet eller videoen er påvirket. Prøv på nytt når årsaken er løst.",
   "frameleaf_jobs_tab_help_history": "Fullført arbeid som beholdes i denne aktivitetsvisningen.",
   "frameleaf_jobs_tab_help_waiting": "Planlagte oppgaver forblir adskilt når ventende arbeid fjernes.",
   "frameleaf_jobs_tab_history": "Historikk",

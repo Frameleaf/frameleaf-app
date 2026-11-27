@@ -73,7 +73,7 @@ describe('folders page load', () => {
     expect(data.path).toBe('/data/library/2026');
     await run('/data/library/2026');
     expect(getAssetsByOriginalPath).toHaveBeenCalledTimes(1);
-    expect(getAssetsByOriginalPath).toHaveBeenCalledWith({ path: '/data/library/2026', take: 500 });
+    expect(getAssetsByOriginalPath).toHaveBeenCalledWith({ path: '/data/library/2026' });
     expect(getFolderSummary).toHaveBeenCalledTimes(1);
   });
 
@@ -119,7 +119,7 @@ describe('folders page load', () => {
     windowIs(true);
     foldersView.set({ view: 'columns', fileNames: false });
     const data = await run('/data/library/2026', 'asset-1');
-    expect(getAssetsByOriginalPath).toHaveBeenCalledWith({ path: '/data/library/2026', take: 500 });
+    expect(getAssetsByOriginalPath).toHaveBeenCalledWith({ path: '/data/library/2026' });
     expect(data.assetsDeferred).toBe(false);
   });
 
