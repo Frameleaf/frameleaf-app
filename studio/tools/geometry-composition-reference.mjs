@@ -168,7 +168,7 @@ export function compositionSourcesFor(sourceSha256) {
     // FL-1822 the editor's tab bar in place of its header; changes no composition or raster producer.
     sourceSha256 === '0191c4d7a611fd2fba5aefd4985be309aa397db7188da8a790893adf31e72f70' ||
     // FL-1822 inspector controls laid out as the approved Studio; changes no composition or raster producer.
-    sourceSha256 === '9bde467ca52754ac2e5256d5759812703ab55c950e76ccf5c15a6198a3f317c8'
+    sourceSha256 === '12627e4c71be07459341c17242efaaf9e93b026e613f43beee979c975c450298'
   )
     return {
       ...COMPOSITION_SOURCES,

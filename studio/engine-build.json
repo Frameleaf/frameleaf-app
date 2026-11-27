@@ -938,8 +938,8 @@
     {
       "path": "patches/0208-studio-inspector-controls.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
-      "sha256": "bdb3e95105dda9857484188fea74fc9fb3e25b6b7953174691ebb2cb18d8e1db"
+      "sha256": "c02f6308468a6be14b1d65c4627ce682fb341d7e7fa622a4716ea731feda6e9f"
     }
   ],
-  "sourceSha256": "9bde467ca52754ac2e5256d5759812703ab55c950e76ccf5c15a6198a3f317c8"
+  "sourceSha256": "12627e4c71be07459341c17242efaaf9e93b026e613f43beee979c975c450298"
 }

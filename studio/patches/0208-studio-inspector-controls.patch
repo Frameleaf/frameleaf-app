@@ -1,18 +1,83 @@
+diff --git a/src/features/editor/components/properties-sidebar/clip-panel/layout-section.tsx b/src/features/editor/components/properties-sidebar/clip-panel/layout-section.tsx
+index bd48601..3337d8a 100644
+--- a/src/features/editor/components/properties-sidebar/clip-panel/layout-section.tsx
++++ b/src/features/editor/components/properties-sidebar/clip-panel/layout-section.tsx
+@@ -188,6 +188,7 @@ const PositionAxisControl = memo(function PositionAxisControl({
+         onLiveChange={onLiveChange}
+         label={axis.toUpperCase()}
+         unit="px"
++        compactUnit
+         step={1}
+         className="flex-1"
+       />
+@@ -822,6 +823,7 @@ export const LayoutSection = memo(function LayoutSection({
+             onLiveChange={handleWidthLiveChange}
+             label="W"
+             unit="px"
++            compactUnit
+             min={1}
+             max={7680}
+             step={1}
+@@ -855,6 +857,7 @@ export const LayoutSection = memo(function LayoutSection({
+             onLiveChange={handleHeightLiveChange}
+             label="H"
+             unit="px"
++            compactUnit
+             min={1}
+             max={7680}
+             step={1}
+@@ -918,6 +921,7 @@ export const LayoutSection = memo(function LayoutSection({
+                 onLiveChange={handleAnchorXLiveChange}
+                 label="X"
+                 unit="px"
++                compactUnit
+                 step={1}
+                 className="flex-1 min-w-0"
+               />
+@@ -934,6 +938,7 @@ export const LayoutSection = memo(function LayoutSection({
+                 onLiveChange={handleAnchorYLiveChange}
+                 label="Y"
+                 unit="px"
++                compactUnit
+                 step={1}
+                 className="flex-1 min-w-0"
+               />
 diff --git a/src/shared/ui/property-controls/number-input.tsx b/src/shared/ui/property-controls/number-input.tsx
-index f2e6278..3f267a3 100644
+index f2e6278..6cfb695 100644
 --- a/src/shared/ui/property-controls/number-input.tsx
 +++ b/src/shared/ui/property-controls/number-input.tsx
-@@ -228,7 +228,8 @@ export function NumberInput({
+@@ -26,6 +26,12 @@ interface NumberInputProps {
+   onUnitClick?: () => void
+   /** Tooltip / accessible name for the unit button. */
+   unitTitle?: string
++  /**
++   * Drop the unit suffix when the field is narrower than 5.5rem, so a paired field beside keyframe,
++   * link and reset buttons still shows its whole value (FL-1822). Needs a field with a set width (a
++   * container is sized as if it had no content), so it is opt-in.
++   */
++  compactUnit?: boolean
+ }
+ 
+ /**
+@@ -54,6 +60,7 @@ export function NumberInput({
+   unitWidth = 20,
+   onUnitClick,
+   unitTitle,
++  compactUnit = false,
+ }: NumberInputProps) {
+   const inputRef = useRef<HTMLInputElement>(null)
+   const textEditStateRef = useRef<'clean' | 'dirty' | 'committed'>('clean')
+@@ -228,7 +235,8 @@ export function NumberInput({
    return (
      <div
        className={cn(
 -        'relative flex items-center h-7 bg-secondary border border-input rounded-md overflow-hidden transition-colors',
-+        // A container, so a narrow field can drop its unit and keep the value readable (FL-1822).
-+        '@container relative flex items-center h-[34px] bg-secondary border border-input rounded-md overflow-hidden transition-colors',
++        'relative flex items-center h-[34px] bg-secondary border border-input rounded-md overflow-hidden transition-colors',
++        compactUnit && '@container',
          'focus-within:ring-1 focus-within:ring-ring focus-within:border-ring',
          isScrubbing && 'ring-1 ring-ring border-ring',
          disabled && 'opacity-50 cursor-not-allowed',
-@@ -240,7 +241,7 @@ export function NumberInput({
+@@ -240,7 +248,7 @@ export function NumberInput({
      >
        {/* Label prefix */}
        {label && (
@@ -21,7 +86,7 @@ index f2e6278..3f267a3 100644
            {label}
          </span>
        )}
-@@ -259,7 +260,7 @@ export function NumberInput({
+@@ -259,7 +267,7 @@ export function NumberInput({
          disabled={disabled}
          placeholder={isMixed ? 'Mixed' : placeholder}
          className={cn(
@@ -30,7 +95,7 @@ index f2e6278..3f267a3 100644
            'px-1 min-w-0 cursor-text',
            isMixed && 'italic text-muted-foreground',
          )}
-@@ -276,14 +277,14 @@ export function NumberInput({
+@@ -276,14 +284,17 @@ export function NumberInput({
            disabled={disabled}
            title={unitTitle}
            aria-label={unitTitle}
@@ -43,7 +108,10 @@ index f2e6278..3f267a3 100644
        ) : (
          <span
 -          className="pr-2 text-[10px] text-muted-foreground select-none pointer-events-none text-right"
-+          className="pr-2 text-[11px] text-muted-foreground select-none pointer-events-none text-right @max-[5.5rem]:hidden"
++          className={cn(
++            'pr-2 text-[11px] text-muted-foreground select-none pointer-events-none text-right',
++            compactUnit && '@max-[5.5rem]:hidden',
++          )}
            style={{ minWidth: unitWidth }}
          >
            {unit}
@@ -61,10 +129,10 @@ index 17a4008..479df06 100644
        )}
      >
 diff --git a/src/shared/ui/property-controls/property-row.tsx b/src/shared/ui/property-controls/property-row.tsx
-index d44200f..904db90 100644
+index d44200f..d8eea27 100644
 --- a/src/shared/ui/property-controls/property-row.tsx
 +++ b/src/shared/ui/property-controls/property-row.tsx
-@@ -9,14 +9,15 @@ interface PropertyRowProps {
+@@ -9,15 +9,16 @@ interface PropertyRowProps {
  }
  
  /**
@@ -80,10 +148,12 @@ index d44200f..904db90 100644
  
    return (
 -    <div className={cn('flex items-center justify-between gap-2 min-w-0 py-1', className)}>
+-      {tooltip ? (
 +    <div className={cn('flex flex-col gap-1.5 min-w-0 py-1', className)}>
-       {tooltip ? (
++      {!label ? null : tooltip ? (
          <Tooltip>
            <TooltipTrigger asChild>{labelContent}</TooltipTrigger>
+           <TooltipContent side="left" className="max-w-[200px]">
 @@ -27,7 +28,7 @@ export function PropertyRow({ label, children, tooltip, className }: PropertyRow
        ) : (
          labelContent
