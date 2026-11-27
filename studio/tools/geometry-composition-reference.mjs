@@ -162,7 +162,9 @@ export function compositionSourcesFor(sourceSha256) {
     // FL-1562 editor controls (fonts, transition sound, channels, markers, grade panels); changes no composition or raster producer.
     sourceSha256 === 'fdf1a4993020b356126619f968109dcc9d889c19242f1900fac996ef08bf84ac' ||
     // FL-1819/FL-1822 upstream fixes, theme accent and Studio wording; changes no composition or raster producer.
-    sourceSha256 === 'dc26d4a87723f78a97719cf9ed71afa535620c1be044c57502ec83cace9610d4'
+    sourceSha256 === 'dc26d4a87723f78a97719cf9ed71afa535620c1be044c57502ec83cace9610d4' ||
+    // FL-1822 the editor's tab bar in place of its header; changes no composition or raster producer.
+    sourceSha256 === '6cacd721babe9fb6a670c5694e9fb7b5c90ca108d6887dfe18bf27f33da9f9bb'
   )
     return {
       ...COMPOSITION_SOURCES,

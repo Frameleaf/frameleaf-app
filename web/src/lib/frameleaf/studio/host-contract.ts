@@ -45,6 +45,7 @@ import type { EngineControlsString } from './engine-controls-strings';
 import type { StudioGeneratedMedia } from './generated-media';
 import type { LibraryPanelString } from './library-strings';
 import type { StudioPreviewView } from './preview';
+import type { ShellString } from './shell-strings';
 import type { StabiliseEngineString } from './stabilise-strings';
 import type { TranscriptEngineString } from './transcript-strings';
 import type { VoiceCleanupEngineString } from './voice-cleanup-strings';
@@ -469,6 +470,8 @@ export type StudioAdapterString =
   | CloudCaptionEngineString
   /** The editor controls of FL-1562, FL-1555, FL-1561, FL-1563 and FL-1559, the same way. */
   | EngineControlsString
+  /** The editor's tab bar, its More menu and its error screen (FL-1822), the same way. */
+  | ShellString
   /** The bin's Library view (FL-636), drawn by the adapter. */
   | LibraryPanelString;
 
