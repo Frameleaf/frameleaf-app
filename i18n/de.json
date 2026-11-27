@@ -11912,7 +11912,7 @@
   "frameleaf_jobs_tab_active": "Aktiv",
   "frameleaf_jobs_tab_failed": "Fehlgeschlagen",
   "frameleaf_jobs_tab_help_active": "Aktive Aufgaben werden auch dann abgeschlossen, wenn ihre Warteschlange pausiert ist.",
-  "frameleaf_jobs_tab_help_failed": "Lies den Fehler und behebe seine Ursache, bevor du es erneut versuchst.",
+  "frameleaf_jobs_tab_help_failed": "Was bei jedem Auftrag schiefging und ob das Foto oder Video betroffen ist. Versuche es erneut, sobald die Ursache behoben ist.",
   "frameleaf_jobs_tab_help_history": "Abgeschlossene Arbeit, die in dieser Aktivitätsansicht aufbewahrt wird.",
   "frameleaf_jobs_tab_help_waiting": "Geplante Aufgaben bleiben getrennt, wenn wartende Arbeit geleert wird.",
   "frameleaf_jobs_tab_history": "Verlauf",

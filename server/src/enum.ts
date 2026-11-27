@@ -2754,6 +2754,8 @@ export enum DatabaseLock {
   LibraryFolderAlbums = 988,
   /** FL-1758: one desktop conversion at a time per video (taken with the asset id as the second key). */
   DesktopTranscode = 989,
+  /** FL-1827: held for the life of the process by the one worker that runs the Best Photos scan. */
+  BestPhotosScan = 990,
 }
 
 export enum MaintenanceAction {
