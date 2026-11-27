@@ -65,7 +65,9 @@
       showPassed = on;
     }
     await tick();
-    document.getElementById(on ? `${fieldId}-${which}` : `${fieldId}-add-${which}`)?.focus();
+    document
+      .querySelector<HTMLElement>(`#${CSS.escape(on ? `${fieldId}-${which}` : `${fieldId}-add-${which}`)}`)
+      ?.focus();
   };
   const unchanged = $derived(
     birth.date === (person.birthDate || null) &&

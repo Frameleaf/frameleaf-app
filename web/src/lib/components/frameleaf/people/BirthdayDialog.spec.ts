@@ -161,7 +161,9 @@ describe('BirthdayDialog (PD-5, FL-864)', () => {
     expect(save().disabled).toBe(false);
 
     await fireEvent.click(screen.getByRole('button', { name: 'Remove date of passing' }));
-    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Add a date of passing' })));
+    await waitFor(() =>
+      expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Add a date of passing' })),
+    );
     await fireEvent.click(screen.getByRole('button', { name: 'Add a date of passing' }));
     await waitFor(() =>
       expect(document.activeElement).toBe(field('Date of passing (optional)').getByLabelText('How sure are you?')),
