@@ -32,7 +32,7 @@
   import { Route } from '$lib/route';
   import { lang } from '$lib/stores/preferences.store';
   import { getServerErrorMessage } from '$lib/utils/handle-error';
-  import { convertBCP47, languageChoices, languageCodeFor } from '$lib/utils/i18n';
+  import { convertBCP47, languageChoices, languageCodeFor, setLanguage } from '$lib/utils/i18n';
   import { getFrameleafAccountLink, setUserOnboarding, updateMyPreferences, updateMyUser } from '@frameleaf/sdk';
   import { Icon, modalManager, themeManager, ThemePreference } from '@frameleaf/ui';
   import {
@@ -46,7 +46,7 @@
     mdiWhiteBalanceSunny,
   } from '@mdi/js';
   import { onMount } from 'svelte';
-  import { locale as i18nLocale, t } from 'svelte-i18n';
+  import { t } from 'svelte-i18n';
 
   interface Props {
     /** Where to go when setup is done: the page sign-in was asked for (FL-146), else the Library. */
@@ -122,7 +122,7 @@
       await save('appearance', async () => {
         await saveNotificationLanguage(selectedLanguage);
         $lang = selectedLanguage;
-        await i18nLocale.set(convertBCP47(selectedLanguage));
+        await setLanguage(selectedLanguage);
       });
     } finally {
       savingAppearance = false;

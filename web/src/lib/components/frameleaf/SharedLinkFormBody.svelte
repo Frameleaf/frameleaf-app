@@ -3,6 +3,7 @@
   import AssetCollage from './AssetCollage.svelte';
   import QrCode from './QrCode.svelte';
   import Toggle from './Toggle.svelte';
+  import { formatCount } from '$lib/frameleaf/number-format';
   import { sharedLinkBadges, relativeTime, type SharedLinkBadgeId } from '$lib/frameleaf/shared-link-badges';
   import { loadAlbumLinkCoverIds, sharedLinkCover, type SharedLinkCover } from '$lib/frameleaf/shared-link-cover';
   import {
@@ -266,9 +267,11 @@
       ? $t('never')
       : $t('frameleaf_sharing.expires_in', {
           values: {
-            duration: new Intl.NumberFormat($locale, { style: 'unit', unit: item.unit, unitDisplay: 'long' }).format(
-              item.value as number,
-            ),
+            duration: formatCount(item.value as number, $locale, {
+              style: 'unit',
+              unit: item.unit,
+              unitDisplay: 'long',
+            }),
           },
         });
 

@@ -1,0 +1,931 @@
+diff --git a/src/features/editor/components/properties-sidebar/clip-panel/clip-markers-section.test.tsx b/src/features/editor/components/properties-sidebar/clip-panel/clip-markers-section.test.tsx
+new file mode 100644
+index 0000000..10f3787
+--- /dev/null
++++ b/src/features/editor/components/properties-sidebar/clip-panel/clip-markers-section.test.tsx
+@@ -0,0 +1,86 @@
++import type { ReactNode } from 'react'
++import { fireEvent, render, screen } from '@testing-library/react'
++import { beforeEach, describe, expect, it, vi } from 'vite-plus/test'
++import type { VideoItem } from '@/types/timeline'
++
++const updateItem = vi.hoisted(() => vi.fn())
++const playback = vi.hoisted(() => ({ currentFrame: 0 }))
++vi.mock('react-i18next', () => ({
++  useTranslation: () => ({
++    t: (key: string, values?: Record<string, unknown>) =>
++      values ? `${key} ${JSON.stringify(values)}` : key,
++  }),
++}))
++vi.mock('@/features/editor/deps/timeline-store', () => ({
++  useTimelineStore: (select: (state: unknown) => unknown) => select({ updateItem, fps: 30 }),
++}))
++vi.mock('@/shared/state/playback', () => ({ usePlaybackStore: { getState: () => playback } }))
++vi.mock('../components', () => ({
++  PropertySection: ({ children }: { children: ReactNode }) => <section>{children}</section>,
++}))
++
++const { ClipMarkersSection } = await import('./clip-markers-section')
++
++const clip = (extra: Partial<VideoItem> = {}) =>
++  ({
++    id: 'clip',
++    type: 'video',
++    from: 100,
++    durationInFrames: 90,
++    sourceStart: 30,
++    sourceEnd: 120,
++    sourceFps: 30,
++    ...extra,
++  }) as VideoItem
++const marker = { id: 'm1', sourceFrame: 75, color: '#fff', label: 'Jamie waves' }
++
++describe('clip markers (FL-1563)', () => {
++  beforeEach(() => {
++    updateItem.mockClear()
++    playback.currentFrame = 0
++  })
++
++  it('lists a marker with where it sits in the clip, and one the trim leaves out', () => {
++    render(
++      <ClipMarkersSection
++        item={clip({ markers: [marker, { id: 'm2', sourceFrame: 10, color: '#fff' }] })}
++      />,
++    )
++    expect(screen.getByDisplayValue('Jamie waves')).toBeTruthy()
++    expect(screen.getByText('engineControls.markers.timeIn {"time":"00:01.15"}')).toBeTruthy()
++    expect(screen.getByText('engineControls.markers.trimmedOut')).toBeTruthy()
++  })
++
++  it('adds a marker on the source frame under the playhead', () => {
++    playback.currentFrame = 110
++    const uuid = vi
++      .spyOn(crypto, 'randomUUID')
++      .mockReturnValue('00000000-0000-4000-8000-000000000001')
++    render(<ClipMarkersSection item={clip()} />)
++    fireEvent.click(screen.getByRole('button', { name: /addClipMarker/ }))
++    expect(updateItem).toHaveBeenCalledWith('clip', {
++      markers: [
++        expect.objectContaining({ id: '00000000-0000-4000-8000-000000000001', sourceFrame: 40 }),
++      ],
++    })
++    uuid.mockRestore()
++  })
++
++  it('edits the name and note, and removing the last marker removes the field', () => {
++    render(<ClipMarkersSection item={clip({ markers: [marker] })} />)
++    fireEvent.change(screen.getByLabelText('engineControls.markers.note'), {
++      target: { value: 'Good for a cut' },
++    })
++    expect(updateItem).toHaveBeenLastCalledWith('clip', {
++      markers: [{ ...marker, note: 'Good for a cut' }],
++    })
++    fireEvent.change(screen.getByLabelText('engineControls.markers.name'), {
++      target: { value: '' },
++    })
++    expect(updateItem).toHaveBeenLastCalledWith('clip', {
++      markers: [{ ...marker, label: undefined }],
++    })
++    fireEvent.click(screen.getByRole('button', { name: 'engineControls.markers.removeClipMarker' }))
++    expect(updateItem).toHaveBeenLastCalledWith('clip', { markers: undefined })
++  })
++})
+diff --git a/src/features/editor/components/properties-sidebar/clip-panel/clip-markers-section.tsx b/src/features/editor/components/properties-sidebar/clip-panel/clip-markers-section.tsx
+new file mode 100644
+index 0000000..00991e1
+--- /dev/null
++++ b/src/features/editor/components/properties-sidebar/clip-panel/clip-markers-section.tsx
+@@ -0,0 +1,104 @@
++/**
++ * Frameleaf (FL-1563): the markers of one clip. They are kept on the clip in its source frames, so
++ * they stay with the media when the clip is moved or trimmed; a marker the trim leaves out is
++ * still listed, dimmed.
++ */
++import { useTranslation } from 'react-i18next'
++import { MapPin, Plus, Trash2 } from 'lucide-react'
++import { Button } from '@/components/ui/button'
++import { Input } from '@/components/ui/input'
++import { Textarea } from '@/components/ui/textarea'
++import type { ClipMarker, TimelineItem } from '@/types/timeline'
++import { useTimelineStore } from '@/features/editor/deps/timeline-store'
++import { usePlaybackStore } from '@/shared/state/playback'
++import { clipMarkerOffsetFrames, clipSourceFrameAt } from '@/shared/timeline/clip-markers'
++import { formatTimecodeDotFrames } from '@/shared/utils/time-utils'
++import { cn } from '@/shared/ui/cn'
++import { PropertySection } from '../components'
++
++const CLIP_MARKER_COLOR = 'oklch(0.60 0.20 310)'
++
++export function ClipMarkersSection({ item }: { item: TimelineItem }) {
++  const { t } = useTranslation()
++  const updateItem = useTimelineStore((s) => s.updateItem)
++  const fps = useTimelineStore((s) => s.fps)
++  const markers = item.markers ?? []
++  const write = (next: ClipMarker[]) =>
++    updateItem(item.id, { markers: next.length > 0 ? next : undefined })
++  const change = (id: string, updates: Partial<ClipMarker>) =>
++    write(markers.map((marker) => (marker.id === id ? { ...marker, ...updates } : marker)))
++
++  const addAtPlayhead = () => {
++    const playhead = usePlaybackStore.getState().currentFrame
++    // The playhead outside the clip marks the clip's first frame.
++    const sourceFrame =
++      clipSourceFrameAt(item, playhead - item.from, fps) ?? clipSourceFrameAt(item, 0, fps)
++    if (sourceFrame === null) return
++    write([...markers, { id: crypto.randomUUID(), sourceFrame, color: CLIP_MARKER_COLOR }])
++  }
++
++  return (
++    <PropertySection
++      title={t('engineControls.markers.clipMarkers')}
++      icon={MapPin}
++      defaultOpen={markers.length > 0}
++    >
++      <div className="space-y-2 px-2">
++        {[...markers]
++          .sort((a, b) => a.sourceFrame - b.sourceFrame)
++          .map((marker) => {
++            const offset = clipMarkerOffsetFrames(item, marker.sourceFrame, fps)
++            return (
++              <div key={marker.id} className={cn('space-y-1', offset === null && 'opacity-60')}>
++                <div className="flex items-center gap-1.5">
++                  <span
++                    className="h-2.5 w-2.5 shrink-0 rotate-45 border border-black/20"
++                    style={{ backgroundColor: marker.color }}
++                  />
++                  <Input
++                    value={marker.label ?? ''}
++                    onChange={(event) =>
++                      change(marker.id, { label: event.target.value || undefined })
++                    }
++                    placeholder={t('engineControls.markers.name')}
++                    aria-label={t('engineControls.markers.name')}
++                    className="h-7 min-w-0 flex-1 text-xs"
++                  />
++                  <span className="shrink-0 font-mono text-[10px] tabular-nums text-muted-foreground">
++                    {offset === null
++                      ? t('engineControls.markers.trimmedOut')
++                      : t('engineControls.markers.timeIn', {
++                          time: formatTimecodeDotFrames(offset, fps),
++                        })}
++                  </span>
++                  <button
++                    type="button"
++                    onClick={() => write(markers.filter((other) => other.id !== marker.id))}
++                    className="grid h-6 w-6 shrink-0 place-items-center rounded text-muted-foreground hover:text-destructive"
++                    aria-label={t('engineControls.markers.removeClipMarker')}
++                  >
++                    <Trash2 className="h-3 w-3" />
++                  </button>
++                </div>
++                <Textarea
++                  value={marker.note ?? ''}
++                  onChange={(event) => change(marker.id, { note: event.target.value || undefined })}
++                  placeholder={t('engineControls.markers.addNote')}
++                  aria-label={t('engineControls.markers.note')}
++                  rows={1}
++                  className="min-h-7 px-2 py-1 text-xs md:text-xs"
++                />
++              </div>
++            )
++          })}
++        <Button variant="outline" size="sm" className="h-7 w-full text-xs" onClick={addAtPlayhead}>
++          <Plus className="mr-1.5 h-3 w-3" />
++          {t('engineControls.markers.addClipMarker')}
++        </Button>
++        <p className="text-[11px] leading-snug text-muted-foreground">
++          {t('engineControls.markers.clipMarkersNote')}
++        </p>
++      </div>
++    </PropertySection>
++  )
++}
+diff --git a/src/features/editor/components/properties-sidebar/clip-panel/index.tsx b/src/features/editor/components/properties-sidebar/clip-panel/index.tsx
+index 4461be2..5fa093e 100644
+--- a/src/features/editor/components/properties-sidebar/clip-panel/index.tsx
++++ b/src/features/editor/components/properties-sidebar/clip-panel/index.tsx
+@@ -40,6 +40,7 @@ import type { TimelineState, TimelineActions } from '@/features/editor/deps/time
+ import type { TransformProperties } from '@/types/transform'
+ import type { TimelineItem, VideoItem, CompositionItem } from '@/types/timeline'
+ import { StabiliseSection } from './stabilise-section'
++import { ClipMarkersSection } from './clip-markers-section'
+ import { CaptionQualityPanel } from '../caption-quality-panel'
+ import { VoiceMusicPanel } from '../voice-music-panel'
+ import { getLinkedAudioCompanion } from '@/shared/utils/linked-media'
+@@ -754,7 +755,6 @@ const ClipPanelCore = memo(function ClipPanelCore({
+               <LazyAudioSection items={audioPanelItems} />
+             </Suspense>
+           )}
+-
+         </TabsContent>
+ 
+         {/* Effects Tab - clip effects plus text styling and animation */}
+@@ -781,6 +781,10 @@ const ClipPanelCore = memo(function ClipPanelCore({
+           )}
+         </TabsContent>
+       </Tabs>
++      {/* Frameleaf (FL-1563): a clip's own markers, whatever kind of clip and tab. */}
++      {selectedItems.length === 1 && (
++        <ClipMarkersSection key={selectedItems[0]!.id} item={selectedItems[0]!} />
++      )}
+       {/* Mounted beside the tabs, not inside one, so the chosen tracks, the reviewed mix and a
+           running audition survive a look at another tab. */}
+       <div hidden={!showAudioTab || activeTab !== 'audio'} data-testid="voice-music-host">
+diff --git a/src/features/editor/components/properties-sidebar/marker-panel/index.test.tsx b/src/features/editor/components/properties-sidebar/marker-panel/index.test.tsx
+new file mode 100644
+index 0000000..c881907
+--- /dev/null
++++ b/src/features/editor/components/properties-sidebar/marker-panel/index.test.tsx
+@@ -0,0 +1,53 @@
++import type { ReactNode } from 'react'
++import { fireEvent, render, screen } from '@testing-library/react'
++import { beforeEach, describe, expect, it, vi } from 'vite-plus/test'
++import { useTimelineStore } from '@/features/editor/deps/timeline-store'
++import { useSelectionStore } from '@/shared/state/selection'
++import { MarkerPanel } from './index'
++
++vi.mock('../components', () => ({
++  PropertySection: ({ children }: { children: ReactNode }) => <section>{children}</section>,
++  PropertyRow: ({ label, children }: { label: string; children: ReactNode }) => (
++    <label>
++      <span>{label}</span>
++      {children}
++    </label>
++  ),
++  NumberInput: ({ value, onChange }: { value: number; onChange: (value: number) => void }) => (
++    <input type="number" value={value} onChange={(event) => onChange(Number(event.target.value))} />
++  ),
++  ColorPicker: () => null,
++}))
++vi.mock('./marker-list', () => ({ MarkerList: () => null }))
++
++const marker = () => useTimelineStore.getState().markers.find((entry) => entry.id === 'mk-1')
++
++describe('marker ranges and notes (FL-1563)', () => {
++  beforeEach(() => {
++    useTimelineStore.setState({
++      fps: 30,
++      markers: [{ id: 'mk-1', frame: 90, color: '#3B82F6', label: 'Opening' }],
++    } as Partial<ReturnType<typeof useTimelineStore.getState>>)
++    useSelectionStore.getState().selectMarker('mk-1')
++  })
++
++  it('makes the marker a range with a length and a point again with none', () => {
++    render(<MarkerPanel />)
++    fireEvent.change(screen.getByLabelText('Length'), { target: { value: '180' } })
++    expect(marker()?.durationInFrames).toBe(180)
++    expect(screen.getByText(/00:03\.00/).textContent).toBe('00:03.00 – 00:09.00')
++
++    fireEvent.change(screen.getByLabelText('Length'), { target: { value: '0' } })
++    expect(marker()?.durationInFrames).toBeUndefined()
++  })
++
++  it('keeps a note with the marker and drops an emptied one', () => {
++    render(<MarkerPanel />)
++    fireEvent.change(screen.getByLabelText('Note'), {
++      target: { value: 'Hold on the lake before the title comes in.' },
++    })
++    expect(marker()?.note).toBe('Hold on the lake before the title comes in.')
++    fireEvent.change(screen.getByLabelText('Note'), { target: { value: '' } })
++    expect(marker()?.note).toBeUndefined()
++  })
++})
+diff --git a/src/features/editor/components/properties-sidebar/marker-panel/index.tsx b/src/features/editor/components/properties-sidebar/marker-panel/index.tsx
+index abeee21..1574a49 100644
+--- a/src/features/editor/components/properties-sidebar/marker-panel/index.tsx
++++ b/src/features/editor/components/properties-sidebar/marker-panel/index.tsx
+@@ -2,6 +2,7 @@ import { useMemo, useCallback } from 'react'
+ import { useTranslation } from 'react-i18next'
+ import { Button } from '@/components/ui/button'
+ import { Input } from '@/components/ui/input'
++import { Textarea } from '@/components/ui/textarea'
+ import { Separator } from '@/components/ui/separator'
+ import { MapPin, Trash2 } from 'lucide-react'
+ import { useTimelineStore } from '@/features/editor/deps/timeline-store'
+@@ -72,6 +73,26 @@ export function MarkerPanel() {
+     [selectedMarkerId, updateMarker],
+   )
+ 
++  // Frameleaf (FL-1563): a length makes the marker a range; none (or 0) leaves it a point.
++  const handleLengthChange = useCallback(
++    (frames: number) => {
++      if (selectedMarkerId) {
++        const length = Math.max(0, Math.round(frames))
++        updateMarker(selectedMarkerId, { durationInFrames: length > 0 ? length : undefined })
++      }
++    },
++    [selectedMarkerId, updateMarker],
++  )
++
++  const handleNoteChange = useCallback(
++    (e: React.ChangeEvent<HTMLTextAreaElement>) => {
++      if (selectedMarkerId) {
++        updateMarker(selectedMarkerId, { note: e.target.value || undefined })
++      }
++    },
++    [selectedMarkerId, updateMarker],
++  )
++
+   // Handle color change
+   const handleColorChange = useCallback(
+     (color: string) => {
+@@ -129,9 +150,24 @@ export function MarkerPanel() {
+         <PropertyRow label={t('editor.markerPanel.time')}>
+           <span className="text-xs font-mono tabular-nums text-muted-foreground">
+             {formatTimecodeDotFrames(selectedMarker.frame, fps)}
++            {selectedMarker.durationInFrames
++              ? ` – ${formatTimecodeDotFrames(selectedMarker.frame + selectedMarker.durationInFrames, fps)}`
++              : null}
+           </span>
+         </PropertyRow>
+ 
++        {/* Range length: 0 is a point marker */}
++        <PropertyRow label={t('engineControls.markers.length')}>
++          <NumberInput
++            value={selectedMarker.durationInFrames ?? 0}
++            onChange={handleLengthChange}
++            min={0}
++            step={1}
++            unit="fr"
++            className="flex-1 min-w-0"
++          />
++        </PropertyRow>
++
+         {/* Label */}
+         <PropertyRow label={t('editor.markerPanel.label')}>
+           <Input
+@@ -142,6 +178,18 @@ export function MarkerPanel() {
+           />
+         </PropertyRow>
+ 
++        {/* Note */}
++        <div className="px-2 py-1.5">
++          <Textarea
++            value={selectedMarker.note ?? ''}
++            onChange={handleNoteChange}
++            placeholder={t('engineControls.markers.addNote')}
++            aria-label={t('engineControls.markers.note')}
++            rows={selectedMarker.note ? 2 : 1}
++            className="min-h-7 px-2 py-1 text-xs md:text-xs"
++          />
++        </div>
++
+         {/* Color */}
+         <ColorPicker
+           label={t('editor.markerPanel.color')}
+diff --git a/src/features/editor/components/properties-sidebar/marker-panel/marker-list.tsx b/src/features/editor/components/properties-sidebar/marker-panel/marker-list.tsx
+index 5ef1300..ae1c765 100644
+--- a/src/features/editor/components/properties-sidebar/marker-panel/marker-list.tsx
++++ b/src/features/editor/components/properties-sidebar/marker-panel/marker-list.tsx
+@@ -88,6 +88,7 @@ export function MarkerList({ defaultOpen = true }: { defaultOpen?: boolean }) {
+                   type="button"
+                   onClick={() => handleSelect(marker.id, marker.frame)}
+                   className="flex-1 min-w-0 flex items-center gap-2 h-full pl-2 pr-1 text-left"
++                  title={marker.note}
+                 >
+                   <span
+                     className="w-2.5 h-2.5 rounded-full shrink-0 border border-black/20"
+@@ -98,6 +99,9 @@ export function MarkerList({ defaultOpen = true }: { defaultOpen?: boolean }) {
+                   </span>
+                   <span className="text-[10px] font-mono tabular-nums text-muted-foreground shrink-0">
+                     {formatTimecodeDotFrames(marker.frame, fps)}
++                    {marker.durationInFrames
++                      ? `–${formatTimecodeDotFrames(marker.frame + marker.durationInFrames, fps)}`
++                      : null}
+                   </span>
+                 </button>
+                 <button
+diff --git a/src/features/timeline/components/timeline-item/index.tsx b/src/features/timeline/components/timeline-item/index.tsx
+index 68019d4..b689451 100644
+--- a/src/features/timeline/components/timeline-item/index.tsx
++++ b/src/features/timeline/components/timeline-item/index.tsx
+@@ -28,6 +28,7 @@ import { DRAG_OPACITY } from '../../constants'
+ import { cn } from '@/shared/ui/cn'
+ import { ClipContent } from './clip-content'
+ import { ClipIndicators } from './clip-indicators'
++import { clipMarkerOffsetFrames } from '@/shared/timeline/clip-markers'
+ import { TrimHandles } from './trim-handles'
+ import { type ActiveEdgeState } from './trim-constants'
+ import { StretchHandles } from './stretch-handles'
+@@ -1068,6 +1069,23 @@ export const TimelineItem = memo(function TimelineItem({
+               isDetailEligible={isDetailEligible}
+             />
+ 
++            {/* Frameleaf (FL-1563): the clip's own markers, on the moment of the media they mark. */}
++            {item.markers?.map((marker) => {
++              const offset = clipMarkerOffsetFrames(item, marker.sourceFrame, fps)
++              return offset === null ? null : (
++                <span
++                  key={marker.id}
++                  data-clip-marker={marker.id}
++                  title={marker.label}
++                  className="pointer-events-none absolute top-0.5 z-20 h-2 w-2 -translate-x-1/2 rotate-45 border border-black/30"
++                  style={{
++                    left: `${(offset / Math.max(1, item.durationInFrames)) * 100}%`,
++                    backgroundColor: marker.color,
++                  }}
++                />
++              )
++            })}
++
+             {!useCompactClipShell && (
+               /* Status indicators */
+               <ClipIndicators
+diff --git a/src/features/timeline/components/timeline-item/timeline-item-memo-compare.test.ts b/src/features/timeline/components/timeline-item/timeline-item-memo-compare.test.ts
+new file mode 100644
+index 0000000..c302671
+--- /dev/null
++++ b/src/features/timeline/components/timeline-item/timeline-item-memo-compare.test.ts
+@@ -0,0 +1,24 @@
++// @vitest-environment node
++
++import { describe, expect, it } from 'vite-plus/test'
++import type { VideoItem } from '@/types/timeline'
++import { areTimelineItemPropsEqual } from './timeline-item-memo-compare'
++
++describe('timeline clip memo comparator', () => {
++  const clip = { id: 'clip', type: 'video', from: 0, durationInFrames: 90 } as VideoItem
++  const props = (item: VideoItem) => ({ item, isCompactWidth: false, isDetailEligible: true })
++
++  it('redraws a clip when its own markers change (FL-1563)', () => {
++    const markers = [{ id: 'm1', sourceFrame: 30, color: '#fff' }]
++    expect(areTimelineItemPropsEqual(props(clip), props({ ...clip }))).toBe(true)
++    expect(
++      areTimelineItemPropsEqual(props({ ...clip, markers }), props({ ...clip, markers })),
++    ).toBe(true)
++    expect(
++      areTimelineItemPropsEqual(
++        props({ ...clip, markers }),
++        props({ ...clip, markers: [...markers, { id: 'm2', sourceFrame: 60, color: '#fff' }] }),
++      ),
++    ).toBe(false)
++  })
++})
+diff --git a/src/features/timeline/components/timeline-item/timeline-item-memo-compare.ts b/src/features/timeline/components/timeline-item/timeline-item-memo-compare.ts
+index 69c5ac2..c38d388 100644
+--- a/src/features/timeline/components/timeline-item/timeline-item-memo-compare.ts
++++ b/src/features/timeline/components/timeline-item/timeline-item-memo-compare.ts
+@@ -47,6 +47,8 @@ export function areTimelineItemPropsEqual(
+     prevItem.reverseConformStatus === nextItem.reverseConformStatus &&
+     prevItem.volume === nextItem.volume &&
+     prevItem.effects === nextItem.effects &&
++    // Frameleaf (FL-1563): the clip's own markers are drawn on it.
++    prevItem.markers === nextItem.markers &&
+     prevItem.audioFadeIn === nextItem.audioFadeIn &&
+     prevItem.audioFadeOut === nextItem.audioFadeOut &&
+     prevItem.audioFadeInCurve === nextItem.audioFadeInCurve &&
+diff --git a/src/features/timeline/components/timeline-project-markers.tsx b/src/features/timeline/components/timeline-project-markers.tsx
+index e958883..5406dc4 100644
+--- a/src/features/timeline/components/timeline-project-markers.tsx
++++ b/src/features/timeline/components/timeline-project-markers.tsx
+@@ -103,6 +103,11 @@ export const TimelineProjectMarkers = memo(function TimelineProjectMarkers() {
+           markerId={marker.id}
+           name={markerNames.get(marker.id) ?? ''}
+           leftPosition={frameToPixels(marker.frame)}
++          rangeWidth={
++            marker.durationInFrames
++              ? frameToPixels(marker.frame + marker.durationInFrames) - frameToPixels(marker.frame)
++              : 0
++          }
+           isDragging={draggingId === marker.id}
+           isSelected={selectedMarkerId === marker.id}
+           onMouseDown={handleMouseDown}
+@@ -118,6 +123,8 @@ interface MarkerIndicatorProps {
+   /** The marker's label, or its "Marker N" fallback. */
+   name: string
+   leftPosition: number
++  /** FL-1563: the width of a range marker's span in pixels; 0 for a point marker. */
++  rangeWidth: number
+   isDragging: boolean
+   isSelected: boolean
+   onMouseDown: (e: React.MouseEvent, markerId: string) => void
+@@ -128,6 +135,7 @@ const MarkerIndicator = memo(function MarkerIndicator({
+   markerId,
+   name,
+   leftPosition,
++  rangeWidth,
+   isDragging,
+   isSelected,
+   onMouseDown,
+@@ -141,58 +149,75 @@ const MarkerIndicator = memo(function MarkerIndicator({
+   )
+ 
+   return (
+-    <div
+-      className="absolute pointer-events-auto"
+-      style={{
+-        left: `${leftPosition}px`,
+-        top: '-2px',
+-        transform: 'translateX(-50%)',
+-        cursor: isDragging ? 'grabbing' : 'grab',
+-        zIndex: isSelected ? 20 : 15,
+-      }}
+-      onMouseDown={handleMouseDown}
+-      data-tooltip={name}
+-      data-tooltip-side="bottom"
+-    >
+-      {/* Invisible larger hit area */}
++    <>
++      {rangeWidth > 0 && (
++        <div
++          className="absolute rounded-sm"
++          data-marker-range={markerId}
++          style={{
++            left: `${leftPosition}px`,
++            top: '2px',
++            width: `${rangeWidth}px`,
++            height: '6px',
++            backgroundColor: marker.color,
++            opacity: isSelected ? 0.6 : 0.35,
++            zIndex: 14,
++          }}
++        />
++      )}
+       <div
+-        className="absolute"
++        className="absolute pointer-events-auto"
+         style={{
+-          top: '-4px',
+-          left: '50%',
+-          width: '20px',
+-          height: '20px',
++          left: `${leftPosition}px`,
++          top: '-2px',
+           transform: 'translateX(-50%)',
+-          backgroundColor: 'transparent',
++          cursor: isDragging ? 'grabbing' : 'grab',
++          zIndex: isSelected ? 20 : 15,
+         }}
+-      />
+-      {/* Selection outline triangle (larger, behind) */}
+-      {isSelected && (
++        onMouseDown={handleMouseDown}
++        data-tooltip={name}
++        data-tooltip-side="bottom"
++      >
++        {/* Invisible larger hit area */}
+         <div
+           className="absolute"
+           style={{
+             top: '-4px',
+             left: '50%',
++            width: '20px',
++            height: '20px',
+             transform: 'translateX(-50%)',
++            backgroundColor: 'transparent',
++          }}
++        />
++        {/* Selection outline triangle (larger, behind) */}
++        {isSelected && (
++          <div
++            className="absolute"
++            style={{
++              top: '-4px',
++              left: '50%',
++              transform: 'translateX(-50%)',
++              width: 0,
++              height: 0,
++              borderLeft: '12px solid transparent',
++              borderRight: '12px solid transparent',
++              borderTop: '18px solid white',
++            }}
++          />
++        )}
++        {/* Visible triangle (CSS triangle pointing down) */}
++        <div
++          style={{
+             width: 0,
+             height: 0,
+-            borderLeft: '12px solid transparent',
+-            borderRight: '12px solid transparent',
+-            borderTop: '18px solid white',
++            borderLeft: '8px solid transparent',
++            borderRight: '8px solid transparent',
++            borderTop: `12px solid ${marker.color}`,
++            filter: `drop-shadow(0 1px 2px rgba(0, 0, 0, 0.3))`,
+           }}
+         />
+-      )}
+-      {/* Visible triangle (CSS triangle pointing down) */}
+-      <div
+-        style={{
+-          width: 0,
+-          height: 0,
+-          borderLeft: '8px solid transparent',
+-          borderRight: '8px solid transparent',
+-          borderTop: `12px solid ${marker.color}`,
+-          filter: `drop-shadow(0 1px 2px rgba(0, 0, 0, 0.3))`,
+-        }}
+-      />
+-    </div>
++      </div>
++    </>
+   )
+ })
+diff --git a/src/i18n/locales/partials/de/engine-controls.json b/src/i18n/locales/partials/de/engine-controls.json
+index f91ef56..6d0044f 100644
+--- a/src/i18n/locales/partials/de/engine-controls.json
++++ b/src/i18n/locales/partials/de/engine-controls.json
+@@ -54,6 +54,18 @@
+       "mixed": "Mixed",
+       "custom": "Custom",
+       "note": "Channels the recording doesn't have are silent."
++    },
++    "markers": {
++      "length": "Length",
++      "note": "Note",
++      "addNote": "Add a note",
++      "clipMarkers": "Clip markers",
++      "name": "Marker name",
++      "timeIn": "{{time}} in",
++      "trimmedOut": "Trimmed out",
++      "addClipMarker": "Add at playhead",
++      "removeClipMarker": "Remove clip marker",
++      "clipMarkersNote": "Clip markers stay with the clip when you move or trim it."
+     }
+   }
+ }
+diff --git a/src/i18n/locales/partials/en/engine-controls.json b/src/i18n/locales/partials/en/engine-controls.json
+index f91ef56..6d0044f 100644
+--- a/src/i18n/locales/partials/en/engine-controls.json
++++ b/src/i18n/locales/partials/en/engine-controls.json
+@@ -54,6 +54,18 @@
+       "mixed": "Mixed",
+       "custom": "Custom",
+       "note": "Channels the recording doesn't have are silent."
++    },
++    "markers": {
++      "length": "Length",
++      "note": "Note",
++      "addNote": "Add a note",
++      "clipMarkers": "Clip markers",
++      "name": "Marker name",
++      "timeIn": "{{time}} in",
++      "trimmedOut": "Trimmed out",
++      "addClipMarker": "Add at playhead",
++      "removeClipMarker": "Remove clip marker",
++      "clipMarkersNote": "Clip markers stay with the clip when you move or trim it."
+     }
+   }
+ }
+diff --git a/src/i18n/locales/partials/es/engine-controls.json b/src/i18n/locales/partials/es/engine-controls.json
+index f91ef56..6d0044f 100644
+--- a/src/i18n/locales/partials/es/engine-controls.json
++++ b/src/i18n/locales/partials/es/engine-controls.json
+@@ -54,6 +54,18 @@
+       "mixed": "Mixed",
+       "custom": "Custom",
+       "note": "Channels the recording doesn't have are silent."
++    },
++    "markers": {
++      "length": "Length",
++      "note": "Note",
++      "addNote": "Add a note",
++      "clipMarkers": "Clip markers",
++      "name": "Marker name",
++      "timeIn": "{{time}} in",
++      "trimmedOut": "Trimmed out",
++      "addClipMarker": "Add at playhead",
++      "removeClipMarker": "Remove clip marker",
++      "clipMarkersNote": "Clip markers stay with the clip when you move or trim it."
+     }
+   }
+ }
+diff --git a/src/i18n/locales/partials/fr/engine-controls.json b/src/i18n/locales/partials/fr/engine-controls.json
+index f91ef56..6d0044f 100644
+--- a/src/i18n/locales/partials/fr/engine-controls.json
++++ b/src/i18n/locales/partials/fr/engine-controls.json
+@@ -54,6 +54,18 @@
+       "mixed": "Mixed",
+       "custom": "Custom",
+       "note": "Channels the recording doesn't have are silent."
++    },
++    "markers": {
++      "length": "Length",
++      "note": "Note",
++      "addNote": "Add a note",
++      "clipMarkers": "Clip markers",
++      "name": "Marker name",
++      "timeIn": "{{time}} in",
++      "trimmedOut": "Trimmed out",
++      "addClipMarker": "Add at playhead",
++      "removeClipMarker": "Remove clip marker",
++      "clipMarkersNote": "Clip markers stay with the clip when you move or trim it."
+     }
+   }
+ }
+diff --git a/src/i18n/locales/partials/ja/engine-controls.json b/src/i18n/locales/partials/ja/engine-controls.json
+index f91ef56..6d0044f 100644
+--- a/src/i18n/locales/partials/ja/engine-controls.json
++++ b/src/i18n/locales/partials/ja/engine-controls.json
+@@ -54,6 +54,18 @@
+       "mixed": "Mixed",
+       "custom": "Custom",
+       "note": "Channels the recording doesn't have are silent."
++    },
++    "markers": {
++      "length": "Length",
++      "note": "Note",
++      "addNote": "Add a note",
++      "clipMarkers": "Clip markers",
++      "name": "Marker name",
++      "timeIn": "{{time}} in",
++      "trimmedOut": "Trimmed out",
++      "addClipMarker": "Add at playhead",
++      "removeClipMarker": "Remove clip marker",
++      "clipMarkersNote": "Clip markers stay with the clip when you move or trim it."
+     }
+   }
+ }
+diff --git a/src/i18n/locales/partials/ko/engine-controls.json b/src/i18n/locales/partials/ko/engine-controls.json
+index f91ef56..6d0044f 100644
+--- a/src/i18n/locales/partials/ko/engine-controls.json
++++ b/src/i18n/locales/partials/ko/engine-controls.json
+@@ -54,6 +54,18 @@
+       "mixed": "Mixed",
+       "custom": "Custom",
+       "note": "Channels the recording doesn't have are silent."
++    },
++    "markers": {
++      "length": "Length",
++      "note": "Note",
++      "addNote": "Add a note",
++      "clipMarkers": "Clip markers",
++      "name": "Marker name",
++      "timeIn": "{{time}} in",
++      "trimmedOut": "Trimmed out",
++      "addClipMarker": "Add at playhead",
++      "removeClipMarker": "Remove clip marker",
++      "clipMarkersNote": "Clip markers stay with the clip when you move or trim it."
+     }
+   }
+ }
+diff --git a/src/i18n/locales/partials/pt-BR/engine-controls.json b/src/i18n/locales/partials/pt-BR/engine-controls.json
+index f91ef56..6d0044f 100644
+--- a/src/i18n/locales/partials/pt-BR/engine-controls.json
++++ b/src/i18n/locales/partials/pt-BR/engine-controls.json
+@@ -54,6 +54,18 @@
+       "mixed": "Mixed",
+       "custom": "Custom",
+       "note": "Channels the recording doesn't have are silent."
++    },
++    "markers": {
++      "length": "Length",
++      "note": "Note",
++      "addNote": "Add a note",
++      "clipMarkers": "Clip markers",
++      "name": "Marker name",
++      "timeIn": "{{time}} in",
++      "trimmedOut": "Trimmed out",
++      "addClipMarker": "Add at playhead",
++      "removeClipMarker": "Remove clip marker",
++      "clipMarkersNote": "Clip markers stay with the clip when you move or trim it."
+     }
+   }
+ }
+diff --git a/src/i18n/locales/partials/tr/engine-controls.json b/src/i18n/locales/partials/tr/engine-controls.json
+index f91ef56..6d0044f 100644
+--- a/src/i18n/locales/partials/tr/engine-controls.json
++++ b/src/i18n/locales/partials/tr/engine-controls.json
+@@ -54,6 +54,18 @@
+       "mixed": "Mixed",
+       "custom": "Custom",
+       "note": "Channels the recording doesn't have are silent."
++    },
++    "markers": {
++      "length": "Length",
++      "note": "Note",
++      "addNote": "Add a note",
++      "clipMarkers": "Clip markers",
++      "name": "Marker name",
++      "timeIn": "{{time}} in",
++      "trimmedOut": "Trimmed out",
++      "addClipMarker": "Add at playhead",
++      "removeClipMarker": "Remove clip marker",
++      "clipMarkersNote": "Clip markers stay with the clip when you move or trim it."
+     }
+   }
+ }
+diff --git a/src/i18n/locales/partials/zh/engine-controls.json b/src/i18n/locales/partials/zh/engine-controls.json
+index f91ef56..6d0044f 100644
+--- a/src/i18n/locales/partials/zh/engine-controls.json
++++ b/src/i18n/locales/partials/zh/engine-controls.json
+@@ -54,6 +54,18 @@
+       "mixed": "Mixed",
+       "custom": "Custom",
+       "note": "Channels the recording doesn't have are silent."
++    },
++    "markers": {
++      "length": "Length",
++      "note": "Note",
++      "addNote": "Add a note",
++      "clipMarkers": "Clip markers",
++      "name": "Marker name",
++      "timeIn": "{{time}} in",
++      "trimmedOut": "Trimmed out",
++      "addClipMarker": "Add at playhead",
++      "removeClipMarker": "Remove clip marker",
++      "clipMarkersNote": "Clip markers stay with the clip when you move or trim it."
+     }
+   }
+ }
+diff --git a/src/shared/timeline/clip-markers.test.ts b/src/shared/timeline/clip-markers.test.ts
+new file mode 100644
+index 0000000..d3a12b3
+--- /dev/null
++++ b/src/shared/timeline/clip-markers.test.ts
+@@ -0,0 +1,42 @@
++// @vitest-environment node
++
++import { describe, expect, it } from 'vite-plus/test'
++import { clipMarkerOffsetFrames, clipSourceFrameAt } from './clip-markers'
++
++describe('clip marker positions (FL-1563)', () => {
++  const clip = { durationInFrames: 90, sourceStart: 30, sourceEnd: 120, sourceFps: 30 }
++
++  it('places a marker by its source frame and drops one the trim leaves out', () => {
++    expect(clipMarkerOffsetFrames(clip, 30, 30)).toBe(0)
++    expect(clipMarkerOffsetFrames(clip, 75, 30)).toBe(45)
++    expect(clipMarkerOffsetFrames(clip, 29, 30)).toBeNull()
++    expect(clipMarkerOffsetFrames(clip, 120, 30)).toBeNull()
++  })
++
++  it('follows the source rate, the speed and a reversed clip', () => {
++    // 60 fps media on a 30 fps timeline: 60 source frames are one second, 30 timeline frames.
++    expect(clipMarkerOffsetFrames({ durationInFrames: 90, sourceFps: 60 }, 60, 30)).toBe(30)
++    expect(clipMarkerOffsetFrames({ ...clip, durationInFrames: 45, speed: 2 }, 90, 30)).toBe(30)
++    expect(clipMarkerOffsetFrames({ ...clip, isReversed: true }, 110, 30)).toBe(9)
++    // The window excludes sourceEnd both ways: 119 opens a reversed clip and 30 ends it.
++    expect(clipMarkerOffsetFrames({ ...clip, isReversed: true }, 119, 30)).toBe(0)
++    expect(clipMarkerOffsetFrames({ ...clip, isReversed: true }, 30, 30)).toBe(89)
++    expect(clipMarkerOffsetFrames({ ...clip, isReversed: true }, 120, 30)).toBeNull()
++    expect(
++      clipMarkerOffsetFrames({ durationInFrames: 90, sourceStart: 30, isReversed: true }, 40, 30),
++    ).toBeNull()
++  })
++
++  it('reads the source frame under a timeline frame, the inverse of placing it', () => {
++    expect(clipSourceFrameAt(clip, 45, 30)).toBe(75)
++    expect(clipSourceFrameAt({ ...clip, durationInFrames: 45, speed: 2 }, 30, 30)).toBe(90)
++    expect(clipSourceFrameAt({ ...clip, isReversed: true }, 10, 30)).toBe(109)
++    expect(clipSourceFrameAt(clip, 90, 30)).toBeNull()
++    expect(clipSourceFrameAt(clip, -1, 30)).toBeNull()
++    for (const item of [clip, { ...clip, isReversed: true }]) {
++      for (const offset of [0, 1, 44, 89]) {
++        expect(clipMarkerOffsetFrames(item, clipSourceFrameAt(item, offset, 30)!, 30)).toBe(offset)
++      }
++    }
++  })
++})
+diff --git a/src/shared/timeline/clip-markers.ts b/src/shared/timeline/clip-markers.ts
+new file mode 100644
+index 0000000..6a2425e
+--- /dev/null
++++ b/src/shared/timeline/clip-markers.ts
+@@ -0,0 +1,46 @@
++/**
++ * Frameleaf (FL-1563): where a clip marker sits. A clip marker is kept in the clip's source frames
++ * at `sourceFps` (graph protocol 2.4), so it stays on the same moment of the media through moves,
++ * trims and slips; these convert between that and frames from the clip's start on the timeline.
++ */
++import type { TimelineItem } from '@/types/timeline'
++import { sourceToTimelineFrames, timelineToSourceFrames } from '@/shared/utils/source-calculations'
++
++type ClipTiming = Pick<
++  TimelineItem,
++  'durationInFrames' | 'sourceStart' | 'sourceEnd' | 'sourceFps' | 'speed' | 'isReversed'
++>
++
++/**
++ * Frames from the clip's start to a source frame, or null when the trim leaves that moment out
++ * (or a reversed clip does not say where its source ends).
++ */
++export function clipMarkerOffsetFrames(
++  item: ClipTiming,
++  sourceFrame: number,
++  fps: number,
++): number | null {
++  const speed = item.speed ?? 1
++  const sourceFps = item.sourceFps ?? fps
++  let distance = sourceFrame - (item.sourceStart ?? 0)
++  if (item.isReversed) {
++    if (item.sourceEnd === undefined) return null
++    // sourceEnd is exclusive in both directions: a reversed clip opens on sourceEnd - 1.
++    distance = item.sourceEnd - 1 - sourceFrame
++  }
++  if (distance < 0) return null
++  const offset = sourceToTimelineFrames(distance, speed, sourceFps, fps)
++  return offset < item.durationInFrames ? offset : null
++}
++
++/** The source frame showing `offsetFrames` after the clip's start, or null outside the clip. */
++export function clipSourceFrameAt(
++  item: ClipTiming,
++  offsetFrames: number,
++  fps: number,
++): number | null {
++  if (offsetFrames < 0 || offsetFrames >= item.durationInFrames) return null
++  const distance = timelineToSourceFrames(offsetFrames, item.speed ?? 1, fps, item.sourceFps ?? fps)
++  if (!item.isReversed) return (item.sourceStart ?? 0) + distance
++  return item.sourceEnd === undefined ? null : Math.max(0, item.sourceEnd - 1 - distance)
++}

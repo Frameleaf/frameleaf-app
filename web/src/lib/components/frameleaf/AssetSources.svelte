@@ -15,6 +15,7 @@
   import { mdiDownloadOutline, mdiFolderZipOutline, mdiPuzzleOutline, mdiTrayArrowUp } from '@mdi/js';
   import { onDestroy } from 'svelte';
   import { locale, t } from 'svelte-i18n';
+  import { formatDate as displayDate } from '$lib/frameleaf/date-format';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import { onLibraryAccessChange } from '$lib/frameleaf/library-access';
   import { libraryReferenceUrl } from '$lib/frameleaf/library-reference';
@@ -83,8 +84,7 @@
     }),
   );
 
-  const formatDate = (value: string) =>
-    new Date(value).toLocaleDateString($locale ?? undefined, { dateStyle: 'medium' });
+  const formatDate = (value: string) => displayDate(new Date(value), { dateStyle: 'medium' }, $locale ?? 'default');
   /** A link's site and path without the scheme, for a licence or page shown as plain text. */
   const shortUrl = (href: string) => {
     const url = new URL(href);

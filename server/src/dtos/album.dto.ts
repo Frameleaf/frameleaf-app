@@ -597,6 +597,9 @@ const AlbumRecentlyAddedResponseSchema = z
     albumIds: z
       .array(z.uuidv4())
       .describe('Albums the user may add to, the one that most recently received an item first'),
+    usedAlbumIds: z
+      .array(z.uuidv4())
+      .describe('Albums the user may add to that the user itself last added items to, most recent first'),
   })
   .meta({ id: 'AlbumRecentlyAddedResponseDto' });
 export class AlbumRecentlyAddedResponseDto extends createZodDto(AlbumRecentlyAddedResponseSchema) {}

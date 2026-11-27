@@ -11,6 +11,15 @@ import path from 'node:path';
 export const TEXT_GOLDENS_FORMAT = 'frameleaf-studio-text-goldens';
 export const TEXT_GOLDENS_VERSION = 1;
 export const SINE_TOLERANCE = 1e-9;
+/**
+ * FL-1562: the family of the `platform/project-font` case, a font kept with the project (`metadata.fonts`,
+ * text.md X4). The browser run registers this one face through the engine's own project-font loader, from
+ * the bytes of the bundled file named by `file`, so no new font file enters the goldens.
+ */
+export const PROJECT_FONT_CASE = {
+  family: 'Kept Sans', importId: '6f0d2a4e-1c3b-4d5e-8f60-718293a4b5c6', weight: 400, style: 'normal',
+  file: { family: 'Anton', weight: 400, style: 'normal', subset: 'latin' },
+};
 export const SINE_PRESETS = ['wave-in', 'pulse', 'wave', 'shimmer', 'swing'];
 export const STYLE_FIELDS = [
   'text', 'color', 'fontSize', 'fontFamily', 'fontWeight', 'fontStyle', 'underline', 'lineHeight', 'letterSpacing',
@@ -939,6 +948,9 @@ export function layoutCases() {
   add('platform/missing-both/Bebas-Neue-semibold-italic', { text: 'Frameleaf AV 01', fontFamily: 'Bebas Neue', fontWeight: 'semibold', fontStyle: 'italic', fontSize: 48 }, { width: 420, height: 200 }, 'platform');
   add('platform/missing-both/Bebas-Neue-normal', { text: 'Frameleaf AV 01', fontFamily: 'Bebas Neue', fontSize: 48 }, { width: 420, height: 200 }, 'platform');
   add('platform/latin-ext', { text: 'Za\u017c\u00f3\u0142\u0107 g\u0119\u015bl\u0105 ja\u017a\u0144', fontFamily: 'Inter', fontWeight: 'medium', fontStyle: 'italic', fontSize: 40 }, { width: 300, height: 240 }, 'platform');
+  // A family the project keeps answers every weight with its nearest listed face (text.md X4): its one
+  // regular face measures a bold title exactly as the same file does under its catalogue name.
+  add('platform/project-font/Kept-Sans-bold', { text: 'Frameleaf AV 01', fontFamily: PROJECT_FONT_CASE.family, fontWeight: 'bold', fontSize: 48 }, { width: 420, height: 200 }, 'platform');
   return cases;
 }
 

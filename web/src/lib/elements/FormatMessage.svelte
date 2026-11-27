@@ -1,5 +1,6 @@
 <script lang="ts">
   import { createMessageFormatter, type InterpolationValues } from '$lib/elements/format-message';
+  import { handleMissingMessage } from '$lib/utils/i18n';
   import { locale as i18nLocale, json, type Translations } from 'svelte-i18n';
 
   interface Props {
@@ -30,6 +31,12 @@
   };
 
   let message = $derived(($json(key) as string) || key);
+  // FL-1797: `$json` does not ask for missing messages the way `$t` does, so ask here.
+  $effect(() => {
+    if (!$json(key)) {
+      handleMissingMessage({ id: key });
+    }
+  });
   let locale = $derived(getLocale($i18nLocale));
   let formatter = $derived(createMessageFormatter(message, locale));
   let parts = $derived(getParts(formatter));

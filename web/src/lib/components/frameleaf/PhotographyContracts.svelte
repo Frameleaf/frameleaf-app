@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { formatDateTime } from '$lib/frameleaf/date-format';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import { onLibraryAccessChange } from '$lib/frameleaf/library-access';
@@ -58,7 +59,7 @@
 
   const uses = (body: string, field: keyof typeof fieldLabels) => body.includes(`{${field}}`);
   const longDate = (value: string) =>
-    value ? new Intl.DateTimeFormat($locale, { dateStyle: 'long', timeZone: 'UTC' }).format(new Date(value)) : '';
+    value ? formatDateTime(new Date(value), { dateStyle: 'long', timeZone: 'UTC' }, $locale) : '';
   const merged = (body: string, values: Record<string, string>) =>
     body.replaceAll(/\{([a-z_]+)\}/g, (token, field: string) =>
       field === 'session_date' ? longDate(values[field]) || token : values[field] || token,

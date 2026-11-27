@@ -7,6 +7,7 @@
    * can make a model available; that takes real qualification evidence on the worker. Asking
    * sends no media, so it is safe for a cloud destination without consent.
    */
+  import { formatDateTime } from '$lib/frameleaf/date-format';
   import Badge from '$lib/components/frameleaf/Badge.svelte';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
@@ -59,7 +60,7 @@
   });
 
   const formatDate = (value: string) =>
-    new Date(value).toLocaleString($locale ?? undefined, { dateStyle: 'medium', timeStyle: 'short' });
+    formatDateTime(new Date(value), { dateStyle: 'medium', timeStyle: 'short' }, $locale ?? 'default');
 </script>
 
 <Dialog

@@ -184,6 +184,8 @@ describe('studio editor frame (FL-88)', () => {
     expect(JSON.stringify(received[0])).not.toMatch(/"(accessToken|token|apiBase\w*|baseUrl|sdk)":/i);
     // FL-636: a host without the Library services is told so, and the frame offers no Library view.
     expect(received[0]).toMatchObject({ context: { librarySearch: false } });
+    // FL-1562: nor is a host that keeps no font files offered "Add font…".
+    expect(received[0]).toMatchObject({ context: { projectFonts: false } });
 
     instance.update({ ...context(), online: false });
     await tick();

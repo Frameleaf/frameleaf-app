@@ -11,6 +11,7 @@
     searchHelp,
     type HelpHit,
   } from '$lib/frameleaf/help';
+  import { formatDateTime } from '$lib/frameleaf/date-format';
   import { leave, prefersReducedMotion } from '$lib/frameleaf/motion';
   import { openSupportDialog } from '$lib/frameleaf/system-dialogs';
   import '$lib/frameleaf/tokens.css';
@@ -320,12 +321,16 @@
 
   const updated = $derived(
     index?.updatedAt
-      ? new Date(index.updatedAt).toLocaleString(undefined, {
-          month: 'short',
-          day: 'numeric',
-          hour: 'numeric',
-          minute: '2-digit',
-        })
+      ? formatDateTime(
+          new Date(index.updatedAt),
+          {
+            month: 'short',
+            day: 'numeric',
+            hour: 'numeric',
+            minute: '2-digit',
+          },
+          'default',
+        )
       : null,
   );
   const site = $derived(index ? new URL(index.origin).host : 'frameleaf.app');

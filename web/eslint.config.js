@@ -22,6 +22,34 @@ const NAVIGATION_PARAM_READ = [
   " [arguments.0.property.name='PREVIOUS_ROUTE'])",
 ].join('');
 
+const NAVIGATION_PARAM_RULE = {
+  selector: `${NAVIGATION_PARAM_READ}:not(${ROUTE_CONTINUE} > ${NAVIGATION_PARAM_READ})`,
+  message: 'Pass this navigation-target query param through Route.continue() to reject cross-origin values.',
+};
+
+// FL-1805: a date or a time is turned into text only by $lib/frameleaf/date-format, so the person's
+// "Date format" and "Time format" apply on every screen.
+const DATE_FORMAT_MESSAGE =
+  "Format dates with formatDate, formatTime, formatDateTime or formatLuxon from $lib/frameleaf/date-format, which apply the person's date and time format.";
+const DATE_FORMAT_RULES = [
+  // with or without `new`
+  ":matches(NewExpression, CallExpression)[callee.object.name='Intl'][callee.property.name='DateTimeFormat']",
+  'CallExpression[callee.property.name=/^toLocale(Date|Time)String$/]',
+  "CallExpression[callee.property.name='toLocaleString'][callee.object.type='NewExpression'][callee.object.callee.name='Date']",
+  // date options written out, on a Date (`date.toLocaleString(locale, { dateStyle })`) or a Luxon value
+  // (`value.toLocaleString({ month: 'long' })`). Only date fields match, so a number's
+  // `toLocaleString(locale, { maximumFractionDigits })` and Luxon's `Duration` lists do not.
+  "CallExpression[callee.property.name='toLocaleString'] > ObjectExpression > Property[key.name=/^(dateStyle|timeStyle|weekday|era|year|month|day|hour|minute|second|timeZone|timeZoneName|hourCycle|hour12)$/]",
+  // a Luxon preset: value.toLocaleString(DateTime.DATE_MED)
+  "CallExpression[callee.property.name='toLocaleString'][arguments.0.object.name='DateTime']",
+].map((selector) => ({ selector, message: DATE_FORMAT_MESSAGE }));
+
+/**
+ * Files that still format dates themselves because another change owns them today. Convert the file
+ * and delete its line; nothing new belongs here.
+ */
+const DATE_FORMAT_PENDING = ['src/lib/components/frameleaf/MemoriesPanel.svelte'];
+
 export default typescriptEslint.config(
   ...eslintPluginSvelte.configs.recommended,
   eslintPluginUnicorn.configs.recommended,
@@ -125,13 +153,7 @@ export default typescriptEslint.config(
 
       curly: 2,
       // navigation-target query params must be origin-checked at the read site, not at the goto/redirect sink
-      'no-restricted-syntax': [
-        'error',
-        {
-          selector: `${NAVIGATION_PARAM_READ}:not(${ROUTE_CONTINUE} > ${NAVIGATION_PARAM_READ})`,
-          message: 'Pass this navigation-target query param through Route.continue() to reject cross-origin values.',
-        },
-      ],
+      'no-restricted-syntax': ['error', NAVIGATION_PARAM_RULE, ...DATE_FORMAT_RULES],
       // Keep the pre-upgrade documentation and parameter style policy.
       'unicorn/no-asterisk-prefix-in-documentation-comments': 'off',
       'unicorn/no-unnecessary-parameters': 'off',
@@ -222,6 +244,11 @@ export default typescriptEslint.config(
         parser: typescriptEslint.parser,
       },
     },
+  },
+  {
+    // The helper itself, specs (which build the text they expect) and the files still to convert.
+    files: ['src/lib/frameleaf/date-format.ts', '**/*.spec.ts', ...DATE_FORMAT_PENDING],
+    rules: { 'no-restricted-syntax': ['error', NAVIGATION_PARAM_RULE] },
   },
   {
     files: ['**/*.spec.ts'],

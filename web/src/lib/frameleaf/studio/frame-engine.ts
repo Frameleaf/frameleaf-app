@@ -347,6 +347,11 @@ const serviceCalls: ServiceHandlers = {
   },
   saveWorkspace: (services, [layout]) =>
     services.saveWorkspace ? services.saveWorkspace(layout) : Promise.resolve({ status: 'unavailable' } as const),
+  // FL-1562: a font added in the title inspector; the server reads the face from the bytes.
+  uploadProjectFont: (services, args) =>
+    services.uploadProjectFont && STUDIO_FRAME_SERVICE_SCHEMA_V9.uploadProjectFont(args)
+      ? services.uploadProjectFont(args[0])
+      : Promise.reject(new Error('This project cannot keep fonts')),
   // The frame is not trusted to send an upload of the right shape; the server checks the bytes.
   uploadProjectImport: (services, [upload]) => {
     if (!services.uploadProjectImport) {
@@ -386,11 +391,14 @@ export const createFrameStudioEngine = ({
     });
     // FL-636: the frame offers the Library view only when this host can answer all three of its calls.
     const librarySearch = !!(services.searchLibrary && services.libraryFacets && services.addLibraryAssets);
+    // FL-1562: "Add font…" only where this host keeps font files.
+    const projectFonts = !!services.uploadProjectFont;
     let current: StudioHostContext;
     try {
       current = {
         ...context,
         librarySearch,
+        projectFonts,
         generatedMedia: await access.admit(context.project.id, context.project.graph, context.project.revision),
       };
     } catch (error) {
@@ -642,7 +650,7 @@ export const createFrameStudioEngine = ({
             if (disposed || revoking || disposing) {
               return;
             }
-            current = { ...next, generatedMedia, librarySearch };
+            current = { ...next, generatedMedia, librarySearch, projectFonts };
             send({ type: 'update', context: toFrameData(current) });
           })
           .catch((error) => revoke(error instanceof Error ? error : new Error(String(error))));

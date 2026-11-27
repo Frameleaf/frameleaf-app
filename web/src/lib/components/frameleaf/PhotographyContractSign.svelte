@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { formatDateTime } from '$lib/frameleaf/date-format';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import { locale } from '$lib/stores/preferences.store';
   import {
@@ -102,7 +103,7 @@
       phase = isHttpError(error) && error.status === 404 ? 'unavailable' : 'sign-error';
     }
   }
-  const when = (value: string) => new Date(value).toLocaleString($locale, { dateStyle: 'medium', timeStyle: 'short' });
+  const when = (value: string) => formatDateTime(new Date(value), { dateStyle: 'medium', timeStyle: 'short' }, $locale);
 </script>
 
 <svelte:head><title>{contract?.name ?? $t('frameleaf_clients_contract_title')}</title></svelte:head>

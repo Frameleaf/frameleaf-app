@@ -35,6 +35,7 @@
     RECOMMENDED_ACCOUNT_DAYS,
     RECOMMENDED_PHOTO_DAYS,
   } from '$lib/components/frameleaf/settings/storage/storage';
+  import { formatDate } from '$lib/frameleaf/date-format';
   import { formatBytes } from '$lib/frameleaf/format-bytes';
   import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
   import { getSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
@@ -116,7 +117,7 @@
     };
   });
 
-  const date = (value: Date) => new Intl.DateTimeFormat($locale, { day: 'numeric', month: 'long' }).format(value);
+  const date = (value: Date) => formatDate(value, { day: 'numeric', month: 'long' }, $locale);
   const size = (bytes: number) => formatBytes(bytes);
   const daysWords = (count: number) =>
     count >= 365 && count % 365 === 0

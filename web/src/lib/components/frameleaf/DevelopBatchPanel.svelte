@@ -17,6 +17,7 @@
     type DevelopBatchItemResponseDto,
     type DevelopBatchMatchResponseDto,
   } from '@frameleaf/sdk';
+  import { formatDateTime } from '$lib/frameleaf/date-format';
   import { hasDevelopBatches, batchErrorCode, batchReason } from '$lib/frameleaf/develop-batches';
   import { hashFile } from '$lib/workers/hash-file';
   import { locale } from '$lib/stores/preferences.store';
@@ -324,7 +325,18 @@
           >
             <option value="">{$t('frameleaf_batch.choose')}</option>
             {#each batches as entry (entry.id)}<option value={entry.id}
-                >{new Date(entry.createdAt).toLocaleString($locale)} · {$t('frameleaf_batch.photo_count', {
+                >{formatDateTime(
+                  new Date(entry.createdAt),
+                  {
+                    year: 'numeric',
+                    month: 'numeric',
+                    day: 'numeric',
+                    hour: 'numeric',
+                    minute: 'numeric',
+                    second: 'numeric',
+                  },
+                  $locale,
+                )} · {$t('frameleaf_batch.photo_count', {
                   values: { count: entry.itemCount },
                 })} · {$t(`frameleaf_batch.${entry.status}` as Translations)}</option
               >{/each}

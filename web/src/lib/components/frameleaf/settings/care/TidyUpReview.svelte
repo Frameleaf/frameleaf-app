@@ -9,6 +9,7 @@
    * Tidied away lists what Tidy up archived, each with Put back.
    */
   import { page } from '$app/state';
+  import { formatLuxon } from '$lib/frameleaf/date-format';
   import LightViewer from '$lib/components/frameleaf/LightViewer.svelte';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import SegmentedControl from '$lib/components/frameleaf/SegmentedControl.svelte';
@@ -271,11 +272,7 @@
   };
 
   const day = (value?: string) =>
-    value
-      ? DateTime.fromISO(value)
-          .setLocale($locale ?? 'en')
-          .toLocaleString(DateTime.DATE_MED)
-      : '';
+    value ? formatLuxon(DateTime.fromISO(value).setLocale($locale ?? 'en'), DateTime.DATE_MED) : '';
   const thumb = (id: string) => getAssetMediaUrl({ id, size: AssetMediaSize.Thumbnail });
 </script>
 

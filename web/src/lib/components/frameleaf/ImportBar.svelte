@@ -8,6 +8,7 @@
    */
   import { tonightLabel } from '$lib/frameleaf/background-work';
   import { importProgress } from '$lib/frameleaf/import-progress';
+  import { formatCount } from '$lib/frameleaf/number-format';
   import { runningJobsSession } from '$lib/frameleaf/running-jobs-session.svelte';
   import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
   import { Route } from '$lib/route';
@@ -31,7 +32,7 @@
   let busy = $state(false);
   let height = $state(0);
 
-  const number = (value: number) => value.toLocaleString($locale);
+  const number = (value: number) => formatCount(value, $locale);
   const title = $derived(
     progress?.scan
       ? progress.scan.name

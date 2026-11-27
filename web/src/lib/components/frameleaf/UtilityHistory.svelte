@@ -6,6 +6,7 @@
    * is the viewer's own recent utility jobs from the server (`recentUtilityActivity`), so it
    * survives reloads and never lists another account's work. Nothing is shown when there is none.
    */
+  import { formatLuxon } from '$lib/frameleaf/date-format';
   import type { ActivityItem } from '$lib/frameleaf/activity';
   import { recentUtilityActivity, UTILITY_HISTORY_FETCH } from '$lib/frameleaf/utility-history';
   import { searchMediaOperations } from '@frameleaf/sdk';
@@ -46,7 +47,7 @@
     {#each items as item (item.id)}
       <p>
         <span>{item.titleKey ? $t(item.titleKey) : item.title} · {$t(item.statusKey)}</span>
-        <time datetime={when(item).toISO()}>{when(item).toLocaleString(DateTime.DATETIME_MED)}</time>
+        <time datetime={when(item).toISO()}>{formatLuxon(when(item), DateTime.DATETIME_MED)}</time>
       </p>
     {/each}
   </details>

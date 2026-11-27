@@ -13,6 +13,7 @@
    *
    * With nothing saved yet, the page says so and offers nothing else to do, as the prototype's hero.
    */
+  import { formatLuxon } from '$lib/frameleaf/date-format';
   import InlineError from '$lib/components/frameleaf/InlineError.svelte';
   import Hero from '$lib/components/frameleaf/settings/kit/Hero.svelte';
   import KitPage from '$lib/components/frameleaf/settings/kit/KitPage.svelte';
@@ -182,7 +183,7 @@
     if (!date.isValid) {
       return value;
     }
-    const time = date.toLocaleString(DateTime.TIME_SIMPLE);
+    const time = formatLuxon(date, DateTime.TIME_SIMPLE);
     const day = dayOf(value);
     const dayWords =
       day === 'today'
@@ -191,7 +192,8 @@
           ? $t('frameleaf_words_history_yesterday')
           : day === 'week'
             ? date.toFormat('cccc')
-            : date.toLocaleString(
+            : formatLuxon(
+                date,
                 date.year === now.getFullYear() ? { day: 'numeric', month: 'long' } : DateTime.DATE_FULL,
               );
     return $t('frameleaf_words_history_when', { values: { day: dayWords, time } });

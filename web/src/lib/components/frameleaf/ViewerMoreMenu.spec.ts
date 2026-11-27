@@ -38,6 +38,11 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
+/** FL-1811: opens (or closes) one of the menu's sections by the key of its row. */
+const toggleSection = (key: string) => fireEvent.click(screen.getByRole('menuitem', { name: key }));
+const SHARE = 'frameleaf_viewer_section_share';
+const VIEWER = 'frameleaf_viewer_group_viewer';
+
 it('exports an unedited Live Photo as a separate still through the download manager', async () => {
   const asset = assetFactory.build({
     ownerId: 'owner',
@@ -47,6 +52,7 @@ it('exports an unedited Live Photo as a separate still through the download mana
     livePhotoVideoId: 'motion',
   });
   render(ViewerMoreMenu, { asset, preAction: vi.fn(), onAction: vi.fn() });
+  await toggleSection(SHARE);
   await fireEvent.click(screen.getByText('frameleaf_editor_export_sdr_jpeg'));
   expect(downloadAssetFile).toHaveBeenCalledWith({
     id: asset.id,
@@ -68,6 +74,7 @@ it('explains that only a preview is left instead of exporting a still of a missi
   const show = vi.spyOn(toastManager, 'show').mockImplementation(() => ({ id: 't', close: () => {} }) as never);
   try {
     render(ViewerMoreMenu, { asset, preAction: vi.fn(), onAction: vi.fn() });
+    await toggleSection(SHARE);
     await fireEvent.click(screen.getByText('frameleaf_editor_export_sdr_jpeg'));
     expect(show).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -88,16 +95,19 @@ it.each([
   { isTrashed: true },
   { duration: 1 },
   { type: AssetTypeEnum.Video },
-])('hides original conversion for an unavailable still: %j', (overrides) => {
+])('hides original conversion for an unavailable still: %j', async (overrides) => {
   render(ViewerMoreMenu, {
     asset: assetFactory.build({ ownerId: 'owner', type: AssetTypeEnum.Image, ...overrides }),
     preAction: vi.fn(),
     onAction: vi.fn(),
   });
+  if (screen.queryByRole('menuitem', { name: SHARE })) {
+    await toggleSection(SHARE);
+  }
   expect(screen.queryByText('frameleaf_editor_export_sdr_jpeg')).not.toBeInTheDocument();
 });
 
-it('offers the server HDR formats only for a reconstructible HDR original', () => {
+it('offers the server HDR formats only for a reconstructible HDR original', async () => {
   render(ViewerMoreMenu, {
     asset: assetFactory.build({
       ownerId: 'owner',
@@ -107,18 +117,20 @@ it('offers the server HDR formats only for a reconstructible HDR original', () =
     preAction: vi.fn(),
     onAction: vi.fn(),
   });
+  await toggleSection(SHARE);
   expect(screen.getByText('frameleaf_editor_export_hdr_jpeg')).toBeInTheDocument();
   expect(screen.getByText('frameleaf_editor_export_hdr_heic')).toBeInTheDocument();
 });
 
 // The ticked image display choice has a tick and the other has no icon; both keep the icon slot, so
 // the label of the one that is not ticked lines up with every other row of the menu.
-it('keeps the icon slot on the image display choice that is not ticked', () => {
+it('keeps the icon slot on the image display choice that is not ticked', async () => {
   render(ViewerMoreMenu, {
     asset: assetFactory.build({ ownerId: 'owner', type: AssetTypeEnum.Image }),
     preAction: vi.fn(),
     onAction: vi.fn(),
   });
+  await toggleSection(VIEWER);
   const ticked = screen.getByRole('menuitem', { name: /frameleaf_image_display_auto/ });
   const other = screen.getByRole('menuitem', { name: /frameleaf_image_display_sdr/ });
   for (const row of [ticked, other, screen.getByRole('menuitem', { name: 'download' })]) {
@@ -140,6 +152,7 @@ it.each(['chooser', 'request', 'session'])('keeps featured-photo selection owned
   const props = { asset: original, preAction: vi.fn(), onAction };
   const view = render(ViewerMoreMenu, props);
   try {
+    await toggleSection('frameleaf_viewer_group_set_as');
     await fireEvent.click(screen.getByRole('menuitem', { name: 'frameleaf_viewer_menu_person_featured' }));
     if (change === 'chooser') {
       await view.rerender({ ...props, asset: replacement });
@@ -196,6 +209,7 @@ describe('Full screen in "…" on a phone (FL-1457)', () => {
       onToggleFullscreen,
     });
 
+    await toggleSection(VIEWER);
     const items = screen.getAllByRole('menuitem').map((item) => item.textContent?.trim());
     const fullScreen = items.findIndex((text) => text?.includes('frameleaf_viewer_enter_fullscreen'));
     expect(items[fullScreen - 1]).toContain('frameleaf_viewer_slideshow_settings');
@@ -204,7 +218,7 @@ describe('Full screen in "…" on a phone (FL-1457)', () => {
     expect(onToggleFullscreen).toHaveBeenCalledOnce();
   });
 
-  it('says Exit full screen while in it', () => {
+  it('says Exit full screen while in it', async () => {
     widthIs(true);
     const asset = assetFactory.build({ ownerId: 'owner', type: AssetTypeEnum.Image });
     render(ViewerMoreMenu, {
@@ -214,18 +228,96 @@ describe('Full screen in "…" on a phone (FL-1457)', () => {
       onToggleFullscreen: vi.fn(),
       fullscreen: true,
     });
+    await toggleSection(VIEWER);
     expect(screen.getByText('frameleaf_viewer_exit_fullscreen')).toBeInTheDocument();
   });
 
-  it('is not offered on a wide screen, nor where the phone keeps its footer', () => {
+  it('is not offered on a wide screen, nor where the phone keeps its footer', async () => {
     widthIs(false);
     const asset = assetFactory.build({ ownerId: 'owner', type: AssetTypeEnum.Image });
     const wide = render(ViewerMoreMenu, { asset, preAction: vi.fn(), onAction: vi.fn(), onToggleFullscreen: vi.fn() });
+    await toggleSection(VIEWER);
     expect(screen.queryByText('frameleaf_viewer_enter_fullscreen')).not.toBeInTheDocument();
     wide.unmount();
 
     widthIs(true);
     render(ViewerMoreMenu, { asset, preAction: vi.fn(), onAction: vi.fn() });
+    await toggleSection(VIEWER);
     expect(screen.queryByText('frameleaf_viewer_enter_fullscreen')).not.toBeInTheDocument();
+  });
+});
+
+// FL-1811 (prototype PR 102): a short list that is always in view, then sections that open in place.
+describe('the short list and its sections (FL-1811)', () => {
+  const names = () => screen.getAllByRole('menuitem').map((item) => item.textContent?.trim());
+  const show = (overrides = {}) =>
+    render(ViewerMoreMenu, {
+      asset: assetFactory.build({ ownerId: 'owner', type: AssetTypeEnum.Image, isOffline: false, ...overrides }),
+      preAction: vi.fn(),
+      onAction: vi.fn(),
+      canNavigateCollection: true,
+    });
+
+  it('draws the everyday actions, then every section closed, and no headings', () => {
+    features.value.smartSearch = true;
+    try {
+      show();
+      expect(names()).toEqual([
+        'add_to_album',
+        'to_archive',
+        'frameleaf_bulk_mark_sensitive',
+        'download',
+        'frameleaf_viewer_menu_find_similar',
+        'frameleaf_viewer_menu_tag_people',
+        SHARE,
+        'frameleaf_viewer_group_stack',
+        'frameleaf_viewer_group_set_as',
+        'frameleaf_viewer_group_go_to',
+        'frameleaf_viewer_section_fix',
+        VIEWER,
+      ]);
+      for (const row of screen.getAllByRole('menuitem').slice(6)) {
+        expect(row).toHaveAttribute('aria-expanded', 'false');
+      }
+      expect(screen.queryByRole('presentation')).not.toBeInTheDocument();
+    } finally {
+      features.value.smartSearch = false;
+    }
+  });
+
+  it('opens a section in place, under its row, and closes it again', async () => {
+    show();
+    expect(screen.queryByText('refresh_metadata')).not.toBeInTheDocument();
+    await toggleSection('frameleaf_viewer_section_fix');
+    const fix = screen.getByRole('menuitem', { name: 'frameleaf_viewer_section_fix' });
+    expect(fix).toHaveAttribute('aria-expanded', 'true');
+    const rows = names();
+    expect(rows.slice(rows.indexOf('frameleaf_viewer_section_fix') + 1, -1)).toEqual([
+      'frameleaf_viewer_menu_split_scan',
+      'refresh_faces',
+      'refresh_metadata',
+      'refresh_thumbnails',
+    ]);
+    await toggleSection('frameleaf_viewer_section_fix');
+    expect(fix).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByText('refresh_metadata')).not.toBeInTheDocument();
+  });
+
+  it('keeps one section open at a time', async () => {
+    show();
+    await toggleSection('frameleaf_viewer_section_fix');
+    await toggleSection('frameleaf_viewer_group_go_to');
+    expect(screen.getByRole('menuitem', { name: 'frameleaf_viewer_section_fix' })).toHaveAttribute(
+      'aria-expanded',
+      'false',
+    );
+    expect(screen.queryByText('refresh_metadata')).not.toBeInTheDocument();
+    expect(screen.getByText('view_in_timeline')).toBeInTheDocument();
+  });
+
+  it('shows Restore and Delete permanently in the short list for a trashed item', () => {
+    show({ isTrashed: true });
+    // Nothing to share or export from the trash here (no edit, no clipboard, no still), so that section is not drawn.
+    expect(names()).toEqual(['download', 'restore', 'frameleaf_viewer_delete_permanently', VIEWER]);
   });
 });

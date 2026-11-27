@@ -5643,6 +5643,8 @@ export type AlbumRailResponseDto = {
 export type AlbumRecentlyAddedResponseDto = {
     /** Albums the user may add to, the one that most recently received an item first */
     albumIds: string[];
+    /** Albums the user may add to that the user itself last added items to, most recent first */
+    usedAlbumIds: string[];
 };
 export type AlbumStatisticsResponseDto = {
     /** Number of non-shared albums */
