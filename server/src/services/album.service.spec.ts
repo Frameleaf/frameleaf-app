@@ -3363,7 +3363,7 @@ describe(AlbumService.name, () => {
         { albumId: album2.id, assetId: asset1.id },
         { albumId: album2.id, assetId: asset2.id },
         { albumId: album2.id, assetId: asset3.id },
-      ]);      ]);
+      ]);
       expect(mocks.album.recordUse).toHaveBeenCalledWith(owner.id, [album1.id, album2.id]);
     });
 

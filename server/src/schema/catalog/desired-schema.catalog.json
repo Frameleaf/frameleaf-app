@@ -60975,6 +60975,111 @@
         }
       ],
       "synchronize": true
+    },
+    {
+      "name": "album_recent_use",
+      "columns": [
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "userId",
+          "tableName": "album_recent_use",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "albumId",
+          "tableName": "album_recent_use",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "usedAt",
+          "tableName": "album_recent_use",
+          "nullable": false,
+          "isArray": false,
+          "default": "now()",
+          "synchronize": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "album_recent_use_albumId_idx",
+          "definition": "CREATE INDEX \"album_recent_use_albumId_idx\" ON public.album_recent_use USING btree (\"albumId\")",
+          "tableName": "album_recent_use",
+          "columnNames": [
+            "albumId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "album_recent_use_userId_usedAt_idx",
+          "definition": "CREATE INDEX \"album_recent_use_userId_usedAt_idx\" ON public.album_recent_use USING btree (\"userId\", \"usedAt\")",
+          "tableName": "album_recent_use",
+          "columnNames": [
+            "userId",
+            "usedAt"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        }
+      ],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "primary-key",
+          "name": "album_recent_use_pkey",
+          "definition": "PRIMARY KEY (\"userId\", \"albumId\")",
+          "tableName": "album_recent_use",
+          "columnNames": [
+            "userId",
+            "albumId"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "album_recent_use_userId_fkey",
+          "definition": "FOREIGN KEY (\"userId\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "album_recent_use",
+          "columnNames": [
+            "userId"
+          ],
+          "referenceTableName": "user",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "album_recent_use_albumId_fkey",
+          "definition": "FOREIGN KEY (\"albumId\") REFERENCES album(id) ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "album_recent_use",
+          "columnNames": [
+            "albumId"
+          ],
+          "referenceTableName": "album",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
     }
   ],
   "sequences": [

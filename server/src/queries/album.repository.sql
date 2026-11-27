@@ -255,6 +255,36 @@ where
 group by
   "album_asset"."albumId"
 
+-- AlbumRepository.recordUse
+insert into
+  "album_recent_use" ("userId", "albumId")
+values
+  ($1, $2)
+on conflict ("userId", "albumId") do update
+set
+  "usedAt" = now()
+
+-- AlbumRepository.getRecentlyUsedIds
+select
+  "album_recent_use"."albumId"
+from
+  "album_recent_use"
+  inner join "album" on "album"."id" = "album_recent_use"."albumId"
+  inner join "album_user" on "album_user"."albumId" = "album"."id"
+  and "album_user"."userId" = $1
+where
+  "album_recent_use"."userId" = $2
+  and "album_user"."role" in ($3, $4)
+  and "album"."deletedAt" is null
+  and (
+    "album"."libraryScope" in ($5, $6)
+    or "album_user"."role" != $7
+  )
+order by
+  "album_recent_use"."usedAt" desc
+limit
+  $8
+
 -- AlbumRepository.getRecentlyAddedIds
 select
   "album_asset"."albumId"
