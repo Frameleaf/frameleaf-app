@@ -47,6 +47,7 @@ import type { LibraryPanelString } from './library-strings';
 import type { StudioPreviewView } from './preview';
 import type { ShellString } from './shell-strings';
 import type { StabiliseEngineString } from './stabilise-strings';
+import type { TimelineString } from './timeline-strings';
 import type { TranscriptEngineString } from './transcript-strings';
 import type { VoiceCleanupEngineString } from './voice-cleanup-strings';
 
@@ -472,6 +473,8 @@ export type StudioAdapterString =
   | EngineControlsString
   /** The editor's tab bar, its More menu and its error screen (FL-1822), the same way. */
   | ShellString
+  /** The editor's timeline toolbar (FL-1822), the same way. */
+  | TimelineString
   /** The bin's Library view (FL-636), drawn by the adapter. */
   | LibraryPanelString;
 

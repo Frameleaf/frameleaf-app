@@ -1,0 +1,61 @@
+diff --git a/src/features/preview/components/gizmo-handles.tsx b/src/features/preview/components/gizmo-handles.tsx
+index 100f3a0..f59ca4f 100644
+--- a/src/features/preview/components/gizmo-handles.tsx
++++ b/src/features/preview/components/gizmo-handles.tsx
+@@ -94,7 +94,8 @@ export function GizmoHandles({
+     }
+   }
+ 
+-  // Border color based on mask state and interaction
++  // Border colour based on mask state and interaction. The approved Studio's selection (FL-1822): a
++  // solid accent outline and white round handles on a dark hairline, readable on any frame.
+   const borderColor = isMask
+     ? isInteracting
+       ? '#0891b2'
+@@ -109,8 +110,8 @@ export function GizmoHandles({
+       <div
+         className="absolute cursor-move"
+         style={{
+-          inset: -2,
+-          border: `2px dashed ${borderColor}`,
++          inset: -1.5,
++          border: `1.5px solid ${borderColor}`,
+           boxSizing: 'border-box',
+           zIndex: 101,
+         }}
+@@ -145,7 +146,7 @@ export function GizmoHandles({
+           return (
+             <div
+               key={handle}
+-              className="bg-white border border-primary"
++              className="rounded-full bg-white shadow-[0_0_0_1px_rgba(0,0,0,0.55)]"
+               style={{ ...getHandleStyle(handle), zIndex: 102 }}
+               role="button"
+               aria-label={handleLabels[handle]}
+@@ -188,7 +189,7 @@ export function GizmoHandles({
+             return (
+               <div
+                 key={edge}
+-                className="absolute border border-white bg-primary shadow-sm"
++                className="absolute rounded-full bg-white shadow-[0_0_0_1px_rgba(0,0,0,0.55)]"
+                 style={{
+                   left,
+                   top,
+@@ -213,7 +214,7 @@ export function GizmoHandles({
+ 
+       {/* Rotation handle */}
+       <div
+-        className="absolute bg-white border border-primary rounded-full cursor-crosshair"
++        className="absolute rounded-full bg-white shadow-[0_0_0_1px_rgba(0,0,0,0.55)] cursor-crosshair"
+         style={{
+           width: 10,
+           height: 10,
+@@ -231,7 +232,7 @@ export function GizmoHandles({
+ 
+       {/* Rotation guide line */}
+       <div
+-        className="absolute border-l border-dashed border-primary pointer-events-none"
++        className="absolute border-l border-primary pointer-events-none"
+         style={{
+           left: '50%',
+           top: -ROTATION_HANDLE_OFFSET + 10,

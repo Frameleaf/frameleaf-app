@@ -18349,8 +18349,10 @@
           "0045-hidden-overlay-displayed-frame.patch",
           "0046-preview-canvas-transform-placement.patch",
           "0110-scope-revision-binding.patch",
-          "0118-adaptive-preview-render-size.patch"
+          "0118-adaptive-preview-render-size.patch",
+          "0209-studio-selection-handles.patch"
         ],
+        "note": "FL-1822 (0209): the selection is the approved Studio's: a solid accent outline and white round handles on a dark hairline.",
         "status": "shipped"
       },
       "id": "module.preview",
@@ -20687,8 +20689,10 @@
           "4d29c52c91",
           "cd365017c8",
           "1accc156fc",
-          "d74234e08d"
+          "d74234e08d",
+          "0210-studio-timeline-toolbar.patch"
         ],
+        "note": "FL-1822 (0210): the timeline toolbar is the approved Studio's: a Tool menu, undo and redo, quiet snapping, marker and keyframe toggles, In and Out with their timecode, voice-over, and a More menu for linked selection, sound while scrubbing and the clearing actions.",
         "status": "shipped"
       },
       "id": "module.timeline",

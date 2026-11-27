@@ -273,6 +273,15 @@ buttons they still show four-digit values; it is opt-in because a container is s
 no content, which would collapse a field that has no width of its own. The colour workspace's own
 controls are not these and are unchanged.
 
+Patch 0209 draws the preview's selection as the approved Studio does (FL-1822): a 1.5px solid accent
+outline and white round handles on a dark hairline (resize, rotate and crop), readable on any frame.
+Patch 0210 rebuilds the timeline toolbar to the approved mock: a Tool menu that shows the current tool
+and lists every tool with a note and its shortcut, undo and redo, snapping, add marker and the
+keyframes lane as quiet icon buttons with one pressed state, In and Out as text buttons that show
+their timecode once set, voice-over (red only while recording), and a More menu for linked
+selection, sound while scrubbing and clearing In and Out or markers. Its words are host-translated
+(`web/src/lib/frameleaf/studio/timeline-strings.ts`) in all eleven languages.
+
 Patch 0185 (FL-1564) adds four transitions other editors use: Film Dissolve (a cross dissolve mixed in
 linear light), Cross Zoom (both clips zoom with a radial blur, `strength`), Cube Spin (the clips are two
 faces of a box turning a quarter turn in perspective, four directions) and Page Peel (the outgoing clip

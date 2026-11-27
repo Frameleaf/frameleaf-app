@@ -939,7 +939,17 @@
       "path": "patches/0208-studio-inspector-controls.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "c02f6308468a6be14b1d65c4627ce682fb341d7e7fa622a4716ea731feda6e9f"
+    },
+    {
+      "path": "patches/0209-studio-selection-handles.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "a938f906ef3c8147886e1a8f18562022e5e1569c8140ecb1e2089a98aedc3053"
+    },
+    {
+      "path": "patches/0210-studio-timeline-toolbar.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "33df308627a5c8d18b8ae4e71baa3de98e12425f985aa21ee13acd7e1c2760a5"
     }
   ],
-  "sourceSha256": "12627e4c71be07459341c17242efaaf9e93b026e613f43beee979c975c450298"
+  "sourceSha256": "1cc2f65efd513fb417533c3d08856d4299ae611e167d7cf8ce0614fe8cafa304"
 }
