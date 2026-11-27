@@ -12,6 +12,7 @@
    * and places are the owner's own: for any other scope the server leaves them out and the panel
    * explains why instead. Every chart keeps its exact values in a data table (and the CSV).
    */
+  import EmptyRow from '$lib/components/frameleaf/EmptyRow.svelte';
   import AnalyticsDataTable from '$lib/components/frameleaf/analytics/AnalyticsDataTable.svelte';
   import AnalyticsDonut from '$lib/components/frameleaf/analytics/AnalyticsDonut.svelte';
   import AnalyticsLeaderboard from '$lib/components/frameleaf/analytics/AnalyticsLeaderboard.svelte';
@@ -241,7 +242,7 @@
       : ''}
   >
     {#if years.length === 0}
-      <p class="empty">{$t('frameleaf_analytics_no_items')}</p>
+      <EmptyRow title={$t('frameleaf_analytics_no_items')} />
     {:else}
       <div
         class="an-years"
@@ -401,12 +402,16 @@
     caption={$t('frameleaf_analytics_gear_caption')}
   >
     {#if cameras.length === 0}
-      <p class="empty">{$t('frameleaf_analytics_no_items')}</p>
+      <EmptyRow title={$t('frameleaf_analytics_no_items')} />
     {:else}
       <AnalyticsLeaderboard rows={cameras} label={$t('frameleaf_analytics_cameras')} format={f.number} />
     {/if}
     <h3 class="an-subhead">{$t('frameleaf_analytics_lenses')}</h3>
-    <AnalyticsLeaderboard rows={lenses} label={$t('frameleaf_analytics_lenses')} format={f.number} />
+    {#if lenses.length === 0}
+      <EmptyRow title={$t('frameleaf_analytics_no_items')} />
+    {:else}
+      <AnalyticsLeaderboard rows={lenses} label={$t('frameleaf_analytics_lenses')} format={f.number} />
+    {/if}
     <h3 class="an-subhead">{$t('frameleaf_analytics_focal_lengths')}</h3>
     <div class="an-focal" role="img" aria-label={$t('frameleaf_analytics_focal_label')}>
       {#each focal as row (row.id)}
@@ -505,7 +510,7 @@
         : { href: Route.people(), label: $t('people') }}
     >
       {#if personRows.length === 0}
-        <p class="empty">{$t('frameleaf_analytics_people_none')}</p>
+        <EmptyRow title={$t('frameleaf_analytics_people_none')} />
       {:else}
         <AnalyticsLeaderboard rows={personRows} label={$t('frameleaf_analytics_top_people')} format={f.number}>
           {#snippet lead(row)}
@@ -541,7 +546,11 @@
         values: { count: people.geotagged, value: f.number(people.geotagged) },
       })}
     >
-      <AnalyticsLeaderboard rows={places} label={$t('frameleaf_analytics_places')} format={f.number} />
+      {#if places.length === 0}
+        <EmptyRow title={$t('frameleaf_analytics_no_items')} />
+      {:else}
+        <AnalyticsLeaderboard rows={places} label={$t('frameleaf_analytics_places')} format={f.number} />
+      {/if}
       {@render dataTable('places')}
     </AnalyticsPanel>
   {:else}
