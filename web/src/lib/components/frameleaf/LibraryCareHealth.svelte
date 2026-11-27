@@ -1,4 +1,5 @@
 <script lang="ts">
+  import EmptyRow from '$lib/components/frameleaf/EmptyRow.svelte';
   import type { Translations } from 'svelte-i18n';
   /**
    * Library Care: Missing media and Damaged media (FL-69).
@@ -864,15 +865,15 @@
     </table>
     {#if visible.length === 0}
       <div class="empty">
-        <Icon icon={mdiCheckCircleOutline} size="1.75rem" aria-hidden={true} />
-        <h3>{$t('library_care_empty_title')}</h3>
-        <p>
-          {list.total === 0 && !query
+        <EmptyRow
+          icon={mdiCheckCircleOutline}
+          title={$t('library_care_empty_title')}
+          message={list.total === 0 && !query
             ? isMissing
               ? $t('library_care_empty_missing')
               : $t('library_care_empty_damaged')
             : $t('library_care_empty_filtered')}
-        </p>
+        />
       </div>
     {/if}
     {#if list.total > rows.length}
@@ -1268,18 +1269,6 @@
     flex-wrap: wrap;
     gap: 8px;
   }
-  .empty {
-    display: grid;
-    justify-items: center;
-    gap: 0.375rem;
-    padding: 2rem 1rem;
-    text-align: center;
-    color: var(--fl-muted);
-  }
-  .empty h3 {
-    color: var(--fl-text);
-    font-size: 0.9375rem;
-  }
   .more {
     padding: 0.5rem 0.75rem;
   }
@@ -1396,5 +1385,8 @@
     .evidence {
       grid-template-columns: minmax(0, 1fr);
     }
+  }
+  .empty {
+    padding: var(--fl-space-4);
   }
 </style>

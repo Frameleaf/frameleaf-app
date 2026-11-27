@@ -1,4 +1,5 @@
 <script lang="ts">
+  import EmptyRow from '$lib/components/frameleaf/EmptyRow.svelte';
   import { formatDateTime } from '$lib/frameleaf/date-format';
   import { formatCount } from '$lib/frameleaf/number-format';
   import DurableRuns from '$lib/components/frameleaf/jobs/DurableRuns.svelte';
@@ -1617,22 +1618,22 @@
             </tbody>
           </table>
           {#if jobsFailed}
-            <p class="jm-empty" role="alert">{$t('frameleaf_jobs_jobs_load_failed')}</p>
+            <div class="jm-state">
+              <InlineError compact message={$t('frameleaf_jobs_jobs_load_failed')} onRetry={() => jobsReload++} />
+            </div>
           {:else if jobsLoaded && matchingJobs.length === 0}
-            <div class="jm-empty">
-              <Icon icon={tab === 'failed' ? mdiCheckCircleOutline : mdiClockOutline} size="28px" aria-hidden={true} />
-              <h3>
-                {tab === 'failed'
+            <div class="jm-state">
+              <EmptyRow
+                icon={tab === 'failed' ? mdiCheckCircleOutline : mdiClockOutline}
+                title={tab === 'failed'
                   ? $t('frameleaf_jobs_empty_failed')
                   : $t('frameleaf_jobs_empty_state', {
                       values: { state: $t(`frameleaf_jobs_empty_state_${tab}` as Translations) },
                     })}
-              </h3>
-              <p>
-                {owner === 'all'
+                message={owner === 'all'
                   ? $t('frameleaf_jobs_empty_help')
                   : $t('frameleaf_jobs_empty_help_account', { values: { name: ownerName } })}
-              </p>
+              />
             </div>
           {/if}
         </div>
@@ -2245,25 +2246,6 @@
   .jm-destination :global(svg) {
     color: var(--fl-muted);
   }
-  .jm-empty {
-    text-align: center;
-    padding: 34px;
-    color: var(--fl-muted);
-  }
-  .jm-empty > :global(svg) {
-    display: block;
-    margin-inline: auto;
-  }
-  .jm-empty h3 {
-    font-size: 14px;
-    color: var(--fl-text);
-    margin: 5px 0;
-  }
-  .jm-empty p {
-    font-size: 12px;
-    margin: 7px auto 13px;
-    max-width: 440px;
-  }
   .jm-load-more {
     display: flex;
     justify-content: center;
@@ -2557,5 +2539,8 @@
   .jm-detail-actions {
     display: flex;
     justify-content: flex-end;
+  }
+  .jm-state {
+    padding: var(--fl-space-4);
   }
 </style>
