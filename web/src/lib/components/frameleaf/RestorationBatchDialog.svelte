@@ -5,6 +5,7 @@
    * background job and a new version; the originals are never changed. Frameleaf Cloud shows as not
    * available until it has a price for this work: no figure is ever made up here.
    */
+  import Skeleton from '$lib/components/frameleaf/Skeleton.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import { formatEstimateSeconds } from '$lib/frameleaf/restoration';
   import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
@@ -218,7 +219,7 @@
     <fieldset>
       <legend>{$t('frameleaf_repair_batch_where')}</legend>
       {#if loading && !estimate}
-        <p class="help" aria-busy="true">{$t('loading')}</p>
+        <div role="status" aria-busy="true" aria-label={$t('loading')}><Skeleton variant="text" lines={3} /></div>
       {:else}
         <div class="where">
           {#each destinations as row (row.id)}

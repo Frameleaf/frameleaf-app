@@ -1,4 +1,5 @@
 <script lang="ts">
+  import GridSkeleton from '$lib/components/frameleaf/GridSkeleton.svelte';
   import { formatLuxon } from '$lib/frameleaf/date-format';
   import { afterNavigate, goto } from '$app/navigation';
   import { page } from '$app/state';
@@ -17,7 +18,6 @@
   import ThumbnailSizeControl from '$lib/components/frameleaf/ThumbnailSizeControl.svelte';
   import InlineError from '$lib/components/frameleaf/InlineError.svelte';
   import Skeleton from '$lib/components/frameleaf/Skeleton.svelte';
-  import Spinner from '$lib/components/frameleaf/Spinner.svelte';
   import SearchSaveDialog from '$lib/components/frameleaf/SearchSaveDialog.svelte';
   import ResultsAssetViewer from '$lib/components/frameleaf/ResultsAssetViewer.svelte';
   import ResultsView from '$lib/components/frameleaf/ResultsView.svelte';
@@ -1210,8 +1210,9 @@
           {/each}
         </div>
       {:else if isLoading && searchResultAssets.length > 0}
+        <!-- FL-1810: one row of tiles while the next page loads, not a spinner -->
         <div class="frameleaf search-more" data-theme={appTheme}>
-          <Spinner size="xl" />
+          <GridSkeleton tiles={6} minTile="10rem" />
         </div>
       {/if}
     </section>
@@ -1557,9 +1558,9 @@
     place-content: center;
   }
   .search-more {
-    display: flex;
-    justify-content: center;
-    padding: var(--fl-space-8) 0;
+    max-height: 12rem;
+    overflow: hidden;
+    padding: var(--fl-space-4) 0;
   }
   .search-skeleton {
     display: grid;

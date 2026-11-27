@@ -1,4 +1,5 @@
 <script lang="ts">
+  import GridSkeleton from '$lib/components/frameleaf/GridSkeleton.svelte';
   import { debounce } from 'lodash-es';
   import { LIVE_ADDITIONS_MAX_WAIT_MS, LIVE_ADDITIONS_QUIET_MS } from '$lib/constants';
   import { goto } from '$app/navigation';
@@ -1213,9 +1214,10 @@
             message={$t(request ? 'frameleaf_pro_load_failed' : 'frameleaf_pro_filter_unavailable')}
             onRetry={request ? load : undefined}
           />{/if}
-        {#if results.loading && !results.refreshing && results.items.length === 0}<p role="status">
-            {$t('loading')}
-          </p>{/if}
+        {#if results.loading && !results.refreshing && results.items.length === 0}<GridSkeleton
+            tiles={12}
+            minTile="10rem"
+          />{/if}
         {#snippet emptyState()}{#if (!results.loading || results.refreshing) && !failed}
             {#if emptyKind === 'first'}
               <div class="fl-items-first" role="status">
