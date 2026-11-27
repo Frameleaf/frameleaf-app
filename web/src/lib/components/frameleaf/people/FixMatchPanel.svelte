@@ -85,6 +85,8 @@
   let rows: Row[] = $state([]);
   /** How many people "Not this person" offers before "Someone else…". */
   const OTHERS_SHOWN = 6;
+  /** At most this many pages of 200 are read to find them. */
+  const OTHERS_PAGES = 5;
   let others: PeopleListItemDto[] = $state([]);
   let hasMore = $state(false);
   let loading = $state(false);
@@ -189,8 +191,10 @@
       // photo count and is read until it has given six, not cut from whatever the first page held.
       const found: PeopleListItemDto[] = [];
       const known = new Set<string>([person.id]);
-      for (let page = 1; found.length < OTHERS_SHOWN; page++) {
-        const result = await getAllPeople({ withHidden: false, sort: PeopleSort.Count, page, size: 50 });
+      // ponytail: stops after OTHERS_PAGES pages, so a library whose biggest groups are unnamed costs at most
+      // that many reads; a server "named only" filter would make the bound unnecessary
+      for (let page = 1; found.length < OTHERS_SHOWN && page <= OTHERS_PAGES; page++) {
+        const result = await getAllPeople({ withHidden: false, sort: PeopleSort.Count, page, size: 200 });
         const added = result.people.filter(({ id }) => !known.has(id));
         for (const candidate of added) {
           known.add(candidate.id);

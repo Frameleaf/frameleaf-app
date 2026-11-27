@@ -119,8 +119,31 @@ describe('FixMatchPanel (PD-3)', () => {
       withHidden: false,
       sort: 'count',
       page: 1,
-      size: 50,
+      size: 200,
     });
+  });
+
+  it('reads at most five pages when the people with the most photos have no names', async () => {
+    sdkMock.getAllPeople.mockImplementation((options) =>
+      Promise.resolve({
+        people: Array.from({ length: 200 }, (_, index) => ({
+          ...personFactory.build({ id: `u${options?.page}-${index}`, name: '' }),
+          assetCount: 1,
+          lastSeenAt: null,
+        })),
+        total: 5000,
+        hidden: 0,
+        hasNextPage: true,
+      }),
+    );
+    render(FixMatchPanel, { person, close: vi.fn() });
+
+    await fireEvent.click(await screen.findByRole('button', { name: 'Not this person in one.jpg' }));
+    await screen.findByRole('menuitem', { name: /Someone else/ });
+
+    await waitFor(() => expect(sdkMock.getAllPeople).toHaveBeenCalledTimes(5));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(sdkMock.getAllPeople).toHaveBeenCalledTimes(5);
   });
 
   it('takes a face that is nobody off the person with a recoverable soft delete', async () => {
