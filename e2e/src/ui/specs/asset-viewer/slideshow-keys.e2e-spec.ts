@@ -8,6 +8,8 @@ import { setupAssetViewerFixture } from './utils';
  * paused is shown rather than held at the transparent first frame of its transition, and closing
  * the viewer ends the slideshow.
  */
+const footer = (page: Page) => page.getByTestId('viewer-footer');
+
 test.describe('slideshow keys and states', () => {
   const fixture = setupAssetViewerFixture(1833);
 
@@ -16,7 +18,6 @@ test.describe('slideshow keys and states', () => {
     await context.addInitScript(() => localStorage.setItem('slideshow-delay', '60'));
   });
 
-  const footer = (page: Page) => page.getByTestId('viewer-footer');
   const openPhoto = async (page: Page) => {
     await page.goto(`/photos/${fixture.primaryAsset.id}`);
     await assetViewerUtils.waitForViewerLoad(page, fixture.primaryAsset);
@@ -71,5 +72,48 @@ test.describe('slideshow keys and states', () => {
     await assetViewerUtils.waitForViewerLoad(page, fixture.primaryAsset);
     await expect(footer(page).getByRole('button', { name: 'Play slideshow' })).toBeVisible();
     await expect(page.getByTestId('slideshow-progress')).toHaveCount(0);
+  });
+
+  // FL-1834: Ascending from the top begins at the last item; Repeat goes back to the collection's start.
+  const openFromTimeline = async (page: Page, assetId: string) => {
+    const asset = fixture.assets.find((candidate) => candidate.id === assetId)!;
+    await pageUtils.deepLinkPhotosPage(page, assetId);
+    await thumbnailUtils.clickAssetId(page, assetId);
+    await assetViewerUtils.waitForViewerLoad(page, asset);
+    await expect(footer(page).getByRole('button', { name: 'Play slideshow' })).toBeEnabled();
+  };
+
+  test('an Ascending slideshow started on the first item begins at the last', async ({ context, page }) => {
+    await context.addInitScript(() => localStorage.setItem('slideshow-navigation', JSON.stringify('ascending-order')));
+    const first = fixture.assets[0];
+    const last = fixture.assets.at(-1)!;
+    await openFromTimeline(page, first.id);
+    await page.keyboard.press('s');
+    await expect(page.locator('#immich-asset-viewer')).toHaveAttribute('data-asset-id', last.id, { timeout: 15_000 });
+    // the address follows, so the next step and a reload both start from here
+    await expect.poll(() => new URL(page.url()).pathname).toBe(`/photos/${last.id}`);
+    await expect(footer(page).getByRole('button', { name: 'Pause slideshow' })).toBeVisible();
+  });
+
+  test('Repeat goes back to the first item of the collection, not the item it started on', async ({
+    context,
+    page,
+  }) => {
+    await context.addInitScript(() => {
+      localStorage.setItem('slideshow-delay', '3');
+      localStorage.setItem('slideshow-repeat', 'true');
+      localStorage.setItem('slideshow-navigation', JSON.stringify('descending-order'));
+    });
+    const first = fixture.assets[0];
+    const last = fixture.assets.at(-1)!;
+    await openFromTimeline(page, last.id);
+    await page.keyboard.press('s');
+    // the first item stays for one slide (3 s); poll often enough not to miss it
+    await page.waitForFunction(
+      (id) => document.querySelector<HTMLElement>('#immich-asset-viewer')?.dataset.assetId === id,
+      first.id,
+      { polling: 50, timeout: 15_000 },
+    );
+    await expect.poll(() => new URL(page.url()).pathname, { intervals: [50] }).toBe(`/photos/${first.id}`);
   });
 });
