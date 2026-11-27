@@ -41,10 +41,10 @@ import { studioCapabilityIds } from './commands';
 import type { StudioCapabilityId, StudioCommandEnvelope, StudioCommandResult, StudioDuration } from './commands';
 import type { StudioCutoutRequest, StudioCutoutState, StudioCutoutSubjectRef } from './cutout';
 import type { CutoutEngineString } from './cutout-strings';
+import type { EngineControlsString } from './engine-controls-strings';
 import type { StudioGeneratedMedia } from './generated-media';
 import type { LibraryPanelString } from './library-strings';
 import type { StudioPreviewView } from './preview';
-import type { EngineControlsString } from './engine-controls-strings';
 import type { StabiliseEngineString } from './stabilise-strings';
 import type { TranscriptEngineString } from './transcript-strings';
 import type { VoiceCleanupEngineString } from './voice-cleanup-strings';
@@ -402,6 +402,11 @@ export interface StudioHostContext {
    * or false means the bin offers no Library view.
    */
   librarySearch?: boolean;
+  /**
+   * The host keeps font files added in the title inspector (FL-1562): `uploadProjectFont` is present.
+   * Set by the frame engine from the services it was given; absent or false means no "Add font…".
+   */
+  projectFonts?: boolean;
   /**
    * Where the quick editor that opened Studio had its playhead (FL-113), as exact seconds. The engine
    * starts there once, when it mounts; later updates never move the playhead.

@@ -391,11 +391,14 @@ export const createFrameStudioEngine = ({
     });
     // FL-636: the frame offers the Library view only when this host can answer all three of its calls.
     const librarySearch = !!(services.searchLibrary && services.libraryFacets && services.addLibraryAssets);
+    // FL-1562: "Add font…" only where this host keeps font files.
+    const projectFonts = !!services.uploadProjectFont;
     let current: StudioHostContext;
     try {
       current = {
         ...context,
         librarySearch,
+        projectFonts,
         generatedMedia: await access.admit(context.project.id, context.project.graph, context.project.revision),
       };
     } catch (error) {
@@ -647,7 +650,7 @@ export const createFrameStudioEngine = ({
             if (disposed || revoking || disposing) {
               return;
             }
-            current = { ...next, generatedMedia, librarySearch };
+            current = { ...next, generatedMedia, librarySearch, projectFonts };
             send({ type: 'update', context: toFrameData(current) });
           })
           .catch((error) => revoke(error instanceof Error ? error : new Error(String(error))));

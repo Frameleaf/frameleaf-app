@@ -1,5 +1,5 @@
 diff --git a/src/features/editor/components/properties-sidebar/transition-panel/index.test.tsx b/src/features/editor/components/properties-sidebar/transition-panel/index.test.tsx
-index 4e5236e..ced2816 100644
+index 4e5236e..da900cd 100644
 --- a/src/features/editor/components/properties-sidebar/transition-panel/index.test.tsx
 +++ b/src/features/editor/components/properties-sidebar/transition-panel/index.test.tsx
 @@ -219,10 +219,10 @@ describe('TransitionPanel', () => {
@@ -25,7 +25,7 @@ index 4e5236e..ced2816 100644
      expect(
        useTimelineStore.getState().transitions.find((transition) => transition.id === 'tr-1'),
      ).toEqual(expect.objectContaining({ durationInFrames: 30, alignment: 0.5 }))
-@@ -352,4 +352,42 @@ describe('TransitionPanel', () => {
+@@ -352,4 +352,45 @@ describe('TransitionPanel', () => {
        ).toEqual([0, 0, 0])
      })
    })
@@ -36,7 +36,10 @@ index 4e5236e..ced2816 100644
 +    expect(screen.getByRole('radio', { name: 'Constant power' })).toBeChecked()
 +    expect(screen.getByText('Even loudness through the change. Best for most sound.')).toBeTruthy()
 +
-+    fireEvent.click(screen.getByRole('radio', { name: 'Exponential' }))
++    // Arrow keys move the choice, as in any radio group.
++    fireEvent.keyDown(screen.getByRole('radio', { name: 'Constant power' }), { key: 'ArrowLeft' })
++    expect(screen.getByRole('radio', { name: 'Exponential' })).toBeChecked()
++    expect(screen.getByRole('radio', { name: 'Constant power' })).toHaveAttribute('tabindex', '-1')
 +
 +    await waitFor(() => {
 +      expect(
@@ -457,16 +460,17 @@ index 908281f..2b361d6 100644
          <div className="pt-2">
 diff --git a/src/features/editor/components/properties-sidebar/transition-panel/sound-controls.tsx b/src/features/editor/components/properties-sidebar/transition-panel/sound-controls.tsx
 new file mode 100644
-index 0000000..1033b4c
+index 0000000..f7b5f7d
 --- /dev/null
 +++ b/src/features/editor/components/properties-sidebar/transition-panel/sound-controls.tsx
-@@ -0,0 +1,120 @@
+@@ -0,0 +1,123 @@
 +/**
 + * Frameleaf (FL-1555): the sound curve of a transition and a picture of where the transition sits
 + * around the cut. Both are views of fields the transition already stores (`audioCurve`, `alignment`).
 + */
 +import { useTranslation } from 'react-i18next'
 +import { cn } from '@/shared/ui/cn'
++import { radioGroupKeyDown } from '@/shared/ui/radio-group-keys'
 +import {
 +  AUDIO_CROSSFADE_CURVES,
 +  getAudioCrossfadeGain,
@@ -519,7 +523,9 @@ index 0000000..1033b4c
 +            type="button"
 +            role="radio"
 +            aria-checked={curve === option}
++            tabIndex={curve === option ? 0 : -1}
 +            onClick={() => onChange(option)}
++            onKeyDown={(event) => radioGroupKeyDown(event, AUDIO_CROSSFADE_CURVES, curve, onChange)}
 +            className={cn(
 +              'inline-flex h-7 flex-1 items-center justify-center rounded px-2 text-xs transition-colors',
 +              curve === option
@@ -594,13 +600,13 @@ index cec0266..27ffa6b 100644
        >
      >,
 diff --git a/src/i18n/locales/partials/de/engine-controls.json b/src/i18n/locales/partials/de/engine-controls.json
-index f0a293f..24956b8 100644
+index bb8c5da..6751384 100644
 --- a/src/i18n/locales/partials/de/engine-controls.json
 +++ b/src/i18n/locales/partials/de/engine-controls.json
-@@ -8,6 +8,33 @@
-       "keptNote": "Fonts you add are kept with the project, so it opens the same on any computer.",
+@@ -9,6 +9,33 @@
        "addFailed": "This font could not be added. Use a .ttf, .otf or .woff2 file.",
-       "full": "This project already keeps as many fonts as it can."
+       "full": "This project already keeps as many fonts as it can.",
+       "tooLarge": "This font file is larger than 32 MB."
 +    },
 +    "transition": {
 +      "alignment": "Alignment",
@@ -632,13 +638,13 @@ index f0a293f..24956b8 100644
    }
  }
 diff --git a/src/i18n/locales/partials/en/engine-controls.json b/src/i18n/locales/partials/en/engine-controls.json
-index f0a293f..24956b8 100644
+index bb8c5da..6751384 100644
 --- a/src/i18n/locales/partials/en/engine-controls.json
 +++ b/src/i18n/locales/partials/en/engine-controls.json
-@@ -8,6 +8,33 @@
-       "keptNote": "Fonts you add are kept with the project, so it opens the same on any computer.",
+@@ -9,6 +9,33 @@
        "addFailed": "This font could not be added. Use a .ttf, .otf or .woff2 file.",
-       "full": "This project already keeps as many fonts as it can."
+       "full": "This project already keeps as many fonts as it can.",
+       "tooLarge": "This font file is larger than 32 MB."
 +    },
 +    "transition": {
 +      "alignment": "Alignment",
@@ -670,13 +676,13 @@ index f0a293f..24956b8 100644
    }
  }
 diff --git a/src/i18n/locales/partials/es/engine-controls.json b/src/i18n/locales/partials/es/engine-controls.json
-index f0a293f..24956b8 100644
+index bb8c5da..6751384 100644
 --- a/src/i18n/locales/partials/es/engine-controls.json
 +++ b/src/i18n/locales/partials/es/engine-controls.json
-@@ -8,6 +8,33 @@
-       "keptNote": "Fonts you add are kept with the project, so it opens the same on any computer.",
+@@ -9,6 +9,33 @@
        "addFailed": "This font could not be added. Use a .ttf, .otf or .woff2 file.",
-       "full": "This project already keeps as many fonts as it can."
+       "full": "This project already keeps as many fonts as it can.",
+       "tooLarge": "This font file is larger than 32 MB."
 +    },
 +    "transition": {
 +      "alignment": "Alignment",
@@ -708,13 +714,13 @@ index f0a293f..24956b8 100644
    }
  }
 diff --git a/src/i18n/locales/partials/fr/engine-controls.json b/src/i18n/locales/partials/fr/engine-controls.json
-index f0a293f..24956b8 100644
+index bb8c5da..6751384 100644
 --- a/src/i18n/locales/partials/fr/engine-controls.json
 +++ b/src/i18n/locales/partials/fr/engine-controls.json
-@@ -8,6 +8,33 @@
-       "keptNote": "Fonts you add are kept with the project, so it opens the same on any computer.",
+@@ -9,6 +9,33 @@
        "addFailed": "This font could not be added. Use a .ttf, .otf or .woff2 file.",
-       "full": "This project already keeps as many fonts as it can."
+       "full": "This project already keeps as many fonts as it can.",
+       "tooLarge": "This font file is larger than 32 MB."
 +    },
 +    "transition": {
 +      "alignment": "Alignment",
@@ -746,13 +752,13 @@ index f0a293f..24956b8 100644
    }
  }
 diff --git a/src/i18n/locales/partials/ja/engine-controls.json b/src/i18n/locales/partials/ja/engine-controls.json
-index f0a293f..24956b8 100644
+index bb8c5da..6751384 100644
 --- a/src/i18n/locales/partials/ja/engine-controls.json
 +++ b/src/i18n/locales/partials/ja/engine-controls.json
-@@ -8,6 +8,33 @@
-       "keptNote": "Fonts you add are kept with the project, so it opens the same on any computer.",
+@@ -9,6 +9,33 @@
        "addFailed": "This font could not be added. Use a .ttf, .otf or .woff2 file.",
-       "full": "This project already keeps as many fonts as it can."
+       "full": "This project already keeps as many fonts as it can.",
+       "tooLarge": "This font file is larger than 32 MB."
 +    },
 +    "transition": {
 +      "alignment": "Alignment",
@@ -784,13 +790,13 @@ index f0a293f..24956b8 100644
    }
  }
 diff --git a/src/i18n/locales/partials/ko/engine-controls.json b/src/i18n/locales/partials/ko/engine-controls.json
-index f0a293f..24956b8 100644
+index bb8c5da..6751384 100644
 --- a/src/i18n/locales/partials/ko/engine-controls.json
 +++ b/src/i18n/locales/partials/ko/engine-controls.json
-@@ -8,6 +8,33 @@
-       "keptNote": "Fonts you add are kept with the project, so it opens the same on any computer.",
+@@ -9,6 +9,33 @@
        "addFailed": "This font could not be added. Use a .ttf, .otf or .woff2 file.",
-       "full": "This project already keeps as many fonts as it can."
+       "full": "This project already keeps as many fonts as it can.",
+       "tooLarge": "This font file is larger than 32 MB."
 +    },
 +    "transition": {
 +      "alignment": "Alignment",
@@ -822,13 +828,13 @@ index f0a293f..24956b8 100644
    }
  }
 diff --git a/src/i18n/locales/partials/pt-BR/engine-controls.json b/src/i18n/locales/partials/pt-BR/engine-controls.json
-index f0a293f..24956b8 100644
+index bb8c5da..6751384 100644
 --- a/src/i18n/locales/partials/pt-BR/engine-controls.json
 +++ b/src/i18n/locales/partials/pt-BR/engine-controls.json
-@@ -8,6 +8,33 @@
-       "keptNote": "Fonts you add are kept with the project, so it opens the same on any computer.",
+@@ -9,6 +9,33 @@
        "addFailed": "This font could not be added. Use a .ttf, .otf or .woff2 file.",
-       "full": "This project already keeps as many fonts as it can."
+       "full": "This project already keeps as many fonts as it can.",
+       "tooLarge": "This font file is larger than 32 MB."
 +    },
 +    "transition": {
 +      "alignment": "Alignment",
@@ -860,13 +866,13 @@ index f0a293f..24956b8 100644
    }
  }
 diff --git a/src/i18n/locales/partials/tr/engine-controls.json b/src/i18n/locales/partials/tr/engine-controls.json
-index f0a293f..24956b8 100644
+index bb8c5da..6751384 100644
 --- a/src/i18n/locales/partials/tr/engine-controls.json
 +++ b/src/i18n/locales/partials/tr/engine-controls.json
-@@ -8,6 +8,33 @@
-       "keptNote": "Fonts you add are kept with the project, so it opens the same on any computer.",
+@@ -9,6 +9,33 @@
        "addFailed": "This font could not be added. Use a .ttf, .otf or .woff2 file.",
-       "full": "This project already keeps as many fonts as it can."
+       "full": "This project already keeps as many fonts as it can.",
+       "tooLarge": "This font file is larger than 32 MB."
 +    },
 +    "transition": {
 +      "alignment": "Alignment",
@@ -898,13 +904,13 @@ index f0a293f..24956b8 100644
    }
  }
 diff --git a/src/i18n/locales/partials/zh/engine-controls.json b/src/i18n/locales/partials/zh/engine-controls.json
-index f0a293f..24956b8 100644
+index bb8c5da..6751384 100644
 --- a/src/i18n/locales/partials/zh/engine-controls.json
 +++ b/src/i18n/locales/partials/zh/engine-controls.json
-@@ -8,6 +8,33 @@
-       "keptNote": "Fonts you add are kept with the project, so it opens the same on any computer.",
+@@ -9,6 +9,33 @@
        "addFailed": "This font could not be added. Use a .ttf, .otf or .woff2 file.",
-       "full": "This project already keeps as many fonts as it can."
+       "full": "This project already keeps as many fonts as it can.",
+       "tooLarge": "This font file is larger than 32 MB."
 +    },
 +    "transition": {
 +      "alignment": "Alignment",
@@ -935,3 +941,39 @@ index f0a293f..24956b8 100644
      }
    }
  }
+diff --git a/src/shared/ui/radio-group-keys.ts b/src/shared/ui/radio-group-keys.ts
+new file mode 100644
+index 0000000..4eb23f5
+--- /dev/null
++++ b/src/shared/ui/radio-group-keys.ts
+@@ -0,0 +1,30 @@
++import type { KeyboardEvent } from 'react'
++
++/**
++ * Frameleaf: the keyboard rule of a radio group. Arrow keys, Home and End choose the neighbouring,
++ * first or last option and move the focus to it. Give the chosen option `tabIndex` 0 and the
++ * others -1, so the group is one tab stop.
++ */
++export function radioGroupKeyDown<T>(
++  event: KeyboardEvent<HTMLElement>,
++  options: readonly T[],
++  current: T,
++  choose: (option: T) => void,
++): void {
++  const index = Math.max(0, options.indexOf(current))
++  const next =
++    event.key === 'ArrowRight' || event.key === 'ArrowDown'
++      ? (index + 1) % options.length
++      : event.key === 'ArrowLeft' || event.key === 'ArrowUp'
++        ? (index - 1 + options.length) % options.length
++        : event.key === 'Home'
++          ? 0
++          : event.key === 'End'
++            ? options.length - 1
++            : null
++  if (next === null) return
++  event.preventDefault()
++  choose(options[next]!)
++  const radios = event.currentTarget.parentElement?.querySelectorAll<HTMLElement>('[role="radio"]')
++  radios?.[next]?.focus()
++}

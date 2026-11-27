@@ -514,6 +514,9 @@ function keepImportedLuts(state: Session) {
 function keepAddedFonts(state: Session) {
   state.unsubscribe.push(
     installProjectFontKeeper({
+      // Only where the host keeps font files, and not in a read-only editor (another person holds the project).
+      available: () =>
+        !state.disposed && state.context.projectFonts === true && acceptsWrite(state, state.mount),
       async keep(file) {
         const mount = state.mount
         if (state.disposed || !acceptsWrite(state, mount)) throw new Error('origin_retired')

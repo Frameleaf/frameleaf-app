@@ -160,7 +160,7 @@ export function compositionSourcesFor(sourceSha256) {
     // FL-1556 transitions and grades in linear HDR; changes no composition or raster producer.
     sourceSha256 === 'a4d2a7c6100e9c888b3f24c8804fe4646c761805fdbfc7b7ad2a10fc1da1726d' ||
     // FL-1562 editor controls (fonts, transition sound, channels, markers, grade panels); changes no composition or raster producer.
-    sourceSha256 === '425f53ca35e8fa5398cbfe589112656f5b907ba09900b29639aca49845920ba5'
+    sourceSha256 === 'fdf1a4993020b356126619f968109dcc9d889c19242f1900fac996ef08bf84ac'
   )
     return {
       ...COMPOSITION_SOURCES,

@@ -1,8 +1,8 @@
 diff --git a/src/features/editor/components/properties-sidebar/clip-panel/audio-section-utils.ts b/src/features/editor/components/properties-sidebar/clip-panel/audio-section-utils.ts
-index 6266343..c631edb 100644
+index 6266343..7cced69 100644
 --- a/src/features/editor/components/properties-sidebar/clip-panel/audio-section-utils.ts
 +++ b/src/features/editor/components/properties-sidebar/clip-panel/audio-section-utils.ts
-@@ -13,3 +13,49 @@ export function getAudioSectionItems(items: TimelineItem[]): AudioCapableItem[]
+@@ -13,3 +13,57 @@ export function getAudioSectionItems(items: TimelineItem[]): AudioCapableItem[]
      (item): item is AudioCapableItem => item.type === 'video' || item.type === 'audio',
    )
  }
@@ -15,6 +15,7 @@ index 6266343..c631edb 100644
 +  { id: 'stereo', group: null, map: undefined },
 +  { id: 'monoLeft', group: null, map: { left: [0], right: [0] } },
 +  { id: 'monoRight', group: null, map: { left: [1], right: [1] } },
++  { id: 'monoMix', group: null, map: { left: [0, 1], right: [0, 1] } },
 +  { id: 'dualMono', group: null, map: { left: [0], right: [1] } },
 +  { id: 'front', group: 'surround', map: { left: [0], right: [1] } },
 +  { id: 'centre', group: 'surround', map: { left: [2], right: [2] } },
@@ -46,9 +47,16 @@ index 6266343..c631edb 100644
 +        ? choice.map === map
 +        : sameSide(choice.map.left, map.left) && sameSide(choice.map.right, map.right),
 +    ).map((choice) => choice.id)
-+  const [first, ...rest] = items.map((item) => matches(item.audioChannelMap))
-+  if (!first) return 'stereo'
-+  if (rest.some((ids) => ids[0] !== first[0])) return 'mixed'
++  const [head, ...others] = items
++  if (!head) return 'stereo'
++  // Clips are alike only when their maps are: two different custom maps are mixed, not custom.
++  const same = (map: AudioCapableItem['audioChannelMap']) =>
++    map === undefined || head.audioChannelMap === undefined
++      ? map === head.audioChannelMap
++      : sameSide(map.left, head.audioChannelMap.left) &&
++        sameSide(map.right, head.audioChannelMap.right)
++  if (others.some((item) => !same(item.audioChannelMap))) return 'mixed'
++  const first = matches(head.audioChannelMap)
 +  if (preferred && first.includes(preferred)) return preferred
 +  return first[0] ?? 'custom'
 +}
@@ -75,10 +83,10 @@ index 60d74d3..63b7997 100644
        <PropertySection title={t('editor.audioSection.pitch')} icon={Music} defaultOpen={true}>
 diff --git a/src/features/editor/components/properties-sidebar/clip-panel/sound-channels-control.test.tsx b/src/features/editor/components/properties-sidebar/clip-panel/sound-channels-control.test.tsx
 new file mode 100644
-index 0000000..49dd05a
+index 0000000..e4aff8e
 --- /dev/null
 +++ b/src/features/editor/components/properties-sidebar/clip-panel/sound-channels-control.test.tsx
-@@ -0,0 +1,68 @@
+@@ -0,0 +1,81 @@
 +import type { ReactNode } from 'react'
 +import { fireEvent, render, screen } from '@testing-library/react'
 +import { beforeEach, describe, expect, it, vi } from 'vite-plus/test'
@@ -116,7 +124,20 @@ index 0000000..49dd05a
 +    expect(getAudioChannelChoice([clip('a', { left: [0], right: [1] })])).toBe('dualMono')
 +    expect(getAudioChannelChoice([clip('a', { left: [0], right: [1] })], 'front')).toBe('front')
 +    expect(getAudioChannelChoice([clip('a', { left: [0], right: [1] })], 'lfe')).toBe('dualMono')
-+    expect(getAudioChannelChoice([clip('a', { left: [0, 1], right: [0, 1] })])).toBe('custom')
++    expect(getAudioChannelChoice([clip('a', { left: [0, 1], right: [0, 1] })])).toBe('monoMix')
++    expect(getAudioChannelChoice([clip('a', { left: [0, 2], right: [1, 2] })])).toBe('custom')
++    expect(
++      getAudioChannelChoice([
++        clip('a', { left: [0, 2], right: [1, 2] }),
++        clip('b', { left: [0, 1, 2], right: [0] }),
++      ]),
++    ).toBe('mixed')
++    expect(
++      getAudioChannelChoice([
++        clip('a', { left: [0, 2], right: [1, 2] }),
++        clip('b', { left: [0, 2], right: [1, 2] }),
++      ]),
++    ).toBe('custom')
 +    expect(getAudioChannelChoice([clip('a'), clip('b', { left: [0], right: [0] })])).toBe('mixed')
 +  })
 +
@@ -141,7 +162,7 @@ index 0000000..49dd05a
 +  })
 +
 +  it('shows a map no preset has without offering to choose it', () => {
-+    render(<SoundChannelsControl items={[clip('a', { left: [0, 1], right: [0, 1] })]} />)
++    render(<SoundChannelsControl items={[clip('a', { left: [0, 2], right: [1, 2] })]} />)
 +    const custom = screen.getByRole('option', { name: 'engineControls.channels.custom' })
 +    expect((custom as HTMLOptionElement).selected).toBe(true)
 +    expect((custom as HTMLOptionElement).disabled).toBe(true)
@@ -220,10 +241,10 @@ index 0000000..f3aba3f
 +  )
 +}
 diff --git a/src/i18n/locales/partials/de/engine-controls.json b/src/i18n/locales/partials/de/engine-controls.json
-index 24956b8..68ff97e 100644
+index 6751384..f91ef56 100644
 --- a/src/i18n/locales/partials/de/engine-controls.json
 +++ b/src/i18n/locales/partials/de/engine-controls.json
-@@ -35,6 +35,23 @@
+@@ -36,6 +36,24 @@
        "curveGraph": "Sound level of the clip before and after through the transition",
        "soundApplies": "Sound applies to the clips' own sound under this transition.",
        "soundPair": "Between {{before}} and {{after}}. Sound clips fade into each other; there's no picture to change."
@@ -234,6 +255,7 @@ index 24956b8..68ff97e 100644
 +        "stereo": "Stereo",
 +        "monoLeft": "Mono from left",
 +        "monoRight": "Mono from right",
++        "monoMix": "Mono mix",
 +        "dualMono": "Dual mono",
 +        "front": "Front left and right",
 +        "centre": "Centre",
@@ -243,15 +265,15 @@ index 24956b8..68ff97e 100644
 +      "surroundGroup": "From 5.1",
 +      "mixed": "Mixed",
 +      "custom": "Custom",
-+      "note": "Choices from 5.1 are silent on a recording that has fewer channels."
++      "note": "Channels the recording doesn't have are silent."
      }
    }
  }
 diff --git a/src/i18n/locales/partials/en/engine-controls.json b/src/i18n/locales/partials/en/engine-controls.json
-index 24956b8..68ff97e 100644
+index 6751384..f91ef56 100644
 --- a/src/i18n/locales/partials/en/engine-controls.json
 +++ b/src/i18n/locales/partials/en/engine-controls.json
-@@ -35,6 +35,23 @@
+@@ -36,6 +36,24 @@
        "curveGraph": "Sound level of the clip before and after through the transition",
        "soundApplies": "Sound applies to the clips' own sound under this transition.",
        "soundPair": "Between {{before}} and {{after}}. Sound clips fade into each other; there's no picture to change."
@@ -262,6 +284,7 @@ index 24956b8..68ff97e 100644
 +        "stereo": "Stereo",
 +        "monoLeft": "Mono from left",
 +        "monoRight": "Mono from right",
++        "monoMix": "Mono mix",
 +        "dualMono": "Dual mono",
 +        "front": "Front left and right",
 +        "centre": "Centre",
@@ -271,15 +294,15 @@ index 24956b8..68ff97e 100644
 +      "surroundGroup": "From 5.1",
 +      "mixed": "Mixed",
 +      "custom": "Custom",
-+      "note": "Choices from 5.1 are silent on a recording that has fewer channels."
++      "note": "Channels the recording doesn't have are silent."
      }
    }
  }
 diff --git a/src/i18n/locales/partials/es/engine-controls.json b/src/i18n/locales/partials/es/engine-controls.json
-index 24956b8..68ff97e 100644
+index 6751384..f91ef56 100644
 --- a/src/i18n/locales/partials/es/engine-controls.json
 +++ b/src/i18n/locales/partials/es/engine-controls.json
-@@ -35,6 +35,23 @@
+@@ -36,6 +36,24 @@
        "curveGraph": "Sound level of the clip before and after through the transition",
        "soundApplies": "Sound applies to the clips' own sound under this transition.",
        "soundPair": "Between {{before}} and {{after}}. Sound clips fade into each other; there's no picture to change."
@@ -290,6 +313,7 @@ index 24956b8..68ff97e 100644
 +        "stereo": "Stereo",
 +        "monoLeft": "Mono from left",
 +        "monoRight": "Mono from right",
++        "monoMix": "Mono mix",
 +        "dualMono": "Dual mono",
 +        "front": "Front left and right",
 +        "centre": "Centre",
@@ -299,15 +323,15 @@ index 24956b8..68ff97e 100644
 +      "surroundGroup": "From 5.1",
 +      "mixed": "Mixed",
 +      "custom": "Custom",
-+      "note": "Choices from 5.1 are silent on a recording that has fewer channels."
++      "note": "Channels the recording doesn't have are silent."
      }
    }
  }
 diff --git a/src/i18n/locales/partials/fr/engine-controls.json b/src/i18n/locales/partials/fr/engine-controls.json
-index 24956b8..68ff97e 100644
+index 6751384..f91ef56 100644
 --- a/src/i18n/locales/partials/fr/engine-controls.json
 +++ b/src/i18n/locales/partials/fr/engine-controls.json
-@@ -35,6 +35,23 @@
+@@ -36,6 +36,24 @@
        "curveGraph": "Sound level of the clip before and after through the transition",
        "soundApplies": "Sound applies to the clips' own sound under this transition.",
        "soundPair": "Between {{before}} and {{after}}. Sound clips fade into each other; there's no picture to change."
@@ -318,6 +342,7 @@ index 24956b8..68ff97e 100644
 +        "stereo": "Stereo",
 +        "monoLeft": "Mono from left",
 +        "monoRight": "Mono from right",
++        "monoMix": "Mono mix",
 +        "dualMono": "Dual mono",
 +        "front": "Front left and right",
 +        "centre": "Centre",
@@ -327,15 +352,15 @@ index 24956b8..68ff97e 100644
 +      "surroundGroup": "From 5.1",
 +      "mixed": "Mixed",
 +      "custom": "Custom",
-+      "note": "Choices from 5.1 are silent on a recording that has fewer channels."
++      "note": "Channels the recording doesn't have are silent."
      }
    }
  }
 diff --git a/src/i18n/locales/partials/ja/engine-controls.json b/src/i18n/locales/partials/ja/engine-controls.json
-index 24956b8..68ff97e 100644
+index 6751384..f91ef56 100644
 --- a/src/i18n/locales/partials/ja/engine-controls.json
 +++ b/src/i18n/locales/partials/ja/engine-controls.json
-@@ -35,6 +35,23 @@
+@@ -36,6 +36,24 @@
        "curveGraph": "Sound level of the clip before and after through the transition",
        "soundApplies": "Sound applies to the clips' own sound under this transition.",
        "soundPair": "Between {{before}} and {{after}}. Sound clips fade into each other; there's no picture to change."
@@ -346,6 +371,7 @@ index 24956b8..68ff97e 100644
 +        "stereo": "Stereo",
 +        "monoLeft": "Mono from left",
 +        "monoRight": "Mono from right",
++        "monoMix": "Mono mix",
 +        "dualMono": "Dual mono",
 +        "front": "Front left and right",
 +        "centre": "Centre",
@@ -355,15 +381,15 @@ index 24956b8..68ff97e 100644
 +      "surroundGroup": "From 5.1",
 +      "mixed": "Mixed",
 +      "custom": "Custom",
-+      "note": "Choices from 5.1 are silent on a recording that has fewer channels."
++      "note": "Channels the recording doesn't have are silent."
      }
    }
  }
 diff --git a/src/i18n/locales/partials/ko/engine-controls.json b/src/i18n/locales/partials/ko/engine-controls.json
-index 24956b8..68ff97e 100644
+index 6751384..f91ef56 100644
 --- a/src/i18n/locales/partials/ko/engine-controls.json
 +++ b/src/i18n/locales/partials/ko/engine-controls.json
-@@ -35,6 +35,23 @@
+@@ -36,6 +36,24 @@
        "curveGraph": "Sound level of the clip before and after through the transition",
        "soundApplies": "Sound applies to the clips' own sound under this transition.",
        "soundPair": "Between {{before}} and {{after}}. Sound clips fade into each other; there's no picture to change."
@@ -374,6 +400,7 @@ index 24956b8..68ff97e 100644
 +        "stereo": "Stereo",
 +        "monoLeft": "Mono from left",
 +        "monoRight": "Mono from right",
++        "monoMix": "Mono mix",
 +        "dualMono": "Dual mono",
 +        "front": "Front left and right",
 +        "centre": "Centre",
@@ -383,15 +410,15 @@ index 24956b8..68ff97e 100644
 +      "surroundGroup": "From 5.1",
 +      "mixed": "Mixed",
 +      "custom": "Custom",
-+      "note": "Choices from 5.1 are silent on a recording that has fewer channels."
++      "note": "Channels the recording doesn't have are silent."
      }
    }
  }
 diff --git a/src/i18n/locales/partials/pt-BR/engine-controls.json b/src/i18n/locales/partials/pt-BR/engine-controls.json
-index 24956b8..68ff97e 100644
+index 6751384..f91ef56 100644
 --- a/src/i18n/locales/partials/pt-BR/engine-controls.json
 +++ b/src/i18n/locales/partials/pt-BR/engine-controls.json
-@@ -35,6 +35,23 @@
+@@ -36,6 +36,24 @@
        "curveGraph": "Sound level of the clip before and after through the transition",
        "soundApplies": "Sound applies to the clips' own sound under this transition.",
        "soundPair": "Between {{before}} and {{after}}. Sound clips fade into each other; there's no picture to change."
@@ -402,6 +429,7 @@ index 24956b8..68ff97e 100644
 +        "stereo": "Stereo",
 +        "monoLeft": "Mono from left",
 +        "monoRight": "Mono from right",
++        "monoMix": "Mono mix",
 +        "dualMono": "Dual mono",
 +        "front": "Front left and right",
 +        "centre": "Centre",
@@ -411,15 +439,15 @@ index 24956b8..68ff97e 100644
 +      "surroundGroup": "From 5.1",
 +      "mixed": "Mixed",
 +      "custom": "Custom",
-+      "note": "Choices from 5.1 are silent on a recording that has fewer channels."
++      "note": "Channels the recording doesn't have are silent."
      }
    }
  }
 diff --git a/src/i18n/locales/partials/tr/engine-controls.json b/src/i18n/locales/partials/tr/engine-controls.json
-index 24956b8..68ff97e 100644
+index 6751384..f91ef56 100644
 --- a/src/i18n/locales/partials/tr/engine-controls.json
 +++ b/src/i18n/locales/partials/tr/engine-controls.json
-@@ -35,6 +35,23 @@
+@@ -36,6 +36,24 @@
        "curveGraph": "Sound level of the clip before and after through the transition",
        "soundApplies": "Sound applies to the clips' own sound under this transition.",
        "soundPair": "Between {{before}} and {{after}}. Sound clips fade into each other; there's no picture to change."
@@ -430,6 +458,7 @@ index 24956b8..68ff97e 100644
 +        "stereo": "Stereo",
 +        "monoLeft": "Mono from left",
 +        "monoRight": "Mono from right",
++        "monoMix": "Mono mix",
 +        "dualMono": "Dual mono",
 +        "front": "Front left and right",
 +        "centre": "Centre",
@@ -439,15 +468,15 @@ index 24956b8..68ff97e 100644
 +      "surroundGroup": "From 5.1",
 +      "mixed": "Mixed",
 +      "custom": "Custom",
-+      "note": "Choices from 5.1 are silent on a recording that has fewer channels."
++      "note": "Channels the recording doesn't have are silent."
      }
    }
  }
 diff --git a/src/i18n/locales/partials/zh/engine-controls.json b/src/i18n/locales/partials/zh/engine-controls.json
-index 24956b8..68ff97e 100644
+index 6751384..f91ef56 100644
 --- a/src/i18n/locales/partials/zh/engine-controls.json
 +++ b/src/i18n/locales/partials/zh/engine-controls.json
-@@ -35,6 +35,23 @@
+@@ -36,6 +36,24 @@
        "curveGraph": "Sound level of the clip before and after through the transition",
        "soundApplies": "Sound applies to the clips' own sound under this transition.",
        "soundPair": "Between {{before}} and {{after}}. Sound clips fade into each other; there's no picture to change."
@@ -458,6 +487,7 @@ index 24956b8..68ff97e 100644
 +        "stereo": "Stereo",
 +        "monoLeft": "Mono from left",
 +        "monoRight": "Mono from right",
++        "monoMix": "Mono mix",
 +        "dualMono": "Dual mono",
 +        "front": "Front left and right",
 +        "centre": "Centre",
@@ -467,7 +497,7 @@ index 24956b8..68ff97e 100644
 +      "surroundGroup": "From 5.1",
 +      "mixed": "Mixed",
 +      "custom": "Custom",
-+      "note": "Choices from 5.1 are silent on a recording that has fewer channels."
++      "note": "Channels the recording doesn't have are silent."
      }
    }
  }

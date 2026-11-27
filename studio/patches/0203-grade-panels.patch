@@ -84,19 +84,33 @@ index c74ffde..f186b1e 100644
          </div>
        </Suspense>
      </div>
+diff --git a/src/features/editor/deps/export-contract.ts b/src/features/editor/deps/export-contract.ts
+index 8659f0d..0e21b88 100644
+--- a/src/features/editor/deps/export-contract.ts
++++ b/src/features/editor/deps/export-contract.ts
+@@ -12,6 +12,8 @@ export const importExportsDialog = () => import('@/features/export/components/ex
+ export { RenderQueueRunner } from '@/features/export/components/render-queue-runner'
+ export { RenderQueuePersistence } from '@/features/export/components/render-queue-persistence'
+ export { useRenderQueueStore } from '@/features/export/stores/render-queue-store'
++// The renderer's working range rule, nested compositions included (FL-1559 grade panels).
++export { deriveSourceWorkingRange } from '@/features/export/utils/project-color'
+ 
+ /** Load the same PCM mixer used by delivery only when a mix is reviewed or auditioned. */
+ export async function loadVoiceMixRenderer() {
 diff --git a/src/features/editor/hooks/use-project-is-hdr.test.tsx b/src/features/editor/hooks/use-project-is-hdr.test.tsx
 new file mode 100644
-index 0000000..b84a678
+index 0000000..dc6d108
 --- /dev/null
 +++ b/src/features/editor/hooks/use-project-is-hdr.test.tsx
-@@ -0,0 +1,40 @@
+@@ -0,0 +1,53 @@
 +import { renderHook } from '@testing-library/react'
 +import { beforeEach, describe, expect, it, vi } from 'vite-plus/test'
 +
 +const state = vi.hoisted(() => ({
 +  project: { currentProject: { metadata: {} as { colorManagement?: { workingRange?: string } } } },
 +  media: { mediaById: {} as Record<string, { colorTransfer?: string }> },
-+  items: { items: [] as { mediaId?: string }[] },
++  items: { items: [] as { mediaId?: string; type?: string; compositionId?: string }[] },
++  compositions: { compositionById: {} as Record<string, { items: { mediaId?: string }[] }> },
 +}))
 +vi.mock('@/features/editor/deps/projects', () => ({
 +  useProjectStore: (select: (s: unknown) => unknown) => select(state.project),
@@ -106,6 +120,11 @@ index 0000000..b84a678
 +}))
 +vi.mock('@/features/editor/deps/timeline-store', () => ({
 +  useItemsStore: (select: (s: unknown) => unknown) => select(state.items),
++  useCompositionsStore: (select: (s: unknown) => unknown) => select(state.compositions),
++}))
++vi.mock('@/features/editor/deps/export-contract', async () => ({
++  deriveSourceWorkingRange: (await import('@/features/export/utils/project-color'))
++    .deriveSourceWorkingRange,
 +}))
 +
 +const { useProjectIsHdr } = await import('./use-project-is-hdr')
@@ -115,6 +134,7 @@ index 0000000..b84a678
 +    state.project.currentProject.metadata = {}
 +    state.media.mediaById = { sdr: {}, hlg: { colorTransfer: 'hlg' } }
 +    state.items.items = [{ mediaId: 'sdr' }, {}]
++    state.compositions.compositionById = {}
 +  })
 +
 +  it('is SDR for SDR sources and no stored range', () => {
@@ -129,37 +149,46 @@ index 0000000..b84a678
 +    state.items.items = [{ mediaId: 'sdr' }, { mediaId: 'hlg' }]
 +    expect(renderHook(() => useProjectIsHdr()).result.current).toBe(true)
 +  })
++
++  it('counts an HDR source inside a nested composition, as the renderer does', () => {
++    state.items.items = [{ mediaId: 'sdr' }, { type: 'composition', compositionId: 'inner' }]
++    state.compositions.compositionById = { inner: { items: [{ mediaId: 'hlg' }] } }
++    expect(renderHook(() => useProjectIsHdr()).result.current).toBe(true)
++  })
 +})
 diff --git a/src/features/editor/hooks/use-project-is-hdr.ts b/src/features/editor/hooks/use-project-is-hdr.ts
 new file mode 100644
-index 0000000..ab6095c
+index 0000000..45971c3
 --- /dev/null
 +++ b/src/features/editor/hooks/use-project-is-hdr.ts
-@@ -0,0 +1,28 @@
+@@ -0,0 +1,31 @@
 +import { useCallback } from 'react'
-+import { useItemsStore } from '@/features/editor/deps/timeline-store'
++import { useCompositionsStore, useItemsStore } from '@/features/editor/deps/timeline-store'
 +import { useMediaLibraryStore } from '@/features/editor/deps/media-library'
 +import { useProjectStore } from '@/features/editor/deps/projects'
-+import { workingRangeOfSources } from '@/shared/graphics/color/managed-color'
++import { deriveSourceWorkingRange } from '@/features/editor/deps/export-contract'
++import type { TimelineItem, TimelineTrack } from '@/types/timeline'
 +
 +/**
-+ * Frameleaf (FL-1559): whether the open project works in HDR, by the automatic rule: a stored HDR
-+ * working range, or any placed clip whose media is PQ, HLG or host-reported HDR.
++ * Frameleaf (FL-1559): whether the open project works in HDR, by the renderer's automatic rule: a
++ * stored HDR working range, or any placed clip, nested compositions included, whose media is PQ,
++ * HLG or host-reported HDR.
 + */
 +export function useProjectIsHdr(): boolean {
 +  const stored = useProjectStore(
 +    (s) => s.currentProject?.metadata.colorManagement?.workingRange === 'hdr',
 +  )
 +  const mediaById = useMediaLibraryStore((s) => s.mediaById)
++  const compositionById = useCompositionsStore((s) => s.compositionById)
 +  const hdrSource = useItemsStore(
 +    useCallback(
-+      (s: { items: readonly { mediaId?: string }[] }) =>
-+        workingRangeOfSources(
-+          s.items.map((item) =>
-+            item.mediaId ? mediaById[item.mediaId]?.colorTransfer : undefined,
-+          ),
++      (s: { items: readonly TimelineItem[] }) =>
++        deriveSourceWorkingRange(
++          [{ items: s.items } as unknown as TimelineTrack],
++          (mediaId) => mediaById[mediaId],
++          compositionById,
 +        ) === 'hdr',
-+      [mediaById],
++      [compositionById, mediaById],
 +    ),
 +  )
 +  return stored || hdrSource
@@ -231,10 +260,10 @@ index fd10522..9b9749c 100644
                <GpuLutPanel
 diff --git a/src/features/effects/components/panels/gpu-grade-panels.test.tsx b/src/features/effects/components/panels/gpu-grade-panels.test.tsx
 new file mode 100644
-index 0000000..ac3ed23
+index 0000000..5f02aa8
 --- /dev/null
 +++ b/src/features/effects/components/panels/gpu-grade-panels.test.tsx
-@@ -0,0 +1,134 @@
+@@ -0,0 +1,184 @@
 +import type { ReactNode } from 'react'
 +import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 +import { beforeEach, describe, expect, it, vi } from 'vite-plus/test'
@@ -274,7 +303,7 @@ index 0000000..ac3ed23
 +  ),
 +}))
 +
-+const { GpuHueCurvesPanel, GpuRgbGridPanel } = await import('./gpu-grade-panels')
++const { GpuHueCurvesPanel, GpuRgbGridPanel, widestGapMiddle } = await import('./gpu-grade-panels')
 +
 +const handlers = {
 +  onParamChange: vi.fn(),
@@ -368,13 +397,63 @@ index 0000000..ac3ed23
 +    fireEvent.keyDown(point, { key: 'Delete' })
 +    expect(handlers.onParamChange).toHaveBeenLastCalledWith('fx', 'hueSatPoints', '')
 +  })
++
++  it('adds a point from the keyboard, moves between curves with arrows, and edits nothing while off', () => {
++    expect(widestGapMiddle([])).toBe(0.5)
++    expect(
++      widestGapMiddle([
++        [0.1, 1],
++        [0.2, 1],
++      ]),
++    ).toBe(0.65)
++    expect(
++      widestGapMiddle([
++        [0.05, 1],
++        [0.95, 1],
++      ]),
++    ).toBe(0.5)
++
++    render(<GpuHueCurvesPanel {...panelProps('gpu-hue-curves')} />)
++    fireEvent.click(screen.getByRole('button', { name: /engineControls.grade.hue.addPoint/ }))
++    expect(handlers.onParamChange).toHaveBeenLastCalledWith('fx', 'hueHuePoints', '[[0.5,0]]')
++
++    const hue = screen.getByRole('radio', { name: 'engineControls.grade.hue.hue' })
++    expect(hue.tabIndex).toBe(0)
++    expect(screen.getByRole('radio', { name: 'engineControls.grade.hue.sat' }).tabIndex).toBe(-1)
++    fireEvent.keyDown(hue, { key: 'ArrowRight' })
++    expect(screen.getByRole('radio', { name: 'engineControls.grade.hue.sat' })).toHaveAttribute(
++      'aria-checked',
++      'true',
++    )
++  })
++
++  it('ignores point edits when the effect is off', () => {
++    const props = panelProps('gpu-hue-curves', { hueHuePoints: '[[0.25,0.1]]' })
++    render(<GpuHueCurvesPanel {...props} effect={{ ...props.effect, enabled: false }} />)
++    const point = screen.getByRole('slider', { name: /engineControls.grade.hue.point/ })
++    fireEvent.doubleClick(point)
++    fireEvent.keyDown(point, { key: 'Delete' })
++    expect(handlers.onParamChange).not.toHaveBeenCalled()
++    expect(screen.getByRole('button', { name: /engineControls.grade.hue.addPoint/ })).toBeDisabled()
++  })
++
++  it('says so when a CDL file cannot be read', async () => {
++    render(<GpuRgbGridPanel {...panelProps('gpu-cdl')} />)
++    const broken = new File(['x'], 'shot.cdl')
++    Object.defineProperty(broken, 'text', { value: () => Promise.reject(new Error('unreadable')) })
++    fireEvent.change(screen.getByLabelText('engineControls.grade.loadCdl', { selector: 'input' }), {
++      target: { files: [broken] },
++    })
++    expect((await screen.findByRole('alert')).textContent).toBe('engineControls.grade.loadFailed')
++    expect(handlers.onParamsBatchChange).not.toHaveBeenCalled()
++  })
 +})
 diff --git a/src/features/effects/components/panels/gpu-grade-panels.tsx b/src/features/effects/components/panels/gpu-grade-panels.tsx
 new file mode 100644
-index 0000000..87d39b5
+index 0000000..55483d8
 --- /dev/null
 +++ b/src/features/effects/components/panels/gpu-grade-panels.tsx
-@@ -0,0 +1,420 @@
+@@ -0,0 +1,469 @@
 +/**
 + * Frameleaf (FL-1559): panels for the three grades other editors carry. ASC CDL and Lift Gamma
 + * Gain are a grid of red, green and blue values; Hue Curves edits the points of its three curves.
@@ -383,9 +462,10 @@ index 0000000..87d39b5
 + */
 +import { memo, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react'
 +import { useTranslation } from 'react-i18next'
-+import { FileUp } from 'lucide-react'
++import { FileUp, Plus } from 'lucide-react'
 +import { Button } from '@/components/ui/button'
 +import { cn } from '@/shared/ui/cn'
++import { radioGroupKeyDown } from '@/shared/ui/radio-group-keys'
 +import { PropertyRow, SliderInput } from '@/shared/ui/property-controls'
 +import { NumberInput } from '@/shared/ui/property-controls/number-input'
 +import { evaluateHueCurve, parseHuePoints } from '@/infrastructure/gpu-effects/effects/grade'
@@ -443,7 +523,12 @@ index 0000000..87d39b5
 +
 +  const loadCdl = async (file: File | undefined) => {
 +    if (!file) return
-+    const values = parseCdlFile(await file.text())
++    let values: ReturnType<typeof parseCdlFile>
++    try {
++      values = parseCdlFile(await file.text())
++    } catch {
++      values = null
++    }
 +    setLoadError(!values)
 +    if (!values) return
 +    onParamsBatchChange(
@@ -591,6 +676,18 @@ index 0000000..87d39b5
 +const HUE_HEIGHT = 120
 +const HUE_PAD = 12
 +const round = (value: number) => Math.round(value * 1000) / 1000
++/** The hue in the middle of the widest gap between points, the hue circle wrapping (0.5 for none). */
++export function widestGapMiddle(points: readonly (readonly [number, number])[]): number {
++  if (points.length === 0) return 0.5
++  const hues = points.map(([hue]) => hue).sort((a, b) => a - b)
++  let best = { from: hues.at(-1)!, width: hues[0]! + 1 - hues.at(-1)! }
++  for (let i = 1; i < hues.length; i++) {
++    const width = hues[i]! - hues[i - 1]!
++    if (width > best.width) best = { from: hues[i - 1]!, width }
++  }
++  const middle = best.from + best.width / 2
++  return round(middle - Math.floor(middle))
++}
 +const serialize = (points: readonly (readonly [number, number])[]) =>
 +  points.length > 0 ? JSON.stringify(points.map(([hue, value]) => [round(hue), round(value)])) : ''
 +
@@ -628,6 +725,7 @@ index 0000000..87d39b5
 +  }).join(' ')
 +
 +  const onPointKey = (event: KeyboardEvent<SVGCircleElement>, index: number) => {
++    if (disabled) return
 +    const step = (kind.max - kind.min) / 50
 +    const delta = event.key === 'ArrowUp' ? step : event.key === 'ArrowDown' ? -step : 0
 +    if (delta !== 0) {
@@ -675,7 +773,16 @@ index 0000000..87d39b5
 +                type="button"
 +                role="radio"
 +                aria-checked={kindId === entry.id}
++                tabIndex={kindId === entry.id ? 0 : -1}
 +                onClick={() => setKindId(entry.id)}
++                onKeyDown={(event) =>
++                  radioGroupKeyDown(
++                    event,
++                    HUE_CURVE_KINDS.map((kindEntry) => kindEntry.id),
++                    kindId,
++                    setKindId,
++                  )
++                }
 +                className={cn(
 +                  'inline-flex h-7 flex-1 items-center justify-center rounded px-2 text-xs transition-colors',
 +                  kindId === entry.id
@@ -753,7 +860,9 @@ index 0000000..87d39b5
 +                  className="cursor-grab fill-background stroke-primary"
 +                  strokeWidth={1.5}
 +                  onKeyDown={(event) => onPointKey(event, index)}
-+                  onDoubleClick={() => commit(points.filter((_, i) => i !== index))}
++                  onDoubleClick={() => {
++                    if (!disabled) commit(points.filter((_, i) => i !== index))
++                  }}
 +                  onPointerDown={(event) => {
 +                    if (disabled) return
 +                    event.currentTarget.setPointerCapture?.(event.pointerId)
@@ -774,9 +883,28 @@ index 0000000..87d39b5
 +                />
 +              ))}
 +            </svg>
-+            <p className="pt-1 text-[11px] leading-snug text-muted-foreground">
-+              {t('engineControls.grade.hue.hint')}
-+            </p>
++            <div className="flex items-start justify-between gap-2 pt-1">
++              <p className="text-[11px] leading-snug text-muted-foreground">
++                {t('engineControls.grade.hue.hint')}
++              </p>
++              {/* The keyboard's way to start a curve: a point in the middle of the widest gap. */}
++              <Button
++                variant="outline"
++                size="sm"
++                className="h-6 shrink-0 gap-1 px-2 text-xs"
++                disabled={disabled || points.length >= MAX_HUE_POINTS}
++                onClick={() =>
++                  commit(
++                    [...points, [widestGapMiddle(points), kind.neutral] as [number, number]].sort(
++                      (a, b) => a[0] - b[0],
++                    ),
++                  )
++                }
++              >
++                <Plus className="h-3 w-3" />
++                {t('engineControls.grade.hue.addPoint')}
++              </Button>
++            </div>
 +          </div>
 +          <PropertyRow label={getEffectParamLabel(t, definition, 'mix')}>
 +            <SliderInput
@@ -809,10 +937,10 @@ index 1c00bb2..f7cb60c 100644
  export { GpuPowerWindowPanel } from './gpu-power-window-panel'
 diff --git a/src/features/effects/utils/cdl-file.test.ts b/src/features/effects/utils/cdl-file.test.ts
 new file mode 100644
-index 0000000..56c0f5e
+index 0000000..7ee40bf
 --- /dev/null
 +++ b/src/features/effects/utils/cdl-file.test.ts
-@@ -0,0 +1,41 @@
+@@ -0,0 +1,50 @@
 +// @vitest-environment node
 +
 +import { describe, expect, it } from 'vite-plus/test'
@@ -840,6 +968,15 @@ index 0000000..56c0f5e
 +    })
 +  })
 +
++  it('reads the SOP and the saturation of the same correction', () => {
++    const values = parseCdlFile(`<ColorCorrectionCollection>
++  <ColorCorrection id="a"><SOPNode><Slope>1.1 1 1</Slope><Offset>0 0 0</Offset><Power>1 1 1</Power></SOPNode></ColorCorrection>
++  <ColorCorrection id="b"><SOPNode><Slope>2 2 2</Slope><Offset>0 0 0</Offset><Power>1 1 1</Power></SOPNode><SatNode><Saturation>0.5</Saturation></SatNode></ColorCorrection>
++</ColorCorrectionCollection>`)
++    expect(values?.slopeR).toBe(1.1)
++    expect(values?.saturation).toBe(1)
++  })
++
 +  it('takes saturation as 1 when the file has none, and refuses a file without a full SOP', () => {
 +    expect(
 +      parseCdlFile(
@@ -856,10 +993,10 @@ index 0000000..56c0f5e
 +})
 diff --git a/src/features/effects/utils/cdl-file.ts b/src/features/effects/utils/cdl-file.ts
 new file mode 100644
-index 0000000..1d8147a
+index 0000000..2ae21dc
 --- /dev/null
 +++ b/src/features/effects/utils/cdl-file.ts
-@@ -0,0 +1,46 @@
+@@ -0,0 +1,48 @@
 +/**
 + * Frameleaf (FL-1559): read an ASC CDL from a `.cdl`, `.cc` or `.ccc` file: the first SOP node's
 + * slope, offset and power (three numbers each) and the first saturation, as `gpu-cdl` params.
@@ -881,7 +1018,9 @@ index 0000000..1d8147a
 +}
 +
 +/** The CDL values of the file, or null when it holds no complete SOP node. */
-+export function parseCdlFile(text: string): CdlParams | null {
++export function parseCdlFile(file: string): CdlParams | null {
++  // A collection holds several corrections: read the first one's SOP and saturation together.
++  const text = /<ColorCorrection\b[\s\S]*?<\/ColorCorrection>/i.exec(file)?.[0] ?? file
 +  const slope = triple(text, 'Slope')
 +  const offset = triple(text, 'Offset')
 +  const power = triple(text, 'Power')
@@ -907,10 +1046,10 @@ index 0000000..1d8147a
 +  }
 +}
 diff --git a/src/i18n/locales/partials/de/engine-controls.json b/src/i18n/locales/partials/de/engine-controls.json
-index c86e5eb..d0bf671 100644
+index 6d0044f..e17da11 100644
 --- a/src/i18n/locales/partials/de/engine-controls.json
 +++ b/src/i18n/locales/partials/de/engine-controls.json
-@@ -64,6 +64,29 @@
+@@ -66,6 +66,30 @@
        "addClipMarker": "Add at playhead",
        "removeClipMarker": "Remove clip marker",
        "clipMarkersNote": "Clip markers stay with the clip when you move or trim it."
@@ -935,16 +1074,17 @@ index c86e5eb..d0bf671 100644
 +        "luma": "Hue vs luma",
 +        "curve": "{{kind}} curve",
 +        "point": "Point at hue {{degrees}}°",
-+        "hint": "Click the curve to add a point; drag it up or down. Double-click a point to remove it."
++        "hint": "Click the curve to add a point; drag it up or down. Double-click a point to remove it.",
++        "addPoint": "Add point"
 +      }
      }
    }
  }
 diff --git a/src/i18n/locales/partials/en/engine-controls.json b/src/i18n/locales/partials/en/engine-controls.json
-index c86e5eb..d0bf671 100644
+index 6d0044f..e17da11 100644
 --- a/src/i18n/locales/partials/en/engine-controls.json
 +++ b/src/i18n/locales/partials/en/engine-controls.json
-@@ -64,6 +64,29 @@
+@@ -66,6 +66,30 @@
        "addClipMarker": "Add at playhead",
        "removeClipMarker": "Remove clip marker",
        "clipMarkersNote": "Clip markers stay with the clip when you move or trim it."
@@ -969,16 +1109,17 @@ index c86e5eb..d0bf671 100644
 +        "luma": "Hue vs luma",
 +        "curve": "{{kind}} curve",
 +        "point": "Point at hue {{degrees}}°",
-+        "hint": "Click the curve to add a point; drag it up or down. Double-click a point to remove it."
++        "hint": "Click the curve to add a point; drag it up or down. Double-click a point to remove it.",
++        "addPoint": "Add point"
 +      }
      }
    }
  }
 diff --git a/src/i18n/locales/partials/es/engine-controls.json b/src/i18n/locales/partials/es/engine-controls.json
-index c86e5eb..d0bf671 100644
+index 6d0044f..e17da11 100644
 --- a/src/i18n/locales/partials/es/engine-controls.json
 +++ b/src/i18n/locales/partials/es/engine-controls.json
-@@ -64,6 +64,29 @@
+@@ -66,6 +66,30 @@
        "addClipMarker": "Add at playhead",
        "removeClipMarker": "Remove clip marker",
        "clipMarkersNote": "Clip markers stay with the clip when you move or trim it."
@@ -1003,16 +1144,17 @@ index c86e5eb..d0bf671 100644
 +        "luma": "Hue vs luma",
 +        "curve": "{{kind}} curve",
 +        "point": "Point at hue {{degrees}}°",
-+        "hint": "Click the curve to add a point; drag it up or down. Double-click a point to remove it."
++        "hint": "Click the curve to add a point; drag it up or down. Double-click a point to remove it.",
++        "addPoint": "Add point"
 +      }
      }
    }
  }
 diff --git a/src/i18n/locales/partials/fr/engine-controls.json b/src/i18n/locales/partials/fr/engine-controls.json
-index c86e5eb..d0bf671 100644
+index 6d0044f..e17da11 100644
 --- a/src/i18n/locales/partials/fr/engine-controls.json
 +++ b/src/i18n/locales/partials/fr/engine-controls.json
-@@ -64,6 +64,29 @@
+@@ -66,6 +66,30 @@
        "addClipMarker": "Add at playhead",
        "removeClipMarker": "Remove clip marker",
        "clipMarkersNote": "Clip markers stay with the clip when you move or trim it."
@@ -1037,16 +1179,17 @@ index c86e5eb..d0bf671 100644
 +        "luma": "Hue vs luma",
 +        "curve": "{{kind}} curve",
 +        "point": "Point at hue {{degrees}}°",
-+        "hint": "Click the curve to add a point; drag it up or down. Double-click a point to remove it."
++        "hint": "Click the curve to add a point; drag it up or down. Double-click a point to remove it.",
++        "addPoint": "Add point"
 +      }
      }
    }
  }
 diff --git a/src/i18n/locales/partials/ja/engine-controls.json b/src/i18n/locales/partials/ja/engine-controls.json
-index c86e5eb..d0bf671 100644
+index 6d0044f..e17da11 100644
 --- a/src/i18n/locales/partials/ja/engine-controls.json
 +++ b/src/i18n/locales/partials/ja/engine-controls.json
-@@ -64,6 +64,29 @@
+@@ -66,6 +66,30 @@
        "addClipMarker": "Add at playhead",
        "removeClipMarker": "Remove clip marker",
        "clipMarkersNote": "Clip markers stay with the clip when you move or trim it."
@@ -1071,16 +1214,17 @@ index c86e5eb..d0bf671 100644
 +        "luma": "Hue vs luma",
 +        "curve": "{{kind}} curve",
 +        "point": "Point at hue {{degrees}}°",
-+        "hint": "Click the curve to add a point; drag it up or down. Double-click a point to remove it."
++        "hint": "Click the curve to add a point; drag it up or down. Double-click a point to remove it.",
++        "addPoint": "Add point"
 +      }
      }
    }
  }
 diff --git a/src/i18n/locales/partials/ko/engine-controls.json b/src/i18n/locales/partials/ko/engine-controls.json
-index c86e5eb..d0bf671 100644
+index 6d0044f..e17da11 100644
 --- a/src/i18n/locales/partials/ko/engine-controls.json
 +++ b/src/i18n/locales/partials/ko/engine-controls.json
-@@ -64,6 +64,29 @@
+@@ -66,6 +66,30 @@
        "addClipMarker": "Add at playhead",
        "removeClipMarker": "Remove clip marker",
        "clipMarkersNote": "Clip markers stay with the clip when you move or trim it."
@@ -1105,16 +1249,17 @@ index c86e5eb..d0bf671 100644
 +        "luma": "Hue vs luma",
 +        "curve": "{{kind}} curve",
 +        "point": "Point at hue {{degrees}}°",
-+        "hint": "Click the curve to add a point; drag it up or down. Double-click a point to remove it."
++        "hint": "Click the curve to add a point; drag it up or down. Double-click a point to remove it.",
++        "addPoint": "Add point"
 +      }
      }
    }
  }
 diff --git a/src/i18n/locales/partials/pt-BR/engine-controls.json b/src/i18n/locales/partials/pt-BR/engine-controls.json
-index c86e5eb..d0bf671 100644
+index 6d0044f..e17da11 100644
 --- a/src/i18n/locales/partials/pt-BR/engine-controls.json
 +++ b/src/i18n/locales/partials/pt-BR/engine-controls.json
-@@ -64,6 +64,29 @@
+@@ -66,6 +66,30 @@
        "addClipMarker": "Add at playhead",
        "removeClipMarker": "Remove clip marker",
        "clipMarkersNote": "Clip markers stay with the clip when you move or trim it."
@@ -1139,16 +1284,17 @@ index c86e5eb..d0bf671 100644
 +        "luma": "Hue vs luma",
 +        "curve": "{{kind}} curve",
 +        "point": "Point at hue {{degrees}}°",
-+        "hint": "Click the curve to add a point; drag it up or down. Double-click a point to remove it."
++        "hint": "Click the curve to add a point; drag it up or down. Double-click a point to remove it.",
++        "addPoint": "Add point"
 +      }
      }
    }
  }
 diff --git a/src/i18n/locales/partials/tr/engine-controls.json b/src/i18n/locales/partials/tr/engine-controls.json
-index c86e5eb..d0bf671 100644
+index 6d0044f..e17da11 100644
 --- a/src/i18n/locales/partials/tr/engine-controls.json
 +++ b/src/i18n/locales/partials/tr/engine-controls.json
-@@ -64,6 +64,29 @@
+@@ -66,6 +66,30 @@
        "addClipMarker": "Add at playhead",
        "removeClipMarker": "Remove clip marker",
        "clipMarkersNote": "Clip markers stay with the clip when you move or trim it."
@@ -1173,16 +1319,17 @@ index c86e5eb..d0bf671 100644
 +        "luma": "Hue vs luma",
 +        "curve": "{{kind}} curve",
 +        "point": "Point at hue {{degrees}}°",
-+        "hint": "Click the curve to add a point; drag it up or down. Double-click a point to remove it."
++        "hint": "Click the curve to add a point; drag it up or down. Double-click a point to remove it.",
++        "addPoint": "Add point"
 +      }
      }
    }
  }
 diff --git a/src/i18n/locales/partials/zh/engine-controls.json b/src/i18n/locales/partials/zh/engine-controls.json
-index c86e5eb..d0bf671 100644
+index 6d0044f..e17da11 100644
 --- a/src/i18n/locales/partials/zh/engine-controls.json
 +++ b/src/i18n/locales/partials/zh/engine-controls.json
-@@ -64,6 +64,29 @@
+@@ -66,6 +66,30 @@
        "addClipMarker": "Add at playhead",
        "removeClipMarker": "Remove clip marker",
        "clipMarkersNote": "Clip markers stay with the clip when you move or trim it."
@@ -1207,7 +1354,8 @@ index c86e5eb..d0bf671 100644
 +        "luma": "Hue vs luma",
 +        "curve": "{{kind}} curve",
 +        "point": "Point at hue {{degrees}}°",
-+        "hint": "Click the curve to add a point; drag it up or down. Double-click a point to remove it."
++        "hint": "Click the curve to add a point; drag it up or down. Double-click a point to remove it.",
++        "addPoint": "Add point"
 +      }
      }
    }

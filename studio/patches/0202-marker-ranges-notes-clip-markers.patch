@@ -623,13 +623,13 @@ index e958883..5406dc4 100644
    )
  })
 diff --git a/src/i18n/locales/partials/de/engine-controls.json b/src/i18n/locales/partials/de/engine-controls.json
-index 68ff97e..c86e5eb 100644
+index f91ef56..6d0044f 100644
 --- a/src/i18n/locales/partials/de/engine-controls.json
 +++ b/src/i18n/locales/partials/de/engine-controls.json
-@@ -52,6 +52,18 @@
+@@ -54,6 +54,18 @@
        "mixed": "Mixed",
        "custom": "Custom",
-       "note": "Choices from 5.1 are silent on a recording that has fewer channels."
+       "note": "Channels the recording doesn't have are silent."
 +    },
 +    "markers": {
 +      "length": "Length",
@@ -646,13 +646,13 @@ index 68ff97e..c86e5eb 100644
    }
  }
 diff --git a/src/i18n/locales/partials/en/engine-controls.json b/src/i18n/locales/partials/en/engine-controls.json
-index 68ff97e..c86e5eb 100644
+index f91ef56..6d0044f 100644
 --- a/src/i18n/locales/partials/en/engine-controls.json
 +++ b/src/i18n/locales/partials/en/engine-controls.json
-@@ -52,6 +52,18 @@
+@@ -54,6 +54,18 @@
        "mixed": "Mixed",
        "custom": "Custom",
-       "note": "Choices from 5.1 are silent on a recording that has fewer channels."
+       "note": "Channels the recording doesn't have are silent."
 +    },
 +    "markers": {
 +      "length": "Length",
@@ -669,13 +669,13 @@ index 68ff97e..c86e5eb 100644
    }
  }
 diff --git a/src/i18n/locales/partials/es/engine-controls.json b/src/i18n/locales/partials/es/engine-controls.json
-index 68ff97e..c86e5eb 100644
+index f91ef56..6d0044f 100644
 --- a/src/i18n/locales/partials/es/engine-controls.json
 +++ b/src/i18n/locales/partials/es/engine-controls.json
-@@ -52,6 +52,18 @@
+@@ -54,6 +54,18 @@
        "mixed": "Mixed",
        "custom": "Custom",
-       "note": "Choices from 5.1 are silent on a recording that has fewer channels."
+       "note": "Channels the recording doesn't have are silent."
 +    },
 +    "markers": {
 +      "length": "Length",
@@ -692,13 +692,13 @@ index 68ff97e..c86e5eb 100644
    }
  }
 diff --git a/src/i18n/locales/partials/fr/engine-controls.json b/src/i18n/locales/partials/fr/engine-controls.json
-index 68ff97e..c86e5eb 100644
+index f91ef56..6d0044f 100644
 --- a/src/i18n/locales/partials/fr/engine-controls.json
 +++ b/src/i18n/locales/partials/fr/engine-controls.json
-@@ -52,6 +52,18 @@
+@@ -54,6 +54,18 @@
        "mixed": "Mixed",
        "custom": "Custom",
-       "note": "Choices from 5.1 are silent on a recording that has fewer channels."
+       "note": "Channels the recording doesn't have are silent."
 +    },
 +    "markers": {
 +      "length": "Length",
@@ -715,13 +715,13 @@ index 68ff97e..c86e5eb 100644
    }
  }
 diff --git a/src/i18n/locales/partials/ja/engine-controls.json b/src/i18n/locales/partials/ja/engine-controls.json
-index 68ff97e..c86e5eb 100644
+index f91ef56..6d0044f 100644
 --- a/src/i18n/locales/partials/ja/engine-controls.json
 +++ b/src/i18n/locales/partials/ja/engine-controls.json
-@@ -52,6 +52,18 @@
+@@ -54,6 +54,18 @@
        "mixed": "Mixed",
        "custom": "Custom",
-       "note": "Choices from 5.1 are silent on a recording that has fewer channels."
+       "note": "Channels the recording doesn't have are silent."
 +    },
 +    "markers": {
 +      "length": "Length",
@@ -738,13 +738,13 @@ index 68ff97e..c86e5eb 100644
    }
  }
 diff --git a/src/i18n/locales/partials/ko/engine-controls.json b/src/i18n/locales/partials/ko/engine-controls.json
-index 68ff97e..c86e5eb 100644
+index f91ef56..6d0044f 100644
 --- a/src/i18n/locales/partials/ko/engine-controls.json
 +++ b/src/i18n/locales/partials/ko/engine-controls.json
-@@ -52,6 +52,18 @@
+@@ -54,6 +54,18 @@
        "mixed": "Mixed",
        "custom": "Custom",
-       "note": "Choices from 5.1 are silent on a recording that has fewer channels."
+       "note": "Channels the recording doesn't have are silent."
 +    },
 +    "markers": {
 +      "length": "Length",
@@ -761,13 +761,13 @@ index 68ff97e..c86e5eb 100644
    }
  }
 diff --git a/src/i18n/locales/partials/pt-BR/engine-controls.json b/src/i18n/locales/partials/pt-BR/engine-controls.json
-index 68ff97e..c86e5eb 100644
+index f91ef56..6d0044f 100644
 --- a/src/i18n/locales/partials/pt-BR/engine-controls.json
 +++ b/src/i18n/locales/partials/pt-BR/engine-controls.json
-@@ -52,6 +52,18 @@
+@@ -54,6 +54,18 @@
        "mixed": "Mixed",
        "custom": "Custom",
-       "note": "Choices from 5.1 are silent on a recording that has fewer channels."
+       "note": "Channels the recording doesn't have are silent."
 +    },
 +    "markers": {
 +      "length": "Length",
@@ -784,13 +784,13 @@ index 68ff97e..c86e5eb 100644
    }
  }
 diff --git a/src/i18n/locales/partials/tr/engine-controls.json b/src/i18n/locales/partials/tr/engine-controls.json
-index 68ff97e..c86e5eb 100644
+index f91ef56..6d0044f 100644
 --- a/src/i18n/locales/partials/tr/engine-controls.json
 +++ b/src/i18n/locales/partials/tr/engine-controls.json
-@@ -52,6 +52,18 @@
+@@ -54,6 +54,18 @@
        "mixed": "Mixed",
        "custom": "Custom",
-       "note": "Choices from 5.1 are silent on a recording that has fewer channels."
+       "note": "Channels the recording doesn't have are silent."
 +    },
 +    "markers": {
 +      "length": "Length",
@@ -807,13 +807,13 @@ index 68ff97e..c86e5eb 100644
    }
  }
 diff --git a/src/i18n/locales/partials/zh/engine-controls.json b/src/i18n/locales/partials/zh/engine-controls.json
-index 68ff97e..c86e5eb 100644
+index f91ef56..6d0044f 100644
 --- a/src/i18n/locales/partials/zh/engine-controls.json
 +++ b/src/i18n/locales/partials/zh/engine-controls.json
-@@ -52,6 +52,18 @@
+@@ -54,6 +54,18 @@
        "mixed": "Mixed",
        "custom": "Custom",
-       "note": "Choices from 5.1 are silent on a recording that has fewer channels."
+       "note": "Channels the recording doesn't have are silent."
 +    },
 +    "markers": {
 +      "length": "Length",
@@ -831,10 +831,10 @@ index 68ff97e..c86e5eb 100644
  }
 diff --git a/src/shared/timeline/clip-markers.test.ts b/src/shared/timeline/clip-markers.test.ts
 new file mode 100644
-index 0000000..ec0a270
+index 0000000..d3a12b3
 --- /dev/null
 +++ b/src/shared/timeline/clip-markers.test.ts
-@@ -0,0 +1,36 @@
+@@ -0,0 +1,42 @@
 +// @vitest-environment node
 +
 +import { describe, expect, it } from 'vite-plus/test'
@@ -854,7 +854,11 @@ index 0000000..ec0a270
 +    // 60 fps media on a 30 fps timeline: 60 source frames are one second, 30 timeline frames.
 +    expect(clipMarkerOffsetFrames({ durationInFrames: 90, sourceFps: 60 }, 60, 30)).toBe(30)
 +    expect(clipMarkerOffsetFrames({ ...clip, durationInFrames: 45, speed: 2 }, 90, 30)).toBe(30)
-+    expect(clipMarkerOffsetFrames({ ...clip, isReversed: true }, 110, 30)).toBe(10)
++    expect(clipMarkerOffsetFrames({ ...clip, isReversed: true }, 110, 30)).toBe(9)
++    // The window excludes sourceEnd both ways: 119 opens a reversed clip and 30 ends it.
++    expect(clipMarkerOffsetFrames({ ...clip, isReversed: true }, 119, 30)).toBe(0)
++    expect(clipMarkerOffsetFrames({ ...clip, isReversed: true }, 30, 30)).toBe(89)
++    expect(clipMarkerOffsetFrames({ ...clip, isReversed: true }, 120, 30)).toBeNull()
 +    expect(
 +      clipMarkerOffsetFrames({ durationInFrames: 90, sourceStart: 30, isReversed: true }, 40, 30),
 +    ).toBeNull()
@@ -863,20 +867,22 @@ index 0000000..ec0a270
 +  it('reads the source frame under a timeline frame, the inverse of placing it', () => {
 +    expect(clipSourceFrameAt(clip, 45, 30)).toBe(75)
 +    expect(clipSourceFrameAt({ ...clip, durationInFrames: 45, speed: 2 }, 30, 30)).toBe(90)
-+    expect(clipSourceFrameAt({ ...clip, isReversed: true }, 10, 30)).toBe(110)
++    expect(clipSourceFrameAt({ ...clip, isReversed: true }, 10, 30)).toBe(109)
 +    expect(clipSourceFrameAt(clip, 90, 30)).toBeNull()
 +    expect(clipSourceFrameAt(clip, -1, 30)).toBeNull()
-+    for (const offset of [0, 1, 44, 89]) {
-+      expect(clipMarkerOffsetFrames(clip, clipSourceFrameAt(clip, offset, 30)!, 30)).toBe(offset)
++    for (const item of [clip, { ...clip, isReversed: true }]) {
++      for (const offset of [0, 1, 44, 89]) {
++        expect(clipMarkerOffsetFrames(item, clipSourceFrameAt(item, offset, 30)!, 30)).toBe(offset)
++      }
 +    }
 +  })
 +})
 diff --git a/src/shared/timeline/clip-markers.ts b/src/shared/timeline/clip-markers.ts
 new file mode 100644
-index 0000000..2daa973
+index 0000000..6a2425e
 --- /dev/null
 +++ b/src/shared/timeline/clip-markers.ts
-@@ -0,0 +1,45 @@
+@@ -0,0 +1,46 @@
 +/**
 + * Frameleaf (FL-1563): where a clip marker sits. A clip marker is kept in the clip's source frames
 + * at `sourceFps` (graph protocol 2.4), so it stays on the same moment of the media through moves,
@@ -904,7 +910,8 @@ index 0000000..2daa973
 +  let distance = sourceFrame - (item.sourceStart ?? 0)
 +  if (item.isReversed) {
 +    if (item.sourceEnd === undefined) return null
-+    distance = item.sourceEnd - sourceFrame
++    // sourceEnd is exclusive in both directions: a reversed clip opens on sourceEnd - 1.
++    distance = item.sourceEnd - 1 - sourceFrame
 +  }
 +  if (distance < 0) return null
 +  const offset = sourceToTimelineFrames(distance, speed, sourceFps, fps)
@@ -920,5 +927,5 @@ index 0000000..2daa973
 +  if (offsetFrames < 0 || offsetFrames >= item.durationInFrames) return null
 +  const distance = timelineToSourceFrames(offsetFrames, item.speed ?? 1, fps, item.sourceFps ?? fps)
 +  if (!item.isReversed) return (item.sourceStart ?? 0) + distance
-+  return item.sourceEnd === undefined ? null : Math.max(0, item.sourceEnd - distance)
++  return item.sourceEnd === undefined ? null : Math.max(0, item.sourceEnd - 1 - distance)
 +}

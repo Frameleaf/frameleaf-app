@@ -319,6 +319,12 @@ async function collect(origin, args, fonts, lists) {
 /** The prose reference must reproduce what the engine just produced. Returns the number of values checked. */
 function checkReference(lists, results, catalogue) {
   const synthetic = syntheticMeasurer();
+  // FL-1562: the kept font is Anton's regular face under another name, so this run's engine must lay
+  // the bold title out exactly as it lays out Anton's regular one.
+  const liveLines = (name) => results.layout[lists.layout.findIndex((c) => c.name === name)].expected.lines
+    .map((line) => [line.text, line.width, line.top, line.baseline, line.start]);
+  assert.deepEqual(liveLines('platform/project-font/Kept-Sans-bold'), liveLines('platform/missing-weight/Anton-normal'),
+    'the font kept with the project did not measure as its own file');
   lists.layout.forEach((c, i) => {
     const measurer = c.measurer === 'synthetic' ? synthetic : recordedMeasurer(results.layout[i].platformMeasurements);
     assert.deepEqual(plain(referenceLayout(c.item, c.box.width, c.box.height, measurer)), plain(results.layout[i].expected), `layout/${c.name}: prose reference differs from the engine`);
