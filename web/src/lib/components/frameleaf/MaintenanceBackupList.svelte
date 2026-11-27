@@ -5,6 +5,7 @@
    * "No backups yet." when empty (`design/frameleaf/template/src/Maintenance.jsx:354-420`), and the
    * existing upload of a backup file above it. Replaces the legacy `MaintenanceBackupsList`.
    */
+  import InlineError from '$lib/components/frameleaf/InlineError.svelte';
   import MaintenanceBackupRow from '$lib/components/frameleaf/MaintenanceBackupRow.svelte';
   import { backupStamp } from '$lib/components/frameleaf/settings/backup-time';
   import OnEvents from '$lib/components/OnEvents.svelte';
@@ -24,6 +25,9 @@
 
   // A caller that polls for a new backup passes the fresh list; otherwise the list loads its own.
   let loaded = $state<DatabaseBackupDto[]>([]);
+  // FL-1810: while the list reads itself, "No backups yet" waits for an answer; a failed read says so.
+  let reading = $state(false);
+  let readFailed = $state(false);
   $effect.pre(() => {
     if (backups) {
       loaded = backups;
@@ -31,8 +35,16 @@
   });
 
   const reload = async () => {
-    const result = await listDatabaseBackups();
-    loaded = result.backups;
+    reading = true;
+    try {
+      const result = await listDatabaseBackups();
+      loaded = result.backups;
+      readFailed = false;
+    } catch {
+      readFailed = true;
+    } finally {
+      reading = false;
+    }
   };
 
   onMount(() => {
@@ -80,10 +92,12 @@
       timezone={backup.timezone}
     />
   {/each}
-  {#if sorted.length === 0}
-    <p class="mt-empty">{$t('admin.frameleaf_maintenance_backups_empty')}</p>
-  {/if}
 </div>
+{#if readFailed && sorted.length === 0}
+  <InlineError compact message={$t('frameleaf_state_load_failed_body')} onRetry={reload} retrying={reading} />
+{:else if sorted.length === 0 && !reading}
+  <p class="mt-empty">{$t('admin.frameleaf_maintenance_backups_empty')}</p>
+{/if}
 
 <style>
   .mt-upload {

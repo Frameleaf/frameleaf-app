@@ -22593,6 +22593,7 @@
     "weekday": "Dzień",
     "weekly": "Co tydzień"
   },
+  "frameleaf_workflows_load_failed": "Nie udało się wczytać Twoich przepływów pracy.",
   "frameleaf_workruns_ask_help": "Tylko dla wierszy ustawionych na Pytaj mnie za każdym razem. Nadal możesz zmienić wybór, zanim praca się rozpocznie.",
   "frameleaf_workruns_ask_home": "Komputer w domu",
   "frameleaf_workruns_ask_label": "Miejsce sugerowane, gdy jesteś pytany",

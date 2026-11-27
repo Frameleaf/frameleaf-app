@@ -22593,6 +22593,7 @@
     "weekday": "Dia",
     "weekly": "Todas as semanas"
   },
+  "frameleaf_workflows_load_failed": "Não foi possível carregar os seus fluxos de trabalho.",
   "frameleaf_workruns_ask_help": "Apenas para as linhas definidas como Perguntar-me sempre. Ainda pode mudar antes de o trabalho começar.",
   "frameleaf_workruns_ask_home": "Um computador em casa",
   "frameleaf_workruns_ask_label": "Local sugerido quando lhe perguntam",

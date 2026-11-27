@@ -7,7 +7,9 @@
    * an account chose stays its own. A file the backup names but cannot give back is a restore error,
    * never one of these.
    */
+  import EmptyRow from '$lib/components/frameleaf/EmptyRow.svelte';
   import InlineError from '$lib/components/frameleaf/InlineError.svelte';
+  import ListSkeleton from '$lib/components/frameleaf/ListSkeleton.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import {
     getCloudBackupManifestExclusions,
@@ -74,9 +76,9 @@
   {#if failed}
     <InlineError compact message={$t('frameleaf_backup_exclusion_load_failed')} onRetry={() => load(manifestKey)} />
   {:else if !exclusions}
-    <p class="muted" role="status">{$t('loading')}</p>
+    <ListSkeleton rows={3} avatar={false} />
   {:else if nothing(exclusions.totals)}
-    <p>{$t('frameleaf_backup_exclusion_none')}</p>
+    <EmptyRow title={$t('frameleaf_backup_exclusion_none')} />
   {:else}
     {#if !exclusions.decisionKnown}
       <p class="muted">{$t('frameleaf_backup_exclusion_older')}</p>
