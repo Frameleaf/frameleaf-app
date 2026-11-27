@@ -110,6 +110,12 @@
     }
   };
 
+  // FL-1834: the slideshow's ends of the results, in screen order.
+  const getEdgeAsset = async (edge: 'first' | 'last') => {
+    const found = edge === 'first' ? assets[0] : assets.at(-1);
+    return found ? { id: found.id } : undefined;
+  };
+
   const removalTarget = (action: Action) => {
     switch (action.type) {
       case AssetAction.ARCHIVE:
@@ -165,6 +171,7 @@
         preAction={handlePreAction}
         onAction={handleAction}
         onRandom={handleRandom}
+        {getEdgeAsset}
         onAssetChange={(asset) => onAssetChange?.(asset)}
         onAssetSuppressed={handleAssetSuppressed}
         onAssetUpdate={(asset) => {
