@@ -302,6 +302,25 @@ describe('FixMatchPanel (PD-3)', () => {
       );
     });
 
+    it('makes someone new from the faces the picker opened for, not faces ticked later (FL-1814)', async () => {
+      twoFaces();
+      sdkMock.createPerson.mockResolvedValue(personFactory.build({ id: 'new-one', name: 'Noor' }));
+      sdkMock.correctFace.mockResolvedValue({} as never);
+      render(FixMatchPanel, { person, close: vi.fn() });
+
+      await fireEvent.click(await screen.findByRole('checkbox', { name: 'Select the face in one.jpg' }));
+      await fireEvent.click(screen.getByRole('checkbox', { name: 'Select the face in two.jpg' }));
+      await fireEvent.click(screen.getByRole('button', { name: 'Move to…' }));
+      // a face unticked while the picker is open does not leave the move
+      await fireEvent.click(screen.getByRole('checkbox', { name: 'Select the face in two.jpg' }));
+      await fireEvent.input(await screen.findByRole('searchbox', { name: 'Find a person' }), {
+        target: { value: 'Noor' },
+      });
+      await fireEvent.click(screen.getByRole('button', { name: 'Someone new called “Noor”' }));
+
+      await waitFor(() => expect(sdkMock.correctFace).toHaveBeenCalledTimes(2));
+    });
+
     it('asks for the name when someone new is chosen in the picker with nothing typed (FL-1814)', async () => {
       twoFaces();
       render(FixMatchPanel, { person, close: vi.fn() });

@@ -363,8 +363,8 @@
     );
   };
 
-  const createForSelection = async (newName: string) => {
-    const targets = selectedRows;
+  /** The faces ticked now, or the ones the picker opened for (FL-1814), which ticking more must not change. */
+  const createForSelection = async (newName: string, targets: Row[] = selectedRows) => {
     if (!newName || targets.length === 0) {
       namingSelection = false;
       return;
@@ -400,7 +400,7 @@
         naming = targets[0].face.id;
       }
     } else if (name) {
-      void createForSelection(name);
+      void createForSelection(name, targets);
     } else {
       namingSelection = true;
     }
