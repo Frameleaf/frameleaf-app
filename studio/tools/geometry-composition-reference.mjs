@@ -164,7 +164,9 @@ export function compositionSourcesFor(sourceSha256) {
     // FL-1819/FL-1822 upstream fixes, theme accent and Studio wording; changes no composition or raster producer.
     sourceSha256 === 'dc26d4a87723f78a97719cf9ed71afa535620c1be044c57502ec83cace9610d4' ||
     // FL-1830 resource policy for the Frameleaf model mirror; changes no composition or raster producer.
-    sourceSha256 === '62f1f7453d93e5dd309986dee2894c76b4fee07c7a4c2e3a8d27abf98694d1e0'
+    sourceSha256 === '62f1f7453d93e5dd309986dee2894c76b4fee07c7a4c2e3a8d27abf98694d1e0' ||
+    // FL-1822 the editor's tab bar in place of its header; changes no composition or raster producer.
+    sourceSha256 === '0191c4d7a611fd2fba5aefd4985be309aa397db7188da8a790893adf31e72f70'
   )
     return {
       ...COMPOSITION_SOURCES,

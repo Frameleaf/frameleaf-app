@@ -30,7 +30,7 @@
   type Relation = (typeof RELATIONS)[number];
 
   let open = $state(true);
-  let chosen = $state<PersonResponseDto>();
+  let chosen = $state<{ id: string; name: string }>();
   let relation = $state<Relation>('mother');
   let refusal = $state('');
   let busy = $state(false);

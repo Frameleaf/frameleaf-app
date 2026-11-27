@@ -1528,6 +1528,14 @@ export type FrameleafServiceDiscovery = {
 };
 
 /** FL-159: the last AI Wallet read (USD display). `topUpUrl` only when the cloud returned one. */
+/** FL-1825: the sealed Hugging Face key, when it was saved, and what Hugging Face last said about it. */
+export type ModelDownloadKeyState = {
+  sealed: string;
+  savedAt: string;
+  state: 'accepted' | 'refused';
+  checkedAt: string;
+};
+
 export type FrameleafMlWallet = {
   balanceUsd: number;
   heldUsd: number;
@@ -1767,6 +1775,7 @@ export interface SystemMetadata extends Record<SystemMetadataKey, Record<string,
   [SystemMetadataKey.FrameleafServerId]: { id: string; createdAt: string };
   [SystemMetadataKey.FrameleafServiceDiscovery]: FrameleafServiceDiscovery;
   [SystemMetadataKey.FrameleafMlWallet]: FrameleafMlWallet;
+  [SystemMetadataKey.ModelDownloadKey]: ModelDownloadKeyState;
   [SystemMetadataKey.ClientsPayments]: import('src/services/clients-payments.service.js').ClientsPaymentsState;
   [SystemMetadataKey.FrameleafLicense]: FrameleafLicenseStore;
   [SystemMetadataKey.FrameleafPricing]: FrameleafPricingState;

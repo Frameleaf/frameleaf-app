@@ -290,7 +290,7 @@ export const getAssetHlsSessionUrl = (id: string, sessionId: string, params = au
 export const getProfileImageUrl = (user: UserResponseDto) =>
   createUrl(getUserProfileImagePath(user.id), { updatedAt: user.profileChangedAt });
 
-export const getPeopleThumbnailUrl = (person: PersonResponseDto, updatedAt?: string) =>
+export const getPeopleThumbnailUrl = (person: Pick<PersonResponseDto, 'id' | 'updatedAt'>, updatedAt?: string) =>
   createUrl(getPeopleThumbnailPath(person.id), { updatedAt: updatedAt ?? person.updatedAt });
 
 /** Copies and says so; resolves false (after reporting the failure) when nothing reached the clipboard. */

@@ -32,6 +32,7 @@ import {
   ENGINE_CONTROLS_STRINGS,
   type EngineControlsString,
 } from '@frameleaf/host/engine-controls-strings'
+import { SHELL_STRINGS, type ShellString } from '@frameleaf/host/shell-strings'
 import {
   CLOUD_CAPTION_ENGINE_STRINGS,
   type CloudCaptionEngineString,
@@ -78,6 +79,10 @@ export const HOST_ENGINE_STRINGS = {
   ...(Object.fromEntries(
     Object.entries(ENGINE_CONTROLS_STRINGS).map(([name, entry]) => [name, entry.engine]),
   ) as Record<EngineControlsString, string>),
+  // The editor's tab bar, More menu and error screen (FL-1822).
+  ...(Object.fromEntries(
+    Object.entries(SHELL_STRINGS).map(([name, entry]) => [name, entry.engine]),
+  ) as Record<ShellString, string>),
 } as const
 
 export function applyHostEngineStrings(i18n: EngineI18n, strings: StudioHostContext['strings']): void {

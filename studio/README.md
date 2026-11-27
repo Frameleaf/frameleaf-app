@@ -257,6 +257,13 @@ and Korean particles follow the new name), the error screen
 loses its logo, and the header loses the docs link, the upstream changelog and the second language
 menu (the host owns the language). None of the three changes a composition or raster producer.
 
+Patch 0207 turns the editor's header into the approved Studio's tab bar (FL-1822): the workspaces as
+text tabs with an accent underline, and a More menu with the keyboard shortcuts and the editor
+settings. Frameleaf's own Studio header already carries back, the project name, the saved state,
+Export and Activity, and the adapter saves every settled edit, so the engine no longer draws its own
+back button, project facts, Save, Export or render queue. The tab bar's words and the error screen's
+are host-translated (`web/src/lib/frameleaf/studio/shell-strings.ts`) in all eleven languages.
+
 Patch 0185 (FL-1564) adds four transitions other editors use: Film Dissolve (a cross dissolve mixed in
 linear light), Cross Zoom (both clips zoom with a radial blur, `strength`), Cube Spin (the clips are two
 faces of a box turning a quarter turn in perspective, four directions) and Page Peel (the outgoing clip

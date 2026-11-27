@@ -2,6 +2,7 @@ import { Injectable, ServiceUnavailableException } from '@nestjs/common';
 import { createHash } from 'node:crypto';
 import { openAsBlob } from 'node:fs';
 import { open, rm, stat } from 'node:fs/promises';
+import { isIPv4 } from 'node:net';
 import { basename, resolve } from 'node:path';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
@@ -58,6 +59,7 @@ import { faceEntries } from 'src/utils/desktop-face.js';
 import { ocrEntries } from 'src/utils/desktop-ocr.js';
 import { parseBoundFaceResult } from 'src/utils/face-result.js';
 import { readPlainFile } from 'src/utils/locked-read.js';
+import { MODEL_DOWNLOAD_KEY_HEADER } from 'src/utils/model-download-key.js';
 import { canonicalJson } from 'src/utils/object.js';
 import { parseBoundOcrResult } from 'src/utils/ocr-result.js';
 import { recoveryMlRefusal } from 'src/utils/recovery-ml-authority.js';
@@ -697,6 +699,33 @@ const readDetail = (body: string): unknown => {
   }
 };
 
+/**
+ * FL-1825: the model download key goes over https, or over http only to the bundled container, the loopback
+ * address or a private network address, never in plain text across the internet.
+ */
+const keyMayTravelTo = (url: string) => {
+  const parsed = URL.parse(url);
+  if (!parsed || parsed.username || parsed.password) {
+    return false;
+  }
+  if (parsed.protocol === 'https:') {
+    return true;
+  }
+  const host = parsed.hostname.replaceAll(/^\[|\]$/g, '');
+  if (parsed.protocol !== 'http:') {
+    return false;
+  }
+  if (['frameleaf-machine-learning', 'immich-machine-learning', 'localhost', '127.0.0.1', '::1'].includes(host)) {
+    return true;
+  }
+  // Private ranges only for an IPv4 literal: a name such as 10.ml.example.com can resolve anywhere.
+  if (isIPv4(host)) {
+    return /^10\./.test(host) || /^192\.168\./.test(host) || /^172\.(1[6-9]|2\d|3[01])\./.test(host);
+  }
+  // A single-label name (a container or a host on the home network), never a dotted name or an IPv6 literal.
+  return !host.includes('.') && !host.includes(':');
+};
+
 /** The same URL and credentials; endpoints are compared by value, never by object identity. */
 export const sameEndpoint = (a: MlEndpoint | null, b: MlEndpoint | null) =>
   !!a && !!b && a.url === b.url && (a.authToken ?? null) === (b.authToken ?? null);
@@ -716,6 +745,7 @@ export class MachineLearningRepository implements RestorationInference {
   private probesInFlight = new Map<string, Promise<MlEndpointProbe>>();
   /** `${endpoint url}\n${model}` -> when the worker's "this container can't run it" answer expires. */
   private modelsWithoutRuntime = new Map<string, number>();
+  private modelDownloadKey: string | null = null;
 
   private get config(): MachineLearningConfig {
     if (!this._config) {
@@ -920,6 +950,8 @@ export class MachineLearningRepository implements RestorationInference {
     const response = await fetch(endpoint, {
       method: 'POST',
       body: form,
+      // the bundled worker's auth and, from FL-1825, the model download key (the inpaint model downloads too)
+      headers: this.authHeaders({ url, authToken: process.env.FRAMELEAF_ML_AUTH_TOKEN?.trim() }),
       redirect: 'error',
       signal: signal ? AbortSignal.any([deadline, signal]) : deadline,
     });
@@ -1716,7 +1748,18 @@ export class MachineLearningRepository implements RestorationInference {
   }
 
   private authHeaders(endpoint: MlEndpoint): Record<string, string> {
-    return endpoint.authToken ? { Authorization: `Bearer ${endpoint.authToken}` } : {};
+    const headers: Record<string, string> = endpoint.authToken ? { Authorization: `Bearer ${endpoint.authToken}` } : {};
+    // FL-1825: only this server's own ML service gets the Hugging Face key (empty: none saved); never a
+    // home-network computer, a desktop or Frameleaf Cloud.
+    if (!endpoint.cloud && this._config?.urls.includes(endpoint.url) && keyMayTravelTo(endpoint.url)) {
+      headers[MODEL_DOWNLOAD_KEY_HEADER] = this.modelDownloadKey ?? '';
+    }
+    return headers;
+  }
+
+  /** FL-1825: the saved Hugging Face key, or null; set by the model download key service. */
+  setModelDownloadKey(key: string | null) {
+    this.modelDownloadKey = key;
   }
 
   private timeout(): number {

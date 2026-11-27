@@ -9941,6 +9941,146 @@
         "x-immich-state": "Alpha"
       }
     },
+    "/admin/model-download-key": {
+      "delete": {
+        "description": "Forgets the Hugging Face key. Models keep downloading without one.",
+        "operationId": "removeModelDownloadKey",
+        "parameters": [],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Remove the model download key",
+        "tags": [
+          "Frameleaf Cloud processing (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "systemConfig.update",
+        "x-immich-state": "Alpha"
+      },
+      "get": {
+        "description": "Whether a Hugging Face key for faster model downloads is saved and still accepted. The key itself is never returned. A key last checked an hour or more ago is checked with Hugging Face again.",
+        "operationId": "getModelDownloadKey",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelDownloadKeyResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get the model download key status",
+        "tags": [
+          "Frameleaf Cloud processing (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "systemConfig.read",
+        "x-immich-state": "Alpha"
+      },
+      "put": {
+        "description": "Checks the Hugging Face key with Hugging Face, then keeps it sealed on this server and gives it to this server’s own ML service for model downloads. A key Hugging Face refuses is not saved.",
+        "operationId": "setModelDownloadKey",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModelDownloadKeyUpdateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelDownloadKeyResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Save a model download key",
+        "tags": [
+          "Frameleaf Cloud processing (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3.2.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "systemConfig.update",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/admin/notifications": {
       "post": {
         "description": "Create a new notification for a specific user.",
@@ -139200,6 +139340,55 @@
         },
         "required": [
           "routes"
+        ],
+        "type": "object"
+      },
+      "ModelDownloadKeyResponseDto": {
+        "properties": {
+          "checkedAt": {
+            "description": "When Hugging Face last answered about the key",
+            "format": "date-time",
+            "nullable": true,
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+            "type": "string"
+          },
+          "savedAt": {
+            "description": "When the key was saved",
+            "format": "date-time",
+            "nullable": true,
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ModelDownloadKeyStatus"
+          }
+        },
+        "required": [
+          "checkedAt",
+          "savedAt",
+          "status"
+        ],
+        "type": "object"
+      },
+      "ModelDownloadKeyStatus": {
+        "description": "none: no key; saved: Hugging Face accepted the key; refused: Hugging Face stopped accepting it",
+        "enum": [
+          "none",
+          "saved",
+          "refused"
+        ],
+        "type": "string"
+      },
+      "ModelDownloadKeyUpdateDto": {
+        "properties": {
+          "key": {
+            "description": "A Hugging Face access token with Read access",
+            "pattern": "^hf_[A-Za-z0-9]{20,200}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key"
         ],
         "type": "object"
       },

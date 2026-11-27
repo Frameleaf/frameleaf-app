@@ -7,11 +7,25 @@ import httpx2 as httpx
 
 
 def _bind_download_credentials(request: httpx.Request) -> None:
-    from frameleaf_ml.config import model_source_token
+    from frameleaf_ml.config import HUGGING_FACE_HOST, model_source_token
+    from frameleaf_ml.download_key import server_key
 
     token = model_source_token(str(request.url))
     if not token or request.headers.get("authorization") != f"Bearer {token}":
         request.headers.pop("authorization", None)
+    # FL-1825: the key the Frameleaf server passed, for requests to Hugging Face itself only (never a
+    # redirect target, a mirror or another port), when no configured token already applies.
+    url = request.url
+    key = server_key()
+    if (
+        not token
+        and key
+        and url.scheme == "https"
+        and url.host == HUGGING_FACE_HOST
+        and url.port in (None, 443)
+        and not url.userinfo
+    ):
+        request.headers["authorization"] = f"Bearer {key}"
 
 
 def _download_client() -> httpx.Client:

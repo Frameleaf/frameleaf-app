@@ -590,6 +590,8 @@ export enum SystemMetadataKey {
   FrameleafMailSignIn = 'frameleaf-mail-sign-in',
   /** FL-159: the last AI Wallet balance read from Frameleaf Cloud (USD display). */
   FrameleafMlWallet = 'frameleaf-ml-wallet',
+  /** FL-1825: the optional Hugging Face key for faster model downloads, sealed, and its last check. */
+  ModelDownloadKey = 'model-download-key',
   /** FL-1037: each studio's Stripe account status as Frameleaf Cloud last reported it. */
   ClientsPayments = 'clients-payments',
   /** FL-156: this server's Frameleaf licence certificate and its refresh state. */

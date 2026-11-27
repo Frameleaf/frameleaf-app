@@ -789,7 +789,10 @@ export class PersonRepository {
             ),
           ]),
         )
-        .$if(!!name, (qb) => qb.where('person.name', 'ilike', `%${escapeLike(name!)}%`))
+        // FL-1814: accents ignored, as the name search the pickers used before ("zoe" finds "Zoë")
+        .$if(!!name, (qb) =>
+          qb.where(sql<boolean>`f_unaccent("person"."name") ilike ('%' || f_unaccent(${escapeLike(name!)}) || '%')`),
+        )
         .$if(!options?.withHidden, (qb) => qb.where('person.isHidden', '=', false))
         .$if(!!options?.closestFaceAssetId, (qb) =>
           qb

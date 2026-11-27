@@ -5,6 +5,7 @@ import { CUTOUT_ENGINE_STRINGS } from '@frameleaf/host/cutout-strings'
 import { STABILISE_ENGINE_STRINGS } from '@frameleaf/host/stabilise-strings'
 import { CAPTION_STYLE_ENGINE_STRINGS } from '@frameleaf/host/caption-style-strings'
 import { ENGINE_CONTROLS_STRINGS } from '@frameleaf/host/engine-controls-strings'
+import { SHELL_STRINGS } from '@frameleaf/host/shell-strings'
 import { applyHostEngineStrings } from '../src/host-engine-strings'
 
 describe('FL-450 host-translated engine messages', () => {
@@ -101,5 +102,10 @@ describe('FL-450 host-translated engine messages', () => {
         .toSorted()
       expect(markers, entry.engine).toEqual([...('values' in entry ? entry.values : [])].toSorted())
     }
+  })
+
+  it('FL-1822: every shell string names an engine key that has English', async () => {
+    await changeAppLanguage('en')
+    for (const entry of Object.values(SHELL_STRINGS)) expect(i18n.t(entry.engine), entry.engine).not.toBe(entry.engine)
   })
 })

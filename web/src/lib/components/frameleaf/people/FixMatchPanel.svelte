@@ -17,7 +17,7 @@
     correctFace,
     createPerson,
     deleteFace,
-    getAllPeople,
+    getPeoplePicker,
     getFaces,
     isHttpError,
     PeopleSort,
@@ -25,7 +25,6 @@
     SourceType,
     type AssetFaceResponseDto,
     type AssetResponseDto,
-    type PeopleListItemDto,
     type PersonResponseDto,
   } from '@frameleaf/sdk';
   import { Icon, toastManager } from '@frameleaf/ui';
@@ -88,7 +87,9 @@
   const OTHERS_SHOWN = 6;
   /** At most this many pages of 200 are read to find them. */
   const OTHERS_PAGES = 5;
-  let others: PeopleListItemDto[] = $state([]);
+  /** Who faces can be moved to: a picker row or a full person. */
+  type Chosen = { id: string; name: string; assetCount?: number };
+  let others: Chosen[] = $state([]);
   let hasMore = $state(false);
   let loading = $state(false);
   // the last read failed; with nothing listed yet the panel offers a retry instead of the empty note
@@ -99,6 +100,8 @@
   // the faces the searchable picker or the new-name field is choosing a person for
   let picking: Row[] | null = $state(null);
   let namingSelection = $state(false);
+  /** The faces the open naming form will move: the ticked ones when it opened, or the picker's (FL-1814). */
+  let namingTargets: Row[] = $state([]);
   let busy = $state(false);
   let message = $state('');
   let heading: HTMLHeadingElement | undefined = $state();
@@ -190,12 +193,13 @@
     try {
       // FL-1803: the six named people with the most photos, whoever they are: the list comes sorted by
       // photo count and is read until it has given six, not cut from whatever the first page held.
-      const found: PeopleListItemDto[] = [];
+      const found: Chosen[] = [];
       const known = new Set<string>([person.id]);
       // ponytail: stops after OTHERS_PAGES pages, so a library whose biggest groups are unnamed costs at most
       // that many reads; a server "named only" filter would make the bound unnecessary
       for (let page = 1; found.length < OTHERS_SHOWN && page <= OTHERS_PAGES; page++) {
-        const result = await getAllPeople({ withHidden: false, sort: PeopleSort.Count, page, size: 200 });
+        // FL-1814: the picker list, with stored counts, rather than full people rows
+        const result = await getPeoplePicker({ withHidden: false, sort: PeopleSort.Count, page, size: 200 });
         const added = result.people.filter(({ id }) => !known.has(id));
         for (const candidate of added) {
           known.add(candidate.id);
@@ -208,7 +212,7 @@
           break;
         }
       }
-      others = found.sort((a, b) => b.assetCount - a.assetCount).slice(0, OTHERS_SHOWN);
+      others = found.sort((a, b) => (b.assetCount ?? 0) - (a.assetCount ?? 0)).slice(0, OTHERS_SHOWN);
     } catch {
       others = [];
     }
@@ -314,6 +318,10 @@
     let done = 0;
     try {
       for (const row of targets) {
+        // a face fixed through its own row while the picker or the naming form was open is left alone
+        if (resolved.has(row.face.id)) {
+          continue;
+        }
         try {
           await action(row);
           changed = true;
@@ -328,6 +336,7 @@
       busy = false;
       picking = null;
       namingSelection = false;
+      namingTargets = [];
       naming = null;
       if (done > 0) {
         message = summary(done);
@@ -335,10 +344,10 @@
     }
   };
 
-  const reassign = (row: Row, target: PersonResponseDto) =>
+  const reassign = (row: Row, target: Chosen) =>
     act(row, () => moveFace(row, target.id), $t('frameleaf_people_fix_moved', { values: { name: target.name } }));
 
-  const moveAll = (targets: Row[], target: PersonResponseDto) =>
+  const moveAll = (targets: Row[], target: Chosen) =>
     actOnAll(
       targets,
       (row) => moveFace(row, target.id),
@@ -361,8 +370,8 @@
     );
   };
 
-  const createForSelection = async (newName: string) => {
-    const targets = selectedRows;
+  /** Makes someone new for exactly these faces: what the picker or the naming form opened for (FL-1814). */
+  const createForSelection = async (newName: string, targets: Row[]) => {
     if (!newName || targets.length === 0) {
       namingSelection = false;
       return;
@@ -387,7 +396,25 @@
       (count) => $t('frameleaf_people_fix_removed_count', { values: { count } }),
     );
 
-  const pickPerson = async (target: PersonResponseDto) => {
+  /** "Someone new…" from the picker: with a name typed it is made at once, otherwise the name is asked for. */
+  const pickNew = (name: string) => {
+    const targets = picking ?? [];
+    picking = null;
+    if (targets.length === 1) {
+      if (name) {
+        void createAndAssign(targets[0], name);
+      } else {
+        naming = targets[0].face.id;
+      }
+    } else if (name) {
+      void createForSelection(name, targets);
+    } else {
+      namingTargets = targets;
+      namingSelection = true;
+    }
+  };
+
+  const pickPerson = async (target: Chosen) => {
     const targets = picking ?? [];
     if (targets.length === 1) {
       await reassign(targets[0], target);
@@ -526,6 +553,7 @@
         excludeId={person.id}
         label={$t('frameleaf_people_fix_move_faces_to', { values: { count: picking.length } })}
         onPick={(target) => void pickPerson(target)}
+        onNew={(name) => pickNew(name)}
         onCancel={() => (picking = null)}
       />
     </div>
@@ -535,8 +563,11 @@
         person={{ id: 'new-selection', name: '' }}
         placeholder={$t('frameleaf_people_fix_new_name')}
         label={$t('frameleaf_people_fix_new_name_label')}
-        onCommit={(newName) => void createForSelection(newName)}
-        onCancel={() => (namingSelection = false)}
+        onCommit={(newName) => void createForSelection(newName, namingTargets)}
+        onCancel={() => {
+          namingSelection = false;
+          namingTargets = [];
+        }}
       />
     </div>
   {/if}
@@ -547,7 +578,13 @@
         <Icon icon={mdiAccountArrowRightOutline} size="16" aria-hidden="true" />
         {$t('frameleaf_people_fix_move_to')}
       </Button>
-      <Button disabled={busy} onclick={() => (namingSelection = true)}>
+      <Button
+        disabled={busy}
+        onclick={() => {
+          namingTargets = selectedRows;
+          namingSelection = true;
+        }}
+      >
         <Icon icon={mdiAccountPlusOutline} size="16" aria-hidden="true" />
         {$t('frameleaf_people_fix_someone_new')}
       </Button>
