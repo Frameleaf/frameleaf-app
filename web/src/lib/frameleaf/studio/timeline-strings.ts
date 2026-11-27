@@ -111,6 +111,8 @@ export const TIMELINE_STRINGS = {
     host: 'frameleaf_studio_timeline_track_delete_empty',
     engine: 'timeline.trackHeader.deleteEmptyTracks',
   },
+  timelineTrackOff: { host: 'frameleaf_studio_timeline_track_off', engine: 'timeline.trackHeader.disableTrack' },
+  timelineTrackOn: { host: 'frameleaf_studio_timeline_track_on', engine: 'timeline.trackHeader.enableTrack' },
   timelineAlignTitle: { host: 'frameleaf_studio_timeline_align_title', engine: 'preview.align.title' },
   timelineAlignLeft: { host: 'frameleaf_studio_timeline_align_left', engine: 'preview.align.left' },
   timelineAlignCentreAcross: { host: 'frameleaf_studio_timeline_align_centre_across', engine: 'preview.align.centerH' },

@@ -20976,6 +20976,8 @@
   "frameleaf_studio_timeline_track_lock": "Verrouiller cette piste",
   "frameleaf_studio_timeline_track_mute": "Couper le son de cette piste",
   "frameleaf_studio_timeline_track_not_synced": "Non synchronisée. Cliquez pour garder cette piste synchronisée",
+  "frameleaf_studio_timeline_track_off": "Désactiver cette piste",
+  "frameleaf_studio_timeline_track_on": "Désactivée. Cliquez pour activer cette piste",
   "frameleaf_studio_timeline_track_show": "Masquée. Cliquez pour afficher cette piste",
   "frameleaf_studio_timeline_track_solo": "Lire uniquement cette piste",
   "frameleaf_studio_timeline_track_synced": "Synchronisée : les clips de cette piste bougent quand un vide se referme sur une autre piste",

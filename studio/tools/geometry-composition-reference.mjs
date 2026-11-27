@@ -172,7 +172,7 @@ export function compositionSourcesFor(sourceSha256) {
     // FL-1822 selection handles and the timeline toolbar; changes no composition or raster producer.
     sourceSha256 === '0bc63badd42ed7735d32c4c6e479bc1f88908274ee00d100b2378e1d027ee843' ||
     // FL-1822 track heads and the Align row in Transform; changes no composition or raster producer.
-    sourceSha256 === '45ccec0d01df1acd935f56385cb7829bb7919f84e72908e897c5ac17a22ee68b'
+    sourceSha256 === '926bc6200a4c1221056b19ff3b2878dc65605b0e12eaecce65e825075bb9fc67'
   )
     return {
       ...COMPOSITION_SOURCES,

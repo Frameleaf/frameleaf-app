@@ -20979,6 +20979,8 @@
   "frameleaf_studio_timeline_track_lock": "Bloquear esta faixa",
   "frameleaf_studio_timeline_track_mute": "Silenciar esta faixa",
   "frameleaf_studio_timeline_track_not_synced": "Não sincronizada. Clique para manter esta faixa sincronizada",
+  "frameleaf_studio_timeline_track_off": "Desativar esta faixa",
+  "frameleaf_studio_timeline_track_on": "Desativada. Clique para ativar esta faixa",
   "frameleaf_studio_timeline_track_show": "Oculta. Clique para mostrar esta faixa",
   "frameleaf_studio_timeline_track_solo": "Reproduzir apenas esta faixa",
   "frameleaf_studio_timeline_track_synced": "Sincronizada: os clipes daqui movem-se quando se fecha um espaço noutra faixa",

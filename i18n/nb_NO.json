@@ -20978,6 +20978,8 @@
   "frameleaf_studio_timeline_track_lock": "Lås dette sporet",
   "frameleaf_studio_timeline_track_mute": "Demp dette sporet",
   "frameleaf_studio_timeline_track_not_synced": "Holdes ikke synkront. Klikk for å holde dette sporet synkront",
+  "frameleaf_studio_timeline_track_off": "Slå av dette sporet",
+  "frameleaf_studio_timeline_track_on": "Slått av. Klikk for å slå på dette sporet",
   "frameleaf_studio_timeline_track_show": "Skjult. Klikk for å vise dette sporet",
   "frameleaf_studio_timeline_track_solo": "Spill bare dette sporet",
   "frameleaf_studio_timeline_track_synced": "Holdes synkront: klipp her flytter seg når et mellomrom lukkes på et annet spor",

@@ -82,6 +82,83 @@ index 3337d8a..9c1b7ec 100644
      </PropertySection>
    )
  })
+diff --git a/src/features/preview/components/alignment-hud.test.tsx b/src/features/preview/components/alignment-hud.test.tsx
+new file mode 100644
+index 0000000..30d7b8c
+--- /dev/null
++++ b/src/features/preview/components/alignment-hud.test.tsx
+@@ -0,0 +1,71 @@
++import { fireEvent, render, screen } from '@testing-library/react'
++import { beforeEach, describe, expect, it } from 'vite-plus/test'
++import { useItemsStore, useTimelineStore } from '../deps/timeline-store'
++import { useSelectionStore } from '@/shared/state/selection'
++import { usePlaybackStore } from '@/shared/state/playback'
++import { useSettingsStore } from '@/features/preview/deps/settings'
++import type { ShapeItem } from '@/types/timeline'
++import { AlignmentToolbar } from './alignment-hud'
++
++const SIZE = { width: 1000, height: 600 }
++const ITEMS: ShapeItem[] = [-200, 0, 150].map((x, index) => ({
++  id: `shape-${index}`,
++  type: 'shape',
++  shapeType: 'rectangle',
++  fillColor: '#ffffff',
++  trackId: 'track',
++  from: 0,
++  durationInFrames: 90,
++  label: `Shape ${index}`,
++  transform: { x, y: 0, width: 100, height: 60, rotation: 0, opacity: 1 },
++}))
++
++const select = (count: number) =>
++  useSelectionStore.getState().selectItems(ITEMS.slice(0, count).map((item) => item.id))
++
++describe('Align in the frame (FL-1822)', () => {
++  beforeEach(() => {
++    useTimelineStore.setState({ keyframes: [] })
++    useItemsStore.getState().setTracks([
++      { id: 'track', name: 'Track', order: 0, height: 72, items: [], visible: true, locked: false, muted: false, solo: false },
++    ])
++    useItemsStore.getState().setItems(structuredClone(ITEMS))
++    usePlaybackStore.getState().setCurrentFrame(0)
++    useSettingsStore.getState().setSetting('canvasSnapEnabled', true)
++    useSelectionStore.getState().selectItems([])
++  })
++
++  it('shows nothing, label included, when no picture is selected', () => {
++    render(<AlignmentToolbar projectSize={SIZE} />)
++    expect(screen.queryByText('Align in the frame')).not.toBeInTheDocument()
++  })
++
++  it('offers the six align actions and snapping for one clip, spacing evenly from three', () => {
++    select(1)
++    const { rerender } = render(<AlignmentToolbar projectSize={SIZE} />)
++    const group = screen.getByRole('group', { name: 'Align in the frame' })
++    expect(group.querySelectorAll('button')).toHaveLength(7)
++    expect(screen.queryByRole('button', { name: 'Space evenly across' })).not.toBeInTheDocument()
++
++    select(3)
++    rerender(<AlignmentToolbar projectSize={SIZE} />)
++    expect(screen.getByRole('button', { name: 'Space evenly across' })).toBeInTheDocument()
++    expect(screen.getByRole('button', { name: 'Space evenly down' })).toBeInTheDocument()
++  })
++
++  it('aligns the selected clip to the frame edge', () => {
++    select(1)
++    render(<AlignmentToolbar projectSize={SIZE} />)
++    fireEvent.click(screen.getByRole('button', { name: 'Align left' }))
++    expect(useItemsStore.getState().items.find((item) => item.id === 'shape-0')?.transform?.x).toBe(-450)
++  })
++
++  it('shows snapping as a pressed toggle', () => {
++    select(1)
++    render(<AlignmentToolbar projectSize={SIZE} />)
++    const snap = screen.getByRole('button', { name: 'Snap to the frame and other clips' })
++    expect(snap).toHaveAttribute('aria-pressed', 'true')
++    fireEvent.click(snap)
++    expect(snap).toHaveAttribute('aria-pressed', 'false')
++  })
++})
 diff --git a/src/features/preview/components/alignment-hud.tsx b/src/features/preview/components/alignment-hud.tsx
 index eca20e1..5def06d 100644
 --- a/src/features/preview/components/alignment-hud.tsx
@@ -184,10 +261,10 @@ index eca20e1..5def06d 100644
  })
  
 diff --git a/src/features/timeline/components/track-header.test.tsx b/src/features/timeline/components/track-header.test.tsx
-index 4706ac1..09e365e 100644
+index 4706ac1..203cf09 100644
 --- a/src/features/timeline/components/track-header.test.tsx
 +++ b/src/features/timeline/components/track-header.test.tsx
-@@ -58,47 +58,49 @@ describe('TrackHeader', () => {
+@@ -58,47 +58,63 @@ describe('TrackHeader', () => {
      useItemsStore.getState().setItems([])
    })
  
@@ -210,6 +287,20 @@ index 4706ac1..09e365e 100644
    })
  
 -  it('derives the disable state from audio mute status', () => {
++  it('marks a hidden picture track and offers to show it', () => {
++    renderTrackHeader(makeTrack({ kind: 'video', visible: false }))
++
++    const show = screen.getByRole('button', { name: 'Hidden. Click to show this track' })
++    expect(show.className).toContain('bg-foreground/15')
++  })
++
++  it('uses plain on and off wording for a track of unknown kind', () => {
++    renderTrackHeader(makeTrack({ kind: undefined, name: 'Music' }))
++
++    expect(screen.getByRole('button', { name: 'Turn this track off' })).toBeInTheDocument()
++    expect(screen.queryByRole('button', { name: 'Hide this track' })).not.toBeInTheDocument()
++  })
++
 +  it('shows a muted sound track as muted', () => {
      const { container } = renderTrackHeader(
        makeTrack({ id: 'track-2', name: 'A1', kind: 'audio', muted: true }),
@@ -249,7 +340,7 @@ index 4706ac1..09e365e 100644
      const { rerender } = render(
        <TrackHeader
          track={makeTrack()}
-@@ -119,7 +121,11 @@ describe('TrackHeader', () => {
+@@ -119,7 +135,11 @@ describe('TrackHeader', () => {
        />,
      )
  
@@ -262,7 +353,7 @@ index 4706ac1..09e365e 100644
  
      rerender(
        <TrackHeader
-@@ -141,6 +147,9 @@ describe('TrackHeader', () => {
+@@ -141,6 +161,9 @@ describe('TrackHeader', () => {
        />,
      )
  
@@ -274,7 +365,7 @@ index 4706ac1..09e365e 100644
    })
  })
 diff --git a/src/features/timeline/components/track-header.tsx b/src/features/timeline/components/track-header.tsx
-index a3f9fdb..da357fd 100644
+index a3f9fdb..e2975a8 100644
 --- a/src/features/timeline/components/track-header.tsx
 +++ b/src/features/timeline/components/track-header.tsx
 @@ -1,6 +1,5 @@
@@ -284,7 +375,7 @@ index a3f9fdb..da357fd 100644
  import {
    ContextMenu,
    ContextMenuContent,
-@@ -8,13 +7,21 @@ import {
+@@ -8,13 +7,23 @@ import {
    ContextMenuSeparator,
    ContextMenuTrigger,
  } from '@/components/ui/context-menu'
@@ -299,6 +390,8 @@ index a3f9fdb..da357fd 100644
 +  Link2Off,
 +  Lock,
 +  LockOpen,
++  Power,
++  PowerOff,
 +} from 'lucide-react'
  import type { TimelineTrack } from '@/types/timeline'
  import { useTrackDrag } from '../hooks/use-track-drag'
@@ -310,7 +403,7 @@ index a3f9fdb..da357fd 100644
  import { isTrackSyncLockActive } from '../utils/track-sync-lock'
  
  interface TrackHeaderProps {
-@@ -35,6 +42,39 @@ interface TrackHeaderProps {
+@@ -35,6 +44,39 @@ interface TrackHeaderProps {
    onDeleteEmptyTracks: () => void
  }
  
@@ -350,7 +443,7 @@ index a3f9fdb..da357fd 100644
  /**
   * Custom equality for TrackHeader memo - ignores callback props which are recreated each render
   */
-@@ -52,7 +92,8 @@ function areTrackHeaderPropsEqual(prev: TrackHeaderProps, next: TrackHeaderProps
+@@ -52,7 +94,8 @@ function areTrackHeaderPropsEqual(prev: TrackHeaderProps, next: TrackHeaderProps
  /**
   * Track Header Component
   *
@@ -360,7 +453,7 @@ index a3f9fdb..da357fd 100644
   * Shows active state with background color.
   * Supports group tracks with collapse/expand and indentation.
   * Right-click context menu for track actions.
-@@ -76,13 +117,19 @@ export const TrackHeader = memo(function TrackHeader({
+@@ -76,13 +119,22 @@ export const TrackHeader = memo(function TrackHeader({
    onDeleteEmptyTracks,
  }: TrackHeaderProps) {
    const { t } = useTranslation()
@@ -374,15 +467,18 @@ index a3f9fdb..da357fd 100644
    const { handleDragStart } = useTrackDrag(track)
 -  const itemCountLabel = t('timeline.trackHeader.clipCount', { count: itemCount })
 +
-+  // Picture tracks hide and sound tracks mute through the same switch (isTrackDisabled).
++  // Picture tracks hide and sound tracks mute through the same switch (isTrackDisabled); a track
++  // of unknown kind is both hidden and muted by it, so it gets the plain on and off wording.
 +  const disableLabel =
 +    kind === 'audio'
 +      ? t(trackDisabled ? 'timeline.trackHeader.unmuteTrack' : 'timeline.trackHeader.muteTrack')
-+      : t(trackDisabled ? 'timeline.trackHeader.showTrack' : 'timeline.trackHeader.hideTrack')
++      : kind === 'video'
++        ? t(trackDisabled ? 'timeline.trackHeader.showTrack' : 'timeline.trackHeader.hideTrack')
++        : t(trackDisabled ? 'timeline.trackHeader.enableTrack' : 'timeline.trackHeader.disableTrack')
  
    return (
      <ContextMenu>
-@@ -99,7 +146,7 @@ export const TrackHeader = memo(function TrackHeader({
+@@ -99,7 +151,7 @@ export const TrackHeader = memo(function TrackHeader({
          >
            <div
              className={`
@@ -391,7 +487,7 @@ index a3f9fdb..da357fd 100644
                cursor-grab active:cursor-grabbing relative
                ${isSelected ? 'bg-primary/10' : trackDisabled ? 'bg-muted/30 hover:bg-muted/40' : 'hover:bg-secondary/50'}
                ${isActive ? 'border-l-3 border-l-primary' : 'border-l-3 border-l-transparent'}
-@@ -110,152 +157,57 @@ export const TrackHeader = memo(function TrackHeader({
+@@ -110,152 +162,63 @@ export const TrackHeader = memo(function TrackHeader({
              onClick={onSelect}
              onMouseDown={handleDragStart}
            >
@@ -437,6 +533,12 @@ index a3f9fdb..da357fd 100644
 +              <TrackHeadButton on={trackDisabled} label={disableLabel} onPress={onToggleDisabled}>
 +                {kind === 'audio' ? (
 +                  <span aria-hidden="true">M</span>
++                ) : kind !== 'video' ? (
++                  trackDisabled ? (
++                    <PowerOff className="h-3.5 w-3.5" aria-hidden="true" />
++                  ) : (
++                    <Power className="h-3.5 w-3.5" aria-hidden="true" />
++                  )
 +                ) : trackDisabled ? (
 +                  <EyeOff className="h-3.5 w-3.5" aria-hidden="true" />
                  ) : (
@@ -624,7 +726,7 @@ index 622873f..b9a0260 100644
      "controls": {
        "captureFailed": "Couldn't capture the current frame.",
 diff --git a/src/i18n/locales/partials/en/timeline.json b/src/i18n/locales/partials/en/timeline.json
-index e22ec23..89f0097 100644
+index e22ec23..53f24e3 100644
 --- a/src/i18n/locales/partials/en/timeline.json
 +++ b/src/i18n/locales/partials/en/timeline.json
 @@ -340,21 +340,25 @@
@@ -641,18 +743,20 @@ index e22ec23..89f0097 100644
 -      "deleteEmptyTracks": "Delete Empty Tracks",
 -      "deleteTrack": "Delete Track",
 -      "disableSyncLock": "Disable sync lock",
-+      "closeAllGaps": "Close gaps",
-+      "deleteEmptyTracks": "Delete empty tracks",
-+      "deleteTrack": "Delete track",
-+      "disableSyncLock": "Kept in sync: clips here move when a gap closes on another track",
-       "disableTrack": "Disable track",
+-      "disableTrack": "Disable track",
 -      "enableSyncLock": "Enable sync lock",
-+      "enableSyncLock": "Not kept in sync. Click to keep this track in sync",
-       "enableTrack": "Enable track",
+-      "enableTrack": "Enable track",
 -      "lockTrack": "Lock Track",
 -      "soloTrack": "Solo Track",
 -      "unlockTrack": "Unlock Track",
 -      "unsoloTrack": "Unsolo Track"
++      "closeAllGaps": "Close gaps",
++      "deleteEmptyTracks": "Delete empty tracks",
++      "deleteTrack": "Delete track",
++      "disableSyncLock": "Kept in sync: clips here move when a gap closes on another track",
++      "disableTrack": "Turn this track off",
++      "enableSyncLock": "Not kept in sync. Click to keep this track in sync",
++      "enableTrack": "Off. Click to turn this track on",
 +      "lockTrack": "Lock this track",
 +      "soloTrack": "Play only this track",
 +      "unlockTrack": "Locked. Click to unlock this track",

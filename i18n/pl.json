@@ -20979,6 +20979,8 @@
   "frameleaf_studio_timeline_track_lock": "Zablokuj tę ścieżkę",
   "frameleaf_studio_timeline_track_mute": "Wycisz tę ścieżkę",
   "frameleaf_studio_timeline_track_not_synced": "Bez synchronizacji. Kliknij, aby synchronizować tę ścieżkę",
+  "frameleaf_studio_timeline_track_off": "Wyłącz tę ścieżkę",
+  "frameleaf_studio_timeline_track_on": "Wyłączona. Kliknij, aby włączyć tę ścieżkę",
   "frameleaf_studio_timeline_track_show": "Ukryta. Kliknij, aby pokazać tę ścieżkę",
   "frameleaf_studio_timeline_track_solo": "Odtwarzaj tylko tę ścieżkę",
   "frameleaf_studio_timeline_track_synced": "Synchronizowana: klipy tutaj przesuwają się, gdy na innej ścieżce zamyka się przerwa",

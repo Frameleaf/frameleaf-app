@@ -953,8 +953,8 @@
     {
       "path": "patches/0211-studio-track-heads.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
-      "sha256": "c952028c76ffa405b5b637d7565f80b10a91611ab19816770e04df192acf6596"
+      "sha256": "050799e98bee4d2c32227da852b6c228874afc93f0ae5d427f2986d1edf7d27e"
     }
   ],
-  "sourceSha256": "45ccec0d01df1acd935f56385cb7829bb7919f84e72908e897c5ac17a22ee68b"
+  "sourceSha256": "926bc6200a4c1221056b19ff3b2878dc65605b0e12eaecce65e825075bb9fc67"
 }

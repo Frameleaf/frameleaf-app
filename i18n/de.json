@@ -20978,6 +20978,8 @@
   "frameleaf_studio_timeline_track_lock": "Diese Spur sperren",
   "frameleaf_studio_timeline_track_mute": "Diese Spur stummschalten",
   "frameleaf_studio_timeline_track_not_synced": "Nicht synchron gehalten. Klicke, um diese Spur synchron zu halten",
+  "frameleaf_studio_timeline_track_off": "Diese Spur ausschalten",
+  "frameleaf_studio_timeline_track_on": "Ausgeschaltet. Klicke, um diese Spur einzuschalten",
   "frameleaf_studio_timeline_track_show": "Ausgeblendet. Klicke, um diese Spur zu zeigen",
   "frameleaf_studio_timeline_track_solo": "Nur diese Spur abspielen",
   "frameleaf_studio_timeline_track_synced": "Synchron gehalten: Clips hier rücken mit, wenn sich auf einer anderen Spur eine Lücke schließt",

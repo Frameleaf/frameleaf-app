@@ -20972,6 +20972,8 @@
   "frameleaf_studio_timeline_track_lock": "Lås dette spor",
   "frameleaf_studio_timeline_track_mute": "Slå lyden fra på dette spor",
   "frameleaf_studio_timeline_track_not_synced": "Holdes ikke synkront. Klik for at holde dette spor synkront",
+  "frameleaf_studio_timeline_track_off": "Slå dette spor fra",
+  "frameleaf_studio_timeline_track_on": "Slået fra. Klik for at slå dette spor til",
   "frameleaf_studio_timeline_track_show": "Skjult. Klik for at vise dette spor",
   "frameleaf_studio_timeline_track_solo": "Afspil kun dette spor",
   "frameleaf_studio_timeline_track_synced": "Holdes synkront: klip her flytter sig, når et hul lukkes på et andet spor",

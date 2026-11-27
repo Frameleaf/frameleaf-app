@@ -20978,6 +20978,8 @@
   "frameleaf_studio_timeline_track_lock": "Blocca questa traccia",
   "frameleaf_studio_timeline_track_mute": "Disattiva l'audio di questa traccia",
   "frameleaf_studio_timeline_track_not_synced": "Non sincronizzata. Fai clic per mantenere sincronizzata questa traccia",
+  "frameleaf_studio_timeline_track_off": "Disattiva questa traccia",
+  "frameleaf_studio_timeline_track_on": "Disattivata. Fai clic per attivare questa traccia",
   "frameleaf_studio_timeline_track_show": "Nascosta. Fai clic per mostrare questa traccia",
   "frameleaf_studio_timeline_track_solo": "Riproduci solo questa traccia",
   "frameleaf_studio_timeline_track_synced": "Sincronizzata: le clip qui si spostano quando si chiude uno spazio su un'altra traccia",

@@ -20881,6 +20881,8 @@
   "frameleaf_studio_timeline_track_lock": "Lock this track",
   "frameleaf_studio_timeline_track_mute": "Mute this track",
   "frameleaf_studio_timeline_track_not_synced": "Not kept in sync. Click to keep this track in sync",
+  "frameleaf_studio_timeline_track_off": "Turn this track off",
+  "frameleaf_studio_timeline_track_on": "Off. Click to turn this track on",
   "frameleaf_studio_timeline_track_show": "Hidden. Click to show this track",
   "frameleaf_studio_timeline_track_solo": "Play only this track",
   "frameleaf_studio_timeline_track_synced": "Kept in sync: clips here move when a gap closes on another track",
