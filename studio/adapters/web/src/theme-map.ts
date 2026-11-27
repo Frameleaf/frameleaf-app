@@ -7,6 +7,7 @@
  * Classes and literals the engine hard-codes are not reachable from here; they change by patch.
  */
 import type { StudioThemeTokens } from '@frameleaf/host/host-contract'
+import brand from '../../../../web/src/lib/frameleaf/brand-tokens.json'
 
 /**
  * Engine variable to host token. `chrome` follows the app's dark theme, as the approved Studio does
@@ -38,6 +39,14 @@ const CHROME: Record<string, string> = {
 }
 
 /**
+ * Dark values by host token name, from the source the host's `tokens.css` is checked against
+ * (`web/src/lib/frameleaf/tokens.spec.ts`). Used for the signals in the light theme.
+ */
+const DARK: Readonly<Record<string, string>> = Object.fromEntries(
+  Object.entries(brand.color.dark).map(([name, value]) => [`--fl-${name}`, value]),
+)
+
+/**
  * The same variables on the viewer set. The engine still hard-codes dark classes, so in the light
  * theme its chrome stays on the viewer's dark tokens until those classes are patched out.
  */
@@ -48,7 +57,10 @@ const VIEWER_CHROME: Record<string, string> = Object.fromEntries(
   ]),
 )
 
-/** The same in both themes: the accent, status colours and the timeline's signals. */
+/**
+ * The accent, status colours and the timeline's signals. They sit on dark chrome in both themes, so
+ * they always take the dark set: the light set is chosen to read on white and is too dim here.
+ */
 const SIGNALS: Record<string, string> = {
   '--primary': '--fl-accent',
   '--primary-foreground': '--fl-accent-text',
@@ -100,12 +112,18 @@ export const themedEngineVariables: readonly string[] = [
  */
 export function engineThemeVariables(theme: StudioThemeTokens): Record<string, string> {
   const variables: Record<string, string> = { ...CLIP_COLOURS, '--radius': RADIUS }
-  const map = { ...(theme.theme === 'dark' ? CHROME : VIEWER_CHROME), ...SIGNALS }
-  for (const [engineName, hostName] of Object.entries(map)) {
+  const dark = theme.theme === 'dark'
+  for (const [engineName, hostName] of Object.entries(dark ? CHROME : VIEWER_CHROME)) {
     const value = theme.tokens[hostName]
     if (value) variables[engineName] = value
   }
-  const blue = theme.tokens['--fl-blue']
+  // In the dark theme the host's live values win; they equal the dark set unless the host changes it.
+  const signal = (hostName: string) => (dark ? theme.tokens[hostName] : DARK[hostName])
+  for (const [engineName, hostName] of Object.entries(SIGNALS)) {
+    const value = signal(hostName)
+    if (value) variables[engineName] = value
+  }
+  const blue = signal('--fl-blue')
   if (blue) {
     variables['--color-timeline-io-range-fill'] = `color-mix(in srgb, ${blue} 32%, transparent)`
     variables['--color-timeline-io-range-border'] = `color-mix(in srgb, ${blue} 80%, transparent)`
