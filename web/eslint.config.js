@@ -32,11 +32,14 @@ const NAVIGATION_PARAM_RULE = {
 const DATE_FORMAT_MESSAGE =
   "Format dates with formatDate, formatTime, formatDateTime or formatLuxon from $lib/frameleaf/date-format, which apply the person's date and time format.";
 const DATE_FORMAT_RULES = [
-  "NewExpression[callee.object.name='Intl'][callee.property.name='DateTimeFormat']",
+  // with or without `new`
+  ":matches(NewExpression, CallExpression)[callee.object.name='Intl'][callee.property.name='DateTimeFormat']",
   'CallExpression[callee.property.name=/^toLocale(Date|Time)String$/]',
   "CallExpression[callee.property.name='toLocaleString'][callee.object.type='NewExpression'][callee.object.callee.name='Date']",
-  // Luxon with its options written out: value.toLocaleString({ month: 'long' }, { locale })
-  "CallExpression[callee.property.name='toLocaleString'][arguments.0.type='ObjectExpression']",
+  // date options written out, on a Date (`date.toLocaleString(locale, { dateStyle })`) or a Luxon value
+  // (`value.toLocaleString({ month: 'long' })`). Only date fields match, so a number's
+  // `toLocaleString(locale, { maximumFractionDigits })` and Luxon's `Duration` lists do not.
+  "CallExpression[callee.property.name='toLocaleString'] > ObjectExpression > Property[key.name=/^(dateStyle|timeStyle|weekday|era|year|month|day|hour|minute|second|timeZone|timeZoneName|hourCycle|hour12)$/]",
   // a Luxon preset: value.toLocaleString(DateTime.DATE_MED)
   "CallExpression[callee.property.name='toLocaleString'][arguments.0.object.name='DateTime']",
 ].map((selector) => ({ selector, message: DATE_FORMAT_MESSAGE }));
