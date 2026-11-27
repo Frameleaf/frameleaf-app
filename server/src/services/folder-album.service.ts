@@ -9,6 +9,7 @@ import { BaseService } from 'src/services/base.service.js';
 import { queueAlbumCopies, recordAlbumEdit } from 'src/services/partner-copy.service.js';
 import {
   EVENT_FOLDER_ALBUM_OPTIONS,
+  FolderAlbumOptions,
   FolderAlbumPlanNode,
   FolderCount,
   autoNames,
@@ -211,7 +212,7 @@ export class FolderAlbumService extends BaseService {
     const original = new Map(byPath);
 
     // Folders renamed or moved: their albums follow, so nothing the owner did to them is lost.
-    const moves = await this.findMovedFolders(libraryId, tree, byPath);
+    const moves = await this.findMovedFolders(libraryId, tree, byPath, { roots, options, name: library.name });
     const previousPaths: { folderPath: string; albumId: string }[] = [];
     // a moved album with the name its old folder gave it takes the new folder's name
     const movedAuto = new Set<string>();
@@ -360,6 +361,19 @@ export class FolderAlbumService extends BaseService {
         await this.moveIntoPlannedAlbum(byPath, tree, roots, link);
         continue;
       }
+      // FL-1837: read again now, as a merge may have moved links since this sync started. An album another folder was
+      // merged into stays while that folder keeps it (only this link goes); a link a merge moved is left alone.
+      const now = await this.libraryRepository.getFolderAlbumLinks(link.id, link.albumId);
+      const mine = now.find(({ id }) => id === link.id);
+      if (!mine || mine.albumId !== link.albumId) {
+        continue;
+      }
+      const sharedWith = now.some(({ id }) => id !== link.id);
+      if (sharedWith) {
+        await this.libraryRepository.deleteFolderAlbum(link.id);
+        byPath.delete(link.folderPath);
+        continue;
+      }
       await this.albumRepository.delete(link.albumId);
       changed.delete(link.albumId);
       result.removed++;
@@ -454,6 +468,7 @@ export class FolderAlbumService extends BaseService {
     libraryId: string,
     tree: Map<string, FolderAlbumPlanNode>,
     byPath: Map<string, FolderAlbumLink>,
+    { roots, options, name }: { roots: string[]; options: FolderAlbumOptions; name: string },
   ) {
     const goneFolders = byPath
       .keys()
@@ -466,8 +481,39 @@ export class FolderAlbumService extends BaseService {
     const newFolders = [...free].filter((folderPath) => tree.get(folderPath)!.photos > 0);
     const gone = new Map(goneFolders.map((folderPath) => [folderPath, new Set<string>()]));
     const candidates = new Map(newFolders.map((folderPath) => [folderPath, new Set<string>()]));
-    for (const row of await this.libraryRepository.getFolderFileKeys(libraryId, goneFolders, newFolders)) {
-      (row.gone ? gone : candidates).get(row.folderPath)?.add(fileKey(row.originalFileName, row.fileModifiedAt));
+    // FL-1837: an album holds the photos of every folder that joins it (an event folder's Capture, Videos…), so it is
+    // matched by all their files. A gone album's folders are planned again over every folder the library has had,
+    // the ones whose files went offline too.
+    if (newFolders.length === 0) {
+      return new Map<string, string>();
+    }
+    const known = await this.libraryRepository.getFolderPaths(libraryId, goneFolders);
+    const before = planFolderAlbums(
+      roots,
+      known.map((folderPath) => ({ folderPath, photos: 1 })),
+      { ...options, skipEmpty: true },
+      name,
+    );
+    const albumsOf = (lists: [string, string[]][]) => {
+      const byFolder = new Map<string, string[]>();
+      for (const [album, folders] of lists) {
+        for (const folder of folders) {
+          byFolder.set(folder, [...(byFolder.get(folder) ?? []), album]);
+        }
+      }
+      return byFolder;
+    };
+    const goneBy = albumsOf(goneFolders.map((album) => [album, before.get(album)?.members ?? [album]]));
+    const newBy = albumsOf(newFolders.map((album) => [album, tree.get(album)!.members]));
+    for (const row of await this.libraryRepository.getFolderFileKeys(
+      libraryId,
+      goneBy.keys().toArray(),
+      newBy.keys().toArray(),
+    )) {
+      const key = fileKey(row.originalFileName, row.fileModifiedAt);
+      for (const album of (row.gone ? goneBy : newBy).get(row.folderPath) ?? []) {
+        (row.gone ? gone : candidates).get(album)!.add(key);
+      }
     }
     return matchMovedFolders(
       [...gone].map(([folderPath, keys]) => ({ folderPath, keys })),

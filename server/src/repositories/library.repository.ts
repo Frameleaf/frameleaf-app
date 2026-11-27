@@ -20,6 +20,9 @@ import { folderOf, isFolderPhoto } from 'src/utils/folder-albums.js';
 import { LibraryScanStopReason, libraryPathsFingerprint } from 'src/utils/library-scan.js';
 import { isNotLocked } from 'src/utils/locked.js';
 
+/** FL-1837: `AlbumChangeKind.FolderAlbumMoved` (album-merge.repository.ts), written out to keep the modules apart. */
+const FOLDER_ALBUM_MOVED = 'album.folder_album_moved';
+
 /**
  * What removing a library would take with it (FL-78). Counts only: never a path, a name or an id of
  * anything inside it. Locked media is left out of every count an administrator sees (FL-34); the
@@ -472,6 +475,35 @@ export class LibraryRepository {
     return rows.map((row) => ({ folderPath: row.folderPath, photos: Number(row.photos), items: Number(row.items) }));
   }
 
+  /**
+   * FL-1837: the folders at or below `under` the library has items in, offline and trashed ones too (not Locked ones),
+   * to work out which folders joined a gone album.
+   */
+  @GenerateSql({ params: [DummyValue.UUID, [DummyValue.STRING]] })
+  async getFolderPaths(libraryId: string, under: string[]): Promise<string[]> {
+    if (under.length === 0) {
+      return [];
+    }
+    const { rows } = await sql<{ folderPath: string }>`
+      SELECT DISTINCT ${folderOf('asset')} AS "folderPath"
+      FROM asset
+      WHERE asset."libraryId" = ${asUuid(libraryId)} AND ${isNotLocked('asset')}
+        AND EXISTS (
+          SELECT 1 FROM unnest(${under}::text[]) AS gone(path) WHERE starts_with(asset."originalPath", gone.path || '/')
+        )`.execute(this.db);
+    return rows.map(({ folderPath }) => folderPath);
+  }
+
+  /** FL-1837: this link, and every link of the library pointing at this album, as they are now. */
+  @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID] })
+  getFolderAlbumLinks(linkId: string, albumId: string) {
+    return this.db
+      .selectFrom('library_folder_album')
+      .select(['id', 'albumId'])
+      .where((eb) => eb.or([eb('id', '=', asUuid(linkId)), eb('albumId', '=', asUuid(albumId))]))
+      .execute();
+  }
+
   /** FL-1837: how many folder albums a library has, and how many of them show nothing. */
   @GenerateSql({ params: [DummyValue.UUID] })
   async getFolderAlbumCounts(libraryId: string): Promise<{ albums: number; empty: number }> {
@@ -487,14 +519,20 @@ export class LibraryRepository {
     return { albums: Number(rows[0]?.albums ?? 0), empty: Number(rows[0]?.empty ?? 0) };
   }
 
-  /** FL-1837: albums made so far stay as they are (`kept`) or follow the library's rules again. */
+  /**
+   * FL-1837: albums made so far stay as they are (`kept`) or follow the library's rules again. A folder whose album was
+   * merged into another (and not undone) stays kept either way: the merged album is the owner's.
+   */
   @GenerateSql({ params: [DummyValue.UUID, true] })
   async setFolderAlbumsKept(libraryId: string, kept: boolean): Promise<void> {
-    await this.db
-      .updateTable('library_folder_album')
-      .set({ isKept: kept })
-      .where('libraryId', '=', asUuid(libraryId))
-      .execute();
+    await sql`
+      UPDATE library_folder_album link SET "isKept" = ${kept}
+      WHERE link."libraryId" = ${asUuid(libraryId)}
+        AND (${kept} OR NOT EXISTS (
+          SELECT 1 FROM album_change change
+          WHERE change.kind = ${FOLDER_ALBUM_MOVED} AND change."albumId" = link."albumId"
+            AND change.after->>'id' = link.id::text
+        ))`.execute(this.db);
   }
 
   /** The library's folder albums, with the album's name, place and kind as they are now. */

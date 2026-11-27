@@ -484,7 +484,10 @@ describe(LibraryService.name, () => {
 
   describe('estimateFolder (FL-539)', () => {
     it('counts the photos and videos in a folder and their size, with its skips', async () => {
-      mocks.storage.walkLibrary.mockImplementation(async function* () {
+      mocks.storage.walkLibrary.mockImplementation(async function* (options) {
+        // FL-1837: what the skips leave out is counted too, so a folder of skipped RAW files shows as empty
+        options.onSkipped?.('/photos/RAW/a.cr3');
+        options.onSkipped?.('/photos/2024/c.cr3');
         // eslint-disable-next-line unicorn/no-useless-promise-resolve-reject
         yield await Promise.resolve(['/photos/a.jpg', '/photos/b.mov', '/photos/2024/c.jpg']);
       });
@@ -501,8 +504,9 @@ describe(LibraryService.name, () => {
         complete: true,
         // FL-838: per folder, for the folder albums preview
         folders: [
-          { path: '/photos', count: 2 },
-          { path: '/photos/2024', count: 1 },
+          { path: '/photos', count: 2, skipped: 0 },
+          { path: '/photos/2024', count: 1, skipped: 1 },
+          { path: '/photos/RAW', count: 0, skipped: 1 },
         ],
       });
       expect(mocks.storage.walkLibrary).toHaveBeenCalledWith(

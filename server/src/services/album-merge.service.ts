@@ -142,6 +142,11 @@ export class AlbumMergeService extends BaseService {
     return new AlbumMergeRepository(tx).reverseTakeoutFolders(changes);
   }
 
+  @ReversesAlbumChange(AlbumChangeKind.FolderAlbumMoved)
+  static reverseFolderAlbums(tx: Transaction<DB>, changes: AlbumChangeRow[]): Promise<AlbumChangeReversal> {
+    return new AlbumMergeRepository(tx).reverseFolderAlbums(changes);
+  }
+
   @ReversesAlbumChange(AlbumChangeKind.ImportAlbumMoved)
   static reverseImportAlbums(tx: Transaction<DB>, changes: AlbumChangeRow[]): Promise<AlbumChangeReversal> {
     return new AlbumMergeRepository(tx).reverseImportAlbums(changes);
@@ -350,6 +355,14 @@ export class AlbumMergeService extends BaseService {
         albumId: winner.id,
         before: { albumId: loser.id },
         after: folder,
+      });
+    }
+    for (const { id, folderPath, isUserEdited, isKept } of await merge.moveFolderAlbums(loser.id, winner.id)) {
+      await runs.recordChange(tx, runId, {
+        kind: AlbumChangeKind.FolderAlbumMoved,
+        albumId: winner.id,
+        before: { albumId: loser.id, isUserEdited, isKept },
+        after: { id, folderPath },
       });
     }
     for (const change of [

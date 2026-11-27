@@ -7,9 +7,9 @@ import en from '../../../../../i18n/en.json';
 const estimate = {
   complete: true,
   folders: [
-    { path: '/mnt/nas/family', count: 38 },
-    { path: '/mnt/nas/family/2024/Banff', count: 212 },
-    { path: '/mnt/nas/family/2025/Summer/Camping', count: 140 },
+    { path: '/mnt/nas/family', count: 38, skipped: 0 },
+    { path: '/mnt/nas/family/2024/Banff', count: 212, skipped: 0 },
+    { path: '/mnt/nas/family/2025/Summer/Camping', count: 140, skipped: 0 },
   ],
 };
 const base = {
@@ -42,6 +42,8 @@ const events = {
     { path: '/mnt/nas/family/2026-11-19 - Nathan/Export', count: 161 },
     { path: '/mnt/nas/family/2026-11-20 - Park/Capture', count: 40 },
     { path: '/mnt/nas/family/2026-11-20 - Park/Export', count: 12 },
+    { path: '/mnt/nas/family/2026-11-19 - Nathan/RAW', count: 0, skipped: 158 },
+    { path: '/mnt/nas/family/2026-11-20 - Park/RAW', count: 0, skipped: 40 },
   ],
 };
 
@@ -69,6 +71,9 @@ describe('FolderAlbumsSection (FL-838, FL-1837)', () => {
     );
     // the example: on the drive and in Albums
     expect(within(preview).getAllByText('2026-11-19 - Nathan')).toHaveLength(2);
+
+    // the RAW folders hold only files this folder skips
+    expect(screen.getByText(/In 2 folders · all empty/)).toHaveTextContent(en.frameleaf_folder_albums_inside_skipped);
 
     const exportRow = screen.getByRole('group', { name: 'Export folders' });
     expect(within(exportRow).getByRole('button', { name: 'Album inside' })).toHaveAttribute('aria-pressed', 'true');

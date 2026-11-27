@@ -65,9 +65,17 @@ describe('planFolderAlbums (FL-838, FL-1837)', () => {
     expect(looksLikeEventFolders(['/p'], events)).toBe(true);
     expect(looksLikeEventFolders(['/nas/family'], folders)).toBe(false);
     expect(subfolderNames(['/p'], events, EVENT_FOLDER_ALBUM_OPTIONS)).toEqual([
-      { name: 'Capture', folders: 2 },
-      { name: 'Export', folders: 1 },
+      { name: 'Capture', folders: 2, empty: 0, skipped: false },
+      { name: 'Export', folders: 1, empty: 0, skipped: false },
     ]);
+    // FL-1837: a RAW folder whose files the folder's skips leave out is empty
+    expect(
+      subfolderNames(
+        ['/p'],
+        [...events, { path: '/p/A/RAW', count: 0, skipped: 12 }, { path: '/p/B/RAW', count: 3, skipped: 0 }],
+        EVENT_FOLDER_ALBUM_OPTIONS,
+      ).find(({ name }) => name === 'RAW'),
+    ).toEqual({ name: 'RAW', folders: 2, empty: 1, skipped: true });
     const plan = planFolderAlbums(['/p'], events, EVENT_FOLDER_ALBUM_OPTIONS, 'P');
     expect(folderAlbumExample(['/p'], events, plan)).toEqual({
       name: 'A',

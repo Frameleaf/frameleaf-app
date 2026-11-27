@@ -412,6 +412,48 @@ WHERE
 GROUP BY
   1
 
+-- LibraryRepository.getFolderPaths
+SELECT DISTINCT
+  coalesce(
+    nullif(
+      substring("asset"."originalPath", '^(.*)/[^/]*$'),
+      ''
+    ),
+    '/'
+  ) AS "folderPath"
+FROM
+  asset
+WHERE
+  asset."libraryId" = $1::uuid
+  AND not exists (
+    select
+      1
+    from
+      asset_lock
+    where
+      asset_lock."assetId" = "asset"."id"
+  )
+  AND EXISTS (
+    SELECT
+      1
+    FROM
+      unnest($2::text[]) AS gone (path)
+    WHERE
+      starts_with(asset."originalPath", gone.path || '/')
+  )
+
+-- LibraryRepository.getFolderAlbumLinks
+select
+  "id",
+  "albumId"
+from
+  "library_folder_album"
+where
+  (
+    "id" = $1::uuid
+    or "albumId" = $2::uuid
+  )
+
 -- LibraryRepository.getFolderAlbumCounts
 SELECT
   count(*) AS albums,
@@ -437,11 +479,24 @@ WHERE
   link."libraryId" = $1::uuid
 
 -- LibraryRepository.setFolderAlbumsKept
-update "library_folder_album"
-set
+UPDATE library_folder_album link
+SET
   "isKept" = $1
-where
-  "libraryId" = $2::uuid
+WHERE
+  link."libraryId" = $2::uuid
+  AND (
+    $3
+    OR NOT EXISTS (
+      SELECT
+        1
+      FROM
+        album_change change
+      WHERE
+        change.kind = $4
+        AND change."albumId" = link."albumId"
+        AND change.after ->> 'id' = link.id::text
+    )
+  )
 
 -- LibraryRepository.getFolderAlbums
 select

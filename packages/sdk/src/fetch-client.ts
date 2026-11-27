@@ -3197,6 +3197,8 @@ export type LibraryFolderEstimateFolderDto = {
     count: number;
     /** A folder holding photos or videos, without a trailing slash */
     path: string;
+    /** Photos and videos directly in it that the exclusion patterns skip (FL-1837); count may then be 0 */
+    skipped: number;
 };
 export type LibraryFolderEstimateResponseDto = {
     /** Their combined size, in bytes */

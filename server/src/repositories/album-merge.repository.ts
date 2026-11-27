@@ -1,7 +1,7 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
 import { Kysely, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
-import { AlbumKind, AlbumUserRole } from 'src/enum.js';
+import { AlbumKind, AlbumUserRole, DatabaseLock } from 'src/enum.js';
 import {
   ALBUM_CHANGE_SOFT_DELETED,
   type AlbumChangeInput,
@@ -19,6 +19,7 @@ export const AlbumChangeKind = {
   SourceLinkMoved: 'album.source_link_moved',
   ICloudAlbumMoved: 'album.icloud_album_moved',
   TakeoutFolderMoved: 'album.takeout_folder_moved',
+  FolderAlbumMoved: 'album.folder_album_moved',
   ImportAlbumMoved: 'album.import_album_moved',
   EagleAlbumMoved: 'album.eagle_album_moved',
   ChoiceMoved: 'album.choice_moved',
@@ -222,6 +223,47 @@ export class AlbumMergeRepository {
     return rows;
   }
 
+  /**
+   * FL-1837: a library folder whose album is merged keeps syncing into the merged album instead of making its album
+   * again. The link counts as the owner's edit and is kept as it is (`isKept`), so the sync never renames, moves or
+   * removes the merged album, and the folder's own photos keep joining it.
+   */
+  async moveFolderAlbums(
+    loserId: string,
+    winnerId: string,
+  ): Promise<{ id: string; folderPath: string; isUserEdited: boolean; isKept: boolean }[]> {
+    await this.holdFolderAlbumSync(loserId);
+    const { rows } = await sql<{ id: string; folderPath: string; isUserEdited: boolean; isKept: boolean }>`
+      WITH old AS (
+        SELECT id, "isUserEdited", "isKept" FROM library_folder_album WHERE "albumId" = ${loserId}::uuid FOR UPDATE
+      )
+      UPDATE library_folder_album link SET "albumId" = ${winnerId}::uuid, "isUserEdited" = true, "isKept" = true
+      FROM old WHERE link.id = old.id
+      RETURNING link.id, link."folderPath", old."isUserEdited", old."isKept"
+    `.execute(this.db);
+    return rows;
+  }
+
+  /**
+   * FL-1837: a folder-album sync reads the links once and decides from them, so no link moves while one runs. The lock
+   * is held to the end of this transaction; with a sync running the merge is refused rather than kept waiting (it
+   * holds album rows the sync may need).
+   */
+  private async holdFolderAlbumSync(albumId: string): Promise<void> {
+    const { rows } = await sql<{ linked: boolean }>`
+      SELECT EXISTS (SELECT 1 FROM library_folder_album WHERE "albumId" = ${albumId}::uuid) AS linked
+    `.execute(this.db);
+    if (!rows[0]?.linked) {
+      return;
+    }
+    const { rows: held } = await sql<{ held: boolean }>`
+      SELECT pg_try_advisory_xact_lock(${DatabaseLock.LibraryFolderAlbums}) AS held
+    `.execute(this.db);
+    if (!held[0]?.held) {
+      throw new ConflictException('Albums from folders are being updated. Try again in a minute.');
+    }
+  }
+
   /** FL-1840: points every importer mapping of the loser at the winner. One change per row moved. */
   async moveImportAlbums(loserId: string, winnerId: string): Promise<AlbumChangeInput[]> {
     const changes: AlbumChangeInput[] = [];
@@ -243,6 +285,18 @@ export class AlbumMergeRepository {
 
   /** FL-1840: an Eagle import's folders (and the collection it went inside) that became the loser now go to the winner. */
   async moveEagleAlbums(loserId: string, winnerId: string): Promise<AlbumChangeInput[]> {
+    // A running import keeps its folders' albums in memory and would write the old one back: refuse, don't wait.
+    const { rows: busy } = await sql<{ busy: boolean }>`
+      SELECT EXISTS (
+        SELECT 1 FROM eagle_import
+        WHERE status IN ('running', 'stopping') AND "leaseExpiresAt" > now()
+          AND ("rootAlbumId" = ${loserId}::uuid
+            OR EXISTS (SELECT 1 FROM jsonb_each_text(albums) entry WHERE entry.value = ${loserId}::text))
+      ) AS busy
+    `.execute(this.db);
+    if (busy[0]?.busy) {
+      throw new ConflictException('An Eagle import is adding to this album. Try again when it has finished.');
+    }
     const { rows } = await sql<{ id: string; folders: string[] | null; root: boolean }>`
       WITH found AS (
         SELECT id, "rootAlbumId" = ${loserId}::uuid AS root,
@@ -437,6 +491,33 @@ export class AlbumMergeRepository {
       `.execute(this.db);
       if (Number(numAffectedRows ?? 0) === 0) {
         skipped.push(folder);
+      } else {
+        reversed += 1;
+      }
+    }
+    return { reversed, skipped };
+  }
+
+  async reverseFolderAlbums(changes: AlbumChangeRow[]): Promise<AlbumChangeReversal> {
+    if (changes.length > 0) {
+      await this.holdFolderAlbumSync(changes[0].albumId);
+    }
+    let reversed = 0;
+    const skipped: string[] = [];
+    for (const change of changes) {
+      const { albumId, isUserEdited, isKept } = change.before as {
+        albumId: string;
+        isUserEdited: boolean;
+        isKept?: boolean;
+      };
+      const { id, folderPath } = change.after as { id: string; folderPath: string };
+      const { numAffectedRows } = await sql`
+        UPDATE library_folder_album
+        SET "albumId" = ${albumId}::uuid, "isUserEdited" = ${isUserEdited}, "isKept" = ${isKept ?? false}
+        WHERE id = ${id}::uuid AND "albumId" = ${change.albumId}::uuid
+      `.execute(this.db);
+      if (Number(numAffectedRows ?? 0) === 0) {
+        skipped.push(folderPath);
       } else {
         reversed += 1;
       }
