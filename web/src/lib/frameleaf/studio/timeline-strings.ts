@@ -1,6 +1,7 @@
 /**
- * The words of the editor's timeline toolbar (FL-1822): the Tool menu, In and Out, the More menu and
- * the toolbar's tooltips. Translated by the host, as for the shell strings (`shell-strings.ts`): the
+ * The words of the editor's timeline toolbar and track heads (FL-1822): the Tool menu, In and Out,
+ * the More menu, the toolbar's tooltips, the track buttons and menu, and the Align row that moved
+ * from above the transport into the inspector's Transform group. Translated by the host, as for the shell strings (`shell-strings.ts`): the
  * engine speaks fewer languages than the host, so the host sends its translation in `context.strings`
  * and the adapter writes it over the engine key. A value filled in at run time travels as an i18next
  * `{{name}}` marker. Several engine keys can share one host message.
@@ -77,6 +78,54 @@ export const TIMELINE_STRINGS = {
   timelineClearInOut: { host: 'frameleaf_studio_timeline_clear_in_out', engine: 'timeline.header.clearInOut' },
   timelineRemoveMarker: { host: 'frameleaf_studio_timeline_remove_marker', engine: 'timeline.header.removeMarker' },
   timelineClearMarkers: { host: 'frameleaf_studio_timeline_clear_markers', engine: 'timeline.header.clearMarkers' },
+  timelineTrackHide: { host: 'frameleaf_studio_timeline_track_hide', engine: 'timeline.trackHeader.hideTrack' },
+  timelineTrackShow: { host: 'frameleaf_studio_timeline_track_show', engine: 'timeline.trackHeader.showTrack' },
+  timelineTrackMute: { host: 'frameleaf_studio_timeline_track_mute', engine: 'timeline.trackHeader.muteTrack' },
+  timelineTrackUnmute: { host: 'frameleaf_studio_timeline_track_unmute', engine: 'timeline.trackHeader.unmuteTrack' },
+  timelineTrackSolo: { host: 'frameleaf_studio_timeline_track_solo', engine: 'timeline.trackHeader.soloTrack' },
+  timelineTrackUnsolo: { host: 'frameleaf_studio_timeline_track_unsolo', engine: 'timeline.trackHeader.unsoloTrack' },
+  timelineTrackLock: { host: 'frameleaf_studio_timeline_track_lock', engine: 'timeline.trackHeader.lockTrack' },
+  timelineTrackUnlock: { host: 'frameleaf_studio_timeline_track_unlock', engine: 'timeline.trackHeader.unlockTrack' },
+  timelineTrackSynced: {
+    host: 'frameleaf_studio_timeline_track_synced',
+    engine: 'timeline.trackHeader.disableSyncLock',
+  },
+  timelineTrackNotSynced: {
+    host: 'frameleaf_studio_timeline_track_not_synced',
+    engine: 'timeline.trackHeader.enableSyncLock',
+  },
+  timelineTrackCloseGaps: {
+    host: 'frameleaf_studio_timeline_track_close_gaps',
+    engine: 'timeline.trackHeader.closeAllGaps',
+  },
+  timelineTrackAddVideo: {
+    host: 'frameleaf_studio_timeline_track_add_video',
+    engine: 'timeline.trackHeader.addVideoTrack',
+  },
+  timelineTrackAddAudio: {
+    host: 'frameleaf_studio_timeline_track_add_audio',
+    engine: 'timeline.trackHeader.addAudioTrack',
+  },
+  timelineTrackDelete: { host: 'frameleaf_studio_timeline_track_delete', engine: 'timeline.trackHeader.deleteTrack' },
+  timelineTrackDeleteEmpty: {
+    host: 'frameleaf_studio_timeline_track_delete_empty',
+    engine: 'timeline.trackHeader.deleteEmptyTracks',
+  },
+  timelineTrackOff: { host: 'frameleaf_studio_timeline_track_off', engine: 'timeline.trackHeader.disableTrack' },
+  timelineTrackOn: { host: 'frameleaf_studio_timeline_track_on', engine: 'timeline.trackHeader.enableTrack' },
+  timelineAlignTitle: { host: 'frameleaf_studio_timeline_align_title', engine: 'preview.align.title' },
+  timelineAlignLeft: { host: 'frameleaf_studio_timeline_align_left', engine: 'preview.align.left' },
+  timelineAlignCentreAcross: { host: 'frameleaf_studio_timeline_align_centre_across', engine: 'preview.align.centerH' },
+  timelineAlignRight: { host: 'frameleaf_studio_timeline_align_right', engine: 'preview.align.right' },
+  timelineAlignTop: { host: 'frameleaf_studio_timeline_align_top', engine: 'preview.align.top' },
+  timelineAlignCentreDown: { host: 'frameleaf_studio_timeline_align_centre_down', engine: 'preview.align.centerV' },
+  timelineAlignBottom: { host: 'frameleaf_studio_timeline_align_bottom', engine: 'preview.align.bottom' },
+  timelineAlignSpaceAcross: {
+    host: 'frameleaf_studio_timeline_align_space_across',
+    engine: 'preview.align.distributeH',
+  },
+  timelineAlignSpaceDown: { host: 'frameleaf_studio_timeline_align_space_down', engine: 'preview.align.distributeV' },
+  timelineAlignSnap: { host: 'frameleaf_studio_timeline_align_snap', engine: 'preview.align.toggleCanvasSnap' },
 } as const satisfies Record<string, { host: string; engine: string; values?: readonly string[] }>;
 
 export type TimelineString = keyof typeof TIMELINE_STRINGS;

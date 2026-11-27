@@ -18350,9 +18350,10 @@
           "0046-preview-canvas-transform-placement.patch",
           "0110-scope-revision-binding.patch",
           "0118-adaptive-preview-render-size.patch",
-          "0209-studio-selection-handles.patch"
+          "0209-studio-selection-handles.patch",
+          "0211-studio-track-heads.patch"
         ],
-        "note": "FL-1822 (0209): the selection is the approved Studio's: a solid accent outline and white round handles on a dark hairline.",
+        "note": "FL-1822 (0209): the selection is the approved Studio's: a solid accent outline and white round handles on a dark hairline. FL-1822 (0211): the Align row left the strip above the transport for the inspector Transform group, labelled Align in the frame, with spacing evenly shown once three clips are chosen and canvas snapping beside it.",
         "status": "shipped"
       },
       "id": "module.preview",
@@ -20690,9 +20691,10 @@
           "cd365017c8",
           "1accc156fc",
           "d74234e08d",
-          "0210-studio-timeline-toolbar.patch"
+          "0210-studio-timeline-toolbar.patch",
+          "0211-studio-track-heads.patch"
         ],
-        "note": "FL-1822 (0210): the timeline toolbar is the approved Studio's: a Tool menu, undo and redo, quiet snapping, marker and keyframe toggles, In and Out with their timecode, voice-over, and a More menu for linked selection, sound while scrubbing and the clearing actions.",
+        "note": "FL-1822 (0210): the timeline toolbar is the approved Studio's: a Tool menu, undo and redo, quiet snapping, marker and keyframe toggles, In and Out with their timecode, voice-over, and a More menu for linked selection, sound while scrubbing and the clearing actions. FL-1822 (0211): each track head is one row, its kind and name, then bordered buttons to hide a picture track or mute a sound track, solo, lock, and keep in sync, highlighted when not in the usual state; close gaps and the track actions stay in the right-click menu.",
         "status": "shipped"
       },
       "id": "module.timeline",
