@@ -73,6 +73,7 @@ import {
 import { FrameleafLibrarySetupController } from 'src/controllers/frameleaf-library-setup.controller.js';
 import { FrameleafServerSetupController } from 'src/controllers/frameleaf-server-setup.controller.js';
 import { HardwareCheckController } from 'src/controllers/hardware-check.controller.js';
+import { ModelDownloadKeyController } from 'src/controllers/model-download-key.controller.js';
 import { HelpController } from 'src/controllers/help.controller.js';
 import { HouseholdLinkController } from 'src/controllers/household-link.controller.js';
 import { HouseholdPeerController } from 'src/controllers/household-peer.controller.js';
@@ -267,6 +268,7 @@ export const controllers = [
   CastController,
   CloudBackupOwnerController,
   HardwareCheckController,
+  ModelDownloadKeyController,
   HelpController,
   ICloudSyncController,
   ICloudIdentityController,

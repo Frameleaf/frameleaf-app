@@ -465,6 +465,31 @@ describe(MachineLearningRepository.name, () => {
       expect(fetch.mock.calls[0][1].headers).toEqual({ Authorization: 'Bearer lan-token' });
     });
 
+    it("passes the model download key to this server's own ML service only (FL-1825)", async () => {
+      const fetch = vi
+        .fn()
+        .mockImplementation(() =>
+          Promise.resolve(jsonResponse({ [ModelTask.SEARCH]: '[1,2,3]', imageHeight: 1, imageWidth: 1 })),
+        );
+      vi.stubGlobal('fetch', fetch);
+      const key = `hf_${'a'.repeat(34)}`;
+      const clip = { ...defaults.machineLearning.clip };
+
+      await sut.encodeImage(selection(MlDestinationKind.Local, localUrl), imagePath, clip);
+      expect(new Headers(fetch.mock.calls[0][1].headers).get('x-frameleaf-model-download-key')).toBe('');
+
+      sut.setModelDownloadKey(key);
+      await sut.encodeImage(selection(MlDestinationKind.Local, localUrl), imagePath, clip);
+      expect(new Headers(fetch.mock.calls[1][1].headers).get('x-frameleaf-model-download-key')).toBe(key);
+
+      await sut.encodeImage(
+        selection(MlDestinationKind.Lan, lanUrl, () => {}, 'lan-token'),
+        imagePath,
+        clip,
+      );
+      expect(new Headers(fetch.mock.calls[2][1].headers).has('x-frameleaf-model-download-key')).toBe(false);
+    });
+
     it('records usage once per request with bytes sent, bytes received and the outcome', async () => {
       const fetch = vi
         .fn()

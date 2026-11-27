@@ -1,0 +1,125 @@
+import { BadRequestException, Injectable, ServiceUnavailableException } from '@nestjs/common';
+import type { ModelDownloadKeyState } from 'src/types.js';
+import { OnEvent } from 'src/decorators.js';
+import { ModelDownloadKeyResponseDto, ModelDownloadKeyUpdateDto } from 'src/dtos/model-download-key.dto.js';
+import { SystemMetadataKey } from 'src/enum.js';
+import { BaseService } from 'src/services/base.service.js';
+import { identityDirectory } from 'src/utils/frameleaf-cloud-gateway.js';
+import {
+  MODEL_DOWNLOAD_KEY_RECHECK_MS,
+  MODEL_DOWNLOAD_KEY_SEAL_PURPOSE,
+  type ModelDownloadKeyCheck,
+  checkModelDownloadKey,
+  openModelDownloadKey,
+  sealModelDownloadKey,
+} from 'src/utils/model-download-key.js';
+
+/** How often each server process reads the saved key again, so a change reaches every worker. */
+const RELOAD_MS = 60_000;
+
+/**
+ * Settings → Computers → Advanced → Connections → Faster model downloads (FL-1825). Keeps the optional
+ * Hugging Face key sealed, checks it with Hugging Face when it is saved and again when the page is opened
+ * an hour or more later, and hands it to this server's own ML service with each request.
+ */
+@Injectable()
+export class ModelDownloadKeyService extends BaseService {
+  private timer?: NodeJS.Timeout;
+  /** Replaced in tests; the one outbound call this feature makes. */
+  check: (key: string) => Promise<ModelDownloadKeyCheck> = (key) => checkModelDownloadKey(key);
+
+  @OnEvent({ name: 'AppBootstrap' })
+  async onBootstrap() {
+    await this.reload();
+    this.timer = setInterval(() => void this.reload(), RELOAD_MS);
+    this.timer.unref();
+  }
+
+  @OnEvent({ name: 'AppShutdown' })
+  onShutdown() {
+    if (this.timer) {
+      clearInterval(this.timer);
+    }
+  }
+
+  async getStatus(): Promise<ModelDownloadKeyResponseDto> {
+    const stored = await this.stored();
+    if (!stored) {
+      return toDto(null);
+    }
+    if (Date.now() - Date.parse(stored.checkedAt) < MODEL_DOWNLOAD_KEY_RECHECK_MS) {
+      return toDto(stored);
+    }
+    const key = openModelDownloadKey(await this.keyedHash(), stored.sealed);
+    if (!key) {
+      // Sealed by another server's key file (a restored database): nothing usable is kept.
+      await this.remove();
+      return toDto(null);
+    }
+    const answer = await this.check(key);
+    if (answer === 'unreachable') {
+      return toDto(stored);
+    }
+    const next: ModelDownloadKeyState = {
+      ...stored,
+      state: answer === 'accepted' ? 'accepted' : 'refused',
+      checkedAt: new Date().toISOString(),
+    };
+    await this.systemMetadataRepository.set(SystemMetadataKey.ModelDownloadKey, next);
+    return toDto(next);
+  }
+
+  async save({ key }: ModelDownloadKeyUpdateDto): Promise<ModelDownloadKeyResponseDto> {
+    const answer = await this.check(key);
+    if (answer === 'refused') {
+      throw new BadRequestException('Hugging Face did not accept this key');
+    }
+    if (answer === 'unreachable') {
+      throw new ServiceUnavailableException('Could not reach Hugging Face to check the key; try again');
+    }
+    const now = new Date().toISOString();
+    const next: ModelDownloadKeyState = {
+      sealed: sealModelDownloadKey(await this.keyedHash(), key),
+      savedAt: now,
+      state: 'accepted',
+      checkedAt: now,
+    };
+    await this.systemMetadataRepository.set(SystemMetadataKey.ModelDownloadKey, next);
+    this.machineLearningRepository.setModelDownloadKey(key);
+    this.logger.log('A Hugging Face key for model downloads was saved');
+    return toDto(next);
+  }
+
+  async remove(): Promise<void> {
+    await this.systemMetadataRepository.delete(SystemMetadataKey.ModelDownloadKey);
+    this.machineLearningRepository.setModelDownloadKey(null);
+  }
+
+  private async reload() {
+    try {
+      const stored = await this.stored();
+      const key = stored ? openModelDownloadKey(await this.keyedHash(), stored.sealed) : null;
+      this.machineLearningRepository.setModelDownloadKey(key);
+    } catch (error) {
+      this.logger.warn(`Could not read the model download key: ${error}`);
+    }
+  }
+
+  private async stored(): Promise<ModelDownloadKeyState | null> {
+    return (await this.systemMetadataRepository.get(SystemMetadataKey.ModelDownloadKey)) ?? null;
+  }
+
+  private keyedHash() {
+    return this.cryptoRepository.serverKeyedHash(
+      identityDirectory(this.configRepository),
+      MODEL_DOWNLOAD_KEY_SEAL_PURPOSE,
+      'v1',
+    );
+  }
+}
+
+const toDto = (stored: ModelDownloadKeyState | null): ModelDownloadKeyResponseDto => ({
+  status: stored ? (stored.state === 'accepted' ? 'saved' : 'refused') : 'none',
+  savedAt: stored?.savedAt ?? null,
+  checkedAt: stored?.checkedAt ?? null,
+});

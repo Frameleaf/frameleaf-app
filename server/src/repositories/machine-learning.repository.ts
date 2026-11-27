@@ -58,6 +58,7 @@ import { faceEntries } from 'src/utils/desktop-face.js';
 import { ocrEntries } from 'src/utils/desktop-ocr.js';
 import { parseBoundFaceResult } from 'src/utils/face-result.js';
 import { readPlainFile } from 'src/utils/locked-read.js';
+import { MODEL_DOWNLOAD_KEY_HEADER } from 'src/utils/model-download-key.js';
 import { canonicalJson } from 'src/utils/object.js';
 import { parseBoundOcrResult } from 'src/utils/ocr-result.js';
 import { recoveryMlRefusal } from 'src/utils/recovery-ml-authority.js';
@@ -716,6 +717,7 @@ export class MachineLearningRepository implements RestorationInference {
   private probesInFlight = new Map<string, Promise<MlEndpointProbe>>();
   /** `${endpoint url}\n${model}` -> when the worker's "this container can't run it" answer expires. */
   private modelsWithoutRuntime = new Map<string, number>();
+  private modelDownloadKey: string | null = null;
 
   private get config(): MachineLearningConfig {
     if (!this._config) {
@@ -1716,7 +1718,18 @@ export class MachineLearningRepository implements RestorationInference {
   }
 
   private authHeaders(endpoint: MlEndpoint): Record<string, string> {
-    return endpoint.authToken ? { Authorization: `Bearer ${endpoint.authToken}` } : {};
+    const headers: Record<string, string> = endpoint.authToken ? { Authorization: `Bearer ${endpoint.authToken}` } : {};
+    // FL-1825: only this server's own ML service gets the Hugging Face key (empty: none saved); never a
+    // home-network computer, a desktop or Frameleaf Cloud.
+    if (!endpoint.cloud && this._config?.urls.includes(endpoint.url)) {
+      headers[MODEL_DOWNLOAD_KEY_HEADER] = this.modelDownloadKey ?? '';
+    }
+    return headers;
+  }
+
+  /** FL-1825: the saved Hugging Face key, or null; set by the model download key service. */
+  setModelDownloadKey(key: string | null) {
+    this.modelDownloadKey = key;
   }
 
   private timeout(): number {
