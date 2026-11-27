@@ -8,7 +8,7 @@
   import { Route } from '$lib/route';
   import { handleError } from '$lib/utils/handle-error';
   import { openFileUploadDialog } from '$lib/utils/file-uploader';
-  import { AlbumKind, type AlbumRailItemDto, type AlbumResponseDto } from '@frameleaf/sdk';
+  import { AlbumKind, getAlbumInfo, type AlbumRailItemDto, type AlbumResponseDto } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
   import {
     mdiAccountMultipleOutline,
@@ -30,6 +30,7 @@
     mdiRenameOutline,
     mdiUpload,
   } from '@mdi/js';
+  import { untrack } from 'svelte';
   import { t } from 'svelte-i18n';
 
   /**
@@ -65,11 +66,16 @@
       });
     return fullRequest;
   };
-  // A new list from the server means the full albums are read again for the next menu.
+  // A new list from the server means the full albums are read again. What was read stays until the new
+  // answer arrives, so a dialog that is open keeps its lists.
   $effect(() => {
     void albums;
-    full = null;
-    fullRequest = null;
+    untrack(() => {
+      fullRequest = null;
+      if (full) {
+        void loadFull().catch(() => {});
+      }
+    });
   });
   let target = $state<Target | null>(null);
   let at = $state<{ x: number; y: number } | null>(null);
@@ -89,10 +95,11 @@
   const runFor = (id: string, command: (loaded: AlbumActions, album: AlbumResponseDto) => unknown) =>
     void loadFull()
       .then((albums) => {
-        const album = albums.find((candidate) => candidate.id === id);
-        if (album) {
-          start((loaded) => command(loaded, album));
-        }
+        // An album the full list does not hold yet (just created, or read a moment apart) is read on its own.
+        const known = albums.find((candidate) => candidate.id === id);
+        return Promise.resolve(known ?? getAlbumInfo({ id })).then((album) =>
+          start((loaded) => command(loaded, album)),
+        );
       })
       .catch((error: unknown) => handleError(error, $t('errors.frameleaf_unable_to_load_albums')));
   /** A command that needs no album (create), or only the directory the dialogs choose from. */
@@ -187,8 +194,10 @@
         <Icon icon={mdiFolderMoveOutline} size="18" aria-hidden={true} />{$t('frameleaf_albums_move_to')}
       </MenuItem>
       {@const fullAlbum = full?.find(({ id }) => id === album.id)}
-      {#if fullAlbum && canMerge(fullAlbum, currentUserId)}
-        <MenuItem onSelect={() => runFor(album.id, (loaded, album) => loaded.openMerge(album))}>
+      <!-- Only the full album says whether this is a partner's copy, which cannot merge. Until it is read the
+           entry holds its place, so nothing below it moves under the pointer. -->
+      {#if fullAlbum ? canMerge(fullAlbum, currentUserId) : album.kind === AlbumKind.Album && !album.isSmart}
+        <MenuItem disabled={!fullAlbum} onSelect={() => runFor(album.id, (loaded, album) => loaded.openMerge(album))}>
           <Icon icon={mdiCallMerge} size="18" aria-hidden={true} />{$t('frameleaf_albums_merge_with')}
         </MenuItem>
       {/if}

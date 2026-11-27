@@ -197,9 +197,10 @@
   onDestroy(
     // the session store dropped what it held (it listens first); this rail asks again
     onLibraryAccessChange(() => {
-      // Counts read under the old access must not outlive it (a lock, another account).
+      // Counts and collections read under the old access must not outlive it (a lock, another account).
       countsRequest++;
       boardsCounts = {};
+      boardsAlbums = [];
       if (authManager.authenticated) {
         void refreshAlbums();
         void refreshPartners();
@@ -833,6 +834,8 @@
   /** Read when Boards' "New collection" opens: the dialog shows each collection as the full album. */
   let boardsAlbums = $state<AlbumResponseDto[]>([]);
   $effect(() => {
+    // never the list from before (another account, or before a lock)
+    boardsAlbums = [];
     if (!boardsCollectionUi.request) {
       return;
     }

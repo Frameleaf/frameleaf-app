@@ -125,7 +125,7 @@ describe('railSession', () => {
     expect(railSession.partners).toEqual([]);
   });
 
-  it('reads the full albums only when asked, once until the tree is read again', async () => {
+  it('reads the full albums only when asked, once until the tree changes', async () => {
     sdkMock.getAlbumRail.mockResolvedValue(rail('Trips') as never);
     sdkMock.getAlbumHierarchy.mockResolvedValue(hierarchy('Trips') as never);
     await railSession.refreshAlbums();
@@ -136,17 +136,34 @@ describe('railSession', () => {
     expect(second).toBe(first);
     expect(sdkMock.getAlbumHierarchy).toHaveBeenCalledTimes(1);
 
+    // the same answer again keeps what was read
+    await railSession.refreshAlbums();
+    await railSession.fullAlbums();
+    expect(sdkMock.getAlbumHierarchy).toHaveBeenCalledTimes(1);
+
+    sdkMock.getAlbumRail.mockResolvedValue(rail('Trips', 'Hikes') as never);
     await railSession.refreshAlbums();
     await railSession.fullAlbums();
     expect(sdkMock.getAlbumHierarchy).toHaveBeenCalledTimes(2);
   });
 
+  it('keeps the same tree, unredrawn, when the rail list has not changed', async () => {
+    sdkMock.getAlbumRail.mockResolvedValue(rail('Trips') as never);
+    await railSession.refreshAlbums();
+    const first = railSession.albums[''];
+    await railSession.refreshAlbums();
+    expect(railSession.albums['']).toBe(first);
+  });
+
   it('never hands out full albums read before the access changed', async () => {
     let answer!: (value: never) => void;
     sdkMock.getAlbumHierarchy.mockReturnValueOnce(new Promise((resolve) => (answer = resolve)));
-    const pending = railSession.fullAlbums();
+    const first = railSession.fullAlbums();
+    const second = railSession.fullAlbums();
     eventManager.emit('SessionLocked');
     answer(hierarchy('Locked album') as never);
-    await expect(pending).resolves.toEqual([]);
+    // every caller, not only the first
+    await expect(first).resolves.toEqual([]);
+    await expect(second).resolves.toEqual([]);
   });
 });

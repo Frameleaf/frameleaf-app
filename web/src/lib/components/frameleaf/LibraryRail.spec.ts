@@ -783,13 +783,9 @@ describe('LibraryRail right-click menu (approved design, 2026-11-04)', () => {
     const menu = await screen.findByRole('menu', { name: 'Actions for Rockies' });
     expect(menu.parentElement).toBe(document.body);
     expect(menu.style.left).toBe('50px');
-    // Merge waits for the full album (FL-1796): only it says whether this is a partner's copy
+    // Merge holds its place, disabled, until the full album says it is not a partner's copy (FL-1796)
     await waitFor(() =>
-      expect(
-        within(menu)
-          .getAllByRole('menuitem')
-          .map((item) => item.textContent?.trim()),
-      ).toContain('Merge with…'),
+      expect(within(menu).getByRole('menuitem', { name: 'Merge with…' })).not.toHaveAttribute('aria-disabled'),
     );
     expect(
       within(menu)
@@ -827,10 +823,22 @@ describe('LibraryRail right-click menu (approved design, 2026-11-04)', () => {
     render(LibraryRail);
     await fireEvent.contextMenu(await screen.findByRole('link', { name: 'Rockies' }), { clientX: 50, clientY: 60 });
     const menu = await screen.findByRole('menu', { name: 'Actions for Rockies' });
-    await waitFor(() => expect(sdkMock.getAlbumHierarchy).toHaveBeenCalled());
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(within(menu).queryByRole('menuitem', { name: 'Merge with…' })).not.toBeInTheDocument();
+    await waitFor(() => expect(within(menu).queryByRole('menuitem', { name: 'Merge with…' })).not.toBeInTheDocument());
     expect(within(menu).getByRole('menuitem', { name: 'Move to…' })).toBeInTheDocument();
+  });
+
+  it('runs a command on an album the full list does not hold yet, reading it on its own (FL-1796)', async () => {
+    sdkMock.getAlbumHierarchy.mockResolvedValue({ roots: [{ album: family, children: [] }] } as never);
+    sdkMock.getAlbumInfo.mockResolvedValue(rockies);
+    render(LibraryRail);
+    await fireEvent.contextMenu(await screen.findByRole('link', { name: 'Rockies' }), { clientX: 50, clientY: 60 });
+    await fireEvent.click(
+      within(await screen.findByRole('menu', { name: 'Actions for Rockies' })).getByRole('menuitem', {
+        name: 'Delete',
+      }),
+    );
+    expect(await screen.findByRole('dialog', { name: 'Delete “Rockies”?' })).toBeInTheDocument();
+    expect(sdkMock.getAlbumInfo).toHaveBeenCalledWith({ id: 'rockies' });
   });
 
   it('deletes from the sidebar through the same confirmation as the Albums page, without leaving the page', async () => {

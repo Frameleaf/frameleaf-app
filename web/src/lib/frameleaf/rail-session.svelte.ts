@@ -40,6 +40,7 @@ class RailSession {
 
   #albumVersion = new Map<string, number>();
   #fullAlbums = new Map<string, Promise<AlbumResponseDto[]>>();
+  #railJson = new Map<string, string>();
   #partnerVersion = 0;
   #generation = 0;
 
@@ -56,6 +57,7 @@ class RailSession {
     this.albums = {};
     this.partners = undefined;
     this.#fullAlbums.clear();
+    this.#railJson.clear();
   }
 
   /** Forget one workspace's tree, for a change that may have taken albums away (a delete, a share). */
@@ -64,6 +66,7 @@ class RailSession {
     delete rest[scope ?? ''];
     this.albums = rest;
     this.#fullAlbums.delete(scope ?? '');
+    this.#railJson.delete(scope ?? '');
   }
 
   /**
@@ -78,8 +81,6 @@ class RailSession {
     this.#albumVersion.set(key, version);
     const current = authManager.captureSession();
     const isLatest = () => generation === this.#generation && version === this.#albumVersion.get(key) && current();
-    // the full albums read before this one may be out of date by the time it answers
-    this.#fullAlbums.delete(key);
     let response: Awaited<ReturnType<typeof getAlbumRail>>;
     try {
       response = await getAlbumRail(scope ? { libraryScope: scope } : {});
@@ -90,6 +91,13 @@ class RailSession {
       return;
     }
     if (isLatest()) {
+      const json = JSON.stringify(response.albums);
+      // An unchanged answer keeps the tree (nothing redraws) and the full albums already read for it.
+      if (this.#railJson.get(key) === json && this.albums[key]) {
+        return;
+      }
+      this.#railJson.set(key, json);
+      this.#fullAlbums.delete(key);
       this.albums = { ...this.albums, [key]: { tree: buildRailAlbumTree(response.albums), records: response.albums } };
     }
   }
@@ -105,15 +113,18 @@ class RailSession {
       return kept;
     }
     const generation = this.#generation;
-    const read = getAlbumHierarchy(scope ? { libraryScope: scope } : {}).then((response) => flatten(response.roots));
+    // Every caller, not only the first, gets the check: an answer for the account or access state
+    // before a change is never handed out.
+    const read = getAlbumHierarchy(scope ? { libraryScope: scope } : {}).then((response) =>
+      generation === this.#generation ? flatten(response.roots) : [],
+    );
     this.#fullAlbums.set(key, read);
     read.catch(() => {
       if (this.#fullAlbums.get(key) === read) {
         this.#fullAlbums.delete(key);
       }
     });
-    // an answer for the account or access state before a change is never handed out
-    return read.then((albums) => (generation === this.#generation ? albums : []));
+    return read;
   }
 
   /** Read the partners again. A failed read shows none: the rail works without the entry. */
