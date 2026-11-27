@@ -38,6 +38,7 @@ import { recentFileCheck, recentWorkScope } from 'src/queue/recent-work.js';
 import { causeRank, queueProblemCause } from 'src/queue/run-failure-cause.js';
 import { type RunFailurePrivacy, reviewRunFailures } from 'src/queue/run-failures.js';
 import { failureRoots, needsLook, ownerJobs, reportedQueueJobs } from 'src/queue/run-query.js';
+import { jobSettled } from 'src/queue/settled.js';
 import { SqlQueueStore } from 'src/queue/store.js';
 import { assertPublicationSource, publicationTransaction } from 'src/queue/transaction.js';
 import {
@@ -515,6 +516,8 @@ export class JobRepository {
       }
       // FL-721 M2: the Locked wait this execution recorded ends with it
       forgetLockedClaim(claim.id);
+      // FL-1794: administrators' pages learn the queue moved, also when the job failed or was deferred
+      jobSettled(claim.queue);
       releaseExecution?.();
       releaseObservers?.();
     }

@@ -140,6 +140,23 @@ describe('DetailPanelImageEnrichment', () => {
       expect(row.querySelector('.fl-enrich-icon.ai')).not.toBeNull();
     });
 
+    // FL-1811: the check folds away, so only its own failures are told inside that fold.
+    it.each([
+      ['a description action', 'frameleaf_info_rewrite_description', false],
+      ['the sensitive-content check', 'frameleaf_info_mark_sensitive', true],
+    ])('tells a failed %s where it stays in view', async (_, button, inFold) => {
+      const asset = assetFactory.build({ type: AssetTypeEnum.Image, exifInfo: { description: 'A lake at dusk' } });
+      vi.mocked(getAssetImageEnrichment).mockResolvedValue(withDescription(0.87));
+      vi.mocked(updateAssetImageEnrichment).mockRejectedValue(new Error('boom'));
+
+      renderWithTooltips(DetailPanelImageEnrichment, { asset, isOwner: true });
+      await fireEvent.click(await screen.findByRole('button', { name: button }));
+
+      const notices = await screen.findAllByTestId('frameleaf-inline-edit-error');
+      expect(notices).toHaveLength(1);
+      expect(notices[0].closest('details[data-fold="sensitive"]') !== null).toBe(inFold);
+    });
+
     it('leaves the confidence out when the server reported none', async () => {
       const asset = assetFactory.build({
         type: AssetTypeEnum.Image,

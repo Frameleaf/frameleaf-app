@@ -1,3 +1,37 @@
+<script lang="ts" module>
+  import type { SettingsAreaId as AreaId } from '$lib/frameleaf/settings-areas';
+  import type { Component } from 'svelte';
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- each page declares its own props
+  type Page = () => Promise<{ default: Component<any> }>;
+
+  // FL-1799: an area's page is fetched when the area is first opened, not with the Command Center.
+  const loadAnalytics: Page = () => import('$lib/components/frameleaf/analytics/AnalyticsArea.svelte');
+  const loadUtilities: Page = () => import('$lib/components/frameleaf/settings/UtilitiesArea.svelte');
+  const loadHouseholds: Page = () => import('$lib/components/frameleaf/households/LinkedHouseholds.svelte');
+  const loadOverview: Page = () => import('$lib/components/frameleaf/settings/overview/Overview.svelte');
+  const loadBackupArea: Page = () => import('$lib/components/frameleaf/backup/BackupArea.svelte');
+  const loadCloudTour: Page = () => import('$lib/components/frameleaf/cloud/CloudTourHost.svelte');
+  /** Landing pages that list the area's sections. */
+  const SECTION_LANDINGS: Partial<Record<AreaId, Page>> = {
+    notifications: () => import('$lib/components/frameleaf/settings/notifications/NotificationsLanding.svelte'),
+    server: () => import('$lib/components/frameleaf/settings/server-settings/ServerLanding.svelte'),
+    preferences: () => import('$lib/components/frameleaf/settings/preferences/PreferencesLanding.svelte'),
+    intelligence: () => import('$lib/components/frameleaf/settings/intelligence/SearchLanding.svelte'),
+    editing: () => import('$lib/components/frameleaf/settings/editing/EditingLanding.svelte'),
+    privacy: () => import('$lib/components/frameleaf/settings/security/YourSignInLanding.svelte'),
+  };
+  /** Landing pages that take nothing. */
+  const PLAIN_LANDINGS: Partial<Record<AreaId, Page>> = {
+    care: () => import('$lib/components/frameleaf/settings/care/LibraryCareLanding.svelte'),
+    storage: () => import('$lib/components/frameleaf/settings/storage/StorageLanding.svelte'),
+    backup: () => import('$lib/components/frameleaf/settings/imports/ImportLanding.svelte'),
+    maintenance: () => import('$lib/components/frameleaf/settings/care/MaintenanceLanding.svelte'),
+    security: () => import('$lib/components/frameleaf/settings/security/WhoCanSignInLanding.svelte'),
+    cloud: () => import('$lib/components/frameleaf/settings/cloud/CloudLanding.svelte'),
+  };
+</script>
+
 <script lang="ts">
   /**
    * The Frameleaf Command Center (FL-71), ported from the design template's `CommandCenter.jsx`
@@ -21,32 +55,15 @@
   import { goto } from '$app/navigation';
   import { gotoWithFocusAndScroll } from '$lib/utils/navigation';
   import { page } from '$app/state';
-  import AnalyticsArea from '$lib/components/frameleaf/analytics/AnalyticsArea.svelte';
-  import BackupArea from '$lib/components/frameleaf/backup/BackupArea.svelte';
   import BackLink from '$lib/components/frameleaf/settings/kit/BackLink.svelte';
-  import LinkedHouseholds from '$lib/components/frameleaf/households/LinkedHouseholds.svelte';
-  import CloudTourHost from '$lib/components/frameleaf/cloud/CloudTourHost.svelte';
   import EmptyState from '$lib/components/frameleaf/EmptyState.svelte';
-  import LibraryCareLanding from '$lib/components/frameleaf/settings/care/LibraryCareLanding.svelte';
-  import ImportLanding from '$lib/components/frameleaf/settings/imports/ImportLanding.svelte';
-  import StorageLanding from '$lib/components/frameleaf/settings/storage/StorageLanding.svelte';
-  import MaintenanceLanding from '$lib/components/frameleaf/settings/care/MaintenanceLanding.svelte';
-  import EditingLanding from '$lib/components/frameleaf/settings/editing/EditingLanding.svelte';
-  import SearchLanding from '$lib/components/frameleaf/settings/intelligence/SearchLanding.svelte';
-  import NotificationsLanding from '$lib/components/frameleaf/settings/notifications/NotificationsLanding.svelte';
-  import PreferencesLanding from '$lib/components/frameleaf/settings/preferences/PreferencesLanding.svelte';
-  import ServerLanding from '$lib/components/frameleaf/settings/server-settings/ServerLanding.svelte';
-  import CloudLanding from '$lib/components/frameleaf/settings/cloud/CloudLanding.svelte';
-  import WhoCanSignInLanding from '$lib/components/frameleaf/settings/security/WhoCanSignInLanding.svelte';
-  import YourSignInLanding from '$lib/components/frameleaf/settings/security/YourSignInLanding.svelte';
-  import Overview from '$lib/components/frameleaf/settings/overview/Overview.svelte';
   import { ownPreferencesPending } from '$lib/components/frameleaf/settings/own-preferences-pending.svelte';
+  import Lazy from '$lib/components/frameleaf/settings/Lazy.svelte';
   import SettingsChangeHistory from '$lib/components/frameleaf/settings/SettingsChangeHistory.svelte';
   import SettingsDirectory, { type DirectoryRow } from '$lib/components/frameleaf/settings/SettingsDirectory.svelte';
   import SettingsDraftNotices from '$lib/components/frameleaf/settings/SettingsDraftNotices.svelte';
   import SettingsOverline from '$lib/components/frameleaf/settings/SettingsOverline.svelte';
   import SettingsSaveBar from '$lib/components/frameleaf/settings/SettingsSaveBar.svelte';
-  import UtilitiesArea from '$lib/components/frameleaf/settings/UtilitiesArea.svelte';
   import {
     backupPageFor,
     commandCenterUrl,
@@ -59,6 +76,8 @@
     directoryGroup,
     isAreaAvailable,
     isPlainArea,
+    defaultSettingsArea,
+    isPlaceArea,
     isScreenArea,
     PAGE_DESCRIPTIONS,
     resolveSettingsArea,
@@ -314,7 +333,7 @@
   // An area this account may not open falls back to the first one it may. This is the area the
   // address names; `area` below is the one the page is shown in.
   const addressArea = $derived(
-    visibleAreas.some((item) => item.id === requestedArea) ? requestedArea : (visibleAreas[0]?.id ?? 'utilities'),
+    visibleAreas.some((item) => item.id === requestedArea) ? requestedArea : defaultSettingsArea(isAdmin),
   );
   const selectedKey = $derived(
     resolveSettingsSection(addressArea, { section: page.url.searchParams.get('section'), isOpen: legacyOpen }),
@@ -335,6 +354,12 @@
    * of Backup (design review finding 66) and a repair tool opened from Library care stays there.
    */
   const area = $derived(careTool ? 'care' : presentedArea(addressArea, selected?.key));
+  /** FL-1806: Import, Library care and Trash are places beside the library rail, not Settings. */
+  const place = $derived(isPlaceArea(area));
+  /** The Settings list holds preferences only. */
+  const navAreas = $derived(visibleAreas.filter((item) => !isPlaceArea(item.id)));
+  const sectionLanding = $derived(SECTION_LANDINGS[area]);
+  const plainLanding = $derived(PLAIN_LANDINGS[area]);
   const backupPage = $derived(
     area === 'backups'
       ? backupPageFor(addressArea, selected?.key, {
@@ -714,11 +739,26 @@
   /** Moves focus to the page's heading, so a keyboard or screen reader hears that the page changed. */
   const focusHeading = async () => {
     await tick();
-    const heading = main?.querySelector('h1');
-    if (heading instanceof HTMLElement) {
+    const focus = () => {
+      const heading = main?.querySelector('h1');
+      if (!(heading instanceof HTMLElement)) {
+        return false;
+      }
       heading.tabIndex = -1;
       heading.focus({ preventScroll: true });
+      return true;
+    };
+    if (focus() || !main) {
+      return;
     }
+    // FL-1799: a page fetched on demand draws its own heading a moment later; focus it when it appears.
+    const observer = new MutationObserver(() => focus() && stop());
+    const timer = setTimeout(() => stop(), 5000);
+    const stop = () => {
+      observer.disconnect();
+      clearTimeout(timer);
+    };
+    observer.observe(main, { childList: true, subtree: true });
   };
 
   /** Opens an area, or one of its sections, keeping the "Viewing" scope. */
@@ -792,75 +832,77 @@
 </script>
 
 <div class="command-center" class:cc-collapsed={$sidebarCollapsed} class:cc-nav-open={sidebarStore.isOpen}>
-  <aside class="cc-nav">
-    <div class="cc-nav-title">
-      <span>{$t('settings')}</span>
-      <button
-        type="button"
-        aria-label={$sidebarCollapsed ? $t('frameleaf_cc_expand') : $t('frameleaf_cc_collapse')}
-        title={$sidebarCollapsed ? $t('frameleaf_cc_expand') : $t('frameleaf_cc_collapse')}
-        onclick={() => ($sidebarCollapsed = !$sidebarCollapsed)}
-      >
-        <Icon icon={$sidebarCollapsed ? mdiChevronDoubleRight : mdiChevronDoubleLeft} size="1.125rem" aria-hidden />
-      </button>
-    </div>
-    <a class="cc-back" href={Route.photos()} title={$t('frameleaf_cc_back')}>
-      <Icon icon={mdiArrowLeft} size="1.125rem" aria-hidden />
-      <span>{$t('frameleaf_cc_back')}</span>
-    </a>
-    <nav id="settings-navigation" aria-label={$t('frameleaf_settings_nav_label')}>
-      {#each SETTINGS_GROUP_ORDER.filter((group) => visibleAreas.some((item) => item.group === group)) as group (group)}
-        <div class="cc-nav-group">
-          <p>{groupCopy[group]}</p>
-          {#each visibleAreas.filter((item) => item.group === group) as item (item.id)}
-            <button
-              type="button"
-              class="area"
-              class:selected={item.id === area}
-              aria-label={areaCopy[item.id].title}
-              title={areaCopy[item.id].title}
-              aria-current={item.id === area ? 'page' : undefined}
-              onclick={() => navigate(item.id)}
-            >
-              <!-- UI review 2026-10-30 P3: a plain icon, as in the main rail (green when selected or hovered). -->
-              <span class="tile">
-                <Icon icon={areaCopy[item.id].icon} size="16" aria-hidden />
-              </span>
-              <span>{areaCopy[item.id].title}</span>
-              {#if pendingAreas.has(item.id)}
-                <span class="pending" title={$t('unsaved_change')}></span>
-              {/if}
-            </button>
-            {#if item.id === area && !$sidebarCollapsed && children.length > 0}
-              <div
-                class="cc-nav-children"
-                role="group"
-                aria-label={$t('frameleaf_settings_nav_pages', { values: { area: areaCopy[item.id].title } })}
-                transition:motionSlide={{ duration: DURATION.base }}
+  {#if !place}
+    <aside class="cc-nav">
+      <div class="cc-nav-title">
+        <span>{$t('settings')}</span>
+        <button
+          type="button"
+          aria-label={$sidebarCollapsed ? $t('frameleaf_cc_expand') : $t('frameleaf_cc_collapse')}
+          title={$sidebarCollapsed ? $t('frameleaf_cc_expand') : $t('frameleaf_cc_collapse')}
+          onclick={() => ($sidebarCollapsed = !$sidebarCollapsed)}
+        >
+          <Icon icon={$sidebarCollapsed ? mdiChevronDoubleRight : mdiChevronDoubleLeft} size="1.125rem" aria-hidden />
+        </button>
+      </div>
+      <a class="cc-back" href={Route.photos()} title={$t('frameleaf_cc_back')}>
+        <Icon icon={mdiArrowLeft} size="1.125rem" aria-hidden />
+        <span>{$t('frameleaf_cc_back')}</span>
+      </a>
+      <nav id="settings-navigation" aria-label={$t('frameleaf_settings_nav_label')}>
+        {#each SETTINGS_GROUP_ORDER.filter((group) => navAreas.some((item) => item.group === group)) as group (group)}
+          <div class="cc-nav-group">
+            <p>{groupCopy[group]}</p>
+            {#each navAreas.filter((item) => item.group === group) as item (item.id)}
+              <button
+                type="button"
+                class="area"
+                class:selected={item.id === area}
+                aria-label={areaCopy[item.id].title}
+                title={areaCopy[item.id].title}
+                aria-current={item.id === area ? 'page' : undefined}
+                onclick={() => navigate(item.id)}
               >
-                {#each children as child (child.key)}
-                  <button
-                    type="button"
-                    aria-current={activeChild === child.key ? 'page' : undefined}
-                    class:has-pending={isChildPending(child)}
-                    onclick={() => navigate(child.area, child.section)}>{child.title}</button
-                  >
-                {/each}
-              </div>
-            {/if}
-          {/each}
-        </div>
-      {/each}
-    </nav>
-    <div class="cc-nav-foot">
-      <Icon icon={isAdmin ? mdiShieldCheckOutline : mdiAccountOutline} size="1.125rem" aria-hidden />
-      <span>
-        {isAdmin ? $t('frameleaf_cc_administrator') : authManager.user.name}
-        <small>{isAdmin ? serverName : $t('frameleaf_cc_own')}</small>
-      </span>
-    </div>
-  </aside>
-  {#if sidebarStore.isOpen}
+                <!-- UI review 2026-10-30 P3: a plain icon, as in the main rail (green when selected or hovered). -->
+                <span class="tile">
+                  <Icon icon={areaCopy[item.id].icon} size="16" aria-hidden />
+                </span>
+                <span>{areaCopy[item.id].title}</span>
+                {#if pendingAreas.has(item.id)}
+                  <span class="pending" title={$t('unsaved_change')}></span>
+                {/if}
+              </button>
+              {#if item.id === area && !$sidebarCollapsed && children.length > 0}
+                <div
+                  class="cc-nav-children"
+                  role="group"
+                  aria-label={$t('frameleaf_settings_nav_pages', { values: { area: areaCopy[item.id].title } })}
+                  transition:motionSlide={{ duration: DURATION.base }}
+                >
+                  {#each children as child (child.key)}
+                    <button
+                      type="button"
+                      aria-current={activeChild === child.key ? 'page' : undefined}
+                      class:has-pending={isChildPending(child)}
+                      onclick={() => navigate(child.area, child.section)}>{child.title}</button
+                    >
+                  {/each}
+                </div>
+              {/if}
+            {/each}
+          </div>
+        {/each}
+      </nav>
+      <div class="cc-nav-foot">
+        <Icon icon={isAdmin ? mdiShieldCheckOutline : mdiAccountOutline} size="1.125rem" aria-hidden />
+        <span>
+          {isAdmin ? $t('frameleaf_cc_administrator') : authManager.user.name}
+          <small>{isAdmin ? serverName : $t('frameleaf_cc_own')}</small>
+        </span>
+      </div>
+    </aside>
+  {/if}
+  {#if sidebarStore.isOpen && !place}
     <button
       type="button"
       class="cc-nav-scrim"
@@ -876,7 +918,7 @@
         <Icon icon={mdiServerOutline} size="1rem" aria-hidden />
         {serverName}
         <span class="cc-context-divider">/</span>
-        {$t('settings')}
+        {place ? areaCopy[area].title : $t('settings')}
       </span>
       {#if scoped}
         <label class="cc-account-scope">
@@ -977,9 +1019,9 @@
           <div class="cc-page" in:reveal>
             {#if area === 'analytics'}
               <!-- As in the template, Library analytics carries its own heading instead of the area's. -->
-              <AnalyticsArea />
+              <Lazy load={loadAnalytics} />
             {:else if addressArea === 'utilities'}
-              <UtilitiesArea />
+              <Lazy load={loadUtilities} />
             {:else if area === 'libraries' && !selected}
               <!-- The Libraries manager carries its own heading; Folder checks is a page of its own
                    (`section=checking`), opened from "Keeping folders up to date" (prototype folders.jsx). -->
@@ -1031,11 +1073,11 @@
                 <div class="cc-back-to-area">
                   <BackLink href={commandCenterUrl('sharing')} label={areaCopy.sharing.title} />
                 </div>
-                <LinkedHouseholds />
+                <Lazy load={loadHouseholds} />
               {:else if area === 'overview'}
-                <Overview />
+                <Lazy load={loadOverview} />
               {:else if area === 'backups' && backupPage}
-                <BackupArea page={backupPage} />
+                <Lazy load={loadBackupArea} props={{ page: backupPage }} />
               {:else if area === 'history'}
                 <SettingsChangeHistory
                   entries={settingsDraft ? history : undefined}
@@ -1062,37 +1104,19 @@
                     class:cc-manager={MANAGER_SECTIONS.includes(selected.key) || isPlainArea(area)}
                     id="setting-{selected.key}"
                   >
-                    {#if selected.component}
+                    {#if selected.load}
+                      <Lazy load={selected.load} />
+                    {:else if selected.component}
                       <selected.component />
                     {:else}
                       {@render sectionBody?.(selected)}
                     {/if}
                   </section>
                 </div>
-              {:else if area === 'notifications'}
-                <NotificationsLanding sections={areaSections} />
-              {:else if area === 'server'}
-                <ServerLanding sections={areaSections} />
-              {:else if area === 'preferences'}
-                <PreferencesLanding sections={areaSections} />
-              {:else if area === 'care'}
-                <LibraryCareLanding />
-              {:else if area === 'storage'}
-                <StorageLanding />
-              {:else if area === 'backup'}
-                <ImportLanding />
-              {:else if area === 'intelligence'}
-                <SearchLanding sections={areaSections} />
-              {:else if area === 'editing'}
-                <EditingLanding sections={areaSections} />
-              {:else if area === 'maintenance'}
-                <MaintenanceLanding />
-              {:else if area === 'security'}
-                <WhoCanSignInLanding />
-              {:else if area === 'cloud'}
-                <CloudLanding />
-              {:else if area === 'privacy'}
-                <YourSignInLanding sections={areaSections} />
+              {:else if sectionLanding}
+                <Lazy load={sectionLanding} props={{ sections: areaSections }} />
+              {:else if plainLanding}
+                <Lazy load={plainLanding} />
               {:else}
                 <div class="cc-settings-content">
                   <SettingsDirectory rows={directoryRows} areaTitle={areaCopy[area].title} />
@@ -1111,7 +1135,10 @@
 </div>
 
 {#if isAdmin}
-  <CloudTourHost {navigate} onNotice={(text) => (tourNotice = text)} />
+  <!-- No placeholder: the tour draws nothing until it has something to show. -->
+  {#await loadCloudTour() then { default: CloudTourHost }}
+    <CloudTourHost {navigate} onNotice={(text: string) => (tourNotice = text)} />
+  {/await}
 {/if}
 
 <style>

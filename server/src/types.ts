@@ -1794,6 +1794,7 @@ export interface SystemMetadata extends Record<SystemMetadataKey, Record<string,
   [SystemMetadataKey.LibraryProgressSamples]: { samples: { at: string; done: Record<string, number> }[] };
   [SystemMetadataKey.OvernightRedo]: { queues: string[]; bestPhotos?: boolean };
   [SystemMetadataKey.VideoCardState]: VideoCardState;
+  [SystemMetadataKey.VideoCardAuto]: { at: string };
   [SystemMetadataKey.IntegrityCheckHistory]: { entries: IntegrityCheckHistoryEntry[] };
   [SystemMetadataKey.IntegrityCheckStop]: { requestedAt: string };
   [SystemMetadataKey.MlUnavailableBehaviour]: { whenUnavailable: 'wait' | 'stop'; notified?: Record<string, string> };

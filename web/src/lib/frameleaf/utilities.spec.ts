@@ -35,7 +35,7 @@ describe('Command Center utilities', () => {
   });
   it('places utility links in the existing user settings namespace and opens Care as its settings area', () => {
     expect(Route.utilities()).toBe('/user-settings?area=utilities');
-    // September 24: Library Care is the Library care settings area, the hub for fixes.
+    // September 24: Library care is the Library care settings area, the hub for fixes.
     expect(Route.libraryCare()).toBe('/user-settings?area=care');
     expect(Route.duplicatesUtility({ index: 2 })).toBe('/user-settings?area=utilities&section=duplicates&index=2');
     expect(utilitiesUrl('icloud')).toBe('/user-settings?area=utilities&section=icloud');

@@ -36,7 +36,6 @@
     buildRailSections,
     currentPrimaryDestination,
     FOLDABLE_RAIL_SECTIONS,
-    isClientsEnabled,
     isDestinationCurrent,
     readClosedRailSections,
     toggleRailSection,
@@ -469,8 +468,6 @@
       tags: !!preferences?.tags.enabled && preferences.tags.sidebarWeb,
       folders: !!preferences?.folders.enabled && preferences.folders.sidebarWeb,
       sharedLinks: !!preferences?.sharedLinks.enabled && preferences.sharedLinks.sidebarWeb,
-      // Clients sits in the top bar once the account starts using it, and leaves Tools.
-      clients: isClientsEnabled(preferences),
     }),
   );
 
@@ -488,7 +485,7 @@
 
   const pathname = $derived(page.url.pathname);
   /** UI review 2026-10-30 #8: Boards, Clients, Studio and Activity head the phone menu, then Help. */
-  const phoneSections = $derived(buildPhoneMenuDestinations({ clients: isClientsEnabled(preferences) }));
+  const phoneSections = $derived(buildPhoneMenuDestinations());
   const openHelp = () => {
     sidebarStore.reset();
     // The closed menu goes inert; Help hands focus back to whatever had it when it opened, so give

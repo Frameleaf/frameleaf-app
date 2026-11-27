@@ -308,12 +308,18 @@ describe('TopBar chrome (September 24)', () => {
       .getAllByRole('link')
       .map((link) => link.textContent?.trim());
 
-  it('keeps Clients out of the sections until the account uses it', async () => {
+  it('shows Clients among the sections before the account starts it (FL-1806)', async () => {
     sdkMock.getAuthStatus.mockResolvedValue(authStatus(false) as never);
     authManager.setPreferences(preferencesFactory.build({ clients: { enabled: false } }));
     const view = render(TopBarTestHarness);
 
-    expect(sectionNames()).toEqual([en.library, en.frameleaf_pro_title, en.frameleaf_studio_title, en.activity]);
+    expect(sectionNames()).toEqual([
+      en.library,
+      en.frameleaf_pro_title,
+      en.frameleaf_photography,
+      en.frameleaf_studio_title,
+      en.activity,
+    ]);
     await waitFor(() => expect(sdkMock.getAuthStatus).toHaveBeenCalled());
     view.unmount();
   });

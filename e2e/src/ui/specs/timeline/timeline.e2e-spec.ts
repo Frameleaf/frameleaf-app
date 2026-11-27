@@ -619,7 +619,7 @@ test.describe('Timeline', () => {
       await expect(tabBar).toBeVisible();
       const [drawer, bar] = await Promise.all([page.getByTestId('sidebar-parent').boundingBox(), tabBar.boundingBox()]);
       expect(drawer!.y + drawer!.height).toBeLessThanOrEqual(bar!.y);
-      const care = railLink(page, 'Library Care');
+      const care = railLink(page, 'Library care');
       await care.scrollIntoViewIfNeeded();
       await care.click();
       await expect(page).toHaveURL(/area=care/);
