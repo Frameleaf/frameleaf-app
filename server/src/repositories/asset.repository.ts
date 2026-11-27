@@ -3319,7 +3319,7 @@ export class AssetRepository {
         if (this.calendarPageCache.size <= CALENDAR_PAGE_CACHE_SIZE) break;
         this.calendarPageCache.delete(old);
       }
-      if (storedKey && (stale.length > 0 || cached?.keys().some((timeBucket) => !next.has(timeBucket)))) {
+      if (storedKey && auth && (stale.length > 0 || cached?.keys().some((timeBucket) => !next.has(timeBucket)))) {
         const ranked = new Map(stale.map(({ timeBucket }) => [timeBucket, next.get(timeBucket)!]));
         // A summary that could not be stored is only ranked again after the next start; the request never fails.
         await this.storeTimelineSummary(storedKey, auth.user.id, ranked, next.keys().toArray()).catch(() => {});
