@@ -18,6 +18,8 @@
    * Inside the font viewer (`font`, FL-1359) it is that viewer's Details: the font's own facts first,
    * and no preview, colours or "Show in Photos too" (a font stays in Boards).
    */
+  import InlineError from '$lib/components/frameleaf/InlineError.svelte';
+  import Skeleton from '$lib/components/frameleaf/Skeleton.svelte';
   import BrokenAsset from '$lib/components/assets/BrokenAsset.svelte';
   import AssetPalette from '$lib/components/frameleaf/AssetPalette.svelte';
   import AssetSources from '$lib/components/frameleaf/AssetSources.svelte';
@@ -152,7 +154,8 @@
       .catch((error) => {
         if (current && generation === version && asset?.id === id) {
           detailFailed = true;
-          handleError(error, $t('errors.failed_to_load_asset'));
+          // FL-1810: the inspector says so in place with Try again; still logged, without the toast
+          handleError(error, $t('errors.failed_to_load_asset'), { notify: false });
         }
       });
     return () => {
@@ -514,9 +517,11 @@
     {#if boardsMode}
       <div class="boards">
         {#if !detail}
-          <p class="muted" role="status">
-            {detailFailed ? $t('frameleaf_item_details_unavailable') : $t('loading')}
-          </p>
+          {#if detailFailed}
+            <InlineError compact message={$t('frameleaf_item_details_unavailable')} onRetry={() => generation++} />
+          {:else}
+            <div role="status" aria-busy="true" aria-label={$t('loading')}><Skeleton variant="text" lines={4} /></div>
+          {/if}
         {:else}
           {@render boardsDetails(detail)}
         {/if}
@@ -550,7 +555,11 @@
 
       <div id={`${tabId}-panel`} role="tabpanel" aria-labelledby={`${tabId}-${tab}`} tabindex="0">
         {#if !detail}
-          <p class="muted" role="status">{detailFailed ? $t('frameleaf_item_details_unavailable') : $t('loading')}</p>
+          {#if detailFailed}
+            <InlineError compact message={$t('frameleaf_item_details_unavailable')} onRetry={() => generation++} />
+          {:else}
+            <div role="status" aria-busy="true" aria-label={$t('loading')}><Skeleton variant="text" lines={4} /></div>
+          {/if}
         {:else if tab === 'info'}
           <section class="part">
             <AssetPalette assetId={asset.id} canRetry={isOwner} onChoose={onChooseColor} />

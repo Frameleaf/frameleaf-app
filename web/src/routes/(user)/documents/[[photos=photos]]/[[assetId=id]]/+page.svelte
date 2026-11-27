@@ -1,11 +1,11 @@
 <script lang="ts">
+  import GridSkeleton from '$lib/components/frameleaf/GridSkeleton.svelte';
   import { goto } from '$app/navigation';
   import ResultsAssetViewer from '$lib/components/frameleaf/ResultsAssetViewer.svelte';
   import ResultsView from '$lib/components/frameleaf/ResultsView.svelte';
   import UserPageLayout from '$lib/components/layouts/UserPageLayout.svelte';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import EmptyState from '$lib/components/frameleaf/EmptyState.svelte';
-  import Spinner from '$lib/components/frameleaf/Spinner.svelte';
   import { brandedArchiveName } from '$lib/frameleaf/archive-name';
   import {
     DOCUMENT_PAGE_SIZE,
@@ -265,7 +265,7 @@
 
     {#if isLoading}
       <div class="doc-loading">
-        <Spinner size="xl" />
+        <GridSkeleton tiles={12} columns={6} aspect="3 / 4" />
       </div>
     {/if}
   </section>
@@ -391,9 +391,7 @@
     place-content: center;
   }
   .doc-loading {
-    display: flex;
-    justify-content: center;
-    padding: var(--fl-space-12) 0;
+    padding: var(--fl-space-4) 0;
   }
   @media (max-width: 767px) {
     .documents {
