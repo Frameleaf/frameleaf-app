@@ -67,13 +67,27 @@ describe(AlbumService.name, () => {
         albumIds: ['album-2', 'album-1'],
         usedAlbumIds: ['album-3'],
       });
+      // authStub.admin has not entered the PIN, so Locked albums stay out of "Used lately"
       expect(mocks.album.getRecentlyUsedIds).toHaveBeenCalledWith(authStub.admin.user.id, {
         libraryScope: LibraryScope.Personal,
+        excludeLocked: true,
       });
       expect(mocks.album.getRecentlyAddedIds).toHaveBeenCalledWith(
         authStub.admin.user.id,
         expect.objectContaining({ libraryScope: LibraryScope.Personal }),
       );
+    });
+
+    it('offers Locked albums in "Used lately" only once the PIN is entered (FL-1814)', async () => {
+      mocks.album.getRecentlyAddedIds.mockResolvedValue([]);
+      mocks.album.getRecentlyUsedIds.mockResolvedValue([]);
+      const unlocked = { ...authStub.admin, session: { id: 'session', hasElevatedPermission: true } } as AuthDto;
+
+      await sut.getRecentlyAdded(unlocked);
+
+      expect(mocks.album.getRecentlyUsedIds).toHaveBeenCalledWith(authStub.admin.user.id, {
+        libraryScope: LibraryScope.Personal,
+      });
     });
 
     it('never tells a connected app about a Locked album', async () => {
@@ -2858,6 +2872,42 @@ describe(AlbumService.name, () => {
       await sut.addAssets(AuthFactory.create(owner), album.id, { ids: [asset.id] });
 
       expect(mocks.album.recordUse).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['a shared link sync', 'link-1', {}],
+      ['auto-add', undefined, { automatic: true }],
+    ] as const)('does not count %s as using the album (FL-1814)', async (_, sourceLinkId, options) => {
+      const owner = UserFactory.create();
+      const album = AlbumFactory.from().owner(owner).build();
+      const asset = AssetFactory.create({ ownerId: owner.id });
+      mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set([album.id]));
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.album.getById.mockResolvedValue(getForAlbum(album));
+      mocks.album.getAssetIds.mockResolvedValueOnce(new Set());
+      mocks.albumSource.getRecordedAssetIds.mockResolvedValue(new Set());
+      mocks.albumSource.get.mockResolvedValue({ albumId: album.id, albumName: 'Shared with me' } as never);
+      mocks.album.addAssetIdsReturning.mockResolvedValue([{ albumId: album.id, assetId: asset.id }] as never);
+
+      await sut.addAssets(AuthFactory.create(owner), album.id, { ids: [asset.id] }, sourceLinkId, options);
+
+      expect(mocks.album.recordUse).not.toHaveBeenCalled();
+    });
+
+    it('still finishes the add when recording "Used lately" fails (FL-1814)', async () => {
+      const owner = UserFactory.create();
+      const album = AlbumFactory.from().owner(owner).build();
+      const asset = AssetFactory.create({ ownerId: owner.id });
+      mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set([album.id]));
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.album.getById.mockResolvedValue(getForAlbum(album));
+      mocks.album.getAssetIds.mockResolvedValueOnce(new Set());
+      mocks.album.recordUse.mockRejectedValue(new Error('deadlock'));
+
+      await expect(sut.addAssets(AuthFactory.create(owner), album.id, { ids: [asset.id] })).resolves.toEqual([
+        { id: asset.id, success: true },
+      ]);
+      expect(mocks.album.updateNewestCovers).toHaveBeenCalledWith([album.id]);
     });
 
     it.each(['add', 'bulk-add'] as const)('never makes an item it just locked the cover (%s)', async (action) => {

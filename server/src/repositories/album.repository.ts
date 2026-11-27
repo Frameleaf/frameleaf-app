@@ -376,6 +376,8 @@ export class AlbumRepository {
         ),
       )
       .orderBy('album_recent_use.usedAt', 'desc')
+      // one bulk add uses several albums at the same instant
+      .orderBy('album_recent_use.albumId')
       .limit(limit)
       .execute();
     return rows.map(({ albumId }) => albumId);
