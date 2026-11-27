@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { type Kysely, type Selectable, sql } from 'kysely';
+import { type Kysely, type SelectQueryBuilder, type Selectable, type Transaction, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { createHash, randomUUID } from 'node:crypto';
 import z from 'zod';
@@ -218,7 +218,12 @@ export class DesktopWorkerChallengeRepository {
    * A challenge belongs to the worker session and its authorization epoch, not to one bearer token: renewing
    * the session rotates the token and must not strand a challenge the desktop is still answering.
    */
-  private scoped(db: Kysely<ChallengeDatabase>, grant: DesktopWorkerGrant, id: string) {
+  // An explicit type: inferring this builder over the whole database hits TypeScript's union limit (TS2590).
+  private scoped(
+    db: Transaction<ChallengeDatabase>,
+    grant: DesktopWorkerGrant,
+    id: string,
+  ): SelectQueryBuilder<ChallengeDatabase, 'desktop_worker_challenge', Challenge> {
     return db
       .selectFrom('desktop_worker_challenge')
       .selectAll()

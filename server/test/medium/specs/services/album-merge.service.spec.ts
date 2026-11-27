@@ -749,6 +749,39 @@ describe(AlbumMergeService.name, () => {
     });
   });
 
+  describe('a running Eagle import and undo (FL-1840)', () => {
+    it('refuses to undo a merge while the import is adding to the merged album', async () => {
+      const { sut, ctx, runs } = setup();
+      const { user } = await ctx.newUser();
+      const auth = factory.auth({ user: { id: user.id } });
+      const winner = await albumWith(ctx, user.id, 2);
+      const loser = await albumWith(ctx, user.id, 1);
+      const { id: eagleId } = await ctx.database
+        .insertInto('eagle_import')
+        .values({
+          ownerId: user.id,
+          rootId: '0',
+          relativePath: 'Paused.library',
+          libraryPath: '/import/Paused.library',
+          libraryName: 'Paused',
+          fingerprint: 'f',
+          target: sql<never>`'{"mode":"top"}'::text::jsonb`,
+          albums: sql<never>`${JSON.stringify({ F1: loser.album.id })}::text::jsonb`,
+          status: 'stopped',
+        })
+        .returning('id')
+        .executeTakeFirstOrThrow();
+      await sut.merge(auth, winner.album.id, { otherId: loser.album.id });
+      await ctx.database
+        .updateTable('eagle_import')
+        .set({ status: 'running', leaseOwner: 'worker', leaseExpiresAt: sql<never>`now() + interval '1 minute'` })
+        .where('id', '=', eagleId)
+        .execute();
+
+      await expect(runs.undoLatest(auth)).rejects.toBeInstanceOf(ConflictException);
+    });
+  });
+
   describe('undo', () => {
     it('restores the album and takes back what the merge added', async () => {
       const { sut, ctx, runs } = setup();

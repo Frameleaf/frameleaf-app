@@ -285,18 +285,7 @@ export class AlbumMergeRepository {
 
   /** FL-1840: an Eagle import's folders (and the collection it went inside) that became the loser now go to the winner. */
   async moveEagleAlbums(loserId: string, winnerId: string): Promise<AlbumChangeInput[]> {
-    // A running import keeps its folders' albums in memory and would write the old one back: refuse, don't wait.
-    const { rows: busy } = await sql<{ busy: boolean }>`
-      SELECT EXISTS (
-        SELECT 1 FROM eagle_import
-        WHERE status IN ('running', 'stopping') AND "leaseExpiresAt" > now()
-          AND ("rootAlbumId" = ${loserId}::uuid OR target->>'inside' = ${loserId}::text
-            OR EXISTS (SELECT 1 FROM jsonb_each_text(albums) entry WHERE entry.value = ${loserId}::text))
-      ) AS busy
-    `.execute(this.db);
-    if (busy[0]?.busy) {
-      throw new ConflictException('An Eagle import is adding to this album. Try again when it has finished.');
-    }
+    await this.holdEagleImports(loserId);
     const { rows } = await sql<{ id: string; folders: string[] | null; root: boolean; inside: boolean }>`
       WITH found AS (
         SELECT id, "rootAlbumId" = ${loserId}::uuid AS root, target->>'inside' = ${loserId}::text AS inside,
@@ -326,6 +315,24 @@ export class AlbumMergeRepository {
       before: { albumId: loserId },
       after: { id, folders: folders ?? [], root, inside },
     }));
+  }
+
+  /**
+   * FL-1840: a running Eagle import keeps its folders' albums in memory and would write the old one back over a
+   * merge or its undo. The imports that hold the album are locked first (a worker's claim skips locked rows), then a
+   * live one refuses the change rather than waiting.
+   */
+  private async holdEagleImports(albumId: string): Promise<void> {
+    const { rows } = await sql<{ busy: boolean }>`
+      SELECT status IN ('running', 'stopping') AND coalesce("leaseExpiresAt" > now(), false) AS busy
+      FROM eagle_import
+      WHERE "rootAlbumId" = ${albumId}::uuid OR target->>'inside' = ${albumId}::text
+        OR EXISTS (SELECT 1 FROM jsonb_each_text(albums) entry WHERE entry.value = ${albumId}::text)
+      FOR UPDATE
+    `.execute(this.db);
+    if (rows.some(({ busy }) => busy)) {
+      throw new ConflictException('An Eagle import is adding to this album. Try again when it has finished.');
+    }
   }
 
   /** What the person chose albums for: a loser that was chosen becomes the winner, so nothing drops out. */
@@ -550,6 +557,9 @@ export class AlbumMergeRepository {
 
   /** Puts an Eagle import's folders back on the merged-away album where they still point at the winner. */
   async reverseEagleAlbums(changes: AlbumChangeRow[]): Promise<AlbumChangeReversal> {
+    for (const albumId of new Set(changes.flatMap(({ albumId }) => albumId ?? []))) {
+      await this.holdEagleImports(albumId);
+    }
     let reversed = 0;
     for (const change of changes) {
       if (!change.albumId) {
