@@ -2,6 +2,7 @@
   import { formatLuxon } from '$lib/frameleaf/date-format';
   import { formatApproximateDate } from '$lib/frameleaf/approximate-date';
   import { isForwardKey } from '$lib/frameleaf/reading-direction';
+  import { isDialogOpen, isTypingTarget } from '$lib/frameleaf/viewer-keys';
   /**
    * The slideshow's engine (FL-36, V-18, VIEWER-P1). The slideshow plays inside the viewer and keeps
    * its chrome, as in the template (MediaViewer.jsx:1008-1298, 1704-1820): the frosted header with the
@@ -150,12 +151,18 @@
   const tapSlop = (event: PointerEvent) => (event.pointerType === 'mouse' ? 6 : 10);
   // the state at pointerdown decides the toggle, so a swipe-down reveal in between cannot undo it
   let tap: { id: number; x: number; y: number; time: number; hidden: boolean; travel: number } | undefined;
+  // The pointers down now. A second finger (a pinch) is never a tap, and once fingers overlap no new
+  // tap starts until they are all lifted. A browser marks a press primary only when no other pointer
+  // is down, so a primary press also forgets a press whose release never arrived.
+  const down = new Set<number>();
   const onPointerDown = (event: PointerEvent) => {
     const target = event.target as Element | null;
-    // A second finger (a pinch) is never a tap. A primary press means no other pointer is down, so it
-    // also replaces a press whose release never arrived.
+    if (event.isPrimary) {
+      down.clear();
+    }
+    down.add(event.pointerId);
     tap =
-      event.isPrimary && target?.closest?.('[data-viewer-content]') && !inChrome(target)
+      down.size === 1 && target?.closest?.('[data-viewer-content]') && !inChrome(target)
         ? {
             id: event.pointerId,
             x: event.clientX,
@@ -172,6 +179,7 @@
     }
   };
   const onPointerUp = (event: PointerEvent) => {
+    down.delete(event.pointerId);
     const start = tap;
     if (start?.id !== event.pointerId) {
       return;
@@ -190,6 +198,7 @@
     }
   };
   const onPointerCancel = (event: PointerEvent) => {
+    down.delete(event.pointerId);
     const start = tap;
     if (start?.id !== event.pointerId) {
       return;
@@ -252,6 +261,31 @@
     });
   });
 
+  /*
+   * FL-1833: the arrows step the slideshow, except where focus is on something that takes arrows
+   * itself (a field, a slider such as a video's time or volume range) or a dialog is open, as with
+   * the viewer's own arrows.
+   */
+  const ownsArrows = (target: EventTarget | null) =>
+    isTypingTarget(target) ||
+    (target instanceof Element && !!target.closest('media-time-range, media-volume-range')) ||
+    isDialogOpen();
+  const slideArrow = (key: 'ArrowLeft' | 'ArrowRight'): ShortcutOptions => ({
+    shortcut: { key },
+    preventDefault: false,
+    onShortcut: (event) => {
+      if (ownsArrows(event.target)) {
+        return;
+      }
+      event.preventDefault();
+      if (isForwardKey(key)) {
+        onNext();
+      } else {
+        onPrevious();
+      }
+    },
+  });
+
   const shortcutBindings = $derived.by((): ShortcutOptions[] => {
     // MediaViewer.jsx:733-747: Escape closes the settings first; with them open, the arrow keys
     // stay with their controls. Otherwise Escape is the header's Close viewer.
@@ -259,8 +293,8 @@
       return [{ shortcut: { key: 'Escape' }, onShortcut: () => void closeSettings() }];
     }
     const bindings: ShortcutOptions[] = [
-      { shortcut: { key: 'ArrowLeft' }, onShortcut: () => (isForwardKey('ArrowLeft') ? onNext() : onPrevious()) },
-      { shortcut: { key: 'ArrowRight' }, onShortcut: () => (isForwardKey('ArrowRight') ? onNext() : onPrevious()) },
+      slideArrow('ArrowLeft'),
+      slideArrow('ArrowRight'),
       { shortcut: { key: 's' }, onShortcut: togglePause, preventDefault: true },
     ];
 

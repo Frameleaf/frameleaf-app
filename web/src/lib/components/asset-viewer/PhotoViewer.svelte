@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { canPlaySlideshow } from '$lib/services/asset.service';
   import { imageViewingPreference } from '$lib/frameleaf/viewer-preferences';
   import { shortcuts } from '$lib/actions/shortcut';
   import { isControlTarget } from '$lib/frameleaf/viewer-keys';
@@ -152,12 +153,42 @@
   const onZoomIn = () => assetViewerManager.animatedZoom(Math.min(assetViewerManager.zoom * 1.25, 10));
   const onZoomOut = () => assetViewerManager.animatedZoom(Math.max(assetViewerManager.zoom / 1.25, 1));
 
-  // S starts a slideshow; while one runs, the slideshow controls own S (play and pause).
+  // S starts a slideshow, with the footer Play button's conditions: something to move through, and not
+  // a Locked item.
   const onPlaySlideshow = () => {
-    if ($slideshowState === SlideshowState.None) {
+    if (
+      $slideshowState === SlideshowState.None &&
+      (cursor.nextAsset || cursor.previousAsset) &&
+      canPlaySlideshow(asset)
+    ) {
       $slideshowState = SlideshowState.PlaySlideshow;
     }
   };
+  /*
+   * FL-1833: while a slideshow runs, S and Space are the slideshow's (SlideshowBar: play and pause).
+   * These bindings are left out then: the shortcut layer stops at the first binding that takes a key,
+   * and this viewer's, added before the slideshow's, kept S and Space from ever pausing it.
+   */
+  const slideshowKeys = $derived(
+    $slideshowState === SlideshowState.None
+      ? [
+          { shortcut: { key: 's' }, onShortcut: onPlaySlideshow, preventDefault: true },
+          // V-15: Space plays the slideshow too, unless it is pressing a focused control (MediaViewer.jsx:781-784).
+          {
+            shortcut: { key: ' ' },
+            // the handler decides, so a focused control keeps its own Space
+            preventDefault: false,
+            onShortcut: (event: KeyboardEvent) => {
+              if (isControlTarget(event.target)) {
+                return;
+              }
+              event.preventDefault();
+              onPlaySlideshow();
+            },
+          },
+        ]
+      : [],
+  );
 
   // TODO move to action + command palette
   const onCopyShortcut = (event: KeyboardEvent) => {
@@ -263,18 +294,7 @@
     { shortcut: { key: '+' }, onShortcut: onZoomIn, preventDefault: true },
     { shortcut: { key: '+', shift: true }, onShortcut: onZoomIn, preventDefault: true },
     { shortcut: { key: '-' }, onShortcut: onZoomOut, preventDefault: true },
-    { shortcut: { key: 's' }, onShortcut: onPlaySlideshow, preventDefault: true },
-    // V-15: Space plays the slideshow too, unless it is pressing a focused control (MediaViewer.jsx:781-784).
-    {
-      shortcut: { key: ' ' },
-      onShortcut: (event) => {
-        if (isControlTarget(event.target)) {
-          return;
-        }
-        event.preventDefault();
-        onPlaySlideshow();
-      },
-    },
+    ...slideshowKeys,
     { shortcut: { key: 'c', ctrl: true }, onShortcut: onCopyShortcut, preventDefault: false },
     { shortcut: { key: 'c', meta: true }, onShortcut: onCopyShortcut, preventDefault: false },
   ]}

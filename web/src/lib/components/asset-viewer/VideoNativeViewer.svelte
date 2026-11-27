@@ -569,6 +569,7 @@
     playbackFailed = true;
     isLoading = false;
     videoPlayer?.pause();
+    skipStalledSlide();
     if (isHlsElement(videoPlayer)) {
       videoPlayer.api?.stopLoad();
     }
@@ -636,10 +637,33 @@
 
   onDestroy(() => {
     destroyed = true;
+    clearTimeout(skipTimer);
     if (videoPlayer) {
       videoPlayer.src = '';
     }
   });
+
+  /*
+   * FL-1833: a video slide moves the slideshow on only when it ends. While a slideshow plays, the
+   * video is started here whatever the autoplay preference; when the browser refuses even a muted
+   * start (an iPad in Low Power Mode) or the video fails, the slideshow skips it after a short pause
+   * instead of waiting for an end that never comes.
+   */
+  const slideshowPlaying = () => $slideshowState === SlideshowState.PlaySlideshow && !$slideshowSettingsOpen;
+  const SKIP_STALLED_SLIDE_MS = 3000;
+  let skipTimer: ReturnType<typeof setTimeout> | undefined;
+  const skipStalledSlide = () => {
+    if (!slideshowPlaying()) {
+      return;
+    }
+    clearTimeout(skipTimer);
+    const stalledId = assetId;
+    skipTimer = setTimeout(() => {
+      if (!destroyed && assetId === stalledId && slideshowPlaying() && (playbackFailed || videoPlayer?.paused)) {
+        onVideoEnded();
+      }
+    }, SKIP_STALLED_SLIDE_MS);
+  };
 
   const handleCanPlay = async (video: HTMLVideoElement) => {
     if (playbackFailed || video !== videoPlayer) {
@@ -647,7 +671,7 @@
     }
     const signal = playbackController?.signal;
     try {
-      if (!video.paused) {
+      if (!video.paused || slideshowPlaying()) {
         await video.play();
         if (!signal?.aborted && video === videoPlayer && !playbackFailed) {
           onVideoStarted();
@@ -669,6 +693,7 @@
 
   const tryForceMutedPlay = async (video: HTMLVideoElement) => {
     if (video.muted) {
+      skipStalledSlide();
       return;
     }
 
@@ -742,7 +767,19 @@
   use:shortcuts={[
     {
       shortcut: { key: ' ' },
-      onShortcut: () => (videoPlayer?.paused ? videoPlayer?.play() : videoPlayer?.pause()),
+      // FL-1833: in a slideshow Space plays and pauses the slideshow (the held effect above pauses and
+      // resumes the video with it); pausing only the video left the slideshow waiting for an end
+      // that never came, with the footer still showing Pause.
+      onShortcut: () => {
+        if ($slideshowState !== SlideshowState.None) {
+          $slideshowState =
+            $slideshowState === SlideshowState.PlaySlideshow
+              ? SlideshowState.PauseSlideshow
+              : SlideshowState.PlaySlideshow;
+          return;
+        }
+        return videoPlayer?.paused ? videoPlayer?.play() : videoPlayer?.pause();
+      },
     },
     {
       shortcut: { shift: true, key: 'ArrowLeft' },
