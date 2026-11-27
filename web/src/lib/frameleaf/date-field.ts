@@ -41,7 +41,9 @@ export const isFutureMonth = ({ sure, year, month }: DateFieldValue, now = new D
 
 /** Whether the value names a real day (no 31 April, no 29 February outside a leap year). */
 export const isRealDay = ({ year, month, day }: Pick<DateFieldValue, 'year' | 'month' | 'day'>) => {
-  const date = new Date(Date.UTC(year, month - 1, day));
+  const date = new Date(0);
+  // setUTCFullYear, unlike Date.UTC, keeps years 0–99 as they are
+  date.setUTCFullYear(year, month - 1, day);
   return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
 };
 
