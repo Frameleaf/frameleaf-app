@@ -176,25 +176,34 @@ const fakeWorld = (mocks: ServiceMocks, importPaths: string[]) => {
     albums.get(id)!.parentId = parentId;
     return Promise.resolve();
   });
-  mocks.album.syncFolderMemberships.mockImplementation((_libraryId, add, remove, stale) => {
-    const added: { albumId: string; assetId: string }[] = [];
-    const removed: { albumId: string; assetId: string }[] = [];
+  mocks.album.getFolderPhotosToAdd.mockImplementation((_libraryId, folders) => {
+    const pairs: { albumId: string; assetId: string }[] = [];
     for (const asset of assets) {
-      for (const { albumId, folderPath } of add) {
-        const once = seen.get(albumId) ?? new Set<string>();
-        seen.set(albumId, once);
+      for (const { albumId, folderPath } of folders) {
         if (
           ofLibrary(asset) &&
           !asset.isOffline &&
           !asset.hidden &&
           folderPath === folderOf(asset) &&
-          !once.has(asset.id)
+          !seen.get(albumId)?.has(asset.id)
         ) {
-          once.add(asset.id);
-          if (!members.get(albumId)!.has(asset.id)) {
-            members.get(albumId)!.add(asset.id);
-            added.push({ albumId, assetId: asset.id });
-          }
+          pairs.push({ albumId, assetId: asset.id });
+        }
+      }
+    }
+    return Promise.resolve(pairs);
+  });
+  mocks.album.syncFolderMemberships.mockImplementation((_libraryId, add, remove, stale) => {
+    const added: { albumId: string; assetId: string }[] = [];
+    const removed: { albumId: string; assetId: string }[] = [];
+    for (const { albumId, assetId } of add) {
+      const once = seen.get(albumId) ?? new Set<string>();
+      seen.set(albumId, once);
+      if (!once.has(assetId)) {
+        once.add(assetId);
+        if (!members.get(albumId)!.has(assetId)) {
+          members.get(albumId)!.add(assetId);
+          added.push({ albumId, assetId });
         }
       }
     }

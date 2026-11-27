@@ -812,16 +812,10 @@ WITH
       link.id,
       asset.id
     FROM
-      asset
-      JOIN unnest($1::text[], $2::uuid[]) AS folder (path, "albumId") ON folder.path = coalesce(
-        nullif(
-          substring("asset"."originalPath", '^(.*)/[^/]*$'),
-          ''
-        ),
-        '/'
-      )
-      JOIN library_folder_album link ON link."albumId" = folder."albumId"
+      unnest($1::uuid[], $2::uuid[]) AS pair ("albumId", "assetId")
+      JOIN library_folder_album link ON link."albumId" = pair."albumId"
       AND link."libraryId" = $3::uuid
+      JOIN asset ON asset.id = pair."assetId"
     WHERE
       asset."libraryId" = $4::uuid
       AND (
@@ -855,24 +849,48 @@ ON CONFLICT DO NOTHING
 RETURNING
   "albumId",
   "assetId"
-DELETE FROM album_asset member USING asset,
-unnest($1::text[], $2::uuid[]) AS folder (path, "albumId")
-WHERE
-  member."assetId" = asset.id
-  AND member."albumId" = folder."albumId"
-  AND asset."libraryId" = $3::uuid
-  AND asset."isOffline" = true
-  AND folder.path = coalesce(
+rollback
+
+-- AlbumRepository.getFolderPhotosToAdd
+SELECT
+  folder."albumId",
+  asset.id AS "assetId"
+FROM
+  asset
+  JOIN unnest($1::text[], $2::uuid[]) AS folder (path, "albumId") ON folder.path = coalesce(
     nullif(
       substring("asset"."originalPath", '^(.*)/[^/]*$'),
       ''
     ),
     '/'
   )
-RETURNING
-  member."albumId",
-  member."assetId"
-commit
+  JOIN library_folder_album link ON link."albumId" = folder."albumId"
+  AND link."libraryId" = $3::uuid
+WHERE
+  asset."libraryId" = $4::uuid
+  AND (
+    "asset"."isOffline" = false
+    AND "asset"."deletedAt" IS NULL
+    AND "asset"."visibility" IN ('timeline', 'archive')
+    AND "asset"."type" IN ('IMAGE', 'VIDEO')
+    AND not exists (
+      select
+        1
+      from
+        asset_lock
+      where
+        asset_lock."assetId" = "asset"."id"
+    )
+  )
+  AND NOT EXISTS (
+    SELECT
+      1
+    FROM
+      library_folder_album_asset seen
+    WHERE
+      seen."folderAlbumId" = link.id
+      AND seen."assetId" = asset.id
+  )
 
 -- AlbumRepository.getSharedAlbumIds
 select

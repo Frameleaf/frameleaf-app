@@ -285,12 +285,13 @@ export class FolderAlbumService extends BaseService {
     // FL-1837: in batches of albums, each its own short transaction: one write locking every album of a large
     // library ran into the pool's lock timeout and rolled back every album's photos, leaving them all empty.
     const removeFrom = [...current, ...previousPaths];
+    const toAdd = await this.albumRepository.getFolderPhotosToAdd(libraryId, add);
     for (const albumIds of chunk([...new Set(byPath.values().map(({ albumId }) => albumId))], MEMBERSHIP_BATCH)) {
       const batch = new Set(albumIds);
       const inBatch = ({ albumId }: { albumId: string }) => batch.has(albumId);
       const { added, removed } = await this.albumRepository.syncFolderMemberships(
         libraryId,
-        add.filter((item) => inBatch(item)),
+        toAdd.filter((item) => inBatch(item)),
         removeFrom.filter((item) => inBatch(item)),
         { members: current.filter((item) => inBatch(item)), albumIds },
       );
