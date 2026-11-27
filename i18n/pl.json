@@ -9717,7 +9717,7 @@
   "frameleaf_folder_albums_on": "Albumy podążają za folderami: zdjęcia dodane do folderu trafiają do jego albumu przy następnym sprawdzeniu. Nowa nazwa, dodane przez Ciebie zdjęcia i wybrana okładka zostają.",
   "frameleaf_folder_albums_on_drive": "Na dysku",
   "frameleaf_folder_albums_partial": "Ten folder jest zbyt duży, aby go tu przejrzeć, więc widać tylko jego część.",
-  "frameleaf_folder_albums_photos": "Zdjęcia: {count}",
+  "frameleaf_folder_albums_photos": "{count, plural, one {# zdjęcie} few {# zdjęcia} many {# zdjęć} other {# zdjęcia}}",
   "frameleaf_folder_albums_preview": "Frameleaf zachowa {made} z {folder}.",
   "frameleaf_folder_albums_preview_instead": "Frameleaf zachowa {made} z {folder} zamiast {before}.",
   "frameleaf_folder_albums_recommended": "Zalecane dla tego folderu",

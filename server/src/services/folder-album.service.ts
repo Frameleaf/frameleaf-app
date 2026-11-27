@@ -1,4 +1,5 @@
 import { ConflictException, Injectable } from '@nestjs/common';
+import { chunk } from 'lodash-es';
 import path from 'node:path';
 import type { JobOf } from 'src/types.js';
 import { OnJob } from 'src/decorators.js';
@@ -17,8 +18,22 @@ import {
   planFolderAlbums,
   resolveFolderAlbumOptions,
 } from 'src/utils/folder-albums.js';
-import { normalizeImportPath } from 'src/utils/library-paths.js';
+import { isSameOrInside, normalizeImportPath } from 'src/utils/library-paths.js';
 import { getPreferences } from 'src/utils/preferences.js';
+
+type FolderAlbumSuggestion = {
+  libraryId: string;
+  name: string;
+  albums: number;
+  empty: number;
+  suggestedAlbums: number;
+  options: ReturnType<typeof resolveFolderAlbumOptions>;
+};
+/** ponytail: per process, one entry per library (its latest version); a second API worker would only read again. */
+const suggestionCache = new Map<string, FolderAlbumSuggestion | undefined>();
+
+/** Albums whose photos one membership write changes; each batch is its own transaction. */
+const MEMBERSHIP_BATCH = 50;
 
 type FolderAlbumLink = {
   id: string;
@@ -115,6 +130,15 @@ export class FolderAlbumService extends BaseService {
     for (const library of await this.libraryRepository.getAll(false)) {
       const options = resolveFolderAlbumOptions(library.folderAlbumOptions);
       if (library.ownerId !== ownerId || !library.folderAlbums || options.shape !== 'every' || library.deletedAt) {
+        continue;
+      }
+      // reading every folder of a large library is not free: once per library until it changes or is checked again
+      const key = `${library.id}:${new Date(library.updatedAt).getTime()}:${library.refreshedAt ? new Date(library.refreshedAt).getTime() : 0}`;
+      if (suggestionCache.has(key)) {
+        const cached = suggestionCache.get(key);
+        if (cached) {
+          suggestions.push(cached);
+        }
         continue;
       }
       const roots = this.rootsOf(library);
@@ -258,22 +282,23 @@ export class FolderAlbumService extends BaseService {
         (tree.get(folderPath)?.members ?? [folderPath]).map((member) => ({ folderPath: member, albumId })),
       )
       .toArray();
-    const { added, removed } = await this.albumRepository.syncFolderMemberships(
-      libraryId,
-      add,
-      [...current, ...previousPaths],
-      {
-        members: current,
-        albumIds: byPath
-          .values()
-          .map(({ albumId }) => albumId)
-          .toArray(),
-      },
-    );
-    result.photosAdded = added.length;
-    result.photosRemoved = removed.length;
-    for (const { albumId } of [...added, ...removed]) {
-      changed.add(albumId);
+    // FL-1837: in batches of albums, each its own short transaction: one write locking every album of a large
+    // library ran into the pool's lock timeout and rolled back every album's photos, leaving them all empty.
+    const removeFrom = [...current, ...previousPaths];
+    for (const albumIds of chunk([...new Set(byPath.values().map(({ albumId }) => albumId))], MEMBERSHIP_BATCH)) {
+      const batch = new Set(albumIds);
+      const inBatch = ({ albumId }: { albumId: string }) => batch.has(albumId);
+      const { added, removed } = await this.albumRepository.syncFolderMemberships(
+        libraryId,
+        add.filter((item) => inBatch(item)),
+        removeFrom.filter((item) => inBatch(item)),
+        { members: current.filter((item) => inBatch(item)), albumIds },
+      );
+      result.photosAdded += added.length;
+      result.photosRemoved += removed.length;
+      for (const { albumId } of [...added, ...removed]) {
+        changed.add(albumId);
+      }
     }
 
     // The owner's edits, noticed now (see the class comment). A shared album is kept too, without freezing its name.
@@ -303,7 +328,12 @@ export class FolderAlbumService extends BaseService {
     // collection once more.
     for (const node of nodes) {
       const link = byPath.get(node.folderPath)!;
-      if (node.kind === AlbumKind.Collection && link.kind === AlbumKind.Album && !edited.has(node.folderPath)) {
+      if (
+        node.kind === AlbumKind.Collection &&
+        link.kind === AlbumKind.Album &&
+        !link.isKept &&
+        !edited.has(node.folderPath)
+      ) {
         const [stats] = await this.albumRepository.getMetadataForIds([link.albumId]);
         if (!stats?.assetCount) {
           await this.albumRepository.update(link.albumId, { id: link.albumId, kind: AlbumKind.Collection }, ownerId);
@@ -354,15 +384,28 @@ export class FolderAlbumService extends BaseService {
     for (const link of kept) {
       const row = byFolder.get(link.folderPath);
       const holds = row && (row.photos > 0 || (!skipEmpty && (row.items ?? 0) > 0));
-      if (!holds || tree.has(link.folderPath)) {
+      if (!holds) {
         continue;
       }
+      const planned = tree.get(link.folderPath);
+      if (planned) {
+        // planned anyway, for a new folder below it: it keeps its own folder's photos too
+        planned.members.unshift(link.folderPath);
+        planned.photos += row.photos;
+        planned.kind = AlbumKind.Album;
+        continue;
+      }
+      const root =
+        roots
+          .filter((candidate) => isSameOrInside(link.folderPath, candidate))
+          .toSorted((a, b) => b.length - a.length)[0] ?? '/';
       const parent = path.posix.dirname(link.folderPath);
       tree.set(link.folderPath, {
         folderPath: link.folderPath,
         parentPath: roots.includes(link.folderPath) || roots.includes(parent) ? null : parent,
         photos: row.photos,
-        depth: link.folderPath.split('/').length,
+        // 1 for an import folder, as the planner counts
+        depth: link.folderPath === root ? 1 : link.folderPath.split('/').length - root.split('/').length + 1,
         kind: link.kind as AlbumKind,
         name: link.albumName,
         members: [link.folderPath],

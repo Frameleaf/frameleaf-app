@@ -11,6 +11,7 @@
   import { EVENT_FOLDER_ALBUM_OPTIONS } from '$lib/frameleaf/folder-albums';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { Route } from '$lib/route';
+  import { handleError } from '$lib/utils/handle-error';
   import { getFolderAlbumSuggestions, updateLibrary, type FolderAlbumSuggestionDto } from '@frameleaf/sdk';
   import { mdiFolderMultipleOutline } from '@mdi/js';
   import { onMount } from 'svelte';
@@ -52,6 +53,8 @@
         // Undo: the rules are back as they were, and the offer is not made again
         notNow();
       }
+    } catch (error) {
+      handleError(error, $t('frameleaf_libraries_error_save'));
     } finally {
       busy = false;
     }

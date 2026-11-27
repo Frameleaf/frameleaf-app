@@ -9716,7 +9716,7 @@
   "frameleaf_folder_albums_on": "Alben folgen den Ordnern: Fotos, die einem Ordner hinzugefügt werden, kommen bei der nächsten Prüfung in sein Album. Ein neuer Name, von Ihnen hinzugefügte Fotos und das gewählte Titelbild bleiben erhalten.",
   "frameleaf_folder_albums_on_drive": "Auf dem Laufwerk",
   "frameleaf_folder_albums_partial": "Dieser Ordner ist zu groß, um ihn hier ganz durchzusehen, daher wird nur ein Teil gezeigt.",
-  "frameleaf_folder_albums_photos": "{count} Fotos",
+  "frameleaf_folder_albums_photos": "{count, plural, one {# Foto} other {# Fotos}}",
   "frameleaf_folder_albums_preview": "Frameleaf behält {made} aus {folder}.",
   "frameleaf_folder_albums_preview_instead": "Frameleaf behält {made} aus {folder} statt {before}.",
   "frameleaf_folder_albums_recommended": "Für diesen Ordner empfohlen",

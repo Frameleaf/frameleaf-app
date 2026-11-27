@@ -9619,7 +9619,7 @@
   "frameleaf_folder_albums_on": "Albums follow the folders: photos added to a folder join its album at the next check. A new name, photos you add and the cover you choose are kept.",
   "frameleaf_folder_albums_on_drive": "On the drive",
   "frameleaf_folder_albums_partial": "This folder is too large to look through here, so only part of it is shown.",
-  "frameleaf_folder_albums_photos": "{count} photos",
+  "frameleaf_folder_albums_photos": "{count, plural, one {# photo} other {# photos}}",
   "frameleaf_folder_albums_preview": "Frameleaf will keep {made} from {folder}.",
   "frameleaf_folder_albums_preview_instead": "Frameleaf will keep {made} from {folder}, instead of {before}.",
   "frameleaf_folder_albums_recommended": "Recommended for this folder",

@@ -9716,7 +9716,7 @@
   "frameleaf_folder_albums_on": "Los álbumes siguen a las carpetas: las fotos añadidas a una carpeta se unen a su álbum en la próxima comprobación. Se conservan el nombre nuevo, las fotos que añadas y la portada que elijas.",
   "frameleaf_folder_albums_on_drive": "En el disco",
   "frameleaf_folder_albums_partial": "Esta carpeta es demasiado grande para revisarla aquí, así que solo se muestra una parte.",
-  "frameleaf_folder_albums_photos": "{count} fotos",
+  "frameleaf_folder_albums_photos": "{count, plural, one {# foto} other {# fotos}}",
   "frameleaf_folder_albums_preview": "Frameleaf mantendrá {made} de {folder}.",
   "frameleaf_folder_albums_preview_instead": "Frameleaf mantendrá {made} de {folder}, en lugar de {before}.",
   "frameleaf_folder_albums_recommended": "Recomendado para esta carpeta",

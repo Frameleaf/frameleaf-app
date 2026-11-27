@@ -9716,7 +9716,7 @@
   "frameleaf_folder_albums_on": "Os álbuns seguem as pastas: as fotos adicionadas a uma pasta entram no seu álbum na próxima verificação. Um nome novo, as fotos que adicionar e a capa que escolher são mantidos.",
   "frameleaf_folder_albums_on_drive": "No disco",
   "frameleaf_folder_albums_partial": "Esta pasta é demasiado grande para ser vista aqui, por isso só é mostrada uma parte.",
-  "frameleaf_folder_albums_photos": "{count} fotos",
+  "frameleaf_folder_albums_photos": "{count, plural, one {# foto} other {# fotos}}",
   "frameleaf_folder_albums_preview": "O Frameleaf vai manter {made} de {folder}.",
   "frameleaf_folder_albums_preview_instead": "O Frameleaf vai manter {made} de {folder}, em vez de {before}.",
   "frameleaf_folder_albums_recommended": "Recomendado para esta pasta",

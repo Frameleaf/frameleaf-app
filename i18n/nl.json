@@ -9716,7 +9716,7 @@
   "frameleaf_folder_albums_on": "Albums volgen de mappen: foto’s die aan een map worden toegevoegd, komen bij de volgende controle in het album. Een nieuwe naam, foto’s die je toevoegt en de gekozen omslag blijven behouden.",
   "frameleaf_folder_albums_on_drive": "Op de schijf",
   "frameleaf_folder_albums_partial": "Deze map is te groot om hier helemaal te bekijken, dus alleen een deel wordt getoond.",
-  "frameleaf_folder_albums_photos": "{count} foto’s",
+  "frameleaf_folder_albums_photos": "{count, plural, one {# foto} other {# foto’s}}",
   "frameleaf_folder_albums_preview": "Frameleaf houdt {made} over van {folder}.",
   "frameleaf_folder_albums_preview_instead": "Frameleaf houdt {made} over van {folder}, in plaats van {before}.",
   "frameleaf_folder_albums_recommended": "Aanbevolen voor deze map",

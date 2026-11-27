@@ -9716,7 +9716,7 @@
   "frameleaf_folder_albums_on": "Albumene følger mappene: bilder som legges i en mappe, kommer i albumet ved neste sjekk. Et nytt navn, bilder du legger til, og omslaget du velger, beholdes.",
   "frameleaf_folder_albums_on_drive": "På disken",
   "frameleaf_folder_albums_partial": "Denne mappen er for stor til å gås gjennom her, så bare en del vises.",
-  "frameleaf_folder_albums_photos": "{count} bilder",
+  "frameleaf_folder_albums_photos": "{count, plural, one {# bilde} other {# bilder}}",
   "frameleaf_folder_albums_preview": "Frameleaf beholder {made} fra {folder}.",
   "frameleaf_folder_albums_preview_instead": "Frameleaf beholder {made} fra {folder}, i stedet for {before}.",
   "frameleaf_folder_albums_recommended": "Anbefalt for denne mappen",

@@ -9714,7 +9714,7 @@
   "frameleaf_folder_albums_on": "Les albums suivent les dossiers : les photos ajoutées à un dossier rejoignent son album à la prochaine vérification. Un nouveau nom, les photos que vous ajoutez et la couverture choisie sont conservés.",
   "frameleaf_folder_albums_on_drive": "Sur le disque",
   "frameleaf_folder_albums_partial": "Ce dossier est trop grand pour être parcouru ici : seule une partie est affichée.",
-  "frameleaf_folder_albums_photos": "{count} photos",
+  "frameleaf_folder_albums_photos": "{count, plural, one {# photo} other {# photos}}",
   "frameleaf_folder_albums_preview": "Frameleaf gardera {made} à partir de {folder}.",
   "frameleaf_folder_albums_preview_instead": "Frameleaf gardera {made} à partir de {folder}, au lieu de {before}.",
   "frameleaf_folder_albums_recommended": "Recommandé pour ce dossier",

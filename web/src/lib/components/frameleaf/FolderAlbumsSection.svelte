@@ -112,7 +112,14 @@
   // svelte-ignore state_referenced_locally
   let draft = $state(clone(options));
   let touched = $state(false);
-  const same = (a: FolderAlbumOptionsDto, b: FolderAlbumOptionsDto) => JSON.stringify(a) === JSON.stringify(b);
+  // stored rules come back with their keys in another order (jsonb), so compare them sorted
+  const stable = (value: object) =>
+    JSON.stringify(value, (_key, item: unknown) =>
+      item && typeof item === 'object' && !Array.isArray(item)
+        ? Object.fromEntries(Object.entries(item).sort(([a], [b]) => a.localeCompare(b)))
+        : item,
+    );
+  const same = (a: object, b: object) => stable(a) === stable(b);
   const dirty = $derived(!same(draft, options));
 
   const eventLike = $derived(looksLikeEventFolders(roots, folders));
@@ -326,7 +333,7 @@
                   <li class="nested" style:--depth={1}>
                     <Icon icon={mdiFolderOutline} size="18" />
                     {folder.name}
-                    <small>{$t('frameleaf_folder_albums_photos', { values: { count: count(folder.photos) } })}</small>
+                    <small>{$t('frameleaf_folder_albums_photos', { values: { count: folder.photos } })}</small>
                   </li>
                 {/each}
               </ul>
@@ -342,7 +349,7 @@
                     <small>
                       {album.kind === 'collection'
                         ? $t('frameleaf_folder_albums_collection')
-                        : $t('frameleaf_folder_albums_photos', { values: { count: count(album.photos) } })}
+                        : $t('frameleaf_folder_albums_photos', { values: { count: album.photos } })}
                     </small>
                   </li>
                 {/each}

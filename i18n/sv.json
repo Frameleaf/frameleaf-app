@@ -9712,7 +9712,7 @@
   "frameleaf_folder_albums_on": "Albumen följer mapparna: bilder som läggs till i en mapp hamnar i dess album vid nästa kontroll. Ett nytt namn, bilder du lägger till och omslaget du väljer behålls.",
   "frameleaf_folder_albums_on_drive": "På disken",
   "frameleaf_folder_albums_partial": "Den här mappen är för stor för att gås igenom här, så bara en del visas.",
-  "frameleaf_folder_albums_photos": "{count} bilder",
+  "frameleaf_folder_albums_photos": "{count, plural, one {# bild} other {# bilder}}",
   "frameleaf_folder_albums_preview": "Frameleaf behåller {made} från {folder}.",
   "frameleaf_folder_albums_preview_instead": "Frameleaf behåller {made} från {folder}, i stället för {before}.",
   "frameleaf_folder_albums_recommended": "Rekommenderas för den här mappen",

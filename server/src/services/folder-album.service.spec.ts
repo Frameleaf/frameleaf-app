@@ -534,6 +534,21 @@ describe(FolderAlbumService.name, () => {
       expect(world.links.find((link) => link.folderPath === '/photos/trip')?.isUserEdited).toBe(true);
     });
 
+    it('writes the photos of a large library in batches of albums, each its own transaction', async () => {
+      const world = fakeWorld(mocks, ['/photos']);
+      for (let index = 0; index < 120; index++) {
+        world.addFile(`/photos/2026-11-${index} - Event/Capture/a.jpg`);
+      }
+
+      await expect(sut.sync(world.library.id)).resolves.toMatchObject({ created: 240, photosAdded: 120 });
+
+      // 240 albums, 50 to a batch
+      expect(mocks.album.syncFolderMemberships).toHaveBeenCalledTimes(5);
+      for (const call of mocks.album.syncFolderMemberships.mock.calls) {
+        expect(call[3]!.albumIds.length).toBeLessThanOrEqual(50);
+      }
+    });
+
     it('does nothing for a library with folder albums off', async () => {
       const world = fakeWorld(mocks, ['/photos']);
       world.library.folderAlbums = false;
@@ -673,6 +688,26 @@ describe(FolderAlbumService.name, () => {
         name: JobName.LibraryFolderAlbumSync,
         data: { id: world.library.id },
       });
+    });
+
+    it('with "new folders only" a kept album keeps its own photos when a new folder appears inside it', async () => {
+      const world = fakeWorld(mocks, ['/photos']);
+      world.addFile('/photos/Trip/a.jpg');
+      world.addFile('/photos/Trip/b.jpg');
+      await sut.sync(world.library.id);
+      const trip = world.albumFor('/photos/Trip')!;
+
+      events(world);
+      await sut.applyToExisting(world.library.id, 'newOnly');
+      world.addFile('/photos/Trip/Extra/c.jpg');
+      await sut.sync(world.library.id);
+
+      expect(world.albumFor('/photos/Trip')).toMatchObject({ id: trip.id, kind: AlbumKind.Album });
+      expect(world.photosOf('/photos/Trip')).toEqual([
+        '/photos/Trip/Extra/c.jpg',
+        '/photos/Trip/a.jpg',
+        '/photos/Trip/b.jpg',
+      ]);
     });
 
     it('makes no album for a folder whose items are none of them shown, unless asked', async () => {

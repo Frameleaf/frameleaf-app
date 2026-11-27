@@ -9716,7 +9716,7 @@
   "frameleaf_folder_albums_on": "Gli album seguono le cartelle: le foto aggiunte a una cartella entrano nel suo album al controllo successivo. Un nuovo nome, le foto che aggiungi e la copertina che scegli restano.",
   "frameleaf_folder_albums_on_drive": "Sul disco",
   "frameleaf_folder_albums_partial": "Questa cartella è troppo grande per essere esaminata qui, quindi ne viene mostrata solo una parte.",
-  "frameleaf_folder_albums_photos": "{count} foto",
+  "frameleaf_folder_albums_photos": "{count, plural, one {# foto} other {# foto}}",
   "frameleaf_folder_albums_preview": "Frameleaf terrà {made} da {folder}.",
   "frameleaf_folder_albums_preview_instead": "Frameleaf terrà {made} da {folder}, invece di {before}.",
   "frameleaf_folder_albums_recommended": "Consigliato per questa cartella",
