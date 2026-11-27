@@ -64,6 +64,8 @@ export type AccountPreferencesDraft = {
   'download.includeEmbeddedVideos': boolean;
   /** ACCOUNT-P5: archives put each photo's details file (XMP) beside it. */
   'download.includeSidecar': boolean;
+  /** FL-826: `original`, `jpeg` or `web` (the SDK's `DownloadFormat`). */
+  'download.defaultFormat': string;
   /** ACCOUNT-P3: searches that name no visibility include archived photos. */
   'search.includeArchived': boolean;
   /** FL-918: search questions go to classic search instead of the Library Assistant. */
@@ -196,6 +198,7 @@ export const createDefaultDraft = (): AccountPreferencesDraft => ({
   'download.archiveSize': 4 * GB,
   'download.includeEmbeddedVideos': false,
   'download.includeSidecar': true,
+  'download.defaultFormat': 'original',
   'search.includeArchived': false,
   'search.classic': false,
   'display.dateFormat': 'auto',
@@ -240,6 +243,7 @@ export const draftFromPreferences = (preferences: UserPreferencesResponseDto): A
   'download.archiveSize': preferences.download.archiveSize,
   'download.includeEmbeddedVideos': preferences.download.includeEmbeddedVideos,
   'download.includeSidecar': preferences.download.includeSidecar,
+  'download.defaultFormat': preferences.download.defaultFormat ?? 'original',
   'search.includeArchived': preferences.search.includeArchived,
   'search.classic': preferences.search.classic ?? false,
   'display.dateFormat': preferences.display?.dateFormat ?? 'auto',

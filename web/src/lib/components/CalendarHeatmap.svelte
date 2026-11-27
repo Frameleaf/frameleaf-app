@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { formatLuxon } from '$lib/frameleaf/date-format';
   import { locale } from '$lib/stores/preferences.store';
   import type { CalendarHeatmapResponseDto } from '@frameleaf/sdk';
   import { DateTime } from 'luxon';
@@ -30,7 +31,7 @@
       if (index === 0 || date.day === 1) {
         starts.push({
           column: Math.floor((padding + index) / 7),
-          label: date.toLocaleString({ month: 'short' }, { locale: $locale }),
+          label: formatLuxon(date, { month: 'short' }, $locale),
         });
       }
     }
@@ -79,9 +80,10 @@
 <div class="heatmap mt-4 w-full" style:--weeks={weeks}>
   <div class="heat">
     {#each data.series as day, idx (day.date)}
-      {@const date = DateTime.fromISO(day.date, { zone: 'utc' }).toLocaleString(
+      {@const date = formatLuxon(
+        DateTime.fromISO(day.date, { zone: 'utc' }),
         { month: 'short', day: 'numeric' },
-        { locale: $locale },
+        $locale,
       )}
       {@const label = itemLabel({ date, count: day.count })}
       <div

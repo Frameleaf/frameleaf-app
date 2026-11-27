@@ -21,6 +21,7 @@ import {
 import { DateTime } from 'luxon';
 import type { MessageFormatter, Translations } from 'svelte-i18n';
 import { describeAdminEvent } from '$lib/frameleaf/account-history';
+import { formatLuxon } from '$lib/frameleaf/date-format';
 import { sessionDeviceName } from '$lib/frameleaf/personal-access';
 
 /**
@@ -434,16 +435,15 @@ export const activityDay = ($t: MessageFormatter, createdAt: string, now: Date, 
     return $t('frameleaf_words_history_yesterday');
   }
   const date = DateTime.fromISO(createdAt).setLocale(locale ?? 'en');
-  return date.toLocaleString(
+  return formatLuxon(
+    date,
     date.year === now.getFullYear() ? { weekday: 'long', day: 'numeric', month: 'long' } : DateTime.DATE_FULL,
   );
 };
 
 /** "8:14 AM", as the viewer's language writes a time. */
 export const activityTime = (createdAt: string, locale?: string) =>
-  DateTime.fromISO(createdAt)
-    .setLocale(locale ?? 'en')
-    .toLocaleString(DateTime.TIME_SIMPLE);
+  formatLuxon(DateTime.fromISO(createdAt).setLocale(locale ?? 'en'), DateTime.TIME_SIMPLE);
 
 /** The events as they came (newest first), as `[{ day, events }]` in that order. */
 export const groupByDay = <T extends Pick<ActivityEvent, 'createdAt'>>(

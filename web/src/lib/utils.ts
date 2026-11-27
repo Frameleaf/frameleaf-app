@@ -173,7 +173,7 @@ type AssetUrlOptions = {
   edited?: boolean;
   size?: AssetMediaSize;
   dynamicRange?: 'auto' | 'sdr' | 'hdr';
-  format?: 'sdr-jpeg' | 'hdr-jpeg' | 'hdr-heic' | 'document-pdf';
+  format?: 'sdr-jpeg' | 'hdr-jpeg' | 'hdr-heic' | 'document-pdf' | 'jpeg' | 'web';
 };
 
 export const getAssetUrl = ({

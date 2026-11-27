@@ -4,6 +4,7 @@
    * in the same row layout, the space lent to a buddy, and the newest backups. Every figure is the
    * server's own; a place whose status cannot be read says so instead of guessing.
    */
+  import EmptyRow from '$lib/components/frameleaf/EmptyRow.svelte';
   import InlineError from '$lib/components/frameleaf/InlineError.svelte';
   import Skeleton from '$lib/components/frameleaf/Skeleton.svelte';
   import { BACKUP_PLACE_COPY } from '$lib/components/frameleaf/backup/backup-places';
@@ -522,7 +523,7 @@
         {/each}
       </HistoryList>
     {:else}
-      <p class="empty">{$t('frameleaf_backup_recent_empty')}</p>
+      <div class="empty"><EmptyRow title={$t('frameleaf_backup_recent_empty')} /></div>
     {/if}
   </Section>
 {/if}
@@ -585,8 +586,7 @@
     letter-spacing: var(--fl-tracking-headline);
   }
   .choice p,
-  .hint,
-  .empty {
+  .hint {
     margin: 0;
     color: var(--fl-muted);
     font-size: var(--fl-font-callout);
@@ -620,8 +620,7 @@
     padding-bottom: var(--fl-space-6);
   }
   .empty {
-    padding: var(--fl-space-4) 0 var(--fl-space-5);
-    border-top: 1px solid var(--fl-border);
+    padding-top: var(--fl-space-4);
   }
   @container kit (max-width: 620px) {
     .choices {

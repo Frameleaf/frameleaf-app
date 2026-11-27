@@ -46,11 +46,40 @@ const settled = async (page: Page, total: () => number, quiet = 1500) => {
   }
 };
 
+/** FL-1796: what the top bar and the rail read. A page change must not ask for any of them again. */
+const SHELL_REQUESTS = [
+  'GET albums/rail',
+  'GET albums/hierarchy',
+  'GET partners',
+  'GET notifications',
+  'GET media-operations',
+  'GET admin/cloud/backup',
+  'GET server/library-setup/progress',
+];
+
+/** One album as the slim rail list (`GET /albums/rail`, FL-1796) sends it. */
+const railAlbum = (id: string, albumName: string) => ({
+  id,
+  albumName,
+  parentId: null,
+  kind: 'album',
+  icon: null,
+  color: null,
+  sortOrder: null,
+  role: 'owner',
+  shared: false,
+  isLocked: false,
+  isSmart: false,
+  smartRuleId: null,
+  assetCount: 0,
+  bookmarkCount: 0,
+});
+
 const json = (body: unknown) => (route: Route) => route.fulfill({ json: body });
 
 /** What the shell reads beyond `setupBaseMockApiRoutes`; anything else answers 404 and is still counted. */
 const setupShellRoutes = async (context: BrowserContext) => {
-  await context.route('**/api/albums/hierarchy*', json({ roots: [] }));
+  await context.route('**/api/albums/rail*', json({ albums: [] }));
   await context.route('**/api/partners*', json([]));
   await context.route('**/api/media-operations*', json({ items: [], total: 0 }));
   await context.route(
@@ -109,5 +138,84 @@ test.describe('app shell requests', () => {
     for (const request of ['GET users/me', 'GET users/me/preferences', 'GET server/config', 'GET server/features']) {
       expect(api.count(request), request).toBe(1);
     }
+  });
+  // FL-1796
+  test('keeps the top bar and the rail across a page change, and asks the server nothing for them', async ({
+    page,
+  }) => {
+    const api = recordApi(page);
+    await page.goto('/photos');
+    const rail = page.getByRole('navigation', { name: 'Library navigation' });
+    await expect(rail).toBeVisible();
+    await settled(page, api.total);
+    // Marks survive only on elements that are never rebuilt.
+    await page.evaluate(() => {
+      document.querySelector('.fl-topbar')?.setAttribute('data-kept', 'yes');
+      document.querySelector('#sidebar')?.setAttribute('data-kept', 'yes');
+    });
+
+    for (const [name, path] of [
+      ['Favorites', '/favorites'],
+      ['Archive', '/archive'],
+      ['Library', '/photos'],
+    ] as const) {
+      const mark = api.mark();
+      await rail.getByRole('link', { name, exact: true }).click();
+      await page.waitForURL((url) => url.pathname === path);
+      await settled(page, api.total);
+
+      const asked = api.since(mark);
+      test.info().annotations.push({ type: `requests opening ${path}`, description: JSON.stringify(asked) });
+      await expect(page.locator('.fl-topbar')).toHaveAttribute('data-kept', 'yes');
+      await expect(page.locator('#sidebar')).toHaveAttribute('data-kept', 'yes');
+      for (const request of SHELL_REQUESTS) {
+        expect(asked[request] ?? 0, `${request} when opening ${path}`).toBe(0);
+      }
+    }
+  });
+
+  // FL-1796
+  test('never empties the album list in the rail while a page opens', async ({ context, page }) => {
+    await context.route('**/api/albums/rail*', (route) =>
+      route.fulfill({
+        json: { albums: [railAlbum('3f0c1c1e-0000-4000-8000-000000000001', 'Summer in the Rockies')] },
+      }),
+    );
+    await page.goto('/photos');
+    const rail = page.getByRole('navigation', { name: 'Library navigation' });
+    const row = rail.getByRole('link', { name: 'Summer in the Rockies' });
+    await expect(row).toBeVisible();
+    // Every moment the row is missing from the rail is recorded from here on.
+    await page.evaluate(() => {
+      const state = globalThis as unknown as { railBlanked: boolean };
+      state.railBlanked = false;
+      new MutationObserver(() => {
+        if (!document.querySelector('#sidebar a[data-album-id]')) {
+          state.railBlanked = true;
+        }
+      }).observe(document.body, { childList: true, subtree: true });
+    });
+
+    await rail.getByRole('link', { name: 'Favorites', exact: true }).click();
+    await page.waitForURL((url) => url.pathname === '/favorites');
+    await rail.getByRole('link', { name: 'Library', exact: true }).click();
+    await page.waitForURL((url) => url.pathname === '/photos');
+    await expect(row).toBeVisible();
+
+    expect(await page.evaluate(() => (globalThis as unknown as { railBlanked: boolean }).railBlanked)).toBe(false);
+  });
+
+  // FL-1796: the rail used to be rebuilt with each page, which closed the phone menu.
+  test('closes the phone menu when a page opens from it', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto('/photos');
+    const rail = page.locator('#sidebar');
+    await expect(rail).toHaveAttribute('inert', '');
+    await page.getByRole('button', { name: 'Main menu' }).click();
+    await expect(rail).not.toHaveAttribute('inert', '');
+
+    await rail.getByRole('link', { name: 'Favorites', exact: true }).click();
+    await page.waitForURL((url) => url.pathname === '/favorites');
+    await expect(rail).toHaveAttribute('inert', '');
   });
 });

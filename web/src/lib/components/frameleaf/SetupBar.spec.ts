@@ -12,7 +12,7 @@ import en from '../../../../../i18n/en.json';
 const auth = vi.hoisted(() => ({ authenticated: true, user: { isAdmin: true } }));
 vi.mock('$lib/managers/auth-manager.svelte', () => ({ authManager: auth }));
 vi.mock('$lib/utils/handle-error', () => ({ handleError: vi.fn() }));
-const dialog = vi.hoisted(() => ({ showDialog: vi.fn() }));
+const dialog = vi.hoisted(() => ({ show: vi.fn() }));
 vi.mock('@frameleaf/ui', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@frameleaf/ui')>()),
   modalManager: dialog,
@@ -71,12 +71,12 @@ describe('SetupBar', () => {
     expect(await screen.findByText('Setup needs attention')).toBeInTheDocument();
     await fireEvent.click(screen.getByRole('button', { name: /Details/ }));
 
-    dialog.showDialog.mockResolvedValueOnce(false);
+    dialog.show.mockResolvedValueOnce(false);
     await fireEvent.click(screen.getByRole('button', { name: 'Stop setup' }));
-    expect(dialog.showDialog).toHaveBeenCalledOnce();
+    expect(dialog.show).toHaveBeenCalledOnce();
     expect(sdkMock.dismissLibrarySetup).not.toHaveBeenCalled();
 
-    dialog.showDialog.mockResolvedValueOnce(true);
+    dialog.show.mockResolvedValueOnce(true);
     sdkMock.getLibrarySetupProgress.mockResolvedValue(progress({ active: false, phase: null, stages: [] }));
     await fireEvent.click(screen.getByRole('button', { name: 'Stop setup' }));
     await vi.waitFor(() => expect(screen.queryByText('Setup needs attention')).not.toBeInTheDocument());

@@ -14679,6 +14679,21 @@ export type PersonMergeVerdictResponseDto = {
     suggestionId: string;
     verdict: PersonMergeVerdict;
 };
+export type PeoplePickerItemDto = {
+    /** Number of timeline assets showing this person */
+    assetCount: number;
+    /** Person ID */
+    id: string;
+    /** Person name */
+    name: string;
+    /** Last update date; the version of the thumbnail URL */
+    updatedAt: string;
+};
+export type PeoplePickerResponseDto = {
+    /** Whether there are more pages */
+    hasNextPage: boolean;
+    people: PeoplePickerItemDto[];
+};
 export type PersonSplitSuggestionDto = {
     /** Face embedding distance between the two groups of faces (higher is less alike) */
     distance: number;
@@ -18638,9 +18653,13 @@ export type QueueProblemDto = {
 export type QueueTaskDto = {
     /** For quietHours: when it opens again */
     closedUntil?: string;
+    /** Jobs of this queue finished since it last had nothing to do (FL-1785). With what is running and waiting, how far along it is */
+    done?: number;
     name: QueueName;
     /** For paused: when a person paused it; absent when the server did */
     pausedAt?: string;
+    /** Jobs finished an hour at the pace of the last ten minutes; absent when none finished */
+    perHour?: number;
     /** Why it is not running; null when nothing holds it */
     reason: (QueueIdleReason) | null;
     /** For waitingFor: the queue it waits for */
@@ -18684,6 +18703,8 @@ export type QueueJobResponseDto = {
     account?: QueueJobAccountDto;
     /** How many times the job has been attempted */
     attemptsMade?: number;
+    /** What went wrong, for a failed job (FL-1785) */
+    cause?: QueueProblemCause;
     /** Job data payload */
     data: {
         [key: string]: any;
@@ -24721,6 +24742,18 @@ export type OwnerBackupPageDto = {
 export type PartnerSearchDto = {
     direction: PartnerDirection;
 };
+export type PeoplePickerSearchDto = {
+    /** Only people whose name contains this text, whatever the case; empty matches everyone */
+    name?: string;
+    /** Page number for pagination */
+    page?: number;
+    /** Number of items per page */
+    size?: number;
+    /** Order: by name (unnamed people last), by photo count, or by the most recent photo. Without it, favorites first, then named people by the number of faces. Ignored with closestPersonId or closestAssetId. */
+    sort?: PeopleSort;
+    /** Include hidden people */
+    withHidden?: boolean;
+};
 export type PersonCorrectionSearchDto = {
     /** Page number */
     page?: number;
@@ -24732,10 +24765,14 @@ export type PersonSearchDto = {
     closestAssetId?: string;
     /** Closest person ID for similarity search */
     closestPersonId?: string;
+    /** Only people whose name contains this text, whatever the case; empty matches everyone */
+    name?: string;
     /** Page number for pagination */
     page?: number;
     /** Number of items per page */
     size?: number;
+    /** Order: by name (unnamed people last), by photo count, or by the most recent photo. Without it, favorites first, then named people by the number of faces. Ignored with closestPersonId or closestAssetId. */
+    sort?: PeopleSort;
     /** Include hidden people */
     withHidden?: boolean;
 };
@@ -37770,11 +37807,13 @@ export function deletePeople({ bulkIdsDto }: {
 /**
  * Get all people
  */
-export function getAllPeople({ closestAssetId, closestPersonId, page, size, withHidden }: {
+export function getAllPeople({ closestAssetId, closestPersonId, name, page, size, sort, withHidden }: {
     closestAssetId?: string;
     closestPersonId?: string;
+    name?: string;
     page?: number;
     size?: number;
+    sort?: PeopleSort;
     withHidden?: boolean;
 }, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
@@ -37783,8 +37822,10 @@ export function getAllPeople({ closestAssetId, closestPersonId, page, size, with
     }>(`/people${QS.query(QS.explode({
         closestAssetId,
         closestPersonId,
+        name,
         page,
         size,
+        sort,
         withHidden
     }))}`, {
         ...opts
@@ -37939,6 +37980,29 @@ export function setMergeVerdict({ personMergeVerdictCreateDto }: {
         method: "PUT",
         body: personMergeVerdictCreateDto
     })));
+}
+/**
+ * Get people for a picker
+ */
+export function getPeoplePicker({ name, page, size, sort, withHidden }: {
+    name?: string;
+    page?: number;
+    size?: number;
+    sort?: PeopleSort;
+    withHidden?: boolean;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PeoplePickerResponseDto;
+    }>(`/people/picker${QS.query(QS.explode({
+        name,
+        page,
+        size,
+        sort,
+        withHidden
+    }))}`, {
+        ...opts
+    }));
 }
 /**
  * Get split suggestions
@@ -49660,6 +49724,11 @@ export enum State5 {
 export enum PartnerScopeMode {
     Everything = "everything",
     Chosen = "chosen"
+}
+export enum PeopleSort {
+    Name = "name",
+    Count = "count",
+    Recent = "recent"
 }
 export enum PersonCorrectionAction {
     Reassign = "reassign",

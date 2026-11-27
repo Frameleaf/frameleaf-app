@@ -14,6 +14,7 @@
   import { mdiCheck, mdiClose, mdiEyeOffOutline, mdiFolderPlusOutline, mdiPlay, mdiTrashCanOutline } from '@mdi/js';
   import { locale, t, type Translations } from 'svelte-i18n';
   import { goto } from '$app/navigation';
+  import { formatDate } from '$lib/frameleaf/date-format';
   import BulkAlbumDialog from '$lib/components/frameleaf/BulkAlbumDialog.svelte';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import IconButton from '$lib/components/frameleaf/IconButton.svelte';
@@ -154,7 +155,7 @@
         {#if item.publishedAt}
           <dt>{$t('frameleaf_creators_fact_posted')}</dt>
           <dd>
-            {new Date(item.publishedAt).toLocaleDateString($locale ?? undefined, { dateStyle: 'medium' })}
+            {formatDate(new Date(item.publishedAt), { dateStyle: 'medium' }, $locale ?? 'default')}
           </dd>
         {/if}
       </dl>

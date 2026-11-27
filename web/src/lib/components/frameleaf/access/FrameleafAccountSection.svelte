@@ -12,6 +12,7 @@
    * `row` (the Frameleaf account row of "How you sign in", `settings-v2/cloud/Personal.jsx` MySignIn).
    * The page around a row reads the state through `link` and links through `connect()`.
    */
+  import { formatDate } from '$lib/frameleaf/date-format';
   import { goto } from '$app/navigation';
   import Facts from '$lib/components/frameleaf/settings/kit/Facts.svelte';
   import Hero from '$lib/components/frameleaf/settings/kit/Hero.svelte';
@@ -74,8 +75,7 @@
 
   onMount(load);
 
-  const since = (value: string | null) =>
-    value ? new Intl.DateTimeFormat($locale, { dateStyle: 'medium' }).format(new Date(value)) : '';
+  const since = (value: string | null) => (value ? formatDate(new Date(value), { dateStyle: 'medium' }, $locale) : '');
 
   export const connect = async () => {
     const confirmed = await confirmFrameleaf({

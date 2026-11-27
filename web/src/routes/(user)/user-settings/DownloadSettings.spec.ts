@@ -29,6 +29,7 @@ vi.mock('$lib/managers/auth-manager.svelte', () => ({ authManager: { preferences
 const values = (archiveSize: number) => ({
   'download.includeEmbeddedVideos': false,
   'download.includeSidecar': true,
+  'download.defaultFormat': 'original',
   'download.archiveSize': archiveSize,
 });
 
@@ -97,5 +98,17 @@ describe('DownloadSettings (ACCOUNT-P5)', () => {
     await fireEvent.input(size, { target: { value: '12' } });
     expect(downloads.set).toHaveBeenCalledWith('download.archiveSize', 12 * GB);
     expect(screen.getByText('A 25 GB album would arrive as 4 files.')).toBeInTheDocument();
+  });
+
+  it('sets the format the Download question starts on (FL-826)', async () => {
+    render(DownloadSettings);
+
+    const formats = screen.getByRole('group', { name: 'Default download format' });
+    expect(within(formats).getByRole('button', { name: 'Original' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByText(/It starts on this one\. The file exactly as it was added/)).toBeInTheDocument();
+
+    await fireEvent.click(within(formats).getByRole('button', { name: 'Web size' }));
+
+    expect(downloads.set).toHaveBeenCalledWith('download.defaultFormat', 'web');
   });
 });

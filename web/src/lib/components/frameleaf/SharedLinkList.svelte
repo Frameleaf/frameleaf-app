@@ -209,11 +209,10 @@
   const onSharedLinkUpdate = (link: SharedLinkResponseDto) => {
     links = links.map((entry) => (entry.id === link.id ? link : entry));
   };
+  // A deleted link leaves the counts even when it was not read yet (opened by `?edit=`).
   const onSharedLinkDelete = (link: SharedLinkResponseDto) => {
-    if (links.some((entry) => entry.id === link.id)) {
-      links = links.filter((entry) => entry.id !== link.id);
-      totals = countedWith(link, -1);
-    }
+    links = links.filter((entry) => entry.id !== link.id);
+    totals = countedWith(link, -1);
   };
   const countedWith = (link: SharedLinkResponseDto, change: number) =>
     link.type === SharedLinkType.Album

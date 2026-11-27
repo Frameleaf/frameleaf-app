@@ -30,12 +30,7 @@
   import { menuButtonId } from '$lib/components/shared-components/navigation-bar/NavigationBar.svelte';
   import { sidebarStore } from '$lib/stores/sidebar.svelte';
   import { websocketEvents } from '$lib/stores/websocket';
-  import {
-    buildAlbumTree,
-    emptyAlbumTree,
-    type FrameleafAlbumNode,
-    type FrameleafAlbumTree,
-  } from '$lib/frameleaf/album-tree';
+  import { emptyAlbumTree, type FrameleafAlbumNode, type FrameleafAlbumTree } from '$lib/frameleaf/album-tree';
   import {
     buildPhoneMenuDestinations,
     buildRailSections,
@@ -61,6 +56,7 @@
   import '$lib/frameleaf/tokens.css';
   import { searchContextFor, workspaceHref } from '$lib/frameleaf/search-context';
   import { onLibraryAccessChange } from '$lib/frameleaf/library-access';
+  import { railSession } from '$lib/frameleaf/rail-session.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { eventManager } from '$lib/managers/event-manager.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
@@ -78,15 +74,11 @@
     LibraryItemSearchKind,
     LibraryScope,
     LibraryViewScope,
-    getAlbumHierarchy,
+    getAlbumInfo,
     setAlbumOrder,
-    type AlbumHierarchyNode,
     type AlbumResponseDto,
     searchLibraryItems,
     type SearchFilter,
-    getPartners,
-    PartnerDirection,
-    type PartnerResponseDto,
   } from '@frameleaf/sdk';
   import { Icon, Theme as AppTheme, themeManager, toastManager } from '@frameleaf/ui';
   import {
@@ -148,14 +140,6 @@
 
   let { children }: Props = $props();
 
-  let tree = $state<FrameleafAlbumTree>(emptyAlbumTree());
-  /** The same albums as the server sent them, for the right-click menu's dialogs. */
-  let albumRecords = $state<AlbumResponseDto[]>([]);
-  const flattenHierarchy = (nodes: AlbumHierarchyNode[]): AlbumResponseDto[] =>
-    nodes.flatMap((node) => [node.album, ...flattenHierarchy(node.children)]);
-  const albumRoots = $derived(
-    (tree.roots ?? [...tree.collections, ...tree.albums]).filter(({ kind }) => kind !== 'space'),
-  );
   /** Sections folded on this device (`frameleaf.rail.closedSections`, as in the prototype). */
   let closedSections = $state<RailSectionId[]>(readClosedRailSections(browser ? localStorage : undefined));
   const foldSection = (id: RailSectionId) => {
@@ -170,7 +154,6 @@
   /** Collections whose open state the user has flipped away from the saved default. */
   const flipped = new SvelteSet<string>();
 
-  let treeRequest = 0;
   /**
    * The workspace the URL names; failing that, a Boards collection opened by its own address
    * (`/albums/<id>`) is still in Boards (FL-670).
@@ -182,40 +165,42 @@
         : undefined),
   );
   const scopedHref = (href: string) => workspaceHref(href, workspaceScope, page.url.origin);
+  /*
+   * FL-1796: the tree and the partners live in the session (`rail-session`), not in this rail. A
+   * rail that mounts again draws the last answer at once and reads it again behind it, instead of
+   * going blank on every page.
+   */
+  const railAlbums = $derived(railSession.albums[workspaceScope ?? '']);
+  const tree = $derived<FrameleafAlbumTree>(railAlbums?.tree ?? emptyAlbumTree());
+  /** The slim albums as the server sent them, in rail order (FL-1796): moves, names, edit rights. */
+  const albumRecords = $derived(railAlbums?.records ?? []);
+  /** The full albums, for the dialogs that need members, links or origin; read when one opens. */
+  const fullAlbums = () => railSession.fullAlbums(workspaceScope);
+  const albumRoots = $derived(
+    (tree.roots ?? [...tree.collections, ...tree.albums]).filter(({ kind }) => kind !== 'space'),
+  );
+  let mounted = true;
+  onDestroy(() => (mounted = false));
   const refreshAlbums = async (scope = workspaceScope) => {
-    const version = ++treeRequest;
-    const current = authManager.captureSession();
     try {
-      const response = await getAlbumHierarchy(scope ? { libraryScope: scope } : {});
-      if (version === treeRequest && current() && scope === workspaceScope) {
-        tree = buildAlbumTree(response);
-        albumRecords = flattenHierarchy(response.roots);
-      }
+      await railSession.refreshAlbums(scope);
     } catch (error) {
-      if (version === treeRequest && current()) {
+      if (mounted) {
         handleError(error, $t('errors.frameleaf_unable_to_load_albums'));
       }
     }
   };
   $effect(() => {
     const scope = workspaceScope;
-    untrack(() => {
-      tree = emptyAlbumTree();
-      albumRecords = [];
-      void refreshAlbums(scope);
-    });
+    untrack(() => void refreshAlbums(scope));
   });
-  onDestroy(() => treeRequest++);
   onDestroy(
+    // the session store dropped what it held (it listens first); this rail asks again
     onLibraryAccessChange(() => {
-      treeRequest++;
-      partnerRequest++;
-      tree = emptyAlbumTree();
-      albumRecords = [];
-      partners = [];
-      // Counts read under the old access must not outlive it (a lock, another account).
+      // Counts and collections read under the old access must not outlive it (a lock, another account).
       countsRequest++;
       boardsCounts = {};
+      boardsAlbums = [];
       if (authManager.authenticated) {
         void refreshAlbums();
         void refreshPartners();
@@ -227,24 +212,8 @@
   );
 
   /** People who share their library with this account (the prototype's partner library entry). */
-  let partners = $state<PartnerResponseDto[]>([]);
-  let partnerRequest = 0;
-  onDestroy(() => partnerRequest++);
-  const refreshPartners = async () => {
-    const version = ++partnerRequest;
-    const current = authManager.captureSession();
-    try {
-      const response = await getPartners({ direction: PartnerDirection.SharedWith });
-      if (version === partnerRequest && current()) {
-        partners = response;
-      }
-    } catch {
-      // The rail still works without the entry; the Sharing page reports partner errors.
-      if (version === partnerRequest && current()) {
-        partners = [];
-      }
-    }
-  };
+  const partners = $derived(railSession.partners ?? []);
+  const refreshPartners = () => railSession.refreshPartners();
 
   /*
    * Right-click (approved design, 2026-11-04): an album, collection or space opens its menu at the
@@ -309,8 +278,8 @@
   };
   const saveMove = async (albumId: string, move: RailMove) => {
     const scope = workspaceScope;
-    let album = albumRecords.find(({ id }) => id === albumId);
-    const name = album?.albumName ?? '';
+    let album: AlbumResponseDto | undefined;
+    const name = albumRecords.find(({ id }) => id === albumId)?.albumName ?? '';
     // Through the album service, which reports a failure and announces each saved album (`AlbumUpdate`).
     let saved = true;
     for (const { id, sortOrder, parentId } of move.updates) {
@@ -338,6 +307,7 @@
         });
         toastManager.primary($t('frameleaf_rail_moved', { values: { name } }));
         // The person's own order changes no album: announce the move so an open Albums page shows it too.
+        album ??= await getAlbumInfo({ id: albumId }).catch(() => undefined);
         if (album) {
           eventManager.emit('AlbumUpdate', album);
         }
@@ -464,8 +434,7 @@
   };
 
   const refreshAccessAlbums = () => {
-    tree = emptyAlbumTree();
-    albumRecords = [];
+    railSession.dropAlbums(workspaceScope);
     void refreshAlbums();
   };
   onMount(() => {
@@ -862,8 +831,30 @@
    * Boards' "New collection" opens over the page you are on (prototype `NewCollectionDialog`), from
    * the "+" here, Boards' Add menu or a collection's "…" menu, and creates in Boards; you stay put.
    */
+  /** Read when Boards' "New collection" opens: the dialog shows each collection as the full album. */
+  let boardsAlbums = $state<AlbumResponseDto[]>([]);
+  $effect(() => {
+    // never the list from before (another account, or before a lock)
+    boardsAlbums = [];
+    if (!boardsCollectionUi.request) {
+      return;
+    }
+    let left = false;
+    void untrack(fullAlbums)
+      .then((albums) => {
+        if (!left) {
+          boardsAlbums = albums;
+        }
+      })
+      .catch(() => {
+        // the dialog then offers no collection to put it in; it still creates at the top level
+      });
+    return () => {
+      left = true;
+    };
+  });
   const boardsCollections = $derived(
-    albumRecords.filter(
+    boardsAlbums.filter(
       (album) => album.kind !== AlbumKind.Space && authManager.authenticated && canEdit(album, authManager.user.id),
     ),
   );
@@ -1518,6 +1509,7 @@
 <RailAlbumMenu
   bind:this={railMenu}
   albums={albumRecords}
+  {fullAlbums}
   onRename={(id) => (renaming = id)}
   onRefresh={() => refreshAlbums()}
 />

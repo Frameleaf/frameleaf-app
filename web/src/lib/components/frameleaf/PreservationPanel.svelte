@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { confirmFrameleaf } from '$lib/frameleaf/confirm';
   /**
    * Import & export › Export a copy (FL-74, `IMP-006`; rebuilt on the kit after the approved
    * prototype's `settings-v2/library/export.jsx`). The last copy first (complete, being made, or
@@ -54,7 +55,7 @@
     type PreservationPackageDto,
     type PreservationRestoreDto,
   } from '@frameleaf/sdk';
-  import { Icon, modalManager, toastManager } from '@frameleaf/ui';
+  import { Icon, toastManager } from '@frameleaf/ui';
   import {
     mdiAlertCircleOutline,
     mdiChevronRight,
@@ -358,7 +359,10 @@
         await retryPreservationPackage({ id: item.id });
         toastManager.info($t('frameleaf_preservation_retry_started'));
       } else {
-        const confirmed = await modalManager.showDialog({
+        const confirmed = await confirmFrameleaf({
+          title: $t('frameleaf_preservation_manage_remove'),
+          confirmText: $t('frameleaf_preservation_manage_remove'),
+          danger: true,
           prompt: $t('frameleaf_preservation_remove_confirm', { values: { name: item.name } }),
         });
         if (!confirmed) {

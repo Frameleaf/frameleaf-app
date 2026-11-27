@@ -690,8 +690,9 @@ export type JobItem =
   | { name: JobName.AssetPaletteQueueAll; data: IBaseJob & { afterId?: string } }
 
   // Best Photos
-  | { name: JobName.BestPhotosScoreQueueAll; data: IBaseJob }
-  | { name: JobName.BestPhotosScore; data: IEntityJob & { embeddingChanged?: boolean } }
+  // FL-1827: `limit` and `after`: one share of the paced scan; `force` on a score: Recalculate, the one way to score again
+  | { name: JobName.BestPhotosScoreQueueAll; data: IBaseJob & { limit?: number; after?: string } }
+  | { name: JobName.BestPhotosScore; data: IEntityJob & { force?: boolean } }
 
   // Media Health
   | { name: JobName.MediaHealthScanMissing; data: IMediaHealthScanJob }
@@ -823,7 +824,8 @@ export type JobItem =
   | { name: JobName.DescriptionFillerTagCleanup; data?: IBaseJob }
 
   // Asset Deletion
-  | { name: JobName.PersonCleanup; data?: IBaseJob }
+  // FL-1790: with `mergeCandidatesOwnerId`, only that owner's merge suggestions are worked out again
+  | { name: JobName.PersonCleanup; data?: IBaseJob & { mergeCandidatesOwnerId?: string } }
   | { name: JobName.AssetDelete; data: IAssetDeleteJob }
   | { name: JobName.AssetDeleteCheck; data?: IBaseJob }
 

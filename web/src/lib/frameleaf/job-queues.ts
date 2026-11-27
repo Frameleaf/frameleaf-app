@@ -13,6 +13,7 @@ import {
   ManualJobName,
   QueueJobStatus,
   QueueName,
+  QueueProblemCause,
   type QueueResponseDto,
   type QueueStatisticsDto,
   type ServerFeaturesDto as FeatureFlags,
@@ -442,3 +443,23 @@ export const manualJobKey = (name: ManualJobName) => `frameleaf_jobs_manual_${sn
 
 /** The i18n key of a job handler's customer-facing name (`frameleaf_jobs_name_<name>`). */
 export const jobNameKey = (name: JobName) => `frameleaf_jobs_name_${snake(name)}`;
+
+/**
+ * FL-1785: the i18n key stem of what went wrong (`frameleaf_jobs_adv_cause_<key>`, with `_body`, `_safe` for many
+ * photos, and `_safe_one` and `_todo` for one job), shared by Advanced's list and one task's failed jobs.
+ */
+export const PROBLEM_KEYS: Record<QueueProblemCause, string> = {
+  [QueueProblemCause.Drive]: 'drive',
+  [QueueProblemCause.Missing]: 'missing',
+  [QueueProblemCause.Damaged]: 'damaged',
+  [QueueProblemCause.Unsupported]: 'unsupported',
+  [QueueProblemCause.WriteDenied]: 'write',
+  [QueueProblemCause.MlUnavailable]: 'ml',
+  [QueueProblemCause.TooLong]: 'slow',
+  [QueueProblemCause.Other]: 'other',
+};
+/** The causes where the file itself is the problem: their line is a caution, not a reassurance. */
+export const PROBLEMS_AT_RISK: ReadonlySet<QueueProblemCause> = new Set([
+  QueueProblemCause.Missing,
+  QueueProblemCause.Damaged,
+]);

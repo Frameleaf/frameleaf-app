@@ -1,6 +1,6 @@
 <script lang="ts">
   import { rovingFocus } from '$lib/frameleaf/roving-focus';
-  import AlbumConfirmDialog from '$lib/components/frameleaf/AlbumConfirmDialog.svelte';
+  import ConfirmDialog from '$lib/components/frameleaf/ConfirmDialog.svelte';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import InlineError from '$lib/components/frameleaf/InlineError.svelte';
@@ -650,10 +650,11 @@
 
 {#if removing.user}
   {@const user = removing.user}
-  <AlbumConfirmDialog
+  <ConfirmDialog
     title={$t('frameleaf_album_remove_member_title', { values: { name: user.name } })}
-    body={$t('frameleaf_album_remove_member_body', { values: { name: album.albumName || $t('unnamed_album') } })}
-    confirmLabel={$t('frameleaf_album_remove_member_confirm')}
+    prompt={$t('frameleaf_album_remove_member_body', { values: { name: album.albumName || $t('unnamed_album') } })}
+    confirmText={$t('frameleaf_album_remove_member_confirm')}
+    danger
     bind:open={removing.open}
     onConfirm={() => remove(user)}
   />
@@ -674,7 +675,7 @@
   /* collections.css .cl-tabs: two pills over a hairline. */
   .tabs {
     display: flex;
-    gap: var(--fl-space-2);
+    gap: var(--fl-space-3);
     padding-bottom: var(--fl-space-3);
     border-bottom: 1px solid var(--fl-border);
   }
@@ -811,7 +812,7 @@
   .link-list {
     display: flex;
     flex-direction: column;
-    gap: var(--fl-space-1);
+    gap: var(--fl-space-2);
     margin: 0 0 var(--fl-space-3);
     padding: 0;
     list-style: none;
@@ -865,7 +866,7 @@
   .invite-row {
     display: flex;
     align-items: flex-end;
-    gap: var(--fl-space-2);
+    gap: var(--fl-space-3);
   }
   .invite-row label {
     display: flex;
@@ -895,7 +896,7 @@
   .links {
     display: flex;
     align-items: center;
-    gap: var(--fl-space-2);
+    gap: var(--fl-space-3);
   }
   button,
   .manage {

@@ -59,13 +59,19 @@ export const normalizeAlbumDirectoryView = (value: unknown): AlbumDirectoryView 
   };
 };
 
-export const roleOf = (album: AlbumResponseDto, userId: string): AlbumUserRole | null =>
-  album.albumUsers.find(({ user }) => user.id === userId)?.role ?? null;
+/**
+ * An album as the full directory sends it (with its members), or as the slim rail list sends it
+ * (FL-1796, `GET /albums/rail`), which carries only the viewer's own role.
+ */
+export type AlbumWithRole = Pick<AlbumResponseDto, 'albumUsers'> | { role: AlbumUserRole };
+
+export const roleOf = (album: AlbumWithRole, userId: string): AlbumUserRole | null =>
+  'role' in album ? album.role : (album.albumUsers.find(({ user }) => user.id === userId)?.role ?? null);
 
 export const ownerOf = (album: AlbumResponseDto): UserResponseDto | undefined =>
   album.albumUsers.find(({ role }) => role === AlbumUserRole.Owner)?.user;
 
-export const isOwner = (album: AlbumResponseDto, userId: string) => roleOf(album, userId) === AlbumUserRole.Owner;
+export const isOwner = (album: AlbumWithRole, userId: string) => roleOf(album, userId) === AlbumUserRole.Owner;
 
 /** "Merge with…" is for plain albums the person owns: not smart albums, collections, spaces or partner copies. */
 export const canMerge = (album: AlbumResponseDto, userId: string) =>
@@ -78,7 +84,7 @@ export const sameAlbumName = (a: string, b: string) => {
 };
 
 /** Owners and editors may change an album or add to a collection. */
-export const canEdit = (album: AlbumResponseDto, userId: string) => {
+export const canEdit = (album: AlbumWithRole, userId: string) => {
   const role = roleOf(album, userId);
   return role === AlbumUserRole.Owner || role === AlbumUserRole.Editor;
 };
@@ -377,9 +383,14 @@ const spanFormats = new Map<string | undefined, Record<'monthYear' | 'month' | '
 const spanFormatters = (locale?: string) => {
   let formats = spanFormats.get(locale);
   if (!formats) {
+    // Month and year only: with no day and no time there is nothing for the account's date or time format
+    // to change, so these stay as they were.
     formats = {
+      // eslint-disable-next-line no-restricted-syntax -- no day or time for the account's format to change
       monthYear: new Intl.DateTimeFormat(locale, { month: 'short', year: 'numeric', timeZone: 'UTC' }),
+      // eslint-disable-next-line no-restricted-syntax -- no day or time for the account's format to change
       month: new Intl.DateTimeFormat(locale, { month: 'short', timeZone: 'UTC' }),
+      // eslint-disable-next-line no-restricted-syntax -- no day or time for the account's format to change
       year: new Intl.DateTimeFormat(locale, { year: 'numeric', timeZone: 'UTC' }),
     };
     spanFormats.set(locale, formats);

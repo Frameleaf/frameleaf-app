@@ -103,7 +103,7 @@ describe(PersonService.name, () => {
         ],
         hasNextPage: false,
       });
-      mocks.person.getNumberOfPeople.mockResolvedValue({ total: 2, hidden: 1 });
+      mocks.person.getListedTotals.mockResolvedValue({ total: 2, hidden: 1 });
       await expect(sut.getAll(auth, { withHidden: true, page: 1, size: 10 })).resolves.toEqual({
         hasNextPage: false,
         total: 2,
@@ -125,8 +125,50 @@ describe(PersonService.name, () => {
           }),
         ],
       });
-      expect(mocks.person.getAllForUser).toHaveBeenCalledWith({ skip: 0, take: 10 }, auth.user.id, {
-        withHidden: true,
+      expect(mocks.person.getAllForUser).toHaveBeenCalledWith(
+        { skip: 0, take: 10 },
+        auth.user.id,
+        { withHidden: true },
+        undefined,
+      );
+    });
+
+    it('passes a name search and a sort to the list, bringing the counts up to date once (FL-1789)', async () => {
+      const auth = AuthFactory.create();
+      mocks.person.getAllForUser.mockResolvedValue({ items: [], hasNextPage: false });
+      mocks.person.getListedTotals.mockResolvedValue({ total: 3, hidden: 0 });
+      mocks.person.syncSummaries.mockResolvedValue('variant-key');
+
+      await sut.getAll(auth, { page: 2, size: 10, name: 'ada', sort: 'recent' });
+
+      expect(mocks.person.getAllForUser).toHaveBeenCalledWith(
+        { skip: 10, take: 10 },
+        auth.user.id,
+        { withHidden: false, name: 'ada', sort: 'recent' },
+        'variant-key',
+      );
+      // the stored counts are brought up to date once, and both reads use that key
+      expect(mocks.person.syncSummaries).toHaveBeenCalledOnce();
+      expect(mocks.person.getListedTotals).toHaveBeenCalledWith(auth.user.id, {}, 'variant-key');
+      expect(mocks.person.getNumberOfPeople).not.toHaveBeenCalled();
+    });
+
+    it('lists people for a picker with only what a row needs (FL-1789)', async () => {
+      const auth = AuthFactory.create();
+      const person = PersonFactory.create({ name: 'Ada', updatedAt: new Date('2026-11-26T10:00:00.000Z') });
+      mocks.person.getPickerPage.mockResolvedValue({
+        items: [{ personGroupId: person.personGroupId, name: 'Ada', updatedAt: person.updatedAt, assetCount: 7 }],
+        hasNextPage: true,
+      });
+
+      await expect(sut.getPicker(auth, { page: 1, size: 100, name: 'ad', sort: 'name' })).resolves.toEqual({
+        people: [{ id: person.personGroupId, name: 'Ada', updatedAt: '2026-11-26T10:00:00.000Z', assetCount: 7 }],
+        hasNextPage: true,
+      });
+      expect(mocks.person.getPickerPage).toHaveBeenCalledWith({ skip: 0, take: 100 }, auth.user.id, {
+        withHidden: false,
+        name: 'ad',
+        sort: 'name',
       });
     });
 
@@ -134,7 +176,7 @@ describe(PersonService.name, () => {
     it('says face recognition is still working when nobody has been found and photos still wait', async () => {
       const auth = AuthFactory.create();
       mocks.person.getAllForUser.mockResolvedValue({ items: [], hasNextPage: false });
-      mocks.person.getNumberOfPeople.mockResolvedValue({ total: 0, hidden: 0 });
+      mocks.person.getListedTotals.mockResolvedValue({ total: 0, hidden: 0 });
       mocks.assetJob.hasFacesToDetect.mockResolvedValue(true);
 
       await expect(sut.getAll(auth, { withHidden: true, page: 1, size: 10 })).resolves.toEqual({
@@ -158,13 +200,13 @@ describe(PersonService.name, () => {
     it('does not say so with face recognition turned off, or once somebody has been found', async () => {
       const auth = AuthFactory.create();
       mocks.person.getAllForUser.mockResolvedValue({ items: [], hasNextPage: false });
-      mocks.person.getNumberOfPeople.mockResolvedValue({ total: 0, hidden: 0 });
+      mocks.person.getListedTotals.mockResolvedValue({ total: 0, hidden: 0 });
       mocks.assetJob.hasFacesToDetect.mockResolvedValue(true);
       mocks.systemMetadata.get.mockResolvedValue({ machineLearning: { enabled: false } });
       await expect(sut.getAll(auth, { withHidden: true, page: 1, size: 10 })).resolves.not.toHaveProperty('scanning');
 
       mocks.systemMetadata.get.mockResolvedValue({});
-      mocks.person.getNumberOfPeople.mockResolvedValue({ total: 0, hidden: 1 });
+      mocks.person.getListedTotals.mockResolvedValue({ total: 0, hidden: 1 });
       await expect(sut.getAll(auth, { withHidden: true, page: 1, size: 10 })).resolves.not.toHaveProperty('scanning');
       expect(mocks.assetJob.hasFacesToDetect).not.toHaveBeenCalled();
     });
@@ -194,7 +236,7 @@ describe(PersonService.name, () => {
         ],
         hasNextPage: false,
       });
-      mocks.person.getNumberOfPeople.mockResolvedValue({ total: 2, hidden: 1 });
+      mocks.person.getListedTotals.mockResolvedValue({ total: 2, hidden: 1 });
       await expect(sut.getAll(auth, { withHidden: false, page: 1, size: 10 })).resolves.toEqual({
         hasNextPage: false,
         total: 2,
@@ -207,9 +249,12 @@ describe(PersonService.name, () => {
           expect.objectContaining({ id: person.personGroupId, isFavorite: false }),
         ],
       });
-      expect(mocks.person.getAllForUser).toHaveBeenCalledWith({ skip: 0, take: 10 }, auth.user.id, {
-        withHidden: false,
-      });
+      expect(mocks.person.getAllForUser).toHaveBeenCalledWith(
+        { skip: 0, take: 10 },
+        auth.user.id,
+        { withHidden: false },
+        undefined,
+      );
     });
   });
 
@@ -308,8 +353,56 @@ describe(PersonService.name, () => {
         ],
       });
       expect(mocks.person.getMergeSuggestions).toHaveBeenCalledWith(auth.user.id, { maxDistance: 0.5, limit: 20 });
-      // FL-1384: a library of up to 500 people is worked out again as it is read
-      expect(mocks.person.refreshMergeCandidates).toHaveBeenCalledWith(auth.user.id, 0.5, 500);
+      // FL-1790: reading writes nothing; the pairs are worked out by a job
+      expect(mocks.person.refreshMergeCandidates).not.toHaveBeenCalled();
+      expect(mocks.person.reanchorMergeVerdicts).not.toHaveBeenCalled();
+      expect(mocks.job.queue).not.toHaveBeenCalled();
+      expect(mocks.job.queueOutsideRun).not.toHaveBeenCalled();
+    });
+
+    it('reads every reference photo for the face boxes in one query (FL-1790)', async () => {
+      const auth = AuthFactory.create();
+      const [alice, bob] = [
+        PersonFactory.create({ ownerId: auth.user.id }),
+        PersonFactory.create({ ownerId: auth.user.id }),
+      ];
+      const [aliceAssetId, bobAssetId] = [newUuid(), newUuid()];
+      const box = {
+        imageWidth: 100,
+        imageHeight: 100,
+        boundingBoxX1: 10,
+        boundingBoxY1: 20,
+        boundingBoxX2: 30,
+        boundingBoxY2: 40,
+      };
+      mocks.systemMetadata.get.mockResolvedValue({ machineLearning: { facialRecognition: { maxDistance: 0.5 } } });
+      mocks.person.getMergeSuggestions.mockResolvedValue([
+        { personId: alice.personGroupId, suggestionId: bob.personGroupId, distance: 0.42 },
+      ]);
+      mocks.person.getForMergePerson.mockResolvedValue([alice, bob]);
+      mocks.person.getReferenceFaces.mockResolvedValue([
+        { personGroupId: alice.personGroupId, faceId: newUuid(), assetId: aliceAssetId, ...box },
+        { personGroupId: bob.personGroupId, faceId: newUuid(), assetId: bobAssetId, ...box },
+      ]);
+      mocks.person.getAssetsForFaceBoxes.mockResolvedValue(
+        [aliceAssetId, bobAssetId].map((id) => ({
+          id,
+          exifImageWidth: 100,
+          exifImageHeight: 100,
+          orientation: null,
+          edits: [],
+        })),
+      );
+
+      const { suggestions } = await sut.getMergeSuggestions(auth);
+
+      expect(mocks.person.getAssetsForFaceBoxes).toHaveBeenCalledExactlyOnceWith([aliceAssetId, bobAssetId]);
+      expect(mocks.asset.getForFaces).not.toHaveBeenCalled();
+      expect(suggestions[0].personEvidence).toMatchObject({ assetId: aliceAssetId, box: { x: 0.1, y: 0.2 } });
+      expect(suggestions[0].suggestionEvidence).toMatchObject({
+        assetId: bobAssetId,
+        box: { width: 0.2, height: 0.2 },
+      });
     });
 
     it('should return no suggestions when nothing is close enough', async () => {
@@ -1702,6 +1795,10 @@ describe(PersonService.name, () => {
         name: JobName.PersonIdentityRefresh,
         data: { ownerId: auth.user.id, assetIds: [face.assetId] },
       });
+      // FL-1790: a moved face asks for the owner's merge suggestions to be worked out again
+      expect(mocks.job.queueOutsideRun).toHaveBeenCalledWith([
+        { name: JobName.PersonCleanup, data: { mergeCandidatesOwnerId: auth.user.id } },
+      ]);
       expect(mocks.job.queueAll).toHaveBeenCalledWith([]);
     });
 
@@ -1754,6 +1851,17 @@ describe(PersonService.name, () => {
       expect(mocks.person.deleteEmptyGroups).toHaveBeenCalledWith();
       expect(mocks.storage.unlink).toHaveBeenCalledWith(person.thumbnailPath);
       expect(mocks.person.reanchorMergeVerdicts).toHaveBeenCalledWith(undefined);
+    });
+
+    it("works out one owner's merge suggestions again when asked to, and nothing else (FL-1790)", async () => {
+      const ownerId = newUuid();
+      mocks.systemMetadata.get.mockResolvedValue({ machineLearning: { facialRecognition: { maxDistance: 0.5 } } });
+
+      await expect(sut.handlePersonCleanup({ mergeCandidatesOwnerId: ownerId })).resolves.toBe(JobStatus.Success);
+
+      expect(mocks.person.reanchorMergeVerdicts).toHaveBeenCalledWith(ownerId);
+      expect(mocks.person.refreshMergeCandidates).toHaveBeenCalledExactlyOnceWith(ownerId, 0.5);
+      expect(mocks.person.getAllWithoutFaces).not.toHaveBeenCalled();
     });
 
     describe('poor main photos (FL-1383)', () => {
@@ -3310,10 +3418,15 @@ describe(PersonService.name, () => {
       mocks.machineLearning.detectFaces.mockResolvedValue(getAsDetectedFace(face));
       mocks.assetJob.getForDetectFacesJob.mockResolvedValue(getForDetectedFaces(asset));
       mocks.person.refreshFaces.mockResolvedValue();
+      mocks.assetJob.getOwnerId.mockResolvedValue(asset.ownerId);
 
       await sut.handleDetectFaces({ id: asset.id });
 
       expect(mocks.person.refreshFaces).toHaveBeenCalledWith([], [], [{ faceId: face.id, embedding: '[1, 2, 3, 4]' }]);
+      // FL-1790: a face found again has a new embedding, so the owner's stored pairs are measured again
+      expect(mocks.job.queueOutsideRun).toHaveBeenCalledWith([
+        { name: JobName.PersonCleanup, data: { mergeCandidatesOwnerId: asset.ownerId } },
+      ]);
       expect(mocks.job.queueAll).not.toHaveBeenCalled();
       expect(mocks.person.reassignFace).not.toHaveBeenCalled();
       expect(mocks.person.reassignFaces).not.toHaveBeenCalled();
@@ -3448,6 +3561,10 @@ describe(PersonService.name, () => {
 
       await sut.handleRecognizeFaces({ id: noPerson1.id });
 
+      // FL-1790: a recognized face asks for the owner's merge suggestions to be worked out again
+      expect(mocks.job.queueOutsideRun).toHaveBeenCalledWith([
+        { name: JobName.PersonCleanup, data: { mergeCandidatesOwnerId: asset.ownerId } },
+      ]);
       expect(mocks.person.create).not.toHaveBeenCalled();
       // joining a person who exists runs alongside other faces, without the creation lock
       expect(mocks.person.lockPersonCreation).not.toHaveBeenCalled();

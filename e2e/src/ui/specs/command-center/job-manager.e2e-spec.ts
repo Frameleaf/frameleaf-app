@@ -59,7 +59,8 @@ const setupQueueMocks = async (context: BrowserContext) => {
       },
     ],
     tasks: [
-      { name: 'thumbnailGeneration', reason: null },
+      // FL-1785: how far along a task is, and its pace
+      { name: 'thumbnailGeneration', reason: null, done: 15, perHour: 60 },
       { name: 'faceDetection', reason: 'quietHours', closedUntil: new Date(Date.now() + 2 * 3_600_000).toISOString() },
       { name: 'backgroundTask', reason: null },
     ],
@@ -80,6 +81,7 @@ const setupQueueMocks = async (context: BrowserContext) => {
               data: { id: faker.string.uuid() },
               attemptsMade: 3,
               failedReason: 'Machine learning is unreachable',
+              cause: 'mlUnavailable',
               account: { id: faker.string.uuid(), name: 'Ada Lovelace' },
               worker: { kind: 'frameleaf-cloud', name: 'Studio cloud' },
             },
@@ -195,13 +197,17 @@ test.describe('Job manager', () => {
     await expect(look.getByText('In Finding faces')).toBeVisible();
     await look.getByRole('button', { name: 'What the server said' }).click();
     await expect(look.getByText(/failed with status 503/)).toBeVisible();
+    // FL-1785: what it means for the photos
+    await expect(look.getByText('Your photos are safe. Only their face and search results are waiting.')).toBeVisible();
 
     // Every task with work, with its feature and why it is or is not running.
     const tasks = page.getByRole('region', { name: 'Tasks with work' });
     const thumbnails = tasks.getByRole('listitem').filter({ hasText: 'Making thumbnails' });
     await expect(thumbnails.getByText('Ready to browse')).toBeVisible();
-    await expect(thumbnails.getByText('Running 2 at once')).toBeVisible();
-    await expect(thumbnails.getByText('5 waiting')).toBeVisible();
+    // FL-1785: a bar, how far along it is and about how long is left
+    await expect(thumbnails.getByText('Running 2 at once · under an hour left')).toBeVisible();
+    await expect(thumbnails.getByText('15 of 22')).toBeVisible();
+    await expect(thumbnails.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '68');
     // Quiet hours are not a pause: the task says when it starts, and can be started now.
     const faces = tasks.getByRole('listitem').filter({ hasText: 'Finding faces' });
     await expect(faces.locator('.ja-state')).toHaveText(/Heavy work\. Starts tonight at /);
@@ -264,6 +270,10 @@ test.describe('Job manager', () => {
     await expect(table.getByRole('columnheader', { name: 'Computer' })).toBeVisible();
     await expect(table.getByText('Ada Lovelace')).toBeVisible();
     await expect(table.getByText('Frameleaf Cloud')).toBeVisible();
+    // FL-1785: what went wrong in plain words, and that the photo is fine; the server's own are in the details
+    await expect(table.getByText('The face and search helper didn’t answer')).toBeVisible();
+    await expect(table.getByText(/Nothing is wrong with this photo or video/)).toBeVisible();
+    await expect(table.getByText('Machine learning is unreachable')).toHaveCount(0);
 
     await page.getByRole('button', { name: 'Try again', exact: true }).click();
     const review = page.getByRole('dialog', { name: 'Try again' });

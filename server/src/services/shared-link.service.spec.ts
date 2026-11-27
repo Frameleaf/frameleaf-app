@@ -109,6 +109,11 @@ describe(SharedLinkService.name, () => {
       await expect(sut.getPage(authStub.user1, { take: 2, cursor: 'nonsense' })).rejects.toBeInstanceOf(
         BadRequestException,
       );
+      // well formed, but a time that cannot exist would fail in Postgres instead (FL-1795 review)
+      const impossible = Buffer.from(`${newUuid()}|2026-02-30 25:61:61+00`).toString('base64url');
+      await expect(sut.getPage(authStub.user1, { take: 2, cursor: impossible })).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
       expect(mocks.sharedLink.getAll).not.toHaveBeenCalled();
     });
   });

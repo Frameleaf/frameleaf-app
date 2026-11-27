@@ -11,6 +11,7 @@ import type {
   FaceCorrectionInput,
   PersonId,
   PersonProfile,
+  PersonRepository,
   UpdateFacesData,
 } from 'src/repositories/person.repository.js';
 import type { AssetFaceTable } from 'src/schema/tables/asset-face.table.js';
@@ -35,6 +36,8 @@ import {
   MergePersonDto,
   MergeSuggestionsResponseDto,
   PERSON_NOTES_MAX_LENGTH,
+  PeoplePickerResponseDto,
+  PeoplePickerSearchDto,
   PeopleResponseDto,
   PeopleUpdateDto,
   PersonCorrectionDto,
@@ -136,7 +139,6 @@ const correctionConflict = (reason: CorrectionConflictReason, message: string) =
 const isDefinedId = (id: string | null): id is string => !!id;
 
 /** FL-1384: up to this many people, merge candidates are worked out when the People page asks. */
-const MERGE_LIVE_PEOPLE = 500;
 /**
  * FL-1384, FL-1385: the time the nightly people care last ran, as it is compared with when faces changed.
  * The run's time is this server's clock and a face's is the database's, so the comparison reaches back
@@ -192,6 +194,9 @@ export const mergeProfiles = (
   return Object.keys(changes).length > 0 ? changes : undefined;
 };
 
+/** FL-1789: a viewer variant in use is counted again daily, so summaries this old belong to one nobody reads. */
+const SUMMARY_ABANDONED_AFTER_MS = 30 * 24 * 60 * 60 * 1000;
+
 @Injectable()
 export class PersonService extends BaseService {
   /** FL-455: photos whose face detection is routed to Frameleaf Cloud wait here for a batch. */
@@ -210,7 +215,7 @@ export class PersonService extends BaseService {
   }
 
   async getAll(auth: AuthDto, dto: PersonSearchDto): Promise<PeopleResponseDto> {
-    const { withHidden = false, closestAssetId, closestPersonId, page, size } = dto;
+    const { withHidden = false, closestAssetId, closestPersonId, page, size, name, sort } = dto;
     let closestFaceAssetId = closestAssetId;
     const pagination = {
       take: size,
@@ -227,14 +232,15 @@ export class PersonService extends BaseService {
       closestFaceAssetId = person.faceAssetId;
     }
     const privacyOptions = getHiddenContentQueryOptions(auth);
-    const [{ items, hasNextPage }, { total, hidden }] = await Promise.all([
-      this.personRepository.getAllForUser(pagination, auth.user.id, {
-        withHidden,
-        closestFaceAssetId,
-        ...privacyOptions,
-      }),
-      this.personRepository.getNumberOfPeople(auth.user.id, privacyOptions),
-    ]);
+    // FL-1789: both read the stored summaries, brought up to date once for the request
+    const viewerKey = await this.personRepository.syncSummaries(auth.user.id, privacyOptions);
+    const { items, hasNextPage } = await this.personRepository.getAllForUser(
+      pagination,
+      auth.user.id,
+      { withHidden, closestFaceAssetId, ...(name && { name }), ...(sort && { sort }), ...privacyOptions },
+      viewerKey,
+    );
+    const { total, hidden } = await this.personRepository.getListedTotals(auth.user.id, privacyOptions, viewerKey);
 
     // FL-1408 (M9): with nobody found yet, say whether face recognition is still working through
     // this account's photos, so the page does not read "no people" halfway through a first scan
@@ -260,6 +266,28 @@ export class PersonService extends BaseService {
   }
 
   /**
+   * FL-1789: the people list for a picker or a filter's vocabulary: id, name, thumbnail version and
+   * photo count, with the same name search, order and pages as `getAll`.
+   */
+  async getPicker(auth: AuthDto, dto: PeoplePickerSearchDto): Promise<PeoplePickerResponseDto> {
+    const { withHidden = false, page, size, name, sort } = dto;
+    const { items, hasNextPage } = await this.personRepository.getPickerPage(
+      { take: size, skip: (page - 1) * size },
+      auth.user.id,
+      { withHidden, ...(name && { name }), ...(sort && { sort }), ...getHiddenContentQueryOptions(auth) },
+    );
+    return {
+      people: items.map((person) => ({
+        id: person.personGroupId,
+        name: person.name,
+        updatedAt: asDateTimeString(person.updatedAt),
+        assetCount: Number(person.assetCount),
+      })),
+      hasNextPage,
+    };
+  }
+
+  /**
    * FL-57: guided merge-suggestion verdict flow. Surfaces candidate pairs of people that
    * may be the same person so the People page can offer same/different/later/ignore instead of
    * requiring the user to notice a duplicate on their own. Reuses the facial-recognition job's own
@@ -273,13 +301,10 @@ export class PersonService extends BaseService {
    * Answers are recorded with `setMergeVerdict`; `deleteMergeVerdict` is the undo.
    */
   async getMergeSuggestions(auth: AuthDto): Promise<MergeSuggestionsResponseDto> {
-    // answers about people recognition has since rebuilt follow them first (see `reanchorMergeVerdicts`)
-    await this.reanchorMergeVerdicts(auth.user.id);
     const { machineLearning } = await this.getConfig({ withCache: true });
     const { maxDistance } = machineLearning.facialRecognition;
-    // FL-1384: the pairs are stored. A library of up to 500 people is worked out again as it is read
-    // (about 125,000 comparisons); a larger one is worked out overnight (`refreshMergeCandidates`).
-    await this.personRepository.refreshMergeCandidates(auth.user.id, maxDistance, MERGE_LIVE_PEOPLE);
+    // FL-1790: this only reads. The pairs are stored, and worked out again by a job a little after a
+    // face is added, moved or changed (`queueMergeCandidates`) and overnight (`refreshMergeCandidates`).
     const candidates = await this.personRepository.getMergeSuggestions(auth.user.id, { maxDistance, limit: 20 });
     if (candidates.length === 0) {
       return { suggestions: [] };
@@ -295,12 +320,20 @@ export class PersonService extends BaseService {
       ids,
       getHiddenContentQueryOptions(auth),
     );
+    // one read for every photo's size and edits, not one per face
+    const assets =
+      references.length > 0
+        ? await this.personRepository.getAssetsForFaceBoxes([
+            ...new Set(references.map((reference) => reference.assetId)),
+          ])
+        : [];
+    const assetById = new Map(assets.map((asset) => [asset.id, asset]));
     const evidence = new Map<string, FaceEvidenceDto>();
     for (const reference of references) {
       evidence.set(reference.personGroupId, {
         assetId: reference.assetId,
         faceId: reference.faceId,
-        box: await this.displayedFaceBox(reference.assetId, reference),
+        box: await this.displayedFaceBox(reference.assetId, reference, assetById.get(reference.assetId)),
       });
     }
 
@@ -628,7 +661,22 @@ export class PersonService extends BaseService {
    * FL-57: generated descriptions and video captions that named these people, or were made of these
    * assets, may now name the wrong people. The refresh job works out which ones actually changed.
    */
+  /**
+   * FL-1790: asks for the owner's merge suggestions to be worked out again. The job waits a minute and
+   * there is one waiting per owner, so an import or a run of corrections is one pass (see
+   * `getNamedJobOptions`); that key alone decides what collapses.
+   */
+  private queueMergeCandidates(ownerId: string) {
+    // outside the asking job's run: a run keeps one row per item and stage, so the second request of a
+    // long recognition run would be dropped once the first refresh had finished
+    return this.jobRepository.queueOutsideRun([
+      { name: JobName.PersonCleanup, data: { mergeCandidatesOwnerId: ownerId } },
+    ]);
+  }
+
   private async refreshIdentities(ownerId: string, change: { personGroupIds?: string[]; assetIds?: string[] }) {
+    // every face change comes through here: the people it touched may now pair up differently
+    await this.queueMergeCandidates(ownerId);
     const personGroupIds = [...new Set(change.personGroupIds)];
     const assetIds = [...new Set(change.assetIds)];
     if (personGroupIds.length === 0 && assetIds.length === 0) {
@@ -821,9 +869,13 @@ export class PersonService extends BaseService {
   }
 
   /** A face box as fractions of the photo as it is displayed, after its edits (as `mapFaces` does). */
-  private async displayedFaceBox(assetId: string, face: FaceBoundingBoxRow): Promise<FaceEvidenceDto['box']> {
+  private async displayedFaceBox(
+    assetId: string,
+    face: FaceBoundingBoxRow,
+    loaded?: Awaited<ReturnType<PersonRepository['getAssetsForFaceBoxes']>>[number],
+  ): Promise<FaceEvidenceDto['box']> {
     try {
-      const asset = await this.assetRepository.getForFaces(assetId);
+      const asset = loaded ?? (await this.assetRepository.getForFaces(assetId));
       const box = transformFaceBoundingBox(
         {
           boundingBoxX1: face.boundingBoxX1,
@@ -1264,7 +1316,20 @@ export class PersonService extends BaseService {
   }
 
   @OnJob({ name: JobName.PersonCleanup, queue: QueueName.BackgroundTask })
-  async handlePersonCleanup(): Promise<JobStatus> {
+  async handlePersonCleanup({ mergeCandidatesOwnerId }: JobOf<JobName.PersonCleanup> = {}): Promise<JobStatus> {
+    if (mergeCandidatesOwnerId) {
+      // FL-1790: answers about people recognition has since rebuilt follow them first
+      await this.reanchorMergeVerdicts(mergeCandidatesOwnerId);
+      const { machineLearning } = await this.getConfig({ withCache: true });
+      await this.duringForkWrites('work out merge suggestions', () =>
+        this.personRepository.refreshMergeCandidates(
+          mergeCandidatesOwnerId,
+          machineLearning.facialRecognition.maxDistance,
+        ),
+      );
+      return JobStatus.Success;
+    }
+
     // each step can leave the next one something to clean up, so the order matters
     const people = await this.personRepository.getAllWithoutFaces();
     await this.removeAllPersonGroups(people.map((person) => person.personGroupId));
@@ -1274,6 +1339,8 @@ export class PersonService extends BaseService {
 
     this.logger.debug(`Deleted ${personGroups} empty person groups and ${clusterGroups} orphaned cluster groups`);
 
+    // FL-1789: stored counts of viewer variants nobody has read for a month
+    await this.personRepository.deleteSummariesComputedBefore(new Date(Date.now() - SUMMARY_ABANDONED_AFTER_MS));
     await this.refreshPoorMainPhotos();
     await this.refreshMergeCandidates();
     await this.refreshSplitCandidates();
@@ -1301,7 +1368,7 @@ export class PersonService extends BaseService {
     const mergeCandidatesAt = new Date().toISOString();
     let pairs = 0;
     for (const ownerId of await this.personRepository.getPersonOwnerIds()) {
-      pairs += (await this.personRepository.refreshMergeCandidates(ownerId, maxDistance)) ?? 0;
+      pairs += await this.personRepository.refreshMergeCandidates(ownerId, maxDistance);
       advanceJobProgress(1);
     }
     // read again: the main photo pass above may have set its own date meanwhile
@@ -1718,6 +1785,14 @@ export class PersonService extends BaseService {
       if (facesToAdd.length > 0 || faceIdsToRemove.length > 0 || embeddings.length > 0) {
         await this.personRepository.refreshFaces(facesToAdd, faceIdsToRemove, embeddings);
         await this.eventRepository.emit('HouseholdFeedAssets', { assetIds: [id] });
+        // FL-1790: a face found again has a new embedding, and one no longer found is gone: the stored
+        // pairs were measured with the old ones. A new face asks for this itself once it is recognized.
+        if (faceIdsToRemove.length > 0 || embeddings.length > facesToAdd.length) {
+          const ownerId = await this.assetJobRepository.getOwnerId(id);
+          if (ownerId) {
+            await this.queueMergeCandidates(ownerId);
+          }
+        }
       }
       for (const { id: faceId, ...box } of facesToMove) {
         // a person's main photo is cut from this box, so it is made again from the new one
@@ -2050,6 +2125,8 @@ export class PersonService extends BaseService {
         // FL-57: a named person now shows in this photo, so its generated text may name the wrong people
         if (person?.name) {
           await this.refreshIdentities(ownerId, { assetIds: [face.assetId] });
+        } else {
+          await this.queueMergeCandidates(ownerId);
         }
 
         if (!person && unfeatured) {

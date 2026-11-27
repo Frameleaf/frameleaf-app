@@ -1,5 +1,8 @@
 <script lang="ts">
-  import Spinner from '$lib/components/frameleaf/Spinner.svelte';
+  import EmptyRow from '$lib/components/frameleaf/EmptyRow.svelte';
+  import InlineError from '$lib/components/frameleaf/InlineError.svelte';
+  import ListSkeleton from '$lib/components/frameleaf/ListSkeleton.svelte';
+  import { formatLuxon } from '$lib/frameleaf/date-format';
   /**
    * Frameleaf FL-57: the correction history of a person, over `GET /people/:id/corrections`
    * (25 decisions a page, "Show more") with Undo (`POST /people/corrections/:id/undo`). The
@@ -199,7 +202,7 @@
     }
   };
 
-  const formatAt = (value: string) => DateTime.fromISO(value).toLocaleString(DateTime.DATETIME_MED);
+  const formatAt = (value: string) => formatLuxon(DateTime.fromISO(value), DateTime.DATETIME_MED);
 </script>
 
 <div class="pd-history" role="dialog" aria-labelledby="pd-history-title" aria-modal="false">
@@ -269,11 +272,13 @@
     {/each}
   </ul>
   {#if loading}
-    <p class="note"><Spinner /></p>
+    <div class="note"><ListSkeleton rows={3} /></div>
   {:else if loadError}
-    <p class="note">{$t('frameleaf_people_correction_history_error')}</p>
+    <div class="note">
+      <InlineError compact message={$t('frameleaf_people_correction_history_error')} onRetry={() => loadPage()} />
+    </div>
   {:else if corrections.length === 0}
-    <p class="note">{$t('frameleaf_people_correction_history_empty')}</p>
+    <div class="note"><EmptyRow title={$t('frameleaf_people_correction_history_empty')} /></div>
   {:else if hasMore}
     <div class="more">
       <Button onclick={() => void loadPage()}>{$t('frameleaf_people_show_more')}</Button>

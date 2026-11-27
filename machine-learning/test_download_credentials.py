@@ -208,3 +208,55 @@ def test_semantic_provisioning_uses_selected_source_without_implicit_credentials
         assert call.kwargs["local_files_only"] is False
         assert call.kwargs["endpoint"] == endpoint
         assert call.kwargs["token"] == ("fake-private-model-token" if private else False)
+
+
+@pytest.fixture
+def hugging_face_token(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "model_source_url", None)
+    monkeypatch.setattr(settings, "model_source_token", SecretStr("fake-private-model-token"))
+    monkeypatch.setattr(settings, "hugging_face_token", SecretStr("fake-hf-token"))
+    monkeypatch.delenv("HF_ENDPOINT", raising=False)
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://cdn.example/file",
+        "https://huggingface.co.example.com/model",
+        "https://huggingface.co:8443/model",
+        "http://huggingface.co/model",
+        "https://models.frameleaf.cloud/model",
+    ],
+)
+def test_hugging_face_token_is_bound_to_hugging_face(hugging_face_token: None, url: str) -> None:
+    assert model_source_token(url) is False
+    request = httpx.Request("GET", url, headers={"authorization": "Bearer fake-hf-token"})
+    _bind_download_credentials(request)
+    assert "authorization" not in request.headers
+
+
+def test_hugging_face_token_goes_to_hugging_face_and_the_custom_token_does_not(hugging_face_token: None) -> None:
+    # The default source is Hugging Face; the custom-source token belongs to a source an admin chose.
+    assert model_source_token() == "fake-hf-token"
+    assert model_source_token("https://huggingface.co/frameleaf/buffalo_l/resolve/main/README.md") == "fake-hf-token"
+    request = httpx.Request("GET", "https://huggingface.co/x", headers={"authorization": "Bearer fake-hf-token"})
+    _bind_download_credentials(request)
+    assert request.headers["authorization"] == "Bearer fake-hf-token"
+    assert "fake-hf-token" not in repr(settings)
+    assert "fake-private-model-token" not in repr(settings)
+
+
+def test_hugging_face_token_stays_home_when_a_mirror_is_chosen(
+    hugging_face_token: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("HF_ENDPOINT", "https://hub-mirror.example.com")
+    monkeypatch.setattr(settings, "model_source_token", None)
+    assert model_source_token() is False
+    assert model_source_token("https://hub-mirror.example.com/model") is False
+
+
+def test_explicit_hugging_face_source_keeps_its_own_token(
+    hugging_face_token: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(settings, "model_source_url", "https://huggingface.co")
+    assert model_source_token() == "fake-private-model-token"
