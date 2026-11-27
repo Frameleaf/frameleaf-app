@@ -302,6 +302,18 @@ describe('FixMatchPanel (PD-3)', () => {
       );
     });
 
+    it('asks for the name when someone new is chosen in the picker with nothing typed (FL-1814)', async () => {
+      twoFaces();
+      render(FixMatchPanel, { person, close: vi.fn() });
+
+      await fireEvent.click(await screen.findByRole('checkbox', { name: 'Select the face in one.jpg' }));
+      await fireEvent.click(screen.getByRole('button', { name: 'Move to…' }));
+      await fireEvent.click(await screen.findByRole('button', { name: 'Someone new…' }));
+
+      expect(await screen.findByRole('combobox', { name: 'Name for the new person' })).toBeTruthy();
+      expect(sdkMock.createPerson).not.toHaveBeenCalled();
+    });
+
     it('makes someone new from the picker with the name typed there (FL-1814)', async () => {
       twoFaces();
       sdkMock.createPerson.mockResolvedValue(personFactory.build({ id: 'new-one', name: 'Noor' }));

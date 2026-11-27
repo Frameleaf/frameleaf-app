@@ -187,6 +187,9 @@ describe('people list from stored summaries (FL-1789)', () => {
     expect(picker.items).toEqual([
       { personGroupId: expect.any(String), name: 'Zoë', updatedAt: expect.any(Date), assetCount: 3 },
     ]);
+    // FL-1814: accents are ignored, as the name search the pickers used before
+    const unaccented = await sut.getPickerPage(page, user.id, { withHidden: false, name: 'zoe' });
+    expect(unaccented.items.map((item) => item.name)).toEqual(['Zoë']);
   });
 
   // review of PR 1521: tagging a photo with a Locked tag writes only tag_asset, never the photo or its faces

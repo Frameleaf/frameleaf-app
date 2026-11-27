@@ -42,6 +42,8 @@
   let query = $state('');
   let people: PeoplePickerItemDto[] = $state([]);
   let page = $state(1);
+  /** The search the list shows, which "Show more" continues even while a newer one is still pending. */
+  let shownQuery = $state('');
   let hasMore = $state(false);
   let loading = $state(false);
   let input: HTMLInputElement | undefined = $state();
@@ -71,6 +73,7 @@
       people = [...(next.page === 1 ? [] : people), ...rows.filter(({ id }) => !known.has(id))];
       hasMore = result.hasNextPage;
       page = next.page;
+      shownQuery = next.query;
     } catch (error) {
       if (current === request && !controller.signal.aborted) {
         handleError(error, $t('errors.failed_to_load_people'));
@@ -146,7 +149,7 @@
     {/each}
   </ul>
   {#if hasMore}
-    <Button disabled={loading} onclick={() => void load({ query, page: page + 1 })}>
+    <Button disabled={loading} onclick={() => void load({ query: shownQuery, page: page + 1 })}>
       {$t('frameleaf_people_show_more')}
     </Button>
   {/if}

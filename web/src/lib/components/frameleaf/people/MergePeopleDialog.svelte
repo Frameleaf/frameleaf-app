@@ -47,7 +47,8 @@
       const id = initialChoice;
       getPerson({ id })
         .then((found) => {
-          if (open && !target) {
+          // a reopen with another preselection, or a pick, since this was asked: this answer is stale
+          if (open && !target && initialChoice === id) {
             target = found;
           }
         })
@@ -166,5 +167,11 @@
     margin: 0 0 16px;
     color: var(--fl-muted);
     line-height: 1.5;
+  }
+  @media (max-width: 700px) {
+    .preview {
+      gap: var(--fl-space-2);
+      padding: var(--fl-space-3);
+    }
   }
 </style>
