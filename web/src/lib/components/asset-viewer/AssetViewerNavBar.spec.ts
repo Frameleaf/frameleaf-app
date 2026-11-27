@@ -282,6 +282,7 @@ describe('AssetViewerNavBar component', () => {
       const asset = { ...build({ findingId: 'finding-1', missing: true }), isEdited: true };
       const show = vi.spyOn(toastManager, 'show').mockImplementation(() => ({ id: 't', close: () => {} }) as never);
       const { getByText } = renderWithTooltips(AssetViewerNavBar, { asset, ...additionalProps });
+      await fireEvent.click(getByText('frameleaf_viewer_section_share'));
       await fireEvent.click(getByText('download_original'));
       expect(show).toHaveBeenCalledTimes(1);
       expect(downloadAssetFile).not.toHaveBeenCalled();
@@ -317,59 +318,113 @@ describe('AssetViewerNavBar component', () => {
       authManager.setPreferences(preferencesFactory.build({ cast: { gCastEnabled: false } }));
     };
 
-    it('heads each group it renders and drops the ones with nothing to offer', () => {
+    // FL-1811: the everyday actions are in view; the rest sits in sections that open in place.
+    it('draws a row for each section it has something for, and no headings', () => {
       const ownerId = 'id-of-the-user';
       signIn(ownerId);
       const asset = assetFactory.build({ ownerId, isTrashed: false, type: AssetTypeEnum.Image });
 
-      const { getByText, queryByText, queryByRole } = renderWithTooltips(AssetViewerNavBar, {
+      const { getByRole, queryByRole } = renderWithTooltips(AssetViewerNavBar, {
         asset,
         ...additionalProps,
       });
 
-      expect(getByText('frameleaf_viewer_group_download')).toBeInTheDocument();
-      expect(getByText('frameleaf_viewer_group_organize')).toBeInTheDocument();
-      expect(getByText('frameleaf_viewer_group_stack')).toBeInTheDocument();
-      expect(getByText('frameleaf_viewer_group_go_to')).toBeInTheDocument();
-      expect(getByText('frameleaf_viewer_group_jobs')).toBeInTheDocument();
-      // "Set as" survives on the profile picture alone.
-      expect(getByText('frameleaf_viewer_group_set_as')).toBeInTheDocument();
-
-      // Not opened from an album or a person page, so neither target is offered.
-      expect(queryByRole('menuitem', { name: 'frameleaf_viewer_menu_album_cover' })).not.toBeInTheDocument();
-      expect(queryByRole('menuitem', { name: 'frameleaf_viewer_menu_person_featured' })).not.toBeInTheDocument();
-      expect(queryByText('frameleaf_viewer_group_trash')).not.toBeInTheDocument();
+      for (const name of ['add_to_album', 'to_archive', 'frameleaf_bulk_mark_sensitive', 'download']) {
+        expect(getByRole('menuitem', { name })).toBeInTheDocument();
+      }
+      for (const name of [
+        'frameleaf_viewer_section_share',
+        'frameleaf_viewer_group_stack',
+        'frameleaf_viewer_group_go_to',
+        'frameleaf_viewer_section_fix',
+        // "Set as" survives on the profile picture alone.
+        'frameleaf_viewer_group_set_as',
+      ]) {
+        expect(getByRole('menuitem', { name })).toHaveAttribute('aria-expanded', 'false');
+      }
+      expect(queryByRole('presentation')).not.toBeInTheDocument();
     });
 
-    it('offers Trash instead of the organizing groups for a trashed asset', () => {
+    it('offers neither cover nor featured photo outside an album or a person page', async () => {
+      const ownerId = 'id-of-the-user';
+      signIn(ownerId);
+      const asset = assetFactory.build({ ownerId, isTrashed: false, type: AssetTypeEnum.Image });
+      const { getByRole, queryByRole } = renderWithTooltips(AssetViewerNavBar, { asset, ...additionalProps });
+
+      await fireEvent.click(getByRole('menuitem', { name: 'frameleaf_viewer_group_set_as' }));
+      expect(getByRole('menuitem', { name: 'frameleaf_viewer_menu_profile_picture' })).toBeInTheDocument();
+      expect(queryByRole('menuitem', { name: 'frameleaf_viewer_menu_album_cover' })).not.toBeInTheDocument();
+      expect(queryByRole('menuitem', { name: 'frameleaf_viewer_menu_person_featured' })).not.toBeInTheDocument();
+    });
+
+    it('offers Restore and Delete permanently instead of the organizing sections for a trashed asset', () => {
       const ownerId = 'id-of-the-user';
       signIn(ownerId);
       const asset = assetFactory.build({ ownerId, isTrashed: true, type: AssetTypeEnum.Image });
 
-      const { getByText, queryByText } = renderWithTooltips(AssetViewerNavBar, { asset, ...additionalProps });
+      const { getByRole, queryByRole } = renderWithTooltips(AssetViewerNavBar, { asset, ...additionalProps });
 
-      expect(getByText('frameleaf_viewer_group_trash')).toBeInTheDocument();
-      expect(queryByText('frameleaf_viewer_group_organize')).not.toBeInTheDocument();
-      expect(queryByText('frameleaf_viewer_group_stack')).not.toBeInTheDocument();
-      expect(queryByText('frameleaf_viewer_group_jobs')).not.toBeInTheDocument();
+      expect(getByRole('menuitem', { name: 'restore' })).toBeInTheDocument();
+      expect(getByRole('menuitem', { name: 'frameleaf_viewer_delete_permanently' })).toBeInTheDocument();
+      expect(queryByRole('menuitem', { name: 'add_to_album' })).not.toBeInTheDocument();
+      expect(queryByRole('menuitem', { name: 'frameleaf_viewer_group_stack' })).not.toBeInTheDocument();
+      expect(queryByRole('menuitem', { name: 'frameleaf_viewer_section_fix' })).not.toBeInTheDocument();
     });
 
-    it('drops the Jobs group entirely for an asset the user does not own', () => {
+    it('drops the Fix section entirely for an asset the user does not own', () => {
       signIn('id-of-the-user');
       const asset = assetFactory.build({ ownerId: 'someone-else', isTrashed: false, type: AssetTypeEnum.Image });
 
-      const { queryByText } = renderWithTooltips(AssetViewerNavBar, { asset, ...additionalProps });
+      const { queryByRole } = renderWithTooltips(AssetViewerNavBar, { asset, ...additionalProps });
 
-      expect(queryByText('frameleaf_viewer_group_jobs')).not.toBeInTheDocument();
-      expect(queryByText('frameleaf_viewer_group_stack')).not.toBeInTheDocument();
+      expect(queryByRole('menuitem', { name: 'frameleaf_viewer_section_fix' })).not.toBeInTheDocument();
+      expect(queryByRole('menuitem', { name: 'frameleaf_viewer_group_stack' })).not.toBeInTheDocument();
     });
 
-    it('offers the encoded-video job for video and the face job for a still', () => {
+    it('leaves the menu open when a section row is pressed, and closes it for an action', async () => {
+      const ownerId = 'id-of-the-user';
+      signIn(ownerId);
+      const asset = assetFactory.build({ ownerId, isTrashed: false, type: AssetTypeEnum.Image });
+      const { getByLabelText, getByRole } = renderWithTooltips(AssetViewerNavBar, { asset, ...additionalProps });
+      const more = getByLabelText('frameleaf_viewer_more_actions');
+
+      await fireEvent.click(more);
+      expect(more).toHaveAttribute('aria-expanded', 'true');
+      await fireEvent.click(getByRole('menuitem', { name: 'frameleaf_viewer_section_fix' }));
+      expect(more).toHaveAttribute('aria-expanded', 'true');
+      await fireEvent.click(getByRole('menuitem', { name: 'refresh_metadata' }));
+      expect(more).toHaveAttribute('aria-expanded', 'false');
+    });
+
+    it('opens a section from the keyboard, and the keys then move through its rows', async () => {
+      const ownerId = 'id-of-the-user';
+      signIn(ownerId);
+      const asset = assetFactory.build({ ownerId, isTrashed: false, type: AssetTypeEnum.Image });
+      const { getByLabelText, getByRole } = renderWithTooltips(AssetViewerNavBar, { asset, ...additionalProps });
+      const more = getByLabelText('frameleaf_viewer_more_actions');
+      await fireEvent.click(more);
+      const menu = getByRole('menu', { hidden: true });
+
+      await fireEvent.keyDown(menu, { key: 'End' });
+      const viewer = getByRole('menuitem', { name: 'frameleaf_viewer_group_viewer' });
+      await vi.waitFor(() => expect(viewer).toHaveClass('active'));
+      await fireEvent.keyDown(menu, { key: 'Enter' });
+      await vi.waitFor(() => expect(viewer).toHaveAttribute('aria-expanded', 'true'));
+      expect(more).toHaveAttribute('aria-expanded', 'true');
+
+      await fireEvent.keyDown(menu, { key: 'ArrowDown' });
+      await vi.waitFor(() =>
+        expect(getByRole('menuitem', { name: /frameleaf_image_display_auto/ })).toHaveClass('active'),
+      );
+    });
+
+    it('offers the encoded-video job for video and the face job for a still', async () => {
       const ownerId = 'id-of-the-user';
       signIn(ownerId);
 
       const video = assetFactory.build({ ownerId, isTrashed: false, type: AssetTypeEnum.Video });
       const rendered = renderWithTooltips(AssetViewerNavBar, { asset: video, ...additionalProps });
+      await fireEvent.click(rendered.getByRole('menuitem', { name: 'frameleaf_viewer_section_fix' }));
       expect(rendered.getByRole('menuitem', { name: 'frameleaf_viewer_menu_refresh_encoded' })).toBeInTheDocument();
       expect(rendered.getByRole('menuitem', { name: 'frameleaf_viewer_menu_transcode' })).toBeInTheDocument();
       expect(rendered.queryByRole('menuitem', { name: 'refresh_faces' })).not.toBeInTheDocument();
@@ -377,6 +432,7 @@ describe('AssetViewerNavBar component', () => {
 
       const still = assetFactory.build({ ownerId, isTrashed: false, type: AssetTypeEnum.Image });
       const { getByRole, queryByRole } = renderWithTooltips(AssetViewerNavBar, { asset: still, ...additionalProps });
+      await fireEvent.click(getByRole('menuitem', { name: 'frameleaf_viewer_section_fix' }));
       expect(getByRole('menuitem', { name: 'refresh_faces' })).toBeInTheDocument();
       expect(queryByRole('menuitem', { name: 'frameleaf_viewer_menu_refresh_encoded' })).not.toBeInTheDocument();
     });
@@ -577,7 +633,7 @@ describe('AssetViewerNavBar component', () => {
 
   // The menu's highlight is its own `active` option, the same for the pointer and the keys, and the
   // keys move through the options only: the group headings between them are never a choice.
-  it('highlights the More menu option the keys move to and skips the group headings', async () => {
+  it('highlights the More menu option the keys move to', async () => {
     authManager.setPreferences(preferencesFactory.build({ cast: { gCastEnabled: false } }));
     const asset = assetFactory.build({ isTrashed: false, type: AssetTypeEnum.Image });
     const { getByLabelText, getByRole } = renderWithTooltips(AssetViewerNavBar, {
@@ -591,7 +647,6 @@ describe('AssetViewerNavBar component', () => {
     expect(menu.parentElement).toHaveClass('open');
     const options = [...menu.querySelectorAll<HTMLElement>('[role="menuitem"]')];
     const active = () => options.filter((option) => option.classList.contains('active'));
-    expect(menu.firstElementChild).toHaveAttribute('role', 'presentation');
 
     await fireEvent.keyDown(menu, { key: 'ArrowDown' });
     await vi.waitFor(() => expect(active()).toEqual([options[0]]));
@@ -722,7 +777,7 @@ describe('AssetViewerNavBar component', () => {
       expect(queryByLabelText('play_motion_photo')).not.toBeInTheDocument();
     });
 
-    it('uses the template labels and offers the slideshow settings in the Viewer group (V-7, V-11)', () => {
+    it('uses the template labels and offers the slideshow settings in the Viewer group (V-7, V-11)', async () => {
       const ownerId = 'id-of-the-user';
       signIn(ownerId);
       const asset = assetFactory.build({
@@ -744,15 +799,17 @@ describe('AssetViewerNavBar component', () => {
         ...additionalProps,
       });
 
+      await fireEvent.click(getByRole('menuitem', { name: 'frameleaf_viewer_group_stack' }));
       expect(getByRole('menuitem', { name: 'frameleaf_viewer_menu_keep_this' })).toBeInTheDocument();
       expect(getByRole('menuitem', { name: 'frameleaf_viewer_menu_set_stack_primary' })).toBeInTheDocument();
       expect(getByRole('menuitem', { name: 'frameleaf_viewer_menu_unstack' })).toBeInTheDocument();
+      // An item that is already stacked is not offered Add to stack.
+      expect(queryByRole('menuitem', { name: 'frameleaf_viewer_menu_add_to_stack' })).not.toBeInTheDocument();
+      await fireEvent.click(getByRole('menuitem', { name: 'frameleaf_viewer_group_viewer' }));
       expect(getByRole('menuitem', { name: 'frameleaf_viewer_slideshow_settings' })).toBeInTheDocument();
       // V-10: tagging and the video source leave the menu for the information panel and the footer.
       expect(queryByRole('menuitem', { name: 'add_tag' })).not.toBeInTheDocument();
       expect(queryByRole('menuitem', { name: 'play_original_video' })).not.toBeInTheDocument();
-      // An item that is already stacked is not offered Add to stack.
-      expect(queryByRole('menuitem', { name: 'frameleaf_viewer_menu_add_to_stack' })).not.toBeInTheDocument();
     });
 
     it('opens the slideshow settings from the menu', async () => {
@@ -770,6 +827,7 @@ describe('AssetViewerNavBar component', () => {
         canNavigateCollection: true,
         ...additionalProps,
       });
+      await fireEvent.click(getByRole('menuitem', { name: 'frameleaf_viewer_group_viewer' }));
       await fireEvent.click(getByRole('menuitem', { name: 'frameleaf_viewer_slideshow_settings' }));
       expect(get(slideshowStore.settingsOpen)).toBe(true);
       await slideshowStore.closeSettings({ restoreFocus: false });
