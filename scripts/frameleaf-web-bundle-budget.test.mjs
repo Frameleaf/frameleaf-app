@@ -13,8 +13,10 @@ import { join } from "node:path";
 import { test } from "node:test";
 import {
   compare,
+  lower,
   measure,
   parseDictionary,
+  raise,
   staticClosure,
 } from "./frameleaf-web-bundle-budget.mjs";
 
@@ -94,7 +96,7 @@ test("checks the built app path from a SvelteKit 3 manifest without the old gene
     }
     writeFileSync(
       join(web, "bundle-budget.json"),
-      JSON.stringify({ "/": 4096 }),
+      JSON.stringify({ limits: { "/": 4096 }, raises: [] }),
     );
     const result = spawnSync(process.execPath, [script], { encoding: "utf8" });
     assert.equal(result.status, 0, result.stderr);
@@ -121,13 +123,10 @@ test("sums the entry, root layout, route layouts and page for each route, each f
   assert.deepEqual(sizes, { "/": 90 });
 });
 
-test("fails a route that grows past its margin, and names new and removed routes", () => {
-  const margin = { ratio: 0.05, bytes: 100 };
-  const baseline = { "/a": 10_000, "/b": 10_000, "/gone": 1 };
+test("fails a route over its limit, with no margin, and names new and removed routes", () => {
   const { over, added, removed } = compare(
-    baseline,
-    { "/a": 10_500, "/b": 10_501, "/new": 5 },
-    margin,
+    { "/a": 10_000, "/b": 10_000, "/gone": 1 },
+    { "/a": 10_000, "/b": 10_001, "/new": 5 },
   );
   assert.deepEqual(
     over.map(({ route }) => route),
@@ -135,9 +134,47 @@ test("fails a route that grows past its margin, and names new and removed routes
   );
   assert.deepEqual(added, ["/new"]);
   assert.deepEqual(removed, ["/gone"]);
-  // a small route may grow by the byte allowance even when that is more than the ratio
-  assert.deepEqual(
-    compare({ "/small": 1000 }, { "/small": 1100 }, margin).over,
-    [],
+});
+
+test("raises only what is over, with a reason that names its issue, and records it", () => {
+  const budget = {
+    limits: { "/a": 10_000, "/b": 10_000, "/gone": 1 },
+    raises: [],
+  };
+  const sizes = { "/a": 9000, "/b": 11_000, "/new": 100 };
+  assert.throws(() => raise(budget, sizes, undefined, "2026-11-26"), /reason/);
+  assert.throws(
+    () => raise(budget, sizes, "bigger now", "2026-11-26"),
+    /reason/,
   );
+  assert.throws(() => raise(budget, sizes, "FL-1", "2026-11-26"), /reason/);
+  assert.throws(() => raise(budget, sizes, "FL-1:", "2026-11-26"), /reason/);
+  assert.throws(
+    () => raise(budget, sizes, "oops FL-1 grew", "2026-11-26"),
+    /reason/,
+  );
+  const raised = raise(budget, sizes, "FL-1: the new toolbar", "2026-11-26");
+  // the route with room keeps its limit; the others get today's size plus the headroom
+  assert.deepEqual(raised.limits, { "/a": 10_000, "/b": 11_220, "/new": 102 });
+  assert.deepEqual(raised.raises, [
+    {
+      date: "2026-11-26",
+      reason: "FL-1: the new toolbar",
+      raised: 1,
+      bytes: 1220,
+      added: 1,
+      removed: 1,
+      routes: { "/b": 1220 },
+    },
+  ]);
+  // nothing over: nothing changes and nothing is recorded
+  assert.equal(raise(raised, sizes, "FL-2: again", "2026-11-27"), raised);
+});
+
+test("lowers limits to today's sizes and never lifts one", () => {
+  const budget = { limits: { "/a": 10_000, "/b": 10_000 }, raises: [] };
+  assert.deepEqual(lower(budget, { "/a": 5000, "/b": 11_000 }).limits, {
+    "/a": 5100,
+    "/b": 10_000,
+  });
 });

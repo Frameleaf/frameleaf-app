@@ -158,8 +158,9 @@ const areaButton = (name: string) =>
     ...screen.getByRole('navigation', { name: 'Settings navigation' }).querySelectorAll<HTMLElement>('button.area'),
   ].find((button) => button.getAttribute('aria-label') === name)!;
 
-/** The Backup page the area is showing. */
-const backupPage = () => screen.getByTestId('backup-area').textContent;
+/** The Backup page the area is showing, once its code has loaded (FL-1799). */
+// The first fetch of a page in a run also compiles it, which can take longer than the default wait.
+const backupPage = async () => (await screen.findByTestId('backup-area', {}, { timeout: 5000 })).textContent;
 
 describe('the Command Center (FL-71)', () => {
   beforeAll(() => addMessages('dev', en));
@@ -555,6 +556,9 @@ describe('the Command Center (FL-71)', () => {
   it("marks the page on screen while one of the account's own preference forms has changes (finding 70)", async () => {
     open('/user-settings?area=backups');
     const { container } = render(SettingsHost, { sections });
+    // Let the page's code arrive before the test ends: a fetch still in flight would hand the next
+    // test the real page instead of the stand-in.
+    await backupPage();
     expect(container.querySelector('.pending')).toBeNull();
 
     const release = ownPreferencesPending.hold();
@@ -570,11 +574,11 @@ describe('the Command Center (FL-71)', () => {
   describe('one Backup area (FL-362, after design review finding 66)', () => {
     const backupHeading = () => screen.getByRole('heading', { level: 1, name: 'Backup' });
 
-    it('opens on the Overview, under the one Backup heading and with no pages in the navigation', () => {
+    it('opens on the Overview, under the one Backup heading and with no pages in the navigation', async () => {
       open('/user-settings?area=backups');
       render(SettingsHost, { sections });
       expect(backupHeading()).toBeInTheDocument();
-      expect(backupPage()).toBe('overview');
+      expect(await backupPage()).toBe('overview');
       const navigation = within(screen.getByRole('navigation', { name: 'Settings navigation' }));
       expect(navigation.queryByLabelText('Backup pages')).toBeNull();
     });
@@ -586,24 +590,24 @@ describe('the Command Center (FL-71)', () => {
       ['buddy', 'buddy'],
       ['local', 'local'],
       ['nonsense', 'overview'],
-    ])('opens the %s page from its address', (section, shown) => {
+    ])('opens the %s page from its address', async (section, shown) => {
       open(`/user-settings?area=backups&section=${section}`);
       render(SettingsHost, { sections });
-      expect(backupPage()).toBe(shown);
+      expect(await backupPage()).toBe(shown);
     });
 
     it.each([
       ['/user-settings?area=backup&section=backup', 'schedule', 'Import & export'],
       ['/user-settings?area=maintenance&section=backups', 'local', 'Maintenance'],
       ['/user-settings?area=cloud&section=cloud-backup', 'cloud', 'Frameleaf Cloud'],
-    ])('shows %s under Backup, at the address it always had', (address, shown, formerArea) => {
+    ])('shows %s under Backup, at the address it always had', async (address, shown, formerArea) => {
       open(address);
       render(SettingsHost, { sections });
       expect(areaButton('Backup')).toHaveAttribute('aria-current', 'page');
       expect(screen.getByRole('button', { name: formerArea })).not.toHaveAttribute('aria-current');
       // One screen, one heading: the older page's own title is not a breadcrumb any more.
       expect(backupHeading()).toBeInTheDocument();
-      expect(backupPage()).toBe(shown);
+      expect(await backupPage()).toBe(shown);
     });
 
     it.each([
@@ -612,10 +616,10 @@ describe('the Command Center (FL-71)', () => {
       ['controls', 'buddy'],
       ['restore', 'restore'],
       ['compare', 'overview'],
-    ])('opens the page that replaced the "%s" view', (view, shown) => {
+    ])('opens the page that replaced the "%s" view', async (view, shown) => {
       open(`/user-settings?area=backups&backupView=${view}`);
       render(SettingsHost, { sections });
-      expect(backupPage()).toBe(shown);
+      expect(await backupPage()).toBe(shown);
     });
 
     it('no longer lists a backup page under Import & protection, Maintenance or Frameleaf Cloud', () => {
