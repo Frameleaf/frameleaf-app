@@ -81,7 +81,7 @@
   /* The sections inside lose their own divider; the fold draws one for all of them. */
   .fl-fold > :global(section) {
     margin: 0;
-    padding: var(--fl-space-1) 0 var(--fl-space-4);
+    padding: var(--fl-space-2) 0 var(--fl-space-4);
     border-bottom: 0;
   }
 

@@ -272,6 +272,11 @@
   );
   /** The one section that is open; opening another closes it. */
   let openSection = $state<ViewerMenuSectionId | null>(null);
+  // Another item starts with every section closed (the menu stays mounted between items).
+  $effect.pre(() => {
+    void asset.id;
+    openSection = null;
+  });
   const SECTION_ICONS: Record<ViewerMenuSectionId, string> = {
     share: mdiExportVariant,
     stack: mdiLayersOutline,

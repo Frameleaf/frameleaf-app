@@ -94,8 +94,18 @@
   let isLoading = $state(false);
   /** The enrichment action in flight, or `accept-description` / `clear-description` for an asset write. */
   let activeAction = $state<AssetImageEnrichmentAction | 'accept-description' | 'clear-description' | null>(null);
-  /** The last failure and the work that produced it, so the right recovery can be offered. */
-  let failure = $state<{ kind: InlineEditFailure; run: () => Promise<void> } | null>(null);
+  /**
+   * The last failure and the work that produced it, so the right recovery can be offered. `sensitive`
+   * says it came from the sensitive-content check, whose notice sits inside that check's fold; every
+   * other failure is told beside the description, which is always in view (FL-1811).
+   */
+  let failure = $state<{ kind: InlineEditFailure; run: () => Promise<void>; sensitive: boolean } | null>(null);
+  const SENSITIVITY_ACTIONS: string[] = [
+    AssetImageEnrichmentAction.RerunNsfwDetection,
+    AssetImageEnrichmentAction.MarkSafe,
+    AssetImageEnrichmentAction.MarkNsfw,
+    AssetImageEnrichmentAction.AcceptNsfwResult,
+  ];
   let canReview = $derived(isOwner && asset.type === AssetTypeEnum.Image);
   // Track the in-flight enrichment fetch so we can abort it when the user
   // swipes to a new asset before the previous request resolved.
@@ -200,7 +210,11 @@
       if (asset.id !== assetId) {
         return;
       }
-      failure = { kind: classifyInlineEditError(error), run: () => perform(key, run) };
+      failure = {
+        kind: classifyInlineEditError(error),
+        run: () => perform(key, run),
+        sensitive: SENSITIVITY_ACTIONS.includes(key),
+      };
       handleError(error, $t('errors.unable_to_update_image_enrichment'));
     } finally {
       activeAction = null;
@@ -451,7 +465,7 @@
       </div>
     </div>
   {/if}
-  {#if canReview && !showSensitivity}
+  {#if canReview && (!showSensitivity || !failure?.sensitive)}
     {@render failureNotice()}
   {/if}
 {/snippet}
@@ -547,7 +561,9 @@
           </div>
         </div>
       {/if}
-      {@render failureNotice()}
+      {#if failure?.sensitive}
+        {@render failureNotice()}
+      {/if}
     </section>
   </DetailPanelFold>
 {/if}

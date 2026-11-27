@@ -163,3 +163,17 @@ describe('open sections and folds (FL-1811)', () => {
     expect(albums.compareDocumentPosition(scan) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 });
+
+it('folds no Credits for a shared-link visitor when the photo has only an artist', async () => {
+  // A shared link never shows the artist, so the fold would be an empty pressable row.
+  vi.spyOn(authManager, 'isSharedLink', 'get').mockReturnValue(true);
+  render(DetailPanel, {
+    asset: assetFactory.build({
+      ownerId: 'someone-else',
+      hasMetadata: true,
+      exifInfo: { artist: 'Ada', copyright: null },
+    }),
+  });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  expect(document.querySelector('details[data-fold="credits"]')).toBeNull();
+});

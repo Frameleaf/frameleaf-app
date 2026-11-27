@@ -309,7 +309,8 @@
         {/if}
       </DetailPanelFold>
 
-      {#if asset.hasMetadata && (isOwner || asset.exifInfo?.artist || asset.exifInfo?.copyright)}
+      <!-- A shared link never shows the artist, so an artist alone leaves nothing to fold there. -->
+      {#if asset.hasMetadata && (isOwner || (!authManager.isSharedLink && asset.exifInfo?.artist) || asset.exifInfo?.copyright)}
         <DetailPanelFold id="credits" label={$t('frameleaf_metadata_credits')}>
           <section>
             {#key asset.id}
