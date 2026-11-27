@@ -297,6 +297,7 @@ describe('DateDoctorService fixes (FL-930)', () => {
     dateTimeOriginal: new Date('2022-07-01T10:03:00Z'),
     timeZone: null,
     dateAccuracy: null,
+    dateDetail: null,
     locks: [],
     earlier: null,
     ...overrides,
@@ -432,6 +433,7 @@ describe('DateDoctorService fixes (FL-930)', () => {
       previousLocalDateTime: new Date('2000-01-01T00:00:00Z'),
       previousLocks: [],
       previousDateAccuracy: null,
+      previousDateDetail: null,
     };
     repository.getCurrent.mockResolvedValue([
       current('a', { timeZone: 'Europe/Paris', locks: ['dateTimeOriginal', 'timeZone'], earlier }),
@@ -639,6 +641,7 @@ describe('DateDoctorService fixes (FL-930)', () => {
     dateTimeOriginal: new Date('2022-07-01T10:03:00Z'),
     timeZone: null,
     dateAccuracy: null,
+    dateDetail: null,
     locks: [],
     earlier: null,
     ...overrides,
@@ -774,6 +777,7 @@ describe('DateDoctorService fixes (FL-930)', () => {
       previousLocalDateTime: new Date('2000-01-01T00:00:00Z'),
       previousLocks: [],
       previousDateAccuracy: null,
+      previousDateDetail: null,
     };
     repository.getCurrent.mockResolvedValue([
       current('a', { timeZone: 'Europe/Paris', locks: ['dateTimeOriginal', 'timeZone'], earlier }),
@@ -994,5 +998,24 @@ describe('a fix that dates photos to a year or a decade (FL-936)', () => {
     expect(accepted({ shiftMinutes: 60 })).toBe(true);
     expect(accepted({ timeZone: 'Europe/Paris', keepWallTime: true })).toBe(true);
     expect(accepted({})).toBe(false);
+  });
+
+  // FL-1814
+  it('takes a month or "around" beside a year, and refuses a month not yet begun', () => {
+    const now = new Date();
+    const year = now.getUTCFullYear();
+    expect(accepted({ dateAccuracy: 'year', year: 1987, dateDetail: 'month', month: 3 })).toBe(true);
+    expect(accepted({ dateAccuracy: 'year', year: 1987, dateDetail: 'about' })).toBe(true);
+    expect(accepted({ dateAccuracy: 'year', year, dateDetail: 'month', month: now.getUTCMonth() + 1 })).toBe(true);
+    expect(accepted({ dateAccuracy: 'year', year: year + 1, dateDetail: 'month', month: 1 })).toBe(false);
+    if (now.getUTCMonth() < 11) {
+      expect(accepted({ dateAccuracy: 'year', year, dateDetail: 'month', month: now.getUTCMonth() + 2 })).toBe(false);
+    }
+    expect(accepted({ dateAccuracy: 'year', year: 1987, dateDetail: 'month' })).toBe(false);
+    expect(accepted({ dateAccuracy: 'year', year: 1987, month: 3 })).toBe(false);
+    expect(accepted({ dateAccuracy: 'year', year: 1987, dateDetail: 'about', month: 3 })).toBe(false);
+    expect(accepted({ dateAccuracy: 'decade', year: 1980, dateDetail: 'about' })).toBe(false);
+    expect(accepted({ dateAccuracy: 'year', year: 1987, dateDetail: 'month', month: 13 })).toBe(false);
+    expect(accepted({ dateAccuracy: 'year', year: 1987, dateDetail: 'day' })).toBe(false);
   });
 });

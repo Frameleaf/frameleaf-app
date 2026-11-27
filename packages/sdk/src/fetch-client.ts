@@ -9949,8 +9949,12 @@ export type DateDoctorFixDto = {
     assetIds: string[];
     /** Date them to a year (`year`) or a decade (`decade`): only that much is known. Sent with `year` alone */
     dateAccuracy?: DateAccuracy;
+    /** With dateAccuracy `year` only: `month` dates them to the 1st of `month` (midnight UTC), `about` says the year is a guess */
+    dateDetail?: DateDetail;
     /** With timeZone: keep the clock time shown and read it in the new zone; otherwise the moment stays */
     keepWallTime?: boolean;
+    /** With dateDetail `month` only: the month, 1 to 12 */
+    month?: number;
     /** Move their dates this many minutes (a camera clock that was off) */
     shiftMinutes?: number;
     /** The time zone they were taken in (IANA, or UTC+2 for a fixed offset) */

@@ -17,6 +17,18 @@ describe('BulkDateDialog (FL-32, T-19)', () => {
   });
 
   const zoneInput = () => screen.getByRole('combobox', { name: 'frameleaf_bulk_date_time_zone' }) as HTMLInputElement;
+  const shownDay = () => [
+    (screen.getByLabelText('year') as HTMLInputElement).value,
+    (screen.getByLabelText('month') as HTMLSelectElement).value,
+    (screen.getByLabelText('day') as HTMLInputElement).value,
+  ];
+  const setDay = async (year: number, month: number, day: number) => {
+    await fireEvent.input(screen.getByLabelText('year'), { target: { value: String(year) } });
+    await fireEvent.change(screen.getByLabelText('month'), { target: { value: String(month) } });
+    await fireEvent.input(screen.getByLabelText('day'), { target: { value: String(day) } });
+  };
+  const sure = (value: string) =>
+    fireEvent.change(screen.getByLabelText('frameleaf_date_field_how_sure'), { target: { value } });
   const apply = () => fireEvent.click(screen.getByRole('button', { name: 'frameleaf_bulk_apply_to' }));
   const chooseZone = async (city: string) => {
     await fireEvent.input(zoneInput(), { target: { value: city } });
@@ -29,7 +41,7 @@ describe('BulkDateDialog (FL-32, T-19)', () => {
       assets: [item('a', '2024-12-11T18:42', -480)],
       onSubmit: vi.fn(),
     });
-    expect(screen.getByLabelText('date')).toHaveValue('2024-12-11');
+    expect(shownDay()).toEqual(['2024', '12', '11']);
     expect(screen.getByLabelText('time')).toHaveValue('18:42');
   });
 
@@ -80,7 +92,7 @@ describe('BulkDateDialog (FL-32, T-19)', () => {
     // Spring forward was at 02:00 that morning: noon is on daylight time.
     expect(zoneInput().value).toContain('UTC−07:00');
 
-    await fireEvent.input(screen.getByLabelText('date'), { target: { value: '2026-03-07' } });
+    await fireEvent.input(screen.getByLabelText('day'), { target: { value: '7' } });
     // The chosen zone is relabelled for the new date.
     expect(zoneInput().value).toContain('UTC−08:00');
     await apply();
@@ -101,7 +113,7 @@ describe('BulkDateDialog (FL-32, T-19)', () => {
       });
       renderWithTooltips(BulkDateDialog, { count: 2, assets: [added('a'), added('b')], resolveCaptureTimes, onSubmit });
       expect(resolveCaptureTimes).toHaveBeenCalledWith(['a', 'b']);
-      await vi.waitFor(() => expect(screen.getByLabelText('date')).toHaveValue('2019-01-05'));
+      await vi.waitFor(() => expect(shownDay()).toEqual(['2019', '1', '5']));
       expect(screen.getByLabelText('time')).toHaveValue('09:30');
       expect(zoneInput().value).toBe('frameleaf_bulk_date_keep_time_zone');
       await apply();
@@ -118,10 +130,11 @@ describe('BulkDateDialog (FL-32, T-19)', () => {
       const resolveCaptureTimes = vi.fn().mockResolvedValue(null);
       renderWithTooltips(BulkDateDialog, { count: 1, assets: [added('a')], resolveCaptureTimes, onSubmit });
       await vi.waitFor(() => expect(resolveCaptureTimes).toHaveBeenCalled());
-      expect(screen.getByLabelText('date')).toHaveValue('');
+      expect(screen.getByLabelText('year')).toHaveValue(null);
+      expect(screen.getByLabelText('day')).toHaveValue(null);
       expect(zoneInput().value).toBe('');
       const button = screen.getByRole('button', { name: 'frameleaf_bulk_apply_to' });
-      await fireEvent.input(screen.getByLabelText('date'), { target: { value: '2019-01-05' } });
+      await setDay(2019, 1, 5);
       await fireEvent.input(screen.getByLabelText('time'), { target: { value: '09:30' } });
       expect(button).toBeDisabled();
       expect(screen.getByText('frameleaf_bulk_date_choose_zone')).toBeInTheDocument();
@@ -138,38 +151,88 @@ describe('BulkDateDialog (FL-32, T-19)', () => {
     });
   });
 
-  describe('a year or a decade (FL-936)', () => {
-    it('submits a decade for the undoable path', async () => {
+  describe('anything short of an exact day (FL-936, FL-1814)', () => {
+    it('submits a month for the undoable path, with no time or zone to choose', async () => {
       const onSubmit = vi.fn();
       renderWithTooltips(BulkDateDialog, { count: 1, assets: [item('a', '1975-06-01T12:00', 0)], onSubmit });
-      await fireEvent.click(screen.getByRole('radio', { name: 'frameleaf_date_precision_decade' }));
-      expect(screen.getByLabelText('frameleaf_date_precision_decade', { selector: 'select' })).toHaveValue('1970');
+      await sure('month');
+      expect(screen.queryByLabelText('time')).toBeNull();
+      expect(screen.queryByRole('combobox', { name: 'frameleaf_bulk_date_time_zone' })).toBeNull();
+      expect(screen.getByText('frameleaf_bulk_date_will_show_period')).toBeInTheDocument();
       await apply();
-      expect(onSubmit).toHaveBeenCalledWith({ dateMode: 'set', dateAccuracy: 'decade', year: 1970 });
+      expect(onSubmit).toHaveBeenCalledWith({
+        dateMode: 'set',
+        dateAccuracy: 'year',
+        year: 1975,
+        dateDetail: 'month',
+        month: 6,
+      });
     });
 
-    it('submits a year, and holds Apply on one out of range', async () => {
+    it('submits "around" a year, and holds Apply on a year out of range', async () => {
       const onSubmit = vi.fn();
       renderWithTooltips(BulkDateDialog, { count: 1, assets: [item('a', '1975-06-01T12:00', 0)], onSubmit });
-      await fireEvent.click(screen.getByRole('radio', { name: 'frameleaf_date_precision_year' }));
-      const year = screen.getByRole('textbox', { name: 'frameleaf_date_precision_year' });
-      await fireEvent.input(year, { target: { value: '1700' } });
+      await sure('about');
+      await fireEvent.input(screen.getByLabelText('year'), { target: { value: '1700' } });
       expect(screen.getByRole('button', { name: 'frameleaf_bulk_apply_to' })).toBeDisabled();
-      await fireEvent.input(year, { target: { value: '1978' } });
+      await fireEvent.input(screen.getByLabelText('year'), { target: { value: '1978' } });
       await apply();
-      expect(onSubmit).toHaveBeenCalledWith({ dateMode: 'set', dateAccuracy: 'year', year: 1978 });
+      expect(onSubmit).toHaveBeenCalledWith({ dateMode: 'set', dateAccuracy: 'year', year: 1978, dateDetail: 'about' });
     });
 
-    it('opens on the accuracy the whole selection shares', () => {
+    it('submits a year', async () => {
+      const onSubmit = vi.fn();
+      renderWithTooltips(BulkDateDialog, { count: 1, assets: [item('a', '1975-06-01T12:00', 0)], onSubmit });
+      await sure('year');
+      await apply();
+      expect(onSubmit).toHaveBeenCalledWith({ dateMode: 'set', dateAccuracy: 'year', year: 1975 });
+    });
+
+    it('opens a shared year without Apply, so a month or "around" it cannot see is never dropped', async () => {
+      const onSubmit = vi.fn();
+      renderWithTooltips(BulkDateDialog, {
+        count: 2,
+        assets: [
+          { ...item('a', '1987-03-01T00:00', 0), dateAccuracy: 'year' },
+          { ...item('b', '1987-03-01T00:00', 0), dateAccuracy: 'year' },
+        ],
+        onSubmit,
+      });
+      expect(screen.getByLabelText('frameleaf_date_field_how_sure')).toHaveValue('year');
+      expect(screen.getByRole('button', { name: 'frameleaf_bulk_apply_to' })).toBeDisabled();
+      await sure('month');
+      await apply();
+      expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ dateDetail: 'month', month: 3, year: 1987 }));
+    });
+
+    it('says why a month not yet begun cannot be applied', async () => {
+      const now = new Date();
+      renderWithTooltips(BulkDateDialog, {
+        count: 1,
+        assets: [item('a', `${now.getFullYear()}-01-01T00:00`, 0)],
+        onSubmit: vi.fn(),
+      });
+      await sure('month');
+      await fireEvent.change(screen.getByLabelText('month'), { target: { value: '12' } });
+      if (now.getMonth() < 11) {
+        expect(screen.getAllByText('frameleaf_people_birthday_future').length).toBeGreaterThan(0);
+        expect(screen.getByRole('button', { name: 'frameleaf_bulk_apply_to' })).toBeDisabled();
+      }
+    });
+
+    it('opens on a decade the whole selection shares, and sends it back unchanged', async () => {
+      const onSubmit = vi.fn();
       renderWithTooltips(BulkDateDialog, {
         count: 2,
         assets: [
           { ...item('a', '1970-01-01T00:00', 0), dateAccuracy: 'decade' },
           { ...item('b', '1970-01-01T00:00', 0), dateAccuracy: 'decade' },
         ],
-        onSubmit: vi.fn(),
+        onSubmit,
       });
-      expect(screen.getByRole('radio', { name: 'frameleaf_date_precision_decade' })).toBeChecked();
+      expect(screen.getByLabelText('frameleaf_date_field_how_sure')).toHaveValue('decade');
+      await apply();
+      expect(onSubmit).toHaveBeenCalledWith({ dateMode: 'set', dateAccuracy: 'decade', year: 1970 });
     });
   });
 });

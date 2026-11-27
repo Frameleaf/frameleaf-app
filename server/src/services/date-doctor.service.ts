@@ -243,9 +243,14 @@ export class DateDoctorService {
     const ordered = new Map(ids.map((id, index) => [id, index]));
     const rows = await this.dateDoctorRepository.getCurrent(auth.user.id, proposals ? proposals.keys().toArray() : ids);
     const shift = (dto.shiftMinutes ?? 0) * 60_000;
-    // FL-936: a year or a decade is its first day at midnight, in UTC
-    const period = dto.dateAccuracy ? new Date(getPeriodStart(dto.year!, dto.dateAccuracy)) : undefined;
+    // FL-936: a year or a decade is its first day at midnight, in UTC; FL-1814: a month, its 1st
+    const period = dto.month
+      ? new Date(Date.UTC(dto.year!, dto.month - 1, 1))
+      : dto.dateAccuracy
+        ? new Date(getPeriodStart(dto.year!, dto.dateAccuracy))
+        : undefined;
     const newDateAccuracy = dto.dateAccuracy ?? null;
+    const newDateDetail = dto.dateDetail ?? null;
     const items: DateFixPlan[] = [];
     for (const row of rows.toSorted((a, b) => ordered.get(a.assetId)! - ordered.get(b.assetId)!)) {
       const proposal = proposals?.get(row.assetId);
@@ -283,7 +288,8 @@ export class DateDoctorService {
         (newDate.getTime() === row.takenAt.getTime() &&
           newLocalDateTime.getTime() === row.localDateTime.getTime() &&
           newZone === row.timeZone &&
-          newDateAccuracy === (row.dateAccuracy ?? null))
+          newDateAccuracy === (row.dateAccuracy ?? null) &&
+          newDateDetail === (row.dateDetail ?? null))
       ) {
         continue;
       }
@@ -300,11 +306,13 @@ export class DateDoctorService {
           previousLocalDateTime: row.localDateTime,
           previousLocks: row.locks,
           previousDateAccuracy: row.dateAccuracy ?? null,
+          previousDateDetail: row.dateDetail ?? null,
         }),
         newDate,
         newZone,
         newLocalDateTime,
         newDateAccuracy,
+        newDateDetail,
       });
     }
     const causes = new Set(items.map(({ cause }) => cause));

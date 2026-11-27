@@ -2,7 +2,7 @@ import { IANAZone } from 'luxon';
 import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
 import { DateFindingCause } from 'src/utils/date-doctor.js';
-import { DATE_ACCURACIES, MIN_APPROXIMATE_YEAR, isApproximateYear } from 'src/utils/date.js';
+import { DATE_ACCURACIES, DATE_DETAILS, MIN_APPROXIMATE_YEAR, isApproximateYear } from 'src/utils/date.js';
 
 /** FL-912: what the Date & Time Doctor found, a shoot (camera and day) at a time. */
 
@@ -89,6 +89,14 @@ const DateDoctorFixSchema = z
       .min(MIN_APPROXIMATE_YEAR)
       .optional()
       .describe('With dateAccuracy: the year, or any year of the decade; not after this year'),
+    // FL-1814: beside dateAccuracy, as on the asset, so a client that knows only dateAccuracy is unaffected
+    dateDetail: z
+      .enum(DATE_DETAILS)
+      .optional()
+      .describe(
+        'With dateAccuracy `year` only: `month` dates them to the 1st of `month` (midnight UTC), `about` says the year is a guess',
+      ),
+    month: z.int().min(1).max(12).optional().describe('With dateDetail `month` only: the month, 1 to 12'),
   })
   .refine((dto) => {
     const noZoneOrShift =
@@ -105,8 +113,23 @@ const DateDoctorFixSchema = z
     return dto.useProposal ? noZoneOrShift : dto.timeZone !== undefined || (dto.shiftMinutes ?? 0) !== 0;
   }, 'Send useProposal alone, a timeZone and/or shiftMinutes, or a dateAccuracy with a year up to this one')
   .refine((dto) => dto.keepWallTime === undefined || dto.timeZone !== undefined, 'keepWallTime needs a timeZone')
+  .refine(
+    (dto) => dto.dateDetail === undefined || dto.dateAccuracy === 'year',
+    'dateDetail goes with dateAccuracy year',
+  )
+  .refine(
+    (dto) => (dto.dateDetail === 'month') === (dto.month !== undefined),
+    'month goes with dateDetail month, and dateDetail month needs one',
+  )
+  .refine((dto) => {
+    if (dto.month === undefined || dto.year === undefined) {
+      return true;
+    }
+    const now = new Date();
+    return dto.year * 12 + dto.month <= now.getUTCFullYear() * 12 + now.getUTCMonth() + 1;
+  }, 'A month is not after this one')
   .describe(
-    'Send `useProposal: true` alone, or a `timeZone` and/or a non-zero `shiftMinutes` (`keepWallTime` only with `timeZone`), or a `dateAccuracy` with its `year`. Any other combination is refused (400). A zone or shift leaves photos dated to a year or a decade as they are.',
+    'Send `useProposal: true` alone, or a `timeZone` and/or a non-zero `shiftMinutes` (`keepWallTime` only with `timeZone`), or a `dateAccuracy` with its `year` (and with `year`, optionally a `dateDetail`; `month` needs its `month`). Any other combination is refused (400). A zone or shift leaves photos dated to a year or a decade as they are.',
   )
   .meta({ id: 'DateDoctorFixDto' });
 
