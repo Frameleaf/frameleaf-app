@@ -80,8 +80,8 @@ const config: PlaywrightTestConfig = {
     // invocation. These two are gated behind PLAYWRIGHT_STUDIO_FIREFOX so they only exist in the
     // project list when explicitly requested (the two new package.json scripts set it); an unscoped
     // local or CI run is unaffected either way. Playwright WebKit is explicitly not accepted as
-    // Safari/iPad evidence for this story - real hardware is required for that axis - so no WebKit
-    // project is added here. Firefox is not installed by any CI/devcontainer `playwright install`
+    // Safari/iPad evidence for this story - real hardware is required for that axis - so no Studio
+    // WebKit lane is added here. Firefox is not installed by any CI/devcontainer `playwright install`
     // today (both call sites pin `chromium` only) - install it first (`playwright install firefox`)
     // before running either new script.
     // FL-1832: the iPad touch specs in Playwright's WebKit with an iPad profile. The `ui` project runs

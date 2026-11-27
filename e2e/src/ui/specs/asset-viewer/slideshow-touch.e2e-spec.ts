@@ -60,15 +60,23 @@ test.describe('slideshow on a touch tablet', () => {
     await startSlideshow(page);
     const { x, y } = middle(page);
 
+    await page.evaluate(() =>
+      document.addEventListener('pointerdown', (e) => (document.body.dataset.pointerType = e.pointerType), {
+        once: true,
+      }),
+    );
     await page.touchscreen.tap(x, y);
+    // the lane really sends touch input, not mouse events
+    await expect(page.locator('body')).toHaveAttribute('data-pointer-type', 'touch');
     await expect(viewer(page)).toHaveClass(/chrome-hidden/);
     await expect(page.locator('[data-viewer-footer]')).toHaveCSS('opacity', '0');
     await expect(page.locator('[data-viewer-chrome="header"]')).toHaveCSS('opacity', '0');
 
-    await page.touchscreen.tap(x, y);
+    // taps 100 px apart, so the photo's double-tap zoom (32 px, 300 ms) never takes them
+    await page.touchscreen.tap(x, y - 100);
     await expect(viewer(page)).not.toHaveClass(/chrome-hidden/);
 
-    await page.touchscreen.tap(x, y);
+    await page.touchscreen.tap(x, y + 100);
     await expect(viewer(page)).toHaveClass(/chrome-hidden/);
     await touch(
       page,

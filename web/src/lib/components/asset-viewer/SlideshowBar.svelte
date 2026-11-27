@@ -140,7 +140,9 @@
    * - while the slideshow decodes the next photo the handlers can run late, so the press is timed
    *   by the events' own timestamps rather than by when the handler ran;
    * - iPadOS may end a still touch with `pointercancel` instead of `pointerup` when its own gesture
-   *   recognizers take it, so a cancelled touch that never moved still counts as the tap.
+   *   recognizers take it, so a cancelled touch that never moved still counts as the tap. (A system
+   *   swipe iPadOS claims before any move arrives, such as the Home gesture, looks the same and
+   *   toggles the chrome as the page leaves; the cancel carries no position to tell them apart.)
    * The canvas also takes `touch-action: none` during a slideshow (AssetViewer), so no pan or zoom
    * of the page claims the touch in the first place.
    */
@@ -150,9 +152,10 @@
   let tap: { id: number; x: number; y: number; time: number; hidden: boolean; travel: number } | undefined;
   const onPointerDown = (event: PointerEvent) => {
     const target = event.target as Element | null;
-    // a second finger (a pinch) is never a tap; the same pointer pressing again replaces a press whose release never arrived
+    // A second finger (a pinch) is never a tap. A primary press means no other pointer is down, so it
+    // also replaces a press whose release never arrived.
     tap =
-      (!tap || tap.id === event.pointerId) && target?.closest?.('[data-viewer-content]') && !inChrome(target)
+      event.isPrimary && target?.closest?.('[data-viewer-content]') && !inChrome(target)
         ? {
             id: event.pointerId,
             x: event.clientX,
