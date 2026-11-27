@@ -1,7 +1,8 @@
 import { fireEvent, render, screen } from '@testing-library/svelte';
 import { init, register, waitLocale } from 'svelte-i18n';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
-import DateField, { dateFieldStart, isDateFieldValid, type DateFieldValue } from './DateField.svelte';
+import { dateFieldStart, isDateFieldValid, type DateFieldValue } from '$lib/frameleaf/date-field';
+import DateField from './DateField.svelte';
 
 /** FL-1814: the one date field. */
 describe('DateField', () => {

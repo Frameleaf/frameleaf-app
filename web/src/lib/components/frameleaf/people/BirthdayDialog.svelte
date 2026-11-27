@@ -1,9 +1,9 @@
 <script lang="ts">
   import Button from '$lib/components/frameleaf/Button.svelte';
-  import DateField, { isDateFieldValid } from '$lib/components/frameleaf/DateField.svelte';
+  import DateField from '$lib/components/frameleaf/DateField.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import IconButton from '$lib/components/frameleaf/IconButton.svelte';
-  import { lifeDateField, lifeDateUpdate } from '$lib/frameleaf/date-field';
+  import { isDateFieldValid, lifeDateField, lifeDateUpdate } from '$lib/frameleaf/date-field';
   import { ageInYears, datesProblem, isUnnamedPerson, lifespan } from '$lib/frameleaf/people';
   import { eventManager } from '$lib/managers/event-manager.svelte';
   import { handleError } from '$lib/utils/handle-error';

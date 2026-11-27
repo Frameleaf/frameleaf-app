@@ -4,7 +4,41 @@
  * how sure it is in `birthDatePrecision` / `deathDatePrecision` (`month`, `year`, `about`). Either way the date is
  * the start of its period.
  */
-import { dateFieldStart, type DateFieldValue, type DateSure } from '$lib/components/frameleaf/DateField.svelte';
+
+/** How much of a date is known. `decade` is only ever a date stored that way before (FL-936). */
+export type DateSure = 'day' | 'month' | 'year' | 'about' | 'decade';
+export type DateFieldValue = {
+  sure: DateSure;
+  year: number;
+  /** 1–12 */
+  month: number;
+  day: number;
+  /** `HH:mm`, with `withTime` and an exact day only */
+  time?: string;
+};
+
+const pad = (value: number, size = 2) => String(value).padStart(size, '0');
+
+/** The ISO day a value is stored as: the day itself, or the start of its month, year or decade. */
+export const dateFieldStart = ({ sure, year, month, day }: DateFieldValue) =>
+  sure === 'day'
+    ? `${pad(year, 4)}-${pad(month)}-${pad(day)}`
+    : sure === 'month'
+      ? `${pad(year, 4)}-${pad(month)}-01`
+      : `${pad(sure === 'decade' ? Math.floor(year / 10) * 10 : year, 4)}-01-01`;
+
+/** Whether the value can be saved: a whole year in range, and a real day when the day is known. */
+export const isDateFieldValid = (value: DateFieldValue, minYear = 1800, maxYear = new Date().getFullYear()) =>
+  Number.isSafeInteger(value.year) &&
+  value.year >= minYear &&
+  value.year <= maxYear &&
+  (value.sure !== 'day' || isRealDay(value));
+
+/** Whether the value names a real day (no 31 April, no 29 February outside a leap year). */
+export const isRealDay = ({ year, month, day }: Pick<DateFieldValue, 'year' | 'month' | 'day'>) => {
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
+};
 
 const parts = (iso: string | null | undefined, fallback: Date) => {
   const match = /^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2}))?/.exec(iso ?? '');

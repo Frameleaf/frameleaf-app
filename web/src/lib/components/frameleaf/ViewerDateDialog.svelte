@@ -13,10 +13,16 @@
    * start of its period in UTC with `dateAccuracy` and `dateDetail`; an exact day saves with its time and zone,
    * which makes the date exact again.
    */
-  import DateField, { dateFieldStart, isDateFieldValid } from '$lib/components/frameleaf/DateField.svelte';
+  import DateField from '$lib/components/frameleaf/DateField.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import { toSdkDateAccuracy } from '$lib/frameleaf/approximate-date';
-  import { photoDateField, photoDateUpdate } from '$lib/frameleaf/date-field';
+  import {
+    dateFieldStart,
+    isDateFieldValid,
+    photoDateField,
+    photoDateUpdate,
+    type DateFieldValue,
+  } from '$lib/frameleaf/date-field';
   import { formatLuxon } from '$lib/frameleaf/date-format';
   import { joinDateTime, splitDateTime, timezoneChoices } from '$lib/frameleaf/viewer-date';
   import {
@@ -49,7 +55,7 @@
   let open = $state(true);
   let saved = false;
   /** What the field holds; an approximate date opens as it is stored. */
-  let field = $state({
+  let field = $state<DateFieldValue>({
     ...photoDateField(
       asset.dateAccuracy ? asset.localDateTime : initialDate?.toISODate(),
       asset.dateAccuracy,
@@ -219,7 +225,6 @@
     color: var(--fl-muted);
   }
 
-  .mv-form input,
   .mv-form select {
     min-height: 36px;
     padding: 6px 10px;

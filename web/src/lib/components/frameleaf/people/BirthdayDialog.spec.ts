@@ -28,8 +28,9 @@ describe('BirthdayDialog (PD-5, FL-864)', () => {
     if (day !== undefined) {
       await fireEvent.input(group.getByLabelText('Day'), { target: { value: String(day) } });
     }
-    if (month !== undefined)
-      {await fireEvent.change(group.getByLabelText('Month'), { target: { value: String(month) } });}
+    if (month !== undefined) {
+      await fireEvent.change(group.getByLabelText('Month'), { target: { value: String(month) } });
+    }
     if (year !== undefined) {
       await fireEvent.input(group.getByLabelText('Year'), { target: { value: String(year) } });
     }
