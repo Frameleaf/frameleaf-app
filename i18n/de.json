@@ -15075,6 +15075,7 @@
   "frameleaf_people_pending_changes": "{count, plural, one {# ausstehende Änderung} other {# ausstehende Änderungen}}",
   "frameleaf_people_person_actions": "Aktionen für {name}",
   "frameleaf_people_photos_count": "{count, plural, one {# Foto} other {# Fotos}}",
+  "frameleaf_people_picker_someone_new_named": "Neue Person namens „{name}“",
   "frameleaf_people_recognition_groups": "Erkennungsgruppen",
   "frameleaf_people_remove_favorite": "Aus Favoriten entfernen",
   "frameleaf_people_rename": "Umbenennen",

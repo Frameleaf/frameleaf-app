@@ -10,8 +10,7 @@ const api = vi.hoisted(() => ({
   createPersonRelationship: vi.fn(),
   deletePersonRelationship: vi.fn(),
   getPersonRelationships: vi.fn(),
-  getAllPeople: vi.fn(),
-  searchPerson: vi.fn(),
+  getPeoplePicker: vi.fn(),
   isHttpError: vi.fn(),
 }));
 vi.mock('@frameleaf/sdk', async (original) => ({ ...(await original<object>()), ...api }));
@@ -42,8 +41,8 @@ describe('FamilySection (FL-842)', () => {
 
   beforeEach(() => {
     vi.resetAllMocks();
-    api.getAllPeople.mockResolvedValue({
-      people: [personFactory.build({ id: 'emma', name: 'Emma' })],
+    api.getPeoplePicker.mockResolvedValue({
+      people: [{ id: 'emma', name: 'Emma', assetCount: 3, updatedAt: '2026-11-01T00:00:00Z' }],
       hasNextPage: false,
     });
   });

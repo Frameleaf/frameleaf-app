@@ -7,7 +7,6 @@ import {
   lifespan,
   matchesPersonSearch,
   normalizedFaceBox,
-  sortMergeCandidates,
   sortPeopleForGrid,
   sortPeopleForManage,
 } from './people';
@@ -74,11 +73,6 @@ describe('frameleaf people grid helpers', () => {
 
   it('sorts by the most recent capture', () => {
     expect(sortPeopleForGrid([bob, alice, unnamed], 'recent').map(({ id }) => id)).toEqual(['u', 'a', 'b']);
-  });
-
-  it('lists merge candidates without the person, named first, then by count', () => {
-    expect(sortMergeCandidates([alice, unnamed, bob], 'a', '').map(({ id }) => id)).toEqual(['b', 'u']);
-    expect(sortMergeCandidates([alice, unnamed, bob], 'u', 'ali').map(({ id }) => id)).toEqual(['a']);
   });
 
   it('computes an age in whole years', () => {

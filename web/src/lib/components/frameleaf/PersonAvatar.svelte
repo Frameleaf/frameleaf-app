@@ -27,7 +27,8 @@
     heroPage = false,
     onUnavailable,
   }: {
-    person?: PersonResponseDto;
+    /** Only what the face needs, so a picker row or a full person both fit. */
+    person?: Pick<PersonResponseDto, 'id' | 'name' | 'updatedAt'>;
     size?: number;
     fluid?: boolean;
     heroKey?: string;

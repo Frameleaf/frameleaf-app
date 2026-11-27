@@ -15075,6 +15075,7 @@
   "frameleaf_people_pending_changes": "{count, plural, one {# ventende endring} other {# ventende endringer}}",
   "frameleaf_people_person_actions": "Handlinger for {name}",
   "frameleaf_people_photos_count": "{count, plural, one {# bilde} other {# bilder}}",
+  "frameleaf_people_picker_someone_new_named": "En ny person som heter «{name}»",
   "frameleaf_people_recognition_groups": "Gjenkjenningsgrupper",
   "frameleaf_people_remove_favorite": "Fjern fra favoritter",
   "frameleaf_people_rename": "Gi nytt navn",
