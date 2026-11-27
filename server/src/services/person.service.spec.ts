@@ -1088,6 +1088,8 @@ describe(PersonService.name, () => {
         updatedAt: expect.any(String),
         featuredAssetId: null,
         deathDate: null,
+        birthDatePrecision: null,
+        deathDatePrecision: null,
       });
       expect(mocks.person.update).toHaveBeenCalledWith({
         ownerId: person.ownerId,
@@ -1311,7 +1313,22 @@ describe(PersonService.name, () => {
       );
     });
 
+    it('returns the precisions it saved, so a client reads them back (FL-1814)', async () => {
+      const { auth, person } = setup();
+      mocks.person.upsertProfile.mockResolvedValue({
+        deathDate: null,
+        notes: null,
+        birthDatePrecision: 'month',
+        deathDatePrecision: null,
+      });
+
+      await expect(
+        sut.update(auth, person.personGroupId, { birthDate: '1987-03-01', birthDatePrecision: 'month' }),
+      ).resolves.toMatchObject({ birthDatePrecision: 'month', deathDatePrecision: null });
+    });
+
     it.each([
+      [{ deathDate: null, deathDatePrecision: 'month' as const }],
       [{ birthDate: '1987-03-14', birthDatePrecision: 'month' as const }],
       [{ birthDate: '1987-03-01', birthDatePrecision: 'year' as const }],
       [{ deathDate: '2020-06-01', deathDatePrecision: 'about' as const }],

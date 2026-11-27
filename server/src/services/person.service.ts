@@ -1089,6 +1089,9 @@ export class PersonService extends BaseService {
       ...mapPerson(person),
       featuredAssetId,
       deathDate: asDateString(details?.deathDate ?? null),
+      // FL-1814: how sure each date is, so a client that saves one reads it back
+      birthDatePrecision: details?.birthDatePrecision ?? null,
+      deathDatePrecision: details?.deathDatePrecision ?? null,
       // FL-941: notes are the owner's alone; every person read here is the caller's own, and this keeps it so
       ...(isOwner && { notes: details?.notes ?? null, categoryIds }),
     };
@@ -1286,6 +1289,10 @@ export class PersonService extends BaseService {
         throw new BadRequestException(`${field}Precision goes with a ${field}`);
       }
       return undefined;
+    }
+    if (date === null && precision) {
+      // a precision with no date would silently clear the date instead
+      throw new BadRequestException(`${field}Precision goes with a ${field}`);
     }
     if (!date || !precision) {
       return null;
@@ -2302,12 +2309,14 @@ export class PersonService extends BaseService {
               this.personRepository.getProfile(survivor),
               this.personRepository.getProfile(removed),
             ]);
-            const profileChanges = mergeProfiles(
-              survivor.birthDate,
-              survivorProfile,
-              removedProfile,
-              changes.birthDate !== undefined,
-            );
+            // FL-1814: the survivor took the merged-away person's date of birth, now or in an earlier try that
+            // wrote the date and then failed: either way its precision comes with it
+            const tookBirthDate =
+              changes.birthDate !== undefined ||
+              (!!survivor.birthDate &&
+                asDateString(survivor.birthDate) === asDateString(removed.birthDate) &&
+                !survivorProfile?.birthDatePrecision);
+            const profileChanges = mergeProfiles(survivor.birthDate, survivorProfile, removedProfile, tookBirthDate);
             if (profileChanges) {
               await this.personRepository.upsertProfile(survivor, profileChanges);
             }
