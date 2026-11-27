@@ -6,8 +6,11 @@
    * the approved template (`media-viewer.mjs` `viewerActionGroups` and the Viewer group of
    * `MediaViewer.jsx:1215-1282`). Every entry below is an existing production action — an
    * `ActionItem` from `asset.service` / `album.service` / `app.service`, or one of the
-   * `asset-viewer/actions` components — so nothing here introduces a new endpoint. A group whose
-   * entries are all unsupported in the current context is dropped along with its heading.
+   * `asset-viewer/actions` components — so nothing here introduces a new endpoint.
+   *
+   * FL-1811 (prototype PR 102, `viewerMenuSections`): the everyday actions are a short list that is
+   * always in view; everything else sits in sections (Share and export, Stack, Set as, Go to, Fix,
+   * Viewer) that open in place, one at a time. A section with nothing to offer is not drawn.
    *
    * "Album cover" outside an album the user may change and "Featured photo for person" open the
    * template's chooser (`ViewerChooserDialog`, audit V-9) over the albums that hold the item and the
@@ -27,7 +30,6 @@
   import UnstackAction from '$lib/components/asset-viewer/actions/UnstackAction.svelte';
   import LibraryCareRepairDialog from '$lib/components/frameleaf/LibraryCareRepairDialog.svelte';
   import ViewerChooserDialog, { type ViewerChooserPick } from '$lib/components/frameleaf/ViewerChooserDialog.svelte';
-  import ViewerMenuGroupLabel from '$lib/components/frameleaf/ViewerMenuGroupLabel.svelte';
   import MenuOption from '$lib/components/shared-components/context-menu/MenuOption.svelte';
   import { AssetAction } from '$lib/constants';
   import { canSendCopies, sendCopyPermitted } from '$lib/frameleaf/send-copy';
@@ -38,9 +40,11 @@
     viewerMenuChooser,
     viewerMenuGroups,
     viewerMenuLabelKey,
+    viewerMenuSections,
     type ViewerActionId,
     type ViewerMenuContext,
     type ViewerMenuGroup,
+    type ViewerMenuSectionId,
   } from '$lib/frameleaf/viewer-menu';
   import { imageViewingPreference, showFilmstrip } from '$lib/frameleaf/viewer-preferences';
   import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
@@ -73,14 +77,19 @@
     mdiCogOutline,
     mdiDeleteForeverOutline,
     mdiDeleteRestore,
+    mdiExportVariant,
     mdiFullscreen,
     mdiFullscreenExit,
     mdiImageAlbum,
     mdiImageBrokenVariant,
     mdiImageMultipleOutline,
+    mdiLayersOutline,
+    mdiMapMarkerOutline,
+    mdiMonitor,
     mdiMovieOpenOutline,
     mdiPause,
     mdiPlayCircleOutline,
+    mdiWrenchOutline,
   } from '@mdi/js';
   import { MediaQuery } from 'svelte/reactivity';
   import { t } from 'svelte-i18n';
@@ -250,7 +259,27 @@
 
   const groups: ViewerMenuGroup[] = $derived(viewerMenuGroups(context));
 
-  const has = (group: ViewerMenuGroup, id: ViewerActionId) => group.items.includes(id);
+  // Rows that are not actions keep their section: the still exports, Full screen on a phone, the display choice.
+  const fullscreenInMenu = $derived(!!onToggleFullscreen && phone.current);
+  const imageDisplayInMenu = $derived(isImageAsset(asset) && !asset.duration);
+  const menu = $derived(
+    viewerMenuSections(groups, [
+      ...(stillExportFormats.length > 0 && groups.some((group) => group.items.includes('download'))
+        ? (['share'] as const)
+        : []),
+      ...(fullscreenInMenu || imageDisplayInMenu ? (['viewer'] as const) : []),
+    ]),
+  );
+  /** The one section that is open; opening another closes it. */
+  let openSection = $state<ViewerMenuSectionId | null>(null);
+  const SECTION_ICONS: Record<ViewerMenuSectionId, string> = {
+    share: mdiExportVariant,
+    stack: mdiLayersOutline,
+    'set-as': mdiAccountCircleOutline,
+    'go-to': mdiMapMarkerOutline,
+    fix: mdiWrenchOutline,
+    viewer: mdiMonitor,
+  };
   const label = (id: ViewerActionId) => $t(viewerMenuLabelKey(id, context));
   const run = (action: ActionItem) => action.onAction(action);
 
@@ -313,211 +342,187 @@
   };
 </script>
 
-{#each groups as group, index (group.id)}
-  <ViewerMenuGroupLabel text={$t(group.labelKey)} divided={index > 0} />
-
-  {#if has(group, 'download')}
+<!-- One entry of the menu: every id maps to an existing production action. -->
+{#snippet entry(id: ViewerActionId)}
+  {#if id === 'download'}
     <MenuOption icon={Actions.Download.icon} text={label('download')} onClick={() => run(Actions.Download)} />
-    {#each stillExportFormats as format (format)}
-      <MenuOption
-        icon={Actions.Download.icon}
-        text={$t(
-          format === 'sdr-jpeg'
-            ? 'frameleaf_editor_export_sdr_jpeg'
-            : format === 'hdr-jpeg'
-              ? 'frameleaf_editor_export_hdr_jpeg'
-              : 'frameleaf_editor_export_hdr_heic',
-        )}
-        onClick={() => exportStill(format)}
-      />
-    {/each}
-  {/if}
-  {#if has(group, 'download-original')}
+  {:else if id === 'download-original'}
     <MenuOption
       icon={Actions.DownloadOriginal.icon}
       text={label('download-original')}
       onClick={() => run(Actions.DownloadOriginal)}
     />
-  {/if}
-  {#if has(group, 'send-copy')}
+  {:else if id === 'send-copy'}
     <MenuOption icon={Actions.SendCopy.icon} text={label('send-copy')} onClick={() => run(Actions.SendCopy)} />
-  {/if}
-  {#if has(group, 'copy-image')}
+  {:else if id === 'copy-image'}
     <MenuOption icon={Actions.Copy.icon} text={label('copy-image')} onClick={() => run(Actions.Copy)} />
-  {/if}
-
-  {#if has(group, 'restore')}
+  {:else if id === 'restore'}
     <MenuOption icon={mdiDeleteRestore} text={label('restore')} onClick={() => restoreFromTrash({ asset, onAction })} />
-  {/if}
-  {#if has(group, 'delete-permanently')}
+  {:else if id === 'delete-permanently'}
     <MenuOption
       icon={mdiDeleteForeverOutline}
       text={label('delete-permanently')}
       danger
       onClick={() => confirmAndDeletePermanently({ asset, preAction, onAction })}
     />
-  {/if}
-
-  {#if has(group, 'add-to-album')}
+  {:else if id === 'add-to-album'}
     <MenuOption icon={Actions.AddToAlbum.icon} text={label('add-to-album')} onClick={() => run(Actions.AddToAlbum)} />
-  {/if}
-  {#if has(group, 'remove-from-album')}
+  {:else if id === 'remove-from-album'}
     <MenuOption
       icon={Actions.RemoveFromAlbum.icon}
       text={label('remove-from-album')}
       onClick={() => run(Actions.RemoveFromAlbum)}
     />
-  {/if}
-  {#if has(group, 'archive') || has(group, 'unarchive')}
+  {:else if id === 'archive' || id === 'unarchive'}
     <ArchiveAction {asset} {onAction} {preAction} />
-  {/if}
-  {#if has(group, 'set-visibility-locked')}
+  {:else if id === 'set-visibility-locked'}
     <SetVisibilityAction asset={toTimelineAsset(asset)} {onAction} {preAction} />
-  {/if}
-
-  {#if has(group, 'add-to-stack')}
+  {:else if id === 'add-to-stack'}
     <AddToStackAction {asset} {stack} {onAction} text={label('add-to-stack')} />
-  {/if}
-  {#if has(group, 'unstack') && stack}
+  {:else if id === 'unstack' && stack}
     <UnstackAction {stack} {onAction} text={label('unstack')} />
-  {/if}
-  {#if has(group, 'stack-keep-this') && stack}
+  {:else if id === 'stack-keep-this' && stack}
     <KeepThisDeleteOthersAction {stack} {asset} {onAction} text={label('stack-keep-this')} />
-  {/if}
-  {#if has(group, 'stack-set-primary') && stack}
+  {:else if id === 'stack-set-primary' && stack}
     <SetStackPrimaryAsset {stack} {asset} {onAction} text={label('stack-set-primary')} />
-  {/if}
-  {#if has(group, 'stack-remove-this') && stack}
+  {:else if id === 'stack-remove-this' && stack}
     <RemoveAssetFromStack {asset} {stack} {onAction} text={label('stack-remove-this')} />
-  {/if}
-
-  {#if has(group, 'set-album-cover')}
+  {:else if id === 'set-album-cover'}
     <MenuOption icon={mdiImageAlbum} text={label('set-album-cover')} onClick={() => choose('set-album-cover')} />
-  {/if}
-  {#if has(group, 'set-person-featured')}
+  {:else if id === 'set-person-featured'}
     <MenuOption
       icon={mdiAccountCircleOutline}
       text={label('set-person-featured')}
       onClick={() => choose('set-person-featured')}
     />
-  {/if}
-  {#if has(group, 'set-profile-picture')}
+  {:else if id === 'set-profile-picture'}
     <MenuOption
       icon={Actions.SetProfilePicture.icon}
       text={label('set-profile-picture')}
       onClick={() => run(Actions.SetProfilePicture)}
     />
-  {/if}
-
-  {#if has(group, 'view-in-timeline')}
+  {:else if id === 'view-in-timeline'}
     <MenuOption
       icon={Actions.ViewInTimeline.icon}
       text={label('view-in-timeline')}
       onClick={() => run(Actions.ViewInTimeline)}
     />
-  {/if}
-  {#if has(group, 'find-similar')}
+  {:else if id === 'find-similar'}
     <MenuOption icon={Actions.ViewSimilar.icon} text={label('find-similar')} onClick={() => run(Actions.ViewSimilar)} />
-  {/if}
-  {#if has(group, 'view-on-map')}
+  {:else if id === 'view-on-map'}
     <MenuOption icon={Actions.ViewOnMap.icon} text={label('view-on-map')} onClick={() => run(Actions.ViewOnMap)} />
-  {/if}
-  {#if has(group, 'open-folder')}
+  {:else if id === 'open-folder'}
     <MenuOption
       icon={Actions.ShowInFolder.icon}
       text={label('open-folder')}
       onClick={() => run(Actions.ShowInFolder)}
     />
-  {/if}
-
-  {#if has(group, 'refresh-faces')}
+  {:else if id === 'refresh-faces'}
     <MenuOption
       icon={Actions.RefreshFacesJob.icon}
       text={label('refresh-faces')}
       onClick={() => run(Actions.RefreshFacesJob)}
     />
-  {/if}
-  {#if has(group, 'refresh-metadata')}
+  {:else if id === 'refresh-metadata'}
     <MenuOption
       icon={Actions.RefreshMetadataJob.icon}
       text={label('refresh-metadata')}
       onClick={() => run(Actions.RefreshMetadataJob)}
     />
-  {/if}
-  {#if has(group, 'refresh-thumbnails')}
+  {:else if id === 'refresh-thumbnails'}
     <MenuOption
       icon={Actions.RegenerateThumbnailJob.icon}
       text={label('refresh-thumbnails')}
       onClick={() => run(Actions.RegenerateThumbnailJob)}
     />
-  {/if}
-  {#if has(group, 'repair-photo')}
+  {:else if id === 'repair-photo'}
     <MenuOption icon={mdiImageBrokenVariant} text={label('repair-photo')} onClick={() => repairPhoto(asset)} />
-  {/if}
-  {#if has(group, 'split-scan')}
+  {:else if id === 'split-scan'}
     <MenuOption icon={mdiImageMultipleOutline} text={label('split-scan')} onClick={() => openScanSplit(asset.id)} />
-  {/if}
-  {#if has(group, 'refresh-encoded')}
+  {:else if id === 'refresh-encoded'}
     <MenuOption
       icon={Actions.TranscodeVideoJob.icon}
       text={label('refresh-encoded')}
       onClick={() => run(Actions.TranscodeVideoJob)}
     />
-  {/if}
-  {#if has(group, 'transcode')}
+  {:else if id === 'transcode'}
     <!-- The template's "Transcode video" queues the same encode job as "Refresh encoded video" (App.jsx:1207-1209). -->
     <MenuOption icon={mdiMovieOpenOutline} text={label('transcode')} onClick={() => run(Actions.TranscodeVideoJob)} />
-  {/if}
-
-  {#if has(group, 'tag-people')}
+  {:else if id === 'tag-people'}
     <MenuOption icon={Actions.TagPeople.icon} text={label('tag-people')} onClick={() => run(Actions.TagPeople)} />
-  {/if}
-  {#if has(group, 'cast')}
+  {:else if id === 'cast'}
     <MenuOption icon={Cast.icon} text={label('cast')} onClick={() => run(Cast)} />
-  {/if}
-  {#if has(group, 'toggle-filmstrip')}
+  {:else if id === 'toggle-filmstrip'}
     <MenuOption
       icon={Actions.ToggleFilmstrip.icon}
       text={label('toggle-filmstrip')}
       onClick={() => showFilmstrip.update((value) => !value)}
     />
-  {/if}
-  {#if has(group, 'play-slideshow')}
+  {:else if id === 'play-slideshow'}
     <MenuOption
       icon={context.slideshowPlaying ? mdiPause : mdiPlayCircleOutline}
       text={label('play-slideshow')}
       onClick={toggleSlideshow}
     />
-  {/if}
-  {#if has(group, 'slideshow-settings')}
+  {:else if id === 'slideshow-settings'}
     <MenuOption icon={mdiCogOutline} text={label('slideshow-settings')} onClick={openSlideshowSettings} />
   {/if}
+{/snippet}
+
+<!-- FL-1811: the everyday actions stay in view; the rest sits in sections that open in place, one at a time. -->
+{#each menu.top as id (id)}
+  {@render entry(id)}
 {/each}
 
-<!-- FL-1457 (N1, prototype MediaViewer.jsx): the Viewer group, always the last one, ends with Full screen on a phone. -->
-{#if onToggleFullscreen && phone.current}
-  {#if groups.at(-1)?.id !== 'viewer'}
-    <ViewerMenuGroupLabel text={$t('frameleaf_viewer_group_viewer')} divided={groups.length > 0} />
+{#each menu.sections as section (section.id)}
+  <MenuOption
+    icon={SECTION_ICONS[section.id]}
+    text={$t(section.labelKey)}
+    expanded={openSection === section.id}
+    onClick={() => (openSection = openSection === section.id ? null : section.id)}
+  />
+  {#if openSection === section.id}
+    {#if section.id === 'share'}
+      {#each stillExportFormats as format (format)}
+        <MenuOption
+          icon={Actions.Download.icon}
+          text={$t(
+            format === 'sdr-jpeg'
+              ? 'frameleaf_editor_export_sdr_jpeg'
+              : format === 'hdr-jpeg'
+                ? 'frameleaf_editor_export_hdr_jpeg'
+                : 'frameleaf_editor_export_hdr_heic',
+          )}
+          onClick={() => exportStill(format)}
+        />
+      {/each}
+    {/if}
+    {#each section.items as id (id)}
+      {@render entry(id)}
+    {/each}
+    {#if section.id === 'viewer'}
+      <!-- FL-1457 (N1): a phone has no footer, so Full screen ends the Viewer section there. -->
+      {#if fullscreenInMenu}
+        <MenuOption
+          icon={fullscreen ? mdiFullscreenExit : mdiFullscreen}
+          text={fullscreen ? $t('frameleaf_viewer_exit_fullscreen') : $t('frameleaf_viewer_enter_fullscreen')}
+          onClick={() => onToggleFullscreen?.()}
+        />
+      {/if}
+      {#if imageDisplayInMenu}
+        <MenuOption
+          text={$t('frameleaf_image_display_auto')}
+          subtitle={$imageViewingPreference === 'auto' ? $t('selected') : ''}
+          icon={$imageViewingPreference === 'auto' ? mdiCheckCircleOutline : undefined}
+          onClick={() => imageViewingPreference.set('auto')}
+        />
+        <MenuOption
+          text={$t('frameleaf_image_display_sdr')}
+          subtitle={$imageViewingPreference === 'sdr' ? $t('selected') : ''}
+          icon={$imageViewingPreference === 'sdr' ? mdiCheckCircleOutline : undefined}
+          onClick={() => imageViewingPreference.set('sdr')}
+        />
+      {/if}
+    {/if}
   {/if}
-  <MenuOption
-    icon={fullscreen ? mdiFullscreenExit : mdiFullscreen}
-    text={fullscreen ? $t('frameleaf_viewer_exit_fullscreen') : $t('frameleaf_viewer_enter_fullscreen')}
-    onClick={onToggleFullscreen}
-  />
-{/if}
-
-{#if isImageAsset(asset) && !asset.duration}
-  <ViewerMenuGroupLabel text={$t('frameleaf_image_display')} divided />
-  <MenuOption
-    text={$t('frameleaf_image_display_auto')}
-    subtitle={$imageViewingPreference === 'auto' ? $t('selected') : ''}
-    icon={$imageViewingPreference === 'auto' ? mdiCheckCircleOutline : undefined}
-    onClick={() => imageViewingPreference.set('auto')}
-  />
-  <MenuOption
-    text={$t('frameleaf_image_display_sdr')}
-    subtitle={$imageViewingPreference === 'sdr' ? $t('selected') : ''}
-    icon={$imageViewingPreference === 'sdr' ? mdiCheckCircleOutline : undefined}
-    onClick={() => imageViewingPreference.set('sdr')}
-  />
-{/if}
+{/each}

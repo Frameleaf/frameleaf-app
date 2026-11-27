@@ -28,6 +28,7 @@
    * asset that changed underneath the panel, and neither for a rejected value or a permission
    * the signed-in user does not have.
    */
+  import DetailPanelFold from '$lib/components/asset-viewer/DetailPanelFold.svelte';
   import LocalDescriptionReview from './LocalDescriptionReview.svelte';
   import ViewerInlineEditError from '$lib/components/frameleaf/ViewerInlineEditError.svelte';
   import { staleReasonKey } from '$lib/frameleaf/enrichment';
@@ -75,9 +76,19 @@
      * in, undefined when there is none) sits beneath it, before the sensitive-content band.
      */
     descriptionEditor?: Snippet<[Snippet | undefined]>;
+    /** FL-1811: what the panel shows between the description and the folded sensitive-content check. */
+    beforeSensitivity?: Snippet;
   }
 
-  let { asset, isOwner, onAssetRefresh, onAssetSuppressed, onDescriptionReview, descriptionEditor }: Props = $props();
+  let {
+    asset,
+    isOwner,
+    onAssetRefresh,
+    onAssetSuppressed,
+    onDescriptionReview,
+    descriptionEditor,
+    beforeSensitivity,
+  }: Props = $props();
 
   let enrichment = $state<AssetImageEnrichmentResponseDto>();
   let isLoading = $state(false);
@@ -456,82 +467,89 @@
   <LocalDescriptionReview {asset} {onAssetRefresh} />
 {/if}
 
+{@render beforeSensitivity?.()}
+
+<!-- FL-1811: the check folds away; its heading is the fold's own label. -->
 {#if showSensitivity}
-  <section
-    class="fl-sensitivity"
-    aria-label={$t('frameleaf_info_sensitive_content')}
-    data-testid="frameleaf-enrichment-card"
-  >
-    <div class="fl-info-heading-row">
-      <h3 class="fl-info-heading">{$t('frameleaf_info_sensitive_content')}</h3>
-      {#if sensitivity}
-        <em class={['fl-pill', sensitivity.tone]} data-testid="frameleaf-sensitivity-state">{stateLabel}</em>
-      {/if}
-    </div>
-
-    {#if !sensitivity && isLoading}
-      <!-- A visible label beside the spinner (prototype MediaViewer "Loading the sensitive-content check…"). -->
-      <div class="fl-sensitivity-loading" role="status">
-        <LoadingSpinner />
-        <span>{$t('frameleaf_info_sensitive_loading')}</span>
-      </div>
-    {/if}
-
-    {#if enrichment && sensitivity}
-      <div class="fl-enrich-row" data-testid="frameleaf-enrichment-sensitivity">
-        {#if sensitivityDetail}
-          <span class={['fl-enrich-icon', sensitivity.tone]} aria-hidden="true">
-            <Icon
-              icon={sensitivity.state === 'needs-review' ? mdiShieldAlertOutline : mdiShieldCheckOutline}
-              size="15"
-            />
-          </span>
+  <DetailPanelFold id="sensitive" label={$t('frameleaf_info_sensitive_content')}>
+    <section
+      class="fl-sensitivity"
+      aria-label={$t('frameleaf_info_sensitive_content')}
+      data-testid="frameleaf-enrichment-card"
+    >
+      <div class="fl-info-heading-row">
+        <h3 class="fl-info-heading">{$t('frameleaf_info_sensitive_content')}</h3>
+        {#if sensitivity}
+          <em class={['fl-pill', sensitivity.tone]} data-testid="frameleaf-sensitivity-state">{stateLabel}</em>
         {/if}
-        <div class="fl-enrich-text">
-          {#if sensitivityDetail}
-            <span data-testid="frameleaf-sensitivity-detail">{sensitivityDetail}</span>
-          {/if}
-          {#if sensitivity.error}
-            <span class="fl-enrich-error">{sensitivity.error}</span>
-          {/if}
+      </div>
+
+      {#if !sensitivity && isLoading}
+        <!-- A visible label beside the spinner (prototype MediaViewer "Loading the sensitive-content check…"). -->
+        <div class="fl-sensitivity-loading" role="status">
+          <LoadingSpinner />
+          <span>{$t('frameleaf_info_sensitive_loading')}</span>
         </div>
-        <div class="fl-enrich-actions">
-          {#if sensitivity.state === 'needs-review'}
+      {/if}
+
+      {#if enrichment && sensitivity}
+        <div class="fl-enrich-row" data-testid="frameleaf-enrichment-sensitivity">
+          {#if sensitivityDetail}
+            <span class={['fl-enrich-icon', sensitivity.tone]} aria-hidden="true">
+              <Icon
+                icon={sensitivity.state === 'needs-review' ? mdiShieldAlertOutline : mdiShieldCheckOutline}
+                size="15"
+              />
+            </span>
+          {/if}
+          <div class="fl-enrich-text">
+            {#if sensitivityDetail}
+              <span data-testid="frameleaf-sensitivity-detail">{sensitivityDetail}</span>
+            {/if}
+            {#if sensitivity.error}
+              <span class="fl-enrich-error">{sensitivity.error}</span>
+            {/if}
+          </div>
+          <div class="fl-enrich-actions">
+            {#if sensitivity.state === 'needs-review'}
+              <button
+                type="button"
+                disabled={activeAction !== null}
+                aria-busy={activeAction === AssetImageEnrichmentAction.AcceptNsfwResult}
+                onclick={() => runAction(AssetImageEnrichmentAction.AcceptNsfwResult)}
+              >
+                {$t('accept')}
+              </button>
+            {/if}
             <button
               type="button"
               disabled={activeAction !== null}
-              aria-busy={activeAction === AssetImageEnrichmentAction.AcceptNsfwResult}
-              onclick={() => runAction(AssetImageEnrichmentAction.AcceptNsfwResult)}
+              aria-busy={activeAction === AssetImageEnrichmentAction.MarkSafe ||
+                activeAction === AssetImageEnrichmentAction.MarkNsfw}
+              onclick={() =>
+                runAction(
+                  sensitivity.marked ? AssetImageEnrichmentAction.MarkSafe : AssetImageEnrichmentAction.MarkNsfw,
+                )}
             >
-              {$t('accept')}
+              {sensitivity.marked ? $t('frameleaf_info_unmark_sensitive') : $t('frameleaf_info_mark_sensitive')}
             </button>
-          {/if}
-          <button
-            type="button"
-            disabled={activeAction !== null}
-            aria-busy={activeAction === AssetImageEnrichmentAction.MarkSafe ||
-              activeAction === AssetImageEnrichmentAction.MarkNsfw}
-            onclick={() =>
-              runAction(sensitivity.marked ? AssetImageEnrichmentAction.MarkSafe : AssetImageEnrichmentAction.MarkNsfw)}
-          >
-            {sensitivity.marked ? $t('frameleaf_info_unmark_sensitive') : $t('frameleaf_info_mark_sensitive')}
-          </button>
-          <button
-            type="button"
-            class="fl-icon"
-            aria-label={$t('frameleaf_info_check_again')}
-            title={$t('frameleaf_info_check_again_short')}
-            disabled={activeAction !== null}
-            aria-busy={activeAction === AssetImageEnrichmentAction.RerunNsfwDetection}
-            onclick={() => runAction(AssetImageEnrichmentAction.RerunNsfwDetection)}
-          >
-            <Icon icon={mdiRefresh} size="14" aria-hidden />
-          </button>
+            <button
+              type="button"
+              class="fl-icon"
+              aria-label={$t('frameleaf_info_check_again')}
+              title={$t('frameleaf_info_check_again_short')}
+              disabled={activeAction !== null}
+              aria-busy={activeAction === AssetImageEnrichmentAction.RerunNsfwDetection}
+              onclick={() => runAction(AssetImageEnrichmentAction.RerunNsfwDetection)}
+            >
+              <Icon icon={mdiRefresh} size="14" aria-hidden />
+            </button>
+          </div>
         </div>
-      </div>
-    {/if}
-    {@render failureNotice()}
-  </section>
+      {/if}
+      {@render failureNotice()}
+    </section>
+  </DetailPanelFold>
 {/if}
 
 <style>

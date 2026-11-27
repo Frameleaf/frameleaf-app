@@ -234,6 +234,8 @@ test.describe('Locked content in the browser (FL-34)', () => {
     await expect(tile).toBeVisible();
     await tile.click();
     await page.getByRole('button', { name: 'Information', exact: true }).click();
+    // FL-1811: "Text in this photo" folds away until asked for.
+    await page.locator('details[data-fold="text"] > summary').click();
 
     const text = page.getByTestId('frameleaf-document-text');
     await expect(text.getByTestId('frameleaf-document-text-body')).toContainText('Grand total $18.50');

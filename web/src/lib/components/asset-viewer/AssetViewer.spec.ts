@@ -339,6 +339,7 @@ describe('AssetViewer', () => {
       await screen.findByTestId('viewer-stack-strip');
       // VIEWER-P3: both stack decisions are in the ⋯ menu; the stack card only shows the members.
       await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_viewer_more_actions' }));
+      await fireEvent.click(screen.getByRole('menuitem', { name: 'frameleaf_viewer_group_stack' }));
       await fireEvent.click(
         screen.getByRole('menuitem', {
           name: kind === 'keep' ? 'frameleaf_viewer_menu_keep_this' : 'frameleaf_viewer_menu_remove_from_stack',
@@ -508,6 +509,7 @@ describe('AssetViewer', () => {
       const view = renderWithTooltips(AssetViewer, props);
       try {
         await fireEvent.click(screen.getByRole('button', { name: 'frameleaf_viewer_more_actions' }));
+        await fireEvent.click(screen.getByRole('menuitem', { name: 'frameleaf_viewer_group_set_as' }));
         await fireEvent.click(screen.getByRole('menuitem', { name: 'frameleaf_viewer_menu_person_featured' }));
         await waitFor(() => expect(updatePerson).toHaveBeenCalled());
         if (change === 'before') {

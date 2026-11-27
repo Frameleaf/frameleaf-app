@@ -4,6 +4,9 @@ import {
   viewerMenuGroups,
   viewerMenuHas,
   viewerMenuLabelKey,
+  viewerMenuSections,
+  type ViewerActionId,
+  type ViewerMenuGroup,
   type ViewerMenuContext,
 } from '$lib/frameleaf/viewer-menu';
 
@@ -379,5 +382,75 @@ describe('viewerMenuLabelKey', () => {
     for (const id of VIEWER_ACTIONS) {
       expect(viewerMenuLabelKey(id, baseContext())).toMatch(/^[a-z_]+$/);
     }
+  });
+});
+
+// FL-1811 (prototype PR 102): the same entries, as a short list plus sections that open in place.
+describe('viewerMenuSections', () => {
+  const sectionsOf = (context: ViewerMenuContext) => viewerMenuSections(viewerMenuGroups(context));
+
+  it('keeps the seven everyday actions in view, in the order the mock draws them', () => {
+    const { top } = sectionsOf(baseContext({ hasAlbumContext: true, canEditAlbum: true }));
+    expect(top).toEqual([
+      'add-to-album',
+      'remove-from-album',
+      'archive',
+      'set-visibility-locked',
+      'download',
+      'find-similar',
+      'tag-people',
+    ]);
+  });
+
+  it('puts the rest in Share and export, Stack, Set as, Go to, Fix and Viewer', () => {
+    const { sections } = sectionsOf(
+      baseContext({ isEdited: true, canSendCopy: true, hasCoordinates: true, canRepair: true, canSplitScan: true }),
+    );
+    expect(sections.map((section) => [section.id, section.labelKey, section.items])).toEqual([
+      ['share', 'frameleaf_viewer_section_share', ['download-original', 'send-copy', 'copy-image']],
+      ['stack', 'frameleaf_viewer_group_stack', ['add-to-stack']],
+      ['set-as', 'frameleaf_viewer_group_set_as', ['set-profile-picture']],
+      ['go-to', 'frameleaf_viewer_group_go_to', ['view-in-timeline', 'view-on-map', 'open-folder']],
+      [
+        'fix',
+        'frameleaf_viewer_section_fix',
+        ['repair-photo', 'split-scan', 'refresh-faces', 'refresh-metadata', 'refresh-thumbnails'],
+      ],
+      ['viewer', 'frameleaf_viewer_group_viewer', ['toggle-filmstrip', 'play-slideshow', 'slideshow-settings']],
+    ]);
+  });
+
+  it.each<[string, Partial<ViewerMenuContext>]>([
+    ['a photo', {}],
+    ['a stacked photo in an album', { hasStack: true, stackSize: 3, hasAlbumContext: true, canEditAlbum: true }],
+    ['a video', { isVideo: true, isImage: false, hasCastDestination: true }],
+    ['a trashed photo', { isTrashed: true }],
+    ['a Locked photo', { isLocked: true }],
+    ["someone else's photo", { isOwner: false }],
+  ])('removes nothing and repeats nothing for %s', (_, overrides) => {
+    const context = baseContext(overrides);
+    const { top, sections } = sectionsOf(context);
+    const placed = [...top, ...sections.flatMap((section) => section.items)];
+    expect(placed.toSorted()).toEqual(idsOf(context).toSorted());
+  });
+
+  it('shows Restore and Delete permanently in the short list for a trashed item', () => {
+    const { top, sections } = sectionsOf(baseContext({ isTrashed: true }));
+    expect(top).toEqual(['download', 'restore', 'delete-permanently']);
+    expect(sections.map((section) => section.id)).toEqual(['share', 'viewer']);
+  });
+
+  it('never draws a section with nothing in it, unless the caller fills it', () => {
+    const groups = viewerMenuGroups(baseContext({ isSharedLink: true }));
+    expect(viewerMenuSections(groups)).toEqual({ top: [], sections: [] });
+    expect(viewerMenuSections(groups, ['viewer']).sections.map((section) => section.id)).toEqual(['viewer']);
+  });
+
+  it('shows an entry no section claims at the end of the short list', () => {
+    const later = 'something-new' as ViewerActionId;
+    const groups: ViewerMenuGroup[] = [
+      { id: 'organize', labelKey: 'frameleaf_viewer_group_organize', items: [later, 'add-to-album'] },
+    ];
+    expect(viewerMenuSections(groups)).toEqual({ top: ['add-to-album', later], sections: [] });
   });
 });

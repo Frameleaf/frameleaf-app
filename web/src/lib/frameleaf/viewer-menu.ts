@@ -276,6 +276,87 @@ export function viewerMenuGroups(context: ViewerMenuContext): ViewerMenuGroup[] 
   return groups.filter((group) => group.items.length > 0);
 }
 
+/** The sections of the short More menu (FL-1811), each a row that opens its items in place. */
+export type ViewerMenuSectionId = 'share' | 'stack' | 'set-as' | 'go-to' | 'fix' | 'viewer';
+
+export interface ViewerMenuSection {
+  id: ViewerMenuSectionId;
+  /** i18n key for the row that opens the section. */
+  labelKey: Translations;
+  items: ViewerActionId[];
+}
+
+/** The everyday actions, always in view, in the order the approved mock draws them (prototype `MENU_TOP`). */
+const MENU_TOP: ViewerActionId[] = [
+  'add-to-album',
+  'remove-from-album',
+  'archive',
+  'unarchive',
+  'set-visibility-locked',
+  'download',
+  'find-similar',
+  'tag-people',
+  'restore',
+  'delete-permanently',
+];
+
+/** Prototype `MENU_SECTIONS`, plus Viewer, which the mock draws as the last section. Fix was Jobs. */
+const MENU_SECTIONS: ViewerMenuSection[] = [
+  { id: 'share', labelKey: 'frameleaf_viewer_section_share', items: ['download-original', 'send-copy', 'copy-image'] },
+  {
+    id: 'stack',
+    labelKey: 'frameleaf_viewer_group_stack',
+    items: ['add-to-stack', 'unstack', 'stack-keep-this', 'stack-set-primary', 'stack-remove-this'],
+  },
+  {
+    id: 'set-as',
+    labelKey: 'frameleaf_viewer_group_set_as',
+    items: ['set-album-cover', 'set-person-featured', 'set-profile-picture'],
+  },
+  { id: 'go-to', labelKey: 'frameleaf_viewer_group_go_to', items: ['view-in-timeline', 'view-on-map', 'open-folder'] },
+  {
+    id: 'fix',
+    labelKey: 'frameleaf_viewer_section_fix',
+    items: [
+      'repair-photo',
+      'split-scan',
+      'refresh-faces',
+      'refresh-metadata',
+      'refresh-thumbnails',
+      'refresh-encoded',
+      'transcode',
+    ],
+  },
+  {
+    id: 'viewer',
+    labelKey: 'frameleaf_viewer_group_viewer',
+    items: ['cast', 'toggle-filmstrip', 'play-slideshow', 'slideshow-settings'],
+  },
+];
+
+/**
+ * The More menu as a short list plus sections that open in place (FL-1811, prototype
+ * `viewerMenuSections`). It takes the groups above, so nothing is added or removed; only where each
+ * entry sits changes. An entry no section claims still shows, at the end of the short list.
+ *
+ * `keep` names sections the caller fills with rows that are not actions (the still exports, Full
+ * screen on a phone, the image display choice), so they stay when no action is left in them.
+ */
+export function viewerMenuSections(
+  groups: ViewerMenuGroup[],
+  keep: ViewerMenuSectionId[] = [],
+): { top: ViewerActionId[]; sections: ViewerMenuSection[] } {
+  const offered = new Set(groups.flatMap((group) => group.items));
+  const pick = (ids: ViewerActionId[]) => ids.filter((id) => offered.has(id));
+  const placed = new Set([...MENU_TOP, ...MENU_SECTIONS.flatMap((section) => section.items)]);
+  return {
+    top: [...pick(MENU_TOP), ...[...offered].filter((id) => !placed.has(id))],
+    sections: MENU_SECTIONS.map((section) => ({ ...section, items: pick(section.items) })).filter(
+      (section) => section.items.length > 0 || keep.includes(section.id),
+    ),
+  };
+}
+
 /** True when `id` survived the grouping rules — used to gate each rendered control. */
 export const viewerMenuHas = (groups: ViewerMenuGroup[], id: ViewerActionId): boolean =>
   groups.some((group) => group.items.includes(id));
