@@ -681,7 +681,14 @@
 
 {#if phase === 'loading'}
   <section class="ac-page">
-    <div aria-label={$t('frameleaf_album_cleanup_loading')}><ListSkeleton rows={4} avatar={false} /></div>
+    <div class="ac-head">
+      <p class="ac-eyebrow">
+        <Icon icon={mdiAutoFix} size="16" aria-hidden={true} />
+        {$t('frameleaf_album_cleanup_magic_albums')}
+      </p>
+      <h1>{$t('frameleaf_album_cleanup_title')}</h1>
+    </div>
+    <ListSkeleton rows={4} avatar={false} />
   </section>
 {:else if phase === 'error'}
   <section class="ac-page">

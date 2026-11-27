@@ -508,6 +508,11 @@ dl.ac-stats {
   background: var(--fl-panel);
   overflow: hidden;
 }
+/* FL-1810: an empty tree is only its EmptyRow, without the panel's frame around it. */
+.ac-tree:has(> .ac-empty) {
+  border: 0;
+  background: none;
+}
 .ac-row {
   display: flex;
   align-items: center;
