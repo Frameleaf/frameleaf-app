@@ -25,6 +25,8 @@ describe('timeline toolbar strings (FL-1822)', () => {
     expect(strings.timelineToolAria).toBe('Tool: {{tool}}');
     expect(strings.timelineScrubSound).toBe('Sound while scrubbing');
     expect(strings.timelineSetInTooltip).toBe(strings.timelineSetIn);
+    expect(strings.timelineTrackNotSynced).toBe('Not kept in sync. Click to keep this track in sync');
+    expect(strings.timelineAlignTitle).toBe('Align in the frame');
     expect(Object.keys(strings)).toEqual(Object.keys(TIMELINE_STRINGS));
   });
 });

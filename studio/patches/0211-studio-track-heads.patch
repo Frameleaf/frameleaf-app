@@ -1,0 +1,666 @@
+diff --git a/src/features/editor/components/preview-area.test.tsx b/src/features/editor/components/preview-area.test.tsx
+index 64b0e3b..f0cd2d6 100644
+--- a/src/features/editor/components/preview-area.test.tsx
++++ b/src/features/editor/components/preview-area.test.tsx
+@@ -28,7 +28,6 @@ vi.mock('@/features/editor/deps/preview', async () => {
+       />
+     ),
+     ColorVideoPreview: () => <div data-testid="color-video-preview" />,
+-    AlignmentToolbar: () => <div data-testid="alignment-toolbar" />,
+     PlaybackControls: ({ totalFrames }: { totalFrames: number }) => (
+       <div data-testid="playback-controls" data-total-frames={totalFrames} />
+     ),
+@@ -205,7 +204,6 @@ describe('PreviewArea mask editor toolbar', () => {
+     render(<PreviewArea project={{ width: 1920, height: 1080, fps: 30 }} />)
+ 
+     expect(screen.getByTestId('video-preview')).toBeInTheDocument()
+-    expect(screen.getByTestId('alignment-toolbar')).toBeInTheDocument()
+     expect(screen.queryByTestId('color-video-preview')).not.toBeInTheDocument()
+   })
+ 
+@@ -255,13 +253,12 @@ describe('PreviewArea mask editor toolbar', () => {
+     expect(screen.getByTestId('timecode-display')).toHaveAttribute('data-total-frames', '240')
+   })
+ 
+-  it('uses color preview chrome without the alignment toolbar in color workspace', () => {
++  it('uses color preview chrome in color workspace', () => {
+     useEditorStore.setState({ workspace: 'color' })
+ 
+     render(<PreviewArea project={{ width: 1920, height: 1080, fps: 30 }} />)
+ 
+     expect(screen.getByTestId('color-video-preview')).toBeInTheDocument()
+-    expect(screen.queryByTestId('alignment-toolbar')).not.toBeInTheDocument()
+     expect(screen.getByTestId('playback-controls')).toBeInTheDocument()
+   })
+ 
+diff --git a/src/features/editor/components/preview-area.tsx b/src/features/editor/components/preview-area.tsx
+index 2668a45..0f06e43 100644
+--- a/src/features/editor/components/preview-area.tsx
++++ b/src/features/editor/components/preview-area.tsx
+@@ -3,7 +3,6 @@ import { Columns2 } from 'lucide-react'
+ import {
+   VideoPreview,
+   PlaybackControls,
+-  AlignmentToolbar,
+   TimecodeDisplay,
+   PreviewZoomControls,
+   importSourceMonitor,
+@@ -753,14 +752,6 @@ export const PreviewArea = memo(function PreviewArea({
+           ) : (
+             <InteractionLockRegion locked={false} overlayClassName="rounded-none">
+               <div className="flex flex-col flex-shrink-0">
+-                {previewChrome === 'edit' && (
+-                  <div className="border-t border-border panel-header flex h-7 items-center justify-center overflow-hidden px-3">
+-                    <div className="flex items-center gap-0">
+-                      <AlignmentToolbar projectSize={{ width, height }} />
+-                    </div>
+-                  </div>
+-                )}
+-
+                 {/* Playback controls row */}
+                 <div
+                   className="@container border-t border-border panel-header relative flex items-center px-3 overflow-hidden"
+diff --git a/src/features/editor/components/properties-sidebar/clip-panel/layout-section.tsx b/src/features/editor/components/properties-sidebar/clip-panel/layout-section.tsx
+index 3337d8a..9c1b7ec 100644
+--- a/src/features/editor/components/properties-sidebar/clip-panel/layout-section.tsx
++++ b/src/features/editor/components/properties-sidebar/clip-panel/layout-section.tsx
+@@ -7,7 +7,7 @@ import { Switch } from '@/components/ui/switch'
+ import type { TimelineItem, VideoItem, CompositionItem } from '@/types/timeline'
+ import type { TransformProperties, CanvasSettings } from '@/types/transform'
+ import type { ItemKeyframes } from '@/types/keyframe'
+-import { useGizmoStore, useThrottledFrame } from '@/features/editor/deps/preview'
++import { AlignmentToolbar, useGizmoStore, useThrottledFrame } from '@/features/editor/deps/preview'
+ import { useMediaLibraryStore } from '@/features/editor/deps/media-library'
+ import {
+   useItemsStore,
+@@ -991,6 +991,8 @@ export const LayoutSection = memo(function LayoutSection({
+           </div>
+         </PropertyRow>
+       )}
++
++      <AlignmentToolbar projectSize={canvas} />
+     </PropertySection>
+   )
+ })
+diff --git a/src/features/preview/components/alignment-hud.tsx b/src/features/preview/components/alignment-hud.tsx
+index eca20e1..5def06d 100644
+--- a/src/features/preview/components/alignment-hud.tsx
++++ b/src/features/preview/components/alignment-hud.tsx
+@@ -13,6 +13,7 @@ import {
+ } from 'lucide-react'
+ import { Button } from '@/components/ui/button'
+ import { cn } from '@/shared/ui/cn'
++import { PropertyRow } from '@/shared/ui/property-controls/property-row'
+ import { useRafDeferredValue } from '@/shared/hooks/use-raf-deferred-value'
+ import { useSelectionStore } from '@/shared/state/selection'
+ import { usePlaybackStore } from '@/shared/state/playback'
+@@ -58,7 +59,8 @@ const ALIGNMENT_ACTIONS: Array<{
+   },
+ ]
+ 
+-const BUTTON_STYLE = { height: 22, width: 22 }
++const BUTTON_CLASS =
++  'h-[30px] w-[30px] flex-shrink-0 rounded-md border border-border bg-secondary text-muted-foreground hover:text-foreground'
+ 
+ interface AlignmentToolbarProps {
+   projectSize: { width: number; height: number }
+@@ -229,55 +231,41 @@ const AlignmentToolbarCore = memo(function AlignmentToolbarCore({
+ 
+   if (itemCount < 1) return null
+ 
+-  const renderButton = ({
+-    type,
+-    icon: Icon,
+-    labelKey,
+-    minItems,
+-  }: (typeof ALIGNMENT_ACTIONS)[number]) => (
++  const renderButton = ({ type, icon: Icon, labelKey }: (typeof ALIGNMENT_ACTIONS)[number]) => (
+     <Button
+       key={type}
+       variant="ghost"
+       size="icon"
+-      className="flex-shrink-0 text-muted-foreground hover:text-foreground"
+-      style={BUTTON_STYLE}
++      className={BUTTON_CLASS}
+       onClick={() => handleAlign(type)}
+-      disabled={itemCount < minItems}
+       data-tooltip={t(labelKey)}
+       aria-label={t(labelKey)}
+     >
+-      <Icon className="w-3.5 h-3.5" />
++      <Icon className="w-4 h-4" />
+     </Button>
+   )
+ 
++  // The inspector's Transform group (FL-1822): spacing evenly shows only once three clips are chosen.
+   return (
+-    <>
+-      {ALIGNMENT_ACTIONS.slice(0, 3).map(renderButton)}
+-      <div className="w-px h-3.5 bg-border mx-0.5" />
+-      {ALIGNMENT_ACTIONS.slice(3, 6).map(renderButton)}
+-      <div className="w-px h-3.5 bg-border mx-0.5" />
+-      {ALIGNMENT_ACTIONS.slice(6).map(renderButton)}
+-      <div className="w-px h-3.5 bg-border mx-0.5" />
+-      <Button
+-        variant="ghost"
+-        size="icon"
+-        className={cn(
+-          'flex-shrink-0 text-muted-foreground hover:text-foreground',
+-          canvasSnapEnabled && 'text-foreground bg-accent',
+-        )}
+-        style={BUTTON_STYLE}
+-        onClick={() => setSetting('canvasSnapEnabled', !canvasSnapEnabled)}
+-        data-tooltip={
+-          canvasSnapEnabled
+-            ? t('preview.align.disableCanvasSnap')
+-            : t('preview.align.enableCanvasSnap')
+-        }
+-        aria-label={t('preview.align.toggleCanvasSnap')}
+-        aria-pressed={canvasSnapEnabled}
+-      >
+-        <Magnet className="w-3.5 h-3.5" />
+-      </Button>
+-    </>
++    <PropertyRow label={t('preview.align.title')}>
++      <div className="flex flex-wrap gap-1.5" role="group" aria-label={t('preview.align.title')}>
++        {ALIGNMENT_ACTIONS.filter((action) => itemCount >= action.minItems).map(renderButton)}
++        <Button
++          variant="ghost"
++          size="icon"
++          className={cn(
++            BUTTON_CLASS,
++            canvasSnapEnabled && 'border-muted-foreground bg-foreground/15 text-foreground',
++          )}
++          onClick={() => setSetting('canvasSnapEnabled', !canvasSnapEnabled)}
++          data-tooltip={t('preview.align.toggleCanvasSnap')}
++          aria-label={t('preview.align.toggleCanvasSnap')}
++          aria-pressed={canvasSnapEnabled}
++        >
++          <Magnet className="w-4 h-4" />
++        </Button>
++      </div>
++    </PropertyRow>
+   )
+ })
+ 
+diff --git a/src/features/timeline/components/track-header.test.tsx b/src/features/timeline/components/track-header.test.tsx
+index 4706ac1..09e365e 100644
+--- a/src/features/timeline/components/track-header.test.tsx
++++ b/src/features/timeline/components/track-header.test.tsx
+@@ -58,47 +58,49 @@ describe('TrackHeader', () => {
+     useItemsStore.getState().setItems([])
+   })
+ 
+-  it('renders a unified disable control for video tracks', () => {
++  it('hides and shows a picture track through the disable control', () => {
+     const { onToggleDisabled } = renderTrackHeader(
+       makeTrack({ kind: 'video', visible: true, muted: false }),
+     )
+ 
+-    expect(screen.getByRole('button', { name: 'Disable track' })).toBeInTheDocument()
+-    expect(screen.queryByRole('button', { name: 'Hide track' })).not.toBeInTheDocument()
+-    expect(screen.queryByRole('button', { name: 'Mute track' })).not.toBeInTheDocument()
++    expect(screen.getByRole('button', { name: 'Hide this track' })).toBeInTheDocument()
++    expect(screen.queryByRole('button', { name: 'Mute this track' })).not.toBeInTheDocument()
+ 
+-    fireEvent.click(screen.getByRole('button', { name: 'Disable track' }))
++    fireEvent.click(screen.getByRole('button', { name: 'Hide this track' }))
+ 
+     expect(onToggleDisabled).toHaveBeenCalledTimes(1)
+   })
+ 
+-  it('derives the disable state from audio mute status', () => {
++  it('shows a muted sound track as muted', () => {
+     const { container } = renderTrackHeader(
+       makeTrack({ id: 'track-2', name: 'A1', kind: 'audio', muted: true }),
+     )
+ 
+-    expect(screen.getByRole('button', { name: 'Enable track' })).toBeInTheDocument()
+-    expect(screen.queryByRole('button', { name: 'Show track' })).not.toBeInTheDocument()
+-    expect(screen.queryByRole('button', { name: 'Unmute track' })).not.toBeInTheDocument()
++    expect(
++      screen.getByRole('button', { name: 'Muted. Click to hear this track' }),
++    ).toBeInTheDocument()
++    expect(
++      screen.queryByRole('button', { name: 'Hidden. Click to show this track' }),
++    ).not.toBeInTheDocument()
+     expect(container.querySelector('[data-track-id="track-2"]')).toHaveAttribute(
+       'data-track-disabled',
+       'true',
+     )
+   })
+ 
+-  it('calls onToggleDisabled when clicking Enable track on a muted audio track', () => {
++  it('unmutes a muted sound track through the disable control', () => {
+     const onToggleDisabled = vi.fn()
+     renderTrackHeader(
+       makeTrack({ id: 'track-3', name: 'A2', kind: 'audio', muted: true }),
+       onToggleDisabled,
+     )
+ 
+-    fireEvent.click(screen.getByRole('button', { name: 'Enable track' }))
++    fireEvent.click(screen.getByRole('button', { name: 'Muted. Click to hear this track' }))
+ 
+     expect(onToggleDisabled).toHaveBeenCalledTimes(1)
+   })
+ 
+-  it('renders sync lock enabled by default and toggles the label when disabled', () => {
++  it('keeps a track in sync by default and marks one left out', () => {
+     const { rerender } = render(
+       <TrackHeader
+         track={makeTrack()}
+@@ -119,7 +121,11 @@ describe('TrackHeader', () => {
+       />,
+     )
+ 
+-    expect(screen.getByRole('button', { name: 'Disable sync lock' })).toBeInTheDocument()
++    const synced = screen.getByRole('button', {
++      name: 'Kept in sync: clips here move when a gap closes on another track',
++    })
++    expect(synced).toBeInTheDocument()
++    expect(synced.className).not.toContain('bg-foreground/15')
+ 
+     rerender(
+       <TrackHeader
+@@ -141,6 +147,9 @@ describe('TrackHeader', () => {
+       />,
+     )
+ 
+-    expect(screen.getByRole('button', { name: 'Enable sync lock' })).toBeInTheDocument()
++    expect(
++      screen.getByRole('button', { name: 'Not kept in sync. Click to keep this track in sync' })
++        .className,
++    ).toContain('bg-foreground/15')
+   })
+ })
+diff --git a/src/features/timeline/components/track-header.tsx b/src/features/timeline/components/track-header.tsx
+index a3f9fdb..da357fd 100644
+--- a/src/features/timeline/components/track-header.tsx
++++ b/src/features/timeline/components/track-header.tsx
+@@ -1,6 +1,5 @@
+ import { memo } from 'react'
+ import { useTranslation } from 'react-i18next'
+-import { Button } from '@/components/ui/button'
+ import {
+   ContextMenu,
+   ContextMenuContent,
+@@ -8,13 +7,21 @@ import {
+   ContextMenuSeparator,
+   ContextMenuTrigger,
+ } from '@/components/ui/context-menu'
+-import { Power, PowerOff, Lock, GripVertical, Radio, FoldHorizontal, Link2 } from 'lucide-react'
++import {
++  AudioLines,
++  Eye,
++  EyeOff,
++  Film,
++  GripVertical,
++  Link2,
++  Link2Off,
++  Lock,
++  LockOpen,
++} from 'lucide-react'
+ import type { TimelineTrack } from '@/types/timeline'
+ import { useTrackDrag } from '../hooks/use-track-drag'
+ import { TIMELINE_SIDEBAR_WIDTH } from '../constants'
+-import { EDITOR_LAYOUT_CSS_VALUES } from '@/config/editor-layout'
+-import { useItemsStore } from '../stores/items-store'
+-import { isTrackDisabled } from '@/features/timeline/utils/classic-tracks'
++import { getTrackKind, isTrackDisabled } from '@/features/timeline/utils/classic-tracks'
+ import { isTrackSyncLockActive } from '../utils/track-sync-lock'
+ 
+ interface TrackHeaderProps {
+@@ -35,6 +42,39 @@ interface TrackHeaderProps {
+   onDeleteEmptyTracks: () => void
+ }
+ 
++/** A small bordered track button; `on` marks the state that is not the usual one. */
++function TrackHeadButton({
++  on,
++  label,
++  onPress,
++  children,
++}: {
++  on: boolean
++  label: string
++  onPress: () => void
++  children: React.ReactNode
++}) {
++  return (
++    <button
++      type="button"
++      className={`flex h-6 w-6 items-center justify-center rounded border text-[11px] font-semibold transition-colors ${
++        on
++          ? 'border-muted-foreground bg-foreground/15 text-foreground'
++          : 'border-border bg-secondary text-muted-foreground hover:text-foreground'
++      }`}
++      onClick={(e) => {
++        e.stopPropagation()
++        onPress()
++      }}
++      onMouseDown={(e) => e.stopPropagation()}
++      aria-label={label}
++      data-tooltip={label}
++    >
++      {children}
++    </button>
++  )
++}
++
+ /**
+  * Custom equality for TrackHeader memo - ignores callback props which are recreated each render
+  */
+@@ -52,7 +92,8 @@ function areTrackHeaderPropsEqual(prev: TrackHeaderProps, next: TrackHeaderProps
+ /**
+  * Track Header Component
+  *
+- * Displays track name, controls, and handles selection.
++ * One row: the track's kind and name, then hide or mute, solo, lock and keep in sync.
++ * Close gaps and the track actions live in the right-click menu.
+  * Shows active state with background color.
+  * Supports group tracks with collapse/expand and indentation.
+  * Right-click context menu for track actions.
+@@ -76,13 +117,19 @@ export const TrackHeader = memo(function TrackHeader({
+   onDeleteEmptyTracks,
+ }: TrackHeaderProps) {
+   const { t } = useTranslation()
+-  const itemCount = useItemsStore((s) => s.itemsByTrackId[track.id]?.length ?? 0)
+   const syncLockEnabled = isTrackSyncLockActive(track)
+   const trackDisabled = isTrackDisabled(track)
++  const kind = getTrackKind(track)
++  const KindIcon = kind === 'audio' ? AudioLines : kind === 'video' ? Film : null
+ 
+   // Use track drag hook (visuals handled centrally by timeline.tsx via DOM)
+   const { handleDragStart } = useTrackDrag(track)
+-  const itemCountLabel = t('timeline.trackHeader.clipCount', { count: itemCount })
++
++  // Picture tracks hide and sound tracks mute through the same switch (isTrackDisabled).
++  const disableLabel =
++    kind === 'audio'
++      ? t(trackDisabled ? 'timeline.trackHeader.unmuteTrack' : 'timeline.trackHeader.muteTrack')
++      : t(trackDisabled ? 'timeline.trackHeader.showTrack' : 'timeline.trackHeader.hideTrack')
+ 
+   return (
+     <ContextMenu>
+@@ -99,7 +146,7 @@ export const TrackHeader = memo(function TrackHeader({
+         >
+           <div
+             className={`
+-              flex flex-col overflow-hidden px-1
++              flex items-center gap-1.5 overflow-hidden pl-1 pr-1.5
+               cursor-grab active:cursor-grabbing relative
+               ${isSelected ? 'bg-primary/10' : trackDisabled ? 'bg-muted/30 hover:bg-muted/40' : 'hover:bg-secondary/50'}
+               ${isActive ? 'border-l-3 border-l-primary' : 'border-l-3 border-l-transparent'}
+@@ -110,152 +157,57 @@ export const TrackHeader = memo(function TrackHeader({
+             onClick={onSelect}
+             onMouseDown={handleDragStart}
+           >
+-            <div className="flex h-6 shrink-0 items-center gap-0.5 overflow-hidden border-b border-border/60">
+-              <div className="flex h-5 w-4 shrink-0 items-center justify-center">
+-                <GripVertical className="w-3.5 h-3.5 text-muted-foreground" aria-hidden="true" />
+-              </div>
+-              {/* Disable Button */}
+-              <Button
+-                variant="ghost"
+-                size="icon"
+-                className="rounded hover:bg-secondary"
+-                style={{
+-                  width: EDITOR_LAYOUT_CSS_VALUES.toolbarButtonSize,
+-                  height: EDITOR_LAYOUT_CSS_VALUES.toolbarButtonSize,
+-                }}
+-                onClick={(e) => {
+-                  e.stopPropagation()
+-                  onToggleDisabled()
+-                }}
+-                onMouseDown={(e) => e.stopPropagation()}
+-                aria-label={
+-                  trackDisabled
+-                    ? t('timeline.trackHeader.enableTrack')
+-                    : t('timeline.trackHeader.disableTrack')
+-                }
+-                data-tooltip={
+-                  trackDisabled
+-                    ? t('timeline.trackHeader.enableTrack')
+-                    : t('timeline.trackHeader.disableTrack')
+-                }
+-              >
+-                {trackDisabled ? (
+-                  <PowerOff className="w-3 h-3 text-primary" />
++            <GripVertical className="h-3.5 w-3.5 shrink-0 text-muted-foreground/70" aria-hidden="true" />
++            {KindIcon && (
++              <KindIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
++            )}
++            <span className="min-w-0 flex-1 truncate text-[13px] font-semibold leading-none">
++              {track.name}
++            </span>
++            <div className="flex shrink-0 items-center gap-1" role="group" aria-label={track.name}>
++              <TrackHeadButton on={trackDisabled} label={disableLabel} onPress={onToggleDisabled}>
++                {kind === 'audio' ? (
++                  <span aria-hidden="true">M</span>
++                ) : trackDisabled ? (
++                  <EyeOff className="h-3.5 w-3.5" aria-hidden="true" />
+                 ) : (
+-                  <Power className="w-3 h-3 opacity-70" />
++                  <Eye className="h-3.5 w-3.5" aria-hidden="true" />
+                 )}
+-              </Button>
+-
+-              {/* Solo Button */}
+-              <Button
+-                variant="ghost"
+-                size="icon"
+-                className="rounded hover:bg-secondary"
+-                style={{
+-                  width: EDITOR_LAYOUT_CSS_VALUES.toolbarButtonSize,
+-                  height: EDITOR_LAYOUT_CSS_VALUES.toolbarButtonSize,
+-                }}
+-                onClick={(e) => {
+-                  e.stopPropagation()
+-                  onToggleSolo()
+-                }}
+-                onMouseDown={(e) => e.stopPropagation()}
+-                aria-label={
+-                  track.solo
+-                    ? t('timeline.trackHeader.unsoloTrack')
+-                    : t('timeline.trackHeader.soloTrack')
+-                }
+-                data-tooltip={
+-                  track.solo
+-                    ? t('timeline.trackHeader.unsoloTrack')
+-                    : t('timeline.trackHeader.soloTrack')
+-                }
++              </TrackHeadButton>
++              <TrackHeadButton
++                on={track.solo}
++                label={t(track.solo ? 'timeline.trackHeader.unsoloTrack' : 'timeline.trackHeader.soloTrack')}
++                onPress={onToggleSolo}
+               >
+-                <Radio className={`w-3 h-3 ${track.solo ? 'text-primary' : ''}`} />
+-              </Button>
+-
+-              {/* Lock Button */}
+-              <Button
+-                variant="ghost"
+-                size="icon"
+-                className="rounded hover:bg-secondary"
+-                style={{
+-                  width: EDITOR_LAYOUT_CSS_VALUES.toolbarButtonSize,
+-                  height: EDITOR_LAYOUT_CSS_VALUES.toolbarButtonSize,
+-                }}
+-                onClick={(e) => {
+-                  e.stopPropagation()
+-                  onToggleLock()
+-                }}
+-                onMouseDown={(e) => e.stopPropagation()}
+-                aria-label={
+-                  track.locked
+-                    ? t('timeline.trackHeader.unlockTrack')
+-                    : t('timeline.trackHeader.lockTrack')
+-                }
+-                data-tooltip={
+-                  track.locked
+-                    ? t('timeline.trackHeader.unlockTrack')
+-                    : t('timeline.trackHeader.lockTrack')
+-                }
++                <span aria-hidden="true">S</span>
++              </TrackHeadButton>
++              <TrackHeadButton
++                on={track.locked}
++                label={t(track.locked ? 'timeline.trackHeader.unlockTrack' : 'timeline.trackHeader.lockTrack')}
++                onPress={onToggleLock}
+               >
+-                <Lock className={`w-3 h-3 ${track.locked ? 'text-primary' : 'opacity-70'}`} />
+-              </Button>
+-
+-              <Button
+-                variant="ghost"
+-                size="icon"
+-                className="rounded hover:bg-secondary"
+-                style={{
+-                  width: EDITOR_LAYOUT_CSS_VALUES.toolbarButtonSize,
+-                  height: EDITOR_LAYOUT_CSS_VALUES.toolbarButtonSize,
+-                }}
+-                onClick={(e) => {
+-                  e.stopPropagation()
+-                  onToggleSyncLock()
+-                }}
+-                onMouseDown={(e) => e.stopPropagation()}
+-                aria-label={
+-                  syncLockEnabled
+-                    ? t('timeline.trackHeader.disableSyncLock')
+-                    : t('timeline.trackHeader.enableSyncLock')
+-                }
+-                data-tooltip={
++                {track.locked ? (
++                  <Lock className="h-3.5 w-3.5" aria-hidden="true" />
++                ) : (
++                  <LockOpen className="h-3.5 w-3.5" aria-hidden="true" />
++                )}
++              </TrackHeadButton>
++              {/* Highlighted means not the usual state, so a track left out of sync stands out. */}
++              <TrackHeadButton
++                on={!syncLockEnabled}
++                label={t(
+                   syncLockEnabled
+-                    ? t('timeline.trackHeader.disableSyncLock')
+-                    : t('timeline.trackHeader.enableSyncLock')
+-                }
+-              >
+-                <Link2 className={`w-3 h-3 ${syncLockEnabled ? 'text-primary' : 'opacity-70'}`} />
+-              </Button>
+-
+-              <Button
+-                variant="ghost"
+-                size="icon"
+-                className="rounded hover:bg-secondary"
+-                style={{
+-                  width: EDITOR_LAYOUT_CSS_VALUES.toolbarButtonSize,
+-                  height: EDITOR_LAYOUT_CSS_VALUES.toolbarButtonSize,
+-                }}
+-                onClick={(e) => {
+-                  e.stopPropagation()
+-                  onCloseGaps?.()
+-                }}
+-                onMouseDown={(e) => e.stopPropagation()}
+-                aria-label={t('timeline.trackHeader.closeAllGaps')}
+-                data-tooltip={t('timeline.trackHeader.closeAllGaps')}
++                    ? 'timeline.trackHeader.disableSyncLock'
++                    : 'timeline.trackHeader.enableSyncLock',
++                )}
++                onPress={onToggleSyncLock}
+               >
+-                <FoldHorizontal className="w-3 h-3" />
+-              </Button>
+-            </div>
+-
+-            <div className="flex min-h-0 flex-1 items-center gap-1.5 overflow-hidden px-1.5">
+-              <span className="min-w-0 truncate text-xs font-semibold leading-none font-mono">
+-                {track.name}
+-              </span>
+-              <span className="shrink-0 text-[10px] leading-none text-muted-foreground">
+-                {itemCountLabel}
+-              </span>
++                {syncLockEnabled ? (
++                  <Link2 className="h-3.5 w-3.5" aria-hidden="true" />
++                ) : (
++                  <Link2Off className="h-3.5 w-3.5" aria-hidden="true" />
++                )}
++              </TrackHeadButton>
+             </div>
+           </div>
+         </div>
+diff --git a/src/i18n/locales/partials/en/preview.json b/src/i18n/locales/partials/en/preview.json
+index 622873f..b9a0260 100644
+--- a/src/i18n/locales/partials/en/preview.json
++++ b/src/i18n/locales/partials/en/preview.json
+@@ -6,17 +6,18 @@
+       "loading": "Loading…"
+     },
+     "align": {
+-      "left": "Align Left",
+-      "centerH": "Align Center Horizontally",
+-      "right": "Align Right",
+-      "top": "Align Top",
+-      "centerV": "Align Center Vertically",
+-      "bottom": "Align Bottom",
+-      "distributeH": "Distribute Horizontally",
+-      "distributeV": "Distribute Vertically",
+-      "disableCanvasSnap": "Disable Canvas Snap",
+-      "enableCanvasSnap": "Enable Canvas Snap",
+-      "toggleCanvasSnap": "Toggle Canvas Snap"
++      "left": "Align left",
++      "centerH": "Centre across",
++      "right": "Align right",
++      "top": "Align top",
++      "centerV": "Centre down",
++      "bottom": "Align bottom",
++      "distributeH": "Space evenly across",
++      "distributeV": "Space evenly down",
++      "disableCanvasSnap": "Snap to the frame and other clips",
++      "enableCanvasSnap": "Snap to the frame and other clips",
++      "toggleCanvasSnap": "Snap to the frame and other clips",
++      "title": "Align in the frame"
+     },
+     "controls": {
+       "captureFailed": "Couldn't capture the current frame.",
+diff --git a/src/i18n/locales/partials/en/timeline.json b/src/i18n/locales/partials/en/timeline.json
+index e22ec23..89f0097 100644
+--- a/src/i18n/locales/partials/en/timeline.json
++++ b/src/i18n/locales/partials/en/timeline.json
+@@ -340,21 +340,25 @@
+       "updating": "Updating"
+     },
+     "trackHeader": {
+-      "addAudioTrack": "Add Audio Track",
+-      "addVideoTrack": "Add Video Track",
++      "addAudioTrack": "Add audio track",
++      "addVideoTrack": "Add video track",
+       "clipCount_one": "{{count}} clip",
+       "clipCount_other": "{{count}} clips",
+-      "closeAllGaps": "Close All Gaps",
+-      "deleteEmptyTracks": "Delete Empty Tracks",
+-      "deleteTrack": "Delete Track",
+-      "disableSyncLock": "Disable sync lock",
++      "closeAllGaps": "Close gaps",
++      "deleteEmptyTracks": "Delete empty tracks",
++      "deleteTrack": "Delete track",
++      "disableSyncLock": "Kept in sync: clips here move when a gap closes on another track",
+       "disableTrack": "Disable track",
+-      "enableSyncLock": "Enable sync lock",
++      "enableSyncLock": "Not kept in sync. Click to keep this track in sync",
+       "enableTrack": "Enable track",
+-      "lockTrack": "Lock Track",
+-      "soloTrack": "Solo Track",
+-      "unlockTrack": "Unlock Track",
+-      "unsoloTrack": "Unsolo Track"
++      "lockTrack": "Lock this track",
++      "soloTrack": "Play only this track",
++      "unlockTrack": "Locked. Click to unlock this track",
++      "unsoloTrack": "Playing only this track. Click to play every track",
++      "hideTrack": "Hide this track",
++      "showTrack": "Hidden. Click to show this track",
++      "muteTrack": "Mute this track",
++      "unmuteTrack": "Muted. Click to hear this track"
+     },
+     "trackRow": {
+       "resizeSections": "Resize video and audio track sections",
