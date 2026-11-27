@@ -34,11 +34,11 @@ import { NO_FAILURE_REASON, deferJobAdoption, queueExecution } from 'src/queue/c
 import { deferJobUntilDependency } from 'src/queue/dependency.js';
 import { deliverJobObservers } from 'src/queue/observers.js';
 import { listQueueProblems, queueHolds, queueProblemJobs, queueProgress } from 'src/queue/queue-problems.js';
-import { jobSettled } from 'src/queue/settled.js';
 import { recentFileCheck, recentWorkScope } from 'src/queue/recent-work.js';
 import { causeRank, queueProblemCause } from 'src/queue/run-failure-cause.js';
 import { type RunFailurePrivacy, reviewRunFailures } from 'src/queue/run-failures.js';
 import { failureRoots, needsLook, ownerJobs, reportedQueueJobs } from 'src/queue/run-query.js';
+import { jobSettled } from 'src/queue/settled.js';
 import { SqlQueueStore } from 'src/queue/store.js';
 import { assertPublicationSource, publicationTransaction } from 'src/queue/transaction.js';
 import {
