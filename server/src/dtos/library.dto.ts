@@ -2,6 +2,7 @@ import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
 import { Library } from 'src/database.js';
 import { LibraryImportPathReasonSchema, MediaOperationStatusSchema } from 'src/enum.js';
+import { resolveFolderAlbumOptions } from 'src/utils/folder-albums.js';
 import { isoDatetimeToDate, stringToBool } from 'src/validation.js';
 
 /** FL-78: the library form's limits. A folder or pattern longer than this is not a real one. */
@@ -16,6 +17,29 @@ const stringArrayMax128 = z
   .refine((arr) => arr.every((s) => s.trim() !== ''), 'Array items must not be empty')
   .refine((arr) => new Set(arr).size === arr.length, 'Array must have unique items');
 
+/** FL-1837: which folders of a library become albums. */
+const FolderAlbumOptionsSchema = z
+  .object({
+    shape: z
+      .enum(['events', 'every', 'level'])
+      .meta({ id: 'FolderAlbumShape' })
+      .describe('One album for each event folder, an album for every folder, or albums starting at a chosen level'),
+    level: z.int().min(1).max(3).describe('With shape level: how many folders down the albums start'),
+    collectionsAbove: z.boolean().describe('With shape level above 1: the folders above the albums become collections'),
+    subfolders: z
+      .record(z.string().min(1).max(255), z.enum(['join', 'own', 'skip']).meta({ id: 'FolderAlbumSubfolderRule' }))
+      .refine((value) => Object.keys(value).length <= 200, 'At most 200 folder names')
+      .describe(
+        "Per name of a folder directly inside an album's folder, matched without regard to case: its photos join the album, get an album inside it, or none. A name left out joins (Export and Edits get an album inside)",
+      ),
+    skipEmpty: z.boolean().describe('No album for a folder holding nothing a folder album shows'),
+    naming: z
+      .enum(['folder', 'path'])
+      .meta({ id: 'FolderAlbumNaming' })
+      .describe("Album names: the folder's name, or the folders on the way joined with ›"),
+  })
+  .meta({ id: 'FolderAlbumOptionsDto' });
+
 const CreateLibrarySchema = z
   .object({
     ownerId: z.uuidv4().describe('Owner user ID. Fixed once the library exists.'),
@@ -27,6 +51,9 @@ const CreateLibrarySchema = z
       .boolean()
       .optional()
       .describe('Keep an album for each folder of the library, made after its first scan. Off when left out.'),
+    folderAlbumOptions: FolderAlbumOptionsSchema.optional().describe(
+      'Which folders become albums. Left out: an album for every folder.',
+    ),
   })
   .meta({ id: 'CreateLibraryDto' });
 
@@ -46,6 +73,14 @@ const UpdateLibrarySchema = z
       .optional()
       .describe(
         'When folderAlbums is turned off: true deletes the folder albums (their photos stay in the library); left out or false keeps them as ordinary albums.',
+      ),
+    folderAlbumOptions: FolderAlbumOptionsSchema.optional().describe('Which folders become albums'),
+    folderAlbumExisting: z
+      .enum(['match', 'newOnly'])
+      .meta({ id: 'FolderAlbumExisting' })
+      .optional()
+      .describe(
+        'When folderAlbumOptions changes: match (the default) changes the albums made so far to match, keeping those the owner renamed, added photos to or shared, moved inside their new album; newOnly leaves them as they are. Photos are never deleted.',
       ),
   })
   .meta({ id: 'UpdateLibraryDto' });
@@ -135,6 +170,7 @@ const LibraryResponseSchema = z
     ownerId: z.uuidv4().describe('Owner user ID'),
     readOnly: z.boolean().describe('Source originals and sidecars are read-only; generated metadata is managed.'),
     folderAlbums: z.boolean().describe('The library keeps an album for each of its folders, in sync after every scan'),
+    folderAlbumOptions: FolderAlbumOptionsSchema.describe('Which folders become albums'),
     name: z.string().describe('Library name'),
     assetCount: z.int().describe('Number of assets'),
     importPaths: z.array(z.string()).describe('Import paths'),
@@ -202,6 +238,19 @@ const LibraryRemovalSchema = z
   })
   .meta({ id: 'LibraryRemovalDto' });
 
+const FolderAlbumSuggestionSchema = z
+  .object({
+    libraryId: z.uuidv4().describe('Library ID'),
+    name: z.string().describe('Library name'),
+    albums: z.int().min(0).describe('Albums and collections made from its folders so far'),
+    empty: z.int().min(0).describe('How many of those albums show nothing'),
+    suggestedAlbums: z.int().min(0).describe('How many one album for each event folder would keep'),
+    options: FolderAlbumOptionsSchema.describe('The library rules now, for Undo'),
+  })
+  .meta({ id: 'FolderAlbumSuggestionDto' });
+
+export class FolderAlbumOptionsDto extends createZodDto(FolderAlbumOptionsSchema) {}
+export class FolderAlbumSuggestionDto extends createZodDto(FolderAlbumSuggestionSchema) {}
 export class CreateLibraryDto extends createZodDto(CreateLibrarySchema) {}
 export class UpdateLibraryDto extends createZodDto(UpdateLibrarySchema) {}
 export class ValidateLibraryDto extends createZodDto(ValidateLibrarySchema) {}
@@ -222,6 +271,7 @@ export function mapLibrary(entity: Library, scan: LibraryScanResponseDto | null 
     ownerId: entity.ownerId,
     readOnly: entity.readOnly,
     folderAlbums: entity.folderAlbums ?? false,
+    folderAlbumOptions: resolveFolderAlbumOptions(entity.folderAlbumOptions),
     name: entity.name,
     createdAt: entity.createdAt,
     updatedAt: entity.updatedAt,

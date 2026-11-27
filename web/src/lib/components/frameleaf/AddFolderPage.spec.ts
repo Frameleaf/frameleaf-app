@@ -105,7 +105,7 @@ describe('AddFolderPage folder albums (FL-838)', () => {
     const albums = screen.getByRole('switch', { name: en.frameleaf_folder_albums_switch });
     expect(albums).toHaveAttribute('aria-checked', 'false');
     await fireEvent.click(albums);
-    expect(await screen.findByText('trip')).toBeInTheDocument();
+    expect(await screen.findByText(/Frameleaf will keep 1 album from/)).toBeInTheDocument();
 
     await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_addfolder_add }));
     expect(sdkMock.createLibrary).toHaveBeenCalledWith({

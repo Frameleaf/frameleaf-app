@@ -412,6 +412,16 @@
                 : $t('frameleaf_folder_albums_done_keep'),
             $t('frameleaf_libraries_error_save'),
           )}
+        onFolderAlbumOptions={(folderAlbumOptions, folderAlbumExisting) =>
+          run(
+            () => updateLibrary({ id: selected.id, updateLibraryDto: { folderAlbumOptions, folderAlbumExisting } }),
+            $t(
+              folderAlbumExisting === 'match'
+                ? 'frameleaf_folder_albums_saved_match'
+                : 'frameleaf_folder_albums_saved_new',
+            ),
+            $t('frameleaf_libraries_error_save'),
+          )}
       />
     {/key}
   </div>

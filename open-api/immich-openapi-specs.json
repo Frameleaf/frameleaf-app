@@ -39061,6 +39061,51 @@
         "x-immich-state": "Stable"
       }
     },
+    "/libraries/folder-album-suggestions": {
+      "get": {
+        "description": "The signed-in user's libraries that made an album for every folder of a folder-by-event layout, with how many albums one album for each event folder would keep instead.",
+        "operationId": "getFolderAlbumSuggestions",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/FolderAlbumSuggestionDto"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Suggest fewer folder albums",
+        "tags": [
+          "Libraries"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          }
+        ],
+        "x-immich-permission": "library.read"
+      }
+    },
     "/libraries/managed-uploads": {
       "get": {
         "description": "Retrieve, for every active account, the photos, videos and original sizes it keeps in managed upload storage rather than in external libraries.",
@@ -110724,6 +110769,10 @@
             "maxItems": 128,
             "type": "array"
           },
+          "folderAlbumOptions": {
+            "$ref": "#/components/schemas/FolderAlbumOptionsDto",
+            "description": "Which folders become albums. Left out: an album for every folder."
+          },
           "folderAlbums": {
             "description": "Keep an album for each folder of the library, made after its first scan. Off when left out.",
             "type": "boolean"
@@ -117264,6 +117313,123 @@
           "previewsReady",
           "receipt",
           "revision"
+        ],
+        "type": "object"
+      },
+      "FolderAlbumExisting": {
+        "enum": [
+          "match",
+          "newOnly"
+        ],
+        "type": "string"
+      },
+      "FolderAlbumNaming": {
+        "enum": [
+          "folder",
+          "path"
+        ],
+        "type": "string"
+      },
+      "FolderAlbumOptionsDto": {
+        "properties": {
+          "collectionsAbove": {
+            "description": "With shape level above 1: the folders above the albums become collections",
+            "type": "boolean"
+          },
+          "level": {
+            "description": "With shape level: how many folders down the albums start",
+            "maximum": 3,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "naming": {
+            "$ref": "#/components/schemas/FolderAlbumNaming",
+            "description": "Album names: the folder's name, or the folders on the way joined with ›"
+          },
+          "shape": {
+            "$ref": "#/components/schemas/FolderAlbumShape",
+            "description": "One album for each event folder, an album for every folder, or albums starting at a chosen level"
+          },
+          "skipEmpty": {
+            "description": "No album for a folder holding nothing a folder album shows",
+            "type": "boolean"
+          },
+          "subfolders": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/FolderAlbumSubfolderRule"
+            },
+            "description": "Per name of a folder directly inside an album's folder, matched without regard to case: its photos join the album, get an album inside it, or none. A name left out joins (Export and Edits get an album inside)",
+            "type": "object"
+          }
+        },
+        "required": [
+          "collectionsAbove",
+          "level",
+          "naming",
+          "shape",
+          "skipEmpty",
+          "subfolders"
+        ],
+        "type": "object"
+      },
+      "FolderAlbumShape": {
+        "enum": [
+          "events",
+          "every",
+          "level"
+        ],
+        "type": "string"
+      },
+      "FolderAlbumSubfolderRule": {
+        "enum": [
+          "join",
+          "own",
+          "skip"
+        ],
+        "type": "string"
+      },
+      "FolderAlbumSuggestionDto": {
+        "properties": {
+          "albums": {
+            "description": "Albums and collections made from its folders so far",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "empty": {
+            "description": "How many of those albums show nothing",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "libraryId": {
+            "description": "Library ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "name": {
+            "description": "Library name",
+            "type": "string"
+          },
+          "options": {
+            "$ref": "#/components/schemas/FolderAlbumOptionsDto",
+            "description": "The library rules now, for Undo"
+          },
+          "suggestedAlbums": {
+            "description": "How many one album for each event folder would keep",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "albums",
+          "empty",
+          "libraryId",
+          "name",
+          "options",
+          "suggestedAlbums"
         ],
         "type": "object"
       },
@@ -128624,6 +128790,10 @@
             },
             "type": "array"
           },
+          "folderAlbumOptions": {
+            "$ref": "#/components/schemas/FolderAlbumOptionsDto",
+            "description": "Which folders become albums"
+          },
           "folderAlbums": {
             "description": "The library keeps an album for each of its folders, in sync after every scan",
             "type": "boolean"
@@ -128685,6 +128855,7 @@
           "createdAt",
           "deletedAt",
           "exclusionPatterns",
+          "folderAlbumOptions",
           "folderAlbums",
           "id",
           "importPaths",
@@ -192377,6 +192548,14 @@
             },
             "maxItems": 128,
             "type": "array"
+          },
+          "folderAlbumExisting": {
+            "$ref": "#/components/schemas/FolderAlbumExisting",
+            "description": "When folderAlbumOptions changes: match (the default) changes the albums made so far to match, keeping those the owner renamed, added photos to or shared, moved inside their new album; newOnly leaves them as they are. Photos are never deleted."
+          },
+          "folderAlbumOptions": {
+            "$ref": "#/components/schemas/FolderAlbumOptionsDto",
+            "description": "Which folders become albums"
           },
           "folderAlbums": {
             "description": "Keep an album for each folder of the library, in sync after every scan. Albums belong to the library's owner.",

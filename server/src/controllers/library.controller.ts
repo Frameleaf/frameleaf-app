@@ -4,6 +4,7 @@ import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import {
   CreateLibraryDto,
+  FolderAlbumSuggestionDto,
   LibraryFolderBrowseDto,
   LibraryFolderBrowseResponseDto,
   LibraryFolderEstimateDto,
@@ -45,6 +46,18 @@ export class LibraryController {
   })
   async getAllLibraries(@Query() dto: LibrarySearchDto): Promise<LibraryResponseDto[]> {
     return this.scans.withScans(await this.service.getAll(dto));
+  }
+
+  @Get('folder-album-suggestions')
+  @Authenticated({ permission: Permission.LibraryRead, admin: true })
+  @Endpoint({
+    summary: 'Suggest fewer folder albums',
+    description:
+      "The signed-in user's libraries that made an album for every folder of a folder-by-event layout, with how many albums one album for each event folder would keep instead.",
+    history: new HistoryBuilder().added('v3'),
+  })
+  getFolderAlbumSuggestions(@Auth() auth: AuthDto): Promise<FolderAlbumSuggestionDto[]> {
+    return this.service.getFolderAlbumSuggestions(auth);
   }
 
   @Get('managed-uploads')
