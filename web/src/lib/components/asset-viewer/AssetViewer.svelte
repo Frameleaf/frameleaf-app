@@ -89,6 +89,13 @@
     type SwipeOrder,
   } from './viewer-motion';
   import { isGestureExempt, ViewerGesture, type DismissDrag } from '$lib/frameleaf/viewer-gesture';
+  import {
+    exitFullscreen,
+    fullscreenElement as currentFullscreenElement,
+    fullscreenSupported,
+    onFullscreenChange as subscribeFullscreenChange,
+    requestFullscreen,
+  } from '$lib/frameleaf/fullscreen';
   import type { ViewerPosition } from '$lib/frameleaf/viewer-position';
   import ActivityStatus from './ActivityStatus.svelte';
   import DetailPanel from './DetailPanel.svelte';
@@ -266,7 +273,14 @@
   const nextAsset = $derived(cursor.nextAsset);
   const previousAsset = $derived(cursor.previousAsset);
   let sharedLink = getSharedLink();
-  let fullscreenElement = $state<Element>();
+  let fullscreenElement = $state<Element | null>(null);
+  /**
+   * FL-1833: the viewer's own full screen, for a browser with no Fullscreen API (on an iPad, a browser
+   * built on WebKit's embedded view; on an iPhone, every browser). The viewer already covers the
+   * window; this keeps its controls tucked away until a tap brings them back, and leaves the same
+   * ways a real full screen does (the button, Escape, the slideshow ending).
+   */
+  let pageFullscreen = $state(false);
 
   /**
    * FL-148: outside a slideshow, `cursor.nextAsset` / `cursor.previousAsset` come from an async
@@ -537,6 +551,11 @@
 
   onDestroy(() => {
     viewerAlive = false;
+    // FL-1833: a slideshow belongs to the viewer. Closing it any way (Back, the iPad edge swipe, a
+    // link, deleting the last item) ends the slideshow, or the next viewer opened would start playing.
+    if ($slideshowState !== SlideshowState.None) {
+      $slideshowState = SlideshowState.None;
+    }
     resetSwipe();
     stopHoldoverFade?.();
     activityManager.reset();
@@ -709,10 +728,18 @@
     void tracker
       .invoke(async () => {
         try {
-          const isShuffle = wasSlideshow && $slideshowNavigation === SlideshowNavigation.Shuffle;
+          // FL-1833: a page with no random source (map, explore, Shared with you, trash) plays a
+          // shuffle in order rather than stopping after the first item.
+          const isShuffle = wasSlideshow && $slideshowNavigation === SlideshowNavigation.Shuffle && !!onRandom;
           let hasNext: boolean;
           if (isShuffle) {
             hasNext = order === 'previous' ? slideshowHistory.previous() : slideshowHistory.next();
+            if (!hasNext && order === 'previous') {
+              // Back at the first item shown: stay on it. A random item here would be added at the end
+              // of the history while shown at its start, and Next and Previous would then go astray.
+              $restartSlideshowProgress = true;
+              return;
+            }
             if (!hasNext) {
               const randomAsset = await onRandom?.();
               if (!isCurrentSlideshow() || (!isCurrentView() && asset.id !== randomAsset?.id)) {
@@ -887,7 +914,8 @@
     const isCurrentSession = authManager.captureSession();
     const isCurrent = () => viewerAlive && generation === slideshowGeneration && isCurrentSession();
     try {
-      if (document.fullscreenElement) {
+      setPageFullscreen(false);
+      if (currentFullscreenElement()) {
         await exitFullscreenOurselves();
       }
     } catch (error) {
@@ -992,7 +1020,7 @@
     onAction?.(action);
   };
 
-  let isFullScreen = $derived(!!fullscreenElement);
+  let isFullScreen = $derived(!!fullscreenElement || pageFullscreen);
 
   $effect(() => {
     if (album && !album.isActivityEnabled && activityManager.commentCount === 0) {
@@ -1422,7 +1450,9 @@
     if (gesturesEnabled) {
       return;
     }
-    chromeHidden = false;
+    // the viewer's own full screen re-hides the controls only for a slideshow: an editor or the OCR
+    // overlay switches the tap off, and its controls must stay reachable
+    chromeHidden = untrack(() => pageFullscreen && $slideshowState !== SlideshowState.None);
     gesture.cancel();
     untrack(() => swipe.cancel());
   });
@@ -1430,7 +1460,7 @@
   // FL-36: a tap may hide the chrome during a slideshow; ending it brings the chrome back.
   $effect(() => {
     if ($slideshowState === SlideshowState.None) {
-      untrack(() => (chromeHidden = false));
+      untrack(() => (chromeHidden = pageFullscreen));
     }
   });
 
@@ -1443,11 +1473,39 @@
   );
 
   /** V-13: the footer's full-screen toggle (MediaViewer.jsx:1799-1806). */
+  const setPageFullscreen = (on: boolean) => {
+    if (pageFullscreen === on) {
+      return;
+    }
+    pageFullscreen = on;
+    chromeHidden = on;
+  };
+
   const toggleFullscreen = async () => {
+    if (pageFullscreen) {
+      setPageFullscreen(false);
+      return;
+    }
+    if (currentFullscreenElement()) {
+      try {
+        await exitFullscreenOurselves();
+      } catch (error) {
+        handleError(error, $t('errors.unable_to_exit_fullscreen'));
+      }
+      return;
+    }
+    if (!assetViewerHtmlElement) {
+      return;
+    }
+    if (!fullscreenSupported()) {
+      setPageFullscreen(true);
+      return;
+    }
     try {
-      await (document.fullscreenElement ? exitFullscreenOurselves() : assetViewerHtmlElement?.requestFullscreen());
-    } catch (error) {
-      handleError(error, $t('errors.unable_to_enter_fullscreen'));
+      await requestFullscreen(assetViewerHtmlElement);
+    } catch {
+      // A browser that lists the API but refuses this element (or this gesture) still gets full screen.
+      setPageFullscreen(true);
     }
   };
 
@@ -1462,33 +1520,80 @@
   let fullscreenLeftAt = -Infinity;
   /** The viewer itself is leaving full screen (the footer toggle, a slideshow ending), not Escape. */
   let leavingFullscreenOurselves = false;
+  let fullscreenExitToken = 0;
 
   const exitFullscreenOurselves = async () => {
+    if (!currentFullscreenElement()) {
+      return;
+    }
+    // FL-1833: the change event arrives after the exit settles (Chromium dispatches it on the next
+    // frame), so the mark stays until that event has been seen; clearing it when the promise settled
+    // made the footer's own exit look like the browser's and ended the slideshow.
     leavingFullscreenOurselves = true;
     try {
-      await document.exitFullscreen();
-    } finally {
+      await exitFullscreen();
+    } catch (error) {
       leavingFullscreenOurselves = false;
+      throw error;
     }
+    // A browser that never reports the change must not leave the mark on for the next exit. Each exit
+    // owns its timer, and the mark is cleared only once full screen is really gone (iPadOS before 16.4
+    // settles at once and animates out afterwards).
+    const exit = ++fullscreenExitToken;
+    const clearMark = () => {
+      if (exit !== fullscreenExitToken) {
+        return;
+      }
+      if (currentFullscreenElement()) {
+        setTimeout(clearMark, 500);
+        return;
+      }
+      leavingFullscreenOurselves = false;
+    };
+    setTimeout(clearMark, 1000);
   };
 
   const onFullscreenChange = () => {
-    if (document.fullscreenElement) {
+    // Safari sends both the standard and the `webkit` event for one change: act on the change once.
+    const wasFullscreen = !!fullscreenElement;
+    fullscreenElement = currentFullscreenElement();
+    if (fullscreenElement || !wasFullscreen) {
       return;
     }
+    const ours = leavingFullscreenOurselves;
+    leavingFullscreenOurselves = false;
     fullscreenLeftAt = performance.now();
     // The browser left full screen (Escape, or its own exit control): a slideshow ends with it.
-    if (!leavingFullscreenOurselves && $slideshowState !== SlideshowState.None) {
+    if (!ours && $slideshowState !== SlideshowState.None) {
       $stopSlideshowProgress = true;
       $slideshowState = SlideshowState.None;
     }
   };
 
+  // Both the standard and the `webkit` change events (iPadOS before 16.4 sends only the latter).
+  $effect(() => {
+    fullscreenElement = currentFullscreenElement();
+    return subscribeFullscreenChange(onFullscreenChange);
+  });
+
   const leaveFullscreenOnEscape = (event: KeyboardEvent) => {
     if (event.key !== 'Escape' || event.defaultPrevented) {
       return;
     }
-    const inFullscreen = !!document.fullscreenElement;
+    if (pageFullscreen && !isDialogOpen() && !assetViewerHtmlElement?.querySelector('[aria-expanded="true"]')) {
+      // The viewer's own full screen leaves as a real one does on Escape, ending a slideshow with it
+      // (an open dialog or menu takes the key first).
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      setPageFullscreen(false);
+      fullscreenLeftAt = performance.now();
+      if ($slideshowState !== SlideshowState.None) {
+        $stopSlideshowProgress = true;
+        $slideshowState = SlideshowState.None;
+      }
+      return;
+    }
+    const inFullscreen = !!currentFullscreenElement();
     if (!inFullscreen && performance.now() - fullscreenLeftAt > FULLSCREEN_ESCAPE_GRACE_MS) {
       return;
     }
@@ -1497,7 +1602,7 @@
     if (inFullscreen) {
       // The page saw the key before the browser did: leave full screen as Escape would, which ends a
       // slideshow through `onFullscreenChange`.
-      document.exitFullscreen().catch((error: unknown) => handleError(error, $t('errors.unable_to_exit_fullscreen')));
+      exitFullscreen().catch((error: unknown) => handleError(error, $t('errors.unable_to_exit_fullscreen')));
     }
   };
 
@@ -1505,6 +1610,17 @@
   // renders `SlideshowSettingsPanel` for it (below), which returns focus to the control that opened it.
 
   /** Hidden chrome comes back as soon as the keyboard is used, so nothing focusable stays invisible. */
+  /*
+   * FL-1833: focus moving inside the viewer brings the controls back only when the keyboard moved it.
+   * A menu returns focus to its button when it closes, so choosing Full screen from the phone's More
+   * menu (the viewer's own full screen on an iPhone) brought the controls straight back.
+   */
+  let lastInputWasKey = false;
+  const revealChromeOnFocus = () => {
+    if (lastInputWasKey) {
+      revealChrome();
+    }
+  };
   const revealChrome = () => {
     if (chromeHidden) {
       chromeHidden = false;
@@ -1675,11 +1791,15 @@
 
 <svelte:window
   onkeydowncapture={(event) => {
+    lastInputWasKey = true;
     closeSettingsOnEscape(event);
     leaveFullscreenOnEscape(event);
   }}
   onkeydown={revealChrome}
-  onpointerdowncapture={(event) => activePointers.add(event.pointerId)}
+  onpointerdowncapture={(event) => {
+    lastInputWasKey = false;
+    activePointers.add(event.pointerId);
+  }}
   onpointerupcapture={releasePointer}
   onpointercancelcapture={releasePointer}
   onpointerdown={onWindowPointerDown}
@@ -1697,8 +1817,6 @@
 />
 
 <svelte:document
-  bind:fullscreenElement
-  onfullscreenchange={onFullscreenChange}
   use:shortcuts={[
     arrowShortcut('ArrowUp', () => navigateStack('previous')),
     arrowShortcut('ArrowDown', () => navigateStack('next')),
@@ -1730,7 +1848,7 @@
   data-theme="dark"
   use:focusTrap
   bind:this={assetViewerHtmlElement}
-  onfocusin={revealChrome}
+  onfocusin={revealChromeOnFocus}
 >
   <!--
     Top navigation bar. The header and the footer stack at the same level, z-2, as in the template
@@ -1822,7 +1940,7 @@
           asset={previewStackedAsset!}
           cacheKey={previewStackedAsset!.thumbhash}
           projectionType={previewStackedAsset!.exifInfo?.projectionType}
-          loopVideo={true}
+          loopVideo={$slideshowState !== SlideshowState.PlaySlideshow}
           onPreviousAsset={() => navigateAsset('previous')}
           onNextAsset={() => navigateAsset('next')}
           onClose={closeViewer}

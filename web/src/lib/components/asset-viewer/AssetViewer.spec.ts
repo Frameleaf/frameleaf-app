@@ -1586,6 +1586,131 @@ describe('AssetViewer', () => {
     expect(onClose).not.toHaveBeenCalled();
   });
 
+  // FL-1833: full screen on the browsers an iPad has (all WebKit).
+  describe('full screen on an iPad browser', () => {
+    const saved = {
+      request: HTMLElement.prototype.requestFullscreen,
+      enabled: Object.getOwnPropertyDescriptor(document, 'fullscreenEnabled'),
+    };
+    const prefixed = HTMLElement.prototype as HTMLElement & { webkitRequestFullscreen?: () => void };
+    const open = () => {
+      const user = userAdminFactory.build();
+      const asset = assetFactory.build({ ownerId: user.id, type: AssetTypeEnum.Image });
+      authManager.setUser(user);
+      authManager.setPreferences(preferencesFactory.build({ cast: { gCastEnabled: false } }));
+      const onClose = vi.fn();
+      const view = renderWithTooltips(AssetViewer, { cursor: { current: asset }, showNavigation: false, onClose });
+      return { onClose, view, viewer: view.container.querySelector('#immich-asset-viewer')! };
+    };
+    afterEach(() => {
+      HTMLElement.prototype.requestFullscreen = saved.request;
+      Reflect.deleteProperty(prefixed, 'webkitRequestFullscreen');
+      for (const key of ['webkitFullscreenEnabled', 'webkitFullscreenElement']) {
+        Reflect.deleteProperty(document, key);
+      }
+      if (saved.enabled) {
+        Object.defineProperty(document, 'fullscreenEnabled', saved.enabled);
+      } else {
+        Reflect.deleteProperty(document, 'fullscreenEnabled');
+      }
+    });
+
+    it('uses the webkit-prefixed API where it is the only one (iPadOS before 16.4)', async () => {
+      Reflect.deleteProperty(HTMLElement.prototype, 'requestFullscreen');
+      Object.defineProperties(document, {
+        fullscreenEnabled: { value: undefined, configurable: true },
+        webkitFullscreenEnabled: { value: true, configurable: true },
+      });
+      const webkitRequest = vi.fn(function (this: HTMLElement) {
+        Object.defineProperty(document, 'webkitFullscreenElement', { value: this, configurable: true });
+        document.dispatchEvent(new Event('webkitfullscreenchange'));
+      });
+      prefixed.webkitRequestFullscreen = webkitRequest;
+      const { view } = open();
+
+      await fireEvent.click(view.getByLabelText('frameleaf_viewer_enter_fullscreen'));
+
+      expect(webkitRequest).toHaveBeenCalledOnce();
+      expect(await view.findByLabelText('frameleaf_viewer_exit_fullscreen')).toBeInTheDocument();
+    });
+
+    it('falls back to its own full screen where the browser has no Fullscreen API', async () => {
+      Reflect.deleteProperty(HTMLElement.prototype, 'requestFullscreen');
+      Object.defineProperty(document, 'fullscreenEnabled', { value: false, configurable: true });
+      const { onClose, view, viewer } = open();
+      slideshowStore.slideshowState.set(SlideshowState.PlaySlideshow);
+      await view.findByTestId('slideshow-progress');
+
+      await fireEvent.click(view.getByLabelText('frameleaf_viewer_enter_fullscreen'));
+      expect(viewer).toHaveClass('chrome-hidden');
+      expect(view.getByLabelText('frameleaf_viewer_exit_fullscreen')).toBeInTheDocument();
+
+      // Escape leaves it as it would a real full screen: the slideshow ends, the viewer stays.
+      await fireEvent.keyDown(document.body, { key: 'Escape' });
+      await waitFor(() => expect(get(slideshowStore.slideshowState)).toBe(SlideshowState.None));
+      expect(viewer).not.toHaveClass('chrome-hidden');
+      expect(view.getByLabelText('frameleaf_viewer_enter_fullscreen')).toBeInTheDocument();
+      expect(onClose).not.toHaveBeenCalled();
+    });
+
+    it('keeps the slideshow when its own exit is reported after the exit settles (Chromium)', async () => {
+      const previousExit = document.exitFullscreen;
+      const element = Object.getOwnPropertyDescriptor(document, 'fullscreenElement');
+      onTestFinished(() => {
+        document.exitFullscreen = previousExit;
+        if (element) {
+          Object.defineProperty(document, 'fullscreenElement', element);
+        } else {
+          Reflect.deleteProperty(document, 'fullscreenElement');
+        }
+      });
+      const setFullscreen = (value: Element | null) => {
+        Object.defineProperty(document, 'fullscreenElement', { configurable: true, value });
+        document.dispatchEvent(new Event('fullscreenchange'));
+      };
+      // the exit settles at once; the change event follows on a later task
+      document.exitFullscreen = vi.fn(() => {
+        setTimeout(() => setFullscreen(null), 0);
+        return Promise.resolve();
+      });
+      const { view } = open();
+      setFullscreen(view.container);
+      slideshowStore.slideshowState.set(SlideshowState.PlaySlideshow);
+      await view.findByTestId('slideshow-progress');
+
+      await fireEvent.click(await view.findByLabelText('frameleaf_viewer_exit_fullscreen'));
+      await waitFor(() => expect(view.getByLabelText('frameleaf_viewer_enter_fullscreen')).toBeInTheDocument());
+      expect(get(slideshowStore.slideshowState)).toBe(SlideshowState.PlaySlideshow);
+    });
+
+    it('in its own full screen, hides the controls for a slideshow and brings them back when it ends', async () => {
+      Reflect.deleteProperty(HTMLElement.prototype, 'requestFullscreen');
+      Object.defineProperty(document, 'fullscreenEnabled', { value: false, configurable: true });
+      const { view, viewer } = open();
+      await fireEvent.click(view.getByLabelText('frameleaf_viewer_enter_fullscreen'));
+      await waitFor(() => expect(viewer).toHaveClass('chrome-hidden'));
+
+      // a slideshow switches the viewer's tap off; the controls stay tucked away for it, then return
+      slideshowStore.slideshowState.set(SlideshowState.PlaySlideshow);
+      await view.findByTestId('slideshow-progress');
+      await waitFor(() => expect(viewer).toHaveClass('chrome-hidden'));
+      slideshowStore.slideshowState.set(SlideshowState.StopSlideshow);
+      await waitFor(() => expect(viewer).not.toHaveClass('chrome-hidden'));
+    });
+
+    it('falls back to its own full screen when the browser refuses the request', async () => {
+      HTMLElement.prototype.requestFullscreen = vi.fn().mockRejectedValue(new TypeError('not allowed'));
+      Object.defineProperty(document, 'fullscreenEnabled', { value: true, configurable: true });
+      const { view, viewer } = open();
+
+      await fireEvent.click(view.getByLabelText('frameleaf_viewer_enter_fullscreen'));
+      await waitFor(() => expect(viewer).toHaveClass('chrome-hidden'));
+
+      await fireEvent.click(view.getByLabelText('frameleaf_viewer_exit_fullscreen'));
+      expect(viewer).not.toHaveClass('chrome-hidden');
+    });
+  });
+
   // Owner, 2026-10-16: Escape in a full-screen slideshow leaves full screen and ends the slideshow; the
   // next Escape closes the viewer. Chromium leaves full screen itself and keeps that key from the page.
   describe('Escape and full screen', () => {
