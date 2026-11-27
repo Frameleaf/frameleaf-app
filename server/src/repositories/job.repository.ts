@@ -33,6 +33,7 @@ import { automaticJobCapacity, clampJobCapacity, readJobCapacity } from 'src/que
 import { NO_FAILURE_REASON, deferJobAdoption, queueExecution } from 'src/queue/context.js';
 import { deferJobUntilDependency } from 'src/queue/dependency.js';
 import { deliverJobObservers } from 'src/queue/observers.js';
+import { jobSettled } from 'src/queue/settled.js';
 import { listQueueProblems, queueHolds, queueProblemJobs } from 'src/queue/queue-problems.js';
 import { recentFileCheck, recentWorkScope } from 'src/queue/recent-work.js';
 import { causeRank } from 'src/queue/run-failure-cause.js';
@@ -512,6 +513,8 @@ export class JobRepository {
       }
       // FL-721 M2: the Locked wait this execution recorded ends with it
       forgetLockedClaim(claim.id);
+      // FL-1794: administrators' pages learn the queue moved, also when the job failed or was deferred
+      jobSettled(claim.queue);
       releaseExecution?.();
       releaseObservers?.();
     }

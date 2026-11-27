@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { OnEvent } from 'src/decorators.js';
+import { onJobSettled } from 'src/queue/settled.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
 import { WebsocketRepository } from 'src/repositories/websocket.repository.js';
 
@@ -14,13 +15,16 @@ const ADMINS_TTL_MS = 60_000;
  * The top bar used to ask for the running-jobs summary every few seconds to find this out. The event
  * carries nothing: a page answers it by asking the summary again, which checks the caller's access as
  * any other request does. It goes to administrators' own sockets only, at most once a second from each
- * process that runs jobs, with one more after the last change so the final state is never missed.
+ * process that runs jobs, with one more after the last change so the final state is never missed. A job
+ * that fails or is deferred settles like one that succeeds. Pausing or emptying a queue sends nothing:
+ * the page that did it reads the summary itself, and other administrators' pages see it at their next look.
  */
 @Injectable()
 export class QueueProgressEventService {
   private lastSent = 0;
   private timer?: ReturnType<typeof setTimeout>;
   private admins?: { at: number; ids: Promise<string[]> };
+  private unsubscribe?: () => void;
 
   constructor(
     private userRepository: UserRepository,
@@ -32,8 +36,13 @@ export class QueueProgressEventService {
     this.nudge();
   }
 
-  @OnEvent({ name: 'JobComplete' })
-  onJobComplete() {
+  /** Every outcome, not only a committed success (`JobComplete`): a failed last job must end the run too. */
+  @OnEvent({ name: 'AppBootstrap' })
+  onBootstrap() {
+    this.unsubscribe ??= onJobSettled(() => this.nudge());
+  }
+
+  onJobSettled() {
     this.nudge();
   }
 
@@ -49,6 +58,8 @@ export class QueueProgressEventService {
 
   @OnEvent({ name: 'AppShutdown' })
   onShutdown() {
+    this.unsubscribe?.();
+    this.unsubscribe = undefined;
     clearTimeout(this.timer);
     this.timer = undefined;
   }

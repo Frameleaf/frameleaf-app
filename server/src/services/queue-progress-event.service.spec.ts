@@ -1,3 +1,4 @@
+import { jobSettled } from 'src/queue/settled.js';
 import { QUEUE_PROGRESS_INTERVAL_MS, QueueProgressEventService } from 'src/services/queue-progress-event.service.js';
 
 describe(QueueProgressEventService.name, () => {
@@ -30,7 +31,7 @@ describe(QueueProgressEventService.name, () => {
   it('sends at most one nudge a second however many jobs run, and one more after the last', async () => {
     for (let job = 0; job < 5000; job++) {
       sut.onJobStart();
-      sut.onJobComplete();
+      sut.onJobSettled();
     }
     await vi.advanceTimersByTimeAsync(0);
     expect(websocket.clientSend).toHaveBeenCalledTimes(2);
@@ -56,7 +57,7 @@ describe(QueueProgressEventService.name, () => {
 
   it('reads the administrators once a minute, not once a nudge', async () => {
     for (let second = 0; second < 30; second++) {
-      sut.onJobComplete();
+      sut.onJobSettled();
       await vi.advanceTimersByTimeAsync(QUEUE_PROGRESS_INTERVAL_MS);
     }
     expect(users.getAdmins).toHaveBeenCalledTimes(1);
@@ -64,7 +65,7 @@ describe(QueueProgressEventService.name, () => {
     users.getAdmins.mockResolvedValue([{ id: 'admin-b' }]);
     await vi.advanceTimersByTimeAsync(31_000);
     websocket.clientSend.mockClear();
-    sut.onJobComplete();
+    sut.onJobSettled();
     await vi.advanceTimersByTimeAsync(0);
     expect(users.getAdmins).toHaveBeenCalledTimes(2);
     expect(websocket.clientSend.mock.calls).toEqual([['on_queue_progress', 'admin-b']]);
@@ -86,6 +87,18 @@ describe(QueueProgressEventService.name, () => {
     await vi.advanceTimersByTimeAsync(0);
     sut.onJobStart();
     sut.onShutdown();
+    await vi.advanceTimersByTimeAsync(10 * QUEUE_PROGRESS_INTERVAL_MS);
+    expect(websocket.clientSend).toHaveBeenCalledTimes(2);
+  });
+
+  it('announces a job that failed or was deferred, not only one that succeeded', async () => {
+    sut.onBootstrap();
+    jobSettled('thumbnailGeneration');
+    await vi.advanceTimersByTimeAsync(0);
+    expect(websocket.clientSend).toHaveBeenCalledTimes(2);
+
+    sut.onShutdown();
+    jobSettled('thumbnailGeneration');
     await vi.advanceTimersByTimeAsync(10 * QUEUE_PROGRESS_INTERVAL_MS);
     expect(websocket.clientSend).toHaveBeenCalledTimes(2);
   });
