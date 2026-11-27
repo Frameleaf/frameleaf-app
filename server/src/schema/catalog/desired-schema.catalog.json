@@ -55133,179 +55133,6 @@
       "synchronize": true
     },
     {
-      "name": "date_fix_item",
-      "columns": [
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "batchId",
-          "tableName": "date_fix_item",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "assetId",
-          "tableName": "date_fix_item",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "previousDate",
-          "tableName": "date_fix_item",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "text",
-          "primary": false,
-          "name": "previousZone",
-          "tableName": "date_fix_item",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "previousTakenAt",
-          "tableName": "date_fix_item",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "previousLocalDateTime",
-          "tableName": "date_fix_item",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "previousLocks",
-          "tableName": "date_fix_item",
-          "nullable": false,
-          "isArray": true,
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "newDate",
-          "tableName": "date_fix_item",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "text",
-          "primary": false,
-          "name": "newZone",
-          "tableName": "date_fix_item",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "newLocalDateTime",
-          "tableName": "date_fix_item",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "text",
-          "primary": false,
-          "name": "previousDateAccuracy",
-          "tableName": "date_fix_item",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "text",
-          "primary": false,
-          "name": "newDateAccuracy",
-          "tableName": "date_fix_item",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        }
-      ],
-      "indexes": [
-        {
-          "name": "date_fix_item_assetId_idx",
-          "definition": "CREATE INDEX \"date_fix_item_assetId_idx\" ON public.date_fix_item USING btree (\"assetId\")",
-          "tableName": "date_fix_item",
-          "columnNames": [
-            "assetId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        }
-      ],
-      "triggers": [],
-      "constraints": [
-        {
-          "type": "primary-key",
-          "name": "date_fix_item_pkey",
-          "definition": "PRIMARY KEY (\"batchId\", \"assetId\")",
-          "tableName": "date_fix_item",
-          "columnNames": [
-            "batchId",
-            "assetId"
-          ],
-          "synchronize": true
-        },
-        {
-          "type": "foreign-key",
-          "name": "date_fix_item_batchId_fkey",
-          "definition": "FOREIGN KEY (\"batchId\") REFERENCES date_fix_batch(id) ON UPDATE CASCADE ON DELETE CASCADE",
-          "tableName": "date_fix_item",
-          "columnNames": [
-            "batchId"
-          ],
-          "referenceTableName": "date_fix_batch",
-          "referenceColumnNames": [
-            "id"
-          ],
-          "onUpdate": "CASCADE",
-          "onDelete": "CASCADE",
-          "synchronize": true
-        },
-        {
-          "type": "foreign-key",
-          "name": "date_fix_item_assetId_fkey",
-          "definition": "FOREIGN KEY (\"assetId\") REFERENCES asset(id) ON UPDATE CASCADE ON DELETE CASCADE",
-          "tableName": "date_fix_item",
-          "columnNames": [
-            "assetId"
-          ],
-          "referenceTableName": "asset",
-          "referenceColumnNames": [
-            "id"
-          ],
-          "onUpdate": "CASCADE",
-          "onDelete": "CASCADE",
-          "synchronize": true
-        }
-      ],
-      "synchronize": true
-    },
-    {
       "name": "import_connection",
       "columns": [
         {
@@ -61230,6 +61057,197 @@
           "definition": "CHECK ((\"deathDatePrecision\" = ANY (ARRAY['month'::text, 'year'::text, 'about'::text])))",
           "tableName": "person_profile",
           "expression": "((\"deathDatePrecision\" = ANY (ARRAY['month'::text, 'year'::text, 'about'::text])))",
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
+    },
+    {
+      "name": "date_fix_item",
+      "columns": [
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "batchId",
+          "tableName": "date_fix_item",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "assetId",
+          "tableName": "date_fix_item",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "previousDate",
+          "tableName": "date_fix_item",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "previousZone",
+          "tableName": "date_fix_item",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "previousTakenAt",
+          "tableName": "date_fix_item",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "previousLocalDateTime",
+          "tableName": "date_fix_item",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "previousLocks",
+          "tableName": "date_fix_item",
+          "nullable": false,
+          "isArray": true,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "newDate",
+          "tableName": "date_fix_item",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "newZone",
+          "tableName": "date_fix_item",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "newLocalDateTime",
+          "tableName": "date_fix_item",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "previousDateAccuracy",
+          "tableName": "date_fix_item",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "newDateAccuracy",
+          "tableName": "date_fix_item",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "previousDateDetail",
+          "tableName": "date_fix_item",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "newDateDetail",
+          "tableName": "date_fix_item",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "date_fix_item_assetId_idx",
+          "definition": "CREATE INDEX \"date_fix_item_assetId_idx\" ON public.date_fix_item USING btree (\"assetId\")",
+          "tableName": "date_fix_item",
+          "columnNames": [
+            "assetId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        }
+      ],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "primary-key",
+          "name": "date_fix_item_pkey",
+          "definition": "PRIMARY KEY (\"batchId\", \"assetId\")",
+          "tableName": "date_fix_item",
+          "columnNames": [
+            "batchId",
+            "assetId"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "date_fix_item_batchId_fkey",
+          "definition": "FOREIGN KEY (\"batchId\") REFERENCES date_fix_batch(id) ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "date_fix_item",
+          "columnNames": [
+            "batchId"
+          ],
+          "referenceTableName": "date_fix_batch",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "date_fix_item_assetId_fkey",
+          "definition": "FOREIGN KEY (\"assetId\") REFERENCES asset(id) ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "date_fix_item",
+          "columnNames": [
+            "assetId"
+          ],
+          "referenceTableName": "asset",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "CASCADE",
           "synchronize": true
         }
       ],

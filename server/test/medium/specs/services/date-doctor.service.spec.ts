@@ -377,10 +377,12 @@ describe('Date & Time Doctor fixes (FL-930)', () => {
           previousLocalDateTime: row.localDateTime,
           previousLocks: [],
           previousDateAccuracy: null,
+          previousDateDetail: null,
           newDate: new Date(row.takenAt.getTime() + 60_000),
           newZone: row.timeZone,
           newLocalDateTime: new Date(row.localDateTime.getTime() + 60_000),
           newDateAccuracy: null,
+          newDateDetail: null,
         },
       ],
       { cause: null, shiftMinutes: 1, timeZone: null, dateAccuracy: null, periodStart: null },
@@ -523,10 +525,12 @@ describe('Date & Time Doctor fixes (FL-930)', () => {
           previousLocalDateTime: row.localDateTime,
           previousLocks: [],
           previousDateAccuracy: null,
+          previousDateDetail: null,
           newDate: row.takenAt,
           newZone: 'Asia/Tokyo',
           newLocalDateTime: new Date(row.takenAt.getTime() + 9 * 3_600_000),
           newDateAccuracy: null,
+          newDateDetail: null,
         },
       ],
       { cause: null, shiftMinutes: null, timeZone: 'Asia/Tokyo', dateAccuracy: null, periodStart: null },
@@ -687,6 +691,101 @@ describe('Date & Time Doctor fixes (FL-930)', () => {
 
     expect(await read()).toEqual(before);
   }, 120_000);
+
+  it('FL-1814: dates photos to a month, then around a year, and one undo puts back each date and its detail', async () => {
+    const { ctx, doctor } = fixSetup();
+    const { user } = await ctx.newUser();
+    const auth = factory.auth({ user });
+    const ids = [await photo(ctx, user.id, 'Europe/Paris', []), await photo(ctx, user.id, null, [])];
+    // the second was already "around 1950"
+    const around = new Date('1950-01-01T00:00:00.000Z');
+    await db
+      .updateTable('asset')
+      .set({ dateAccuracy: 'year', dateDetail: 'about', fileCreatedAt: around, localDateTime: around })
+      .where('id', '=', ids[1])
+      .execute();
+    await db
+      .updateTable('asset_exif')
+      .set({ dateTimeOriginal: around, timeZone: 'UTC', lockedProperties: ['dateTimeOriginal', 'timeZone'] })
+      .where('assetId', '=', ids[1])
+      .execute();
+    const read = () =>
+      db
+        .selectFrom('asset')
+        .innerJoin('asset_exif', 'asset_exif.assetId', 'asset.id')
+        .select([
+          'asset.id',
+          'asset.fileCreatedAt',
+          'asset.localDateTime',
+          'asset.dateAccuracy',
+          'asset.dateDetail',
+          'asset_exif.dateTimeOriginal',
+          'asset_exif.timeZone',
+        ])
+        .where('asset.id', 'in', ids)
+        .orderBy('asset.id')
+        .execute();
+    const before = await read();
+
+    // a month is its 1st at midnight UTC, whatever zone the photo had
+    await doctor.apply(auth, { assetIds: ids, dateAccuracy: 'year', year: 1988, dateDetail: 'month', month: 2 });
+    const february = new Date('1988-02-01T00:00:00.000Z');
+    for (const row of await read()) {
+      expect(row).toEqual(
+        expect.objectContaining({
+          fileCreatedAt: february,
+          localDateTime: february,
+          dateAccuracy: 'year',
+          dateDetail: 'month',
+        }),
+      );
+    }
+    // the same month again changes nothing
+    await expect(
+      doctor.apply(auth, { assetIds: ids, dateAccuracy: 'year', year: 1988, dateDetail: 'month', month: 2 }),
+    ).rejects.toThrow('Nothing to fix');
+
+    await doctor.apply(auth, { assetIds: ids, dateAccuracy: 'year', year: 1988, dateDetail: 'about' });
+    const start = new Date('1988-01-01T00:00:00.000Z');
+    for (const row of await read()) {
+      expect(row).toEqual(expect.objectContaining({ fileCreatedAt: start, dateAccuracy: 'year', dateDetail: 'about' }));
+    }
+    // a plain year clears the detail
+    const plain = await doctor.apply(auth, { assetIds: ids, dateAccuracy: 'year', year: 1988 });
+    for (const row of await read()) {
+      expect(row).toEqual(expect.objectContaining({ fileCreatedAt: start, dateAccuracy: 'year', dateDetail: null }));
+    }
+
+    // each fix kept what the photos had before the first, so undoing the last goes all the way back
+    await doctor.undo(auth, plain.batch.id);
+
+    expect(await read()).toEqual(before);
+  });
+
+  it('FL-1814: undo leaves a photo whose month or "around" was changed since, though its moment is the same', async () => {
+    const { ctx, doctor } = fixSetup();
+    const { user } = await ctx.newUser();
+    const auth = factory.auth({ user });
+    const id = await photo(ctx, user.id, 'Europe/Paris', []);
+
+    const { batch } = await doctor.apply(auth, {
+      assetIds: [id],
+      dateAccuracy: 'year',
+      year: 1988,
+      dateDetail: 'month',
+      month: 1,
+    });
+    // January 1988 and "around 1988" are both 1 January at midnight UTC: only the detail changes
+    await db.updateTable('asset').set({ dateDetail: 'about' }).where('id', '=', id).execute();
+
+    await expect(doctor.undo(auth, batch.id)).resolves.toEqual(expect.objectContaining({ restored: 0 }));
+    const row = await db
+      .selectFrom('asset')
+      .select(['dateAccuracy', 'dateDetail'])
+      .where('id', '=', id)
+      .executeTakeFirstOrThrow();
+    expect(row).toEqual({ dateAccuracy: 'year', dateDetail: 'about' });
+  });
 
   it('removes batches older than 30 days each night', async () => {
     const { ctx, doctor } = fixSetup();
