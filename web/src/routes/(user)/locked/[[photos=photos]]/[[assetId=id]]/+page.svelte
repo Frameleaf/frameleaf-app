@@ -149,11 +149,12 @@
     display: grid;
     grid-template-columns: auto minmax(0, 1fr) auto;
     align-items: center;
-    gap: var(--fl-space-3);
+    gap: var(--fl-space-4);
     min-height: 44px;
-    padding: var(--fl-space-3) var(--fl-space-4);
+    padding: var(--fl-space-4);
     border: 1px solid var(--fl-border);
     border-radius: var(--fl-radius-card);
+    background: var(--fl-panel);
     color: var(--fl-muted);
     text-decoration: none;
   }

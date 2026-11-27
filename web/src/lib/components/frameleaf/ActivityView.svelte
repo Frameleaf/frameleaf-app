@@ -96,6 +96,7 @@
     mdiWifi,
     mdiWifiOff,
   } from '@mdi/js';
+  import { DateTime } from 'luxon';
   import { onMount, untrack } from 'svelte';
   import { locale, t } from 'svelte-i18n';
   import { SvelteSet } from 'svelte/reactivity';
@@ -414,10 +415,24 @@
     }
   };
   onMount(() => void loadEditBatches());
+  // The tabs narrow it too: an open batch is in progress, a finished one is done, none ever failed.
+  const shownEditBatches = $derived(
+    editBatches.filter(
+      (batch) =>
+        filter === 'all' ||
+        (filter === 'running' && batch.status === DevelopBatchStatus.Open) ||
+        (filter === 'done' && batch.status === DevelopBatchStatus.Completed),
+    ),
+  );
+  // "2 days ago" reads in the middle of a sentence, in every language, where "Yesterday, 3:04 PM" does not.
   const sentOut = (batch: DevelopBatchSummaryDto) =>
     $t(
       batch.status === DevelopBatchStatus.Open ? 'frameleaf_activity_edits_waiting' : 'frameleaf_activity_edits_done',
-      { values: { when: formatFinishedTime(Date.parse(batch.createdAt), $locale ?? undefined) } },
+      {
+        values: {
+          when: DateTime.fromISO(batch.createdAt, { locale: $locale ?? undefined }).toRelative() ?? '',
+        },
+      },
     );
 
   /**
@@ -1123,12 +1138,14 @@
     </section>
   {/if}
 
-  {#if editBatches.length > 0}
+  {#if shownEditBatches.length > 0}
     <section class="fla-section" aria-labelledby="{rowIdPrefix}-edits">
-      <h2 id="{rowIdPrefix}-edits" class="fla-section-title">{$t('frameleaf_activity_edits_title')}</h2>
+      <h2 id="{rowIdPrefix}-edits" class="fla-section-title">
+        {$t('frameleaf_activity_edits_title')} <span class="fla-edits-count">{shownEditBatches.length}</span>
+      </h2>
       <p class="fla-edits-hint">{$t('frameleaf_activity_edits_hint')}</p>
       <ul class="fla-edits">
-        {#each editBatches as batch (batch.id)}
+        {#each shownEditBatches as batch (batch.id)}
           {@const action =
             batch.status === DevelopBatchStatus.Open ? $t('frameleaf_activity_edits_bring_back') : $t('open')}
           <li>
@@ -1334,8 +1351,15 @@
     color: var(--fl-muted);
     font-size: var(--fl-font-small);
   }
+  .fla-edits-count {
+    margin-inline-start: var(--fl-space-2);
+    color: var(--fl-muted);
+    font-weight: 500;
+  }
+  /* findable-pages.css `.fla-batches`: one card per batch, 8 apart. */
   .fla-edits {
     display: grid;
+    gap: var(--fl-space-2);
     margin: 0;
     padding: 0;
     list-style: none;
@@ -1344,13 +1368,13 @@
     display: grid;
     grid-template-columns: auto minmax(0, 1fr) auto;
     align-items: center;
-    gap: var(--fl-space-3);
+    gap: var(--fl-space-4);
     min-height: 44px;
-    padding: var(--fl-space-2) 0;
+    padding: var(--fl-space-4);
+    border: 1px solid var(--fl-border);
+    border-radius: var(--fl-radius-card);
+    background: var(--fl-panel);
     color: var(--fl-muted);
-  }
-  .fla-edits li + li {
-    border-top: 1px solid var(--fl-border);
   }
   .fla-edits-text {
     display: grid;
