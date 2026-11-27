@@ -28,7 +28,7 @@ describe('Backup › What Cloud Backup keeps (FL-362)', () => {
       { id: 'album-1', albumName: 'Our wedding', kind: 'album' },
       { id: 'collection-1', albumName: 'Family', kind: 'collection' },
     ] as never);
-    sdkMock.getAllPeople.mockResolvedValue({ people: [{ id: 'person-1', name: 'Emma' }] } as never);
+    sdkMock.getPeoplePicker.mockResolvedValue({ people: [{ id: 'person-1', name: 'Emma' }] } as never);
     sdkMock.getAllTags.mockResolvedValue([{ id: 'tag-1', value: 'Travel' }] as never);
     sdkMock.getUniqueOriginalPaths.mockResolvedValue(['/library/me/Trips'] as never);
   });
@@ -107,6 +107,35 @@ describe('Backup › What Cloud Backup keeps (FL-362)', () => {
       vi.useRealTimers();
       process.env.TZ = zone;
     }
+  });
+
+  // FL-1803: the people to choose from were the first 500 only
+  it('offers every person to choose from, past the first page of the list', async () => {
+    const everyone = Array.from({ length: 1500 }, (_, index) => ({
+      id: `person-${index}`,
+      name: `Person ${String(index).padStart(4, '0')}`,
+      updatedAt: '2026-11-26T00:00:00.000Z',
+      assetCount: 1,
+    }));
+    sdkMock.getPeoplePicker.mockImplementation(({ page = 1, size = 500 } = {}) =>
+      Promise.resolve({
+        people: everyone.slice((page - 1) * size, page * size),
+        hasNextPage: page * size < everyone.length,
+      }),
+    );
+    sdkMock.getOwnCloudBackupSelection.mockResolvedValue({
+      ...EVERYTHING,
+      mode: 'chosen',
+      selectedOriginals: 0,
+    } as never);
+    render(CloudBackupChoiceSection);
+    await fireEvent.click(await screen.findByRole('button', { name: 'Choose people' }));
+
+    expect(await screen.findByRole('checkbox', { name: 'Person 1499' })).toBeInTheDocument();
+    expect(sdkMock.getPeoplePicker.mock.calls.map(([options]) => options)).toEqual([
+      { withHidden: false, page: 1, size: 1000 },
+      { withHidden: false, page: 2, size: 1000 },
+    ]);
   });
 
   it('chooses albums from the person’s own albums only, not their collections', async () => {

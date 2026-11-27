@@ -1,6 +1,8 @@
 <script lang="ts" module>
   const CELEBRATED = 'frameleaf-setup-celebrated';
   const POLL_MS = 15_000;
+  /** FL-1794: while the server's queues move and no setup is known, how often to ask whether one started. */
+  const STARTED_CHECK_MS = 60_000;
 
   const readCelebrated = () => {
     try {
@@ -12,6 +14,7 @@
 </script>
 
 <script lang="ts">
+  import { confirmFrameleaf } from '$lib/frameleaf/confirm';
   /*
    * Setup bar (FL-1146, owner 2026-11-02; prototype SetupBar.jsx): an Immich import opens the library as soon as its
    * rows are in. Until the work behind it is done, administrators see this row above the top bar on every page:
@@ -38,7 +41,7 @@
     LibrarySetupStageId,
     LibrarySetupStageStatus,
   } from '@frameleaf/sdk';
-  import { Icon, modalManager } from '@frameleaf/ui';
+  import { Icon } from '@frameleaf/ui';
   import {
     mdiAlertCircleOutline,
     mdiCheckCircle,
@@ -164,11 +167,13 @@
     }
   };
 
+  let lastAsked = 0;
   const load = async () => {
     if (loading) {
       return;
     }
     loading = true;
+    lastAsked = Date.now();
     try {
       await latest(getLibrarySetupProgress());
     } catch {
@@ -203,7 +208,7 @@
   // The owner would rather let the server run: held work starts, and this bar and the phone step stop asking.
   const dismiss = () =>
     act(async () => {
-      const confirmed = await modalManager.showDialog({
+      const confirmed = await confirmFrameleaf({
         title: $t('setup_bar_dismiss_title'),
         prompt: $t('setup_bar_dismiss_prompt'),
         confirmText: $t('setup_bar_dismiss'),
@@ -248,7 +253,13 @@
     start();
     document.addEventListener('visibilitychange', onVisibility);
     // subscribing reads and writes the event manager's own state, which must not re-run this effect
-    const unsubscribe = untrack(() => eventManager.on({ WebsocketConnect: resume }));
+    // FL-1794: setup starting puts work in the queues, which the server announces; ask then, but rarely
+    const onQueues = () => {
+      if (timer === undefined && !isTabHidden() && Date.now() - lastAsked >= STARTED_CHECK_MS) {
+        resume();
+      }
+    };
+    const unsubscribe = untrack(() => eventManager.on({ WebsocketConnect: resume, QueueProgress: onQueues }));
     return () => {
       stopPolling();
       unsubscribe();

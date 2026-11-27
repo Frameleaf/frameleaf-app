@@ -103,7 +103,7 @@ describe(PersonService.name, () => {
         ],
         hasNextPage: false,
       });
-      mocks.person.getNumberOfPeople.mockResolvedValue({ total: 2, hidden: 1 });
+      mocks.person.getListedTotals.mockResolvedValue({ total: 2, hidden: 1 });
       await expect(sut.getAll(auth, { withHidden: true, page: 1, size: 10 })).resolves.toEqual({
         hasNextPage: false,
         total: 2,
@@ -125,8 +125,50 @@ describe(PersonService.name, () => {
           }),
         ],
       });
-      expect(mocks.person.getAllForUser).toHaveBeenCalledWith({ skip: 0, take: 10 }, auth.user.id, {
-        withHidden: true,
+      expect(mocks.person.getAllForUser).toHaveBeenCalledWith(
+        { skip: 0, take: 10 },
+        auth.user.id,
+        { withHidden: true },
+        undefined,
+      );
+    });
+
+    it('passes a name search and a sort to the list, bringing the counts up to date once (FL-1789)', async () => {
+      const auth = AuthFactory.create();
+      mocks.person.getAllForUser.mockResolvedValue({ items: [], hasNextPage: false });
+      mocks.person.getListedTotals.mockResolvedValue({ total: 3, hidden: 0 });
+      mocks.person.syncSummaries.mockResolvedValue('variant-key');
+
+      await sut.getAll(auth, { page: 2, size: 10, name: 'ada', sort: 'recent' });
+
+      expect(mocks.person.getAllForUser).toHaveBeenCalledWith(
+        { skip: 10, take: 10 },
+        auth.user.id,
+        { withHidden: false, name: 'ada', sort: 'recent' },
+        'variant-key',
+      );
+      // the stored counts are brought up to date once, and both reads use that key
+      expect(mocks.person.syncSummaries).toHaveBeenCalledOnce();
+      expect(mocks.person.getListedTotals).toHaveBeenCalledWith(auth.user.id, {}, 'variant-key');
+      expect(mocks.person.getNumberOfPeople).not.toHaveBeenCalled();
+    });
+
+    it('lists people for a picker with only what a row needs (FL-1789)', async () => {
+      const auth = AuthFactory.create();
+      const person = PersonFactory.create({ name: 'Ada', updatedAt: new Date('2026-11-26T10:00:00.000Z') });
+      mocks.person.getPickerPage.mockResolvedValue({
+        items: [{ personGroupId: person.personGroupId, name: 'Ada', updatedAt: person.updatedAt, assetCount: 7 }],
+        hasNextPage: true,
+      });
+
+      await expect(sut.getPicker(auth, { page: 1, size: 100, name: 'ad', sort: 'name' })).resolves.toEqual({
+        people: [{ id: person.personGroupId, name: 'Ada', updatedAt: '2026-11-26T10:00:00.000Z', assetCount: 7 }],
+        hasNextPage: true,
+      });
+      expect(mocks.person.getPickerPage).toHaveBeenCalledWith({ skip: 0, take: 100 }, auth.user.id, {
+        withHidden: false,
+        name: 'ad',
+        sort: 'name',
       });
     });
 
@@ -134,7 +176,7 @@ describe(PersonService.name, () => {
     it('says face recognition is still working when nobody has been found and photos still wait', async () => {
       const auth = AuthFactory.create();
       mocks.person.getAllForUser.mockResolvedValue({ items: [], hasNextPage: false });
-      mocks.person.getNumberOfPeople.mockResolvedValue({ total: 0, hidden: 0 });
+      mocks.person.getListedTotals.mockResolvedValue({ total: 0, hidden: 0 });
       mocks.assetJob.hasFacesToDetect.mockResolvedValue(true);
 
       await expect(sut.getAll(auth, { withHidden: true, page: 1, size: 10 })).resolves.toEqual({
@@ -158,13 +200,13 @@ describe(PersonService.name, () => {
     it('does not say so with face recognition turned off, or once somebody has been found', async () => {
       const auth = AuthFactory.create();
       mocks.person.getAllForUser.mockResolvedValue({ items: [], hasNextPage: false });
-      mocks.person.getNumberOfPeople.mockResolvedValue({ total: 0, hidden: 0 });
+      mocks.person.getListedTotals.mockResolvedValue({ total: 0, hidden: 0 });
       mocks.assetJob.hasFacesToDetect.mockResolvedValue(true);
       mocks.systemMetadata.get.mockResolvedValue({ machineLearning: { enabled: false } });
       await expect(sut.getAll(auth, { withHidden: true, page: 1, size: 10 })).resolves.not.toHaveProperty('scanning');
 
       mocks.systemMetadata.get.mockResolvedValue({});
-      mocks.person.getNumberOfPeople.mockResolvedValue({ total: 0, hidden: 1 });
+      mocks.person.getListedTotals.mockResolvedValue({ total: 0, hidden: 1 });
       await expect(sut.getAll(auth, { withHidden: true, page: 1, size: 10 })).resolves.not.toHaveProperty('scanning');
       expect(mocks.assetJob.hasFacesToDetect).not.toHaveBeenCalled();
     });
@@ -194,7 +236,7 @@ describe(PersonService.name, () => {
         ],
         hasNextPage: false,
       });
-      mocks.person.getNumberOfPeople.mockResolvedValue({ total: 2, hidden: 1 });
+      mocks.person.getListedTotals.mockResolvedValue({ total: 2, hidden: 1 });
       await expect(sut.getAll(auth, { withHidden: false, page: 1, size: 10 })).resolves.toEqual({
         hasNextPage: false,
         total: 2,
@@ -207,9 +249,12 @@ describe(PersonService.name, () => {
           expect.objectContaining({ id: person.personGroupId, isFavorite: false }),
         ],
       });
-      expect(mocks.person.getAllForUser).toHaveBeenCalledWith({ skip: 0, take: 10 }, auth.user.id, {
-        withHidden: false,
-      });
+      expect(mocks.person.getAllForUser).toHaveBeenCalledWith(
+        { skip: 0, take: 10 },
+        auth.user.id,
+        { withHidden: false },
+        undefined,
+      );
     });
   });
 

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { confirmFrameleaf } from '$lib/frameleaf/confirm';
   /**
    * Frameleaf FL-38: the inline per-person "…" menu inside the viewer's People section
    * (`DetailPanelPeople.svelte`), ported from the design template's `mv-chip-menu`
@@ -40,7 +41,7 @@
     type AssetFaceResponseDto,
     type PersonResponseDto,
   } from '@frameleaf/sdk';
-  import { Icon, Input, modalManager, toastManager } from '@frameleaf/ui';
+  import { Icon, Input, toastManager } from '@frameleaf/ui';
   import {
     mdiAccountEditOutline,
     mdiAccountOutline,
@@ -180,7 +181,10 @@
 
   const removeFace = async () => {
     open = false;
-    const isConfirmed = await modalManager.showDialog({
+    const isConfirmed = await confirmFrameleaf({
+      title: $t('frameleaf_faces_remove_face'),
+      confirmText: $t('frameleaf_faces_remove_face'),
+      danger: true,
       prompt: $t('frameleaf_faces_confirm_remove', { values: { name } }),
     });
     if (!isConfirmed) {

@@ -1485,6 +1485,291 @@ order by
   "showAt" desc nulls last,
   "memoryAt" desc
 
+-- MemoryRepository.search (slim)
+select
+  (
+    select
+      coalesce(json_agg(agg), '[]')
+    from
+      (
+        select
+          "asset"."id",
+          "asset"."type",
+          "asset"."thumbhash",
+          "asset"."fileCreatedAt",
+          "asset"."localDateTime",
+          "asset"."width",
+          "asset"."height",
+          "asset"."visibility",
+          (
+            select
+              "asset_exif"."city"
+            from
+              "asset_exif"
+            where
+              "asset_exif"."assetId" = "asset"."id"
+          ) as "city"
+        from
+          "asset"
+          inner join "memory_asset" on "asset"."id" = "memory_asset"."assetId"
+        where
+          "memory_asset"."memoriesId" = "memory"."id"
+          and (
+            "asset"."visibility" = 'timeline'
+            and not exists (
+              select
+                1
+              from
+                asset_lock
+              where
+                asset_lock."assetId" = "asset"."id"
+            )
+          )
+          and "asset"."deletedAt" is null
+          and not (
+            exists (
+              select
+                1
+              from
+                public.asset as nsfw_asset
+              where
+                nsfw_asset.id = "asset"."id"
+                and nsfw_asset.is_nsfw = true
+            )
+          )
+          and "asset"."libraryScope" in ($1, $2)
+          and not exists (
+            select
+              $3 as "one"
+            from
+              "asset_face"
+              inner join "person" on "person"."personGroupId" = "asset_face"."personGroupId"
+              and "person"."ownerId" = "asset"."ownerId"
+            where
+              "asset_face"."assetId" = "asset"."id"
+              and "person"."isHidden" = $4
+          )
+          and not exists (
+            select
+              "pet_observation"."assetId"
+            from
+              "pet_observation"
+              inner join "pet" on "pet"."id" = "pet_observation"."petId"
+              and "pet"."ownerId" = "asset"."ownerId"
+            where
+              "pet_observation"."assetId" = "asset"."id"
+              and "pet_observation"."state" = 'confirmed'
+              and "pet"."isHidden" is true
+          )
+          and (
+            "memory"."type" not in ('birthday', 'person_recap')
+            or (
+              "memory"."data" ->> 'subject' = 'person'
+              and exists (
+                select
+                from
+                  "asset_face"
+                where
+                  "asset_face"."assetId" = "asset"."id"
+                  and "asset_face"."deletedAt" is null
+                  and "asset_face"."isVisible" = true
+                  and "asset_face"."personGroupId"::text = "memory"."data" ->> 'subjectId'
+              )
+            )
+            or (
+              "memory"."data" ->> 'subject' = 'pet'
+              and exists (
+                select
+                from
+                  "pet_observation"
+                where
+                  "pet_observation"."assetId" = "asset"."id"
+                  and "pet_observation"."state" = 'confirmed'
+                  and "pet_observation"."petId"::text = "memory"."data" ->> 'subjectId'
+              )
+            )
+          )
+        order by
+          "asset"."fileCreatedAt" asc
+      ) as agg
+  ) as "assets",
+  "memory".*
+from
+  "memory"
+where
+  "deletedAt" is null
+  and "ownerId" = $5
+  and exists (
+    select
+      "memory_asset"."memoriesId"
+    from
+      "memory_asset"
+      inner join "asset" on "asset"."id" = "memory_asset"."assetId"
+    where
+      "memory_asset"."memoriesId" = "memory"."id"
+      and (
+        "asset"."visibility" = 'timeline'
+        and not exists (
+          select
+            1
+          from
+            asset_lock
+          where
+            asset_lock."assetId" = "asset"."id"
+        )
+      )
+      and "asset"."deletedAt" is null
+      and not (
+        exists (
+          select
+            1
+          from
+            public.asset as nsfw_asset
+          where
+            nsfw_asset.id = "asset"."id"
+            and nsfw_asset.is_nsfw = true
+        )
+      )
+      and "asset"."libraryScope" in ($6, $7)
+      and not exists (
+        select
+          $8 as "one"
+        from
+          "asset_face"
+          inner join "person" on "person"."personGroupId" = "asset_face"."personGroupId"
+          and "person"."ownerId" = "asset"."ownerId"
+        where
+          "asset_face"."assetId" = "asset"."id"
+          and "person"."isHidden" = $9
+      )
+      and not exists (
+        select
+          "pet_observation"."assetId"
+        from
+          "pet_observation"
+          inner join "pet" on "pet"."id" = "pet_observation"."petId"
+          and "pet"."ownerId" = "asset"."ownerId"
+        where
+          "pet_observation"."assetId" = "asset"."id"
+          and "pet_observation"."state" = 'confirmed'
+          and "pet"."isHidden" is true
+      )
+      and (
+        "memory"."type" not in ('birthday', 'person_recap')
+        or (
+          "memory"."data" ->> 'subject' = 'person'
+          and exists (
+            select
+            from
+              "asset_face"
+            where
+              "asset_face"."assetId" = "asset"."id"
+              and "asset_face"."deletedAt" is null
+              and "asset_face"."isVisible" = true
+              and "asset_face"."personGroupId"::text = "memory"."data" ->> 'subjectId'
+          )
+        )
+        or (
+          "memory"."data" ->> 'subject' = 'pet'
+          and exists (
+            select
+            from
+              "pet_observation"
+            where
+              "pet_observation"."assetId" = "asset"."id"
+              and "pet_observation"."state" = 'confirmed'
+              and "pet_observation"."petId"::text = "memory"."data" ->> 'subjectId'
+          )
+        )
+      )
+  )
+  and (
+    not exists (
+      select
+        "memory_asset"."memoriesId"
+      from
+        "memory_asset"
+      where
+        "memory_asset"."memoriesId" = "memory"."id"
+    )
+    or exists (
+      select
+        "memory_asset"."memoriesId"
+      from
+        "memory_asset"
+        inner join "asset" on "asset"."id" = "memory_asset"."assetId"
+      where
+        "memory_asset"."memoriesId" = "memory"."id"
+        and not exists (
+          select
+            1
+          from
+            asset_lock
+          where
+            asset_lock."assetId" = "asset"."id"
+        )
+        and "asset"."libraryScope" in ($10, $11)
+        and (
+          "asset"."visibility" = 'timeline'
+          and not exists (
+            select
+              1
+            from
+              asset_lock
+            where
+              asset_lock."assetId" = "asset"."id"
+          )
+        )
+        and "asset"."deletedAt" is null
+        and not (
+          exists (
+            select
+              1
+            from
+              public.asset as nsfw_asset
+            where
+              nsfw_asset.id = "asset"."id"
+              and nsfw_asset.is_nsfw = true
+          )
+        )
+      offset
+        $12
+    )
+  )
+  and not exists (
+    select
+      1
+    from
+      memory_asset as hidden_memory_asset
+      inner join asset as hidden_memory_item on hidden_memory_item.id = hidden_memory_asset."assetId"
+    where
+      hidden_memory_asset."memoriesId" = "memory"."id"
+      and (
+        not not exists (
+          select
+            1
+          from
+            asset_lock
+          where
+            asset_lock."assetId" = "hidden_memory_item"."id"
+        )
+        or (
+          exists (
+            select
+              1
+            from
+              public.asset as nsfw_asset
+            where
+              nsfw_asset.id = "hidden_memory_item"."id"
+              and nsfw_asset.is_nsfw = true
+          )
+        )
+      )
+  )
+order by
+  "showAt" desc nulls last,
+  "memoryAt" desc
+
 -- MemoryRepository.get
 select
   "memory".*,

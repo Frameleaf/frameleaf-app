@@ -39,6 +39,92 @@ describe('MergePeopleDialog (PD-4)', () => {
     expect((screen.getByRole('button', { name: 'Merge' }) as HTMLButtonElement).disabled).toBe(true);
   });
 
+  // FL-1803: opened without the caller's list (the person page), the dialog read the first 1,000 people
+  // and searched only those, so anyone after them could not be merged into.
+  it('finds someone past the first page by asking the server for the name typed', async () => {
+    const everyone = Array.from({ length: 1500 }, (_, index) => ({
+      ...personFactory.build({ id: `p${index}`, name: `Person ${String(index).padStart(4, '0')}` }),
+      assetCount: 1,
+      lastSeenAt: null,
+    }));
+    // a page here is 40 people, whatever size is asked for: enough to stand for "more than one page"
+    const PAGE = 40;
+    sdkMock.getAllPeople.mockImplementation((options) => {
+      const name = options?.name;
+      const matching = name
+        ? everyone.filter((person) => person.name.toLowerCase().includes(name.toLowerCase()))
+        : everyone;
+      return Promise.resolve({
+        people: matching.slice(0, PAGE),
+        total: everyone.length,
+        hidden: 0,
+        hasNextPage: matching.length > PAGE,
+      });
+    });
+    render(MergePeopleDialog, { person: ada, open: true, onMerged: vi.fn() });
+    await waitFor(() => expect(screen.getByRole('button', { name: /Person 0039/ })).toBeTruthy());
+    expect(screen.queryByRole('button', { name: /Person 1400/ })).toBeNull();
+
+    await fireEvent.input(screen.getByRole('searchbox'), { target: { value: 'person 1400' } });
+
+    await waitFor(() => expect(screen.getByRole('button', { name: /Person 1400/ })).toBeTruthy());
+    expect(sdkMock.getAllPeople).toHaveBeenLastCalledWith(
+      { withHidden: true, size: 100, name: 'person 1400' },
+      { signal: expect.any(AbortSignal) },
+    );
+
+    // a pick stays when the next search no longer lists that person
+    await fireEvent.click(screen.getByRole('button', { name: /Person 1400/ }));
+    await fireEvent.input(screen.getByRole('searchbox'), { target: { value: '' } });
+    await waitFor(() =>
+      expect(sdkMock.getAllPeople).toHaveBeenLastCalledWith({ withHidden: true, size: 1000 }, expect.anything()),
+    );
+    expect(screen.getByRole('button', { name: /Person 1400/, pressed: true })).toBeTruthy();
+    expect((screen.getByRole('button', { name: 'Merge' }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it('shows the newest search when an earlier one answers last, and asks once per pause in typing', async () => {
+    const person = (id: string, name: string) => ({
+      ...personFactory.build({ id, name }),
+      assetCount: 1,
+      lastSeenAt: null,
+    });
+    const answers = new Map<string, (value: never) => void>();
+    sdkMock.getAllPeople.mockImplementation(
+      (options) =>
+        new Promise((resolve) => answers.set(options?.name ?? '', resolve as (value: never) => void)) as never,
+    );
+    render(MergePeopleDialog, { person: ada, open: true, onMerged: vi.fn() });
+    await waitFor(() => expect(answers.has('')).toBe(true));
+    answers.get('')!({ people: [], total: 0, hidden: 0, hasNextPage: false } as never);
+
+    const box = screen.getByRole('searchbox');
+    await fireEvent.input(box, { target: { value: 'z' } });
+    await fireEvent.input(box, { target: { value: 'zo' } });
+    await waitFor(() => expect(answers.has('zo')).toBe(true));
+    await fireEvent.input(box, { target: { value: 'zoe' } });
+    await waitFor(() => expect(answers.has('zoe')).toBe(true));
+    // "z" was typed over before its pause ended, so it was never asked
+    expect(answers.has('z')).toBe(false);
+
+    answers.get('zoe')!({ people: [person('zoe', 'Zoe')], total: 1, hidden: 0, hasNextPage: false } as never);
+    await waitFor(() => expect(screen.getByRole('button', { name: /Zoe/ })).toBeTruthy());
+    answers.get('zo')!({ people: [person('zola', 'Zola')], total: 1, hidden: 0, hasNextPage: false } as never);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(screen.getByRole('button', { name: /Zoe/ })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /Zola/ })).toBeNull();
+  });
+
+  it('keeps to the caller’s list when it is given one, without reading people', async () => {
+    render(MergePeopleDialog, { person: ada, candidates: [ada, grace], open: true, onMerged: vi.fn() });
+
+    await fireEvent.input(screen.getByRole('searchbox'), { target: { value: 'gra' } });
+
+    expect(screen.getByRole('button', { name: /Grace/ })).toBeTruthy();
+    expect(sdkMock.getAllPeople).not.toHaveBeenCalled();
+  });
+
   it('merges the person into the chosen one, which survives', async () => {
     sdkMock.mergePeople.mockResolvedValue([]);
     const onMerged = vi.fn();

@@ -1,59 +1,102 @@
 <script lang="ts">
   /**
-   * The Frameleaf confirmation (FL-67, FL-71, FL-76, FL-81): the prototype's titled `Dialog` with a
-   * sentence of consequence and a Cancel / action footer (for example "Delete this report?" in
-   * `design/frameleaf/template/src/Maintenance.jsx:673-699`, or the device revoke confirm in
-   * `AccountsLibraries.jsx`). It replaces `modalManager.showDialog`'s generic upstream modal on the
-   * Frameleaf surfaces; open it through `confirmFrameleaf` in `$lib/frameleaf/confirm`, which
-   * resolves `true` only when the action button is pressed.
+   * The one confirmation in the app (FL-1814; the prototype's `ConfirmDialog` in
+   * `ComponentsSheet.jsx`). The title names the action ("Delete “Lake days”?"), the text says what
+   * happens and whether it can be undone, and the button repeats the action ("Delete album", never
+   * "OK" or "Yes"). A destructive action takes the danger button, and then Cancel takes the first
+   * focus: Enter on open must not delete.
    *
-   * It is the one confirmation in the app: `$lib/frameleaf/kit-bridge` also routes the legacy
-   * `modalManager.showDialog` here, which is why the title, prompt and action text have the
-   * generic defaults that call had, and why `prompt` may be a snippet.
+   * Two ways to use it:
+   * - from script, `confirmFrameleaf` in `$lib/frameleaf/confirm` opens it and resolves `true` only
+   *   when the action button was pressed (`onClose`);
+   * - in markup, `bind:open` with `onConfirm`: the dialog stays open and busy while `onConfirm`
+   *   runs, closes when it resolves, and reports the failure and stays open if it throws.
+   *
+   * `$lib/frameleaf/kit-bridge` also routes the kit's `modalManager.showDialog` here.
    */
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
+  import { ICON_SIZE } from '$lib/frameleaf/tokens';
+  import { handleError } from '$lib/utils/handle-error';
+  import { Icon } from '@frameleaf/ui';
+  import { mdiImageMultipleOutline } from '@mdi/js';
   import type { Snippet } from 'svelte';
   import { t } from 'svelte-i18n';
 
   let {
     title,
     prompt,
+    keepNote,
     confirmText,
     cancelText,
     danger = false,
     disabled = false,
+    open = $bindable(true),
+    onConfirm,
     onClose,
   }: {
-    title?: string;
+    title: string;
     prompt?: string | Snippet;
-    confirmText?: string;
+    /** Reassurance about what is kept ("Its 37 photos stay in your library"), with the library icon. */
+    keepNote?: string;
+    confirmText: string;
     cancelText?: string;
     danger?: boolean;
     /** Keeps the action unavailable, for a confirmation that depends on something still loading. */
     disabled?: boolean;
-    onClose: (confirmed?: boolean) => void;
+    open?: boolean;
+    onConfirm?: () => Promise<unknown> | unknown;
+    onClose?: (confirmed?: boolean) => void;
   } = $props();
 
-  let open = $state(true);
+  let busy = $state(false);
   let confirmed = false;
 
-  const confirm = () => {
+  const confirm = async () => {
+    if (onConfirm) {
+      busy = true;
+      try {
+        await onConfirm();
+      } catch (error) {
+        // Stay open: the action did not happen, and the person can try again or cancel.
+        handleError(error, $t('error'));
+        return;
+      } finally {
+        busy = false;
+      }
+    }
     confirmed = true;
     open = false;
   };
+
+  // The answer is reported once the sheet has finished leaving, so the exit is not cut short.
+  const onClosed = () => {
+    const answer = confirmed;
+    confirmed = false;
+    onClose?.(answer);
+  };
 </script>
 
-<!-- The answer is reported once the sheet has finished leaving, so the exit is not cut short. -->
-<Dialog bind:open title={title ?? $t('confirm')} closeLabel={$t('close')} onClosed={() => onClose(confirmed)}>
-  {#if typeof prompt === 'string'}
-    <p>{prompt}</p>
-  {:else if prompt}
-    {@render prompt()}
-  {/if}
+<Dialog bind:open {title} closeLabel={$t('close')} {onClosed}>
+  <div class="body">
+    {#if typeof prompt === 'string'}
+      <p>{prompt}</p>
+    {:else if prompt}
+      {@render prompt()}
+    {/if}
+    {#if keepNote}
+      <p class="keep">
+        <span aria-hidden="true"><Icon icon={mdiImageMultipleOutline} size={ICON_SIZE.lg} /></span>
+        {keepNote}
+      </p>
+    {/if}
+  </div>
   {#snippet actions()}
-    <!-- A destructive action never takes the first focus: Enter on open must not delete. -->
-    <button type="button" class="button" data-initial-focus={danger ? '' : undefined} onclick={() => (open = false)}
-      >{cancelText ?? $t('cancel')}</button
+    <button
+      type="button"
+      class="button"
+      data-initial-focus={danger ? '' : undefined}
+      disabled={busy}
+      onclick={() => (open = false)}>{cancelText ?? $t('cancel')}</button
     >
     <button
       type="button"
@@ -61,16 +104,31 @@
       class:primary={!danger}
       class:fl-danger={danger}
       data-initial-focus={danger ? undefined : ''}
-      {disabled}
-      onclick={confirm}>{confirmText ?? $t('confirm')}</button
+      disabled={disabled || busy}
+      onclick={() => void confirm()}>{confirmText}</button
     >
   {/snippet}
 </Dialog>
 
 <style>
+  .body {
+    display: flex;
+    flex-direction: column;
+    gap: var(--fl-space-3);
+    max-width: 28rem;
+  }
   p {
     margin: 0;
     color: var(--fl-text);
     line-height: 1.5;
+  }
+  .keep {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--fl-space-2);
+    padding: var(--fl-space-3);
+    color: var(--fl-muted);
+    background: var(--fl-raised);
+    border-radius: var(--fl-radius);
   }
 </style>
