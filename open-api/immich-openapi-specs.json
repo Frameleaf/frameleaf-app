@@ -88364,10 +88364,20 @@
               "type": "string"
             },
             "type": "array"
+          },
+          "usedAlbumIds": {
+            "description": "Albums the user may add to that the user itself last added items to, most recent first",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "type": "array"
           }
         },
         "required": [
-          "albumIds"
+          "albumIds",
+          "usedAlbumIds"
         ],
         "type": "object"
       },

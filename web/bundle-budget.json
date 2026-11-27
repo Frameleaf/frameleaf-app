@@ -96,7 +96,13 @@
     "/photography/invoice/[token]": 460375,
     "/photography/pay/[slug]": 460088,
     "/photography/sign/[token]": 461251,
-    "/studio/[id]": 476784
+    "/studio/[id]": 476784,
+    "messages/boards": 4012,
+    "messages/clients": 22054,
+    "messages/core": 171435,
+    "messages/rest": 45509,
+    "messages/settings": 270313,
+    "messages/studio": 12391
   },
   "raises": [
     {
@@ -205,6 +211,15 @@
         "/photography/sign/[token]": 2384,
         "/studio/[id]": 2385
       }
+    },
+    {
+      "added": 6,
+      "bytes": 0,
+      "date": "2026-11-26",
+      "raised": 0,
+      "reason": "FL-1797: the translated messages become measured bundles (core, settings, studio, clients, boards, rest), each held to its largest language",
+      "removed": 0,
+      "routes": {}
     }
   ]
 }

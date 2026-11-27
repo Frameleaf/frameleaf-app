@@ -15,6 +15,7 @@
     frameOffsetSeconds,
     type ReviewGroup,
   } from '$lib/frameleaf/duplicate-review';
+  import { formatDateTime } from '$lib/frameleaf/date-format';
   import { locale } from '$lib/stores/preferences.store';
   import { getAssetMediaUrl } from '$lib/utils';
   import { getByteUnitString } from '$lib/utils/byte-units';
@@ -67,7 +68,7 @@
     const value = asset.localDateTime ?? asset.exifInfo?.dateTimeOriginal;
     const date = value ? new Date(value) : null;
     return date && Number.isFinite(date.getTime())
-      ? date.toLocaleString($locale, { dateStyle: 'short', timeStyle: 'short', timeZone: 'UTC' })
+      ? formatDateTime(date, { dateStyle: 'short', timeStyle: 'short', timeZone: 'UTC' }, $locale)
       : '';
   };
 </script>

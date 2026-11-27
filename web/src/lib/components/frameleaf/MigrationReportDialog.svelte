@@ -5,6 +5,8 @@
    * needs, and a filterable, paged list of unresolved items. It offers no action on either
    * server; closing it discards the report.
    */
+  import { formatDateTime } from '$lib/frameleaf/date-format';
+  import { formatCount } from '$lib/frameleaf/number-format';
   import Badge from '$lib/components/frameleaf/Badge.svelte';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
@@ -47,13 +49,11 @@
   const current = $derived(Math.min(page, pages));
   const visible = $derived(filtered.slice((current - 1) * PAGE_SIZE, current * PAGE_SIZE));
   const generated = $derived(
-    new Intl.DateTimeFormat($locale ?? undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(
-      new Date(report.generatedAt),
-    ),
+    formatDateTime(new Date(report.generatedAt), { dateStyle: 'medium', timeStyle: 'short' }, $locale ?? 'default'),
   );
 
   const of = (value: number, total: number) => $t('admin.frameleaf_migration_metric_of', { values: { value, total } });
-  const number = (value: number) => new Intl.NumberFormat($locale ?? undefined).format(value);
+  const number = (value: number) => formatCount(value, $locale ?? null);
 
   const sections = $derived([
     {

@@ -19,6 +19,7 @@
    * administrator's own current one (only possible when viewing their own account) can be
    * signed out from here, the same confirm-then-revoke flow as the account's own device list.
    */
+  import { formatLuxon } from '$lib/frameleaf/date-format';
   import AccountPasswordResetDialog from '$lib/components/frameleaf/AccountPasswordResetDialog.svelte';
   import AccountPinDialog from '$lib/components/frameleaf/AccountPinDialog.svelte';
   import Button from '$lib/components/frameleaf/Button.svelte';
@@ -174,7 +175,7 @@
   };
 
   const lastSeen = (session: SessionResponseDto) =>
-    DateTime.fromISO(session.updatedAt, { locale: $locale }).toLocaleString(DateTime.DATETIME_MED);
+    formatLuxon(DateTime.fromISO(session.updatedAt, { locale: $locale }), DateTime.DATETIME_MED);
 
   // Reset when the account changes, so a revoke on one account's devices never hides a session
   // of the next account shown in this same panel instance.

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { formatDateTime } from '$lib/frameleaf/date-format';
   import SpaceCommentComposer from '$lib/components/frameleaf/SpaceCommentComposer.svelte';
   import Status from '$lib/components/frameleaf/Status.svelte';
   import UserAvatar from '$lib/components/shared-components/UserAvatar.svelte';
@@ -174,6 +175,12 @@
       },
     });
 
+  const exactTime = (value: string) =>
+    formatDateTime(
+      new Date(value),
+      { year: 'numeric', month: 'numeric', day: 'numeric', hour: 'numeric', minute: 'numeric', second: 'numeric' },
+      $locale,
+    );
   const relative = $derived(new Intl.RelativeTimeFormat($locale, { numeric: 'auto' }));
   const UNITS: Intl.RelativeTimeFormatUnit[] = ['year', 'month', 'day', 'hour', 'minute'];
   const SECONDS: Record<string, number> = { year: 31_536_000, month: 2_592_000, day: 86_400, hour: 3600, minute: 60 };
@@ -269,7 +276,7 @@
                 {/if}
               </ul>
             {/if}
-            <time datetime={event.createdAt} title={new Date(event.createdAt).toLocaleString($locale)}>
+            <time datetime={event.createdAt} title={exactTime(event.createdAt)}>
               {timeAgo(event.createdAt)}
             </time>
             {#if space.isActivityEnabled && canReplyToEvent(event)}

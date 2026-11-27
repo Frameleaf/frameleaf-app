@@ -9,7 +9,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { compareCase, decodeBuffer, sha256 } from './render-goldens.mjs';
 import {
-  SINE_TOLERANCE, SINE_PRESETS, STYLE_FIELDS, IMAGE_SIZE, TEXT_MOTION_PRESETS,
+  SINE_TOLERANCE, SINE_PRESETS, STYLE_FIELDS, IMAGE_SIZE, TEXT_MOTION_PRESETS, PROJECT_FONT_CASE,
   syntheticMeasurer, recordedMeasurer, plain, validateTextGoldens, randomRanks, bundledTitleFonts, bundledFontRecords, parseDataLiteral,
   SYNTHETIC_MEASURER_TABLE, sameWithin, usesSine, referenceImage, imageTolerance, referenceRequiredHeight, referenceColour,
   layoutCases, autoHeightCases, paintCases, styleScaleCases, motionCases, slotCases, unitCases, imageCases,
@@ -208,6 +208,17 @@ test('a weight or style a family lacks measures as the face it has', () => {
   assert.deepEqual(lines('platform/missing-weight/Anton-bold'), lines('platform/missing-weight/Anton-normal'));
   assert.deepEqual(lines('platform/missing-style/Orbitron-italic'), lines('platform/missing-style/Orbitron-normal'));
   assert.deepEqual(lines('platform/missing-both/Bebas-Neue-semibold-italic'), lines('platform/missing-both/Bebas-Neue-normal'));
+});
+
+test('a font kept with the project measures as its own file, whatever weight the title asks for (FL-1562)', () => {
+  const kept = goldens.layout.find((c) => c.name === 'platform/project-font/Kept-Sans-bold');
+  assert.equal(kept.item.fontFamily, PROJECT_FONT_CASE.family);
+  // The family is in no catalogue: only the project's own face can have answered.
+  assert(!catalogue.fonts.families.some((font) => font.family === PROJECT_FONT_CASE.family));
+  assert(kept.expected.lines.every((line) => line.font.includes(`"${PROJECT_FONT_CASE.family}"`) && line.font.includes(' 700 ')));
+  const lines = (c) => c.expected.lines.map((line) => [line.text, line.width, line.top, line.baseline, line.start]);
+  // The kept file is Anton's regular face under another name; the bold title measures exactly like it.
+  assert.deepEqual(lines(kept), lines(goldens.layout.find((c) => c.name === 'platform/missing-weight/Anton-normal')));
 });
 
 // The spec is prose and mathematics: no engine source text (the lint of render-goldens.test.mjs).

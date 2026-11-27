@@ -6,6 +6,7 @@
    * the rows. Account rows are keyed by user id; the name and email come from the users list the
    * page already loaded, so a removed account still shows its row until an administrator clears it.
    */
+  import { formatLuxon } from '$lib/frameleaf/date-format';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Pane from '$lib/components/frameleaf/Pane.svelte';
   import { bytesToGB, msToMinutes } from '$lib/frameleaf/render-workers';
@@ -51,7 +52,7 @@
   const concurrency = (limit: RenderWorkerLimitDto) =>
     limit.maxConcurrentOperations === 0 ? $t('frameleaf_render_workers_limits_paused') : limit.maxConcurrentOperations;
 
-  const updated = (value: string) => DateTime.fromISO(value, { locale: $locale }).toLocaleString(DateTime.DATETIME_MED);
+  const updated = (value: string) => formatLuxon(DateTime.fromISO(value, { locale: $locale }), DateTime.DATETIME_MED);
 </script>
 
 <Pane label={$t('frameleaf_render_workers_limits_title')}>

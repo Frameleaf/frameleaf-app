@@ -50,6 +50,7 @@ import { AlbumChangeTable } from 'src/schema/tables/album-change.table.js';
 import { AlbumCleanupApplyTable } from 'src/schema/tables/album-cleanup-apply.table.js';
 import { AlbumCleanupSnapshotTable } from 'src/schema/tables/album-cleanup-snapshot.table.js';
 import { AlbumClosureTable } from 'src/schema/tables/album-closure.table.js';
+import { AlbumRecentUseTable } from 'src/schema/tables/album-recent-use.table.js';
 import {
   AlbumSuggestionAutoAddTable,
   AlbumSuggestionDismissalTable,
@@ -239,10 +240,10 @@ import { PersonGroupAuditTable } from 'src/schema/tables/person-group-audit.tabl
 import { PersonGroupTable } from 'src/schema/tables/person-group.table.js';
 import { PersonMergeCandidateTable } from 'src/schema/tables/person-merge-candidate.table.js';
 import { PersonProfileTable } from 'src/schema/tables/person-profile.table.js';
-import { PersonSummaryStateTable } from 'src/schema/tables/person-summary-state.table.js';
-import { PersonSummaryTable } from 'src/schema/tables/person-summary.table.js';
 import { PersonRelationshipTable } from 'src/schema/tables/person-relationship.table.js';
 import { PersonSplitCandidateTable } from 'src/schema/tables/person-split-candidate.table.js';
+import { PersonSummaryStateTable } from 'src/schema/tables/person-summary-state.table.js';
+import { PersonSummaryTable } from 'src/schema/tables/person-summary.table.js';
 import { PersonTable } from 'src/schema/tables/person.table.js';
 import { PetAuditTable } from 'src/schema/tables/pet-audit.table.js';
 import { PetObservationAuditTable } from 'src/schema/tables/pet-observation-audit.table.js';
@@ -458,6 +459,7 @@ export class ImmichDatabase {
     OAuthSpentRefreshTokenTable,
     BookmarkTable,
     AlbumBookmarkTable,
+    AlbumRecentUseTable,
     AlbumChangeRunTable,
     AlbumChangeTable,
     AlbumCleanupApplyTable,
@@ -843,6 +845,7 @@ export interface DB extends QueueDatabase {
   oauth_spent_refresh_token: OAuthSpentRefreshTokenTable;
   bookmark: BookmarkTable;
   album_bookmark: AlbumBookmarkTable;
+  album_recent_use: AlbumRecentUseTable;
   album_change_run: AlbumChangeRunTable;
   album_change: AlbumChangeTable;
   album_cleanup_apply: AlbumCleanupApplyTable;

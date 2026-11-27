@@ -255,11 +255,10 @@ export const locales = [
 export interface Lang {
   name: string;
   code: string;
-  loader: () => Promise<{ default: object }>;
   rtl?: boolean;
 }
 
-export const defaultLang: Lang = { name: 'English', code: 'en', loader: () => import('$i18n/en.json') };
+export const defaultLang: Lang = { name: 'English', code: 'en' };
 
 export enum SettingInputFieldType {
   EMAIL = 'email',

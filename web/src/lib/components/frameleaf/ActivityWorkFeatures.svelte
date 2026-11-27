@@ -18,6 +18,7 @@
   import { cloudWorkRows, type CloudWorkRow } from '$lib/frameleaf/cloud-backup';
   import { runTitleKey } from '$lib/frameleaf/durable-runs';
   import { jobQueue } from '$lib/frameleaf/job-queues';
+  import { formatCount } from '$lib/frameleaf/number-format';
   import { backupPageUrl, commandCenterUrl } from '$lib/frameleaf/settings-areas';
   import type { WorkFeature, WorkFeatureId } from '$lib/frameleaf/work-features';
   import { getByteUnitString } from '$lib/utils/byte-units';
@@ -63,7 +64,7 @@
   } = $props();
 
   const cloudRows = $derived(cloudWorkRows(cloudStatus));
-  const number = (value: number) => value.toLocaleString($locale ?? undefined);
+  const number = (value: number) => formatCount(value, $locale ?? null);
   const nameOf = (feature: WorkFeature) => $t(`frameleaf_work_feature_${feature.id}` as Translations);
 
   /** The server's own tasks behind a feature, by the names Settings › Background work › Advanced uses. */

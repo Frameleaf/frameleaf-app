@@ -1,4 +1,6 @@
 <script lang="ts" module>
+  import { formatDate, formatDateTime } from '$lib/frameleaf/date-format';
+  import { formatCount } from '$lib/frameleaf/number-format';
   /**
    * Files chosen on the start screen, handed to the wizard that opens on the new import: creating the
    * import moves the hosting dialog to it, which mounts a fresh wizard.
@@ -153,7 +155,7 @@
     $t('frameleaf_takeout_step_import'),
   ]);
 
-  const counts = (value: number) => value.toLocaleString($locale);
+  const counts = (value: number) => formatCount(value, $locale);
   const bytes = (value: number) => formatBytes(value);
   const say = (message: string) => (announcement = message);
 
@@ -274,7 +276,7 @@
 
   const defaultName = () =>
     $t('frameleaf_takeout_default_name', {
-      values: { date: new Date().toLocaleDateString($locale, { day: 'numeric', month: 'long' }) },
+      values: { date: formatDate(new Date(), { day: 'numeric', month: 'long' }, $locale) },
     });
 
   /* Start ------------------------------------------------------------- */
@@ -428,7 +430,7 @@
   const takenAt = (value?: string | null) =>
     value
       ? $t('frameleaf_takeout_candidate_taken', {
-          values: { date: new Date(value).toLocaleString($locale, { dateStyle: 'long', timeStyle: 'short' }) },
+          values: { date: formatDateTime(new Date(value), { dateStyle: 'long', timeStyle: 'short' }, $locale) },
         })
       : $t('frameleaf_takeout_candidate_no_date');
 

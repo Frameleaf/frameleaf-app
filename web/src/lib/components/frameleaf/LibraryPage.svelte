@@ -35,6 +35,7 @@
     scanNeedsAttention,
     type LibraryRow,
   } from '$lib/frameleaf/libraries';
+  import { formatCount } from '$lib/frameleaf/number-format';
   import { getSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
   import { locale } from '$lib/stores/preferences.store';
   import { getUserHistoryAdmin, type UserAdminHistoryEventResponseDto } from '@frameleaf/sdk';
@@ -98,7 +99,7 @@
   );
 
   const bytes = (value: number) => getByteUnitString(value, $locale, 1);
-  const count = (value: number) => value.toLocaleString($locale);
+  const count = (value: number) => formatCount(value, $locale);
   const ago = (iso: string) => DateTime.fromISO(iso, { locale: $locale }).toRelative() ?? '';
   /** A folder the way the prototype names it, by its last two folders: "Family NAS › Family photos". */
   const pathWords = (path: string) => path.split('/').filter(Boolean).slice(-2).join(' › ') || path;

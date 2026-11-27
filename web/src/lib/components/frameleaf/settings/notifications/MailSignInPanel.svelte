@@ -13,6 +13,7 @@
    * Every state is the server's own answer (`MailSignInStore`); nothing here is assumed.
    */
   import { goto } from '$app/navigation';
+  import { formatDateTime } from '$lib/frameleaf/date-format';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Notice from '$lib/components/frameleaf/settings/kit/Notice.svelte';
   import Row from '$lib/components/frameleaf/settings/kit/Row.svelte';
@@ -51,7 +52,7 @@
   const offered = $derived(!!store.state?.available && store.state.providers.includes(signIn.provider));
   const since = $derived(
     connection?.needsSignInSince
-      ? new Date(connection.needsSignInSince).toLocaleString($locale, { dateStyle: 'medium', timeStyle: 'short' })
+      ? formatDateTime(new Date(connection.needsSignInSince), { dateStyle: 'medium', timeStyle: 'short' }, $locale)
       : undefined,
   );
 

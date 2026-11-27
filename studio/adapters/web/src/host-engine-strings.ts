@@ -29,6 +29,10 @@ import {
   type CaptionLanguageEngineString,
 } from '@frameleaf/host/caption-language-strings'
 import {
+  ENGINE_CONTROLS_STRINGS,
+  type EngineControlsString,
+} from '@frameleaf/host/engine-controls-strings'
+import {
   CLOUD_CAPTION_ENGINE_STRINGS,
   type CloudCaptionEngineString,
 } from '@frameleaf/host/cloud-captions'
@@ -70,6 +74,10 @@ export const HOST_ENGINE_STRINGS = {
   ...(Object.fromEntries(
     Object.entries(CLOUD_CAPTION_ENGINE_STRINGS).map(([name, entry]) => [name, entry.engine]),
   ) as Record<CloudCaptionEngineString, string>),
+  // The editor controls of one engine pass (FL-1562, FL-1555, FL-1561, FL-1563, FL-1559).
+  ...(Object.fromEntries(
+    Object.entries(ENGINE_CONTROLS_STRINGS).map(([name, entry]) => [name, entry.engine]),
+  ) as Record<EngineControlsString, string>),
 } as const
 
 export function applyHostEngineStrings(i18n: EngineI18n, strings: StudioHostContext['strings']): void {

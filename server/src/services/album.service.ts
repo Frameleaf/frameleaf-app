@@ -288,13 +288,18 @@ export class AlbumService extends BaseService {
 
   /** The add-to-album picker's Recent group. Counts only items this session may see. */
   async getRecentlyAdded(auth: AuthDto, dto: AlbumViewDto = {}): Promise<AlbumRecentlyAddedResponseDto> {
-    const albumIds = await this.albumRepository.getRecentlyAddedIds(auth.user.id, {
-      ...this.nsfwOptions(auth),
-      libraryScope: dto.libraryScope ?? LibraryScope.Personal,
-      // FL-780 (TM-5): a connected app is never told a Locked album exists
-      ...(auth.oauthApp ? { excludeLocked: true } : {}),
-    });
-    return { albumIds };
+    const libraryScope = dto.libraryScope ?? LibraryScope.Personal;
+    // FL-780 (TM-5): a connected app is never told a Locked album exists
+    const locked = auth.oauthApp ? { excludeLocked: true } : {};
+    const [albumIds, usedAlbumIds] = await Promise.all([
+      this.albumRepository.getRecentlyAddedIds(auth.user.id, { ...this.nsfwOptions(auth), libraryScope, ...locked }),
+      // FL-1814: nor does "Used lately" offer a Locked album to a session that has not entered the PIN.
+      this.albumRepository.getRecentlyUsedIds(auth.user.id, {
+        libraryScope,
+        ...(auth.oauthApp || !auth.session?.hasElevatedPermission ? { excludeLocked: true } : {}),
+      }),
+    ]);
+    return { albumIds, usedAlbumIds };
   }
 
   async getAll(
@@ -1155,7 +1160,14 @@ export class AlbumService extends BaseService {
     await this.albumRepository.deleteCollection(id);
   }
 
-  async addAssets(auth: AuthDto, id: string, dto: BulkIdsDto, sourceLinkId?: string): Promise<BulkIdResponseDto[]> {
+  async addAssets(
+    auth: AuthDto,
+    id: string,
+    dto: BulkIdsDto,
+    sourceLinkId?: string,
+    /** FL-1814: an add the person did not make themselves (auto-add) is not a use of the album. */
+    { automatic = false }: { automatic?: boolean } = {},
+  ): Promise<BulkIdResponseDto[]> {
     await this.requireAccess({ auth, permission: Permission.AlbumAssetCreate, ids: [id] });
     const album = await this.findOrFail(id, auth, { withAssets: false });
     this.requireAppMayAddTo(auth, album);
@@ -1251,6 +1263,10 @@ export class AlbumService extends BaseService {
         [id],
         [AlbumOriginField.Membership],
       );
+      // A shared link's sync is not the person using the album either.
+      if (!sourceLinkId && !automatic) {
+        await this.recordUse(auth, [id]);
+      }
     }
 
     return response;
@@ -1353,8 +1369,28 @@ export class AlbumService extends BaseService {
       events.map(({ id }) => id),
       [AlbumOriginField.Membership],
     );
+    await this.recordUse(
+      auth,
+      added.map(({ albumId }) => albumId),
+    );
 
     return results;
+  }
+
+  /**
+   * FL-1814: the albums this account just added to lead its picker's "Used lately". Runs last and never
+   * fails the add: everything the add must do (locking, covers, events) has already happened. A visitor
+   * through a shared link is not the link owner using the album.
+   */
+  private async recordUse(auth: AuthDto, albumIds: string[]) {
+    if (auth.sharedLink || albumIds.length === 0) {
+      return;
+    }
+    try {
+      await this.albumRepository.recordUse(auth.user.id, albumIds);
+    } catch (error) {
+      this.logger.warn(`Could not record recently used albums: ${error instanceof Error ? error.message : error}`);
+    }
   }
 
   async removeAssets(auth: AuthDto, id: string, dto: BulkIdsDto, sourceLinkId?: string): Promise<BulkIdResponseDto[]> {

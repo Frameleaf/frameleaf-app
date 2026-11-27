@@ -1,6 +1,8 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
+  import { formatDate } from '$lib/frameleaf/date-format';
+  import { formatCount } from '$lib/frameleaf/number-format';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import InlineError from '$lib/components/frameleaf/InlineError.svelte';
@@ -97,8 +99,8 @@
   });
 
   const latest = $derived(imports?.[0]);
-  const count = (value: number) => value.toLocaleString($locale);
-  const dateOf = (value: string) => new Date(value).toLocaleDateString($locale, { day: 'numeric', month: 'long' });
+  const count = (value: number) => formatCount(value, $locale);
+  const dateOf = (value: string) => formatDate(new Date(value), { day: 'numeric', month: 'long' }, $locale);
 
   type Status = {
     tone: 'good' | 'warn' | 'bad' | 'quiet';

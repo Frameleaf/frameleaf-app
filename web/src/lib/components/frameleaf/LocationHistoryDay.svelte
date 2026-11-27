@@ -1,5 +1,6 @@
 <script lang="ts">
   /** FL-999: one day of suggested places: the photos to tick, and a small map of where they would go. */
+  import { formatLuxon } from '$lib/frameleaf/date-format';
   import { DAY_PREVIEW, placeKey } from '$lib/frameleaf/location-history';
   import { locale } from '$lib/stores/preferences.store';
   import { getAssetMediaUrl } from '$lib/utils';
@@ -32,7 +33,7 @@
   const shown = $derived(expanded ? day.proposals : day.proposals.slice(0, DAY_PREVIEW));
   const more = $derived(day.proposals.length - shown.length);
   const title = $derived(
-    DateTime.fromISO(day.day, { locale: $locale }).toLocaleString({
+    formatLuxon(DateTime.fromISO(day.day, { locale: $locale }), {
       weekday: 'long',
       day: 'numeric',
       month: 'long',
@@ -42,7 +43,7 @@
   const nameOf = (proposal: LocationFillProposalDto) =>
     names[placeKey(proposal)] ?? $t('frameleaf_location_history_place_unknown');
   const timeOf = (proposal: LocationFillProposalDto) =>
-    DateTime.fromISO(proposal.localDateTime, { locale: $locale }).toLocaleString(DateTime.TIME_SIMPLE);
+    formatLuxon(DateTime.fromISO(proposal.localDateTime, { locale: $locale }), DateTime.TIME_SIMPLE);
   const apart = (seconds: number) =>
     seconds < 60
       ? $t('frameleaf_location_history_gap_under')
