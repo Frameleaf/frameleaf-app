@@ -15076,6 +15076,7 @@
   "frameleaf_people_pending_changes": "{count, plural, one {# oczekująca zmiana} few {# oczekujące zmiany} many {# oczekujących zmian} other {# oczekującej zmiany}}",
   "frameleaf_people_person_actions": "Działania dla: {name}",
   "frameleaf_people_photos_count": "{count, plural, one {# zdjęcie} few {# zdjęcia} many {# zdjęć} other {# zdjęcia}}",
+  "frameleaf_people_picker_someone_new_named": "Nowa osoba o imieniu „{name}”",
   "frameleaf_people_recognition_groups": "Grupy rozpoznawania",
   "frameleaf_people_remove_favorite": "Usuń z ulubionych",
   "frameleaf_people_rename": "Zmień nazwę",

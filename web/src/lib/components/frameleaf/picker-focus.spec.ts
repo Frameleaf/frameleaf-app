@@ -15,7 +15,7 @@ import { userAdminFactory } from '@test-data/factories/user-factory';
 describe('pickers focus their search field on open', () => {
   beforeEach(() => {
     vi.resetAllMocks();
-    sdkMock.getAllPeople.mockResolvedValue({ people: [], hasNextPage: false, total: 0, hidden: 0 });
+    sdkMock.getPeoplePicker.mockResolvedValue({ people: [], hasNextPage: false });
   });
 
   const albums = [albumFactory.build({ albumName: 'Trips' }), albumFactory.build({ albumName: 'Family' })];
