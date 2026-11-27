@@ -7,7 +7,8 @@
   import type { SpacePhotoSet } from '$lib/frameleaf/space-photos.svelte';
   import type { TimelineAsset } from '$lib/managers/timeline-manager/types';
   import { toTimelineAsset } from '$lib/utils/timeline-util';
-  import { getAllTags, type AlbumResponseDto } from '@frameleaf/sdk';
+  import { loadAllTags } from '$lib/frameleaf/tag-store';
+  import { type AlbumResponseDto } from '@frameleaf/sdk';
   import { onMount, untrack } from 'svelte';
   import { t } from 'svelte-i18n';
 
@@ -103,7 +104,7 @@
   });
 
   onMount(() => {
-    void getAllTags()
+    void loadAllTags()
       .then((tags) => (tagOptions = tags.map(({ id, value }) => ({ id, name: value }))))
       .catch(() => {
         // Tagging simply offers no existing tags if they cannot be read.

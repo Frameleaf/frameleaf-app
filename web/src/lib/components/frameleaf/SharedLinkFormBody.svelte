@@ -166,6 +166,8 @@
   let removePassword = $state(false);
   let slug = $state('');
   let allowDownload = $state(false);
+  // FL-826: the owner can limit photo downloads through the link to web size.
+  let webSizeOnly = $state(false);
   let allowUpload = $state(false);
   let showMetadata = $state(false);
   let preset = $state('never');
@@ -280,6 +282,7 @@
     removePassword = false;
     slug = link?.slug ?? '';
     allowDownload = link ? link.allowDownload && link.showMetadata : false;
+    webSizeOnly = !!link?.webSizeOnly;
     allowUpload = link ? link.allowUpload : false;
     showMetadata = link ? link.showMetadata : false;
     // FL-922: a new link starts on the person's default expiry, else the server's.
@@ -487,6 +490,7 @@
             description,
             slug: slug.trim() || null,
             allowDownload,
+            webSizeOnly: allowDownload && webSizeOnly,
             allowUpload,
             showMetadata,
             expiresAt: savedExpiry,
@@ -506,6 +510,7 @@
             description,
             slug: slug.trim() || null,
             allowDownload,
+            webSizeOnly: allowDownload && webSizeOnly,
             allowUpload,
             showMetadata,
             expiresAt: savedExpiry,
@@ -711,6 +716,23 @@
             />
           </span>
         </div>
+        {#if allowDownload}
+          <div class="slf-toggle">
+            <span>
+              <strong>{$t('frameleaf_sharing.web_size_only')}</strong>
+              <small id="{ids}-web-size-hint">{$t('frameleaf_sharing.web_size_only_description')}</small>
+            </span>
+            <span class="slf-toggle-control">
+              <Toggle
+                label={$t('frameleaf_sharing.web_size_only')}
+                bind:checked={webSizeOnly}
+                onLabel={$t('enabled')}
+                offLabel={$t('disabled')}
+                describedBy="{ids}-web-size-hint"
+              />
+            </span>
+          </div>
+        {/if}
         <div class="slf-toggle">
           <span>
             <strong>{$t('frameleaf_sharing.allow_upload')}</strong>

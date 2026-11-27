@@ -110,9 +110,9 @@
   import { navigateToAsset } from '$lib/utils/asset-utils';
   import { toTimelineAsset } from '$lib/utils/timeline-util';
   import { Icon, Theme as AppTheme, themeManager, toastManager } from '@frameleaf/ui';
+  import { loadAllTags } from '$lib/frameleaf/tag-store';
   import {
     AssetTypeEnum,
-    getAllTags,
     LibraryItemSearchKind,
     LibraryScope,
     LibraryViewScope,
@@ -615,7 +615,7 @@
       return;
     }
     const current = authManager.captureSession();
-    void Promise.resolve(getAllTags())
+    void Promise.resolve(loadAllTags())
       .then((tags) => {
         if (current() && Array.isArray(tags)) {
           tagChoices = [...tags].sort((a, b) => a.value.localeCompare(b.value));

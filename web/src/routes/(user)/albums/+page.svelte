@@ -3,7 +3,6 @@
   import AlbumDirectory, { albumDirectoryHeadingId } from '$lib/components/frameleaf/AlbumDirectory.svelte';
   import Theme from '$lib/components/frameleaf/Theme.svelte';
   import UserPageLayout from '$lib/components/layouts/UserPageLayout.svelte';
-  import UserSidebar from '$lib/components/shared-components/side-bar/UserSidebar.svelte';
   import SkipLink from '$lib/elements/SkipLink.svelte';
   import { refreshAlbumTrees } from '$lib/frameleaf/album-tree-cache';
   import { Route } from '$lib/route';
@@ -24,10 +23,8 @@
 </script>
 
 <UserPageLayout use={[[scrollMemory, { routeStartsWith: Route.albums() }]]}>
-  {#snippet sidebar()}
-    <UserSidebar>
-      <SkipLink target={`#${albumDirectoryHeadingId}`} text={$t('skip_to_albums')} breakpoint="md" />
-    </UserSidebar>
+  {#snippet railExtra()}
+    <SkipLink target={`#${albumDirectoryHeadingId}`} text={$t('skip_to_albums')} breakpoint="md" />
   {/snippet}
 
   <Theme theme={themeManager.value === AppTheme.Dark ? 'dark' : 'light'}>

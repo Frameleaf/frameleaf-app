@@ -170,7 +170,7 @@
 
   const refreshNotifications = async () => {
     try {
-      await notificationManager.refresh();
+      await notificationManager.load();
     } catch (error) {
       console.error('Failed to load notifications on mount', error);
     }

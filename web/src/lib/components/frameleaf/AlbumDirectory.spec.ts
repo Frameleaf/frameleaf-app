@@ -16,6 +16,7 @@ import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import { defaultAlbumDirectoryView } from '$lib/frameleaf/album-directory';
 import { workspaceHref } from '$lib/frameleaf/search-context';
 import { installFrameleafToasts } from '$lib/frameleaf/toast';
+import { eventManager } from '$lib/managers/event-manager.svelte';
 import { albumDirectoryView } from '$lib/stores/preferences.store';
 import { renderWithTooltips } from '$tests/helpers';
 import { albumFactory } from '@test-data/factories/album-factory';
@@ -1157,6 +1158,48 @@ describe('AlbumDirectory', () => {
       await rerender(wrapped(flatTree(pendingAlbum), onRefresh));
       await vi.advanceTimersByTimeAsync(3000);
       expect(onRefresh).toHaveBeenCalledTimes(2);
+    });
+
+    /** FL-1802 */
+    it('asks for the waiting albums’ numbers alone, and reads the tree only once they arrive', async () => {
+      vi.useFakeTimers();
+      const onRefresh = vi.fn();
+      sdkMock.getAlbumStats.mockResolvedValue({ albums: [{ id: 'pending', assetCount: 0, statsPending: true }] });
+      renderWithTooltips(AlbumDirectory, { tree: flatTree(pendingAlbum, counted), onRefresh });
+      await tick();
+
+      await vi.advanceTimersByTimeAsync(9000);
+      expect(sdkMock.getAlbumStats).toHaveBeenCalledTimes(3);
+      expect(sdkMock.getAlbumStats).toHaveBeenLastCalledWith({ albumStatsDto: { albumIds: ['pending'] } });
+      expect(onRefresh).not.toHaveBeenCalled();
+
+      sdkMock.getAlbumStats.mockResolvedValue({ albums: [{ id: 'pending', assetCount: 12 }] });
+      await vi.advanceTimersByTimeAsync(3000);
+      expect(onRefresh).toHaveBeenCalledTimes(1);
+    });
+
+    it('reads the tree when a waiting album is no longer in the answer', async () => {
+      vi.useFakeTimers();
+      const onRefresh = vi.fn();
+      sdkMock.getAlbumStats.mockResolvedValue({ albums: [] });
+      renderWithTooltips(AlbumDirectory, { tree: flatTree(pendingAlbum), onRefresh });
+      await tick();
+      await vi.advanceTimersByTimeAsync(3000);
+      expect(onRefresh).toHaveBeenCalledTimes(1);
+    });
+
+    it('answers a burst of album changes with one read', async () => {
+      vi.useFakeTimers();
+      const onRefresh = vi.fn();
+      renderWithTooltips(AlbumDirectory, { tree: flatTree(counted), onRefresh });
+      await tick();
+      for (let change = 0; change < 12; change++) {
+        eventManager.emit('AlbumUpdate', counted);
+      }
+      eventManager.emit('AlbumDelete', counted);
+      expect(onRefresh).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(250);
+      expect(onRefresh).toHaveBeenCalledTimes(1);
     });
 
     it('stops asking once the numbers have arrived', async () => {
