@@ -30,7 +30,7 @@ const NAVIGATION_PARAM_RULE = {
 // FL-1805: a date or a time is turned into text only by $lib/frameleaf/date-format, so the person's
 // "Date format" and "Time format" apply on every screen.
 const DATE_FORMAT_MESSAGE =
-  "Format dates with formatDate, formatTime, formatDateTime or formatLuxon from $lib/frameleaf/date-format, which apply the person's date and time format.";
+  "Format dates with formatDate, formatTime, formatDateTime, formatDateRange or formatLuxon from $lib/frameleaf/date-format, which apply the person's date and time format.";
 const DATE_FORMAT_RULES = [
   // with or without `new`
   ":matches(NewExpression, CallExpression)[callee.object.name='Intl'][callee.property.name='DateTimeFormat']",

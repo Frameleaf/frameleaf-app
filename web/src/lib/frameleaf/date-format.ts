@@ -211,7 +211,7 @@ export const formatDateRange = (
   const fields = options.dateStyle ? DATE_STYLE_FIELDS[options.dateStyle] : pick(options, DATE_KEYS);
   if (format.dateFormat === 'auto' || !fields.day) {
     const clock: Intl.DateTimeFormatOptions =
-      format.hourCycle !== 'auto' && Object.keys(pick(options, TIME_KEYS)).length > 0
+      format.hourCycle !== 'auto' && Object.keys(pick(options, TIME_KEYS)).some((key) => key !== 'timeZoneName')
         ? { hourCycle: format.hourCycle, hour12: undefined }
         : {};
     return formatterFor(resolved, { ...options, ...clock }).formatRange(from, to);
