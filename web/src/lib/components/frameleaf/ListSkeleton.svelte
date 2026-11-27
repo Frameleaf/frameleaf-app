@@ -26,6 +26,19 @@
 </ul>
 
 <style>
+  /* FL-1810: the placeholder carries its own look, so it shows in portalled surfaces outside
+     .frameleaf too (the photo viewer's info panel, the font viewer); base.css keeps the same rule. */
+  .fl-skeleton {
+    display: block;
+    background: var(--fl-raised);
+    border-radius: var(--fl-radius-sm);
+    animation: fl-skeleton-pulse var(--fl-duration-pulse) var(--fl-ease) infinite alternate;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .fl-skeleton {
+      animation: none;
+    }
+  }
   ul {
     display: grid;
     gap: var(--fl-space-4);

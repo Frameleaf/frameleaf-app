@@ -217,7 +217,7 @@
   <div class="stage">
     <div class="column">
       {#if family === null}
-        <div aria-busy="true"><Skeleton variant="block" height="14rem" /></div>
+        <div role="status" aria-busy="true" aria-label={$t('loading')}><Skeleton variant="block" height="14rem" /></div>
       {:else if family && font}
         <section class="card" aria-labelledby="{headingId}-try">
           <div class="card-row">

@@ -120,7 +120,7 @@
   {#if failed}
     <InlineError compact message={$t('frameleaf_boards_collections_unavailable')} onRetry={() => generation++} />
   {:else if loading}
-    <ListSkeleton rows={3} />
+    <ListSkeleton rows={2} avatar={false} />
   {:else if entries.length === 0}
     <EmptyRow title={$t('frameleaf_boards_collections_empty')} />
   {:else}

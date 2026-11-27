@@ -244,8 +244,8 @@
         given={bookmarkSources(detail)}
         fallbackVia={{ icon: mdiLinkVariantPlus, label: $t('frameleaf_boards_save_link') }}
       />
-    {:else if !failed}<div aria-busy="true">
-        <Skeleton variant="block" aspect="4 / 3" /><Skeleton variant="text" lines={4} />
+    {:else if !failed}<div role="status" aria-busy="true" aria-label={$t('loading')}>
+        <Skeleton variant="block" aspect="16 / 9" /><Skeleton variant="text" lines={4} />
       </div>{/if}
   </div>
 </aside>

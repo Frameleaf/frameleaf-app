@@ -792,7 +792,7 @@
   {/if}
 
   {#if activitySession.loading && items.length === 0}
-    <ListSkeleton rows={4} />
+    <div class="fla-list"><ListSkeleton rows={4} /></div>
   {:else if !showProgress && visible.length + leftOver.length + stuckShown.length === 0}
     <EmptyState
       icon={filter === 'failed' ? mdiCheckCircleOutline : mdiProgressClock}
