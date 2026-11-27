@@ -50,15 +50,17 @@ describe('AssetAddToAlbumModal', () => {
     );
   });
 
-  it('leads with recent albums and adds to a ticked album and a new one', async () => {
+  it('leads with the albums this account used lately and adds to a ticked album and a new one', async () => {
     const user = userAdminFactory.build();
     authManager.setUser(user);
     const member = [{ user, role: AlbumUserRole.Owner }];
     const older = albumFactory.build({ albumName: 'Older', albumUsers: member });
-    const latest = albumFactory.build({ albumName: 'Latest', albumUsers: member });
+    // named to sort last, so only the "Used lately" group can put it first
+    const latest = albumFactory.build({ albumName: 'Zermatt', albumUsers: member });
     const created = albumFactory.build({ albumName: 'Banff', albumUsers: member });
     sdkMock.getAllAlbums.mockResolvedValueOnce([older, latest]);
-    sdkMock.getRecentlyAddedAlbums.mockResolvedValueOnce({ albumIds: [latest.id], usedAlbumIds: [] });
+    // "Used lately" is the account's own adds, not the album that last received something from anyone
+    sdkMock.getRecentlyAddedAlbums.mockResolvedValueOnce({ albumIds: [older.id], usedAlbumIds: [latest.id] });
     sdkMock.createAlbum.mockResolvedValueOnce(created);
     sdkMock.addAssetsToAlbums.mockResolvedValueOnce({ success: true });
     const onClose = vi.fn();
@@ -66,7 +68,8 @@ describe('AssetAddToAlbumModal', () => {
     render(AssetAddToAlbumModal, { assetIds: ['asset-1'], onClose });
 
     const boxes = await screen.findAllByRole('checkbox', { hidden: true });
-    expect(boxes[0].closest('label')).toHaveTextContent('Latest');
+    expect(screen.getByText('Used lately')).toBeInTheDocument();
+    expect(boxes[0].closest('label')).toHaveTextContent('Zermatt');
     await fireEvent.click(boxes[0]);
     const search = screen.getByRole('searchbox', { hidden: true });
     await fireEvent.input(search, { target: { value: 'Banff' } });
@@ -79,5 +82,20 @@ describe('AssetAddToAlbumModal', () => {
     expect(sdkMock.addAssetsToAlbums).toHaveBeenCalledWith(
       expect.objectContaining({ albumsAddAssetsDto: { albumIds: [latest.id, created.id], assetIds: ['asset-1'] } }),
     );
+  });
+
+  it('stands in the albums that recently received items until this account has used one (FL-1814)', async () => {
+    const user = userAdminFactory.build();
+    authManager.setUser(user);
+    const member = [{ user, role: AlbumUserRole.Owner }];
+    const older = albumFactory.build({ albumName: 'Alps', albumUsers: member });
+    const received = albumFactory.build({ albumName: 'Zermatt', albumUsers: member });
+    sdkMock.getAllAlbums.mockResolvedValueOnce([older, received]);
+    sdkMock.getRecentlyAddedAlbums.mockResolvedValueOnce({ albumIds: [received.id], usedAlbumIds: [] });
+
+    render(AssetAddToAlbumModal, { assetIds: ['asset-1'], onClose: vi.fn() });
+
+    const boxes = await screen.findAllByRole('checkbox', { hidden: true });
+    expect(boxes[0].closest('label')).toHaveTextContent('Zermatt');
   });
 });

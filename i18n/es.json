@@ -3382,6 +3382,7 @@
   "frameleaf_album_people_chip": "{name} · {count, number}",
   "frameleaf_album_people_clear": "Borrar personas",
   "frameleaf_album_people_title": "Personas de este álbum",
+  "frameleaf_album_picker_used_lately": "Usados recientemente",
   "frameleaf_album_private": "Privado",
   "frameleaf_album_private_share_it": "Privado · compártelo",
   "frameleaf_album_remove_member_body": "Pierden el acceso a «{name}». Puedes volver a invitarlas más adelante; una invitación a un espacio compartido hay que aceptarla de nuevo.",

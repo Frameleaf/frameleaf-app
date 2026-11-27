@@ -3382,6 +3382,7 @@
   "frameleaf_album_people_chip": "{name} · {count, number}",
   "frameleaf_album_people_clear": "Fjern personer",
   "frameleaf_album_people_title": "Personer i dette albumet",
+  "frameleaf_album_picker_used_lately": "Brukt nylig",
   "frameleaf_album_private": "Privat",
   "frameleaf_album_private_share_it": "Privat · del det",
   "frameleaf_album_remove_member_body": "De mister tilgangen til «{name}». Du kan invitere dem igjen senere. En invitasjon til et delt område må godtas på nytt.",

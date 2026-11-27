@@ -44,8 +44,9 @@
    * result says where it lives ("Brand › Spring"), as every Boards picker does.
    *
    * Several albums can be ticked, and a typed name that doesn't exist becomes a new album. New albums
-   * are only made on Add, so Cancel never leaves an empty one behind. The five albums that most
-   * recently received items lead the list.
+   * are only made on Add, so Cancel never leaves an empty one behind. "Used lately" leads the list:
+   * the five albums this account itself last added to (FL-1814; the server keeps that record, so it
+   * follows the person between devices and never shows anyone else's adds).
    */
   const PAGE = 60;
   const RECENT_ALBUMS = 5;
@@ -79,12 +80,15 @@
   /** Read once per load, so rows don't move while someone is ticking them. */
   let recentIds = $state<string[]>([]);
   let limit = $state(PAGE);
+  let searchInput: HTMLInputElement | undefined = $state();
 
-  /** Best effort: the picker works the same, without a Recent group, if this can't be read. */
+  /** Best effort: the picker works the same, without "Used lately", if this can't be read. */
   const loadRecentIds = async () => {
     try {
-      const { albumIds } = await getRecentlyAddedAlbums(libraryScope ? { libraryScope } : {});
-      return albumIds;
+      const { usedAlbumIds, albumIds } = await getRecentlyAddedAlbums(libraryScope ? { libraryScope } : {});
+      // Until this account has added something since the record began, the albums that recently
+      // received items stand in, so nobody opens an empty "Used lately" after the update.
+      return usedAlbumIds.length > 0 ? usedAlbumIds : albumIds;
     } catch {
       return [];
     }
@@ -277,6 +281,7 @@
     <input
       type="search"
       bind:value={query}
+      bind:this={searchInput}
       oninput={onSearch}
       onkeydown={onSearchKeydown}
       placeholder={$t('frameleaf_bulk_album_search_or_new')}
@@ -301,6 +306,14 @@
             <span class="name">{$t('frameleaf_bulk_album_new', { values: { name: typed } })}</span>
           </button>
         </li>
+      {:else if !typed}
+        <!-- FL-1814: New album is always offered, as the approved picker does; it asks for the name in the search field. -->
+        <li>
+          <button type="button" class="row create" onclick={() => searchInput?.focus()}>
+            <span class="thumb"><Icon icon={mdiPlus} size="18" aria-hidden={true} /></span>
+            <span class="name">{$t('new_album')}</span>
+          </button>
+        </li>
       {/if}
       {#each shownDrafts as name (name)}
         <li>
@@ -313,7 +326,7 @@
         </li>
       {/each}
       {#if !searching && recent.length > 0}
-        <li class="group"><span>{$t('recent')}</span></li>
+        <li class="group"><span>{$t('frameleaf_album_picker_used_lately')}</span></li>
         {#each recent as target (target.id)}
           {@render targetRow(target, false, '')}
         {/each}
