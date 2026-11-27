@@ -125,6 +125,16 @@ test.describe('face history', () => {
       if (pathname === `/api/people/${personId}`) {
         return route.fulfill({ json: person });
       }
+      // FL-1814: pickers read the light people list
+      if (pathname === '/api/people/picker') {
+        const item = (entry: PersonResponseDto, assetCount: number) => ({
+          id: entry.id,
+          name: entry.name,
+          updatedAt: '2025-01-01T00:00:00.000Z',
+          assetCount,
+        });
+        return route.fulfill({ json: { people: [item(person, 2), item(other, 4)], hasNextPage: false } });
+      }
       if (pathname === '/api/people') {
         const listed = (entry: PersonResponseDto, assetCount: number): PeopleListItemDto => ({
           ...entry,

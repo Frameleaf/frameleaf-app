@@ -231,7 +231,7 @@
 {:else if part === 'history'}
   <Section title={$t('frameleaf_computers_history_title')} description={$t('frameleaf_computers_history_description')}>
     {#if store.audit.length === 0}
-      <EmptyRow title={$t('frameleaf_computers_history_empty')} />
+      <div class="empty"><EmptyRow title={$t('frameleaf_computers_history_empty')} /></div>
     {:else}
       <HistoryList>
         {#each store.audit.slice(0, HISTORY_SHOWN) as entry (entry.id)}
@@ -294,5 +294,8 @@
     min-width: 0;
     max-width: 100%;
     overflow-x: auto;
+  }
+  .empty {
+    padding-bottom: var(--fl-space-4);
   }
 </style>

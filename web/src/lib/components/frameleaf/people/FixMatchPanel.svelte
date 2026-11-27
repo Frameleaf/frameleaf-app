@@ -93,9 +93,11 @@
   type Chosen = { id: string; name: string; assetCount?: number };
   let others: Chosen[] = $state([]);
   let hasMore = $state(false);
-  let loading = $state(false);
+  // FL-1810: true from the start, so the empty row never shows before the first read
+  let loading = $state(true);
   // the last read failed; with nothing listed yet the panel offers a retry instead of the empty note
   let loadFailed = $state(false);
+  let loadError = $state('');
   const resolved = new SvelteMap<string, string>();
   const selected = new SvelteSet<string>();
   let naming: string | null = $state(null);
@@ -186,7 +188,8 @@
     } catch (error) {
       loadFailed = true;
       // FL-1810: the panel says so in place with Try again; handleError still logs and handles sign-in
-      handleError(error, $t('errors.cant_get_faces'), { notify: rows.length > 0 });
+      loadError =
+        handleError(error, $t('errors.cant_get_faces'), { notify: rows.length > 0 }) ?? $t('errors.cant_get_faces');
     } finally {
       loading = false;
     }
@@ -452,7 +455,7 @@
     </IconButton>
   </header>
   {@render tabs?.()}
-  <ul class="pd-fix-list">
+  <ul class="pd-fix-list" class:is-empty={rows.length === 0}>
     {#each rows as row (row.face.id)}
       {@const done = resolved.get(row.face.id)}
       <li class="pd-fix-row" class:is-done={!!done} class:is-selected={selected.has(row.face.id)}>
@@ -541,7 +544,7 @@
     <div class="note"><ListSkeleton rows={3} /></div>
   {:else if rows.length === 0 && loadFailed}
     <div class="note">
-      <InlineError compact message={$t('errors.cant_get_faces')} onRetry={() => loadPage()} />
+      <InlineError compact message={loadError} onRetry={() => loadPage()} />
     </div>
   {:else if rows.length === 0}
     <div class="note"><EmptyRow title={$t('frameleaf_people_fix_empty')} /></div>
@@ -605,7 +608,9 @@
       {message ||
         (open > 0
           ? $t('frameleaf_people_fix_to_review', { values: { count: open } })
-          : $t('frameleaf_people_fix_done'))}
+          : loading || loadFailed
+            ? ''
+            : $t('frameleaf_people_fix_done'))}
     </span>
     {@render footerLink?.()}
     <Button variant="primary" onclick={finish}>{$t('done')}</Button>
@@ -661,6 +666,11 @@
     color: var(--fl-muted);
     font-size: var(--fl-font-small);
     line-height: 1.5;
+  }
+  /* With nothing listed the states below sit under the header, where the rows will appear. */
+  .pd-fix-list.is-empty {
+    flex: none;
+    padding-block: 0;
   }
   .pd-fix-list {
     display: flex;

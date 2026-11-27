@@ -1,4 +1,5 @@
 import { AssetVisibility, SourceType, type AssetFaceResponseDto, type AssetResponseDto } from '@frameleaf/sdk';
+import { toastManager } from '@frameleaf/ui';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { init, register, waitLocale } from 'svelte-i18n';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -69,11 +70,14 @@ describe('FixMatchPanel (PD-3)', () => {
 
   it('offers a retry when the first face read fails, without reading again until asked', async () => {
     sdkMock.getFaces.mockRejectedValueOnce(new Error('offline'));
+    const toast = vi.spyOn(toastManager, 'danger');
     render(FixMatchPanel, { person, close: vi.fn() });
 
     // FL-1810: said in place, with the shared Try again
     expect(await screen.findByTestId('frameleaf-inline-error')).toBeTruthy();
     const retry = screen.getByRole('button', { name: 'Try again' });
+    // a failed first read is said in place only; no toast
+    expect(toast).not.toHaveBeenCalled();
     expect(sdkMock.getFaces).toHaveBeenCalledTimes(1);
     await fireEvent.click(retry);
 

@@ -407,7 +407,11 @@
       <AnalyticsLeaderboard rows={cameras} label={$t('frameleaf_analytics_cameras')} format={f.number} />
     {/if}
     <h3 class="an-subhead">{$t('frameleaf_analytics_lenses')}</h3>
-    <AnalyticsLeaderboard rows={lenses} label={$t('frameleaf_analytics_lenses')} format={f.number} />
+    {#if lenses.length === 0}
+      <EmptyRow title={$t('frameleaf_analytics_no_items')} />
+    {:else}
+      <AnalyticsLeaderboard rows={lenses} label={$t('frameleaf_analytics_lenses')} format={f.number} />
+    {/if}
     <h3 class="an-subhead">{$t('frameleaf_analytics_focal_lengths')}</h3>
     <div class="an-focal" role="img" aria-label={$t('frameleaf_analytics_focal_label')}>
       {#each focal as row (row.id)}
@@ -542,7 +546,11 @@
         values: { count: people.geotagged, value: f.number(people.geotagged) },
       })}
     >
-      <AnalyticsLeaderboard rows={places} label={$t('frameleaf_analytics_places')} format={f.number} />
+      {#if places.length === 0}
+        <EmptyRow title={$t('frameleaf_analytics_no_items')} />
+      {:else}
+        <AnalyticsLeaderboard rows={places} label={$t('frameleaf_analytics_places')} format={f.number} />
+      {/if}
       {@render dataTable('places')}
     </AnalyticsPanel>
   {:else}
