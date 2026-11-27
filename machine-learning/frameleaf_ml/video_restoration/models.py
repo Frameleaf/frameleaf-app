@@ -226,7 +226,7 @@ class RuntimeSpec(ConfigModel):
 
 class WeightSource(ConfigModel):
     """Where ``fetch_weights`` downloads a weight from: a repository of the Frameleaf model source
-    (``MACHINE_LEARNING_MODEL_SOURCE_URL``, by default https://models.frameleaf.cloud), under the
+    (``MACHINE_LEARNING_MODEL_SOURCE_URL``, by default https://huggingface.co), under the
     ``frameleaf`` organisation. The download is kept only when it hashes to the pinned sha256."""
 
     repo: str = Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]{0,95}$")
