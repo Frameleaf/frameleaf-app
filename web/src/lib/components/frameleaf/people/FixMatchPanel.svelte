@@ -1,6 +1,8 @@
 <script lang="ts">
   import { formatLuxon } from '$lib/frameleaf/date-format';
-  import Spinner from '$lib/components/frameleaf/Spinner.svelte';
+  import EmptyRow from '$lib/components/frameleaf/EmptyRow.svelte';
+  import InlineError from '$lib/components/frameleaf/InlineError.svelte';
+  import ListSkeleton from '$lib/components/frameleaf/ListSkeleton.svelte';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import IconButton from '$lib/components/frameleaf/IconButton.svelte';
   import Menu from '$lib/components/frameleaf/Menu.svelte';
@@ -183,7 +185,8 @@
       hasMore = more;
     } catch (error) {
       loadFailed = true;
-      handleError(error, $t('errors.cant_get_faces'));
+      // FL-1810: the panel says so in place with Try again; handleError still logs and handles sign-in
+      handleError(error, $t('errors.cant_get_faces'), { notify: rows.length > 0 });
     } finally {
       loading = false;
     }
@@ -535,13 +538,13 @@
     {/each}
   </ul>
   {#if loading}
-    <p class="note"><Spinner /></p>
+    <div class="note"><ListSkeleton rows={3} /></div>
   {:else if rows.length === 0 && loadFailed}
-    <div class="more">
-      <Button onclick={() => void loadPage()}>{$t('retry')}</Button>
+    <div class="note">
+      <InlineError compact message={$t('errors.cant_get_faces')} onRetry={() => loadPage()} />
     </div>
   {:else if rows.length === 0}
-    <p class="note">{$t('frameleaf_people_fix_empty')}</p>
+    <div class="note"><EmptyRow title={$t('frameleaf_people_fix_empty')} /></div>
   {:else if hasMore}
     <div class="more">
       <Button onclick={() => void loadPage()}>{$t('frameleaf_people_show_more')}</Button>

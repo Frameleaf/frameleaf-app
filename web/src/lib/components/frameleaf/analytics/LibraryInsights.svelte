@@ -12,6 +12,7 @@
    * and places are the owner's own: for any other scope the server leaves them out and the panel
    * explains why instead. Every chart keeps its exact values in a data table (and the CSV).
    */
+  import EmptyRow from '$lib/components/frameleaf/EmptyRow.svelte';
   import AnalyticsDataTable from '$lib/components/frameleaf/analytics/AnalyticsDataTable.svelte';
   import AnalyticsDonut from '$lib/components/frameleaf/analytics/AnalyticsDonut.svelte';
   import AnalyticsLeaderboard from '$lib/components/frameleaf/analytics/AnalyticsLeaderboard.svelte';
@@ -241,7 +242,7 @@
       : ''}
   >
     {#if years.length === 0}
-      <p class="empty">{$t('frameleaf_analytics_no_items')}</p>
+      <EmptyRow title={$t('frameleaf_analytics_no_items')} />
     {:else}
       <div
         class="an-years"
@@ -401,7 +402,7 @@
     caption={$t('frameleaf_analytics_gear_caption')}
   >
     {#if cameras.length === 0}
-      <p class="empty">{$t('frameleaf_analytics_no_items')}</p>
+      <EmptyRow title={$t('frameleaf_analytics_no_items')} />
     {:else}
       <AnalyticsLeaderboard rows={cameras} label={$t('frameleaf_analytics_cameras')} format={f.number} />
     {/if}
@@ -505,7 +506,7 @@
         : { href: Route.people(), label: $t('people') }}
     >
       {#if personRows.length === 0}
-        <p class="empty">{$t('frameleaf_analytics_people_none')}</p>
+        <EmptyRow title={$t('frameleaf_analytics_people_none')} />
       {:else}
         <AnalyticsLeaderboard rows={personRows} label={$t('frameleaf_analytics_top_people')} format={f.number}>
           {#snippet lead(row)}

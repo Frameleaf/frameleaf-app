@@ -11,6 +11,7 @@
    * `limits` (the "Limits for each person" section) and `history` (the "History" section, with the full
    * record and its filter behind a disclosure). Without a part, everything as it was.
    */
+  import EmptyRow from '$lib/components/frameleaf/EmptyRow.svelte';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import RenderLimitDialog from '$lib/components/frameleaf/RenderLimitDialog.svelte';
   import RenderLimitsPanel from '$lib/components/frameleaf/RenderLimitsPanel.svelte';
@@ -230,7 +231,7 @@
 {:else if part === 'history'}
   <Section title={$t('frameleaf_computers_history_title')} description={$t('frameleaf_computers_history_description')}>
     {#if store.audit.length === 0}
-      <p class="empty">{$t('frameleaf_computers_history_empty')}</p>
+      <EmptyRow title={$t('frameleaf_computers_history_empty')} />
     {:else}
       <HistoryList>
         {#each store.audit.slice(0, HISTORY_SHOWN) as entry (entry.id)}
@@ -288,13 +289,6 @@
 {/if}
 
 <style>
-  .empty {
-    margin: 0;
-    padding: var(--fl-space-4) 0;
-    color: var(--fl-muted);
-    font-size: var(--fl-font-callout);
-    border-top: 1px solid var(--fl-border);
-  }
   /* The full record keeps its own layout, inside the card and never wider than it. */
   .operator {
     min-width: 0;

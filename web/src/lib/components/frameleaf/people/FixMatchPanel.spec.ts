@@ -71,7 +71,9 @@ describe('FixMatchPanel (PD-3)', () => {
     sdkMock.getFaces.mockRejectedValueOnce(new Error('offline'));
     render(FixMatchPanel, { person, close: vi.fn() });
 
-    const retry = await screen.findByRole('button', { name: 'Retry' });
+    // FL-1810: said in place, with the shared Try again
+    expect(await screen.findByTestId('frameleaf-inline-error')).toBeTruthy();
+    const retry = screen.getByRole('button', { name: 'Try again' });
     expect(sdkMock.getFaces).toHaveBeenCalledTimes(1);
     await fireEvent.click(retry);
 
