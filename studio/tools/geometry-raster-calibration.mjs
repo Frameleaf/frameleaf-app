@@ -309,7 +309,10 @@ export function validateBaseRaster(capture, envelope, binding) {
             '0bc63badd42ed7735d32c4c6e479bc1f88908274ee00d100b2378e1d027ee843' ||
           // FL-1822 track heads and the Align row in Transform; raster producer bytes unchanged.
           binding.sourceSha256 ===
-            '926bc6200a4c1221056b19ff3b2878dc65605b0e12eaecce65e825075bb9fc67')),
+            '926bc6200a4c1221056b19ff3b2878dc65605b0e12eaecce65e825075bb9fc67' ||
+          // FL-1822 the media bin laid out as the approved Studio; raster producer bytes unchanged.
+          binding.sourceSha256 ===
+            '23af4f1aabfd81a53909eb907a3d51acb51392b0b98bca06b748c6eca080536d')),
     'SOURCE_BROWSER',
   )
   check(
