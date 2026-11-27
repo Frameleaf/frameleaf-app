@@ -15,7 +15,8 @@
   import Skeleton from '$lib/components/frameleaf/Skeleton.svelte';
   import { Icon } from '@frameleaf/ui';
   import { mdiChevronRight, mdiFolderOutline } from '@mdi/js';
-  import type { Snippet } from 'svelte';
+  import { getServerErrorMessage } from '$lib/utils/handle-error';
+  import { tick, type Snippet } from 'svelte';
   import { t } from 'svelte-i18n';
 
   let {
@@ -48,25 +49,47 @@
   let open = $state(true);
   let trail = $state<FolderEntry[]>(start);
   let retries = $state(0);
-  let listing = $state<{ key: string; result?: FolderListing<Extra>; failed?: boolean }>();
-  const key = $derived(`${refresh}\n${retries}\n${trail.map((step) => step.id ?? step.name).join('\n')}`);
+  let listing = $state<{ key: string; place: string; result?: FolderListing<Extra>; failed?: string }>();
+  const place = $derived(trail.map((step) => step.id ?? step.name).join('\n'));
+  const key = $derived(`${refresh}\n${retries}\n${place}`);
   const current = $derived(listing?.key === key ? listing : undefined);
-  // Reading again (a refresh) keeps the last list on screen instead of flashing the skeleton.
-  const shown = $derived(current ?? (listing?.result ? listing : undefined));
+  // Reading the same folder again (a refresh) keeps its list on screen instead of flashing the skeleton.
+  // Moving to another folder never does: a row of the folder just left must not be clickable.
+  const shown = $derived(current ?? (listing?.result && listing.place === place ? listing : undefined));
   const crumbs = $derived(shown?.result?.trail ?? trail);
   const choosable = $derived(!!current?.result?.choosable);
 
+  let list: HTMLUListElement | undefined = $state();
+  let nav: HTMLElement | undefined = $state();
+  /** Set on open and on each move: the next list read takes the focus, on its first folder. */
+  let moved = true;
+  const go = (next: FolderEntry[]) => {
+    moved = true;
+    trail = next;
+  };
+
   $effect(() => {
     const requested = key;
+    const at = place;
     void read(trail)
-      .then((result) => {
-        if (requested === key) {
-          listing = { key: requested, result };
+      .then(async (result) => {
+        if (requested !== key) {
+          return;
+        }
+        listing = { key: requested, place: at, result };
+        if (moved) {
+          moved = false;
+          await tick();
+          (list?.querySelector('button') ?? nav?.querySelector<HTMLElement>('[aria-current]'))?.focus();
         }
       })
-      .catch(() => {
+      .catch((error: unknown) => {
         if (requested === key) {
-          listing = { key: requested, failed: true };
+          listing = {
+            key: requested,
+            place: at,
+            failed: getServerErrorMessage(error) ?? $t('frameleaf_libraries_browse_failed'),
+          };
         }
       });
   });
@@ -85,13 +108,13 @@
   bind:open
   onClosed={onClose}
 >
-  <nav class="crumbs" aria-label={$t('frameleaf_takeout_folder_where')}>
+  <nav class="crumbs" bind:this={nav} aria-label={$t('frameleaf_takeout_folder_where')}>
     {#each [rootName, ...crumbs.map((step) => step.name)] as name, index (index)}
       {#if index > 0}<Icon icon={mdiChevronRight} size="14" aria-hidden={true} />{/if}
       <button
         type="button"
         aria-current={index === crumbs.length ? 'page' : undefined}
-        onclick={() => (trail = crumbs.slice(0, index))}
+        onclick={() => go(crumbs.slice(0, index))}
       >
         {name}
       </button>
@@ -100,10 +123,10 @@
 
   {#if shown?.result}
     {@const result = shown.result}
-    <ul class="folders">
+    <ul class="folders" bind:this={list}>
       {#each result.folders as folder (folder.id ?? folder.name)}
         <li>
-          <button type="button" onclick={() => (trail = [...crumbs, folder])}>
+          <button type="button" onclick={() => go([...crumbs, folder])}>
             <span class="icon"><Icon icon={folder.icon ?? mdiFolderOutline} size="20" aria-hidden={true} /></span>
             <span>
               <strong>{folder.name}</strong>
@@ -125,7 +148,7 @@
       <p class="hint">{result.note ?? note}</p>
     {/if}
   {:else if current?.failed}
-    <InlineError compact message={$t('frameleaf_libraries_browse_failed')} onRetry={() => retries++} />
+    <InlineError compact message={current.failed} onRetry={() => retries++} />
   {:else}
     <div role="status" aria-busy="true">
       <span class="sr-only">{$t('loading')}</span>

@@ -96,4 +96,37 @@ describe('ConfirmDialog', () => {
     expect(handleError).toHaveBeenCalledOnce();
     expect(onClose).not.toHaveBeenCalled();
   });
+
+  it('keeps Escape and the close button from closing it while the action runs', async () => {
+    let finish!: () => void;
+    const onClose = vi.fn();
+    render(ConfirmDialog, {
+      title: 'Leave “Lake days”?',
+      confirmText: 'Leave album',
+      onConfirm: () => new Promise<void>((resolve) => (finish = resolve)),
+      onClose,
+    });
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Leave album' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+    expect(screen.getByRole('heading', { name: 'Leave “Lake days”?' })).toBeInTheDocument();
+    expect(onClose).not.toHaveBeenCalled();
+
+    finish();
+    await vi.waitFor(() => expect(onClose).toHaveBeenCalledWith(true));
+  });
+
+  it('gives the focus back to the action after a failure', async () => {
+    render(ConfirmDialog, {
+      title: 'Delete?',
+      confirmText: 'Delete album',
+      danger: true,
+      onConfirm: vi.fn().mockRejectedValue(new Error('offline')),
+      onClose: vi.fn(),
+    });
+    const action = screen.getByRole('button', { name: 'Delete album' });
+    action.focus();
+    await fireEvent.click(action);
+    await vi.waitFor(() => expect(action).toHaveFocus());
+  });
 });

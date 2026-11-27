@@ -46,6 +46,28 @@
     aside?: Snippet;
   } = $props();
 
+  let root: HTMLElement | undefined = $state();
+  let closeButton: HTMLButtonElement | undefined = $state();
+  let lastFocused: Element | null = null;
+
+  // A focused button that becomes disabled (Next at the last photo, Accept while it runs) drops the
+  // focus out of the viewer, and the next Tab would leave it. Hand the focus to Close instead.
+  $effect(() => {
+    if (!root) {
+      return;
+    }
+    const observer = new MutationObserver((mutations) => {
+      if (mutations.some(({ target }) => target === lastFocused && (target as HTMLButtonElement).disabled)) {
+        closeButton?.focus();
+      }
+    });
+    observer.observe(root, { subtree: true, attributes: true, attributeFilter: ['disabled'] });
+    return () => observer.disconnect();
+  });
+
+  const typing = (target: EventTarget | null) =>
+    target instanceof HTMLElement && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName));
+
   const onkeydown = (event: KeyboardEvent) => {
     // A dialog opened from here (a confirmation) owns the keyboard until it closes.
     if (
@@ -60,6 +82,9 @@
     if (event.key === 'Escape') {
       event.preventDefault();
       onClose();
+    } else if (typing(event.target)) {
+      // the arrow keys belong to the field being typed in
+      return;
     } else if (event.key === 'ArrowRight' && hasNext) {
       event.preventDefault();
       onNext();
@@ -74,7 +99,16 @@
 
 <!-- focusTrap puts the focus on Close, keeps Tab inside, and hands focus back to the opener on close. -->
 <!-- On the body (with the Frameleaf scope it leaves behind), so no page container can hold the fixed overlay inside itself. -->
-<div class="frameleaf light-viewer" role="dialog" aria-modal="true" aria-label={label} use:portal use:focusTrap>
+<div
+  class="frameleaf light-viewer"
+  role="dialog"
+  aria-modal="true"
+  aria-label={label}
+  bind:this={root}
+  onfocusin={(event) => (lastFocused = event.target as Element)}
+  use:portal
+  use:focusTrap
+>
   <!-- The layout sits one level in: focusTrap adds its own sentinel elements to the element it is on. -->
   <div class="frame" class:with-aside={aside}>
     <div class="main">
@@ -83,7 +117,7 @@
           {#if heading}<strong>{heading}</strong>{/if}
           {#if position}<small>{position}</small>{/if}
         </span>
-        <button type="button" class="round" aria-label={$t('close')} onclick={onClose}>
+        <button type="button" class="round" aria-label={$t('close')} bind:this={closeButton} onclick={onClose}>
           <Icon icon={mdiClose} size={ICON_SIZE.lg} aria-hidden />
         </button>
       </header>
@@ -168,16 +202,19 @@
     min-height: 0;
     padding: 0 var(--fl-space-6) var(--fl-space-6);
   }
+  /* Fills the stage's row, so a photo fits whatever the header and footer leave, on a phone too. */
   .content {
     display: grid;
-    justify-items: center;
+    align-self: stretch;
+    align-content: center;
     min-width: 0;
     min-height: 0;
   }
   /* A bare photo on the stage; a caller with its own layout styles its own. */
   .content > :global(img) {
     max-width: 100%;
-    max-height: calc(100vh - 200px);
+    justify-self: center;
+    max-height: 100%;
     border-radius: var(--fl-radius-card);
     object-fit: contain;
   }

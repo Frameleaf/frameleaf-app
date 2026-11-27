@@ -5,6 +5,11 @@ import type { FolderEntry, FolderListing } from '$lib/frameleaf/folder-readers';
 import en from '../../../../../i18n/en.json';
 import FolderChooser from './FolderChooser.svelte';
 
+// The server's reason, as getServerErrorMessage reads it from an HTTP error.
+vi.mock('$lib/utils/handle-error', () => ({
+  getServerErrorMessage: (error: { serverMessage?: string }) => error?.serverMessage,
+}));
+
 const TREE: Record<string, FolderListing> = {
   '': { choosable: false, folders: [{ id: '/mnt', name: 'mnt' }] },
   '/mnt': { choosable: true, detail: '/mnt', folders: [{ id: '/mnt/photos', name: 'photos', detail: '1,204 photos' }] },
@@ -79,5 +84,34 @@ describe('FolderChooser', () => {
     expect(await screen.findByText(en.frameleaf_libraries_browse_failed)).toBeInTheDocument();
     await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_error_retry }));
     expect(await button('mnt')).toBeInTheDocument();
+  });
+
+  it('never leaves the folder just left clickable while the next one loads', async () => {
+    let release!: () => void;
+    read.mockImplementation((trail: FolderEntry[]) => {
+      const id = trail.at(-1)?.id ?? '';
+      return id === '/mnt' ? new Promise((resolve) => (release = () => resolve(TREE[id]))) : Promise.resolve(TREE[id]);
+    });
+    open();
+    await fireEvent.click(await button('mnt'));
+    expect(screen.queryByRole('button', { name: 'mnt' })).toHaveAttribute('aria-current', 'page');
+    // the top level's "mnt" row is gone; only the trail's "mnt" is left
+    expect(screen.getAllByRole('button', { name: 'mnt' })).toHaveLength(1);
+    release();
+    expect(await button(/^photos/)).toBeInTheDocument();
+    read.mockImplementation((trail: FolderEntry[]) => Promise.resolve(TREE[trail.at(-1)?.id ?? '']));
+  });
+
+  it('puts the focus on the first folder on open and after each move', async () => {
+    open();
+    await vi.waitFor(() => expect(screen.getByRole('button', { name: 'mnt' })).toHaveFocus());
+    await fireEvent.click(screen.getByRole('button', { name: 'mnt' }));
+    await vi.waitFor(() => expect(screen.getByRole('button', { name: /^photos/ })).toHaveFocus());
+  });
+
+  it("says the server's own reason when it gives one", async () => {
+    read.mockRejectedValueOnce({ serverMessage: 'Choose a whole path' });
+    open();
+    expect(await screen.findByText('Choose a whole path')).toBeInTheDocument();
   });
 });
