@@ -6,6 +6,7 @@ import { STABILISE_ENGINE_STRINGS } from '@frameleaf/host/stabilise-strings'
 import { CAPTION_STYLE_ENGINE_STRINGS } from '@frameleaf/host/caption-style-strings'
 import { ENGINE_CONTROLS_STRINGS } from '@frameleaf/host/engine-controls-strings'
 import { SHELL_STRINGS } from '@frameleaf/host/shell-strings'
+import { TIMELINE_STRINGS } from '@frameleaf/host/timeline-strings'
 import { applyHostEngineStrings } from '../src/host-engine-strings'
 
 describe('FL-450 host-translated engine messages', () => {
@@ -107,5 +108,16 @@ describe('FL-450 host-translated engine messages', () => {
   it('FL-1822: every shell string names an engine key that has English', async () => {
     await changeAppLanguage('en')
     for (const entry of Object.values(SHELL_STRINGS)) expect(i18n.t(entry.engine), entry.engine).not.toBe(entry.engine)
+  })
+
+  it('FL-1822: every timeline toolbar string names an engine key with English and the same run-time values', async () => {
+    await changeAppLanguage('en')
+    for (const entry of Object.values(TIMELINE_STRINGS)) {
+      expect(i18n.t(entry.engine), entry.engine).not.toBe(entry.engine)
+      const markers = [...(i18n.getResource('en', 'translation', entry.engine) as string).matchAll(/\{\{(\w+)\}\}/g)]
+        .map((match) => match[1])
+        .toSorted()
+      expect(markers, entry.engine).toEqual([...('values' in entry ? entry.values : [])].toSorted())
+    }
   })
 })

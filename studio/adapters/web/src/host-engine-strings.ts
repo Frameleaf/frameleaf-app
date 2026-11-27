@@ -33,6 +33,7 @@ import {
   type EngineControlsString,
 } from '@frameleaf/host/engine-controls-strings'
 import { SHELL_STRINGS, type ShellString } from '@frameleaf/host/shell-strings'
+import { TIMELINE_STRINGS, type TimelineString } from '@frameleaf/host/timeline-strings'
 import {
   CLOUD_CAPTION_ENGINE_STRINGS,
   type CloudCaptionEngineString,
@@ -83,6 +84,10 @@ export const HOST_ENGINE_STRINGS = {
   ...(Object.fromEntries(
     Object.entries(SHELL_STRINGS).map(([name, entry]) => [name, entry.engine]),
   ) as Record<ShellString, string>),
+  // The editor's timeline toolbar (FL-1822).
+  ...(Object.fromEntries(
+    Object.entries(TIMELINE_STRINGS).map(([name, entry]) => [name, entry.engine]),
+  ) as Record<TimelineString, string>),
 } as const
 
 export function applyHostEngineStrings(i18n: EngineI18n, strings: StudioHostContext['strings']): void {

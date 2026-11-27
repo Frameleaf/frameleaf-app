@@ -152,22 +152,19 @@ try {
       );
     }
   });
+  // FL-1822: the toolbar's tools are one Tool menu; its button names the current tool.
+  const chooseTool = async (name) => {
+    await page.getByRole("button", { name: /^Tool: / }).click();
+    await page.getByRole("menuitemcheckbox", { name: new RegExp(`^${name}`) }).click();
+  };
   const selectSlip = async () => {
-    await page
-      .getByRole("button", { name: "Select Tool", exact: true })
-      .click();
+    await chooseTool("Select");
     // Select's smart cut supplies Roll; there is no invented Roll toolbar command.
     if (editTool === "roll") return;
-    await page
-      .getByRole("button", { name: "Slip Slide Tools", exact: true })
-      .click();
-    await page.getByRole("menuitem", { name: /^Slip Tool/ }).click();
+    await chooseTool("Slip");
   };
   await selectSlip();
-  if (mutation === "wrong-tool")
-    await page
-      .getByRole("button", { name: "Select Tool", exact: true })
-      .click();
+  if (mutation === "wrong-tool") await chooseTool("Select");
   const state = () => page.evaluate(() => window.fl100Editor.state());
   const timeline = () => page.evaluate(() => window.fl100Editor.timeline());
   const clip = page.locator('[data-timeline-item][data-item-id="slip-v-A"]');
