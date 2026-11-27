@@ -89,6 +89,8 @@ describe(PersonService.name, () => {
             categoryIds: [family],
             deathDate: null,
             notes: null,
+            birthDatePrecision: null,
+            deathDatePrecision: null,
             assetCount: 3,
             lastSeenAt: new Date('2026-01-02T03:04:05.000Z'),
           },
@@ -97,6 +99,8 @@ describe(PersonService.name, () => {
             categoryIds: [],
             deathDate: null,
             notes: null,
+            birthDatePrecision: null,
+            deathDatePrecision: null,
             assetCount: 1,
             lastSeenAt: new Date('2025-06-07T08:09:10.000Z'),
           },
@@ -222,6 +226,8 @@ describe(PersonService.name, () => {
             categoryIds: [],
             deathDate: null,
             notes: null,
+            birthDatePrecision: null,
+            deathDatePrecision: null,
             assetCount: 2,
             lastSeenAt: new Date('2026-01-01T00:00:00.000Z'),
           },
@@ -230,6 +236,8 @@ describe(PersonService.name, () => {
             categoryIds: [],
             deathDate: null,
             notes: null,
+            birthDatePrecision: null,
+            deathDatePrecision: null,
             assetCount: 5,
             lastSeenAt: new Date('2026-01-01T00:00:00.000Z'),
           },
@@ -1258,7 +1266,10 @@ describe(PersonService.name, () => {
     it('returns null for both when none were kept', async () => {
       const { auth, person } = setup();
 
-      await expect(sut.getById(auth, person.personGroupId)).resolves.toMatchObject({ deathDate: null, notes: null });
+      await expect(sut.getById(auth, person.personGroupId)).resolves.toMatchObject({
+        deathDate: null,
+        notes: null,
+      });
     });
 
     it('sets a date of passing after the date of birth', async () => {
@@ -1349,7 +1360,7 @@ describe(PersonService.name, () => {
       ).resolves.toMatchObject({ deathDate: null });
       expect(mocks.person.upsertProfile).toHaveBeenLastCalledWith(
         { ownerId: person.ownerId, personGroupId: person.personGroupId },
-        { deathDate: null, notes: undefined },
+        { deathDate: null, notes: undefined, birthDatePrecision: null, deathDatePrecision: null },
       );
     });
 
@@ -1403,7 +1414,7 @@ describe(PersonService.name, () => {
       ).resolves.toEqual([{ id: person.personGroupId, success: true }]);
       expect(mocks.person.upsertProfile).toHaveBeenCalledWith(
         { ownerId: person.ownerId, personGroupId: person.personGroupId },
-        { deathDate: '2020-01-02', notes: 'n' },
+        { deathDate: '2020-01-02', notes: 'n', deathDatePrecision: null },
       );
     });
 

@@ -776,7 +776,7 @@ export const bulkPayloadProblem = (
       }
       if (
         payload.dateDetail !== undefined &&
-        (payload.dateAccuracy !== 'year' || !DATE_DETAILS.some((value) => value === payload.dateDetail))
+        (payload.dateAccuracy !== 'year' || !(DATE_DETAILS as readonly string[]).includes(payload.dateDetail))
       ) {
         return 'A month or an "around" goes with a year date';
       }

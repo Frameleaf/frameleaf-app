@@ -1,8 +1,8 @@
 import { Check, Column, ForeignKeyColumn, Table } from '@frameleaf/sql-tools';
 import type { Generated, Timestamp } from '@frameleaf/sql-tools';
+import type { LifeDatePrecision } from 'src/utils/date.js';
 import { PersonGroupTable } from 'src/schema/tables/person-group.table.js';
 import { UserTable } from 'src/schema/tables/user.table.js';
-import type { LifeDatePrecision } from 'src/utils/date.js';
 
 /**
  * FL-864, FL-941: what an owner keeps about one of their people beyond the upstream `person` row: the date of

@@ -2328,6 +2328,8 @@ describe(AssetService.name, () => {
       expect(mocks.asset.updateDateTimeOriginal).toHaveBeenCalledWith(['asset-1'], undefined, 'UTC', false);
       expect(mocks.asset.updateAll).toHaveBeenCalledWith(['asset-1'], {
         dateAccuracy: 'decade',
+        // FL-1814: any date edit but a year with a detail clears the detail
+        dateDetail: null,
         fileCreatedAt: start,
         localDateTime: start,
       });

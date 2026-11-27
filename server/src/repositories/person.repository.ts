@@ -3,6 +3,7 @@ import { type ExpressionBuilder, type Insertable, type Kysely, type Updateable, 
 import { jsonObjectFrom } from 'kysely/helpers/postgres';
 import { InjectKysely } from 'nestjs-kysely';
 import { validate as isUuid } from 'uuid';
+import type { LifeDatePrecision } from 'src/utils/date.js';
 import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import type { PersonRelationshipEdge } from 'src/utils/person-relationship.js';
 import { AssetFace } from 'src/database.js';
@@ -11,7 +12,6 @@ import { AssetFileType, AssetType, AssetVisibility, LibraryScope, SourceType, Us
 import { publicationDatabase, publicationTransaction } from 'src/queue/transaction.js';
 import { uuidV7Floor } from 'src/repositories/album-summary.repository.js';
 import { DB } from 'src/schema/index.js';
-import type { LifeDatePrecision } from 'src/utils/date.js';
 import { AssetFaceTable } from 'src/schema/tables/asset-face.table.js';
 import { FaceSearchTable } from 'src/schema/tables/face-search.table.js';
 import { PersonGroupTable } from 'src/schema/tables/person-group.table.js';

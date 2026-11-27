@@ -1339,9 +1339,32 @@ describe(PersonRepository.name, () => {
       await expect(sut.getProfile(person)).resolves.toEqual({
         deathDate: expect.any(Date),
         notes: 'Grandma, loved gardens',
+        birthDatePrecision: null,
+        deathDatePrecision: null,
       });
       await sut.upsertProfile(person, { deathDate: null });
-      await expect(sut.getProfile(person)).resolves.toEqual({ deathDate: null, notes: 'Grandma, loved gardens' });
+      await expect(sut.getProfile(person)).resolves.toEqual({
+        deathDate: null,
+        notes: 'Grandma, loved gardens',
+        birthDatePrecision: null,
+        deathDatePrecision: null,
+      });
+
+      // FL-1814: how sure each date is, kept and cleared like the rest, and only the stored choices
+      await sut.upsertProfile(person, { birthDatePrecision: 'month', deathDatePrecision: 'about' });
+      await expect(sut.getProfile(person)).resolves.toMatchObject({
+        birthDatePrecision: 'month',
+        deathDatePrecision: 'about',
+        notes: 'Grandma, loved gardens',
+      });
+      await sut.upsertProfile(person, { birthDatePrecision: null });
+      await expect(sut.getProfile(person)).resolves.toMatchObject({
+        birthDatePrecision: null,
+        deathDatePrecision: 'about',
+      });
+      await expect(sut.upsertProfile(person, { birthDatePrecision: 'week' as never })).rejects.toThrow(
+        /person_profile_birthDatePrecision_check/,
+      );
     });
 
     it('reads the profile with the People page, one row per person', async () => {
