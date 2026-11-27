@@ -26,4 +26,8 @@ export class LibraryFolderAlbumTable {
 
   @Column({ type: 'boolean', default: false })
   isUserEdited!: Generated<boolean>;
+
+  // FL-1837: kept as made when the library's rules changed ("new folders only"): it keeps its own folder's photos
+  @Column({ type: 'boolean', default: false })
+  isKept!: Generated<boolean>;
 }

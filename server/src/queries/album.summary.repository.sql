@@ -70,6 +70,11 @@ set
   "lastModifiedAssetTimestamp" = "excluded"."lastModifiedAssetTimestamp",
   "computedAt" = "excluded"."computedAt"
 
+-- AlbumSummaryRepository.deleteByAlbumIds
+delete from "album_summary"
+where
+  "albumId" = any ($1::uuid[])
+
 -- AlbumSummaryRepository.deleteComputedBefore
 delete from "album_summary"
 where

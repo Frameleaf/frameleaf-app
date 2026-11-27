@@ -13,8 +13,13 @@ export type StoredAlbumSourceLink = Omit<AlbumSourceLink, 'albumName'> & {
   stayRemoved: boolean;
 };
 
+/**
+ * FL-1840: a link outlives its album. An album that is gone was deleted by the person, so the link stays removed
+ * rather than finding (or making) an album by name again.
+ */
 const LINK_COLUMNS = sql`link.id, link."userId", link."albumId", link."sourceKind", link."sourceId", link."deviceKey",
-  link."lastSourceName", link."createdAt", link."updatedAt", link."stayRemoved"`;
+  link."lastSourceName", link."createdAt", link."updatedAt",
+  (link."stayRemoved" OR NOT EXISTS (SELECT 1 FROM public.album gone WHERE gone.id = link."albumId")) AS "stayRemoved"`;
 
 /** The album is live and owned by the link's user. */
 const LIVE_ALBUM = sql`

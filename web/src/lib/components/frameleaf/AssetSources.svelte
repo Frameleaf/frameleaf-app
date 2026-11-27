@@ -10,13 +10,14 @@
    * was uploaded. Stored links are untrusted and only http(s) addresses
    * become links.
    */
+  import InlineError from '$lib/components/frameleaf/InlineError.svelte';
+  import Skeleton from '$lib/components/frameleaf/Skeleton.svelte';
   import { getAssetSources, type AssetSourceResponseDto } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
   import { mdiDownloadOutline, mdiFolderZipOutline, mdiPuzzleOutline, mdiTrayArrowUp } from '@mdi/js';
   import { onDestroy } from 'svelte';
   import { locale, t } from 'svelte-i18n';
   import { formatDate as displayDate } from '$lib/frameleaf/date-format';
-  import Button from '$lib/components/frameleaf/Button.svelte';
   import { onLibraryAccessChange } from '$lib/frameleaf/library-access';
   import { libraryReferenceUrl } from '$lib/frameleaf/library-reference';
 
@@ -104,10 +105,9 @@
 {#if canRead || added}
   <section class="fl-asset-sources" aria-labelledby={headingId} aria-busy={loading}>
     <h3 id={headingId} class={headingClass}>{$t('frameleaf_boards_source')}</h3>
-    {#if loading}<p role="status">{$t('loading')}</p>
+    {#if loading}<Skeleton variant="text" lines={3} />
     {:else if failed}
-      <p role="status">{$t('frameleaf_sources_unavailable')}</p>
-      <Button onclick={() => generation++}>{$t('retry')}</Button>
+      <InlineError compact message={$t('frameleaf_sources_unavailable')} onRetry={() => generation++} />
     {:else}
       <dl>
         {#if canRead}
@@ -234,7 +234,6 @@
     outline-offset: 2px;
     border-radius: var(--fl-radius-control);
   }
-  p,
   small {
     margin: 0;
     color: var(--fl-muted);

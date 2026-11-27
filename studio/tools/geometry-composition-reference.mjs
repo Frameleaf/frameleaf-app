@@ -170,7 +170,15 @@ export function compositionSourcesFor(sourceSha256) {
     // FL-1822 inspector controls laid out as the approved Studio; changes no composition or raster producer.
     sourceSha256 === '12627e4c71be07459341c17242efaaf9e93b026e613f43beee979c975c450298' ||
     // FL-1822 selection handles and the timeline toolbar; changes no composition or raster producer.
-    sourceSha256 === '0bc63badd42ed7735d32c4c6e479bc1f88908274ee00d100b2378e1d027ee843'
+    sourceSha256 === '0bc63badd42ed7735d32c4c6e479bc1f88908274ee00d100b2378e1d027ee843' ||
+    // FL-1822 track heads and the Align row in Transform; changes no composition or raster producer.
+    sourceSha256 === '926bc6200a4c1221056b19ff3b2878dc65605b0e12eaecce65e825075bb9fc67' ||
+    // FL-1822 the media bin laid out as the approved Studio; changes no composition or raster producer.
+    sourceSha256 === '23af4f1aabfd81a53909eb907a3d51acb51392b0b98bca06b748c6eca080536d' ||
+    // FL-1822 the Add panel and two-tone transition previews; changes no composition or raster producer.
+    sourceSha256 === '3ac1e51c2bb62cdd299b8912a1080fc8dc4e559eb439eabf59368bba1b90b25c' ||
+    // FL-1822 the keyframes lane's header and labels; changes no composition or raster producer.
+    sourceSha256 === '7bf91610b9e5169164d516910acd08a18ff905506bcbfd597f2216a4248d761b'
   )
     return {
       ...COMPOSITION_SOURCES,

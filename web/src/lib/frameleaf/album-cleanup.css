@@ -508,6 +508,11 @@ dl.ac-stats {
   background: var(--fl-panel);
   overflow: hidden;
 }
+/* FL-1810: an empty tree is only its EmptyRow, without the panel's frame around it. */
+.ac-tree:has(> .ac-empty) {
+  border: 0;
+  background: none;
+}
 .ac-row {
   display: flex;
   align-items: center;
@@ -612,7 +617,12 @@ button.ac-chevron:hover {
   padding: 8px 12px 8px calc(48px + var(--depth, 0) * 24px);
   border-bottom: 1px solid var(--fl-border);
 }
+/* FL-1810: an empty list holds one EmptyRow, which brings its own padding. */
 .ac-empty {
+  list-style: none;
+}
+.ac-more-note,
+.ac-picker .ac-empty {
   padding: 16px;
   color: var(--fl-muted);
   font-size: var(--fl-font-callout);
@@ -621,7 +631,7 @@ button.ac-chevron:hover {
   display: grid;
   gap: 8px;
 }
-.ac-dupes > li:not(.ac-empty) {
+.ac-dupes > li:not(.ac-empty, .ac-more-note) {
   display: grid;
   gap: 8px;
   padding: 12px 16px;

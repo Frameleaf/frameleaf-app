@@ -266,7 +266,8 @@ describe('VideoMomentsPanel', () => {
       await fireEvent.click(await screen.findByRole('button', { name: 'Find moments like 0:12' }));
       expect(await screen.findByRole('alert')).toHaveTextContent('Similar moments could not be found.');
 
-      await fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+      // FL-1810: the shared in-place error and its Try again
+      await fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
 
       expect(await screen.findByText('Found it')).toBeInTheDocument();
       expect(sdkMock.searchSimilarVideoMoments).toHaveBeenCalledTimes(2);

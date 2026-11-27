@@ -17,6 +17,7 @@ import {
   LibraryScanStopReason,
   MediaOperationStatus,
   UserStatus,
+  type FolderAlbumOptionsDto,
   type LibraryResponseDto,
   type LibraryScanResponseDto,
   type LibraryStatsResponseDto,
@@ -87,6 +88,8 @@ export type LibraryRow = {
   stats: LibraryStats | null;
   /** FL-838: the folder keeps an album for each of its folders. */
   folderAlbums?: boolean;
+  /** FL-1837: which of its folders become albums. */
+  folderAlbumOptions?: FolderAlbumOptionsDto;
 };
 
 export const libraryKey = (id: string) => `library:${id}`;
@@ -173,6 +176,7 @@ export const buildLibraryRows = ({
       scan: library.scan ?? null,
       stats: stats ? toStats(stats) : null,
       folderAlbums: library.folderAlbums,
+      folderAlbumOptions: library.folderAlbumOptions,
     };
   });
 

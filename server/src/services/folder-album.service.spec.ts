@@ -2,7 +2,15 @@ import path from 'node:path';
 import { AlbumKind, JobName } from 'src/enum.js';
 import { FolderAlbumService } from 'src/services/folder-album.service.js';
 import { LibraryService } from 'src/services/library.service.js';
-import { buildFolderTree, matchMovedFolders } from 'src/utils/folder-albums.js';
+import {
+  EVENT_FOLDER_ALBUM_OPTIONS,
+  FolderAlbumOptions,
+  LEGACY_FOLDER_ALBUM_OPTIONS,
+  buildFolderTree,
+  looksLikeEventFolders,
+  matchMovedFolders,
+  planFolderAlbums,
+} from 'src/utils/folder-albums.js';
 import { factory, newUuid } from 'test/small.factory.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
 
@@ -12,10 +20,19 @@ type FakeAsset = {
   originalFileName: string;
   fileModifiedAt: Date;
   isOffline: boolean;
+  /** an item a folder album does not show, such as a hidden one */
+  hidden?: boolean;
   libraryId: string | null;
 };
 type FakeAlbum = { id: string; albumName: string; parentId: string | null; kind: AlbumKind };
-type FakeLink = { id: string; libraryId: string; folderPath: string; albumId: string; isUserEdited: boolean };
+type FakeLink = {
+  id: string;
+  libraryId: string;
+  folderPath: string;
+  albumId: string;
+  isUserEdited: boolean;
+  isKept: boolean;
+};
 
 /**
  * An in-memory library and its albums behind the repository methods the sync uses, so the tests read as what
@@ -29,6 +46,7 @@ const fakeWorld = (mocks: ServiceMocks, importPaths: string[]) => {
   // library_folder_album_asset: the photos the sync has put in each album once
   const seen = new Map<string, Set<string>>();
   const links: FakeLink[] = [];
+  const shared = new Set<string>();
   const folderOf = (asset: FakeAsset) => path.posix.dirname(asset.originalPath);
   const ofLibrary = (asset: FakeAsset) => asset.libraryId === library.id;
 
@@ -52,14 +70,44 @@ const fakeWorld = (mocks: ServiceMocks, importPaths: string[]) => {
   mocks.user.get.mockResolvedValue({ id: library.ownerId } as never);
   mocks.user.getMetadata.mockResolvedValue([]);
   mocks.library.getFolderPhotoCounts.mockImplementation(() => {
-    const counts = new Map<string, number>();
+    const counts = new Map<string, { photos: number; items: number }>();
     for (const asset of assets) {
       if (ofLibrary(asset) && !asset.isOffline) {
-        counts.set(folderOf(asset), (counts.get(folderOf(asset)) ?? 0) + 1);
+        const row = counts.get(folderOf(asset)) ?? { photos: 0, items: 0 };
+        row.items++;
+        row.photos += asset.hidden ? 0 : 1;
+        counts.set(folderOf(asset), row);
       }
     }
-    return Promise.resolve([...counts].map(([folderPath, photos]) => ({ folderPath, photos })));
+    return Promise.resolve([...counts].map(([folderPath, row]) => ({ folderPath, ...row })));
   });
+  mocks.library.getFolderPaths.mockImplementation((_libraryId, under) =>
+    Promise.resolve([
+      ...new Set(
+        assets
+          .filter((asset) => ofLibrary(asset) && under.some((folder) => asset.originalPath.startsWith(`${folder}/`)))
+          .map((asset) => folderOf(asset)),
+      ),
+    ]),
+  );
+  mocks.library.getFolderAlbumLinks.mockImplementation((linkId, albumId) =>
+    Promise.resolve(
+      links
+        .filter(({ id, albumId: linked }) => id === linkId || linked === albumId)
+        .map(({ id, albumId: linked }) => ({ id, albumId: linked })),
+    ),
+  );
+  mocks.library.setFolderAlbumsKept.mockImplementation((_libraryId, kept) => {
+    for (const link of links) {
+      link.isKept = kept;
+    }
+    return Promise.resolve();
+  });
+  mocks.album.getSharedAlbumIds.mockImplementation(() => Promise.resolve(new Set(shared)));
+  mocks.album.getMetadataForIds.mockImplementation((ids) =>
+    Promise.resolve(ids.map((albumId) => ({ albumId, assetCount: members.get(albumId)?.size ?? 0 })) as never),
+  );
+  mocks.albumSummary.deleteByAlbumIds.mockResolvedValue();
   mocks.library.getFolderAlbums.mockImplementation(() =>
     Promise.resolve(
       links.map((link) => {
@@ -69,7 +117,7 @@ const fakeWorld = (mocks: ServiceMocks, importPaths: string[]) => {
     ),
   );
   mocks.library.createFolderAlbum.mockImplementation((value) => {
-    const link = { id: newUuid(), isUserEdited: false, ...value } as FakeLink;
+    const link = { id: newUuid(), isUserEdited: false, isKept: false, ...value } as FakeLink;
     links.push(link);
     return Promise.resolve(link as never);
   });
@@ -144,19 +192,34 @@ const fakeWorld = (mocks: ServiceMocks, importPaths: string[]) => {
     albums.get(id)!.parentId = parentId;
     return Promise.resolve();
   });
-  mocks.album.syncFolderMemberships.mockImplementation((_libraryId, add, remove) => {
+  mocks.album.getFolderPhotosToAdd.mockImplementation((_libraryId, folders) => {
+    const pairs: { albumId: string; assetId: string }[] = [];
+    for (const asset of assets) {
+      for (const { albumId, folderPath } of folders) {
+        if (
+          ofLibrary(asset) &&
+          !asset.isOffline &&
+          !asset.hidden &&
+          folderPath === folderOf(asset) &&
+          !seen.get(albumId)?.has(asset.id)
+        ) {
+          pairs.push({ albumId, assetId: asset.id });
+        }
+      }
+    }
+    return Promise.resolve(pairs);
+  });
+  mocks.album.syncFolderMemberships.mockImplementation((_libraryId, add, remove, stale) => {
     const added: { albumId: string; assetId: string }[] = [];
     const removed: { albumId: string; assetId: string }[] = [];
-    for (const asset of assets) {
-      for (const { albumId, folderPath } of add) {
-        const once = seen.get(albumId) ?? new Set<string>();
-        seen.set(albumId, once);
-        if (ofLibrary(asset) && !asset.isOffline && folderPath === folderOf(asset) && !once.has(asset.id)) {
-          once.add(asset.id);
-          if (!members.get(albumId)!.has(asset.id)) {
-            members.get(albumId)!.add(asset.id);
-            added.push({ albumId, assetId: asset.id });
-          }
+    for (const { albumId, assetId } of add) {
+      const once = seen.get(albumId) ?? new Set<string>();
+      seen.set(albumId, once);
+      if (!once.has(assetId)) {
+        once.add(assetId);
+        if (!members.get(albumId)!.has(assetId)) {
+          members.get(albumId)!.add(assetId);
+          added.push({ albumId, assetId });
         }
       }
     }
@@ -167,6 +230,20 @@ const fakeWorld = (mocks: ServiceMocks, importPaths: string[]) => {
           members.get(albumId)!.delete(assetId);
           seen.get(albumId)?.delete(assetId);
           removed.push({ albumId, assetId });
+        }
+      }
+    }
+    for (const albumId of stale?.albumIds ?? []) {
+      for (const assetId of seen.get(albumId) ?? []) {
+        const asset = assets.find(({ id }) => id === assetId)!;
+        const member = stale!.members.some(
+          (folder) => folder.albumId === albumId && folder.folderPath === folderOf(asset),
+        );
+        if (!member) {
+          seen.get(albumId)!.delete(assetId);
+          if (members.get(albumId)?.delete(assetId)) {
+            removed.push({ albumId, assetId });
+          }
         }
       }
     }
@@ -218,7 +295,28 @@ const fakeWorld = (mocks: ServiceMocks, importPaths: string[]) => {
       .map((id) => assets.find((asset) => asset.id === id)!.originalPath)
       .toSorted();
 
-  return { library, assets, albums, members, links, addFile, removeFile, renameFolder, albumFor, photosOf };
+  const childrenOf = (folderPath: string) =>
+    albums
+      .values()
+      .filter((album) => album.parentId === albumFor(folderPath)!.id)
+      .map(({ albumName }) => albumName)
+      .toArray()
+      .toSorted();
+
+  return {
+    library,
+    assets,
+    albums,
+    members,
+    links,
+    shared,
+    addFile,
+    removeFile,
+    renameFolder,
+    albumFor,
+    photosOf,
+    childrenOf,
+  };
 };
 
 describe(FolderAlbumService.name, () => {
@@ -461,6 +559,65 @@ describe(FolderAlbumService.name, () => {
       expect(world.links.find((link) => link.folderPath === '/photos/trip')?.isUserEdited).toBe(true);
     });
 
+    it('writes the photos of a large library in batches of albums, each its own transaction', async () => {
+      const world = fakeWorld(mocks, ['/photos']);
+      for (let index = 0; index < 120; index++) {
+        world.addFile(`/photos/2026-11-${index} - Event/Capture/a.jpg`);
+      }
+
+      await expect(sut.sync(world.library.id)).resolves.toMatchObject({ created: 240, photosAdded: 120 });
+
+      // 240 albums, 50 to a batch
+      expect(mocks.album.syncFolderMemberships).toHaveBeenCalledTimes(5);
+      for (const call of mocks.album.syncFolderMemberships.mock.calls) {
+        expect(call[3]!.albumIds.length).toBeLessThanOrEqual(50);
+      }
+    });
+
+    it('keeps syncing a merged folder album into the album it was merged into, without making it again', async () => {
+      const world = fakeWorld(mocks, ['/photos']);
+      world.addFile('/photos/Trip/a.jpg');
+      world.addFile('/photos/Beach/b.jpg');
+      await sut.sync(world.library.id);
+      const trip = world.albumFor('/photos/Trip')!;
+      const beach = world.albumFor('/photos/Beach')!;
+      // the owner merges Trip into Beach: Trip's link follows to Beach as the owner's edit (AlbumMergeRepository)
+      world.members.get(beach.id)!.add(world.assets[0].id);
+      const link = world.links.find(({ folderPath }) => folderPath === '/photos/Trip')!;
+      Object.assign(link, { albumId: beach.id, isUserEdited: true, isKept: true });
+      world.albums.delete(trip.id);
+
+      world.addFile('/photos/Trip/c.jpg');
+      await expect(sut.sync(world.library.id)).resolves.toMatchObject({ created: 0, removed: 0, photosAdded: 1 });
+
+      expect(world.photosOf('/photos/Trip')).toEqual([
+        '/photos/Beach/b.jpg',
+        '/photos/Trip/a.jpg',
+        '/photos/Trip/c.jpg',
+      ]);
+      expect(beach.albumName).toBe('Beach');
+
+      // Beach's own folder goes: the album stays for the Trip folder merged into it
+      world.removeFile('/photos/Beach/b.jpg');
+      await expect(sut.sync(world.library.id)).resolves.toMatchObject({ removed: 0 });
+      expect(world.albums.has(beach.id)).toBe(true);
+      expect(world.albumFor('/photos/Beach')).toBeUndefined();
+    });
+
+    it('leaves an album alone when a merge moved its folder while the sync ran', async () => {
+      const world = fakeWorld(mocks, ['/photos']);
+      world.addFile('/photos/Trip/a.jpg');
+      await sut.sync(world.library.id);
+      const trip = world.albumFor('/photos/Trip')!;
+      const link = world.links.find(({ folderPath }) => folderPath === '/photos/Trip')!;
+      world.removeFile('/photos/Trip/a.jpg');
+      // the merge commits after the sync read the links: by the time it would delete, the link points elsewhere
+      mocks.library.getFolderAlbumLinks.mockResolvedValueOnce([{ id: link.id, albumId: 'merged-album' }]);
+
+      await expect(sut.sync(world.library.id)).resolves.toMatchObject({ removed: 0 });
+      expect(world.albums.has(trip.id)).toBe(true);
+    });
+
     it('does nothing for a library with folder albums off', async () => {
       const world = fakeWorld(mocks, ['/photos']);
       world.library.folderAlbums = false;
@@ -468,6 +625,219 @@ describe(FolderAlbumService.name, () => {
 
       await expect(sut.sync(world.library.id)).resolves.toBeUndefined();
       expect(mocks.album.create).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('which folders become albums (FL-1837)', () => {
+    const events = (world: ReturnType<typeof fakeWorld>, options: Partial<FolderAlbumOptions> = {}) => {
+      (world.library as { folderAlbumOptions?: FolderAlbumOptions }).folderAlbumOptions = {
+        ...EVENT_FOLDER_ALBUM_OPTIONS,
+        ...options,
+      };
+    };
+    const eventLibrary = () => {
+      const world = fakeWorld(mocks, ['/photos']);
+      world.addFile('/photos/2026-11-19 - Nathan/Capture/a.jpg');
+      world.addFile('/photos/2026-11-19 - Nathan/Capture/b.jpg');
+      world.addFile('/photos/2026-11-19 - Nathan/Videos/c.mp4');
+      world.addFile('/photos/2026-11-19 - Nathan/Export/a-edit.jpg');
+      world.addFile('/photos/2026-11-20 - Park/Capture/d.jpg');
+      return world;
+    };
+
+    it('makes one album for each event folder, with an album inside for exports', async () => {
+      const world = eventLibrary();
+      events(world);
+
+      await sut.sync(world.library.id);
+
+      const nathan = world.albumFor('/photos/2026-11-19 - Nathan')!;
+      expect(nathan).toMatchObject({ albumName: '2026-11-19 - Nathan', parentId: null, kind: AlbumKind.Album });
+      expect(world.photosOf('/photos/2026-11-19 - Nathan')).toEqual([
+        '/photos/2026-11-19 - Nathan/Capture/a.jpg',
+        '/photos/2026-11-19 - Nathan/Capture/b.jpg',
+        '/photos/2026-11-19 - Nathan/Videos/c.mp4',
+      ]);
+      expect(world.albumFor('/photos/2026-11-19 - Nathan/Export')).toMatchObject({
+        albumName: 'Export',
+        parentId: nathan.id,
+      });
+      expect(world.albumFor('/photos/2026-11-19 - Nathan/Capture')).toBeUndefined();
+      expect(world.albums.size).toBe(3);
+    });
+
+    it('names albums from the folders on the way when asked, and leaves out folders set to No album', async () => {
+      const world = eventLibrary();
+      events(world, { naming: 'path', subfolders: { videos: 'skip' } });
+
+      await sut.sync(world.library.id);
+
+      expect(world.albumFor('/photos/2026-11-19 - Nathan/Export')).toMatchObject({
+        albumName: '2026-11-19 - Nathan › Export',
+      });
+      expect(world.photosOf('/photos/2026-11-19 - Nathan')).not.toContain('/photos/2026-11-19 - Nathan/Videos/c.mp4');
+    });
+
+    it('changes the albums to match: unedited ones go, renamed or shared ones stay, photos only change albums', async () => {
+      const world = eventLibrary();
+      world.addFile('/photos/2026-11-19 - Nathan/Edits/e.jpg');
+      await sut.sync(world.library.id);
+      expect(world.albumFor('/photos/2026-11-19 - Nathan')).toMatchObject({ kind: AlbumKind.Collection });
+      const videos = world.albumFor('/photos/2026-11-19 - Nathan/Videos')!;
+      videos.albumName = 'Clips';
+      const edits = world.albumFor('/photos/2026-11-19 - Nathan/Edits')!;
+      const park = world.albumFor('/photos/2026-11-20 - Park/Capture')!;
+      world.shared.add(park.id);
+      const assetsBefore = world.assets.length;
+
+      events(world, { subfolders: { edits: 'join' } });
+      await sut.sync(world.library.id);
+
+      const nathan = world.albumFor('/photos/2026-11-19 - Nathan')!;
+      expect(nathan.kind).toBe(AlbumKind.Album);
+      expect(world.albumFor('/photos/2026-11-19 - Nathan/Capture')).toBeUndefined();
+      expect(world.albums.has(edits.id)).toBe(false);
+      expect(world.albumFor('/photos/2026-11-19 - Nathan/Videos')).toMatchObject({ id: videos.id, albumName: 'Clips' });
+      expect(world.photosOf('/photos/2026-11-19 - Nathan/Videos')).toEqual([
+        '/photos/2026-11-19 - Nathan/Videos/c.mp4',
+      ]);
+      expect(world.photosOf('/photos/2026-11-19 - Nathan')).toContain('/photos/2026-11-19 - Nathan/Edits/e.jpg');
+      // the shared album stays, moved inside its event's new album
+      const parkEvent = world.albumFor('/photos/2026-11-20 - Park')!;
+      expect(world.albumFor('/photos/2026-11-20 - Park/Capture')).toMatchObject({
+        id: park.id,
+        parentId: parkEvent.id,
+      });
+      expect(world.photosOf('/photos/2026-11-20 - Park')).toEqual(['/photos/2026-11-20 - Park/Capture/d.jpg']);
+      expect(world.assets).toHaveLength(assetsBefore);
+      expect(mocks.asset.deleteAll).not.toHaveBeenCalled();
+    });
+
+    it('takes photos out of an album when their folder gets an album of its own, and puts them back on Undo', async () => {
+      const world = eventLibrary();
+      events(world, { subfolders: { export: 'join' } });
+      await sut.sync(world.library.id);
+      expect(world.photosOf('/photos/2026-11-19 - Nathan')).toContain('/photos/2026-11-19 - Nathan/Export/a-edit.jpg');
+
+      events(world);
+      await sut.sync(world.library.id);
+      expect(world.photosOf('/photos/2026-11-19 - Nathan')).not.toContain(
+        '/photos/2026-11-19 - Nathan/Export/a-edit.jpg',
+      );
+      expect(world.photosOf('/photos/2026-11-19 - Nathan/Export')).toEqual([
+        '/photos/2026-11-19 - Nathan/Export/a-edit.jpg',
+      ]);
+
+      // Undo: back to an album for every folder; the event album is a collection of folder albums again
+      (world.library as { folderAlbumOptions?: FolderAlbumOptions }).folderAlbumOptions = LEGACY_FOLDER_ALBUM_OPTIONS;
+      await sut.sync(world.library.id);
+      expect(world.albumFor('/photos/2026-11-19 - Nathan')).toMatchObject({ kind: AlbumKind.Collection });
+      expect(world.photosOf('/photos/2026-11-19 - Nathan')).toEqual([]);
+      expect(world.childrenOf('/photos/2026-11-19 - Nathan')).toEqual(['Capture', 'Export', 'Videos']);
+    });
+
+    it('with "new folders only" keeps the albums made so far as they were', async () => {
+      const world = eventLibrary();
+      await sut.sync(world.library.id);
+      const capture = world.albumFor('/photos/2026-11-19 - Nathan/Capture')!;
+
+      events(world);
+      await sut.applyToExisting(world.library.id, 'newOnly');
+      world.addFile('/photos/2026-11-21 - Zoo/Capture/z.jpg');
+      world.addFile('/photos/2026-11-19 - Nathan/Capture/new.jpg');
+      await sut.sync(world.library.id);
+
+      expect(world.albumFor('/photos/2026-11-19 - Nathan/Capture')).toMatchObject({ id: capture.id });
+      expect(world.photosOf('/photos/2026-11-19 - Nathan/Capture')).toContain(
+        '/photos/2026-11-19 - Nathan/Capture/new.jpg',
+      );
+      expect(world.albumFor('/photos/2026-11-21 - Zoo')).toMatchObject({ kind: AlbumKind.Album });
+      expect(world.albumFor('/photos/2026-11-21 - Zoo/Capture')).toBeUndefined();
+      expect(mocks.job.queue).toHaveBeenCalledWith({
+        name: JobName.LibraryFolderAlbumSync,
+        data: { id: world.library.id },
+      });
+    });
+
+    it('with "new folders only" a kept album keeps its own photos when a new folder appears inside it', async () => {
+      const world = fakeWorld(mocks, ['/photos']);
+      world.addFile('/photos/Trip/a.jpg');
+      world.addFile('/photos/Trip/b.jpg');
+      await sut.sync(world.library.id);
+      const trip = world.albumFor('/photos/Trip')!;
+
+      events(world);
+      await sut.applyToExisting(world.library.id, 'newOnly');
+      world.addFile('/photos/Trip/Extra/c.jpg');
+      await sut.sync(world.library.id);
+
+      expect(world.albumFor('/photos/Trip')).toMatchObject({ id: trip.id, kind: AlbumKind.Album });
+      expect(world.photosOf('/photos/Trip')).toEqual([
+        '/photos/Trip/Extra/c.jpg',
+        '/photos/Trip/a.jpg',
+        '/photos/Trip/b.jpg',
+      ]);
+    });
+
+    it('follows a renamed event folder: the same album, its new name, the photos of the folders inside it', async () => {
+      const world = eventLibrary();
+      events(world);
+      await sut.sync(world.library.id);
+      const nathan = world.albumFor('/photos/2026-11-19 - Nathan')!;
+      const exported = world.albumFor('/photos/2026-11-19 - Nathan/Export')!;
+
+      world.renameFolder('/photos/2026-11-19 - Nathan', '/photos/2026-11-19 - Nathan and Popi');
+      await expect(sut.sync(world.library.id)).resolves.toMatchObject({ created: 0, removed: 0 });
+
+      expect(world.albumFor('/photos/2026-11-19 - Nathan and Popi')).toMatchObject({
+        id: nathan.id,
+        albumName: '2026-11-19 - Nathan and Popi',
+      });
+      expect(world.albumFor('/photos/2026-11-19 - Nathan and Popi/Export')).toMatchObject({
+        id: exported.id,
+        parentId: nathan.id,
+      });
+      expect(world.photosOf('/photos/2026-11-19 - Nathan and Popi')).toEqual([
+        '/photos/2026-11-19 - Nathan and Popi/Capture/a.jpg',
+        '/photos/2026-11-19 - Nathan and Popi/Capture/b.jpg',
+        '/photos/2026-11-19 - Nathan and Popi/Videos/c.mp4',
+      ]);
+    });
+
+    it('makes no album for a folder whose items are none of them shown, unless asked', async () => {
+      const world = fakeWorld(mocks, ['/photos']);
+      world.addFile('/photos/trip/a.jpg');
+      world.addFile('/photos/hidden/b.jpg', { hidden: true });
+
+      await sut.sync(world.library.id);
+      expect(world.albumFor('/photos/hidden')).toBeUndefined();
+
+      (world.library as { folderAlbumOptions?: FolderAlbumOptions }).folderAlbumOptions = {
+        ...LEGACY_FOLDER_ALBUM_OPTIONS,
+        skipEmpty: false,
+      };
+      await sut.sync(world.library.id);
+      expect(world.albumFor('/photos/hidden')).toMatchObject({ kind: AlbumKind.Album });
+      expect(world.photosOf('/photos/hidden')).toEqual([]);
+    });
+
+    it("asks album lists to count the changed albums again, so none stays 'Empty'", async () => {
+      const world = eventLibrary();
+      await sut.sync(world.library.id);
+      const capture = world.albumFor('/photos/2026-11-19 - Nathan/Capture')!;
+      expect(mocks.albumSummary.deleteByAlbumIds).toHaveBeenCalledWith(expect.arrayContaining([capture.id]));
+    });
+
+    it('suggests one album for each event folder for a library laid out by event', async () => {
+      const world = eventLibrary();
+      await sut.sync(world.library.id);
+      mocks.library.getAll.mockResolvedValue([world.library] as never);
+      mocks.library.getFolderAlbumCounts.mockResolvedValue({ albums: 6, empty: 1 });
+
+      await expect(sut.getSuggestions(world.library.ownerId)).resolves.toEqual([
+        expect.objectContaining({ libraryId: world.library.id, albums: 6, empty: 1, suggestedAlbums: 3 }),
+      ]);
+      await expect(sut.getSuggestions('someone-else')).resolves.toEqual([]);
     });
   });
 
@@ -528,6 +898,62 @@ describe('folder album planning', () => {
       depth: 1,
     });
     expect(buildFolderTree(['/photos'], [{ folderPath: '/photos/a/b/c/d', photos: 1 }], 4).size).toBe(0);
+  });
+
+  it('plans albums at a chosen level, with the folders above as collections when asked', () => {
+    const counts = [
+      { folderPath: '/p/2026/Trip/Capture', photos: 3 },
+      { folderPath: '/p/2026/Trip', photos: 1 },
+      { folderPath: '/p/2026/cover.jpg-folder', photos: 0, items: 2 },
+      { folderPath: '/p/2026', photos: 1 },
+    ];
+    const options = { ...LEGACY_FOLDER_ALBUM_OPTIONS, shape: 'level' as const, level: 2 };
+    const flat = planFolderAlbums(['/p'], counts, { ...options, collectionsAbove: false }, 'Lib');
+    expect(flat.get('/p/2026/Trip')).toMatchObject({
+      parentPath: null,
+      kind: AlbumKind.Album,
+      photos: 4,
+      members: ['/p/2026/Trip/Capture', '/p/2026/Trip'],
+    });
+    // a folder above the level holding photos of its own still gets an album
+    expect(flat.get('/p/2026')).toMatchObject({ parentPath: null, members: ['/p/2026'] });
+    expect(flat.has('/p/2026/cover.jpg-folder')).toBe(false);
+
+    const nested = planFolderAlbums(['/p'], counts, { ...options, naming: 'path', skipEmpty: false }, 'Lib');
+    expect(nested.get('/p/2026/Trip')).toMatchObject({ parentPath: '/p/2026', name: '2026 › Trip' });
+    expect(nested.get('/p/2026/cover.jpg-folder')).toMatchObject({ photos: 0, parentPath: '/p/2026' });
+  });
+
+  it('plans an album for every folder as FL-838 did', () => {
+    const plan = planFolderAlbums(
+      ['/photos'],
+      [
+        { folderPath: '/photos', photos: 1 },
+        { folderPath: '/photos/2020/trip', photos: 2 },
+      ],
+      LEGACY_FOLDER_ALBUM_OPTIONS,
+      'Photos',
+    );
+    expect(plan.get('/photos')).toMatchObject({ name: 'Photos', kind: AlbumKind.Album, parentPath: null });
+    expect(plan.get('/photos/2020')).toMatchObject({ kind: AlbumKind.Collection, members: [] });
+    expect(plan.get('/photos/2020/trip')).toMatchObject({ parentPath: '/photos/2020', members: ['/photos/2020/trip'] });
+  });
+
+  it('tells a folder-by-event layout from an ordinary one', () => {
+    const event = (name: string) => [
+      { folderPath: `/p/${name}/Capture`, photos: 1 },
+      { folderPath: `/p/${name}/RAW`, photos: 1 },
+    ];
+    expect(looksLikeEventFolders(['/p'], [...event('2026-01-01 A'), ...event('2026-01-02 B')])).toBe(true);
+    expect(
+      looksLikeEventFolders(
+        ['/p'],
+        [
+          { folderPath: '/p/2020/trip', photos: 1 },
+          { folderPath: '/p/2021/party', photos: 1 },
+        ],
+      ),
+    ).toBe(false);
   });
 
   it('matches a moved folder by most of its files, and a folder of folders by where they went', () => {
@@ -603,5 +1029,23 @@ describe(`${LibraryService.name} folder albums`, () => {
 
     expect(mocks.library.deleteFolderAlbums).not.toHaveBeenCalled();
     expect(mocks.job.queue).not.toHaveBeenCalledWith(expect.objectContaining({ name: JobName.LibraryFolderAlbumSync }));
+  });
+  it('new rules change the albums made so far to match, or apply to new folders only', async () => {
+    const library = factory.library({ folderAlbums: true });
+    mocks.library.get.mockResolvedValue(library);
+    mocks.library.update.mockResolvedValue(library);
+    mocks.library.setFolderAlbumsKept.mockResolvedValue();
+
+    await sut.update(library.id, { folderAlbumOptions: EVENT_FOLDER_ALBUM_OPTIONS });
+    expect(mocks.library.setFolderAlbumsKept).toHaveBeenLastCalledWith(library.id, false);
+
+    await sut.update(library.id, { folderAlbumOptions: EVENT_FOLDER_ALBUM_OPTIONS, folderAlbumExisting: 'newOnly' });
+    expect(mocks.library.setFolderAlbumsKept).toHaveBeenLastCalledWith(library.id, true);
+    expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.LibraryFolderAlbumSync, data: { id: library.id } });
+
+    // the same rules again change nothing
+    mocks.library.setFolderAlbumsKept.mockClear();
+    await sut.update(library.id, { folderAlbumOptions: LEGACY_FOLDER_ALBUM_OPTIONS });
+    expect(mocks.library.setFolderAlbumsKept).not.toHaveBeenCalled();
   });
 });

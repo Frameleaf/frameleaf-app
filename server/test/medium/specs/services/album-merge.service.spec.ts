@@ -1,7 +1,7 @@
 import { BadRequestException, ConflictException } from '@nestjs/common';
 import { Kysely, sql } from 'kysely';
 import { AlbumSourceKind, AlbumSourceOutcome } from 'src/dtos/album-source.dto.js';
-import { AlbumKind, AlbumUserRole, AssetLockReason, SharedLinkType } from 'src/enum.js';
+import { AlbumKind, AlbumUserRole, AssetLockReason, DatabaseLock, SharedLinkType } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AlbumChangeRunRepository } from 'src/repositories/album-change-run.repository.js';
 import { AlbumMergeRepository } from 'src/repositories/album-merge.repository.js';
@@ -12,6 +12,7 @@ import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { ClassificationRepository } from 'src/repositories/classification.repository.js';
 import { EventRepository } from 'src/repositories/event.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
+import { LibraryRepository } from 'src/repositories/library.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { PartnerOriginRepository } from 'src/repositories/partner-origin.repository.js';
 import { PartnerRepository } from 'src/repositories/partner.repository.js';
@@ -558,6 +559,59 @@ describe(AlbumMergeService.name, () => {
       await expect(deletedAt(loser.album.id)).resolves.toEqual({ deletedAt: null });
     });
 
+    it('FL-1837: a merged library folder album keeps syncing into the merged album, and Undo points it back', async () => {
+      const { sut, ctx, runs } = setup();
+      const { user } = await ctx.newUser();
+      const auth = factory.auth({ user: { id: user.id } });
+      const winner = await albumWith(ctx, user.id, 2);
+      const loser = await albumWith(ctx, user.id, 1);
+      const library = await ctx.database
+        .insertInto('library')
+        .values({
+          ownerId: user.id,
+          name: 'Folder',
+          importPaths: ['/fl1837'],
+          exclusionPatterns: [],
+          folderAlbums: true,
+        })
+        .returning('id')
+        .executeTakeFirstOrThrow();
+      await ctx.database
+        .insertInto('library_folder_album')
+        .values({ libraryId: library.id, folderPath: '/fl1837/Trip', albumId: loser.album.id })
+        .execute();
+      const link = () =>
+        ctx.database
+          .selectFrom('library_folder_album')
+          .select(['albumId', 'isUserEdited'])
+          .where('libraryId', '=', library.id)
+          .executeTakeFirstOrThrow();
+
+      // a folder-album sync running at the time (it holds the lock): the merge is refused, nothing moves
+      await ctx.database.connection().execute(async (connection) => {
+        await sql`SELECT pg_advisory_lock(${DatabaseLock.LibraryFolderAlbums})`.execute(connection);
+        try {
+          await expect(sut.merge(auth, winner.album.id, { otherId: loser.album.id })).rejects.toBeInstanceOf(
+            ConflictException,
+          );
+        } finally {
+          await sql`SELECT pg_advisory_unlock(${DatabaseLock.LibraryFolderAlbums})`.execute(connection);
+        }
+      });
+      await expect(link()).resolves.toEqual({ albumId: loser.album.id, isUserEdited: false });
+
+      await sut.merge(auth, winner.album.id, { otherId: loser.album.id });
+      await expect(link()).resolves.toEqual({ albumId: winner.album.id, isUserEdited: true });
+      // changing the library's rules to match later leaves the merged folder kept
+      await new LibraryRepository(ctx.database).setFolderAlbumsKept(library.id, false);
+      await expect(
+        ctx.database.selectFrom('library_folder_album').select('isKept').where('libraryId', '=', library.id).execute(),
+      ).resolves.toEqual([{ isKept: true }]);
+
+      await runs.undoLatest(auth);
+      await expect(link()).resolves.toEqual({ albumId: loser.album.id, isUserEdited: false });
+    });
+
     it('follows a merged-away import folder and a backup choice', async () => {
       const { sut, ctx } = setup();
       const { user } = await ctx.newUser();
@@ -581,6 +635,150 @@ describe(AlbumMergeService.name, () => {
       await expect(
         ctx.database.selectFrom('cloud_backup_selection').select('albumIds').where('userId', '=', user.id).execute(),
       ).resolves.toEqual([{ albumIds: [winner.album.id] }]);
+    });
+  });
+
+  describe('importer mappings (FL-1840)', () => {
+    it('moves media, Eagle, catalog and preservation mappings to the winner, and undo puts them back', async () => {
+      const { sut, ctx, runs } = setup();
+      const { user } = await ctx.newUser();
+      const auth = factory.auth({ user: { id: user.id } });
+      const winner = await albumWith(ctx, user.id, 2);
+      const loser = await albumWith(ctx, user.id, 1);
+      const { album: other } = await ctx.newAlbum({ ownerId: user.id });
+      const { id: creatorId } = await ctx.database
+        .insertInto('media_creator')
+        .values({ ownerId: user.id, provider: 'youtube', creatorId: 'c1', name: 'Creator', albumId: loser.album.id })
+        .returning('id')
+        .executeTakeFirstOrThrow();
+      const { id: eagleId } = await ctx.database
+        .insertInto('eagle_import')
+        .values({
+          ownerId: user.id,
+          rootId: '0',
+          relativePath: 'Design.library',
+          libraryPath: '/import/Design.library',
+          libraryName: 'Design',
+          fingerprint: 'f',
+          target: sql<never>`${JSON.stringify({ mode: 'inside', inside: loser.album.id })}::text::jsonb`,
+          albums: sql<never>`${JSON.stringify({ F1: loser.album.id, F2: other.id })}::text::jsonb`,
+        })
+        .returning('id')
+        .executeTakeFirstOrThrow();
+      await ctx.database
+        .insertInto('photo_source_album')
+        .values({ ownerId: user.id, catalog: 'lightroom:cat', collectionId: 'c1', albumId: loser.album.id })
+        .execute();
+      await ctx.database
+        .insertInto('preservation_album')
+        .values({ ownerId: user.id, packageIdentity: 'pkg', sourceAlbumId: 'a1', albumId: loser.album.id })
+        .execute();
+      const read = async () => ({
+        creator: (
+          await ctx.database
+            .selectFrom('media_creator')
+            .select('albumId')
+            .where('id', '=', creatorId)
+            .executeTakeFirstOrThrow()
+        ).albumId,
+        eagle: await ctx.database
+          .selectFrom('eagle_import')
+          .select(['albums', 'target'])
+          .where('id', '=', eagleId)
+          .executeTakeFirstOrThrow(),
+        catalog: (
+          await ctx.database
+            .selectFrom('photo_source_album')
+            .select('albumId')
+            .where('ownerId', '=', user.id)
+            .executeTakeFirstOrThrow()
+        ).albumId,
+        preservation: (
+          await ctx.database
+            .selectFrom('preservation_album')
+            .select('albumId')
+            .where('ownerId', '=', user.id)
+            .executeTakeFirstOrThrow()
+        ).albumId,
+      });
+
+      await sut.merge(auth, winner.album.id, { otherId: loser.album.id });
+      await expect(read()).resolves.toEqual({
+        creator: winner.album.id,
+        eagle: { albums: { F1: winner.album.id, F2: other.id }, target: { mode: 'inside', inside: winner.album.id } },
+        catalog: winner.album.id,
+        preservation: winner.album.id,
+      });
+
+      await runs.undoLatest(auth);
+      await expect(read()).resolves.toEqual({
+        creator: loser.album.id,
+        eagle: { albums: { F1: loser.album.id, F2: other.id }, target: { mode: 'inside', inside: loser.album.id } },
+        catalog: loser.album.id,
+        preservation: loser.album.id,
+      });
+    });
+  });
+
+  describe('a running Eagle import (FL-1840)', () => {
+    it('refuses to merge away an album the import is adding to', async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const auth = factory.auth({ user: { id: user.id } });
+      const winner = await albumWith(ctx, user.id, 2);
+      const loser = await albumWith(ctx, user.id, 1);
+      await ctx.database
+        .insertInto('eagle_import')
+        .values({
+          ownerId: user.id,
+          rootId: '0',
+          relativePath: 'Running.library',
+          libraryPath: '/import/Running.library',
+          libraryName: 'Running',
+          fingerprint: 'f',
+          target: sql<never>`'{"mode":"top"}'::text::jsonb`,
+          albums: sql<never>`${JSON.stringify({ F1: loser.album.id })}::text::jsonb`,
+          leaseOwner: 'worker',
+          leaseExpiresAt: sql<never>`now() + interval '1 minute'`,
+        })
+        .execute();
+
+      await expect(sut.merge(auth, winner.album.id, { otherId: loser.album.id })).rejects.toBeInstanceOf(
+        ConflictException,
+      );
+    });
+  });
+
+  describe('a running Eagle import and undo (FL-1840)', () => {
+    it('refuses to undo a merge while the import is adding to the merged album', async () => {
+      const { sut, ctx, runs } = setup();
+      const { user } = await ctx.newUser();
+      const auth = factory.auth({ user: { id: user.id } });
+      const winner = await albumWith(ctx, user.id, 2);
+      const loser = await albumWith(ctx, user.id, 1);
+      const { id: eagleId } = await ctx.database
+        .insertInto('eagle_import')
+        .values({
+          ownerId: user.id,
+          rootId: '0',
+          relativePath: 'Paused.library',
+          libraryPath: '/import/Paused.library',
+          libraryName: 'Paused',
+          fingerprint: 'f',
+          target: sql<never>`'{"mode":"top"}'::text::jsonb`,
+          albums: sql<never>`${JSON.stringify({ F1: loser.album.id })}::text::jsonb`,
+          status: 'stopped',
+        })
+        .returning('id')
+        .executeTakeFirstOrThrow();
+      await sut.merge(auth, winner.album.id, { otherId: loser.album.id });
+      await ctx.database
+        .updateTable('eagle_import')
+        .set({ status: 'running', leaseOwner: 'worker', leaseExpiresAt: sql<never>`now() + interval '1 minute'` })
+        .where('id', '=', eagleId)
+        .execute();
+
+      await expect(runs.undoLatest(auth)).rejects.toBeInstanceOf(ConflictException);
     });
   });
 

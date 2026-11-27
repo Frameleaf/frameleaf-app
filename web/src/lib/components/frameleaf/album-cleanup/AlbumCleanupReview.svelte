@@ -5,9 +5,10 @@
   import AlbumCleanupArt from '$lib/components/frameleaf/album-cleanup/AlbumCleanupArt.svelte';
   import AlbumCleanupMoveDialog from '$lib/components/frameleaf/album-cleanup/AlbumCleanupMoveDialog.svelte';
   import Button from '$lib/components/frameleaf/Button.svelte';
+  import EmptyRow from '$lib/components/frameleaf/EmptyRow.svelte';
+  import ListSkeleton from '$lib/components/frameleaf/ListSkeleton.svelte';
   import Menu from '$lib/components/frameleaf/Menu.svelte';
   import MenuItem from '$lib/components/frameleaf/MenuItem.svelte';
-  import Status from '$lib/components/frameleaf/Status.svelte';
   import {
     buildPlan,
     DEFAULT_DELIMITERS,
@@ -173,10 +174,12 @@
       phase = 'review';
       await resumeIfApplying();
     } catch (error) {
-      if (phase === 'loading' || phase === 'unready') {
+      // FL-1810: a failed first read is said on the page with Try again, without a toast as well
+      const inPlace = phase === 'loading' || phase === 'unready';
+      if (inPlace) {
         phase = 'error';
       }
-      handleError(error, $t('frameleaf_album_cleanup_load_failed'));
+      handleError(error, $t('frameleaf_album_cleanup_load_failed'), { notify: !inPlace });
     }
   };
 
@@ -660,7 +663,7 @@
 
 {#snippet moreNote(shown: number, total: number, noun: string)}
   {#if total > shown && !searching}
-    <li class="ac-empty">
+    <li class="ac-more-note">
       {$t('frameleaf_album_cleanup_showing', { values: { shown, total: number(total), noun } })}
     </li>
   {/if}
@@ -678,7 +681,14 @@
 
 {#if phase === 'loading'}
   <section class="ac-page">
-    <Status message={$t('frameleaf_album_cleanup_loading')} />
+    <div class="ac-head">
+      <p class="ac-eyebrow">
+        <Icon icon={mdiAutoFix} size="16" aria-hidden={true} />
+        {$t('frameleaf_album_cleanup_magic_albums')}
+      </p>
+      <h1>{$t('frameleaf_album_cleanup_title')}</h1>
+    </div>
+    <ListSkeleton rows={4} avatar={false} />
   </section>
 {:else if phase === 'error'}
   <section class="ac-page">
@@ -917,7 +927,7 @@
           <ul class="ac-tree">
             {@render rows(visibleStructure, 0, TREE_LIMIT)}
             {#if visibleStructure.length === 0}
-              <li class="ac-empty">{$t('frameleaf_album_cleanup_no_groups')}</li>
+              <li class="ac-empty"><EmptyRow title={$t('frameleaf_album_cleanup_no_groups')} /></li>
             {/if}
             {@render moreNote(TREE_LIMIT, visibleStructure.length, $t('frameleaf_album_cleanup_noun_album'))}
           </ul>
@@ -960,7 +970,7 @@
                 </ol>
               </li>
             {:else}
-              <li class="ac-empty">{$t('frameleaf_album_cleanup_no_duplicates')}</li>
+              <li class="ac-empty"><EmptyRow title={$t('frameleaf_album_cleanup_no_duplicates')} /></li>
             {/each}
             {@render moreNote(LIST_LIMIT, plan.duplicates.length, $t('frameleaf_album_cleanup_noun_album'))}
           </ul>
@@ -984,7 +994,7 @@
                 }),
               )}
             {:else}
-              <li class="ac-empty">{$t('frameleaf_album_cleanup_no_albums')}</li>
+              <li class="ac-empty"><EmptyRow title={$t('frameleaf_album_cleanup_no_albums')} /></li>
             {/each}
           </ul>
         {:else if tab === 'merge' && activeSub === 'trip'}
@@ -999,9 +1009,11 @@
               )}
             {:else}
               <li class="ac-empty">
-                {usePhotoData
-                  ? $t('frameleaf_album_cleanup_no_albums')
-                  : $t('frameleaf_album_cleanup_turn_on_photo_data')}
+                <EmptyRow
+                  title={usePhotoData
+                    ? $t('frameleaf_album_cleanup_no_albums')
+                    : $t('frameleaf_album_cleanup_turn_on_photo_data')}
+                />
               </li>
             {/each}
           </ul>
@@ -1039,9 +1051,11 @@
               </li>
             {:else}
               <li class="ac-empty">
-                {usePhotoData
-                  ? $t('frameleaf_album_cleanup_no_trips')
-                  : $t('frameleaf_album_cleanup_turn_on_photo_data')}
+                <EmptyRow
+                  title={usePhotoData
+                    ? $t('frameleaf_album_cleanup_no_trips')
+                    : $t('frameleaf_album_cleanup_turn_on_photo_data')}
+                />
               </li>
             {/each}
             {@render moreNote(LIST_LIMIT, plan.trips.length, $t('frameleaf_album_cleanup_noun_trip'))}
@@ -1075,7 +1089,7 @@
                 </ol>
               </li>
             {:else}
-              <li class="ac-empty">{$t('frameleaf_album_cleanup_no_days')}</li>
+              <li class="ac-empty"><EmptyRow title={$t('frameleaf_album_cleanup_no_days')} /></li>
             {/each}
             {@render moreNote(LIST_LIMIT, plan.dayRuns.length, $t('frameleaf_album_cleanup_noun_place'))}
           </ul>
@@ -1101,9 +1115,11 @@
               </li>
             {:else}
               <li class="ac-empty">
-                {usePhotoData
-                  ? $t('frameleaf_album_cleanup_no_albums')
-                  : $t('frameleaf_album_cleanup_turn_on_photo_data')}
+                <EmptyRow
+                  title={usePhotoData
+                    ? $t('frameleaf_album_cleanup_no_albums')
+                    : $t('frameleaf_album_cleanup_turn_on_photo_data')}
+                />
               </li>
             {/each}
             {@render moreNote(TREE_LIMIT, plan.placed.length, $t('frameleaf_album_cleanup_noun_album'))}
@@ -1179,7 +1195,7 @@
                 </ul>
               </li>
             {:else}
-              <li class="ac-empty">{$t('frameleaf_album_cleanup_no_lost')}</li>
+              <li class="ac-empty"><EmptyRow title={$t('frameleaf_album_cleanup_no_lost')} /></li>
             {/each}
             {@render moreNote(LOST_LIMIT, plan.lostDates.length, $t('frameleaf_album_cleanup_noun_album'))}
           </ul>
@@ -1208,9 +1224,11 @@
               </li>
             {:else}
               <li class="ac-empty">
-                {usePhotoData
-                  ? $t('frameleaf_album_cleanup_no_albums')
-                  : $t('frameleaf_album_cleanup_turn_on_photo_data')}
+                <EmptyRow
+                  title={usePhotoData
+                    ? $t('frameleaf_album_cleanup_no_albums')
+                    : $t('frameleaf_album_cleanup_turn_on_photo_data')}
+                />
               </li>
             {/each}
             {@render moreNote(TREE_LIMIT, plan.mismatches.length, $t('frameleaf_album_cleanup_noun_album'))}
@@ -1227,7 +1245,7 @@
                 </span>
               </li>
             {:else}
-              <li class="ac-empty">{$t('frameleaf_album_cleanup_no_albums')}</li>
+              <li class="ac-empty"><EmptyRow title={$t('frameleaf_album_cleanup_no_albums')} /></li>
             {/each}
             {@render moreNote(TREE_LIMIT, plan.untouched.length, $t('frameleaf_album_cleanup_noun_album'))}
           </ul>

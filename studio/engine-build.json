@@ -949,7 +949,27 @@
       "path": "patches/0210-studio-timeline-toolbar.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "c0e4a354a5ba5ba5d637a20d751ba75be8660f308bf23aec8efba2f9e133649c"
+    },
+    {
+      "path": "patches/0211-studio-track-heads.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "050799e98bee4d2c32227da852b6c228874afc93f0ae5d427f2986d1edf7d27e"
+    },
+    {
+      "path": "patches/0212-studio-media-bin.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "c9a293ec515a160b733a272128a9747f4e9571f0408f99de89ee6518d1af0c49"
+    },
+    {
+      "path": "patches/0213-studio-add-panel.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "3677a0a1325ca0f9c9bae9c6a02bf2711c8a4281b06b95e5ee0b555320a508eb"
+    },
+    {
+      "path": "patches/0214-studio-keyframes-lane.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "4ec09c313d61e6585d8da6c34606ea51407bdb926f6c1ec3f97b62bf88283771"
     }
   ],
-  "sourceSha256": "0bc63badd42ed7735d32c4c6e479bc1f88908274ee00d100b2378e1d027ee843"
+  "sourceSha256": "7bf91610b9e5169164d516910acd08a18ff905506bcbfd597f2216a4248d761b"
 }

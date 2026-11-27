@@ -1,5 +1,5 @@
 <script lang="ts" module>
-  export type ChoiceOption = { value: string; label: string; detail?: string; disabled?: boolean };
+  export type ChoiceOption = { value: string; label: string; detail?: string; badge?: string; disabled?: boolean };
 </script>
 
 <script lang="ts">
@@ -35,7 +35,9 @@
         onchange={() => onChange?.(option.value)}
       />
       <span>
-        <strong>{option.label}</strong>
+        <strong
+          >{option.label}{#if option.badge}<em>{option.badge}</em>{/if}</strong
+        >
         {#if option.detail}<small>{option.detail}</small>{/if}
       </span>
     </label>
@@ -85,6 +87,13 @@
   }
   strong {
     color: var(--fl-text);
+    font-weight: 600;
+  }
+  em {
+    margin-inline-start: var(--fl-space-2);
+    color: var(--fl-accent);
+    font-size: var(--fl-font-small);
+    font-style: normal;
     font-weight: 600;
   }
   small {

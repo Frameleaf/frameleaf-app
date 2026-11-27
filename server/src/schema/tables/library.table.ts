@@ -8,6 +8,7 @@ import {
   UpdateDateColumn,
 } from '@frameleaf/sql-tools';
 import type { Generated, Timestamp } from '@frameleaf/sql-tools';
+import type { FolderAlbumOptions } from 'src/utils/folder-albums.js';
 import { UpdateIdColumn, UpdatedAtTrigger } from 'src/decorators.js';
 import { UserTable } from 'src/schema/tables/user.table.js';
 
@@ -35,6 +36,10 @@ export class LibraryTable {
   /** FL-838: keep an album for each folder of the library, synced after every scan. */
   @Column({ type: 'boolean', default: false })
   folderAlbums!: Generated<boolean>;
+
+  // FL-1837: which folders become albums; null for a library from before, which makes an album for every folder
+  @Column({ type: 'jsonb', nullable: true })
+  folderAlbumOptions!: FolderAlbumOptions | null;
 
   @CreateDateColumn()
   createdAt!: Generated<Timestamp>;

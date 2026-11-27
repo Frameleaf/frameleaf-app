@@ -1,6 +1,7 @@
 import { Selectable, ShallowDehydrateObject } from 'kysely';
 import type { UserMetadataItem } from 'src/types.js';
 import type { CaptureDetails } from 'src/utils/capture-details.js';
+import type { FolderAlbumOptions } from 'src/utils/folder-albums.js';
 import { MapAsset } from 'src/dtos/asset-response.dto.js';
 import {
   AlbumUserRole,
@@ -49,6 +50,8 @@ export type Library = {
   readOnly: boolean;
   /** FL-838: the library keeps an album for each of its folders. */
   folderAlbums: boolean;
+  /** FL-1837: which folders become albums; null or left out, an album for every folder. */
+  folderAlbumOptions?: FolderAlbumOptions | null;
   id: string;
   ownerId: string;
   createdAt: Date;

@@ -3197,6 +3197,8 @@ export type LibraryFolderEstimateFolderDto = {
     count: number;
     /** A folder holding photos or videos, without a trailing slash */
     path: string;
+    /** Photos and videos directly in it that the exclusion patterns skip (FL-1837); count may then be 0 */
+    skipped: number;
 };
 export type LibraryFolderEstimateResponseDto = {
     /** Their combined size, in bytes */
@@ -9957,8 +9959,12 @@ export type DateDoctorFixDto = {
     assetIds: string[];
     /** Date them to a year (`year`) or a decade (`decade`): only that much is known. Sent with `year` alone */
     dateAccuracy?: DateAccuracy;
+    /** With dateAccuracy `year` only: `month` dates them to the 1st of `month` (midnight UTC), `about` says the year is a guess */
+    dateDetail?: DateDetail;
     /** With timeZone: keep the clock time shown and read it in the new zone; otherwise the moment stays */
     keepWallTime?: boolean;
+    /** With dateDetail `month` only: the month, 1 to 12 */
+    month?: number;
     /** Move their dates this many minutes (a camera clock that was off) */
     shiftMinutes?: number;
     /** The time zone they were taken in (IANA, or UTC+2 for a fixed offset) */
@@ -12473,6 +12479,22 @@ export type QueueCommandDto = {
     /** Include quarantined assets in a forced processing run */
     includeSetAside?: boolean;
 };
+export type FolderAlbumOptionsDto = {
+    /** With shape level above 1: the folders above the albums become collections */
+    collectionsAbove: boolean;
+    /** With shape level: how many folders down the albums start */
+    level: number;
+    /** Album names: the folder's name, or the folders on the way joined with › */
+    naming: FolderAlbumNaming;
+    /** One album for each event folder, an album for every folder, or albums starting at a chosen level */
+    shape: FolderAlbumShape;
+    /** No album for a folder holding nothing a folder album shows */
+    skipEmpty: boolean;
+    /** Per name of a folder directly inside an album's folder, matched without regard to case: its photos join the album, get an album inside it, or none. A name left out joins (Export and Edits get an album inside) */
+    subfolders: {
+        [key: string]: FolderAlbumSubfolderRule;
+    };
+};
 export type LibraryScanResponseDto = {
     /** New items indexed */
     added: number;
@@ -12519,6 +12541,8 @@ export type LibraryResponseDto = {
     deletedAt: string | null;
     /** Exclusion patterns */
     exclusionPatterns: string[];
+    /** Which folders become albums */
+    folderAlbumOptions: FolderAlbumOptionsDto;
     /** The library keeps an album for each of its folders, in sync after every scan */
     folderAlbums: boolean;
     /** Library ID */
@@ -12541,6 +12565,8 @@ export type LibraryResponseDto = {
 export type CreateLibraryDto = {
     /** Exclusion patterns (max 128) */
     exclusionPatterns?: string[];
+    /** Which folders become albums. Left out: an album for every folder. */
+    folderAlbumOptions?: FolderAlbumOptionsDto;
     /** Keep an album for each folder of the library, made after its first scan. Off when left out. */
     folderAlbums?: boolean;
     /** Import paths (max 128) */
@@ -12551,6 +12577,20 @@ export type CreateLibraryDto = {
     ownerId: string;
     /** Keep source originals and sidecars read-only. Fixed once created. */
     readOnly?: boolean;
+};
+export type FolderAlbumSuggestionDto = {
+    /** Albums and collections made from its folders so far */
+    albums: number;
+    /** How many of those albums show nothing */
+    empty: number;
+    /** Library ID */
+    libraryId: string;
+    /** Library name */
+    name: string;
+    /** The library rules now, for Undo */
+    options: FolderAlbumOptionsDto;
+    /** How many one album for each event folder would keep */
+    suggestedAlbums: number;
 };
 export type ManagedUploadsStatsResponseDto = {
     /** When the newest of these photos and videos was added (Locked and hidden excluded); null when none */
@@ -12571,6 +12611,10 @@ export type ManagedUploadsStatsResponseDto = {
 export type UpdateLibraryDto = {
     /** Exclusion patterns (max 128) */
     exclusionPatterns?: string[];
+    /** When folderAlbumOptions changes: match (the default) changes the albums made so far to match, keeping those the owner renamed, added photos to or shared, moved inside their new album; newOnly leaves them as they are. Photos are never deleted. */
+    folderAlbumExisting?: FolderAlbumExisting;
+    /** Which folders become albums */
+    folderAlbumOptions?: FolderAlbumOptionsDto;
     /** Keep an album for each folder of the library, in sync after every scan. Albums belong to the library's owner. */
     folderAlbums?: boolean;
     /** Import paths (max 128) */
@@ -15097,6 +15141,8 @@ export type PhotoSourceCatalogMetadataDto = {
         caption?: string;
         /** Collections (albums) the item is in */
         collections?: {
+            /** The catalog's own id for the collection, so its album is found again after either is renamed */
+            id?: string;
             /** The collection name */
             name: string;
             /** The collection sets the collection sits in, outermost first */
@@ -35653,6 +35699,17 @@ export function createLibrary({ createLibraryDto }: {
     })));
 }
 /**
+ * Suggest fewer folder albums
+ */
+export function getFolderAlbumSuggestions(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: FolderAlbumSuggestionDto[];
+    }>("/libraries/folder-album-suggestions", {
+        ...opts
+    }));
+}
+/**
  * Retrieve managed upload statistics
  */
 export function getManagedUploadStatistics(opts?: Oazapfts.RequestOpts) {
@@ -49444,6 +49501,20 @@ export enum QueueCommand {
     Empty = "empty",
     ClearFailed = "clear-failed"
 }
+export enum FolderAlbumNaming {
+    Folder = "folder",
+    Path = "path"
+}
+export enum FolderAlbumShape {
+    Events = "events",
+    Every = "every",
+    Level = "level"
+}
+export enum FolderAlbumSubfolderRule {
+    Join = "join",
+    Own = "own",
+    Skip = "skip"
+}
 export enum LibraryScanPhase {
     Crawl = "crawl",
     Check = "check",
@@ -49453,6 +49524,10 @@ export enum LibraryScanStopReason {
     PathsChanged = "paths_changed",
     LibraryRemoved = "library_removed",
     OwnerDeleted = "owner_deleted"
+}
+export enum FolderAlbumExisting {
+    Match = "match",
+    NewOnly = "newOnly"
 }
 export enum LibraryImportPathReason {
     Valid = "valid",

@@ -15,6 +15,8 @@
    * Everything goes through the enrichment endpoints; a Locked video's moments are only ever
    * returned to its owner's unlocked session, so the panel simply shows nothing otherwise.
    */
+  import InlineError from '$lib/components/frameleaf/InlineError.svelte';
+  import Skeleton from '$lib/components/frameleaf/Skeleton.svelte';
   import { formatDateTime } from '$lib/frameleaf/date-format';
   import IconButton from '$lib/components/frameleaf/IconButton.svelte';
   import VideoMomentHits from '$lib/components/frameleaf/VideoMomentHits.svelte';
@@ -53,7 +55,7 @@
     type VideoMomentSearchHitDto,
     type VideoMomentsResponseDto,
   } from '@frameleaf/sdk';
-  import { Button, Icon, LoadingSpinner } from '@frameleaf/ui';
+  import { Button, Icon } from '@frameleaf/ui';
   import { mdiClose, mdiImageCheckOutline, mdiPlus, mdiRefresh, mdiTextBoxPlusOutline } from '@mdi/js';
   import { onDestroy } from 'svelte';
   import { locale, t } from 'svelte-i18n';
@@ -299,10 +301,10 @@
   <section data-testid="frameleaf-video-moments" aria-label={$t('frameleaf_moments_title')}>
     <div class="fl-info-heading-row">
       <h3 class="fl-info-heading">{$t('frameleaf_moments_title')}</h3>
-      {#if loading}
-        <LoadingSpinner />
-      {/if}
     </div>
+    {#if loading && !moments}
+      <div role="status" aria-busy="true" aria-label={$t('loading')}><Skeleton variant="text" lines={3} /></div>
+    {/if}
 
     {#if moments}
       <div class="space-y-3 text-sm">
@@ -376,20 +378,15 @@
                   </IconButton>
                 {/snippet}
                 {#if search.hits === null}
-                  <p class="text-xs text-(--fl-muted)" role="status">
-                    {$t('frameleaf_moments_similar_loading')}
-                  </p>
+                  <div role="status" aria-busy="true" aria-label={$t('frameleaf_moments_similar_loading')}>
+                    <Skeleton variant="text" lines={2} />
+                  </div>
                 {:else if search.failed}
-                  <p class="text-xs text-(--fl-danger)" role="alert">
-                    {$t('frameleaf_moments_similar_error')}
-                  </p>
-                  <button
-                    type="button"
-                    class="similar-toggle"
-                    onclick={() => findSimilar({ id: search.frameId, timestampMs: search.timestampMs })}
-                  >
-                    {$t('retry')}
-                  </button>
+                  <InlineError
+                    compact
+                    message={$t('frameleaf_moments_similar_error')}
+                    onRetry={() => findSimilar({ id: search.frameId, timestampMs: search.timestampMs })}
+                  />
                 {:else}
                   <p class="text-xs text-(--fl-muted)" role="status">
                     {$t('frameleaf_moments_similar_none')}

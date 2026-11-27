@@ -1,4 +1,5 @@
 import { AlbumChangeRunStatus, type AlbumCleanupFactsDto, type UserPreferencesResponseDto } from '@frameleaf/sdk';
+import { toastManager } from '@frameleaf/ui';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
@@ -208,7 +209,12 @@ describe(AlbumCleanupReview.name, () => {
 
   it('offers to try again when the suggestions cannot be read', async () => {
     sdkMock.getAlbumCleanupSnapshot.mockRejectedValueOnce(new Error('offline'));
+    const toast = vi.spyOn(toastManager, 'danger');
     render(AlbumCleanupReview);
+    // FL-1810: placeholders while reading, then the failure on the page only, with no toast
+    expect(screen.getByTestId('frameleaf-list-skeleton')).toBeInTheDocument();
+    await screen.findByRole('button', { name: 'frameleaf_album_cleanup_try_again' });
+    expect(toast).not.toHaveBeenCalled();
     await fireEvent.click(await screen.findByRole('button', { name: 'frameleaf_album_cleanup_try_again' }));
     await waitFor(() => expect(sdkMock.getAlbumCleanupSnapshot).toHaveBeenCalledTimes(2));
     await waitFor(() =>

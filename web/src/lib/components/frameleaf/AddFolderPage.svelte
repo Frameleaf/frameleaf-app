@@ -41,6 +41,7 @@
     getManagerAccess,
     estimateLibraryFolder,
     scanLibrary,
+    type FolderAlbumOptionsDto,
     type LibraryFolderEstimateResponseDto,
     type LibraryResponseDto,
     type UserAdminResponseDto,
@@ -71,6 +72,7 @@
   let extra = $state('');
   let first = $state(true);
   let folderAlbums = $state(false);
+  let folderAlbumOptions = $state<FolderAlbumOptionsDto | undefined>();
   let readOnly = $state(true);
   let saving = $state(false);
   let error = $state('');
@@ -181,6 +183,7 @@
           importPaths: [folder],
           exclusionPatterns: patterns,
           folderAlbums,
+          folderAlbumOptions: folderAlbums ? folderAlbumOptions : undefined,
         },
       });
       let scanning = false;
@@ -352,7 +355,11 @@
     {ownerName}
     checked={folderAlbums}
     estimate={estimate && estimate.readable ? estimate : null}
+    options={folderAlbumOptions}
     onChange={(on) => (folderAlbums = on)}
+    onOptions={(options) => {
+      folderAlbumOptions = options;
+    }}
   />
 
   <Section title={$t('frameleaf_addfolder_step5')}>

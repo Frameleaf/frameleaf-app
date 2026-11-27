@@ -31,6 +31,8 @@ export type CatalogApplied = {
   tags?: string[];
   /** Collection paths (sets outermost first, then the collection's name) whose album the item was added to. */
   collections?: string[][];
+  /** FL-1840: the catalog's own ids of those collections, so a renamed collection is not added again. */
+  collectionIds?: string[];
 };
 
 export const CATALOG_COLOUR_LABEL_TAG = 'Colour label';
@@ -57,11 +59,13 @@ export const parseCatalogApplied = (value: unknown): CatalogApplied => {
   const collections = Array.isArray(record.collections)
     ? record.collections.map((path) => strings(path)).filter((path): path is string[] => !!path && path.length > 0)
     : undefined;
+  const collectionIds = strings(record.collectionIds);
   return {
     ...(rating !== undefined && { rating }),
     ...(description !== undefined && { description }),
     ...(tags && { tags }),
     ...(collections && { collections }),
+    ...(collectionIds && { collectionIds }),
   };
 };
 
@@ -116,6 +120,9 @@ export const catalogDescription = (item: PhotoSourceCatalogItem): string | undef
 
 const pathKey = (path: string[]) => JSON.stringify(path);
 
+/** A collection to put an item in: its path (sets outermost first, then its name) and the catalog's id for it. */
+type CollectionRef = { path: string[]; id?: string };
+
 type ItemPlan = {
   itemId: string;
   assetId: string;
@@ -123,7 +130,9 @@ type ItemPlan = {
   next: CatalogApplied;
   update: { rating?: number | null; description?: string };
   tags: string[];
-  collections: string[][];
+  collections: CollectionRef[];
+  /** Collections added before the catalog sent ids: their album is remembered by id, the item is not added again. */
+  adopt: CollectionRef[];
   applied: PhotoSourceCatalogField[];
   keptEdits: PhotoSourceCatalogField[];
 };
@@ -219,7 +228,7 @@ export class PhotoSourceCatalogService {
     }
 
     await this.addTags(auth, plans);
-    await this.addToAlbums(auth, plans);
+    await this.addToAlbums(auth, sourceId, plans);
     for (const plan of plans) {
       if (plan.update.rating !== undefined || plan.update.description !== undefined) {
         await this.assets.update(auth, plan.assetId, plan.update);
@@ -270,6 +279,7 @@ export class PhotoSourceCatalogService {
       update: {},
       tags: [],
       collections: [],
+      adopt: [],
       applied: [],
       keptEdits: [],
     };
@@ -309,19 +319,34 @@ export class PhotoSourceCatalogService {
       plan.applied.push('tags');
     }
 
+    // FL-1840: a collection the catalog names by id is matched by id, so renaming it does not add the item again.
     const appliedCollections = new Set((previous.collections ?? []).map((path) => pathKey(path)));
-    const collections = new Map<string, string[]>();
-    for (const { path, name } of item.collections ?? []) {
+    const appliedIds = new Set(previous.collectionIds);
+    const collections = new Map<string, CollectionRef>();
+    const adopt = new Map<string, CollectionRef>();
+    for (const { path, name, id } of item.collections ?? []) {
       const full = [...path, name];
-      const key = pathKey(full);
-      if (!appliedCollections.has(key)) {
-        collections.set(key, full);
+      const key = id === undefined ? pathKey(full) : `id:${id}`;
+      if (id !== undefined && appliedIds.has(id)) {
+        continue;
       }
+      if (appliedCollections.has(pathKey(full))) {
+        if (id !== undefined) {
+          adopt.set(key, { path: full, id });
+        }
+        continue;
+      }
+      collections.set(key, { path: full, ...(id !== undefined && { id }) });
     }
     plan.collections = collections.values().toArray();
+    plan.adopt = adopt.values().toArray();
     if (plan.collections.length > 0) {
-      plan.next.collections = [...(previous.collections ?? []), ...plan.collections];
+      plan.next.collections = [...(previous.collections ?? []), ...plan.collections.map(({ path }) => path)];
       plan.applied.push('albums');
+    }
+    const newIds = [...plan.collections, ...plan.adopt].flatMap(({ id }) => (id === undefined ? [] : [id]));
+    if (newIds.length > 0) {
+      plan.next.collectionIds = [...appliedIds, ...newIds];
     }
     return plan;
   }
@@ -353,13 +378,27 @@ export class PhotoSourceCatalogService {
     }
   }
 
-  /** Find or make the album for each collection (collection sets become collections), then add the items to it. */
-  private async addToAlbums(auth: AuthDto, plans: ItemPlan[]) {
-    const resolved = new Map<string, string>();
+  /**
+   * Find or make the album for each collection (collection sets become collections), then add the items to it. A
+   * collection with a catalog id goes to the album it became before, wherever it was moved or renamed to, and
+   * nowhere if the person removed that album.
+   */
+  private async addToAlbums(auth: AuthDto, sourceId: string, plans: ItemPlan[]) {
+    if (!plans.some((plan) => plan.collections.length > 0 || plan.adopt.length > 0)) {
+      return;
+    }
+    const catalog = await this.repository.getCatalogKey(auth.user.id, sourceId);
+    const resolved = new Map<string, string | null>();
     const members = new Map<string, Set<string>>();
     for (const plan of plans) {
-      for (const path of plan.collections) {
-        const albumId = await this.resolveAlbum(auth, path, resolved);
+      for (const ref of plan.adopt) {
+        await this.adoptAlbum(auth, catalog, ref as Required<CollectionRef>, resolved);
+      }
+      for (const ref of plan.collections) {
+        const albumId = await this.collectionAlbum(auth, catalog, ref, resolved);
+        if (!albumId) {
+          continue;
+        }
         const assetIds = members.get(albumId) ?? new Set<string>();
         assetIds.add(plan.assetId);
         members.set(albumId, assetIds);
@@ -370,7 +409,56 @@ export class PhotoSourceCatalogService {
     }
   }
 
-  private async resolveAlbum(auth: AuthDto, path: string[], resolved: Map<string, string>): Promise<string> {
+  /** The album a collection goes to: by its catalog id when it has one, else by name in its sets. */
+  private async collectionAlbum(
+    auth: AuthDto,
+    catalog: string,
+    { path, id }: CollectionRef,
+    resolved: Map<string, string | null>,
+  ): Promise<string | null> {
+    if (id === undefined) {
+      return this.resolveAlbum(auth, path, resolved, true);
+    }
+    const key = `id:${id}`;
+    if (resolved.has(key)) {
+      return resolved.get(key)!;
+    }
+    const mapping = await this.repository.getCatalogCollectionAlbum(auth.user.id, catalog, id);
+    const albumId = mapping
+      ? mapping.albumId
+      : await this.repository.setCatalogCollectionAlbum(
+          auth.user.id,
+          catalog,
+          id,
+          (await this.resolveAlbum(auth, path, resolved, true))!,
+        );
+    resolved.set(key, albumId);
+    return albumId;
+  }
+
+  /** Remembers by id the album an earlier read-in found by name; never makes one. */
+  private async adoptAlbum(
+    auth: AuthDto,
+    catalog: string,
+    { path, id }: Required<CollectionRef>,
+    resolved: Map<string, string | null>,
+  ) {
+    const key = `id:${id}`;
+    if (resolved.has(key) || (await this.repository.getCatalogCollectionAlbum(auth.user.id, catalog, id))) {
+      return;
+    }
+    const albumId = await this.resolveAlbum(auth, path, resolved, false);
+    if (albumId) {
+      resolved.set(key, await this.repository.setCatalogCollectionAlbum(auth.user.id, catalog, id, albumId));
+    }
+  }
+
+  private async resolveAlbum(
+    auth: AuthDto,
+    path: string[],
+    resolved: Map<string, string | null>,
+    create: boolean,
+  ): Promise<string | null> {
     let parentId: string | null = null;
     for (let depth = 1; depth <= path.length; depth++) {
       const leaf = depth === path.length;
@@ -379,6 +467,9 @@ export class PhotoSourceCatalogService {
       if (!albumId) {
         const albumName = path[depth - 1];
         const existing = await this.repository.findCatalogAlbum(auth.user.id, albumName, parentId, leaf);
+        if (!existing && !create) {
+          return null;
+        }
         albumId =
           existing?.id ??
           (

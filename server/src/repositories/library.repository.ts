@@ -3,7 +3,14 @@ import { type Insertable, type Kysely, type RawBuilder, type Transaction, type U
 import { InjectKysely } from 'nestjs-kysely';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
 import { LibraryStatsResponseDto, ManagedUploadsStatsResponseDto } from 'src/dtos/library.dto.js';
-import { AssetType, AssetVisibility, MediaOperationKind, MediaOperationStatus, UserStatus } from 'src/enum.js';
+import {
+  AlbumKind,
+  AssetType,
+  AssetVisibility,
+  MediaOperationKind,
+  MediaOperationStatus,
+  UserStatus,
+} from 'src/enum.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { DB } from 'src/schema/index.js';
 import { LibraryFolderAlbumTable } from 'src/schema/tables/library-folder-album.table.js';
@@ -12,6 +19,9 @@ import { asUuid, isNotLockedAsset } from 'src/utils/database.js';
 import { folderOf, isFolderPhoto } from 'src/utils/folder-albums.js';
 import { LibraryScanStopReason, libraryPathsFingerprint } from 'src/utils/library-scan.js';
 import { isNotLocked } from 'src/utils/locked.js';
+
+/** FL-1837: `AlbumChangeKind.FolderAlbumMoved` (album-merge.repository.ts), written out to keep the modules apart. */
+const FOLDER_ALBUM_MOVED = 'album.folder_album_moved';
 
 /**
  * What removing a library would take with it (FL-78). Counts only: never a path, a name or an id of
@@ -449,15 +459,80 @@ export class LibraryRepository {
 
   /* FL-838: folder albums ------------------------------------------------ */
 
-  /** Each folder holding photos or videos a folder album shows, with how many it holds directly. */
+  /**
+   * Each folder holding items, with how many photos and videos a folder album shows directly in it and how many items
+   * it holds that are online and neither Locked nor trashed (FL-1837: a folder whose items are none of them shown is "empty").
+   */
   @GenerateSql({ params: [DummyValue.UUID] })
-  async getFolderPhotoCounts(libraryId: string): Promise<{ folderPath: string; photos: number }[]> {
-    const { rows } = await sql<{ folderPath: string; photos: string }>`
-      SELECT ${folderOf('asset')} AS "folderPath", count(*) AS photos
+  async getFolderPhotoCounts(libraryId: string): Promise<{ folderPath: string; photos: number; items: number }[]> {
+    const { rows } = await sql<{ folderPath: string; photos: string; items: string }>`
+      SELECT ${folderOf('asset')} AS "folderPath", count(*) FILTER (WHERE ${isFolderPhoto('asset')}) AS photos,
+        count(*) AS items
       FROM asset
-      WHERE asset."libraryId" = ${asUuid(libraryId)} AND ${isFolderPhoto('asset')}
+      WHERE asset."libraryId" = ${asUuid(libraryId)} AND asset."isOffline" = false AND asset."deletedAt" IS NULL
+        AND ${isNotLocked('asset')}
       GROUP BY 1`.execute(this.db);
-    return rows.map((row) => ({ folderPath: row.folderPath, photos: Number(row.photos) }));
+    return rows.map((row) => ({ folderPath: row.folderPath, photos: Number(row.photos), items: Number(row.items) }));
+  }
+
+  /**
+   * FL-1837: the folders at or below `under` the library has items in, offline and trashed ones too (not Locked ones),
+   * to work out which folders joined a gone album.
+   */
+  @GenerateSql({ params: [DummyValue.UUID, [DummyValue.STRING]] })
+  async getFolderPaths(libraryId: string, under: string[]): Promise<string[]> {
+    if (under.length === 0) {
+      return [];
+    }
+    const { rows } = await sql<{ folderPath: string }>`
+      SELECT DISTINCT ${folderOf('asset')} AS "folderPath"
+      FROM asset
+      WHERE asset."libraryId" = ${asUuid(libraryId)} AND ${isNotLocked('asset')}
+        AND EXISTS (
+          SELECT 1 FROM unnest(${under}::text[]) AS gone(path) WHERE starts_with(asset."originalPath", gone.path || '/')
+        )`.execute(this.db);
+    return rows.map(({ folderPath }) => folderPath);
+  }
+
+  /** FL-1837: this link, and every link of the library pointing at this album, as they are now. */
+  @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID] })
+  getFolderAlbumLinks(linkId: string, albumId: string) {
+    return this.db
+      .selectFrom('library_folder_album')
+      .select(['id', 'albumId'])
+      .where((eb) => eb.or([eb('id', '=', asUuid(linkId)), eb('albumId', '=', asUuid(albumId))]))
+      .execute();
+  }
+
+  /** FL-1837: how many folder albums a library has, and how many of them show nothing. */
+  @GenerateSql({ params: [DummyValue.UUID] })
+  async getFolderAlbumCounts(libraryId: string): Promise<{ albums: number; empty: number }> {
+    const { rows } = await sql<{ albums: string; empty: string }>`
+      SELECT count(*) AS albums,
+        count(*) FILTER (WHERE album.kind = ${sql.lit(AlbumKind.Album)} AND NOT EXISTS (
+          SELECT 1 FROM album_asset member JOIN asset ON asset.id = member."assetId"
+          WHERE member."albumId" = album.id AND asset."deletedAt" IS NULL
+        )) AS empty
+      FROM library_folder_album link
+      JOIN album ON album.id = link."albumId" AND album."deletedAt" IS NULL
+      WHERE link."libraryId" = ${asUuid(libraryId)}`.execute(this.db);
+    return { albums: Number(rows[0]?.albums ?? 0), empty: Number(rows[0]?.empty ?? 0) };
+  }
+
+  /**
+   * FL-1837: albums made so far stay as they are (`kept`) or follow the library's rules again. A folder whose album was
+   * merged into another (and not undone) stays kept either way: the merged album is the owner's.
+   */
+  @GenerateSql({ params: [DummyValue.UUID, true] })
+  async setFolderAlbumsKept(libraryId: string, kept: boolean): Promise<void> {
+    await sql`
+      UPDATE library_folder_album link SET "isKept" = ${kept}
+      WHERE link."libraryId" = ${asUuid(libraryId)}
+        AND (${kept} OR NOT EXISTS (
+          SELECT 1 FROM album_change change
+          WHERE change.kind = ${FOLDER_ALBUM_MOVED} AND change."albumId" = link."albumId"
+            AND change.after->>'id' = link.id::text
+        ))`.execute(this.db);
   }
 
   /** The library's folder albums, with the album's name, place and kind as they are now. */
@@ -472,6 +547,7 @@ export class LibraryRepository {
         'library_folder_album.folderPath',
         'library_folder_album.albumId',
         'library_folder_album.isUserEdited',
+        'library_folder_album.isKept',
         'album.albumName',
         'album.parentId',
         'album.kind',

@@ -49,6 +49,7 @@
     scanLibrary,
     scanLibraryEveryFile,
     updateLibrary,
+    FolderAlbumExisting,
     type LibraryResponseDto,
     type UserAdminResponseDto,
   } from '@frameleaf/sdk';
@@ -410,6 +411,16 @@
               : removeAlbums
                 ? $t('frameleaf_folder_albums_done_remove', { values: { name: selected.ownerName } })
                 : $t('frameleaf_folder_albums_done_keep'),
+            $t('frameleaf_libraries_error_save'),
+          )}
+        onFolderAlbumOptions={(folderAlbumOptions, folderAlbumExisting) =>
+          run(
+            () => updateLibrary({ id: selected.id, updateLibraryDto: { folderAlbumOptions, folderAlbumExisting } }),
+            $t(
+              folderAlbumExisting === FolderAlbumExisting.Match
+                ? 'frameleaf_folder_albums_saved_match'
+                : 'frameleaf_folder_albums_saved_new',
+            ),
             $t('frameleaf_libraries_error_save'),
           )}
       />

@@ -1088,16 +1088,19 @@ export class TakeoutWorkerService {
     if (cached !== undefined) {
       return cached;
     }
-    let albumId = await this.repository.getAlbumFor(run.row.ownerId, folder);
+    // A connection's albums are its own: a Dropbox "Trips" and a Drive "Trips" are two albums.
+    const source = run.row.connectionId ?? '';
+    const { ownerId } = run.row;
+    let albumId: string | null | undefined = await this.repository.getAlbumFor(ownerId, source, folder);
     if (!albumId) {
-      if (await this.repository.isFolderAlbumRemoved(run.row.ownerId, folder)) {
+      if (await this.repository.isFolderAlbumRemoved(ownerId, source, folder)) {
         run.albums.set(folder, null);
         return null;
       }
       const album = await this.albums.create(run.auth, { albumName: path.posix.basename(folder).slice(0, 255) });
-      albumId = await this.repository.setAlbumFor(run.row.ownerId, folder, album.id);
+      albumId = await this.repository.setAlbumFor(ownerId, source, folder, album.id);
       if (albumId !== album.id) {
-        // Another run made this folder's album first; keep that one.
+        // Another run made this folder's album first, or the person removed it meanwhile; keep theirs.
         await this.albums.delete(run.auth, album.id);
       }
     }

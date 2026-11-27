@@ -38,7 +38,12 @@
   import { formatCount } from '$lib/frameleaf/number-format';
   import { getSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
   import { locale } from '$lib/stores/preferences.store';
-  import { getUserHistoryAdmin, type UserAdminHistoryEventResponseDto } from '@frameleaf/sdk';
+  import {
+    getUserHistoryAdmin,
+    type FolderAlbumExisting,
+    type FolderAlbumOptionsDto,
+    type UserAdminHistoryEventResponseDto,
+  } from '@frameleaf/sdk';
   import { getByteUnitString } from '@frameleaf/ui';
   import {
     mdiFolderAlertOutline,
@@ -65,6 +70,8 @@
     onCancelScan: () => void;
     /** FL-838: "Make an album for each folder" turned on, or off (keeping or removing the albums). */
     onFolderAlbums?: (on: boolean, removeAlbums: boolean) => void;
+    /** FL-1837: new rules for which folders become albums, and what happens to the albums made so far. */
+    onFolderAlbumOptions?: (options: FolderAlbumOptionsDto, existing: FolderAlbumExisting) => Promise<void>;
   };
 
   let {
@@ -77,6 +84,7 @@
     onScanEveryFile,
     onCancelScan,
     onFolderAlbums,
+    onFolderAlbumOptions,
   }: Props = $props();
 
   const external = $derived(row.kind === 'external');
@@ -285,9 +293,11 @@
           libraryName={row.name}
           ownerName={row.ownerName}
           checked={row.folderAlbums ?? false}
+          options={row.folderAlbumOptions}
           editing
           {busy}
           onChange={onFolderAlbums}
+          onOptions={onFolderAlbumOptions}
         />
       {/if}
     {/if}

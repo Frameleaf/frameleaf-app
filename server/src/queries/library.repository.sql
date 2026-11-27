@@ -377,27 +377,126 @@ SELECT
     ),
     '/'
   ) AS "folderPath",
-  count(*) AS photos
+  count(*) FILTER (
+    WHERE
+      (
+        "asset"."isOffline" = false
+        AND "asset"."deletedAt" IS NULL
+        AND "asset"."visibility" IN ('timeline', 'archive')
+        AND "asset"."type" IN ('IMAGE', 'VIDEO')
+        AND not exists (
+          select
+            1
+          from
+            asset_lock
+          where
+            asset_lock."assetId" = "asset"."id"
+        )
+      )
+  ) AS photos,
+  count(*) AS items
 FROM
   asset
 WHERE
   asset."libraryId" = $1::uuid
-  AND (
-    "asset"."isOffline" = false
-    AND "asset"."deletedAt" IS NULL
-    AND "asset"."visibility" IN ('timeline', 'archive')
-    AND "asset"."type" IN ('IMAGE', 'VIDEO')
-    AND not exists (
-      select
-        1
-      from
-        asset_lock
-      where
-        asset_lock."assetId" = "asset"."id"
-    )
+  AND asset."isOffline" = false
+  AND asset."deletedAt" IS NULL
+  AND not exists (
+    select
+      1
+    from
+      asset_lock
+    where
+      asset_lock."assetId" = "asset"."id"
   )
 GROUP BY
   1
+
+-- LibraryRepository.getFolderPaths
+SELECT DISTINCT
+  coalesce(
+    nullif(
+      substring("asset"."originalPath", '^(.*)/[^/]*$'),
+      ''
+    ),
+    '/'
+  ) AS "folderPath"
+FROM
+  asset
+WHERE
+  asset."libraryId" = $1::uuid
+  AND not exists (
+    select
+      1
+    from
+      asset_lock
+    where
+      asset_lock."assetId" = "asset"."id"
+  )
+  AND EXISTS (
+    SELECT
+      1
+    FROM
+      unnest($2::text[]) AS gone (path)
+    WHERE
+      starts_with(asset."originalPath", gone.path || '/')
+  )
+
+-- LibraryRepository.getFolderAlbumLinks
+select
+  "id",
+  "albumId"
+from
+  "library_folder_album"
+where
+  (
+    "id" = $1::uuid
+    or "albumId" = $2::uuid
+  )
+
+-- LibraryRepository.getFolderAlbumCounts
+SELECT
+  count(*) AS albums,
+  count(*) FILTER (
+    WHERE
+      album.kind = 'album'
+      AND NOT EXISTS (
+        SELECT
+          1
+        FROM
+          album_asset member
+          JOIN asset ON asset.id = member."assetId"
+        WHERE
+          member."albumId" = album.id
+          AND asset."deletedAt" IS NULL
+      )
+  ) AS empty
+FROM
+  library_folder_album link
+  JOIN album ON album.id = link."albumId"
+  AND album."deletedAt" IS NULL
+WHERE
+  link."libraryId" = $1::uuid
+
+-- LibraryRepository.setFolderAlbumsKept
+UPDATE library_folder_album link
+SET
+  "isKept" = $1
+WHERE
+  link."libraryId" = $2::uuid
+  AND (
+    $3
+    OR NOT EXISTS (
+      SELECT
+        1
+      FROM
+        album_change change
+      WHERE
+        change.kind = $4
+        AND change."albumId" = link."albumId"
+        AND change.after ->> 'id' = link.id::text
+    )
+  )
 
 -- LibraryRepository.getFolderAlbums
 select
@@ -406,6 +505,7 @@ select
   "library_folder_album"."folderPath",
   "library_folder_album"."albumId",
   "library_folder_album"."isUserEdited",
+  "library_folder_album"."isKept",
   "album"."albumName",
   "album"."parentId",
   "album"."kind",

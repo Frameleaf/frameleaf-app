@@ -9,9 +9,6 @@ import { t } from 'svelte-i18n';
 import { get } from 'svelte/store';
 
 export type DateAccuracy = 'year' | 'decade';
-/** What the date dialogs choose between. */
-export type DatePrecision = 'exact' | DateAccuracy;
-
 /** The earliest year the server takes for a year or a decade. */
 export const MIN_APPROXIMATE_YEAR = 1800;
 
@@ -27,15 +24,6 @@ export const dateAccuracyOf = (value: unknown): DateAccuracy | null =>
 export const toSdkDateAccuracy = (accuracy: DateAccuracy) => accuracy as SdkDateAccuracy;
 
 export const decadeOf = (year: number) => Math.floor(year / 10) * 10;
-
-/** The decades the dialogs offer: 1800s to the current one, oldest first. */
-export const decadeChoices = (currentYear = new Date().getFullYear()): number[] => {
-  const decades: number[] = [];
-  for (let decade = MIN_APPROXIMATE_YEAR; decade <= currentYear; decade += 10) {
-    decades.push(decade);
-  }
-  return decades;
-};
 
 /** A typed year the server takes: four digits, from 1800 to this year. Null for anything else. */
 export const parseApproximateYear = (value: unknown, currentYear = new Date().getFullYear()): number | null => {

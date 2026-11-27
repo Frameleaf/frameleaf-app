@@ -21,7 +21,11 @@ export const LIBRARY_WALK_LIVENESS_MS = Math.min(
   QUEUE_TIMING.opaqueDeadline / 4,
   QUEUE_TIMING.noProgressDeadline / 4,
 );
-export type LibraryWalkOptions = WalkOptionsDto & { signal?: AbortSignal };
+export type LibraryWalkOptions = WalkOptionsDto & {
+  signal?: AbortSignal;
+  /** FL-1837: told of each photo or video the exclusion patterns skip (not of skipped folders). */
+  onSkipped?: (file: string) => void;
+};
 export type LibraryWalkStorage = {
   opendir: (folder: string, options: { bufferSize: number }) => Promise<Pick<Dir, 'read' | 'close'>>;
   realpath: (file: string) => Promise<string>;
@@ -110,7 +114,12 @@ export async function* walkLibraryPaths(
           }
           signal?.throwIfAborted();
         }
-        if (excluded(file, kind.isDirectory())) continue;
+        if (excluded(file, kind.isDirectory())) {
+          if (kind.isFile() && supported(entry.name)) {
+            options.onSkipped?.(file);
+          }
+          continue;
+        }
         if (kind.isDirectory()) {
           if (ownedRoots.has(file)) continue;
           try {

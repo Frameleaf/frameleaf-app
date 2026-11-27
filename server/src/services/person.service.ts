@@ -1089,6 +1089,9 @@ export class PersonService extends BaseService {
       ...mapPerson(person),
       featuredAssetId,
       deathDate: asDateString(details?.deathDate ?? null),
+      // FL-1814: how sure each date is, so a client that saves one reads it back
+      birthDatePrecision: details?.birthDatePrecision ?? null,
+      deathDatePrecision: details?.deathDatePrecision ?? null,
       // FL-941: notes are the owner's alone; every person read here is the caller's own, and this keeps it so
       ...(isOwner && { notes: details?.notes ?? null, categoryIds }),
     };
@@ -1286,6 +1289,10 @@ export class PersonService extends BaseService {
         throw new BadRequestException(`${field}Precision goes with a ${field}`);
       }
       return undefined;
+    }
+    if (date === null && precision) {
+      // a precision with no date would silently clear the date instead
+      throw new BadRequestException(`${field}Precision goes with a ${field}`);
     }
     if (!date || !precision) {
       return null;
@@ -2264,14 +2271,6 @@ export class PersonService extends BaseService {
           isUndefined,
         );
 
-        if (Object.keys(changes).length > 0) {
-          targetPeople[mergePerson.ownerId] = await this.personRepository.update({
-            ownerId: targetPerson.ownerId,
-            personGroupId: targetPerson.personGroupId,
-            ...changes,
-          });
-        }
-
         const mergeName = mergePerson.name || mergePerson.personGroupId;
         const mergeData: UpdateFacesData = {
           oldPersonGroupId: mergeId,
@@ -2286,7 +2285,17 @@ export class PersonService extends BaseService {
           const affected = await this.workflowPersonAssets(targetPerson.ownerId, [mergeId, targetPerson.personGroupId]);
           const relationships = BaseService.create(PersonRelationshipService, this);
           let relationshipsChanged = false as boolean;
+          let updated: Selectable<PersonTable> | undefined;
           const people = await this.personRepository.withMergeWrite(async () => {
+            // FL-1814: the name and date of birth taken over are written with the rest of the merge, so a failed
+            // merge leaves neither behind and a retry starts from the survivor as it was
+            if (Object.keys(changes).length > 0) {
+              updated = await this.personRepository.update({
+                ownerId: targetPerson.ownerId,
+                personGroupId: targetPerson.personGroupId,
+                ...changes,
+              });
+            }
             const survivor = await this.personRepository.getByGroupId({
               ownerId: targetPerson.ownerId,
               personGroupId: targetPerson.personGroupId,
@@ -2302,6 +2311,7 @@ export class PersonService extends BaseService {
               this.personRepository.getProfile(survivor),
               this.personRepository.getProfile(removed),
             ]);
+            // FL-1814: a date of birth taken over brings its precision with it
             const profileChanges = mergeProfiles(
               survivor.birthDate,
               survivorProfile,
@@ -2327,6 +2337,9 @@ export class PersonService extends BaseService {
             );
             return this.personRepository.delete([mergeId], targetPerson.ownerId);
           }, targetPerson.ownerId);
+          if (updated) {
+            targetPeople[mergePerson.ownerId] = updated;
+          }
           await this.emitAssetsChanged(affected);
           await this.queueFaceSidecars(affected);
           await this.cleanupRemovedPeople(people, targetPerson.ownerId);

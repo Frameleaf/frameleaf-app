@@ -7,9 +7,9 @@ import en from '../../../../../i18n/en.json';
 const estimate = {
   complete: true,
   folders: [
-    { path: '/mnt/nas/family', count: 38 },
-    { path: '/mnt/nas/family/2024/Banff', count: 212 },
-    { path: '/mnt/nas/family/2025/Summer/Camping', count: 140 },
+    { path: '/mnt/nas/family', count: 38, skipped: 0 },
+    { path: '/mnt/nas/family/2024/Banff', count: 212, skipped: 0 },
+    { path: '/mnt/nas/family/2025/Summer/Camping', count: 140, skipped: 0 },
   ],
 };
 const base = {
@@ -34,16 +34,78 @@ beforeEach(() => {
   addMessages('dev', en);
 });
 
-describe('FolderAlbumsSection (FL-838)', () => {
-  it('shows the albums it will make as a tree when switched on', () => {
+const events = {
+  complete: true,
+  folders: [
+    { path: '/mnt/nas/family/2026-11-19 - Nathan/Capture', count: 158 },
+    { path: '/mnt/nas/family/2026-11-19 - Nathan/Videos', count: 6 },
+    { path: '/mnt/nas/family/2026-11-19 - Nathan/Export', count: 161 },
+    { path: '/mnt/nas/family/2026-11-20 - Park/Capture', count: 40 },
+    { path: '/mnt/nas/family/2026-11-20 - Park/Export', count: 12 },
+    { path: '/mnt/nas/family/2026-11-19 - Nathan/RAW', count: 0, skipped: 158 },
+    { path: '/mnt/nas/family/2026-11-20 - Park/RAW', count: 0, skipped: 40 },
+  ],
+};
+
+describe('FolderAlbumsSection (FL-838, FL-1837)', () => {
+  it('previews an album for every folder, as FL-838 made them', () => {
     render(FolderAlbumsSection, { ...base, checked: true, estimate, onChange: vi.fn() });
 
+    expect(screen.getByRole('radio', { name: /An album for every folder/ })).toBeChecked();
+    expect(screen.getByTestId('folder-albums-preview')).toHaveTextContent(
+      'Frameleaf will keep 4 albums and 2 collections from nas › family.',
+    );
+  });
+
+  it('recommends one album for each event folder for a folder laid out by event, with the subfolder rules', async () => {
+    const onOptions = vi.fn();
+    render(FolderAlbumsSection, { ...base, checked: true, estimate: events, onChange: vi.fn(), onOptions });
+
+    expect(await screen.findByRole('radio', { name: /One album for each event folder/ })).toBeChecked();
+    expect(screen.getByText(en.frameleaf_folder_albums_recommended)).toBeInTheDocument();
+    expect(onOptions).toHaveBeenLastCalledWith(expect.objectContaining({ shape: 'events' }), 'match');
     const preview = screen.getByTestId('folder-albums-preview');
-    expect(preview).toHaveTextContent('From nas › family, Frameleaf will make 4 albums and 2 collections:');
-    expect(within(preview).getByText('Family photos')).toBeInTheDocument();
-    expect(within(preview).getByText('Collection · 140 photos')).toBeInTheDocument();
-    // Summer only holds Camping: an album of albums below the top
-    expect(within(preview).getByText('Holds albums')).toBeInTheDocument();
+    // two event albums, each with an Export album inside, instead of 2 collections of 5 albums
+    expect(preview).toHaveTextContent(
+      'Frameleaf will keep 4 albums from nas › family, instead of 5 albums and 2 collections.',
+    );
+    // the example: on the drive and in Albums
+    expect(within(preview).getAllByText('2026-11-19 - Nathan')).toHaveLength(2);
+
+    // the RAW folders hold only files this folder skips
+    expect(screen.getByText(/In 2 folders · all empty/)).toHaveTextContent(en.frameleaf_folder_albums_inside_skipped);
+
+    const exportRow = screen.getByRole('group', { name: 'Export folders' });
+    expect(within(exportRow).getByRole('button', { name: 'Album inside' })).toHaveAttribute('aria-pressed', 'true');
+    await fireEvent.click(within(exportRow).getByRole('button', { name: 'In the album' }));
+    expect(onOptions).toHaveBeenLastCalledWith(
+      expect.objectContaining({ shape: 'events', subfolders: { Export: 'join' } }),
+      'match',
+    );
+    expect(preview).toHaveTextContent('Frameleaf will keep 2 albums from nas › family');
+  });
+
+  it('on a folder already added, saves new rules with the choice about the albums made so far', async () => {
+    const onOptions = vi.fn();
+    render(FolderAlbumsSection, {
+      ...base,
+      checked: true,
+      editing: true,
+      estimate: events,
+      onChange: vi.fn(),
+      onOptions,
+    });
+    const save = screen.getByRole('button', { name: 'Save' });
+    expect(save).toBeDisabled();
+
+    await fireEvent.click(screen.getByRole('radio', { name: /One album for each event folder/ }));
+    expect(
+      screen.getByText(/Family photos already has 5 albums and 2 collections made from its folders/),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: /Change them to match/ })).toBeChecked();
+    await fireEvent.click(screen.getByRole('radio', { name: /Leave them, use this for new folders only/ }));
+    await fireEvent.click(save);
+    expect(onOptions).toHaveBeenCalledWith(expect.objectContaining({ shape: 'events' }), 'newOnly');
   });
 
   it('turns on and off directly while adding a folder', async () => {
@@ -59,7 +121,7 @@ describe('FolderAlbumsSection (FL-838)', () => {
     sdkMock.estimateLibraryFolder.mockResolvedValue({ ...estimate, readable: true, found: true, count: 390, bytes: 0 });
     const onChange = vi.fn();
     render(FolderAlbumsSection, { ...base, checked: true, editing: true, onChange });
-    expect(await screen.findByText(/Frameleaf keeps 4 albums and 2 collections/)).toBeInTheDocument();
+    expect(await screen.findByText(/Frameleaf will keep 4 albums and 2 collections/)).toBeInTheDocument();
     expect(sdkMock.estimateLibraryFolder).toHaveBeenCalledWith({ path: '/mnt/nas/family', exclusionPatterns: [] });
 
     await fireEvent.click(screen.getByRole('switch', { name: en.frameleaf_folder_albums_switch }));

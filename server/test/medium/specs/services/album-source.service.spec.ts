@@ -19,7 +19,7 @@ import { AlbumSourceService } from 'src/services/album-source.service.js';
 import { AlbumService } from 'src/services/album.service.js';
 import { BaseService } from 'src/services/base.service.js';
 import { newMediumService } from 'test/medium.factory.js';
-import { factory } from 'test/small.factory.js';
+import { factory, newUuid } from 'test/small.factory.js';
 import { getKyselyDB } from 'test/utils.js';
 
 let defaultDatabase: Kysely<DB>;
@@ -272,16 +272,23 @@ describe(AlbumSourceService.name, () => {
       expect([a.links[0].outcome, b.links[0].outcome].toSorted()).toEqual(['created', 'merged']);
     });
 
-    it('resolves again when the linked album was deleted', async () => {
+    it('leaves an album the person deleted gone, even with another album of its name (FL-1840)', async () => {
       const { sut, ctx } = setup();
       const { user } = await ctx.newUser();
       const auth = factory.auth({ user });
       const { links } = await sut.resolve(auth, { sources: [source('cloud-3', 'Gone')] });
       await defaultDatabase.deleteFrom('album').where('id', '=', links[0].albumId).execute();
+      const { album: sameName } = await ctx.newAlbum({ ownerId: user.id, albumName: 'Gone' });
 
       const again = await sut.resolve(auth, { sources: [source('cloud-3', 'Gone')] });
-      expect(again.links[0]).toMatchObject({ outcome: 'created' });
-      expect(again.links[0].albumId).not.toBe(links[0].albumId);
+      expect(again.links[0]).toMatchObject({ id: links[0].id, albumId: links[0].albumId, outcome: 'existing' });
+      expect(again.links[0].albumId).not.toBe(sameName.id);
+      await expect(sut.addAssets(auth, links[0].id, { ids: [newUuid()] })).resolves.toEqual([
+        expect.objectContaining({ success: false, error: 'duplicate' }),
+      ]);
+      await expect(
+        defaultDatabase.selectFrom('album').select('id').where('albumName', '=', 'Gone').execute(),
+      ).resolves.toEqual([{ id: sameName.id }]);
     });
   });
 

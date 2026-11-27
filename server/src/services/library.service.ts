@@ -2,6 +2,7 @@ import { BadRequestException, ConflictException, Injectable } from '@nestjs/comm
 import { Insertable, Updateable } from 'kysely';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
+import { isDeepStrictEqual } from 'node:util';
 import picomatch from 'picomatch';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { ArgOf } from 'src/repositories/event.repository.js';
@@ -12,6 +13,7 @@ import { OnEvent, OnJob } from 'src/decorators.js';
 import {
   CreateLibraryDto,
   FOLDER_ESTIMATE_FOLDERS,
+  FolderAlbumSuggestionDto,
   LibraryFolderBrowseDto,
   LibraryFolderBrowseResponseDto,
   LibraryFolderEstimateDto,
@@ -41,6 +43,7 @@ import { AssetTable } from 'src/schema/tables/asset.table.js';
 import { LibraryTable } from 'src/schema/tables/library.table.js';
 import { BaseService } from 'src/services/base.service.js';
 import { FolderAlbumService } from 'src/services/folder-album.service.js';
+import { resolveFolderAlbumOptions } from 'src/utils/folder-albums.js';
 import {
   DEFAULT_LIBRARY_EXCLUSION_PATTERNS,
   type ImportPathNeighbour,
@@ -347,6 +350,7 @@ export class LibraryService extends BaseService {
       importPaths,
       exclusionPatterns,
       folderAlbums: dto.folderAlbums ?? false,
+      folderAlbumOptions: dto.folderAlbumOptions ?? null,
     });
     await this.recordAdminEvents([libraryEvent(auth, library, AdminAuditAction.LibraryCreated)]);
     if (importPaths.length > 0) {
@@ -421,18 +425,27 @@ export class LibraryService extends BaseService {
     let bytes = 0;
     let complete = true;
     const folders = new Map<string, number>();
+    // FL-1837: photos the folder's skips leave out, by folder, so the folder albums preview can say why one is empty
+    const skipped = new Map<string, number>();
     try {
       const batches = this.storageRepository.walkLibrary({
         pathsToCrawl: [folder],
         includeHidden: false,
         exclusionPatterns,
         take: 500,
+        onSkipped: (file) => {
+          const parent = path.posix.dirname(file);
+          // one cap for both maps: the answer lists at most FOLDER_ESTIMATE_FOLDERS folders
+          if (skipped.has(parent) || folders.has(parent) || folders.size + skipped.size < FOLDER_ESTIMATE_FOLDERS) {
+            skipped.set(parent, (skipped.get(parent) ?? 0) + 1);
+          }
+        },
       });
       for await (const batch of batches) {
         for (const file of batch) {
           count++;
           const parent = path.posix.dirname(file);
-          if (folders.has(parent) || folders.size < FOLDER_ESTIMATE_FOLDERS) {
+          if (folders.has(parent) || skipped.has(parent) || folders.size + skipped.size < FOLDER_ESTIMATE_FOLDERS) {
             folders.set(parent, (folders.get(parent) ?? 0) + 1);
           }
           bytes += await this.storageRepository
@@ -455,8 +468,17 @@ export class LibraryService extends BaseService {
       count,
       bytes,
       complete,
-      folders: [...folders].map(([folderPath, folderCount]) => ({ path: folderPath, count: folderCount })),
+      folders: [...new Set([...folders.keys(), ...skipped.keys()])].map((folderPath) => ({
+        path: folderPath,
+        count: folders.get(folderPath) ?? 0,
+        skipped: skipped.get(folderPath) ?? 0,
+      })),
     };
+  }
+
+  /** FL-1837: the signed-in user's libraries whose folder albums could be one album for each event folder. */
+  getFolderAlbumSuggestions(auth: AuthDto): Promise<FolderAlbumSuggestionDto[]> {
+    return this.folderAlbums.getSuggestions(auth.user.id);
   }
 
   /** Every account's managed uploads, for the Libraries list (FL-78). */
@@ -556,6 +578,7 @@ export class LibraryService extends BaseService {
       importPaths: dto.importPaths?.map((importPath) => normalizeImportPath(importPath)),
       exclusionPatterns: dto.exclusionPatterns,
       folderAlbums: dto.folderAlbums,
+      folderAlbumOptions: dto.folderAlbumOptions,
     };
 
     if (update.exclusionPatterns) {
@@ -571,6 +594,16 @@ export class LibraryService extends BaseService {
       await this.folderAlbums.queueSync(id);
     } else if (dto.folderAlbums === false && existing.folderAlbums) {
       await this.folderAlbums.removeAll(id, { removeAlbums: dto.removeFolderAlbums === true });
+    } else if (
+      library.folderAlbums &&
+      dto.folderAlbumOptions &&
+      !isDeepStrictEqual(
+        resolveFolderAlbumOptions(dto.folderAlbumOptions),
+        resolveFolderAlbumOptions(existing.folderAlbumOptions),
+      )
+    ) {
+      // FL-1837: new rules change the albums made so far to match, or leave them and apply to new folders only
+      await this.folderAlbums.applyToExisting(id, dto.folderAlbumExisting ?? 'match');
     }
 
     const foldersChanged =

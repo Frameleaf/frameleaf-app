@@ -117,6 +117,15 @@ export class AlbumSummaryRepository {
       .execute();
   }
 
+  /** FL-1837: these albums' numbers are read again, for every viewer, the next time a list asks. */
+  @GenerateSql({ params: [[DummyValue.UUID]] })
+  async deleteByAlbumIds(albumIds: string[]): Promise<void> {
+    if (albumIds.length === 0) {
+      return;
+    }
+    await this.db.deleteFrom('album_summary').where('albumId', '=', anyUuid(albumIds)).execute();
+  }
+
   /** Clears variants nobody reads any more: one in use is recomputed at least daily. */
   @GenerateSql({ params: [DummyValue.DATE] })
   async deleteComputedBefore(date: Date): Promise<void> {

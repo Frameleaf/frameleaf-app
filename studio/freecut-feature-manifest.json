@@ -13758,9 +13758,10 @@
           "0205-frameleaf-accent.patch",
           "0206-studio-not-upstream.patch",
           "0207-studio-tab-bar.patch",
-          "0208-studio-inspector-controls.patch"
+          "0208-studio-inspector-controls.patch",
+          "0213-studio-add-panel.patch"
         ],
-        "note": "FL-1819 (0204) ports upstream fixes made after the pin: the caret stays put while a title is typed in the inspector, and the inspector's selection is memoised. FL-1822: 0205 replaces every hard-coded upstream accent with the theme accent; 0206 removes the upstream product's name, logo, changelog button, docs link and language menu from the hosted editor. FL-1822 (0207): inside Frameleaf the editor's header is a tab bar of its workspaces with a More menu for keyboard shortcuts and editor settings; back, the project name, saving, export and the render queue are the host's. FL-1822 (0208): inspector controls follow the approved Studio: labels above full-width fields, 34px fields and sliders, the paired Transform fields drop their unit when narrow so their values stay readable, and 11px section heads with room between rows.",
+        "note": "FL-1819 (0204) ports upstream fixes made after the pin: the caret stays put while a title is typed in the inspector, and the inspector's selection is memoised. FL-1822: 0205 replaces every hard-coded upstream accent with the theme accent; 0206 removes the upstream product's name, logo, changelog button, docs link and language menu from the hosted editor. FL-1822 (0207): inside Frameleaf the editor's header is a tab bar of its workspaces with a More menu for keyboard shortcuts and editor settings; back, the project name, saving, export and the render queue are the host's. FL-1822 (0208): inspector controls follow the approved Studio: labels above full-width fields, 34px fields and sliders, the paired Transform fields drop their unit when narrow so their values stay readable, and 11px section heads with room between rows. FL-1822 (0213): the left rail is Media, Add, Transcript and AI; Add holds titles, shapes, effects, transitions and animations behind chips with a one-line hint, tiles are two columns with 12px labels that wrap, and transition previews play between two-tone stills in the clip colours instead of a sunset.",
         "status": "shipped"
       },
       "id": "module.editor",
@@ -17451,9 +17452,10 @@
           "0b7183d4dd",
           "0160-library-view-in-media-bin.patch",
           "0204-upstream-fixes.patch",
-          "0206-studio-not-upstream.patch"
+          "0206-studio-not-upstream.patch",
+          "0212-studio-media-bin.patch"
         ],
-        "note": "FL-636 adds a Library view to the bin: whole-library smart search with people, place, month and photo/video filters through the host; results are added by drag or at the playhead. FL-1819 (0204) ports upstream's readable drop overlay, bounded preview caches and the missing-media dialog closing once media is recovered. FL-1822 (0206): messages say Studio, not the upstream product.",
+        "note": "FL-636 adds a Library view to the bin: whole-library smart search with people, place, month and photo/video filters through the host; results are added by drag or at the playhead. FL-1819 (0204) ports upstream's readable drop overlay, bounded preview caches and the missing-media dialog closing once media is recovered. FL-1822 (0206): messages say Studio, not the upstream product. FL-1822 (0212): the bin is the approved Studio's: Library, Project and Scenes on their own row, search across the panel, a quiet Add files with a menu for subtitles and web addresses (no copy or link storage modes), 32px filter, sort and view controls with names, sentence-case group headings and larger tiles by default.",
         "status": "shipped"
       },
       "id": "module.media-library",
@@ -18350,9 +18352,10 @@
           "0046-preview-canvas-transform-placement.patch",
           "0110-scope-revision-binding.patch",
           "0118-adaptive-preview-render-size.patch",
-          "0209-studio-selection-handles.patch"
+          "0209-studio-selection-handles.patch",
+          "0211-studio-track-heads.patch"
         ],
-        "note": "FL-1822 (0209): the selection is the approved Studio's: a solid accent outline and white round handles on a dark hairline.",
+        "note": "FL-1822 (0209): the selection is the approved Studio's: a solid accent outline and white round handles on a dark hairline. FL-1822 (0211): the Align row left the strip above the transport for the inspector Transform group, labelled Align in the frame, with spacing evenly shown once three clips are chosen and canvas snapping beside it.",
         "status": "shipped"
       },
       "id": "module.preview",
@@ -20690,9 +20693,11 @@
           "cd365017c8",
           "1accc156fc",
           "d74234e08d",
-          "0210-studio-timeline-toolbar.patch"
+          "0210-studio-timeline-toolbar.patch",
+          "0211-studio-track-heads.patch",
+          "0214-studio-keyframes-lane.patch"
         ],
-        "note": "FL-1822 (0210): the timeline toolbar is the approved Studio's: a Tool menu, undo and redo, quiet snapping, marker and keyframe toggles, In and Out with their timecode, voice-over, and a More menu for linked selection, sound while scrubbing and the clearing actions.",
+        "note": "FL-1822 (0210): the timeline toolbar is the approved Studio's: a Tool menu, undo and redo, quiet snapping, marker and keyframe toggles, In and Out with their timecode, voice-over, and a More menu for linked selection, sound while scrubbing and the clearing actions. FL-1822 (0211): each track head is one row, its kind and name, then bordered buttons to hide a picture track or mute a sound track, solo, lock, and keep in sync, highlighted when not in the usual state; close gaps and the track actions stay in the right-click menu. FL-1822 (0214): the keyframes lane opens with a Keyframes title and its count; the frame fields read In clip and In project at 12px; the Property, Animated and All header and the row labels move from 9 to 11-12px, with room for Position; group headings are sentence case; the docked title drops the clip's internal id.",
         "status": "shipped"
       },
       "id": "module.timeline",

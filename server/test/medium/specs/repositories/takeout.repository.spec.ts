@@ -472,11 +472,53 @@ describe(TakeoutRepository.name, () => {
     const { user } = await ctx.newUser();
     const { album } = await ctx.newAlbum({ ownerId: user.id, albumName: 'Trip' });
 
-    await expect(sut.setAlbumFor(user.id, 'Trip', album.id)).resolves.toBe(album.id);
-    await expect(sut.getAlbumFor(user.id, 'Trip')).resolves.toBe(album.id);
+    await expect(sut.setAlbumFor(user.id, '', 'Trip', album.id)).resolves.toBe(album.id);
+    await expect(sut.getAlbumFor(user.id, '', 'Trip')).resolves.toBe(album.id);
 
     await ctx.database.updateTable('album').set({ deletedAt: new Date() }).where('id', '=', album.id).execute();
-    await expect(sut.getAlbumFor(user.id, 'Trip')).resolves.toBeUndefined();
+    await expect(sut.getAlbumFor(user.id, '', 'Trip')).resolves.toBeUndefined();
+    await expect(sut.isFolderAlbumRemoved(user.id, '', 'Trip')).resolves.toBe(true);
+  });
+
+  it('remembers a folder album the person deleted, so it is not made again (FL-1840)', async () => {
+    const { ctx, sut } = setup();
+    const { user } = await ctx.newUser();
+    const { album } = await ctx.newAlbum({ ownerId: user.id, albumName: 'Trip' });
+    const { album: replacement } = await ctx.newAlbum({ ownerId: user.id, albumName: 'Trip' });
+    await sut.setAlbumFor(user.id, '', 'Trip', album.id);
+
+    await ctx.database.deleteFrom('album').where('id', '=', album.id).execute();
+
+    await expect(sut.getAlbumFor(user.id, '', 'Trip')).resolves.toBeUndefined();
+    await expect(sut.isFolderAlbumRemoved(user.id, '', 'Trip')).resolves.toBe(true);
+    // a run that made one anyway (racing the delete) is told to drop it
+    await expect(sut.setAlbumFor(user.id, '', 'Trip', replacement.id)).resolves.toBeNull();
+  });
+
+  it('tells a run racing a move to the trash to drop the album it made (FL-1840)', async () => {
+    const { ctx, sut } = setup();
+    const { user } = await ctx.newUser();
+    const { album } = await ctx.newAlbum({ ownerId: user.id, albumName: 'Trip' });
+    const { album: replacement } = await ctx.newAlbum({ ownerId: user.id, albumName: 'Trip' });
+    await sut.setAlbumFor(user.id, '', 'Trip', album.id);
+    await ctx.database.updateTable('album').set({ deletedAt: new Date() }).where('id', '=', album.id).execute();
+
+    await expect(sut.setAlbumFor(user.id, '', 'Trip', replacement.id)).resolves.toBeNull();
+  });
+
+  it('keeps each source’s albums apart: a Dropbox "Trips" and a Drive "Trips" (FL-1840)', async () => {
+    const { ctx, sut } = setup();
+    const { user } = await ctx.newUser();
+    const { album: dropbox } = await ctx.newAlbum({ ownerId: user.id, albumName: 'Trips' });
+    const { album: drive } = await ctx.newAlbum({ ownerId: user.id, albumName: 'Trips' });
+    const dropboxId = '019a0000-0000-7000-8000-000000000001';
+    const driveId = '019a0000-0000-7000-8000-000000000002';
+
+    await expect(sut.setAlbumFor(user.id, dropboxId, 'Trips', dropbox.id)).resolves.toBe(dropbox.id);
+    await expect(sut.setAlbumFor(user.id, driveId, 'Trips', drive.id)).resolves.toBe(drive.id);
+    await expect(sut.getAlbumFor(user.id, dropboxId, 'Trips')).resolves.toBe(dropbox.id);
+    await expect(sut.getAlbumFor(user.id, driveId, 'Trips')).resolves.toBe(drive.id);
+    await expect(sut.getAlbumFor(user.id, '', 'Trips')).resolves.toBeUndefined();
   });
 
   it('closes archive uploads once the scan has started', async () => {

@@ -1271,10 +1271,11 @@ export class AlbumRepository {
   })
   async syncFolderMemberships(
     libraryId: string,
-    add: { folderPath: string; albumId: string }[],
+    add: { albumId: string; assetId: string }[],
     remove: { folderPath: string; albumId: string }[],
+    stale?: { members: { folderPath: string; albumId: string }[]; albumIds: string[] },
   ): Promise<{ added: { albumId: string; assetId: string }[]; removed: { albumId: string; assetId: string }[] }> {
-    const albumIds = [...add, ...remove].map(({ albumId }) => albumId);
+    const albumIds = [...[...add, ...remove].map(({ albumId }) => albumId), ...(stale?.albumIds ?? [])];
     if (albumIds.length === 0) {
       return { added: [], removed: [] };
     }
@@ -1287,11 +1288,11 @@ export class AlbumRepository {
                 WITH seen AS (
                   INSERT INTO library_folder_album_asset ("folderAlbumId", "assetId")
                   SELECT link.id, asset.id
-                  FROM asset
-                  JOIN unnest(${add.map(({ folderPath }) => folderPath)}::text[], ${add.map(({ albumId }) => albumId)}::uuid[])
-                    AS folder(path, "albumId") ON folder.path = ${folderOf('asset')}
+                  FROM unnest(${add.map(({ albumId }) => albumId)}::uuid[], ${add.map(({ assetId }) => assetId)}::uuid[])
+                    AS pair("albumId", "assetId")
                   JOIN library_folder_album link
-                    ON link."albumId" = folder."albumId" AND link."libraryId" = ${asUuid(libraryId)}
+                    ON link."albumId" = pair."albumId" AND link."libraryId" = ${asUuid(libraryId)}
+                  JOIN asset ON asset.id = pair."assetId"
                   WHERE asset."libraryId" = ${asUuid(libraryId)} AND ${isFolderPhoto('asset')}
                   ON CONFLICT DO NOTHING
                   RETURNING "folderAlbumId", "assetId"
@@ -1317,6 +1318,28 @@ export class AlbumRepository {
                   AND folder.path = ${folderOf('asset')}
                 RETURNING member."albumId", member."assetId"`.execute(tx)
             ).rows;
+      // FL-1837: a photo the sync put in an album whose folder no longer joins it (the rules changed) comes out of it
+      if (stale && stale.albumIds.length > 0) {
+        const { rows } = await sql<{ albumId: string; assetId: string }>`
+          WITH gone AS (
+            DELETE FROM library_folder_album_asset seen
+            USING library_folder_album link, asset
+            WHERE seen."folderAlbumId" = link.id AND asset.id = seen."assetId"
+              AND link."libraryId" = ${asUuid(libraryId)} AND link."albumId" = ANY(${stale.albumIds}::uuid[])
+              AND NOT EXISTS (
+                SELECT 1
+                FROM unnest(${stale.members.map(({ folderPath }) => folderPath)}::text[], ${stale.members.map(({ albumId }) => albumId)}::uuid[])
+                  AS folder(path, "albumId")
+                WHERE folder."albumId" = link."albumId" AND folder.path = ${folderOf('asset')}
+              )
+            RETURNING link."albumId", seen."assetId"
+          )
+          DELETE FROM album_asset member
+          USING gone
+          WHERE member."albumId" = gone."albumId" AND member."assetId" = gone."assetId"
+          RETURNING member."albumId", member."assetId"`.execute(tx);
+        removed.push(...rows);
+      }
       if (removed.length > 0) {
         await sql`
           DELETE FROM library_folder_album_asset seen
@@ -1330,6 +1353,56 @@ export class AlbumRepository {
       await repository.invalidateSourceMemberships(removed);
       return { added, removed };
     });
+  }
+
+  /**
+   * FL-1837: the folder photos the sync has not yet put in their album (`folders` names the folders whose photos join
+   * each album), read once per sync without locking any album; `syncFolderMemberships` then adds them in batches.
+   */
+  @GenerateSql({ params: [DummyValue.UUID, [{ folderPath: DummyValue.STRING, albumId: DummyValue.UUID }]] })
+  async getFolderPhotosToAdd(
+    libraryId: string,
+    folders: { folderPath: string; albumId: string }[],
+  ): Promise<{ albumId: string; assetId: string }[]> {
+    if (folders.length === 0) {
+      return [];
+    }
+    const { rows } = await sql<{ albumId: string; assetId: string }>`
+      SELECT folder."albumId", asset.id AS "assetId"
+      FROM asset
+      JOIN unnest(${folders.map(({ folderPath }) => folderPath)}::text[], ${folders.map(({ albumId }) => albumId)}::uuid[])
+        AS folder(path, "albumId") ON folder.path = ${folderOf('asset')}
+      JOIN library_folder_album link ON link."albumId" = folder."albumId" AND link."libraryId" = ${asUuid(libraryId)}
+      WHERE asset."libraryId" = ${asUuid(libraryId)} AND ${isFolderPhoto('asset')}
+        AND NOT EXISTS (
+          SELECT 1 FROM library_folder_album_asset seen WHERE seen."folderAlbumId" = link.id AND seen."assetId" = asset.id
+        )`.execute(this.db);
+    return rows;
+  }
+
+  /** FL-1837: which of these albums someone besides their owner can see, by invitation or a shared link. */
+  @GenerateSql({ params: [[DummyValue.UUID]] })
+  async getSharedAlbumIds(albumIds: string[]): Promise<Set<string>> {
+    if (albumIds.length === 0) {
+      return new Set();
+    }
+    const rows = await this.db
+      .selectFrom('album')
+      .select('album.id')
+      .where('album.id', '=', anyUuid(albumIds))
+      .where((eb) =>
+        eb.or([
+          eb.exists(
+            eb
+              .selectFrom('album_user')
+              .whereRef('album_user.albumId', '=', 'album.id')
+              .where('album_user.role', '!=', AlbumUserRole.Owner),
+          ),
+          eb.exists(eb.selectFrom('shared_link').whereRef('shared_link.albumId', '=', 'album.id')),
+        ]),
+      )
+      .execute();
+    return new Set(rows.map(({ id }) => id));
   }
 
   /** FL-838: the library folder behind each of these albums, told only to the library's owner. */

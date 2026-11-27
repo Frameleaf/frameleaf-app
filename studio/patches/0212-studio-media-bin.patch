@@ -1,0 +1,621 @@
+diff --git a/src/features/media-library/components/media-library.test.tsx b/src/features/media-library/components/media-library.test.tsx
+new file mode 100644
+index 0000000..9614cf9
+--- /dev/null
++++ b/src/features/media-library/components/media-library.test.tsx
+@@ -0,0 +1,37 @@
++import { fireEvent, render, screen } from '@testing-library/react'
++import { beforeEach, describe, expect, it } from 'vite-plus/test'
++import { useMediaLibraryStore } from '../stores/media-library-store'
++import { MediaLibrary } from './media-library'
++
++describe('media bin (FL-1822)', () => {
++  beforeEach(() => {
++    useMediaLibraryStore.setState({ currentProjectId: null })
++  })
++
++  it('cannot add anything before a project is open', () => {
++    render(<MediaLibrary />)
++
++    expect(screen.getByRole('button', { name: 'Add files' })).toBeDisabled()
++    expect(screen.getByRole('button', { name: 'More ways to add' })).toBeDisabled()
++  })
++
++  it('puts the source switch on its own row with a quiet Add files and a menu of other ways', async () => {
++    useMediaLibraryStore.setState({ currentProjectId: 'project-1' })
++    render(<MediaLibrary />)
++
++    const source = screen.getByRole('group', { name: 'Where your media comes from' })
++    expect(source).toHaveTextContent('Project')
++    expect(source).toHaveTextContent('Scenes')
++    expect(screen.getByRole('button', { name: 'Project' })).toHaveAttribute('aria-pressed', 'true')
++    expect(screen.getByRole('textbox', { name: 'Search media' })).toBeInTheDocument()
++    expect(screen.getByRole('button', { name: 'Add files' })).toBeEnabled()
++    expect(screen.getByRole('button', { name: 'Type: All types' })).toBeInTheDocument()
++    expect(screen.getByRole('button', { name: 'Sort: Date' })).toBeInTheDocument()
++    expect(screen.getByRole('button', { name: 'Show as a grid' })).toHaveAttribute('aria-pressed', 'true')
++
++    fireEvent.pointerDown(screen.getByRole('button', { name: 'More ways to add' }), { button: 0, ctrlKey: false })
++    expect(await screen.findByRole('menuitem', { name: 'Add subtitles (SRT or VTT)' })).toBeInTheDocument()
++    expect(screen.getByRole('menuitem', { name: 'Add from a web address' })).toBeInTheDocument()
++    expect(screen.queryByText('Link original files')).not.toBeInTheDocument()
++  })
++})
+diff --git a/src/features/media-library/components/media-library.tsx b/src/features/media-library/components/media-library.tsx
+index ee767ee..286bbab 100644
+--- a/src/features/media-library/components/media-library.tsx
++++ b/src/features/media-library/components/media-library.tsx
+@@ -38,7 +38,6 @@ import {
+   FileText,
+   ScanSearch,
+   FileJson,
+-  Library,
+ } from 'lucide-react'
+ import { useTranslation } from 'react-i18next'
+ import { importSceneBrowserPanel, useSceneBrowserStore } from '../deps/scene-browser'
+@@ -195,11 +194,9 @@ const MediaTypeGroupBase = memo(function MediaTypeGroupBase({
+             isOpen && 'rotate-90',
+           )}
+         />
+-        <Icon className="w-3 h-3 text-muted-foreground" />
+-        <span className="text-xs font-semibold tracking-wide uppercase text-muted-foreground">
+-          {label}
+-        </span>
+-        <span className="text-[10px] tabular-nums text-muted-foreground">{items.length}</span>
++        <Icon className="w-3.5 h-3.5 text-muted-foreground" />
++        <span className="text-[13px] font-semibold text-foreground">{label}</span>
++        <span className="text-xs tabular-nums text-muted-foreground">{items.length}</span>
+       </CollapsibleTrigger>
+       <CollapsibleContent className="pt-1 pb-2">
+         <Grid items={items} onMediaSelect={onMediaSelect} itemSize={itemSize} />
+@@ -432,14 +429,6 @@ export const MediaLibrary = memo(function MediaLibrary({ onMediaSelect }: MediaL
+     }
+   }
+ 
+-  const handleLinkImport = async () => {
+-    try {
+-      await importMedia({ storageMode: 'link' })
+-    } catch (error) {
+-      logger.error('Link import failed:', error)
+-    }
+-  }
+-
+   const handleImportUrl = useCallback(
+     async (event: React.FormEvent<HTMLFormElement>) => {
+       event.preventDefault()
+@@ -663,72 +652,50 @@ export const MediaLibrary = memo(function MediaLibrary({ onMediaSelect }: MediaL
+             ref={headerToolbarRef}
+             className="flex flex-nowrap items-center gap-2 text-xs min-w-0 overflow-hidden"
+           >
+-            {/* Import action */}
+-            <div className="flex shrink-0">
+-              <HeaderActionTooltip label={t('media.library.importMediaFiles')}>
+-                <button
+-                  onClick={handleImport}
+-                  disabled={!currentProjectId}
+-                  className="flex items-center gap-1.5 h-7 px-2.5 rounded-l-md
+-                    bg-primary text-primary-foreground
+-                    hover:bg-primary/90
+-                    disabled:opacity-40 disabled:cursor-not-allowed
+-                    transition-colors duration-150"
+-                >
+-                  <FolderOpen className="w-3.5 h-3.5" />
+-                  <span className={headerCompactLevel >= 4 ? 'hidden' : 'hidden @[260px]:inline'}>
+-                    {t('media.library.import')}
+-                  </span>
+-                </button>
+-              </HeaderActionTooltip>
+-              <DropdownMenu>
+-                <DropdownMenuTrigger asChild>
+-                  <button
+-                    disabled={!currentProjectId}
+-                    className="flex h-7 w-7 items-center justify-center rounded-r-md border-l border-primary-foreground/20
+-                      bg-primary text-primary-foreground
+-                      hover:bg-primary/90
+-                      disabled:opacity-40 disabled:cursor-not-allowed
+-                      transition-colors duration-150"
+-                    aria-label={t('media.library.importMoreOptions')}
+-                    title={t('media.library.importMoreOptions')}
+-                  >
+-                    <ChevronDown className="w-3.5 h-3.5" />
+-                  </button>
+-                </DropdownMenuTrigger>
+-                <DropdownMenuContent align="start" className="w-56">
+-                  <DropdownMenuItem onSelect={handleImport}>
+-                    <FolderOpen className="w-4 h-4 mr-2" />
+-                    {t('media.library.importCopyToWorkspace')}
+-                  </DropdownMenuItem>
+-                  <DropdownMenuItem onSelect={() => void handleSubtitleImport()}>
+-                    <FileText className="w-4 h-4 mr-2" />
+-                    {t('media.library.importSubtitles', { defaultValue: 'Import subtitles (SRT/VTT)' })}
+-                  </DropdownMenuItem>
+-                  <DropdownMenuItem onSelect={handleLinkImport}>
+-                    <Link className="w-4 h-4 mr-2" />
+-                    {t('media.library.importLinkOriginal')}
+-                  </DropdownMenuItem>
+-                </DropdownMenuContent>
+-              </DropdownMenu>
+-            </div>
+-
+-            <HeaderActionTooltip label={t('media.library.importMediaFromUrl')}>
++            {/* Add files: quiet, as the approved Studio's bin (FL-1822); the library is the main source. */}
++            <HeaderActionTooltip label={t('media.library.importMediaFiles')}>
+               <button
+-                onClick={() => setShowImportUrlDialog(true)}
++                onClick={handleImport}
+                 disabled={!currentProjectId}
+-                className="flex items-center gap-1.5 h-7 px-2.5 rounded-md shrink-0 border
+-                  bg-secondary border-border text-muted-foreground
+-                  hover:text-primary hover:bg-primary/10 hover:border-primary/40
++                aria-label={t('media.library.import')}
++                className="flex items-center gap-1.5 h-8 px-3 rounded-md shrink-0 border
++                  bg-secondary border-border text-foreground text-[13px]
++                  hover:bg-accent
+                   disabled:opacity-40 disabled:cursor-not-allowed
+                   transition-colors duration-150"
+               >
+-                <Link className="w-3.5 h-3.5" />
+-                <span className={headerCompactLevel >= 2 ? 'hidden' : 'hidden @[360px]:inline'}>
+-                  {t('media.library.url')}
++                <FolderOpen className="w-4 h-4" />
++                <span className={headerCompactLevel >= 4 ? 'hidden' : 'hidden @[200px]:inline'}>
++                  {t('media.library.import')}
+                 </span>
+               </button>
+             </HeaderActionTooltip>
++            <DropdownMenu>
++              <DropdownMenuTrigger asChild disabled={!currentProjectId}>
++                <button
++                  disabled={!currentProjectId}
++                  className="flex h-8 w-8 items-center justify-center rounded-md shrink-0 border
++                    bg-secondary border-border text-muted-foreground
++                    hover:text-foreground hover:bg-accent
++                    disabled:opacity-40 disabled:cursor-not-allowed
++                    transition-colors duration-150"
++                  aria-label={t('media.library.importMoreOptions')}
++                  data-tooltip={t('media.library.importMoreOptions')}
++                >
++                  <ChevronDown className="w-4 h-4" />
++                </button>
++              </DropdownMenuTrigger>
++              <DropdownMenuContent align="start" className="w-60">
++                <DropdownMenuItem onSelect={() => void handleSubtitleImport()}>
++                  <FileText className="w-4 h-4 mr-2" />
++                  {t('media.library.importSubtitles')}
++                </DropdownMenuItem>
++                <DropdownMenuItem onSelect={() => setShowImportUrlDialog(true)}>
++                  <Link className="w-4 h-4 mr-2" />
++                  {t('media.library.importMediaFromUrl')}
++                </DropdownMenuItem>
++              </DropdownMenuContent>
++            </DropdownMenu>
+ 
+             {/* Workspace health scan indicator */}
+             {isScanningMediaHealth && (
+@@ -901,7 +868,7 @@ export const MediaLibrary = memo(function MediaLibrary({ onMediaSelect }: MediaL
+                 }
+               >
+                 {isImportUrlSubmitting && <Loader2 className="w-4 h-4 animate-spin" />}
+-                {t('media.library.import')}
++                {t('media.library.importUrlSubmit')}
+               </Button>
+             </DialogFooter>
+           </form>
+@@ -990,93 +957,78 @@ export const MediaLibrary = memo(function MediaLibrary({ onMediaSelect }: MediaL
+           the media-library grid, so they're hidden when the Scene browser is
+           mounted (it has its own search). */}
+       <div className="px-4 pt-3 pb-2 space-y-2 flex-shrink-0">
+-        {/* Search + Media/Scenes toggle group */}
+-        <div className="@container flex items-center gap-2">
+-          {!otherViewOpen && (
+-            <div className="relative group flex-1 min-w-0">
+-              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground group-focus-within:text-primary transition-colors" />
+-              <Input
+-                placeholder={t('media.searchMedia')}
+-                value={searchQuery}
+-                onChange={(e) => setSearchQuery(e.target.value)}
+-                className="pl-8 h-7 bg-secondary border border-border focus:border-primary text-foreground placeholder:text-muted-foreground text-xs"
+-              />
+-              {searchQuery && (
+-                <button
+-                  onClick={() => setSearchQuery('')}
+-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-primary transition-colors"
+-                >
+-                  <X className="w-3 h-3" />
+-                </button>
++        {/* Where the media comes from, on its own row (FL-1822): Library, Project, Scenes. */}
++        <div
++          role="group"
++          aria-label={t('media.library.libraryView')}
++          className="flex items-center h-8 rounded-md border border-border bg-secondary p-0.5"
++        >
++          {libraryPanel && (
++            <button
++              onClick={() => {
++                if (sceneBrowserOpen) closeSceneBrowser()
++                setLibraryViewChosen(true)
++              }}
++              aria-pressed={libraryViewOpen}
++              data-frameleaf-library-toggle=""
++              className={cn(
++                'flex-1 min-w-0 h-7 px-2 rounded-[5px] text-[13px] truncate transition-colors duration-150',
++                libraryViewOpen ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground',
+               )}
+-            </div>
++            >
++              {libraryPanel.label}
++            </button>
+           )}
+-          {otherViewOpen && <div className="flex-1 min-w-0" aria-hidden />}
+-          <div
+-            role="group"
+-            aria-label={t('media.library.libraryView')}
+-            className="inline-flex items-center h-7 rounded-md border border-border bg-secondary p-0.5 shrink-0"
++          <button
++            onClick={() => {
++              setLibraryViewChosen(false)
++              if (sceneBrowserOpen) closeSceneBrowser()
++            }}
++            aria-pressed={!otherViewOpen}
++            data-tooltip={t('media.library.showMediaLibrary')}
++            className={cn(
++              'flex-1 min-w-0 h-7 px-2 rounded-[5px] text-[13px] truncate transition-colors duration-150',
++              !otherViewOpen ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground',
++            )}
+           >
+-            <HeaderActionTooltip label={t('media.library.showMediaLibrary')}>
+-              <button
+-                onClick={() => {
+-                  setLibraryViewChosen(false)
+-                  if (sceneBrowserOpen) closeSceneBrowser()
+-                }}
+-                aria-pressed={!otherViewOpen}
+-                className={cn(
+-                  'flex items-center gap-1 h-6 px-1.5 @[280px]:px-2 rounded-[3px] text-[11px] transition-colors duration-150',
+-                  !otherViewOpen
+-                    ? 'bg-primary text-primary-foreground'
+-                    : 'text-muted-foreground hover:text-foreground',
+-                )}
+-              >
+-                <Film className="w-3 h-3" />
+-                <span className="hidden @[280px]:inline">{t('media.library.mediaTab')}</span>
+-              </button>
+-            </HeaderActionTooltip>
+-            <HeaderActionTooltip label={t('media.library.searchScenes')}>
++            {t('media.library.mediaTab')}
++          </button>
++          <button
++            onClick={() => {
++              setLibraryViewChosen(false)
++              if (!sceneBrowserOpen) openSceneBrowser()
++            }}
++            aria-pressed={sceneBrowserOpen}
++            data-tooltip={t('media.library.searchScenes')}
++            className={cn(
++              'flex-1 min-w-0 h-7 px-2 rounded-[5px] text-[13px] truncate transition-colors duration-150',
++              sceneBrowserOpen ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground',
++            )}
++          >
++            {t('media.library.scenesTab')}
++          </button>
++        </div>
++        {!otherViewOpen && (
++          <div className="relative group">
++            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground group-focus-within:text-foreground transition-colors" />
++            <Input
++              placeholder={t('media.searchMedia')}
++              aria-label={t('media.searchMedia')}
++              value={searchQuery}
++              onChange={(e) => setSearchQuery(e.target.value)}
++              className="pl-8 h-8 bg-secondary border border-border text-foreground placeholder:text-muted-foreground text-[13px]"
++            />
++            {searchQuery && (
+               <button
+-                onClick={() => {
+-                  setLibraryViewChosen(false)
+-                  if (!sceneBrowserOpen) openSceneBrowser()
+-                }}
+-                aria-pressed={sceneBrowserOpen}
+-                className={cn(
+-                  'flex items-center gap-1 h-6 px-1.5 @[280px]:px-2 rounded-[3px] text-[11px] transition-colors duration-150',
+-                  sceneBrowserOpen
+-                    ? 'bg-primary text-primary-foreground'
+-                    : 'text-muted-foreground hover:text-foreground',
+-                )}
++                onClick={() => setSearchQuery('')}
++                aria-label={t('media.library.clearSearch')}
++                className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+               >
+-                <ScanSearch className="w-3 h-3" />
+-                <span className="hidden @[280px]:inline">{t('media.library.scenesTab')}</span>
++                <X className="w-3.5 h-3.5" />
+               </button>
+-            </HeaderActionTooltip>
+-            {libraryPanel && (
+-              <HeaderActionTooltip label={libraryPanel.label}>
+-                <button
+-                  onClick={() => {
+-                    if (sceneBrowserOpen) closeSceneBrowser()
+-                    setLibraryViewChosen(true)
+-                  }}
+-                  aria-pressed={libraryViewOpen}
+-                  aria-label={libraryPanel.label}
+-                  data-frameleaf-library-toggle=""
+-                  className={cn(
+-                    'flex items-center gap-1 h-6 px-1.5 @[280px]:px-2 rounded-[3px] text-[11px] transition-colors duration-150',
+-                    libraryViewOpen
+-                      ? 'bg-primary text-primary-foreground'
+-                      : 'text-muted-foreground hover:text-foreground',
+-                  )}
+-                >
+-                  <Library className="w-3 h-3" />
+-                  <span className="hidden @[280px]:inline">{libraryPanel.label}</span>
+-                </button>
+-              </HeaderActionTooltip>
+             )}
+           </div>
+-        </div>
++        )}
+ 
+         {!otherViewOpen && (
+           <>
+@@ -1088,14 +1040,19 @@ export const MediaLibrary = memo(function MediaLibrary({ onMediaSelect }: MediaL
+                   <Button
+                     variant="outline"
+                     size="sm"
+-                    className={`h-6 bg-secondary border text-[10px] px-2 flex-shrink-0 ${
++                    aria-label={`${t('media.library.filterByType')}: ${
++                      filterByType
++                        ? t(`media.library.typeShort.${filterByType}`)
++                        : t('media.library.allShort')
++                    }`}
++                    className={`h-8 bg-secondary border text-[13px] px-2.5 flex-shrink-0 ${
+                       filterByType
+-                        ? 'border-primary text-primary hover:bg-primary/10'
+-                        : 'border-border text-muted-foreground hover:border-primary/50 hover:text-primary'
++                        ? 'border-muted-foreground text-foreground'
++                        : 'border-border text-muted-foreground hover:text-foreground'
+                     }`}
+                   >
+-                    <Filter className="w-2.5 h-2.5" />
+-                    <span className="hidden @[280px]:inline ml-1">
++                    <Filter className="w-3.5 h-3.5" />
++                    <span className="hidden @[220px]:inline ml-1">
+                       {filterByType
+                         ? t(`media.library.typeShort.${filterByType}`)
+                         : t('media.library.allShort')}
+@@ -1115,28 +1072,28 @@ export const MediaLibrary = memo(function MediaLibrary({ onMediaSelect }: MediaL
+                     className="text-xs hover:bg-accent hover:text-accent-foreground"
+                   >
+                     <Video className="w-3 h-3 mr-2" />
+-                    {t('media.type.video')}
++                    {t('media.library.typeShort.video')}
+                   </DropdownMenuItem>
+                   <DropdownMenuItem
+                     onClick={() => setFilterByType('audio')}
+                     className="text-xs hover:bg-accent hover:text-accent-foreground"
+                   >
+                     <FileAudio className="w-3 h-3 mr-2" />
+-                    {t('media.type.audio')}
++                    {t('media.library.typeShort.audio')}
+                   </DropdownMenuItem>
+                   <DropdownMenuItem
+                     onClick={() => setFilterByType('image')}
+                     className="text-xs hover:bg-accent hover:text-accent-foreground"
+                   >
+                     <ImageIcon className="w-3 h-3 mr-2" />
+-                    {t('media.type.image')}
++                    {t('media.library.typeShort.image')}
+                   </DropdownMenuItem>
+                   <DropdownMenuItem
+                     onClick={() => setFilterByType('lottie')}
+                     className="text-xs hover:bg-accent hover:text-accent-foreground"
+                   >
+                     <FileJson className="w-3 h-3 mr-2" />
+-                    {t('media.type.lottie')}
++                    {t('media.library.typeShort.lottie')}
+                   </DropdownMenuItem>
+                 </DropdownMenuContent>
+               </DropdownMenu>
+@@ -1147,10 +1104,11 @@ export const MediaLibrary = memo(function MediaLibrary({ onMediaSelect }: MediaL
+                   <Button
+                     variant="outline"
+                     size="sm"
+-                    className="h-6 bg-secondary border border-border text-muted-foreground hover:border-primary/50 hover:text-primary text-[10px] px-2 flex-shrink-0"
++                    aria-label={`${t('media.library.sortBy')}: ${t(`media.library.sortShort.${sortBy}`)}`}
++                    className="h-8 bg-secondary border border-border text-muted-foreground hover:text-foreground text-[13px] px-2.5 flex-shrink-0"
+                   >
+-                    <SortAsc className="w-2.5 h-2.5" />
+-                    <span className="hidden @[280px]:inline ml-1">
++                    <SortAsc className="w-3.5 h-3.5" />
++                    <span className="hidden @[220px]:inline ml-1">
+                       {t(`media.library.sortShort.${sortBy}`)}
+                     </span>
+                   </Button>
+@@ -1186,7 +1144,7 @@ export const MediaLibrary = memo(function MediaLibrary({ onMediaSelect }: MediaL
+                     step={1}
+                     value={[mediaItemSize]}
+                     onValueChange={([v]) => setMediaItemSize(v ?? 3)}
+-                    className="flex-1 min-w-6 max-w-24"
++                    className="hidden @[340px]:flex flex-1 min-w-12 max-w-24"
+                     aria-label={t('media.library.gridItemSize')}
+                   />
+                 )}
+@@ -1195,25 +1153,31 @@ export const MediaLibrary = memo(function MediaLibrary({ onMediaSelect }: MediaL
+                     variant="ghost"
+                     size="sm"
+                     onClick={() => setViewMode('grid')}
+-                    className={`h-6 w-6 p-0 rounded-none rounded-l ${
++                    aria-label={t('media.library.gridView')}
++                    aria-pressed={viewMode === 'grid'}
++                    data-tooltip={t('media.library.gridView')}
++                    className={`h-8 w-8 p-0 rounded-none rounded-l ${
+                       viewMode === 'grid'
+-                        ? 'bg-primary/10 text-primary'
++                        ? 'bg-background text-foreground'
+                         : 'text-muted-foreground hover:text-foreground'
+                     }`}
+                   >
+-                    <Grid3x3 className="w-3 h-3" />
++                    <Grid3x3 className="w-3.5 h-3.5" />
+                   </Button>
+                   <Button
+                     variant="ghost"
+                     size="sm"
+                     onClick={() => setViewMode('list')}
+-                    className={`h-6 w-6 p-0 rounded-none rounded-r ${
++                    aria-label={t('media.library.listView')}
++                    aria-pressed={viewMode === 'list'}
++                    data-tooltip={t('media.library.listView')}
++                    className={`h-8 w-8 p-0 rounded-none rounded-r ${
+                       viewMode === 'list'
+-                        ? 'bg-primary/10 text-primary'
++                        ? 'bg-background text-foreground'
+                         : 'text-muted-foreground hover:text-foreground'
+                     }`}
+                   >
+-                    <List className="w-3 h-3" />
++                    <List className="w-3.5 h-3.5" />
+                   </Button>
+                 </div>
+               </div>
+diff --git a/src/features/media-library/stores/media-library-store.ts b/src/features/media-library/stores/media-library-store.ts
+index 39a72f1..f8c9f2b 100644
+--- a/src/features/media-library/stores/media-library-store.ts
++++ b/src/features/media-library/stores/media-library-store.ts
+@@ -118,7 +118,7 @@ const newStore: MediaLibraryStoreApi =
+         filterByType: null,
+         sortBy: 'date',
+         viewMode: 'grid',
+-        mediaItemSize: 1,
++        mediaItemSize: 2,
+ 
+         // Broken media tracking (lazy/proactive detection)
+         brokenMediaIds: [],
+diff --git a/src/i18n/locales/partials/en/media.json b/src/i18n/locales/partials/en/media.json
+index 9efd99b..b549abb 100644
+--- a/src/i18n/locales/partials/en/media.json
++++ b/src/i18n/locales/partials/en/media.json
+@@ -128,7 +128,7 @@
+     },
+     "library": {
+       "aiAnalysisProgress": "AI Analysis Progress",
+-      "allTypes": "All Types",
++      "allTypes": "All types",
+       "analyzingMultiple": "Analyzing Multiple",
+       "analyzingSingle": "Analyzing Single",
+       "andJoiner": " and ",
+@@ -150,7 +150,7 @@
+       "deleteWithClips": "Delete With Clips",
+       "dismiss": "Dismiss",
+       "dragDropUnsupported": "Drag Drop Unsupported",
+-      "dropFilesHere": "Drop Files Here",
++      "dropFilesHere": "Drop files here",
+       "filesRejected": "Files Rejected",
+       "downloadingInterpolationModel": "Downloading Interpolation Model",
+       "generateProxiesForSelected": "Generate proxies for {{count}} selected items",
+@@ -159,22 +159,22 @@
+       "interpolatingFrames": "Interpolating Frames",
+       "interpolationProgress": "Frame Interpolation Progress",
+       "timeRemaining": "{{time}} left",
+-      "gridItemSize": "Grid Item Size",
+-      "groupAudio": "Audio",
++      "gridItemSize": "Thumbnail size",
++      "groupAudio": "Sound",
+       "groupGifs": "GIFs",
+-      "groupImages": "Images",
+-      "groupLottie": "Lottie",
++      "groupImages": "Photos",
++      "groupLottie": "Animations",
+       "groupVideos": "Videos",
+-      "import": "Import",
++      "import": "Add files",
+       "importCopyToWorkspace": "Copy into workspace",
+-      "importFromUrlDescription": "Import a media file from a direct URL.",
+-      "importFromUrlHint": "Paste a direct link to a video, audio, image, or GIF file.",
+-      "importFromUrlTitle": "Import From URL",
++      "importFromUrlDescription": "Add a video, sound, photo or GIF from a direct link.",
++      "importFromUrlHint": "Paste a link that goes straight to the file.",
++      "importFromUrlTitle": "Add from a web address",
+       "importLinkOriginal": "Link original files",
+-      "importMediaFiles": "Import Media Files",
+-      "importMediaFromUrl": "Import Media From URL",
+-      "importMoreOptions": "Import options",
+-      "libraryView": "Library View",
++      "importMediaFiles": "Add photos, videos or sound from this computer",
++      "importMediaFromUrl": "Add from a web address",
++      "importMoreOptions": "More ways to add",
++      "libraryView": "Where your media comes from",
+       "linkedInstancesDetail": "{{count}} timeline instances that use these assets will also be removed.",
+       "linkedInstancesDetail_one": "{{count}} timeline instance that uses these assets will also be removed.",
+       "linkedInstancesDetail_other": "{{count}} timeline instances that use these assets will also be removed.",
+@@ -182,12 +182,12 @@
+       "mediaItemsCount": "{{count}} media items",
+       "mediaItemsCount_one": "{{count}} media item",
+       "mediaItemsCount_other": "{{count}} media items",
+-      "mediaTab": "Media",
++      "mediaTab": "Project",
+       "missingCount": "{{count}} Missing",
+       "proxyCount": "{{count}} proxies",
+       "proxyGenerationProgress": "Proxy Generation Progress",
+       "scenesTab": "Scenes",
+-      "searchScenes": "Search Scenes",
++      "searchScenes": "Find scenes inside your videos",
+       "selected": "Selected",
+       "selectedAssetsCount": "{{count}} selected assets",
+       "selectedAssetsCount_one": "{{count}} selected asset",
+@@ -195,26 +195,26 @@
+       "sequencesCount": "{{count}} sequences",
+       "sequencesCount_one": "{{count}} sequence",
+       "sequencesCount_other": "{{count}} sequences",
+-      "showMediaLibrary": "Show Media Library",
+-      "sortDate": "Sort Date",
+-      "sortName": "Sort Name",
+-      "sortSize": "Sort Size",
++      "showMediaLibrary": "Media in this project",
++      "sortDate": "By date",
++      "sortName": "By name",
++      "sortSize": "By size",
+       "transcriptGenerationProgress": "Transcript Generation Progress",
+       "url": "URL",
+       "viewMissingMedia": "View Missing Media",
+       "checkingWorkspaceHealth": "Checking workspace media health",
+       "checkingWorkspaceHealthShort": "Checking",
+-      "allShort": "ALL",
++      "allShort": "All types",
+       "typeShort": {
+-        "video": "VIDEO",
+-        "audio": "AUDIO",
+-        "image": "IMAGE",
+-        "lottie": "LOTTIE"
++        "video": "Videos",
++        "audio": "Sound",
++        "image": "Photos",
++        "lottie": "Animations"
+       },
+       "sortShort": {
+-        "name": "NAME",
+-        "date": "DATE",
+-        "size": "SIZE"
++        "name": "Name",
++        "date": "Date",
++        "size": "Size"
+       },
+       "missingCount_one": "{{count}} Missing",
+       "missingCount_other": "{{count}} Missing",
+@@ -237,7 +237,14 @@
+       "importFailed_one": "{{count}} file failed to import. Check the file and try again.",
+       "importFailed_other": "{{count}} files failed to import. Check the files and try again.",
+       "upscalingVideo": "Upscaling Video",
+-      "upscaleProgress": "Upscale Progress"
++      "upscaleProgress": "Upscale Progress",
++      "importSubtitles": "Add subtitles (SRT or VTT)",
++      "gridView": "Show as a grid",
++      "listView": "Show as a list",
++      "clearSearch": "Clear search",
++      "importUrlSubmit": "Add",
++      "filterByType": "Type",
++      "sortBy": "Sort"
+     },
+     "missingMedia": {
+       "title": "Missing Media",

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import EmptyRow from '$lib/components/frameleaf/EmptyRow.svelte';
   import UserAvatar from '$lib/components/shared-components/UserAvatar.svelte';
   import { activityManager } from '$lib/managers/activity-manager.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
@@ -244,7 +245,7 @@
 
   <ol bind:this={list} class="list" aria-label={$t('frameleaf_album_activity_comments')}>
     {#if comments.length === 0}
-      <li class="empty">{$t('frameleaf_album_activity_empty')}</li>
+      <li class="empty"><EmptyRow icon={mdiCommentOutline} title={$t('frameleaf_album_activity_empty')} /></li>
     {/if}
     {#each comments as entry (entry.id)}
       {@const own = entry.user.id === currentUserId}
@@ -453,12 +454,6 @@
     display: flex;
     flex-direction: column;
     gap: var(--fl-space-3);
-  }
-  .empty {
-    padding: var(--fl-space-6) 0;
-    text-align: center;
-    color: var(--fl-muted);
-    font-size: var(--fl-font-callout);
   }
   .item {
     display: flex;
