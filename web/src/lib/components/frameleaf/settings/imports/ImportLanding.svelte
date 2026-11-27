@@ -1,10 +1,11 @@
 <script lang="ts">
   /**
-   * Import & export (FL-365, the approved prototype's `settings-v2/library/importing.jsx`
-   * `ImportHome`): the area (renamed from "Import & protection"; owner call defaulted on FL-365) opens
-   * on what is coming in right now, then every way to bring photos in, each saying its own state and
-   * opening the tool where it lives, then how to take a copy out, and one line for the commonest
-   * wrong turn: backups are in Backup.
+   * Import (FL-1808, the approved prototype's `settings-v2/library/importing.jsx` `ImportHome` behind
+   * `nav=v2`): the one Import page, opened from the rail footer and shown beside the library rail. It
+   * opens on what is coming in right now, then every way to bring photos in (your phone first, then
+   * Google Photos, iCloud Photos, a folder on this server and an Eagle library), each saying its own
+   * state and opening its existing flow, then how to take a copy out, and one line for the commonest
+   * wrong turn: backups are in Backup. Cloud drives and other photo apps join the list when they exist.
    *
    * Readings are this account's own imports (`listTakeoutImports`) and iCloud connections, and, for an
    * administrator, the server's added folders.
@@ -16,6 +17,7 @@
   import Links, { type LinkRow } from '$lib/components/frameleaf/settings/kit/Links.svelte';
   import Notice from '$lib/components/frameleaf/settings/kit/Notice.svelte';
   import Section from '$lib/components/frameleaf/settings/kit/Section.svelte';
+  import { eagleImportUi } from '$lib/frameleaf/eagle/eagle-import-status.svelte';
   import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { locale } from '$lib/stores/preferences.store';
@@ -38,6 +40,7 @@
     mdiSync,
     mdiTrayArrowDown,
     mdiTruckOutline,
+    mdiViewDashboardOutline,
   } from '@mdi/js';
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';
@@ -100,6 +103,12 @@
 
   const inRows = $derived<LinkRow[]>([
     {
+      icon: mdiCellphone,
+      title: $t('frameleaf_import_phone'),
+      body: $t('frameleaf_import_phone_body'),
+      href: commandCenterUrl('utilities', 'downloads'),
+    },
+    {
       icon: mdiGoogle,
       title: $t('frameleaf_import_google'),
       body: googleBody,
@@ -121,11 +130,12 @@
           },
         ]
       : []),
+    // Into Boards, with its folders and tags (FL-653). The dialog sits beside the library rail.
     {
-      icon: mdiCellphone,
-      title: $t('frameleaf_import_phone'),
-      body: $t('frameleaf_import_phone_body'),
-      href: commandCenterUrl('utilities', 'downloads'),
+      icon: mdiViewDashboardOutline,
+      title: $t('frameleaf_import_eagle'),
+      body: $t('frameleaf_import_eagle_body'),
+      onSelect: () => eagleImportUi.show(),
     },
   ]);
   const outRows = $derived<LinkRow[]>([

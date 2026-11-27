@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/svelte';
+import { fireEvent, render, screen } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import en from '../../../../../../../i18n/en.json';
 import ImportLanding from './ImportLanding.svelte';
@@ -12,7 +12,7 @@ vi.mock('$app/navigation', () => ({ goto: vi.fn() }));
 vi.mock('$lib/managers/auth-manager.svelte', () => ({ authManager: { user: { isAdmin: true } } }));
 vi.mock('@frameleaf/sdk', async (original) => ({ ...(await original<typeof import('@frameleaf/sdk')>()), ...sdk }));
 
-describe('Import & export (FL-365)', () => {
+describe('Import (FL-365, FL-1808)', () => {
   beforeAll(() => addMessages('dev', en));
   beforeEach(() => {
     sdk.listTakeoutImports.mockResolvedValue([]);
@@ -28,6 +28,21 @@ describe('Import & export (FL-365)', () => {
     }
     expect(await screen.findByText(/1 folder connected/)).toBeInTheDocument();
     expect(screen.getByText('Looking for backups?')).toBeInTheDocument();
+  });
+
+  it('lists your phone first, then Google, iCloud, a folder and Eagle, and opens the Eagle import here (FL-1808)', async () => {
+    const { eagleImportUi } = await import('$lib/frameleaf/eagle/eagle-import-status.svelte');
+    render(ImportLanding);
+    const ways = await screen.findByRole('region', { name: 'Bring photos in from…' });
+    expect([...ways.querySelectorAll('li strong')].map((row) => row.textContent)).toEqual([
+      'Your phone',
+      'Google Photos',
+      'iCloud Photos',
+      'A folder on this server',
+      'Eagle library',
+    ]);
+    await fireEvent.click(screen.getByRole('button', { name: /Eagle library/ }));
+    expect(eagleImportUi.open).toBe(true);
   });
 
   it('says when an import is running', async () => {

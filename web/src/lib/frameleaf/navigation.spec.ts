@@ -212,6 +212,9 @@ describe('Frameleaf rail destinations', () => {
     expect(active(commandCenterUrl('care', 'repair'))).toEqual(['libraryCare']);
     expect(active(Route.workflows())).toEqual(['libraryCare']);
     expect(active(Route.importPlace())).toEqual(['import']);
+    // FL-1808: iCloud Photos and the phone apps are ways photos come in.
+    expect(active(Route.icloudSyncUtility())).toEqual(['import']);
+    expect(active(Route.downloadsUtility())).toEqual(['import']);
     expect(active(Route.takeout())).toEqual(['import']);
     expect(active(Route.trash())).toEqual(['trash']);
     expect(active(Route.userSettings())).toEqual(['settings']);
