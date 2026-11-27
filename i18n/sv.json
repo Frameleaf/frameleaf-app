@@ -11892,7 +11892,7 @@
   "frameleaf_jobs_tab_active": "Aktiva",
   "frameleaf_jobs_tab_failed": "Misslyckade",
   "frameleaf_jobs_tab_help_active": "Aktiva jobb blir klara även när deras kö är pausad.",
-  "frameleaf_jobs_tab_help_failed": "Läs felet och åtgärda orsaken innan du försöker igen.",
+  "frameleaf_jobs_tab_help_failed": "Vad som gick fel för varje jobb och om fotot påverkas. Försök igen när orsaken är åtgärdad.",
   "frameleaf_jobs_tab_help_history": "Slutfört arbete som sparas i den här aktivitetsvyn.",
   "frameleaf_jobs_tab_help_waiting": "Schemalagda jobb hålls separata när väntande arbete rensas.",
   "frameleaf_jobs_tab_history": "Historik",

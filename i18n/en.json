@@ -11799,7 +11799,7 @@
   "frameleaf_jobs_tab_active": "Active",
   "frameleaf_jobs_tab_failed": "Failed",
   "frameleaf_jobs_tab_help_active": "Active jobs finish even when their queue is paused.",
-  "frameleaf_jobs_tab_help_failed": "Read the error and resolve its cause before retrying.",
+  "frameleaf_jobs_tab_help_failed": "What went wrong with each job, and whether the photo is affected. Try again once the cause is fixed.",
   "frameleaf_jobs_tab_help_history": "Completed work retained in this activity view.",
   "frameleaf_jobs_tab_help_waiting": "Scheduled jobs remain separate when waiting work is cleared.",
   "frameleaf_jobs_tab_history": "History",

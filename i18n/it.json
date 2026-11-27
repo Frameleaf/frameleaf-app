@@ -11896,7 +11896,7 @@
   "frameleaf_jobs_tab_active": "Attivi",
   "frameleaf_jobs_tab_failed": "Non riusciti",
   "frameleaf_jobs_tab_help_active": "I processi attivi terminano anche se la loro coda è in pausa.",
-  "frameleaf_jobs_tab_help_failed": "Leggi l’errore e risolvine la causa prima di riprovare.",
+  "frameleaf_jobs_tab_help_failed": "Che cosa è andato storto in ogni processo e se la foto è interessata. Riprova quando la causa è risolta.",
   "frameleaf_jobs_tab_help_history": "Lavoro completato conservato in questa vista delle attività.",
   "frameleaf_jobs_tab_help_waiting": "I processi pianificati restano separati quando si cancella il lavoro in attesa.",
   "frameleaf_jobs_tab_history": "Cronologia",

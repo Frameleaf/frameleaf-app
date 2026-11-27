@@ -11890,7 +11890,7 @@
   "frameleaf_jobs_tab_active": "Aktive",
   "frameleaf_jobs_tab_failed": "Mislykkede",
   "frameleaf_jobs_tab_help_active": "Aktive opgaver bliver færdige, selv når deres kø er på pause.",
-  "frameleaf_jobs_tab_help_failed": "Læs fejlen, og løs dens årsag, før du prøver igen.",
+  "frameleaf_jobs_tab_help_failed": "Hvad der gik galt for hvert job, og om billedet er påvirket. Prøv igen, når årsagen er løst.",
   "frameleaf_jobs_tab_help_history": "Fuldført arbejde, der gemmes i denne aktivitetsvisning.",
   "frameleaf_jobs_tab_help_waiting": "Planlagte opgaver forbliver adskilt, når ventende arbejde ryddes.",
   "frameleaf_jobs_tab_history": "Historik",
