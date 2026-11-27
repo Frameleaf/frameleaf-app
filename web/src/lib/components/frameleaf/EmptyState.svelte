@@ -96,8 +96,9 @@
       padding: var(--fl-empty-padding, 40px var(--fl-space-4));
     }
   }
+  /* A panel that draws the compact form roomier (the notifications panel) sets this. */
   .fl-empty-state.compact {
-    padding: var(--fl-space-6) var(--fl-space-4);
+    padding: var(--fl-empty-compact-padding, var(--fl-space-6) var(--fl-space-4));
   }
   .icon {
     display: inline-flex;
