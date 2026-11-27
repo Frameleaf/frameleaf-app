@@ -150,13 +150,12 @@ describe('bounded PostgreSQL queue history', () => {
       const runId = await store.createRun('immich-import-derived', {});
       await task(runId, 'a', 'thumbnail', 'completed', '2 hours');
       await store.finishEnumeration(runId);
-      // a worker queueing follow-up work holds the run row (for share) on another connection
-      const worker = await getKyselyDB();
+      // a worker queueing follow-up work holds the run row (for share) on another connection of the same database
       let release!: () => void;
       const held = new Promise<void>((resolve) => (release = resolve));
       let holding!: () => void;
       const ready = new Promise<void>((resolve) => (holding = resolve));
-      const hold = worker.transaction().execute(async (tx) => {
+      const hold = db.transaction().execute(async (tx) => {
         await sql`select 1 from job_run where id = ${runId}::uuid for share`.execute(tx);
         holding();
         await held;
@@ -167,7 +166,6 @@ describe('bounded PostgreSQL queue history', () => {
       expect(await left(runId)).toEqual(['a thumbnail']);
       release();
       await hold;
-      await worker.destroy();
       expect((await foldOpenRunsPage(db)).folded).toBe(1);
       expect(await left(runId)).toEqual([]);
     });

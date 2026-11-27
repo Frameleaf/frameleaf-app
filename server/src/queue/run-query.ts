@@ -1254,10 +1254,10 @@ export async function observeQueueRun(db: QueryExecutorProvider, name: string, i
   const foldedDone = folded.reduce((sum, [, task]) => sum + task.n, 0);
   const foldedItems = folded.filter(([task]) => task === itemJob).reduce((sum, [, task]) => sum + task.n, 0);
   // their pace is measured from the earliest of them, folded or not
-  const foldedSince = folded
-    .filter(([task, { since }]) => task === itemJob && since)
-    .map(([, { since }]) => new Date(since!))
-    .reduce<Date | null>((earliest, at) => (earliest && earliest <= at ? earliest : at), null);
+  let foldedSince: Date | null = null;
+  for (const [task, { since }] of folded) {
+    if (task === itemJob && since && (!foldedSince || new Date(since) < foldedSince)) foldedSince = new Date(since);
+  }
   const {
     rows: [{ itemsDone, itemsLeft, itemsStartedAt, ...row }],
   } = await sql<{
