@@ -25,6 +25,9 @@ test('Postgres memory follows host RAM within NAS-friendly caps', () => {
     work_mem: '16MB',
     max_wal_size: '2GB',
     random_page_cost: '1.1',
+    wal_compression: 'zstd',
+    checkpoint_timeout: '15min',
+    wal_buffers: '32MB',
   });
   // A "16 GB" host reports a little less; rounding keeps it in the 16 GB tier
   assert.deepEqual(settings(15.6 * GiB), {
@@ -35,6 +38,9 @@ test('Postgres memory follows host RAM within NAS-friendly caps', () => {
     work_mem: '32MB',
     max_wal_size: '4GB',
     random_page_cost: '1.1',
+    wal_compression: 'zstd',
+    checkpoint_timeout: '15min',
+    wal_buffers: '64MB',
   });
   assert.deepEqual(settings(128 * GiB), {
     shm_size: '2048mb',
@@ -44,6 +50,9 @@ test('Postgres memory follows host RAM within NAS-friendly caps', () => {
     work_mem: '64MB',
     max_wal_size: '4GB',
     random_page_cost: '1.1',
+    wal_compression: 'zstd',
+    checkpoint_timeout: '15min',
+    wal_buffers: '64MB',
   });
   assert.equal(settings(1024 * GiB).shared_buffers, '8192MB');
   assert.equal(settings(1024 * GiB).effective_cache_size, '32768MB');
@@ -56,6 +65,9 @@ test('Postgres memory follows host RAM within NAS-friendly caps', () => {
     work_mem: '1MB',
     max_wal_size: '2GB',
     random_page_cost: '1.1',
+    wal_compression: 'zstd',
+    checkpoint_timeout: '15min',
+    wal_buffers: '4MB',
   });
   assert.equal(settings(512 * 2 ** 20).shared_buffers, '128MB');
   assert.deepEqual(postgresTuning(125.7 * GiB), postgresTuning(125.8 * GiB));
