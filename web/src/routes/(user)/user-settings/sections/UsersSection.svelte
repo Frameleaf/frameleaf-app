@@ -47,6 +47,7 @@
   import UserAvatar from '$lib/components/shared-components/UserAvatar.svelte';
   import { UUID_REGEX } from '$lib/constants';
   import { accountLifecycle, accountQuotaUsage } from '$lib/frameleaf/accounts';
+  import { formatDate } from '$lib/frameleaf/date-format';
   import { motionScrollBehavior } from '$lib/frameleaf/motion';
   import { getSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
@@ -230,11 +231,7 @@
     }
   };
   const joined = (user: UserAdminResponseDto) => {
-    const date = new Date(user.createdAt).toLocaleDateString($locale, {
-      day: 'numeric',
-      month: 'short',
-      year: 'numeric',
-    });
+    const date = formatDate(new Date(user.createdAt), { day: 'numeric', month: 'short', year: 'numeric' }, $locale);
     const active = lastActive.get(user.id);
     // "today", "yesterday", "3 days ago": a session records its use about once an hour
     const when = active ? DateTime.fromISO(active, { locale: $locale }).toRelativeCalendar() : null;

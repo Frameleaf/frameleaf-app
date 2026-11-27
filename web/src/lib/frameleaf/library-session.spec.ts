@@ -26,6 +26,8 @@ import {
   type LibrarySession,
   type LibrarySessionAction,
   type LibraryViewState,
+  LIBRARY_SCOPE_KINDS,
+  STORED_SELECTION_LIMIT,
 } from '$lib/frameleaf/library-session';
 
 const run = (session: LibrarySession, ...actions: LibrarySessionAction[]) => {
@@ -653,6 +655,39 @@ describe('what survives a reload', () => {
     const restored = fromStoredLibrarySession(stored, incoming);
     expect(restored.state).toEqual(incoming);
     expect(restored.layout).toBe('work');
+  });
+});
+
+describe('a very large selection (FL-1804)', () => {
+  it('freezes a page scope on the snapshot and leaves the page state alone', () => {
+    const session = reduceLibrarySession(createLibrarySession(), {
+      type: 'selection',
+      ids: ['a'],
+      allMatching: true,
+      scope: { kind: 'tag', id: 'tag-1' },
+    });
+    expect(session.selectionSnapshot?.scope).toEqual({ kind: 'tag', id: 'tag-1' });
+    expect(session.state.scope).toEqual({ kind: 'library' });
+    // A snapshot scope is never restored from storage or a link: only the three page scopes are.
+    expect(LIBRARY_SCOPE_KINDS).toEqual(['library', 'album', 'space']);
+  });
+
+  it('keeps the selection out of the tab storage above the limit, and in it at the limit', () => {
+    const select = (count: number) =>
+      reduceLibrarySession(createLibrarySession(), {
+        type: 'selection',
+        ids: Array.from({ length: count }, (_, index) => `asset-${index}`),
+        allMatching: true,
+      });
+    const kept = toStoredLibraryTransient(select(STORED_SELECTION_LIMIT));
+    expect(kept.selection).toHaveLength(STORED_SELECTION_LIMIT);
+    expect(kept.selectionSnapshot).toBeDefined();
+
+    const dropped = toStoredLibraryTransient(select(STORED_SELECTION_LIMIT + 1));
+    expect(dropped.selection).toEqual([]);
+    expect(dropped.anchorId).toBeNull();
+    expect(dropped.selectionSnapshot).toBeUndefined();
+    expect(JSON.stringify(dropped).length).toBeLessThan(2000);
   });
 });
 

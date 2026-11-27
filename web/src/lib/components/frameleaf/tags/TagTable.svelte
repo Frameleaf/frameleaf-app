@@ -1,5 +1,6 @@
 <script lang="ts">
   import TagDot from '$lib/components/frameleaf/tags/TagDot.svelte';
+  import { formatDate } from '$lib/frameleaf/date-format';
   import { tagTrail, type FrameleafTagNode } from '$lib/frameleaf/tag-tree';
   import { Route } from '$lib/route';
   import { Icon } from '@frameleaf/ui';
@@ -41,10 +42,10 @@
   const focusId = $derived(rows.some((row) => row.id === focused) ? focused : (rows[0]?.id ?? null));
 
   // The capture day comes as a date at UTC midnight (like an album's), so it is read in UTC.
-  const dayFormat = $derived(new Intl.DateTimeFormat($locale ?? undefined, { dateStyle: 'medium', timeZone: 'UTC' }));
+  const dayFormat = (date: Date) => formatDate(date, { dateStyle: 'medium', timeZone: 'UTC' }, $locale ?? 'default');
   const newest = (node: FrameleafTagNode) => {
     const date = node.endDate ? new Date(node.endDate) : null;
-    return date && !Number.isNaN(date.getTime()) ? dayFormat.format(date) : '–';
+    return date && !Number.isNaN(date.getTime()) ? dayFormat(date) : '–';
   };
 
   const focusRow = (id: string | undefined) => {

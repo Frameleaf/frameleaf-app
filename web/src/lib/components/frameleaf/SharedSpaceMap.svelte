@@ -1,11 +1,11 @@
 <script lang="ts">
-  import Spinner from '$lib/components/frameleaf/Spinner.svelte';
+  import EmptyRow from '$lib/components/frameleaf/EmptyRow.svelte';
+  import Skeleton from '$lib/components/frameleaf/Skeleton.svelte';
   import { timeToLoadTheMap } from '$lib/constants';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { delay } from '$lib/utils/asset-utils';
   import { handleError } from '$lib/utils/handle-error';
   import { getAlbumMapMarkers, type AlbumResponseDto, type MapMarkerResponseDto } from '@frameleaf/sdk';
-  import { LoadingSpinner } from '@frameleaf/ui';
   import { onDestroy, onMount } from 'svelte';
   import { t } from 'svelte-i18n';
 
@@ -57,14 +57,14 @@
   <p class="hint">{$t('frameleaf_spaces_places_hint')}</p>
 
   {#if loading}
-    <div class="loading"><Spinner /></div>
+    <div class="canvas" aria-busy="true"><Skeleton variant="block" height="100%" /></div>
   {:else if markers.length === 0}
-    <p class="empty">{$t('frameleaf_spaces_places_empty')}</p>
+    <EmptyRow title={$t('frameleaf_spaces_places_empty')} />
   {:else}
     <div class="canvas">
       {#await import('$lib/components/shared-components/map/Map.svelte')}
         {#await delay(timeToLoadTheMap) then}
-          <div class="spinner"><LoadingSpinner /></div>
+          <Skeleton variant="block" height="100%" />
         {/await}
       {:then { default: Map }}
         <Map
@@ -91,8 +91,7 @@
     font-size: 1rem;
     font-weight: 700;
   }
-  .hint,
-  .empty {
+  .hint {
     margin: 0;
     color: var(--fl-muted);
     font-size: 0.8125rem;
@@ -104,17 +103,5 @@
     overflow: hidden;
     border: 1px solid var(--fl-border);
     border-radius: var(--fl-radius);
-  }
-  .spinner {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    height: 100%;
-  }
-  .loading {
-    display: flex;
-    justify-content: center;
-    padding: var(--fl-space-6) 0;
-    color: var(--fl-muted);
   }
 </style>

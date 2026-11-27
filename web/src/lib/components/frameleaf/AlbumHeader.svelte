@@ -10,7 +10,7 @@
   import { MediaQuery } from 'svelte/reactivity';
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
-  import AlbumConfirmDialog from '$lib/components/frameleaf/AlbumConfirmDialog.svelte';
+  import ConfirmDialog from '$lib/components/frameleaf/ConfirmDialog.svelte';
   import AlbumMoveDialog from '$lib/components/frameleaf/AlbumMoveDialog.svelte';
   import AlbumCoverDialog from '$lib/components/frameleaf/AlbumCoverDialog.svelte';
   import AlbumMark from '$lib/components/frameleaf/AlbumMark.svelte';
@@ -1367,10 +1367,11 @@
   {/snippet}
 </Dialog>
 
-<AlbumConfirmDialog
+<ConfirmDialog
   title={$t('frameleaf_album_leave_title', { values: { name } })}
-  body={$t('frameleaf_album_leave_body')}
-  confirmLabel={$t('frameleaf_album_leave', { values: { kind: kindLabel } })}
+  prompt={$t('frameleaf_album_leave_body')}
+  confirmText={$t('frameleaf_album_leave', { values: { kind: kindLabel } })}
+  danger
   bind:open={leaveOpen}
   onConfirm={confirmLeave}
 />

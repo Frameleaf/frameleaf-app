@@ -41,6 +41,7 @@ export const timeZoneCity = (zone: string): string => (zone.split('/').at(-1) ??
 
 const genericName = (zone: string, at: Date, locale?: string): string | undefined => {
   try {
+    // eslint-disable-next-line no-restricted-syntax -- reads a time zone's name ("Mountain Time"), formats no date
     const part = new Intl.DateTimeFormat(locale, { timeZone: zone, timeZoneName: 'longGeneric' })
       .formatToParts(at)
       .find((item) => item.type === 'timeZoneName')?.value;
@@ -105,6 +106,7 @@ export const splitLocalDateTime = (value: string | undefined): { date: string; t
 /** The browser's own zone. */
 export const browserTimeZone = (): string => {
   try {
+    // eslint-disable-next-line no-restricted-syntax -- reads the browser's time zone, formats nothing
     return new Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
   } catch {
     return 'UTC';
@@ -144,6 +146,7 @@ export const isIanaZone = (zone: string | null | undefined): zone is string => {
     return false;
   }
   try {
+    // eslint-disable-next-line no-restricted-syntax -- checks that the browser knows the zone, formats nothing
     new Intl.DateTimeFormat('en', { timeZone: zone });
     return true;
   } catch {

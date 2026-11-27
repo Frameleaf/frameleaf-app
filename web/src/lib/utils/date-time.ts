@@ -1,6 +1,7 @@
 import { DateTime } from 'luxon';
 import { get } from 'svelte/store';
 import { dateFormats } from '$lib/constants';
+import { formatLuxon } from '$lib/frameleaf/date-format';
 import { locale } from '$lib/stores/preferences.store';
 
 export function parseUtcDate(date: string) {
@@ -17,7 +18,7 @@ const getDateRange = (startTimestamp: string, endTimestamp: string, format: 'sho
   const endDate = DateTime.fromISO(endTimestamp).setZone('UTC');
 
   if (startDate.year === endDate.year && startDate.month === endDate.month && format === 'short') {
-    return endDate.setLocale(userLocale).toLocaleString({ month: 'long', year: 'numeric' });
+    return formatLuxon(endDate.setLocale(userLocale), { month: 'long', year: 'numeric' });
   }
 
   let cached = rangeFormatters[format];
@@ -25,6 +26,7 @@ const getDateRange = (startTimestamp: string, endTimestamp: string, format: 'sho
   if (!cached || cached.locale !== userLocale) {
     cached = {
       locale: userLocale,
+      // eslint-disable-next-line no-restricted-syntax -- a range of dates ("Oct – Nov 2026"), which the date helper does not write
       formatter: new Intl.DateTimeFormat(userLocale, format === 'short' ? dateFormats.albumShort : dateFormats.album),
     };
     rangeFormatters[format] = cached;

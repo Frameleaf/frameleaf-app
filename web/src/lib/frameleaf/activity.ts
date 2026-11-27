@@ -12,6 +12,7 @@ import {
 } from '@frameleaf/sdk';
 import type { Translations } from 'svelte-i18n';
 import { bulkActionTitleKey } from '$lib/frameleaf/bulk-actions';
+import { formatDateTime, formatTime } from '$lib/frameleaf/date-format';
 import type { BulkOperationRecord } from '$lib/frameleaf/library-session';
 import type { DownloadState } from '$lib/managers/download-manager.svelte';
 import { UploadState, type UploadAsset } from '$lib/types';
@@ -1067,15 +1068,14 @@ export const formatFinishedTime = (at: number, locale?: string, now: number = Da
       86_400_000,
   );
   if (days !== 0 && days !== 1) {
-    return new Intl.DateTimeFormat(locale, {
-      month: 'short',
-      day: 'numeric',
-      hour: 'numeric',
-      minute: '2-digit',
-    }).format(date);
+    return formatDateTime(
+      date,
+      { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' },
+      locale ?? 'default',
+    );
   }
   const day = new Intl.RelativeTimeFormat(locale, { numeric: 'auto' }).format(-days, 'day');
-  const time = new Intl.DateTimeFormat(locale, { hour: 'numeric', minute: '2-digit' }).format(date);
+  const time = formatTime(date, { hour: 'numeric', minute: '2-digit' }, locale ?? 'default');
   return `${day.charAt(0).toLocaleUpperCase(locale)}${day.slice(1)}, ${time}`;
 };
 

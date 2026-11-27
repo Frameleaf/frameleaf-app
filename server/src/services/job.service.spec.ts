@@ -85,17 +85,22 @@ describe(JobService.name, () => {
       expect(mocks.job.queue).not.toHaveBeenCalledWith(expect.objectContaining({ name: JobName.PetRecognition }));
       expect(mocks.job.queue).not.toHaveBeenCalledWith(expect.objectContaining({ name: JobName.BestPhotosScore }));
     });
-    it('re-scores a photo for Best Photos once its new embedding is stored (FL-978)', async () => {
+    it('never scores a photo for Best Photos as its search, faces or edit finish (FL-1827)', async () => {
       const asset = AssetFactory.create({ type: AssetType.Image });
       mocks.asset.getById.mockResolvedValue(getForAsset(asset));
+      mocks.assetEdit.getWithSyncInfo.mockResolvedValue([] as never);
       mocks.job.run.mockResolvedValue(JobStatus.Success);
 
       await sut.onJobRun(QueueName.SmartSearch, { name: JobName.SmartSearchPostprocess, data: { id: asset.id } });
+      await sut.onJobRun(QueueName.FaceDetection, { name: JobName.AssetDetectFaces, data: { id: asset.id } });
+      await sut.onJobRun(QueueName.Editor, { name: JobName.AssetEditThumbnailGeneration, data: { id: asset.id } });
 
-      expect(mocks.job.queue).toHaveBeenCalledWith({
-        name: JobName.BestPhotosScore,
-        data: { id: asset.id, embeddingChanged: true },
-      });
+      // the paced scan scores it once, when the library is set up
+      const queued = [
+        ...mocks.job.queue.mock.calls.map(([job]) => job),
+        ...mocks.job.queueAll.mock.calls.flatMap(([jobs]) => jobs),
+      ];
+      expect(queued.map(({ name }) => name)).not.toContain(JobName.BestPhotosScore);
     });
     it('queues nothing that reads the embedding while search waits for Frameleaf Cloud', async () => {
       const asset = AssetFactory.create({ type: AssetType.Image });
@@ -276,19 +281,12 @@ describe(JobService.name, () => {
       },
       {
         item: { name: JobName.AssetGenerateThumbnails, data: { id: 'asset-1', source: 'upload' } },
-        // with faces on, face detection queues the photo's Best Photos score
         jobs: [JobName.SmartSearch, JobName.AssetDetectFaces, JobName.Ocr, JobName.ImageDescription],
         stub: [AssetFactory.create({ id: 'asset-1', livePhotoVideoId: newUuid() })],
       },
       {
         item: { name: JobName.AssetGenerateThumbnails, data: { id: 'asset-1', source: 'upload' } },
-        jobs: [
-          JobName.SmartSearch,
-          JobName.AssetDetectFaces,
-          JobName.Ocr,
-          JobName.AssetEncodeVideo,
-          JobName.BestPhotosScore,
-        ],
+        jobs: [JobName.SmartSearch, JobName.AssetDetectFaces, JobName.Ocr, JobName.AssetEncodeVideo],
         stub: [AssetFactory.create({ id: 'asset-1', type: AssetType.Video })],
       },
       {
@@ -322,8 +320,8 @@ describe(JobService.name, () => {
       },
       {
         item: { name: JobName.AssetDetectFaces, data: { id: 'asset-1' } },
-        // FL-863: and the faces' eye scores
-        jobs: [JobName.BestPhotosScore, JobName.FaceEyeScore],
+        // FL-863: the faces' eye scores
+        jobs: [JobName.FaceEyeScore],
         stub: [AssetFactory.create({ id: 'asset-1' })],
       },
       {
@@ -377,7 +375,7 @@ describe(JobService.name, () => {
     }
 
     it.each([
-      { disabled: 'enabled', type: AssetType.Image, jobs: [JobName.BestPhotosScore] },
+      { disabled: 'enabled', type: AssetType.Image, jobs: [] },
       {
         disabled: 'clip',
         type: AssetType.Image,
@@ -386,14 +384,14 @@ describe(JobService.name, () => {
       {
         disabled: 'facialRecognition',
         type: AssetType.Image,
-        jobs: [JobName.SmartSearch, JobName.Ocr, JobName.BestPhotosScore],
+        jobs: [JobName.SmartSearch, JobName.Ocr],
       },
       {
         disabled: 'ocr',
         type: AssetType.Image,
         jobs: [JobName.SmartSearch, JobName.AssetDetectFaces],
       },
-      { disabled: 'enabled', type: AssetType.Video, jobs: [JobName.AssetEncodeVideo, JobName.BestPhotosScore] },
+      { disabled: 'enabled', type: AssetType.Video, jobs: [JobName.AssetEncodeVideo] },
     ])('skips disabled $disabled automatic upload ML for $type', async ({ disabled, type, jobs }) => {
       const asset = AssetFactory.create({ id: 'asset-1', type });
       const data = { id: asset.id, source: 'upload' } as const;
@@ -752,7 +750,6 @@ describe(JobService.name, () => {
         { name: JobName.AssetDetectFaces, data: { id: asset.id, source: 'upload' } },
         { name: JobName.Ocr, data: { id: asset.id, source: 'upload' } },
         { name: JobName.AssetEncodeVideo, data: { id: asset.id, source: 'upload' } },
-        { name: JobName.BestPhotosScore, data: { id: asset.id, source: 'upload' } },
       ]);
     });
 
@@ -786,7 +783,7 @@ describe(JobService.name, () => {
       );
     });
 
-    it('should requeue Best Photos scoring after face detection succeeds', async () => {
+    it('queues the eye scores, and no Best Photos score, after face detection succeeds', async () => {
       mocks.asset.getById.mockResolvedValue(getForAsset(AssetFactory.create({ id: 'asset-1' })));
       mocks.systemMetadata.get.mockResolvedValue({
         machineLearning: {
@@ -801,13 +798,11 @@ describe(JobService.name, () => {
         data: { id: 'asset-1' },
       });
 
-      expect(mocks.job.queueAll).toHaveBeenCalledWith([
-        { name: JobName.BestPhotosScore, data: { id: 'asset-1' } },
-        { name: JobName.FaceEyeScore, data: { id: 'asset-1' } },
-      ]);
+      expect(mocks.job.queue).toHaveBeenCalledExactlyOnceWith({ name: JobName.FaceEyeScore, data: { id: 'asset-1' } });
+      expect(mocks.job.queueAll).not.toHaveBeenCalled();
     });
 
-    it('should requeue Best Photos scoring after edited image thumbnails are generated', async () => {
+    it('announces edited image thumbnails without scoring the photo again', async () => {
       const asset = AssetFactory.create({ id: 'asset-1', type: AssetType.Image });
       mocks.asset.getById.mockResolvedValue(asset as never);
       mocks.assetEdit.getWithSyncInfo.mockResolvedValue([] as never);
@@ -818,7 +813,7 @@ describe(JobService.name, () => {
         data: { id: asset.id },
       });
 
-      expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.BestPhotosScore, data: { id: asset.id } });
+      expect(mocks.job.queue).not.toHaveBeenCalled();
       const publication = mocks.websocket.clientSend.mock.calls.find(([event]) => event === 'AssetEditReadyV2');
       expect(publication?.[1]).toBe(asset.ownerId);
       expect(publication?.[2]).toMatchObject({

@@ -1,11 +1,11 @@
 <script lang="ts">
+  import { confirmFrameleaf } from '$lib/frameleaf/confirm';
   import MenuOption from '$lib/components/shared-components/context-menu/MenuOption.svelte';
   import { AssetAction } from '$lib/constants';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { keepThisDeleteOthers } from '$lib/utils/asset-utils';
   import { toTimelineAsset } from '$lib/utils/timeline-util';
   import type { AssetResponseDto, StackResponseDto } from '@frameleaf/sdk';
-  import { modalManager } from '@frameleaf/ui';
   import { mdiPinOutline } from '@mdi/js';
   import { t } from 'svelte-i18n';
   import type { OnAction } from './action';
@@ -25,11 +25,12 @@
     const targetStack = stack;
     const handleAction = onAction;
     const isCurrentSession = authManager.captureSession();
-    const isConfirmed = await modalManager.showDialog({
+    const isConfirmed = await confirmFrameleaf({
       // The template's wording (media-viewer.mjs "Keep this, remove the rest"); the rest go to the trash.
       title: $t('frameleaf_viewer_menu_keep_this'),
       prompt: $t('confirm_keep_this_delete_others'),
       confirmText: $t('delete_others'),
+      danger: true,
     });
 
     if (!isConfirmed || !isCurrentSession()) {

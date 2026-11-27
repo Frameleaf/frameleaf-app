@@ -264,7 +264,7 @@ export type MemoryHeadline = { title: string; subtitle: string };
 
 /** "August 2026" for a pet story's local month ('yyyy-MM'). */
 const monthLabel = (month: string, locale?: string) =>
-  DateTime.fromFormat(month, 'yyyy-MM', { zone: 'utc', ...(locale && { locale }) }).toLocaleString({
+  formatLuxon(DateTime.fromFormat(month, 'yyyy-MM', { zone: 'utc', ...(locale && { locale }) }), {
     month: 'long',
     year: 'numeric',
   });

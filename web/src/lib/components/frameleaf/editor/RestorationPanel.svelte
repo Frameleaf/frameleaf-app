@@ -1,4 +1,5 @@
 <script lang="ts" module>
+  import { formatDateTime } from '$lib/frameleaf/date-format';
   import { rovingFocus } from '$lib/frameleaf/roving-focus';
   /** What the panel asks the stage to show: two real files, before and after. */
   export type RestorationCompareRequest = {
@@ -11,6 +12,7 @@
 </script>
 
 <script lang="ts">
+  import { confirmFrameleaf } from '$lib/frameleaf/confirm';
   /**
    * The restoration panel of the quick editor (FL-115), ported from the prototype's `RestorePanel`.
    *
@@ -109,7 +111,7 @@
     type CloudMlModelDto,
     MlAdmissionRefusal,
   } from '@frameleaf/sdk';
-  import { Icon, modalManager, toastManager } from '@frameleaf/ui';
+  import { Icon, toastManager } from '@frameleaf/ui';
   import {
     mdiAutoFix,
     mdiCheck,
@@ -804,10 +806,11 @@
     );
 
   const discard = async (item: AssetRestorationResponseDto) => {
-    const confirmed = await modalManager.showDialog({
+    const confirmed = await confirmFrameleaf({
       title: $t('frameleaf_restoration_discard_title'),
       prompt: $t('frameleaf_restoration_discard_prompt', { values: { revision: item.revision } }),
       confirmText: $t('frameleaf_restoration_discard_confirm'),
+      danger: true,
     });
     if (!confirmed) {
       return;
@@ -981,7 +984,14 @@
   const itemTitle = (item: AssetRestorationResponseDto) =>
     isPhotoOperation(item) ? photoVersionName(item) : enhanceTitle(item);
 
-  const formatDate = (value: string | null) => (value ? new Date(value).toLocaleString($locale ?? undefined) : '');
+  const formatDate = (value: string | null) =>
+    value
+      ? formatDateTime(
+          new Date(value),
+          { year: 'numeric', month: 'numeric', day: 'numeric', hour: 'numeric', minute: 'numeric', second: 'numeric' },
+          $locale ?? 'default',
+        )
+      : '';
 </script>
 
 <div class={subsection ? 'rs-subsection' : 'ed-panel-body'} data-testid="restoration-panel">

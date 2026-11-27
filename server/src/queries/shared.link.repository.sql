@@ -259,6 +259,28 @@ where
         1 as "one"
       from
         "album"
+        inner join lateral (
+          select
+            "id",
+            "name",
+            "email",
+            "avatarColor",
+            "profileImagePath",
+            "profileChangedAt"
+          from
+            "user"
+          where
+            exists (
+              select
+              from
+                "album_user"
+              where
+                "album_user"."role" = 'owner'
+                and "album_user"."albumId" = "album"."id"
+                and "album_user"."userId" = "user"."id"
+            )
+            and "user"."deletedAt" is null
+        ) as "owner" on true
       where
         "album"."id" = "shared_link"."albumId"
         and "album"."deletedAt" is null

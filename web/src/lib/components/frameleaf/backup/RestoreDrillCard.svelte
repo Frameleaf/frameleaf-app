@@ -5,6 +5,7 @@
    * the last result with the next drill. A drill (FL-879) takes a sample back from the newest backup into a
    * scratch copy and checks it; it changes nothing. Backup is for administrators only, so members never see it.
    */
+  import { formatDate, formatDateTime } from '$lib/frameleaf/date-format';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import { backupPageUrl } from '$lib/frameleaf/settings-areas';
   import { drillCardState, DRILL_STEPS, runningStep, type DrillStepId } from '$lib/frameleaf/restore-drill';
@@ -80,11 +81,9 @@
     clearTimeout(timer);
   });
 
-  const day = (iso: string) =>
-    new Intl.DateTimeFormat($locale, { month: 'short', day: 'numeric' }).format(new Date(iso));
-  const date = (iso: string) => new Intl.DateTimeFormat($locale, { dateStyle: 'full' }).format(new Date(iso));
-  const moment = (iso: string) =>
-    new Intl.DateTimeFormat($locale, { dateStyle: 'full', timeStyle: 'short' }).format(new Date(iso));
+  const day = (iso: string) => formatDate(new Date(iso), { month: 'short', day: 'numeric' }, $locale);
+  const date = (iso: string) => formatDate(new Date(iso), { dateStyle: 'full' }, $locale);
+  const moment = (iso: string) => formatDateTime(new Date(iso), { dateStyle: 'full', timeStyle: 'short' }, $locale);
 
   const title = $derived(
     {

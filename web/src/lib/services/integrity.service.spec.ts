@@ -17,7 +17,9 @@ vi.mock('@frameleaf/ui', async (original) => ({
 }));
 vi.mock('$lib/frameleaf/confirm', () => ({ confirmFrameleaf: (...args: unknown[]) => confirmFrameleaf(...args) }));
 // the keys themselves, so the test reads which wording each check gets
-vi.mock('$lib/utils/i18n', () => ({
+// The rest of the module stays real: the date helper's stores load through it (FL-1805).
+vi.mock('$lib/utils/i18n', async (original) => ({
+  ...(await original<typeof import('$lib/utils/i18n')>()),
   getFormatter: () => (key: string, options?: { values?: Record<string, unknown> }) =>
     options?.values ? `${key} ${JSON.stringify(options.values)}` : key,
 }));

@@ -18,6 +18,7 @@
   import Select from '$lib/components/frameleaf/settings/kit/Select.svelte';
   import Switch from '$lib/components/frameleaf/settings/kit/Switch.svelte';
   import Tiles from '$lib/components/frameleaf/settings/kit/Tiles.svelte';
+  import { formatCount } from '$lib/frameleaf/number-format';
   import { locale } from '$lib/stores/preferences.store';
   import { getServerErrorMessage } from '$lib/utils/handle-error';
   import {
@@ -105,7 +106,7 @@
   let draft = $state<string[]>([]);
   let filter = $state('');
 
-  const count = (value: number) => new Intl.NumberFormat($locale).format(value);
+  const count = (value: number) => formatCount(value, $locale);
 
   const load = async () => {
     loadFailed = false;
