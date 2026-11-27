@@ -6,6 +6,7 @@
    * next request); how to connect an AI assistant (the library's assistant address, and steps for
    * Claude, ChatGPT and an app on your computer); and Home Assistant.
    */
+  import { formatLuxon } from '$lib/frameleaf/date-format';
   import { goto } from '$app/navigation';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
@@ -156,7 +157,7 @@
   };
   const iconOf = (grant: OAuthAppGrantDto) =>
     (grant.client.knownApp && ICONS[grant.client.knownApp]) || mdiApplicationOutline;
-  const date = (iso: string) => DateTime.fromISO(iso, { locale: $locale }).toLocaleString(DateTime.DATE_MED);
+  const date = (iso: string) => formatLuxon(DateTime.fromISO(iso, { locale: $locale }), DateTime.DATE_MED);
   const usedText = (grant: OAuthAppGrantDto) => {
     const months = staleMonths(grant.lastUsedAt);
     if (months !== null) {

@@ -12,6 +12,7 @@
    * many apps or devices can reach the library (or the never-used key that can do everything), then
    * "Your keys" with New key, each row with Manage › for edit, replace and delete.
    */
+  import { formatLuxon } from '$lib/frameleaf/date-format';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import ApiKeyDialog from '$lib/components/frameleaf/access/ApiKeyDialog.svelte';
   import OnEvents from '$lib/components/OnEvents.svelte';
@@ -49,7 +50,7 @@
   };
 
   const made = (key: ApiKeyResponseDto) =>
-    DateTime.fromISO(key.createdAt, { locale: $locale }).toLocaleString(DateTime.DATE_MED);
+    formatLuxon(DateTime.fromISO(key.createdAt, { locale: $locale }), DateTime.DATE_MED);
   /** FL-367: "Last used 2 days ago" or "Never used", from what the server records. */
   const lastUsed = (key: ApiKeyResponseDto) =>
     key.lastUsedAt

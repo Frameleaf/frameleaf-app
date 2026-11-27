@@ -22,6 +22,24 @@ Run all web checks with `mise //web:checklist`
 Use `mise //web:lint-fix` and `mise //web:format-fix` to automatically correct some issues.
 :::
 
+## Web: empty, loading, saved and failed states
+
+Every page shows these the same way. Use the shared pieces in `web/src/lib/components/frameleaf/`; do not write a new empty block, "Loading…" line or "Saved" message for one page.
+
+| What happened                                       | What to use                                                                                                                 |
+| --------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| Nothing here yet, whole page                        | `EmptyState`: icon, what will be here and how it gets here, at most one main action.                                        |
+| Nothing here yet, one section of a page             | `EmptyRow`: one line and at most one action. The page keeps its layout.                                                     |
+| Loading a list or a grid                            | `ListSkeleton`, `GridSkeleton` or `Skeleton`. No "Loading…" text and no spinner.                                            |
+| A button is working                                 | The button is disabled while it works and shows it is busy (`loading` on the `@frameleaf/ui` `Button`). Nothing else moves. |
+| A setting or a field was saved                      | `StatusLine` beside it: Saving…, then Saved, or why it was not saved. No toast.                                             |
+| An action finished somewhere else, or can be undone | A toast (`toastManager`; `toastUndo` from `$lib/frameleaf/toast` when it can be undone).                                    |
+| A list or page could not be read                    | `InlineError` in place of the content, with `onRetry`. Never a toast, never a blank page.                                   |
+| An action failed                                    | A toast that says what failed and why: `handleError(error, $t('…'))`, which adds the reason. Never silent.                  |
+
+- [ ] New or changed pages use these pieces for every state they can be in.
+- [ ] Spacing uses the `--fl-space-*` tokens (1–6, 8, 10, 12, 16) and colours use the `--fl-*` role tokens, never a hex value.
+
 ## Documentation
 
 - [ ] `mise //docs:format` (formatting via Prettier)

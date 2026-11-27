@@ -11,6 +11,7 @@
    * $92.91. Every figure is read from `license/products`.
    */
   import './cloud-account.css';
+  import { formatDateTime } from '$lib/frameleaf/date-format';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import Skeleton from '$lib/components/frameleaf/Skeleton.svelte';
@@ -91,9 +92,9 @@
       .catch(() => (nameAddress = null));
   });
   const formatDate = (value: string | null | undefined) =>
-    value ? new Intl.DateTimeFormat($locale, { dateStyle: 'long' }).format(new Date(value)) : '—';
+    value ? formatDateTime(new Date(value), { dateStyle: 'long' }, $locale) : '—';
   const formatWhen = (value: string | null | undefined) =>
-    value ? new Intl.DateTimeFormat($locale, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value)) : '—';
+    value ? formatDateTime(new Date(value), { dateStyle: 'medium', timeStyle: 'short' }, $locale) : '—';
   const manageUrl = $derived(status?.manageUrl ?? products?.storeUrl ?? null);
 
   let removing = $state(false);
