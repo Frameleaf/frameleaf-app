@@ -11910,7 +11910,7 @@
   "frameleaf_jobs_tab_active": "En cours",
   "frameleaf_jobs_tab_failed": "En échec",
   "frameleaf_jobs_tab_help_active": "Les tâches en cours se terminent même si leur file est en pause.",
-  "frameleaf_jobs_tab_help_failed": "Lisez l’erreur et corrigez sa cause avant de réessayer.",
+  "frameleaf_jobs_tab_help_failed": "Ce qui s’est mal passé pour chaque travail, et si la photo ou la vidéo est concernée. Réessayez une fois la cause corrigée.",
   "frameleaf_jobs_tab_help_history": "Tâches terminées conservées dans cette vue d’activité.",
   "frameleaf_jobs_tab_help_waiting": "Les tâches planifiées restent distinctes lorsque les tâches en attente sont effacées.",
   "frameleaf_jobs_tab_history": "Historique",
