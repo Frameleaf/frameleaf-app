@@ -33,7 +33,8 @@ test.describe('Navigation and Settings regroup (FL-1806)', () => {
     await page.goto('/user-settings?area=care');
     const nav = rail(page);
 
-    await expect(nav.getByRole('link', { name: 'People & pets' })).toHaveAttribute('href', '/people');
+    // The mocked account has People turned off, so People & pets opens Pets.
+    await expect(nav.getByRole('link', { name: 'People & pets' })).toHaveAttribute('href', '/pets');
     await expect(nav.getByRole('link', { name: 'Places & map' })).toHaveAttribute('href', '/places');
     await expect(nav.getByRole('link', { name: 'All shared' })).toHaveAttribute('href', '/sharing');
     await expect(nav.getByRole('button', { name: 'Tools' })).toHaveCount(0);
