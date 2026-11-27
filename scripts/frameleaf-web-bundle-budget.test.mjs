@@ -15,6 +15,7 @@ import {
   compare,
   lower,
   measure,
+  measureMessages,
   parseDictionary,
   raise,
   staticClosure,
@@ -177,4 +178,26 @@ test("lowers limits to today's sizes and never lifts one", () => {
     "/a": 5100,
     "/b": 10_000,
   });
+});
+
+test("holds each message bundle to the size of its largest language", () => {
+  const sizes = {
+    "en-core.js": 100,
+    "de-core.js": 130,
+    "en-settings.js": 200,
+    "page.js": 999,
+  };
+  assert.deepEqual(
+    measureMessages({
+      manifest: {
+        "virtual:frameleaf-messages": { file: "page.js" },
+        "virtual:frameleaf-messages/en/core": { file: "en-core.js" },
+        "virtual:frameleaf-messages/de/core": { file: "de-core.js" },
+        "virtual:frameleaf-messages/en/settings": { file: "en-settings.js" },
+        "_shared.js": { file: "page.js" },
+      },
+      sizeOf: (file) => sizes[file],
+    }),
+    { "messages/core": 130, "messages/settings": 200 },
+  );
 });

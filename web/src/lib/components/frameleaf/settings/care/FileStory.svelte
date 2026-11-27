@@ -10,6 +10,7 @@
    * they are. Look in a folder lists only folders the server can already see; any other drive is added
    * in Frameleaf Manager first, which an administrator is linked to and a member is told about.
    */
+  import { formatDate } from '$lib/frameleaf/date-format';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import LibraryCareRepairDialog from '$lib/components/frameleaf/LibraryCareRepairDialog.svelte';
@@ -115,12 +116,11 @@
             locked = true;
           }
           if (active && info?.localDateTime) {
-            taken = new Intl.DateTimeFormat($locale, {
-              day: 'numeric',
-              month: 'short',
-              year: 'numeric',
-              timeZone: 'UTC',
-            }).format(new Date(info.localDateTime));
+            taken = formatDate(
+              new Date(info.localDateTime),
+              { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' },
+              $locale,
+            );
           }
         }
       } catch (error) {

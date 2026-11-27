@@ -15,6 +15,7 @@
    * report's findings; acting on them (files are deleted or items trashed, see
    * `handleRemoveAllIntegrityReportItems`) is the separate red button, whose confirmation says it in full.
    */
+  import { formatDateTime } from '$lib/frameleaf/date-format';
   import { Route } from '$lib/route';
   import {
     handleClearIntegrityReports,
@@ -76,8 +77,7 @@
 
   const findings = (count: number) => $t('admin.frameleaf_maintenance_findings', { values: { count } });
   // The template's `when` (`Maintenance.jsx:39-45`): medium date, short time.
-  const when = (value: string) =>
-    new Intl.DateTimeFormat($locale, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value));
+  const when = (value: string) => formatDateTime(new Date(value), { dateStyle: 'medium', timeStyle: 'short' }, $locale);
   /**
    * "Last run …" / "No completed run recorded", then " · n findings" once the check has a report: after any run, or
    * findings from before runs were recorded (`Maintenance.jsx:466-469`).

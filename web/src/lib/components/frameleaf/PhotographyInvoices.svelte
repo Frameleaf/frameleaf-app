@@ -5,6 +5,7 @@
   import InlineError from '$lib/components/frameleaf/InlineError.svelte';
   import ListSkeleton from '$lib/components/frameleaf/ListSkeleton.svelte';
   import { onLibraryAccessChange } from '$lib/frameleaf/library-access';
+  import { formatMoney } from '$lib/frameleaf/number-format';
   import { locale } from '$lib/stores/preferences.store';
   import {
     PhotographyInvoiceCurrency,
@@ -60,8 +61,7 @@
 
   const cents = (value: string) => Math.round((Number(value) || 0) * 100);
   const amount = (value: number) => (value / 100).toFixed(2);
-  const money = (value: number, currency: string) =>
-    new Intl.NumberFormat($locale, { style: 'currency', currency }).format(value / 100);
+  const money = (value: number, currency: string) => formatMoney(value, currency, $locale);
   /** Display only: the server computes the stored totals with the same integer rules. */
   const totals = (value: Draft) => {
     const subtotal = value.lines.reduce(

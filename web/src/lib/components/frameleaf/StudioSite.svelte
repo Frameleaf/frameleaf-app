@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { formatMoney } from '$lib/frameleaf/number-format';
   import { inquiryProblems, sectionOn, siteTemplate } from '$lib/frameleaf/photography/studio-site';
   import type { InquiryInput, PublicSite, SitePhoto } from '$lib/frameleaf/photography/workflow-api';
   import { locale } from '$lib/stores/preferences.store';
@@ -40,8 +41,7 @@
   const brandColours = $derived(site.colours === 'brand');
   const has = (id: PublicSite['sections'][number]['id']) => sectionOn(site.sections, id);
   const showBooking = $derived(site.booking && bookings.length > 0);
-  const money = (amount: number, currency: string) =>
-    new Intl.NumberFormat($locale, { style: 'currency', currency }).format(amount / 100);
+  const money = (amount: number, currency: string) => formatMoney(amount, currency, $locale);
   const style = $derived(
     [
       `--ss-accent:${site.brand.color}`,

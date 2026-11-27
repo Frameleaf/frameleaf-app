@@ -32,6 +32,7 @@
     LIBRARY_NAME_MAX_LENGTH,
     isImportPathFormatValid,
   } from '$lib/frameleaf/libraries';
+  import { formatCount } from '$lib/frameleaf/number-format';
   import { libraryFolderReader, pathTrail } from '$lib/frameleaf/folder-readers';
   import { locale } from '$lib/stores/preferences.store';
   import { getServerErrorMessage } from '$lib/utils/handle-error';
@@ -141,7 +142,7 @@
   void getManagerAccess()
     ?.then((value) => (managerUrl = value.url))
     .catch(() => {});
-  const count = (value: number) => value.toLocaleString($locale);
+  const count = (value: number) => formatCount(value, $locale);
   const folderHelp = $derived.by(() => {
     if (!folder) {
       return $t('frameleaf_addfolder_choose_help');

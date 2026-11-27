@@ -12,6 +12,7 @@
    * After Try again the row says "Trying again…" and the list is read again every few seconds until
    * no file is being tried; a file that works leaves the list by itself.
    */
+  import { formatLuxon } from '$lib/frameleaf/date-format';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Hero from '$lib/components/frameleaf/settings/kit/Hero.svelte';
   import KitPage from '$lib/components/frameleaf/settings/kit/KitPage.svelte';
@@ -139,12 +140,12 @@
     const date = DateTime.fromISO(value).setLocale($locale ?? 'en');
     const days = Math.floor(DateTime.now().startOf('day').diff(date.startOf('day'), 'days').days);
     if (days === 0) {
-      return $t('frameleaf_processing_failure_today', { values: { time: date.toLocaleString(DateTime.TIME_SIMPLE) } });
+      return $t('frameleaf_processing_failure_today', { values: { time: formatLuxon(date, DateTime.TIME_SIMPLE) } });
     }
     if (days === 1) {
       return $t('frameleaf_processing_failure_yesterday');
     }
-    return date.toLocaleString({ month: 'short', day: 'numeric' });
+    return formatLuxon(date, { month: 'short', day: 'numeric' });
   };
 
   const tryAgain = async (file: ProcessingFailureFile) => {

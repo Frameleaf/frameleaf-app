@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { type Kysely, type Selectable, type Transaction, sql } from 'kysely';
+import { type Kysely, type QueryExecutorProvider, type Selectable, type Transaction, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { createHash } from 'node:crypto';
 import z from 'zod';
@@ -119,7 +119,11 @@ const WORKLOAD_QUEUES: Record<string, string> = {
   description: 'imageDescription',
 };
 /** The Jobs concurrency setting of each kind of work's queue; 1 where the queue has no row yet. */
-const queueLimits = async (db: Kysely<DesktopMlDatabase>): Promise<Record<string, number>> => {
+// Either executor, named exactly: checking a Transaction against Kysely<DesktopMlDatabase> walks the whole
+// schema type and passes TypeScript's limit (TS2590).
+const queueLimits = async (
+  db: Kysely<DesktopMlDatabase> | Transaction<DesktopMlDatabase>,
+): Promise<Record<string, number>> => {
   const { rows } = await sql<{ name: string; concurrency: number }>`
     SELECT name, concurrency FROM job_queue WHERE name=ANY(${Object.values(WORKLOAD_QUEUES)}::text[])`.execute(db);
   return Object.fromEntries(
@@ -373,7 +377,7 @@ export class DesktopMlRepository {
 
   /** The model key of each task this desktop holds a live lease for. */
   private async heldModelKeys(
-    db: Kysely<DesktopMlDatabase>,
+    db: Transaction<DesktopMlDatabase>,
     grant: Pick<DesktopWorkerGrant, 'deviceId' | 'authorizationEpoch'>,
   ): Promise<string[]> {
     const rows = await db
@@ -750,7 +754,8 @@ export class DesktopMlRepository {
     );
   }
 
-  private async readFailures(db: Kysely<DesktopMlDatabase>): Promise<DesktopModelFailures> {
+  // Raw SQL only, so any executor will do; see queueLimits for why it is not Kysely<DesktopMlDatabase>.
+  private async readFailures(db: QueryExecutorProvider): Promise<DesktopModelFailures> {
     const { rows } = await sql<{ value: unknown }>`SELECT value FROM system_metadata
       WHERE key=${SystemMetadataKey.FrameleafDesktopModelFailures}`.execute(db);
     const parsed = failuresSchema.safeParse(rows[0]?.value ?? {});

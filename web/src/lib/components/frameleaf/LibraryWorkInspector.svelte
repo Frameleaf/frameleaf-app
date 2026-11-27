@@ -28,6 +28,7 @@
     releaseAnnotations,
     type BoardsAnnotationsState,
   } from '$lib/frameleaf/boards-annotations-store.svelte';
+  import { formatDateTime } from '$lib/frameleaf/date-format';
   import { onLibraryAccessChange } from '$lib/frameleaf/library-access';
   import { onDestroy, untrack } from 'svelte';
   import { getExifRating } from '$lib/frameleaf/rating';
@@ -165,9 +166,10 @@
     const date = new Date(value);
     const style = { dateStyle: 'medium', timeStyle: 'short' } as const;
     try {
-      return date.toLocaleString(undefined, timeZone ? { ...style, timeZone } : style);
+      // 'default' follows the browser, as before; a zone the browser does not know still throws
+      return formatDateTime(date, timeZone ? { ...style, timeZone } : style, 'default');
     } catch {
-      return date.toLocaleString(undefined, style);
+      return formatDateTime(date, style, 'default');
     }
   };
 

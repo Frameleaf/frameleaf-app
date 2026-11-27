@@ -7,6 +7,7 @@
    * choices, and nothing changes until the person presses the button. FL-1299 adds a third tab: photos
    * already in the album whose date was lost, healed from the album around them.
    */
+  import { formatDate, formatTime } from '$lib/frameleaf/date-format';
   import AlbumLostDates from '$lib/components/frameleaf/AlbumLostDates.svelte';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
@@ -163,12 +164,16 @@
   };
 
   const formatDay = (day: string) =>
-    new Date(`${day}T12:00:00Z`).toLocaleDateString($locale, {
-      day: 'numeric',
-      month: 'short',
-      year: 'numeric',
-      timeZone: 'UTC',
-    });
+    formatDate(
+      new Date(`${day}T12:00:00Z`),
+      {
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric',
+        timeZone: 'UTC',
+      },
+      $locale,
+    );
 
   /** The suggested local date and time, read from its own wall time so the viewer's zone doesn't shift it. */
   const formatSuggested = ({ dateTimeOriginal, precision }: AlbumDateSuggestionDto) => {
@@ -177,7 +182,7 @@
     if (precision !== 'moment') {
       return day;
     }
-    const time = wall.toLocaleTimeString($locale, { hour: 'numeric', minute: '2-digit', timeZone: 'UTC' });
+    const time = formatTime(wall, { hour: 'numeric', minute: '2-digit', timeZone: 'UTC' }, $locale);
     return `${day}, ${time}`;
   };
 

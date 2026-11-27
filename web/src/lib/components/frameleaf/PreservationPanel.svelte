@@ -10,6 +10,7 @@
    * A copy (a preservation package) is the signed-in account's own. Nothing here reads another
    * account's media, and a copy holding Locked items downloads only from an unlocked session.
    */
+  import { formatDateTime } from '$lib/frameleaf/date-format';
   import { page } from '$app/state';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
@@ -105,9 +106,9 @@
     return parsed === null ? null : getByteUnitString(parsed, $locale ?? undefined);
   };
   const formatDate = (value: string) =>
-    new Date(value).toLocaleDateString($locale ?? undefined, { day: 'numeric', month: 'long', year: 'numeric' });
+    formatDateTime(new Date(value), { day: 'numeric', month: 'long', year: 'numeric' }, $locale ?? 'default');
   const formatWhen = (value: string) =>
-    new Date(value).toLocaleString($locale ?? undefined, { dateStyle: 'medium', timeStyle: 'short' });
+    formatDateTime(new Date(value), { dateStyle: 'medium', timeStyle: 'short' }, $locale ?? 'default');
   const downloadHref = (item: PreservationPackageDto, what: 'download' | 'manifest') =>
     `${getBaseUrl()}/preservation/packages/${item.id}/${what}`;
   const desktopCopyPath = '/__frameleaf_desktop_copy';

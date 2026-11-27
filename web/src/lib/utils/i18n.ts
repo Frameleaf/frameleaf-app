@@ -1,5 +1,6 @@
-import { locale, t, waitLocale } from 'svelte-i18n';
+import { addMessages, locale, t, waitLocale } from 'svelte-i18n';
 import { get, type Unsubscriber } from 'svelte/store';
+import { areaRoutes, loaders, merged } from 'virtual:frameleaf-messages';
 import type { Lang } from '$lib/constants';
 
 export const getFormatter = async () => {
@@ -21,11 +22,7 @@ const aliases: Record<string, string> = {
   'zh-TW': 'zh-Hant',
 };
 
-const modules = import.meta.glob('$i18n/*.json');
-
-const fileCodes = Object.keys(modules)
-  .map((path) => path.match(/\/(\w+)\.json$/)?.[1])
-  .filter(Boolean) as string[];
+const fileCodes = Object.keys(loaders);
 
 export const convertBCP47 = (code: string) => code.replaceAll('_', '-');
 
@@ -140,11 +137,10 @@ export const langs: Lang[] = [
     .map((code) => ({
       name: getLanguageName(convertBCP47(code)),
       code,
-      loader: () => import(`$i18n/${code}.json`),
       rtl: rtlCodes.has(code),
     }))
     .sort((a, b) => a.code.localeCompare(b.code)),
-  { name: 'Development (keys only)', code: 'dev', loader: () => Promise.resolve({ default: {} }) },
+  { name: 'Development (keys only)', code: 'dev' },
 ];
 
 /**
@@ -202,4 +198,97 @@ export const languageChoices = (...current: (string | undefined)[]) => {
     }
   }
   return choices;
+};
+
+/**
+ * FL-1797: messages arrive in bundles (web/scripts/message-areas.mjs): `core` at startup, an area's
+ * when one of its routes is first opened, each fetched once per language.
+ */
+const wanted = new Set(['core']);
+const fetched = new Map<string, Promise<void>>();
+
+const fetchBundle = (code: string, bundle: string) => {
+  const loader = loaders[code]?.[bundle];
+  if (!loader) {
+    return Promise.resolve();
+  }
+  const key = `${code}/${bundle}`;
+  let pending = fetched.get(key);
+  if (!pending) {
+    pending = loader().then(({ default: messages }) => addMessages(convertBCP47(code), messages));
+    // A failed fetch is tried again the next time the bundle is asked for.
+    pending.catch(() => fetched.delete(key));
+    fetched.set(key, pending);
+  }
+  return pending;
+};
+
+/**
+ * The message files a language reads: its own, and English beside it unless its own bundles
+ * already hold English for the keys it lacks. The keys-only development language reads none.
+ */
+const sourcesFor = (language: string) => {
+  if (language === 'dev') {
+    return [];
+  }
+  const available = languageCodeFor(language);
+  const code = fileCodes.find((candidate) => convertBCP47(candidate) === available);
+  if (!code) {
+    return ['en'];
+  }
+  return code === 'en' || merged.includes(code) ? [code] : [code, 'en'];
+};
+
+/** Fetches a bundle for a language (the one in use unless given) and keeps it for later languages. */
+export const loadMessages = async (bundle: string, language = get(locale) ?? 'en') => {
+  wanted.add(bundle);
+  await Promise.all(sourcesFor(language).map((code) => fetchBundle(code, bundle)));
+};
+
+/** The area a route belongs to (SvelteKit's route id), if it has messages beyond `core`. */
+export const areaForRoute = (routeId: string | null) =>
+  routeId
+    ? Object.keys(areaRoutes).find((area) =>
+        areaRoutes[area].some((folder) => routeId === `/${folder}` || routeId.startsWith(`/${folder}/`)),
+      )
+    : undefined;
+
+/** Fetches what a route needs beyond `core`, before the route is drawn. */
+export const loadRouteMessages = async (routeId: string | null) => {
+  const area = areaForRoute(routeId);
+  if (area) {
+    await loadMessages(area);
+  }
+};
+
+/** Changes the language, once every bundle already in use is there in the new one. */
+export const setLanguage = async (language: string) => {
+  await Promise.all([...wanted].map((bundle) => loadMessages(bundle, language)));
+  await locale.set(convertBCP47(language));
+};
+
+// What to fetch when a page names a key its bundles lack: first the keys no source file names,
+// then every area (the key was placed in the wrong one).
+const RECOVERY = [['rest'], Object.keys(areaRoutes)];
+let recovered = 0;
+let recovering = false;
+
+/**
+ * svelte-i18n calls this for a key it cannot find. The missing bundles are fetched in the
+ * background and the text corrects itself. A pass that fails (offline, or files from a release the
+ * tab predates) is tried again on the next miss instead of being used up. A page that only wants
+ * to know whether a key exists asks `$json`, which never comes here.
+ */
+export const handleMissingMessage = ({ id }: { id: string }) => {
+  if (recovering || recovered >= RECOVERY.length) {
+    return;
+  }
+  recovering = true;
+  if (import.meta.env.DEV) {
+    console.warn(`[i18n] "${id}" is not in the messages loaded for this page; fetching more.`);
+  }
+  void Promise.all(RECOVERY[recovered].map((bundle) => loadMessages(bundle)))
+    .then(() => recovered++)
+    .catch(() => {})
+    .finally(() => (recovering = false));
 };

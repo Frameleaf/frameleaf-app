@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { formatDate } from '$lib/frameleaf/date-format';
   import { ruleChips, type RuleChip, type RuleDraft } from '$lib/frameleaf/classification-rules';
   import type { PersonResponseDto, TagResponseDto } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
@@ -23,12 +24,11 @@
   let { rule, people = [], tags = [] }: Props = $props();
 
   const formatDay = (value: string) =>
-    new Date(`${value}T00:00:00Z`).toLocaleDateString($locale ?? undefined, {
-      day: 'numeric',
-      month: 'short',
-      year: 'numeric',
-      timeZone: 'UTC',
-    });
+    formatDate(
+      new Date(`${value}T00:00:00Z`),
+      { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' },
+      $locale ?? 'default',
+    );
 
   const chips = $derived(
     ruleChips(

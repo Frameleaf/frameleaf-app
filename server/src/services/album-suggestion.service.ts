@@ -154,7 +154,7 @@ export class AlbumSuggestionService extends BaseService {
       if (!trip || !matchTripCandidate(trip, candidate)?.likely) continue;
       try {
         // The same path as adding by hand: access is rechecked, so a person who left the album adds nothing.
-        await this.albumService.addAssets(auth, albumId, { ids: [id] });
+        await this.albumService.addAssets(auth, albumId, { ids: [id] }, undefined, { automatic: true });
       } catch (error) {
         this.logger.warn(`Could not add ${id} to album ${albumId}: ${error instanceof Error ? error.message : error}`);
       }

@@ -9,6 +9,7 @@
    * server refuses to enable or run what cannot run, and the draft stays open when a save fails.
    * History is the server's real run log: attempts, failures and manual retry.
    */
+  import { formatLuxon } from '$lib/frameleaf/date-format';
   import WorkflowAutomation from './WorkflowAutomation.svelte';
   import WorkflowBatches from './WorkflowBatches.svelte';
   import { onMount } from 'svelte';
@@ -812,7 +813,7 @@
               {#each logs as entry (entry.id)}
                 <tr>
                   <td>
-                    {DateTime.fromISO(entry.at).toLocaleString(DateTime.DATETIME_MED)}
+                    {formatLuxon(DateTime.fromISO(entry.at), DateTime.DATETIME_MED)}
                     <small>{attemptLabel(entry.attempt)}</small>
                   </td>
                   <td>

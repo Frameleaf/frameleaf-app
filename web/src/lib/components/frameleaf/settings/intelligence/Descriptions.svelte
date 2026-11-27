@@ -18,6 +18,7 @@
   import { page } from '$app/state';
   import { goto } from '$app/navigation';
   import FeatureModelPickers from '$lib/components/frameleaf/cloud/FeatureModelPickers.svelte';
+  import { formatCount } from '$lib/frameleaf/number-format';
   import { getCloudManager } from '$lib/managers/get-cloud-manager.svelte';
   import EnrichmentWorkbench from '$lib/components/frameleaf/EnrichmentWorkbench.svelte';
   import Button from '$lib/components/frameleaf/Button.svelte';
@@ -140,7 +141,7 @@
     }
   });
 
-  const count = (value: number) => value.toLocaleString($locale);
+  const count = (value: number) => formatCount(value, $locale);
   const rewrite = $derived(stats ? roughDuration(stats.estimatedTotalSeconds) : undefined);
 
   const hero = $derived.by(() => {

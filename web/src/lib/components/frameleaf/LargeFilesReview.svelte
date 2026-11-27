@@ -10,6 +10,7 @@
    * one of them changed (already trashed, locked, hidden) since the review. Undo restores exactly
    * the items that moved, through the same review.
    */
+  import { formatLuxon } from '$lib/frameleaf/date-format';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import {
@@ -503,7 +504,7 @@
                 })}{entry.bytes > 0 ? ` · ${formatBytes(entry.bytes)}` : ''}
               </strong>
               <time datetime={entry.createdAt}>
-                {DateTime.fromISO(entry.createdAt).toLocaleString(DateTime.DATETIME_MED)}
+                {formatLuxon(DateTime.fromISO(entry.createdAt), DateTime.DATETIME_MED)}
               </time>
             </div>
             {#if entry.items.length > 0}

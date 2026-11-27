@@ -32,6 +32,7 @@
   import SecretField from '$lib/components/frameleaf/settings/security/locked-encryption/SecretField.svelte';
   import TurnOffModal from '$lib/components/frameleaf/settings/security/locked-encryption/TurnOffModal.svelte';
   import TurnOnModal from '$lib/components/frameleaf/settings/security/locked-encryption/TurnOnModal.svelte';
+  import { formatDate } from '$lib/frameleaf/date-format';
   import { lockedEncryptionView, untilParts, type AskAgain } from '$lib/frameleaf/locked-encryption';
   import { isCompletePin } from '$lib/frameleaf/personal-access';
   import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
@@ -114,7 +115,7 @@
     hours === null ? $t('frameleaf_le_again_restart') : $t('frameleaf_le_again_hours', { values: { hours } });
   const recoverySaved = $derived(
     status?.recoveryKeyCreatedAt
-      ? new Date(status.recoveryKeyCreatedAt).toLocaleDateString($locale, { dateStyle: 'long' })
+      ? formatDate(new Date(status.recoveryKeyCreatedAt), { dateStyle: 'long' }, $locale)
       : undefined,
   );
 

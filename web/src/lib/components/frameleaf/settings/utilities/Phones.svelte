@@ -38,6 +38,7 @@
     waitingTotal,
     worstFirst,
   } from '$lib/frameleaf/backup-receipt';
+  import { formatCount } from '$lib/frameleaf/number-format';
   import { utilitiesUrl } from '$lib/frameleaf/utilities';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { locale } from '$lib/stores/preferences.store';
@@ -99,7 +100,7 @@
   onMount(() => void load());
 
   const ago = (iso: string) => DateTime.fromISO(iso, { locale: $locale }).toRelative() ?? '';
-  const number = (value: number) => value.toLocaleString($locale);
+  const number = (value: number) => formatCount(value, $locale);
   const rows = $derived((phones ?? []).map((phone) => ({ phone, state: receiptState(phone, scoped) })));
   const worst = $derived(worstFirst(rows)[0]);
   const openId = $derived(page.url.searchParams.get('phone'));

@@ -430,6 +430,9 @@ describe(AlbumSuggestionService.name, () => {
         expect.objectContaining({ user: expect.objectContaining({ id: auth.user.id }) }),
         albumId,
         { ids: ['here'] },
+        undefined,
+        // FL-1814: auto-add is not the person using the album, so it stays out of "Used lately"
+        { automatic: true },
       );
 
       addAssets.mockClear();

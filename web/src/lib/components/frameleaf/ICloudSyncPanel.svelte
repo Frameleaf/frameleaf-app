@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { formatDateTime } from '$lib/frameleaf/date-format';
   import { newRequestKey } from '$lib/frameleaf/request-key';
   import { locale } from '$lib/stores/preferences.store';
   /**
@@ -568,7 +569,20 @@
         {#if selected.nextRunAt && !isActiveRun(run)}
           <p class="ic-run-note">
             {$t('frameleaf_icloud_next_run', {
-              values: { date: new Date(selected.nextRunAt).toLocaleString($locale) },
+              values: {
+                date: formatDateTime(
+                  new Date(selected.nextRunAt),
+                  {
+                    year: 'numeric',
+                    month: 'numeric',
+                    day: 'numeric',
+                    hour: 'numeric',
+                    minute: 'numeric',
+                    second: 'numeric',
+                  },
+                  $locale,
+                ),
+              },
             })}
           </p>
         {/if}
