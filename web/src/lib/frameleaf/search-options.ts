@@ -2,7 +2,6 @@ import {
   getAllAlbums,
   getAllPeople,
   getAllPets,
-  getAllTags,
   getSearchSuggestions,
   getUserPlaces,
   getVisitedLandmarks,
@@ -35,6 +34,8 @@ import {
   type HistogramUnit,
   type PaletteFacets,
 } from '$lib/frameleaf/search-palette';
+import { sessionCache } from '$lib/frameleaf/session-cache';
+import { loadAllTags } from '$lib/frameleaf/tag-store';
 import { authManager } from '$lib/managers/auth-manager.svelte';
 import { eventManager } from '$lib/managers/event-manager.svelte';
 
@@ -95,147 +96,140 @@ export const emptyFilterPanelOptions = (): FilterPanelOptions => ({
  * are excluded: hiding is the account's own display choice and the filter list honours it.
  */
 const loadAllPeople = async (signal?: AbortSignal): Promise<PersonResponseDto[]> => {
-  const people: PersonResponseDto[] = [];
-  for (let page = 1; ; page++) {
+  const first = await getAllPeople({ withHidden: false, page: 1 }, { signal });
+  const people: PersonResponseDto[] = [...first.people];
+  if (!first.hasNextPage || first.people.length === 0) {
+    return people;
+  }
+  // FL-1802: the first page says how many there are, so the rest are asked for together instead of
+  // one after another (ten requests in a row for 5,000 people). `total` may count hidden people too;
+  // a page past the end answers empty.
+  const pages = Math.ceil(first.total / first.people.length);
+  const rest = await Promise.all(
+    Array.from({ length: Math.max(0, pages - 1) }, (_, index) =>
+      getAllPeople({ withHidden: false, page: index + 2 }, { signal }),
+    ),
+  );
+  for (const response of rest) {
+    people.push(...response.people);
+  }
+  // Someone was added while the pages were read: carry on one at a time, as before.
+  for (let page = pages + 1; rest.at(-1)?.hasNextPage; page++) {
     signal?.throwIfAborted();
     const response = await getAllPeople({ withHidden: false, page }, { signal });
     people.push(...response.people);
     if (!response.hasNextPage) {
-      return people;
+      break;
     }
   }
+  return people;
 };
 
-type SharedSuggestions = { request: Promise<string[]>; controller: AbortController; callers: number };
-const inFlightSuggestions = new Map<SearchSuggestionType, SharedSuggestions>();
-
-let clearsOnLogout = false;
-
 /**
- * One request per suggestion list while it is in flight: opening the palette loads the filter panel's
- * places and the command palette's places at the same moment. Not cached once settled. A caller whose
- * signal aborts stops waiting at once, and the request is aborted when its last caller has left.
+ * FL-1802: each vocabulary is kept for the session on its own (`sessionCache`: dropped on a lock,
+ * unlock or account change, and after five minutes), the albums per workspace. Opening the filter
+ * panel or the search palette a second time asks the server nothing. One that cannot be read is
+ * left out of the panel and asked for again next time; the others are still kept.
+ */
+const VOCABULARIES = {
+  people: () => loadAllPeople(),
+  // Hidden pets are left out for the same reason hidden people are: hiding is a display choice
+  pets: () => getAllPets({ withHidden: false }),
+  albums: (scope: string) => getAllAlbums(scope ? { libraryScope: scope as LibraryViewScope } : {}),
+  suggestions: async (type: string) => (await getSearchSuggestions({ $type: type as SearchSuggestionType })) ?? [],
+  landmarks: () => getVisitedLandmarks(),
+  places: () => getUserPlaces(),
+};
+type Vocabulary = keyof typeof VOCABULARIES;
+type VocabularyOf<K extends Vocabulary> = Awaited<ReturnType<(typeof VOCABULARIES)[K]>>;
+
+const vocabularies = sessionCache<unknown>((key) => {
+  const [name, argument] = key.split('|', 2);
+  return VOCABULARIES[name as Vocabulary](argument);
+});
+const vocabulary = <K extends Vocabulary>(name: K, argument = ''): Promise<VocabularyOf<K> | undefined> =>
+  // One unavailable vocabulary must not empty the whole panel.
+  (vocabularies.get(`${name}|${argument}`) as Promise<VocabularyOf<K>>).catch(() => undefined);
+/**
+ * One suggestion list, shared: opening the palette loads the filter panel's places and the command
+ * palette's places at the same moment, and both get the one request. The answer is kept with the
+ * other vocabularies (FL-1802), so only the first opening asks. A caller whose signal aborts stops
+ * waiting at once; the request carries on and its answer is kept for the next caller.
  */
 export const sharedSearchSuggestions = (type: SearchSuggestionType, signal?: AbortSignal): Promise<string[]> => {
-  if (signal?.aborted) {
+  const answer = vocabularies.get(`suggestions|${type}`) as Promise<string[]>;
+  if (!signal) {
+    return answer;
+  }
+  if (signal.aborted) {
     return Promise.reject(signal.reason);
   }
-  if (!clearsOnLogout) {
-    clearsOnLogout = true;
-    // a request started for one account must never answer the next one
-    eventManager.on({
-      AuthLogout: () => {
-        for (const { controller } of inFlightSuggestions.values()) {
-          controller.abort();
-        }
-        inFlightSuggestions.clear();
-      },
-    });
-  }
-  let shared = inFlightSuggestions.get(type);
-  if (!shared) {
-    const controller = new AbortController();
-    const entry: SharedSuggestions = {
-      controller,
-      callers: 0,
-      // never throws synchronously: a caller's Promise.all must receive every request it started
-      request: (async () =>
-        (await getSearchSuggestions({ $type: type }, { signal: controller.signal })) ?? [])().finally(() => {
-        if (inFlightSuggestions.get(type) === entry) {
-          inFlightSuggestions.delete(type);
-        }
-      }),
-    };
-    inFlightSuggestions.set(type, entry);
-    shared = entry;
-  }
-  const entry = shared;
-  entry.callers++;
   return new Promise<string[]>((resolve, reject) => {
-    let left = false;
-    const leave = () => {
-      if (left) {
-        return false;
-      }
-      left = true;
-      entry.callers--;
-      signal?.removeEventListener('abort', onAbort);
-      return true;
-    };
-    const onAbort = () => {
-      if (!leave()) {
-        return;
-      }
-      if (entry.callers === 0) {
-        if (inFlightSuggestions.get(type) === entry) {
-          inFlightSuggestions.delete(type);
-        }
-        entry.controller.abort(signal?.reason);
-      }
-      reject(signal?.reason);
-    };
-    signal?.addEventListener('abort', onAbort, { once: true });
-    entry.request
-      .then((value) => {
-        if (leave()) {
-          resolve(value);
-        }
-      })
-      .catch((error: unknown) => {
-        if (leave()) {
-          reject(error);
-        }
-      });
+    const onAbort = () => reject(signal.reason);
+    signal.addEventListener('abort', onAbort, { once: true });
+    answer
+      .then(resolve)
+      .catch(reject)
+      .finally(() => signal.removeEventListener('abort', onAbort));
   });
 };
 
-const settle = async <T>(work: Promise<T>, fallback: T, signal?: AbortSignal): Promise<T> => {
-  try {
-    return await work;
-  } catch (error) {
-    if (signal?.aborted || (error instanceof DOMException && error.name === 'AbortError')) {
-      throw error;
-    }
-    // One unavailable vocabulary must not empty the whole panel.
-    return fallback;
-  }
-};
+let dropsOnChange = false;
 
 export const loadFilterPanelOptions = async (
   signal?: AbortSignal,
   libraryScope?: LibraryViewScope,
 ): Promise<FilterPanelOptions> => {
+  signal?.throwIfAborted();
+  if (!dropsOnChange) {
+    dropsOnChange = true;
+    // a person renamed, or an album created, renamed or deleted here
+    const dropAlbums = () => {
+      vocabularies.invalidate('albums|');
+      for (const scope of Object.values(LibraryViewScope)) {
+        vocabularies.invalidate(`albums|${scope}`);
+      }
+    };
+    eventManager.on({
+      AlbumCreate: dropAlbums,
+      AlbumUpdate: dropAlbums,
+      AlbumDelete: dropAlbums,
+      PersonUpdate: () => vocabularies.invalidate('people|'),
+    });
+  }
+  const suggestions = (type: SearchSuggestionType) => vocabulary('suggestions', type);
   const [people, pets, tags, albums, cities, states, countries, makes, models, lenses, landmarks, places] =
     await Promise.all([
-      settle<PersonResponseDto[]>(loadAllPeople(signal), [], signal),
-      // Hidden pets are left out for the same reason hidden people are: hiding is a display choice
-      settle<PetResponseDto[]>(getAllPets({ withHidden: false }, { signal }), [], signal),
-      settle(getAllTags({ signal }), [], signal),
-      settle(getAllAlbums(libraryScope ? { libraryScope } : {}, { signal }), [], signal),
-      settle(sharedSearchSuggestions(SearchSuggestionType.City, signal), [], signal),
-      settle(sharedSearchSuggestions(SearchSuggestionType.State, signal), [], signal),
-      settle(sharedSearchSuggestions(SearchSuggestionType.Country, signal), [], signal),
-      settle(getSearchSuggestions({ $type: SearchSuggestionType.CameraMake }, { signal }), [], signal),
-      settle(getSearchSuggestions({ $type: SearchSuggestionType.CameraModel }, { signal }), [], signal),
-      settle(getSearchSuggestions({ $type: SearchSuggestionType.CameraLensModel }, { signal }), [], signal),
-      settle(getVisitedLandmarks({ signal }), [], signal),
-      authManager.isSharedLink ? [] : settle(getUserPlaces({ signal }), [], signal),
+      vocabulary('people'),
+      vocabulary('pets'),
+      loadAllTags().catch(() => []),
+      vocabulary('albums', libraryScope),
+      suggestions(SearchSuggestionType.City),
+      suggestions(SearchSuggestionType.State),
+      suggestions(SearchSuggestionType.Country),
+      suggestions(SearchSuggestionType.CameraMake),
+      suggestions(SearchSuggestionType.CameraModel),
+      suggestions(SearchSuggestionType.CameraLensModel),
+      vocabulary('landmarks'),
+      authManager.isSharedLink ? [] : vocabulary('places'),
     ]);
+  // A caller that has gone (a closed panel) gets its abort, as it did when each request carried the signal.
+  signal?.throwIfAborted();
 
   return {
-    people,
+    people: people ?? [],
     // Favorites first, then by name, as the Pets page lists them
-    pets: sortPets(pets),
+    pets: sortPets(pets ?? []),
     tags: tags.map((tag) => ({ value: tag.id, label: tag.value })),
-    albums: albumSelectionOptions(albums),
-    cities: cities.filter(Boolean),
-    landmarks: landmarks.map(({ id, name, assetCount }) => ({ id, name, count: assetCount })),
+    albums: albumSelectionOptions(albums ?? []),
+    cities: (cities ?? []).filter(Boolean),
+    landmarks: (landmarks ?? []).map(({ id, name, assetCount }) => ({ id, name, count: assetCount })),
     namedPlaces: (places ?? []).map(({ id, name }) => ({ id, name })),
-    states: states.filter(Boolean),
-    countries: countries.filter(Boolean),
-    makes: makes.filter(Boolean),
-    models: models.filter(Boolean),
-    lenses: lenses.filter(Boolean),
+    states: (states ?? []).filter(Boolean),
+    countries: (countries ?? []).filter(Boolean),
+    makes: (makes ?? []).filter(Boolean),
+    models: (models ?? []).filter(Boolean),
+    lenses: (lenses ?? []).filter(Boolean),
   };
 };
 

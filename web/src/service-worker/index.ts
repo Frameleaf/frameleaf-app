@@ -5,7 +5,8 @@
 import { installMessageListener } from './messaging';
 import { handleFetch as handleAssetFetch } from './request';
 
-const ASSET_REQUEST_REGEX = /^\/api\/assets\/[a-f0-9-]+\/(original|thumbnail)/;
+// FL-1788: person thumbnails too, so a cached face is reauthorized after a Lock like any other thumbnail
+const ASSET_REQUEST_REGEX = /^\/api\/(assets\/[a-f0-9-]+\/(original|thumbnail)|people\/[a-f0-9-]+\/thumbnail)/;
 
 const sw = globalThis as unknown as ServiceWorkerGlobalScope;
 

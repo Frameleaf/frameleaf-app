@@ -1576,6 +1576,32 @@ order by
   asset_face.id = person."faceAssetId" desc,
   "asset"."fileCreatedAt" desc
 
+-- PersonRepository.getAssetsForFaceBoxes
+select
+  "asset"."id",
+  "asset_exif"."exifImageHeight",
+  "asset_exif"."exifImageWidth",
+  "asset_exif"."orientation",
+  (
+    select
+      coalesce(json_agg(agg), '[]')
+    from
+      (
+        select
+          "asset_edit"."action",
+          "asset_edit"."parameters"
+        from
+          "asset_edit"
+        where
+          "asset_edit"."assetId" = "asset"."id"
+      ) as agg
+  ) as "edits"
+from
+  "asset"
+  inner join "asset_exif" on "asset_exif"."assetId" = "asset"."id"
+where
+  "asset"."id" = any ($1::uuid[])
+
 -- PersonRepository.getVisibleEvidenceAssetIds
 select
   "asset"."id"

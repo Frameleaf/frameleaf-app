@@ -3,7 +3,6 @@
   import SharedSpaceDetail from '$lib/components/frameleaf/SharedSpaceDetail.svelte';
   import Theme from '$lib/components/frameleaf/Theme.svelte';
   import UserPageLayout from '$lib/components/layouts/UserPageLayout.svelte';
-  import UserSidebar from '$lib/components/shared-components/side-bar/UserSidebar.svelte';
   import { isEnteringViewer, isLeavingViewer } from '$lib/frameleaf/space-viewer';
   import { Theme as AppTheme, themeManager } from '@frameleaf/ui';
   import { tick } from 'svelte';
@@ -80,10 +79,6 @@
 </script>
 
 <UserPageLayout use={[captureScroller]}>
-  {#snippet sidebar()}
-    <UserSidebar />
-  {/snippet}
-
   <Theme theme={themeManager.value === AppTheme.Dark ? 'dark' : 'light'}>
     <SharedSpaceDetail
       space={data.space}

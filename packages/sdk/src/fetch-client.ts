@@ -5605,6 +5605,41 @@ export type AlbumOrderDto = {
     /** Collection whose albums are ordered, or null for a top-level group (collections, albums on their own, or shared spaces) */
     parentId: string | null;
 };
+export type AlbumRailItemDto = {
+    /** Album name */
+    albumName: string;
+    /** Number of assets */
+    assetCount: number;
+    /** Number of links (Boards) */
+    bookmarkCount: number;
+    /** Colour name (grey, green, teal, blue, purple, pink, amber, red) or null */
+    color: string | null;
+    /** Icon: a Material Design Icons name or legacy key (null = default icon) */
+    icon: string | null;
+    /** Album ID */
+    id: string;
+    /** The owner chose to lock this album */
+    isLocked: boolean;
+    /** True when the album is filled by smart album rules */
+    isSmart: boolean;
+    kind: AlbumKind;
+    /** Parent album or collection in this list (null = top level). Never names an album the list leaves out. */
+    parentId: string | null;
+    /** The authenticated user's own role in the album */
+    role: AlbumUserRole;
+    /** Is shared album */
+    shared: boolean;
+    /** Your classification rule behind this smart album, when it is one of yours */
+    smartRuleId: string | null;
+    /** Sibling display position. Lower values appear first. */
+    sortOrder: number | null;
+    /** True while this album's count is still being worked out for this viewer; assetCount is 0 until then. */
+    statsPending?: boolean;
+};
+export type AlbumRailResponseDto = {
+    /** Every album of the directory in display order, each parent before its children */
+    albums: AlbumRailItemDto[];
+};
 export type AlbumRecentlyAddedResponseDto = {
     /** Albums the user may add to, the one that most recently received an item first */
     albumIds: string[];
@@ -5616,6 +5651,28 @@ export type AlbumStatisticsResponseDto = {
     owned: number;
     /** Number of shared albums */
     shared: number;
+};
+export type AlbumStatsDto = {
+    /** Albums to read the numbers of */
+    albumIds: string[];
+};
+export type AlbumStatsItemDto = {
+    /** Number of assets */
+    assetCount: number;
+    /** End date (latest asset) */
+    endDate?: string;
+    /** Album ID */
+    id: string;
+    /** Last modified asset timestamp */
+    lastModifiedAssetTimestamp?: string;
+    /** Start date (earliest asset) */
+    startDate?: string;
+    /** True while this album's count and dates are still being worked out; assetCount is 0 until then. */
+    statsPending?: boolean;
+};
+export type AlbumStatsResponseDto = {
+    /** One entry per requested album the user can read; the others are left out */
+    albums: AlbumStatsItemDto[];
 };
 export type AlbumCollectionResponseDto = {
     /** Number of albums inside the collection */
@@ -18581,9 +18638,13 @@ export type QueueProblemDto = {
 export type QueueTaskDto = {
     /** For quietHours: when it opens again */
     closedUntil?: string;
+    /** Jobs of this queue finished since it last had nothing to do (FL-1785). With what is running and waiting, how far along it is */
+    done?: number;
     name: QueueName;
     /** For paused: when a person paused it; absent when the server did */
     pausedAt?: string;
+    /** Jobs finished an hour at the pace of the last ten minutes; absent when none finished */
+    perHour?: number;
     /** Why it is not running; null when nothing holds it */
     reason: (QueueIdleReason) | null;
     /** For waitingFor: the queue it waits for */
@@ -18627,6 +18688,8 @@ export type QueueJobResponseDto = {
     account?: QueueJobAccountDto;
     /** How many times the job has been attempted */
     attemptsMade?: number;
+    /** What went wrong, for a failed job (FL-1785) */
+    cause?: QueueProblemCause;
     /** Job data payload */
     data: {
         [key: string]: any;
@@ -20167,6 +20230,16 @@ export type SharedLinkCreateDto = {
 export type SharedLinkLoginDto = {
     /** Shared link password */
     password: string;
+};
+export type SharedLinkPageResponseDto = {
+    /** All your album links, on every page */
+    albumCount: number;
+    /** All your links to chosen items, on every page */
+    individualCount: number;
+    /** Newest first */
+    links: SharedLinkResponseDto[];
+    /** Pass as cursor for the next page; null when there are no more */
+    nextCursor: string | null;
 };
 export type SharedLinkEditDto = {
     /** Allow downloads */
@@ -23860,6 +23933,12 @@ export type DuplicateEstimateQueryDto = {
     /** The distances to estimate groups for, from 0.001 (nearly identical) to 0.1 */
     maxDistances: number[];
 };
+export type DuplicateReviewPageDto = {
+    /** duplicateId of the last group of the page before; only with take */
+    after?: string;
+    /** Most groups to return. With it the review is read a page at a time, in group ID order: a page shorter than this is the last one. Without it every group is returned. */
+    take?: number;
+};
 export type EagleImportQueryDto = {
     /** Include what became of every item, for the finish report */
     outcomes?: boolean;
@@ -23882,6 +23961,14 @@ export type FileTrashListQueryDto = {
     page?: number;
     /** Entries per page */
     size?: number;
+};
+export type FolderAssetsDto = {
+    /** ID of the last asset of the page before; only with take */
+    after?: string;
+    /** Folder path */
+    path: string;
+    /** Most assets to return. With it the folder is read a page at a time, in asset ID order: a page shorter than this is the last one. Without it every asset is returned, in file name order. */
+    take?: number;
 };
 export type FoundFileListDto = {
     /** The id of the last file of the page before */
@@ -24658,6 +24745,10 @@ export type PersonSearchDto = {
     /** Include hidden people */
     withHidden?: boolean;
 };
+export type PersonThumbnailDto = {
+    /** Cache version: the person's current updatedAt. A matching thumbnail is served as immutable. */
+    updatedAt?: string;
+};
 export type PetAssetObservationSearchDto = {
     /** Asset whose pet observations to list */
     assetId: string;
@@ -24787,6 +24878,12 @@ export type SearchSuggestionRequestDto = {
 };
 export type SharedLinkDirectImageDto = {
     size?: SharedLinkDirectImageSize;
+};
+export type SharedLinkPageDto = {
+    /** nextCursor of the page before; omitted for the first page */
+    cursor?: string;
+    /** Most links to return */
+    take?: number;
 };
 export type SharedLinkSearchDto = {
     /** Filter by album ID */
@@ -29359,6 +29456,21 @@ export function setAlbumOrder({ albumOrderDto }: {
     })));
 }
 /**
+ * Retrieve the album directory for navigation
+ */
+export function getAlbumRail({ libraryScope }: {
+    libraryScope?: LibraryViewScope;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AlbumRailResponseDto;
+    }>(`/albums/rail${QS.query(QS.explode({
+        libraryScope
+    }))}`, {
+        ...opts
+    }));
+}
+/**
  * List albums that recently received items
  */
 export function getRecentlyAddedAlbums({ libraryScope }: {
@@ -29383,6 +29495,21 @@ export function getAlbumStatistics(opts?: Oazapfts.RequestOpts) {
     }>("/albums/statistics", {
         ...opts
     }));
+}
+/**
+ * Retrieve the counts and dates of some albums
+ */
+export function getAlbumStats({ albumStatsDto }: {
+    albumStatsDto: AlbumStatsDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AlbumStatsResponseDto;
+    }>("/albums/stats", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: albumStatsDto
+    })));
 }
 /**
  * Retrieve the album directory
@@ -34170,11 +34297,17 @@ export function resolveDuplicates({ duplicateResolveDto }: {
 /**
  * Retrieve the duplicate review
  */
-export function getDuplicateReview(opts?: Oazapfts.RequestOpts) {
+export function getDuplicateReview({ after, take }: {
+    after?: string;
+    take?: number;
+}, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
         status: 200;
         data: DuplicateReviewGroupDto[];
-    }>("/duplicates/review", {
+    }>(`/duplicates/review${QS.query(QS.explode({
+        after,
+        take
+    }))}`, {
         ...opts
     }));
 }
@@ -38014,13 +38147,16 @@ export function getPersonStatistics({ id }: {
 /**
  * Get person thumbnail
  */
-export function getPersonThumbnail({ id }: {
+export function getPersonThumbnail({ id, updatedAt }: {
     id: string;
+    updatedAt?: string;
 }, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchBlob<{
         status: 200;
         data: Blob;
-    }>(`/people/${encodeURIComponent(id)}/thumbnail`, {
+    }>(`/people/${encodeURIComponent(id)}/thumbnail${QS.query(QS.explode({
+        updatedAt
+    }))}`, {
         ...opts
     }));
 }
@@ -41721,6 +41857,23 @@ export function getMySharedLink({ key, slug }: {
     }>(`/shared-links/me${QS.query(QS.explode({
         key,
         slug
+    }))}`, {
+        ...opts
+    }));
+}
+/**
+ * Retrieve shared links a page at a time
+ */
+export function getSharedLinkPage({ cursor, take }: {
+    cursor?: string;
+    take?: number;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: SharedLinkPageResponseDto;
+    }>(`/shared-links/page${QS.query(QS.explode({
+        cursor,
+        take
     }))}`, {
         ...opts
     }));
@@ -45971,14 +46124,18 @@ export function getUtilitiesSummary(opts?: Oazapfts.RequestOpts) {
 /**
  * Retrieve assets by original path
  */
-export function getAssetsByOriginalPath({ path }: {
+export function getAssetsByOriginalPath({ after, path, take }: {
+    after?: string;
     path: string;
+    take?: number;
 }, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
         status: 200;
         data: AssetResponseDto[];
     }>(`/view/folder${QS.query(QS.explode({
-        path
+        after,
+        path,
+        take
     }))}`, {
         ...opts
     }));

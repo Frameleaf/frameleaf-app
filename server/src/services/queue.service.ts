@@ -355,39 +355,45 @@ export class QueueService extends BaseService {
    * one a person can act on first: feature off, then paused, then quiet hours, then waiting for another queue.
    */
   async getOverview(auth: AuthDto): Promise<QueueOverviewResponseDto> {
-    const [problems, holds, pausedAt, { machineLearning }] = await Promise.all([
+    const [problems, holds, progress, pausedAt, { machineLearning }] = await Promise.all([
       this.jobRepository.listQueueProblems({
         ...getHiddenContentQueryOptions(auth),
         ...getLockedVisibilityOptions(auth),
         ...getOthersRulesQueryOptions(auth),
       }),
       this.jobRepository.getQueueHolds(),
+      this.jobRepository.getQueueProgress(),
       this.systemMetadataRepository.get(SystemMetadataKey.QueuePausedAt),
       this.getConfig({ withCache: true }),
     ]);
     const names = new Set<string>(Object.values(QueueName));
     const held = new Map(holds.map((hold) => [hold.name, hold]));
+    // FL-1785: how far along each task is, beside why it is or is not running
+    const progressOf = new Map(
+      progress.map(({ name, done, perHour }) => [name, { done, ...(perHour > 0 && { perHour }) }] as const),
+    );
+    const reasonOf = (name: QueueName) => {
+      const hold = held.get(name);
+      if (QUEUE_FEATURES[name]?.(machineLearning) === false) {
+        return { name, reason: 'featureOff' as const };
+      }
+      if (hold?.paused) {
+        return { name, reason: 'paused' as const, ...(pausedAt?.[name] && { pausedAt: pausedAt[name] }) };
+      }
+      if (hold?.closedUntil) {
+        return { name, reason: 'quietHours' as const, closedUntil: new Date(hold.closedUntil).toISOString() };
+      }
+      if (hold?.waitingFor && names.has(hold.waitingFor)) {
+        return { name, reason: 'waitingFor' as const, waitingFor: hold.waitingFor as QueueName };
+      }
+      return { name, reason: null };
+    };
     return {
       problems: problems.map((problem) => ({
         ...problem,
         queues: problem.queues.filter((queue): queue is QueueName => names.has(queue)),
       })),
-      tasks: Object.values(QueueName).map((name) => {
-        const hold = held.get(name);
-        if (QUEUE_FEATURES[name]?.(machineLearning) === false) {
-          return { name, reason: 'featureOff' as const };
-        }
-        if (hold?.paused) {
-          return { name, reason: 'paused' as const, ...(pausedAt?.[name] && { pausedAt: pausedAt[name] }) };
-        }
-        if (hold?.closedUntil) {
-          return { name, reason: 'quietHours' as const, closedUntil: new Date(hold.closedUntil).toISOString() };
-        }
-        if (hold?.waitingFor && names.has(hold.waitingFor)) {
-          return { name, reason: 'waitingFor' as const, waitingFor: hold.waitingFor as QueueName };
-        }
-        return { name, reason: null };
-      }),
+      tasks: Object.values(QueueName).map((name) => ({ ...reasonOf(name), ...progressOf.get(name) })),
     };
   }
 

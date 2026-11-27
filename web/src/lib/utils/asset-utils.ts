@@ -16,6 +16,7 @@ import {
   viewAssetDevelopFile,
   type AssetResponseDto,
   type DownloadArchiveInfo,
+  type DownloadFormat,
   type DownloadInfoDto,
   type DownloadResponseDto,
   type StackResponseDto,
@@ -24,6 +25,7 @@ import { toastManager } from '@frameleaf/ui';
 import { DateTime } from 'luxon';
 import { t } from 'svelte-i18n';
 import { get } from 'svelte/store';
+import { askDownloadFormat } from '$lib/frameleaf/download-format';
 import { authManager } from '$lib/managers/auth-manager.svelte';
 import {
   downloadManager,
@@ -147,13 +149,33 @@ export type ArchiveContents = {
    * owners only, and always from the originals, so this downloads the originals.
    */
   library?: { bookmarkIds: string[] };
+  /** FL-826: the format already chosen, so the download does not ask. */
+  format?: DownloadFormat;
 };
 
-export const downloadArchive = (
+/**
+ * FL-826: asks which format first, unless the archive holds originals by definition or the caller
+ * already chose. Cancelling the question downloads nothing and resolves.
+ */
+export const downloadArchive = async (
+  fileName: string,
+  options: Omit<DownloadInfoDto, 'archiveSize' | 'format'>,
+  contents: ArchiveContents = {},
+): Promise<void> => {
+  if (contents.library || contents.originals) {
+    return startArchive(fileName, options, contents);
+  }
+  const format =
+    contents.format ?? (await askDownloadFormat({ count: options.assetIds?.length, info: options, hasVideo: true }));
+  return format ? startArchive(fileName, { ...options, format }, contents) : undefined;
+};
+
+const startArchive = (
   fileName: string,
   options: Omit<DownloadInfoDto, 'archiveSize'>,
   contents: ArchiveContents = {},
 ): Promise<void> => {
+  const format = options.format;
   const archiveSize = authManager.authenticated ? authManager.preferences.download.archiveSize : undefined;
   const dto = { ...options, archiveSize };
   const params = authManager.params;
@@ -209,7 +231,7 @@ export const downloadArchive = (
       const stream = new StreamedDownload(() =>
         library
           ? downloadUrlPost(streamUrl(), archive.assetIds, archiveName, edited, formFields(first))
-          : downloadUrlPost(streamUrl(), archive.assetIds, archiveName, edited),
+          : downloadUrlPost(streamUrl(), archive.assetIds, archiveName, edited, format ? { format } : {}),
       );
       // A part that could never be held is ready at once; it does not wait for the parts before it.
       if (archive.size > bufferLimit()) {
@@ -223,7 +245,13 @@ export const downloadArchive = (
             requestArchive(
               {
                 ...params,
-                downloadArchiveDto: { assetIds: archive.assetIds, archiveName, edited, ...libraryFields(first) },
+                downloadArchiveDto: {
+                  assetIds: archive.assetIds,
+                  archiveName,
+                  edited,
+                  ...(format && { format }),
+                  ...libraryFields(first),
+                },
               },
               { signal: context.signal, fetch },
             ),
@@ -313,7 +341,8 @@ export const downloadAssetFile = ({
   filename: string;
   edited: boolean;
   size?: number;
-  format?: 'sdr-jpeg' | 'hdr-jpeg' | 'hdr-heic';
+  /** An HDR export, or (FL-826) the photo converted to a full-size or web-size JPEG. */
+  format?: 'sdr-jpeg' | 'hdr-jpeg' | 'hdr-heic' | 'jpeg' | 'web';
   /** The owner's develop version on screen: its rendered master is downloaded. */
   revisionId?: string;
 }) =>
