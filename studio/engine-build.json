@@ -933,8 +933,8 @@
     {
       "path": "patches/0207-studio-tab-bar.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
-      "sha256": "e29675a62a397e863ba863731b806adbb135d29af33c5213a05e6d765f04f658"
+      "sha256": "c0954f32adfe366acccb0003f4d6ecae655f47c94cc46f331c831904e6c5ca73"
     }
   ],
-  "sourceSha256": "6bc6ecc794b2e1957bd048c71d87e42ca9491fd3c8ed046122d3e6bd4a73ff5c"
+  "sourceSha256": "0191c4d7a611fd2fba5aefd4985be309aa397db7188da8a790893adf31e72f70"
 }

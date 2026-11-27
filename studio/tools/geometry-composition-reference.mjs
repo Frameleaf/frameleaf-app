@@ -166,7 +166,7 @@ export function compositionSourcesFor(sourceSha256) {
     // FL-1830 resource policy for the Frameleaf model mirror; changes no composition or raster producer.
     sourceSha256 === '62f1f7453d93e5dd309986dee2894c76b4fee07c7a4c2e3a8d27abf98694d1e0' ||
     // FL-1822 the editor's tab bar in place of its header; changes no composition or raster producer.
-    sourceSha256 === '6bc6ecc794b2e1957bd048c71d87e42ca9491fd3c8ed046122d3e6bd4a73ff5c'
+    sourceSha256 === '0191c4d7a611fd2fba5aefd4985be309aa397db7188da8a790893adf31e72f70'
   )
     return {
       ...COMPOSITION_SOURCES,

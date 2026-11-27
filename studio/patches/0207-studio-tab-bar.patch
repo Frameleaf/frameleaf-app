@@ -1,5 +1,35 @@
+diff --git a/src/features/editor/components/editor.tsx b/src/features/editor/components/editor.tsx
+index 98dd0ad..e5e5662 100644
+--- a/src/features/editor/components/editor.tsx
++++ b/src/features/editor/components/editor.tsx
+@@ -47,7 +47,6 @@ import {
+   importExportsDialog,
+   RenderQueuePersistence,
+   RenderQueueRunner,
+-  useRenderQueueStore,
+ } from '@/features/editor/deps/export-contract'
+ import { getEditorLayout, getEditorLayoutCssVars } from '@/config/editor-layout'
+ import { EDITOR_WORKSPACE_TIMELINE_SIZE, type EditorWorkspaceId } from '@/config/editor-workspaces'
+@@ -389,9 +388,6 @@ export const LoadedEditor = memo(function LoadedEditor({
+   const [exportDialogOpen, setExportDialogOpen] = useState(false)
+   const [bundleExportDialogOpen, setBundleExportDialogOpen] = useState(false)
+   const [renderQueueOpen, setRenderQueueOpen] = useState(false)
+-  const renderQueueActiveCount = useRenderQueueStore(
+-    (s) => s.jobs.filter((j) => j.status === 'queued' || j.status === 'rendering').length,
+-  )
+   const [bundleFileHandle, setBundleFileHandle] = useState<FileSystemFileHandle | undefined>()
+   const editorDensity = useSettingsStore((s) => s.editorDensity)
+   const snapEnabledPreference = useSettingsStore((s) => s.snapEnabled)
+@@ -692,7 +688,6 @@ export const LoadedEditor = memo(function LoadedEditor({
+           onExport={handleExport}
+           onExportBundle={handleExportBundle}
+           onOpenRenderQueue={handleOpenRenderQueue}
+-          renderQueueCount={renderQueueActiveCount}
+         />
+       </InteractionLockRegion>
+ 
 diff --git a/src/features/editor/components/toolbar.tsx b/src/features/editor/components/toolbar.tsx
-index 8e21aad..331d970 100644
+index 8e21aad..f5883cc 100644
 --- a/src/features/editor/components/toolbar.tsx
 +++ b/src/features/editor/components/toolbar.tsx
 @@ -1,18 +1,6 @@
@@ -58,7 +88,7 @@ index 8e21aad..331d970 100644
  
  interface ToolbarProps {
    projectId: string
-@@ -59,282 +27,75 @@ interface ToolbarProps {
+@@ -59,282 +27,74 @@ interface ToolbarProps {
      height: number
      fps: number
    }
@@ -72,7 +102,7 @@ index 8e21aad..331d970 100644
    onExportBundle?: () => void
    onOpenRenderQueue?: () => void
 -  /** Number of queued + rendering jobs, shown as a badge on the queue button. */
-   renderQueueCount?: number
+-  renderQueueCount?: number
  }
  
 -export const Toolbar = memo(function Toolbar({

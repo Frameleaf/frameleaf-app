@@ -1,6 +1,6 @@
 /**
  * The words of the editor's own shell (FL-1822): the tab bar that replaces the engine's header, its
- * More menu, and the screen shown when the editor cannot open a project. Translated by the host.
+ * More menu, and the screens shown when the editor or one of its panels stops. Translated by the host.
  *
  * The engine speaks fewer languages than the host, and its locale files carry only its English for
  * strings Frameleaf adds. The host sends its translation of each in `context.strings`, and the adapter
@@ -20,6 +20,16 @@ export const SHELL_STRINGS = {
   shellErrorReload: { host: 'frameleaf_studio_shell_error_reload', engine: 'app.errorBoundary.reloadPage' },
   shellErrorSupportHint: { host: 'frameleaf_studio_shell_error_support_hint', engine: 'app.routeError.supportHint' },
   shellErrorCopyDetails: { host: 'frameleaf_studio_shell_error_copy_details', engine: 'app.routeError.copyDetails' },
+  shellErrorCopied: { host: 'frameleaf_studio_shell_error_copied', engine: 'app.routeError.detailsCopied' },
+  shellErrorCopyFailed: { host: 'frameleaf_studio_shell_error_copy_failed', engine: 'app.routeError.copyFailed' },
+  shellErrorUnexpected: {
+    host: 'frameleaf_studio_shell_error_unexpected',
+    engine: 'app.errorBoundary.unexpectedError',
+  },
+  // The editor's crash screens: the whole editor, or one panel of it.
+  shellErrorApp: { host: 'frameleaf_studio_shell_error_title', engine: 'app.errorBoundary.appError' },
+  shellErrorFeature: { host: 'frameleaf_studio_shell_error_part', engine: 'app.errorBoundary.featureError' },
+  shellErrorComponent: { host: 'frameleaf_studio_shell_error_part', engine: 'app.errorBoundary.componentError' },
 } as const satisfies Record<string, { host: string; engine: string }>;
 
 export type ShellString = keyof typeof SHELL_STRINGS;

@@ -16,7 +16,8 @@ describe('editor shell strings (FL-1822)', () => {
     expect(strings.shellWorkspaceColor).toBe('Color');
     expect(strings.shellShortcuts).toBe('Keyboard shortcuts…');
     expect(strings.shellSettings).toBe('Editor settings…');
-    expect(strings.shellErrorTitle).toBe('Studio could not open this project');
+    expect(strings.shellErrorTitle).toBe('Studio stopped working');
+    expect(strings.shellErrorApp).toBe(strings.shellErrorTitle);
     expect(Object.keys(strings)).toEqual(Object.keys(SHELL_STRINGS));
   });
 });
