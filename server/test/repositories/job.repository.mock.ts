@@ -78,6 +78,8 @@ export const newJobRepositoryMock = (): Mocked<RepositoryInterface<JobRepository
       retrying: 0,
       noDispatchBacklog: false,
     }),
+    hasRunnableJobs: vitest.fn(),
+    hasIncomingWork: vitest.fn(),
     hasDedupJob: vitest.fn(),
     getRollingAvgMs: vitest.fn().mockReturnValue(null),
     clear: vitest.fn(),
