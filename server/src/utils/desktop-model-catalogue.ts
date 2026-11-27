@@ -294,7 +294,7 @@ const catalogueSchema = z
   .strictObject({
     schemaVersion: z.literal(1),
     epoch: z.number().int().positive(),
-    profiles: z.array(profile).min(1).max(256),
+    profiles: z.array(profile).min(1).max(512),
   })
   .refine(
     (value) =>
