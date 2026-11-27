@@ -35,6 +35,7 @@
   } from '@mdi/js';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
+  import EmptyState from '$lib/components/frameleaf/EmptyState.svelte';
   import InlineError from '$lib/components/frameleaf/InlineError.svelte';
   import PhotographyThumb from '$lib/components/frameleaf/PhotographyThumb.svelte';
   import Skeleton from '$lib/components/frameleaf/Skeleton.svelte';
@@ -296,11 +297,11 @@
       </p>
     </section>
   {:else if items.length === 0}
-    <div class="raw-empty">
-      <Icon icon={mdiCameraOutline} size="2rem" aria-hidden={true} />
-      <h2>{$t('frameleaf_raw_support_empty_title')}</h2>
-      <p>{$t('frameleaf_raw_support_empty_body')}</p>
-    </div>
+    <EmptyState
+      icon={mdiCameraOutline}
+      title={$t('frameleaf_raw_support_empty_title')}
+      message={$t('frameleaf_raw_support_empty_body')}
+    />
   {:else if selected && copy}
     <div class="raw-health-body">
       <section class="raw-list" aria-label={$t('frameleaf_raw_support_files')}>
@@ -859,23 +860,6 @@
     width: 100%;
     max-height: 70vh;
     object-fit: contain;
-  }
-  .raw-empty {
-    display: grid;
-    justify-items: center;
-    gap: var(--fl-space-2);
-    padding: 64px var(--fl-space-4);
-    color: var(--fl-muted);
-    text-align: center;
-  }
-  .raw-empty h2 {
-    color: var(--fl-text);
-    font-size: var(--fl-font-headline);
-    font-weight: 600;
-    margin: 0;
-  }
-  .raw-empty p {
-    margin: 0;
   }
   @media (max-width: 1100px) {
     .raw-care {
