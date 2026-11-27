@@ -19006,7 +19006,7 @@
   "frameleaf_setup_import_google": "Google Photos",
   "frameleaf_setup_import_google_body": "Hent en Takeout-eksport ind med albummer, datoer, steder og beskrivelser intakte. Billeder, du allerede har, tilføjes til deres albummer i stedet for at blive kopieret to gange.",
   "frameleaf_setup_import_google_via": "med Google Takeout",
-  "frameleaf_setup_import_google_where": "Senere, under Indstillinger › Import og eksport › Google Photos",
+  "frameleaf_setup_import_google_where": "Senere, under Import › Google Photos",
   "frameleaf_setup_import_icloud": "iCloud Photos",
   "frameleaf_setup_import_icloud_body": "Forbind iCloud Photos, vælg albummerne, og hold dem synkroniseret efter en tidsplan. Live Photos forbliver parret.",
   "frameleaf_setup_import_icloud_via": "med en forbindelse, du selv styrer",

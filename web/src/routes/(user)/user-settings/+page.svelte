@@ -43,7 +43,8 @@
       isOpen: page.url.searchParams.get('isOpen'),
       isAdmin: authManager.user.isAdmin,
     });
-    return isPlaceArea(presentedArea(area, section));
+    // A member never sees a backup section, so the host keeps such an address in its place too.
+    return isPlaceArea(presentedArea(area, section)) || (!authManager.user.isAdmin && isPlaceArea(area));
   });
 
   const appTheme = $derived(themeManager.value === AppTheme.Dark ? 'dark' : 'light');

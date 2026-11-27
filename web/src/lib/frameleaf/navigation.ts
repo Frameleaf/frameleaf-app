@@ -264,6 +264,8 @@ export interface RailCapabilities {
   /** FL-146: the account's "Recently added in navigation" choice (on by default, as in the prototype). */
   recentlyAdded: boolean;
   search: boolean;
+  /** The server has the map, which Places links to. */
+  map: boolean;
   trash: boolean;
   people: boolean;
   /** The account's "show Pets in sidebar" choice (on by default). */
@@ -277,6 +279,7 @@ export interface RailCapabilities {
 export const defaultRailCapabilities = (): RailCapabilities => ({
   recentlyAdded: false,
   search: false,
+  map: false,
   trash: false,
   people: false,
   pets: false,
@@ -320,13 +323,24 @@ export const buildRailSections = (capabilities: RailCapabilities): RailSection[]
       labelKey: 'explore',
       destinations: [
         ...keep(capabilities.search, destination('explore', 'explore', mdiImageSearchOutline, Route.explore())),
-        // People & pets opens People, which links to Pets; it shows while either is on in the sidebar.
+        // People & pets opens People, which links to Pets; it shows while either is on in the sidebar,
+        // and opens Pets when People is the one turned off.
         ...keep(
           capabilities.people || capabilities.pets,
-          destination('people', 'frameleaf_rail_people_pets', mdiAccountOutline, Route.people()),
+          destination(
+            'people',
+            'frameleaf_rail_people_pets',
+            mdiAccountOutline,
+            capabilities.people ? Route.people() : Route.pets(),
+          ),
         ),
-        // Places & map opens Places, which links to the Map.
-        destination('places', 'frameleaf_rail_places_map', mdiMapMarkerMultipleOutline, Route.places()),
+        // Places & map opens Places, which links to the Map; without the map it is plain Places.
+        destination(
+          'places',
+          capabilities.map ? 'frameleaf_rail_places_map' : 'places',
+          mdiMapMarkerMultipleOutline,
+          Route.places(),
+        ),
         ...keep(capabilities.memories, destination('memories', 'memories', mdiHistory, Route.memories())),
         destination('documents', 'frameleaf_documents_title', mdiTextBoxSearchOutline, Route.documents()),
         ...keep(capabilities.tags, destination('tags', 'tags', mdiTagMultipleOutline, Route.tags())),

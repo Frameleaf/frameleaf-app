@@ -19013,7 +19013,7 @@
   "frameleaf_setup_import_google": "Zdjęcia Google",
   "frameleaf_setup_import_google_body": "Zaimportuj eksport z Takeout z zachowanymi albumami, datami, miejscami i opisami. Zdjęcia, które już masz, dołączają do swoich albumów zamiast być kopiowane drugi raz.",
   "frameleaf_setup_import_google_via": "przez Google Takeout",
-  "frameleaf_setup_import_google_where": "Później, w Ustawienia › Import i eksport › Zdjęcia Google",
+  "frameleaf_setup_import_google_where": "Później, w Import › Zdjęcia Google",
   "frameleaf_setup_import_icloud": "Zdjęcia iCloud",
   "frameleaf_setup_import_icloud_body": "Połącz Zdjęcia iCloud, wybierz albumy i synchronizuj je według harmonogramu. Live Photo pozostają sparowane.",
   "frameleaf_setup_import_icloud_via": "przez połączenie, które kontrolujesz",

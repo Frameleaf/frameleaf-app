@@ -22,6 +22,7 @@ import { Route } from '$lib/route';
 const allCapabilities = (): RailCapabilities => ({
   recentlyAdded: true,
   search: true,
+  map: true,
   trash: true,
   people: true,
   pets: true,
@@ -124,7 +125,6 @@ describe('Frameleaf rail destinations', () => {
   });
 
   it('keeps People & pets while either People or Pets is in the sidebar, and current on both pages', () => {
-    expect(find({ ...allCapabilities(), people: false }, 'people')?.href).toBe(Route.people());
     expect(find({ ...allCapabilities(), pets: false }, 'people')?.href).toBe(Route.people());
     expect(find({ ...allCapabilities(), people: false, pets: false }, 'people')).toBeUndefined();
 
@@ -132,6 +132,12 @@ describe('Frameleaf rail destinations', () => {
     expect(isDestinationCurrent(Route.people(), people)).toBe(true);
     expect(isDestinationCurrent(Route.pets(), people)).toBe(true);
     expect(isDestinationCurrent(Route.viewPet({ id: 'pet-id' }), people)).toBe(true);
+  });
+
+  it('opens Pets from People & pets when People is the one turned off, and says Places without the map', () => {
+    expect(find({ ...allCapabilities(), people: false }, 'people')?.href).toBe(Route.pets());
+    expect(find({ ...allCapabilities(), map: false }, 'places')?.labelKey).toBe('places');
+    expect(find(allCapabilities(), 'places')?.labelKey).toBe('frameleaf_rail_places_map');
   });
 
   it('keeps Places & map current on the map', () => {

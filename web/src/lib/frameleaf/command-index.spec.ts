@@ -28,6 +28,7 @@ const everything = (): CommandIndexContext =>
     capabilities: {
       recentlyAdded: true,
       search: true,
+      map: true,
       trash: true,
       people: true,
       pets: true,

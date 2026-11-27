@@ -104,6 +104,7 @@
       recentlyAdded: true,
       pets: true,
       search: featureFlagsManager.value.search || currentQuery.filter.libraryScope === LibraryViewScope.Design,
+      map: featureFlagsManager.value.map,
       trash: featureFlagsManager.value.trash,
       people: !!preferences?.people.enabled,
       memories: !!preferences?.memories.enabled,

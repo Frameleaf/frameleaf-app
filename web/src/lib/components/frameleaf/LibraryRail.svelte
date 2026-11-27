@@ -452,6 +452,7 @@
   const sections = $derived(
     buildRailSections({
       search: featureFlagsManager.value.search || workspaceScope === LibraryViewScope.Design,
+      map: featureFlagsManager.value.map,
       trash: featureFlagsManager.value.trash,
       // Feature preferences are the account's own display choices, never permissions:
       // hiding a destination here does not revoke data or API access.
