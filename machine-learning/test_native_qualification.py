@@ -580,3 +580,24 @@ def test_a_profile_that_stays_open_fails_a_passed_qualification_but_never_hides_
     with pytest.raises(PermissionError):
         native_qualification.remove_profiles(None, tmp_path, raise_errors=True)
     assert len(calls) == 1
+
+
+def test_decisive_files_leave_out_refs_dotfiles_and_cards_only() -> None:
+    from frameleaf_ml.native_qualification import decisive_files
+
+    files = {
+        "models--frameleaf--m/refs/main": "1" * 64,
+        ".gitattributes": "2" * 64,
+        "README.md": "3" * 64,
+        "visual/.cache/x": "4" * 64,
+        "visual/model.onnx": "5" * 64,
+        "config.json": "6" * 64,
+        "textual/tokenizer.json": "7" * 64,
+        "models--frameleaf--m/blobs/abc": "8" * 64,
+    }
+    assert decisive_files(files) == {
+        "visual/model.onnx": "5" * 64,
+        "config.json": "6" * 64,
+        "textual/tokenizer.json": "7" * 64,
+        "models--frameleaf--m/blobs/abc": "8" * 64,
+    }
