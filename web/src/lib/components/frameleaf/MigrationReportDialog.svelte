@@ -5,6 +5,7 @@
    * needs, and a filterable, paged list of unresolved items. It offers no action on either
    * server; closing it discards the report.
    */
+  import EmptyRow from '$lib/components/frameleaf/EmptyRow.svelte';
   import { formatDateTime } from '$lib/frameleaf/date-format';
   import { formatCount } from '$lib/frameleaf/number-format';
   import Badge from '$lib/components/frameleaf/Badge.svelte';
@@ -158,7 +159,7 @@
     <section class="unresolved" aria-label={$t('admin.frameleaf_migration_unresolved_title')}>
       <h3>{$t('admin.frameleaf_migration_unresolved_title')}</h3>
       {#if report.unresolvedCount === 0}
-        <p class="empty">{$t('admin.frameleaf_migration_unresolved_none')}</p>
+        <EmptyRow title={$t('admin.frameleaf_migration_unresolved_none')} />
       {:else}
         {#if report.unresolvedCount > report.unresolved.length}
           <p class="truncated">
