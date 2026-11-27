@@ -264,6 +264,15 @@ Export and Activity, and the adapter saves every settled edit, so the engine no 
 back button, project facts, Save, Export or render queue. The tab bar's words and the error screen's
 are host-translated (`web/src/lib/frameleaf/studio/shell-strings.ts`) in all eleven languages.
 
+Patch 0208 lays the inspector's shared controls out as the approved Studio does (FL-1822): a field's
+label sits above it and the field takes the panel's full width, fields and sliders are 34px tall with
+13px values and 11px labels and units, and section heads are 11px small capitals with room between
+rows. The paired Transform fields (Position, Size, Anchor) drop their unit suffix when narrower than
+5.5rem (an opt-in `compactUnit`, a CSS container query), so beside their keyframe, link and reset
+buttons they still show four-digit values; it is opt-in because a container is sized as if it had
+no content, which would collapse a field that has no width of its own. The colour workspace's own
+controls are not these and are unchanged.
+
 Patch 0185 (FL-1564) adds four transitions other editors use: Film Dissolve (a cross dissolve mixed in
 linear light), Cross Zoom (both clips zoom with a radial blur, `strength`), Cube Spin (the clips are two
 faces of a box turning a quarter turn in perspective, four directions) and Page Peel (the outgoing clip

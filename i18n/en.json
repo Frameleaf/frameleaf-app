@@ -22495,6 +22495,7 @@
     "weekday": "On",
     "weekly": "Every week"
   },
+  "frameleaf_workflows_load_failed": "Your workflows couldn’t be loaded.",
   "frameleaf_workruns_ask_help": "Only for rows set to Ask me each time. You can still switch before the work starts.",
   "frameleaf_workruns_ask_home": "A computer at home",
   "frameleaf_workruns_ask_label": "Place suggested when you’re asked",

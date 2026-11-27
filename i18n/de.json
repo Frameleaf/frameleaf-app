@@ -22592,6 +22592,7 @@
     "weekday": "Am",
     "weekly": "Jede Woche"
   },
+  "frameleaf_workflows_load_failed": "Deine Workflows konnten nicht geladen werden.",
   "frameleaf_workruns_ask_help": "Nur für Zeilen, die auf „Jedes Mal fragen“ gesetzt sind. Du kannst vor dem Start der Arbeit noch wechseln.",
   "frameleaf_workruns_ask_home": "Ein Computer zu Hause",
   "frameleaf_workruns_ask_label": "Vorgeschlagener Ort, wenn du gefragt wirst",

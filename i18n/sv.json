@@ -22588,6 +22588,7 @@
     "weekday": "På",
     "weekly": "Varje vecka"
   },
+  "frameleaf_workflows_load_failed": "Dina arbetsflöden kunde inte läsas in.",
   "frameleaf_workruns_ask_help": "Bara för rader som är inställda på Fråga mig varje gång. Du kan fortfarande växla innan arbetet startar.",
   "frameleaf_workruns_ask_home": "En dator hemma",
   "frameleaf_workruns_ask_label": "Plats som föreslås när du tillfrågas",
