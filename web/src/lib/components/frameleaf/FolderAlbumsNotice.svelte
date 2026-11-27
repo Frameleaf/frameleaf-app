@@ -12,7 +12,12 @@
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { Route } from '$lib/route';
   import { handleError } from '$lib/utils/handle-error';
-  import { getFolderAlbumSuggestions, updateLibrary, type FolderAlbumSuggestionDto } from '@frameleaf/sdk';
+  import {
+    FolderAlbumExisting,
+    getFolderAlbumSuggestions,
+    updateLibrary,
+    type FolderAlbumSuggestionDto,
+  } from '@frameleaf/sdk';
   import { mdiFolderMultipleOutline } from '@mdi/js';
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';
@@ -45,7 +50,7 @@
     try {
       await updateLibrary({
         id: suggestion.libraryId,
-        updateLibraryDto: { folderAlbumOptions, folderAlbumExisting: 'match' },
+        updateLibraryDto: { folderAlbumOptions, folderAlbumExisting: FolderAlbumExisting.Match },
       });
       done = after;
       onChanged?.();

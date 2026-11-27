@@ -3,6 +3,7 @@ import { fireEvent, render, screen } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import LibrariesManager from '$lib/components/frameleaf/LibrariesManager.svelte';
+import { LEGACY_FOLDER_ALBUM_OPTIONS } from '$lib/frameleaf/folder-albums';
 import { buildLibraryRows, LIBRARY_SCAN_POLL_MS } from '$lib/frameleaf/libraries';
 import en from '../../../../../i18n/en.json';
 
@@ -43,6 +44,7 @@ const scanOf = (overrides: Partial<LibraryScanResponseDto>): LibraryScanResponse
 const libraryOf = (scan: LibraryScanResponseDto | null) => ({
   readOnly: false,
   folderAlbums: false,
+  folderAlbumOptions: LEGACY_FOLDER_ALBUM_OPTIONS,
   id: 'lib-1',
   name: 'Family photo archive',
   ownerId: 'owner-1',

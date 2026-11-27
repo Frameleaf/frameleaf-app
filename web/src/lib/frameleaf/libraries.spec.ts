@@ -8,6 +8,7 @@ import {
   type UserAdminResponseDto,
 } from '@frameleaf/sdk';
 import { readFileSync } from 'node:fs';
+import { LEGACY_FOLDER_ALBUM_OPTIONS } from '$lib/frameleaf/folder-albums';
 import {
   DEFAULT_EXCLUSION_PATTERNS,
   buildLibraryRows,
@@ -60,6 +61,7 @@ const scanOf = (overrides: Partial<LibraryScanResponseDto> = {}): LibraryScanRes
 const library = (overrides: Partial<LibraryResponseDto> = {}): LibraryResponseDto => ({
   readOnly: false,
   folderAlbums: false,
+  folderAlbumOptions: LEGACY_FOLDER_ALBUM_OPTIONS,
   id: 'lib-1',
   name: 'Family photo archive',
   ownerId: 'owner-1',

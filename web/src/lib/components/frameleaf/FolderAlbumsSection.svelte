@@ -30,6 +30,7 @@
   import { locale } from '$lib/stores/preferences.store';
   import {
     estimateLibraryFolder,
+    FolderAlbumExisting,
     FolderAlbumShape,
     type FolderAlbumOptionsDto,
     type FolderAlbumSubfolderRule,
@@ -40,7 +41,7 @@
   import { t } from 'svelte-i18n';
 
   type Estimate = Pick<LibraryFolderEstimateResponseDto, 'folders' | 'complete'>;
-  type Existing = 'match' | 'newOnly';
+  type Existing = FolderAlbumExisting;
 
   type Props = {
     title: string;
@@ -127,7 +128,7 @@
   $effect(() => {
     if (!editing && !touched && eventLike && draft.shape === FolderAlbumShape.Every) {
       draft = { ...clone(draft), shape: FolderAlbumShape.Events };
-      void onOptions?.(clone(draft), 'match');
+      void onOptions?.(clone(draft), FolderAlbumExisting.Match);
     }
   });
 
@@ -135,7 +136,7 @@
     touched = true;
     draft = { ...clone(draft), ...patch };
     if (!editing) {
-      void onOptions?.(clone(draft), 'match');
+      void onOptions?.(clone(draft), FolderAlbumExisting.Match);
     }
   };
   const setRule = (name: string, rule: FolderAlbumSubfolderRule) =>
@@ -161,7 +162,7 @@
   const example = $derived(plan ? folderAlbumExample(roots, folders, plan) : undefined);
   const exampleName = $derived(example?.albums.find(({ photos }) => photos > 0)?.name ?? example?.albums[0]?.name);
 
-  let existing = $state<Existing>('match');
+  let existing = $state<Existing>(FolderAlbumExisting.Match);
   let saving = $state(false);
   const save = async () => {
     saving = true;
@@ -378,17 +379,19 @@
             value={existing}
             options={[
               {
-                value: 'match',
+                value: FolderAlbumExisting.Match,
                 label: $t('frameleaf_folder_albums_existing_match'),
                 detail: $t('frameleaf_folder_albums_existing_match_detail'),
               },
               {
-                value: 'newOnly',
+                value: FolderAlbumExisting.NewOnly,
                 label: $t('frameleaf_folder_albums_existing_new'),
                 detail: $t('frameleaf_folder_albums_existing_new_detail'),
               },
             ]}
-            onChange={(value) => (existing = value === 'newOnly' ? 'newOnly' : 'match')}
+            onChange={(value) =>
+              (existing =
+                value === FolderAlbumExisting.NewOnly ? FolderAlbumExisting.NewOnly : FolderAlbumExisting.Match)}
           />
         {/if}
         <div class="actions">

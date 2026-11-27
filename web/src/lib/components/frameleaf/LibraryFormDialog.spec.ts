@@ -9,6 +9,7 @@ import { fireEvent, render, screen } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import LibraryFormDialog from '$lib/components/frameleaf/LibraryFormDialog.svelte';
+import { LEGACY_FOLDER_ALBUM_OPTIONS } from '$lib/frameleaf/folder-albums';
 import { DEFAULT_EXCLUSION_PATTERNS } from '$lib/frameleaf/libraries';
 import en from '../../../../../i18n/en.json';
 
@@ -42,6 +43,7 @@ const scanning = {
 const library = (overrides: Partial<LibraryResponseDto> = {}): LibraryResponseDto => ({
   readOnly: false,
   folderAlbums: false,
+  folderAlbumOptions: LEGACY_FOLDER_ALBUM_OPTIONS,
   id: 'lib-1',
   name: 'Family photo archive',
   ownerId: 'owner-1',

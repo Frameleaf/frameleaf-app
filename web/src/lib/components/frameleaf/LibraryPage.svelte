@@ -40,6 +40,7 @@
   import { locale } from '$lib/stores/preferences.store';
   import {
     getUserHistoryAdmin,
+    type FolderAlbumExisting,
     type FolderAlbumOptionsDto,
     type UserAdminHistoryEventResponseDto,
   } from '@frameleaf/sdk';
@@ -70,7 +71,7 @@
     /** FL-838: "Make an album for each folder" turned on, or off (keeping or removing the albums). */
     onFolderAlbums?: (on: boolean, removeAlbums: boolean) => void;
     /** FL-1837: new rules for which folders become albums, and what happens to the albums made so far. */
-    onFolderAlbumOptions?: (options: FolderAlbumOptionsDto, existing: 'match' | 'newOnly') => Promise<void>;
+    onFolderAlbumOptions?: (options: FolderAlbumOptionsDto, existing: FolderAlbumExisting) => Promise<void>;
   };
 
   let {

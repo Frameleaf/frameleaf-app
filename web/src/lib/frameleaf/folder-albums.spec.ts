@@ -1,3 +1,4 @@
+import { FolderAlbumNaming, FolderAlbumShape } from '@frameleaf/sdk';
 import {
   EVENT_FOLDER_ALBUM_OPTIONS,
   LEGACY_FOLDER_ALBUM_OPTIONS,
@@ -44,7 +45,7 @@ describe('planFolderAlbums (FL-838, FL-1837)', () => {
     const plan = planFolderAlbums(
       ['/nas/family'],
       folders,
-      { ...LEGACY_FOLDER_ALBUM_OPTIONS, shape: 'level', level: 2, naming: 'path' },
+      { ...LEGACY_FOLDER_ALBUM_OPTIONS, shape: FolderAlbumShape.Level, level: 2, naming: FolderAlbumNaming.Path },
       'Family photos',
     );
     expect(plan.find(({ path }) => path === '/nas/family/2025/Summer')).toMatchObject({

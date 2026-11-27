@@ -49,6 +49,7 @@
     scanLibrary,
     scanLibraryEveryFile,
     updateLibrary,
+    FolderAlbumExisting,
     type LibraryResponseDto,
     type UserAdminResponseDto,
   } from '@frameleaf/sdk';
@@ -416,7 +417,7 @@
           run(
             () => updateLibrary({ id: selected.id, updateLibraryDto: { folderAlbumOptions, folderAlbumExisting } }),
             $t(
-              folderAlbumExisting === 'match'
+              folderAlbumExisting === FolderAlbumExisting.Match
                 ? 'frameleaf_folder_albums_saved_match'
                 : 'frameleaf_folder_albums_saved_new',
             ),

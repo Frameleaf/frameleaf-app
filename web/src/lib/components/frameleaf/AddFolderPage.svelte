@@ -357,7 +357,9 @@
     estimate={estimate && estimate.readable ? estimate : null}
     options={folderAlbumOptions}
     onChange={(on) => (folderAlbums = on)}
-    onOptions={(options) => (folderAlbumOptions = options)}
+    onOptions={(options) => {
+      folderAlbumOptions = options;
+    }}
   />
 
   <Section title={$t('frameleaf_addfolder_step5')}>
