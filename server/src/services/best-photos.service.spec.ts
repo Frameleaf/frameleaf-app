@@ -1,6 +1,6 @@
 import { vitest } from 'vitest';
 import { BEST_PHOTOS_MIN_SCORE, BEST_PHOTO_SCORE_VERSION } from 'src/dtos/best-photos.dto.js';
-import { AssetStatus, AssetType, AssetVisibility, JobName, JobStatus } from 'src/enum.js';
+import { AssetStatus, AssetType, AssetVisibility, JobName, JobStatus, QueueName } from 'src/enum.js';
 import { BestPhotosService } from 'src/services/best-photos.service.js';
 import { getAestheticHead, scoreAesthetic } from 'src/utils/aesthetic-head.js';
 import { LockedKeyUnavailableError } from 'src/utils/locked-read.js';
@@ -26,7 +26,13 @@ describe(BestPhotosService.name, () => {
     getBestPhotos: vitest.fn(),
     upsertScore: vitest.fn(),
   };
-  const jobRepository = { queueSelection: vitest.fn(), guardAssetSource: vitest.fn() };
+  const jobRepository = {
+    queueSelection: vitest.fn(),
+    guardAssetSource: vitest.fn(),
+    queue: vitest.fn(),
+    hasIncomingWork: vitest.fn(),
+    hasRunnableJobs: vitest.fn(),
+  };
   const mediaRepository = { measureImageQuality: vitest.fn(), transcode: vitest.fn() };
   /** Preview statistics as sharp reports them; the defaults are an ordinary, well-exposed photo. */
   const quality = (
@@ -62,6 +68,7 @@ describe(BestPhotosService.name, () => {
       mediaRepository as never,
       configRepository as never,
       systemMetadataRepository as never,
+      { tryLock: vitest.fn() } as never,
     );
   });
 
@@ -234,7 +241,7 @@ describe(BestPhotosService.name, () => {
       previewFile: '/preview.jpg',
       faceCount: 0,
       embedding: null as string | null,
-      scoreMetadata: null as Record<string, unknown> | null,
+      scored: false,
     };
 
     it('uses the head for the visual search model when the photo has an embedding', async () => {
@@ -265,24 +272,16 @@ describe(BestPhotosService.name, () => {
       );
     });
 
-    it('re-scores a new embedding from the stored image statistics without reading the preview', async () => {
-      assetJobRepository.getForBestPhotoScoring.mockResolvedValue(photo);
+    it('never scores a photo that has a score, unless Recalculate asked (FL-1827)', async () => {
+      assetJobRepository.getForBestPhotoScoring.mockResolvedValue({ ...photo, scored: true });
       mediaRepository.measureImageQuality.mockResolvedValue(quality());
-      await sut.handleScore({ id: photo.id });
-      const { metadata, technicalScore } = bestPhotosRepository.upsertScore.mock.lastCall![0];
-      mediaRepository.measureImageQuality.mockClear();
 
-      assetJobRepository.getForBestPhotoScoring.mockResolvedValue({
-        ...photo,
-        embedding: JSON.stringify(embedding),
-        scoreMetadata: metadata,
-      });
-      await expect(sut.handleScore({ id: photo.id, embeddingChanged: true })).resolves.toBe(JobStatus.Success);
-
+      await expect(sut.handleScore({ id: photo.id })).resolves.toBe(JobStatus.Skipped);
       expect(mediaRepository.measureImageQuality).not.toHaveBeenCalled();
-      expect(bestPhotosRepository.upsertScore).toHaveBeenLastCalledWith(
-        expect.objectContaining({ technicalScore, metadata: expect.objectContaining({ aestheticScoreVersion: 2 }) }),
-      );
+      expect(bestPhotosRepository.upsertScore).not.toHaveBeenCalled();
+
+      await expect(sut.handleScore({ id: photo.id, force: true })).resolves.toBe(JobStatus.Success);
+      expect(bestPhotosRepository.upsertScore).toHaveBeenCalledOnce();
     });
   });
 
@@ -402,9 +401,94 @@ describe(BestPhotosService.name, () => {
     assetJobRepository.selectionForBestPhotosScoring.mockReturnValue([{ id: 'asset-1' }, { id: 'asset-2' }]);
 
     await expect(sut.handleQueueAll({ force: true })).resolves.toBe(JobStatus.Success);
+    // Recalculate: every photo, each scored again
+    expect(assetJobRepository.selectionForBestPhotosScoring).toHaveBeenCalledWith({ force: true });
     expect(jobRepository.queueSelection).toHaveBeenCalledWith(
       JobName.BestPhotosScore,
       assetJobRepository.selectionForBestPhotosScoring.mock.results[0].value,
+      { force: true },
     );
+  });
+
+  describe('the paced scan (FL-1827)', () => {
+    /** The photos the selection returns next, as one share. */
+    const unscored = (...ids: string[]) =>
+      assetJobRepository.selectionForBestPhotosScoring.mockReturnValue({
+        execute: vitest.fn().mockResolvedValue(ids.map((id) => ({ id }))),
+      } as never);
+
+    beforeEach(() => {
+      jobRepository.hasIncomingWork.mockResolvedValue(false);
+      jobRepository.hasRunnableJobs.mockResolvedValue(false);
+      unscored('a', 'b');
+    });
+
+    it('queues one share once the library is set up, and walks on from its last photo', async () => {
+      await expect(sut.queueNextShare()).resolves.toBe(true);
+      expect(jobRepository.queue).toHaveBeenLastCalledWith({
+        name: JobName.BestPhotosScoreQueueAll,
+        data: { force: false, limit: 1000 },
+      });
+      // a photo waits for what its score reads: here search and faces are on
+      expect(assetJobRepository.selectionForBestPhotosScoring).toHaveBeenLastCalledWith({
+        ready: { search: true, faces: true },
+        limit: 1000,
+        after: undefined,
+      });
+
+      // the next share starts after the last photo of this one, so a photo that can't be scored holds up nothing
+      unscored('c');
+      await expect(sut.queueNextShare()).resolves.toBe(true);
+      expect(jobRepository.queue).toHaveBeenLastCalledWith({
+        name: JobName.BestPhotosScoreQueueAll,
+        data: { force: false, limit: 1000, after: 'b' },
+      });
+    });
+
+    it('waits while photos are still coming in or being made ready', async () => {
+      jobRepository.hasIncomingWork.mockResolvedValue(true);
+      await expect(sut.queueNextShare()).resolves.toBe(false);
+      expect(jobRepository.hasIncomingWork).toHaveBeenCalledWith([
+        QueueName.Library,
+        QueueName.Sidecar,
+        QueueName.MetadataExtraction,
+        QueueName.ThumbnailGeneration,
+      ]);
+      expect(jobRepository.queue).not.toHaveBeenCalled();
+    });
+
+    it('never queues a share while the last one can still run', async () => {
+      jobRepository.hasRunnableJobs.mockResolvedValue(true);
+      await expect(sut.queueNextShare()).resolves.toBe(false);
+      expect(jobRepository.hasRunnableJobs).toHaveBeenCalledWith(QueueName.BackgroundTask, [
+        JobName.BestPhotosScore,
+        JobName.BestPhotosScoreQueueAll,
+      ]);
+      expect(jobRepository.queue).not.toHaveBeenCalled();
+    });
+
+    it('rests an hour at the end of a pass, then starts again from the first photo', async () => {
+      const now = Date.now();
+      await expect(sut.queueNextShare(now)).resolves.toBe(true);
+      unscored();
+      await expect(sut.queueNextShare(now)).resolves.toBe(false);
+      unscored('a');
+      await expect(sut.queueNextShare(now + 59 * 60_000)).resolves.toBe(false);
+      await expect(sut.queueNextShare(now + 61 * 60_000)).resolves.toBe(true);
+      expect(assetJobRepository.selectionForBestPhotosScoring).toHaveBeenLastCalledWith(
+        expect.objectContaining({ after: undefined }),
+      );
+    });
+
+    it('takes a share of photos never scored and ready from its place, and scores each without force', async () => {
+      assetJobRepository.selectionForBestPhotosScoring.mockReturnValue([{ id: 'c' }] as never);
+      await expect(sut.handleQueueAll({ force: false, limit: 1000, after: 'b' })).resolves.toBe(JobStatus.Success);
+      expect(assetJobRepository.selectionForBestPhotosScoring).toHaveBeenCalledWith({
+        ready: { search: true, faces: true },
+        limit: 1000,
+        after: 'b',
+      });
+      expect(jobRepository.queueSelection).toHaveBeenCalledWith(JobName.BestPhotosScore, expect.anything(), {});
+    });
   });
 });

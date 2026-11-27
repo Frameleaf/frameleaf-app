@@ -1,5 +1,6 @@
-import { describe, expect, it } from 'vitest';
-import { formatDate, formatDateTime, formatTime, type DisplayFormat } from './date-format';
+import { DateTime } from 'luxon';
+import { describe, expect, it, vi } from 'vitest';
+import { formatDate, formatDateTime, formatLuxon, formatTime, type DisplayFormat } from './date-format';
 
 const date = new Date('2026-11-01T14:30:00Z');
 const UTC = { timeZone: 'UTC' };
@@ -77,5 +78,40 @@ describe('date-format', () => {
 
   it('gives an empty string for an invalid date', () => {
     expect(formatDate('not a date', undefined, 'en-US', as('iso'))).toBe('');
+  });
+});
+
+describe('a Luxon date and the shared formatters (FL-1805)', () => {
+  const auto: DisplayFormat = { dateFormat: 'auto', hourCycle: 'auto' };
+
+  it('reads as Luxon wrote it while the format is auto, in the date’s own zone', () => {
+    for (const zone of ['UTC', 'America/Edmonton', 'UTC+2', 'Asia/Kolkata']) {
+      const value = DateTime.fromISO('2026-11-01T23:30:00', { zone, locale: 'en-US' });
+      for (const preset of [DateTime.DATE_MED, DateTime.DATE_MED_WITH_WEEKDAY, DateTime.DATETIME_MED]) {
+        // Luxon joins the engine's parts, which keep the narrow no-break space before "PM" that the
+        // engine's own `format` writes as a plain space; the words and digits are the same.
+        expect(formatLuxon(value, preset, 'en-US', auto), zone).toBe(
+          value.toLocaleString(preset).replaceAll('\u{202F}', ' '),
+        );
+      }
+    }
+  });
+
+  it('keeps the year of a photo dated before the year 100', () => {
+    const value = DateTime.fromObject({ year: 1, month: 3, day: 4 }, { zone: 'UTC' });
+    expect(formatLuxon(value, { year: 'numeric', month: 'long', day: 'numeric' }, 'en-US', auto)).toBe('March 4, 1');
+    expect(formatLuxon(DateTime.invalid('unparsable'), DateTime.DATE_MED, 'en-US', auto)).toBe('');
+  });
+
+  it('builds a formatter once per locale and set of options', () => {
+    const constructor = vi.spyOn(Intl, 'DateTimeFormat');
+    const options = { dateStyle: 'full', timeZone: 'Pacific/Chatham' } as const;
+    const first = formatDate(new Date(Date.UTC(2026, 10, 1)), options, 'en-NZ', auto);
+    for (let day = 2; day < 50; day++) {
+      formatDate(new Date(Date.UTC(2026, 10, day)), options, 'en-NZ', auto);
+    }
+    expect(constructor.mock.calls.filter(([, given]) => given?.timeZone === 'Pacific/Chatham')).toHaveLength(1);
+    expect(first).toBe(new Intl.DateTimeFormat('en-NZ', options).format(new Date(Date.UTC(2026, 10, 1))));
+    constructor.mockRestore();
   });
 });

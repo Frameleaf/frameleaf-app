@@ -5,6 +5,7 @@
    * added and when it was last used, and offers only Remove access, which signs that browser out
    * and keeps its waiting items.
    */
+  import { formatLuxon } from '$lib/frameleaf/date-format';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import { extensionBrowser, handleRemoveExtensionAccess } from '$lib/services/api-key.service';
@@ -20,7 +21,7 @@
   let working = $state(false);
 
   const browser = $derived(extensionBrowser(apiKey));
-  const added = $derived(DateTime.fromISO(apiKey.createdAt, { locale: $locale }).toLocaleString(DateTime.DATE_MED));
+  const added = $derived(formatLuxon(DateTime.fromISO(apiKey.createdAt, { locale: $locale }), DateTime.DATE_MED));
   const used = $derived(
     apiKey.lastUsedAt
       ? $t('frameleaf_access_key_last_used', {

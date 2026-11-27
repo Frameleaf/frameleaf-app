@@ -12,6 +12,7 @@
    * FL-1666: "Files or folders, as they were stored" and "Browse files" on a date with a Cloud Backup
    * open the browse of that backup (`&browse=<backup>`), its three steps in place of this page.
    */
+  import { formatDateTime } from '$lib/frameleaf/date-format';
   import InlineError from '$lib/components/frameleaf/InlineError.svelte';
   import BackupBrowse from '$lib/components/frameleaf/backup/BackupBrowse.svelte';
   import MaintenanceRestoreTest from '$lib/components/frameleaf/MaintenanceRestoreTest.svelte';
@@ -134,7 +135,7 @@
     return $t(key, { values });
   };
   const formatWhen = (value: string | null | undefined) =>
-    value ? new Intl.DateTimeFormat($locale, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value)) : '—';
+    value ? formatDateTime(new Date(value), { dateStyle: 'medium', timeStyle: 'short' }, $locale) : '—';
 
   const cloudOn = $derived(!!cloud?.configured);
   const buddyOn = $derived(!!buddy?.pairing);

@@ -5,6 +5,7 @@ import {
   type MediaImportResponseDto,
   type MediaSubscriptionCreateDto,
 } from '@frameleaf/sdk';
+import { formatDateTime } from '$lib/frameleaf/date-format';
 import { newRequestKey } from '$lib/frameleaf/enrichment';
 
 export type MediaInterval = NonNullable<MediaSubscriptionCreateDto['intervalMinutes']>;
@@ -90,4 +91,4 @@ export const privateMediaParents = (albums: AlbumResponseDto[], ownerId: string)
 };
 
 export const mediaDate = (value: string, locale?: string | null) =>
-  new Date(value).toLocaleString(locale ?? undefined, { dateStyle: 'medium', timeStyle: 'short' });
+  formatDateTime(new Date(value), { dateStyle: 'medium', timeStyle: 'short' }, locale ?? 'default');

@@ -186,23 +186,30 @@ describe('getAltText', () => {
     expect(alt(item)).toBe(`Image taken on ${originalDate(item)}`);
   });
 
-  it('reuses only the last successful formatter and never formats invalid dates through Intl', () => {
+  // FL-1805: the date helper keeps the formatters (one per locale and option set, for every screen).
+  // The locales here are ones no other test uses, so each is built for the first time.
+  it('builds one formatter per locale and never formats invalid dates through Intl', () => {
     const alt = get(getAltText);
     const constructor = vi.spyOn(Intl, 'DateTimeFormat');
+    const built = () => constructor.mock.calls.filter(([, options]) => options?.dateStyle === 'long');
     const item = asset();
+    locale.set('en-NZ');
     alt(item);
     alt(item);
-    expect(constructor.mock.calls.filter(([, options]) => options?.dateStyle === 'long')).toHaveLength(1);
-    locale.set('fr');
+    expect(built()).toHaveLength(1);
+    locale.set('fr-CA');
     alt(item);
     alt(item);
-    expect(constructor.mock.calls.filter(([, options]) => options?.dateStyle === 'long')).toHaveLength(2);
+    expect(built()).toHaveLength(2);
     expect(
       alt(asset({ localDateTime: { year: 2024, month: 2, day: 30, hour: 0, minute: 0, second: 0, millisecond: 0 } })),
     ).toBe('Image taken on Invalid Date');
-    locale.set('en-US');
+    locale.set('en-ZA');
     alt(item);
-    expect(constructor.mock.calls.filter(([, options]) => options?.dateStyle === 'long')).toHaveLength(3);
+    expect(built()).toHaveLength(3);
+    locale.set('en-NZ');
+    alt(item);
+    expect(built()).toHaveLength(3);
   });
 
   it.each([

@@ -5,6 +5,7 @@ import {
   type UserAdminHistoryEventResponseDto,
 } from '@frameleaf/sdk';
 import type { MessageFormatter } from 'svelte-i18n';
+import { formatDate } from '$lib/frameleaf/date-format';
 
 /**
  * The account detail's Activity and Libraries tabs (FL-76), ported from the design template's
@@ -188,7 +189,7 @@ export const describeAdminEvent = (
 
 /** The template's short date (`Sep 23, 2026`), in the viewer's locale. */
 export const formatHistoryDate = (value: string, locale?: string) =>
-  new Date(value).toLocaleDateString(locale, { month: 'short', day: 'numeric', year: 'numeric' });
+  formatDate(new Date(value), { month: 'short', day: 'numeric', year: 'numeric' }, locale ?? 'default');
 
 /**
  * Photos and videos in the account's managed uploads: everything the account owns, less what its

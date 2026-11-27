@@ -655,4 +655,24 @@ describe('LibrarySessionStore', () => {
     expect(restored.refusedView).toBeNull();
     expect(restored.query).toEqual(store.query);
   });
+
+  it('answers "is it selected" from the current selection, quickly with 50,000 selected (FL-1804)', () => {
+    const ids = Array.from({ length: 50_000 }, (_, index) => `asset-${index}`);
+    store.selectAll(ids);
+    const started = performance.now();
+    // what a screen of tiles asks on every draw, many times over
+    let selected = 0;
+    for (let index = 0; index < 50_000; index++) {
+      selected += store.isSelected(`asset-${index * 2}`) ? 1 : 0;
+    }
+    expect(selected).toBe(25_000);
+    // a scan of the list per question would take seconds here
+    expect(performance.now() - started).toBeLessThan(500);
+
+    store.selectGroup(['asset-7'], false);
+    expect(store.isSelected('asset-7')).toBe(false);
+    expect(store.isSelected('asset-8')).toBe(true);
+    store.clearSelection();
+    expect(store.isSelected('asset-8')).toBe(false);
+  });
 });

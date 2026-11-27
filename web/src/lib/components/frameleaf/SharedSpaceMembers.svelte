@@ -1,6 +1,6 @@
 <script lang="ts">
   import { rovingFocus } from '$lib/frameleaf/roving-focus';
-  import AlbumConfirmDialog from '$lib/components/frameleaf/AlbumConfirmDialog.svelte';
+  import ConfirmDialog from '$lib/components/frameleaf/ConfirmDialog.svelte';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import PersonPhoto from '$lib/components/frameleaf/PersonPhoto.svelte';
@@ -460,16 +460,17 @@
 {#if confirming.member}
   {@const member = confirming.member}
   {@const self = member.user.id === currentUserId}
-  <AlbumConfirmDialog
+  <ConfirmDialog
     title={self
       ? $t('frameleaf_album_leave_title', { values: { name: space.albumName } })
       : $t('frameleaf_album_remove_member_title', { values: { name: member.user.name } })}
-    body={self
+    prompt={self
       ? $t('frameleaf_album_leave_body')
       : $t('frameleaf_album_remove_member_body', { values: { name: space.albumName } })}
-    confirmLabel={self
+    confirmText={self
       ? $t('frameleaf_album_leave', { values: { kind: $t('frameleaf_album_kind_space') } })
       : $t('frameleaf_album_remove_member_confirm')}
+    danger
     bind:open={confirming.open}
     onConfirm={async () => {
       await remove(member);

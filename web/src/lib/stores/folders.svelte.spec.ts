@@ -5,7 +5,7 @@ import {
   type FolderSummaryResponseDto,
 } from '@frameleaf/sdk';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { FOLDER_FILES_KEPT, FOLDER_FILES_PAGE_SIZE, foldersStore } from '$lib/stores/folders.svelte';
+import { FOLDER_FILES_KEPT, foldersStore } from '$lib/stores/folders.svelte';
 
 vi.mock('$lib/managers/event-manager.svelte', () => ({
   eventManager: {
@@ -86,23 +86,11 @@ describe('foldersStore', () => {
     expect(getAssetsByOriginalPath).toHaveBeenCalledTimes(2);
   });
 
-  it('reads a large folder a page at a time and hands back every file (FL-1795)', async () => {
-    const file = (id: string) => ({ id }) as AssetResponseDto;
-    const full = Array.from({ length: FOLDER_FILES_PAGE_SIZE }, (_, index) => file(`first-${index}`));
-    vi.mocked(getAssetsByOriginalPath)
-      .mockResolvedValueOnce(full)
-      .mockResolvedValueOnce([file('last')]);
+  it('reads a folder in one request (FL-1795 review)', async () => {
+    vi.mocked(getAssetsByOriginalPath).mockResolvedValue([{ id: 'one' } as AssetResponseDto]);
 
-    const files = await foldersStore.fetchAssetsByPath('/big');
-
-    expect(files).toHaveLength(FOLDER_FILES_PAGE_SIZE + 1);
-    expect(vi.mocked(getAssetsByOriginalPath).mock.calls).toEqual([
-      [{ path: '/big', take: FOLDER_FILES_PAGE_SIZE }],
-      [{ path: '/big', take: FOLDER_FILES_PAGE_SIZE, after: `first-${FOLDER_FILES_PAGE_SIZE - 1}` }],
-    ]);
-    // the whole folder is cached as one list
-    expect(await foldersStore.fetchAssetsByPath('/big')).toHaveLength(FOLDER_FILES_PAGE_SIZE + 1);
-    expect(getAssetsByOriginalPath).toHaveBeenCalledTimes(2);
+    await expect(foldersStore.fetchAssetsByPath('/big')).resolves.toHaveLength(1);
+    expect(getAssetsByOriginalPath).toHaveBeenCalledExactlyOnceWith({ path: '/big' });
   });
 
   it('keeps the files of the last few folders only, the ones opened most recently (FL-1795)', async () => {

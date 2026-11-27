@@ -41,7 +41,7 @@ const FolderAssetsSchema = z
       .describe(
         'Most assets to return. With it the folder is read a page at a time, in asset ID order: a page shorter than this is the last one. Without it every asset is returned, in file name order.',
       ),
-    after: z.uuidv4().optional().describe('ID of the last asset of the page before; only with take'),
+    after: z.uuid().optional().describe('ID of the last asset of the page before; only with take'),
   })
   .meta({ id: 'FolderAssetsDto' });
 

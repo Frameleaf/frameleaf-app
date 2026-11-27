@@ -7,6 +7,7 @@
    * FL-1785 (approved 2026-11-26, prototype `?jobs=v3`): a progress bar on the page and on each task, what a failure
    * means for the photo, and the whole width of the pane.
    */
+  import { formatDate, formatTime } from '$lib/frameleaf/date-format';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import InlineError from '$lib/components/frameleaf/InlineError.svelte';
   import type { JobQueueDefinition, JobTab } from '$lib/frameleaf/job-queues';
@@ -235,8 +236,7 @@
     }
     return known;
   };
-  const day = (value: string) =>
-    new Date(value).toLocaleDateString($locale ?? undefined, { month: 'short', day: 'numeric' });
+  const day = (value: string) => formatDate(new Date(value), { month: 'short', day: 'numeric' }, $locale ?? 'default');
   const DAY = 86_400_000;
   const whyLine = (why: QueueTaskDto) => {
     switch (why.reason) {
@@ -252,7 +252,7 @@
         }
         return until.getTime() - Date.now() < DAY
           ? $t('frameleaf_jobs_adv_why_night_at', {
-              values: { time: until.toLocaleTimeString($locale ?? undefined, { hour: 'numeric', minute: '2-digit' }) },
+              values: { time: formatTime(until, { hour: 'numeric', minute: '2-digit' }, $locale ?? 'default') },
             })
           : $t('frameleaf_jobs_adv_why_night_on', { values: { date: day(why.closedUntil!) } });
       }

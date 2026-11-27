@@ -5,6 +5,7 @@
    * The server works the numbers out from the photos (`insights.magic`); the forecast is the report's
    * own pace (`forecast`). Shutter counts and altitude are not recorded, so they are left out.
    */
+  import { formatDateTime, formatTime } from '$lib/frameleaf/date-format';
   import AnalyticsPanel from '$lib/components/frameleaf/analytics/AnalyticsPanel.svelte';
   import { analyticsFormats, type Translate } from '$lib/frameleaf/analytics';
   import { colourName, forecast, laps } from '$lib/frameleaf/library-magic';
@@ -36,8 +37,8 @@
   const f = $derived(analyticsFormats($locale, tr));
   const pct = (part: number, whole: number) => (whole > 0 ? Math.round((part / whole) * 100) : 0);
   const monthName = (month: number, style: 'short' | 'long' = 'short') =>
-    new Intl.DateTimeFormat($locale, { month: style, timeZone: 'UTC' }).format(Date.UTC(2026, month - 1, 15));
-  const monthYear = (date: Date) => new Intl.DateTimeFormat($locale, { month: 'short', year: 'numeric' }).format(date);
+    formatDateTime(Date.UTC(2026, month - 1, 15), { month: style, timeZone: 'UTC' }, $locale);
+  const monthYear = (date: Date) => formatDateTime(date, { month: 'short', year: 'numeric' }, $locale);
   const colourWord = (hex: string) => $t(`frameleaf_magic_colour_${colourName(hex)}` as Translations);
 
   // ── Your year in colour ──
@@ -151,7 +152,7 @@
     </div>
     <div class="an-light-axis" aria-hidden="true">
       {#each [0, 6, 12, 18, 0] as hour, index (index)}<span
-          >{new Intl.DateTimeFormat($locale, { hour: 'numeric' }).format(new Date(2026, 0, 1, hour))}</span
+          >{formatTime(new Date(2026, 0, 1, hour), { hour: 'numeric' }, $locale)}</span
         >{/each}
     </div>
     <ul class="an-light-key">

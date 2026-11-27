@@ -352,6 +352,56 @@ describe('LibraryView', () => {
     }
   });
 
+  describe('Select all on a page of its own (FL-1804)', () => {
+    const MONTHS = [
+      { timeBucket: '2024-03-01', count: 60_000 },
+      { timeBucket: '2024-02-01', count: 40_000 },
+    ];
+    const selectAllButton = () => screen.findByRole('button', { name: 'frameleaf_selection_select_all_matching' });
+
+    afterEach(() => librarySession.dispatch({ type: 'selection', ids: [] }));
+
+    it('selects a tag page by its scope, without fetching a single month', async () => {
+      sdkMock.getTimeBuckets.mockResolvedValue(MONTHS);
+      render(LibraryView, {
+        options: { visibility: AssetVisibility.Timeline, tagId: 'tag-1' },
+        destination: { kind: 'tag', id: 'tag-1' },
+        selectAll: 'loaded',
+        syncUrl: false,
+      });
+      await waitFor(() => expect(screen.getByTestId('frameleaf-library')).toBeInTheDocument());
+      librarySession.dispatch({ type: 'selection', ids: ['a'] });
+      const monthRequests = sdkMock.getTimeBucket.mock.calls.length;
+
+      await fireEvent.click(await selectAllButton());
+
+      expect(librarySession.session.selectionSnapshot?.scope).toEqual({ kind: 'tag', id: 'tag-1' });
+      // The page's own state keeps the library scope; only the frozen selection names the tag.
+      expect(librarySession.state.scope).toEqual({ kind: 'library' });
+      expect(sdkMock.getTimeBucket.mock.calls).toHaveLength(monthRequests);
+      expect(sdkMock.searchAssetStatistics).not.toHaveBeenCalled();
+    });
+
+    it('keeps selecting what is loaded where the server cannot return exactly what the page shows', async () => {
+      sdkMock.getTimeBuckets.mockResolvedValue(MONTHS);
+      sdkMock.getTimeBucket.mockRejectedValue(new Error('no months in this test'));
+      render(LibraryView, {
+        options: { isFavorite: true, withStacked: true },
+        destination: { kind: 'favorites' },
+        selectAll: 'loaded',
+        syncUrl: false,
+      });
+      await waitFor(() => expect(screen.getByTestId('frameleaf-library')).toBeInTheDocument());
+      librarySession.dispatch({ type: 'selection', ids: ['a'] });
+      const monthRequests = sdkMock.getTimeBucket.mock.calls.length;
+
+      await fireEvent.click(await selectAllButton());
+
+      await waitFor(() => expect(sdkMock.getTimeBucket.mock.calls.length).toBeGreaterThan(monthRequests));
+      expect(librarySession.session.selectionSnapshot).toBeUndefined();
+    });
+  });
+
   it('draws no layout switch, Filter menu or Work panel on a public shared-link page', async () => {
     await setup(true);
     expect(screen.queryByTestId('frameleaf-results-toolbar')).not.toBeInTheDocument();
