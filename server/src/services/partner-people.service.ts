@@ -30,9 +30,6 @@ export type PersonEdit = {
   name?: string;
   birthDate?: string | null;
   deathDate?: string | null;
-  /** FL-1814: how sure each date is; it follows, and stops following, with its date */
-  birthDatePrecision?: string | null;
-  deathDatePrecision?: string | null;
   isHidden?: boolean;
   isFavorite?: boolean;
   color?: string | null;
@@ -252,8 +249,9 @@ export class PartnerPeopleService extends BaseService {
   async noteEdit(ownerId: string, personGroupId: string, edit: PersonEdit): Promise<void> {
     const fields = [
       edit.name !== undefined && 'name',
-      (edit.birthDate !== undefined || edit.birthDatePrecision !== undefined) && 'birthDate',
-      (edit.deathDate !== undefined || edit.deathDatePrecision !== undefined) && 'deathDate',
+      // FL-1814: a precision is only ever sent with its date, so a date edit covers both
+      edit.birthDate !== undefined && 'birthDate',
+      edit.deathDate !== undefined && 'deathDate',
       edit.isHidden !== undefined && 'hidden',
       edit.featureFaceAssetId !== undefined && 'cover',
       edit.isFavorite !== undefined && 'favorite',
@@ -343,11 +341,7 @@ export class PartnerPeopleService extends BaseService {
 
   /** Whether a person edit touched a detail its copies follow. */
   static touchesFollowedFields(edit: PersonEdit): boolean {
-    return (
-      FOLLOWED_PERSON_FIELDS.some((field) => edit[field === 'hidden' ? 'isHidden' : field] !== undefined) ||
-      edit.birthDatePrecision !== undefined ||
-      edit.deathDatePrecision !== undefined
-    );
+    return FOLLOWED_PERSON_FIELDS.some((field) => edit[field === 'hidden' ? 'isHidden' : field] !== undefined);
   }
 
   private async resolvePerson(input: {
@@ -513,7 +507,8 @@ export class PartnerPeopleService extends BaseService {
     // FL-864: the copy starts with the partner's date of passing, as it does with their birth date; never their notes.
     // FL-1814: and with how sure each date is
     const sourceProfile = source ? await this.personRepository.getProfile(source) : undefined;
-    if (sourceProfile?.deathDate || (sourceProfile?.birthDatePrecision && source?.birthDate)) {
+    // a copy that was there already keeps its own details
+    if (result.created && (sourceProfile?.deathDate || (sourceProfile?.birthDatePrecision && source?.birthDate))) {
       await this.personRepository.upsertProfile(
         { ownerId: targetOwnerId, personGroupId: result.personGroupId },
         {

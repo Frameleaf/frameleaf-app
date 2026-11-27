@@ -112,7 +112,7 @@ describe(PartnerPeopleService.name, () => {
           correctionId: null,
         },
       ];
-      return Promise.resolve({ personGroupId: NEW_PG });
+      return Promise.resolve({ personGroupId: NEW_PG, created: true });
     });
     mocks.search.searchFaces.mockResolvedValue([]);
   });
@@ -368,6 +368,24 @@ describe(PartnerPeopleService.name, () => {
         { ownerId: B, personGroupId: NEW_PG },
         { deathDate: '2020-01-01', deathDatePrecision: 'year', birthDatePrecision: 'month' },
       );
+    });
+
+    it('leaves the details of a copy that was there already (FL-1814)', async () => {
+      mocks.person.getProfile.mockResolvedValue({
+        deathDate: '2020-01-01',
+        notes: null,
+        birthDatePrecision: 'year',
+        deathDatePrecision: null,
+      });
+      const createCopy = mocks.partnerOrigin.createPersonCopy.getMockImplementation()!;
+      mocks.partnerOrigin.createPersonCopy.mockImplementation(async (value, undo) => ({
+        ...((await createCopy(value, undo)) as { personGroupId: string }),
+        created: false,
+      }));
+
+      await sut.copyFaces(copyInput);
+
+      expect(mocks.person.upsertProfile).not.toHaveBeenCalled();
     });
 
     it('creates a new person with an origin when nothing matches', async () => {
@@ -774,13 +792,6 @@ describe(PartnerPeopleService.name, () => {
     it('marks the edited followed fields as changed by the owner', async () => {
       await sut.noteEdit(B, PG_B, { name: 'Em', featureFaceAssetId: newUuid(), isFavorite: true });
       expect(mocks.partnerOrigin.markPersonOverridden).toHaveBeenCalledWith(B, [PG_B], ['name', 'cover', 'favorite']);
-    });
-
-    it('a change to how sure a date is stops that date following (FL-1814)', async () => {
-      await sut.noteEdit(B, PG_B, { birthDatePrecision: 'year', deathDatePrecision: null });
-      expect(mocks.partnerOrigin.markPersonOverridden).toHaveBeenCalledWith(B, [PG_B], ['birthDate', 'deathDate']);
-      expect(PartnerPeopleService.touchesFollowedFields({ birthDatePrecision: 'about' })).toBe(true);
-      expect(PartnerPeopleService.touchesFollowedFields({ isFavorite: true })).toBe(false);
     });
 
     it('does nothing for an edit of nothing tracked', async () => {

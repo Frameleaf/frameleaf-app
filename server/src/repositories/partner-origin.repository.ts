@@ -78,7 +78,9 @@ export type PersonCopyInput = Omit<PersonOriginInput, 'personGroupId'> & {
   isHidden: boolean;
 };
 export type PersonCopyUndo = { correctionId: string; personGroupId: string; faceIds: string[] };
-export type PersonCopyResult = { personGroupId: string } | { conflict: 'already-undone' | 'person-gone' };
+/** `created`: the person was made now, so it starts with the source's details; otherwise it was there already. */
+export type PersonCopyResult =
+  { personGroupId: string; created: boolean } | { conflict: 'already-undone' | 'person-gone' };
 /** What a partner copy of one asset is made from (spec §4.3). */
 export type AssetCopyInput = {
   sourceAssetId: string;
@@ -574,7 +576,7 @@ export class PartnerOriginRepository {
           JOIN person ON person."ownerId" = link."ownerId" AND person."personGroupId" = link."personGroupId"
           WHERE link."ownerId" = ${input.ownerId}::uuid AND link."sourcePersonGroupId" = ${input.sourcePersonGroupId}::uuid
         `.execute(tx);
-        if (rows[0]) return rows[0];
+        if (rows[0]) return { personGroupId: rows[0].personGroupId, created: false };
       }
       const { rows } = await sql<{ personGroupId: string }>`
         SELECT origin."personGroupId" FROM public.person_origin origin
@@ -582,6 +584,7 @@ export class PartnerOriginRepository {
         WHERE origin."ownerId" = ${input.ownerId}::uuid AND origin."sourcePersonGroupId" = ${input.sourcePersonGroupId}::uuid
       `.execute(tx);
       let personGroupId = rows[0]?.personGroupId;
+      const created = !personGroupId;
       if (!personGroupId) {
         // A deleted recipient person is no longer a mapping, but its source unique key can remain.
         await sql`
@@ -630,7 +633,7 @@ export class PartnerOriginRepository {
         SET "personGroupId" = excluded."personGroupId", kind = excluded.kind,
           "partnerSharedById" = excluded."partnerSharedById", "correctionId" = excluded."correctionId"
       `.execute(tx);
-      return { personGroupId };
+      return { personGroupId, created };
     });
   }
   async createPersonOrigin(input: PersonOriginInput, kysely: Kysely<DB> = this.db): Promise<void> {
