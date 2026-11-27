@@ -4,6 +4,7 @@
    * revocations, newest first, with the stable refusal code turned into a sentence. The server
    * never writes a secret or a file path into an audit row, so `detail` is shown in full.
    */
+  import { formatLuxon } from '$lib/frameleaf/date-format';
   import Badge from '$lib/components/frameleaf/Badge.svelte';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Pane from '$lib/components/frameleaf/Pane.svelte';
@@ -39,7 +40,7 @@
   const workerName = $derived(new Map(workers.map((worker) => [worker.id, worker.name])));
   const nameOfUser = $derived(new Map(users.map((user) => [user.id, user.name])));
 
-  const at = (value: string) => DateTime.fromISO(value, { locale: $locale }).toLocaleString(DateTime.DATETIME_MED);
+  const at = (value: string) => formatLuxon(DateTime.fromISO(value, { locale: $locale }), DateTime.DATETIME_MED);
 </script>
 
 <Pane label={$t('frameleaf_render_workers_audit_title')}>

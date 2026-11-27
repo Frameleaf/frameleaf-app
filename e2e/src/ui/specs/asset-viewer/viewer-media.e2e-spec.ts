@@ -157,20 +157,27 @@ test.describe('viewer media sources', () => {
     await expect(page.getByText('Original file unavailable')).toBeVisible();
   });
 
-  test('the More menu follows the template (V-7, V-11)', async ({ context, page }) => {
+  test('the More menu is a short list and sections that open in place (FL-1811)', async ({ context, page }) => {
     await enableSmartSearch(context);
     await page.goto(`/photos/${fixture.primaryAsset.id}`);
     await assetViewerUtils.waitForViewerLoad(page, fixture.primaryAsset);
     await page.getByRole('button', { name: 'More actions' }).click();
     const menu = page.getByRole('menu');
-    // Group headings (media-viewer.mjs viewerActionGroups): "Download" heads a group whose first item is
-    // also "Download", so the heading row is matched on its own rather than by text alone.
-    const headings = menu.locator('li[role="presentation"]');
-    for (const heading of ['Download', 'Organize', 'Go to', 'Jobs', 'Viewer']) {
-      await expect(headings.filter({ hasText: new RegExp(`^${heading}$`) })).toBeVisible();
+    // The everyday actions are in view; nothing heads them (prototype `viewerMenuSections`).
+    await expect(menu.locator('li[role="presentation"]')).toHaveCount(0);
+    for (const name of ['Add to album', 'Download', 'Find similar']) {
+      await expect(menu.getByRole('menuitem', { name, exact: true })).toBeVisible();
     }
-    await expect(menu.getByRole('menuitem', { name: 'Find similar' })).toBeVisible();
+    // The rest sits in sections, closed until asked for, one open at a time.
+    for (const name of ['Go to', 'Fix', 'Viewer']) {
+      await expect(menu.getByRole('menuitem', { name, exact: true })).toHaveAttribute('aria-expanded', 'false');
+    }
+    await expect(menu.getByRole('menuitem', { name: 'Slideshow settings' })).toHaveCount(0);
+    await menu.getByRole('menuitem', { name: 'Viewer', exact: true }).click();
     await expect(menu.getByRole('menuitem', { name: 'Slideshow settings' })).toBeVisible();
+    await menu.getByRole('menuitem', { name: 'Fix', exact: true }).click();
+    await expect(menu.getByRole('menuitem', { name: 'Refresh metadata' })).toBeVisible();
+    await expect(menu.getByRole('menuitem', { name: 'Slideshow settings' })).toHaveCount(0);
     // tagging and the video source live in the information panel and the footer
     await expect(menu.getByRole('menuitem', { name: 'Add tag' })).toHaveCount(0);
     await expect(menu.getByRole('menuitem', { name: /Play (original|transcoded) video/ })).toHaveCount(0);
@@ -184,6 +191,7 @@ test.describe('viewer media sources', () => {
     await page.goto(`/photos/${video.id}`);
     await assetViewerUtils.waitForViewerLoad(page, video);
     await page.getByRole('button', { name: 'More actions' }).click();
+    await page.getByRole('menuitem', { name: 'Fix', exact: true }).click();
     await expect(page.getByRole('menuitem', { name: 'Refresh encoded video' })).toBeVisible();
     await expect(page.getByRole('menuitem', { name: 'Transcode video' })).toBeVisible();
     await expect(page.getByRole('menuitem', { name: 'Refresh faces' })).toHaveCount(0);

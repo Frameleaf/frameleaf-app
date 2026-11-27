@@ -134,6 +134,8 @@ test.describe('Detail Panel', () => {
       await page.waitForSelector('#immich-asset-viewer');
 
       await page.getByRole('button', { name: 'Information', exact: true }).click();
+      // FL-1811: the file and camera facts fold away until asked for.
+      await page.locator('details[data-fold="details"] > summary').click();
       const details = page.getByTestId('frameleaf-info-details');
       const fileDetails = page.getByTestId('frameleaf-info-file-details');
 
@@ -156,6 +158,8 @@ test.describe('Detail Panel', () => {
       await page.waitForSelector('#immich-asset-viewer');
 
       await page.getByRole('button', { name: 'Information', exact: true }).click();
+      // FL-1811: the file and camera facts fold away until asked for.
+      await page.locator('details[data-fold="details"] > summary').click();
       const details = page.getByTestId('frameleaf-info-details');
 
       await expect(details.getByText('Filename', { exact: true })).toBeVisible();

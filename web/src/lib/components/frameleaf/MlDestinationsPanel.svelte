@@ -17,6 +17,7 @@
    * the last check read instead of an hourly rate. It is added, and its consent reviewed, from the
    * Frameleaf Cloud section, because consent there is versioned and per feature.
    */
+  import { formatDateTime } from '$lib/frameleaf/date-format';
   import Badge from '$lib/components/frameleaf/Badge.svelte';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Chip from '$lib/components/frameleaf/Chip.svelte';
@@ -387,11 +388,7 @@
   };
 
   const formatDate = (value: string | null) =>
-    value
-      ? new Intl.DateTimeFormat($locale ?? undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(
-          new Date(value),
-        )
-      : null;
+    value ? formatDateTime(new Date(value), { dateStyle: 'medium', timeStyle: 'short' }, $locale ?? 'default') : null;
 </script>
 
 <Pane label={$t('admin.frameleaf_ml_destinations_title')}>

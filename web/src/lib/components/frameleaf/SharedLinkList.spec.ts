@@ -12,6 +12,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/sve
 import { addMessages } from 'svelte-i18n';
 import { replaceState } from '$app/navigation';
 import { sharedLinkFactory } from '$lib/../test-data/factories/shared-link-factory';
+import { eventManager } from '$lib/managers/event-manager.svelte';
 import { copyToClipboard, getAssetMediaUrl } from '$lib/utils';
 import { handleError } from '$lib/utils/handle-error';
 import en from '../../../../../i18n/en.json';
@@ -520,6 +521,19 @@ describe('paging (FL-1795)', () => {
     expect(screen.getByText('first.jpg')).toBeInTheDocument();
     // nothing more to read: the end marker is gone
     await waitFor(() => expect(document.querySelector('.sl-end')).not.toBeInTheDocument());
+  });
+
+  it('counts down a deleted link that was never read into the list (FL-1795 review)', async () => {
+    vi.mocked(getSharedLinkPage).mockResolvedValueOnce(
+      pageOf([selection('one', 'first.jpg')], { nextCursor: 'next', albumCount: 3 }),
+    );
+    render(SharedLinkList);
+    await screen.findByText('first.jpg');
+    expect(screen.getByRole('tab', { name: /^Albums/ })).toHaveTextContent('3');
+
+    eventManager.emit('SharedLinkDelete', sharedLinkFactory.build({ id: 'unread', type: SharedLinkType.Album }));
+
+    await waitFor(() => expect(screen.getByRole('tab', { name: /^Albums/ })).toHaveTextContent('2'));
   });
 
   it('keeps the loading cards, not "no matches", while a tab has shown nothing of the pages read so far', async () => {

@@ -27,7 +27,7 @@
   import { getWorkflowForShare, searchWorkflows, updateWorkflow, type WorkflowResponseDto } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
   import { mdiDownload, mdiFileImportOutline, mdiPlus, mdiTuneVariant } from '@mdi/js';
-  import { t, type Translations } from 'svelte-i18n';
+  import { json, t, type Translations } from 'svelte-i18n';
   import { onMount, untrack } from 'svelte';
 
   let {
@@ -74,8 +74,8 @@
 
   const triggerLabel = (trigger: string) => {
     const key = `frameleaf_workflows.trigger_${trigger}`;
-    const label = $t(key as Translations);
-    return label === key ? trigger : label;
+    // FL-1797: `$json` only looks; `$t` would start fetching bundles for a key that exists nowhere.
+    return typeof $json(key) === 'string' ? $t(key as Translations) : trigger;
   };
 
   const openDesigner = (workflow?: WorkflowResponseDto, draft?: WorkflowDraft) => {

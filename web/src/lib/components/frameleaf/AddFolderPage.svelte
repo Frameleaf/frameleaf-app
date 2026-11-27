@@ -16,6 +16,7 @@
    */
   import '$lib/frameleaf/libraries.css';
   import Button from '$lib/components/frameleaf/Button.svelte';
+  import FolderChooser from '$lib/components/frameleaf/FolderChooser.svelte';
   import FolderAlbumsSection from '$lib/components/frameleaf/FolderAlbumsSection.svelte';
   import Advanced from '$lib/components/frameleaf/settings/kit/Advanced.svelte';
   import Field from '$lib/components/frameleaf/settings/kit/Field.svelte';
@@ -31,15 +32,15 @@
     LIBRARY_NAME_MAX_LENGTH,
     isImportPathFormatValid,
   } from '$lib/frameleaf/libraries';
+  import { formatCount } from '$lib/frameleaf/number-format';
+  import { libraryFolderReader, pathTrail } from '$lib/frameleaf/folder-readers';
   import { locale } from '$lib/stores/preferences.store';
   import { getServerErrorMessage } from '$lib/utils/handle-error';
   import {
-    browseLibraryFolders,
     createLibrary,
     getManagerAccess,
     estimateLibraryFolder,
     scanLibrary,
-    type LibraryFolderBrowseResponseDto,
     type LibraryFolderEstimateResponseDto,
     type LibraryResponseDto,
     type UserAdminResponseDto,
@@ -85,19 +86,13 @@
   const ownerName = $derived(owners.find((user) => user.id === owner)?.name ?? '');
 
   // ---- 1. Choose the folder ----
-  let browsing = $state<LibraryFolderBrowseResponseDto | null>(null);
   let browseOpen = $state(false);
-  let browseError = $state('');
-  const browse = async (path?: string) => {
-    browseError = '';
-    try {
-      browsing = await browseLibraryFolders({ path });
-      nasPatterns = browsing.defaultExclusionPatterns.filter((pattern) => !HIDDEN_PATTERNS.includes(pattern));
-    } catch (error_) {
-      browseError = getServerErrorMessage(error_) ?? $t('frameleaf_libraries_browse_failed');
+  /** Bumped when the window comes back, so a folder connected in Manager meanwhile shows (FL-1495). */
+  let browseRefresh = $state(0);
+  const choose = (path: string, defaultExclusionPatterns?: string[]) => {
+    if (defaultExclusionPatterns) {
+      nasPatterns = defaultExclusionPatterns.filter((pattern) => !HIDDEN_PATTERNS.includes(pattern));
     }
-  };
-  const choose = (path: string) => {
     folder = path;
     if (!name.trim()) {
       name = path.split('/').findLast(Boolean) ?? '';
@@ -147,7 +142,7 @@
   void getManagerAccess()
     ?.then((value) => (managerUrl = value.url))
     .catch(() => {});
-  const count = (value: number) => value.toLocaleString($locale);
+  const count = (value: number) => formatCount(value, $locale);
   const folderHelp = $derived.by(() => {
     if (!folder) {
       return $t('frameleaf_addfolder_choose_help');
@@ -212,9 +207,7 @@
       looks++;
     }
     // FL-1495: a folder connected in Manager shows on coming back; a look that failed while Frameleaf restarted is tried again.
-    if (browseOpen && (browsing || browseError)) {
-      void browse(browsing?.path);
-    }
+    browseRefresh++;
   }}
 />
 
@@ -227,74 +220,41 @@
     <Row label={$t('frameleaf_addfolder_folder')} help={folderHelp}>
       <span class="inline">
         {#if folder}<code class="path">{folder}</code>{/if}
-        <Button
-          variant={folder ? 'default' : 'primary'}
-          onclick={() => {
-            browseOpen = !browseOpen;
-            if (browseOpen) {
-              void browse(browsing?.path ?? (folder || undefined));
-            }
-          }}
-        >
+        <Button variant={folder ? 'default' : 'primary'} onclick={() => (browseOpen = true)}>
           {folder ? $t('frameleaf_addfolder_change') : $t('frameleaf_libraries_choose_folder')}
         </Button>
       </span>
     </Row>
     {#if browseOpen}
-      <div class="fl-libraries">
-        <div class="resource-browser" role="group" aria-label={$t('frameleaf_libraries_choose_folder')}>
-          {#if browseError}
-            <p class="resource-error" role="alert">{browseError}</p>
-          {:else if browsing}
-            <p class="resource-footnote">
-              <code>{browsing.path}</code>
-              {#if !browsing.readable}· {$t('frameleaf_libraries_browse_unreadable')}{/if}
-            </p>
-            <ul>
-              {#if browsing.parent}
-                <li>
-                  <button type="button" class="resource-button" onclick={() => browse(browsing!.parent!)}
-                    >{$t('frameleaf_libraries_browse_up')}</button
-                  >
-                </li>
-              {/if}
-              {#each browsing.folders as entry (entry.path)}
-                <li>
-                  <button type="button" class="resource-button" onclick={() => browse(entry.path)}>{entry.name}</button>
-                </li>
-              {:else}
-                {#if !managerUrl || !browsing.nothingConnected}
-                  <li class="resource-footnote">{$t('frameleaf_libraries_browse_empty')}</li>
-                {/if}
-              {/each}
-            </ul>
-            <!-- FL-1495: with Manager, Frameleaf sees a folder only once it is connected there, so /mnt holds nothing
-                 at all until then. A connected folder with no folders inside, empty or not, keeps the plain line. -->
-            {#if managerUrl && browsing.readable}
-              {#if browsing.nothingConnected}
-                <Notice title={$t('frameleaf_libraries_browse_none_title')}
-                  >{$t('frameleaf_libraries_browse_none_body')}
-                  {#snippet action()}
-                    <a
-                      class="fl-control button primary"
-                      href={`${managerUrl}/#services`}
-                      target="_blank"
-                      rel="noopener noreferrer">{$t('frameleaf_move_open_manager')}</a
-                    >
-                  {/snippet}
-                </Notice>
-              {:else if browsing.folders.length > 0}
-                <p class="resource-footnote">{$t('frameleaf_libraries_browse_connected_only')}</p>
-              {/if}
-            {/if}
-            {#if browsing.path !== '/' && browsing.readable}
-              <button type="button" class="resource-button primary" onclick={() => choose(browsing!.path)}
-                >{$t('frameleaf_libraries_browse_use')}</button
-              >
-            {/if}
+      <!-- FL-1495: with Manager, Frameleaf sees a folder only once it is connected there, so /mnt holds nothing
+           at all until then. A connected folder with no folders inside, empty or not, keeps the plain line. -->
+      <FolderChooser
+        rootName={$t('frameleaf_cc_group_this_server')}
+        start={pathTrail(folder || undefined)}
+        read={libraryFolderReader($t)}
+        refresh={browseRefresh}
+        note={managerUrl ? $t('frameleaf_libraries_browse_connected_only') : undefined}
+        onClose={() => (browseOpen = false)}
+        onChoose={(_, listing) => choose(listing.extra!.path, listing.extra!.defaultExclusionPatterns)}
+      >
+        {#snippet empty(listing)}
+          {#if managerUrl && listing.extra?.nothingConnected}
+            <Notice title={$t('frameleaf_libraries_browse_none_title')}
+              >{$t('frameleaf_libraries_browse_none_body')}
+              {#snippet action()}
+                <a
+                  class="fl-control button primary"
+                  href={`${managerUrl}/#services`}
+                  target="_blank"
+                  rel="noopener noreferrer">{$t('frameleaf_move_open_manager')}</a
+                >
+              {/snippet}
+            </Notice>
+          {:else}
+            <p class="chooser-none">{$t('frameleaf_takeout_folder_none')}</p>
           {/if}
-        </div>
-      </div>
+        {/snippet}
+      </FolderChooser>
     {/if}
     {#if folder && estimate && estimate.readable && estimate.count === 0}
       <Notice tone="warn" title={$t('frameleaf_addfolder_empty_title')}>{$t('frameleaf_addfolder_empty_body')}</Notice>
@@ -424,6 +384,11 @@
 </KitPage>
 
 <style>
+  .chooser-none {
+    margin: 0;
+    color: var(--fl-muted);
+    font-size: var(--fl-font-small);
+  }
   .inline {
     display: inline-flex;
     flex-wrap: wrap;

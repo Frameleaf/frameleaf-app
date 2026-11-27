@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { formatDateTime } from '$lib/frameleaf/date-format';
+  import { confirmFrameleaf } from '$lib/frameleaf/confirm';
   import SpaceCommentComposer from '$lib/components/frameleaf/SpaceCommentComposer.svelte';
   import Status from '$lib/components/frameleaf/Status.svelte';
   import UserAvatar from '$lib/components/shared-components/UserAvatar.svelte';
@@ -22,7 +24,7 @@
     type SharedSpaceCommentResponseDto,
     type SharedSpaceMemberResponseDto,
   } from '@frameleaf/sdk';
-  import { Icon, modalManager } from '@frameleaf/ui';
+  import { Icon } from '@frameleaf/ui';
   import {
     mdiChevronDown,
     mdiChevronUp,
@@ -241,7 +243,10 @@
   const remove = async (comment: SharedSpaceCommentResponseDto) => {
     const replyCount = comment.parentId ? 0 : comments.filter(({ parentId }) => parentId === comment.id).length;
     if (replyCount > 0) {
-      const confirmed = await modalManager.showDialog({
+      const confirmed = await confirmFrameleaf({
+        title: $t('frameleaf_spaces_comments_delete'),
+        confirmText: $t('frameleaf_spaces_comments_delete'),
+        danger: true,
         prompt: $t('frameleaf_spaces_comments_delete_thread_confirm', { values: { count: replyCount } }),
       });
       if (!confirmed) {
@@ -271,6 +276,12 @@
     }
   };
 
+  const exactTime = (value: string) =>
+    formatDateTime(
+      new Date(value),
+      { year: 'numeric', month: 'numeric', day: 'numeric', hour: 'numeric', minute: 'numeric', second: 'numeric' },
+      $locale,
+    );
   const relative = $derived(new Intl.RelativeTimeFormat($locale, { numeric: 'auto' }));
   const UNITS: Intl.RelativeTimeFormatUnit[] = ['year', 'month', 'day', 'hour', 'minute'];
   const SECONDS: Record<string, number> = { year: 31_536_000, month: 2_592_000, day: 86_400, hour: 3600, minute: 60 };
@@ -295,7 +306,7 @@
     <div class="body">
       <p class="meta">
         <strong>{comment.user.name}</strong>
-        <time datetime={comment.createdAt} title={new Date(comment.createdAt).toLocaleString($locale)}>
+        <time datetime={comment.createdAt} title={exactTime(comment.createdAt)}>
           {timeAgo(comment.createdAt)}
         </time>
         {#if wasEdited(comment)}

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { formatDateTime } from '$lib/frameleaf/date-format';
   import Button from './Button.svelte';
   import {
     cancelWorkflowBatch,
@@ -51,9 +52,18 @@
     {#each batches as batch (batch.id)}
       <li>
         <span
-          >{new Date(batch.createdAt).toLocaleString($locale)} · {$t(
-            `frameleaf_workflows.batch_${batch.status}` as Translations,
-          )}</span
+          >{formatDateTime(
+            new Date(batch.createdAt),
+            {
+              year: 'numeric',
+              month: 'numeric',
+              day: 'numeric',
+              hour: 'numeric',
+              minute: 'numeric',
+              second: 'numeric',
+            },
+            $locale,
+          )} · {$t(`frameleaf_workflows.batch_${batch.status}` as Translations)}</span
         >
         <p>
           {$t('frameleaf_workflows.batch_progress', {

@@ -1,9 +1,9 @@
 <script lang="ts">
   /**
    * The Clients introduction (owner, October 28; the prototype's `ClientsIntro.jsx` and
-   * `clients-intro.css`). Clients is opt-in: until the account starts using it, it lives under Tools
-   * and opens this page. "Start using Clients" turns the account's `clients.enabled` preference on,
-   * which adds Clients to the top bar and opens the workspace; the caller owns that action.
+   * `clients-intro.css`). Clients is opt-in: it is always in the top bar (FL-1806), and until the
+   * account starts using it, it opens this page. "Start using Clients" turns the account's
+   * `clients.enabled` preference on and opens the workspace; the caller owns that action.
    */
   import Button from '$lib/components/frameleaf/Button.svelte';
   import { Route } from '$lib/route';

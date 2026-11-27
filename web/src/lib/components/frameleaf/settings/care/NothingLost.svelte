@@ -32,6 +32,7 @@
     type LedgerChip,
     type LedgerState,
   } from '$lib/frameleaf/nothing-lost';
+  import { formatCount } from '$lib/frameleaf/number-format';
   import { sessionAccess } from '$lib/frameleaf/session-access.svelte';
   import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
   import { unusedFilesAccess } from '$lib/frameleaf/unused-files.svelte';
@@ -190,7 +191,7 @@
   });
 
   const ready = $derived(!!summary && summary.total > 0);
-  const number = (value: number) => value.toLocaleString($locale);
+  const number = (value: number) => formatCount(value, $locale);
   const scope = $derived(own ? 'you' : everyone ? 'everyone' : 'person');
 
   type Answer = { tone: 'good' | 'warn' | 'quiet'; icon: string; title: string; body: string };

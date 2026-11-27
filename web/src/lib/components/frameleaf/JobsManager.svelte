@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { formatDateTime } from '$lib/frameleaf/date-format';
+  import { formatCount } from '$lib/frameleaf/number-format';
   import DurableRuns from '$lib/components/frameleaf/jobs/DurableRuns.svelte';
   import { readingKey } from '$lib/frameleaf/reading-direction';
   import { motionScrollBehavior, reveal } from '$lib/frameleaf/motion';
@@ -461,7 +463,7 @@
   // The household names of each kind of work (FL-364), shared with the area's landing page.
   const title = (definition: JobQueueDefinition) => $t(`frameleaf_work_${definition.key}` as Translations);
   const description = (definition: JobQueueDefinition) => $t(`frameleaf_work_${definition.key}_does` as Translations);
-  const number = (value: number) => value.toLocaleString($locale);
+  const number = (value: number) => formatCount(value, $locale);
   const statusLabel = (value: JobQueueStatus | QueueJobStatus) => $t(`frameleaf_jobs_status_${value}` as Translations);
 
   /** A Job manager address that keeps the "Viewing" scope, which is this page's account filter. */
@@ -1079,7 +1081,7 @@
   });
   const shownJobs = $derived(matchingJobs.slice(0, shown));
   const timestamp = (value: number) =>
-    new Date(value).toLocaleString($locale, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+    formatDateTime(new Date(value), { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }, $locale);
 
   const selectTab = (next: JobTab) => {
     if (selected) {
@@ -1344,8 +1346,8 @@
     </section>
   </KitPage>
 {:else}
-  <!-- Advanced: one task's screen with its Active, Waiting, Failed and History jobs. -->
-  <KitPage>
+  <!-- Advanced: one task's screen with its Active, Waiting, Failed and History jobs. A table of jobs: the whole pane (FL-1829). -->
+  <KitPage wide>
     {@render views()}
     <section class="jobs-manager" aria-label={$t('frameleaf_jobs_label')} bind:this={main}>
       <header class="jm-header">
@@ -1772,7 +1774,8 @@
   />
 {/if}
 
-<Dialog title={detail ? jobTitle(detail.name) : ''} closeLabel={$t('close')} bind:open={detailOpen}>
+<!-- FL-1829: wide enough for what went wrong, the server's words and the job's data without wrapping every line -->
+<Dialog title={detail ? jobTitle(detail.name) : ''} closeLabel={$t('close')} size="medium" bind:open={detailOpen}>
   {#if detail}
     <div class="jm-job-detail">
       {@render queueStatus(detail.status)}

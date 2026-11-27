@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { formatTime } from '$lib/frameleaf/date-format';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import InlineError from '$lib/components/frameleaf/InlineError.svelte';
@@ -443,7 +444,7 @@
         {#if quote.expiresAt}<p>
             {$t('frameleaf_location_scan_expires', {
               values: {
-                time: new Date(quote.expiresAt).toLocaleTimeString($locale ?? undefined, { timeStyle: 'short' }),
+                time: formatTime(new Date(quote.expiresAt), { timeStyle: 'short' }, $locale ?? 'default'),
               },
             })}
           </p>{/if}

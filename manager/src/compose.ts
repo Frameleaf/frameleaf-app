@@ -83,6 +83,13 @@ const GB = 2 ** 30;
  * under 1 GB (an administrator limit) it is used as is and the floors shrink so Postgres stays inside it.
  * Parallel hash joins live in /dev/shm: each query needs about work_mem × hash_mem_multiplier (2) ×
  * (max_parallel_workers_per_gather (2) + 1) = 6 × work_mem there, and shm_size leaves 3-5× that for concurrency.
+ *
+ * FL-1828: WAL. Every job writes to many indexes of a large table, so after each checkpoint the first change to each
+ * page writes the whole page into the WAL: about 30 MB a second under steady background work, which filled the
+ * default 16 MB WAL buffer over and over, so every write (the websocket heartbeat too) waited for the disk to take
+ * WAL, and statements timed out on slow storage. zstd compresses those page images (about a quarter of the WAL,
+ * so checkpoints, which heavy work triggers by WAL size, come about four times less often); a larger buffer absorbs
+ * the bursts; and under light work the 15-minute timer, not 5, sets how often the page images come back.
  */
 export function postgresTuning(bytes: number): { shm_size: string; command: string[] } {
   const ram = bytes >= GB ? Math.round(bytes / GB) * 1024 : Math.max(64, Math.floor(bytes / MB));
@@ -92,13 +99,17 @@ export function postgresTuning(bytes: number): { shm_size: string; command: stri
   const shm = Math.min(tierShm, ram / 4);
   // three concurrent parallel hash joins (3 × 6 × work_mem) always fit in shm_size
   const workMem = Math.max(1, Math.min(tierWorkMem, Math.floor(shm / 18)));
+  const sharedBuffers = clamp(ram / 16, Math.min(256, ram / 4), 8 * 1024);
   const settings = {
-    shared_buffers: mb(clamp(ram / 16, Math.min(256, ram / 4), 8 * 1024)),
+    shared_buffers: mb(sharedBuffers),
     effective_cache_size: mb(Math.min(ram / 4, 32 * 1024)),
     maintenance_work_mem: mb(clamp(ram / 64, Math.min(128, ram / 8), 2 * 1024)),
     work_mem: mb(workMem),
     max_wal_size: ram >= 16 * 1024 ? '4GB' : '2GB',
     random_page_cost: '1.1',
+    wal_compression: 'zstd',
+    checkpoint_timeout: '15min',
+    wal_buffers: mb(clamp(sharedBuffers / 8, 1, 64)),
   };
   return { shm_size: `${Math.floor(shm)}mb`, command: ['postgres', ...Object.entries(settings).flatMap(([k, v]) => ['-c', `${k}=${v}`])] };
 }

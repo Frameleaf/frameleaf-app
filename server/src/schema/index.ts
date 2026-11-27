@@ -50,6 +50,7 @@ import { AlbumChangeTable } from 'src/schema/tables/album-change.table.js';
 import { AlbumCleanupApplyTable } from 'src/schema/tables/album-cleanup-apply.table.js';
 import { AlbumCleanupSnapshotTable } from 'src/schema/tables/album-cleanup-snapshot.table.js';
 import { AlbumClosureTable } from 'src/schema/tables/album-closure.table.js';
+import { AlbumRecentUseTable } from 'src/schema/tables/album-recent-use.table.js';
 import {
   AlbumSuggestionAutoAddTable,
   AlbumSuggestionDismissalTable,
@@ -241,6 +242,8 @@ import { PersonMergeCandidateTable } from 'src/schema/tables/person-merge-candid
 import { PersonProfileTable } from 'src/schema/tables/person-profile.table.js';
 import { PersonRelationshipTable } from 'src/schema/tables/person-relationship.table.js';
 import { PersonSplitCandidateTable } from 'src/schema/tables/person-split-candidate.table.js';
+import { PersonSummaryStateTable } from 'src/schema/tables/person-summary-state.table.js';
+import { PersonSummaryTable } from 'src/schema/tables/person-summary.table.js';
 import { PersonTable } from 'src/schema/tables/person.table.js';
 import { PetAuditTable } from 'src/schema/tables/pet-audit.table.js';
 import { PetObservationAuditTable } from 'src/schema/tables/pet-observation-audit.table.js';
@@ -345,6 +348,7 @@ import {
   TakeoutPairTable,
   TakeoutSourceTable,
 } from 'src/schema/tables/takeout.table.js';
+import { TimelineSummaryTable } from 'src/schema/tables/timeline-summary.table.js';
 import { UserAuditTable } from 'src/schema/tables/user-audit.table.js';
 import { UserKnownDeviceTable } from 'src/schema/tables/user-known-device.table.js';
 import { UserMetadataAuditTable } from 'src/schema/tables/user-metadata-audit.table.js';
@@ -455,6 +459,7 @@ export class ImmichDatabase {
     OAuthSpentRefreshTokenTable,
     BookmarkTable,
     AlbumBookmarkTable,
+    AlbumRecentUseTable,
     AlbumChangeRunTable,
     AlbumChangeTable,
     AlbumCleanupApplyTable,
@@ -532,6 +537,7 @@ export class ImmichDatabase {
     GeodataPlacesTable,
     GeodataPlaceNameTable,
     AssetGeonameTable,
+    TimelineSummaryTable,
     LandmarkTable,
     LandmarkAreaTable,
     AssetLandmarkTable,
@@ -586,6 +592,8 @@ export class ImmichDatabase {
     PersonCategoryMemberTable,
     PersonCategorySeedTable,
     PersonProfileTable,
+    PersonSummaryTable,
+    PersonSummaryStateTable,
     PersonRelationshipTable,
     PersonSplitCandidateTable,
     PersonGroupAuditTable,
@@ -837,6 +845,7 @@ export interface DB extends QueueDatabase {
   oauth_spent_refresh_token: OAuthSpentRefreshTokenTable;
   bookmark: BookmarkTable;
   album_bookmark: AlbumBookmarkTable;
+  album_recent_use: AlbumRecentUseTable;
   album_change_run: AlbumChangeRunTable;
   album_change: AlbumChangeTable;
   album_cleanup_apply: AlbumCleanupApplyTable;
@@ -875,6 +884,7 @@ export interface DB extends QueueDatabase {
   geodata_places: GeodataPlacesTable;
   geodata_place_name: GeodataPlaceNameTable;
   asset_geoname: AssetGeonameTable;
+  timeline_summary: TimelineSummaryTable;
   landmark: LandmarkTable;
   landmark_area: LandmarkAreaTable;
   asset_landmark: AssetLandmarkTable;
@@ -938,6 +948,8 @@ export interface DB extends QueueDatabase {
   person_category_member: PersonCategoryMemberTable;
   person_category_seed: PersonCategorySeedTable;
   person_profile: PersonProfileTable;
+  person_summary: PersonSummaryTable;
+  person_summary_state: PersonSummaryStateTable;
   person_relationship: PersonRelationshipTable;
   person_split_candidate: PersonSplitCandidateTable;
   person_group_audit: PersonGroupAuditTable;

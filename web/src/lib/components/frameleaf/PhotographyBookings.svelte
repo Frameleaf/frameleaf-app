@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { formatDateTime } from '$lib/frameleaf/date-format';
+  import { formatMoney } from '$lib/frameleaf/number-format';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import PhotographyBookingTypes from '$lib/components/frameleaf/PhotographyBookingTypes.svelte';
@@ -67,18 +69,18 @@
   const count = (id: Filter) => (bookings ?? []).filter((b) => id === 'all' || b.status === id).length;
   const current = $derived(bookings?.find((b) => b.id === openId));
   const first = (name: string) => name.trim().split(/\s+/, 1)[0];
-  const money = (amount: number, currency: string) =>
-    new Intl.NumberFormat($locale, { style: 'currency', currency }).format(amount / 100);
+  const money = (amount: number, currency: string) => formatMoney(amount, currency, $locale);
   const dates = (booking: Booking) =>
     new Intl.ListFormat($locale, { type: 'disjunction' }).format(
       booking.preferredDates.map((date) =>
-        new Intl.DateTimeFormat($locale, { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' }).format(
+        formatDateTime(
           new Date(`${date}T00:00:00Z`),
+          { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' },
+          $locale,
         ),
       ),
     );
-  const when = (value: string) =>
-    new Intl.DateTimeFormat($locale, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value));
+  const when = (value: string) => formatDateTime(new Date(value), { dateStyle: 'medium', timeStyle: 'short' }, $locale);
 
   async function load() {
     const request = ++generation;

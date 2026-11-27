@@ -10,6 +10,8 @@
    * administrator, the server's added folders.
    */
   import { goto } from '$app/navigation';
+  import { formatDate } from '$lib/frameleaf/date-format';
+  import { formatCount } from '$lib/frameleaf/number-format';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Hero from '$lib/components/frameleaf/settings/kit/Hero.svelte';
   import KitPage from '$lib/components/frameleaf/settings/kit/KitPage.svelte';
@@ -62,9 +64,8 @@
   });
 
   const RUNNING = new Set<TakeoutState>([TakeoutState.Queued, TakeoutState.Scanning, TakeoutState.Importing]);
-  const count = (value: number) => new Intl.NumberFormat($locale).format(value);
-  const day = (value: string) =>
-    new Intl.DateTimeFormat($locale, { day: 'numeric', month: 'long' }).format(new Date(value));
+  const count = (value: number) => formatCount(value, $locale);
+  const day = (value: string) => formatDate(new Date(value), { day: 'numeric', month: 'long' }, $locale);
 
   const running = $derived(imports?.find((item) => RUNNING.has(item.state)));
   const waiting = $derived(imports?.find((item) => item.state === TakeoutState.Review));
@@ -198,7 +199,12 @@
     <div class="pad">
       <Notice title={$t('frameleaf_import_backups_title')}>
         {#snippet action()}
-          <Button onclick={() => goto(commandCenterUrl('backups'))}>{$t('frameleaf_import_open_backup')}</Button>
+          <!-- Backup is the server's; a member's own part of it is what Cloud Backup keeps for them. -->
+          <Button
+            onclick={() =>
+              goto(isAdmin ? commandCenterUrl('backups') : commandCenterUrl('backup', 'cloud-backup-choice'))}
+            >{$t('frameleaf_import_open_backup')}</Button
+          >
         {/snippet}
         {$t('frameleaf_import_backups_body')}
       </Notice>

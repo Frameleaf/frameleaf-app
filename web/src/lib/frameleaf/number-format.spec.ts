@@ -26,4 +26,14 @@ describe('counts and money (FL-1805)', () => {
     );
     expect(formatMoney(120_000, 'USD', 'en-US', { maximumFractionDigits: 0 })).toBe('$1,200');
   });
+
+  it('builds one formatter per region and set of options', () => {
+    const constructor = vi.spyOn(Intl, 'NumberFormat');
+    for (let value = 0; value < 200; value++) {
+      formatCount(value, 'en-IE', { minimumFractionDigits: 3 });
+      formatMoney(value, 'NZD', 'en-IE');
+    }
+    expect(constructor).toHaveBeenCalledTimes(2);
+    constructor.mockRestore();
+  });
 });

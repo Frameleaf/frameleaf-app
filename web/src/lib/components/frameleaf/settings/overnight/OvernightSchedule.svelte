@@ -15,6 +15,7 @@
    * instead when they start close together.
    */
   import { goto } from '$app/navigation';
+  import { formatDateTime, formatTime } from '$lib/frameleaf/date-format';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import InlineError from '$lib/components/frameleaf/InlineError.svelte';
   import SegmentedControl from '$lib/components/frameleaf/SegmentedControl.svelte';
@@ -116,6 +117,7 @@
   const someDays = $derived(days.length > 0 && days.length < 7);
   const time = (value: string) => clockTime(value, $locale);
   const zone = $derived(status?.timezone ?? '');
+  // eslint-disable-next-line no-restricted-syntax -- reads the browser's time zone, formats nothing
   const viewerZone = new Intl.DateTimeFormat().resolvedOptions().timeZone;
   const yours = $derived(zone ? viewerTime(startTime, zone, viewerZone) : undefined);
 
@@ -178,13 +180,10 @@
   // ---- the status at the top ----
   const lastNight = $derived(status?.nights[0]);
   const outcome = $derived(lastNight ? nightOutcome(lastNight.results) : null);
-  const finishedAt = (iso: string) =>
-    new Intl.DateTimeFormat($locale, { hour: 'numeric', minute: '2-digit' }).format(new Date(iso));
+  const finishedAt = (iso: string) => formatTime(new Date(iso), { hour: 'numeric', minute: '2-digit' }, $locale);
   const nextStart = $derived(
     status?.nextRunAt
-      ? new Intl.DateTimeFormat($locale, { weekday: 'short', hour: 'numeric', minute: '2-digit' }).format(
-          new Date(status.nextRunAt),
-        )
+      ? formatDateTime(new Date(status.nextRunAt), { weekday: 'short', hour: 'numeric', minute: '2-digit' }, $locale)
       : time(startTime),
   );
 
@@ -322,9 +321,7 @@
       const result = nightOutcome(night.results);
       return {
         at: night.startedAt,
-        when: new Intl.DateTimeFormat($locale, { dateStyle: 'medium', timeStyle: 'short' }).format(
-          new Date(night.startedAt),
-        ),
+        when: formatDateTime(new Date(night.startedAt), { dateStyle: 'medium', timeStyle: 'short' }, $locale),
         what: night.manual
           ? $t('frameleaf_overnight_night_manual')
           : $t('frameleaf_overnight_night_steps', { values: { count: result.ran.length } }),

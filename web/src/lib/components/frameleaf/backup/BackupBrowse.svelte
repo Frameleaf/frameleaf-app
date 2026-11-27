@@ -13,7 +13,8 @@
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import InlineError from '$lib/components/frameleaf/InlineError.svelte';
   import Skeleton from '$lib/components/frameleaf/Skeleton.svelte';
-  import BackupFolderChooser from '$lib/components/frameleaf/backup/BackupFolderChooser.svelte';
+  import FolderChooser from '$lib/components/frameleaf/FolderChooser.svelte';
+  import { libraryFolderReader, pathTrail } from '$lib/frameleaf/folder-readers';
   import BackLink from '$lib/components/frameleaf/settings/kit/BackLink.svelte';
   import Facts from '$lib/components/frameleaf/settings/kit/Facts.svelte';
   import Notice from '$lib/components/frameleaf/settings/kit/Notice.svelte';
@@ -552,11 +553,15 @@
   {/snippet}
 </Dialog>
 
-<BackupFolderChooser
-  bind:open={chooserOpen}
-  start={targetValid ? target.trim() : undefined}
-  onChoose={(path) => (target = path)}
-/>
+{#if chooserOpen}
+  <FolderChooser
+    rootName={$t('frameleaf_cc_group_this_server')}
+    start={pathTrail(targetValid ? target.trim() : undefined)}
+    read={libraryFolderReader($t)}
+    onClose={() => (chooserOpen = false)}
+    onChoose={(_, listing) => (target = listing.extra!.path)}
+  />
+{/if}
 
 <style>
   .steps {

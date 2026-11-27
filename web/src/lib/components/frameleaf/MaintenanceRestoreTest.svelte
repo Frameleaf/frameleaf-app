@@ -7,6 +7,7 @@
    * backup can restore" (`CommandCenter.jsx:1790-1800`) reads the same record. Recording is a
    * statement by the administrator, not a check the server runs, and the dialog says so.
    */
+  import { formatDateTime } from '$lib/frameleaf/date-format';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Skeleton from '$lib/components/frameleaf/Skeleton.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
@@ -35,8 +36,7 @@
       .catch(() => (failed = true));
   });
 
-  const when = (value: string) =>
-    new Intl.DateTimeFormat($locale, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value));
+  const when = (value: string) => formatDateTime(new Date(value), { dateStyle: 'medium', timeStyle: 'short' }, $locale);
   const proved = (value: string | null) =>
     value
       ? $t('admin.frameleaf_restore_test_proved', { values: { date: when(value) } })

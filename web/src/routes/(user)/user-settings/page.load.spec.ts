@@ -47,7 +47,7 @@ describe('the Command Center page (FL-71)', () => {
     expect(systemConfigManager.seed).toHaveBeenCalledWith({}, {});
   });
 
-  it('sends the old Library Care screen to the Library care area', async () => {
+  it('sends the old Library care screen to the Library care area', async () => {
     auth.user.isAdmin = true;
     await expect(open('?screen=care')).rejects.toMatchObject({ status: 307, location: '/user-settings?area=care' });
     expect(getAdminConfigWithRevision).not.toHaveBeenCalled();

@@ -673,6 +673,12 @@ export enum SystemMetadataKey {
    * processor instead), and the last "Test it" of the card, for Video playback copies.
    */
   VideoCardState = 'video-card-state',
+  /**
+   * FL-1824: when start-up found the playback-video graphics card switch on, or turned it on after a test
+   * transcode ran on a card. Set once; after it the switch is the administrator's alone. Its own key, so
+   * no writer of VideoCardState can drop it.
+   */
+  VideoCardAuto = 'video-card-auto',
   /** FL-520: the most recent file checks, newest first: when each ran, how it ended and what it found. */
   IntegrityCheckHistory = 'integrity-check-history',
   /** FL-520: when an administrator last pressed Stop on the file checks; a check started before it stops. */
@@ -2754,6 +2760,8 @@ export enum DatabaseLock {
   LibraryFolderAlbums = 988,
   /** FL-1758: one desktop conversion at a time per video (taken with the asset id as the second key). */
   DesktopTranscode = 989,
+  /** FL-1827: held for the life of the process by the one worker that runs the Best Photos scan. */
+  BestPhotosScan = 990,
 }
 
 export enum MaintenanceAction {

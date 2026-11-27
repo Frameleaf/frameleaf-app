@@ -13,6 +13,7 @@
    * On the person page it is the prototype's last card (`settings-v2/cloud/People.jsx`): "Remove Emma",
    * what happens, and a danger "Remove…" that asks first.
    */
+  import { formatLuxon } from '$lib/frameleaf/date-format';
   import AccountDeleteDialog from '$lib/components/frameleaf/AccountDeleteDialog.svelte';
   import AccountRestoreDialog from '$lib/components/frameleaf/AccountRestoreDialog.svelte';
   import Button from '$lib/components/frameleaf/Button.svelte';
@@ -34,9 +35,7 @@
   const isSelf = $derived(authManager.user.id === user.id);
 
   const asDate = (value: Date | string) =>
-    DateTime.fromJSDate(value instanceof Date ? value : new Date(value)).toLocaleString(DateTime.DATE_MED, {
-      locale: $locale,
-    });
+    formatLuxon(DateTime.fromJSDate(value instanceof Date ? value : new Date(value)), DateTime.DATE_MED, $locale);
 </script>
 
 {#if lifecycle === 'deleted'}

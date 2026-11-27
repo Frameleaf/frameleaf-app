@@ -51,7 +51,7 @@ it('LibraryView leaves shortcuts to an open modal', () => {
   expect(() => handler({ key: 'Escape' })).not.toThrow();
 });
 
-it('Library Care does not restart polling after destruction during a request', async () => {
+it('Library care does not restart polling after destruction during a request', async () => {
   vi.useFakeTimers();
   const request = deferred();
   let destroy!: () => void;

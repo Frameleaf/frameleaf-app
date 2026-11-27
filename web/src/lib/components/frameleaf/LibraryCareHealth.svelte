@@ -24,6 +24,7 @@
    *   or recovery changed the original itself; putting the old path back is not a status change, so
    *   those notices offer none.
    */
+  import { formatLuxon } from '$lib/frameleaf/date-format';
   import Badge from '$lib/components/frameleaf/Badge.svelte';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
@@ -186,7 +187,7 @@
   const scope = $derived(ownerScope(owner, selfId));
 
   const time = (value: string | null | undefined) =>
-    value ? DateTime.fromISO(value).toLocaleString(DateTime.DATETIME_MED) : '';
+    value ? formatLuxon(DateTime.fromISO(value), DateTime.DATETIME_MED) : '';
 
   const refresh = async () => {
     try {

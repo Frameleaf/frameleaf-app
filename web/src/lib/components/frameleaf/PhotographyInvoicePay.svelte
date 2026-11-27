@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { formatDateTime } from '$lib/frameleaf/date-format';
+  import { formatMoney } from '$lib/frameleaf/number-format';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import { locale } from '$lib/stores/preferences.store';
   import {
@@ -25,10 +27,8 @@
     clearTimeout(timer);
   });
 
-  const money = (cents: number) =>
-    new Intl.NumberFormat($locale, { style: 'currency', currency: invoice!.currency }).format(cents / 100);
-  const date = (value: string) =>
-    new Intl.DateTimeFormat($locale, { dateStyle: 'long', timeZone: 'UTC' }).format(new Date(value));
+  const money = (cents: number) => formatMoney(cents, invoice!.currency, $locale);
+  const date = (value: string) => formatDateTime(new Date(value), { dateStyle: 'long', timeZone: 'UTC' }, $locale);
 
   async function load() {
     phase = 'loading';

@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { formatDate } from '$lib/frameleaf/date-format';
+  import { formatMoney } from '$lib/frameleaf/number-format';
   import { developLabel } from '$lib/frameleaf/develop-label';
   /**
    * The photography workspace: a photographer's shoots, each linked to an album they own, with
@@ -15,7 +17,7 @@
    * make it current, then arrows move (Up/Down by row), 1-5 rate, X rejects and 0 clears.
    *
    * Clients is opt-in (owner, October 28): while it is in the top bar the rail's foot offers
-   * "Remove from the top bar", which puts it back under Tools; the page owns that action.
+   * "Stop using Clients", which shows the introduction again; the page owns that action.
    */
   import { developFileUrl } from '$lib/frameleaf/develop-api';
   import { newRequestKey } from '$lib/frameleaf/request-key';
@@ -182,7 +184,7 @@
     initialShoot?: string;
     /** `galleries`: the editor's Proof opens the shoot's galleries; `website`: an inquiry email's link (FL-702). */
     initialSection?: 'galleries' | 'website' | 'payments' | 'booking-types';
-    /** Take Clients out of the top bar (back under Tools); omitted, the rail offers no such action. */
+    /** Stop using Clients (the page shows its introduction again); omitted, the rail offers no such action. */
     onRemoveFromTopBar?: () => void;
     /** Removing is being saved. */
     removing?: boolean;
@@ -372,7 +374,7 @@
   );
   const cover = (id: string) => getAssetMediaUrl({ id, size: AssetMediaSize.Thumbnail });
   const dateLabel = (date: string) =>
-    new Date(`${date}T12:00:00`).toLocaleDateString($locale, { month: 'short', day: 'numeric', year: 'numeric' });
+    formatDate(new Date(`${date}T12:00:00`), { month: 'short', day: 'numeric', year: 'numeric' }, $locale);
   const failure = (cause: unknown) => $t(photographyErrorKey(cause));
   const photoFilters: readonly PhotoFilter[] = ['all', 'selected', 'edited'];
   const photoFilterLabel = (filter: PhotoFilter) =>
@@ -482,7 +484,7 @@
     }
     if (summary?.published) {
       const due = summary.selectionDeadline
-        ? ` · ${$t('frameleaf_photography_selections_due', { values: { date: new Date(summary.selectionDeadline).toLocaleDateString($locale) } })}`
+        ? ` · ${$t('frameleaf_photography_selections_due', { values: { date: formatDate(new Date(summary.selectionDeadline), { year: 'numeric', month: 'numeric', day: 'numeric' }, $locale) } })}`
         : '';
       return {
         label: `${$t('frameleaf_photography_next_waiting')}${due}`,
@@ -529,11 +531,7 @@
   /** `narrow`: the label already names the currency, so "$0.00" rather than "CA$0.00", as in the prototype. */
   const money = (amount: number, currency: string, narrow = false) => {
     try {
-      return new Intl.NumberFormat($locale, {
-        style: 'currency',
-        currency,
-        currencyDisplay: narrow ? 'narrowSymbol' : 'symbol',
-      }).format(amount / 100);
+      return formatMoney(amount, currency, $locale, { currencyDisplay: narrow ? 'narrowSymbol' : 'symbol' });
     } catch {
       return `${amount / 100} ${currency}`;
     }

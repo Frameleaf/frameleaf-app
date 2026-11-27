@@ -14,6 +14,7 @@
   import Section from '$lib/components/frameleaf/settings/kit/Section.svelte';
   import Switch from '$lib/components/frameleaf/settings/kit/Switch.svelte';
   import { folderAlbumCounts, folderAlbumTree, type FolderAlbumNode } from '$lib/frameleaf/folder-albums';
+  import { formatCount } from '$lib/frameleaf/number-format';
   import { locale } from '$lib/stores/preferences.store';
   import { estimateLibraryFolder, type LibraryFolderEstimateResponseDto } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
@@ -99,7 +100,7 @@
     return out;
   });
 
-  const count = (value: number) => value.toLocaleString($locale);
+  const count = (value: number) => formatCount(value, $locale);
   const folderWords = $derived(
     roots.length === 1 ? roots[0].split('/').filter(Boolean).slice(-2).join(' › ') || roots[0] : libraryName,
   );

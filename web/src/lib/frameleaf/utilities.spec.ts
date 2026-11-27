@@ -35,7 +35,7 @@ describe('Command Center utilities', () => {
   });
   it('places utility links in the existing user settings namespace and opens Care as its settings area', () => {
     expect(Route.utilities()).toBe('/user-settings?area=utilities');
-    // September 24: Library Care is the Library care settings area, the hub for fixes.
+    // September 24: Library care is the Library care settings area, the hub for fixes.
     expect(Route.libraryCare()).toBe('/user-settings?area=care');
     expect(Route.duplicatesUtility({ index: 2 })).toBe('/user-settings?area=utilities&section=duplicates&index=2');
     expect(utilitiesUrl('icloud')).toBe('/user-settings?area=utilities&section=icloud');
@@ -53,8 +53,7 @@ describe('Command Center utilities', () => {
     sdk.getDuplicateReview.mockResolvedValue([]);
     sdk.getDuplicateDecisions.mockResolvedValue([]);
     await loadUtility('duplicates', new URL('https://example.test/user-settings?scope=someone-else'), false);
-    // FL-1795: a page at a time, and never a scope
-    expect(sdk.getDuplicateReview).toHaveBeenCalledExactlyOnceWith({ take: 250 });
+    expect(sdk.getDuplicateReview).toHaveBeenCalledExactlyOnceWith({});
     expect(sdk.getDuplicateDecisions).toHaveBeenCalledExactlyOnceWith();
   });
   it('keeps bookmarked photo ids and review filters in the settings destination', async () => {

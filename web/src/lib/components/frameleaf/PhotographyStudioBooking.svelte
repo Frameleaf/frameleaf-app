@@ -1,6 +1,7 @@
 <script lang="ts">
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
+  import { formatMoney } from '$lib/frameleaf/number-format';
   import { locale } from '$lib/stores/preferences.store';
   import { photographyRequestBooking, type PhotographyPublicBookingTypeListDto } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
@@ -44,8 +45,7 @@
   const total = $derived(
     type ? type.price + type.addOns.reduce((sum, a) => sum + a.price * (quantities[a.id] ?? 0), 0) : 0,
   );
-  const money = (amount: number, currency: string) =>
-    new Intl.NumberFormat($locale, { style: 'currency', currency }).format(amount / 100);
+  const money = (amount: number, currency: string) => formatMoney(amount, currency, $locale);
 
   async function submit(event: SubmitEvent) {
     event.preventDefault();

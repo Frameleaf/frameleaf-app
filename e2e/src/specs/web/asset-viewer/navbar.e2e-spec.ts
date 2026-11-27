@@ -190,6 +190,8 @@ test.describe('Asset Viewer Navbar', () => {
       await utils.setAuthCookies(context, admin.accessToken);
       await page.goto(`/photos/${asset.id}`);
       await page.getByRole('button', { name: 'More actions' }).click();
+      // FL-1811: the slideshow entries sit in the Viewer section, which opens in place.
+      await page.getByRole('menuitem', { name: 'Viewer', exact: true }).click();
       await page.getByRole('menuitem', { name: 'Slideshow settings' }).click();
       await expect(page.getByTestId('slideshow-settings')).toBeVisible();
     });

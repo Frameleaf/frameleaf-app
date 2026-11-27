@@ -1063,6 +1063,16 @@ group by
 order by
   "timeBucket" desc
 
+-- AssetRepository.readTimelineSummary
+select
+  "timeBucket",
+  "fingerprint",
+  "pages"
+from
+  "timeline_summary"
+where
+  "key" = $1
+
 -- AssetRepository.getTimelineHighlights
 with
   asset as (

@@ -9,7 +9,9 @@ import {
   STUDIO_LIBRARY_ADD_LIMIT,
   isStudioFrameServiceName,
   isStudioLibraryQuery,
+  isStudioProjectFontUpload,
   isStudioSourceRequest,
+  STUDIO_PROJECT_FONT_MAX_BYTES,
 } from './frame-service-schema';
 
 describe('FL-641 caption translation in protocol 9', () => {
@@ -31,6 +33,8 @@ describe('FL-641 caption translation in protocol 9', () => {
       'readCloudCaptions',
       'pendingCloudCaptions',
       'forgetCloudCaptions',
+      // FL-1562: "Add font…", an optional host service.
+      'uploadProjectFont',
     ]);
     for (const name of [
       'searchLibrary',
@@ -179,5 +183,35 @@ describe('one explicitly versioned Studio service schema', () => {
       'utf8',
     );
     expect(vite).toContain('protocolVersion: STUDIO_FRAME_PROTOCOL_VERSION');
+  });
+});
+
+describe('FL-1562 font upload in protocol 9', () => {
+  const upload = (extra: Record<string, unknown> = {}) => ({
+    id: '9d2a7c1e-3b4f-4a6d-8e5c-1f2a3b4c5d6e',
+    fileName: 'Brandon-Bold.OTF',
+    file: new Blob(['OTTO']),
+    ...extra,
+  });
+
+  it('accepts an id, a font file name and its bytes, nothing else', () => {
+    expect(isStudioProjectFontUpload(upload())).toBe(true);
+    expect(STUDIO_FRAME_SERVICE_SCHEMA_V9.uploadProjectFont([upload({ fileName: 'a.woff2' })])).toBe(true);
+    for (const bad of [
+      upload({ id: 'not-an-id' }),
+      upload({ fileName: 'notes.txt' }),
+      upload({ fileName: 'old.woff' }),
+      upload({ fileName: `${'x'.repeat(252)}.ttf` }),
+      upload({ file: new Blob([]) }),
+      upload({ file: 'bytes' }),
+      upload({ file: { size: STUDIO_PROJECT_FONT_MAX_BYTES + 1 } }),
+      upload({ scope: { projectId: 'p', userId: 'u', graphVersion: 1 } }),
+      null,
+    ]) {
+      expect(isStudioProjectFontUpload(bad), JSON.stringify(bad)).toBe(false);
+    }
+    expect(STUDIO_FRAME_SERVICE_SCHEMA_V9.uploadProjectFont([])).toBe(false);
+    expect(STUDIO_FRAME_SERVICE_SCHEMA_V9.uploadProjectFont([upload(), upload()])).toBe(false);
+    expect(Object.hasOwn(STUDIO_FRAME_SERVICE_SCHEMA_V8, 'uploadProjectFont')).toBe(false);
   });
 });

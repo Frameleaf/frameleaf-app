@@ -1,6 +1,8 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
+  import { formatDate } from '$lib/frameleaf/date-format';
+  import { formatCount } from '$lib/frameleaf/number-format';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import InlineError from '$lib/components/frameleaf/InlineError.svelte';
@@ -14,11 +16,14 @@
   import Section from '$lib/components/frameleaf/settings/kit/Section.svelte';
   import Steps from '$lib/components/frameleaf/settings/kit/Steps.svelte';
   import Skeleton from '$lib/components/frameleaf/Skeleton.svelte';
-  import TakeoutFolderChooser, {
+  import FolderChooser from '$lib/components/frameleaf/FolderChooser.svelte';
+  import {
+    chosenTakeoutFolder,
     describeTakeoutFolder,
     holdsTakeoutExport,
+    takeoutFolderReader,
     type ChosenTakeoutFolder,
-  } from '$lib/components/frameleaf/settings/TakeoutFolderChooser.svelte';
+  } from '$lib/frameleaf/folder-readers';
   import TakeoutWizard from '$lib/components/frameleaf/TakeoutWizard.svelte';
   import { takeoutProgress, takeoutStateKey, takeoutView } from '$lib/frameleaf/takeout';
   import { Route } from '$lib/route';
@@ -94,8 +99,8 @@
   });
 
   const latest = $derived(imports?.[0]);
-  const count = (value: number) => value.toLocaleString($locale);
-  const dateOf = (value: string) => new Date(value).toLocaleDateString($locale, { day: 'numeric', month: 'long' });
+  const count = (value: number) => formatCount(value, $locale);
+  const dateOf = (value: string) => formatDate(new Date(value), { day: 'numeric', month: 'long' }, $locale);
 
   type Status = {
     tone: 'good' | 'warn' | 'bad' | 'quiet';
@@ -453,12 +458,16 @@
         {/if}
       </Advanced>
       {#if choosing && roots}
-        <TakeoutFolderChooser
-          {roots}
+        <FolderChooser
+          title={$t('frameleaf_takeout_folder_chooser_title')}
+          rootName={$t('frameleaf_takeout_folder_allowed')}
+          note={$t('frameleaf_takeout_folder_only_allowed_imports')}
+          read={takeoutFolderReader(roots, $t, {
+            detail: (contents) => describeTakeoutFolder(contents, $t, $locale),
+          })}
           onClose={() => (choosing = false)}
-          onChoose={(folder) => {
-            chosen = folder;
-            choosing = false;
+          onChoose={(trail, listing) => {
+            chosen = chosenTakeoutFolder(trail, listing);
             advancedOpen = true;
           }}
         />

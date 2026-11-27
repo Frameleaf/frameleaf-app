@@ -285,6 +285,13 @@ async function nightPhotos(
   // too many to count once, or the night's tasks are pruned: its tasks, said as tasks
   const summed = { counts: sumCounts(photoRuns.map((read) => read.stageTotals)), countedOnce: false };
   if (tasks > DISTINCT_PHOTOS_LIMIT) return summed;
+  // FL-1826: a run that folded photos out of `job` has no rows left to count them once across the night
+  const {
+    rows: [{ folded }],
+  } = await sql<{ folded: boolean }>`select exists (select 1 from job_run where id = any(${photoRuns.map(
+    ({ id }) => id,
+  )}::uuid[]) and selection ? 'folded') folded`.execute(db);
+  if (folded) return summed;
   const { rows } = await sql<{ top: number; n: number }>`select top, count(*)::int n from (
       select ${STATE_TOP} top from job where "runId" = any(${photoRuns.map(({ id }) => id)}::uuid[])
         and "rootItemKey" is not null and not (state in ('pending','waiting') and ("runId", name) in (select * from unnest(

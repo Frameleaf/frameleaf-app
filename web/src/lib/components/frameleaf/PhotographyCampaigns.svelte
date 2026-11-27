@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { formatDateTime } from '$lib/frameleaf/date-format';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import { onDestroy, onMount } from 'svelte';
@@ -282,7 +283,18 @@
             <h3>{campaign.name}</h3>
             <p>{$t(`campaign_status_${campaign.status}`)}</p>
             {#if campaign.scheduledFor}<time datetime={campaign.scheduledFor}
-                >{new Date(campaign.scheduledFor).toLocaleString($locale)}</time
+                >{formatDateTime(
+                  new Date(campaign.scheduledFor),
+                  {
+                    year: 'numeric',
+                    month: 'numeric',
+                    day: 'numeric',
+                    hour: 'numeric',
+                    minute: 'numeric',
+                    second: 'numeric',
+                  },
+                  $locale,
+                )}</time
               >{/if}
             {#if campaign.status !== 'draft'}<p>
                 {$t('campaign_results', {

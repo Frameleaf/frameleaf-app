@@ -423,7 +423,7 @@ describe('Frameleaf Activity page', () => {
     const lines = within(finished).getAllByRole('listitem');
     expect(lines).toHaveLength(1);
     expect(within(lines[0]).getByText('Scheduled library health scan')).toBeInTheDocument();
-    expect(within(lines[0]).getByText('Library Care · 79 times')).toBeInTheDocument();
+    expect(within(lines[0]).getByText('Library care · 79 times')).toBeInTheDocument();
     // The newest run's time.
     expect(lines[0].querySelector('time')?.getAttribute('datetime')).toBe('2026-09-22T03:12:00.000Z');
     expect(container.querySelector('article')).toBeNull();

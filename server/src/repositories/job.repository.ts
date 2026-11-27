@@ -38,6 +38,7 @@ import { recentFileCheck, recentWorkScope } from 'src/queue/recent-work.js';
 import { causeRank, queueProblemCause } from 'src/queue/run-failure-cause.js';
 import { type RunFailurePrivacy, reviewRunFailures } from 'src/queue/run-failures.js';
 import { failureRoots, needsLook, ownerJobs, reportedQueueJobs } from 'src/queue/run-query.js';
+import { jobSettled } from 'src/queue/settled.js';
 import { SqlQueueStore } from 'src/queue/store.js';
 import { assertPublicationSource, publicationTransaction } from 'src/queue/transaction.js';
 import {
@@ -515,6 +516,8 @@ export class JobRepository {
       }
       // FL-721 M2: the Locked wait this execution recorded ends with it
       forgetLockedClaim(claim.id);
+      // FL-1794: administrators' pages learn the queue moved, also when the job failed or was deferred
+      jobSettled(claim.queue);
       releaseExecution?.();
       releaseObservers?.();
     }
@@ -774,6 +777,37 @@ export class JobRepository {
   async getQueuesWithUnfinishedWork(names: readonly QueueName[]): Promise<Set<string>> {
     return new Set(await this.store.queuesWithUnfinishedWork(names));
   }
+  /**
+   * FL-1827: whether any of these jobs can run or is running. A job waiting on a dependency (a Locked photo waiting
+   * for its owner's key) or held by a pause is not: it would keep the Best Photos scan waiting for good.
+   */
+  async hasRunnableJobs(queue: QueueName, names: JobName[]): Promise<boolean> {
+    const {
+      rows: [row],
+    } = await sql<{ live: boolean }>`select exists (select 1 from job where queue = ${queue}
+      and state in ('pending','waiting','active') and name = any(${names}::text[])
+      and (state = 'active' or ("dependencyReason" is null and "availableAt" <> 'infinity'::timestamptz))) live`.execute(
+      this.store.db,
+    );
+    return row.live;
+  }
+
+  /**
+   * FL-1827: whether photos are still coming in or being made ready in these queues: work running or waiting its
+   * turn, or held by library setup. A task a person paused, and work waiting on a dependency (an offline drive), are
+   * left out: they can wait for days, and Best Photos only reads what is already ready.
+   */
+  async hasIncomingWork(queues: QueueName[]): Promise<boolean> {
+    const {
+      rows: [row],
+    } = await sql<{ busy: boolean }>`select exists (select 1 from job j join job_queue q on q.name = j.queue
+      where j.queue = any(${queues}::text[]) and j.state in ('pending','waiting','active')
+        and (j.state = 'active' or (j."dependencyReason" is null and not q.paused and (j."availableAt" <> 'infinity'::timestamptz
+          or exists (select 1 from job_run r where r.id = j."runId" and r.selection->'holds'->>j.name = 'setup'))))) busy`.execute(
+      this.store.db,
+    );
+    return row.busy;
+  }
   hasDedupJob(name: QueueName, id: string) {
     return this.store.hasDedup(name, id);
   }
@@ -959,10 +993,7 @@ export class JobRepository {
     const identity =
       options?.deduplication?.id ??
       options?.jobId ??
-      (item.name === JobName.LandmarkInfer ? item.data?.trigger : undefined) ??
-      // the re-score once the embedding is stored is its own item: keyed by the photo alone it hit the score queued
-      // earlier (after thumbnails or faces) and was dropped, so the learned aesthetic never reached the score
-      (item.name === JobName.BestPhotosScore && item.data?.embeddingChanged ? 'embedding' : undefined);
+      (item.name === JobName.LandmarkInfer ? item.data?.trigger : undefined);
     // One run can publish an asset's files more than once. A completed seal must not consume a
     // later publication's obligation; live deduplication still coalesces sealing by asset.
     const publication =

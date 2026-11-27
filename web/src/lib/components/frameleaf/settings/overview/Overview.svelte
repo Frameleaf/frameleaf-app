@@ -14,6 +14,7 @@
    *
    * Not on this page yet (FL-363 follow-up): the phones row, which needs a reading for all accounts.
    */
+  import { formatTime } from '$lib/frameleaf/date-format';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import InlineError from '$lib/components/frameleaf/InlineError.svelte';
   import Skeleton from '$lib/components/frameleaf/Skeleton.svelte';
@@ -465,8 +466,7 @@
     const workItem = itemOf('work');
     const versionItem = itemOf('version');
     const night = lastNight ? nightOutcome(lastNight.results) : null;
-    const time = (iso: string) =>
-      new Intl.DateTimeFormat($locale, { hour: 'numeric', minute: '2-digit' }).format(new Date(iso));
+    const time = (iso: string) => formatTime(new Date(iso), { hour: 'numeric', minute: '2-digit' }, $locale);
     const all: (Check | false | undefined)[] = [
       {
         id: 'backup',

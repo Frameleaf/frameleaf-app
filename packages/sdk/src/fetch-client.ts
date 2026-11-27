@@ -5643,6 +5643,8 @@ export type AlbumRailResponseDto = {
 export type AlbumRecentlyAddedResponseDto = {
     /** Albums the user may add to, the one that most recently received an item first */
     albumIds: string[];
+    /** Albums the user may add to that the user itself last added items to, most recent first */
+    usedAlbumIds: string[];
 };
 export type AlbumStatisticsResponseDto = {
     /** Number of non-shared albums */
@@ -13777,7 +13779,24 @@ export type MemoryOccasionDto = {
     /** The person the memory is about */
     personId: string;
 };
+export type MemorySlimAssetDto = {
+    /** When the file was captured (UTC) */
+    fileCreatedAt: string;
+    /** Asset height */
+    height: number | null;
+    /** Asset ID */
+    id: string;
+    /** Local date and time of capture */
+    localDateTime: string;
+    /** Thumbhash (base64), also the thumbnail cache key */
+    thumbhash: string | null;
+    "type": AssetTypeEnum;
+    visibility: AssetVisibility;
+    /** Asset width */
+    width: number | null;
+};
 export type MemoryResponseDto = {
+    /** The items; empty when the search asked for `slim` */
     assets: AssetResponseDto[];
     /** Creation date */
     createdAt: string;
@@ -13802,6 +13821,8 @@ export type MemoryResponseDto = {
     seenAt?: string;
     /** Date when memory should be shown */
     showAt?: string;
+    /** The items in the same order, when the search asked for `slim` */
+    slimAssets?: MemorySlimAssetDto[];
     /** The owner's own title, when they set one */
     title: string | null;
     "type": MemoryType;
@@ -14678,6 +14699,21 @@ export type PersonMergeVerdictResponseDto = {
     /** The other person of the pair; the ignored person again for "ignore"; the merged person for "same" */
     suggestionId: string;
     verdict: PersonMergeVerdict;
+};
+export type PeoplePickerItemDto = {
+    /** Number of timeline assets showing this person */
+    assetCount: number;
+    /** Person ID */
+    id: string;
+    /** Person name */
+    name: string;
+    /** Last update date; the version of the thumbnail URL */
+    updatedAt: string;
+};
+export type PeoplePickerResponseDto = {
+    /** Whether there are more pages */
+    hasNextPage: boolean;
+    people: PeoplePickerItemDto[];
 };
 export type PersonSplitSuggestionDto = {
     /** Face embedding distance between the two groups of faces (higher is less alike) */
@@ -24697,6 +24733,8 @@ export type MemorySearchDto = {
     page?: number;
     /** Number of memories to return */
     size?: number;
+    /** Leave `assets` empty and list each item in `slimAssets` instead, for lists that only draw covers */
+    slim?: boolean;
     "type"?: MemoryType;
 };
 export type NotificationSearchDto = {
@@ -24727,6 +24765,18 @@ export type OwnerBackupPageDto = {
 export type PartnerSearchDto = {
     direction: PartnerDirection;
 };
+export type PeoplePickerSearchDto = {
+    /** Only people whose name contains this text, whatever the case; empty matches everyone */
+    name?: string;
+    /** Page number for pagination */
+    page?: number;
+    /** Number of items per page */
+    size?: number;
+    /** Order: by name (unnamed people last), by photo count, or by the most recent photo. Without it, favorites first, then named people by the number of faces. Ignored with closestPersonId or closestAssetId. */
+    sort?: PeopleSort;
+    /** Include hidden people */
+    withHidden?: boolean;
+};
 export type PersonCorrectionSearchDto = {
     /** Page number */
     page?: number;
@@ -24738,10 +24788,14 @@ export type PersonSearchDto = {
     closestAssetId?: string;
     /** Closest person ID for similarity search */
     closestPersonId?: string;
+    /** Only people whose name contains this text, whatever the case; empty matches everyone */
+    name?: string;
     /** Page number for pagination */
     page?: number;
     /** Number of items per page */
     size?: number;
+    /** Order: by name (unnamed people last), by photo count, or by the most recent photo. Without it, favorites first, then named people by the number of faces. Ignored with closestPersonId or closestAssetId. */
+    sort?: PeopleSort;
     /** Include hidden people */
     withHidden?: boolean;
 };
@@ -36716,7 +36770,7 @@ export function updateMediaWatch({ assetId, mediaWatchUpdateDto }: {
 /**
  * Retrieve memories
  */
-export function searchMemories({ $for, id, isHidden, isSaved, isTrashed, isUpcoming, order, page, size, $type }: {
+export function searchMemories({ $for, id, isHidden, isSaved, isTrashed, isUpcoming, order, page, size, slim, $type }: {
     $for?: string;
     id?: string;
     isHidden?: boolean;
@@ -36726,6 +36780,7 @@ export function searchMemories({ $for, id, isHidden, isSaved, isTrashed, isUpcom
     order?: MemorySearchOrder;
     page?: number;
     size?: number;
+    slim?: boolean;
     $type?: MemoryType;
 }, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
@@ -36741,6 +36796,7 @@ export function searchMemories({ $for, id, isHidden, isSaved, isTrashed, isUpcom
         order,
         page,
         size,
+        slim,
         "type": $type
     }))}`, {
         ...opts
@@ -36896,7 +36952,7 @@ export function addMemoryShowLess({ memoryShowLessDto }: {
 /**
  * Retrieve memories statistics
  */
-export function memoriesStatistics({ $for, id, isHidden, isSaved, isTrashed, isUpcoming, order, page, size, $type }: {
+export function memoriesStatistics({ $for, id, isHidden, isSaved, isTrashed, isUpcoming, order, page, size, slim, $type }: {
     $for?: string;
     id?: string;
     isHidden?: boolean;
@@ -36906,6 +36962,7 @@ export function memoriesStatistics({ $for, id, isHidden, isSaved, isTrashed, isU
     order?: MemorySearchOrder;
     page?: number;
     size?: number;
+    slim?: boolean;
     $type?: MemoryType;
 }, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
@@ -36921,6 +36978,7 @@ export function memoriesStatistics({ $for, id, isHidden, isSaved, isTrashed, isU
         order,
         page,
         size,
+        slim,
         "type": $type
     }))}`, {
         ...opts
@@ -37776,11 +37834,13 @@ export function deletePeople({ bulkIdsDto }: {
 /**
  * Get all people
  */
-export function getAllPeople({ closestAssetId, closestPersonId, page, size, withHidden }: {
+export function getAllPeople({ closestAssetId, closestPersonId, name, page, size, sort, withHidden }: {
     closestAssetId?: string;
     closestPersonId?: string;
+    name?: string;
     page?: number;
     size?: number;
+    sort?: PeopleSort;
     withHidden?: boolean;
 }, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
@@ -37789,8 +37849,10 @@ export function getAllPeople({ closestAssetId, closestPersonId, page, size, with
     }>(`/people${QS.query(QS.explode({
         closestAssetId,
         closestPersonId,
+        name,
         page,
         size,
+        sort,
         withHidden
     }))}`, {
         ...opts
@@ -37945,6 +38007,29 @@ export function setMergeVerdict({ personMergeVerdictCreateDto }: {
         method: "PUT",
         body: personMergeVerdictCreateDto
     })));
+}
+/**
+ * Get people for a picker
+ */
+export function getPeoplePicker({ name, page, size, sort, withHidden }: {
+    name?: string;
+    page?: number;
+    size?: number;
+    sort?: PeopleSort;
+    withHidden?: boolean;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PeoplePickerResponseDto;
+    }>(`/people/picker${QS.query(QS.explode({
+        name,
+        page,
+        size,
+        sort,
+        withHidden
+    }))}`, {
+        ...opts
+    }));
 }
 /**
  * Get split suggestions
@@ -49666,6 +49751,11 @@ export enum State5 {
 export enum PartnerScopeMode {
     Everything = "everything",
     Chosen = "chosen"
+}
+export enum PeopleSort {
+    Name = "name",
+    Count = "count",
+    Recent = "recent"
 }
 export enum PersonCorrectionAction {
     Reassign = "reassign",

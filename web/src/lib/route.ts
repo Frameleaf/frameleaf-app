@@ -265,8 +265,10 @@ export const Route = {
 
   // utilities
   utilities: () => utilitiesUrl(),
-  // The rail's Library Care opens the Library care area, the hub for fixes (September 24).
+  // The rail's Library care opens the Library care area, the hub for fixes (September 24).
   libraryCare: () => commandCenterUrl('care'),
+  // FL-1808: the one Import page, every way to bring photos in (the rail footer's Import).
+  importPlace: () => commandCenterUrl('backup'),
   duplicatesUtility: (params?: { index?: number }) => utilitiesUrl('duplicates', params),
   largeFileUtility: () => utilitiesUrl('large-files'),
   livePhotosUtility: () => utilitiesUrl('live-photos'),

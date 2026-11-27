@@ -21,6 +21,7 @@ import {
   type StudioCutoutSubjectRef,
 } from './cutout';
 import {
+  isBlobLike,
   isStudioProjectImportUpload,
   isStudioPublicationId,
   isStudioEditorScope as isPublicationEditorScope,
@@ -35,6 +36,8 @@ import type {
   StudioLibraryQuery,
   StudioLibraryResults,
   StudioLibraryType,
+  StudioProjectFontRef,
+  StudioProjectFontUpload,
   StudioProjectHandle,
   StudioProjectImportUpload,
   StudioProjectImportRef,
@@ -135,6 +138,23 @@ export const isStudioLibraryAssetIds = (value: unknown): value is string[] =>
   value.length <= STUDIO_LIBRARY_ADD_LIMIT &&
   value.every((item) => id(item));
 
+/** The largest font file the server keeps (32 MiB); a larger one is refused before it is sent. */
+export const STUDIO_PROJECT_FONT_MAX_BYTES = 32 * 1024 * 1024;
+/**
+ * Whether a font upload from the frame has the shape the host accepts (FL-1562): a new import id, a
+ * .ttf, .otf or .woff2 file name and the bytes, nothing else. The server reads the font itself.
+ */
+export const isStudioProjectFontUpload = (value: unknown): value is StudioProjectFontUpload =>
+  record(value) &&
+  exact(value, ['id', 'fileName', 'file']) &&
+  id(value.id) &&
+  typeof value.fileName === 'string' &&
+  value.fileName.length <= 255 &&
+  /\.(ttf|otf|woff2)$/i.test(value.fileName) &&
+  isBlobLike(value.file) &&
+  value.file.size > 0 &&
+  value.file.size <= STUDIO_PROJECT_FONT_MAX_BYTES;
+
 /** Frozen names and tuple/result contract for peers built before closed source ownership. */
 export const STUDIO_FRAME_SERVICE_SCHEMA_V7 = Object.freeze({
   submitCommands: (args: unknown[]) => args.length === 1 && Array.isArray(args[0]),
@@ -176,6 +196,8 @@ export const STUDIO_FRAME_SERVICE_SCHEMA_V9 = Object.freeze({
   readCloudCaptions: (args: unknown[]) => args.length === 1 && isStudioCloudCaptionId(args[0]),
   pendingCloudCaptions: (args: unknown[]) => args.length === 0,
   forgetCloudCaptions: (args: unknown[]) => args.length === 1 && isStudioCloudCaptionId(args[0]),
+  // FL-1562: "Add font…" in the title inspector. Optional host service; an older host answers it as unknown.
+  uploadProjectFont: (args: unknown[]) => args.length === 1 && isStudioProjectFontUpload(args[0]),
 });
 type ServiceBindings = Omit<StudioFrameServiceCallsV7, 'commitEditorDraft' | 'reloadProject'> & {
   translateCaptions: { args: [request: StudioCaptionTranslationRequest]; result: StudioCaptionTranslationResult };
@@ -202,6 +224,7 @@ type ServiceBindings = Omit<StudioFrameServiceCallsV7, 'commitEditorDraft' | 're
   readCloudCaptions: { args: [id: string]; result: StudioCloudCaptionState };
   pendingCloudCaptions: { args: []; result: StudioCloudCaptionJob[] };
   forgetCloudCaptions: { args: [id: string]; result: void };
+  uploadProjectFont: { args: [upload: StudioProjectFontUpload]; result: StudioProjectFontRef };
 };
 export type StudioFrameServiceName = keyof typeof STUDIO_FRAME_SERVICE_SCHEMA_V9;
 export type StudioFrameServiceCalls = { [Name in StudioFrameServiceName]: ServiceBindings[Name] };

@@ -5,10 +5,8 @@
   import { sessionAccess, trackSessionModals } from '$lib/frameleaf/session-access.svelte';
   import { requestSessionLock, watchSessionLockOwner } from '$lib/frameleaf/session-lock';
   import SessionLockShield from '$lib/components/frameleaf/SessionLockShield.svelte';
-  import DownloadPanel from '$lib/components/frameleaf/DownloadPanel.svelte';
   import PanelDock from '$lib/components/frameleaf/PanelDock.svelte';
   import SettingsSkeleton from '$lib/components/frameleaf/SettingsSkeleton.svelte';
-  import UploadPanel from '$lib/components/frameleaf/UploadPanel.svelte';
   import ErrorLayout from './ErrorLayout.svelte';
   import CustomStyles from './CustomStyles.svelte';
   import SessionPrivacyGuard from './SessionPrivacyGuard.svelte';
@@ -16,6 +14,8 @@
   import NavigationLoadingBar from './NavigationLoadingBar.svelte';
   import VersionAnnouncement from './VersionAnnouncement.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
+  import { downloadManager } from '$lib/managers/download-manager.svelte';
+  import { uploadAssetsStore } from '$lib/stores/upload';
   import { eventManager } from '$lib/managers/event-manager.svelte';
   import { serverConfigManager } from '$lib/managers/server-config-manager.svelte';
   import ServerRestartingModal from '$lib/modals/ServerRestartingModal.svelte';
@@ -202,6 +202,24 @@
   let { children }: Props = $props();
 
   let showNavigationLoadingBar = $state(false);
+
+  // FL-1799: the transfer panels are not part of the first load. Their code is fetched once the page
+  // is idle (or at the first upload or download, if that comes sooner), so it arrives from the same
+  // release as the rest of the page long before it is needed, then they stay mounted as before.
+  const { isUploading } = uploadAssetsStore;
+  let panelsWanted = $state(false);
+  $effect(() => {
+    panelsWanted ||= $isUploading || downloadManager.isDownloading;
+  });
+  onMount(() => {
+    const want = () => (panelsWanted = true);
+    if ('requestIdleCallback' in globalThis) {
+      const id = requestIdleCallback(want, { timeout: 5000 });
+      return () => cancelIdleCallback(id);
+    }
+    const timer = setTimeout(want, 2000);
+    return () => clearTimeout(timer);
+  });
   // Settings waits for its settings before it draws: its shape shows meanwhile (approved design, 2026-11-04).
   const SETTINGS_ROUTE = '/(user)/user-settings';
   const openingSettings = $derived(navigating.to?.route.id === SETTINGS_ROUTE && page.route.id !== SETTINGS_ROUTE);
@@ -354,8 +372,16 @@
 
       <!-- App.jsx PanelDock: uploads above downloads. -->
       <PanelDock>
-        <UploadPanel />
-        <DownloadPanel />
+        {#if panelsWanted}
+          {#await import('$lib/components/frameleaf/UploadPanel.svelte') then { default: UploadPanel }}
+            <UploadPanel />
+          {/await}
+        {/if}
+        {#if panelsWanted}
+          {#await import('$lib/components/frameleaf/DownloadPanel.svelte') then { default: DownloadPanel }}
+            <DownloadPanel />
+          {/await}
+        {/if}
       </PanelDock>
     </SessionPrivacyGuard>
   </SessionLockShield>

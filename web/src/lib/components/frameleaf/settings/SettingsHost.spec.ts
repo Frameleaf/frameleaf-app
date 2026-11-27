@@ -147,6 +147,10 @@ const open = (href: string, isAdmin = true) => {
   state.goto.mockReset().mockResolvedValue(undefined);
 };
 
+const groupNames = () =>
+  [...screen.getByRole('navigation', { name: 'Settings navigation' }).querySelectorAll(':scope .cc-nav-group > p')].map(
+    (heading) => heading.textContent?.trim(),
+  );
 const areaNames = () =>
   [...screen.getByRole('navigation', { name: 'Settings navigation' }).querySelectorAll('button.area')].map((button) =>
     button.textContent?.trim(),
@@ -158,8 +162,9 @@ const areaButton = (name: string) =>
     ...screen.getByRole('navigation', { name: 'Settings navigation' }).querySelectorAll<HTMLElement>('button.area'),
   ].find((button) => button.getAttribute('aria-label') === name)!;
 
-/** The Backup page the area is showing. */
-const backupPage = () => screen.getByTestId('backup-area').textContent;
+/** The Backup page the area is showing, once its code has loaded (FL-1799). */
+// The first fetch of a page in a run also compiles it, which can take longer than the default wait.
+const backupPage = async () => (await screen.findByTestId('backup-area', {}, { timeout: 5000 })).textContent;
 
 describe('the Command Center (FL-71)', () => {
   beforeAll(() => addMessages('dev', en));
@@ -171,16 +176,16 @@ describe('the Command Center (FL-71)', () => {
     expect(screen.getByRole('button', { name: 'Collapse settings navigation' })).toBeInTheDocument();
     expect(screen.getByText('Administrator')).toBeInTheDocument();
     const names = areaNames();
-    // The template's catalogue order, grouped: Your library keeps care, libraries, utilities (N1).
-    expect(names.slice(names.indexOf('Library care'), names.indexOf('Tools') + 1)).toEqual([
-      'Library care',
-      'Libraries',
-      'Tools',
-    ]);
-    expect(names.at(-3)).toBe('Your preferences');
-    // FL-367
-    expect(names.at(-2)).toBe('Your sign-in & privacy');
-    expect(names.at(-1)).toBe('Change history');
+    // FL-1806: the Overview, then You, Library and Server; the places (Import, Library care, Tools,
+    // Trash) are on the library rail instead.
+    expect(groupNames()).toEqual(['Settings', 'You', 'Library', 'Server']);
+    expect(names.slice(0, 4)).toEqual(['Overview', 'Your preferences', 'Your sign-in & privacy', 'Change history']);
+    expect(names[4]).toBe('Library analytics');
+    expect(names).toContain('Backup');
+    expect(names.indexOf('Notifications')).toBeGreaterThan(names.indexOf('Backup'));
+    for (const place of ['Import', 'Library care', 'Tools', 'Trash']) {
+      expect(names).not.toContain(place);
+    }
     expect(screen.getByRole('button', { name: 'Storage & originals' })).toHaveAttribute('aria-current', 'page');
   });
 
@@ -239,7 +244,7 @@ describe('the Command Center (FL-71)', () => {
     render(SettingsHost, { sections });
     const heading = screen.getByRole('heading', { level: 1, name: 'Trash' }).parentElement!;
     expect(within(heading).queryByRole('button', { name: 'Trash' })).toBeNull();
-    expect(heading.querySelector('.cc-overline')).toHaveTextContent('Your library');
+    expect(heading.querySelector('.cc-overline')).toHaveTextContent('Library');
   });
 
   it('gives administration tools the page width without a card around their own grouped containers', () => {
@@ -423,19 +428,14 @@ describe('the Command Center (FL-71)', () => {
     open('/user-settings?area=storage', false);
     render(SettingsHost, { sections: sections.filter((section) => !section.admin) });
     expect(areaNames()).toEqual([
-      'Import & export',
-      'People & sharing',
-      // Library care always lists the repair tools the account may run.
-      'Library care',
-      'Tools',
-      'Trash',
-      'Notifications',
       'Your preferences',
       'Your sign-in & privacy',
       'Change history',
+      'People & sharing',
+      'Notifications',
     ]);
-    // A server area falls back to the first area the account may open.
-    expect(screen.getByRole('button', { name: 'Import & export' })).toHaveAttribute('aria-current', 'page');
+    // A server area falls back to the first area the account may open, never to a place.
+    expect(screen.getByRole('button', { name: 'Your preferences' })).toHaveAttribute('aria-current', 'page');
     expect(screen.queryByRole('button', { name: /Backup schedule/ })).toBeNull();
     expect(screen.queryByRole('combobox', { name: 'Account or library scope' })).toBeNull();
     expect(screen.getByText('Ada’s library')).toBeInTheDocument();
@@ -555,6 +555,9 @@ describe('the Command Center (FL-71)', () => {
   it("marks the page on screen while one of the account's own preference forms has changes (finding 70)", async () => {
     open('/user-settings?area=backups');
     const { container } = render(SettingsHost, { sections });
+    // Let the page's code arrive before the test ends: a fetch still in flight would hand the next
+    // test the real page instead of the stand-in.
+    await backupPage();
     expect(container.querySelector('.pending')).toBeNull();
 
     const release = ownPreferencesPending.hold();
@@ -570,11 +573,11 @@ describe('the Command Center (FL-71)', () => {
   describe('one Backup area (FL-362, after design review finding 66)', () => {
     const backupHeading = () => screen.getByRole('heading', { level: 1, name: 'Backup' });
 
-    it('opens on the Overview, under the one Backup heading and with no pages in the navigation', () => {
+    it('opens on the Overview, under the one Backup heading and with no pages in the navigation', async () => {
       open('/user-settings?area=backups');
       render(SettingsHost, { sections });
       expect(backupHeading()).toBeInTheDocument();
-      expect(backupPage()).toBe('overview');
+      expect(await backupPage()).toBe('overview');
       const navigation = within(screen.getByRole('navigation', { name: 'Settings navigation' }));
       expect(navigation.queryByLabelText('Backup pages')).toBeNull();
     });
@@ -586,24 +589,24 @@ describe('the Command Center (FL-71)', () => {
       ['buddy', 'buddy'],
       ['local', 'local'],
       ['nonsense', 'overview'],
-    ])('opens the %s page from its address', (section, shown) => {
+    ])('opens the %s page from its address', async (section, shown) => {
       open(`/user-settings?area=backups&section=${section}`);
       render(SettingsHost, { sections });
-      expect(backupPage()).toBe(shown);
+      expect(await backupPage()).toBe(shown);
     });
 
     it.each([
-      ['/user-settings?area=backup&section=backup', 'schedule', 'Import & export'],
+      ['/user-settings?area=backup&section=backup', 'schedule', 'Storage & originals'],
       ['/user-settings?area=maintenance&section=backups', 'local', 'Maintenance'],
       ['/user-settings?area=cloud&section=cloud-backup', 'cloud', 'Frameleaf Cloud'],
-    ])('shows %s under Backup, at the address it always had', (address, shown, formerArea) => {
+    ])('shows %s under Backup, at the address it always had', async (address, shown, formerArea) => {
       open(address);
       render(SettingsHost, { sections });
       expect(areaButton('Backup')).toHaveAttribute('aria-current', 'page');
       expect(screen.getByRole('button', { name: formerArea })).not.toHaveAttribute('aria-current');
       // One screen, one heading: the older page's own title is not a breadcrumb any more.
       expect(backupHeading()).toBeInTheDocument();
-      expect(backupPage()).toBe(shown);
+      expect(await backupPage()).toBe(shown);
     });
 
     it.each([
@@ -612,10 +615,10 @@ describe('the Command Center (FL-71)', () => {
       ['controls', 'buddy'],
       ['restore', 'restore'],
       ['compare', 'overview'],
-    ])('opens the page that replaced the "%s" view', (view, shown) => {
+    ])('opens the page that replaced the "%s" view', async (view, shown) => {
       open(`/user-settings?area=backups&backupView=${view}`);
       render(SettingsHost, { sections });
-      expect(backupPage()).toBe(shown);
+      expect(await backupPage()).toBe(shown);
     });
 
     it('no longer lists a backup page under Import & protection, Maintenance or Frameleaf Cloud', () => {
@@ -640,18 +643,19 @@ describe('the Command Center (FL-71)', () => {
     });
   });
 
-  it('lists no tools under Tools in the rail, as the prototype; the Tools page lists them', () => {
-    open('/user-settings?area=utilities&section=duplicates');
-    render(SettingsHost, { sections });
-    expect(screen.getByRole('button', { name: 'Tools' })).toHaveAttribute('aria-current', 'page');
-    expect(screen.queryByRole('group', { name: /Tools/ })).toBeNull();
-  });
-
-  it('keeps a repair tool opened from Library care under Library care', () => {
-    open('/user-settings?area=utilities&section=duplicates&from=care');
-    render(SettingsHost, { sections });
-    expect(screen.getByRole('button', { name: 'Library care' })).toHaveAttribute('aria-current', 'page');
-    expect(screen.getByRole('button', { name: 'Tools' })).not.toHaveAttribute('aria-current');
+  it('opens Import, Library care, its tools and Trash as places, without the Settings list (FL-1806)', () => {
+    for (const [address, name] of [
+      ['/user-settings?area=backup', 'Import'],
+      ['/user-settings?area=care', 'Library care'],
+      ['/user-settings?area=utilities&section=duplicates&from=care', 'Library care'],
+      ['/user-settings?area=trash', 'Trash'],
+    ]) {
+      open(address);
+      const { container, unmount } = render(SettingsHost, { sections });
+      expect(screen.queryByRole('navigation', { name: 'Settings navigation' })).toBeNull();
+      expect(container.querySelector('.cc-context')).toHaveTextContent(name);
+      unmount();
+    }
   });
 
   it('walks search results with the arrow keys and opens the first with Enter', async () => {
@@ -700,7 +704,7 @@ describe('the Command Center (FL-71)', () => {
     render(SettingsHost, { sections: sections.filter((section) => !section.admin) });
     const names = areaNames();
     expect(names).toContain('People & sharing');
-    expect(names).toContain('Trash');
+    expect(names).not.toContain('Trash');
     expect(names).not.toContain('Users');
     expect(names).not.toContain('Overview');
     expect(names).not.toContain('Computers & background work');

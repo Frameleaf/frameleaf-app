@@ -1,7 +1,7 @@
 import { getICloudSyncActivity } from '@frameleaf/sdk';
-import { modalManager } from '@frameleaf/ui';
 import { t } from 'svelte-i18n';
 import { get } from 'svelte/store';
+import { confirmFrameleaf } from '$lib/frameleaf/confirm';
 
 /** Before iCloud Photos is turned off: warns when syncs are unfinished. Resolves false to keep it on. */
 export const confirmICloudOff = async (): Promise<boolean> => {
@@ -16,9 +16,10 @@ export const confirmICloudOff = async (): Promise<boolean> => {
     return true;
   }
   const translate = get(t);
-  return modalManager.showDialog({
+  return confirmFrameleaf({
     title: translate('frameleaf_icloud_setting_running_title'),
     prompt: translate('frameleaf_icloud_setting_running', { values: { count: running } }),
     confirmText: translate('frameleaf_icloud_setting_running_confirm'),
+    danger: true,
   });
 };

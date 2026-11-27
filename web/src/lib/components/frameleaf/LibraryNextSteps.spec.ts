@@ -6,7 +6,7 @@ import LibraryNextSteps from './LibraryNextSteps.svelte';
 const auth = vi.hoisted(() => ({ authenticated: true, user: { id: 'admin', isAdmin: true } }));
 vi.mock('$lib/managers/auth-manager.svelte', () => ({ authManager: auth }));
 
-/** Review finding 98: setup promises Library Care, Cloud backup and Background work; the library delivers them once. */
+/** Review finding 98: setup promises Library care, Cloud backup and Background work; the library delivers them once. */
 describe('LibraryNextSteps', () => {
   beforeEach(() => {
     localStorage.clear();
@@ -19,7 +19,7 @@ describe('LibraryNextSteps', () => {
     expect(screen.queryByTestId('frameleaf-next-steps')).not.toBeInTheDocument();
   });
 
-  it('links Library Care, Cloud backup and Background work for the administrator who finished setup', () => {
+  it('links Library care, Cloud backup and Background work for the administrator who finished setup', () => {
     offerNextSteps('admin');
     render(LibraryNextSteps);
     const card = screen.getByTestId('frameleaf-next-steps');

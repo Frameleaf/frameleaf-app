@@ -7,6 +7,7 @@
    * the dialogs, so this component is presentation plus the filter/sort rules in
    * `$lib/frameleaf/render-workers`.
    */
+  import { formatLuxon } from '$lib/frameleaf/date-format';
   import Badge from '$lib/components/frameleaf/Badge.svelte';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Pane from '$lib/components/frameleaf/Pane.svelte';
@@ -66,7 +67,7 @@
 
   const seenAt = (value: string | null) =>
     value
-      ? DateTime.fromISO(value, { locale: $locale }).toLocaleString(DateTime.DATETIME_MED)
+      ? formatLuxon(DateTime.fromISO(value, { locale: $locale }), DateTime.DATETIME_MED)
       : $t('frameleaf_render_workers_never_seen');
 
   const ceilings = (worker: RenderWorkerDto) => {

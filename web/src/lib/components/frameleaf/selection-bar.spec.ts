@@ -10,7 +10,7 @@ import { userAdminFactory } from '@test-data/factories/user-factory';
 vi.mock('@frameleaf/sdk', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@frameleaf/sdk')>()),
   getAllAlbums: vi.fn(),
-  getRecentlyAddedAlbums: async () => ({ albumIds: [] }),
+  getRecentlyAddedAlbums: async () => ({ albumIds: [], usedAlbumIds: [] }),
 }));
 vi.mock('$lib/frameleaf/icon-catalogue', async (importOriginal) => ({
   ...(await importOriginal<typeof import('$lib/frameleaf/icon-catalogue')>()),

@@ -5,6 +5,7 @@
    * width does not shimmer, and assistive technology reads the final value only.
    */
   import { countUp } from '$lib/frameleaf/motion';
+  import { formatCount } from '$lib/frameleaf/number-format';
   import { locale } from '$lib/stores/preferences.store';
 
   let {
@@ -20,7 +21,7 @@
     delay?: number;
   } = $props();
 
-  const show = $derived(format ?? ((number: number) => new Intl.NumberFormat($locale).format(Math.round(number))));
+  const show = $derived(format ?? ((number: number) => formatCount(Math.round(number), $locale)));
 
   let shown = $state(0);
   // Deliberately not $state: where the next count starts from, read without subscribing.

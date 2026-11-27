@@ -1,5 +1,6 @@
 import {
   importStudioProjectFile,
+  importStudioProjectFont,
   StudioProjectFontFormat,
   StudioProjectFontStyle,
   StudioProjectImportKind,
@@ -16,12 +17,14 @@ import {
   toStudioPublicationReceipt,
   loadStudioProjectImports,
   toStudioProjectImport,
+  uploadStudioProjectFont,
   uploadStudioProjectImport,
 } from '$lib/frameleaf/studio/project-imports';
 
 vi.mock('@frameleaf/sdk', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@frameleaf/sdk')>()),
   importStudioProjectFile: vi.fn(),
+  importStudioProjectFont: vi.fn(),
   getStudioProjectImports: vi.fn(),
   getStudioProjectFonts: vi.fn(async () => []),
   registerStudioImportPublication: vi.fn(),
@@ -271,4 +274,44 @@ it('hands the editor the fonts kept with the project, by id and never as bin med
     },
   ]);
   expect(getStudioProjectFonts).toHaveBeenLastCalledWith({ id: retentionProject }, { signal: controller.signal });
+});
+
+it('keeps an added font with the project and answers the face the server read (FL-1562)', async () => {
+  const project = '5c1f5c3f-6e4b-4d66-8f1f-7c0a5d8e9f12';
+  const font = {
+    id: '9d2a7c1e-3b4f-4a6d-8e5c-1f2a3b4c5d6e',
+    family: 'Brandon Grotesque',
+    subfamily: 'Bold Italic',
+    weight: 700,
+    style: StudioProjectFontStyle.Italic,
+    format: StudioProjectFontFormat.Otf,
+    fileName: 'Brandon-BoldItalic.otf',
+    sizeBytes: 52_000,
+    checksum: 'd'.repeat(64),
+    createdAt: '2026-11-26T00:00:00.000Z',
+  };
+  vi.mocked(importStudioProjectFont).mockResolvedValueOnce(font);
+  const controller = new AbortController();
+  const kept = await uploadStudioProjectFont(
+    project,
+    { id: font.id, fileName: font.fileName, file: new Blob(['OTTO'], { type: 'font/otf' }) },
+    controller.signal,
+  );
+  expect(kept).toEqual({
+    id: font.id,
+    kind: 'font',
+    name: 'Brandon-BoldItalic.otf',
+    mimeType: 'font/otf',
+    sizeBytes: 52_000,
+    checksum: font.checksum,
+    url: expect.stringContaining(`/studio/projects/${project}/imports/${font.id}/file`),
+    family: 'Brandon Grotesque',
+    weight: 700,
+    style: 'italic',
+  });
+  const [request, options] = vi.mocked(importStudioProjectFont).mock.calls.at(-1)!;
+  expect(request.id).toBe(project);
+  expect(request.studioProjectFontCreateDto.id).toBe(font.id);
+  expect((request.studioProjectFontCreateDto.file as File).name).toBe('Brandon-BoldItalic.otf');
+  expect(options).toEqual({ signal: controller.signal });
 });
