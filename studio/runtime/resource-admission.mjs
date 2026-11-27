@@ -10,7 +10,7 @@ export class ResourceBlockedError extends Error {
 
 const APPROVAL = /^[a-f0-9]{64}$/;
 const HUGGING_FACE = 'https://huggingface.co/';
-const MIRROR = /^https:\/\/huggingface\.co\/frameleaf\/[A-Za-z0-9][A-Za-z0-9._-]*$/;
+const FRAMELEAF_ORG = /^https:\/\/huggingface\.co\/frameleaf\/[A-Za-z0-9][A-Za-z0-9._-]*$/;
 
 const admitted = (resource) => resource?.localRuntime === 'allowed' && APPROVAL.test(resource.approvalSha256 ?? '');
 
@@ -36,7 +36,7 @@ function entryForUrl(id) {
   for (const resource of Object.values(policy)) {
     const { locator, revision } = resource ?? {};
     if (typeof locator !== 'string' || !locator) continue;
-    if (MIRROR.test(locator)) {
+    if (FRAMELEAF_ORG.test(locator)) {
       // A Frameleaf organisation repository (full URL), like a hub repository, only at its approved revision.
       if (typeof revision !== 'string' || !/^[a-f0-9]{40}$/.test(revision)) continue;
       const base = `${locator}/resolve/${revision}/`;
@@ -55,10 +55,16 @@ function entryForUrl(id) {
 
 /**
  * The approved revision of a Hugging Face repository, or undefined when the policy pins none.
- * Only a `model:<repository>` row with a commit revision pins a repository.
+ * A `model:<repository>` row with a commit revision pins a repository, and so does a row whose
+ * locator is that Frameleaf organisation repository's full URL (FL-1830: Parakeet keeps its
+ * upstream row id but is served from https://huggingface.co/frameleaf/parakeet-tdt-0.6b-v3).
  */
 function pinnedRevision(repository) {
-  const resource = Object.hasOwn(policy, `model:${repository}`) ? policy[`model:${repository}`] : undefined;
+  let resource = Object.hasOwn(policy, `model:${repository}`) ? policy[`model:${repository}`] : undefined;
+  if (!resource) {
+    const locator = `${HUGGING_FACE}${repository}`;
+    if (FRAMELEAF_ORG.test(locator)) resource = Object.values(policy).find((entry) => entry?.locator === locator);
+  }
   return admitted(resource) && /^[a-f0-9]{40}$/.test(resource.revision ?? '') ? resource.revision : undefined;
 }
 

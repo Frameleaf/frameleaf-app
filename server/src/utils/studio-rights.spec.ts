@@ -89,8 +89,9 @@ describe('studio rights (FL-86)', () => {
         // The owner approved this exact seven-file model inventory again on October 3.
         expect(rights.approvedOn, id).toBe('2026-10-03');
       } else if (id === 'model:Olicorne/parakeet-tdt-0.6b-v3-smoothquant-onnx') {
-        // The owner approved the five-file inventory served from the Frameleaf model mirror on October 31 (FL-685).
-        expect(rights.approvedOn, id).toBe('2026-10-31');
+        // The owner approved the five-file inventory on October 31 (FL-685) and again on November 26, when it moved
+        // from the Frameleaf model mirror to the Frameleaf organisation on Hugging Face (FL-1830).
+        expect(rights.approvedOn, id).toBe('2026-11-26');
       } else {
         expect(rights.approvedOn, id).toBe(REAPPROVED.has(id) || isPinned(id) ? '2026-09-29' : '2026-09-25');
       }

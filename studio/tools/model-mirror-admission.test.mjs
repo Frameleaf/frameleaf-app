@@ -26,6 +26,11 @@ test('a Frameleaf organisation model is admitted only at its approved revision w
     approvedOn: '2026-10-31', source: 'Authored admission check, not production approval', uses: ['localRuntime'],
     resources: [{ id: row.id, sha256: approvalRowDigest(row) }] }));
   await writeResourcePolicy(root, path.join(root, 'engine'));
+  // Importing the module wraps fetch: record what reaches the network and answer with the pinned bytes.
+  const requested = [];
+  const network = globalThis.fetch;
+  t.after(() => { globalThis.fetch = network; });
+  globalThis.fetch = async (request) => { requested.push(request.url); return new Response(payload); };
   const admission = await import(pathToFileURL(path.join(root, 'engine/src/shared/utils/resource-admission.mjs')));
 
   const pinned = `${locator}/resolve/${revision}/vocab.txt`;
@@ -41,4 +46,14 @@ test('a Frameleaf organisation model is admitted only at its approved revision w
     `https://huggingface.co/frameleaf/other/resolve/${revision}/vocab.txt`,
   ]) assert.equal(admission.canUseResource(refused), false, refused);
   await assert.rejects(admission.verifyResourceBytes(`${locator}/resolve/${revision}/unlisted.bin`, payload), /FRAMELEAF_RESOURCE_BLOCKED/);
+
+  // FL-1830: the row id names the upstream repository, not the locator's; a download must still go through.
+  assert.deepEqual(new Uint8Array(await (await fetch(pinned)).arrayBuffer()), payload);
+  await fetch(`${locator}/resolve/main/vocab.txt`);
+  assert.deepEqual(requested, [pinned, pinned]);
+  for (const refused of [
+    `${locator}/resolve/${'c'.repeat(40)}/vocab.txt`,
+    `https://huggingface.co/frameleaf/other/resolve/${revision}/vocab.txt`,
+    `${locator}/resolve/${revision}/unlisted.bin`,
+  ]) await assert.rejects(fetch(refused), /FRAMELEAF_RESOURCE_BLOCKED/, refused);
 });

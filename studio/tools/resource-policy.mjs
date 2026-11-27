@@ -31,7 +31,7 @@ export function assertReviewedDecisions(resource, message) {
 }
 
 // The Frameleaf organisation's repositories on Hugging Face: https://huggingface.co/frameleaf/<name>.
-const MIRROR_LOCATOR = /^https:\/\/huggingface\.co\/frameleaf\/[A-Za-z0-9][A-Za-z0-9._-]*$/;
+const FRAMELEAF_ORG_LOCATOR = /^https:\/\/huggingface\.co\/frameleaf\/[A-Za-z0-9][A-Za-z0-9._-]*$/;
 
 // Paths are literal repository-relative identities, never a URL, query, or encoded alias.
 // Existing bundled npm files are validated too, but do not become network identities.
@@ -53,7 +53,7 @@ function fileBindings(resource, admitted) {
       const segments = resource.locator.split('/');
       assert.ok(!segments.some((part) => part === '.' || part === '..'), `Invalid repository locator: ${resource.id}`);
       url = `https://huggingface.co/${resource.locator}/resolve/${resource.revision}/${file.path}`;
-    } else if (MIRROR_LOCATOR.test(resource.locator ?? '')) {
+    } else if (FRAMELEAF_ORG_LOCATOR.test(resource.locator ?? '')) {
       // A Frameleaf organisation repository, reached by its full URL, pinned at its approved revision.
       url = `${resource.locator}/resolve/${resource.revision}/${file.path}`;
     } else if (typeof resource.locator === 'string' && resource.locator.startsWith('https://')) {
