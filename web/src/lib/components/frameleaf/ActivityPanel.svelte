@@ -245,7 +245,7 @@
 
   <ol bind:this={list} class="list" aria-label={$t('frameleaf_album_activity_comments')}>
     {#if comments.length === 0}
-      <li class="empty"><EmptyRow title={$t('frameleaf_album_activity_empty')} /></li>
+      <li class="empty"><EmptyRow icon={mdiCommentOutline} title={$t('frameleaf_album_activity_empty')} /></li>
     {/if}
     {#each comments as entry (entry.id)}
       {@const own = entry.user.id === currentUserId}
@@ -594,8 +594,5 @@
   /* Kept in the page for the announcement, without a band of its own while there is nothing to say. */
   .note:empty {
     padding: 0;
-  }
-  .empty {
-    list-style: none;
   }
 </style>

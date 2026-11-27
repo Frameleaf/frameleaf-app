@@ -1,5 +1,6 @@
 <script lang="ts">
   import EmptyRow from '$lib/components/frameleaf/EmptyRow.svelte';
+  import EmptyState from '$lib/components/frameleaf/EmptyState.svelte';
   import { formatDateTime } from '$lib/frameleaf/date-format';
   import { formatCount } from '$lib/frameleaf/number-format';
   import DurableRuns from '$lib/components/frameleaf/jobs/DurableRuns.svelte';
@@ -1252,7 +1253,7 @@
     </summary>
     <p>{$t('frameleaf_jobs_history_help')}</p>
     {#if shownHistory.length === 0}
-      <p class="jm-muted">{$t('frameleaf_jobs_history_empty')}</p>
+      <EmptyRow icon={mdiHistory} title={$t('frameleaf_jobs_history_empty')} />
     {:else}
       <ol>
         {#each shownHistory.slice(0, JOB_HISTORY_SHOWN) as entry (entry.id)}
@@ -1618,23 +1619,26 @@
             </tbody>
           </table>
           {#if jobsFailed}
-            <div class="jm-state">
-              <InlineError compact message={$t('frameleaf_jobs_jobs_load_failed')} onRetry={() => jobsReload++} />
-            </div>
+            <InlineError
+              message={$t('frameleaf_jobs_jobs_load_failed')}
+              onRetry={() => {
+                lastLoad = 0;
+                jobsReload++;
+              }}
+            />
           {:else if jobsLoaded && matchingJobs.length === 0}
-            <div class="jm-state">
-              <EmptyRow
-                icon={tab === 'failed' ? mdiCheckCircleOutline : mdiClockOutline}
-                title={tab === 'failed'
-                  ? $t('frameleaf_jobs_empty_failed')
-                  : $t('frameleaf_jobs_empty_state', {
-                      values: { state: $t(`frameleaf_jobs_empty_state_${tab}` as Translations) },
-                    })}
-                message={owner === 'all'
-                  ? $t('frameleaf_jobs_empty_help')
-                  : $t('frameleaf_jobs_empty_help_account', { values: { name: ownerName } })}
-              />
-            </div>
+            <EmptyState
+              compact
+              icon={tab === 'failed' ? mdiCheckCircleOutline : mdiClockOutline}
+              title={tab === 'failed'
+                ? $t('frameleaf_jobs_empty_failed')
+                : $t('frameleaf_jobs_empty_state', {
+                    values: { state: $t(`frameleaf_jobs_empty_state_${tab}` as Translations) },
+                  })}
+              message={owner === 'all'
+                ? $t('frameleaf_jobs_empty_help')
+                : $t('frameleaf_jobs_empty_help_account', { values: { name: ownerName } })}
+            />
           {/if}
         </div>
         {#if matchingJobs.length > shownJobs.length}
@@ -2539,8 +2543,5 @@
   .jm-detail-actions {
     display: flex;
     justify-content: flex-end;
-  }
-  .jm-state {
-    padding: var(--fl-space-4);
   }
 </style>
