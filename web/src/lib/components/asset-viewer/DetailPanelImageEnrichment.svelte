@@ -100,12 +100,12 @@
    * other failure is told beside the description, which is always in view (FL-1811).
    */
   let failure = $state<{ kind: InlineEditFailure; run: () => Promise<void>; sensitive: boolean } | null>(null);
-  const SENSITIVITY_ACTIONS: string[] = [
+  const SENSITIVITY_ACTIONS = new Set<string>([
     AssetImageEnrichmentAction.RerunNsfwDetection,
     AssetImageEnrichmentAction.MarkSafe,
     AssetImageEnrichmentAction.MarkNsfw,
     AssetImageEnrichmentAction.AcceptNsfwResult,
-  ];
+  ]);
   let canReview = $derived(isOwner && asset.type === AssetTypeEnum.Image);
   // Track the in-flight enrichment fetch so we can abort it when the user
   // swipes to a new asset before the previous request resolved.
@@ -213,7 +213,7 @@
       failure = {
         kind: classifyInlineEditError(error),
         run: () => perform(key, run),
-        sensitive: SENSITIVITY_ACTIONS.includes(key),
+        sensitive: SENSITIVITY_ACTIONS.has(key),
       };
       handleError(error, $t('errors.unable_to_update_image_enrichment'));
     } finally {
