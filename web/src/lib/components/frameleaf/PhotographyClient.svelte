@@ -11,7 +11,6 @@
    * has one. A photographer's Client preview (`#preview=` from the workspace) shows the same pages
    * with nothing saved or sent.
    */
-  import Skeleton from '$lib/components/frameleaf/Skeleton.svelte';
   import { onMount, onDestroy } from 'svelte';
   import { t } from 'svelte-i18n';
   import { Icon } from '@frameleaf/ui';
@@ -1674,9 +1673,10 @@
                 alt={$t('frameleaf_photography_photo_number', {
                   values: { number: gallery.photos.find((photo) => photo.id === id)?.number ?? '' },
                 })}
-              />{:else}<div role="status" aria-busy="true" aria-label={$t('loading')}>
-                <Skeleton variant="block" aspect="3 / 2" />
-              </div>{/if}<button type="button" aria-pressed={choices.includes(id)} onclick={() => favorite(id)}
+              />{:else}<p role="status">{$t('loading')}</p>{/if}<button
+              type="button"
+              aria-pressed={choices.includes(id)}
+              onclick={() => favorite(id)}
               ><Icon
                 icon={choices.includes(id) ? mdiHeart : mdiHeartOutline}
                 size="18"

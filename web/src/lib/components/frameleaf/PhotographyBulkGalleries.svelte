@@ -1,6 +1,4 @@
 <script lang="ts">
-  import InlineError from '$lib/components/frameleaf/InlineError.svelte';
-  import ListSkeleton from '$lib/components/frameleaf/ListSkeleton.svelte';
   import { getFolderSummary, type PhotographyBulkCreateDto, type PhotographyBulkDto } from '@frameleaf/sdk';
   import { t } from 'svelte-i18n';
   import Button from '$lib/components/frameleaf/Button.svelte';
@@ -189,9 +187,9 @@
     {:else if stage === 'review'}
       <p>{$t('frameleaf_photography_bulk_choose_folder')}</p>
       {#if loadingFolders}
-        <ListSkeleton rows={2} avatar={false} />
+        <p role="status">{$t('loading')}</p>
       {:else if foldersFailed}
-        <InlineError compact message={$t('frameleaf_state_load_failed_body')} onRetry={loadFolders} />
+        <Button onclick={loadFolders}>{$t('retry')}</Button>
       {/if}
       <ul>
         {#each rows as row (row.index)}
