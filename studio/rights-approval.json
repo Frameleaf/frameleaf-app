@@ -500,9 +500,9 @@
     },
     {
       "id": "model:Olicorne/parakeet-tdt-0.6b-v3-smoothquant-onnx",
-      "sha256": "7c2ce591f4636bc62a04f04e39adca8f00814954e9410f65e5d4b409698f94eb",
-      "approvedOn": "2026-10-31",
-      "source": "Owner (AJ Taylor), 2026-10-31, in chat with the Studio session working FL-685: chose \"Mirror Parakeet\", approving this five-file inventory served from the Frameleaf model mirror (frameleaf/parakeet-tdt-0.6b-v3, mirror revision 8fdb7406cf95bd8be6d735010cfd96a17502bfa8; Olicorne/parakeet-tdt-0.6b-v3-optimized-onnx commit 8a9229fe6a84898bcd05abd31d541722560b80f8); mirrored by Frameleaf/frameleaf-cloud#589."
+      "sha256": "403beab293cbb0c13a457d27a77f134e6918a9500dd869fc6384f87a9d1c07b8",
+      "approvedOn": "2026-11-26",
+      "source": "Owner (AJ Taylor), 2026-11-26, in chat (FL-1825/FL-1830): \"eliminate our mirror and lets host 100% on our HF organization\". Same five-file inventory and hashes as the 2026-10-31 approval (FL-685, \"Mirror Parakeet\"; Olicorne/parakeet-tdt-0.6b-v3-optimized-onnx commit 8a9229fe6a84898bcd05abd31d541722560b80f8), now served from the Frameleaf organisation on Hugging Face (frameleaf/parakeet-tdt-0.6b-v3, revision 9b7613c2e358251021f94da279da6d18ff39a623) instead of the mirror (revision 8fdb7406cf95bd8be6d735010cfd96a17502bfa8)."
     },
     {
       "id": "model:OpenMOSS-Team/MOSS-Audio-Tokenizer-Nano-ONNX",

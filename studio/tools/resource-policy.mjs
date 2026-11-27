@@ -30,8 +30,8 @@ export function assertReviewedDecisions(resource, message) {
   assert.deepEqual(resource.decisions, decisions, message);
 }
 
-// The Frameleaf model mirror's repositories: https://models.frameleaf.cloud/frameleaf/<name>.
-const MIRROR_LOCATOR = /^https:\/\/models\.frameleaf\.cloud\/frameleaf\/[A-Za-z0-9][A-Za-z0-9._-]*$/;
+// The Frameleaf organisation's repositories on Hugging Face: https://huggingface.co/frameleaf/<name>.
+const MIRROR_LOCATOR = /^https:\/\/huggingface\.co\/frameleaf\/[A-Za-z0-9][A-Za-z0-9._-]*$/;
 
 // Paths are literal repository-relative identities, never a URL, query, or encoded alias.
 // Existing bundled npm files are validated too, but do not become network identities.
@@ -54,7 +54,7 @@ function fileBindings(resource, admitted) {
       assert.ok(!segments.some((part) => part === '.' || part === '..'), `Invalid repository locator: ${resource.id}`);
       url = `https://huggingface.co/${resource.locator}/resolve/${resource.revision}/${file.path}`;
     } else if (MIRROR_LOCATOR.test(resource.locator ?? '')) {
-      // A Frameleaf model mirror repository serves the hub's layout, pinned at the mirror revision.
+      // A Frameleaf organisation repository, reached by its full URL, pinned at its approved revision.
       url = `${resource.locator}/resolve/${resource.revision}/${file.path}`;
     } else if (typeof resource.locator === 'string' && resource.locator.startsWith('https://')) {
       // A reviewed full-file locator binds only itself. No directory-prefix guessing.

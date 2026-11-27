@@ -582,7 +582,7 @@
       ]
     },
     {
-      "basis": "CC-BY-4.0 model licence; attribution retained. Allowed everywhere: personal use by the user on their own server or a Frameleaf Cloud container (legal review 2026-10-17, FL-451). Served from the Frameleaf model mirror (FL-685): the five files are Olicorne/parakeet-tdt-0.6b-v3-optimized-onnx (formerly -smoothquant-onnx) at commit 8a9229fe6a84898bcd05abd31d541722560b80f8, the fp16/ and int8/ precisions served flat.",
+      "basis": "CC-BY-4.0 model licence; attribution retained. Allowed everywhere: personal use by the user on their own server or a Frameleaf Cloud container (legal review 2026-10-17, FL-451). Served from the Frameleaf organisation on Hugging Face (FL-685, moved from the Frameleaf model mirror in FL-1830): the five files are Olicorne/parakeet-tdt-0.6b-v3-optimized-onnx (formerly -smoothquant-onnx) at commit 8a9229fe6a84898bcd05abd31d541722560b80f8, the fp16/ and int8/ precisions served flat.",
       "decisions": {
         "hostedUse": "allowed",
         "localRuntime": "allowed",
@@ -620,8 +620,8 @@
       "id": "model:Olicorne/parakeet-tdt-0.6b-v3-smoothquant-onnx",
       "kind": "model",
       "licenseDeclared": "cc-by-4.0",
-      "locator": "https://models.frameleaf.cloud/frameleaf/parakeet-tdt-0.6b-v3",
-      "revision": "8fdb7406cf95bd8be6d735010cfd96a17502bfa8",
+      "locator": "https://huggingface.co/frameleaf/parakeet-tdt-0.6b-v3",
+      "revision": "9b7613c2e358251021f94da279da6d18ff39a623",
       "sourceRefs": [
         "src/features/media-library/transcription/types.ts",
         "src/features/media-library/transcription/workers/parakeet.worker.ts",

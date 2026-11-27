@@ -10,13 +10,13 @@ export class ResourceBlockedError extends Error {
 
 const APPROVAL = /^[a-f0-9]{64}$/;
 const HUGGING_FACE = 'https://huggingface.co/';
-const MIRROR = /^https:\/\/models\.frameleaf\.cloud\/frameleaf\/[A-Za-z0-9][A-Za-z0-9._-]*$/;
+const MIRROR = /^https:\/\/huggingface\.co\/frameleaf\/[A-Za-z0-9][A-Za-z0-9._-]*$/;
 
 const admitted = (resource) => resource?.localRuntime === 'allowed' && APPROVAL.test(resource.approvalSha256 ?? '');
 
 /**
  * The policy entry a URL belongs to, or undefined. A URL is never an identity of its own: it is
- * admitted only inside a reviewed locator. A Hugging Face or Frameleaf model mirror repository is reached only through the
+ * admitted only inside a reviewed locator. A Hugging Face or Frameleaf organisation repository is reached only through the
  * exact revision the owner approved (`/resolve/<revision>/`), never a branch such as `main`, and
  * any other locator only by itself or a path beneath it. The URL is parsed first, so dot segments,
  * encoded separators, credentials, another host or a lookalike prefix cannot borrow an approval.
@@ -37,7 +37,7 @@ function entryForUrl(id) {
     const { locator, revision } = resource ?? {};
     if (typeof locator !== 'string' || !locator) continue;
     if (MIRROR.test(locator)) {
-      // A Frameleaf model mirror repository, like a hub repository, only at its approved revision.
+      // A Frameleaf organisation repository (full URL), like a hub repository, only at its approved revision.
       if (typeof revision !== 'string' || !/^[a-f0-9]{40}$/.test(revision)) continue;
       const base = `${locator}/resolve/${revision}/`;
       if (id.startsWith(base)) matches.push([base.length, resource]);
