@@ -1,5 +1,6 @@
 import { Kysely, sql } from 'kysely';
 import { recordQueueBatches } from 'src/queue/queue-problems.js';
+import { type RunFolded, foldedOf } from 'src/queue/run-query.js';
 import { QUEUE_BATCH } from 'src/queue/types.js';
 import { dropAttemptEvidence, pruneWorkerStopEvidence } from 'src/utils/attempt-evidence.js';
 
@@ -109,5 +110,102 @@ export async function pruneQueueHistoryPage(
     )`.execute(tx);
     await pruneWorkerStopEvidence(tx);
     return { pruned, fullPage: candidates.length === QUEUE_BATCH, due: !!last?.due };
+  });
+}
+
+const FOLD_CURSOR = 'frameleaf-queue-fold-cursor';
+
+/**
+ * FL-1826 (owner, 2026-11-26): an open run keeps its jobs as its counts, so a long import held millions of finished
+ * rows (7.2M of 9.5M on a 900,000 photo library). One page: the next photos of one open run, in key order; those whose
+ * every task completed over an hour ago are deleted and added to the run's `selection.folded` (`RunFolded`), in one
+ * transaction with the run row locked, so `finishRuns` never sums a run half way through a page.
+ *
+ * Only a photo with nothing but completed tasks goes: one with a failed, waiting or running task keeps every row, as
+ * the failure reports and Try again read them. Only an enumerated run with no parked stage: until every photo is
+ * admitted a missing row would be admitted again, and a parked stage can bring a photo's tasks back.
+ * `more`: the run has photos after this page, or another open run follows it.
+ * ponytail: a folded photo no longer shows in the run's item list; the list is of what still has rows.
+ */
+export async function foldOpenRunsPage(db: Kysely<any>): Promise<{ folded: number; more: boolean }> {
+  return db.transaction().execute(async (tx) => {
+    const {
+      rows: [lock],
+    } = await sql<{ acquired: boolean }>`select pg_try_advisory_xact_lock(-333, 2) acquired`.execute(tx);
+    if (!lock.acquired) return { folded: 0, more: false };
+    const {
+      rows: [cursor],
+    } = await sql<{ runId: string | null; root: string | null }>`select (value->>'runId')::uuid "runId",
+      value->>'root' root from system_metadata where key = ${FOLD_CURSOR}`.execute(tx);
+    const save = (value: { runId: string; root: string } | null) =>
+      sql`insert into system_metadata(key, value) values (${FOLD_CURSOR}, ${JSON.stringify(value ?? {})}::text::jsonb)
+        on conflict (key) do update set value = excluded.value`.execute(tx);
+    // the cursor's run while it is still open, else the next one; a run someone has locked waits for its next turn
+    const {
+      rows: [run],
+    } = await sql<{ id: string; folded: unknown }>`select r.id, r.selection->'folded' folded from job_run r
+      where r."enumerationDone" and r."finishedAt" is null
+        and not coalesce(r.selection->'holds' @? '$.* ? (@ == "parked")', false)
+        ${cursor?.runId ? sql`and r.id >= ${cursor.runId}::uuid` : sql``}
+      order by r.id limit 1 for no key update skip locked`.execute(tx);
+    if (!run) {
+      await save(null);
+      return { folded: 0, more: false };
+    }
+    const after = run.id === cursor?.runId ? (cursor.root ?? '') : '';
+    const { rows: page } = await sql<{ root: string }>`select distinct j."rootItemKey" root from job j
+      where j."runId" = ${run.id}::uuid and j."rootItemKey" > ${after} order by 1 limit ${QUEUE_BATCH}`.execute(tx);
+    const last = page.at(-1);
+    // past this run's last photo: the next run, or the first again. Says whether anything is left this time round
+    const next = async () => {
+      if (last && page.length === QUEUE_BATCH) {
+        await save({ runId: run.id, root: last.root });
+        return true;
+      }
+      const {
+        rows: [following],
+      } = await sql<{ id: string }>`select r.id from job_run r where r."enumerationDone" and r."finishedAt" is null
+        and r.id > ${run.id}::uuid order by r.id limit 1`.execute(tx);
+      await save(following ? { runId: following.id, root: '' } : null);
+      return !!following;
+    };
+    if (page.length === 0) return { folded: 0, more: await next() };
+    const roots = page.map(({ root }) => root);
+    // a row someone else holds is not waited for: its photo is left for the next time round
+    const { rows: locked } = await sql<{ id: string }>`select id from job
+      where "runId" = ${run.id}::uuid and "rootItemKey" = any(${roots}::text[]) for update skip locked`.execute(tx);
+    const { rows: gone } = await sql<{ id: string; name: string; queue: string; root: string }>`
+      select j.id, j.name, j.queue, j."rootItemKey" root from job j
+      where j."runId" = ${run.id}::uuid and j."rootItemKey" = any(${roots}::text[])
+        and not exists (select 1 from job o where o."runId" = j."runId" and o."rootItemKey" = j."rootItemKey" and (
+          o.id <> all(${locked.map(({ id }) => id)}::uuid[])
+          or o.state <> 'completed' or o."latestPending" is not null
+          or o."finishedAt" is null or o."finishedAt" >= now() - interval '1 hour'
+          -- a task of another photo or run that waits on one of these keeps the photo
+          or exists (select 1 from job child where child."parentId" = o.id and (child."runId" is distinct from o."runId"
+            or child."rootItemKey" is distinct from o."rootItemKey"))
+          -- as retention: an attempt that did not complete needs its proof of stopping before its job may go
+          or exists (select 1 from job_attempt a where a."jobId" = o.id
+            and (a.outcome is distinct from 'completed' or a."finishedAt" is null)
+            and not exists (select 1 from system_metadata m
+              where m.key = 'frameleaf-attempt-evidence:' || a.token::text
+                and m.value->>'jobId' = o.id::text and m.value ? 'stoppedAt')
+            and not exists (select 1 from system_metadata m
+              where m.key = 'frameleaf-worker-stopped:' || a."workerId"::text
+                and m.value->>'workerId' = a."workerId"::text and m.value ? 'stoppedAt'))))`.execute(tx);
+    if (gone.length > 0) {
+      const ids = gone.map(({ id }) => id);
+      const folded: RunFolded = foldedOf(run.folded);
+      folded.roots += new Set(gone.map(({ root }) => root)).size;
+      for (const { name, queue } of gone) {
+        folded.tasks[name] = { n: (folded.tasks[name]?.n ?? 0) + 1, queue };
+      }
+      await dropAttemptEvidence(tx, ids);
+      // children first: a task's parent is of the same photo, and goes in the same statement
+      await sql`delete from job where id = any(${ids}::uuid[])`.execute(tx);
+      await sql`update job_run set selection = jsonb_set(coalesce(selection, '{}'::jsonb), '{folded}',
+        ${JSON.stringify(folded)}::text::jsonb) where id = ${run.id}::uuid`.execute(tx);
+    }
+    return { folded: gone.length, more: await next() };
   });
 }

@@ -39,6 +39,7 @@ vi.mock('src/queue/store.js', () => ({
 }));
 vi.mock('src/queue/retention.js', () => ({
   pruneQueueHistoryPage: vi.fn().mockResolvedValue(undefined),
+  foldOpenRunsPage: vi.fn().mockResolvedValue({ folded: 0, more: false }),
 }));
 vi.mock('src/queue/run-summary.js', () => ({
   finishRuns: vi.fn().mockResolvedValue(0),
