@@ -100,6 +100,16 @@ describe(JobRepository.name, () => {
     ]);
   });
 
+  it("keeps one waiting refresh of an owner's merge suggestions and leaves the nightly cleanup alone (FL-1790)", async () => {
+    await sut.queue({ name: JobName.PersonCleanup, data: { mergeCandidatesOwnerId: 'owner' } });
+    await sut.queue({ name: JobName.PersonCleanup });
+
+    expect(enqueue.mock.calls.map(([items]) => items[0].options)).toEqual([
+      { delay: 60_000, deduplication: { id: 'PersonCleanup:merge-candidates:owner', keepLastIfActive: true } },
+      undefined,
+    ]);
+  });
+
   it('lets the shared search wait longer under the same key while a scheduled scan runs (FL-1534)', async () => {
     await sut.queue({
       name: JobName.MediaHealthLocateMissing,

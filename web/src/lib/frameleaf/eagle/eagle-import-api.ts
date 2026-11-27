@@ -11,6 +11,7 @@ import {
   upsertTags,
 } from '@frameleaf/sdk';
 import type { EagleAnnotation } from '$lib/frameleaf/eagle/eagle-annotations';
+import { invalidateTags } from '$lib/frameleaf/tag-store';
 import { fileUploadHandler, type UploadChecksums } from '$lib/utils/file-uploader';
 
 /**
@@ -53,6 +54,7 @@ export const frameleafEagleImportApi: EagleImportApi = {
   },
   async upsertTags(names) {
     const tags = await upsertTags({ tagUpsertDto: { tags: names } });
+    invalidateTags();
     const wanted = new Set(names);
     return Object.fromEntries(tags.filter(({ value }) => wanted.has(value)).map(({ value, id }) => [value, id]));
   },

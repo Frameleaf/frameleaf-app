@@ -59,6 +59,29 @@
   } from '@mdi/js';
   import { t } from 'svelte-i18n';
 
+  /*
+   * FL-1802: a card is a collage of thumbnails, and an account can have thousands of tags. The cards
+   * are drawn a batch at a time, the next batch well before the end of the list scrolls into sight.
+   */
+  const CARD_BATCH = 60;
+  let shownCards = $state(CARD_BATCH);
+  const moreCards = (marker: HTMLElement) => {
+    if (typeof IntersectionObserver === 'undefined') {
+      shownCards = Infinity;
+      return;
+    }
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          shownCards += CARD_BATCH;
+        }
+      },
+      { rootMargin: '800px' },
+    );
+    observer.observe(marker);
+    return { destroy: () => observer.disconnect() };
+  };
+
   let { tree }: { tree: FrameleafTagTree } = $props();
 
   const headingId = $props.id();
@@ -252,12 +275,18 @@
     />
   {:else if view.view === 'cards'}
     <div class="grid">
-      {#each cards as node (node.id)}
+      {#each cards.slice(0, shownCards) as node (node.id)}
         <TagCard {node} note={noteFor(node)}>
           {#snippet actions()}{@render menuFor(node)}{/snippet}
         </TagCard>
       {/each}
     </div>
+    {#if shownCards < cards.length}
+      <!-- Rebuilt after each batch, so a marker still in sight asks for the next one. -->
+      {#key shownCards}
+        <div use:moreCards aria-hidden="true"></div>
+      {/key}
+    {/if}
   {:else}
     {#if !matches && groupIds.length > 0}
       <div class="table-tools">
