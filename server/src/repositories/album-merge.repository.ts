@@ -422,8 +422,10 @@ export class AlbumMergeRepository {
   }
 
   async reverseFolderAlbums(changes: AlbumChangeRow[]): Promise<AlbumChangeReversal> {
-    if (changes.length > 0) {
-      await this.holdFolderAlbumSync(changes[0].albumId);
+    // the winner, which every moved link points at; null once the winner itself was deleted
+    const winnerId = changes[0]?.albumId;
+    if (winnerId) {
+      await this.holdFolderAlbumSync(winnerId);
     }
     let reversed = 0;
     const skipped: string[] = [];
