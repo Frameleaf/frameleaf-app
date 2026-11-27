@@ -83,6 +83,14 @@
     open = false;
   };
 
+  // A second Escape can't be cancelled on a <dialog>, so stop the key itself while the action runs.
+  const holdEscape = (event: KeyboardEvent) => {
+    if (busy && event.key === 'Escape') {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+  };
+
   // While the action runs, Escape and the close button wait for it, as Cancel does.
   const requestClose = () => {
     if (!busy) {
@@ -97,6 +105,8 @@
     onClose?.(answer);
   };
 </script>
+
+<svelte:window onkeydowncapture={holdEscape} />
 
 <Dialog bind:open {title} closeLabel={$t('close')} {onClosed} onRequestClose={requestClose}>
   <div class="body">

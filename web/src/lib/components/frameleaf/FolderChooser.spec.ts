@@ -5,11 +5,6 @@ import type { FolderEntry, FolderListing } from '$lib/frameleaf/folder-readers';
 import en from '../../../../../i18n/en.json';
 import FolderChooser from './FolderChooser.svelte';
 
-// The server's reason, as getServerErrorMessage reads it from an HTTP error.
-vi.mock('$lib/utils/handle-error', () => ({
-  getServerErrorMessage: (error: { serverMessage?: string }) => error?.serverMessage,
-}));
-
 const TREE: Record<string, FolderListing> = {
   '': { choosable: false, folders: [{ id: '/mnt', name: 'mnt' }] },
   '/mnt': { choosable: true, detail: '/mnt', folders: [{ id: '/mnt/photos', name: 'photos', detail: '1,204 photos' }] },
@@ -31,7 +26,8 @@ describe('FolderChooser', () => {
     await init({ fallbackLocale: 'en', initialLocale: 'en' });
   });
   beforeEach(() => {
-    read.mockClear();
+    read.mockReset();
+    read.mockImplementation((trail: FolderEntry[]) => Promise.resolve(TREE[trail.at(-1)?.id ?? '']));
     HTMLDialogElement.prototype.showModal ??= vi.fn(function (this: HTMLDialogElement) {
       this.open = true;
     });
@@ -99,7 +95,6 @@ describe('FolderChooser', () => {
     expect(screen.getAllByRole('button', { name: 'mnt' })).toHaveLength(1);
     release();
     expect(await button(/^photos/)).toBeInTheDocument();
-    read.mockImplementation((trail: FolderEntry[]) => Promise.resolve(TREE[trail.at(-1)?.id ?? '']));
   });
 
   it('puts the focus on the first folder on open and after each move', async () => {
@@ -109,9 +104,13 @@ describe('FolderChooser', () => {
     await vi.waitFor(() => expect(screen.getByRole('button', { name: /^photos/ })).toHaveFocus());
   });
 
-  it("says the server's own reason when it gives one", async () => {
-    read.mockRejectedValueOnce({ serverMessage: 'Choose a whole path' });
+  it('says why in its own words when reading fails, and gives Retry the focus after a move', async () => {
     open();
-    expect(await screen.findByText('Choose a whole path')).toBeInTheDocument();
+    await fireEvent.click(await button('mnt'));
+    read.mockRejectedValueOnce(new Error('Internal server error'));
+    await fireEvent.click(await button(/^photos/));
+    expect(await screen.findByText(en.frameleaf_libraries_browse_failed)).toBeInTheDocument();
+    expect(screen.queryByText('Internal server error')).not.toBeInTheDocument();
+    await vi.waitFor(() => expect(screen.getByRole('button', { name: en.frameleaf_error_retry })).toHaveFocus());
   });
 });

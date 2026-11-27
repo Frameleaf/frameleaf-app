@@ -207,6 +207,7 @@
     display: grid;
     align-self: stretch;
     align-content: center;
+    grid-template-rows: minmax(0, 1fr);
     min-width: 0;
     min-height: 0;
   }
@@ -214,6 +215,8 @@
   .content > :global(img) {
     max-width: 100%;
     justify-self: center;
+    align-self: center;
+    min-height: 0;
     max-height: 100%;
     border-radius: var(--fl-radius-card);
     object-fit: contain;

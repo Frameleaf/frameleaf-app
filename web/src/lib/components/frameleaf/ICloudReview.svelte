@@ -465,12 +465,14 @@
   {@const open = viewing}
   <LightViewer
     label={open.fileName ?? $t('frameleaf_icloud_untitled')}
-    position={$t('frameleaf_icloud_review_position', {
-      values: {
-        position: number((current - 1) * (review?.size ?? PAGE_SIZE) + openIndex + 1),
-        total: number(review?.total ?? 0),
-      },
-    })}
+    position={openIndex === -1
+      ? undefined
+      : $t('frameleaf_icloud_review_position', {
+          values: {
+            position: number((current - 1) * (review?.size ?? PAGE_SIZE) + openIndex + 1),
+            total: number(review?.total ?? 0),
+          },
+        })}
     {hasPrevious}
     {hasNext}
     onPrevious={() => void step(-1)}

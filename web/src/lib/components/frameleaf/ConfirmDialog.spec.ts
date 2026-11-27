@@ -109,6 +109,9 @@ describe('ConfirmDialog', () => {
 
     await fireEvent.click(screen.getByRole('button', { name: 'Leave album' }));
     await fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+    const escape = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+    document.body.dispatchEvent(escape);
+    expect(escape.defaultPrevented).toBe(true);
     expect(screen.getByRole('heading', { name: 'Leave “Lake days”?' })).toBeInTheDocument();
     expect(onClose).not.toHaveBeenCalled();
 
@@ -127,6 +130,8 @@ describe('ConfirmDialog', () => {
     const action = screen.getByRole('button', { name: 'Delete album' });
     action.focus();
     await fireEvent.click(action);
+    // a browser drops the focus from a button that becomes disabled; jsdom does not, so do it here
+    action.blur();
     await vi.waitFor(() => expect(action).toHaveFocus());
   });
 });

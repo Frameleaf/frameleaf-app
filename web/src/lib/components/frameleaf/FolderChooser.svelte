@@ -15,7 +15,6 @@
   import Skeleton from '$lib/components/frameleaf/Skeleton.svelte';
   import { Icon } from '@frameleaf/ui';
   import { mdiChevronRight, mdiFolderOutline } from '@mdi/js';
-  import { getServerErrorMessage } from '$lib/utils/handle-error';
   import { tick, type Snippet } from 'svelte';
   import { t } from 'svelte-i18n';
 
@@ -61,6 +60,7 @@
 
   let list: HTMLUListElement | undefined = $state();
   let nav: HTMLElement | undefined = $state();
+  let errorBox: HTMLElement | undefined = $state();
   /** Set on open and on each move: the next list read takes the focus, on its first folder. */
   let moved = true;
   const go = (next: FolderEntry[]) => {
@@ -83,13 +83,17 @@
           (list?.querySelector('button') ?? nav?.querySelector<HTMLElement>('[aria-current]'))?.focus();
         }
       })
-      .catch((error: unknown) => {
-        if (requested === key) {
-          listing = {
-            key: requested,
-            place: at,
-            failed: getServerErrorMessage(error) ?? $t('frameleaf_libraries_browse_failed'),
-          };
+      .catch(async () => {
+        if (requested !== key) {
+          return;
+        }
+        // Always the translated line: the server's own text is English and may be a bare status.
+        listing = { key: requested, place: at, failed: $t('frameleaf_libraries_browse_failed') };
+        if (moved) {
+          // the row that was clicked is gone; Retry takes the focus instead
+          moved = false;
+          await tick();
+          errorBox?.querySelector<HTMLElement>('button')?.focus();
         }
       });
   });
@@ -148,7 +152,9 @@
       <p class="hint">{result.note ?? note}</p>
     {/if}
   {:else if current?.failed}
-    <InlineError compact message={current.failed} onRetry={() => retries++} />
+    <div bind:this={errorBox}>
+      <InlineError compact message={current.failed} onRetry={() => retries++} />
+    </div>
   {:else}
     <div role="status" aria-busy="true">
       <span class="sr-only">{$t('loading')}</span>
