@@ -102,7 +102,8 @@
         nextPage = null;
       }
       loadFailed = true;
-      handleError(error, $t('frameleaf_documents_error_load'));
+      // FL-1810: the page says so in place, with Try again; still logged
+      handleError(error, $t('frameleaf_documents_error_load'), { notify: !reset });
     } finally {
       if (isCurrent()) {
         isLoading = false;
@@ -197,7 +198,7 @@
     <div class="doc-toolbar">
       <p class="doc-count" aria-live="polite">
         {#if isLoading && assets.length === 0}
-          {$t('frameleaf_documents_loading')}
+          <!-- FL-1810: the placeholder below says it is loading -->
         {:else if searching}
           {$t('frameleaf_documents_match_count', { values: { count: total, query: query.trim() } })}
         {:else}
@@ -263,9 +264,9 @@
       </ResultsView>
     </div>
 
-    {#if isLoading}
+    {#if isLoading && assets.length === 0}
       <div class="doc-loading">
-        <GridSkeleton tiles={12} columns={6} aspect="3 / 4" />
+        <GridSkeleton tiles={12} minTile="10rem" />
       </div>
     {/if}
   </section>

@@ -518,9 +518,14 @@
       <div class="boards">
         {#if !detail}
           {#if detailFailed}
-            <InlineError compact message={$t('frameleaf_item_details_unavailable')} onRetry={() => generation++} />
+            <!-- .fl-scope: the inspector also shows inside the font viewer, which is portalled outside .frameleaf -->
+            <div class="fl-scope">
+              <InlineError message={$t('frameleaf_item_details_unavailable')} onRetry={() => generation++} />
+            </div>
           {:else}
-            <div role="status" aria-busy="true" aria-label={$t('loading')}><Skeleton variant="text" lines={4} /></div>
+            <div class="detail-loading" role="status" aria-busy="true" aria-label={$t('loading')}>
+              <Skeleton variant="block" height="7rem" /><Skeleton variant="text" lines={7} />
+            </div>
           {/if}
         {:else}
           {@render boardsDetails(detail)}
@@ -556,9 +561,14 @@
       <div id={`${tabId}-panel`} role="tabpanel" aria-labelledby={`${tabId}-${tab}`} tabindex="0">
         {#if !detail}
           {#if detailFailed}
-            <InlineError compact message={$t('frameleaf_item_details_unavailable')} onRetry={() => generation++} />
+            <!-- .fl-scope: the inspector also shows inside the font viewer, which is portalled outside .frameleaf -->
+            <div class="fl-scope">
+              <InlineError message={$t('frameleaf_item_details_unavailable')} onRetry={() => generation++} />
+            </div>
           {:else}
-            <div role="status" aria-busy="true" aria-label={$t('loading')}><Skeleton variant="text" lines={4} /></div>
+            <div class="detail-loading" role="status" aria-busy="true" aria-label={$t('loading')}>
+              <Skeleton variant="block" height="7rem" /><Skeleton variant="text" lines={7} />
+            </div>
           {/if}
         {:else if tab === 'info'}
           <section class="part">
@@ -958,5 +968,9 @@
     font-weight: 600;
     letter-spacing: 0.06em;
     text-transform: uppercase;
+  }
+  .detail-loading {
+    display: grid;
+    gap: var(--fl-space-4);
   }
 </style>

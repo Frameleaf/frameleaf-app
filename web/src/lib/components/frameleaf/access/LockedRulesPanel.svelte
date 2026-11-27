@@ -32,7 +32,6 @@
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
   import Button from '$lib/components/frameleaf/Button.svelte';
-  import Spinner from '$lib/components/frameleaf/Spinner.svelte';
   import OnEvents from '$lib/components/OnEvents.svelte';
   import {
     canCreateTag,
@@ -617,7 +616,7 @@
     {/each}
   </div>
   {#if searchingPeople}
-    <Spinner size="md" label={$t('loading')} />
+    <ListSkeleton rows={2} />
   {/if}
   {#if draft.personIds.length === 0 && personOptions.length === 0 && !searchingPeople}
     <p class="muted">{$t('frameleaf_locked_rules_people_empty')}</p>

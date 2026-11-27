@@ -1,5 +1,4 @@
 <script module lang="ts">
-  import EmptyRow from '$lib/components/frameleaf/EmptyRow.svelte';
   import { newRequestKey } from '$lib/frameleaf/request-key';
   import { TOAST_ACTION_TIMEOUT_MS, toastUndo } from '$lib/frameleaf/toast';
 
@@ -1064,7 +1063,8 @@
         </details>
       {:else}
         <div class="ft-empty">
-          <EmptyRow title={$t('frameleaf_face_tagger_empty_title')} message={$t('frameleaf_face_tagger_empty_body')} />
+          <h3>{$t('frameleaf_face_tagger_empty_title')}</h3>
+          <p>{$t('frameleaf_face_tagger_empty_body')}</p>
         </div>
       {/if}
     </aside>
@@ -1358,6 +1358,7 @@
     font-size: 12px;
   }
   .ft-position p,
+  .ft-empty p,
   .ft-person-list p {
     color: var(--fl-muted);
     font-size: 11px;
