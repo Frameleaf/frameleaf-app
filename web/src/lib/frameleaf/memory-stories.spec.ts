@@ -259,6 +259,9 @@ describe('memory stories', () => {
 
       it('reads the years from the items, newest first', () => {
         expect(onThisDayYears(gathered)).toEqual(['2025', '2023', '2019']);
+        // FL-1793: a memory from a list carries its items slim
+        const listed = { ...gathered, assets: [], slimAssets: gathered.assets } as unknown as MemoryResponseDto;
+        expect(onThisDayYears(listed)).toEqual(['2025', '2023', '2019']);
         expect(onThisDayYears(single)).toEqual(['2024']);
         expect(onThisDayYears({ ...eventStory, assets: gathered.assets })).toEqual([]);
       });
@@ -469,6 +472,9 @@ describe('pet stories (FL-58)', () => {
       title: 'Moments with Biscuit',
       subtitle: 'August 2026 · 2 items',
     });
+    // FL-1793: counted from the slim items when the memory came from a list
+    const listed = { ...petStory, assets: [], slimAssets: [{}, {}, {}] } as unknown as MemoryResponseDto;
+    expect(memoryHeadline(listed, { t, locale: 'en' }).subtitle).toBe('August 2026 · 3 items');
     expect(showLessOptions(story, { t, locale: 'en' }).map(({ rule }) => rule)).toEqual([
       { kind: MemoryShowLessKind.Pet, value: 'p1' },
       { kind: MemoryShowLessKind.Type, value: MemoryType.PetStory },

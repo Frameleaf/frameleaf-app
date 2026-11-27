@@ -43805,6 +43805,21 @@
             }
           },
           {
+            "name": "slim",
+            "required": false,
+            "in": "query",
+            "description": "Leave `assets` empty and list each item in `slimAssets` instead, for lists that only draw covers",
+            "x-immich-history": [
+              {
+                "version": "v3",
+                "state": "Added"
+              }
+            ],
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
             "name": "type",
             "required": false,
             "in": "query",
@@ -44514,6 +44529,21 @@
               "minimum": 1,
               "maximum": 9007199254740991,
               "type": "integer"
+            }
+          },
+          {
+            "name": "slim",
+            "required": false,
+            "in": "query",
+            "description": "Leave `assets` empty and list each item in `slimAssets` instead, for lists that only draw covers",
+            "x-immich-history": [
+              {
+                "version": "v3",
+                "state": "Added"
+              }
+            ],
+            "schema": {
+              "type": "boolean"
             }
           },
           {
@@ -136701,6 +136731,7 @@
       "MemoryResponseDto": {
         "properties": {
           "assets": {
+            "description": "The items; empty when the search asked for `slim`",
             "items": {
               "$ref": "#/components/schemas/AssetResponseDto"
             },
@@ -136786,6 +136817,19 @@
             "format": "date-time",
             "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
             "type": "string"
+          },
+          "slimAssets": {
+            "description": "The items in the same order, when the search asked for `slim`",
+            "items": {
+              "$ref": "#/components/schemas/MemorySlimAssetDto"
+            },
+            "type": "array",
+            "x-immich-history": [
+              {
+                "version": "v3",
+                "state": "Added"
+              }
+            ]
           },
           "title": {
             "description": "The owner's own title, when they set one",
@@ -136876,6 +136920,16 @@
             "minimum": 1,
             "type": "integer"
           },
+          "slim": {
+            "description": "Leave `assets` empty and list each item in `slimAssets` instead, for lists that only draw covers",
+            "type": "boolean",
+            "x-immich-history": [
+              {
+                "version": "v3",
+                "state": "Added"
+              }
+            ]
+          },
           "type": {
             "$ref": "#/components/schemas/MemoryType"
           }
@@ -136946,6 +137000,62 @@
           "kind",
           "name",
           "value"
+        ],
+        "type": "object"
+      },
+      "MemorySlimAssetDto": {
+        "properties": {
+          "fileCreatedAt": {
+            "description": "When the file was captured (UTC)",
+            "format": "date-time",
+            "type": "string"
+          },
+          "height": {
+            "description": "Asset height",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
+          "id": {
+            "description": "Asset ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "localDateTime": {
+            "description": "Local date and time of capture",
+            "format": "date-time",
+            "type": "string"
+          },
+          "thumbhash": {
+            "description": "Thumbhash (base64), also the thumbnail cache key",
+            "nullable": true,
+            "type": "string"
+          },
+          "type": {
+            "$ref": "#/components/schemas/AssetTypeEnum"
+          },
+          "visibility": {
+            "$ref": "#/components/schemas/AssetVisibility"
+          },
+          "width": {
+            "description": "Asset width",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "fileCreatedAt",
+          "height",
+          "id",
+          "localDateTime",
+          "thumbhash",
+          "type",
+          "visibility",
+          "width"
         ],
         "type": "object"
       },
