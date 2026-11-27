@@ -934,7 +934,12 @@
       "path": "patches/0207-studio-tab-bar.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "c0954f32adfe366acccb0003f4d6ecae655f47c94cc46f331c831904e6c5ca73"
+    },
+    {
+      "path": "patches/0208-studio-inspector-controls.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "bdb3e95105dda9857484188fea74fc9fb3e25b6b7953174691ebb2cb18d8e1db"
     }
   ],
-  "sourceSha256": "0191c4d7a611fd2fba5aefd4985be309aa397db7188da8a790893adf31e72f70"
+  "sourceSha256": "9bde467ca52754ac2e5256d5759812703ab55c950e76ccf5c15a6198a3f317c8"
 }

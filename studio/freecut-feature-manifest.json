@@ -13757,9 +13757,10 @@
           "0204-upstream-fixes.patch",
           "0205-frameleaf-accent.patch",
           "0206-studio-not-upstream.patch",
-          "0207-studio-tab-bar.patch"
+          "0207-studio-tab-bar.patch",
+          "0208-studio-inspector-controls.patch"
         ],
-        "note": "FL-1819 (0204) ports upstream fixes made after the pin: the caret stays put while a title is typed in the inspector, and the inspector's selection is memoised. FL-1822: 0205 replaces every hard-coded upstream accent with the theme accent; 0206 removes the upstream product's name, logo, changelog button, docs link and language menu from the hosted editor. FL-1822 (0207): inside Frameleaf the editor's header is a tab bar of its workspaces with a More menu for keyboard shortcuts and editor settings; back, the project name, saving, export and the render queue are the host's.",
+        "note": "FL-1819 (0204) ports upstream fixes made after the pin: the caret stays put while a title is typed in the inspector, and the inspector's selection is memoised. FL-1822: 0205 replaces every hard-coded upstream accent with the theme accent; 0206 removes the upstream product's name, logo, changelog button, docs link and language menu from the hosted editor. FL-1822 (0207): inside Frameleaf the editor's header is a tab bar of its workspaces with a More menu for keyboard shortcuts and editor settings; back, the project name, saving, export and the render queue are the host's. FL-1822 (0208): inspector controls follow the approved Studio: labels above full-width fields, 34px fields and sliders, a narrow field drops its unit so its value stays readable, and 11px section heads with room between rows.",
         "status": "shipped"
       },
       "id": "module.editor",
