@@ -8,6 +8,7 @@
   import { getAllPeople, getPerson, mergePeople, type PeopleListItemDto, type PersonResponseDto } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
   import { mdiAccountOutline, mdiArrowRight, mdiCallMerge, mdiCheck } from '@mdi/js';
+  import { onDestroy } from 'svelte';
   import { t } from 'svelte-i18n';
 
   /**
@@ -19,7 +20,7 @@
    *
    * Candidates are the caller's already-loaded people when it has them (the People grid);
    * otherwise the dialog reads them with `getAllPeople`, hidden people included, as the
-   * prototype lists them.
+   * prototype lists them, and asks the server for the name being typed (FL-1803).
    */
   interface Props {
     person: PersonResponseDto & { assetCount?: number };
@@ -36,14 +37,21 @@
   let loaded: PeopleListItemDto[] = $state([]);
   // The preselected person when the list does not include them (a library past the first page).
   let preselected: Candidate | null = $state(null);
+  // The person clicked, kept while later searches replace the list, so the pick and Merge stay (FL-1803).
+  let picked: Candidate | null = $state(null);
   let query = $state('');
   let choice: string | null = $state(null);
   let busy = $state(false);
 
   const listed = $derived<Candidate[]>(candidates ?? loaded);
-  const people = $derived<Candidate[]>(
-    preselected && listed.every(({ id }) => id !== preselected!.id) ? [preselected, ...listed] : listed,
-  );
+  const people = $derived.by<Candidate[]>(() => {
+    const kept = [preselected, picked].filter(
+      (candidate, index, all): candidate is Candidate =>
+        !!candidate && all.findIndex((other) => other?.id === candidate.id) === index,
+    );
+    const missing = kept.filter((candidate) => listed.every(({ id }) => id !== candidate.id));
+    return missing.length > 0 ? [...missing, ...listed] : listed;
+  });
   const rows = $derived(sortMergeCandidates(people, person.id, query));
   const target = $derived(people.find((candidate) => candidate.id === choice) ?? null);
   const self = $derived(people.find((candidate) => candidate.id === person.id));
@@ -58,10 +66,11 @@
     query = '';
     choice = initialChoice;
     preselected = null;
+    picked = null;
     void (async () => {
       try {
         if (!candidates) {
-          loaded = (await getAllPeople({ withHidden: true, size: 1000 })).people;
+          await load('');
         }
         if (initialChoice && (candidates ?? loaded).every(({ id }) => id !== initialChoice)) {
           preselected = await getPerson({ id: initialChoice });
@@ -70,6 +79,56 @@
         handleError(error, $t('errors.failed_to_load_people'));
       }
     })();
+  });
+
+  /** A name search waits for typing to pause, so a word is one request rather than one per letter. */
+  const SEARCH_DELAY_MS = 200;
+  /** People a name search lists: enough to find anyone by a few letters of their name. */
+  const SEARCH_SIZE = 100;
+  // only the newest read may answer, so a slow earlier search never replaces a later one
+  let request = 0;
+  let inFlight: AbortController | undefined;
+  let searchTimer: ReturnType<typeof setTimeout> | undefined;
+  /**
+   * FL-1803: the list the dialog reads itself. With a name typed the server finds the people (hidden
+   * ones included), so someone past the first page can be chosen; with none it is the first page.
+   * A newer read cancels the one before it, and only the newest one's failure is said.
+   */
+  const load = async (name: string) => {
+    const current = ++request;
+    inFlight?.abort();
+    const controller = new AbortController();
+    inFlight = controller;
+    try {
+      const { people } = await getAllPeople(
+        { withHidden: true, size: name ? SEARCH_SIZE : 1000, ...(name && { name }) },
+        { signal: controller.signal },
+      );
+      if (current === request) {
+        loaded = people;
+      }
+    } catch (error) {
+      if (current === request && !controller.signal.aborted) {
+        throw error;
+      }
+    }
+  };
+  const onSearch = () => {
+    if (candidates) {
+      return;
+    }
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => {
+      load(query.trim()).catch((error: unknown) => handleError(error, $t('errors.failed_to_load_people')));
+    }, SEARCH_DELAY_MS);
+  };
+  const pick = (candidate: Candidate) => {
+    choice = candidate.id;
+    picked = candidate;
+  };
+  onDestroy(() => {
+    clearTimeout(searchTimer);
+    inFlight?.abort();
   });
 
   const merge = async () => {
@@ -119,12 +178,13 @@
     aria-label={$t('frameleaf_people_merge_find')}
     placeholder={$t('frameleaf_people_find_a_person')}
     bind:value={query}
+    oninput={onSearch}
     data-initial-focus
   />
   <ul class="list" aria-label={$t('people')}>
     {#each rows as candidate (candidate.id)}
       <li>
-        <button type="button" aria-pressed={candidate.id === choice} onclick={() => (choice = candidate.id)}>
+        <button type="button" aria-pressed={candidate.id === choice} onclick={() => pick(candidate)}>
           <PersonAvatar person={candidate} size={40} />
           <span class="name" class:unnamed={isUnnamedPerson(candidate)}>{nameOf(candidate)}</span>
           <span class="count">{itemCount(candidate.assetCount)}</span>

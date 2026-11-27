@@ -8,6 +8,7 @@
    * server; an administrator sees only how much of each library is covered. Every change is saved at
    * once and the server says back how many of the person's photos and videos it keeps now.
    */
+  import { readEveryPage } from '$lib/frameleaf/all-people';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import InlineError from '$lib/components/frameleaf/InlineError.svelte';
@@ -26,7 +27,7 @@
     CloudBackupDateRangeKind,
     CloudBackupSelectionMode,
     getAllAlbums,
-    getAllPeople,
+    getPeoplePicker,
     getAllTags,
     getOwnCloudBackupSelection,
     getUniqueOriginalPaths,
@@ -142,7 +143,8 @@
           break;
         }
         case 'people': {
-          const { people } = await getAllPeople({ withHidden: false });
+          // FL-1803: every page of the picker list, so anyone can be chosen
+          const people = await readEveryPage((page) => getPeoplePicker({ withHidden: false, page, size: 1000 }));
           found = people.map((person) => ({
             id: person.id,
             name: person.name || $t('frameleaf_backup_keeps_unnamed_person'),
