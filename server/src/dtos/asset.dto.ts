@@ -98,6 +98,13 @@ const UpdateAssetBaseSchema = z
       (typeof data.latitude === 'number' && typeof data.longitude === 'number'),
     { message: 'Latitude and longitude must be provided together, both as numbers or both as null' },
   )
+  .refine(
+    (data) =>
+      data.dateDetail !== 'month' ||
+      !data.dateTimeOriginal ||
+      getMonthStart(data.dateTimeOriginal) <= new Date().toISOString(),
+    { message: 'A month is not after this one', path: ['dateTimeOriginal'] },
+  )
   .refine((data) => !data.dateDetail || data.dateAccuracy === 'year', {
     message: 'dateDetail goes with dateAccuracy year',
     path: ['dateDetail'],

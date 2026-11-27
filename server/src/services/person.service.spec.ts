@@ -1418,6 +1418,18 @@ describe(PersonService.name, () => {
       );
     });
 
+    it('takes how sure each date is through the bulk update too (FL-1814)', async () => {
+      const { auth, person } = setup();
+
+      await sut.updateAll(auth, {
+        people: [{ id: person.personGroupId, birthDate: '1987-01-01', birthDatePrecision: 'year' }],
+      });
+      expect(mocks.person.upsertProfile).toHaveBeenCalledWith(
+        { ownerId: person.ownerId, personGroupId: person.personGroupId },
+        expect.objectContaining({ birthDatePrecision: 'year' }),
+      );
+    });
+
     it("gives a partner's copy the date of passing but never the notes (FL-326)", async () => {
       const { auth, person } = setup();
       const follower = { ownerId: newUuid(), personGroupId: newUuid(), overriddenFields: [] };

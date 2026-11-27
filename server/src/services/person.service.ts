@@ -1322,6 +1322,9 @@ export class PersonService extends BaseService {
           isFavorite: person.isFavorite,
           deathDate: person.deathDate,
           notes: person.notes,
+          // FL-1814: the bulk update takes how sure each date is, as the single update does
+          birthDatePrecision: person.birthDatePrecision,
+          deathDatePrecision: person.deathDatePrecision,
         });
         results.push({ id: person.id, success: true });
       } catch (error: any) {
