@@ -1,5 +1,6 @@
 <script lang="ts">
   import { formatDateTime } from '$lib/frameleaf/date-format';
+  import { confirmFrameleaf } from '$lib/frameleaf/confirm';
   import SpaceCommentComposer from '$lib/components/frameleaf/SpaceCommentComposer.svelte';
   import Status from '$lib/components/frameleaf/Status.svelte';
   import UserAvatar from '$lib/components/shared-components/UserAvatar.svelte';
@@ -23,7 +24,7 @@
     type SharedSpaceCommentResponseDto,
     type SharedSpaceMemberResponseDto,
   } from '@frameleaf/sdk';
-  import { Icon, modalManager } from '@frameleaf/ui';
+  import { Icon } from '@frameleaf/ui';
   import {
     mdiChevronDown,
     mdiChevronUp,
@@ -242,7 +243,10 @@
   const remove = async (comment: SharedSpaceCommentResponseDto) => {
     const replyCount = comment.parentId ? 0 : comments.filter(({ parentId }) => parentId === comment.id).length;
     if (replyCount > 0) {
-      const confirmed = await modalManager.showDialog({
+      const confirmed = await confirmFrameleaf({
+        title: $t('frameleaf_spaces_comments_delete'),
+        confirmText: $t('frameleaf_spaces_comments_delete'),
+        danger: true,
         prompt: $t('frameleaf_spaces_comments_delete_thread_confirm', { values: { count: replyCount } }),
       });
       if (!confirmed) {

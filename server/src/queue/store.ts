@@ -24,6 +24,7 @@ import {
   markRunCountsStale,
   observeQueueRun,
   ownerJobs,
+  readFolded,
   reportedQueueJobs,
   rewriteFailureCauses,
   runCountsPhotos,
@@ -1186,7 +1187,18 @@ export class SqlQueueStore {
     const { rows } = await sql<{ name: string; total: number; done: number }>`select name, count(*)::int total,
       count(*) filter (where state not in ${LIVE})::int done
       from job where "runId" = ${runId}::uuid group by name order by name`.execute(this.db);
-    return rows;
+    // FL-1826: the tasks of photos folded out of `job` all ended
+    const folded = await readFolded(this.db, runId);
+    for (const [name, { n }] of Object.entries(folded.tasks)) {
+      const row = rows.find((stage) => stage.name === name);
+      if (row) {
+        row.total += n;
+        row.done += n;
+      } else {
+        rows.push({ name, total: n, done: n });
+      }
+    }
+    return rows.sort((a, b) => a.name.localeCompare(b.name));
   }
 
   /** Whether the run still has live work; `ignoreParked` leaves out jobs held because their stage is parked. */

@@ -11,7 +11,6 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ReviewGroup } from '$lib/frameleaf/duplicate-review';
 import {
-  DUPLICATE_REVIEW_PAGE_SIZE,
   DuplicateReviewSession,
   newRequestId,
   readDuplicateReview,
@@ -153,6 +152,8 @@ describe('the duplicate review session', () => {
       state: 'failed',
       reasonKey: 'frameleaf_bulk_reason_group_changed',
     });
+    // a group that failed may have lost some of its photos: the review is read again (FL-1795 review)
+    expect(gateway.getReview).toHaveBeenCalledTimes(1);
   });
 
   it('reads the review again after an undo, which brings groups back (FL-1795)', async () => {
@@ -190,6 +191,35 @@ describe('the duplicate review session', () => {
     expect(afterUndo.groups.map(({ duplicateId }) => duplicateId)).toEqual(['lake', 'forest']);
     expect(afterUndo.undoing).toBe(false);
     afterUndo.destroy();
+  });
+
+  it('reads the review again when a finished job does not say what became of a group (FL-1795 review)', async () => {
+    await session.decide([lakeDecision]);
+    gateway.getReview.mockResolvedValue([forest]);
+    // cancelled before it reached the group: neither done, failed nor pending
+    gateway.getOperation.mockResolvedValue(detail({ status: MediaOperationStatus.Cancelled, processedUnits: '0' }));
+
+    await session.poll();
+
+    expect(gateway.getReview).toHaveBeenCalledTimes(1);
+    expect(session.groups.map(({ duplicateId }) => duplicateId)).toEqual(['forest']);
+  });
+
+  it('reads the review again on the next finished job when the first re-read failed (FL-1795 review)', async () => {
+    gateway.submit.mockResolvedValueOnce({ id: 'job-1' } as MediaOperationDto);
+    gateway.submit.mockResolvedValueOnce({ id: 'job-2' } as MediaOperationDto);
+    await session.decide([lakeDecision]);
+    gateway.getReview.mockRejectedValueOnce(new Error('offline'));
+    gateway.getOperation.mockResolvedValue(detail({ status: MediaOperationStatus.Cancelled, processedUnits: '0' }));
+    await session.poll();
+    expect(gateway.getReview).toHaveBeenCalledTimes(1);
+
+    await session.decide([{ ...lakeDecision, duplicateId: 'forest', memberIds: ['c', 'd'] }]);
+    gateway.getOperation.mockResolvedValue(detail({ status: MediaOperationStatus.Completed, processedUnits: '2' }));
+    gateway.getReview.mockResolvedValue([lake]);
+    await session.poll();
+
+    expect(gateway.getReview).toHaveBeenCalledTimes(2);
   });
 
   it('keeps loaders on the groups of a job still running after a reload', () => {
@@ -271,21 +301,13 @@ describe('the duplicate review session', () => {
   });
 });
 
-describe('reading the review a page at a time (FL-1795)', () => {
-  it('asks for pages until one comes back short, and hands back every group in order', async () => {
-    const page = (prefix: string, count: number) =>
-      Array.from({ length: count }, (_, index) => group(`${prefix}-${index}`, ['a', 'b']));
-    vi.mocked(getDuplicateReview)
-      .mockResolvedValueOnce(page('first', DUPLICATE_REVIEW_PAGE_SIZE))
-      .mockResolvedValueOnce(page('second', 3));
+describe('reading the review (FL-1795)', () => {
+  it('reads the whole review in one request', async () => {
+    vi.mocked(getDuplicateReview).mockResolvedValueOnce([group('lake', ['a', 'b'])]);
 
     const groups = await readDuplicateReview();
 
-    expect(groups).toHaveLength(DUPLICATE_REVIEW_PAGE_SIZE + 3);
-    expect(groups.at(-1)?.duplicateId).toBe('second-2');
-    expect(vi.mocked(getDuplicateReview).mock.calls).toEqual([
-      [{ take: DUPLICATE_REVIEW_PAGE_SIZE }],
-      [{ take: DUPLICATE_REVIEW_PAGE_SIZE, after: `first-${DUPLICATE_REVIEW_PAGE_SIZE - 1}` }],
-    ]);
+    expect(groups.map(({ duplicateId }) => duplicateId)).toEqual(['lake']);
+    expect(getDuplicateReview).toHaveBeenCalledExactlyOnceWith({});
   });
 });

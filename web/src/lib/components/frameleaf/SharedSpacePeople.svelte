@@ -1,4 +1,5 @@
 <script lang="ts">
+  import EmptyRow from '$lib/components/frameleaf/EmptyRow.svelte';
   import Status from '$lib/components/frameleaf/Status.svelte';
   import { defaultSpacePersonName, spacePersonCandidates } from '$lib/frameleaf/shared-space';
   import { getAssetMediaUrl } from '$lib/utils';
@@ -106,7 +107,7 @@
   <p class="hint">{$t('frameleaf_spaces_people_hint')}</p>
 
   {#if linked.length === 0}
-    <p class="empty">{$t('frameleaf_spaces_people_empty')}</p>
+    <EmptyRow title={$t('frameleaf_spaces_people_empty')} />
   {:else}
     <ul class="tiles">
       {#each linked as person (person.id)}
@@ -145,7 +146,7 @@
   <p class="hint">{$t('frameleaf_spaces_people_seen_hint')}</p>
 
   {#if offered.length === 0}
-    <p class="empty">{$t('frameleaf_spaces_people_seen_empty')}</p>
+    <EmptyRow title={$t('frameleaf_spaces_people_seen_empty')} />
   {:else}
     <div class="controls">
       <label>
@@ -189,8 +190,7 @@
     font-size: 0.875rem;
     font-weight: 700;
   }
-  .hint,
-  .empty {
+  .hint {
     margin: 0;
     color: var(--fl-muted);
     font-size: 0.8125rem;
