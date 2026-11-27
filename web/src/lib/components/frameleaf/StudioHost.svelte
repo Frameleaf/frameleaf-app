@@ -130,6 +130,7 @@
     type StudioProjectStatus,
   } from '$lib/frameleaf/studio/project-session';
   import { readStudioThemeTokens } from '$lib/frameleaf/studio/theme';
+  import { engineControlsStrings } from '$lib/frameleaf/studio/engine-controls-strings';
   import { stabiliseEngineStrings } from '$lib/frameleaf/studio/stabilise-strings';
   import { transcriptEngineStrings } from '$lib/frameleaf/studio/transcript-strings';
   import { cutoutEngineStrings } from '$lib/frameleaf/studio/cutout-strings';
@@ -558,6 +559,7 @@
     ...voiceCleanupEngineStrings($t),
     ...captionLanguageEngineStrings($t),
     ...cloudCaptionEngineStrings($t),
+    ...engineControlsStrings($t),
     ...libraryPanelStrings($t),
   });
 

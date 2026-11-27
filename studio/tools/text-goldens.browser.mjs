@@ -19,7 +19,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { encodeBuffer, decodeBuffer, sha256, deriveTolerance, compareCase } from './render-goldens.mjs';
 import {
   TEXT_GOLDENS_FORMAT, TEXT_GOLDENS_VERSION, SINE_TOLERANCE, IMAGE_SIZE, ANIMATED_STYLE_FIELDS,
-  syntheticMeasurer, recordedMeasurer, plain, validateTextGoldens, bundledTitleFonts, bundledFontRecords,
+  syntheticMeasurer, recordedMeasurer, plain, validateTextGoldens, bundledTitleFonts, bundledFontRecords, PROJECT_FONT_CASE,
   SYNTHETIC_MEASURER_TABLE, sameWithin, usesSine, imageTolerance, referenceRequiredHeight,
   layoutCases, autoHeightCases, paintCases, styleScaleCases, motionCases, slotCases, unitCases, imageCases,
   referenceLayout, referenceAutoHeight, referencePaint, referenceAnimatedStyle, referenceMotionState, referenceCoarseSlot, referenceUnits,
@@ -90,7 +90,7 @@ async function collect(origin, args, fonts, lists) {
     await page.route(`${origin}/text-goldens`, (route) => route.fulfill({ contentType: 'text/html', body: PAGE }));
     await page.goto(`${origin}/text-goldens`);
     await page.waitForFunction(() => window.__vite_plugin_react_preamble_installed__ === true);
-    return await page.evaluate(async ({ lists, fonts, ranges, measurerSource, size, styleFields }) => {
+    return await page.evaluate(async ({ lists, fonts, ranges, measurerSource, size, styleFields, projectFont }) => {
       const { layoutTextBlock } = await import('/src/shared/typography/text-block-layout.ts');
       const { createCanvasTextMeasurer } = await import('/src/shared/typography/text-measurer.ts');
       const { evaluateGlyphMotion, getActiveTextMotionSlot, isTextMotionActive, segmentTextUnits } = await import('/src/shared/typography/text-motion/index.ts');
@@ -110,6 +110,20 @@ async function collect(origin, args, fonts, lists) {
       }
       for (const font of fonts) await document.fonts.load(`${font.style} ${font.weight} 32px "${font.family}"`, 'Hg');
       const environment = { userAgent: navigator.userAgent, fontsLoaded: [...document.fonts].filter((f) => f.status === 'loaded').length };
+
+      // FL-1562: the family of the project-font case is kept with the project. It is registered the way the
+      // editor does it: listed as `metadata.fonts` lists it, its bytes readable by import id, and loaded by
+      // the engine's own project-font loader (never the catalogue, never the network).
+      {
+        const { setProjectFonts, loadProjectFontFamily } = await import('/src/shared/typography/project-fonts.ts');
+        const { blobUrlManager } = await import('/src/infrastructure/browser/blob-url-manager.ts');
+        const source = fonts.find((f) => Object.entries(projectFont.file).every(([key, value]) => f[key] === value));
+        if (!source) throw new Error('the bundled file of the project-font case is not among the loaded fonts');
+        const bytes = Uint8Array.from(atob(source.base64), (c) => c.charCodeAt(0));
+        blobUrlManager.registerUrl(projectFont.importId, URL.createObjectURL(new Blob([bytes])));
+        setProjectFonts([{ importId: projectFont.importId, family: projectFont.family, weight: projectFont.weight, style: projectFont.style }]);
+        if (!(await loadProjectFontFamily(projectFont.family))) throw new Error('the font kept with the project did not load');
+      }
 
       const textItem = (item) => ({ id: 'title', type: 'text', trackId: 'track', from: 0, durationInFrames: 90, label: 'Title', ...item });
       const lineOf = (line) => ({
@@ -296,7 +310,7 @@ async function collect(origin, args, fonts, lists) {
       });
 
       return { environment, layout, autoHeight, paint, styleScale, motion, slot, units, image };
-    }, { lists, fonts, ranges: SUBSET_RANGES, measurerSource: syntheticMeasurer.toString(), size: IMAGE_SIZE, styleFields: ANIMATED_STYLE_FIELDS });
+    }, { lists, fonts, ranges: SUBSET_RANGES, measurerSource: syntheticMeasurer.toString(), size: IMAGE_SIZE, styleFields: ANIMATED_STYLE_FIELDS, projectFont: PROJECT_FONT_CASE });
   } finally {
     await browser.close();
   }
@@ -305,6 +319,12 @@ async function collect(origin, args, fonts, lists) {
 /** The prose reference must reproduce what the engine just produced. Returns the number of values checked. */
 function checkReference(lists, results, catalogue) {
   const synthetic = syntheticMeasurer();
+  // FL-1562: the kept font is Anton's regular face under another name, so this run's engine must lay
+  // the bold title out exactly as it lays out Anton's regular one.
+  const liveLines = (name) => results.layout[lists.layout.findIndex((c) => c.name === name)].expected.lines
+    .map((line) => [line.text, line.width, line.top, line.baseline, line.start]);
+  assert.deepEqual(liveLines('platform/project-font/Kept-Sans-bold'), liveLines('platform/missing-weight/Anton-normal'),
+    'the font kept with the project did not measure as its own file');
   lists.layout.forEach((c, i) => {
     const measurer = c.measurer === 'synthetic' ? synthetic : recordedMeasurer(results.layout[i].platformMeasurements);
     assert.deepEqual(plain(referenceLayout(c.item, c.box.width, c.box.height, measurer)), plain(results.layout[i].expected), `layout/${c.name}: prose reference differs from the engine`);
@@ -336,7 +356,13 @@ function checkReference(lists, results, catalogue) {
   lists.units.forEach((c, i) => assert.deepEqual(referenceUnits(c.lines, c.unit), results.units[i], `units/${c.name}`));
 }
 
-export async function runTextGoldens({ write = false } = {}) {
+/**
+ * `only` (with `write`) names cases as `<kind>/<name>`: those are written from this run and every other
+ * committed case, with the file's head (engine, renderer, fonts), is kept as it is. A new or changed case
+ * then leaves the platform snapshots of the others alone.
+ */
+export async function runTextGoldens({ write = false, only } = {}) {
+  assert(!only || write, '--only needs --write');
   const origin = process.env.STUDIO_TEST_ORIGIN || 'http://127.0.0.1:5186';
   const catalogue = JSON.parse(await readFile(path.join(studio, 'graph-parameters-v1.json'), 'utf8'));
   const engineBuild = JSON.parse(await readFile(path.join(studio, 'engine-build.json'), 'utf8'));
@@ -424,7 +450,22 @@ export async function runTextGoldens({ write = false } = {}) {
     }),
   };
   const kinds = ['layout', 'autoHeight', 'paint', 'styleScale', 'motion', 'slot', 'units', 'image'];
-  const head = Object.fromEntries(Object.entries(doc).filter(([key]) => !kinds.includes(key)));
+  let head = Object.fromEntries(Object.entries(doc).filter(([key]) => !kinds.includes(key)));
+  if (only) {
+    const committed = JSON.parse(await readFile(goldensPath, 'utf8'));
+    assert.deepEqual(committed.fonts, fontRecord, 'the goldens were written with other font files: set TEXT_GOLDENS_FONT_DIR or regenerate');
+    let written = 0;
+    for (const kind of kinds) {
+      doc[kind] = doc[kind].map((c) => {
+        if (only.includes(`${kind}/${c.name}`)) { written++; return c; }
+        const kept = committed[kind].find((entry) => entry.name === c.name);
+        assert(kept, `${kind}/${c.name} is not in the committed goldens: name it in --only`);
+        return kept;
+      });
+    }
+    assert.equal(written, only.length, `--only names a case that does not exist: ${only.join(', ')}`);
+    head = Object.fromEntries(Object.entries(committed).filter(([key]) => !kinds.includes(key)));
+  }
   const body = kinds.map((kind) => `  ${JSON.stringify(kind)}: [\n${doc[kind].map((c) => `    ${JSON.stringify(c)}`).join(',\n')}\n  ]`).join(',\n');
   const text = `${JSON.stringify(head, null, 2).replace(/\n}$/, '')},\n${body}\n}\n`;
   const counts = validateTextGoldens(JSON.parse(text), catalogue);
@@ -435,6 +476,7 @@ export async function runTextGoldens({ write = false } = {}) {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  await runTextGoldens({ write: process.argv.includes('--write') });
+  const only = process.argv.find((arg) => arg.startsWith('--only='))?.slice('--only='.length).split(',').filter(Boolean);
+  await runTextGoldens({ write: process.argv.includes('--write'), only });
   process.exit(0);
 }

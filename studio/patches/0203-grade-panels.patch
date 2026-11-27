@@ -1,0 +1,1362 @@
+diff --git a/src/features/editor/components/properties-sidebar/clip-panel/index.tsx b/src/features/editor/components/properties-sidebar/clip-panel/index.tsx
+index 5fa093e..472f3b7 100644
+--- a/src/features/editor/components/properties-sidebar/clip-panel/index.tsx
++++ b/src/features/editor/components/properties-sidebar/clip-panel/index.tsx
+@@ -41,6 +41,7 @@ import type { TransformProperties } from '@/types/transform'
+ import type { TimelineItem, VideoItem, CompositionItem } from '@/types/timeline'
+ import { StabiliseSection } from './stabilise-section'
+ import { ClipMarkersSection } from './clip-markers-section'
++import { useProjectIsHdr } from '@/features/editor/hooks/use-project-is-hdr'
+ import { CaptionQualityPanel } from '../caption-quality-panel'
+ import { VoiceMusicPanel } from '../voice-music-panel'
+ import { getLinkedAudioCompanion } from '@/shared/utils/linked-media'
+@@ -440,6 +441,7 @@ const ClipPanelCore = memo(function ClipPanelCore({
+     (s) => s.currentProject?.metadata.height ?? DEFAULT_PROJECT_HEIGHT,
+   )
+   const projectFps = useProjectStore((s) => s.currentProject?.metadata.fps ?? DEFAULT_PROJECT_FPS)
++  const hdrProject = useProjectIsHdr()
+   // Canvas settings
+   const canvas = useMemo(
+     () => ({
+@@ -767,7 +769,11 @@ const ClipPanelCore = memo(function ClipPanelCore({
+                   {t('editor.clipPanel.adjustmentLayerHint')}
+                 </div>
+               )}
+-              <EffectsSection items={visualItems} onEditInColor={handleEditInColor} />
++              <EffectsSection
++                items={visualItems}
++                onEditInColor={handleEditInColor}
++                hdrProject={hdrProject}
++              />
+               {/* Text style + animation only share the Effects tab for mixed
+                   selections; a pure-text selection has dedicated Text /
+                   Animation tabs. */}
+diff --git a/src/features/editor/components/properties-sidebar/color-grade-panel/index.test.tsx b/src/features/editor/components/properties-sidebar/color-grade-panel/index.test.tsx
+index ab15006..d081bc2 100644
+--- a/src/features/editor/components/properties-sidebar/color-grade-panel/index.test.tsx
++++ b/src/features/editor/components/properties-sidebar/color-grade-panel/index.test.tsx
+@@ -16,6 +16,7 @@ const { VIDEO_ITEM } = vi.hoisted(() => ({
+   } satisfies VideoItem,
+ }))
+ 
++vi.mock('@/features/editor/hooks/use-project-is-hdr', () => ({ useProjectIsHdr: () => false }))
+ vi.mock('@/features/editor/deps/timeline-store', () => ({
+   useItemsStore: (selector: (state: { itemById: Record<string, VideoItem> }) => unknown) =>
+     selector({ itemById: { [VIDEO_ITEM.id]: VIDEO_ITEM } }),
+diff --git a/src/features/editor/components/properties-sidebar/color-grade-panel/index.tsx b/src/features/editor/components/properties-sidebar/color-grade-panel/index.tsx
+index c74ffde..f186b1e 100644
+--- a/src/features/editor/components/properties-sidebar/color-grade-panel/index.tsx
++++ b/src/features/editor/components/properties-sidebar/color-grade-panel/index.tsx
+@@ -4,6 +4,7 @@ import { Palette } from 'lucide-react'
+ import { useShallow } from 'zustand/react/shallow'
+ import { useSelectionStore } from '@/shared/state/selection'
+ import { useItemsStore } from '@/features/editor/deps/timeline-store'
++import { useProjectIsHdr } from '@/features/editor/hooks/use-project-is-hdr'
+ import { KeyframeGraphPanel } from '@/features/editor/deps/timeline-keyframe-ui'
+ import { addAdjustmentLayer } from '@/features/editor/utils/add-adjustment-layer'
+ import type { TimelineItem } from '@/types/timeline'
+@@ -37,6 +38,7 @@ export const ColorGradePanel = memo(function ColorGradePanel({
+ }: ColorGradePanelProps) {
+   const { t } = useTranslation()
+   const selectedItemIds = useSelectionStore((s) => s.selectedItemIds)
++  const hdrProject = useProjectIsHdr()
+   const visualItems = useItemsStore(
+     useShallow(
+       useCallback(
+@@ -92,6 +94,7 @@ export const ColorGradePanel = memo(function ColorGradePanel({
+               items={visualItems}
+               hiddenGpuEffectTypes={COLOR_PANEL_EFFECT_TYPES}
+               layout="dock"
++              hdrProject={hdrProject}
+             />
+           </div>
+           <div
+@@ -123,7 +126,11 @@ export const ColorGradePanel = memo(function ColorGradePanel({
+           />
+         </div>
+         <div className={sectionClassName}>
+-          <LazyEffectsSection items={visualItems} hiddenGpuEffectTypes={COLOR_PANEL_EFFECT_TYPES} />
++          <LazyEffectsSection
++            items={visualItems}
++            hiddenGpuEffectTypes={COLOR_PANEL_EFFECT_TYPES}
++            hdrProject={hdrProject}
++          />
+         </div>
+       </Suspense>
+     </div>
+diff --git a/src/features/editor/deps/export-contract.ts b/src/features/editor/deps/export-contract.ts
+index 8659f0d..0e21b88 100644
+--- a/src/features/editor/deps/export-contract.ts
++++ b/src/features/editor/deps/export-contract.ts
+@@ -12,6 +12,8 @@ export const importExportsDialog = () => import('@/features/export/components/ex
+ export { RenderQueueRunner } from '@/features/export/components/render-queue-runner'
+ export { RenderQueuePersistence } from '@/features/export/components/render-queue-persistence'
+ export { useRenderQueueStore } from '@/features/export/stores/render-queue-store'
++// The renderer's working range rule, nested compositions included (FL-1559 grade panels).
++export { deriveSourceWorkingRange } from '@/features/export/utils/project-color'
+ 
+ /** Load the same PCM mixer used by delivery only when a mix is reviewed or auditioned. */
+ export async function loadVoiceMixRenderer() {
+diff --git a/src/features/editor/hooks/use-project-is-hdr.test.tsx b/src/features/editor/hooks/use-project-is-hdr.test.tsx
+new file mode 100644
+index 0000000..dc6d108
+--- /dev/null
++++ b/src/features/editor/hooks/use-project-is-hdr.test.tsx
+@@ -0,0 +1,53 @@
++import { renderHook } from '@testing-library/react'
++import { beforeEach, describe, expect, it, vi } from 'vite-plus/test'
++
++const state = vi.hoisted(() => ({
++  project: { currentProject: { metadata: {} as { colorManagement?: { workingRange?: string } } } },
++  media: { mediaById: {} as Record<string, { colorTransfer?: string }> },
++  items: { items: [] as { mediaId?: string; type?: string; compositionId?: string }[] },
++  compositions: { compositionById: {} as Record<string, { items: { mediaId?: string }[] }> },
++}))
++vi.mock('@/features/editor/deps/projects', () => ({
++  useProjectStore: (select: (s: unknown) => unknown) => select(state.project),
++}))
++vi.mock('@/features/editor/deps/media-library', () => ({
++  useMediaLibraryStore: (select: (s: unknown) => unknown) => select(state.media),
++}))
++vi.mock('@/features/editor/deps/timeline-store', () => ({
++  useItemsStore: (select: (s: unknown) => unknown) => select(state.items),
++  useCompositionsStore: (select: (s: unknown) => unknown) => select(state.compositions),
++}))
++vi.mock('@/features/editor/deps/export-contract', async () => ({
++  deriveSourceWorkingRange: (await import('@/features/export/utils/project-color'))
++    .deriveSourceWorkingRange,
++}))
++
++const { useProjectIsHdr } = await import('./use-project-is-hdr')
++
++describe('useProjectIsHdr (FL-1559)', () => {
++  beforeEach(() => {
++    state.project.currentProject.metadata = {}
++    state.media.mediaById = { sdr: {}, hlg: { colorTransfer: 'hlg' } }
++    state.items.items = [{ mediaId: 'sdr' }, {}]
++    state.compositions.compositionById = {}
++  })
++
++  it('is SDR for SDR sources and no stored range', () => {
++    expect(renderHook(() => useProjectIsHdr()).result.current).toBe(false)
++  })
++
++  it('is HDR with a stored HDR range or any placed HDR clip', () => {
++    state.project.currentProject.metadata = { colorManagement: { workingRange: 'hdr' } }
++    expect(renderHook(() => useProjectIsHdr()).result.current).toBe(true)
++
++    state.project.currentProject.metadata = {}
++    state.items.items = [{ mediaId: 'sdr' }, { mediaId: 'hlg' }]
++    expect(renderHook(() => useProjectIsHdr()).result.current).toBe(true)
++  })
++
++  it('counts an HDR source inside a nested composition, as the renderer does', () => {
++    state.items.items = [{ mediaId: 'sdr' }, { type: 'composition', compositionId: 'inner' }]
++    state.compositions.compositionById = { inner: { items: [{ mediaId: 'hlg' }] } }
++    expect(renderHook(() => useProjectIsHdr()).result.current).toBe(true)
++  })
++})
+diff --git a/src/features/editor/hooks/use-project-is-hdr.ts b/src/features/editor/hooks/use-project-is-hdr.ts
+new file mode 100644
+index 0000000..45971c3
+--- /dev/null
++++ b/src/features/editor/hooks/use-project-is-hdr.ts
+@@ -0,0 +1,31 @@
++import { useCallback } from 'react'
++import { useCompositionsStore, useItemsStore } from '@/features/editor/deps/timeline-store'
++import { useMediaLibraryStore } from '@/features/editor/deps/media-library'
++import { useProjectStore } from '@/features/editor/deps/projects'
++import { deriveSourceWorkingRange } from '@/features/editor/deps/export-contract'
++import type { TimelineItem, TimelineTrack } from '@/types/timeline'
++
++/**
++ * Frameleaf (FL-1559): whether the open project works in HDR, by the renderer's automatic rule: a
++ * stored HDR working range, or any placed clip, nested compositions included, whose media is PQ,
++ * HLG or host-reported HDR.
++ */
++export function useProjectIsHdr(): boolean {
++  const stored = useProjectStore(
++    (s) => s.currentProject?.metadata.colorManagement?.workingRange === 'hdr',
++  )
++  const mediaById = useMediaLibraryStore((s) => s.mediaById)
++  const compositionById = useCompositionsStore((s) => s.compositionById)
++  const hdrSource = useItemsStore(
++    useCallback(
++      (s: { items: readonly TimelineItem[] }) =>
++        deriveSourceWorkingRange(
++          [{ items: s.items } as unknown as TimelineTrack],
++          (mediaId) => mediaById[mediaId],
++          compositionById,
++        ) === 'hdr',
++      [compositionById, mediaById],
++    ),
++  )
++  return stored || hdrSource
++}
+diff --git a/src/features/effects/components/effects-section.tsx b/src/features/effects/components/effects-section.tsx
+index fd10522..9b9749c 100644
+--- a/src/features/effects/components/effects-section.tsx
++++ b/src/features/effects/components/effects-section.tsx
+@@ -19,6 +19,8 @@ import {
+   GpuWheelsPanel,
+   GpuCurvesPanel,
+   GpuLutPanel,
++  GpuHueCurvesPanel,
++  GpuRgbGridPanel,
+   GpuGradientMapPanel,
+   GpuPowerWindowPanel,
+   GpuSecondaryQualifierPanel,
+@@ -55,6 +57,8 @@ interface EffectsSectionProps {
+    * affordance instead of the full grading surface.
+    */
+   onEditInColor?: () => void
++  /** Frameleaf (FL-1559): the project works in HDR, where some grades are refused. */
++  hdrProject?: boolean
+ }
+ 
+ const EMPTY_HIDDEN_GPU_EFFECT_TYPES: readonly string[] = []
+@@ -69,6 +73,7 @@ export const EffectsSection = memo(function EffectsSection({
+   hiddenGpuEffectTypes = EMPTY_HIDDEN_GPU_EFFECT_TYPES,
+   layout = 'sidebar',
+   onEditInColor,
++  hdrProject = false,
+ }: EffectsSectionProps) {
+   const { t } = useTranslation()
+   const isDock = layout === 'dock'
+@@ -820,6 +825,34 @@ export const EffectsSection = memo(function EffectsSection({
+             )
+           }
+ 
++          // Frameleaf (FL-1559): the grades other editors carry.
++          if (
++            gpuEff.gpuEffectType === 'gpu-cdl' ||
++            gpuEff.gpuEffectType === 'gpu-lift-gamma-gain' ||
++            gpuEff.gpuEffectType === 'gpu-hue-curves'
++          ) {
++            const GradePanel =
++              gpuEff.gpuEffectType === 'gpu-hue-curves' ? GpuHueCurvesPanel : GpuRgbGridPanel
++            return (
++              <GradePanel
++                key={effect.id}
++                effect={effect}
++                gpuEffect={displayGpuEffect}
++                definition={def}
++                hdrProject={hdrProject}
++                onParamChange={handleGpuParamChange}
++                onParamLiveChange={handleGpuParamLiveChange}
++                onParamsBatchChange={handleGpuParamsBatchChange}
++                onReset={handleResetGpuEffect}
++                onToggle={handleToggle}
++                onRemove={handleRemove}
++                onMove={handleMoveEffect}
++                canMoveUp={effectIndex > 0}
++                canMoveDown={effectIndex < effects.length - 1}
++              />
++            )
++          }
++
+           if (gpuEff.gpuEffectType === 'gpu-lut') {
+             return (
+               <GpuLutPanel
+diff --git a/src/features/effects/components/panels/gpu-grade-panels.test.tsx b/src/features/effects/components/panels/gpu-grade-panels.test.tsx
+new file mode 100644
+index 0000000..5f02aa8
+--- /dev/null
++++ b/src/features/effects/components/panels/gpu-grade-panels.test.tsx
+@@ -0,0 +1,184 @@
++import type { ReactNode } from 'react'
++import { fireEvent, render, screen, waitFor } from '@testing-library/react'
++import { beforeEach, describe, expect, it, vi } from 'vite-plus/test'
++import { getGpuEffect, getGpuEffectDefaultParams } from '@/infrastructure/gpu-effects'
++import { evaluateHueCurve, parseHuePoints } from '@/infrastructure/gpu-effects/effects/grade'
++import type { GpuEffect, ItemEffect } from '@/types/effects'
++
++vi.mock('react-i18next', () => ({
++  useTranslation: () => ({
++    t: (key: string, values?: Record<string, unknown>) =>
++      typeof values?.defaultValue === 'string'
++        ? values.defaultValue
++        : values
++          ? `${key} ${JSON.stringify(values)}`
++          : key,
++  }),
++}))
++vi.mock('@/shared/ui/property-controls', () => ({
++  PropertyRow: ({ label, children }: { label: string; children: ReactNode }) => (
++    <label>
++      <span>{label}</span>
++      {children}
++    </label>
++  ),
++  SliderInput: ({ value, onChange }: { value: number; onChange: (value: number) => void }) => (
++    <input type="range" value={value} onChange={(event) => onChange(Number(event.target.value))} />
++  ),
++}))
++vi.mock('@/shared/ui/property-controls/number-input', () => ({
++  NumberInput: ({ value, onChange }: { value: number; onChange: (value: number) => void }) => (
++    <input type="number" value={value} onChange={(event) => onChange(Number(event.target.value))} />
++  ),
++}))
++vi.mock('./effect-panel-header-actions', () => ({
++  EffectPanelHeaderRow: ({ label, isDefault }: { label: string; isDefault: boolean }) => (
++    <h4 data-default={isDefault}>{label}</h4>
++  ),
++}))
++
++const { GpuHueCurvesPanel, GpuRgbGridPanel, widestGapMiddle } = await import('./gpu-grade-panels')
++
++const handlers = {
++  onParamChange: vi.fn(),
++  onParamLiveChange: vi.fn(),
++  onParamsBatchChange: vi.fn(),
++  onReset: vi.fn(),
++  onToggle: vi.fn(),
++  onRemove: vi.fn(),
++  onMove: vi.fn(),
++  canMoveUp: false,
++  canMoveDown: false,
++}
++function panelProps(type: string, params: Record<string, number | string> = {}) {
++  const gpuEffect = {
++    type: 'gpu-effect',
++    gpuEffectType: type,
++    params: { ...getGpuEffectDefaultParams(type), ...params },
++  } as GpuEffect
++  const effect = { id: 'fx', enabled: true, effect: gpuEffect } as ItemEffect
++  return { effect, gpuEffect, definition: getGpuEffect(type)!, ...handlers }
++}
++const cell = (key: string) =>
++  document.querySelector(`[data-grade-param="${key}"] input`) as HTMLInputElement
++
++describe('grade panels (FL-1559)', () => {
++  beforeEach(() =>
++    Object.values(handlers).forEach((fn) => typeof fn === 'function' && fn.mockClear()),
++  )
++
++  it('edits ASC CDL per channel, within the effect range', () => {
++    render(<GpuRgbGridPanel {...panelProps('gpu-cdl', { slopeR: 1.04 })} />)
++    expect(cell('slopeR').value).toBe('1.04')
++    expect(screen.getByRole('group', { name: 'engineControls.grade.row.power B' })).toBeTruthy()
++
++    fireEvent.change(cell('offsetB'), { target: { value: '-0.01' } })
++    expect(handlers.onParamChange).toHaveBeenLastCalledWith('fx', 'offsetB', -0.01)
++    fireEvent.change(cell('powerG'), { target: { value: '9' } })
++    expect(handlers.onParamChange).toHaveBeenLastCalledWith('fx', 'powerG', 4)
++    expect(screen.queryByRole('note')).toBeNull()
++  })
++
++  it('loads a .cdl file as one change and says when a file has none', async () => {
++    render(<GpuRgbGridPanel {...panelProps('gpu-cdl')} />)
++    const input = screen.getByLabelText('engineControls.grade.loadCdl', { selector: 'input' })
++    const cdl =
++      '<SOPNode><Slope>1.2 1 0.9</Slope><Offset>0 0 0</Offset><Power>1 1 1</Power></SOPNode><SatNode><Saturation>0.5</Saturation></SatNode>'
++    fireEvent.change(input, { target: { files: [new File([cdl], 'shot.cdl')] } })
++    await waitFor(() => expect(handlers.onParamsBatchChange).toHaveBeenCalledTimes(1))
++    expect(handlers.onParamsBatchChange.mock.calls[0]).toEqual([
++      'fx',
++      expect.objectContaining({ slopeR: 1.2, slopeB: 0.9, saturation: 0.5 }),
++    ])
++
++    fireEvent.change(input, { target: { files: [new File(['nothing'], 'notes.cc')] } })
++    expect((await screen.findByRole('alert')).textContent).toBe('engineControls.grade.loadFailed')
++    expect(handlers.onParamsBatchChange).toHaveBeenCalledTimes(1)
++  })
++
++  it('edits lift, gamma and gain per channel and names the HDR refusal', () => {
++    render(<GpuRgbGridPanel {...panelProps('gpu-lift-gamma-gain')} hdrProject />)
++    expect(screen.getByRole('note').textContent).toBe('engineControls.grade.hdr')
++    expect(cell('gammaG').value).toBe('1')
++    fireEvent.change(cell('liftR'), { target: { value: '0.05' } })
++    expect(handlers.onParamChange).toHaveBeenLastCalledWith('fx', 'liftR', 0.05)
++    expect(
++      screen.queryByLabelText('engineControls.grade.loadCdl', { selector: 'input' }),
++    ).toBeNull()
++  })
++
++  it('adds, nudges and removes hue curve points as the JSON the effect reads', () => {
++    const { rerender } = render(<GpuHueCurvesPanel {...panelProps('gpu-hue-curves')} />)
++    fireEvent.click(screen.getByRole('radio', { name: 'engineControls.grade.hue.sat' }))
++
++    // jsdom has no layout: the click lands on hue 0, at the top of the range.
++    fireEvent.pointerDown(document.querySelector('[data-hue-surface]')!, { clientX: 0, clientY: 0 })
++    const [, param, json] = handlers.onParamChange.mock.calls.at(-1)!
++    expect(param).toBe('hueSatPoints')
++    const points = parseHuePoints(json, 0, 2)
++    expect(points).toHaveLength(1)
++    expect(evaluateHueCurve(points, 0.4, 1)).toBe(points[0]![1])
++
++    rerender(
++      <GpuHueCurvesPanel {...panelProps('gpu-hue-curves', { hueSatPoints: '[[0.25,1.5]]' })} />,
++    )
++    fireEvent.click(screen.getByRole('radio', { name: 'engineControls.grade.hue.sat' }))
++    const point = screen.getByRole('slider', {
++      name: 'engineControls.grade.hue.point {"degrees":90}',
++    })
++    fireEvent.keyDown(point, { key: 'ArrowDown' })
++    expect(handlers.onParamChange).toHaveBeenLastCalledWith('fx', 'hueSatPoints', '[[0.25,1.46]]')
++    fireEvent.keyDown(point, { key: 'Delete' })
++    expect(handlers.onParamChange).toHaveBeenLastCalledWith('fx', 'hueSatPoints', '')
++  })
++
++  it('adds a point from the keyboard, moves between curves with arrows, and edits nothing while off', () => {
++    expect(widestGapMiddle([])).toBe(0.5)
++    expect(
++      widestGapMiddle([
++        [0.1, 1],
++        [0.2, 1],
++      ]),
++    ).toBe(0.65)
++    expect(
++      widestGapMiddle([
++        [0.05, 1],
++        [0.95, 1],
++      ]),
++    ).toBe(0.5)
++
++    render(<GpuHueCurvesPanel {...panelProps('gpu-hue-curves')} />)
++    fireEvent.click(screen.getByRole('button', { name: /engineControls.grade.hue.addPoint/ }))
++    expect(handlers.onParamChange).toHaveBeenLastCalledWith('fx', 'hueHuePoints', '[[0.5,0]]')
++
++    const hue = screen.getByRole('radio', { name: 'engineControls.grade.hue.hue' })
++    expect(hue.tabIndex).toBe(0)
++    expect(screen.getByRole('radio', { name: 'engineControls.grade.hue.sat' }).tabIndex).toBe(-1)
++    fireEvent.keyDown(hue, { key: 'ArrowRight' })
++    expect(screen.getByRole('radio', { name: 'engineControls.grade.hue.sat' })).toHaveAttribute(
++      'aria-checked',
++      'true',
++    )
++  })
++
++  it('ignores point edits when the effect is off', () => {
++    const props = panelProps('gpu-hue-curves', { hueHuePoints: '[[0.25,0.1]]' })
++    render(<GpuHueCurvesPanel {...props} effect={{ ...props.effect, enabled: false }} />)
++    const point = screen.getByRole('slider', { name: /engineControls.grade.hue.point/ })
++    fireEvent.doubleClick(point)
++    fireEvent.keyDown(point, { key: 'Delete' })
++    expect(handlers.onParamChange).not.toHaveBeenCalled()
++    expect(screen.getByRole('button', { name: /engineControls.grade.hue.addPoint/ })).toBeDisabled()
++  })
++
++  it('says so when a CDL file cannot be read', async () => {
++    render(<GpuRgbGridPanel {...panelProps('gpu-cdl')} />)
++    const broken = new File(['x'], 'shot.cdl')
++    Object.defineProperty(broken, 'text', { value: () => Promise.reject(new Error('unreadable')) })
++    fireEvent.change(screen.getByLabelText('engineControls.grade.loadCdl', { selector: 'input' }), {
++      target: { files: [broken] },
++    })
++    expect((await screen.findByRole('alert')).textContent).toBe('engineControls.grade.loadFailed')
++    expect(handlers.onParamsBatchChange).not.toHaveBeenCalled()
++  })
++})
+diff --git a/src/features/effects/components/panels/gpu-grade-panels.tsx b/src/features/effects/components/panels/gpu-grade-panels.tsx
+new file mode 100644
+index 0000000..55483d8
+--- /dev/null
++++ b/src/features/effects/components/panels/gpu-grade-panels.tsx
+@@ -0,0 +1,469 @@
++/**
++ * Frameleaf (FL-1559): panels for the three grades other editors carry. ASC CDL and Lift Gamma
++ * Gain are a grid of red, green and blue values; Hue Curves edits the points of its three curves.
++ * Each is a view of the effect's own params. HDR projects refuse these effects (render spec C4),
++ * so the panel says so instead of leaving the refusal to the render.
++ */
++import { memo, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react'
++import { useTranslation } from 'react-i18next'
++import { FileUp, Plus } from 'lucide-react'
++import { Button } from '@/components/ui/button'
++import { cn } from '@/shared/ui/cn'
++import { radioGroupKeyDown } from '@/shared/ui/radio-group-keys'
++import { PropertyRow, SliderInput } from '@/shared/ui/property-controls'
++import { NumberInput } from '@/shared/ui/property-controls/number-input'
++import { evaluateHueCurve, parseHuePoints } from '@/infrastructure/gpu-effects/effects/grade'
++import { getEffectDefinitionName, getEffectParamLabel } from '@/features/effects/utils/effect-i18n'
++import { parseCdlFile } from '@/features/effects/utils/cdl-file'
++import { EffectPanelHeaderRow } from './effect-panel-header-actions'
++import type { GpuPanelBaseProps, GpuParamUpdates } from './panel-props'
++
++export interface GpuGradePanelProps extends GpuPanelBaseProps {
++  onParamsBatchChange: (effectId: string, updates: GpuParamUpdates) => void
++  /** The project works in HDR, where these effects are refused. */
++  hdrProject?: boolean
++}
++
++const CHANNELS = ['R', 'G', 'B'] as const
++const GRIDS = {
++  'gpu-cdl': ['slope', 'offset', 'power'],
++  'gpu-lift-gamma-gain': ['lift', 'gamma', 'gain'],
++} as const
++
++function useGradePanel({ effect, gpuEffect, definition }: GpuGradePanelProps) {
++  const number = (key: string) => {
++    const value = gpuEffect.params[key]
++    return typeof value === 'number' ? value : (definition.params[key]?.default as number)
++  }
++  const isDefault = Object.entries(definition.params).every(
++    ([key, param]) => (gpuEffect.params[key] ?? param.default) === param.default,
++  )
++  return { number, isDefault, disabled: !effect.enabled }
++}
++
++function HdrNotice({ hdrProject }: { hdrProject?: boolean }) {
++  const { t } = useTranslation()
++  return hdrProject ? (
++    <p role="note" className="px-2 py-1 text-[11px] leading-snug text-destructive">
++      {t('engineControls.grade.hdr')}
++    </p>
++  ) : null
++}
++
++/** ASC CDL and Lift Gamma Gain: one row per stage, one number per channel. */
++export const GpuRgbGridPanel = memo(function GpuRgbGridPanel(props: GpuGradePanelProps) {
++  const { effect, definition, onParamChange, onParamLiveChange, onParamsBatchChange } = props
++  const { t } = useTranslation()
++  const [collapsed, setCollapsed] = useState(false)
++  const [loadError, setLoadError] = useState(false)
++  const fileInput = useRef<HTMLInputElement | null>(null)
++  const { number, isDefault, disabled } = useGradePanel(props)
++  const isCdl = definition.id === 'gpu-cdl'
++  const rows = GRIDS[isCdl ? 'gpu-cdl' : 'gpu-lift-gamma-gain']
++  const clamp = (key: string, value: number) => {
++    const param = definition.params[key]
++    return Math.min(param?.max ?? value, Math.max(param?.min ?? value, value))
++  }
++
++  const loadCdl = async (file: File | undefined) => {
++    if (!file) return
++    let values: ReturnType<typeof parseCdlFile>
++    try {
++      values = parseCdlFile(await file.text())
++    } catch {
++      values = null
++    }
++    setLoadError(!values)
++    if (!values) return
++    onParamsBatchChange(
++      effect.id,
++      Object.fromEntries(Object.entries(values).map(([key, value]) => [key, clamp(key, value)])),
++    )
++  }
++
++  return (
++    <div className="space-y-0">
++      <EffectPanelHeaderRow
++        label={getEffectDefinitionName(definition)}
++        effectId={effect.id}
++        enabled={effect.enabled}
++        isDefault={isDefault}
++        onReset={props.onReset}
++        onToggle={props.onToggle}
++        onRemove={props.onRemove}
++        onMove={props.onMove}
++        canMoveUp={props.canMoveUp}
++        canMoveDown={props.canMoveDown}
++        collapsed={collapsed}
++        onToggleCollapsed={() => setCollapsed((value) => !value)}
++      />
++      {collapsed ? null : (
++        <div className={cn('space-y-1.5 py-1.5', disabled && 'opacity-50')}>
++          <HdrNotice hdrProject={props.hdrProject} />
++          <p className="px-2 text-[11px] leading-snug text-muted-foreground">
++            {t(isCdl ? 'engineControls.grade.cdlNote' : 'engineControls.grade.fineAdjust')}
++          </p>
++          <div
++            role="group"
++            aria-label={getEffectDefinitionName(definition)}
++            className="grid grid-cols-[3rem_repeat(3,minmax(0,1fr))] items-center gap-1.5 px-2"
++          >
++            <span />
++            {CHANNELS.map((channel) => (
++              <span
++                key={channel}
++                className={cn(
++                  'text-center text-[11px] font-medium',
++                  channel === 'R' && 'text-red-500',
++                  channel === 'G' && 'text-green-500',
++                  channel === 'B' && 'text-blue-500',
++                )}
++              >
++                {channel}
++              </span>
++            ))}
++            {rows.map((row) => (
++              <div key={row} className="contents">
++                <span className="text-xs text-muted-foreground">
++                  {t(`engineControls.grade.row.${row}`)}
++                </span>
++                {CHANNELS.map((channel) => {
++                  const key = `${row}${channel}`
++                  const param = definition.params[key]
++                  return (
++                    <div
++                      key={key}
++                      role="group"
++                      aria-label={`${t(`engineControls.grade.row.${row}`)} ${channel}`}
++                      data-grade-param={key}
++                    >
++                      <NumberInput
++                        value={number(key)}
++                        onChange={(value) => onParamChange(effect.id, key, clamp(key, value))}
++                        onLiveChange={(value) =>
++                          onParamLiveChange(effect.id, key, clamp(key, value))
++                        }
++                        min={param?.min}
++                        max={param?.max}
++                        step={param?.step ?? 0.01}
++                        disabled={disabled}
++                        // No unit: the cell is narrow, and a signed value needs its width.
++                        unitWidth={0}
++                        className="min-w-0"
++                      />
++                    </div>
++                  )
++                })}
++              </div>
++            ))}
++          </div>
++          {isCdl ? (
++            <>
++              <PropertyRow label={getEffectParamLabel(t, definition, 'saturation')}>
++                <SliderInput
++                  value={number('saturation')}
++                  onChange={(value) => onParamChange(effect.id, 'saturation', value)}
++                  onLiveChange={(value) => onParamLiveChange(effect.id, 'saturation', value)}
++                  min={definition.params.saturation?.min ?? 0}
++                  max={definition.params.saturation?.max ?? 4}
++                  step={0.01}
++                  disabled={disabled}
++                  className="min-w-0 flex-1"
++                />
++              </PropertyRow>
++              <div className="px-2">
++                <Button
++                  variant="outline"
++                  size="sm"
++                  className="h-6 w-full justify-start gap-1.5 text-xs"
++                  disabled={disabled}
++                  onClick={() => fileInput.current?.click()}
++                >
++                  <FileUp className="h-3 w-3 shrink-0" />
++                  {t('engineControls.grade.loadCdl')}
++                </Button>
++                <input
++                  ref={fileInput}
++                  type="file"
++                  accept=".cdl,.cc,.ccc,.xml"
++                  className="hidden"
++                  aria-label={t('engineControls.grade.loadCdl')}
++                  onChange={(event) => {
++                    const file = event.target.files?.[0]
++                    event.target.value = ''
++                    void loadCdl(file)
++                  }}
++                />
++                {loadError ? (
++                  <p role="alert" className="pt-1 text-[11px] text-destructive">
++                    {t('engineControls.grade.loadFailed')}
++                  </p>
++                ) : null}
++              </div>
++            </>
++          ) : null}
++        </div>
++      )}
++    </div>
++  )
++})
++
++/** The three hue curves: the param each writes, its value range and its neutral value. */
++export const HUE_CURVE_KINDS = [
++  { id: 'hue', param: 'hueHuePoints', min: -0.5, max: 0.5, neutral: 0 },
++  { id: 'sat', param: 'hueSatPoints', min: 0, max: 2, neutral: 1 },
++  { id: 'luma', param: 'hueLumaPoints', min: 0, max: 2, neutral: 1 },
++] as const
++/** As many points as a curve keeps (`parseHuePoints`). */
++const MAX_HUE_POINTS = 16
++const HUE_WIDTH = 268
++const HUE_HEIGHT = 120
++const HUE_PAD = 12
++const round = (value: number) => Math.round(value * 1000) / 1000
++/** The hue in the middle of the widest gap between points, the hue circle wrapping (0.5 for none). */
++export function widestGapMiddle(points: readonly (readonly [number, number])[]): number {
++  if (points.length === 0) return 0.5
++  const hues = points.map(([hue]) => hue).sort((a, b) => a - b)
++  let best = { from: hues.at(-1)!, width: hues[0]! + 1 - hues.at(-1)! }
++  for (let i = 1; i < hues.length; i++) {
++    const width = hues[i]! - hues[i - 1]!
++    if (width > best.width) best = { from: hues[i - 1]!, width }
++  }
++  const middle = best.from + best.width / 2
++  return round(middle - Math.floor(middle))
++}
++const serialize = (points: readonly (readonly [number, number])[]) =>
++  points.length > 0 ? JSON.stringify(points.map(([hue, value]) => [round(hue), round(value)])) : ''
++
++export const GpuHueCurvesPanel = memo(function GpuHueCurvesPanel(props: GpuGradePanelProps) {
++  const { effect, gpuEffect, definition, onParamChange, onParamLiveChange } = props
++  const { t } = useTranslation()
++  const [collapsed, setCollapsed] = useState(false)
++  const [kindId, setKindId] = useState<(typeof HUE_CURVE_KINDS)[number]['id']>('hue')
++  const dragging = useRef<{ index: number; points: [number, number][] } | null>(null)
++  const { number, isDefault, disabled } = useGradePanel(props)
++  const kind = HUE_CURVE_KINDS.find((entry) => entry.id === kindId)!
++  const points = parseHuePoints(gpuEffect.params[kind.param], kind.min, kind.max)
++  const kindLabel = t(`engineControls.grade.hue.${kind.id}`)
++
++  const x = (hue: number) => hue * HUE_WIDTH
++  const y = (value: number) =>
++    HUE_HEIGHT - HUE_PAD - ((value - kind.min) / (kind.max - kind.min)) * (HUE_HEIGHT - 2 * HUE_PAD)
++  const at = (event: PointerEvent<SVGElement>): [number, number] => {
++    const box =
++      event.currentTarget.ownerSVGElement?.getBoundingClientRect() ??
++      event.currentTarget.getBoundingClientRect()
++    const hue = Math.min(0.999, Math.max(0, (event.clientX - box.left) / (box.width || 1)))
++    const unit =
++      1 -
++      ((event.clientY - box.top) / (box.height || 1)) * (HUE_HEIGHT / (HUE_HEIGHT - 2 * HUE_PAD)) +
++      HUE_PAD / (HUE_HEIGHT - 2 * HUE_PAD)
++    return [hue, Math.min(kind.max, Math.max(kind.min, kind.min + unit * (kind.max - kind.min)))]
++  }
++  const commit = (next: readonly (readonly [number, number])[]) =>
++    onParamChange(effect.id, kind.param, serialize(next))
++
++  const path = Array.from({ length: 65 }, (_, index) => {
++    const hue = index / 64
++    return `${index ? 'L' : 'M'}${x(hue).toFixed(1)} ${y(evaluateHueCurve(points, hue, kind.neutral)).toFixed(1)}`
++  }).join(' ')
++
++  const onPointKey = (event: KeyboardEvent<SVGCircleElement>, index: number) => {
++    if (disabled) return
++    const step = (kind.max - kind.min) / 50
++    const delta = event.key === 'ArrowUp' ? step : event.key === 'ArrowDown' ? -step : 0
++    if (delta !== 0) {
++      event.preventDefault()
++      commit(
++        points.map((point, i) =>
++          i === index
++            ? [point[0], Math.min(kind.max, Math.max(kind.min, point[1] + delta))]
++            : point,
++        ),
++      )
++    } else if (event.key === 'Delete' || event.key === 'Backspace') {
++      event.preventDefault()
++      commit(points.filter((_, i) => i !== index))
++    }
++  }
++
++  return (
++    <div className="space-y-0">
++      <EffectPanelHeaderRow
++        label={getEffectDefinitionName(definition)}
++        effectId={effect.id}
++        enabled={effect.enabled}
++        isDefault={isDefault}
++        onReset={props.onReset}
++        onToggle={props.onToggle}
++        onRemove={props.onRemove}
++        onMove={props.onMove}
++        canMoveUp={props.canMoveUp}
++        canMoveDown={props.canMoveDown}
++        collapsed={collapsed}
++        onToggleCollapsed={() => setCollapsed((value) => !value)}
++      />
++      {collapsed ? null : (
++        <div className={cn('space-y-1.5 py-1.5', disabled && 'opacity-50')}>
++          <HdrNotice hdrProject={props.hdrProject} />
++          <div
++            role="radiogroup"
++            aria-label={getEffectDefinitionName(definition)}
++            className="mx-2 flex items-center gap-0.5 rounded-md bg-secondary p-0.5"
++          >
++            {HUE_CURVE_KINDS.map((entry) => (
++              <button
++                key={entry.id}
++                type="button"
++                role="radio"
++                aria-checked={kindId === entry.id}
++                tabIndex={kindId === entry.id ? 0 : -1}
++                onClick={() => setKindId(entry.id)}
++                onKeyDown={(event) =>
++                  radioGroupKeyDown(
++                    event,
++                    HUE_CURVE_KINDS.map((kindEntry) => kindEntry.id),
++                    kindId,
++                    setKindId,
++                  )
++                }
++                className={cn(
++                  'inline-flex h-7 flex-1 items-center justify-center rounded px-2 text-xs transition-colors',
++                  kindId === entry.id
++                    ? 'bg-background text-foreground shadow-sm'
++                    : 'text-muted-foreground hover:text-foreground',
++                )}
++              >
++                {t(`engineControls.grade.hue.${entry.id}`)}
++              </button>
++            ))}
++          </div>
++          <div className="px-2">
++            <svg
++              viewBox={`0 0 ${HUE_WIDTH} ${HUE_HEIGHT}`}
++              role="group"
++              aria-label={t('engineControls.grade.hue.curve', { kind: kindLabel })}
++              className="w-full touch-none rounded-md bg-muted/30"
++            >
++              <defs>
++                <linearGradient id={`hue-band-${effect.id}`} x1="0" x2="1">
++                  {[0, 60, 120, 180, 240, 300, 360].map((hue) => (
++                    <stop key={hue} offset={hue / 360} stopColor={`hsl(${hue} 70% 52%)`} />
++                  ))}
++                </linearGradient>
++              </defs>
++              <rect
++                data-hue-surface
++                x={0}
++                y={0}
++                width={HUE_WIDTH}
++                height={HUE_HEIGHT}
++                fill="transparent"
++                onPointerDown={(event) => {
++                  if (disabled || points.length >= MAX_HUE_POINTS) return
++                  commit([...points, at(event)].sort((a, b) => a[0] - b[0]))
++                }}
++              />
++              <rect
++                x={0}
++                y={HUE_HEIGHT - 8}
++                width={HUE_WIDTH}
++                height={8}
++                fill={`url(#hue-band-${effect.id})`}
++                pointerEvents="none"
++              />
++              <line
++                x1={0}
++                x2={HUE_WIDTH}
++                y1={y(kind.neutral)}
++                y2={y(kind.neutral)}
++                className="stroke-border"
++                pointerEvents="none"
++              />
++              <path
++                d={path}
++                fill="none"
++                strokeWidth={1.5}
++                className="stroke-primary"
++                pointerEvents="none"
++              />
++              {points.map(([hue, value], index) => (
++                <circle
++                  key={index}
++                  cx={x(hue)}
++                  cy={y(value)}
++                  r={5}
++                  tabIndex={disabled ? -1 : 0}
++                  role="slider"
++                  aria-label={t('engineControls.grade.hue.point', {
++                    degrees: Math.round(hue * 360),
++                  })}
++                  aria-valuemin={kind.min}
++                  aria-valuemax={kind.max}
++                  aria-valuenow={round(value)}
++                  className="cursor-grab fill-background stroke-primary"
++                  strokeWidth={1.5}
++                  onKeyDown={(event) => onPointKey(event, index)}
++                  onDoubleClick={() => {
++                    if (!disabled) commit(points.filter((_, i) => i !== index))
++                  }}
++                  onPointerDown={(event) => {
++                    if (disabled) return
++                    event.currentTarget.setPointerCapture?.(event.pointerId)
++                    dragging.current = { index, points: points.map((point) => [...point]) }
++                  }}
++                  onPointerMove={(event) => {
++                    const drag = dragging.current
++                    if (!drag) return
++                    // The hue stays put: a point is dragged up or down.
++                    drag.points[drag.index] = [drag.points[drag.index]![0], at(event)[1]]
++                    onParamLiveChange(effect.id, kind.param, serialize(drag.points))
++                  }}
++                  onPointerUp={() => {
++                    const drag = dragging.current
++                    dragging.current = null
++                    if (drag) commit(drag.points)
++                  }}
++                />
++              ))}
++            </svg>
++            <div className="flex items-start justify-between gap-2 pt-1">
++              <p className="text-[11px] leading-snug text-muted-foreground">
++                {t('engineControls.grade.hue.hint')}
++              </p>
++              {/* The keyboard's way to start a curve: a point in the middle of the widest gap. */}
++              <Button
++                variant="outline"
++                size="sm"
++                className="h-6 shrink-0 gap-1 px-2 text-xs"
++                disabled={disabled || points.length >= MAX_HUE_POINTS}
++                onClick={() =>
++                  commit(
++                    [...points, [widestGapMiddle(points), kind.neutral] as [number, number]].sort(
++                      (a, b) => a[0] - b[0],
++                    ),
++                  )
++                }
++              >
++                <Plus className="h-3 w-3" />
++                {t('engineControls.grade.hue.addPoint')}
++              </Button>
++            </div>
++          </div>
++          <PropertyRow label={getEffectParamLabel(t, definition, 'mix')}>
++            <SliderInput
++              value={number('mix')}
++              onChange={(value) => onParamChange(effect.id, 'mix', value)}
++              onLiveChange={(value) => onParamLiveChange(effect.id, 'mix', value)}
++              min={0}
++              max={1}
++              step={0.01}
++              disabled={disabled}
++              className="min-w-0 flex-1"
++            />
++          </PropertyRow>
++        </div>
++      )}
++    </div>
++  )
++})
+diff --git a/src/features/effects/components/panels/index.ts b/src/features/effects/components/panels/index.ts
+index 1c00bb2..f7cb60c 100644
+--- a/src/features/effects/components/panels/index.ts
++++ b/src/features/effects/components/panels/index.ts
+@@ -2,6 +2,7 @@ export { GpuEffectPanel } from './gpu-effect-panel'
+ export { GpuWheelsPanel } from './gpu-wheels-panel'
+ export { GpuCurvesPanel } from './gpu-curves-panel'
+ export { GpuLutPanel } from './gpu-lut-panel'
++export { GpuHueCurvesPanel, GpuRgbGridPanel } from './gpu-grade-panels'
+ export { GpuGradientMapPanel } from './gpu-gradient-map-panel'
+ export { GpuSecondaryQualifierPanel } from './gpu-secondary-qualifier-panel'
+ export { GpuPowerWindowPanel } from './gpu-power-window-panel'
+diff --git a/src/features/effects/utils/cdl-file.test.ts b/src/features/effects/utils/cdl-file.test.ts
+new file mode 100644
+index 0000000..7ee40bf
+--- /dev/null
++++ b/src/features/effects/utils/cdl-file.test.ts
+@@ -0,0 +1,50 @@
++// @vitest-environment node
++
++import { describe, expect, it } from 'vite-plus/test'
++import { parseCdlFile } from './cdl-file'
++
++describe('ASC CDL files (FL-1559)', () => {
++  it('reads slope, offset, power and saturation from a colour correction', () => {
++    expect(
++      parseCdlFile(`<?xml version="1.0"?>
++<ColorDecisionList xmlns="urn:ASC:CDL:v1.01"><ColorDecision><ColorCorrection id="shot_010">
++  <SOPNode><Slope>1.04 1 0.96</Slope><Offset>0.01 0 -1e-2</Offset><Power>.98 1 1.03</Power></SOPNode>
++  <SatNode><Saturation>0.92</Saturation></SatNode>
++</ColorCorrection></ColorDecision></ColorDecisionList>`),
++    ).toEqual({
++      slopeR: 1.04,
++      slopeG: 1,
++      slopeB: 0.96,
++      offsetR: 0.01,
++      offsetG: 0,
++      offsetB: -0.01,
++      powerR: 0.98,
++      powerG: 1,
++      powerB: 1.03,
++      saturation: 0.92,
++    })
++  })
++
++  it('reads the SOP and the saturation of the same correction', () => {
++    const values = parseCdlFile(`<ColorCorrectionCollection>
++  <ColorCorrection id="a"><SOPNode><Slope>1.1 1 1</Slope><Offset>0 0 0</Offset><Power>1 1 1</Power></SOPNode></ColorCorrection>
++  <ColorCorrection id="b"><SOPNode><Slope>2 2 2</Slope><Offset>0 0 0</Offset><Power>1 1 1</Power></SOPNode><SatNode><Saturation>0.5</Saturation></SatNode></ColorCorrection>
++</ColorCorrectionCollection>`)
++    expect(values?.slopeR).toBe(1.1)
++    expect(values?.saturation).toBe(1)
++  })
++
++  it('takes saturation as 1 when the file has none, and refuses a file without a full SOP', () => {
++    expect(
++      parseCdlFile(
++        '<ColorCorrection><SOPNode><Slope>1 1 1</Slope><Offset>0 0 0</Offset><Power>1 1 1</Power></SOPNode></ColorCorrection>',
++      )?.saturation,
++    ).toBe(1)
++    expect(
++      parseCdlFile(
++        '<SOPNode><Slope>1 1</Slope><Offset>0 0 0</Offset><Power>1 1 1</Power></SOPNode>',
++      ),
++    ).toBeNull()
++    expect(parseCdlFile('LUT_3D_SIZE 2')).toBeNull()
++  })
++})
+diff --git a/src/features/effects/utils/cdl-file.ts b/src/features/effects/utils/cdl-file.ts
+new file mode 100644
+index 0000000..2ae21dc
+--- /dev/null
++++ b/src/features/effects/utils/cdl-file.ts
+@@ -0,0 +1,48 @@
++/**
++ * Frameleaf (FL-1559): read an ASC CDL from a `.cdl`, `.cc` or `.ccc` file: the first SOP node's
++ * slope, offset and power (three numbers each) and the first saturation, as `gpu-cdl` params.
++ */
++export type CdlParams = Record<
++  `${'slope' | 'offset' | 'power'}${'R' | 'G' | 'B'}` | 'saturation',
++  number
++>
++
++const NUMBER = String.raw`[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?`
++const triple = (text: string, tag: string): [number, number, number] | null => {
++  const match = new RegExp(
++    String.raw`<${tag}\b[^>]*>\s*(${NUMBER})\s+(${NUMBER})\s+(${NUMBER})\s*</${tag}>`,
++    'i',
++  ).exec(text)
++  if (!match) return null
++  const values = match.slice(1, 4).map(Number) as [number, number, number]
++  return values.every(Number.isFinite) ? values : null
++}
++
++/** The CDL values of the file, or null when it holds no complete SOP node. */
++export function parseCdlFile(file: string): CdlParams | null {
++  // A collection holds several corrections: read the first one's SOP and saturation together.
++  const text = /<ColorCorrection\b[\s\S]*?<\/ColorCorrection>/i.exec(file)?.[0] ?? file
++  const slope = triple(text, 'Slope')
++  const offset = triple(text, 'Offset')
++  const power = triple(text, 'Power')
++  if (!slope || !offset || !power) return null
++  const saturation = new RegExp(
++    String.raw`<Saturation\b[^>]*>\s*(${NUMBER})\s*</Saturation>`,
++    'i',
++  ).exec(text)
++  const [slopeR, slopeG, slopeB] = slope
++  const [offsetR, offsetG, offsetB] = offset
++  const [powerR, powerG, powerB] = power
++  return {
++    slopeR,
++    slopeG,
++    slopeB,
++    offsetR,
++    offsetG,
++    offsetB,
++    powerR,
++    powerG,
++    powerB,
++    saturation: saturation ? Number(saturation[1]) : 1,
++  }
++}
+diff --git a/src/i18n/locales/partials/de/engine-controls.json b/src/i18n/locales/partials/de/engine-controls.json
+index 6d0044f..e17da11 100644
+--- a/src/i18n/locales/partials/de/engine-controls.json
++++ b/src/i18n/locales/partials/de/engine-controls.json
+@@ -66,6 +66,30 @@
+       "addClipMarker": "Add at playhead",
+       "removeClipMarker": "Remove clip marker",
+       "clipMarkersNote": "Clip markers stay with the clip when you move or trim it."
++    },
++    "grade": {
++      "hdr": "HDR projects can't use this effect yet. Turn it off or remove it to play and export this project.",
++      "cdlNote": "Slope, offset and power for each colour, then saturation: the values a grade from set or another editor carries.",
++      "fineAdjust": "Fine adjust red, green, blue",
++      "row": {
++        "slope": "Slope",
++        "offset": "Offset",
++        "power": "Power",
++        "lift": "Lift",
++        "gamma": "Gamma",
++        "gain": "Gain"
++      },
++      "loadCdl": "Load .cdl or .cc",
++      "loadFailed": "This file has no ASC CDL values.",
++      "hue": {
++        "hue": "Hue vs hue",
++        "sat": "Hue vs sat",
++        "luma": "Hue vs luma",
++        "curve": "{{kind}} curve",
++        "point": "Point at hue {{degrees}}°",
++        "hint": "Click the curve to add a point; drag it up or down. Double-click a point to remove it.",
++        "addPoint": "Add point"
++      }
+     }
+   }
+ }
+diff --git a/src/i18n/locales/partials/en/engine-controls.json b/src/i18n/locales/partials/en/engine-controls.json
+index 6d0044f..e17da11 100644
+--- a/src/i18n/locales/partials/en/engine-controls.json
++++ b/src/i18n/locales/partials/en/engine-controls.json
+@@ -66,6 +66,30 @@
+       "addClipMarker": "Add at playhead",
+       "removeClipMarker": "Remove clip marker",
+       "clipMarkersNote": "Clip markers stay with the clip when you move or trim it."
++    },
++    "grade": {
++      "hdr": "HDR projects can't use this effect yet. Turn it off or remove it to play and export this project.",
++      "cdlNote": "Slope, offset and power for each colour, then saturation: the values a grade from set or another editor carries.",
++      "fineAdjust": "Fine adjust red, green, blue",
++      "row": {
++        "slope": "Slope",
++        "offset": "Offset",
++        "power": "Power",
++        "lift": "Lift",
++        "gamma": "Gamma",
++        "gain": "Gain"
++      },
++      "loadCdl": "Load .cdl or .cc",
++      "loadFailed": "This file has no ASC CDL values.",
++      "hue": {
++        "hue": "Hue vs hue",
++        "sat": "Hue vs sat",
++        "luma": "Hue vs luma",
++        "curve": "{{kind}} curve",
++        "point": "Point at hue {{degrees}}°",
++        "hint": "Click the curve to add a point; drag it up or down. Double-click a point to remove it.",
++        "addPoint": "Add point"
++      }
+     }
+   }
+ }
+diff --git a/src/i18n/locales/partials/es/engine-controls.json b/src/i18n/locales/partials/es/engine-controls.json
+index 6d0044f..e17da11 100644
+--- a/src/i18n/locales/partials/es/engine-controls.json
++++ b/src/i18n/locales/partials/es/engine-controls.json
+@@ -66,6 +66,30 @@
+       "addClipMarker": "Add at playhead",
+       "removeClipMarker": "Remove clip marker",
+       "clipMarkersNote": "Clip markers stay with the clip when you move or trim it."
++    },
++    "grade": {
++      "hdr": "HDR projects can't use this effect yet. Turn it off or remove it to play and export this project.",
++      "cdlNote": "Slope, offset and power for each colour, then saturation: the values a grade from set or another editor carries.",
++      "fineAdjust": "Fine adjust red, green, blue",
++      "row": {
++        "slope": "Slope",
++        "offset": "Offset",
++        "power": "Power",
++        "lift": "Lift",
++        "gamma": "Gamma",
++        "gain": "Gain"
++      },
++      "loadCdl": "Load .cdl or .cc",
++      "loadFailed": "This file has no ASC CDL values.",
++      "hue": {
++        "hue": "Hue vs hue",
++        "sat": "Hue vs sat",
++        "luma": "Hue vs luma",
++        "curve": "{{kind}} curve",
++        "point": "Point at hue {{degrees}}°",
++        "hint": "Click the curve to add a point; drag it up or down. Double-click a point to remove it.",
++        "addPoint": "Add point"
++      }
+     }
+   }
+ }
+diff --git a/src/i18n/locales/partials/fr/engine-controls.json b/src/i18n/locales/partials/fr/engine-controls.json
+index 6d0044f..e17da11 100644
+--- a/src/i18n/locales/partials/fr/engine-controls.json
++++ b/src/i18n/locales/partials/fr/engine-controls.json
+@@ -66,6 +66,30 @@
+       "addClipMarker": "Add at playhead",
+       "removeClipMarker": "Remove clip marker",
+       "clipMarkersNote": "Clip markers stay with the clip when you move or trim it."
++    },
++    "grade": {
++      "hdr": "HDR projects can't use this effect yet. Turn it off or remove it to play and export this project.",
++      "cdlNote": "Slope, offset and power for each colour, then saturation: the values a grade from set or another editor carries.",
++      "fineAdjust": "Fine adjust red, green, blue",
++      "row": {
++        "slope": "Slope",
++        "offset": "Offset",
++        "power": "Power",
++        "lift": "Lift",
++        "gamma": "Gamma",
++        "gain": "Gain"
++      },
++      "loadCdl": "Load .cdl or .cc",
++      "loadFailed": "This file has no ASC CDL values.",
++      "hue": {
++        "hue": "Hue vs hue",
++        "sat": "Hue vs sat",
++        "luma": "Hue vs luma",
++        "curve": "{{kind}} curve",
++        "point": "Point at hue {{degrees}}°",
++        "hint": "Click the curve to add a point; drag it up or down. Double-click a point to remove it.",
++        "addPoint": "Add point"
++      }
+     }
+   }
+ }
+diff --git a/src/i18n/locales/partials/ja/engine-controls.json b/src/i18n/locales/partials/ja/engine-controls.json
+index 6d0044f..e17da11 100644
+--- a/src/i18n/locales/partials/ja/engine-controls.json
++++ b/src/i18n/locales/partials/ja/engine-controls.json
+@@ -66,6 +66,30 @@
+       "addClipMarker": "Add at playhead",
+       "removeClipMarker": "Remove clip marker",
+       "clipMarkersNote": "Clip markers stay with the clip when you move or trim it."
++    },
++    "grade": {
++      "hdr": "HDR projects can't use this effect yet. Turn it off or remove it to play and export this project.",
++      "cdlNote": "Slope, offset and power for each colour, then saturation: the values a grade from set or another editor carries.",
++      "fineAdjust": "Fine adjust red, green, blue",
++      "row": {
++        "slope": "Slope",
++        "offset": "Offset",
++        "power": "Power",
++        "lift": "Lift",
++        "gamma": "Gamma",
++        "gain": "Gain"
++      },
++      "loadCdl": "Load .cdl or .cc",
++      "loadFailed": "This file has no ASC CDL values.",
++      "hue": {
++        "hue": "Hue vs hue",
++        "sat": "Hue vs sat",
++        "luma": "Hue vs luma",
++        "curve": "{{kind}} curve",
++        "point": "Point at hue {{degrees}}°",
++        "hint": "Click the curve to add a point; drag it up or down. Double-click a point to remove it.",
++        "addPoint": "Add point"
++      }
+     }
+   }
+ }
+diff --git a/src/i18n/locales/partials/ko/engine-controls.json b/src/i18n/locales/partials/ko/engine-controls.json
+index 6d0044f..e17da11 100644
+--- a/src/i18n/locales/partials/ko/engine-controls.json
++++ b/src/i18n/locales/partials/ko/engine-controls.json
+@@ -66,6 +66,30 @@
+       "addClipMarker": "Add at playhead",
+       "removeClipMarker": "Remove clip marker",
+       "clipMarkersNote": "Clip markers stay with the clip when you move or trim it."
++    },
++    "grade": {
++      "hdr": "HDR projects can't use this effect yet. Turn it off or remove it to play and export this project.",
++      "cdlNote": "Slope, offset and power for each colour, then saturation: the values a grade from set or another editor carries.",
++      "fineAdjust": "Fine adjust red, green, blue",
++      "row": {
++        "slope": "Slope",
++        "offset": "Offset",
++        "power": "Power",
++        "lift": "Lift",
++        "gamma": "Gamma",
++        "gain": "Gain"
++      },
++      "loadCdl": "Load .cdl or .cc",
++      "loadFailed": "This file has no ASC CDL values.",
++      "hue": {
++        "hue": "Hue vs hue",
++        "sat": "Hue vs sat",
++        "luma": "Hue vs luma",
++        "curve": "{{kind}} curve",
++        "point": "Point at hue {{degrees}}°",
++        "hint": "Click the curve to add a point; drag it up or down. Double-click a point to remove it.",
++        "addPoint": "Add point"
++      }
+     }
+   }
+ }
+diff --git a/src/i18n/locales/partials/pt-BR/engine-controls.json b/src/i18n/locales/partials/pt-BR/engine-controls.json
+index 6d0044f..e17da11 100644
+--- a/src/i18n/locales/partials/pt-BR/engine-controls.json
++++ b/src/i18n/locales/partials/pt-BR/engine-controls.json
+@@ -66,6 +66,30 @@
+       "addClipMarker": "Add at playhead",
+       "removeClipMarker": "Remove clip marker",
+       "clipMarkersNote": "Clip markers stay with the clip when you move or trim it."
++    },
++    "grade": {
++      "hdr": "HDR projects can't use this effect yet. Turn it off or remove it to play and export this project.",
++      "cdlNote": "Slope, offset and power for each colour, then saturation: the values a grade from set or another editor carries.",
++      "fineAdjust": "Fine adjust red, green, blue",
++      "row": {
++        "slope": "Slope",
++        "offset": "Offset",
++        "power": "Power",
++        "lift": "Lift",
++        "gamma": "Gamma",
++        "gain": "Gain"
++      },
++      "loadCdl": "Load .cdl or .cc",
++      "loadFailed": "This file has no ASC CDL values.",
++      "hue": {
++        "hue": "Hue vs hue",
++        "sat": "Hue vs sat",
++        "luma": "Hue vs luma",
++        "curve": "{{kind}} curve",
++        "point": "Point at hue {{degrees}}°",
++        "hint": "Click the curve to add a point; drag it up or down. Double-click a point to remove it.",
++        "addPoint": "Add point"
++      }
+     }
+   }
+ }
+diff --git a/src/i18n/locales/partials/tr/engine-controls.json b/src/i18n/locales/partials/tr/engine-controls.json
+index 6d0044f..e17da11 100644
+--- a/src/i18n/locales/partials/tr/engine-controls.json
++++ b/src/i18n/locales/partials/tr/engine-controls.json
+@@ -66,6 +66,30 @@
+       "addClipMarker": "Add at playhead",
+       "removeClipMarker": "Remove clip marker",
+       "clipMarkersNote": "Clip markers stay with the clip when you move or trim it."
++    },
++    "grade": {
++      "hdr": "HDR projects can't use this effect yet. Turn it off or remove it to play and export this project.",
++      "cdlNote": "Slope, offset and power for each colour, then saturation: the values a grade from set or another editor carries.",
++      "fineAdjust": "Fine adjust red, green, blue",
++      "row": {
++        "slope": "Slope",
++        "offset": "Offset",
++        "power": "Power",
++        "lift": "Lift",
++        "gamma": "Gamma",
++        "gain": "Gain"
++      },
++      "loadCdl": "Load .cdl or .cc",
++      "loadFailed": "This file has no ASC CDL values.",
++      "hue": {
++        "hue": "Hue vs hue",
++        "sat": "Hue vs sat",
++        "luma": "Hue vs luma",
++        "curve": "{{kind}} curve",
++        "point": "Point at hue {{degrees}}°",
++        "hint": "Click the curve to add a point; drag it up or down. Double-click a point to remove it.",
++        "addPoint": "Add point"
++      }
+     }
+   }
+ }
+diff --git a/src/i18n/locales/partials/zh/engine-controls.json b/src/i18n/locales/partials/zh/engine-controls.json
+index 6d0044f..e17da11 100644
+--- a/src/i18n/locales/partials/zh/engine-controls.json
++++ b/src/i18n/locales/partials/zh/engine-controls.json
+@@ -66,6 +66,30 @@
+       "addClipMarker": "Add at playhead",
+       "removeClipMarker": "Remove clip marker",
+       "clipMarkersNote": "Clip markers stay with the clip when you move or trim it."
++    },
++    "grade": {
++      "hdr": "HDR projects can't use this effect yet. Turn it off or remove it to play and export this project.",
++      "cdlNote": "Slope, offset and power for each colour, then saturation: the values a grade from set or another editor carries.",
++      "fineAdjust": "Fine adjust red, green, blue",
++      "row": {
++        "slope": "Slope",
++        "offset": "Offset",
++        "power": "Power",
++        "lift": "Lift",
++        "gamma": "Gamma",
++        "gain": "Gain"
++      },
++      "loadCdl": "Load .cdl or .cc",
++      "loadFailed": "This file has no ASC CDL values.",
++      "hue": {
++        "hue": "Hue vs hue",
++        "sat": "Hue vs sat",
++        "luma": "Hue vs luma",
++        "curve": "{{kind}} curve",
++        "point": "Point at hue {{degrees}}°",
++        "hint": "Click the curve to add a point; drag it up or down. Double-click a point to remove it.",
++        "addPoint": "Add point"
++      }
+     }
+   }
+ }

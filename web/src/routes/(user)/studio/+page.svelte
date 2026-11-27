@@ -66,6 +66,7 @@
   import {
     createStudioRetentionApi,
     loadStudioProjectImports,
+    uploadStudioProjectFont,
     uploadStudioProjectImport,
   } from '$lib/frameleaf/studio/project-imports';
   import {
@@ -1208,6 +1209,19 @@
       }
     },
     cancelProjectImportPublication: cancelPublication,
+    // FL-1562: a font added in the title inspector is kept with the stored project.
+    uploadProjectFont: async (upload) => {
+      const origin = importOrigin;
+      if (!origin || !isImportScopeCurrent(origin.scope)) {
+        throw new Error('origin_retired');
+      }
+      const kept = await uploadStudioProjectFont(origin.scope.projectId, upload, origin.controller.signal);
+      // A committed late response belongs to its original project, as for any import.
+      if (!origin.controller.signal.aborted && isImportScopeCurrent(origin.scope)) {
+        projectImports = [...projectImports.filter((item) => item.id !== kept.id), kept];
+      }
+      return kept;
+    },
     // FL-641: caption lines, as text, translated on the processing order (this server, then home computers).
     translateCaptions: async (request) => {
       const { lines } = await translateStudioCaptions({

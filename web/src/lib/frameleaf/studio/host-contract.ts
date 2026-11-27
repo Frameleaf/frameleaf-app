@@ -41,6 +41,7 @@ import { studioCapabilityIds } from './commands';
 import type { StudioCapabilityId, StudioCommandEnvelope, StudioCommandResult, StudioDuration } from './commands';
 import type { StudioCutoutRequest, StudioCutoutState, StudioCutoutSubjectRef } from './cutout';
 import type { CutoutEngineString } from './cutout-strings';
+import type { EngineControlsString } from './engine-controls-strings';
 import type { StudioGeneratedMedia } from './generated-media';
 import type { LibraryPanelString } from './library-strings';
 import type { StudioPreviewView } from './preview';
@@ -291,6 +292,24 @@ export interface StudioEditorScope {
 export type StudioEditorCommitResult =
   { status: 'saved'; revision: number; graphDigest: string | null } | { status: 'rejected'; reason: string };
 
+/** A font file added in the editor (FL-1562), for the host to keep with the project. */
+export interface StudioProjectFontUpload {
+  /** The import id the editor gave the font; `metadata.fonts` names it as `importId`. */
+  id: string;
+  fileName: string;
+  file: Blob;
+}
+
+/** A kept font: where the editor reads its bytes, and the face the server read from them. */
+export interface StudioProjectFontRef extends StudioProjectImportRef {
+  kind: 'font';
+  /** The family name the file gives itself. */
+  family: string;
+  /** 100 to 900. */
+  weight: number;
+  style: 'normal' | 'italic';
+}
+
 export interface StudioProjectImportUpload {
   id: string;
   fileName: string;
@@ -384,6 +403,11 @@ export interface StudioHostContext {
    */
   librarySearch?: boolean;
   /**
+   * The host keeps font files added in the title inspector (FL-1562): `uploadProjectFont` is present.
+   * Set by the frame engine from the services it was given; absent or false means no "Add font…".
+   */
+  projectFonts?: boolean;
+  /**
    * Where the quick editor that opened Studio had its playhead (FL-113), as exact seconds. The engine
    * starts there once, when it mounts; later updates never move the playhead.
    */
@@ -443,6 +467,8 @@ export type StudioAdapterString =
   /** The captions Languages card's words (FL-641), the same way. */
   | CaptionLanguageEngineString
   | CloudCaptionEngineString
+  /** The editor controls of FL-1562, FL-1555, FL-1561, FL-1563 and FL-1559, the same way. */
+  | EngineControlsString
   /** The bin's Library view (FL-636), drawn by the adapter. */
   | LibraryPanelString;
 
@@ -571,6 +597,13 @@ export interface StudioHostServices {
    * lasts only as long as the editor document.
    */
   uploadProjectImport?(upload: StudioProjectImportUpload): Promise<StudioProjectImportRef>;
+  /**
+   * Keep a font file added in the title inspector with the project (FL-1562). The server reads the
+   * family, weight and style from the bytes and refuses what is not a .ttf, .otf or .woff2 font; the
+   * editor lists the answered face in the project's `metadata.fonts`. Optional: without it the
+   * editor offers no "Add font…".
+   */
+  uploadProjectFont?(upload: StudioProjectFontUpload): Promise<StudioProjectFontRef>;
   /** A committed publication is reconciled in its original project, never erased by cancellation. */
   cancelProjectImportPublication?(
     importId: string,
