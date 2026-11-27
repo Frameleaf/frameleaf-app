@@ -18,6 +18,7 @@ import {
 } from '@mdi/js';
 import { DateTime } from 'luxon';
 import type { Translations } from 'svelte-i18n';
+import { formatLuxon } from '$lib/frameleaf/date-format';
 
 export type LedgerState = keyof AssetLedgerCountsDto;
 
@@ -111,15 +112,17 @@ export function ledgerRow(item: AssetLedgerItemDto, { me, names }: LedgerViewer)
 export function ledgerWhen(iso: string, locale: string | undefined, { time = true, now = new Date() } = {}) {
   const date = DateTime.fromISO(iso).setLocale(locale ?? 'en');
   if (date.year !== now.getFullYear()) {
-    return date.toLocaleString({ day: 'numeric', month: 'short', year: 'numeric' });
+    return formatLuxon(date, { day: 'numeric', month: 'short', year: 'numeric' });
   }
-  return date.toLocaleString(
+  return formatLuxon(
+    date,
     time ? { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' } : { day: 'numeric', month: 'short' },
   );
 }
 
 /** "November 2026" from the server's "2026-11". */
 export const ledgerMonth = (month: string, locale: string | undefined) =>
-  DateTime.fromFormat(month, 'yyyy-MM', { zone: 'utc' })
-    .setLocale(locale ?? 'en')
-    .toLocaleString({ month: 'long', year: 'numeric' });
+  formatLuxon(DateTime.fromFormat(month, 'yyyy-MM', { zone: 'utc' }).setLocale(locale ?? 'en'), {
+    month: 'long',
+    year: 'numeric',
+  });

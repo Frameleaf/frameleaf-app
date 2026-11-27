@@ -1,6 +1,7 @@
 import { MediaHealthCategory, type FileProblemRowDto, type FileStepDto } from '@frameleaf/sdk';
 import { t, type MessageFormatter, type Translations } from 'svelte-i18n';
 import { get } from 'svelte/store';
+import { formatDate } from '$lib/frameleaf/date-format';
 
 /** The Pill tones (`settings/kit/Pill.svelte`). */
 type KitTone = 'good' | 'warn' | 'bad' | 'off';
@@ -134,11 +135,11 @@ const shortDay = (value: string, { locale, now = new Date() }: StepContext) => {
   if (Number.isNaN(date.getTime())) {
     return;
   }
-  return new Intl.DateTimeFormat(locale, {
-    day: 'numeric',
-    month: 'short',
-    year: date.getFullYear() === now.getFullYear() ? undefined : 'numeric',
-  }).format(date);
+  return formatDate(
+    date,
+    { day: 'numeric', month: 'short', year: date.getFullYear() === now.getFullYear() ? undefined : 'numeric' },
+    locale ?? 'default',
+  );
 };
 
 /** The kind of file Frameleaf can't show, by its extension: "Photoshop", or "TGA". */

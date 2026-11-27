@@ -72,6 +72,7 @@ export function joinDateTime(date: string, time: string): string | null {
 /** `UTC+02:00` for a zone at a moment, or null for a zone the browser does not know. */
 export function timezoneOffsetLabel(zone: string, at: Date = new Date()): string | null {
   try {
+    // eslint-disable-next-line no-restricted-syntax -- reads a zone's offset ("GMT+02:00") to build a fixed UTC label, formats no date
     const parts = new Intl.DateTimeFormat('en-US', { timeZone: zone, timeZoneName: 'longOffset' }).formatToParts(at);
     const name = parts.find((part) => part.type === 'timeZoneName')?.value;
     return name === 'GMT' ? 'UTC+00:00' : (name ?? '').replace(/^GMT/, 'UTC') || null;

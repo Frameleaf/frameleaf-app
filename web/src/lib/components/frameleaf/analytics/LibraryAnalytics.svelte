@@ -23,6 +23,8 @@
    * - People and places are only for the owner reading their own library; otherwise the panel says
    *   so instead of showing other accounts' names.
    */
+  import { formatDateTime } from '$lib/frameleaf/date-format';
+  import { formatCount } from '$lib/frameleaf/number-format';
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
   import AnalyticsChart from '$lib/components/frameleaf/analytics/AnalyticsChart.svelte';
@@ -78,22 +80,25 @@
   const table = (id: string) => tables.find((item) => item.id === id) as AnalyticsTable;
 
   const f = $derived(analyticsFormats($locale, tr));
-  const number = (value: number) => new Intl.NumberFormat($locale, { maximumFractionDigits: 2 }).format(value);
+  const number = (value: number) => formatCount(value, $locale, { maximumFractionDigits: 2 });
   /** The value `number` shows, for choosing singular or plural wording. */
   const shownCount = (value: number) => Math.round(value * 100) / 100;
   const day = (value: string) =>
-    new Intl.DateTimeFormat($locale, { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' }).format(
+    formatDateTime(
       new Date(`${value.slice(0, 10)}T00:00:00Z`),
+      { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' },
+      $locale,
     );
   const dateTime = (value: string) =>
-    new Intl.DateTimeFormat($locale, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value));
+    formatDateTime(new Date(value), { dateStyle: 'medium', timeStyle: 'short' }, $locale);
   const bucketLabel = (key: string) =>
-    new Intl.DateTimeFormat(
-      $locale,
+    formatDateTime(
+      new Date(`${key.length === 7 ? `${key}-01` : key}T00:00:00Z`),
       key.length === 7
         ? { month: 'short', year: '2-digit', timeZone: 'UTC' }
         : { month: 'short', day: 'numeric', timeZone: 'UTC' },
-    ).format(new Date(`${key.length === 7 ? `${key}-01` : key}T00:00:00Z`));
+      $locale,
+    );
 
   const selectedLabel = $derived(
     report.scopeKind === AnalyticsScopeKind.Host ? $t('frameleaf_analytics_scope_all') : report.scopeLabel,

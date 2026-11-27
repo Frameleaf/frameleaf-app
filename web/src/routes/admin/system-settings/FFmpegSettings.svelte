@@ -51,6 +51,7 @@
     type CopyRule,
     type PlaybackQuality,
   } from '$lib/frameleaf/playback-presets';
+  import { formatLuxon } from '$lib/frameleaf/date-format';
   import { formatBytes } from '$lib/frameleaf/format-bytes';
   import { saveAndRedo } from '$lib/frameleaf/library-progress';
   import { locale } from '$lib/stores/preferences.store';
@@ -299,7 +300,7 @@
   });
 
   const shortDate = (iso: string) =>
-    DateTime.fromISO(iso, { locale: $locale }).toLocaleString({ month: 'short', day: 'numeric' });
+    formatLuxon(DateTime.fromISO(iso, { locale: $locale }), { month: 'short', day: 'numeric' });
 
   // FL-537: Test it ─ a short test video on the card, and on the processor for comparison
   let testing = $state(false);

@@ -2,6 +2,7 @@
   import EmptyRow from '$lib/components/frameleaf/EmptyRow.svelte';
   import InlineError from '$lib/components/frameleaf/InlineError.svelte';
   import ListSkeleton from '$lib/components/frameleaf/ListSkeleton.svelte';
+  import { formatLuxon } from '$lib/frameleaf/date-format';
   /**
    * Frameleaf FL-57: the correction history of a person, over `GET /people/:id/corrections`
    * (25 decisions a page, "Show more") with Undo (`POST /people/corrections/:id/undo`). The
@@ -201,7 +202,7 @@
     }
   };
 
-  const formatAt = (value: string) => DateTime.fromISO(value).toLocaleString(DateTime.DATETIME_MED);
+  const formatAt = (value: string) => formatLuxon(DateTime.fromISO(value), DateTime.DATETIME_MED);
 </script>
 
 <div class="pd-history" role="dialog" aria-labelledby="pd-history-title" aria-modal="false">

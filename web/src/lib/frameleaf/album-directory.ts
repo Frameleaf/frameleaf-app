@@ -377,9 +377,14 @@ const spanFormats = new Map<string | undefined, Record<'monthYear' | 'month' | '
 const spanFormatters = (locale?: string) => {
   let formats = spanFormats.get(locale);
   if (!formats) {
+    // Month and year only: with no day and no time there is nothing for the account's date or time format
+    // to change, so these stay as they were.
     formats = {
+      // eslint-disable-next-line no-restricted-syntax -- no day or time for the account's format to change
       monthYear: new Intl.DateTimeFormat(locale, { month: 'short', year: 'numeric', timeZone: 'UTC' }),
+      // eslint-disable-next-line no-restricted-syntax -- no day or time for the account's format to change
       month: new Intl.DateTimeFormat(locale, { month: 'short', timeZone: 'UTC' }),
+      // eslint-disable-next-line no-restricted-syntax -- no day or time for the account's format to change
       year: new Intl.DateTimeFormat(locale, { year: 'numeric', timeZone: 'UTC' }),
     };
     spanFormats.set(locale, formats);

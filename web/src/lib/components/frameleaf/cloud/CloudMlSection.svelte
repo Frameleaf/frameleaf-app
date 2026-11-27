@@ -19,6 +19,7 @@
    */
   import './frameleaf-cloud.css';
   import { goto } from '$app/navigation';
+  import { formatTime } from '$lib/frameleaf/date-format';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import CloudDescriptionBackfill from '$lib/components/frameleaf/cloud/CloudDescriptionBackfill.svelte';
   import CloudMlConsentDialog from '$lib/components/frameleaf/cloud/CloudMlConsentDialog.svelte';
@@ -201,7 +202,7 @@
       : $t('frameleaf_cp_waiting_batch', {
           values: {
             count: photos,
-            time: new Date(at).toLocaleTimeString($locale ?? undefined, { timeStyle: 'short' }),
+            time: formatTime(new Date(at), { timeStyle: 'short' }, $locale ?? 'default'),
           },
         });
   };
