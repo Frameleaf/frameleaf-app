@@ -1,9 +1,10 @@
 <script lang="ts">
-  import Spinner from '$lib/components/frameleaf/Spinner.svelte';
+  import EmptyRow from '$lib/components/frameleaf/EmptyRow.svelte';
+  import GridSkeleton from '$lib/components/frameleaf/GridSkeleton.svelte';
+  import InlineError from '$lib/components/frameleaf/InlineError.svelte';
   import { rovingFocus } from '$lib/frameleaf/roving-focus';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
-  import Status from '$lib/components/frameleaf/Status.svelte';
   import FaceCrop from '$lib/components/frameleaf/people/FaceCrop.svelte';
   import { isUnnamedPerson, normalizedFaceBox, type FaceBox } from '$lib/frameleaf/people';
   import { eventManager } from '$lib/managers/event-manager.svelte';
@@ -157,10 +158,9 @@
 <Dialog title={$t('select_featured_photo')} closeLabel={$t('close')} wide bind:open>
   <p class="hint">{$t('frameleaf_people_featured_hint', { values: { name } })}</p>
   {#if failed}
-    <Status message={$t('frameleaf_people_featured_failed')} />
-    <Button onclick={() => void load()}>{$t('retry')}</Button>
+    <InlineError compact message={$t('frameleaf_people_featured_failed')} onRetry={() => load()} />
   {:else if !loading && assets.length === 0}
-    <p class="empty">{$t('frameleaf_people_featured_empty')}</p>
+    <EmptyRow title={$t('frameleaf_people_featured_empty')} />
   {:else}
     <div class="grid" role="radiogroup" use:rovingFocus aria-label={$t('photos')}>
       {#each assets as asset, index (asset.id)}
@@ -193,7 +193,7 @@
       {/each}
     </div>
     {#if loading}
-      <div class="loading"><Spinner /></div>
+      <div class="loading"><GridSkeleton tiles={6} columns={6} /></div>
     {:else if nextCursor}
       <div class="more">
         <Button onclick={() => void load(nextCursor!)}>{$t('frameleaf_people_show_more')}</Button>
@@ -263,9 +263,6 @@
     color: var(--fl-accent-text);
     background: var(--fl-accent);
   }
-  .empty {
-    color: var(--fl-muted);
-  }
   .more {
     display: flex;
     justify-content: center;
@@ -277,9 +274,6 @@
     }
   }
   .loading {
-    display: flex;
-    justify-content: center;
-    padding: var(--fl-space-6) 0;
-    color: var(--fl-muted);
+    padding-top: var(--fl-space-2);
   }
 </style>

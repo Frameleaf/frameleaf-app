@@ -23,7 +23,8 @@
   import { handlePromiseError } from '$lib/utils';
   import { removeTag, tagAssets } from '$lib/utils/asset-utils';
   import { handleError } from '$lib/utils/handle-error';
-  import { getAllTags, getAssetInfo, upsertTags, type AssetResponseDto, type TagResponseDto } from '@frameleaf/sdk';
+  import { invalidateTags, loadAllTags } from '$lib/frameleaf/tag-store';
+  import { getAssetInfo, upsertTags, type AssetResponseDto, type TagResponseDto } from '@frameleaf/sdk';
   import { Icon, toastManager } from '@frameleaf/ui';
   import { mdiClose, mdiPlus, mdiTagOutline, mdiTagPlusOutline } from '@mdi/js';
   import { onDestroy } from 'svelte';
@@ -93,7 +94,7 @@
     }
     const isCurrent = captureView();
     try {
-      const loaded = await getAllTags();
+      const loaded = await loadAllTags();
       if (isCurrent()) {
         allTags = loaded;
       }
@@ -132,6 +133,7 @@
         let tagId = change.option.id;
         if (change.option.create) {
           const [created] = await upsertTags({ tagUpsertDto: { tags: [change.option.id] } });
+          invalidateTags();
           if (!isCurrent()) {
             return;
           }

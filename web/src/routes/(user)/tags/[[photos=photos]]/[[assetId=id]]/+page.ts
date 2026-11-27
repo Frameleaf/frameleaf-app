@@ -1,6 +1,7 @@
-import { getAllTags, getTagStatistics } from '@frameleaf/sdk';
+import { getTagStatistics } from '@frameleaf/sdk';
 import { error } from '@sveltejs/kit';
 import { QueryParameter } from '$lib/constants';
+import { loadAllTags } from '$lib/frameleaf/tag-store';
 import { tagPathExists } from '$lib/frameleaf/tag-tree';
 import { authenticate } from '$lib/utils/auth';
 import { getFormatter } from '$lib/utils/i18n';
@@ -17,7 +18,7 @@ export const load = (async ({ url }) => {
   // waits for the data, so nothing appears late.
   const path = url.searchParams.get(QueryParameter.PATH) ?? '';
   const [tags, statistics, TagLibrary] = await Promise.all([
-    getAllTags(),
+    loadAllTags(),
     getTagStatistics(),
     path ? import('$lib/components/frameleaf/tags/TagLibrary.svelte').then((module) => module.default) : undefined,
   ]);

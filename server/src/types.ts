@@ -823,7 +823,8 @@ export type JobItem =
   | { name: JobName.DescriptionFillerTagCleanup; data?: IBaseJob }
 
   // Asset Deletion
-  | { name: JobName.PersonCleanup; data?: IBaseJob }
+  // FL-1790: with `mergeCandidatesOwnerId`, only that owner's merge suggestions are worked out again
+  | { name: JobName.PersonCleanup; data?: IBaseJob & { mergeCandidatesOwnerId?: string } }
   | { name: JobName.AssetDelete; data: IAssetDeleteJob }
   | { name: JobName.AssetDeleteCheck; data?: IBaseJob }
 

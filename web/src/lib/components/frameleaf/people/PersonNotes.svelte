@@ -6,13 +6,14 @@
    * shows no card at all. Saving an empty note clears it.
    */
   import Button from '$lib/components/frameleaf/Button.svelte';
+  import EmptyRow from '$lib/components/frameleaf/EmptyRow.svelte';
+  import StatusLine from '$lib/components/frameleaf/StatusLine.svelte';
   import { PERSON_NOTES_MAX, noteParts } from '$lib/frameleaf/person-notes';
   import { eventManager } from '$lib/managers/event-manager.svelte';
   import { locale } from '$lib/stores/preferences.store';
-  import { handleError } from '$lib/utils/handle-error';
   import { updatePerson, type PersonResponseDto } from '@frameleaf/sdk';
-  import { Icon, toastManager } from '@frameleaf/ui';
-  import { mdiPencilOutline } from '@mdi/js';
+  import { Icon } from '@frameleaf/ui';
+  import { mdiNoteTextOutline, mdiPencilOutline } from '@mdi/js';
   import { onDestroy } from 'svelte';
   import { t } from 'svelte-i18n';
 
@@ -25,6 +26,8 @@
   let editing = $state(false);
   let draft = $state('');
   let busy = $state(false);
+  // FL-1810: a saved field shows the status line beside it, not a toast.
+  let saved = $state<{ state: 'saved' | 'failed'; message: string }>();
   const note = $derived(person.notes ?? '');
   const label = $derived(
     person.name
@@ -35,11 +38,13 @@
   $effect(() => {
     void person.id;
     editing = false;
+    saved = undefined;
   });
 
   const edit = () => {
     draft = note;
     editing = true;
+    saved = undefined;
   };
   // A save that finishes after the page moved on to another person, or after this card is gone, must
   // not hand its person to the page.
@@ -48,6 +53,7 @@
   const save = async () => {
     const id = person.id;
     busy = true;
+    saved = undefined;
     try {
       const notes = draft.trim() ? draft : null;
       const updated = await updatePerson({ id, personUpdateDto: { notes } });
@@ -57,9 +63,15 @@
       }
       onPersonChange?.(updated);
       editing = false;
-      toastManager.primary($t(notes ? 'frameleaf_person_notes_saved' : 'frameleaf_person_notes_removed'));
-    } catch (error) {
-      handleError(error, $t('frameleaf_person_notes_error'));
+      saved = {
+        state: 'saved',
+        message: $t(notes ? 'frameleaf_person_notes_saved' : 'frameleaf_person_notes_removed'),
+      };
+    } catch {
+      // the text stays in the box, so nothing typed is lost
+      if (alive && person.id === id) {
+        saved = { state: 'failed', message: $t('frameleaf_person_notes_error') };
+      }
     } finally {
       busy = false;
     }
@@ -108,7 +120,10 @@
               >{:else}{part.text}{/if}{/each}
         </p>
       {:else}
-        <p class="quiet">{$t('frameleaf_person_notes_empty')}</p>
+        <EmptyRow icon={mdiNoteTextOutline} title={$t('frameleaf_person_notes_empty')} />
+      {/if}
+      {#if busy || saved}
+        <StatusLine state={busy ? 'saving' : saved?.state} message={busy ? undefined : saved?.message} />
       {/if}
     </div>
   </section>
@@ -148,7 +163,6 @@
     font-weight: var(--fl-weight-semibold);
   }
   h2 small,
-  .quiet,
   .actions small {
     margin: 0;
     color: var(--fl-muted);
