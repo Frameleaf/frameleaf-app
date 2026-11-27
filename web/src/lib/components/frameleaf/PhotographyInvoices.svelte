@@ -1,6 +1,9 @@
 <script lang="ts">
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
+  import EmptyState from '$lib/components/frameleaf/EmptyState.svelte';
+  import InlineError from '$lib/components/frameleaf/InlineError.svelte';
+  import ListSkeleton from '$lib/components/frameleaf/ListSkeleton.svelte';
   import { onLibraryAccessChange } from '$lib/frameleaf/library-access';
   import { locale } from '$lib/stores/preferences.store';
   import {
@@ -14,6 +17,7 @@
     type PhotographyInvoiceDto,
     type PhotographyInvoiceListDto,
   } from '@frameleaf/sdk';
+  import { mdiFileDocumentOutline } from '@mdi/js';
   import { onDestroy, onMount } from 'svelte';
   import { t } from 'svelte-i18n';
 
@@ -174,14 +178,21 @@
 </script>
 
 <section class="invoices" aria-busy={busy}>
-  {#if error}<p role="alert" class="error">{$t('frameleaf_clients_invoice_error')}</p>{/if}
+  {#if error && !data}
+    <InlineError compact message={$t('frameleaf_clients_invoice_error')} onRetry={() => run(reload)} retrying={busy} />
+  {:else if error}
+    <p role="alert" class="error">{$t('frameleaf_clients_invoice_error')}</p>
+  {:else if !data}
+    <ListSkeleton rows={3} avatar={false} />
+  {/if}
   {#if data && !data.mailReady}<p role="status" class="muted">{$t('frameleaf_clients_invoice_mail_needed')}</p>{/if}
   {#if data && data.items.length === 0}
-    <div class="empty">
-      <h2>{$t('frameleaf_clients_invoice_empty_heading')}</h2>
-      <p>{$t('frameleaf_clients_invoice_empty_body')}</p>
-      <Button variant="primary" disabled={busy} onclick={() => open()}>{$t('frameleaf_clients_invoice_new')}</Button>
-    </div>
+    <EmptyState
+      icon={mdiFileDocumentOutline}
+      title={$t('frameleaf_clients_invoice_empty_heading')}
+      message={$t('frameleaf_clients_invoice_empty_body')}
+      action={{ label: $t('frameleaf_clients_invoice_new'), onClick: () => open() }}
+    />
   {:else if data}
     <div class="heading">
       <h2>{$t('frameleaf_clients_invoice_title')}</h2>
@@ -461,15 +472,6 @@
   h2,
   h3 {
     margin: 0;
-  }
-  .empty {
-    display: grid;
-    justify-items: start;
-    gap: 1rem;
-    padding: 2rem;
-    border: 1px solid var(--fl-border);
-    border-radius: var(--fl-radius-card);
-    background: var(--fl-panel);
   }
   .list {
     margin: 0;

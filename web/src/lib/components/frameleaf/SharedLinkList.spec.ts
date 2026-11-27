@@ -1,8 +1,8 @@
-import type { ServerConfigDto } from '@frameleaf/sdk';
+import type { ServerConfigDto, SharedLinkPageResponseDto } from '@frameleaf/sdk';
 import {
   getAllAlbums,
-  getAllSharedLinks,
   getSharedLinkById,
+  getSharedLinkPage,
   removeSharedLink,
   searchAssets,
   SharedLinkType,
@@ -21,7 +21,7 @@ vi.mock('$lib/utils');
 vi.mock('$lib/utils/handle-error', () => ({ handleError: vi.fn() }));
 vi.mock('@frameleaf/sdk', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@frameleaf/sdk')>()),
-  getAllSharedLinks: vi.fn(),
+  getSharedLinkPage: vi.fn(),
   getSharedLinkById: vi.fn(),
   getAllAlbums: vi.fn(),
   removeSharedLink: vi.fn(),
@@ -59,6 +59,20 @@ beforeAll(() => {
   };
 });
 
+type Link = ReturnType<typeof sharedLinkFactory.build>;
+const pageOf = (links: Link[], more: Partial<SharedLinkPageResponseDto> = {}): SharedLinkPageResponseDto => ({
+  links,
+  nextCursor: null,
+  albumCount: links.filter(({ type }) => type === SharedLinkType.Album).length,
+  individualCount: links.filter(({ type }) => type === SharedLinkType.Individual).length,
+  ...more,
+});
+/** What the server lists, as one page holding everything. */
+const serverLinks = {
+  mockResolvedValue: (links: Link[]) => vi.mocked(getSharedLinkPage).mockResolvedValue(pageOf(links)),
+  mockRejectedValue: (error: unknown) => vi.mocked(getSharedLinkPage).mockRejectedValue(error),
+};
+
 beforeEach(() => {
   vi.clearAllMocks();
   pageState.url = new URL('http://localhost/shared-links');
@@ -75,7 +89,7 @@ describe('SharedLinkList', () => {
       password: 'super-secret',
       description: 'Family photos',
     });
-    vi.mocked(getAllSharedLinks).mockResolvedValue([link]);
+    serverLinks.mockResolvedValue([link]);
 
     render(SharedLinkList);
 
@@ -91,7 +105,7 @@ describe('SharedLinkList', () => {
       assets: [],
       password: null,
     });
-    vi.mocked(getAllSharedLinks).mockResolvedValue([link]);
+    serverLinks.mockResolvedValue([link]);
     vi.mocked(removeSharedLink).mockResolvedValue(undefined as never);
 
     render(SharedLinkList);
@@ -115,14 +129,14 @@ describe('SharedLinkList', () => {
   });
 
   it('shows the empty state distinct from the no-results state', async () => {
-    vi.mocked(getAllSharedLinks).mockResolvedValue([]);
+    serverLinks.mockResolvedValue([]);
     render(SharedLinkList);
     expect(await screen.findByText(en.frameleaf_sharing.empty_links_title)).toBeInTheDocument();
   });
 
   it('opens the edit form for ?edit= (the old edit address) and drops the parameter', async () => {
     const link = sharedLinkFactory.build({ type: SharedLinkType.Individual, assets: [] });
-    vi.mocked(getAllSharedLinks).mockResolvedValue([link]);
+    serverLinks.mockResolvedValue([link]);
     pageState.url = new URL(`http://localhost/shared-links?edit=${link.id}`);
 
     render(SharedLinkList);
@@ -136,7 +150,7 @@ describe('SharedLinkList', () => {
 
   it('asks for a link missing from the list by id, and says so when it does not exist', async () => {
     const warning = vi.spyOn(toastManager, 'warning').mockImplementation(() => undefined as never);
-    vi.mocked(getAllSharedLinks).mockResolvedValue([]);
+    serverLinks.mockResolvedValue([]);
     vi.mocked(getSharedLinkById).mockRejectedValue(new Error('not found'));
     pageState.url = new URL('http://localhost/shared-links?edit=missing-id');
 
@@ -148,13 +162,13 @@ describe('SharedLinkList', () => {
   });
 
   it('opens with the prototype intro copy (AL-19)', async () => {
-    vi.mocked(getAllSharedLinks).mockResolvedValue([]);
+    serverLinks.mockResolvedValue([]);
     render(SharedLinkList);
     expect(await screen.findByText(en.frameleaf_sharing.links_intro)).toBeInTheDocument();
   });
 
   it('moves between tabs with the arrow keys, Home and End, keeping one tab stop (AL-20)', async () => {
-    vi.mocked(getAllSharedLinks).mockResolvedValue([
+    serverLinks.mockResolvedValue([
       sharedLinkFactory.build({
         type: SharedLinkType.Album,
         album: { id: 'a', albumName: 'Rockies' } as never,
@@ -198,7 +212,7 @@ describe('SharedLinkList', () => {
   it('marks each link with its expiry, password, download, upload and metadata badges (AL-21)', async () => {
     const soon = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString();
     const past = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-    vi.mocked(getAllSharedLinks).mockResolvedValue([
+    serverLinks.mockResolvedValue([
       sharedLinkFactory.build({
         type: SharedLinkType.Album,
         album: { id: 'open', albumName: 'Open link' } as never,
@@ -250,7 +264,7 @@ describe('SharedLinkList', () => {
       directUrl: '/api/shared-links/direct/lake-morning.jpg',
     });
     const album = sharedLinkFactory.build({ type: SharedLinkType.Individual, description: 'Two photos' });
-    vi.mocked(getAllSharedLinks).mockResolvedValue([photo, album]);
+    serverLinks.mockResolvedValue([photo, album]);
     vi.mocked(copyToClipboard).mockResolvedValue(true);
 
     render(SharedLinkList);
@@ -291,7 +305,7 @@ describe('SharedLinkList', () => {
         assetCount: 15,
         coverAssetIds: ['cover', 'n1', 'n2', 'n3'],
       });
-      vi.mocked(getAllSharedLinks).mockResolvedValue([album, selectionOf(['a1', 'a2', 'a3', 'a4', 'a5', 'a6'])]);
+      serverLinks.mockResolvedValue([album, selectionOf(['a1', 'a2', 'a3', 'a4', 'a5', 'a6'])]);
 
       render(SharedLinkList);
 
@@ -303,13 +317,13 @@ describe('SharedLinkList', () => {
       expect(pictures(selectionCard)).toEqual(['/thumbnail/a1', '/thumbnail/a2', '/thumbnail/a3', '/thumbnail/a4']);
       expect(within(selectionCard).getByText('+2')).toBeInTheDocument();
 
-      expect(getAllSharedLinks).toHaveBeenCalledTimes(1);
+      expect(getSharedLinkPage).toHaveBeenCalledTimes(1);
       expect(getSharedLinkById).not.toHaveBeenCalled();
       expect(searchAssets).not.toHaveBeenCalled();
     });
 
     it('fills the cover with the one photo of a single-photo share', async () => {
-      vi.mocked(getAllSharedLinks).mockResolvedValue([selectionOf(['beach'])]);
+      serverLinks.mockResolvedValue([selectionOf(['beach'])]);
 
       render(SharedLinkList);
 
@@ -321,7 +335,7 @@ describe('SharedLinkList', () => {
 
     it('names a one-photo share after the photo it shows, not after an item that is not counted', async () => {
       // Two items came back, but only one is shared with viewers (the other is in the trash, say).
-      vi.mocked(getAllSharedLinks).mockResolvedValue([
+      serverLinks.mockResolvedValue([
         selectionOf(['beach'], { assets: items('old', 'beach'), assetCount: 1, coverAssetIds: ['beach'] }),
       ]);
 
@@ -332,7 +346,7 @@ describe('SharedLinkList', () => {
     });
 
     it('keeps the "Expired" flag on an expired link, over its cover', async () => {
-      vi.mocked(getAllSharedLinks).mockResolvedValue([
+      serverLinks.mockResolvedValue([
         selectionOf(['beach'], { expiresAt: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString() }),
       ]);
 
@@ -346,7 +360,7 @@ describe('SharedLinkList', () => {
     });
 
     it('shows an empty cover, and no count badge, for a link with nothing to show', async () => {
-      vi.mocked(getAllSharedLinks).mockResolvedValue([selectionOf([])]);
+      serverLinks.mockResolvedValue([selectionOf([])]);
 
       render(SharedLinkList);
 
@@ -365,7 +379,7 @@ describe('SharedLinkList', () => {
       assets: [],
       slug: 'rockies',
     });
-    vi.mocked(getAllSharedLinks).mockResolvedValue([link]);
+    serverLinks.mockResolvedValue([link]);
     render(SharedLinkList);
     await screen.findByText('Rockies');
 
@@ -393,7 +407,7 @@ describe('SharedLinkList', () => {
     const cardOf = (title: string) => screen.getByRole('heading', { name: title }).closest('li') as HTMLElement;
 
     it('is never shown: a card says when the link was made, and its custom address when it has one', async () => {
-      vi.mocked(getAllSharedLinks).mockResolvedValue([withAddress, withoutAddress]);
+      serverLinks.mockResolvedValue([withAddress, withoutAddress]);
       render(SharedLinkList);
       await screen.findByText('Rockies');
 
@@ -405,7 +419,7 @@ describe('SharedLinkList', () => {
     });
 
     it('is not searched either, so a card never matches on something it does not show', async () => {
-      vi.mocked(getAllSharedLinks).mockResolvedValue([withAddress, withoutAddress]);
+      serverLinks.mockResolvedValue([withAddress, withoutAddress]);
       render(SharedLinkList);
       await screen.findByText('Rockies');
       const search = screen.getByRole('searchbox', { name: en.frameleaf_sharing.search_shared_links });
@@ -425,7 +439,7 @@ describe('SharedLinkList', () => {
   });
 
   it('says so when the links cannot be loaded, instead of failing silently', async () => {
-    vi.mocked(getAllSharedLinks).mockRejectedValue(new Error('offline'));
+    serverLinks.mockRejectedValue(new Error('offline'));
     render(SharedLinkList);
     await waitFor(() =>
       expect(handleError).toHaveBeenCalledWith(expect.any(Error), en.frameleaf_sharing.links_load_failed),
@@ -434,7 +448,7 @@ describe('SharedLinkList', () => {
   });
 
   it('says so when the albums for a new link cannot be loaded', async () => {
-    vi.mocked(getAllSharedLinks).mockResolvedValue([]);
+    serverLinks.mockResolvedValue([]);
     vi.mocked(getAllAlbums).mockRejectedValue(new Error('offline'));
     render(SharedLinkList);
     await screen.findByText(en.frameleaf_sharing.empty_links_title);
@@ -449,7 +463,7 @@ describe('SharedLinkList', () => {
 
 it('reports a rejected edit address update and keeps the share editor closed', async () => {
   const link = sharedLinkFactory.build();
-  vi.mocked(getAllSharedLinks).mockResolvedValue([link]);
+  serverLinks.mockResolvedValue([link]);
   const failure = new Error('Navigation aborted');
   vi.mocked(replaceState).mockRejectedValueOnce(failure);
   pageState.url = new URL(`http://localhost/shared-links?edit=${link.id}`);
@@ -457,4 +471,67 @@ it('reports a rejected edit address update and keeps the share editor closed', a
   await waitFor(() => expect(handleError).toHaveBeenCalledWith(failure, en.frameleaf_sharing.links_load_failed));
   expect(pageState.url.searchParams.get('edit')).toBe(link.id);
   expect(screen.queryByRole('heading', { name: en.frameleaf_sharing.edit_shared_link_title })).toBeNull();
+});
+
+describe('paging (FL-1795)', () => {
+  let seen: (() => void) | undefined;
+  beforeEach(() => {
+    seen = undefined;
+    vi.stubGlobal(
+      'IntersectionObserver',
+      vi.fn(function (callback: IntersectionObserverCallback) {
+        seen = () => callback([{ isIntersecting: true } as IntersectionObserverEntry], {} as IntersectionObserver);
+        return { observe: vi.fn(), disconnect: vi.fn(), unobserve: vi.fn(), takeRecords: vi.fn() };
+      }),
+    );
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  const selection = (id: string, name: string) =>
+    sharedLinkFactory.build({
+      id,
+      type: SharedLinkType.Individual,
+      assets: [{ id: `asset-${id}`, originalFileName: name } as never],
+      assetCount: 1,
+      coverAssetIds: [`asset-${id}`],
+    });
+
+  it('reads one page, counts every link in the tabs, and reads the next page when the end comes into view', async () => {
+    vi.mocked(getSharedLinkPage)
+      .mockResolvedValueOnce(
+        pageOf([selection('one', 'first.jpg')], { nextCursor: 'next', individualCount: 2, albumCount: 5 }),
+      )
+      .mockResolvedValueOnce(pageOf([selection('two', 'second.jpg')], { individualCount: 2, albumCount: 5 }));
+
+    render(SharedLinkList);
+
+    await screen.findByText('first.jpg');
+    expect(getSharedLinkPage).toHaveBeenCalledExactlyOnceWith({ take: 60 });
+    expect(screen.queryByText('second.jpg')).not.toBeInTheDocument();
+    // the tabs count the links of every page, not only the ones read
+    expect(screen.getByRole('tab', { name: /^All/ })).toHaveTextContent('7');
+    expect(screen.getByRole('tab', { name: /^Albums/ })).toHaveTextContent('5');
+
+    await waitFor(() => expect(seen).toBeDefined());
+    seen!();
+
+    await screen.findByText('second.jpg');
+    expect(getSharedLinkPage).toHaveBeenLastCalledWith({ take: 60, cursor: 'next' });
+    expect(screen.getByText('first.jpg')).toBeInTheDocument();
+    // nothing more to read: the end marker is gone
+    await waitFor(() => expect(document.querySelector('.sl-end')).not.toBeInTheDocument());
+  });
+
+  it('keeps the loading cards, not "no matches", while a tab has shown nothing of the pages read so far', async () => {
+    vi.mocked(getSharedLinkPage).mockResolvedValueOnce(
+      pageOf([selection('one', 'first.jpg')], { nextCursor: 'next', albumCount: 1 }),
+    );
+
+    render(SharedLinkList);
+    await screen.findByText('first.jpg');
+    await fireEvent.click(screen.getByRole('tab', { name: /^Albums/ }));
+
+    expect(screen.getByRole('list', { name: 'Loading' })).toBeInTheDocument();
+    expect(document.querySelector('.sl-end')).toBeInTheDocument();
+  });
 });

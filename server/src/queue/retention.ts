@@ -1,4 +1,5 @@
 import { Kysely, sql } from 'kysely';
+import { recordQueueBatches } from 'src/queue/queue-problems.js';
 import { QUEUE_BATCH } from 'src/queue/types.js';
 import { dropAttemptEvidence, pruneWorkerStopEvidence } from 'src/utils/attempt-evidence.js';
 
@@ -26,6 +27,8 @@ export async function pruneQueueHistoryPage(
       rows: [lock],
     } = await sql<{ acquired: boolean }>`select pg_try_advisory_xact_lock(-333, 1) acquired`.execute(tx);
     if (!lock.acquired) return { pruned: 0, fullPage: false, due: false };
+    // FL-1785: count what each queue finished before any of it is deleted
+    await recordQueueBatches(tx);
     const {
       rows: [cursor],
     } = await sql<{

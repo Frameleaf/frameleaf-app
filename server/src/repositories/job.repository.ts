@@ -33,9 +33,9 @@ import { automaticJobCapacity, clampJobCapacity, readJobCapacity } from 'src/que
 import { NO_FAILURE_REASON, deferJobAdoption, queueExecution } from 'src/queue/context.js';
 import { deferJobUntilDependency } from 'src/queue/dependency.js';
 import { deliverJobObservers } from 'src/queue/observers.js';
-import { listQueueProblems, queueHolds, queueProblemJobs } from 'src/queue/queue-problems.js';
+import { listQueueProblems, queueHolds, queueProblemJobs, queueProgress } from 'src/queue/queue-problems.js';
 import { recentFileCheck, recentWorkScope } from 'src/queue/recent-work.js';
-import { causeRank } from 'src/queue/run-failure-cause.js';
+import { causeRank, queueProblemCause } from 'src/queue/run-failure-cause.js';
 import { type RunFailurePrivacy, reviewRunFailures } from 'src/queue/run-failures.js';
 import { failureRoots, needsLook, ownerJobs, reportedQueueJobs } from 'src/queue/run-query.js';
 import { SqlQueueStore } from 'src/queue/store.js';
@@ -64,6 +64,9 @@ import { assertAssetSource, readAssetSource } from 'src/utils/asset-source-autho
 import { recordStoppedAttempt } from 'src/utils/attempt-evidence.js';
 import { DATABASE_POOL_SIZE } from 'src/utils/execution-database.js';
 import { FIX_SEARCH_DELAY_MS } from 'src/utils/file-fix.js';
+
+/** FL-1790: how long a refresh of merge suggestions waits for more face changes to arrive. */
+export const MERGE_CANDIDATES_DELAY_MS = 60_000;
 import { forgetLockedClaim, lockedKeyLoadedSinceDeferral } from 'src/utils/locked-read.js';
 import { FrameleafStartupError, getKeyByValue } from 'src/utils/misc.js';
 import { NIGHT_DATA_KEY, nightWork, withNight } from 'src/utils/night-work.js';
@@ -907,6 +910,11 @@ export class JobRepository {
     return queueHolds(this.store.db);
   }
 
+  /** FL-1785: each queue's finished jobs of its current batch, and how many it finishes an hour. */
+  getQueueProgress() {
+    return queueProgress(this.store.db);
+  }
+
   /**
    * FL-1486: Try again or Stop trying on one problem's failed jobs, whatever run they are in. Returns how many photos
    * (jobs, for work that is no photo's) something was done to.
@@ -1442,6 +1450,32 @@ export class JobRepository {
       ) jobs where status = any(${statuses}::text[])
       and (${!publicOnly} or name = any(${JobNameSchema.options}::text[]))
       order by timestamp desc, id limit ${limit}`.execute(this.store.db);
+    // FL-1785: a failed job says what went wrong, by the rules Needs a look counts with (`queueProblemCause`)
+    const failed = rows.filter((row) => row.status === QueueJobStatus.Failed && row.id);
+    if (failed.length > 0) {
+      const { rows: facts } = await sql<{
+        id: string;
+        asset: boolean;
+        external: boolean;
+        offline: boolean;
+        finding: 'missing' | 'corrupt' | null;
+        deadline: boolean;
+      }>`select j.id, a.id is not null asset, a."libraryId" is not null external, coalesce(a."isOffline", false) offline,
+          h.finding, coalesce(j."cancelReason" = 'deadline', false) deadline
+        from job j
+        left join asset a on a.id = case when pg_input_is_valid(j."rootItemKey", 'uuid') then j."rootItemKey"::uuid end
+        left join lateral (select h.category::text finding from asset_health h where h."assetId" = a.id
+          and h.category in ('missing','corrupt') and h."resolvedAt" is null and h."dismissedAt" is null
+          order by h.category = 'missing' desc limit 1) h on true
+        where j.id = any(${failed.map((row) => row.id)}::uuid[])`.execute(this.store.db);
+      const byId = new Map(facts.map((fact) => [fact.id, fact]));
+      for (const row of failed) {
+        const fact = byId.get(row.id!);
+        if (fact) {
+          row.cause = queueProblemCause({ ...fact, error: row.failedReason ?? null });
+        }
+      }
+    }
     return rows;
   }
 
@@ -1761,6 +1795,18 @@ export class JobRepository {
         return item.data.delay
           ? { delay: item.data.delay, deduplication: { id: `${id}:later`, keepLastIfActive: true } }
           : { deduplication: { id, keepLastIfActive: true } };
+      }
+      case JobName.PersonCleanup: {
+        // FL-1790: one waiting refresh of an owner's merge suggestions. It waits a little so a burst of
+        // face changes (an import, a run of corrections) is one pass, and one asked for while a pass
+        // runs gets its own after it. The nightly cleanup carries no owner and is left as it was.
+        const ownerId = item.data?.mergeCandidatesOwnerId;
+        return ownerId
+          ? {
+              delay: MERGE_CANDIDATES_DELAY_MS,
+              deduplication: { id: `${JobName.PersonCleanup}:merge-candidates:${ownerId}`, keepLastIfActive: true },
+            }
+          : null;
       }
       case JobName.PushBackupStaleCheck: {
         return { deduplication: { id: JobName.PushBackupStaleCheck } };

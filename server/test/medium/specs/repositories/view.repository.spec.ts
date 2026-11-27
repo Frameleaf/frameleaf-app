@@ -53,6 +53,36 @@ describe(ViewRepository.name, () => {
     }
   });
 
+  it('reads a folder a page at a time: every file once, the same files as the whole read (FL-1795)', async () => {
+    const { ctx, sut } = setup();
+    const { user } = await ctx.newUser();
+    for (const name of ['e.jpg', 'a.jpg', 'd.jpg', 'c.jpg', 'b.jpg']) {
+      await ctx.newAsset({ ownerId: user.id, originalPath: `/paged/${name}` });
+    }
+    await ctx.newAsset({ ownerId: user.id, originalPath: '/paged/nested/child.jpg' });
+    await ctx.newAsset({ ownerId: user.id, originalPath: '/elsewhere/z.jpg' });
+
+    const whole = await sut.getAssetsByOriginalPath(user.id, '/paged');
+    expect(whole).toHaveLength(5);
+
+    const paged: string[] = [];
+    let after: string | undefined;
+    let reads = 0;
+    for (; reads < 5; reads++) {
+      const rows = await sut.getAssetsByOriginalPath(user.id, '/paged', undefined, { take: 2, after });
+      paged.push(...rows.map(({ id }) => id));
+      if (rows.length < 2) {
+        break;
+      }
+      after = rows.at(-1)!.id;
+    }
+    expect(reads).toBe(2);
+    expect(paged).toEqual(whole.map(({ id }) => id).toSorted());
+    // a page carries what the whole read carries for each file
+    const [first] = await sut.getAssetsByOriginalPath(user.id, '/paged', undefined, { take: 1 });
+    expect(first).toEqual(whole.find(({ id }) => id === first.id));
+  });
+
   it('lists an absolute folder alone, never a folder elsewhere whose path ends the same way', async () => {
     const { ctx, sut } = setup();
     const { user } = await ctx.newUser();

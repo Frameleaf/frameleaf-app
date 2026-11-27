@@ -2,6 +2,7 @@
   import { getNewMediaCreatorItems, type MediaCreatorItemResponse } from '@frameleaf/sdk';
   import { onMount } from 'svelte';
   import { locale, t } from 'svelte-i18n';
+  import EmptyRow from '$lib/components/frameleaf/EmptyRow.svelte';
   import InlineError from '$lib/components/frameleaf/InlineError.svelte';
   import {
     creatorBannerUrl,
@@ -108,7 +109,7 @@
           {/each}
         </ul>
       {:else}
-        <p class="cr-empty">{$t('frameleaf_creators_nothing_new')}</p>
+        <EmptyRow title={$t('frameleaf_creators_nothing_new')} />
       {/if}
     </section>
     <section aria-labelledby="cr-all-heading">
@@ -164,7 +165,7 @@
           {/each}
         </ul>
       {:else}
-        <p class="cr-empty">{$t('frameleaf_creators_no_one')}</p>
+        <EmptyRow title={$t('frameleaf_creators_no_one')} />
       {/if}
     </section>
   </div>

@@ -111,6 +111,23 @@ const DuplicateDecisionHistorySchema = z
   })
   .meta({ id: 'DuplicateDecisionHistoryDto' });
 
+// FL-1795
+const DuplicateReviewPageSchema = z
+  .object({
+    take: z.coerce
+      .number()
+      .int()
+      .min(1)
+      .max(500)
+      .optional()
+      .describe(
+        'Most groups to return. With it the review is read a page at a time, in group ID order: a page shorter than this is the last one. Without it every group is returned.',
+      ),
+    after: z.uuidv4().optional().describe('duplicateId of the last group of the page before; only with take'),
+  })
+  .meta({ id: 'DuplicateReviewPageDto' });
+
+export class DuplicateReviewPageDto extends createZodDto(DuplicateReviewPageSchema) {}
 export class DuplicateReviewGroupDto extends createZodDto(DuplicateReviewGroupSchema) {}
 export class DuplicateReviewQualityDto extends createZodDto(DuplicateReviewQualitySchema) {}
 export class DuplicateDecisionGroupDto extends createZodDto(DuplicateDecisionGroupSchema) {}

@@ -9,10 +9,10 @@ import { eventManager } from '$lib/managers/event-manager.svelte';
 import { peopleListItemFactory } from '@test-data/factories/person-factory';
 import { userAdminFactory } from '@test-data/factories/user-factory';
 import PeoplePage from './+page.svelte';
-import { PEOPLE_CAP, PEOPLE_PAGE_SIZE } from './people-page';
+import { PEOPLE_PAGE_SIZE } from './people-page';
 
-// Small page and cap sizes keep the rendered grid cheap; the page reads both from this module.
-vi.mock(import('./people-page'), () => ({ PEOPLE_PAGE_SIZE: 2, PEOPLE_CAP: 6, WAITING_REFRESH_MS: 25 }));
+// A small page size keeps the rendered grid cheap; the page reads it from this module.
+vi.mock(import('./people-page'), () => ({ PEOPLE_PAGE_SIZE: 2, WAITING_REFRESH_MS: 25 }));
 vi.mock('$app/state', () => ({ page: { url: new URL('http://localhost/people') } }));
 const flags = vi.hoisted(() => ({ facialRecognition: true }));
 vi.mock('$lib/managers/feature-flags-manager.svelte', () => ({ featureFlagsManager: { value: flags } }));
@@ -31,7 +31,7 @@ const page = (size: number, prefix: string) =>
   Array.from({ length: size }, (_, index) => peopleListItemFactory.build({ id: `${prefix}${index}`, isHidden: false }));
 
 // FL-37: the People grid reads every page up front for its sorts, in the largest pages the API
-// allows, stops at a cap and never keeps reading after the page is gone.
+// allows, and never keeps reading after the page is gone. FL-1801: there is no cap on how many.
 describe('People library page loading', () => {
   beforeEach(() => {
     vi.resetAllMocks();
@@ -41,24 +41,133 @@ describe('People library page loading', () => {
     sdkMock.getAssetStatistics.mockResolvedValue({ images: 0, videos: 0, total: 0 });
   });
 
-  it('reads the remaining pages in the largest page size and stops at the cap', async () => {
+  it('reads every remaining page in the largest page size, with no cap', async () => {
+    const pages = 5;
     sdkMock.getAllPeople.mockImplementation((options) => {
+      const number = options?.page ?? 1;
       return Promise.resolve({
-        people: page(PEOPLE_PAGE_SIZE, `p${options?.page ?? 1}-`),
+        people: page(PEOPLE_PAGE_SIZE, `p${number}-`),
         total: 99_999,
         hidden: 0,
-        hasNextPage: true,
+        hasNextPage: number < pages,
       });
     });
     const { container } = render(PeoplePage, { data: data(page(PEOPLE_PAGE_SIZE, 'p1-'), true) });
 
-    await waitFor(() => expect(container.textContent).toContain('frameleaf_people_truncated'), { timeout: 3000 });
+    await waitFor(() => expect(container.querySelectorAll('.pl-card')).toHaveLength(pages * PEOPLE_PAGE_SIZE), {
+      timeout: 3000,
+    });
     const calls = sdkMock.getAllPeople.mock.calls.map(([options]) => options);
-    expect(calls).toEqual([
+    expect(calls).toEqual([2, 3, 4, 5].map((number) => ({ withHidden: true, page: number, size: PEOPLE_PAGE_SIZE })));
+    expect(container.textContent).not.toContain('frameleaf_people_truncated');
+  });
+
+  // FL-1801: a re-read used to show its first page and add the rest back, which destroyed and rebuilt
+  // every card past that page. It now gathers the pages and replaces the list once.
+  it('keeps every card mounted through a re-read that finds the same people', async () => {
+    const everyone = [...page(PEOPLE_PAGE_SIZE, 'a'), ...page(PEOPLE_PAGE_SIZE, 'b'), ...page(1, 'c')];
+    const pageOf = (number: number) => everyone.slice((number - 1) * PEOPLE_PAGE_SIZE, number * PEOPLE_PAGE_SIZE);
+    sdkMock.getAllPeople.mockImplementation((options) => {
+      const number = options?.page ?? 1;
+      return Promise.resolve({ people: pageOf(number), total: 5, hidden: 0, hasNextPage: number < 3 });
+    });
+    sdkMock.getMergeSuggestions.mockResolvedValue({
+      suggestions: [{ person: everyone[0], suggestion: everyone[4], distance: 0.3 }] as never,
+    });
+    const { container } = render(PeoplePage, { data: data(pageOf(1), true) });
+    await waitFor(() => expect(container.querySelectorAll('.pl-card')).toHaveLength(5));
+    const before = [...container.querySelectorAll('.pl-card')];
+    const reads = sdkMock.getAllPeople.mock.calls.length;
+    const seen: number[] = [];
+    const observer = new MutationObserver(() => {
+      seen.push(container.querySelectorAll('.pl-card').length);
+    });
+    observer.observe(container, { childList: true, subtree: true });
+
+    // a merge the server answers makes the page read People again
+    sdkMock.setMergeVerdict.mockResolvedValue({
+      personId: everyone[0].id,
+      suggestionId: 'someone-else',
+      verdict: PersonMergeVerdict.Same,
+      createdAt: '2026-11-26T00:00:00.000Z',
+    });
+    await fireEvent.click(await screen.findByRole('button', { name: 'frameleaf_people_merge_suggestion_accept' }));
+    await waitFor(() => expect(sdkMock.getAllPeople.mock.calls.length).toBe(reads + 3));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    observer.disconnect();
+
+    const after = [...container.querySelectorAll('.pl-card')];
+    expect(after).toHaveLength(5);
+    // the very same elements: none was destroyed and built again
+    for (const [index, card] of after.entries()) {
+      expect(card).toBe(before[index]);
+    }
+    // and the grid never dropped to the first page on the way
+    expect(seen.every((count) => count === 5)).toBe(true);
+    expect(sdkMock.getAllPeople.mock.calls.slice(reads).map(([options]) => options)).toEqual([
+      { withHidden: true, size: PEOPLE_PAGE_SIZE },
       { withHidden: true, page: 2, size: PEOPLE_PAGE_SIZE },
       { withHidden: true, page: 3, size: PEOPLE_PAGE_SIZE },
     ]);
-    expect(container.querySelectorAll('.pl-card')).toHaveLength(PEOPLE_CAP);
+  });
+
+  // a page read before a change must not put the old value back when the re-read finishes
+  it('keeps a change made while a re-read is still reading its later pages', async () => {
+    const [first, second, third] = page(3, 'a');
+    let resolveSecondPage: (value: never) => void = () => {};
+    sdkMock.getAllPeople.mockImplementation((options) =>
+      options?.page === 2
+        ? new Promise((resolve) => (resolveSecondPage = resolve))
+        : Promise.resolve({ people: [first, second], total: 3, hidden: 0, hasNextPage: true }),
+    );
+    sdkMock.getMergeSuggestions.mockResolvedValue({
+      suggestions: [{ person: first, suggestion: second, distance: 0.3 }] as never,
+    });
+    sdkMock.setMergeVerdict.mockResolvedValue({
+      personId: first.id,
+      suggestionId: 'someone-else',
+      verdict: PersonMergeVerdict.Same,
+      createdAt: '2026-11-26T00:00:00.000Z',
+    });
+    sdkMock.updatePerson.mockResolvedValue({ ...first, isFavorite: true });
+    const { container } = render(PeoplePage, { data: data([first, second], false) });
+
+    // the merge starts a re-read; its first page answers and its second is still on the way
+    await fireEvent.click(await screen.findByRole('button', { name: 'frameleaf_people_merge_suggestion_accept' }));
+    await waitFor(() => expect(sdkMock.getAllPeople).toHaveBeenCalledTimes(2));
+    await fireEvent.click(container.querySelector(':scope .pl-menu button')!);
+    await fireEvent.click(await screen.findByRole('menuitem', { name: 'favorite' }));
+    await waitFor(() => expect(container.querySelectorAll('.pl-badge.favorite')).toHaveLength(1));
+
+    resolveSecondPage({ people: [third], total: 3, hidden: 0, hasNextPage: false } as never);
+
+    await waitFor(() => expect(container.querySelectorAll('.pl-card')).toHaveLength(3));
+    expect(container.querySelectorAll('.pl-badge.favorite')).toHaveLength(1);
+  });
+
+  it('gives every page of a quiet re-read a time limit', async () => {
+    const timeout = vi.spyOn(AbortSignal, 'timeout');
+    sdkMock.getAllPeople.mockImplementation((options) =>
+      Promise.resolve({
+        people: page(1, options?.page === 2 ? 'b' : 'a'),
+        total: 2,
+        hidden: 0,
+        hasNextPage: options?.page !== 2,
+        scanning: true,
+      }),
+    );
+    render(PeoplePage, {
+      data: { ...data([], false), people: { people: [], total: 0, hidden: 0, hasNextPage: false, scanning: true } },
+    });
+
+    // the waiting page re-reads on its own; that re-read has two pages
+    await waitFor(() => expect(sdkMock.getAllPeople.mock.calls.length).toBeGreaterThanOrEqual(2), { timeout: 2000 });
+    const reads = sdkMock.getAllPeople.mock.calls.length;
+
+    expect(sdkMock.getAllPeople.mock.calls[1][0]).toMatchObject({ page: 2 });
+    // one limit per page read, the second page included
+    expect(timeout.mock.calls.length).toBeGreaterThanOrEqual(reads);
+    timeout.mockRestore();
   });
 
   it('stops reading pages once the page is destroyed', async () => {
