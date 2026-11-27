@@ -33,7 +33,8 @@
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import InlineError from '$lib/components/frameleaf/InlineError.svelte';
   import EagleNamedList from '$lib/components/frameleaf/eagle/EagleNamedList.svelte';
-  import TakeoutFolderChooser from '$lib/components/frameleaf/settings/TakeoutFolderChooser.svelte';
+  import FolderChooser from '$lib/components/frameleaf/FolderChooser.svelte';
+  import { chosenTakeoutFolder, takeoutFolderReader } from '$lib/frameleaf/folder-readers';
   import { EAGLE_ANNOTATIONS_AVAILABLE } from '$lib/frameleaf/eagle/eagle-annotations';
   import {
     EAGLE_DEFAULT_COLLECTION,
@@ -95,7 +96,6 @@
     mdiFolderMultipleOutline,
     mdiFolderOpenOutline,
     mdiFolderPlusOutline,
-    mdiFolderOutline,
     mdiFolderZipOutline,
     mdiImageMultipleOutline,
     mdiInboxOutline,
@@ -1420,14 +1420,18 @@
 </Dialog>
 
 {#if browsing && serverRootList}
-  <TakeoutFolderChooser
-    roots={serverRootList}
-    detail={() => ''}
-    folderIcon={(name) => (isLibraryName(name) ? mdiFolderZipOutline : mdiFolderOutline)}
-    canChoose={isLibraryFolder}
+  <FolderChooser
+    title={$t('frameleaf_takeout_folder_chooser_title')}
+    rootName={$t('frameleaf_takeout_folder_allowed')}
+    note={$t('frameleaf_takeout_folder_only_allowed_imports')}
+    read={takeoutFolderReader(serverRootList, $t, {
+      detail: () => '',
+      folderIcon: (name) => (isLibraryName(name) ? mdiFolderZipOutline : undefined),
+      canChoose: isLibraryFolder,
+    })}
     onClose={() => (browsing = false)}
-    onChoose={({ rootId, parts }) => {
-      browsing = false;
+    onChoose={(trail, listing) => {
+      const { rootId, parts } = chosenTakeoutFolder(trail, listing);
       // An import folder that is itself the library is "." below it: the server's check needs a path.
       void pickServer({ rootId, path: parts.join('/') || '.' });
     }}
