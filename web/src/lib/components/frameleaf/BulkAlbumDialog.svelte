@@ -44,8 +44,9 @@
    * result says where it lives ("Brand › Spring"), as every Boards picker does.
    *
    * Several albums can be ticked, and a typed name that doesn't exist becomes a new album. New albums
-   * are only made on Add, so Cancel never leaves an empty one behind. The five albums that most
-   * recently received items lead the list.
+   * are only made on Add, so Cancel never leaves an empty one behind. "Used lately" leads the list:
+   * the five albums this account itself last added to (FL-1814; the server keeps that record, so it
+   * follows the person between devices and never shows anyone else's adds).
    */
   const PAGE = 60;
   const RECENT_ALBUMS = 5;
@@ -80,11 +81,11 @@
   let recentIds = $state<string[]>([]);
   let limit = $state(PAGE);
 
-  /** Best effort: the picker works the same, without a Recent group, if this can't be read. */
+  /** Best effort: the picker works the same, without "Used lately", if this can't be read. */
   const loadRecentIds = async () => {
     try {
-      const { albumIds } = await getRecentlyAddedAlbums(libraryScope ? { libraryScope } : {});
-      return albumIds;
+      const { usedAlbumIds } = await getRecentlyAddedAlbums(libraryScope ? { libraryScope } : {});
+      return usedAlbumIds;
     } catch {
       return [];
     }
@@ -313,7 +314,7 @@
         </li>
       {/each}
       {#if !searching && recent.length > 0}
-        <li class="group"><span>{$t('recent')}</span></li>
+        <li class="group"><span>{$t('frameleaf_album_picker_used_lately')}</span></li>
         {#each recent as target (target.id)}
           {@render targetRow(target, false, '')}
         {/each}

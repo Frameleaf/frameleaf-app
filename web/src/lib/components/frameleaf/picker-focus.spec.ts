@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import AlbumMergeIntoDialog from '$lib/components/frameleaf/AlbumMergeIntoDialog.svelte';
 import AlbumMoveDialog from '$lib/components/frameleaf/AlbumMoveDialog.svelte';
+import BulkAlbumDialog from '$lib/components/frameleaf/BulkAlbumDialog.svelte';
 import AddRelationshipDialog from '$lib/components/frameleaf/people/AddRelationshipDialog.svelte';
 import PersonPicker from '$lib/components/frameleaf/people/PersonPicker.svelte';
 import { albumFactory } from '@test-data/factories/album-factory';
@@ -24,6 +25,13 @@ describe('pickers focus their search field on open', () => {
 
   it('Merge albums into', async () => {
     render(AlbumMergeIntoDialog, { merging: albums, albums, open: true, onMerge: vi.fn() });
+    await waitFor(() => expect(screen.getByRole('searchbox')).toHaveFocus());
+  });
+
+  it('Add to album (FL-1814)', async () => {
+    sdkMock.getAllAlbums.mockResolvedValue(albums);
+    sdkMock.getRecentlyAddedAlbums.mockResolvedValue({ albumIds: [], usedAlbumIds: [albums[1].id] });
+    render(BulkAlbumDialog, { count: 3, onSubmit: vi.fn() });
     await waitFor(() => expect(screen.getByRole('searchbox')).toHaveFocus());
   });
 

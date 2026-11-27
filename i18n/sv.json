@@ -3378,6 +3378,7 @@
   "frameleaf_album_people_chip": "{name} · {count, number}",
   "frameleaf_album_people_clear": "Rensa personer",
   "frameleaf_album_people_title": "Personer i det här albumet",
+  "frameleaf_album_picker_used_lately": "Senast använda",
   "frameleaf_album_private": "Privat",
   "frameleaf_album_private_share_it": "Privat · dela det",
   "frameleaf_album_remove_member_body": "De förlorar åtkomst till ”{name}”. Du kan bjuda in dem igen senare. En inbjudan till ett delat utrymme måste accepteras igen.",

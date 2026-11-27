@@ -3382,6 +3382,7 @@
   "frameleaf_album_people_chip": "{name} · {count, number}",
   "frameleaf_album_people_clear": "Personen zurücksetzen",
   "frameleaf_album_people_title": "Personen in diesem Album",
+  "frameleaf_album_picker_used_lately": "Zuletzt verwendet",
   "frameleaf_album_private": "Privat",
   "frameleaf_album_private_share_it": "Privat · teilen",
   "frameleaf_album_remove_member_body": "Sie verlieren den Zugriff auf „{name}“. Du kannst sie später erneut einladen. Eine Einladung zu einem geteilten Bereich muss erneut angenommen werden.",

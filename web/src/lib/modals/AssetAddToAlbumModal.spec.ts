@@ -50,7 +50,7 @@ describe('AssetAddToAlbumModal', () => {
     );
   });
 
-  it('leads with recent albums and adds to a ticked album and a new one', async () => {
+  it('leads with the albums this account used lately and adds to a ticked album and a new one', async () => {
     const user = userAdminFactory.build();
     authManager.setUser(user);
     const member = [{ user, role: AlbumUserRole.Owner }];
@@ -58,7 +58,8 @@ describe('AssetAddToAlbumModal', () => {
     const latest = albumFactory.build({ albumName: 'Latest', albumUsers: member });
     const created = albumFactory.build({ albumName: 'Banff', albumUsers: member });
     sdkMock.getAllAlbums.mockResolvedValueOnce([older, latest]);
-    sdkMock.getRecentlyAddedAlbums.mockResolvedValueOnce({ albumIds: [latest.id], usedAlbumIds: [] });
+    // "Used lately" is the account's own adds, not the album that last received something from anyone
+    sdkMock.getRecentlyAddedAlbums.mockResolvedValueOnce({ albumIds: [older.id], usedAlbumIds: [latest.id] });
     sdkMock.createAlbum.mockResolvedValueOnce(created);
     sdkMock.addAssetsToAlbums.mockResolvedValueOnce({ success: true });
     const onClose = vi.fn();
