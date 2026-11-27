@@ -22590,6 +22590,7 @@
     "weekday": "Le",
     "weekly": "Toutes les semaines"
   },
+  "frameleaf_workflows_load_failed": "Impossible de charger vos workflows.",
   "frameleaf_workruns_ask_help": "Uniquement pour les lignes réglées sur Me demander à chaque fois. Vous pouvez toujours changer avant le début du travail.",
   "frameleaf_workruns_ask_home": "Un ordinateur à la maison",
   "frameleaf_workruns_ask_label": "Lieu suggéré quand on vous le demande",

@@ -123,6 +123,18 @@ describe('WorkflowsPanel', () => {
     expect(screen.getByRole('button', { name: /1\. Unavailable plugin method/ })).toBeInTheDocument();
   });
 
+  it('shows placeholders, then a failed read in place with Try again, then the list (FL-1810)', async () => {
+    sdkMock.searchWorkflows.mockRejectedValueOnce(new Error('offline')).mockResolvedValueOnce([workflow()]);
+    render(WorkflowsPanel, {});
+    expect(screen.getByTestId('frameleaf-list-skeleton')).toBeInTheDocument();
+
+    expect(await screen.findByTestId('frameleaf-inline-error')).toHaveTextContent(en.frameleaf_workflows_load_failed);
+    expect(screen.queryByText(t.empty)).toBeNull();
+    await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_error_retry }));
+    expect(await screen.findByRole('button', { name: t.open })).toBeInTheDocument();
+    expect(screen.queryByTestId('frameleaf-inline-error')).toBeNull();
+  });
+
   it('loads its own workflows when mounted without them, and opens one in place', async () => {
     sdkMock.searchWorkflows.mockResolvedValue([workflow()]);
     render(WorkflowsPanel, {});

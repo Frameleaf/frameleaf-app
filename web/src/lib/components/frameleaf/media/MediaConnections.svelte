@@ -1,5 +1,6 @@
 <script lang="ts">
   import Button from '$lib/components/frameleaf/Button.svelte';
+  import EmptyRow from '$lib/components/frameleaf/EmptyRow.svelte';
   import InlineError from '$lib/components/frameleaf/InlineError.svelte';
   import ListSkeleton from '$lib/components/frameleaf/ListSkeleton.svelte';
   import {
@@ -154,7 +155,7 @@
 {#if !secure}<p class="media-secondary">{$t('frameleaf_boards_media_https_required')}</p>{/if}
 {#if failed}<InlineError compact message={$t('frameleaf_boards_media_connection_action_error')} />{/if}
 {#if loading}
-  <ListSkeleton rows={2} />
+  <ListSkeleton rows={2} avatar={false} />
 {:else if loadFailed}
   <InlineError compact message={$t('frameleaf_boards_media_connections_error')} onRetry={load} />
 {:else}
@@ -205,7 +206,7 @@
       {/each}
     </ul>
   {:else}
-    <p>{$t('frameleaf_boards_media_connections_empty')}</p>
+    <EmptyRow title={$t('frameleaf_boards_media_connections_empty')} />
   {/if}
   {#if secure && providers.length > 0 && !showForm}
     <div>

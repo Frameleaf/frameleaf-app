@@ -8,6 +8,7 @@
   import { emptyDiscoveryQuery, parseDiscoveryQueryText } from '$lib/components/discovery/query';
   import { workflowFromSearch } from '$lib/frameleaf/workflow-source';
   import Button from '$lib/components/frameleaf/Button.svelte';
+  import InlineError from '$lib/components/frameleaf/InlineError.svelte';
   import EmptyRow from '$lib/components/frameleaf/EmptyRow.svelte';
   import ListSkeleton from '$lib/components/frameleaf/ListSkeleton.svelte';
   import WorkflowDesigner from '$lib/components/frameleaf/WorkflowDesigner.svelte';
@@ -55,20 +56,25 @@
   let workflows = $state<WorkflowResponseDto[]>(initial ?? []);
   // svelte-ignore state_referenced_locally
   let loaded = $state(initial !== undefined);
+  // FL-1810: a failed read says so in place with Try again; `error` is only for actions.
+  let loadFailed = $state(false);
   // the section is mounted wherever the utilities area puts it, so it loads what it needs itself
-  onMount(async () => {
+  const load = async (preloaded = false) => {
+    loadFailed = false;
+    loaded = preloaded;
     try {
       const [list] = await Promise.all([
-        loaded ? Promise.resolve(workflows) : searchWorkflows({}),
+        preloaded ? Promise.resolve(workflows) : searchWorkflows({}),
         pluginManager.ready(),
       ]);
       workflows = list;
-    } catch (error_) {
-      error = getServerErrorMessage(error_) ?? $t('errors.something_went_wrong');
+    } catch {
+      loadFailed = true;
     } finally {
       loaded = true;
     }
-  });
+  };
+  onMount(() => void load(loaded));
   let editing = $state<{ workflow?: WorkflowResponseDto; draft: WorkflowDraft } | null>(null);
   let designerOpen = $state(false);
   let notice = $state('');
@@ -209,9 +215,11 @@
   {#if error}<p role="alert" class="error">{error}</p>{/if}
   {#if notice}<p role="status" class="notice">{notice}</p>{/if}
 
-  {#if !loaded && !error}
+  {#if !loaded}
     <ListSkeleton rows={3} />
-  {:else if loaded && workflows.length === 0 && !error}
+  {:else if loadFailed}
+    <InlineError compact message={$t('frameleaf_workflows_load_failed')} onRetry={() => load()} />
+  {:else if workflows.length === 0}
     <EmptyRow title={$t('frameleaf_workflows.empty')} />
   {:else}
     <div class="list">

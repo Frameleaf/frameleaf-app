@@ -11,6 +11,9 @@
   import { photographyErrorKey } from '$lib/components/frameleaf/PhotographyStatus.svelte';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
+  import EmptyRow from '$lib/components/frameleaf/EmptyRow.svelte';
+  import GridSkeleton from '$lib/components/frameleaf/GridSkeleton.svelte';
+  import InlineError from '$lib/components/frameleaf/InlineError.svelte';
   import Skeleton from '$lib/components/frameleaf/Skeleton.svelte';
   import {
     brandFonts,
@@ -255,12 +258,26 @@
   });
 </script>
 
-{#if error}<div class="phw-notice" role="alert">
+{#if error && draft}<div class="phw-notice" role="alert">
     {error}<Button disabled={busy} onclick={reload}>{$t('frameleaf_photography_reload_branding')}</Button>
   </div>{/if}
-{#if loading}<div aria-busy="true" aria-label={$t('frameleaf_photography_loading_branding')}>
+{#if loading}<div
+    class="phw-detail-layout"
+    role="status"
+    aria-busy="true"
+    aria-label={$t('frameleaf_photography_loading_branding')}
+  >
     <Skeleton variant="block" height="24rem" />
+    <Skeleton variant="block" height="16rem" />
   </div>
+{:else if error && !draft}
+  <InlineError
+    compact
+    message={error}
+    retryLabel={$t('frameleaf_photography_reload_branding')}
+    onRetry={reload}
+    retrying={loading}
+  />
 {:else if draft && stored}
   <form class="phw-detail-layout phw-brand-layout" onsubmit={persist} aria-busy={busy}>
     <section class="phw-brand-main">
@@ -402,18 +419,17 @@
 >
   <div class="phw-new-shoot">
     <p class="phw-small">{$t('frameleaf_photography_logo_picker_note')}</p>
-    {#if logoError}<p role="alert">{logoError}</p>
-      <Button onclick={() => candidates()}>{$t('frameleaf_error_retry')}</Button>{/if}
+    {#if logoError}<InlineError compact message={logoError} onRetry={() => candidates()} retrying={logoLoading} />{/if}
     <div class="phw-logo-grid">
       {#each logos as logo (logo.id)}<button type="button" onclick={() => choose(logo.id)}
           ><img src={logoThumbnailUrl(logo.id)} alt="" loading="lazy" /><span>{logo.fileName}</span></button
         >{/each}
     </div>
-    {#if logoLoading}<p role="status">
-        {$t('frameleaf_photography_loading_logos')}
-      </p>{:else if logos.length === 0 && !logoError}<p>
-        {$t('frameleaf_photography_no_logos')}
-      </p>{/if}{#if cursor}<Button disabled={logoLoading} onclick={() => candidates(true)}
+    {#if logoLoading && logos.length === 0}<div aria-label={$t('frameleaf_photography_loading_logos')}>
+        <GridSkeleton tiles={8} />
+      </div>{:else if !logoLoading && logos.length === 0 && !logoError}<EmptyRow
+        title={$t('frameleaf_photography_no_logos')}
+      />{/if}{#if cursor}<Button disabled={logoLoading} onclick={() => candidates(true)}
         >{$t('frameleaf_photography_load_more_images')}</Button
       >{/if}
   </div>

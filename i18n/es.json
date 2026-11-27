@@ -22592,6 +22592,7 @@
     "weekday": "El",
     "weekly": "Cada semana"
   },
+  "frameleaf_workflows_load_failed": "No se pudieron cargar tus flujos de trabajo.",
   "frameleaf_workruns_ask_help": "Solo para las filas configuradas en Preguntarme cada vez. Aún puedes cambiar antes de que empiece el trabajo.",
   "frameleaf_workruns_ask_home": "Un ordenador de casa",
   "frameleaf_workruns_ask_label": "Lugar sugerido cuando se te pregunta",
