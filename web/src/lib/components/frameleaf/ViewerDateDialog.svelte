@@ -8,21 +8,15 @@
    * saved nothing); the zone list is the template's common zones
    * followed by every other zone, so no zone the old dialog offered is lost.
    *
-   * FL-936: Exact date / Year / Decade at the top. A year or a decade saves the start of that period in UTC
-   * with `dateAccuracy`; an exact date saves as before, which makes the date exact again.
+   * FL-1814: the date is the one date field, which asks how sure you are first (the exact day, month and year,
+   * year only, around a year; a decade stored before is shown as it is). Anything but the exact day saves the
+   * start of its period in UTC with `dateAccuracy` and `dateDetail`; an exact day saves with its time and zone,
+   * which makes the date exact again.
    */
-  import DatePrecisionChoice from '$lib/components/frameleaf/DatePrecisionChoice.svelte';
+  import DateField, { dateFieldStart, isDateFieldValid } from '$lib/components/frameleaf/DateField.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
-  import {
-    dateAccuracyOf,
-    decadeChoices,
-    decadeOf,
-    MIN_APPROXIMATE_YEAR,
-    parseApproximateYear,
-    periodStartIso,
-    type DatePrecision,
-    toSdkDateAccuracy,
-  } from '$lib/frameleaf/approximate-date';
+  import { toSdkDateAccuracy } from '$lib/frameleaf/approximate-date';
+  import { photoDateField, photoDateUpdate } from '$lib/frameleaf/date-field';
   import { formatLuxon } from '$lib/frameleaf/date-format';
   import { joinDateTime, splitDateTime, timezoneChoices } from '$lib/frameleaf/viewer-date';
   import {
@@ -34,7 +28,7 @@
   } from '$lib/modals/timezone-utils';
   import { locale } from '$lib/stores/preferences.store';
   import { handleError } from '$lib/utils/handle-error';
-  import { updateAssets, type AssetResponseDto } from '@frameleaf/sdk';
+  import { updateAssets, type AssetResponseDto, type DateDetail } from '@frameleaf/sdk';
   import { DateTime } from 'luxon';
   import { t } from 'svelte-i18n';
 
@@ -54,36 +48,20 @@
 
   let open = $state(true);
   let saved = false;
-  let date = $state(initial.date);
-  let time = $state(initial.time || '00:00');
+  /** What the field holds; an approximate date opens as it is stored. */
+  let field = $state({
+    ...photoDateField(
+      asset.dateAccuracy ? asset.localDateTime : initialDate?.toISODate(),
+      asset.dateAccuracy,
+      asset.dateDetail,
+    ),
+    time: initial.time || '00:00',
+  });
+  const date = $derived(field.sure === 'day' && isDateFieldValid(field) ? dateFieldStart(field) : '');
+  const time = $derived(field.time ?? '00:00');
   /** An empty value keeps the current time zone. */
   let zone = $state('');
   let saving = $state(false);
-
-  const currentYear = new Date().getFullYear();
-  const decades = decadeChoices(currentYear);
-  /** The year the photo is dated to now: the start of its period when only a year or a decade is known. */
-  const startYear = Number(asset.localDateTime?.slice(0, 4)) || initialDate?.year || currentYear;
-  const knownYear = Math.min(Math.max(startYear, MIN_APPROXIMATE_YEAR), currentYear);
-  let precision = $state<DatePrecision>(dateAccuracyOf(asset.dateAccuracy) ?? 'exact');
-  let yearText = $state(String(knownYear));
-  let decade = $state(String(decadeOf(knownYear)));
-  const year = $derived(parseApproximateYear(yearText, currentYear));
-  /** The first year of the chosen period, or null while the year typed is not one. */
-  const periodYear = $derived(precision === 'year' ? year : precision === 'decade' ? Number(decade) : null);
-  const approximateCopy = $derived.by(() => {
-    if (precision === 'decade') {
-      return $t('frameleaf_date_will_show_decade', { values: { decade } });
-    }
-    if (year !== null) {
-      return $t('frameleaf_date_will_show_year', { values: { year: String(year) } });
-    }
-    return /^\d{4}$/.test(yearText.trim())
-      ? $t('frameleaf_date_year_range', {
-          values: { min: String(MIN_APPROXIMATE_YEAR), max: String(currentYear) },
-        })
-      : $t('frameleaf_date_enter_year');
-  });
 
   const choices = timezoneChoices(initialTimeZone);
   const takenAt = $derived(joinDateTime(date, time));
@@ -125,14 +103,16 @@
     }
   });
 
-  const saveApproximate = async (accuracy: 'year' | 'decade', start: number) => {
+  const saveApproximate = async () => {
+    const { dateTimeOriginal, dateAccuracy, dateDetail } = photoDateUpdate(field);
     saving = true;
     try {
       await updateAssets({
         assetBulkUpdateDto: {
           ids: [asset.id],
-          dateTimeOriginal: periodStartIso(start, accuracy),
-          dateAccuracy: toSdkDateAccuracy(accuracy),
+          dateTimeOriginal,
+          dateAccuracy: toSdkDateAccuracy(dateAccuracy),
+          dateDetail: dateDetail as DateDetail | null,
         },
       });
       saved = true;
@@ -147,9 +127,9 @@
   };
 
   const save = async () => {
-    if (precision !== 'exact') {
-      if (periodYear !== null) {
-        await saveApproximate(precision, periodYear);
+    if (field.sure !== 'day') {
+      if (isDateFieldValid(field)) {
+        await saveApproximate();
       }
       return;
     }
@@ -187,18 +167,8 @@
       void save();
     }}
   >
-    <div class="mv-precision">
-      <DatePrecisionChoice value={precision} onChange={(value) => (precision = value)} />
-    </div>
-    {#if precision === 'exact'}
-      <label>
-        {$t('date')}
-        <input type="date" bind:value={date} data-initial-focus />
-      </label>
-      <label>
-        {$t('time')}
-        <input type="time" bind:value={time} />
-      </label>
+    <DateField label={$t('edit_date_and_time')} withTime value={field} onChange={(value) => (field = value)} />
+    {#if field.sure === 'day'}
       <label>
         {$t('frameleaf_info_time_zone')}
         <select bind:value={zone}>
@@ -220,36 +190,6 @@
           ? $t('frameleaf_info_capture_time_becomes', { values: { date: preview.date, time: preview.time } })
           : $t('frameleaf_info_enter_valid_date')}
       </p>
-    {:else}
-      {#if precision === 'year'}
-        <label>
-          {$t('frameleaf_date_precision_year')}
-          <input
-            type="text"
-            inputmode="numeric"
-            maxlength="4"
-            placeholder="1975"
-            bind:value={yearText}
-            aria-invalid={year === null}
-            aria-describedby="fl-viewer-date-approximate"
-            data-initial-focus
-          />
-        </label>
-      {:else}
-        <label>
-          {$t('frameleaf_date_precision_decade')}
-          <select bind:value={decade} aria-describedby="fl-viewer-date-approximate" data-initial-focus>
-            {#each decades as option (option)}
-              <option value={String(option)}>
-                {$t('frameleaf_date_decade_option', { values: { decade: String(option) } })}
-              </option>
-            {/each}
-          </select>
-        </label>
-      {/if}
-      <p id="fl-viewer-date-approximate" class="mv-dialog-copy is-approximate" aria-live="polite">
-        {approximateCopy}
-      </p>
     {/if}
   </form>
   {#snippet actions()}
@@ -258,7 +198,7 @@
       type="submit"
       form="fl-viewer-date-form"
       class="button primary"
-      disabled={(precision === 'exact' ? !takenAt || !targetZone : periodYear === null) || saving}
+      disabled={(field.sure === 'day' ? !takenAt || !targetZone : !isDateFieldValid(field)) || saving}
     >
       {$t('save')}
     </button>
@@ -289,14 +229,6 @@
     color: var(--fl-text);
     font: inherit;
     font-size: var(--fl-font-size);
-  }
-
-  .mv-precision {
-    margin-bottom: 20px;
-  }
-
-  .mv-dialog-copy.is-approximate {
-    margin-top: 8px;
   }
 
   .mv-dialog-copy {
