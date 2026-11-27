@@ -95,7 +95,7 @@
   import { DURATION } from '$lib/frameleaf/tokens';
   import { sectionForConfigPath } from '$lib/frameleaf/system-config-draft';
   import { getSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
-  import { LIBRARY_CARE_TOOLS, utilityTool, utilityToolsFor } from '$lib/frameleaf/utilities';
+  import { isImportTool, LIBRARY_CARE_TOOLS, utilityTool, utilityToolsFor } from '$lib/frameleaf/utilities';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { serverConfigManager } from '$lib/managers/server-config-manager.svelte';
   import { Route } from '$lib/route';
@@ -357,6 +357,12 @@
   const area = $derived(careTool ? 'care' : presentedArea(addressArea, selected?.key));
   /** FL-1806: Import, Library care and Trash are places beside the library rail, not Settings. */
   const place = $derived(isPlaceArea(area));
+  /** FL-1808: iCloud Photos and the phone apps belong to Import; the other tools to Library care. */
+  const placeTitle = $derived(
+    area === 'utilities' && isImportTool(page.url.searchParams.get('section'))
+      ? areaCopy.backup.title
+      : areaCopy[area].title,
+  );
   /** The Settings list holds preferences only. */
   const navAreas = $derived(visibleAreas.filter((item) => !isPlaceArea(item.id)));
   const sectionLanding = $derived(SECTION_LANDINGS[area]);
@@ -585,7 +591,7 @@
         id: `utilities:${tool.id}`,
         area: 'utilities' as const,
         section: tool.id,
-        overline: areaCopy.utilities.title,
+        overline: isImportTool(tool.id) ? areaCopy.backup.title : areaCopy.utilities.title,
         title: $t(tool.titleKey),
         subtitle: $t(tool.descriptionKey),
       }));
@@ -921,7 +927,7 @@
         <Icon icon={mdiServerOutline} size="1rem" aria-hidden />
         {serverName}
         <span class="cc-context-divider">/</span>
-        {place ? areaCopy[area].title : $t('settings')}
+        {place ? placeTitle : $t('settings')}
       </span>
       {#if scoped}
         <label class="cc-account-scope">

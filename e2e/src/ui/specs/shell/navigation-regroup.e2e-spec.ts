@@ -114,3 +114,28 @@ test.describe('One Library care page (FL-1807)', () => {
     await expect(page.getByRole('heading', { level: 1, name: 'Library care' })).toBeVisible();
   });
 });
+
+/** FL-1808 (approved 2026-11-26): one Import page listing every source, your phone first. */
+test.describe('One Import page (FL-1808)', () => {
+  test.beforeEach(async ({ context }) => {
+    await setupBaseMockApiRoutes(context, faker.string.uuid());
+    await setupShellRoutes(context);
+  });
+
+  test('lists every way in, your phone first, and a copy out at the bottom', async ({ page }) => {
+    await page.goto('/user-settings?area=backup');
+    const ways = page.getByRole('region', { name: 'Bring photos in from…' });
+    await expect(ways.locator('li strong')).toHaveText([
+      'Your phone',
+      'Google Photos',
+      'iCloud Photos',
+      'A folder on this server',
+      'Eagle library',
+    ]);
+    await expect(page.getByRole('region', { name: 'Take a copy out' })).toBeVisible();
+
+    await ways.getByRole('link', { name: /iCloud Photos/ }).click();
+    await expect(page).toHaveURL(/area=utilities&section=icloud/);
+    await expect(railLink(page, 'Import')).toHaveAttribute('aria-current', 'page');
+  });
+});

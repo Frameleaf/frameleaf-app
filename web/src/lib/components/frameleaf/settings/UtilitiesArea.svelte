@@ -18,7 +18,7 @@
   import SettingsOverline from '$lib/components/frameleaf/settings/SettingsOverline.svelte';
   import UtilityHistory from '$lib/components/frameleaf/UtilityHistory.svelte';
   import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
-  import { utilityTool, type UtilityId } from '$lib/frameleaf/utilities';
+  import { isImportTool, utilityTool } from '$lib/frameleaf/utilities';
   import { loadUtility, type UtilityData } from '$lib/frameleaf/utilities-load';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { Icon } from '@frameleaf/ui';
@@ -88,9 +88,8 @@
    * FL-1807: the Tools directory is gone. Every tool has one home its heading leads back to: Import
    * for the ways photos come in (FL-1808), Library care for the rest.
    */
-  const IMPORT_TOOLS: readonly UtilityId[] = ['icloud', 'downloads', 'phones'];
   const home = $derived(
-    selected && IMPORT_TOOLS.includes(selected.id)
+    isImportTool(selected?.id)
       ? { title: $t('frameleaf_settings_area_backup'), href: commandCenterUrl('backup') }
       : {
           title: $t('frameleaf_library_care'),
