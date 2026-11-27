@@ -1,16 +1,12 @@
 import { DateTime } from 'luxon';
 import { get } from 'svelte/store';
 import { dateFormats } from '$lib/constants';
-import { formatLuxon } from '$lib/frameleaf/date-format';
+import { formatDateRange, formatLuxon } from '$lib/frameleaf/date-format';
 import { locale } from '$lib/stores/preferences.store';
 
 export function parseUtcDate(date: string) {
   return DateTime.fromISO(date, { zone: 'UTC' }).toUTC();
 }
-
-const rangeFormatters: Partial<
-  Record<'short' | 'long', { locale: string | undefined; formatter: Intl.DateTimeFormat }>
-> = {};
 
 const getDateRange = (startTimestamp: string, endTimestamp: string, format: 'short' | 'long') => {
   const userLocale = get(locale);
@@ -20,18 +16,13 @@ const getDateRange = (startTimestamp: string, endTimestamp: string, format: 'sho
   if (startDate.year === endDate.year && startDate.month === endDate.month && format === 'short') {
     return formatLuxon(endDate.setLocale(userLocale), { month: 'long', year: 'numeric' });
   }
-
-  let cached = rangeFormatters[format];
-  // Keep at most one locale per style, rather than retaining every language selected.
-  if (!cached || cached.locale !== userLocale) {
-    cached = {
-      locale: userLocale,
-      // eslint-disable-next-line no-restricted-syntax -- a range of dates ("Oct – Nov 2026"), which the date helper does not write
-      formatter: new Intl.DateTimeFormat(userLocale, format === 'short' ? dateFormats.albumShort : dateFormats.album),
-    };
-    rangeFormatters[format] = cached;
-  }
-  return cached.formatter.formatRange(startDate.toJSDate(), endDate.toJSDate());
+  // FL-1805: the person's date order applies to a range that shows days.
+  return formatDateRange(
+    startDate.toJSDate(),
+    endDate.toJSDate(),
+    format === 'short' ? dateFormats.albumShort : dateFormats.album,
+    userLocale,
+  );
 };
 
 /**

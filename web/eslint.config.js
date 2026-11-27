@@ -44,12 +44,6 @@ const DATE_FORMAT_RULES = [
   "CallExpression[callee.property.name='toLocaleString'][arguments.0.object.name='DateTime']",
 ].map((selector) => ({ selector, message: DATE_FORMAT_MESSAGE }));
 
-/**
- * Files that still format dates themselves because another change owns them today. Convert the file
- * and delete its line; nothing new belongs here.
- */
-const DATE_FORMAT_PENDING = ['src/lib/components/frameleaf/MemoriesPanel.svelte'];
-
 export default typescriptEslint.config(
   ...eslintPluginSvelte.configs.recommended,
   eslintPluginUnicorn.configs.recommended,
@@ -246,8 +240,8 @@ export default typescriptEslint.config(
     },
   },
   {
-    // The helper itself, specs (which build the text they expect) and the files still to convert.
-    files: ['src/lib/frameleaf/date-format.ts', '**/*.spec.ts', ...DATE_FORMAT_PENDING],
+    // The helper itself, and specs (which build the text they expect).
+    files: ['src/lib/frameleaf/date-format.ts', '**/*.spec.ts'],
     rules: { 'no-restricted-syntax': ['error', NAVIGATION_PARAM_RULE] },
   },
   {

@@ -1,6 +1,13 @@
 import { DateTime } from 'luxon';
 import { describe, expect, it, vi } from 'vitest';
-import { formatDate, formatDateTime, formatLuxon, formatTime, type DisplayFormat } from './date-format';
+import {
+  formatDate,
+  formatDateRange,
+  formatDateTime,
+  formatLuxon,
+  formatTime,
+  type DisplayFormat,
+} from './date-format';
 
 const date = new Date('2026-11-01T14:30:00Z');
 const UTC = { timeZone: 'UTC' };
@@ -113,5 +120,45 @@ describe('a Luxon date and the shared formatters (FL-1805)', () => {
     expect(constructor.mock.calls.filter(([, given]) => given?.timeZone === 'Pacific/Chatham')).toHaveLength(1);
     expect(first).toBe(new Intl.DateTimeFormat('en-NZ', options).format(new Date(Date.UTC(2026, 10, 1))));
     constructor.mockRestore();
+  });
+});
+
+describe('a run of dates (FL-1805 follow-up)', () => {
+  const as = (
+    dateFormat: DisplayFormat['dateFormat'],
+    hourCycle: DisplayFormat['hourCycle'] = 'auto',
+  ): DisplayFormat => ({
+    dateFormat,
+    hourCycle,
+  });
+  const first = new Date(Date.UTC(2024, 4, 12));
+  const last = new Date(Date.UTC(2024, 4, 15));
+  const days = { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' } as const;
+
+  it('is exactly what Intl writes while the format is auto', () => {
+    for (const locale of ['en-US', 'de-DE', 'fr-FR', 'ja-JP']) {
+      expect(formatDateRange(first, last, days, locale, as('auto'))).toBe(
+        new Intl.DateTimeFormat(locale, days).formatRange(first, last),
+      );
+    }
+  });
+
+  it('writes both ends in the chosen order once the person has chosen one', () => {
+    expect(formatDateRange(first, last, days, 'en-US', as('dmy'))).toBe('12 May 2024 – 15 May 2024');
+    expect(formatDateRange(first, last, days, 'en-US', as('iso'))).toBe('2024-05-12 – 2024-05-15');
+    expect(formatDateRange(first, first, days, 'en-US', as('dmy'))).toBe('12 May 2024');
+  });
+
+  it('leaves a range of months to Intl, since there is no day to order', () => {
+    const months = { month: 'short', year: 'numeric', timeZone: 'UTC' } as const;
+    const october = new Date(Date.UTC(2026, 9, 1));
+    const november = new Date(Date.UTC(2026, 10, 1));
+    expect(formatDateRange(october, november, months, 'en-US', as('dmy'))).toBe(
+      new Intl.DateTimeFormat('en-US', months).formatRange(october, november),
+    );
+  });
+
+  it('gives an empty string for an invalid end', () => {
+    expect(formatDateRange(first, 'not a date', days, 'en-US', as('dmy'))).toBe('');
   });
 });

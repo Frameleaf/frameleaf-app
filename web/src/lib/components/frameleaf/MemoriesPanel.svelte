@@ -35,6 +35,7 @@
   import MenuItem from '$lib/components/frameleaf/MenuItem.svelte';
   import Skeleton from '$lib/components/frameleaf/Skeleton.svelte';
   import Status from '$lib/components/frameleaf/Status.svelte';
+  import { formatLuxon } from '$lib/frameleaf/date-format';
   import { createLandmarkAlbum } from '$lib/frameleaf/landmark-albums';
   import { memoryMotionStyle, memoryOverlineKey, memoryPreviewMotion } from '$lib/frameleaf/memory-engine';
   import {
@@ -142,11 +143,7 @@
   const nextUp = $derived(sections.upcoming[0]);
   // FL-1408 (M8): the day after a first import, before the overnight look through the library
   const preparing = $derived(memoryManager.preparing && nothing);
-  const longToday = $derived(
-    DateTime.fromISO(today)
-      .setLocale($locale ?? 'en')
-      .toLocaleString(DateTime.DATE_FULL),
-  );
+  const longToday = $derived(formatLuxon(DateTime.fromISO(today).setLocale($locale ?? 'en'), DateTime.DATE_FULL));
 
   const coverOf = (memory: LoadedMemory | undefined) =>
     memory?.slimAssets.find((asset) => asset.visibility !== AssetVisibility.Locked);
