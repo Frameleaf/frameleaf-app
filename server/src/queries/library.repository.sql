@@ -377,27 +377,71 @@ SELECT
     ),
     '/'
   ) AS "folderPath",
-  count(*) AS photos
+  count(*) FILTER (
+    WHERE
+      (
+        "asset"."isOffline" = false
+        AND "asset"."deletedAt" IS NULL
+        AND "asset"."visibility" IN ('timeline', 'archive')
+        AND "asset"."type" IN ('IMAGE', 'VIDEO')
+        AND not exists (
+          select
+            1
+          from
+            asset_lock
+          where
+            asset_lock."assetId" = "asset"."id"
+        )
+      )
+  ) AS photos,
+  count(*) AS items
 FROM
   asset
 WHERE
   asset."libraryId" = $1::uuid
-  AND (
-    "asset"."isOffline" = false
-    AND "asset"."deletedAt" IS NULL
-    AND "asset"."visibility" IN ('timeline', 'archive')
-    AND "asset"."type" IN ('IMAGE', 'VIDEO')
-    AND not exists (
-      select
-        1
-      from
-        asset_lock
-      where
-        asset_lock."assetId" = "asset"."id"
-    )
+  AND asset."isOffline" = false
+  AND asset."deletedAt" IS NULL
+  AND not exists (
+    select
+      1
+    from
+      asset_lock
+    where
+      asset_lock."assetId" = "asset"."id"
   )
 GROUP BY
   1
+
+-- LibraryRepository.getFolderAlbumCounts
+SELECT
+  count(*) AS albums,
+  count(*) FILTER (
+    WHERE
+      album.kind = 'album'
+      AND NOT EXISTS (
+        SELECT
+          1
+        FROM
+          album_asset member
+          JOIN asset ON asset.id = member."assetId"
+        WHERE
+          member."albumId" = album.id
+          AND asset."deletedAt" IS NULL
+      )
+  ) AS empty
+FROM
+  library_folder_album link
+  JOIN album ON album.id = link."albumId"
+  AND album."deletedAt" IS NULL
+WHERE
+  link."libraryId" = $1::uuid
+
+-- LibraryRepository.setFolderAlbumsKept
+update "library_folder_album"
+set
+  "isKept" = $1
+where
+  "libraryId" = $2::uuid
 
 -- LibraryRepository.getFolderAlbums
 select
@@ -406,6 +450,7 @@ select
   "library_folder_album"."folderPath",
   "library_folder_album"."albumId",
   "library_folder_album"."isUserEdited",
+  "library_folder_album"."isKept",
   "album"."albumName",
   "album"."parentId",
   "album"."kind",

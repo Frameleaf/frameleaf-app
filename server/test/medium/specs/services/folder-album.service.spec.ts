@@ -1,5 +1,6 @@
 import { Kysely } from 'kysely';
 import { AlbumKind, ChecksumAlgorithm } from 'src/enum.js';
+import { AlbumSummaryRepository } from 'src/repositories/album-summary.repository.js';
 import { AlbumRepository } from 'src/repositories/album.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { DatabaseRepository } from 'src/repositories/database.repository.js';
@@ -12,6 +13,7 @@ import { PartnerRepository } from 'src/repositories/partner.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
 import { DB } from 'src/schema/index.js';
 import { FolderAlbumService } from 'src/services/folder-album.service.js';
+import { EVENT_FOLDER_ALBUM_OPTIONS, LEGACY_FOLDER_ALBUM_OPTIONS } from 'src/utils/folder-albums.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { getKyselyDB } from 'test/utils.js';
 
@@ -22,6 +24,7 @@ const setup = (db?: Kysely<DB>) => {
     database: db || defaultDatabase,
     real: [
       AlbumRepository,
+      AlbumSummaryRepository,
       AssetRepository,
       DatabaseRepository,
       LibraryRepository,
@@ -87,6 +90,54 @@ beforeAll(async () => {
 });
 
 describe(FolderAlbumService.name, () => {
+  it('fills the albums of subfolders whose parent folder holds only folders', async () => {
+    const { sut, ctx } = setup();
+    const { library, file } = await newLibrary(ctx, ['/fl838/events']);
+    const photo = await file("/fl838/events/2026-10-12 - Nathan's Birth/Capture/a.jpg");
+    const video = await file("/fl838/events/2026-10-12 - Nathan's Birth/Videos/b.mp4");
+
+    await expect(sut.sync(library.id)).resolves.toMatchObject({ created: 3, photosAdded: 2 });
+
+    const event = await folderAlbum(defaultDatabase, library.id, "/fl838/events/2026-10-12 - Nathan's Birth");
+    const capture = await folderAlbum(defaultDatabase, library.id, "/fl838/events/2026-10-12 - Nathan's Birth/Capture");
+    const videos = await folderAlbum(defaultDatabase, library.id, "/fl838/events/2026-10-12 - Nathan's Birth/Videos");
+    expect(event).toMatchObject({ kind: AlbumKind.Collection, parentId: null });
+    expect(capture).toMatchObject({ parentId: event!.id });
+    expect(await membersOf(defaultDatabase, capture!.id)).toEqual([photo.id]);
+    expect(await membersOf(defaultDatabase, videos!.id)).toEqual([video.id]);
+  });
+
+  it('FL-1837: one album for each event folder, changed to match and back again', async () => {
+    const { sut, ctx } = setup();
+    const { library, file } = await newLibrary(ctx, ['/fl1837/events']);
+    const root = '/fl1837/events/2026-11-19 - Nathan';
+    const capture = await file(`${root}/Capture/a.jpg`);
+    const exported = await file(`${root}/Export/a-edit.jpg`);
+    await sut.sync(library.id);
+    expect(await folderAlbum(defaultDatabase, library.id, root)).toMatchObject({ kind: AlbumKind.Collection });
+
+    await ctx.get(LibraryRepository).update(library.id, { folderAlbumOptions: EVENT_FOLDER_ALBUM_OPTIONS });
+    await sut.sync(library.id);
+    const event = await folderAlbum(defaultDatabase, library.id, root);
+    expect(event).toMatchObject({ kind: AlbumKind.Album, parentId: null });
+    expect(await membersOf(defaultDatabase, event!.id)).toEqual([capture.id]);
+    expect(await folderAlbum(defaultDatabase, library.id, `${root}/Capture`)).toBeUndefined();
+    const exportAlbum = await folderAlbum(defaultDatabase, library.id, `${root}/Export`);
+    expect(exportAlbum).toMatchObject({ parentId: event!.id });
+    expect(await membersOf(defaultDatabase, exportAlbum!.id)).toEqual([exported.id]);
+
+    // back to an album for every folder: the event's album is emptied and a collection again
+    await ctx.get(LibraryRepository).update(library.id, { folderAlbumOptions: LEGACY_FOLDER_ALBUM_OPTIONS });
+    await sut.sync(library.id);
+    expect(await folderAlbum(defaultDatabase, library.id, root)).toMatchObject({
+      id: event!.id,
+      kind: AlbumKind.Collection,
+    });
+    expect(await membersOf(defaultDatabase, event!.id)).toEqual([]);
+    const captureAlbum = await folderAlbum(defaultDatabase, library.id, `${root}/Capture`);
+    expect(await membersOf(defaultDatabase, captureAlbum!.id)).toEqual([capture.id]);
+  });
+
   it("makes nested albums for nested folders, owned by the library owner, with the import folder's own photos beside them", async () => {
     const { sut, ctx } = setup();
     const { user, library, file } = await newLibrary(ctx, ['/fl838/nested']);

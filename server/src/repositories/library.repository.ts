@@ -3,7 +3,14 @@ import { type Insertable, type Kysely, type RawBuilder, type Transaction, type U
 import { InjectKysely } from 'nestjs-kysely';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
 import { LibraryStatsResponseDto, ManagedUploadsStatsResponseDto } from 'src/dtos/library.dto.js';
-import { AssetType, AssetVisibility, MediaOperationKind, MediaOperationStatus, UserStatus } from 'src/enum.js';
+import {
+  AlbumKind,
+  AssetType,
+  AssetVisibility,
+  MediaOperationKind,
+  MediaOperationStatus,
+  UserStatus,
+} from 'src/enum.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { DB } from 'src/schema/index.js';
 import { LibraryFolderAlbumTable } from 'src/schema/tables/library-folder-album.table.js';
@@ -449,15 +456,45 @@ export class LibraryRepository {
 
   /* FL-838: folder albums ------------------------------------------------ */
 
-  /** Each folder holding photos or videos a folder album shows, with how many it holds directly. */
+  /**
+   * Each folder holding items, with how many photos and videos a folder album shows directly in it and how many items
+   * it holds that are online and neither Locked nor trashed (FL-1837: a folder whose items are none of them shown is "empty").
+   */
   @GenerateSql({ params: [DummyValue.UUID] })
-  async getFolderPhotoCounts(libraryId: string): Promise<{ folderPath: string; photos: number }[]> {
-    const { rows } = await sql<{ folderPath: string; photos: string }>`
-      SELECT ${folderOf('asset')} AS "folderPath", count(*) AS photos
+  async getFolderPhotoCounts(libraryId: string): Promise<{ folderPath: string; photos: number; items: number }[]> {
+    const { rows } = await sql<{ folderPath: string; photos: string; items: string }>`
+      SELECT ${folderOf('asset')} AS "folderPath", count(*) FILTER (WHERE ${isFolderPhoto('asset')}) AS photos,
+        count(*) AS items
       FROM asset
-      WHERE asset."libraryId" = ${asUuid(libraryId)} AND ${isFolderPhoto('asset')}
+      WHERE asset."libraryId" = ${asUuid(libraryId)} AND asset."isOffline" = false AND asset."deletedAt" IS NULL
+        AND ${isNotLocked('asset')}
       GROUP BY 1`.execute(this.db);
-    return rows.map((row) => ({ folderPath: row.folderPath, photos: Number(row.photos) }));
+    return rows.map((row) => ({ folderPath: row.folderPath, photos: Number(row.photos), items: Number(row.items) }));
+  }
+
+  /** FL-1837: how many folder albums a library has, and how many of them show nothing. */
+  @GenerateSql({ params: [DummyValue.UUID] })
+  async getFolderAlbumCounts(libraryId: string): Promise<{ albums: number; empty: number }> {
+    const { rows } = await sql<{ albums: string; empty: string }>`
+      SELECT count(*) AS albums,
+        count(*) FILTER (WHERE album.kind = ${sql.lit(AlbumKind.Album)} AND NOT EXISTS (
+          SELECT 1 FROM album_asset member JOIN asset ON asset.id = member."assetId"
+          WHERE member."albumId" = album.id AND asset."deletedAt" IS NULL
+        )) AS empty
+      FROM library_folder_album link
+      JOIN album ON album.id = link."albumId" AND album."deletedAt" IS NULL
+      WHERE link."libraryId" = ${asUuid(libraryId)}`.execute(this.db);
+    return { albums: Number(rows[0]?.albums ?? 0), empty: Number(rows[0]?.empty ?? 0) };
+  }
+
+  /** FL-1837: albums made so far stay as they are (`kept`) or follow the library's rules again. */
+  @GenerateSql({ params: [DummyValue.UUID, true] })
+  async setFolderAlbumsKept(libraryId: string, kept: boolean): Promise<void> {
+    await this.db
+      .updateTable('library_folder_album')
+      .set({ isKept: kept })
+      .where('libraryId', '=', asUuid(libraryId))
+      .execute();
   }
 
   /** The library's folder albums, with the album's name, place and kind as they are now. */
@@ -472,6 +509,7 @@ export class LibraryRepository {
         'library_folder_album.folderPath',
         'library_folder_album.albumId',
         'library_folder_album.isUserEdited',
+        'library_folder_album.isKept',
         'album.albumName',
         'album.parentId',
         'album.kind',
