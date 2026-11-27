@@ -20,7 +20,7 @@
   import { Route } from '$lib/route';
   import { navigate } from '$lib/utils/navigation';
   import { Icon } from '@frameleaf/ui';
-  import { mdiLockOutline, mdiShieldLockOutline } from '@mdi/js';
+  import { mdiChevronRight, mdiEyeOffOutline, mdiLockOutline, mdiShieldLockOutline } from '@mdi/js';
   import { t } from 'svelte-i18n';
   import type { PageData } from './$types';
 
@@ -90,6 +90,19 @@
       selectAll="loaded"
       onOpen={(asset) => void navigate({ targetRoute: 'current', assetId: asset.id })}
     >
+      {#snippet subheader()}
+        <!-- FL-1809 (approved 2026-11-26): photos hidden by your rules had no way in. They sit behind the
+             same PIN as Locked, so the way in is here, once unlocked. -->
+        <a class="hidden-rules" href={Route.suppressed()}>
+          <Icon icon={mdiEyeOffOutline} size="20" aria-hidden />
+          <span>
+            <strong>{$t('frameleaf_suppressed_gate_title')}</strong>
+            <small>{$t('frameleaf_locked_hidden_rules_body')}</small>
+          </span>
+          <Icon icon={mdiChevronRight} size="18" aria-hidden />
+        </a>
+      {/snippet}
+
       {#snippet toolbarStart()}
         <LockedReasonFilter value={filter} onChange={(next) => void setFilter(next)} />
       {/snippet}
@@ -130,3 +143,37 @@
     />
   {/if}
 </UserPageLayout>
+
+<style>
+  .hidden-rules {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: var(--fl-space-3);
+    min-height: 44px;
+    padding: var(--fl-space-3) var(--fl-space-4);
+    border: 1px solid var(--fl-border);
+    border-radius: var(--fl-radius-card);
+    color: var(--fl-muted);
+    text-decoration: none;
+  }
+  .hidden-rules:hover {
+    background: var(--fl-raised);
+  }
+  .hidden-rules:focus-visible {
+    outline: var(--fl-focus-ring);
+    outline-offset: var(--fl-focus-offset);
+  }
+  .hidden-rules span {
+    display: grid;
+    gap: var(--fl-space-1);
+    min-width: 0;
+  }
+  .hidden-rules strong {
+    color: var(--fl-text);
+    font-weight: 600;
+  }
+  .hidden-rules small {
+    font-size: var(--fl-font-small);
+  }
+</style>
