@@ -209,10 +209,8 @@ describe('Frameleaf selection bar', () => {
 
     const confirm = screen.getByRole('dialog');
     expect(within(confirm).getByText(/cannot be undone/i)).toBeInTheDocument();
-    // The confirm sits in the dialog's actions footer and joins its form through `form=`.
-    const submit = within(confirm).getByRole<HTMLButtonElement>('button', { name: 'Delete permanently' });
-    expect(submit.form).not.toBeNull();
-    await fireEvent.submit(submit.form!);
+    // FL-1814: the shared ConfirmDialog; its action button repeats the action and runs it.
+    await fireEvent.click(within(confirm).getByRole('button', { name: 'Delete permanently' }));
     expect(onAction).toHaveBeenCalledWith('delete-permanently', undefined);
 
     vi.resetAllMocks();
