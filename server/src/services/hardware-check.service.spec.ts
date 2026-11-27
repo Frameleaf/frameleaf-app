@@ -51,70 +51,99 @@ describe(HardwareCheckService.name, () => {
   });
 
   describe('enableVideoCard', () => {
-    const withAccel = (accel: TranscodeHardwareAcceleration) => {
-      const config = { ffmpeg: { accel } } as SystemConfig;
-      vi.spyOn(sut, 'getConfig').mockResolvedValue(config);
+    const intelCard = {
+      nvidia: null,
+      nvidiaError: null,
+      nvidiaRequested: false,
+      nvidiaDevice: false,
+      renderNodes: [
+        { node: 'renderD128', vendor: 'Intel', accessible: true, memoryTotalBytes: null },
+        { node: 'renderD129', vendor: 'NVIDIA', accessible: false, memoryTotalBytes: null },
+      ],
+      encoders: ['h264_vaapi'],
+      test: { encoder: 'h264_vaapi', gpu: true, speed: 6, error: null },
+      host: { kernel: '6.8.0', gpus: [], dxg: false, groups: [0], root: true },
+    };
+    let metadata: Map<string, unknown>;
+    let saved: SystemConfig;
+
+    /** The saved settings; `meanwhile` is what an administrator saves while the test transcode runs. */
+    const withAccel = (accel: TranscodeHardwareAcceleration, meanwhile?: TranscodeHardwareAcceleration) => {
+      saved = { ffmpeg: { accel, preferredHwDevice: 'auto' } } as SystemConfig;
+      vi.spyOn(sut, 'getConfig').mockImplementation(() => Promise.resolve(structuredClone(saved)));
       return vi.spyOn(sut, 'updateConfigExclusively').mockImplementation((change) => {
-        const next = structuredClone(config);
-        change(next);
-        return Promise.resolve({ oldConfig: config, newConfig: next });
+        if (meanwhile) {
+          saved.ffmpeg.accel = meanwhile;
+        }
+        const oldConfig = structuredClone(saved);
+        change(saved);
+        return Promise.resolve({ oldConfig, newConfig: structuredClone(saved) });
       });
     };
 
+    beforeEach(() => {
+      metadata = new Map();
+      mocks.systemMetadata.get.mockImplementation((key) => Promise.resolve(metadata.get(key) as never));
+      mocks.systemMetadata.set.mockImplementation((key, value) => {
+        metadata.set(key, value);
+        return Promise.resolve();
+      });
+    });
+
     it('turns the switch on once when the test transcode ran on a card', async () => {
-      const update = withAccel(TranscodeHardwareAcceleration.Disabled);
+      withAccel(TranscodeHardwareAcceleration.Disabled);
 
       await sut.enableVideoCard();
 
-      expect(update).toHaveBeenCalledTimes(1);
-      const { newConfig } = await update.mock.results[0].value;
-      expect(newConfig.ffmpeg.accel).toBe(TranscodeHardwareAcceleration.Nvenc);
+      expect(saved.ffmpeg).toEqual({ accel: TranscodeHardwareAcceleration.Nvenc, preferredHwDevice: 'auto' });
       expect(mocks.event.emit).toHaveBeenCalledWith('ConfigUpdate', expect.anything());
-      expect(stored).toMatchObject({ autoEnabledAt: expect.any(String) });
+      expect(metadata.get(SystemMetadataKey.VideoCardAuto)).toEqual({ at: expect.any(String) });
 
-      // An administrator who then turns it off keeps it off.
+      // An administrator who then turns it off keeps it off, whatever else rewrites the card's state.
+      metadata.set(SystemMetadataKey.VideoCardState, { failedAt: null, accel: null, lastTest: null });
       withAccel(TranscodeHardwareAcceleration.Disabled);
       mocks.hardwareProbe.readServer.mockClear();
       await sut.enableVideoCard();
       expect(mocks.hardwareProbe.readServer).not.toHaveBeenCalled();
+      expect(saved.ffmpeg.accel).toBe(TranscodeHardwareAcceleration.Disabled);
     });
 
-    it('uses VA-API for an Intel or AMD card', async () => {
-      mocks.hardwareProbe.readServer.mockResolvedValue({
-        nvidia: null,
-        nvidiaError: null,
-        nvidiaRequested: false,
-        nvidiaDevice: false,
-        renderNodes: [],
-        encoders: ['h264_vaapi'],
-        test: { encoder: 'h264_vaapi', gpu: true, speed: 6, error: null },
-        host: { kernel: '6.8.0', gpus: [], dxg: false, groups: [0], root: true },
-      });
-      const update = withAccel(TranscodeHardwareAcceleration.Disabled);
+    it('uses VA-API on the render node the test ran on', async () => {
+      mocks.hardwareProbe.readServer.mockResolvedValue(intelCard);
+      withAccel(TranscodeHardwareAcceleration.Disabled);
 
       await sut.enableVideoCard();
 
-      const { newConfig } = await update.mock.results[0].value;
-      expect(newConfig.ffmpeg.accel).toBe(TranscodeHardwareAcceleration.Vaapi);
+      expect(saved.ffmpeg).toEqual({
+        accel: TranscodeHardwareAcceleration.Vaapi,
+        preferredHwDevice: '/dev/dri/renderD128',
+      });
+    });
+
+    it('keeps a choice an administrator saved while the test ran', async () => {
+      mocks.hardwareProbe.readServer.mockResolvedValue(intelCard);
+      withAccel(TranscodeHardwareAcceleration.Disabled, TranscodeHardwareAcceleration.Qsv);
+
+      await sut.enableVideoCard();
+
+      expect(saved.ffmpeg).toEqual({ accel: TranscodeHardwareAcceleration.Qsv, preferredHwDevice: 'auto' });
+      expect(mocks.event.emit).not.toHaveBeenCalledWith('ConfigUpdate', expect.anything());
+      expect(metadata.get(SystemMetadataKey.VideoCardAuto)).toBeDefined();
     });
 
     it('leaves the switch off and checks again next start when no card worked', async () => {
       mocks.hardwareProbe.readServer.mockResolvedValue({
-        nvidia: null,
-        nvidiaError: null,
-        nvidiaRequested: false,
-        nvidiaDevice: false,
+        ...intelCard,
         renderNodes: [],
         encoders: [],
         test: { encoder: 'libx264', gpu: false, speed: 2, error: null },
-        host: { kernel: '6.8.0', gpus: [], dxg: false, groups: [0], root: true },
       });
       const update = withAccel(TranscodeHardwareAcceleration.Disabled);
 
       await sut.enableVideoCard();
 
       expect(update).not.toHaveBeenCalled();
-      expect(stored).toBeUndefined();
+      expect(metadata.size).toBe(0);
     });
 
     it('only marks it when the switch is already on', async () => {
@@ -124,7 +153,17 @@ describe(HardwareCheckService.name, () => {
 
       expect(update).not.toHaveBeenCalled();
       expect(mocks.hardwareProbe.readServer).not.toHaveBeenCalled();
-      expect(stored).toMatchObject({ autoEnabledAt: expect.any(String) });
+      expect(metadata.get(SystemMetadataKey.VideoCardAuto)).toBeDefined();
+    });
+
+    it('leaves a config file alone', async () => {
+      mocks.config.getEnv.mockReturnValue({ ...mocks.config.getEnv(), configFile: '/config.json' });
+      const update = withAccel(TranscodeHardwareAcceleration.Disabled);
+
+      await sut.enableVideoCard();
+
+      expect(update).not.toHaveBeenCalled();
+      expect(mocks.hardwareProbe.readServer).not.toHaveBeenCalled();
     });
   });
 

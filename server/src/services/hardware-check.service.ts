@@ -34,6 +34,7 @@ import {
   restorationWorkerCheckFrom,
   runsOnDevice,
   serverCheckFrom,
+  testEncoderFor,
   unavailableWorkload,
 } from 'src/utils/hardware-check.js';
 import { mlWorkerRoleOf, resolveEndpoint } from 'src/utils/ml-destination.js';
@@ -76,34 +77,45 @@ export class HardwareCheckService extends BaseService {
   }
 
   async enableVideoCard(): Promise<void> {
-    const state = await this.systemMetadataRepository.get(SystemMetadataKey.VideoCardState);
-    if (state?.autoEnabledAt) {
+    // A config file is the administrator's to edit; it cannot be written here.
+    if (this.configRepository.getEnv().configFile) {
+      return;
+    }
+    if (await this.systemMetadataRepository.get(SystemMetadataKey.VideoCardAuto)) {
       return;
     }
     const mark = () =>
-      this.systemMetadataRepository.set(SystemMetadataKey.VideoCardState, {
-        failedAt: null,
-        accel: null,
-        lastTest: null,
-        ...state,
-        autoEnabledAt: new Date().toISOString(),
-      });
+      this.systemMetadataRepository.set(SystemMetadataKey.VideoCardAuto, { at: new Date().toISOString() });
     const { ffmpeg } = await this.getConfig({ withCache: false });
     if (ffmpeg.accel !== TranscodeHardwareAcceleration.Disabled) {
       await mark();
       return;
     }
     // ponytail: until a card is found this runs one short test transcode per start-up
-    const accel = CARD_ACCEL[serverCheckFrom(await this.hardwareProbeRepository.readServer()).backend];
+    const facts = await this.hardwareProbeRepository.readServer();
+    const accel = CARD_ACCEL[serverCheckFrom(facts).backend];
     if (!accel) {
       return;
     }
+    // VA-API with `auto` opens the highest render node; the test used this one, so jobs use it too.
+    const node = accel === TranscodeHardwareAcceleration.Vaapi ? testEncoderFor(facts).node : null;
+    let changed = false;
     const { oldConfig, newConfig } = await this.updateConfigExclusively((config) => {
+      // The test takes a while; a choice an administrator saved meanwhile wins.
+      if (config.ffmpeg.accel !== TranscodeHardwareAcceleration.Disabled) {
+        return;
+      }
       config.ffmpeg.accel = accel;
+      if (node && config.ffmpeg.preferredHwDevice === 'auto') {
+        config.ffmpeg.preferredHwDevice = node;
+      }
+      changed = true;
     });
-    await this.eventRepository.emit('ConfigUpdate', { oldConfig, newConfig });
+    if (changed) {
+      await this.eventRepository.emit('ConfigUpdate', { oldConfig, newConfig });
+      this.logger.log(`Playback videos now use the graphics card (${accel.toUpperCase()}), found by a test transcode`);
+    }
     await mark();
-    this.logger.log(`Playback videos now use the graphics card (${accel.toUpperCase()}), found by a test transcode`);
   }
 
   async getCheck(): Promise<HardwareCheckResponseDto> {
