@@ -6,7 +6,7 @@ import DetailPanelFold from './DetailPanelFold.svelte';
 const STORE = 'frameleaf-viewer-info-folds';
 const content = (html: string) => createRawSnippet(() => ({ render: () => html }));
 const section = content('<section data-testid="inside">Inside</section>');
-const fold = (id: string) => document.querySelector<HTMLDetailsElement>(`details[data-fold="${id}"]`)!;
+const fold = (id: string) => document.querySelector<HTMLDetailsElement>(`details[data-fold="${CSS.escape(id)}"]`)!;
 const stored = () => JSON.parse(localStorage.getItem(STORE) ?? '{}');
 /** The rule in the component's style that hides a fold with nothing in it. */
 const EMPTY = ':not(:has(> :not(summary)))';

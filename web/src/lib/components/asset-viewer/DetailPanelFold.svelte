@@ -30,13 +30,13 @@
 
   const onToggle = (event: Event & { currentTarget: HTMLDetailsElement }) => {
     const open = event.currentTarget.open;
-    if ((folds.current[id] === true) !== open) {
+    if (!!folds.current[id] !== open) {
       folds.current = { ...folds.current, [id]: open };
     }
   };
 </script>
 
-<details class="fl-fold" class:headings open={folds.current[id] === true} ontoggle={onToggle} data-fold={id}>
+<details class="fl-fold" class:headings open={!!folds.current[id]} ontoggle={onToggle} data-fold={id}>
   <summary>
     {label}
     <Icon icon={mdiChevronDown} size="16" aria-hidden />

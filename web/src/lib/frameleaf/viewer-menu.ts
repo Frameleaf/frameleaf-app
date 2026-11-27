@@ -349,8 +349,15 @@ export function viewerMenuSections(
   const offered = new Set(groups.flatMap((group) => group.items));
   const pick = (ids: ViewerActionId[]) => ids.filter((id) => offered.has(id));
   const placed = new Set([...MENU_TOP, ...MENU_SECTIONS.flatMap((section) => section.items)]);
+  // ponytail: a loop, because Set#difference is newer than the oldest browser the app supports.
+  const unplaced: ViewerActionId[] = [];
+  for (const id of offered) {
+    if (!placed.has(id)) {
+      unplaced.push(id);
+    }
+  }
   return {
-    top: [...pick(MENU_TOP), ...[...offered].filter((id) => !placed.has(id))],
+    top: [...pick(MENU_TOP), ...unplaced],
     sections: MENU_SECTIONS.map((section) => ({ ...section, items: pick(section.items) })).filter(
       (section) => section.items.length > 0 || keep.includes(section.id),
     ),

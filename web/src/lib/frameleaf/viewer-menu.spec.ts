@@ -431,7 +431,8 @@ describe('viewerMenuSections', () => {
     const context = baseContext(overrides);
     const { top, sections } = sectionsOf(context);
     const placed = [...top, ...sections.flatMap((section) => section.items)];
-    expect(placed.toSorted()).toEqual(idsOf(context).toSorted());
+    expect(placed).toHaveLength(idsOf(context).length);
+    expect(new Set(placed)).toEqual(new Set(idsOf(context)));
   });
 
   it('shows Restore and Delete permanently in the short list for a trashed item', () => {
