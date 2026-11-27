@@ -125,27 +125,31 @@ describe(PersonService.name, () => {
           }),
         ],
       });
-      expect(mocks.person.getAllForUser).toHaveBeenCalledWith({ skip: 0, take: 10 }, auth.user.id, {
-        withHidden: true,
-      });
+      expect(mocks.person.getAllForUser).toHaveBeenCalledWith(
+        { skip: 0, take: 10 },
+        auth.user.id,
+        { withHidden: true },
+        undefined,
+      );
     });
 
-    it('passes a name search and a sort to the list, and reads the totals after it (FL-1789)', async () => {
+    it('passes a name search and a sort to the list, bringing the counts up to date once (FL-1789)', async () => {
       const auth = AuthFactory.create();
       mocks.person.getAllForUser.mockResolvedValue({ items: [], hasNextPage: false });
       mocks.person.getListedTotals.mockResolvedValue({ total: 3, hidden: 0 });
+      mocks.person.syncSummaries.mockResolvedValue('variant-key');
 
       await sut.getAll(auth, { page: 2, size: 10, name: 'ada', sort: 'recent' });
 
-      expect(mocks.person.getAllForUser).toHaveBeenCalledWith({ skip: 10, take: 10 }, auth.user.id, {
-        withHidden: false,
-        name: 'ada',
-        sort: 'recent',
-      });
-      // the list brings the stored counts up to date; the totals then read them
-      expect(mocks.person.getAllForUser.mock.invocationCallOrder[0]).toBeLessThan(
-        mocks.person.getListedTotals.mock.invocationCallOrder[0],
+      expect(mocks.person.getAllForUser).toHaveBeenCalledWith(
+        { skip: 10, take: 10 },
+        auth.user.id,
+        { withHidden: false, name: 'ada', sort: 'recent' },
+        'variant-key',
       );
+      // the stored counts are brought up to date once, and both reads use that key
+      expect(mocks.person.syncSummaries).toHaveBeenCalledOnce();
+      expect(mocks.person.getListedTotals).toHaveBeenCalledWith(auth.user.id, {}, 'variant-key');
       expect(mocks.person.getNumberOfPeople).not.toHaveBeenCalled();
     });
 
@@ -245,9 +249,12 @@ describe(PersonService.name, () => {
           expect.objectContaining({ id: person.personGroupId, isFavorite: false }),
         ],
       });
-      expect(mocks.person.getAllForUser).toHaveBeenCalledWith({ skip: 0, take: 10 }, auth.user.id, {
-        withHidden: false,
-      });
+      expect(mocks.person.getAllForUser).toHaveBeenCalledWith(
+        { skip: 0, take: 10 },
+        auth.user.id,
+        { withHidden: false },
+        undefined,
+      );
     });
   });
 

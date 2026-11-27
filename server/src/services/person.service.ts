@@ -232,16 +232,15 @@ export class PersonService extends BaseService {
       closestFaceAssetId = person.faceAssetId;
     }
     const privacyOptions = getHiddenContentQueryOptions(auth);
-    // FL-1789: both read the stored summaries. One after the other: the first brings them up to date,
-    // so the second finds nothing to count again.
-    const { items, hasNextPage } = await this.personRepository.getAllForUser(pagination, auth.user.id, {
-      withHidden,
-      closestFaceAssetId,
-      ...(name && { name }),
-      ...(sort && { sort }),
-      ...privacyOptions,
-    });
-    const { total, hidden } = await this.personRepository.getListedTotals(auth.user.id, privacyOptions);
+    // FL-1789: both read the stored summaries, brought up to date once for the request
+    const viewerKey = await this.personRepository.syncSummaries(auth.user.id, privacyOptions);
+    const { items, hasNextPage } = await this.personRepository.getAllForUser(
+      pagination,
+      auth.user.id,
+      { withHidden, closestFaceAssetId, ...(name && { name }), ...(sort && { sort }), ...privacyOptions },
+      viewerKey,
+    );
+    const { total, hidden } = await this.personRepository.getListedTotals(auth.user.id, privacyOptions, viewerKey);
 
     // FL-1408 (M9): with nobody found yet, say whether face recognition is still working through
     // this account's photos, so the page does not read "no people" halfway through a first scan

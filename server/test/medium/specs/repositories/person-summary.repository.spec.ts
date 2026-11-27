@@ -4,6 +4,7 @@ import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { PersonRepository } from 'src/repositories/person.repository.js';
 import { DB } from 'src/schema/index.js';
 import { BaseService } from 'src/services/base.service.js';
+import { emptyHiddenContentFilter } from 'src/utils/hidden-content.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { getKyselyDB } from 'test/utils.js';
 
@@ -51,6 +52,8 @@ describe('people list from stored summaries (FL-1789)', () => {
 
   const summaries = (ownerId: string) =>
     database.selectFrom('person_summary').selectAll().where('ownerId', '=', ownerId).execute();
+  const states = (ownerId: string) =>
+    database.selectFrom('person_summary_state').selectAll().where('ownerId', '=', ownerId).execute();
 
   it('reads a page without counting faces again while nothing has changed', async () => {
     const { ctx, sut } = setup();
@@ -59,11 +62,13 @@ describe('people list from stored summaries (FL-1789)', () => {
 
     await expect(counts(sut, user.id)).resolves.toEqual({ Ada: 2 });
     const [first] = await summaries(user.id);
+    const [state] = await states(user.id);
     await expect(counts(sut, user.id)).resolves.toEqual({ Ada: 2 });
     await expect(sut.getListedTotals(user.id)).resolves.toMatchObject({ total: 1, hidden: 0 });
 
-    // the same rows as the first read left: nothing was counted in between
+    // the same rows and state as the first read left: nothing was counted in between
     await expect(summaries(user.id)).resolves.toEqual([first]);
+    await expect(states(user.id)).resolves.toEqual([state]);
   });
 
   it('keeps counts right after a face is assigned, moved and deleted', async () => {
@@ -184,6 +189,48 @@ describe('people list from stored summaries (FL-1789)', () => {
     ]);
   });
 
+  // review of PR 1521: tagging a photo with a Locked tag writes only tag_asset, never the photo or its faces
+  it('leaves a photo out at once when it gains a Locked tag, and counts it again when the tag goes', async () => {
+    const { ctx, sut } = setup();
+    const { user } = await ctx.newUser();
+    const { faces } = await personIn(ctx, user.id, 'Ada', 2);
+    const { tag } = await ctx.newTag({ userId: user.id, value: 'Private' });
+    // a session without its PIN: the owner's Locked tag rules hide what carries the tag
+    const locked = {
+      withHidden: false,
+      hiddenContent: { ...emptyHiddenContentFilter(user.id), includeNsfw: true, tagIds: [tag.id] },
+    };
+    const lockedCounts = async () =>
+      Object.fromEntries(
+        (await sut.getAllForUser(page, user.id, locked)).items.map((item) => [item.name, Number(item.assetCount)]),
+      );
+    await expect(lockedCounts()).resolves.toEqual({ Ada: 2 });
+
+    await ctx.newTagAsset({ tagIds: [tag.id], assetIds: [faces[0].asset.id] });
+    await expect(lockedCounts()).resolves.toEqual({ Ada: 1 });
+
+    await database.deleteFrom('tag_asset').where('tagId', '=', tag.id).execute();
+    await expect(lockedCounts()).resolves.toEqual({ Ada: 2 });
+  });
+
+  it('starts the change window again a margin back once it has grown, without counting again', async () => {
+    const { ctx, sut } = setup();
+    const { user } = await ctx.newUser();
+    await personIn(ctx, user.id, 'Ada', 1);
+    await counts(sut, user.id);
+    // as if the summaries were counted an hour ago and nothing has changed since
+    await sql`update person_summary_state set "checkedFrom" = now() - interval '1 hour', "computedAt" = now() - interval '40 minutes' where "ownerId" = ${user.id}`.execute(
+      database,
+    );
+    const [before] = await states(user.id);
+
+    await expect(counts(sut, user.id)).resolves.toEqual({ Ada: 1 });
+
+    const [after] = await states(user.id);
+    expect(after.computedAt).toEqual(before.computedAt);
+    expect(new Date(after.checkedFrom).getTime()).toBeGreaterThan(new Date(before.checkedFrom).getTime());
+  });
+
   it('drops the summaries of viewer variants nobody reads any more', async () => {
     const { ctx, sut } = setup();
     const { user } = await ctx.newUser();
@@ -192,11 +239,12 @@ describe('people list from stored summaries (FL-1789)', () => {
 
     await sut.deleteSummariesComputedBefore(new Date(Date.now() - 60_000));
     await expect(summaries(user.id)).resolves.toHaveLength(1);
-    await sql`update person_summary set "computedAt" = now() - interval '31 days' where "ownerId" = ${user.id}`.execute(
+    await sql`update person_summary_state set "computedAt" = now() - interval '31 days' where "ownerId" = ${user.id}`.execute(
       database,
     );
     await sut.deleteSummariesComputedBefore(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000));
     await expect(summaries(user.id)).resolves.toEqual([]);
+    await expect(states(user.id)).resolves.toEqual([]);
     // and the next read counts them again
     await expect(counts(sut, user.id)).resolves.toEqual({ Ada: 1 });
   });
