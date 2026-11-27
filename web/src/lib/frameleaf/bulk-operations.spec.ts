@@ -19,6 +19,7 @@ import {
   durableBulkParts,
   durableItemStates,
   removesFromView,
+  matchingScope,
   resolveMatchingIds,
   runBulkAction,
   runBulkOperation,
@@ -583,9 +584,9 @@ describe('a matching set is bound to the scope it was taken from', () => {
         filter: {
           isFavorite: { eq: true },
           albumIds: { any: ['album-1'] },
-          // A view that says nothing about visibility means the timeline, not everything unlocked,
-          // and nothing from the trash, which a structured search would otherwise include (FL-48).
-          visibility: { eq: AssetVisibility.Timeline },
+          // FL-1804: an album page shows its archived members too, so the matching set has them;
+          // nothing from the trash, which a structured search would otherwise include (FL-48).
+          visibility: { in: [AssetVisibility.Timeline, AssetVisibility.Archive] },
           trashedAt: { eq: null },
         },
         size: 250,
@@ -623,7 +624,7 @@ describe('a matching set is bound to the scope it was taken from', () => {
         filter: {
           isFavorite: { eq: true },
           albumIds: { any: ['space-1'] },
-          visibility: { eq: AssetVisibility.Timeline },
+          visibility: { in: [AssetVisibility.Timeline, AssetVisibility.Archive] },
           trashedAt: { eq: null },
         },
         size: 250,
@@ -640,6 +641,115 @@ describe('a matching set is bound to the scope it was taken from', () => {
     expect(snapshotSearch(viewState({ scope: { kind: 'space' } }))).toEqual({
       kind: 'unsupported',
       reasonKey: 'frameleaf_bulk_reason_scope_unsupported',
+    });
+  });
+
+  describe('the scope of a page of its own (FL-1804)', () => {
+    const timeline = AssetVisibility.Timeline;
+
+    it('recognises only the page requests the search can answer exactly', () => {
+      expect(matchingScope({ albumId: 'album-1', order: 'asc' })).toEqual({ kind: 'album', id: 'album-1' });
+      expect(matchingScope({ visibility: timeline, tagId: 'tag-1' })).toEqual({ kind: 'tag', id: 'tag-1' });
+      expect(matchingScope({ visibility: timeline, petId: 'pet-1' })).toEqual({ kind: 'pet', id: 'pet-1' });
+      expect(matchingScope({ visibility: AssetVisibility.Archive })).toEqual({ kind: 'archive' });
+      // an option left undefined is not an option
+      expect(matchingScope({ visibility: timeline, tagId: 'tag-1', withChildTags: undefined })).toEqual({
+        kind: 'tag',
+        id: 'tag-1',
+      });
+    });
+
+    it('refuses a request it would have to approximate', () => {
+      for (const options of [
+        undefined,
+        {},
+        // one item per stack on the page, every member from the search
+        { isFavorite: true, withStacked: true },
+        { visibility: timeline, withStacked: true, dateType: 'added' },
+        { visibility: timeline, withStacked: true, bestPhotos: true },
+        // "this tag only" has no filter
+        { visibility: timeline, tagId: 'tag-1', withChildTags: false },
+        // a person page also shows other people's photos from shared albums
+        { visibility: timeline, personId: 'person-1' },
+        { personId: 'person-1' },
+        // the view menu changed what the page asks for
+        { tagId: 'tag-1' },
+        { visibility: timeline, petId: 'pet-1', withPartners: false },
+        { albumId: 'album-1', visibility: timeline },
+        { visibility: AssetVisibility.Locked },
+        { visibility: timeline },
+      ]) {
+        expect(matchingScope(options), JSON.stringify(options)).toBeNull();
+      }
+    });
+
+    it('requires a tag or a pet on top of what the query says about the same field', () => {
+      const tag = snapshotSearch(viewState({ scope: { kind: 'tag', id: 'tag-1' } }));
+      expect(tag).toEqual({
+        kind: 'metadata',
+        dto: {
+          filter: { tagIds: { any: ['tag-1'] }, visibility: { eq: timeline }, trashedAt: { eq: null } },
+          size: 250,
+        },
+      });
+      const narrowed = snapshotSearch(
+        viewState({
+          scope: { kind: 'pet', id: 'pet-1' },
+          query: { ...emptyDiscoveryQuery(), filter: { petIds: { any: ['pet-2', 'pet-3'] } } },
+        }),
+      );
+      expect(narrowed.kind === 'metadata' && narrowed.dto.filter?.petIds).toEqual({
+        any: ['pet-2', 'pet-3'],
+        all: ['pet-1'],
+      });
+    });
+
+    it('resolves the archive as archived items only, and refuses a query that names another visibility', () => {
+      const archive = snapshotSearch(viewState({ scope: { kind: 'archive' } }));
+      expect(archive.kind === 'metadata' && archive.dto.filter).toEqual({
+        visibility: { eq: AssetVisibility.Archive },
+        trashedAt: { eq: null },
+      });
+      expect(
+        snapshotSearch(
+          viewState({
+            scope: { kind: 'archive' },
+            query: { ...emptyDiscoveryQuery(), filter: { visibility: { eq: timeline } } },
+          }),
+        ).kind,
+      ).toBe('unsupported');
+    });
+
+    it('refuses a tag or pet scope with no id', () => {
+      expect(snapshotSearch(viewState({ scope: { kind: 'tag' } })).kind).toBe('unsupported');
+      expect(snapshotSearch(viewState({ scope: { kind: 'pet' } })).kind).toBe('unsupported');
+    });
+
+    it('acts on every item of a 100,000 item album: no cut at the client bound, and no bucket request', async () => {
+      const ids = Array.from({ length: 100_000 }, (_, index) => `asset-${index}`);
+      vi.mocked(api.searchAssets).mockImplementation(({ metadataSearchDto }) => {
+        const from = Number(metadataSearchDto.cursor ?? 0);
+        const to = from + 1000;
+        return Promise.resolve(page(ids.slice(from, to), to < ids.length ? String(to) : null)) as never;
+      });
+      const frozen = viewState({ scope: { kind: 'album', id: 'album-1' } });
+      const snapshot = await resolveMatchingIds(frozen, { gateway: api });
+      expect(snapshot.truncated).toBe(false);
+      expect(snapshot.ids).toHaveLength(100_000);
+      expect(api.searchAssets).toHaveBeenCalledTimes(100);
+
+      const outcome = await runBulkOperation(
+        { requestId: 'request-album', action: 'favorite', scope: frozen, submittedTotal: 100_000 },
+        { gateway: api, context: {} },
+      );
+      expect(outcome.truncated).toBe(false);
+      expect(outcome.succeeded).toHaveLength(100_000);
+    });
+
+    it('still cuts the whole library short at the client bound', async () => {
+      vi.mocked(api.searchAssets).mockResolvedValue(page(['a', 'b', 'c'], '2') as never);
+      const snapshot = await resolveMatchingIds(viewState(), { gateway: api, limit: 2 });
+      expect(snapshot.truncated).toBe(true);
     });
   });
 

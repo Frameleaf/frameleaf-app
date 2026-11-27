@@ -422,8 +422,17 @@ export class LibrarySessionStore {
   /* Selection                                                               */
   /* ---------------------------------------------------------------------- */
 
+  // FL-1804: every tile on screen asks this; a Set per selection keeps it quick with 50,000 selected.
+  #selectedIds = new Set<string>();
+  #selectedIdsOf: string[] | undefined;
+
   isSelected(id: string) {
-    return this.#session.selection.includes(id);
+    const selection = this.#session.selection;
+    if (selection !== this.#selectedIdsOf) {
+      this.#selectedIdsOf = selection;
+      this.#selectedIds = new Set(selection);
+    }
+    return this.#selectedIds.has(id);
   }
 
   select(id: string, options: { additive?: boolean; range?: boolean; orderedIds?: string[] } = {}) {

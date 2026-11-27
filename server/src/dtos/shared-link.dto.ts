@@ -180,6 +180,26 @@ export class SharedLinkDirectImageDto extends createZodDto(SharedLinkDirectImage
 export class SharedLinkLoginDto extends createZodDto(SharedLinkLoginSchema) {}
 export class SharedLinkResponseDto extends createZodDto(SharedLinkResponseSchema) {}
 
+// FL-1795
+const SharedLinkPageSchema = z
+  .object({
+    take: z.coerce.number().int().min(1).max(200).default(60).describe('Most links to return'),
+    cursor: z.string().max(200).optional().describe('nextCursor of the page before; omitted for the first page'),
+  })
+  .meta({ id: 'SharedLinkPageDto' });
+
+const SharedLinkPageResponseSchema = z
+  .object({
+    links: z.array(SharedLinkResponseSchema).describe('Newest first'),
+    nextCursor: z.string().nullable().describe('Pass as cursor for the next page; null when there are no more'),
+    albumCount: z.int().min(0).describe('All your album links, on every page'),
+    individualCount: z.int().min(0).describe('All your links to chosen items, on every page'),
+  })
+  .meta({ id: 'SharedLinkPageResponseDto' });
+
+export class SharedLinkPageDto extends createZodDto(SharedLinkPageSchema) {}
+export class SharedLinkPageResponseDto extends createZodDto(SharedLinkPageResponseSchema) {}
+
 /**
  * FL-161: what a response carries in place of a shared link's password. Passwords are stored hashed,
  * so there is nothing to show; an edit that sends this value back leaves the password unchanged.

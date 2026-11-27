@@ -23,7 +23,11 @@ vi.mock('$lib/managers/cloud-manager.svelte', () => ({
 }));
 vi.mock('$lib/stores/preferences.store', async () => ({ locale: (await import('svelte/store')).writable('en') }));
 vi.mock('$lib/frameleaf/cloud-ml', () => ({ formatDateTime: (value: string) => value }));
-vi.mock('$lib/frameleaf/settings-areas', () => ({ commandCenterUrl: () => '/user-settings' }));
+// The rest of the module stays real: the date helper's account lookup loads modules that name it (FL-1805).
+vi.mock('$lib/frameleaf/settings-areas', async (original) => ({
+  ...(await original<typeof import('$lib/frameleaf/settings-areas')>()),
+  commandCenterUrl: () => '/user-settings',
+}));
 vi.mock('$lib/utils/handle-error', () => ({ getServerErrorMessage: () => undefined }));
 vi.mock('./BuddyRestoreSection.svelte', () => ({ default: () => {} }));
 

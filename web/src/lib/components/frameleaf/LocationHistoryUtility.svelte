@@ -64,6 +64,7 @@
     type LocationFillRunResponseDto,
     type LocationHistorySourceResponseDto,
   } from '@frameleaf/sdk';
+  import { handleError } from '$lib/utils/handle-error';
   import { Icon } from '@frameleaf/ui';
   import {
     mdiCellphone,
@@ -95,7 +96,6 @@
 
   let loaded = $state(false);
   let loadFailed = $state(false);
-  let actionFailed = $state(false);
   let said = $state('');
   let sources = $state<LocationHistorySourceResponseDto[]>([]);
   let uploads = $state<Upload[]>([]);
@@ -184,6 +184,9 @@
     }
   };
 
+  // FL-1810: an action that failed says so in a toast; only a failed read is shown in place.
+  const actionError = (error: unknown) => handleError(error, $t('frameleaf_location_history_action_error'));
+
   const loadPage = async (id: string, reset = false) => {
     loadingMore = true;
     try {
@@ -196,8 +199,8 @@
       hasNextPage = result.hasNextPage;
       nextPage = page + 1;
       void loadNames(result.days.flatMap((day) => day.proposals));
-    } catch {
-      actionFailed = true;
+    } catch (error) {
+      actionError(error);
     } finally {
       loadingMore = false;
     }
@@ -373,12 +376,11 @@
 
   /** Stop reading a file, or take a file that was left out off the list. */
   const discard = async (source: LocationHistorySourceResponseDto) => {
-    actionFailed = false;
     try {
       await deleteLocationHistorySource({ id: source.id });
       sources = sources.filter((item) => item.id !== source.id);
-    } catch {
-      actionFailed = true;
+    } catch (error) {
+      actionError(error);
     }
   };
 
@@ -391,13 +393,12 @@
       return;
     }
     const source = removing;
-    actionFailed = false;
     try {
       await deleteLocationHistorySource({ id: source.id });
       sources = sources.filter((item) => item.id !== source.id);
       said = $t('frameleaf_location_history_removed', { values: { name: source.fileName } });
-    } catch {
-      actionFailed = true;
+    } catch (error) {
+      actionError(error);
     } finally {
       removeOpen = false;
     }
@@ -407,7 +408,6 @@
 
   const start = async (minutes: FillGap) => {
     gap = minutes;
-    actionFailed = false;
     said = '';
     submitting = true;
     try {
@@ -419,8 +419,8 @@
       requested = undefined;
       missed = null;
       takeRun(next);
-    } catch {
-      actionFailed = true;
+    } catch (error) {
+      actionError(error);
     } finally {
       submitting = false;
     }
@@ -447,7 +447,6 @@
     }
     const id = run.id;
     const count = picked;
-    actionFailed = false;
     submitting = true;
     try {
       let batches: (string[] | undefined)[] = [undefined];
@@ -464,8 +463,8 @@
           await waitWhileApplying(id);
         }
       }
-    } catch {
-      actionFailed = true;
+    } catch (error) {
+      actionError(error);
       if (run?.status === 'ready') {
         requested = undefined;
       }
@@ -478,12 +477,11 @@
     if (!run) {
       return;
     }
-    actionFailed = false;
     missed = null;
     try {
       takeRun(await undoLocationFill({ id: run.id }));
-    } catch {
-      actionFailed = true;
+    } catch (error) {
+      actionError(error);
     }
   };
 
@@ -491,15 +489,14 @@
     if (!run) {
       return;
     }
-    actionFailed = false;
     try {
       const left = (await allProposals(run.id)).filter(
         (proposal) => !proposal.applied && isSelected(selection, proposal.assetId),
       );
       missed = groupByDay(left);
       void loadNames(left);
-    } catch {
-      actionFailed = true;
+    } catch (error) {
+      actionError(error);
     }
   };
 </script>
@@ -591,7 +588,6 @@
     onchange={onChosen}
   />
   <Said message={said} onDismiss={() => (said = '')} />
-  {#if actionFailed}<InlineError compact message={$t('frameleaf_location_history_action_error')} />{/if}
 
   {#if !loaded}
     <div role="status" aria-busy="true">

@@ -90,6 +90,26 @@
     }
   };
 
+  const TEXT_FIELDS =
+    'input:is(:not([type]), [type="text"], [type="search"], [type="email"], [type="url"], [type="tel"], [type="password"]), textarea';
+
+  /**
+   * FL-1823: a dialog that marks nothing opens with the cursor in its first search or text field,
+   * so a picker can be typed into at once. Left alone: a dialog that uses `autofocus`, a combobox
+   * (focus opens its list; mark it `data-initial-focus` if that is wanted), and a field below the
+   * fold (focusing it would scroll the dialog as it opens).
+   */
+  const firstTextField = () => {
+    if (dialog.querySelector('[autofocus]')) {
+      return;
+    }
+    const field = [...dialog.querySelectorAll<HTMLElement>(TEXT_FIELDS)].find(
+      (element) =>
+        !element.matches(':disabled, [readonly], [role="combobox"]') && (element.checkVisibility?.() ?? true),
+    );
+    return field && field.getBoundingClientRect().bottom <= dialog.getBoundingClientRect().bottom ? field : undefined;
+  };
+
   // Runs only when `open` changes; unmounting is handled by onDestroy below.
   $effect(() => {
     if (open) {
@@ -100,7 +120,7 @@
         previous = untrack(() => returnFocus) ?? document.activeElement;
         dialog.showModal();
         // As in the prototype, a caller marks the control that should take focus first.
-        dialog.querySelector<HTMLElement>('[data-initial-focus]')?.focus();
+        (dialog.querySelector<HTMLElement>('[data-initial-focus]') ?? firstTextField())?.focus();
       }
       shown = true;
       return;

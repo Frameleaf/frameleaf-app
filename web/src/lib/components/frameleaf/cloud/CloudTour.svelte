@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { formatDate } from '$lib/frameleaf/date-format';
   import { locale } from '$lib/stores/preferences.store';
   import { readingKey } from '$lib/frameleaf/reading-direction';
   /**
@@ -215,9 +216,7 @@
           grace: () =>
             $t('frameleaf_plan_status_grace', {
               values: {
-                date: value.graceUntil
-                  ? new Intl.DateTimeFormat($locale, { dateStyle: 'long' }).format(new Date(value.graceUntil))
-                  : '—',
+                date: value.graceUntil ? formatDate(new Date(value.graceUntil), { dateStyle: 'long' }, $locale) : '—',
               },
             }),
           expired: () => $t('frameleaf_license_state_expired'),

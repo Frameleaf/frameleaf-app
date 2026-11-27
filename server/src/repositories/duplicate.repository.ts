@@ -176,8 +176,16 @@ export class DuplicateRepository {
         .execute()
     );
   }
-  @GenerateSql({ params: [DummyValue.UUID, { excludeNsfw: true }] })
-  getAll(userId: string, options: DuplicatePrivacyOptions = {}) {
+  @GenerateSql(
+    { params: [DummyValue.UUID, { excludeNsfw: true }] },
+    { name: 'page', params: [DummyValue.UUID, { excludeNsfw: true }, { take: 250, after: DummyValue.UUID }] },
+  )
+  getAll(
+    userId: string,
+    options: DuplicatePrivacyOptions = {},
+    /** FL-1795: at most `take` groups, in group id order, starting after the group `after`. */
+    page?: { take: number; after?: string },
+  ) {
     return (
       this.db
         .with('duplicates', (qb) =>
@@ -226,12 +234,22 @@ export class DuplicateRepository {
             .where('asset.deletedAt', 'is', null)
             .where('asset.stackId', 'is', null)
             .$call((qb) => withHiddenContentFilter(qb, options))
-            .groupBy('asset.duplicateId'),
+            .groupBy('asset.duplicateId')
+            // A page is cut from whole groups: a group of one is left out before the cut, so only the last
+            // page is ever short.
+            .$if(!!page, (qb) =>
+              qb
+                .having((eb) => eb(eb.fn.countAll(), '>', 1))
+                .orderBy('asset.duplicateId')
+                .limit(page!.take),
+            )
+            .$if(!!page?.after, (qb) => qb.where('asset.duplicateId', '>', asUuid(page!.after!))),
         )
         .selectFrom('duplicates')
         .selectAll()
         // Filter out singleton groups (only 1 asset) directly in the query
         .where((eb) => eb(eb.fn('json_array_length', ['assets']), '>', 1))
+        .$if(!!page, (qb) => qb.orderBy('duplicates.duplicateId'))
         .execute()
     );
   }

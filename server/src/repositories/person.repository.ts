@@ -23,6 +23,7 @@ import {
   nsfwAssetIdExists,
   removeUndefinedKeys,
   withDefaultVisibility,
+  withEdits,
   withFilePath,
   withHiddenContentFilter,
 } from 'src/utils/database.js';
@@ -1494,22 +1495,10 @@ export class PersonRepository {
    * few of their faces, not by one face, so two groups of one person pair up even when their main photos
    * differ (age, glasses, angle). Measured with buffalo_l: different people's centres sit 0.6 or more
    * apart, two halves of one person 0.1 to 0.35, so the recognition distance (0.5) divides them.
-   * With `maxPeople`, an owner with more people than that is left as they are (nothing is returned).
    */
   @GenerateSql({ params: [DummyValue.UUID, 0.5] })
-  refreshMergeCandidates(ownerId: string, maxDistance: number, maxPeople?: number): Promise<number | undefined> {
+  refreshMergeCandidates(ownerId: string, maxDistance: number): Promise<number> {
     return this.db.transaction().execute(async (tx) => {
-      if (maxPeople !== undefined) {
-        // a library too large to work out as it is read keeps the pairs from the last night
-        const { people } = await tx
-          .selectFrom('person')
-          .select((eb) => eb.fn.countAll<number>().as('people'))
-          .where('person.ownerId', '=', ownerId)
-          .executeTakeFirstOrThrow();
-        if (Number(people) > maxPeople) {
-          return;
-        }
-      }
       await tx.deleteFrom('person_merge_candidate').where('ownerId', '=', ownerId).execute();
       // ponytail: every pair of the owner's people is compared (12.5 million pairs at 5,000 people, a few
       // seconds, once a night); give the centres a vector index if libraries pass about 20,000 people.
@@ -1791,6 +1780,17 @@ export class PersonRepository {
         .orderBy('asset.fileCreatedAt', 'desc')
         .execute()
     );
+  }
+  /** FL-1790: what a face box needs to be drawn on each photo as it is displayed, in one read. */
+  @GenerateSql({ params: [[DummyValue.UUID]] })
+  getAssetsForFaceBoxes(assetIds: string[]) {
+    return this.db
+      .selectFrom('asset')
+      .innerJoin('asset_exif', (join) => join.onRef('asset_exif.assetId', '=', 'asset.id'))
+      .select(['asset.id', 'asset_exif.exifImageHeight', 'asset_exif.exifImageWidth', 'asset_exif.orientation'])
+      .select(withEdits)
+      .where('asset.id', '=', anyUuid(assetIds))
+      .execute();
   }
   /**
    * FL-57: which of `assetIds` the viewer may still be shown as evidence (a correction history

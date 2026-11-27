@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { formatLuxon } from '$lib/frameleaf/date-format';
   import Spinner from '$lib/components/frameleaf/Spinner.svelte';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import IconButton from '$lib/components/frameleaf/IconButton.svelte';
@@ -37,7 +38,7 @@
     mdiClose,
   } from '@mdi/js';
   import { DateTime } from 'luxon';
-  import { onDestroy, onMount } from 'svelte';
+  import { onDestroy, onMount, type Snippet } from 'svelte';
   import { t } from 'svelte-i18n';
   import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 
@@ -67,9 +68,14 @@
     /** Called once when the panel closes, when at least one face moved, with the people faces moved to. */
     onChanged?: (personIds: string[]) => void;
     close: () => void;
+    /** FL-1813: the panel's heading when it is one tab of "Fix recognition". */
+    title?: string;
+    /** FL-1813: the tabs under the heading, and what sits beside Done. */
+    tabs?: Snippet;
+    footerLink?: Snippet;
   }
 
-  let { person, onOpenAsset, onChanged, close }: Props = $props();
+  let { person, onOpenAsset, onChanged, close, title, tabs, footerLink }: Props = $props();
 
   const PAGE_SIZE = 25;
   // at most this many photos' faces are read at once, as in FeaturedPhotoDialog
@@ -381,19 +387,20 @@
   const nameOf = (candidate: { name: string }) => (isUnnamedPerson(candidate) ? $t('unnamed_person') : candidate.name);
 
   const shortDate = (asset: AssetResponseDto) =>
-    DateTime.fromISO(asset.localDateTime, { zone: 'utc' }).toLocaleString(DateTime.DATE_MED);
+    formatLuxon(DateTime.fromISO(asset.localDateTime, { zone: 'utc' }), DateTime.DATE_MED);
 </script>
 
 <div class="pd-fix" role="dialog" aria-labelledby="pd-fix-title" aria-modal="false">
   <header class="pd-fix-header">
     <div>
-      <h2 id="pd-fix-title" bind:this={heading} tabindex="-1">{$t('fix_incorrect_match')}</h2>
+      <h2 id="pd-fix-title" bind:this={heading} tabindex="-1">{title ?? $t('fix_incorrect_match')}</h2>
       <p>{$t('frameleaf_people_fix_description', { values: { name } })}</p>
     </div>
     <IconButton label={$t('frameleaf_people_fix_close')} onclick={finish}>
       <Icon icon={mdiClose} size="18" aria-hidden="true" />
     </IconButton>
   </header>
+  {@render tabs?.()}
   <ul class="pd-fix-list">
     {#each rows as row (row.face.id)}
       {@const done = resolved.get(row.face.id)}
@@ -539,6 +546,7 @@
           ? $t('frameleaf_people_fix_to_review', { values: { count: open } })
           : $t('frameleaf_people_fix_done'))}
     </span>
+    {@render footerLink?.()}
     <Button variant="primary" onclick={finish}>{$t('done')}</Button>
   </footer>
 </div>

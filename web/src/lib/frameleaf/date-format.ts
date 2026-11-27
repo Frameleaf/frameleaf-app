@@ -24,7 +24,7 @@ export const AUTO_DISPLAY_FORMAT: DisplayFormat = Object.freeze({ dateFormat: 'a
 
 /** The signed-in person's choice; `auto` when signed out or on a server from before FL-783. */
 export const displayFormat = (): DisplayFormat =>
-  authManager.authenticated ? { ...AUTO_DISPLAY_FORMAT, ...authManager.preferences.display } : AUTO_DISPLAY_FORMAT;
+  authManager.authenticated ? { ...AUTO_DISPLAY_FORMAT, ...authManager.preferences?.display } : AUTO_DISPLAY_FORMAT;
 
 /** The "Dates and numbers" region from Look & playback; `undefined` follows the browser. */
 const defaultLocale = (): string | undefined => {
@@ -54,9 +54,25 @@ const pick = (options: Intl.DateTimeFormatOptions, keys: readonly string[]) =>
 
 const pad = (value: string) => value.padStart(2, '0');
 
+/**
+ * FL-1805: one formatter per locale and set of options. A timeline draws thousands of dates with the
+ * same few, and building an `Intl.DateTimeFormat` costs far more than using one.
+ */
+const formatters = new Map<string, Intl.DateTimeFormat>();
+const formatterFor = (locale: string | undefined, options: Intl.DateTimeFormatOptions) => {
+  const key = `${locale ?? ''}|${JSON.stringify(options)}`;
+  let formatter = formatters.get(key);
+  if (!formatter) {
+    // ponytail: unbounded, but the keys are the app's own handful of option sets times the locales in use
+    formatter = new Intl.DateTimeFormat(locale, options);
+    formatters.set(key, formatter);
+  }
+  return formatter;
+};
+
 const partsOf = (date: Date, locale: string | undefined, options: Intl.DateTimeFormatOptions) => {
   const parts: Partial<Record<Intl.DateTimeFormatPartTypes, string>> = {};
-  for (const part of new Intl.DateTimeFormat(locale, options).formatToParts(date)) {
+  for (const part of formatterFor(locale, options).formatToParts(date)) {
     parts[part.type] ??= part.value;
   }
   return parts;
@@ -123,12 +139,12 @@ export const formatDateTime = (
 
   const ordered = orderedDate(value, locale, options, format.dateFormat);
   if (ordered === undefined) {
-    return new Intl.DateTimeFormat(locale, { ...options, ...clock }).format(value);
+    return formatterFor(locale, { ...options, ...clock }).format(value);
   }
   if (!hasTime) {
     return ordered;
   }
-  const time = new Intl.DateTimeFormat(locale, {
+  const time = formatterFor(locale, {
     hourCycle: options.hourCycle,
     hour12: options.hour12,
     ...timeOptions,
@@ -147,15 +163,15 @@ export const formatLuxon = (
   options: Intl.DateTimeFormatOptions = MEDIUM_DATE,
   locale: string | undefined = value.locale ?? defaultLocale(),
   format: DisplayFormat = displayFormat(),
-): string =>
-  value.isValid
-    ? formatDateTime(
-        new Date(Date.UTC(value.year, value.month - 1, value.day, value.hour, value.minute, value.second)),
-        { ...options, timeZone: 'UTC' },
-        locale,
-        format,
-      )
-    : '';
+): string => {
+  if (!value.isValid) {
+    return '';
+  }
+  // The year is set on its own: Date.UTC reads years 0 to 99 as 1900 to 1999 (a photo dated year 1).
+  const wall = new Date(Date.UTC(2000, value.month - 1, value.day, value.hour, value.minute, value.second));
+  wall.setUTCFullYear(value.year);
+  return formatDateTime(wall, { ...options, timeZone: 'UTC' }, locale, format);
+};
 
 /** A date on its own; defaults to the medium style ("Aug 16, 2026"). */
 export const formatDate = (

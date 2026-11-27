@@ -9,6 +9,7 @@
  */
 import { DateTime } from 'luxon';
 import type { Words } from '$lib/frameleaf/backup-overview';
+import { formatDate, formatTime } from '$lib/frameleaf/date-format';
 
 /** Days of the week as cron numbers them: Sunday is 0. */
 export const WEEK_DAYS = [0, 1, 2, 3, 4, 5, 6] as const;
@@ -116,14 +117,16 @@ export const sameSchedule = (a: string, b: string) => {
 /** A clock time as the viewer's language writes it: "2:00 AM", "02:00". */
 export const clockTime = (time: string, locale?: string) => {
   const [hour, minute] = time.split(':').map(Number);
-  return new Intl.DateTimeFormat(locale, { hour: 'numeric', minute: '2-digit', timeZone: 'UTC' }).format(
+  return formatTime(
     new Date(Date.UTC(2026, 0, 1, hour, minute)),
+    { hour: 'numeric', minute: '2-digit', timeZone: 'UTC' },
+    locale ?? 'default',
   );
 };
 
 /** A day's name: "Sunday". 4 January 2026 was a Sunday. */
 export const dayName = (day: number, locale?: string, width: 'long' | 'short' = 'long') =>
-  new Intl.DateTimeFormat(locale, { weekday: width, timeZone: 'UTC' }).format(new Date(Date.UTC(2026, 0, 4 + day)));
+  formatDate(new Date(Date.UTC(2026, 0, 4 + day)), { weekday: width, timeZone: 'UTC' }, locale ?? 'default');
 
 /** The schedule as a person would say it: "Every day at 2:00 AM". */
 export const scheduleWords = (schedule: BackupSchedule, locale?: string): Words => {

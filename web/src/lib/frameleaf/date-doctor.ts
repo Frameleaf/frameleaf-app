@@ -11,6 +11,7 @@ import {
   type DateDoctorTimeDto,
 } from '@frameleaf/sdk';
 import { DateTime, Duration } from 'luxon';
+import { formatDate, formatLuxon } from '$lib/frameleaf/date-format';
 
 /** A fix can be undone for this many days (FL-930). */
 export const UNDO_DAYS = 30;
@@ -109,10 +110,14 @@ export const shiftWords = (minutes: number, locale: string) => {
 
 /** "12 May 2024", or "12 – 15 May 2024" for a card over several days. */
 export const dayWords = (days: string[], locale: string) => {
-  const format = new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeZone: 'UTC' });
+  const options = { dateStyle: 'medium', timeZone: 'UTC' } as const;
   const first = new Date(`${days[0]}T00:00:00Z`);
+  if (days.length <= 1) {
+    return formatDate(first, options, locale);
+  }
   const last = new Date(`${days.at(-1) ?? days[0]}T00:00:00Z`);
-  return days.length > 1 ? format.formatRange(first, last) : format.format(first);
+  // eslint-disable-next-line no-restricted-syntax -- a range of days ("12 – 15 May 2024"), which the date helper does not write
+  return new Intl.DateTimeFormat(locale, options).formatRange(first, last);
 };
 
 /** The i18n key and values of a card's sentence ("Camera clock was 3 hours behind on 12 May 2024"). */
@@ -174,7 +179,7 @@ export const cardBodyKey = (card: DateFixCard) => {
  */
 export const stripTime = (time: DateDoctorTimeDto, locale: string) => {
   const wall = DateTime.fromISO(time.local, { zone: 'utc', locale });
-  const shown = wall.toLocaleString({
+  const shown = formatLuxon(wall, {
     month: 'short',
     day: 'numeric',
     year: 'numeric',

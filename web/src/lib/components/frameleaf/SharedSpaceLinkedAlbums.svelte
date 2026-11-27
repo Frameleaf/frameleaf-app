@@ -1,5 +1,6 @@
 <script lang="ts">
   import AlbumIcon from '$lib/components/frameleaf/AlbumIcon.svelte';
+  import EmptyRow from '$lib/components/frameleaf/EmptyRow.svelte';
   import Status from '$lib/components/frameleaf/Status.svelte';
   import { canContribute, linkableAlbums } from '$lib/frameleaf/shared-space';
   import { authManager } from '$lib/managers/auth-manager.svelte';
@@ -127,7 +128,7 @@
   {/if}
 
   {#if albums.length === 0}
-    <p class="empty">{$t('frameleaf_spaces_albums_empty')}</p>
+    <EmptyRow title={$t('frameleaf_spaces_albums_empty')} />
   {:else}
     <ul>
       {#each albums as album (album.id)}
@@ -196,11 +197,6 @@
     font-weight: 700;
   }
   .hint,
-  .empty {
-    margin: 0;
-    color: var(--fl-muted);
-    font-size: 0.8125rem;
-  }
   .controls {
     display: flex;
     flex-wrap: wrap;

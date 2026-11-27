@@ -11,6 +11,7 @@
   import type { KitTone } from '$lib/components/frameleaf/settings/kit/Pill.svelte';
   import Section from '$lib/components/frameleaf/settings/kit/Section.svelte';
   import { backupWhen } from '$lib/frameleaf/backup-overview';
+  import { formatCount } from '$lib/frameleaf/number-format';
   import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { locale } from '$lib/stores/preferences.store';
@@ -46,7 +47,7 @@
     void load();
   });
 
-  const count = (value: number) => new Intl.NumberFormat($locale).format(value);
+  const count = (value: number) => formatCount(value, $locale);
 
   /** What one account's row says: numbers only, never a choice. */
   const rowOf = (account: CloudBackupCoverageAccountDto): { status: string; tone: KitTone; note?: string } => {

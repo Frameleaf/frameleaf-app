@@ -9,6 +9,7 @@
   import { mdiChevronDown, mdiChevronRight, mdiDownloadOutline, mdiRefresh } from '@mdi/js';
   import { locale, t, type Translations } from 'svelte-i18n';
   import Button from '$lib/components/frameleaf/Button.svelte';
+  import EmptyRow from '$lib/components/frameleaf/EmptyRow.svelte';
   import InlineError from '$lib/components/frameleaf/InlineError.svelte';
   import { mediaImportActive, mediaImportRetryable } from '$lib/components/frameleaf/media/boards-media';
   import { creatorPlatform, platformName } from '$lib/frameleaf/creators';
@@ -121,7 +122,7 @@
     {#if creatorsDownloads.failed && creatorsDownloads.jobs.length === 0}
       <InlineError compact message={$t('frameleaf_creators_tray_error')} onRetry={creatorsDownloads.load} />
     {:else if rows.length === 0}
-      <p class="cr-empty">{$t('frameleaf_creators_tray_empty')}</p>
+      <EmptyRow icon={mdiDownloadOutline} title={$t('frameleaf_creators_tray_empty')} />
     {:else}
       <table class="cr-manage cr-dl">
         <thead>

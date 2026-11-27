@@ -16,6 +16,7 @@ import {
   type HardwareCheckResponseDto,
 } from '@frameleaf/sdk';
 import type { Translations } from 'svelte-i18n';
+import { formatDateTime as displayDateTime } from '$lib/frameleaf/date-format';
 import {
   bandFor,
   estimateCost,
@@ -54,7 +55,7 @@ export const formatUsd = (value: number | null | undefined, digits = 2) => {
 export const formatRatePerMinute = (usdPerSec: number) => formatUsd(usdPerSec * 60);
 
 export const formatDateTime = (value: string, locale: string | undefined | null) =>
-  new Intl.DateTimeFormat(locale ?? undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value));
+  displayDateTime(new Date(value), { dateStyle: 'medium', timeStyle: 'short' }, locale ?? 'default');
 
 /** A duration in plain units ("3 s", "2 min", "1 h 5 min"), in the reader's language. */
 export const formatDuration = (seconds: number | null | undefined, locale: string | undefined | null) => {

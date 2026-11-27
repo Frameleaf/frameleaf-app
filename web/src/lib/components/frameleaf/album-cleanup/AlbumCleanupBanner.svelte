@@ -9,6 +9,7 @@
     type CleanupPlan,
   } from '$lib/frameleaf/album-cleanup';
   import '$lib/frameleaf/album-cleanup.css';
+  import { formatCount } from '$lib/frameleaf/number-format';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { Route } from '$lib/route';
   import { locale } from '$lib/stores/preferences.store';
@@ -77,7 +78,7 @@
     }
   };
 
-  const number = (value: number) => value.toLocaleString($locale);
+  const number = (value: number) => formatCount(value, $locale);
 </script>
 
 {#if plan}

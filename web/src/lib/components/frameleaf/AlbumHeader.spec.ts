@@ -174,14 +174,15 @@ describe('AlbumHeader', () => {
     expect(screen.queryByText('Private · share it')).toBeNull();
   });
 
-  it('offers the owner every control: add, upload, edit, share, links, activity and delete', async () => {
+  it('offers the owner every control: add, upload, edit, share, activity and delete', async () => {
     renderHeader(albumAs(AlbumUserRole.Owner));
 
     await fireEvent.click(screen.getByRole('button', { name: 'Add photos' }));
     const add = within(await screen.findByRole('menu', { name: 'Add photos' }));
     expect(add.getByRole('menuitem', { name: /Upload from computer/ })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Share' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Links' })).toBeInTheDocument();
+    // FL-1812: links are a tab of the Share dialog, not a button of their own
+    expect(screen.queryByRole('button', { name: 'Links' })).toBeNull();
     expect(screen.getByRole('button', { name: /^Comments/ })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Edit title' })).toBeInTheDocument();
 
@@ -370,9 +371,10 @@ describe('AlbumHeader', () => {
       }
 
       const menu = await openMore();
-      for (const name of ['Links', 'Slideshow', 'Download', 'Comments']) {
+      for (const name of ['Slideshow', 'Download', 'Comments']) {
         expect(menu.getByRole(name === 'Comments' ? 'menuitemcheckbox' : 'menuitem', { name })).toBeInTheDocument();
       }
+      expect(menu.queryByRole('menuitem', { name: 'Links' })).toBeNull();
       expect(menu.getByRole('menuitem', { name: 'Delete album' })).toBeInTheDocument();
     });
 
@@ -407,10 +409,22 @@ describe('AlbumHeader', () => {
       expect(menu.getAllByRole('separator')).toHaveLength(1);
     });
 
-    it('separates the moved actions, the album settings and Delete', async () => {
+    // FL-1812, prototype CollectionHeader.jsx `group(`.
+    it('puts the moved actions first, then the groups under their headings, and Delete last', async () => {
       renderHeader(albumAs(AlbumUserRole.Owner));
       const menu = await openMore();
-      expect(menu.getAllByRole('separator')).toHaveLength(2);
+      const labels = (root: HTMLElement) =>
+        [...root.querySelectorAll('[role^="menuitem"]')].map((item) => item.textContent?.trim());
+      const names = (group: string) => labels(menu.getByRole('group', { name: group }));
+      expect(names('Organise')).toEqual(['New album']);
+      expect(names('Export')).toEqual(['Export originals and metadata…']);
+      expect(names('Album settings')).toEqual(['Edit details', 'Icon and colour…', 'Select cover', 'Options']);
+      const all = labels(screen.getByRole('menu', { name: 'More actions' }));
+      expect(all.slice(0, 3)).toEqual(['Slideshow', 'Make a movie', 'Download']);
+      expect(all.indexOf('Download')).toBeLessThan(all.indexOf('New album'));
+      expect(all.at(-1)).toBe('Delete album');
+      // one separator, above the danger item
+      expect(menu.getAllByRole('separator')).toHaveLength(1);
       expect(menu.getByRole('menuitem', { name: 'Delete album' }).querySelector('.danger-item')).not.toBeNull();
     });
 

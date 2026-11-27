@@ -2,12 +2,15 @@ import { getMyPreferences, updateMyPreferences, type SavedSearch } from '@framel
 import type { DiscoveryQuery } from '$lib/components/discovery/query';
 import { onLibraryAccessChange } from '$lib/frameleaf/library-access';
 import { removeSavedSearch, toSavedSearch, upsertSavedSearch } from '$lib/frameleaf/search-palette';
+import { authManager } from '$lib/managers/auth-manager.svelte';
 
 /**
  * FL-49 (S-14): the account's saved searches, shared by the search palette and the rail's saved-search
  * list (`RailSavedSearches.svelte`). They live in the `savedSearches` preference, which the server trims
  * while the session is locked (a search naming a Locked person, pet or tag is withheld), so the list is
  * always read from the server and dropped on every access change instead of being kept across one.
+ * FL-1798: the first read uses the preferences sign-in read moments ago (same server answer, same
+ * access state) instead of asking for them a second time.
  */
 class SavedSearchesStore {
   list = $state.raw<SavedSearch[]>([]);
@@ -41,7 +44,7 @@ class SavedSearchesStore {
     }
     const generation = this.#generation;
     const pending = this.#queue.then(async () => {
-      if (!(await this.#read(generation)) && generation === this.#generation && this.#loading === pending) {
+      if (!(await this.#read(generation, !force)) && generation === this.#generation && this.#loading === pending) {
         this.#loading = undefined;
       }
     });
@@ -50,12 +53,12 @@ class SavedSearchesStore {
     return pending;
   }
 
-  async #read(generation: number): Promise<boolean> {
+  async #read(generation: number, seed = false): Promise<boolean> {
     if (generation !== this.#generation) {
       return false;
     }
     try {
-      const preferences = await getMyPreferences();
+      const preferences = (seed ? authManager.takeFreshPreferences() : undefined) ?? (await getMyPreferences());
       if (generation !== this.#generation) {
         return false;
       }

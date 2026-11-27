@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { formatDateTime } from '$lib/frameleaf/date-format';
   import { locale } from '$lib/stores/preferences.store';
   /**
    * Edit in another app (FL-64): the round trip of an original through a RAW developer or any
@@ -128,7 +129,18 @@
           {item.isCurrentOriginal ? $t('frameleaf_editor_roundtrip_matches') : $t('frameleaf_editor_roundtrip_changed')}
         </span>
         <small>
-          {new Date(item.createdAt).toLocaleString($locale)} · {$t('frameleaf_editor_checksum', {
+          {formatDateTime(
+            new Date(item.createdAt),
+            {
+              year: 'numeric',
+              month: 'numeric',
+              day: 'numeric',
+              hour: 'numeric',
+              minute: 'numeric',
+              second: 'numeric',
+            },
+            $locale,
+          )} · {$t('frameleaf_editor_checksum', {
             values: { checksum: shortChecksum(item.sourceChecksum) },
           })}
         </small>
@@ -146,7 +158,20 @@
         <span>{$t('frameleaf_editor_roundtrip_developed_from')}</span>
         <select value={exportId ?? ''} onchange={(event) => (exportId = event.currentTarget.value || null)}>
           {#each usable as item (item.id)}
-            <option value={item.id}>{new Date(item.createdAt).toLocaleString($locale)}</option>
+            <option value={item.id}
+              >{formatDateTime(
+                new Date(item.createdAt),
+                {
+                  year: 'numeric',
+                  month: 'numeric',
+                  day: 'numeric',
+                  hour: 'numeric',
+                  minute: 'numeric',
+                  second: 'numeric',
+                },
+                $locale,
+              )}</option
+            >
           {/each}
         </select>
       </label>

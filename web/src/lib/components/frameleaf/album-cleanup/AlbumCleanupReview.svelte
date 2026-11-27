@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { formatDate } from '$lib/frameleaf/date-format';
+  import { formatCount } from '$lib/frameleaf/number-format';
   import { goto } from '$app/navigation';
   import AlbumCleanupArt from '$lib/components/frameleaf/album-cleanup/AlbumCleanupArt.svelte';
   import AlbumCleanupMoveDialog from '$lib/components/frameleaf/album-cleanup/AlbumCleanupMoveDialog.svelte';
@@ -256,7 +258,7 @@
   const summary = $derived(plan?.summary);
   const needle = $derived(search.trim().toLowerCase());
   const searching = $derived(needle.length > 0);
-  const number = (value: number) => value.toLocaleString($locale);
+  const number = (value: number) => formatCount(value, $locale);
 
   const matchTree = (nodes: PlanNode[], query: string): PlanNode[] =>
     nodes.flatMap((node) => {
@@ -496,12 +498,11 @@
   const homeLabel = (city: string | null | undefined) =>
     city ? $t('frameleaf_album_cleanup_home_area', { values: { city } }) : $t('frameleaf_album_cleanup_home_unknown');
   const formatDay = (day: string) =>
-    new Date(`${day}T00:00:00Z`).toLocaleDateString($locale, {
-      timeZone: 'UTC',
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
-    });
+    formatDate(
+      new Date(`${day}T00:00:00Z`),
+      { timeZone: 'UTC', month: 'short', day: 'numeric', year: 'numeric' },
+      $locale,
+    );
 
   const onRowMenu = {
     rename: (node: PlanNode) => (editing = node.id),

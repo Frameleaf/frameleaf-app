@@ -24,6 +24,7 @@ import {
   type AnalyticsReportResponseDto,
   type AnalyticsScopeOptionDto,
 } from '@frameleaf/sdk';
+import { formatDate, formatTime } from '$lib/frameleaf/date-format';
 
 export type Translate = (key: string, values?: Record<string, string | number>) => string;
 
@@ -393,8 +394,10 @@ export const analyticsFormats = (locale: string | undefined, t: Translate) => {
   const compact = (value: number) =>
     new Intl.NumberFormat(locale, { notation: 'compact', maximumFractionDigits: 1 }).format(value);
   const longDate = (value: string) =>
-    new Intl.DateTimeFormat(locale, { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' }).format(
+    formatDate(
       new Date(`${value.slice(0, 10)}T00:00:00Z`),
+      { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' },
+      locale ?? 'default',
     );
   /**
    * Bytes in GB, TB from one terabyte up and MB under one gigabyte, as the prototype writes volume
@@ -424,7 +427,7 @@ export const analyticsFormats = (locale: string | undefined, t: Translate) => {
       .join(':');
   };
   const hour = (value: number) =>
-    new Intl.DateTimeFormat(locale, { hour: 'numeric', timeZone: 'UTC' }).format(new Date(Date.UTC(2026, 0, 5, value)));
+    formatTime(new Date(Date.UTC(2026, 0, 5, value)), { hour: 'numeric', timeZone: 'UTC' }, locale ?? 'default');
   return { number, compact, longDate, size, percent, duration, hour };
 };
 
