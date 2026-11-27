@@ -1,4 +1,5 @@
 <script lang="ts">
+  import EmptyState from '$lib/components/frameleaf/EmptyState.svelte';
   import { shortcut } from '$lib/actions/shortcut';
   import PublicViewerShell from '$lib/components/frameleaf/PublicViewerShell.svelte';
   import ResultsAssetViewer from '$lib/components/frameleaf/ResultsAssetViewer.svelte';
@@ -165,28 +166,13 @@
       onOpen={(asset) => void navigateToAsset(asset)}
     >
       {#snippet empty()}
-        <div class="pv-empty" role="status">
-          <h2>{$t('frameleaf_public_empty_title')}</h2>
-          <p>
-            {sharedLink.allowUpload ? $t('frameleaf_public_empty_upload') : $t('frameleaf_public_empty_owner')}
-          </p>
-        </div>
+        <EmptyState
+          title={$t('frameleaf_public_empty_title')}
+          message={sharedLink.allowUpload ? $t('frameleaf_public_empty_upload') : $t('frameleaf_public_empty_owner')}
+        />
       {/snippet}
     </ResultsView>
   </div>
 </PublicViewerShell>
 
 <ResultsAssetViewer {assets} onRemove={(id) => handleRemoved([id])} emptyRoute={Route.photos()} />
-
-<style>
-  .pv-empty {
-    padding: 4rem 1rem;
-    text-align: center;
-    color: var(--fl-muted);
-  }
-  .pv-empty h2 {
-    margin-bottom: 0.5rem;
-    font-size: 1.125rem;
-    color: var(--fl-text);
-  }
-</style>

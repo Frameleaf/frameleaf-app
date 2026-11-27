@@ -5,6 +5,8 @@
    * background job and a new version; the originals are never changed. Frameleaf Cloud shows as not
    * available until it has a price for this work: no figure is ever made up here.
    */
+  import InlineError from '$lib/components/frameleaf/InlineError.svelte';
+  import Skeleton from '$lib/components/frameleaf/Skeleton.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import { formatEstimateSeconds } from '$lib/frameleaf/restoration';
   import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
@@ -60,7 +62,9 @@
     !!estimate && !loading && !starting && !!destinationId && estimate.eligible > 0 && anyAvailable,
   );
 
+  let loadFailed = $state(false);
   const load = async (next: AssetRestorationBatchOperation, include: boolean) => {
+    loadFailed = false;
     const mine = ++request;
     loading = true;
     try {
@@ -82,7 +86,9 @@
       if (mine === request) {
         estimate = null;
         destinationId = null;
-        handleError(error, $t('frameleaf_repair_batch_error'));
+        // FL-1810: said in place of the destinations, with Try again; still logged
+        loadFailed = true;
+        handleError(error, $t('frameleaf_repair_batch_error'), { notify: false });
       }
     } finally {
       if (mine === request) {
@@ -218,7 +224,15 @@
     <fieldset>
       <legend>{$t('frameleaf_repair_batch_where')}</legend>
       {#if loading && !estimate}
-        <p class="help" aria-busy="true">{$t('loading')}</p>
+        <div class="where" role="status" aria-busy="true" aria-label={$t('loading')}>
+          <Skeleton variant="block" height="3.75rem" /><Skeleton variant="block" height="3.75rem" />
+        </div>
+      {:else if loadFailed}
+        <InlineError
+          compact
+          message={$t('frameleaf_repair_batch_error')}
+          onRetry={() => load(operation, includeHandTinted)}
+        />
       {:else}
         <div class="where">
           {#each destinations as row (row.id)}
