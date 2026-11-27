@@ -74,6 +74,7 @@
     LibraryItemSearchKind,
     LibraryScope,
     LibraryViewScope,
+    getAlbumInfo,
     setAlbumOrder,
     type AlbumResponseDto,
     searchLibraryItems,
@@ -171,8 +172,10 @@
    */
   const railAlbums = $derived(railSession.albums[workspaceScope ?? '']);
   const tree = $derived<FrameleafAlbumTree>(railAlbums?.tree ?? emptyAlbumTree());
-  /** The same albums as the server sent them, for the right-click menu's dialogs. */
-  const albumRecords = $derived<AlbumResponseDto[]>(railAlbums?.records ?? []);
+  /** The slim albums as the server sent them, in rail order (FL-1796): moves, names, edit rights. */
+  const albumRecords = $derived(railAlbums?.records ?? []);
+  /** The full albums, for the dialogs that need members, links or origin; read when one opens. */
+  const fullAlbums = () => railSession.fullAlbums(workspaceScope);
   const albumRoots = $derived(
     (tree.roots ?? [...tree.collections, ...tree.albums]).filter(({ kind }) => kind !== 'space'),
   );
@@ -194,9 +197,10 @@
   onDestroy(
     // the session store dropped what it held (it listens first); this rail asks again
     onLibraryAccessChange(() => {
-      // Counts read under the old access must not outlive it (a lock, another account).
+      // Counts and collections read under the old access must not outlive it (a lock, another account).
       countsRequest++;
       boardsCounts = {};
+      boardsAlbums = [];
       if (authManager.authenticated) {
         void refreshAlbums();
         void refreshPartners();
@@ -274,8 +278,8 @@
   };
   const saveMove = async (albumId: string, move: RailMove) => {
     const scope = workspaceScope;
-    let album = albumRecords.find(({ id }) => id === albumId);
-    const name = album?.albumName ?? '';
+    let album: AlbumResponseDto | undefined;
+    const name = albumRecords.find(({ id }) => id === albumId)?.albumName ?? '';
     // Through the album service, which reports a failure and announces each saved album (`AlbumUpdate`).
     let saved = true;
     for (const { id, sortOrder, parentId } of move.updates) {
@@ -303,6 +307,7 @@
         });
         toastManager.primary($t('frameleaf_rail_moved', { values: { name } }));
         // The person's own order changes no album: announce the move so an open Albums page shows it too.
+        album ??= await getAlbumInfo({ id: albumId }).catch(() => undefined);
         if (album) {
           eventManager.emit('AlbumUpdate', album);
         }
@@ -826,8 +831,30 @@
    * Boards' "New collection" opens over the page you are on (prototype `NewCollectionDialog`), from
    * the "+" here, Boards' Add menu or a collection's "…" menu, and creates in Boards; you stay put.
    */
+  /** Read when Boards' "New collection" opens: the dialog shows each collection as the full album. */
+  let boardsAlbums = $state<AlbumResponseDto[]>([]);
+  $effect(() => {
+    // never the list from before (another account, or before a lock)
+    boardsAlbums = [];
+    if (!boardsCollectionUi.request) {
+      return;
+    }
+    let left = false;
+    void untrack(fullAlbums)
+      .then((albums) => {
+        if (!left) {
+          boardsAlbums = albums;
+        }
+      })
+      .catch(() => {
+        // the dialog then offers no collection to put it in; it still creates at the top level
+      });
+    return () => {
+      left = true;
+    };
+  });
   const boardsCollections = $derived(
-    albumRecords.filter(
+    boardsAlbums.filter(
       (album) => album.kind !== AlbumKind.Space && authManager.authenticated && canEdit(album, authManager.user.id),
     ),
   );
@@ -1482,6 +1509,7 @@
 <RailAlbumMenu
   bind:this={railMenu}
   albums={albumRecords}
+  {fullAlbums}
   onRename={(id) => (renaming = id)}
   onRefresh={() => refreshAlbums()}
 />
