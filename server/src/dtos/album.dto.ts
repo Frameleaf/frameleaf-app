@@ -773,13 +773,14 @@ const AlbumFoldersResponseSchema = z
       .array(
         z
           .object({
+            albumId: z.uuidv4().describe('The album made for the folder, inside this one'),
             name: z.string(),
             count: z.int().min(0),
             coverAssetId: z.uuidv4().nullable(),
           })
           .meta({ id: 'AlbumFolderInsideDto' }),
       )
-      .describe("The folders shown as albums inside this one; open one with the timeline's albumFolder"),
+      .describe('The folders that have an album of their own inside this one (an album inside)'),
     versionsChanged: z
       .boolean()
       .describe('The versions were worked out again just now, so a timeline read before this is out of date'),

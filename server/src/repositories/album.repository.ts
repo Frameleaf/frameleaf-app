@@ -1449,6 +1449,34 @@ export class AlbumRepository {
       .execute();
   }
 
+  /**
+   * FL-1838: the folder albums made for folders directly inside this album's folder (FL-1837's "album inside"), with
+   * how many items each holds and its cover.
+   */
+  @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID, DummyValue.STRING] })
+  getFolderAlbumChildren(albumId: string, libraryId: string, folderPath: string) {
+    const prefix = folderPath === '/' ? '/' : `${folderPath}/`;
+    return this.db
+      .selectFrom('library_folder_album')
+      .innerJoin('album', 'album.id', 'library_folder_album.albumId')
+      .select((eb) => [
+        'library_folder_album.albumId',
+        'library_folder_album.folderPath',
+        'album.albumThumbnailAssetId as coverAssetId',
+        eb
+          .selectFrom('album_asset')
+          .select((eb) => eb.fn.countAll<number>().as('count'))
+          .whereRef('album_asset.albumId', '=', 'album.id')
+          .as('count'),
+      ])
+      .where('library_folder_album.libraryId', '=', asUuid(libraryId))
+      .where('album.parentId', '=', asUuid(albumId))
+      .where('album.deletedAt', 'is', null)
+      .where(sql<boolean>`left(library_folder_album."folderPath", char_length(${prefix}::text)) = ${prefix}::text`)
+      .where(sql<boolean>`strpos(substr(library_folder_album."folderPath", char_length(${prefix}::text) + 1), '/') = 0`)
+      .execute();
+  }
+
   /** FL-1838: the album's versions as stored. */
   @GenerateSql({ params: [DummyValue.UUID] })
   getFolderVersionRows(albumId: string) {

@@ -19,7 +19,12 @@ import {
   planFolderAlbums,
   resolveFolderAlbumOptions,
 } from 'src/utils/folder-albums.js';
-import { refreshAlbumFolderVersions, resolveAlbumFolderChoices } from 'src/utils/album-folders.js';
+import {
+  type AlbumFolderChoices,
+  refreshAlbumFolderVersions,
+  resolveAlbumFolderChoices,
+  subfolderRulesOf,
+} from 'src/utils/album-folders.js';
 import { isSameOrInside, normalizeImportPath } from 'src/utils/library-paths.js';
 import { getPreferences } from 'src/utils/preferences.js';
 
@@ -43,6 +48,7 @@ type FolderAlbumLink = {
   albumId: string;
   isUserEdited: boolean;
   isKept: boolean;
+  displayChoices: AlbumFolderChoices | null;
   albumName: string;
   parentId: string | null;
   kind: string;
@@ -201,11 +207,19 @@ export class FolderAlbumService extends BaseService {
       .filter((link) => link.isKept)
       .toArray();
     const keptPaths = new Set(kept.map(({ folderPath }) => folderPath));
+    // FL-1838: an album's own "Folders in this album" choices: an album inside, or in the album
+    const albumRules = new Map(
+      byPath
+        .values()
+        .filter((link) => !!link.displayChoices)
+        .map((link) => [link.folderPath, subfolderRulesOf(resolveAlbumFolderChoices(link.displayChoices))] as const),
+    );
     const tree = planFolderAlbums(
       roots,
       counts.filter(({ folderPath }) => !keptPaths.has(folderPath)),
       options,
       library.name,
+      albumRules,
     );
     this.addKept(tree, kept, counts, roots, options.skipEmpty);
 

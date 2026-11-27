@@ -8,7 +8,9 @@ import {
   matchAlbumVersions,
   resolveAlbumFolderChoices,
   subfolderOf,
+  subfolderRulesOf,
 } from 'src/utils/album-folders.js';
+import { EVENT_FOLDER_ALBUM_OPTIONS, planFolderAlbums } from 'src/utils/folder-albums.js';
 
 const at = '2026-11-19T10:00:00.000Z';
 const item = (
@@ -112,5 +114,30 @@ describe('album folders', () => {
     expect(view.exclude.toSorted()).toEqual(['edits', 'raw', 'videos']);
     expect(view.oneVersion).toBe(false);
     expect(albumFolderView('album-1', '/photos/Event', choices, 'RAW').only).toBe('raw');
+  });
+
+  it('turns the choices into the library rules FL-1837 syncs', () => {
+    const choices = resolveAlbumFolderChoices({ folders: { Edits: 'album', RAW: 'hidden', Export: 'with' } });
+    expect(subfolderRulesOf(choices)).toEqual({ edits: 'own', raw: 'join', export: 'join' });
+  });
+
+  it("lets one album's choice override the library rule for a folder inside it", () => {
+    const counts = [
+      { folderPath: '/p/A/Edits', photos: 2 },
+      { folderPath: '/p/A/Original', photos: 2 },
+      { folderPath: '/p/B/Edits', photos: 2 },
+      { folderPath: '/p/B/RAW', photos: 2 },
+    ];
+    const rules = new Map([
+      ['/p/A', { edits: 'join' as const }],
+      ['/p/B', { raw: 'own' as const }],
+    ]);
+    const plan = planFolderAlbums(['/p'], counts, EVENT_FOLDER_ALBUM_OPTIONS, 'Lib', rules);
+    expect(plan.get('/p/A')?.members.toSorted()).toEqual(['/p/A/Edits', '/p/A/Original']);
+    expect(plan.has('/p/A/Edits')).toBe(false);
+    // B follows the library for Edits (an album inside) and its own rule for RAW
+    expect(plan.get('/p/B/Edits')?.parentPath).toBe('/p/B');
+    expect(plan.get('/p/B/RAW')?.parentPath).toBe('/p/B');
+    expect(plan.get('/p/B')?.members).toEqual([]);
   });
 });

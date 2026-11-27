@@ -2,9 +2,10 @@
   /**
    * FL-1838 (prototype `AlbumPageV2.jsx`, approved 2026-11-27): on an album made from a folder with folders inside it,
    * a chip for each folder shown narrows the album to it, "RAW hidden" says what the album leaves out and opens
-   * "Folders in this album", and the folders shown as albums inside this one are tiles that open them.
+   * "Folders in this album", and the folders that have an album of their own inside this one (FL-1837's "album inside") are tiles that open it.
    */
   import Button from '$lib/components/frameleaf/Button.svelte';
+  import { Route } from '$lib/route';
   import { getAssetMediaUrl } from '$lib/utils';
   import { AlbumFolderDisplay, AssetMediaSize, type AlbumFoldersResponseDto } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
@@ -55,7 +56,7 @@
     <h2 id="fl-album-folders-inside">{$t('frameleaf_album_folders_albums_inside')}</h2>
     <div class="albums">
       {#each folders.albums as inside (inside.name)}
-        <button type="button" class="album fl-control" onclick={() => onSelect(inside.name)}>
+        <a class="album fl-control" href={Route.viewAlbum({ id: inside.albumId })}>
           {#if inside.coverAssetId}
             <img
               src={getAssetMediaUrl({ id: inside.coverAssetId, size: AssetMediaSize.Thumbnail })}
@@ -69,7 +70,7 @@
             <strong>{inside.name}</strong>
             <small>{$t('frameleaf_album_folders_items', { values: { count: inside.count } })}</small>
           </span>
-        </button>
+        </a>
       {/each}
     </div>
   </section>
@@ -120,6 +121,7 @@
     border: 1px solid var(--fl-border);
     border-radius: var(--fl-radius);
     text-align: start;
+    text-decoration: none;
   }
   .album img,
   .cover-empty {

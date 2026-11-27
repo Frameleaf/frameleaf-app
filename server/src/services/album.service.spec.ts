@@ -4261,6 +4261,29 @@ describe(AlbumService.name, () => {
       mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set([albumId]));
       mocks.album.getFolderAlbumItems.mockResolvedValue(items);
       mocks.album.getFolderVersionRows.mockResolvedValue([]);
+      mocks.album.getFolderAlbumChildren.mockResolvedValue([]);
+      mocks.library.get.mockResolvedValue({ id: libraryId, folderAlbumOptions: null } as never);
+    });
+
+    it("shows FL-1837's albums inside as albums inside, and lets one come back into the album", async () => {
+      const saved = link();
+      const editsAlbumId = newUuid();
+      mocks.album.getFolderAlbumLink.mockResolvedValue(saved);
+      mocks.album.getFolderAlbumChildren.mockResolvedValue([
+        { albumId: editsAlbumId, folderPath: `${saved.folderPath}/Edits`, coverAssetId: null, count: 4 },
+      ]);
+      const result = await sut.getFolders(authStub.admin, albumId);
+      expect(result.folders).toContainEqual({ name: 'Edits', photos: 4, videos: 0, display: 'album' });
+      expect(result.albums).toEqual([{ albumId: editsAlbumId, name: 'Edits', count: 4, coverAssetId: null }]);
+
+      await sut.updateFolders(authStub.admin, albumId, { folders: { Edits: 'with' }, versions: 'one', prefer: [] });
+      expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.LibraryFolderAlbumSync, data: { id: libraryId } });
+    });
+
+    it('asks for no sync when no folder gets or loses an album inside', async () => {
+      mocks.album.getFolderAlbumLink.mockResolvedValue(link());
+      await sut.updateFolders(authStub.admin, albumId, { folders: { RAW: 'section' }, versions: 'one', prefer: [] });
+      expect(mocks.job.queue).not.toHaveBeenCalled();
     });
 
     it('lists the folders with the photographer defaults and works the versions out', async () => {
@@ -4340,6 +4363,11 @@ describe(AlbumService.name, () => {
       await sut.updateFolders(authStub.admin, albumId, { ...choices, applyToLibrary: true });
       expect(mocks.album.setLibraryFolderChoices).toHaveBeenCalledWith(libraryId, choices);
       expect(mocks.album.setFolderAlbumChoices).toHaveBeenCalledWith(saved.id, null);
+      expect(mocks.library.update).toHaveBeenCalledWith(
+        libraryId,
+        expect.objectContaining({ folderAlbumOptions: expect.objectContaining({ subfolders: { edits: 'join' } }) }),
+      );
+      expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.LibraryFolderAlbumSync, data: { id: libraryId } });
       expect(mocks.album.getFolderAlbumItems).toHaveBeenCalledWith(otherAlbumId, '/photos/2026-11-20 - Other');
       expect(mocks.event.emit).toHaveBeenCalledWith('AlbumUpdate', expect.objectContaining({ id: otherAlbumId }));
     });

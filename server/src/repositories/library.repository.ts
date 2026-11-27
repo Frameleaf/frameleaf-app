@@ -548,6 +548,7 @@ export class LibraryRepository {
         'library_folder_album.albumId',
         'library_folder_album.isUserEdited',
         'library_folder_album.isKept',
+        'library_folder_album.displayChoices',
         'album.albumName',
         'album.parentId',
         'album.kind',

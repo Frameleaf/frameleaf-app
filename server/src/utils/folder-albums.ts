@@ -84,15 +84,14 @@ export const resolveFolderAlbumOptions = (
   subfolders: { ...stored?.subfolders },
 });
 
-export const subfolderRule = (options: FolderAlbumOptions, name: string): SubfolderRule => {
+/** The rule `rules` gives the folder `name`, matched without regard to case; undefined when it gives none. */
+const ruleFor = (rules: Readonly<Record<string, SubfolderRule>>, name: string) => {
   const lower = name.toLowerCase();
-  for (const [key, rule] of Object.entries(options.subfolders)) {
-    if (key.toLowerCase() === lower) {
-      return rule;
-    }
-  }
-  return DEFAULT_SUBFOLDER_RULES[lower] ?? 'join';
+  return Object.entries(rules).find(([key]) => key.toLowerCase() === lower)?.[1];
 };
+
+export const subfolderRule = (options: FolderAlbumOptions, name: string): SubfolderRule =>
+  ruleFor(options.subfolders, name) ?? DEFAULT_SUBFOLDER_RULES[name.toLowerCase()] ?? 'join';
 
 /** The album name for a folder: its own name, or `libraryName` for an import folder (`roots`). */
 export const folderName = (folderPath: string, libraryName: string, roots: string[]) =>
@@ -214,6 +213,11 @@ export const planFolderAlbums = (
   counts: FolderCount[],
   options: FolderAlbumOptions,
   libraryName: string,
+  /**
+   * FL-1838: per album folder, its own rule for the folders directly inside it ("Folders in this album": an album
+   * inside, or in the album), in place of the library's.
+   */
+  albumRules: ReadonlyMap<string, Readonly<Record<string, SubfolderRule>>> = new Map(),
   maxDepth = MAX_FOLDER_DEPTH,
 ): Map<string, FolderAlbumPlanNode> => {
   const rows = counts.filter(({ photos, items }) => photos > 0 || (!options.skipEmpty && (items ?? 0) > 0));
@@ -303,7 +307,9 @@ export const planFolderAlbums = (
       continue;
     }
     const inside = chain[level + 1];
-    const rule = subfolderRule(options, path.posix.basename(inside));
+    const insideName = path.posix.basename(inside);
+    const own = albumRules.get(albumFolder);
+    const rule = (own && ruleFor(own, insideName)) ?? subfolderRule(options, insideName);
     if (rule === 'skip') {
       continue;
     }

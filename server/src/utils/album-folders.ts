@@ -1,6 +1,6 @@
 import { sql } from 'kysely';
 import type { AlbumRepository } from 'src/repositories/album.repository.js';
-import { folderOf } from 'src/utils/folder-albums.js';
+import { type SubfolderRule, folderOf } from 'src/utils/folder-albums.js';
 
 /**
  * FL-1838: "Folders in this album". An album made from a folder holds the photos of the folders inside it (Original,
@@ -53,6 +53,18 @@ export const folderDisplay = (choices: AlbumFolderChoices, name: string): AlbumF
   }
   return DEFAULT_DISPLAY[lower] ?? 'with';
 };
+
+/**
+ * The FL-1837 rules these choices make for the folders they name: an album inside is a real album the sync makes
+ * ('own'); any other choice keeps the folder's photos in the album ('join'), where only how they show differs.
+ */
+export const subfolderRulesOf = (choices: AlbumFolderChoices): Record<string, SubfolderRule> =>
+  Object.fromEntries(
+    Object.entries(choices.folders).map(([name, display]) => [
+      name.toLowerCase(),
+      display === 'album' ? 'own' : 'join',
+    ]),
+  );
 
 /** The folder directly inside `albumFolder` that holds `itemFolder`; '' when the item is in the album's folder itself. */
 export const subfolderOf = (itemFolder: string, albumFolder: string) => {
