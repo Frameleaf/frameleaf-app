@@ -296,7 +296,7 @@ describe('PersonService face history (FL-57)', () => {
         PersonFactory.create({ ownerId: partnerId, name: 'Emma', birthDate, isHidden: true }),
       );
       mocks.person.getPersonOriginRoot.mockResolvedValue(rootOwnerId);
-      mocks.partnerOrigin.createPersonCopy.mockResolvedValue({ personGroupId: newGroupId });
+      mocks.partnerOrigin.createPersonCopy.mockResolvedValue({ personGroupId: newGroupId, created: true });
       const thumbnailSelection = {
         where: vi.fn().mockReturnThis(),
         execute: vi
