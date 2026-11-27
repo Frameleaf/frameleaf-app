@@ -1,10 +1,11 @@
 /**
- * The words of the editor's timeline toolbar and track heads (FL-1822): the Tool menu, In and Out,
- * the More menu, the toolbar's tooltips, the track buttons and menu, and the Align row that moved
- * from above the transport into the inspector's Transform group. Translated by the host, as for the shell strings (`shell-strings.ts`): the
- * engine speaks fewer languages than the host, so the host sends its translation in `context.strings`
- * and the adapter writes it over the engine key. A value filled in at run time travels as an i18next
- * `{{name}}` marker. Several engine keys can share one host message.
+ * The words of the editor's timeline (FL-1822): the toolbar's Tool menu, In and Out, More menu and
+ * tooltips; the track buttons and menu; the keyframes lane's header; and the Align row that moved
+ * from above the transport into the inspector's Transform group. Translated by the host, as for the
+ * shell strings (`shell-strings.ts`): the engine speaks fewer languages than the host, so the host
+ * sends its translation in `context.strings` and the adapter writes it over the engine key. A value
+ * filled in at run time travels as an i18next `{{name}}` marker. Several engine keys can share one
+ * host message.
  */
 export const TIMELINE_STRINGS = {
   timelineToolSelect: { host: 'frameleaf_studio_timeline_tool_select', engine: 'timeline.header.tools.select' },
@@ -126,6 +127,42 @@ export const TIMELINE_STRINGS = {
   },
   timelineAlignSpaceDown: { host: 'frameleaf_studio_timeline_align_space_down', engine: 'preview.align.distributeV' },
   timelineAlignSnap: { host: 'frameleaf_studio_timeline_align_snap', engine: 'preview.align.toggleCanvasSnap' },
+  timelineKeyframesTitle: {
+    host: 'frameleaf_studio_timeline_keyframes_title',
+    engine: 'timeline.keyframeEditor.title',
+  },
+  timelineKeyframesInClip: {
+    host: 'frameleaf_studio_timeline_keyframes_in_clip',
+    engine: 'timeline.keyframeEditor.local',
+  },
+  timelineKeyframesInProject: {
+    host: 'frameleaf_studio_timeline_keyframes_in_project',
+    engine: 'timeline.keyframeEditor.global',
+  },
+  timelineKeyframesFrameInClip: {
+    host: 'frameleaf_studio_timeline_keyframes_frame_in_clip',
+    engine: 'timeline.keyframeEditor.localFrame',
+  },
+  timelineKeyframesFrameInProject: {
+    host: 'frameleaf_studio_timeline_keyframes_frame_in_project',
+    engine: 'timeline.keyframeEditor.globalFrame',
+  },
+  timelineKeyframesProperty: {
+    host: 'frameleaf_studio_timeline_keyframes_property',
+    engine: 'timeline.keyframeEditor.property',
+  },
+  timelineKeyframesWhich: {
+    host: 'frameleaf_studio_timeline_keyframes_which',
+    engine: 'timeline.keyframeEditor.propertyVisibility',
+  },
+  timelineKeyframesAnimated: {
+    host: 'frameleaf_studio_timeline_keyframes_animated',
+    engine: 'timeline.keyframeEditor.animatedProperties',
+  },
+  timelineKeyframesAll: {
+    host: 'frameleaf_studio_timeline_keyframes_all',
+    engine: 'timeline.keyframeEditor.allProperties',
+  },
 } as const satisfies Record<string, { host: string; engine: string; values?: readonly string[] }>;
 
 export type TimelineString = keyof typeof TIMELINE_STRINGS;

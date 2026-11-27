@@ -964,7 +964,12 @@
       "path": "patches/0213-studio-add-panel.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "3677a0a1325ca0f9c9bae9c6a02bf2711c8a4281b06b95e5ee0b555320a508eb"
+    },
+    {
+      "path": "patches/0214-studio-keyframes-lane.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "4ec09c313d61e6585d8da6c34606ea51407bdb926f6c1ec3f97b62bf88283771"
     }
   ],
-  "sourceSha256": "3ac1e51c2bb62cdd299b8912a1080fc8dc4e559eb439eabf59368bba1b90b25c"
+  "sourceSha256": "7bf91610b9e5169164d516910acd08a18ff905506bcbfd597f2216a4248d761b"
 }

@@ -20694,9 +20694,10 @@
           "1accc156fc",
           "d74234e08d",
           "0210-studio-timeline-toolbar.patch",
-          "0211-studio-track-heads.patch"
+          "0211-studio-track-heads.patch",
+          "0214-studio-keyframes-lane.patch"
         ],
-        "note": "FL-1822 (0210): the timeline toolbar is the approved Studio's: a Tool menu, undo and redo, quiet snapping, marker and keyframe toggles, In and Out with their timecode, voice-over, and a More menu for linked selection, sound while scrubbing and the clearing actions. FL-1822 (0211): each track head is one row, its kind and name, then bordered buttons to hide a picture track or mute a sound track, solo, lock, and keep in sync, highlighted when not in the usual state; close gaps and the track actions stay in the right-click menu.",
+        "note": "FL-1822 (0210): the timeline toolbar is the approved Studio's: a Tool menu, undo and redo, quiet snapping, marker and keyframe toggles, In and Out with their timecode, voice-over, and a More menu for linked selection, sound while scrubbing and the clearing actions. FL-1822 (0211): each track head is one row, its kind and name, then bordered buttons to hide a picture track or mute a sound track, solo, lock, and keep in sync, highlighted when not in the usual state; close gaps and the track actions stay in the right-click menu. FL-1822 (0214): the keyframes lane opens with a Keyframes title and its count; the frame fields read In clip and In project at 12px; the Property, Animated and All header and the row labels move from 9 to 11-12px, with room for Position; group headings are sentence case; the docked title drops the clip's internal id.",
         "status": "shipped"
       },
       "id": "module.timeline",
