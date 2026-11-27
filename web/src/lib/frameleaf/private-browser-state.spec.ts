@@ -34,6 +34,8 @@ describe('clearPrivateBrowserState (FL-80)', () => {
   it('treats a new frameleaf key as private by default', () => {
     expect(isPrivateBrowserKey('frameleaf:some-new-feature:v1')).toBe(true);
     expect(isPrivateBrowserKey('frameleaf.rail.closedSections')).toBe(false);
+    // FL-1811: the information panel's folds are this screen's layout, kept through a lock
+    expect(isPrivateBrowserKey('frameleaf-viewer-info-folds')).toBe(false);
     expect(isPrivateBrowserKey('immich-ui-theme')).toBe(false);
   });
 

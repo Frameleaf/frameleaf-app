@@ -3,7 +3,8 @@
 
   /**
    * Which folds were left open, by fold id. Kept in this browser, beside the panel's own open state
-   * (`asset-viewer-state`): there is no per-account store for viewer layout.
+   * (`asset-viewer-state`): there is no per-account store for viewer layout. It names no content, so
+   * it is a device preference that a lock or sign-out keeps (`DEVICE_PREFERENCE_KEYS`).
    */
   const folds = new PersistedLocalStorage<Record<string, boolean>>('frameleaf-viewer-info-folds', {});
 </script>
