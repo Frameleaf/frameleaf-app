@@ -97,7 +97,8 @@ describe('Frameleaf settings areas', () => {
   });
 
   it('opens Library analytics as a command center screen, as the template does (FL-79)', () => {
-    expect(SETTINGS_AREAS[1]).toMatchObject({ id: 'analytics', group: 'command', sections: [] });
+    // FL-1806: Library analytics is listed with the library.
+    expect(SETTINGS_AREAS[1]).toMatchObject({ id: 'analytics', group: 'library', sections: [] });
     expect(isScreenArea('analytics')).toBe(true);
     expect(isScreenArea('storage')).toBe(false);
     expect(resolveSettingsArea({ area: 'analytics' })).toBe('analytics');

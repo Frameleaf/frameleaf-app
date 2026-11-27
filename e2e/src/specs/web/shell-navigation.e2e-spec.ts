@@ -8,7 +8,7 @@ import { asBearerAuth, utils } from 'src/utils.js';
  * destination opens a page (never the error page) and marks itself current, deep links and the
  * browser's Back and Forward keep the rail in step, the collapsed rail is remembered, a
  * destination the account turned off leaves the rail but not the product, the repair utilities
- * live in Library Care rather than the rail, and the access roles hold at the route boundary.
+ * live in Library care rather than the rail, and the access roles hold at the route boundary.
  * Prototype (Frameleaf/frameleaf-prototype): `src/LibraryRail.jsx` and the `App.jsx` header.
  */
 
@@ -66,7 +66,8 @@ test.describe('Frameleaf shell navigation (FL-30)', () => {
     const destinations = links.filter(({ name }) => !['New album', 'New shared space'].includes(name));
     const names = destinations.map(({ name }) => name);
     expect(new Set(names).size, 'no destination is listed twice').toBe(names.length);
-    // LibraryRail.jsx (September 24): Library, Explore, Albums, Shared spaces, Tools, then Care, Settings, Support.
+    // FL-1806 (approved 2026-11-26): Library, Explore, Albums, Shared spaces, then Import, Library care,
+    // Trash, Settings and Support. No Tools section: Clients is in the top bar, Workflows in Library care.
     expect(names).toEqual([
       'Library',
       'Favorites',
@@ -75,22 +76,18 @@ test.describe('Frameleaf shell navigation (FL-30)', () => {
       'Archive',
       'Locked',
       'Explore',
-      'People',
-      'Pets',
+      'People & pets',
+      'Places & map',
       'Memories',
-      'Places',
-      'Map',
+      'Documents',
       'Tags',
       'Folders',
-      'Documents',
       'All albums',
+      'All shared',
       'Shared links',
-      'Clients',
-      // FL-420: LibraryRail.jsx lists RAW support right under Photography.
-      'RAW support',
-      'Workflows',
+      'Import',
+      'Library care',
       'Trash',
-      'Library Care',
       'Settings',
       'Support Frameleaf',
     ]);
@@ -108,19 +105,10 @@ test.describe('Frameleaf shell navigation (FL-30)', () => {
           // LIB-P2: without an unlocked session Locked opens in the app, the rail in place, and its
           // card asks for the PIN.
           await expect(page.getByTestId('library-locked-gate')).toBeVisible();
-        }
-        if (new URL(page.url()).pathname === '/user-settings') {
-          // Tools, Library Care and Settings open Command Center areas, which bring their own
-          // navigation in place of the library rail (CommandCenter.jsx); Back returns to the rail.
+        } else if (name === 'Settings' || name === 'Support Frameleaf') {
+          // Settings brings its own navigation in place of the library rail; Back returns to the rail.
+          // Import, Library care and Trash are places: they keep the rail and are current in it.
           await expect(page.getByRole('navigation', { name: 'Settings navigation' })).toBeVisible();
-          await page.goBack();
-          await page.waitForURL(at(previous));
-          await expect(rail(page)).toBeVisible();
-          return;
-        }
-        if (name === 'Clients') {
-          // Like Studio, Clients (and its introduction until it is started) is a full page without the library rail.
-          await expect(rail(page)).toHaveCount(0);
           await page.goBack();
           await page.waitForURL(at(previous));
           await expect(rail(page)).toBeVisible();
@@ -203,9 +191,10 @@ test.describe('Frameleaf shell navigation (FL-30)', () => {
     try {
       await page.goto('/photos');
       await expect(railLink(page, 'Library')).toBeVisible();
-      await expect(railLink(page, 'People')).toHaveCount(0);
       await expect(railLink(page, 'Memories')).toHaveCount(0);
-      await expect(railLink(page, 'Places')).toBeVisible();
+      // FL-1806: People & pets stays while Pets is still in the sidebar.
+      await expect(railLink(page, 'People & pets')).toBeVisible();
+      await expect(railLink(page, 'Places & map')).toBeVisible();
 
       // A display choice, never an access control: the deep link still works.
       await page.goto('/people');
@@ -224,7 +213,7 @@ test.describe('Frameleaf shell navigation (FL-30)', () => {
   test("shows a new account every destination the prototype's rail and tab bar show", async ({ context, page }) => {
     await utils.setAuthCookies(context, member.accessToken);
     await page.goto('/photos');
-    for (const name of ['Recently added', 'People', 'Memories', 'Tags', 'Folders', 'Shared links']) {
+    for (const name of ['Recently added', 'People & pets', 'Memories', 'Tags', 'Folders', 'Shared links']) {
       await expect(railLink(page, name), name).toBeVisible();
     }
 
@@ -265,7 +254,7 @@ test.describe('Frameleaf shell navigation (FL-30)', () => {
     }
   });
 
-  test('keeps the repair utilities in Library Care, not in the rail', async ({ context, page }) => {
+  test('keeps the repair utilities in Library care, not in the rail', async ({ context, page }) => {
     await utils.setAuthCookies(context, admin.accessToken);
     await page.goto('/photos');
 
@@ -273,7 +262,7 @@ test.describe('Frameleaf shell navigation (FL-30)', () => {
       await expect(rail(page).getByRole('link', { name })).toHaveCount(0);
     }
 
-    await railLink(page, 'Library Care').click();
+    await railLink(page, 'Library care').click();
     await page.waitForURL((url) => url.pathname === '/user-settings' && url.searchParams.get('area') === 'care');
     await expect(errorTitle(page)).toHaveCount(0);
     // FL-366: the Library care landing lists Duplicates and Things to fix (Live Photos to reconnect).

@@ -107,7 +107,7 @@ describe('CloudBackupRestoreSection (FL-164)', () => {
       }),
     );
 
-    // a backup made before details were recorded brings the file back for Library Care
+    // a backup made before details were recorded brings the file back for Library care
     await fireEvent.click(within(rows[2]).getByRole('button', { name: /Restore/ }));
     await waitFor(() =>
       expect(sdkMock.restoreCloudBackup).toHaveBeenLastCalledWith({

@@ -50,6 +50,7 @@
   import { Icon, toastManager } from '@frameleaf/ui';
   import {
     mdiAccountMultipleOutline,
+    mdiPawOutline,
     mdiAccountOffOutline,
     mdiAccountOutline,
     mdiAccountSearchOutline,
@@ -720,8 +721,8 @@
         <h1 class="fl-type-display">{$t('people')}</h1>
         {#if summary}<p class="pl-summary">{summary}</p>{/if}
       </div>
-      {#if !nobody}
-        <div class="pl-toolbar">
+      <div class="pl-toolbar">
+        {#if !nobody}
           <input
             type="search"
             aria-label={$t('frameleaf_people_find_a_person')}
@@ -743,8 +744,13 @@
             <!-- FL-1394 (S1): was "Show and hide people", which read like "Show hidden" beside it. -->
             {$t('frameleaf_people_choose_who_appears')}
           </FrameleafButton>
-        </div>
-      {/if}
+        {/if}
+        <!-- FL-1806: the rail's "People & pets" opens this page, so Pets is one click from here. -->
+        <FrameleafButton onclick={() => goto(Route.pets())}>
+          <Icon icon={mdiPawOutline} size={ICON_SIZE.lg} aria-hidden="true" />
+          {$t('frameleaf_pets_title')}
+        </FrameleafButton>
+      </div>
     </header>
     {#if facesOff}
       <!-- FL-1408: nothing is being compared while face recognition is off, so nothing is asked. -->

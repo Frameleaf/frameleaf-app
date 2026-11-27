@@ -14,7 +14,7 @@
   import SkipLink from '$lib/elements/SkipLink.svelte';
   import { helpPanel } from '$lib/frameleaf/help-panel.svelte';
   import { libraryUploadScope } from '$lib/frameleaf/search-context';
-  import { buildPrimaryDestinations, currentPrimaryDestination, isClientsEnabled } from '$lib/frameleaf/navigation';
+  import { buildPrimaryDestinations, currentPrimaryDestination } from '$lib/frameleaf/navigation';
   import { sessionAccess, trackSessionModals } from '$lib/frameleaf/session-access.svelte';
   import { requestSessionLock } from '$lib/frameleaf/session-lock';
   import '$lib/frameleaf/tokens.css';
@@ -78,12 +78,8 @@
 
   let { onUploadClick, noBorder = false, hasRail = true }: Props = $props();
 
-  // Clients joins the sections once the account uses it (ClientsIntro.jsx, owner October 28).
-  const primaryDestinations = $derived(
-    buildPrimaryDestinations({
-      clients: authManager.authenticated && isClientsEnabled(authManager.preferences),
-    }),
-  );
+  // FL-1806: Clients is always a section; until it is started it opens its introduction.
+  const primaryDestinations = buildPrimaryDestinations();
   /** apple-style.css: phones show the Frameleaf symbol only. */
   const phone = new MediaQuery('max-width: 700px');
   const proContext = $derived(

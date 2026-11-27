@@ -133,3 +133,47 @@ it.each([
   await new Promise((resolve) => setTimeout(resolve, 0));
   expect(screen.queryByTestId('map-input')).not.toBeInTheDocument();
 });
+
+// FL-1811 (prototype PR 102): what stays open, what folds, and in which order.
+describe('open sections and folds (FL-1811)', () => {
+  it('folds the scan and the text away, closed, after the open sections', async () => {
+    render(DetailPanel, { asset: assetFactory.build({ ownerId: 'owner' }) });
+    await waitFor(() => expect(sdkMock.getAllAlbums).toHaveBeenCalled());
+    const folds = [...document.querySelectorAll<HTMLDetailsElement>('.fl-info > details[data-fold]')];
+    expect(folds.map((fold) => [fold.dataset.fold, fold.open])).toEqual([
+      ['scan', false],
+      ['text', false],
+    ]);
+    expect(folds.map((fold) => fold.querySelector('summary')?.textContent?.trim())).toEqual([
+      'frameleaf_info_fold_scan',
+      'frameleaf_documents_text_in_photo',
+    ]);
+    // Captured is the first band, and nothing that folds comes before the open sections end.
+    const panel = document.querySelector('.fl-info')!;
+    expect(panel.firstElementChild).toHaveTextContent('frameleaf_info_captured');
+    expect(folds[0].nextElementSibling).toBe(folds[1]);
+  });
+
+  it('keeps the albums the item appears in open, above the folds', async () => {
+    sdkMock.getAllAlbums.mockResolvedValue([{ id: 'album-1', albumName: 'Summer', albumUsers: [] }] as never);
+    render(DetailPanel, { asset: assetFactory.build({ ownerId: 'owner' }) });
+    const albums = (await screen.findByText('appears_in')).closest('section')!;
+    expect(albums.closest('details')).toBeNull();
+    const scan = document.querySelector('details[data-fold="scan"]')!;
+    expect(albums.compareDocumentPosition(scan) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+});
+
+it('folds no Credits for a shared-link visitor when the photo has only an artist', async () => {
+  // A shared link never shows the artist, so the fold would be an empty pressable row.
+  vi.spyOn(authManager, 'isSharedLink', 'get').mockReturnValue(true);
+  render(DetailPanel, {
+    asset: assetFactory.build({
+      ownerId: 'someone-else',
+      hasMetadata: true,
+      exifInfo: { artist: 'Ada', copyright: null },
+    }),
+  });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  expect(document.querySelector('details[data-fold="credits"]')).toBeNull();
+});

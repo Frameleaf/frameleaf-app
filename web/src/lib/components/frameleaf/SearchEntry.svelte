@@ -98,6 +98,7 @@
 
   const context = $derived({
     isAdmin,
+    map: featureFlagsManager.value.map,
     capabilities: {
       // The palette reaches every page; only the rail follows the "in navigation" choices.
       recentlyAdded: true,

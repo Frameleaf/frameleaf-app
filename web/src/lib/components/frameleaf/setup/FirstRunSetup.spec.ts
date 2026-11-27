@@ -132,7 +132,7 @@ describe('FirstRunSetup (FL-176)', () => {
     render(FirstRunSetup, { initial: { ...state, step: check, reached: check }, authenticated: true });
     expect(await screen.findByText('We could not check the file records just now')).toBeInTheDocument();
     expect(screen.queryByText(/look healthy/)).toBeNull();
-    expect(screen.queryByRole('link', { name: /Library Care/ })).toBeNull();
+    expect(screen.queryByRole('link', { name: /Library care/ })).toBeNull();
   });
 
   it('shows the library location check without waiting for the hardware benchmark, in the unit that fits', async () => {
@@ -199,7 +199,7 @@ describe('FirstRunSetup (FL-176)', () => {
       );
 
     beforeEach(() => {
-      // Right after an import the hardware check (a live benchmark) and the Library Care summary
+      // Right after an import the hardware check (a live benchmark) and the Library care summary
       // take seconds; the welcome figures must not wait for them.
       sdkMock.getHardwareCheck.mockReturnValue(new Promise(() => {}) as never);
       sdkMock.getSummary.mockReturnValue(new Promise(() => {}) as never);
