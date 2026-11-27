@@ -7,6 +7,7 @@
    * the dialogs, so this component is presentation plus the filter/sort rules in
    * `$lib/frameleaf/render-workers`.
    */
+  import EmptyState from '$lib/components/frameleaf/EmptyState.svelte';
   import { formatLuxon } from '$lib/frameleaf/date-format';
   import Badge from '$lib/components/frameleaf/Badge.svelte';
   import Button from '$lib/components/frameleaf/Button.svelte';
@@ -195,9 +196,12 @@
       </tbody>
     </table>
     {#if rows.length === 0}
-      <p class="empty">
-        {workers.length === 0 ? $t('frameleaf_render_workers_empty_none') : $t('frameleaf_render_workers_empty')}
-      </p>
+      <EmptyState
+        compact
+        message={workers.length === 0
+          ? $t('frameleaf_render_workers_empty_none')
+          : $t('frameleaf_render_workers_empty')}
+      />
     {/if}
   </div>
 </Pane>
@@ -315,10 +319,5 @@
   }
   .actions {
     white-space: nowrap;
-  }
-  .empty {
-    margin: 0;
-    padding: 1.5rem 0.875rem;
-    color: var(--fl-muted);
   }
 </style>

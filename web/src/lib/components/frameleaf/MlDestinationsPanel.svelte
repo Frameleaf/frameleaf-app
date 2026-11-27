@@ -17,6 +17,7 @@
    * the last check read instead of an hourly rate. It is added, and its consent reviewed, from the
    * Frameleaf Cloud section, because consent there is versioned and per feature.
    */
+  import EmptyState from '$lib/components/frameleaf/EmptyState.svelte';
   import { formatDateTime } from '$lib/frameleaf/date-format';
   import Badge from '$lib/components/frameleaf/Badge.svelte';
   import Button from '$lib/components/frameleaf/Button.svelte';
@@ -410,7 +411,7 @@
   {/if}
 
   {#if destinations.length === 0}
-    <p class="empty">{$t('admin.frameleaf_ml_destinations_empty')}</p>
+    <EmptyState compact message={$t('admin.frameleaf_ml_destinations_empty')} />
   {:else}
     <ul class="destinations">
       {#each destinations as destination (destination.id)}
@@ -823,7 +824,6 @@
     margin: 0 0 0.25rem;
   }
   .head p,
-  .empty,
   .muted,
   .routes p,
   .endpoint {
