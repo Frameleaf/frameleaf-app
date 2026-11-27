@@ -18,6 +18,7 @@ import {
   DATE_DETAILS,
   MIN_APPROXIMATE_YEAR,
   getCaptureYear,
+  getMonthStart,
   isApproximateYear,
 } from 'src/utils/date.js';
 import { IsNotSiblingOf, isoDatetimeToDate, latitudeSchema, longitudeSchema, stringToBool } from 'src/validation.js';
