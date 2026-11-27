@@ -10,7 +10,8 @@ import { AlbumKind, type AlbumResponseDto } from '@frameleaf/sdk';
 import { canEdit, isOwner, type AlbumWithRole } from '$lib/frameleaf/album-directory';
 
 /** What a move needs to know of an album: a full one, or a slim rail item (FL-1796). */
-export type RailMoveAlbum = Pick<AlbumResponseDto, 'id' | 'kind' | 'parentId' | 'sortOrder'> & AlbumWithRole;
+export type RailMoveAlbum = Pick<AlbumResponseDto, 'id' | 'kind' | 'parentId' | 'sortOrder' | 'isSmart'> &
+  AlbumWithRole;
 
 export type RailDrop = 'before' | 'after' | 'into';
 export type RailUpdate = { id: string; sortOrder?: number; parentId?: string | null };

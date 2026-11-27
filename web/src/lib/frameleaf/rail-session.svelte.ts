@@ -93,7 +93,7 @@ class RailSession {
     if (isLatest()) {
       const json = JSON.stringify(response.albums);
       // An unchanged answer keeps the tree (nothing redraws) and the full albums already read for it.
-      if (this.#railJson.get(key) === json && this.albums[key]) {
+      if (this.#railJson.get(key) === json && Object.hasOwn(this.albums, key)) {
         return;
       }
       this.#railJson.set(key, json);
