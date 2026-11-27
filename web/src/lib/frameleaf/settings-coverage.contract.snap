@@ -1208,6 +1208,12 @@
       "desc"
     ]
   },
+  "preferences.albums.pinned": {
+    "type": "array"
+  },
+  "preferences.albums.pinnedCustomOrder": {
+    "type": "boolean"
+  },
   "preferences.albums.showPartnerAlbums": {
     "type": "boolean"
   },

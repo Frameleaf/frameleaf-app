@@ -1928,6 +1928,19 @@ export const PREFERENCE_LEAF_COVERAGE: readonly SettingsLeafCoverage[] = Object.
     file: 'src/lib/components/frameleaf/album-cleanup/AlbumCleanupBanner.svelte',
     evidence: 'cleanupBannerDismissed',
   },
+  // FL-1836: the sidebar's Pinned albums and whether they keep the order they were dragged into.
+  {
+    pattern: 'albums.pinned',
+    kind: 'control',
+    file: 'src/lib/frameleaf/pinned-albums.ts',
+    evidence: 'albums: { pinned, pinnedCustomOrder }',
+  },
+  {
+    pattern: 'albums.pinnedCustomOrder',
+    kind: 'control',
+    file: 'src/lib/frameleaf/pinned-albums.ts',
+    evidence: 'albums: { pinned, pinnedCustomOrder }',
+  },
   {
     pattern: 'albums.showPartnerAlbums',
     kind: 'control',

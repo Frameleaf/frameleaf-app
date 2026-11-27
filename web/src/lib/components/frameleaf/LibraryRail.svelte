@@ -40,6 +40,7 @@
     pinnedInOrder,
     placePinned,
     recentAlbumIds,
+    pendingPins,
     savePinnedOrder,
     sortPinnedByName,
   } from '$lib/frameleaf/pinned-albums';
@@ -122,7 +123,7 @@
   import { debounce } from 'lodash-es';
   import { onMount, onDestroy, tick, untrack, type Snippet } from 'svelte';
   import type { Translations } from 'svelte-i18n';
-  import { t } from 'svelte-i18n';
+  import { locale, t } from 'svelte-i18n';
   import { SvelteSet } from 'svelte/reactivity';
 
   /**
@@ -476,15 +477,16 @@
   const RAIL_RECENT_ALBUMS = 5;
   const albumNodes = $derived(new Map(flattenAlbumTree(tree).map((node) => [node.id, node])));
   const findAlbumNode = (id: string) => albumNodes.get(id);
-  const pinnedIds = $derived(preferences?.albums.pinned ?? []);
+  // The pins as they will be once any save in flight lands, so a reorder never drops a pin made a moment ago.
+  const pinnedIds = $derived($pendingPins ?? preferences?.albums.pinned ?? []);
   const pinnedCustomOrder = $derived(preferences?.albums.pinnedCustomOrder ?? false);
   /** The order on screen while a pinned album is dragged or a new order is being saved. */
   let pinDraft = $state<string[] | null>(null);
   let pinDragId = $state<string | null>(null);
   const pinnedNodes = $derived(
     pinDraft
-      ? pinnedInOrder(pinDraft, true, findAlbumNode)
-      : pinnedInOrder(pinnedIds, pinnedCustomOrder, findAlbumNode),
+      ? pinnedInOrder(pinDraft, true, findAlbumNode, $locale ?? undefined)
+      : pinnedInOrder(pinnedIds, pinnedCustomOrder, findAlbumNode, $locale ?? undefined),
   );
   const recentNodes = $derived.by(() => {
     const pinned = new Set(pinnedIds);
@@ -511,7 +513,7 @@
     }
     pinDragId = null;
     const shown = pinnedNodes.map(({ id }) => id);
-    const saved = pinnedInOrder(pinnedIds, pinnedCustomOrder, findAlbumNode).map(({ id }) => id);
+    const saved = pinnedInOrder(pinnedIds, pinnedCustomOrder, findAlbumNode, $locale ?? undefined).map(({ id }) => id);
     if (dropped && shown.join('\n') !== saved.join('\n')) {
       void savePinOrder(shown);
     } else {
@@ -1700,7 +1702,7 @@
     align-items: center;
     justify-content: space-between;
     gap: var(--fl-space-2);
-    padding-right: 22px;
+    padding-inline-end: 22px;
   }
   .fl-subhead-row .fl-subhead {
     flex: 1;

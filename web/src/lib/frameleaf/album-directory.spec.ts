@@ -4,6 +4,7 @@ import { albumFactory } from '@test-data/factories/album-factory';
 import { userAdminFactory } from '@test-data/factories/user-factory';
 import {
   albumAncestors,
+  arrangeInGroup,
   browseAlbumDirectory,
   canEdit,
   isOwner,
@@ -385,6 +386,57 @@ describe('the hierarchy the Albums page browses (FL-1836)', () => {
     expect(result.items.get('top')).toBe(7);
     expect(result.items.get('mid')).toBe(7);
     expect(ids(result)).toEqual(['fresh', 'top']);
+  });
+
+  it('groups and sorts a collection by the photos inside it, not its own empty numbers (recheck)', () => {
+    const shelf = owned({ id: 'shelf', albumName: 'Shelf', kind: AlbumKind.Collection, assetCount: 0 });
+    const inside = owned({
+      id: 'inside',
+      albumName: 'Inside',
+      parentId: 'shelf',
+      assetCount: 1240,
+      startDate: '2024-03-01T00:00:00.000Z',
+      endDate: '2024-06-01T00:00:00.000Z',
+    });
+    const small = owned({ id: 'small', albumName: 'Small', assetCount: 3, endDate: '2026-01-01T00:00:00.000Z' });
+    const directory = tree({
+      collections: [{ collection: shelf, albums: [inside], albumCount: 1, assetCount: 1240 }],
+      albums: [small],
+    });
+    expect(
+      browseAlbumDirectory(directory, { ...base, group: 'year', order: 'desc' }).groups.map(({ id }) => id),
+    ).toEqual(['year:2026', 'year:2024']);
+    expect(ids(browseAlbumDirectory(directory, { ...base, sort: 'items', order: 'desc' }))).toEqual(['shelf', 'small']);
+  });
+
+  it('arranges the top level kind by kind, keeping collections ahead of albums as shown (recheck)', () => {
+    const c1 = owned({ id: 'c1', albumName: 'C1', kind: AlbumKind.Collection });
+    const c2 = owned({ id: 'c2', albumName: 'C2', kind: AlbumKind.Collection });
+    const a1 = owned({ id: 'a1', albumName: 'A1' });
+    const a2 = owned({ id: 'a2', albumName: 'A2' });
+    const directory = tree({
+      collections: [
+        { collection: c1, albums: [], albumCount: 0, assetCount: 0 },
+        { collection: c2, albums: [], albumCount: 0, assetCount: 0 },
+      ],
+      albums: [a1, a2],
+    });
+    expect(arrangeInGroup(directory, 'a2', (band) => moveInOrder(band, 'a2', -1))).toEqual({
+      parentId: null,
+      ids: ['c1', 'c2', 'a2', 'a1'],
+    });
+    expect(arrangeInGroup(directory, 'c2', (band) => moveInOrder(band, 'c2', -1))).toEqual({
+      parentId: null,
+      ids: ['c2', 'c1', 'a1', 'a2'],
+    });
+    // An album can't be placed among the collections: they are listed apart.
+    expect(arrangeInGroup(directory, 'a1', (band) => placeBefore(band, 'a1', 'c1'))).toBeUndefined();
+  });
+
+  it('marks a level that holds a broken parent cycle, which the server cannot arrange', () => {
+    const a = owned({ id: 'a', albumName: 'A', parentId: 'b', assetCount: 1 });
+    const b = owned({ id: 'b', albumName: 'B', parentId: 'a', assetCount: 1 });
+    expect(browseAlbumDirectory(tree({ albums: [a, b] }), base).cycleHere).toBe(true);
   });
 
   it('counts what hiding empty albums leaves out at this level', () => {

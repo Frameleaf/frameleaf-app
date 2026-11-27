@@ -29,8 +29,10 @@
     canMerge,
     canTakeOut,
     isOwner,
+    arrangeInGroup,
     moveInOrder,
     normalizeAlbumDirectoryView,
+    orderBandOf,
     orderGroupOf,
     placeBefore,
     type AlbumDirectoryFilter,
@@ -39,7 +41,7 @@
     type AlbumDirectoryViewMode,
   } from '$lib/frameleaf/album-directory';
   import { albumColorStyle } from '$lib/frameleaf/album-tree';
-  import { recentAlbumIds, togglePinned } from '$lib/frameleaf/pinned-albums';
+  import { pendingPins, recentAlbumIds, togglePinned } from '$lib/frameleaf/pinned-albums';
   import { canRevealNearby, createNearbyReveal } from '$lib/frameleaf/reveal-near';
   import { toastUndo } from '$lib/frameleaf/toast';
   import { ICON_SIZE } from '$lib/frameleaf/tokens';
@@ -208,6 +210,7 @@
       search,
       userId: currentUserId,
       opened: $recentAlbumIds,
+      locale: $locale ?? undefined,
     }),
   );
   const here = $derived(browse.here);
@@ -229,7 +232,8 @@
       groupChosenHere = false;
     });
   });
-  const pinned = $derived(new Set(authManager.preferences.albums.pinned));
+  // While a pin is still being saved the menu already says what it will be.
+  const pinned = $derived(new Set($pendingPins ?? authManager.preferences.albums.pinned));
   const showFolders = $derived(everything.some((album) => !!album.folderAlbum));
   const filters = $derived(albumDirectoryFilters.filter((filter) => filter !== 'folders' || showFolders));
   /**
@@ -515,6 +519,7 @@
       !browse.searching &&
       !view.collectionsFirst &&
       browse.hiddenHere === 0 &&
+      !browse.cycleHere &&
       (browse.listed.length <= PREVIEW + 2 || expanded.has(foldKey('none'))),
   );
 
@@ -544,31 +549,29 @@
 
   /** Move earlier / Move later: the keyboard and touch way to arrange a group. */
   const step = (album: AlbumResponseDto, direction: -1 | 1) => {
-    const group = orderGroupOf(tree, album.id);
-    const ids = group && moveInOrder(group.ids, album.id, direction);
-    if (group && ids) {
-      void saveOrder(album, group.parentId, ids, group.ids);
+    const previous = orderGroupOf(tree, album.id);
+    const next = arrangeInGroup(tree, album.id, (ids) => moveInOrder(ids, album.id, direction));
+    if (previous && next) {
+      void saveOrder(album, next.parentId, next.ids, previous.ids);
     }
   };
-  const canStep = (album: AlbumResponseDto, direction: -1 | 1) => {
-    const group = orderGroupOf(tree, album.id);
-    return !!group && !!moveInOrder(group.ids, album.id, direction);
-  };
+  const canStep = (album: AlbumResponseDto, direction: -1 | 1) =>
+    !!orderBandOf(tree, album.id) && !!moveInOrder(orderBandOf(tree, album.id)!.band, album.id, direction);
 
-  /** A dragged item may land on another item of the same group, which it then goes just before. */
-  const acceptsReorder = (target: AlbumResponseDto) => {
-    if (!reorderable || !dragged || dragged.id === target.id) {
-      return false;
-    }
-    return orderGroupOf(tree, dragged.id)?.ids.includes(target.id) ?? false;
-  };
+  /** The run a dragged item may be arranged in, worked out once per drag rather than once per tile. */
+  const draggedBand = $derived(
+    reorderable && dragged ? new Set(orderBandOf(tree, dragged.id)?.band) : new Set<string>(),
+  );
+  /** A dragged item may land on another item of its run, which it then goes just before. */
+  const acceptsReorder = (target: AlbumResponseDto) =>
+    !!dragged && dragged.id !== target.id && draggedBand.has(target.id);
   const dropBefore = (albumId: string, target: AlbumResponseDto) => {
     const album = find(albumId);
     endDrag();
-    const group = orderGroupOf(tree, albumId);
-    const ids = group && placeBefore(group.ids, albumId, target.id);
-    if (album && group && ids) {
-      void saveOrder(album, group.parentId, ids, group.ids);
+    const previous = orderGroupOf(tree, albumId);
+    const next = arrangeInGroup(tree, albumId, (ids) => placeBefore(ids, albumId, target.id));
+    if (album && previous && next) {
+      void saveOrder(album, next.parentId, next.ids, previous.ids);
     }
   };
   /**
@@ -916,7 +919,7 @@
       href={openRoute(album)}
       inside={insideCount(album)}
       total={browse.items.get(album.id)}
-      where={browse.searching && album.parentId ? find(album.parentId)?.albumName : undefined}
+      where={browse.searching ? find(browse.parents.get(album.id) ?? '')?.albumName : undefined}
       draggable={canDrag(album)}
       dragging={dragged?.id === album.id}
       acceptsReorder={acceptsReorder(album)}
@@ -1079,11 +1082,12 @@
     </div>
   </header>
 
-  {#if !here}
-    <!-- FL-1837: the one-time offer of one album for each event folder, between the header and the toolbar
-         at the top level, as the approved design places it. -->
+  <!-- FL-1837: the one-time offer of one album for each event folder, between the header and the toolbar at
+       the top level, as the approved design places it. Kept mounted while inside a collection, so its Undo and
+       its answer survive a visit there and back. -->
+  <div class="notice-slot" hidden={!!here}>
     <FolderAlbumsNotice onChanged={refresh} />
-  {/if}
+  </div>
 
   {#if here}
     {@const editor = canEdit(here, currentUserId)}
@@ -1271,11 +1275,13 @@
       {#if group !== 'none'}
         <!-- FL-1836: the same heading for every section, whatever the grouping. -->
         <header class="group-head">
-          <button type="button" class="fold" aria-expanded={!folded} onclick={() => toggleCollapsed(key)}>
-            <Icon icon={mdiChevronDown} size="18" aria-hidden={true} />
-            <h2>{label}</h2>
-            <span class="count">{section.albums.length}</span>
-          </button>
+          <h2>
+            <button type="button" class="fold" aria-expanded={!folded} onclick={() => toggleCollapsed(key)}>
+              <Icon icon={mdiChevronDown} size="18" aria-hidden={true} />
+              <span class="fold-label">{label}</span>
+              <span class="count">{section.albums.length}</span>
+            </button>
+          </h2>
           {#if !folded && section.albums.length > PREVIEW + 2}
             <button
               type="button"
@@ -1979,10 +1985,16 @@
   .fold[aria-expanded='false'] :global(svg) {
     transform: rotate(-90deg);
   }
-  .fold h2 {
+  .group-head h2 {
     margin: 0;
     font-size: 1.125rem;
     font-weight: 600;
+  }
+  .fold {
+    font: inherit;
+  }
+  .notice-slot[hidden] {
+    display: none;
   }
   .count {
     min-width: 24px;

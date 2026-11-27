@@ -2,7 +2,8 @@ import { updateMyPreferences } from '@frameleaf/sdk';
 import { toastManager } from '@frameleaf/ui';
 import { t } from 'svelte-i18n';
 import { persisted } from 'svelte-persisted-store';
-import { get } from 'svelte/store';
+import { get, writable } from 'svelte/store';
+import { nameCollatorFor } from '$lib/frameleaf/album-directory';
 import { authManager } from '$lib/managers/auth-manager.svelte';
 import { handleError } from '$lib/utils/handle-error';
 
@@ -21,8 +22,6 @@ export const recentAlbumIds = persisted<string[]>('frameleaf-recent-albums', [])
 export const rememberOpenedAlbum = (albumId: string) =>
   recentAlbumIds.update((ids) => [albumId, ...ids.filter((id) => id !== albumId)].slice(0, RECENT_ALBUMS_MAX));
 
-const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
-
 /**
  * The pinned albums in the order the sidebar lists them: A to Z by name unless the person set their own
  * order. Pins whose album is gone or out of reach are left out.
@@ -31,7 +30,9 @@ export const pinnedInOrder = <T extends { id: string; name: string }>(
   pinned: string[],
   customOrder: boolean,
   find: (id: string) => T | undefined,
+  locale?: string,
 ): T[] => {
+  const collator = nameCollatorFor(locale);
   const albums = pinned.map((id) => find(id)).filter((album): album is T => !!album);
   return customOrder ? albums : albums.sort((a, b) => collator.compare(a.name, b.name) || a.id.localeCompare(b.id));
 };
@@ -48,6 +49,12 @@ export const placePinned = (ids: string[], albumId: string, index: number): stri
  * both. `latest` is that list until the saves are done; then the account's preferences are the truth again.
  */
 let latest: { pinned: string[]; custom: boolean } | undefined;
+/** The pins as they will be once the saves in flight land: for labels that must not lag behind a click. */
+export const pendingPins = writable<string[] | undefined>(undefined);
+const setLatest = (value: typeof latest) => {
+  latest = value;
+  pendingPins.set(value?.pinned);
+};
 let queue: Promise<boolean> = Promise.resolve(true);
 let waiting = 0;
 
@@ -58,7 +65,7 @@ const current = () =>
   };
 
 const save = (pinned: string[], pinnedCustomOrder: boolean) => {
-  latest = { pinned, custom: pinnedCustomOrder };
+  setLatest({ pinned, custom: pinnedCustomOrder });
   waiting++;
   queue = queue.then(async () => {
     try {
@@ -68,13 +75,13 @@ const save = (pinned: string[], pinnedCustomOrder: boolean) => {
       authManager.setPreferences(preferences);
       return true;
     } catch (error) {
-      latest = undefined;
+      setLatest(undefined);
       handleError(error, get(t)('frameleaf_albums_pinned_save_failed'));
       return false;
     } finally {
       waiting--;
       if (waiting === 0) {
-        latest = undefined;
+        setLatest(undefined);
       }
     }
   });

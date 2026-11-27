@@ -155,7 +155,7 @@ describe('AlbumDirectory', () => {
     expect(screen.queryByRole('article', { name: 'Summer in the Rockies' })).toBeNull();
   });
 
-  it('offers the folder-albums notice at the top level, and not inside a collection (FL-1837)', async () => {
+  it('offers the folder-albums notice at the top level, and keeps it out of sight inside a collection (FL-1837)', async () => {
     const { authManager } = await import('$lib/managers/auth-manager.svelte');
     const user = authManager.user as { isAdmin: boolean };
     user.isAdmin = true;
@@ -163,11 +163,13 @@ describe('AlbumDirectory', () => {
     try {
       const top = renderWithTooltips(AlbumDirectory, { tree, onRefresh: vi.fn() });
       expect(sdkMock.getFolderAlbumSuggestions).toHaveBeenCalledTimes(1);
+      expect(document.querySelector('.notice-slot')).not.toHaveAttribute('hidden');
       top.unmount();
 
+      // Inside a collection it stays mounted (its Undo survives the visit) but is not shown.
       app.page.url = new URL('http://localhost/albums?in=family');
       renderWithTooltips(AlbumDirectory, { tree, onRefresh: vi.fn() });
-      expect(sdkMock.getFolderAlbumSuggestions).toHaveBeenCalledTimes(1);
+      expect(document.querySelector('.notice-slot')).toHaveAttribute('hidden');
     } finally {
       user.isAdmin = false;
     }
@@ -194,7 +196,8 @@ describe('AlbumDirectory', () => {
     renderWithTooltips(AlbumDirectory, { tree: dated, onRefresh: vi.fn() });
     await fireEvent.click(screen.getByRole('button', { name: 'Group albums' }));
     await fireEvent.click(await screen.findByRole('menuitemcheckbox', { name: 'Year' }));
-    const headings = () => screen.getAllByRole('heading', { level: 2 }).map((heading) => heading.textContent);
+    const headings = () =>
+      screen.getAllByRole('heading', { level: 2 }).map((heading) => heading.querySelector('.fold-label')?.textContent);
     expect(headings()).toEqual(['2026', '2019']);
     await fireEvent.click(screen.getByRole('button', { name: 'Order: Newest first' }));
     expect(headings()).toEqual(['2019', '2026']);

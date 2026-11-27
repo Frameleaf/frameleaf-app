@@ -261,6 +261,9 @@ export const PREFERENCE_WORDS: Readonly<Record<string, Words>> = Object.freeze({
   'people.suggestInSpaces': { label: 'frameleaf_sharing_suggest_spaces' },
   'albums.showPartnerAlbums': { label: 'frameleaf_sharing_partner_albums' },
   'albums.cleanupBannerDismissed': { label: 'frameleaf_album_cleanup_banner_setting' },
+  // FL-1836: the sidebar's Pinned albums.
+  'albums.pinned': { label: 'frameleaf_albums_pinned_setting' },
+  'albums.pinnedCustomOrder': { label: 'frameleaf_albums_pinned_order_setting' },
   // FL-1398: the Library View menu. Time taken and File name are one pair of switches kept per layout.
   'libraryView.scrubber': { label: 'frameleaf_library_view_scrubber' },
   'libraryView.crop': { label: 'frameleaf_library_view_crop' },

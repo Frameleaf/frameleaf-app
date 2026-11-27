@@ -76,7 +76,8 @@ export const normalizeAlbumDirectoryView = (value: unknown): AlbumDirectoryView 
     collectionsFirst:
       typeof raw.collectionsFirst === 'boolean' ? raw.collectionsFirst : defaultAlbumDirectoryView.collectionsFirst,
     collapsed: Array.isArray(raw.collapsed)
-      ? raw.collapsed.filter((id): id is string => typeof id === 'string').slice(0, 200)
+      ? // The newest 200: folds are kept per level, so the oldest give way rather than new ones being refused.
+        raw.collapsed.filter((id): id is string => typeof id === 'string').slice(-200)
       : [],
   };
 };
@@ -167,28 +168,57 @@ const compareDates = (a: string | undefined, b: string | undefined, direction: '
   return direction === 'asc' ? left - right : right - left;
 };
 
-/** Names compare as people read them, so "2026-11-19 - …" and "Album 10" fall in order. */
-const nameCollator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
-const compareNames = (a: AlbumResponseDto, b: AlbumResponseDto) =>
-  nameCollator.compare(a.albumName, b.albumName) || a.id.localeCompare(b.id);
+/**
+ * Names compare as people read them in the viewer's language, so "2026-11-19 - …" and "Album 10" fall in order
+ * (FL-139: the chosen locale, never the browser's by accident).
+ */
+const nameCollators = new Map<string | undefined, Intl.Collator>();
+export const nameCollatorFor = (locale?: string) => {
+  let collator = nameCollators.get(locale);
+  if (!collator) {
+    collator = new Intl.Collator(locale, { numeric: true, sensitivity: 'base' });
+    nameCollators.set(locale, collator);
+  }
+  return collator;
+};
 
 /**
  * The order a level is listed in. `opened` is the albums opened on this device, most recent first
  * (`recentAlbumIds`); albums never opened here follow by when they last changed.
  */
+/**
+ * What a tile stands for when sorting and grouping: for a collection, or an album holding albums, its photos'
+ * dates and items with everything inside it (the server's numbers cover the album's own photos only).
+ */
+export interface AlbumFacts {
+  startDate?: string;
+  endDate?: string;
+  assetCount: number;
+}
+const ownFacts = (album: AlbumResponseDto): AlbumFacts => album;
+
 export const compareAlbums =
-  (sort: AlbumDirectorySort, order: AlbumDirectoryOrder = 'desc', opened: string[] = []) =>
+  (
+    sort: AlbumDirectorySort,
+    order: AlbumDirectoryOrder = 'desc',
+    opened: string[] = [],
+    facts: (album: AlbumResponseDto) => AlbumFacts = ownFacts,
+    locale?: string,
+  ) =>
   (a: AlbumResponseDto, b: AlbumResponseDto): number => {
+    const collator = nameCollatorFor(locale);
+    const compareNames = (x: AlbumResponseDto, y: AlbumResponseDto) =>
+      collator.compare(x.albumName, y.albumName) || x.id.localeCompare(y.id);
     const flip = order === 'asc' ? -1 : 1;
     switch (sort) {
       case 'title': {
         return (order === 'asc' ? 1 : -1) * compareNames(a, b);
       }
       case 'items': {
-        return flip * (b.assetCount - a.assetCount) || compareNames(a, b);
+        return flip * (facts(b).assetCount - facts(a).assetCount) || compareNames(a, b);
       }
       case 'date': {
-        return compareDates(a.endDate, b.endDate, order) || compareNames(a, b);
+        return compareDates(facts(a).endDate, facts(b).endDate, order) || compareNames(a, b);
       }
       case 'opened': {
         const rank = (album: AlbumResponseDto) => {
@@ -239,6 +269,10 @@ export interface AlbumBrowse {
   totals: { albums: number; collections: number; spaces: number; emptyHidden: number };
   /** Items at this level left out because they are empty (`hideEmpty`): an order can't be arranged around them. */
   hiddenHere: number;
+  /** Where each album sits in the hierarchy the page browses (`effectiveParents`), for "in …" under a result. */
+  parents: Map<string, string | null>;
+  /** This level holds an album whose parent cycle the page broke; the server can't arrange such a group. */
+  cycleHere: boolean;
   searching: boolean;
   /** Nothing to show here (after filter, search and hiding empty albums). */
   empty: boolean;
@@ -256,6 +290,8 @@ export interface BrowseOptions {
   userId: string;
   /** Albums opened on this device, most recent first. */
   opened?: string[];
+  /** The viewer's language, for comparing names. */
+  locale?: string;
 }
 
 const kindKey = (album: AlbumResponseDto) =>
@@ -269,7 +305,12 @@ const kindKey = (album: AlbumResponseDto) =>
 const kindOrder = ['kind:collections', 'kind:albums', 'kind:smart', 'kind:spaces'];
 const sourceOrder = ['source:made', 'source:folders', 'source:shared', 'source:smart', 'source:spaces'];
 
-export const groupKeyOf = (album: AlbumResponseDto, group: AlbumDirectoryGroup, userId: string): string => {
+export const groupKeyOf = (
+  album: AlbumResponseDto,
+  group: AlbumDirectoryGroup,
+  userId: string,
+  facts: (album: AlbumResponseDto) => AlbumFacts = ownFacts,
+): string => {
   switch (group) {
     case 'kind': {
       return kindKey(album);
@@ -287,11 +328,11 @@ export const groupKeyOf = (album: AlbumResponseDto, group: AlbumDirectoryGroup, 
       return album.folderAlbum ? 'source:folders' : 'source:made';
     }
     case 'year': {
-      const date = album.endDate ?? album.startDate;
+      const date = facts(album).endDate ?? facts(album).startDate;
       return date ? `year:${date.slice(0, 4)}` : 'year:none';
     }
     case 'month': {
-      const date = album.endDate ?? album.startDate;
+      const date = facts(album).endDate ?? facts(album).startDate;
       return date ? `month:${date.slice(0, 7)}` : 'month:none';
     }
     case 'owner': {
@@ -344,25 +385,77 @@ const orderGroups = (groups: AlbumGroup[], group: AlbumDirectoryGroup, order: Al
  * says where it lives. Spaces never count as empty.
  */
 export const browseAlbumDirectory = (tree: AlbumTreeResponseDto, options: BrowseOptions): AlbumBrowse => {
-  const { inside, filter, sort, order, group, hideEmpty, collectionsFirst, search, userId, opened = [] } = options;
+  const {
+    inside,
+    filter,
+    sort,
+    order,
+    group,
+    hideEmpty,
+    collectionsFirst,
+    search,
+    userId,
+    opened = [],
+    locale,
+  } = options;
   const everything = directoryAlbums(tree);
   const byId = new Map(everything.map((album) => [album.id, album]));
   const parentOf = effectiveParents(everything);
+  const rawParentOf = effectiveParents(everything, { breakCycles: false });
   const children = new Map<string, AlbumResponseDto[]>();
   for (const album of everything) {
     const parentId = parentOf.get(album.id);
     if (parentId) {
-      children.set(parentId, [...(children.get(parentId) ?? []), album]);
-    }
-  }
-  const descendants = function* (album: AlbumResponseDto, seen = new Set<string>()): Generator<AlbumResponseDto> {
-    for (const child of children.get(album.id) ?? []) {
-      if (!seen.has(child.id)) {
-        seen.add(child.id);
-        yield child;
-        yield* descendants(child, seen);
+      const list = children.get(parentId);
+      if (list) {
+        list.push(album);
+      } else {
+        children.set(parentId, [album]);
       }
     }
+  }
+  // Everything inside each album, once: a plain array, so no browser needs iterator helpers (FL-1836 recheck).
+  const below = new Map<string, AlbumResponseDto[]>();
+  const descendants = (album: AlbumResponseDto): AlbumResponseDto[] => {
+    const known = below.get(album.id);
+    if (known) {
+      return known;
+    }
+    const list: AlbumResponseDto[] = [];
+    below.set(album.id, list);
+    const seen = new Set([album.id]);
+    const stack = [...(children.get(album.id) ?? [])];
+    while (stack.length > 0) {
+      const child = stack.pop()!;
+      if (!seen.has(child.id)) {
+        seen.add(child.id);
+        list.push(child);
+        stack.push(...(children.get(child.id) ?? []));
+      }
+    }
+    return list;
+  };
+
+  const factsMemo = new Map<string, AlbumFacts>();
+  const factsOf = (album: AlbumResponseDto): AlbumFacts => {
+    if (album.kind !== AlbumKind.Collection && !children.has(album.id)) {
+      return album;
+    }
+    let facts = factsMemo.get(album.id);
+    if (!facts) {
+      facts = { startDate: album.startDate, endDate: album.endDate, assetCount: album.assetCount };
+      for (const child of descendants(album)) {
+        facts.assetCount += child.assetCount;
+        if (child.endDate && (!facts.endDate || child.endDate > facts.endDate)) {
+          facts.endDate = child.endDate;
+        }
+        if (child.startDate && (!facts.startDate || child.startDate < facts.startDate)) {
+          facts.startDate = child.startDate;
+        }
+      }
+      factsMemo.set(album.id, facts);
+    }
+    return facts;
   };
 
   const contentMemo = new Map<string, boolean>();
@@ -388,7 +481,7 @@ export const browseAlbumDirectory = (tree: AlbumTreeResponseDto, options: Browse
   const here = inside ? byId.get(inside) : undefined;
   const path = here ? [...albumAncestorsIn(byId, here), here] : [];
   const searching = searchTokens(search).length > 0;
-  const belowHere = here ? new Set([...descendants(here)].map(({ id }) => id)) : undefined;
+  const belowHere = here ? new Set(descendants(here).map(({ id }) => id)) : undefined;
   const level = searching
     ? everything.filter(
         (album) => album.id !== here?.id && (!belowHere || belowHere.has(album.id)) && matchesSearch(album, search),
@@ -396,7 +489,7 @@ export const browseAlbumDirectory = (tree: AlbumTreeResponseDto, options: Browse
     : everything.filter((album) => (parentOf.get(album.id) ?? null) === (here?.id ?? null));
 
   const holds = (album: AlbumResponseDto) => (album.kind === AlbumKind.Collection || children.has(album.id) ? 0 : 1);
-  const compare = compareAlbums(sort, order, opened);
+  const compare = compareAlbums(sort, order, opened, factsOf, locale);
   const filtered = level.filter((album) => (searching ? matchesFilter(album, filter, userId) : passes(album)));
   const listed = filtered
     .filter((album) => shown(album))
@@ -404,8 +497,13 @@ export const browseAlbumDirectory = (tree: AlbumTreeResponseDto, options: Browse
 
   const sections = new Map<string, AlbumResponseDto[]>();
   for (const album of listed) {
-    const key = groupKeyOf(album, group, userId);
-    sections.set(key, [...(sections.get(key) ?? []), album]);
+    const key = groupKeyOf(album, group, userId, factsOf);
+    const list = sections.get(key);
+    if (list) {
+      list.push(album);
+    } else {
+      sections.set(key, [album]);
+    }
   }
   const groups = orderGroups(
     [...sections].map(([id, albums]) => ({ id, albums })),
@@ -421,10 +519,7 @@ export const browseAlbumDirectory = (tree: AlbumTreeResponseDto, options: Browse
   const itemTotals = new Map<string, number>();
   for (const album of everything) {
     if (children.has(album.id) || album.kind === AlbumKind.Collection) {
-      itemTotals.set(
-        album.id,
-        descendants(album).reduce((sum, child) => sum + child.assetCount, album.assetCount),
-      );
+      itemTotals.set(album.id, factsOf(album).assetCount);
     }
   }
 
@@ -446,6 +541,8 @@ export const browseAlbumDirectory = (tree: AlbumTreeResponseDto, options: Browse
       emptyHidden,
     },
     hiddenHere: filtered.length - listed.length,
+    parents: parentOf,
+    cycleHere: level.some((album) => parentOf.get(album.id) !== rawParentOf.get(album.id)),
     searching,
     empty: listed.length === 0,
   };
@@ -456,7 +553,10 @@ export const browseAlbumDirectory = (tree: AlbumTreeResponseDto, options: Browse
  * (`albumOrderGroup` with `hierarchy`): an album whose parent the viewer can't see, a shared space, and
  * an album under a shared space are at the top level; so is any album caught in a parent cycle.
  */
-export const effectiveParents = (albums: AlbumResponseDto[]): Map<string, string | null> => {
+export const effectiveParents = (
+  albums: AlbumResponseDto[],
+  { breakCycles = true }: { breakCycles?: boolean } = {},
+): Map<string, string | null> => {
   const byId = new Map(albums.map((album) => [album.id, album]));
   const parents = new Map<string, string | null>();
   for (const album of albums) {
@@ -466,7 +566,7 @@ export const effectiveParents = (albums: AlbumResponseDto[]): Map<string, string
       parent && album.kind !== AlbumKind.Space && parent.kind !== AlbumKind.Space ? parent.id : null,
     );
   }
-  for (const album of albums) {
+  for (const album of breakCycles ? albums : []) {
     const seen = new Set([album.id]);
     for (let up = parents.get(album.id); up; up = parents.get(up) ?? null) {
       if (seen.has(up)) {
@@ -496,7 +596,8 @@ export const orderGroupOf = (tree: AlbumTreeResponseDto, albumId: string): Album
   if (!album) {
     return undefined;
   }
-  const parents = effectiveParents(all);
+  // The server's own grouping, which leaves a parent cycle as it is (`albumOrderGroup` with `hierarchy`).
+  const parents = effectiveParents(all, { breakCycles: false });
   const parentId = parents.get(albumId) ?? null;
   const isSpace = album.kind === AlbumKind.Space;
   return {
@@ -509,6 +610,47 @@ export const orderGroupOf = (tree: AlbumTreeResponseDto, albumId: string): Album
       )
       .map(({ id }) => id),
   };
+};
+
+/**
+ * The part of an album's order group the page shows as one run: at the top level the albums tree lists every
+ * collection before every album, so each kind is arranged on its own and the saved order keeps collections
+ * first, as shown. Inside an album or collection the run is the whole group.
+ */
+export const orderBandOf = (tree: AlbumTreeResponseDto, albumId: string) => {
+  const group = orderGroupOf(tree, albumId);
+  if (!group) {
+    return undefined;
+  }
+  if (group.parentId !== null) {
+    return { group, band: group.ids };
+  }
+  const byId = albumsById(tree);
+  const isCollection = (id: string) => byId.get(id)?.kind === AlbumKind.Collection;
+  const mine = isCollection(albumId);
+  return { group, band: group.ids.filter((id) => isCollection(id) === mine) };
+};
+
+/** Apply a change to an album's run (`orderBandOf`) and give back the whole group to save, or undefined. */
+export const arrangeInGroup = (
+  tree: AlbumTreeResponseDto,
+  albumId: string,
+  change: (band: string[]) => string[] | undefined,
+): AlbumOrderGroup | undefined => {
+  const found = orderBandOf(tree, albumId);
+  const changed = found && change(found.band);
+  if (!found || !changed) {
+    return undefined;
+  }
+  const inBand = new Set(found.band);
+  const before = found.group.ids.filter((id) => !inBand.has(id));
+  const byId = albumsById(tree);
+  // Collections stay ahead of albums at the top level, as the page shows them.
+  const ids =
+    found.group.parentId === null && byId.get(albumId)?.kind !== AlbumKind.Collection
+      ? [...before, ...changed]
+      : [...changed, ...before];
+  return { parentId: found.group.parentId, ids };
 };
 
 /** The group's ids with `albumId` moved `step` places (−1 earlier, +1 later); undefined at an end. */
