@@ -270,7 +270,7 @@ test.describe('Identical files, Duplicates and Unused files (FL-416)', () => {
     await setupIdenticalFilesMocks(context, { owner: false });
     await page.goto('/user-settings?area=care');
 
-    await expect(page.getByRole('heading', { name: 'Tools' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Tidy' })).toBeVisible();
     await expect(page.getByRole('link', { name: /Unused files/ })).toHaveCount(0);
 
     await page.goto('/user-settings?area=care&section=duplicates');

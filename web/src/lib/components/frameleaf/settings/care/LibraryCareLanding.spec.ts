@@ -208,7 +208,8 @@ describe('Library care landing (FL-366)', () => {
     render(LibraryCareLanding);
 
     // As the prototype: the row says where the scan stands, and the scan itself is its own page.
-    expect(await screen.findByRole('heading', { name: 'Identify photo locations' })).toBeInTheDocument();
+    // FL-1807: Place names is a row of the Fix group.
+    expect(await screen.findByRole('heading', { name: 'Fix' })).toBeInTheDocument();
     expect(await screen.findByText('Not run yet')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Estimate' })).not.toBeInTheDocument();
     await fireEvent.click(screen.getByRole('button', { name: 'Open Identify photo locations' }));
@@ -279,6 +280,25 @@ describe('Library care landing (FL-366)', () => {
     await waitFor(() => expect(createJob).toHaveBeenCalledTimes(3));
     expect(createJob).toHaveBeenCalledWith({ jobCreateDto: { name: ManualJobName.IntegrityMissingFiles } });
     expect(await screen.findByText(en.frameleaf_carehome_check_started)).toBeInTheDocument();
+  });
+
+  it('groups every tool under Fix, Tidy, Check and Automate, with no Tools list (FL-1807)', async () => {
+    vi.mocked(getSummary).mockResolvedValue(summary());
+    vi.mocked(getIntegrityOverview).mockResolvedValue(reports() as never);
+    vi.mocked(getIntegrityCheckRuns).mockResolvedValue(runs(new Date().toISOString()) as never);
+    render(LibraryCareLanding);
+
+    const rows = async (group: string) => {
+      const section = await screen.findByRole('region', { name: group });
+      return [...section.querySelectorAll('li strong')].map((name) => name.textContent?.trim());
+    };
+    expect(await rows('Fix')).toEqual(['File checks', 'Things to fix', 'Fix locations', 'Place names']);
+    expect(await rows('Tidy')).toEqual(['Duplicates', 'Tidy up', 'Album cleanup', 'Large files']);
+    expect(await rows('Check')).toEqual(['Nothing lost', 'Search and recognition progress']);
+    expect(await rows('Automate')).toEqual(['Workflows']);
+    expect(screen.queryByRole('region', { name: 'Tools' })).toBeNull();
+    await fireEvent.click(screen.getByRole('button', { name: 'Open Workflows' }));
+    expect(goto).toHaveBeenLastCalledWith(expect.stringContaining('section=workflows'));
   });
 
   it("shows a member their own library, without the administrator's pages", async () => {
@@ -367,7 +387,7 @@ describe('Library care landing (FL-366)', () => {
     expect(screen.getByText(en.frameleaf_ledger_row_note_missing)).toBeInTheDocument();
   });
 
-  it('lists Unused files among the tools for the server owner only (FL-416)', async () => {
+  it('lists Unused files under Tidy for the server owner only (FL-416)', async () => {
     vi.mocked(getSummary).mockResolvedValue(summary());
     vi.mocked(getIntegrityOverview).mockResolvedValue(reports() as never);
     vi.mocked(getIntegrityCheckRuns).mockResolvedValue(runs(new Date().toISOString()) as never);
@@ -382,9 +402,7 @@ describe('Library care landing (FL-366)', () => {
     vi.mocked(getUtilitiesSummary).mockResolvedValue({ unusedFiles: 277, unusedBytes: 4_500_000_000 } as never);
     render(LibraryCareLanding);
     expect(await screen.findByText(en.frameleaf_unused_title)).toBeInTheDocument();
-    expect(screen.getByText(en.frameleaf_unused_title).closest('a')).toHaveAttribute(
-      'href',
-      expect.stringContaining('section=unused-files'),
-    );
+    await fireEvent.click(screen.getByRole('button', { name: 'Open Unused files' }));
+    expect(goto).toHaveBeenLastCalledWith(expect.stringContaining('section=unused-files'));
   });
 });

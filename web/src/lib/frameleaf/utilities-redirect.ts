@@ -1,4 +1,5 @@
 import { redirect } from '@sveltejs/kit';
+import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
 import { utilitiesUrl, type UtilityId } from '$lib/frameleaf/utilities';
 import { authenticate } from '$lib/utils/auth';
 
@@ -15,5 +16,6 @@ export const redirectUtility = async (url: URL, section?: UtilityId, assetId?: s
   if (assetId) {
     params.assetId = assetId;
   }
-  redirect(307, utilitiesUrl(section, params));
+  // FL-1807: the Tools directory is gone; its old address opens Library care.
+  redirect(307, section ? utilitiesUrl(section, params) : commandCenterUrl('care'));
 };

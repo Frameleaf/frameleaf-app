@@ -249,9 +249,10 @@
       description: $t('frameleaf_settings_area_libraries_description'),
       icon: mdiFolderOutline,
     },
+    // FL-1807: the tools' pages belong to Library care; the Tools directory is gone.
     utilities: {
-      title: $t('frameleaf_tools'),
-      description: $t('frameleaf_utilities_description'),
+      title: $t('frameleaf_library_care'),
+      description: $t('frameleaf_settings_area_care_description'),
       icon: mdiTools,
     },
     history: {
@@ -534,6 +535,8 @@
     }
     const needle = query.trim().toLowerCase();
     const areaResults = visibleAreas
+      // The tools' area has no page of its own (FL-1807); each tool is found by its own name.
+      .filter((item) => item.id !== 'utilities')
       .filter((item) => `${areaCopy[item.id].title} ${areaCopy[item.id].description}`.toLowerCase().includes(needle))
       .map((item) => ({
         id: `area:${item.id}`,

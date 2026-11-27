@@ -21,7 +21,6 @@
   import Item from '$lib/components/frameleaf/settings/kit/Item.svelte';
   import ItemList from '$lib/components/frameleaf/settings/kit/ItemList.svelte';
   import KitPage from '$lib/components/frameleaf/settings/kit/KitPage.svelte';
-  import Links, { type LinkRow } from '$lib/components/frameleaf/settings/kit/Links.svelte';
   import type { KitTone } from '$lib/components/frameleaf/settings/kit/Pill.svelte';
   import Said from '$lib/components/frameleaf/settings/kit/Said.svelte';
   import Section from '$lib/components/frameleaf/settings/kit/Section.svelte';
@@ -30,7 +29,7 @@
   import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
   import { formatBytes } from '$lib/frameleaf/format-bytes';
   import { unusedFilesAccess } from '$lib/frameleaf/unused-files.svelte';
-  import { libraryCareToolsFor, utilitiesUrl, type UtilityId } from '$lib/frameleaf/utilities';
+  import { utilitiesUrl } from '$lib/frameleaf/utilities';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { Route } from '$lib/route';
   import { locale } from '$lib/stores/preferences.store';
@@ -81,7 +80,10 @@
     mdiFileQuestionOutline,
     mdiFileSearchOutline,
     mdiImageSearchOutline,
+    mdiHarddisk,
     mdiMapMarkerOutline,
+    mdiMapMarkerRadiusOutline,
+    mdiTuneVariant,
     mdiPlayOutline,
     mdiShieldAlertOutline,
     mdiShieldCheckOutline,
@@ -426,31 +428,6 @@
     }
   };
 
-  /**
-   * The tools, in the prototype's order. Duplicate review is reached from Duplicates. FL-416: Unused files
-   * is the server owner's alone, so only they see it here.
-   */
-  const TOOL_ORDER: UtilityId[] = ['live-photos', 'missing-media', 'corrupt-media'];
-  const tools = $derived([
-    ...TOOL_ORDER.flatMap((id) => libraryCareToolsFor(isAdmin).filter((tool) => tool.id === id)).map(
-      (tool): LinkRow => ({
-        icon: tool.icon,
-        title: $t(tool.titleKey),
-        body: $t(tool.descriptionKey),
-        href: utilitiesUrl(tool.id, { from: 'care' }),
-      }),
-    ),
-    ...(isAdmin && unusedFilesAccess.isOwner
-      ? [
-          {
-            icon: mdiTrashCanOutline,
-            title: $t('frameleaf_unused_title'),
-            body: $t('frameleaf_unused_tool_description'),
-            href: commandCenterUrl('care', 'unused-files'),
-          },
-        ]
-      : []),
-  ]);
   const recoveredAlbumId = $derived(
     identical?.recovered.find((entry) => entry.ownerId === authManager.user.id)?.albumId ?? undefined,
   );
@@ -664,10 +641,10 @@
     </Section>
   {/if}
 
-  <Section
-    title={$t('frameleaf_carehome_look_after')}
-    description={isAdmin ? $t('frameleaf_carehome_look_after_admin') : $t('frameleaf_carehome_look_after_member')}
-  >
+  <!-- FL-1807 (approved 2026-11-26, prototype care/landing.jsx): one Library care page. Every tool
+       has one home here, in four groups, and the Tools directory is gone. Live Photo pairing and
+       missing and damaged files are reached through Things to fix. -->
+  <Section title={$t('frameleaf_carehome_group_fix')} description={$t('frameleaf_carehome_group_fix_description')}>
     <ItemList>
       {#if isAdmin}
         <Item
@@ -713,47 +690,38 @@
         {/snippet}
       </Item>
       <Item
-        icon={mdiBroom}
-        name={$t('frameleaf_tidy_title')}
-        detail={$t('frameleaf_tidy_row_detail')}
-        tone={tidy && tidy.waiting > 0 ? 'warn' : tidyOn ? 'good' : 'off'}
-        status={tidy
-          ? tidy.waiting > 0
-            ? $t('frameleaf_tidy_to_review', { values: { count: tidy.waiting } })
-            : tidyOn
-              ? $t('frameleaf_tidy_nothing_waiting')
-              : $t('frameleaf_tidy_row_off')
-          : undefined}
-        note={$t('frameleaf_tidy_row_note')}
+        icon={mdiMapMarkerRadiusOutline}
+        name={$t('library_care_tool_geolocation')}
+        detail={$t('library_care_tool_geolocation_description')}
       >
         {#snippet action()}
-          <Button label={openLabel('frameleaf_tidy_title')} onclick={() => open('tidy-up')}>
+          <Button
+            label={openLabel('library_care_tool_geolocation')}
+            onclick={() => goto(utilitiesUrl('geolocation', { from: 'care' }))}
+          >
             {$t('frameleaf_carehome_open')}<Icon icon={mdiChevronRight} size="1em" aria-hidden />
           </Button>
         {/snippet}
       </Item>
       <Item
-        icon={mdiClipboardCheckOutline}
-        name={$t('frameleaf_ledger_title')}
-        detail={$t('frameleaf_ledger_row_detail')}
-        tone={ledger && ledger.states.missing > 0 ? 'warn' : ledger ? 'good' : 'off'}
-        status={ledger
-          ? ledger.states.missing > 0
-            ? $t('frameleaf_ledger_count_missing', {
-                values: { count: ledger.states.missing.toLocaleString($locale) },
-              })
-            : $t('frameleaf_ledger_row_all', { values: { count: ledger.total.toLocaleString($locale) } })
-          : undefined}
-        note={ledger && ledger.states.missing > 0
-          ? $t('frameleaf_ledger_row_note_missing')
-          : $t('frameleaf_ledger_row_note_ok')}
+        icon={mdiMapMarkerOutline}
+        name={$t('frameleaf_carehome_row_places')}
+        detail={$t(isAdmin ? 'frameleaf_carehome_row_places_detail_admin' : 'frameleaf_carehome_row_places_detail')}
+        tone={places.tone}
+        status={places.status}
+        note={places.note}
       >
         {#snippet action()}
-          <Button label={openLabel('frameleaf_ledger_title')} onclick={() => open('nothing-lost')}>
+          <Button label={$t('frameleaf_carehome_places_open')} onclick={() => open('location-scan')}>
             {$t('frameleaf_carehome_open')}<Icon icon={mdiChevronRight} size="1em" aria-hidden />
           </Button>
         {/snippet}
       </Item>
+    </ItemList>
+  </Section>
+
+  <Section title={$t('frameleaf_carehome_group_tidy')} description={$t('frameleaf_carehome_group_tidy_description')}>
+    <ItemList>
       <Item
         icon={mdiContentCopy}
         name={$t('frameleaf_carehome_row_dupes')}
@@ -774,6 +742,26 @@
             label={openLabel('frameleaf_carehome_row_dupes')}
             onclick={() => (isAdmin ? open('duplicates') : goto(utilitiesUrl('duplicates', { from: 'care' })))}
           >
+            {$t('frameleaf_carehome_open')}<Icon icon={mdiChevronRight} size="1em" aria-hidden />
+          </Button>
+        {/snippet}
+      </Item>
+      <Item
+        icon={mdiBroom}
+        name={$t('frameleaf_tidy_title')}
+        detail={$t('frameleaf_tidy_row_detail')}
+        tone={tidy && tidy.waiting > 0 ? 'warn' : tidyOn ? 'good' : 'off'}
+        status={tidy
+          ? tidy.waiting > 0
+            ? $t('frameleaf_tidy_to_review', { values: { count: tidy.waiting } })
+            : tidyOn
+              ? $t('frameleaf_tidy_nothing_waiting')
+              : $t('frameleaf_tidy_row_off')
+          : undefined}
+        note={$t('frameleaf_tidy_row_note')}
+      >
+        {#snippet action()}
+          <Button label={openLabel('frameleaf_tidy_title')} onclick={() => open('tidy-up')}>
             {$t('frameleaf_carehome_open')}<Icon icon={mdiChevronRight} size="1em" aria-hidden />
           </Button>
         {/snippet}
@@ -806,6 +794,63 @@
           </span>
         {/snippet}
       </Item>
+      <Item
+        icon={mdiHarddisk}
+        name={$t('library_care_tool_large_files')}
+        detail={$t('library_care_tool_large_files_description')}
+      >
+        {#snippet action()}
+          <Button
+            label={openLabel('library_care_tool_large_files')}
+            onclick={() => goto(utilitiesUrl('large-files', { from: 'care' }))}
+          >
+            {$t('frameleaf_carehome_open')}<Icon icon={mdiChevronRight} size="1em" aria-hidden />
+          </Button>
+        {/snippet}
+      </Item>
+      {#if isAdmin && unusedFilesAccess.isOwner}
+        <Item
+          icon={mdiTrashCanOutline}
+          name={$t('frameleaf_unused_title')}
+          detail={$t('frameleaf_unused_tool_description')}
+        >
+          {#snippet action()}
+            <Button
+              label={openLabel('frameleaf_unused_title')}
+              onclick={() => goto(commandCenterUrl('care', 'unused-files'))}
+            >
+              {$t('frameleaf_carehome_open')}<Icon icon={mdiChevronRight} size="1em" aria-hidden />
+            </Button>
+          {/snippet}
+        </Item>
+      {/if}
+    </ItemList>
+  </Section>
+
+  <Section title={$t('frameleaf_carehome_group_check')} description={$t('frameleaf_carehome_group_check_description')}>
+    <ItemList>
+      <Item
+        icon={mdiClipboardCheckOutline}
+        name={$t('frameleaf_ledger_title')}
+        detail={$t('frameleaf_ledger_row_detail')}
+        tone={ledger && ledger.states.missing > 0 ? 'warn' : ledger ? 'good' : 'off'}
+        status={ledger
+          ? ledger.states.missing > 0
+            ? $t('frameleaf_ledger_count_missing', {
+                values: { count: ledger.states.missing.toLocaleString($locale) },
+              })
+            : $t('frameleaf_ledger_row_all', { values: { count: ledger.total.toLocaleString($locale) } })
+          : undefined}
+        note={ledger && ledger.states.missing > 0
+          ? $t('frameleaf_ledger_row_note_missing')
+          : $t('frameleaf_ledger_row_note_ok')}
+      >
+        {#snippet action()}
+          <Button label={openLabel('frameleaf_ledger_title')} onclick={() => open('nothing-lost')}>
+            {$t('frameleaf_carehome_open')}<Icon icon={mdiChevronRight} size="1em" aria-hidden />
+          </Button>
+        {/snippet}
+      </Item>
       {#if isAdmin}
         <Item
           icon={mdiImageSearchOutline}
@@ -825,30 +870,27 @@
     </ItemList>
   </Section>
 
-  <Section title={$t('frameleaf_location_scan_title')} description={$t('frameleaf_location_scan_description')}>
+  <Section
+    title={$t('frameleaf_carehome_group_automate')}
+    description={$t('frameleaf_carehome_group_automate_description')}
+  >
     <ItemList>
       <Item
-        icon={mdiMapMarkerOutline}
-        name={$t('frameleaf_carehome_row_places')}
-        detail={$t(isAdmin ? 'frameleaf_carehome_row_places_detail_admin' : 'frameleaf_carehome_row_places_detail')}
-        tone={places.tone}
-        status={places.status}
-        note={places.note}
+        icon={mdiTuneVariant}
+        name={$t('library_care_tool_workflows')}
+        detail={$t('library_care_tool_workflows_description')}
       >
         {#snippet action()}
-          <Button label={$t('frameleaf_carehome_places_open')} onclick={() => open('location-scan')}>
+          <Button
+            label={openLabel('library_care_tool_workflows')}
+            onclick={() => goto(utilitiesUrl('workflows', { from: 'care' }))}
+          >
             {$t('frameleaf_carehome_open')}<Icon icon={mdiChevronRight} size="1em" aria-hidden />
           </Button>
         {/snippet}
       </Item>
     </ItemList>
   </Section>
-
-  {#if tools.length > 0}
-    <Section title={$t('frameleaf_carehome_tools')} description={$t('frameleaf_carehome_tools_description')}>
-      <Links rows={tools} />
-    </Section>
-  {/if}
 </KitPage>
 
 <style>
