@@ -97,28 +97,337 @@ where
 limit
   3
 
--- PersonRepository.getAllForUser
+-- PersonRepository.syncSummaries
 select
-  "person".*,
-  "person_profile"."deathDate",
-  "person_profile"."notes",
-  count(distinct "asset_face"."assetId") as "assetCount",
-  max("asset"."fileCreatedAt") as "lastSeenAt",
-  array(
+  coalesce(
+    (
+      select
+        (
+          user_metadata.value -> 'people' ->> 'includeArchived'
+        )::boolean
+      from
+        user_metadata
+      where
+        user_metadata."userId" = $1
+        and user_metadata.key = 'preferences'
+    ),
+    false
+  ) as "includeArchived"
+select
+  "computedAt",
+  "checkedFrom",
+  "changeToken"
+from
+  "person_summary_state"
+where
+  "ownerId" = $1
+  and "viewerKey" = $2
+begin
+SELECT
+  pg_advisory_xact_lock(hashtextextended ($1, 0))
+select
+  "computedAt",
+  "checkedFrom",
+  "changeToken"
+from
+  "person_summary_state"
+where
+  "ownerId" = $1
+  and "viewerKey" = $2
+with
+  recent_face as materialized (
     select
-      "person_category_member"."categoryId"::text
+      "updateId",
+      "assetId"
     from
-      "person_category_member"
+      asset_face
     where
-      "person_category_member"."ownerId" = "person"."ownerId"
-      and "person_category_member"."personId" = "person"."personGroupId"
+      "updateId" >= $1::uuid
     order by
-      "person_category_member"."categoryId"
-  ) as "categoryIds"
+      "updateId"
+    limit
+      50000
+  ),
+  recent_asset as materialized (
+    select
+      id,
+      "updateId",
+      "ownerId"
+    from
+      asset
+    where
+      "updateId" >= $2::uuid
+    order by
+      "updateId"
+    limit
+      50000
+  ),
+  gone_face as materialized (
+    select
+      id,
+      "assetId"
+    from
+      asset_face_audit
+    where
+      "deletedAt" >= $3
+    order by
+      "deletedAt"
+    limit
+      50000
+  ),
+  recent_tag_asset as materialized (
+    select
+      "updateId",
+      "tagId"
+    from
+      tag_asset
+    where
+      "updateId" >= $4::uuid
+    order by
+      "updateId"
+    limit
+      50000
+  ),
+  recent_pet as materialized (
+    select
+      "updateId",
+      "assetId"
+    from
+      pet_observation
+    where
+      "updateId" >= $5::uuid
+    order by
+      "updateId"
+    limit
+      50000
+  ),
+  kinds as (
+    (
+      select
+        1 as kind,
+        recent_face."updateId" as id
+      from
+        recent_face
+        inner join asset on asset.id = recent_face."assetId"
+      where
+        asset."ownerId" = $6
+      limit
+        10000
+    )
+    union all
+    (
+      select
+        2,
+        recent_asset."updateId"
+      from
+        recent_asset
+      where
+        recent_asset."ownerId" = $7
+        and exists (
+          select
+            1
+          from
+            asset_face
+          where
+            asset_face."assetId" = recent_asset.id
+        )
+      limit
+        10000
+    )
+    union all
+    (
+      select
+        3,
+        asset_audit.id
+      from
+        asset_audit
+      where
+        asset_audit."ownerId" = $8
+        and asset_audit."deletedAt" >= $9
+      limit
+        10000
+    )
+    union all
+    (
+      select
+        4,
+        gone_face.id
+      from
+        gone_face
+        inner join asset on asset.id = gone_face."assetId"
+      where
+        asset."ownerId" = $10
+      limit
+        10000
+    )
+    union all
+    (
+      select
+        5,
+        recent_tag_asset."updateId"
+      from
+        recent_tag_asset
+        inner join tag on tag.id = recent_tag_asset."tagId"
+      where
+        tag."userId" = $11
+      limit
+        10000
+    )
+    union all
+    (
+      select
+        6,
+        tag_asset_audit.id
+      from
+        tag_asset_audit
+      where
+        tag_asset_audit."userId" = $12
+        and tag_asset_audit."deletedAt" >= $13
+      limit
+        10000
+    )
+    union all
+    (
+      select
+        7,
+        tag."updateId"
+      from
+        tag
+      where
+        tag."userId" = $14
+        and tag."updateId" >= $15::uuid
+      limit
+        10000
+    )
+    union all
+    (
+      select
+        8,
+        tag_audit.id
+      from
+        tag_audit
+      where
+        tag_audit."userId" = $16
+        and tag_audit."deletedAt" >= $17
+      limit
+        10000
+    )
+    union all
+    (
+      select
+        9,
+        recent_pet."updateId"
+      from
+        recent_pet
+        inner join asset on asset.id = recent_pet."assetId"
+      where
+        asset."ownerId" = $18
+      limit
+        10000
+    )
+    union all
+    (
+      select
+        10,
+        pet_observation_audit.id
+      from
+        pet_observation_audit
+      where
+        pet_observation_audit."ownerId" = $19
+        and pet_observation_audit."deletedAt" >= $20
+      limit
+        10000
+    )
+  ),
+  counted as (
+    select
+      kind,
+      id,
+      count(*) over (
+        partition by
+          kind
+      ) as of_kind
+    from
+      kinds
+  )
+select
+  (
+    select
+      md5(
+        coalesce(
+          string_agg(
+            counted.id::text,
+            ','
+            order by
+              counted.kind,
+              counted.id
+          ),
+          ''
+        )
+      )
+    from
+      counted
+  ) as token,
+  (
+    select
+      coalesce(max(counted.of_kind), 0)::integer
+    from
+      counted
+  ) as most,
+  greatest(
+    (
+      select
+        count(*)
+      from
+        recent_face
+    ),
+    (
+      select
+        count(*)
+      from
+        recent_asset
+    ),
+    (
+      select
+        count(*)
+      from
+        gone_face
+    ),
+    (
+      select
+        count(*)
+      from
+        recent_tag_asset
+    ),
+    (
+      select
+        count(*)
+      from
+        recent_pet
+    )
+  )::integer as scanned
+delete from "person_summary"
+where
+  "ownerId" = $1
+  and "viewerKey" = $2
+insert into
+  "person_summary" (
+    "ownerId",
+    "viewerKey",
+    "personGroupId",
+    "assetCount",
+    "faceCount",
+    "lastSeenAt"
+  )
+select
+  "person"."ownerId",
+  $1 as "viewerKey",
+  "person"."personGroupId",
+  count(distinct "asset_face"."assetId") as "assetCount",
+  count("asset_face"."assetId") as "faceCount",
+  max("asset"."fileCreatedAt") as "lastSeenAt"
 from
   "person"
-  left join "person_profile" on "person_profile"."ownerId" = "person"."ownerId"
-  and "person_profile"."personId" = "person"."personGroupId"
   inner join "asset_face" on "asset_face"."personGroupId" = "person"."personGroupId"
   inner join "asset" on "asset_face"."assetId" = "asset"."id"
   and "asset"."ownerId" = "person"."ownerId"
@@ -155,7 +464,7 @@ from
           from
             user_metadata
           where
-            user_metadata."userId" = $1
+            user_metadata."userId" = $2
             and user_metadata.key = 'preferences'
         ),
         false
@@ -164,43 +473,839 @@ from
   )
   and "asset"."deletedAt" is null
 where
-  "person"."ownerId" = $2
-  and "asset"."libraryScope" in ($3, $4)
+  "person"."ownerId" = $3
+  and "asset"."libraryScope" in ($4, $5)
   and "asset_face"."deletedAt" is null
   and "asset_face"."isVisible" is true
-  and "person"."isHidden" = $5
 group by
   "person"."ownerId",
-  "person"."personGroupId",
-  "person_profile"."ownerId",
-  "person_profile"."personId"
-having
-  (
-    "person"."name" != $6
-    or count("asset_face"."assetId") >= COALESCE(
-      (
-        SELECT
-          value -> 'people' ->> 'minimumFaces'
-        FROM
-          user_metadata
-        WHERE
-          "userId" = $7
-          AND key = 'preferences'
-      ),
-      '3'
-    )::int
+  "person"."personGroupId"
+insert into
+  "person_summary_state" (
+    "ownerId",
+    "viewerKey",
+    "computedAt",
+    "checkedFrom",
+    "changeToken"
   )
-order by
-  "person"."isHidden" asc,
-  "person"."isFavorite" desc,
-  NULLIF(person.name, '') is null asc,
-  count("asset_face"."assetId") desc,
-  NULLIF(person.name, '') asc nulls last,
-  "person"."createdAt"
-limit
-  $8
-offset
-  $9
+values
+  ($1, $2, $3, $4, $5)
+on conflict ("ownerId", "viewerKey") do update
+set
+  "computedAt" = $6,
+  "checkedFrom" = $7,
+  "changeToken" = $8
+rollback
+
+-- PersonRepository.deleteSummariesComputedBefore
+begin
+delete from "person_summary_state"
+where
+  "computedAt" < $1
+returning
+  "ownerId",
+  "viewerKey"
+commit
+
+-- PersonRepository.getAllForUser
+select
+  coalesce(
+    (
+      select
+        (
+          user_metadata.value -> 'people' ->> 'includeArchived'
+        )::boolean
+      from
+        user_metadata
+      where
+        user_metadata."userId" = $1
+        and user_metadata.key = 'preferences'
+    ),
+    false
+  ) as "includeArchived"
+select
+  "computedAt",
+  "checkedFrom",
+  "changeToken"
+from
+  "person_summary_state"
+where
+  "ownerId" = $1
+  and "viewerKey" = $2
+begin
+SELECT
+  pg_advisory_xact_lock(hashtextextended ($1, 0))
+select
+  "computedAt",
+  "checkedFrom",
+  "changeToken"
+from
+  "person_summary_state"
+where
+  "ownerId" = $1
+  and "viewerKey" = $2
+with
+  recent_face as materialized (
+    select
+      "updateId",
+      "assetId"
+    from
+      asset_face
+    where
+      "updateId" >= $1::uuid
+    order by
+      "updateId"
+    limit
+      50000
+  ),
+  recent_asset as materialized (
+    select
+      id,
+      "updateId",
+      "ownerId"
+    from
+      asset
+    where
+      "updateId" >= $2::uuid
+    order by
+      "updateId"
+    limit
+      50000
+  ),
+  gone_face as materialized (
+    select
+      id,
+      "assetId"
+    from
+      asset_face_audit
+    where
+      "deletedAt" >= $3
+    order by
+      "deletedAt"
+    limit
+      50000
+  ),
+  recent_tag_asset as materialized (
+    select
+      "updateId",
+      "tagId"
+    from
+      tag_asset
+    where
+      "updateId" >= $4::uuid
+    order by
+      "updateId"
+    limit
+      50000
+  ),
+  recent_pet as materialized (
+    select
+      "updateId",
+      "assetId"
+    from
+      pet_observation
+    where
+      "updateId" >= $5::uuid
+    order by
+      "updateId"
+    limit
+      50000
+  ),
+  kinds as (
+    (
+      select
+        1 as kind,
+        recent_face."updateId" as id
+      from
+        recent_face
+        inner join asset on asset.id = recent_face."assetId"
+      where
+        asset."ownerId" = $6
+      limit
+        10000
+    )
+    union all
+    (
+      select
+        2,
+        recent_asset."updateId"
+      from
+        recent_asset
+      where
+        recent_asset."ownerId" = $7
+        and exists (
+          select
+            1
+          from
+            asset_face
+          where
+            asset_face."assetId" = recent_asset.id
+        )
+      limit
+        10000
+    )
+    union all
+    (
+      select
+        3,
+        asset_audit.id
+      from
+        asset_audit
+      where
+        asset_audit."ownerId" = $8
+        and asset_audit."deletedAt" >= $9
+      limit
+        10000
+    )
+    union all
+    (
+      select
+        4,
+        gone_face.id
+      from
+        gone_face
+        inner join asset on asset.id = gone_face."assetId"
+      where
+        asset."ownerId" = $10
+      limit
+        10000
+    )
+    union all
+    (
+      select
+        5,
+        recent_tag_asset."updateId"
+      from
+        recent_tag_asset
+        inner join tag on tag.id = recent_tag_asset."tagId"
+      where
+        tag."userId" = $11
+      limit
+        10000
+    )
+    union all
+    (
+      select
+        6,
+        tag_asset_audit.id
+      from
+        tag_asset_audit
+      where
+        tag_asset_audit."userId" = $12
+        and tag_asset_audit."deletedAt" >= $13
+      limit
+        10000
+    )
+    union all
+    (
+      select
+        7,
+        tag."updateId"
+      from
+        tag
+      where
+        tag."userId" = $14
+        and tag."updateId" >= $15::uuid
+      limit
+        10000
+    )
+    union all
+    (
+      select
+        8,
+        tag_audit.id
+      from
+        tag_audit
+      where
+        tag_audit."userId" = $16
+        and tag_audit."deletedAt" >= $17
+      limit
+        10000
+    )
+    union all
+    (
+      select
+        9,
+        recent_pet."updateId"
+      from
+        recent_pet
+        inner join asset on asset.id = recent_pet."assetId"
+      where
+        asset."ownerId" = $18
+      limit
+        10000
+    )
+    union all
+    (
+      select
+        10,
+        pet_observation_audit.id
+      from
+        pet_observation_audit
+      where
+        pet_observation_audit."ownerId" = $19
+        and pet_observation_audit."deletedAt" >= $20
+      limit
+        10000
+    )
+  ),
+  counted as (
+    select
+      kind,
+      id,
+      count(*) over (
+        partition by
+          kind
+      ) as of_kind
+    from
+      kinds
+  )
+select
+  (
+    select
+      md5(
+        coalesce(
+          string_agg(
+            counted.id::text,
+            ','
+            order by
+              counted.kind,
+              counted.id
+          ),
+          ''
+        )
+      )
+    from
+      counted
+  ) as token,
+  (
+    select
+      coalesce(max(counted.of_kind), 0)::integer
+    from
+      counted
+  ) as most,
+  greatest(
+    (
+      select
+        count(*)
+      from
+        recent_face
+    ),
+    (
+      select
+        count(*)
+      from
+        recent_asset
+    ),
+    (
+      select
+        count(*)
+      from
+        gone_face
+    ),
+    (
+      select
+        count(*)
+      from
+        recent_tag_asset
+    ),
+    (
+      select
+        count(*)
+      from
+        recent_pet
+    )
+  )::integer as scanned
+delete from "person_summary"
+where
+  "ownerId" = $1
+  and "viewerKey" = $2
+insert into
+  "person_summary" (
+    "ownerId",
+    "viewerKey",
+    "personGroupId",
+    "assetCount",
+    "faceCount",
+    "lastSeenAt"
+  )
+select
+  "person"."ownerId",
+  $1 as "viewerKey",
+  "person"."personGroupId",
+  count(distinct "asset_face"."assetId") as "assetCount",
+  count("asset_face"."assetId") as "faceCount",
+  max("asset"."fileCreatedAt") as "lastSeenAt"
+from
+  "person"
+  inner join "asset_face" on "asset_face"."personGroupId" = "person"."personGroupId"
+  inner join "asset" on "asset_face"."assetId" = "asset"."id"
+  and "asset"."ownerId" = "person"."ownerId"
+  and (
+    (
+      "asset"."visibility" = 'timeline'
+      and not exists (
+        select
+          1
+        from
+          asset_lock
+        where
+          asset_lock."assetId" = "asset"."id"
+      )
+    )
+    or (
+      (
+        "asset"."visibility" = 'archive'
+        and not exists (
+          select
+            1
+          from
+            asset_lock
+          where
+            asset_lock."assetId" = "asset"."id"
+        )
+      )
+      and coalesce(
+        (
+          select
+            (
+              user_metadata.value -> 'people' ->> 'includeArchived'
+            )::boolean
+          from
+            user_metadata
+          where
+            user_metadata."userId" = $2
+            and user_metadata.key = 'preferences'
+        ),
+        false
+      )
+    )
+  )
+  and "asset"."deletedAt" is null
+where
+  "person"."ownerId" = $3
+  and "asset"."libraryScope" in ($4, $5)
+  and "asset_face"."deletedAt" is null
+  and "asset_face"."isVisible" is true
+group by
+  "person"."ownerId",
+  "person"."personGroupId"
+insert into
+  "person_summary_state" (
+    "ownerId",
+    "viewerKey",
+    "computedAt",
+    "checkedFrom",
+    "changeToken"
+  )
+values
+  ($1, $2, $3, $4, $5)
+on conflict ("ownerId", "viewerKey") do update
+set
+  "computedAt" = $6,
+  "checkedFrom" = $7,
+  "changeToken" = $8
+rollback
+
+-- PersonRepository.getPickerPage
+select
+  coalesce(
+    (
+      select
+        (
+          user_metadata.value -> 'people' ->> 'includeArchived'
+        )::boolean
+      from
+        user_metadata
+      where
+        user_metadata."userId" = $1
+        and user_metadata.key = 'preferences'
+    ),
+    false
+  ) as "includeArchived"
+select
+  "computedAt",
+  "checkedFrom",
+  "changeToken"
+from
+  "person_summary_state"
+where
+  "ownerId" = $1
+  and "viewerKey" = $2
+begin
+SELECT
+  pg_advisory_xact_lock(hashtextextended ($1, 0))
+select
+  "computedAt",
+  "checkedFrom",
+  "changeToken"
+from
+  "person_summary_state"
+where
+  "ownerId" = $1
+  and "viewerKey" = $2
+with
+  recent_face as materialized (
+    select
+      "updateId",
+      "assetId"
+    from
+      asset_face
+    where
+      "updateId" >= $1::uuid
+    order by
+      "updateId"
+    limit
+      50000
+  ),
+  recent_asset as materialized (
+    select
+      id,
+      "updateId",
+      "ownerId"
+    from
+      asset
+    where
+      "updateId" >= $2::uuid
+    order by
+      "updateId"
+    limit
+      50000
+  ),
+  gone_face as materialized (
+    select
+      id,
+      "assetId"
+    from
+      asset_face_audit
+    where
+      "deletedAt" >= $3
+    order by
+      "deletedAt"
+    limit
+      50000
+  ),
+  recent_tag_asset as materialized (
+    select
+      "updateId",
+      "tagId"
+    from
+      tag_asset
+    where
+      "updateId" >= $4::uuid
+    order by
+      "updateId"
+    limit
+      50000
+  ),
+  recent_pet as materialized (
+    select
+      "updateId",
+      "assetId"
+    from
+      pet_observation
+    where
+      "updateId" >= $5::uuid
+    order by
+      "updateId"
+    limit
+      50000
+  ),
+  kinds as (
+    (
+      select
+        1 as kind,
+        recent_face."updateId" as id
+      from
+        recent_face
+        inner join asset on asset.id = recent_face."assetId"
+      where
+        asset."ownerId" = $6
+      limit
+        10000
+    )
+    union all
+    (
+      select
+        2,
+        recent_asset."updateId"
+      from
+        recent_asset
+      where
+        recent_asset."ownerId" = $7
+        and exists (
+          select
+            1
+          from
+            asset_face
+          where
+            asset_face."assetId" = recent_asset.id
+        )
+      limit
+        10000
+    )
+    union all
+    (
+      select
+        3,
+        asset_audit.id
+      from
+        asset_audit
+      where
+        asset_audit."ownerId" = $8
+        and asset_audit."deletedAt" >= $9
+      limit
+        10000
+    )
+    union all
+    (
+      select
+        4,
+        gone_face.id
+      from
+        gone_face
+        inner join asset on asset.id = gone_face."assetId"
+      where
+        asset."ownerId" = $10
+      limit
+        10000
+    )
+    union all
+    (
+      select
+        5,
+        recent_tag_asset."updateId"
+      from
+        recent_tag_asset
+        inner join tag on tag.id = recent_tag_asset."tagId"
+      where
+        tag."userId" = $11
+      limit
+        10000
+    )
+    union all
+    (
+      select
+        6,
+        tag_asset_audit.id
+      from
+        tag_asset_audit
+      where
+        tag_asset_audit."userId" = $12
+        and tag_asset_audit."deletedAt" >= $13
+      limit
+        10000
+    )
+    union all
+    (
+      select
+        7,
+        tag."updateId"
+      from
+        tag
+      where
+        tag."userId" = $14
+        and tag."updateId" >= $15::uuid
+      limit
+        10000
+    )
+    union all
+    (
+      select
+        8,
+        tag_audit.id
+      from
+        tag_audit
+      where
+        tag_audit."userId" = $16
+        and tag_audit."deletedAt" >= $17
+      limit
+        10000
+    )
+    union all
+    (
+      select
+        9,
+        recent_pet."updateId"
+      from
+        recent_pet
+        inner join asset on asset.id = recent_pet."assetId"
+      where
+        asset."ownerId" = $18
+      limit
+        10000
+    )
+    union all
+    (
+      select
+        10,
+        pet_observation_audit.id
+      from
+        pet_observation_audit
+      where
+        pet_observation_audit."ownerId" = $19
+        and pet_observation_audit."deletedAt" >= $20
+      limit
+        10000
+    )
+  ),
+  counted as (
+    select
+      kind,
+      id,
+      count(*) over (
+        partition by
+          kind
+      ) as of_kind
+    from
+      kinds
+  )
+select
+  (
+    select
+      md5(
+        coalesce(
+          string_agg(
+            counted.id::text,
+            ','
+            order by
+              counted.kind,
+              counted.id
+          ),
+          ''
+        )
+      )
+    from
+      counted
+  ) as token,
+  (
+    select
+      coalesce(max(counted.of_kind), 0)::integer
+    from
+      counted
+  ) as most,
+  greatest(
+    (
+      select
+        count(*)
+      from
+        recent_face
+    ),
+    (
+      select
+        count(*)
+      from
+        recent_asset
+    ),
+    (
+      select
+        count(*)
+      from
+        gone_face
+    ),
+    (
+      select
+        count(*)
+      from
+        recent_tag_asset
+    ),
+    (
+      select
+        count(*)
+      from
+        recent_pet
+    )
+  )::integer as scanned
+delete from "person_summary"
+where
+  "ownerId" = $1
+  and "viewerKey" = $2
+insert into
+  "person_summary" (
+    "ownerId",
+    "viewerKey",
+    "personGroupId",
+    "assetCount",
+    "faceCount",
+    "lastSeenAt"
+  )
+select
+  "person"."ownerId",
+  $1 as "viewerKey",
+  "person"."personGroupId",
+  count(distinct "asset_face"."assetId") as "assetCount",
+  count("asset_face"."assetId") as "faceCount",
+  max("asset"."fileCreatedAt") as "lastSeenAt"
+from
+  "person"
+  inner join "asset_face" on "asset_face"."personGroupId" = "person"."personGroupId"
+  inner join "asset" on "asset_face"."assetId" = "asset"."id"
+  and "asset"."ownerId" = "person"."ownerId"
+  and (
+    (
+      "asset"."visibility" = 'timeline'
+      and not exists (
+        select
+          1
+        from
+          asset_lock
+        where
+          asset_lock."assetId" = "asset"."id"
+      )
+    )
+    or (
+      (
+        "asset"."visibility" = 'archive'
+        and not exists (
+          select
+            1
+          from
+            asset_lock
+          where
+            asset_lock."assetId" = "asset"."id"
+        )
+      )
+      and coalesce(
+        (
+          select
+            (
+              user_metadata.value -> 'people' ->> 'includeArchived'
+            )::boolean
+          from
+            user_metadata
+          where
+            user_metadata."userId" = $2
+            and user_metadata.key = 'preferences'
+        ),
+        false
+      )
+    )
+  )
+  and "asset"."deletedAt" is null
+where
+  "person"."ownerId" = $3
+  and "asset"."libraryScope" in ($4, $5)
+  and "asset_face"."deletedAt" is null
+  and "asset_face"."isVisible" is true
+group by
+  "person"."ownerId",
+  "person"."personGroupId"
+insert into
+  "person_summary_state" (
+    "ownerId",
+    "viewerKey",
+    "computedAt",
+    "checkedFrom",
+    "changeToken"
+  )
+values
+  ($1, $2, $3, $4, $5)
+on conflict ("ownerId", "viewerKey") do update
+set
+  "computedAt" = $6,
+  "checkedFrom" = $7,
+  "changeToken" = $8
+rollback
 
 -- PersonRepository.getAllWithoutFaces
 select
@@ -679,6 +1784,406 @@ where
       )
   )
   and "person"."ownerId" = $4
+
+-- PersonRepository.getListedTotals
+select
+  coalesce(
+    (
+      select
+        (
+          user_metadata.value -> 'people' ->> 'includeArchived'
+        )::boolean
+      from
+        user_metadata
+      where
+        user_metadata."userId" = $1
+        and user_metadata.key = 'preferences'
+    ),
+    false
+  ) as "includeArchived"
+select
+  "computedAt",
+  "checkedFrom",
+  "changeToken"
+from
+  "person_summary_state"
+where
+  "ownerId" = $1
+  and "viewerKey" = $2
+begin
+SELECT
+  pg_advisory_xact_lock(hashtextextended ($1, 0))
+select
+  "computedAt",
+  "checkedFrom",
+  "changeToken"
+from
+  "person_summary_state"
+where
+  "ownerId" = $1
+  and "viewerKey" = $2
+with
+  recent_face as materialized (
+    select
+      "updateId",
+      "assetId"
+    from
+      asset_face
+    where
+      "updateId" >= $1::uuid
+    order by
+      "updateId"
+    limit
+      50000
+  ),
+  recent_asset as materialized (
+    select
+      id,
+      "updateId",
+      "ownerId"
+    from
+      asset
+    where
+      "updateId" >= $2::uuid
+    order by
+      "updateId"
+    limit
+      50000
+  ),
+  gone_face as materialized (
+    select
+      id,
+      "assetId"
+    from
+      asset_face_audit
+    where
+      "deletedAt" >= $3
+    order by
+      "deletedAt"
+    limit
+      50000
+  ),
+  recent_tag_asset as materialized (
+    select
+      "updateId",
+      "tagId"
+    from
+      tag_asset
+    where
+      "updateId" >= $4::uuid
+    order by
+      "updateId"
+    limit
+      50000
+  ),
+  recent_pet as materialized (
+    select
+      "updateId",
+      "assetId"
+    from
+      pet_observation
+    where
+      "updateId" >= $5::uuid
+    order by
+      "updateId"
+    limit
+      50000
+  ),
+  kinds as (
+    (
+      select
+        1 as kind,
+        recent_face."updateId" as id
+      from
+        recent_face
+        inner join asset on asset.id = recent_face."assetId"
+      where
+        asset."ownerId" = $6
+      limit
+        10000
+    )
+    union all
+    (
+      select
+        2,
+        recent_asset."updateId"
+      from
+        recent_asset
+      where
+        recent_asset."ownerId" = $7
+        and exists (
+          select
+            1
+          from
+            asset_face
+          where
+            asset_face."assetId" = recent_asset.id
+        )
+      limit
+        10000
+    )
+    union all
+    (
+      select
+        3,
+        asset_audit.id
+      from
+        asset_audit
+      where
+        asset_audit."ownerId" = $8
+        and asset_audit."deletedAt" >= $9
+      limit
+        10000
+    )
+    union all
+    (
+      select
+        4,
+        gone_face.id
+      from
+        gone_face
+        inner join asset on asset.id = gone_face."assetId"
+      where
+        asset."ownerId" = $10
+      limit
+        10000
+    )
+    union all
+    (
+      select
+        5,
+        recent_tag_asset."updateId"
+      from
+        recent_tag_asset
+        inner join tag on tag.id = recent_tag_asset."tagId"
+      where
+        tag."userId" = $11
+      limit
+        10000
+    )
+    union all
+    (
+      select
+        6,
+        tag_asset_audit.id
+      from
+        tag_asset_audit
+      where
+        tag_asset_audit."userId" = $12
+        and tag_asset_audit."deletedAt" >= $13
+      limit
+        10000
+    )
+    union all
+    (
+      select
+        7,
+        tag."updateId"
+      from
+        tag
+      where
+        tag."userId" = $14
+        and tag."updateId" >= $15::uuid
+      limit
+        10000
+    )
+    union all
+    (
+      select
+        8,
+        tag_audit.id
+      from
+        tag_audit
+      where
+        tag_audit."userId" = $16
+        and tag_audit."deletedAt" >= $17
+      limit
+        10000
+    )
+    union all
+    (
+      select
+        9,
+        recent_pet."updateId"
+      from
+        recent_pet
+        inner join asset on asset.id = recent_pet."assetId"
+      where
+        asset."ownerId" = $18
+      limit
+        10000
+    )
+    union all
+    (
+      select
+        10,
+        pet_observation_audit.id
+      from
+        pet_observation_audit
+      where
+        pet_observation_audit."ownerId" = $19
+        and pet_observation_audit."deletedAt" >= $20
+      limit
+        10000
+    )
+  ),
+  counted as (
+    select
+      kind,
+      id,
+      count(*) over (
+        partition by
+          kind
+      ) as of_kind
+    from
+      kinds
+  )
+select
+  (
+    select
+      md5(
+        coalesce(
+          string_agg(
+            counted.id::text,
+            ','
+            order by
+              counted.kind,
+              counted.id
+          ),
+          ''
+        )
+      )
+    from
+      counted
+  ) as token,
+  (
+    select
+      coalesce(max(counted.of_kind), 0)::integer
+    from
+      counted
+  ) as most,
+  greatest(
+    (
+      select
+        count(*)
+      from
+        recent_face
+    ),
+    (
+      select
+        count(*)
+      from
+        recent_asset
+    ),
+    (
+      select
+        count(*)
+      from
+        gone_face
+    ),
+    (
+      select
+        count(*)
+      from
+        recent_tag_asset
+    ),
+    (
+      select
+        count(*)
+      from
+        recent_pet
+    )
+  )::integer as scanned
+delete from "person_summary"
+where
+  "ownerId" = $1
+  and "viewerKey" = $2
+insert into
+  "person_summary" (
+    "ownerId",
+    "viewerKey",
+    "personGroupId",
+    "assetCount",
+    "faceCount",
+    "lastSeenAt"
+  )
+select
+  "person"."ownerId",
+  $1 as "viewerKey",
+  "person"."personGroupId",
+  count(distinct "asset_face"."assetId") as "assetCount",
+  count("asset_face"."assetId") as "faceCount",
+  max("asset"."fileCreatedAt") as "lastSeenAt"
+from
+  "person"
+  inner join "asset_face" on "asset_face"."personGroupId" = "person"."personGroupId"
+  inner join "asset" on "asset_face"."assetId" = "asset"."id"
+  and "asset"."ownerId" = "person"."ownerId"
+  and (
+    (
+      "asset"."visibility" = 'timeline'
+      and not exists (
+        select
+          1
+        from
+          asset_lock
+        where
+          asset_lock."assetId" = "asset"."id"
+      )
+    )
+    or (
+      (
+        "asset"."visibility" = 'archive'
+        and not exists (
+          select
+            1
+          from
+            asset_lock
+          where
+            asset_lock."assetId" = "asset"."id"
+        )
+      )
+      and coalesce(
+        (
+          select
+            (
+              user_metadata.value -> 'people' ->> 'includeArchived'
+            )::boolean
+          from
+            user_metadata
+          where
+            user_metadata."userId" = $2
+            and user_metadata.key = 'preferences'
+        ),
+        false
+      )
+    )
+  )
+  and "asset"."deletedAt" is null
+where
+  "person"."ownerId" = $3
+  and "asset"."libraryScope" in ($4, $5)
+  and "asset_face"."deletedAt" is null
+  and "asset_face"."isVisible" is true
+group by
+  "person"."ownerId",
+  "person"."personGroupId"
+insert into
+  "person_summary_state" (
+    "ownerId",
+    "viewerKey",
+    "computedAt",
+    "checkedFrom",
+    "changeToken"
+  )
+values
+  ($1, $2, $3, $4, $5)
+on conflict ("ownerId", "viewerKey") do update
+set
+  "computedAt" = $6,
+  "checkedFrom" = $7,
+  "changeToken" = $8
+rollback
 
 -- PersonRepository.createGroup
 insert into
