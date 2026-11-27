@@ -733,6 +733,7 @@ export class AssetService extends BaseService {
       dateTimeRelative,
       timeZone: givenTimeZone,
       dateAccuracy,
+      dateDetail,
     } = withApproximateDate(dto);
     // FL-936: a year or a decade starts at midnight UTC, whatever zone came with it
     const timeZone = dateAccuracy ? undefined : givenTimeZone;
@@ -768,6 +769,7 @@ export class AssetService extends BaseService {
             visibility: storedVisibility,
             duplicateId,
             dateAccuracy,
+            dateDetail,
             ...getAssetDateTimeUpdates(dateTimeOriginal, timeZone),
           },
           isUndefined,

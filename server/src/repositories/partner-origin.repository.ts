@@ -363,8 +363,10 @@ export class PartnerOriginRepository {
       ...(fields.includes(AssetOriginField.Rating) ? ['rating'] : []),
     ];
     const assetColumns = [
-      // FL-936: a copy is dated to the same year or decade as its source
-      ...(fields.includes(AssetOriginField.DateTimeOriginal) ? ['fileCreatedAt', 'localDateTime', 'dateAccuracy'] : []),
+      // FL-936, FL-1814: a copy is dated to the same year or decade as its source, with the same month or "about"
+      ...(fields.includes(AssetOriginField.DateTimeOriginal)
+        ? ['fileCreatedAt', 'localDateTime', 'dateAccuracy', 'dateDetail']
+        : []),
       ...(fields.includes(AssetOriginField.Visibility) ? ['visibility'] : []),
     ];
     if (exifColumns.length === 0 && assetColumns.length === 0) {

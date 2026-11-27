@@ -231,6 +231,9 @@ export type BirthdaySubject = {
   birthDate: string | null;
   /** 'YYYY-MM-DD' (FL-864); null when none is set, and always for a pet */
   deathDate?: string | null;
+  /** FL-1814: set when the date is known only to its month or year; there is then no day to remember */
+  birthDatePrecision?: string | null;
+  deathDatePrecision?: string | null;
 };
 @Injectable()
 export class MemoryRepository implements IBulkAsset {
@@ -890,18 +893,22 @@ export class MemoryRepository implements IBulkAsset {
     const { rows } = await sql<BirthdaySubject>`
       SELECT 'person' AS subject, person."personGroupId"::text AS id, person.name,
         to_char(person."birthDate", 'YYYY-MM-DD') AS "birthDate",
-        to_char(person_profile."deathDate", 'YYYY-MM-DD') AS "deathDate"
+        to_char(person_profile."deathDate", 'YYYY-MM-DD') AS "deathDate",
+        person_profile."birthDatePrecision", person_profile."deathDatePrecision"
       FROM person
       LEFT JOIN person_profile
         ON person_profile."ownerId" = person."ownerId" AND person_profile."personId" = person."personGroupId"
       WHERE person."ownerId" = ${ownerId}::uuid AND person."isHidden" = false AND person.name <> ''
+        -- FL-1814: a date known only to the month or the year has no day to remember
         AND (
-          to_char(person."birthDate", 'MM-DD') = ANY(${monthDays}::text[])
-          OR to_char(person_profile."deathDate", 'MM-DD') = ANY(${monthDays}::text[])
+          (to_char(person."birthDate", 'MM-DD') = ANY(${monthDays}::text[])
+            AND person_profile."birthDatePrecision" IS NULL)
+          OR (to_char(person_profile."deathDate", 'MM-DD') = ANY(${monthDays}::text[])
+            AND person_profile."deathDatePrecision" IS NULL)
         )
       UNION ALL
       SELECT 'pet' AS subject, id::text AS id, name, to_char("birthDate", 'YYYY-MM-DD') AS "birthDate",
-        NULL::text AS "deathDate"
+        NULL::text AS "deathDate", NULL::text AS "birthDatePrecision", NULL::text AS "deathDatePrecision"
       FROM pet
       WHERE "ownerId" = ${ownerId}::uuid AND "isHidden" = false AND name <> '' AND "birthDate" IS NOT NULL
         AND to_char("birthDate", 'MM-DD') = ANY(${monthDays}::text[])

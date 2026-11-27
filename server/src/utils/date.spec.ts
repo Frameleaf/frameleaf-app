@@ -120,7 +120,7 @@ describe('approximate dates (FL-936)', () => {
           ['decade', '1970-01-01T00:00:00.000Z'],
         ] as const) {
           const edit = withApproximateDate({ dateTimeOriginal, dateAccuracy });
-          expect(edit).toEqual({ dateTimeOriginal: start, dateAccuracy });
+          expect(edit).toEqual({ dateTimeOriginal: start, dateAccuracy, dateDetail: null });
           // what the EXIF row and the asset row get: the same instant and the same clock, zone UTC
           expect(withDateTimeOffset(edit.dateTimeOriginal)).toBe(start);
           expect(extractTimeZone(edit.dateTimeOriginal)?.name).toBe('UTC');
@@ -137,14 +137,56 @@ describe('approximate dates (FL-936)', () => {
     expect(withApproximateDate({ dateTimeOriginal: '1975-06-15T10:00:00+02:00' })).toEqual({
       dateTimeOriginal: '1975-06-15T10:00:00+02:00',
       dateAccuracy: null,
+      dateDetail: null,
     });
     expect(withApproximateDate({ dateTimeOriginal: '1975-06-15T10:00:00', dateAccuracy: null })).toEqual({
       dateTimeOriginal: '1975-06-15T10:00:00',
       dateAccuracy: null,
+      dateDetail: null,
     });
-    expect(withApproximateDate({ dateAccuracy: null })).toEqual({ dateAccuracy: null });
+    expect(withApproximateDate({ dateAccuracy: null })).toEqual({ dateAccuracy: null, dateDetail: null });
     const untouched: { dateTimeOriginal?: string; isFavorite: boolean } = { isFavorite: true };
     expect(withApproximateDate(untouched)).toBe(untouched);
+  });
+
+  describe('FL-1814: a month, or around a year', () => {
+    it('stores a month as its 1st at midnight UTC, read on the clock the date was written in', () => {
+      for (const [dateTimeOriginal, start] of [
+        ['1987-03-15T10:00:00', '1987-03-01T00:00:00.000Z'],
+        // late on the 31st in Edmonton is already April in UTC: the month the person meant is March
+        ['1987-03-31T23:30:00-07:00', '1987-03-01T00:00:00.000Z'],
+        // early on 1 March in Tokyo is still February in UTC: still March
+        ['1987-03-01T00:30:00+09:00', '1987-03-01T00:00:00.000Z'],
+        // a leap day keeps its month
+        ['2024-02-29T12:00:00Z', '2024-02-01T00:00:00.000Z'],
+        ['1987-12-31T23:59:59', '1987-12-01T00:00:00.000Z'],
+      ] as const) {
+        expect(withApproximateDate({ dateTimeOriginal, dateAccuracy: 'year', dateDetail: 'month' })).toEqual({
+          dateTimeOriginal: start,
+          dateAccuracy: 'year',
+          dateDetail: 'month',
+        });
+      }
+    });
+
+    it('stores around a year as that year, with the detail', () => {
+      expect(
+        withApproximateDate({ dateTimeOriginal: '1987-06-15T10:00:00', dateAccuracy: 'year', dateDetail: 'about' }),
+      ).toEqual({ dateTimeOriginal: '1987-01-01T00:00:00.000Z', dateAccuracy: 'year', dateDetail: 'about' });
+    });
+
+    it('drops the detail beside anything but a year, and clears it on any other date edit', () => {
+      expect(
+        withApproximateDate({ dateTimeOriginal: '1987-06-15T10:00:00', dateAccuracy: 'decade', dateDetail: 'month' }),
+      ).toEqual({ dateTimeOriginal: '1980-01-01T00:00:00.000Z', dateAccuracy: 'decade', dateDetail: null });
+      expect(withApproximateDate({ dateTimeOriginal: '1987-06-15T10:00:00', dateDetail: 'month' })).toMatchObject({
+        dateAccuracy: null,
+        dateDetail: null,
+      });
+      expect(withApproximateDate({ dateTimeOriginal: '1987-06-15T10:00:00', dateAccuracy: 'year' })).toMatchObject({
+        dateDetail: null,
+      });
+    });
   });
 
   it('takes a year from 1800 up to this one, and a decade that has begun', () => {

@@ -5949,12 +5949,16 @@ export type PersonRelationshipsResponseDto = {
 export type PersonResponseDto = {
     /** Person date of birth */
     birthDate: string | null;
+    /** How much of the date of birth is known (FL-1814): `month`, `year` or `about`; absent or null for the exact day. Returned to the person's owner with the profile. Other values may be added: treat an unknown one as approximate. */
+    birthDatePrecision?: string | null;
     /** The caller's categories the person is in (FL-874), such as Family, Friends or Work. Returned only to the person's owner, by GET /people and by GET and PUT /people/:id; never to anyone else */
     categoryIds?: string[];
     /** Person color (hex) */
     color?: string;
     /** Date of passing (FL-864); null when none is set. Returned by the People endpoints, wherever the person is returned to the caller */
     deathDate?: string | null;
+    /** As birthDatePrecision, for the date of passing. */
+    deathDatePrecision?: string | null;
     /** The photo the person's featured face is in (FL-37). Returned only to the person's owner, by GET and PUT /people/:id; null when there is none, when it is another account's photo, or when it may not be shown (trashed, hidden, Locked, a removed or invisible face, or hidden as NSFW) */
     featuredAssetId?: string | null;
     /** Person ID */
@@ -6005,6 +6009,8 @@ export type AssetResponseDto = {
     createdAt: string;
     /** Set when only the year (`year`) or the decade (`decade`) of the capture date is known; localDateTime is then the start of that period. Absent or null for an exact date. Other values may be added: treat an unknown one as approximate. */
     dateAccuracy?: string | null;
+    /** With dateAccuracy `year` only: `month` when the month is known too (localDateTime is then the 1st of it) or `about` when the year itself is a guess. Absent or null otherwise. Other values may be added: treat an unknown one as absent. */
+    dateDetail?: string | null;
     /** Duplicate group ID */
     duplicateId?: string | null;
     /** Video/gif duration in milliseconds (null for static images) */
@@ -6085,6 +6091,8 @@ export type AssetResponseDto = {
 export type SanitizedAssetResponseDto = {
     /** Set when only the year (`year`) or the decade (`decade`) of the capture date is known; localDateTime is then the start of that period. Absent or null for an exact date. Other values may be added: treat an unknown one as approximate. */
     dateAccuracy?: string | null;
+    /** With dateAccuracy `year` only: `month` when the month is known too (localDateTime is then the 1st of it) or `about` when the year itself is a guess. Absent or null otherwise. Other values may be added: treat an unknown one as absent. */
+    dateDetail?: string | null;
     /** Video/gif duration in milliseconds (null for static images) */
     duration: number | null;
     /** Whether asset has metadata */
@@ -6909,6 +6917,8 @@ export type AssetBulkUpdateDto = {
     copyright?: string | null;
     /** With dateTimeOriginal: only its year (`year`) or its decade (`decade`) is known. The date is then stored as the start of that period, 1 January at midnight, and no time zone is applied. A dateTimeOriginal sent without it, or with null, is an exact date. Null on its own keeps the date and makes it exact. */
     dateAccuracy?: DateAccuracy | null;
+    /** With dateAccuracy `year` only: `month` when the month is known too (the date is then stored as the 1st of that month, midnight UTC) or `about` when the year itself is a guess. Absent or null: the year is all that is known. Any other date edit clears it. */
+    dateDetail?: DateDetail | null;
     /** Original date and time */
     dateTimeOriginal?: string;
     /** Relative time offset in minutes */
@@ -7242,6 +7252,8 @@ export type UpdateAssetDto = {
     country?: string | null;
     /** With dateTimeOriginal: only its year (`year`) or its decade (`decade`) is known. The date is then stored as the start of that period, 1 January at midnight, and no time zone is applied. A dateTimeOriginal sent without it, or with null, is an exact date. Null on its own keeps the date and makes it exact. */
     dateAccuracy?: DateAccuracy | null;
+    /** With dateAccuracy `year` only: `month` when the month is known too (the date is then stored as the 1st of that month, midnight UTC) or `about` when the year itself is a guess. Absent or null: the year is all that is known. Any other date edit clears it. */
+    dateDetail?: DateDetail | null;
     /** Original date and time */
     dateTimeOriginal?: string;
     /** Asset description */
@@ -8727,6 +8739,8 @@ export type BestPhotoAssetResponseDto = {
     createdAt: string;
     /** Set when only the year (`year`) or the decade (`decade`) of the capture date is known; localDateTime is then the start of that period. Absent or null for an exact date. Other values may be added: treat an unknown one as approximate. */
     dateAccuracy?: string | null;
+    /** With dateAccuracy `year` only: `month` when the month is known too (localDateTime is then the 1st of it) or `about` when the year itself is a guess. Absent or null otherwise. Other values may be added: treat an unknown one as absent. */
+    dateDetail?: string | null;
     /** Duplicate group ID */
     duplicateId?: string | null;
     /** Video/gif duration in milliseconds (null for static images) */
@@ -13460,6 +13474,8 @@ export type MediaOperationBulkPayloadDto = {
     classificationRuleId?: string;
     /** With `dateTimeOriginal`: `year` or `decade` when only that much of the date is known */
     dateAccuracy?: string;
+    /** With `dateAccuracy: year`: `month` when the month is known too, or `about` when the year is a guess */
+    dateDetail?: string;
     dateMode?: DateMode;
     dateTimeOriginal?: string;
     description?: string;
@@ -14523,12 +14539,16 @@ export type PeopleListItemDto = {
     assetCount: number;
     /** Person date of birth */
     birthDate: string | null;
+    /** How much of the date of birth is known (FL-1814): `month`, `year` or `about`; absent or null for the exact day. Returned to the person's owner with the profile. Other values may be added: treat an unknown one as approximate. */
+    birthDatePrecision?: string | null;
     /** The caller's categories the person is in (FL-874), such as Family, Friends or Work. Returned only to the person's owner, by GET /people and by GET and PUT /people/:id; never to anyone else */
     categoryIds?: string[];
     /** Person color (hex) */
     color?: string;
     /** Date of passing (FL-864); null when none is set. Returned by the People endpoints, wherever the person is returned to the caller */
     deathDate?: string | null;
+    /** As birthDatePrecision, for the date of passing. */
+    deathDatePrecision?: string | null;
     /** The photo the person's featured face is in (FL-37). Returned only to the person's owner, by GET and PUT /people/:id; null when there is none, when it is another account's photo, or when it may not be shown (trashed, hidden, Locked, a removed or invisible face, or hidden as NSFW) */
     featuredAssetId?: string | null;
     /** Person ID */
@@ -14576,10 +14596,14 @@ export type PersonCreateDto = {
 export type PeopleUpdateItem = {
     /** Person date of birth */
     birthDate?: string | null;
+    /** How much of the date of birth is known (FL-1814): `month`, `year`, or `about` (around that year); null is the exact day. Sent with birthDate, which is then the start of that period (the 1st of the month, or 1 January). A birthDate sent without it is an exact day. */
+    birthDatePrecision?: BirthDatePrecision | null;
     /** Person color (hex) */
     color?: string | null;
     /** Date of passing (FL-864). Null clears it. Refused when it is before the date of birth (the one sent, or the stored one) */
     deathDate?: string | null;
+    /** As birthDatePrecision, for the date of passing; sent with deathDate. */
+    deathDatePrecision?: DeathDatePrecision | null;
     /** Asset ID used for feature face thumbnail */
     featureFaceAssetId?: string;
     /** Person ID */
@@ -14765,10 +14789,14 @@ export type PersonSplitVerdictResponseDto = {
 export type PersonUpdateDto = {
     /** Person date of birth */
     birthDate?: string | null;
+    /** How much of the date of birth is known (FL-1814): `month`, `year`, or `about` (around that year); null is the exact day. Sent with birthDate, which is then the start of that period (the 1st of the month, or 1 January). A birthDate sent without it is an exact day. */
+    birthDatePrecision?: BirthDatePrecision | null;
     /** Person color (hex) */
     color?: string | null;
     /** Date of passing (FL-864). Null clears it. Refused when it is before the date of birth (the one sent, or the stored one) */
     deathDate?: string | null;
+    /** As birthDatePrecision, for the date of passing; sent with deathDate. */
+    deathDatePrecision?: DeathDatePrecision | null;
     /** Asset ID used for feature face thumbnail */
     featureFaceAssetId?: string;
     /** Mark as favorite */
@@ -48468,6 +48496,10 @@ export enum DateAccuracy {
     Year = "year",
     Decade = "decade"
 }
+export enum DateDetail {
+    Month = "month",
+    About = "about"
+}
 export enum AssetUploadAction {
     Accept = "accept",
     Reject = "reject"
@@ -49807,6 +49839,16 @@ export enum PeopleSort {
     Name = "name",
     Count = "count",
     Recent = "recent"
+}
+export enum BirthDatePrecision {
+    Month = "month",
+    Year = "year",
+    About = "about"
+}
+export enum DeathDatePrecision {
+    Month = "month",
+    Year = "year",
+    About = "about"
 }
 export enum PersonCorrectionAction {
     Reassign = "reassign",

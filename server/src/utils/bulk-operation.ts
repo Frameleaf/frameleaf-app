@@ -1,6 +1,12 @@
 import { AssetJobName } from 'src/dtos/asset.dto.js';
 import { AssetVisibility, MediaOperationBulkAction, MediaOperationItemStatus, Permission } from 'src/enum.js';
-import { DATE_ACCURACIES, MIN_APPROXIMATE_YEAR, getCaptureYear, isApproximateYear } from 'src/utils/date.js';
+import {
+  DATE_ACCURACIES,
+  DATE_DETAILS,
+  MIN_APPROXIMATE_YEAR,
+  getCaptureYear,
+  isApproximateYear,
+} from 'src/utils/date.js';
 import {
   type DuplicateGroupDecision,
   duplicateDecisionProblem,
@@ -50,6 +56,8 @@ export type BulkOperationPayload = {
   dateTimeOriginal?: string;
   /** FL-936: with `dateTimeOriginal`, only its year or its decade is known. */
   dateAccuracy?: string;
+  /** FL-1814: with a `year` accuracy, `month` or `about`. */
+  dateDetail?: string;
   timeZone?: string;
   minutes?: number;
   description?: string;
@@ -704,6 +712,7 @@ export const bulkAssetUpdate = (
             dateTimeOriginal: payload.dateTimeOriginal,
             ...(payload.timeZone && { timeZone: payload.timeZone }),
             ...(payload.dateAccuracy && { dateAccuracy: payload.dateAccuracy }),
+            ...(payload.dateDetail && { dateDetail: payload.dateDetail }),
           };
     }
     case MediaOperationBulkAction.ChangeDescription: {
@@ -764,6 +773,12 @@ export const bulkPayloadProblem = (
         if (!accuracy || !isApproximateYear(getCaptureYear(payload.dateTimeOriginal), accuracy)) {
           return `A year or decade is from ${MIN_APPROXIMATE_YEAR} to this year`;
         }
+      }
+      if (
+        payload.dateDetail !== undefined &&
+        (payload.dateAccuracy !== 'year' || !(DATE_DETAILS as readonly string[]).includes(payload.dateDetail))
+      ) {
+        return 'A month or an "around" goes with a year date';
       }
       return !payload.timeZone || isTimeZone(payload.timeZone) ? null : 'The time zone is not recognised';
     }
