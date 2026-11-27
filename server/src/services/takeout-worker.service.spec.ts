@@ -148,7 +148,7 @@ describe(TakeoutWorkerService.name, () => {
       getAssetState: vi.fn().mockResolvedValue(assetState()),
       getAlbumFor: vi.fn().mockResolvedValue(undefined),
       isFolderAlbumRemoved: vi.fn().mockResolvedValue(false),
-      setAlbumFor: vi.fn((_owner: string, _folder: string, id: string) => Promise.resolve(id)),
+      setAlbumFor: vi.fn((_owner: string, _source: string, _folder: string, id: string) => Promise.resolve(id)),
     };
     staging = {
       sweep: vi.fn().mockResolvedValue({ imports: 0, parts: 0 }),
@@ -624,6 +624,29 @@ describe(TakeoutWorkerService.name, () => {
       expect(assets.update).not.toHaveBeenCalled();
       expect(albums.addAssets).toHaveBeenCalledWith(expect.anything(), 'existing-album', { ids: [assetId] });
       expect(repository.itemDone).toHaveBeenCalledWith(itemOf().id, 'matched');
+    });
+
+    it('leaves an album the person deleted gone (FL-1840)', async () => {
+      pending = [[itemOf()]];
+      repository.isFolderAlbumRemoved.mockResolvedValue(true);
+
+      await sut.run(operationOf('import'), claimToken);
+
+      expect(repository.isFolderAlbumRemoved).toHaveBeenCalledWith(ownerId, '', 'Trip');
+      expect(albums.create).not.toHaveBeenCalled();
+      expect(albums.addAssets).not.toHaveBeenCalled();
+      expect(repository.itemDone).toHaveBeenCalledWith(itemOf().id, 'imported');
+    });
+
+    it('drops the album it just made when the person removed the folder’s album meanwhile (FL-1840)', async () => {
+      pending = [[itemOf()]];
+      repository.setAlbumFor.mockResolvedValue(null);
+
+      await sut.run(operationOf('import'), claimToken);
+
+      expect(albums.create).toHaveBeenCalledOnce();
+      expect(albums.delete).toHaveBeenCalledOnce();
+      expect(albums.addAssets).not.toHaveBeenCalled();
     });
 
     it('only fills what a matched photo is missing when asked to update matched metadata', async () => {

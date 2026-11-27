@@ -172,6 +172,23 @@ export class EagleImportRepository {
   }
 
   /** Writes what the run has done so far, while it still holds the lease. */
+  /**
+   * FL-1840: which of these albums are still there and not deleted. Only deletion counts: the album the import goes
+   * inside may be one shared with the person, and adding to it is checked when the import adds.
+   */
+  async liveAlbumIds(albumIds: string[]): Promise<Set<string>> {
+    if (albumIds.length === 0) {
+      return new Set();
+    }
+    const rows = await this.db
+      .selectFrom('album')
+      .select('album.id')
+      .where('album.id', 'in', albumIds)
+      .where('album.deletedAt', 'is', null)
+      .execute();
+    return new Set(rows.map(({ id }) => id));
+  }
+
   async save(id: string, workerId: string, patch: EagleImportPatch) {
     const { albums, tagIds, failed, recent, target, existingTop, ...rest } = patch;
     await this.db

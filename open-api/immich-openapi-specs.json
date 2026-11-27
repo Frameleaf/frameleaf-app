@@ -144387,6 +144387,12 @@
                   "items": {
                     "additionalProperties": false,
                     "properties": {
+                      "id": {
+                        "description": "The catalog's own id for the collection, so its album is found again after either is renamed",
+                        "maxLength": 255,
+                        "minLength": 1,
+                        "type": "string"
+                      },
                       "name": {
                         "description": "The collection name",
                         "maxLength": 255,

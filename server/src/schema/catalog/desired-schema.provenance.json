@@ -1,5 +1,5 @@
 {
-  "sourceCommit": "a26b14aad49dfc46ead360d38166118bee043d17",
+  "sourceCommit": "c93bf76d8c547cdee967917ee85e2712f11f5c7d",
   "sourceHashes": {
     "src/enum.ts": "3ae9134b12467772d407dee97ba6845499b1aef88daf21a5cebce1f8df585cae",
     "src/immich-import/state.ts": "0c553f994130d9f6a37600aab0a4a3c51a5785783dc658fa6bb638d1acb86092",
@@ -8,7 +8,7 @@
     "src/schema/enums.ts": "3c355b0611a7ee3413946504318563801b71f71de2e006e53d9603a6045f0e6c",
     "src/schema/frameleaf-feature-schema.ts": "9ab4505b9f535a5d819bb8d4f0ec8c8f9bbce397cad2795fb0af6e8ec68d66ef",
     "src/schema/functions.ts": "8ed4b11427fb5adb820920e5d49823430b04f4af922eabccf5de73ff81dd6c80",
-    "src/schema/index.ts": "54715bb3655f3703e56a6617bf82061dc1e5fc48bcd5bf62c186097fe69ccc96",
+    "src/schema/index.ts": "47d84bb2147ca37fe7c1f26ce0fda0f8a9749cb9f5e12be2008f53b9ca404d5b",
     "src/schema/shared-services-schema.ts": "080b0c250c7045cfc4ab07f7e044bb8f41efe5b739663c95cea14162f3b4a8a4",
     "src/schema/tables/account-event.table.ts": "324ace449bf4c8cb73632c4f0d246cd230168de709be94b9fcb61f997c5348e0",
     "src/schema/tables/activity.table.ts": "c64bbf2ac009cea099c9954ecb8109948ecd20d8b2810c3996689da8e1cf936c",
@@ -146,7 +146,7 @@
     "src/schema/tables/pet-observation-audit.table.ts": "ecb7a4e85d894c9cf13325bbe0a45ab25d255f8bb720a0962947851b488976be",
     "src/schema/tables/pet.table.ts": "c4b7bd7c6125350aab803ce580d1936102d3c8a1574b1a5505a89d222f757626",
     "src/schema/tables/photo-locations.table.ts": "658855e6235ac4b2a382143e6a991aedd26d6ac03bb87e3ecd216c77d36965ad",
-    "src/schema/tables/photo-source.table.ts": "22b295849af43397ab3bf644dfa01eb47f3b072e9047a23968a3815cf59f2d99",
+    "src/schema/tables/photo-source.table.ts": "280b33b32d508f652af2624d771c406515e1ab7a9f1fdce746ebc8f7dc724912",
     "src/schema/tables/photo-tools.table.ts": "cb52713d8c29c44e520a43d2c2bdc6b465dbbd7fa19b8c2a6e7a7c2e59aaeb5e",
     "src/schema/tables/photography-booking.table.ts": "69e3421befe654618da9c050c90bb5b471cb27f0bc53f2c7d8f95b6fd29f8574",
     "src/schema/tables/photography-campaign.table.ts": "0e9c2856a6bb6c0bbb7db491b53efe8f25602ddc15aedb841eb77833058db8d4",
@@ -156,7 +156,7 @@
     "src/schema/tables/physical-file.table.ts": "983ee1341d4843fcf720286de94e9e64410dd16705cde8f83301962d640d8865",
     "src/schema/tables/plugin-method.table.ts": "d1a6c8b56050fc06afcfdee7deca452e27fcfe54bc6f5ea6fdb85ca297543c18",
     "src/schema/tables/plugin.table.ts": "e29234679dd17e282b10a3e32672f5b4d0a9a2eb0b8560436d0a91f1f2b2df12",
-    "src/schema/tables/preservation.table.ts": "63c0980d90689f8ad844b56e3d4f2c673c67905a2a440623994d14998fae6baf",
+    "src/schema/tables/preservation.table.ts": "e2751555806d4a19d3cd7fee09473f97795f801417e48119f8dad4a19a5a2ad9",
     "src/schema/tables/push-device.table.ts": "9c7645fff74d2c590a6304c6894dcbb6ed2c0b740bc81e5ac5f7939cccfa3d1a",
     "src/schema/tables/render-worker.table.ts": "4692e94f2c240c98be411a39bd95f2a426e276bf031febb18c2d2868a746e1ec",
     "src/schema/tables/safety-proof.table.ts": "6868c5aa5d958c80dd83733a178060f20fec396511bceac6abd75685427a7da4",
@@ -193,7 +193,7 @@
     "src/schema/tables/tag-closure.table.ts": "f2fe0a8a19f1ae05ba56307076ac56115b0483244871db94b1fbfee55dc2a276",
     "src/schema/tables/tag-sync-state.table.ts": "61b6ca72e27b7691357e864e2cf35eb873c716d4190a663102065c23c98172a7",
     "src/schema/tables/tag.table.ts": "a834166a29db7e74c55268a35966e75d65d95d7ff8d01ecfbd3b6d54eedacc2a",
-    "src/schema/tables/takeout.table.ts": "b61e082a6965e89a997fb8d902cf745f49161d9a9af5a377be57ab1748941f7f",
+    "src/schema/tables/takeout.table.ts": "f22fb1182af516f751ce86f5cc71f5057b2729964060c7005a5a45c76ec73930",
     "src/schema/tables/timeline-summary.table.ts": "24131bec60f3b66d7b4a420995311a4ea84b013c37aaeb13cb39853c87bb6b07",
     "src/schema/tables/user-audit.table.ts": "e77746133031ba867764186197785e51b89b684845aae299c5fb4c7c63d30c35",
     "src/schema/tables/user-known-device.table.ts": "320719dea61bb67a19e5924cd14af2c565b94fd8c3e6476ee02de345c56c0312",
@@ -216,6 +216,6 @@
   },
   "serverVersion": 190000,
   "baselineSha256": "b57bd944096b45f516bb29a336033410d24b145e89b708575786aa09e1a6bfbf",
-  "dumpSha256": "1364c27b97781b49f25386798a8daf818727bd264c130cfb32918b95a8a71402",
-  "rawMetadataSha256": "628259c67b8d7c722ebce4976256c9175d5e28f05afdbf123e4f8a8408739f4b"
+  "dumpSha256": "c2db86b902b36f575ae262570429d99f4dbb29a08ef8868f6092f7abdda9b0c9",
+  "rawMetadataSha256": "33070d5a1358c66d6a019fb17955e85cfaa74c7ac74df4f3d01ebc67505fc067"
 }

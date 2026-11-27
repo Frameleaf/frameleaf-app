@@ -255,6 +255,7 @@ import {
   PhotoLocationScanTable,
 } from 'src/schema/tables/photo-locations.table.js';
 import {
+  PhotoSourceAlbumTable,
   PhotoSourceResourceTable,
   PhotoSourceRunTable,
   PhotoSourceTable,
@@ -277,6 +278,7 @@ import { PhysicalFileTable } from 'src/schema/tables/physical-file.table.js';
 import { PluginMethodTable } from 'src/schema/tables/plugin-method.table.js';
 import { PluginTable } from 'src/schema/tables/plugin.table.js';
 import {
+  PreservationAlbumTable,
   PreservationItemTable,
   PreservationPackageTable,
   PreservationRestoreItemTable,
@@ -420,6 +422,7 @@ export class ImmichDatabase {
     DesktopDeviceTable,
     PhotoSourceTable,
     PhotoSourceRunTable,
+    PhotoSourceAlbumTable,
     PhotoSourceResourceTable,
     SourceResourceGrantTable,
     SourceResourceGrantNonceTable,
@@ -605,6 +608,7 @@ export class ImmichDatabase {
     PetCandidateTable,
     PreservationPackageTable,
     PreservationItemTable,
+    PreservationAlbumTable,
     PreservationRestoreTable,
     PreservationRestoreItemTable,
     SessionTable,
@@ -766,6 +770,7 @@ export interface DB extends QueueDatabase {
   desktop_device: DesktopDeviceTable;
   photo_source: PhotoSourceTable;
   photo_source_run: PhotoSourceRunTable;
+  photo_source_album: PhotoSourceAlbumTable;
   photo_source_resource: PhotoSourceResourceTable;
   source_resource_grant: SourceResourceGrantTable;
   source_resource_grant_nonce: SourceResourceGrantNonceTable;
@@ -977,6 +982,7 @@ export interface DB extends QueueDatabase {
 
   preservation_package: PreservationPackageTable;
   preservation_item: PreservationItemTable;
+  preservation_album: PreservationAlbumTable;
   preservation_restore: PreservationRestoreTable;
   preservation_restore_item: PreservationRestoreItemTable;
 

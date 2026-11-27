@@ -15133,6 +15133,8 @@ export type PhotoSourceCatalogMetadataDto = {
         caption?: string;
         /** Collections (albums) the item is in */
         collections?: {
+            /** The catalog's own id for the collection, so its album is found again after either is renamed */
+            id?: string;
             /** The collection name */
             name: string;
             /** The collection sets the collection sits in, outermost first */

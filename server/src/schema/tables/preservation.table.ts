@@ -9,6 +9,7 @@ import {
 } from '@frameleaf/sql-tools';
 import type { Generated, Int8, Timestamp } from '@frameleaf/sql-tools';
 import { PrimaryGeneratedUuidV7Column, UpdateIdColumn, UpdatedAtTrigger } from 'src/decorators.js';
+import { AlbumTable } from 'src/schema/tables/album.table.js';
 import { AssetTable } from 'src/schema/tables/asset.table.js';
 import { UserTable } from 'src/schema/tables/user.table.js';
 
@@ -334,4 +335,30 @@ export class PreservationRestoreItemTable {
   /** Written by the `updated_at` trigger with every change. */
   @UpdateIdColumn()
   updateId!: Generated<string>;
+}
+
+/**
+ * FL-1840: the album a package's album became for its owner, whichever way a restoration found or made it, so a
+ * later restoration of the same package goes to the album it was merged into rather than finding nothing.
+ */
+@Table('preservation_album')
+@Unique({
+  name: 'preservation_album_ownerId_packageIdentity_sourceAlbumId_uq',
+  columns: ['ownerId', 'packageIdentity', 'sourceAlbumId'],
+})
+export class PreservationAlbumTable {
+  @PrimaryGeneratedUuidV7Column()
+  id!: Generated<string>;
+
+  @ForeignKeyColumn(() => UserTable, { onDelete: 'CASCADE', onUpdate: 'CASCADE', nullable: false, index: false })
+  ownerId!: string;
+
+  @Column()
+  packageIdentity!: string;
+
+  @Column()
+  sourceAlbumId!: string;
+
+  @ForeignKeyColumn(() => AlbumTable, { onDelete: 'CASCADE', onUpdate: 'CASCADE', nullable: false })
+  albumId!: string;
 }

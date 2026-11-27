@@ -229,6 +229,64 @@ export class PhotoSourceRepository {
         .executeTakeFirst()
     );
   }
+  /**
+   * FL-1840: what names a source's catalog for the albums its collections became: `<app>:<catalogId>`, so a new
+   * source for the same catalog finds them, or `source:<id>` for a source that names no catalog.
+   */
+  async getCatalogKey(ownerId: string, sourceId: string): Promise<string> {
+    const row = await this.db
+      .selectFrom('photo_source')
+      .select('catalog')
+      .where('id', '=', sourceId)
+      .where('ownerId', '=', ownerId)
+      .executeTakeFirst();
+    return row?.catalog ? `${row.catalog.app}:${row.catalog.catalogId}` : `source:${sourceId}`;
+  }
+
+  /**
+   * FL-1840: the album a catalog collection became. `albumId` is null when the person removed it (deleted, in the
+   * trash or no longer theirs): a read-in then leaves it gone. Undefined when the collection has no album yet.
+   */
+  async getCatalogCollectionAlbum(
+    ownerId: string,
+    catalog: string,
+    collectionId: string,
+  ): Promise<{ albumId: string | null } | undefined> {
+    const { rows } = await sql<{ albumId: string | null }>`
+      select case when album.id is not null then mapping."albumId" end as "albumId"
+      from photo_source_album mapping
+      left join album on album.id = mapping."albumId" and album."deletedAt" is null
+        and exists (
+          select 1 from album_user owner
+          where owner."albumId" = album.id and owner."userId" = ${ownerId}::uuid and owner.role = ${AlbumUserRole.Owner}
+        )
+      where mapping."ownerId" = ${ownerId}::uuid and mapping.catalog = ${catalog} and mapping."collectionId" = ${collectionId}
+    `.execute(this.db);
+    return rows[0];
+  }
+
+  /** Records the album a collection became; a mapping another read-in recorded first wins and is returned. */
+  async setCatalogCollectionAlbum(
+    ownerId: string,
+    catalog: string,
+    collectionId: string,
+    albumId: string,
+  ): Promise<string | null> {
+    await this.db
+      .insertInto('photo_source_album')
+      .values({ ownerId, catalog, collectionId, albumId })
+      .onConflict((oc) => oc.columns(['ownerId', 'catalog', 'collectionId']).doNothing())
+      .execute();
+    const row = await this.db
+      .selectFrom('photo_source_album')
+      .select('albumId')
+      .where('ownerId', '=', ownerId)
+      .where('catalog', '=', catalog)
+      .where('collectionId', '=', collectionId)
+      .executeTakeFirstOrThrow();
+    return row.albumId;
+  }
+
   revoke(auth: SourceAuthority, id: string) {
     return this.db.transaction().execute(async (tx) => {
       await this.owner(tx, auth);

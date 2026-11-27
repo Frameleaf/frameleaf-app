@@ -40,7 +40,7 @@ const setup = async () => {
   };
   const sut = new PhotoSourceRepository(db);
   const source = await sut.create(authority, input);
-  return { sut, source, input, authority, devices, device, user };
+  return { sut, source, input, authority, devices, device, user, ctx };
 };
 it('photo-copy authority is independent of ML approval and retries preserve one immutable source', async () => {
   const { sut, source, input, authority } = await setup();
@@ -215,4 +215,21 @@ it('upload admission binds live photo authority to the exact planned bytes and s
   await db.updateTable('desktop_device').set({ state: 'awaiting-approval' }).where('id', '=', device.id).execute();
   await sut.revoke(authority, source.id);
   await expect(sut.assertUpload(authority, binding, checksum, 6)).rejects.toThrow();
+});
+
+it('remembers a catalog collection’s album by id, and that the person removed it (FL-1840)', async () => {
+  const { ctx, user } = await setup();
+  const repo = new PhotoSourceRepository(db);
+  const { album } = await ctx.newAlbum({ ownerId: user.id, albumName: 'Paris' });
+  const { album: other } = await ctx.newAlbum({ ownerId: user.id, albumName: 'Elsewhere' });
+
+  await expect(repo.getCatalogCollectionAlbum(user.id, 'lightroom:cat', 'c1')).resolves.toBeUndefined();
+  await expect(repo.setCatalogCollectionAlbum(user.id, 'lightroom:cat', 'c1', album.id)).resolves.toBe(album.id);
+  // the first mapping wins over a racing read-in
+  await expect(repo.setCatalogCollectionAlbum(user.id, 'lightroom:cat', 'c1', other.id)).resolves.toBe(album.id);
+  await db.updateTable('album').set({ albumName: 'Paris 2024' }).where('id', '=', album.id).execute();
+  await expect(repo.getCatalogCollectionAlbum(user.id, 'lightroom:cat', 'c1')).resolves.toEqual({ albumId: album.id });
+
+  await db.deleteFrom('album').where('id', '=', album.id).execute();
+  await expect(repo.getCatalogCollectionAlbum(user.id, 'lightroom:cat', 'c1')).resolves.toEqual({ albumId: null });
 });
