@@ -1344,8 +1344,8 @@
     </section>
   </KitPage>
 {:else}
-  <!-- Advanced: one task's screen with its Active, Waiting, Failed and History jobs. -->
-  <KitPage>
+  <!-- Advanced: one task's screen with its Active, Waiting, Failed and History jobs. A table of jobs: the whole pane (FL-1829). -->
+  <KitPage wide>
     {@render views()}
     <section class="jobs-manager" aria-label={$t('frameleaf_jobs_label')} bind:this={main}>
       <header class="jm-header">
@@ -1772,7 +1772,8 @@
   />
 {/if}
 
-<Dialog title={detail ? jobTitle(detail.name) : ''} closeLabel={$t('close')} bind:open={detailOpen}>
+<!-- FL-1829: wide enough for what went wrong, the server's words and the job's data without wrapping every line -->
+<Dialog title={detail ? jobTitle(detail.name) : ''} closeLabel={$t('close')} size="medium" bind:open={detailOpen}>
   {#if detail}
     <div class="jm-job-detail">
       {@render queueStatus(detail.status)}
