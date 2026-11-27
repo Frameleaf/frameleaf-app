@@ -1,4 +1,4 @@
-import { AlbumKind, LibraryViewScope } from '@frameleaf/sdk';
+import { AlbumKind, AlbumUserRole, LibraryViewScope } from '@frameleaf/sdk';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import { railSession } from '$lib/frameleaf/rail-session.svelte';
 import { authManager } from '$lib/managers/auth-manager.svelte';
@@ -6,6 +6,24 @@ import { eventManager } from '$lib/managers/event-manager.svelte';
 import { albumFactory } from '@test-data/factories/album-factory';
 import { userAdminFactory } from '@test-data/factories/user-factory';
 
+const rail = (...names: string[]) => ({
+  albums: names.map((albumName) => ({
+    id: albumName,
+    albumName,
+    parentId: null,
+    kind: AlbumKind.Album,
+    icon: null,
+    color: null,
+    sortOrder: null,
+    role: AlbumUserRole.Owner,
+    shared: false,
+    isLocked: false,
+    isSmart: false,
+    smartRuleId: null,
+    assetCount: 0,
+    bookmarkCount: 0,
+  })),
+});
 const hierarchy = (...names: string[]) => ({
   roots: names.map((albumName) => ({
     album: albumFactory.build({ id: albumName, albumName, kind: AlbumKind.Album }),
@@ -33,13 +51,13 @@ describe('railSession', () => {
   afterEach(() => authManager.reset());
 
   it('keeps each workspace its own tree', async () => {
-    sdkMock.getAlbumHierarchy.mockResolvedValueOnce(hierarchy('Trips') as never);
+    sdkMock.getAlbumRail.mockResolvedValueOnce(rail('Trips') as never);
     await railSession.refreshAlbums();
-    sdkMock.getAlbumHierarchy.mockResolvedValueOnce(hierarchy('Moodboard') as never);
+    sdkMock.getAlbumRail.mockResolvedValueOnce(rail('Moodboard') as never);
     await railSession.refreshAlbums(LibraryViewScope.Design);
 
-    expect(sdkMock.getAlbumHierarchy).toHaveBeenNthCalledWith(1, {});
-    expect(sdkMock.getAlbumHierarchy).toHaveBeenNthCalledWith(2, { libraryScope: LibraryViewScope.Design });
+    expect(sdkMock.getAlbumRail).toHaveBeenNthCalledWith(1, {});
+    expect(sdkMock.getAlbumRail).toHaveBeenNthCalledWith(2, { libraryScope: LibraryViewScope.Design });
     expect(names()).toEqual(['Trips']);
     expect(names(LibraryViewScope.Design)).toEqual(['Moodboard']);
   });
@@ -47,20 +65,20 @@ describe('railSession', () => {
   it('keeps the newest read asked, whichever answers last', async () => {
     const before = deferred<never>();
     const after = deferred<never>();
-    sdkMock.getAlbumHierarchy.mockReturnValueOnce(before.promise).mockReturnValueOnce(after.promise);
+    sdkMock.getAlbumRail.mockReturnValueOnce(before.promise).mockReturnValueOnce(after.promise);
     const first = railSession.refreshAlbums();
     const second = railSession.refreshAlbums();
-    after.resolve(hierarchy('After the move') as never);
+    after.resolve(rail('After the move') as never);
     await second;
-    before.resolve(hierarchy('Before the move') as never);
+    before.resolve(rail('Before the move') as never);
     await first;
     expect(names()).toEqual(['After the move']);
   });
 
   it('keeps the last tree and reports a failed read', async () => {
-    sdkMock.getAlbumHierarchy.mockResolvedValueOnce(hierarchy('Trips') as never);
+    sdkMock.getAlbumRail.mockResolvedValueOnce(rail('Trips') as never);
     await railSession.refreshAlbums();
-    sdkMock.getAlbumHierarchy.mockRejectedValueOnce(new Error('offline'));
+    sdkMock.getAlbumRail.mockRejectedValueOnce(new Error('offline'));
     await expect(railSession.refreshAlbums()).rejects.toThrow('offline');
     expect(names()).toEqual(['Trips']);
   });
@@ -68,15 +86,15 @@ describe('railSession', () => {
   it.each(['SessionLocked', 'AuthLogout'] as const)(
     'drops everything on %s, and an answer still on its way',
     async (event) => {
-      sdkMock.getAlbumHierarchy.mockResolvedValueOnce(hierarchy('Trips') as never);
+      sdkMock.getAlbumRail.mockResolvedValueOnce(rail('Trips') as never);
       sdkMock.getPartners.mockResolvedValueOnce([{ id: 'partner' }] as never);
       await Promise.all([railSession.refreshAlbums(), railSession.refreshPartners()]);
       const late = deferred<never>();
-      sdkMock.getAlbumHierarchy.mockReturnValueOnce(late.promise);
+      sdkMock.getAlbumRail.mockReturnValueOnce(late.promise);
       const pending = railSession.refreshAlbums();
 
       eventManager.emit(event);
-      late.resolve(hierarchy('Locked album') as never);
+      late.resolve(rail('Locked album') as never);
       await pending;
 
       expect(railSession.albums).toEqual({});
@@ -85,7 +103,7 @@ describe('railSession', () => {
   );
 
   it('forgets one workspace before a change that may take albums away', async () => {
-    sdkMock.getAlbumHierarchy.mockResolvedValue(hierarchy('Trips') as never);
+    sdkMock.getAlbumRail.mockResolvedValue(rail('Trips') as never);
     await railSession.refreshAlbums();
     await railSession.refreshAlbums(LibraryViewScope.Design);
     railSession.dropAlbums();
@@ -105,5 +123,30 @@ describe('railSession', () => {
     sdkMock.getPartners.mockRejectedValueOnce(new Error('offline'));
     await railSession.refreshPartners();
     expect(railSession.partners).toEqual([]);
+  });
+
+  it('reads the full albums only when asked, once until the tree is read again', async () => {
+    sdkMock.getAlbumRail.mockResolvedValue(rail('Trips') as never);
+    sdkMock.getAlbumHierarchy.mockResolvedValue(hierarchy('Trips') as never);
+    await railSession.refreshAlbums();
+    expect(sdkMock.getAlbumHierarchy).not.toHaveBeenCalled();
+
+    const [first, second] = await Promise.all([railSession.fullAlbums(), railSession.fullAlbums()]);
+    expect(first.map(({ albumName }) => albumName)).toEqual(['Trips']);
+    expect(second).toBe(first);
+    expect(sdkMock.getAlbumHierarchy).toHaveBeenCalledTimes(1);
+
+    await railSession.refreshAlbums();
+    await railSession.fullAlbums();
+    expect(sdkMock.getAlbumHierarchy).toHaveBeenCalledTimes(2);
+  });
+
+  it('never hands out full albums read before the access changed', async () => {
+    let answer!: (value: never) => void;
+    sdkMock.getAlbumHierarchy.mockReturnValueOnce(new Promise((resolve) => (answer = resolve)));
+    const pending = railSession.fullAlbums();
+    eventManager.emit('SessionLocked');
+    answer(hierarchy('Locked album') as never);
+    await expect(pending).resolves.toEqual([]);
   });
 });

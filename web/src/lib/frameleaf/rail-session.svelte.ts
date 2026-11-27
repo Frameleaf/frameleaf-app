@@ -1,21 +1,23 @@
 import {
   getAlbumHierarchy,
+  getAlbumRail,
   getPartners,
   PartnerDirection,
   type AlbumHierarchyNode,
+  type AlbumRailItemDto,
   type AlbumResponseDto,
   type LibraryViewScope,
   type PartnerResponseDto,
 } from '@frameleaf/sdk';
-import { buildAlbumTree, type FrameleafAlbumTree } from '$lib/frameleaf/album-tree';
+import { buildRailAlbumTree, type FrameleafAlbumTree } from '$lib/frameleaf/album-tree';
 import { onLibraryAccessChange } from '$lib/frameleaf/library-access';
 import { authManager } from '$lib/managers/auth-manager.svelte';
 import { eventManager } from '$lib/managers/event-manager.svelte';
 
 export type RailAlbums = {
   tree: FrameleafAlbumTree;
-  /** The same albums as the server sent them, for the right-click menu's dialogs. */
-  records: AlbumResponseDto[];
+  /** The slim albums as the server sent them, in rail order: names, kinds, parents, the viewer's role. */
+  records: AlbumRailItemDto[];
 };
 
 const flatten = (nodes: AlbumHierarchyNode[]): AlbumResponseDto[] =>
@@ -26,6 +28,10 @@ const flatten = (nodes: AlbumHierarchyNode[]): AlbumResponseDto[] =>
  * rail that mounts again (a page change, coming back from the viewer) draws at once from the last
  * answer while it is read again. Album trees are kept per workspace. Everything is dropped when
  * library access changes (a lock, another account), as the rail always did.
+ *
+ * The tree is read from the slim `GET /albums/rail`. The full albums (members, links, origin), which only
+ * the right-click menu's dialogs need, are read from `GET /albums/hierarchy` when one opens, and kept
+ * until the tree is read again.
  */
 class RailSession {
   albums = $state.raw<Record<string, RailAlbums>>({});
@@ -33,6 +39,7 @@ class RailSession {
   partners = $state.raw<PartnerResponseDto[] | undefined>();
 
   #albumVersion = new Map<string, number>();
+  #fullAlbums = new Map<string, Promise<AlbumResponseDto[]>>();
   #partnerVersion = 0;
   #generation = 0;
 
@@ -48,6 +55,7 @@ class RailSession {
     this.#generation++;
     this.albums = {};
     this.partners = undefined;
+    this.#fullAlbums.clear();
   }
 
   /** Forget one workspace's tree, for a change that may have taken albums away (a delete, a share). */
@@ -55,6 +63,7 @@ class RailSession {
     const rest = { ...this.albums };
     delete rest[scope ?? ''];
     this.albums = rest;
+    this.#fullAlbums.delete(scope ?? '');
   }
 
   /**
@@ -69,9 +78,11 @@ class RailSession {
     this.#albumVersion.set(key, version);
     const current = authManager.captureSession();
     const isLatest = () => generation === this.#generation && version === this.#albumVersion.get(key) && current();
-    let response: Awaited<ReturnType<typeof getAlbumHierarchy>>;
+    // the full albums read before this one may be out of date by the time it answers
+    this.#fullAlbums.delete(key);
+    let response: Awaited<ReturnType<typeof getAlbumRail>>;
     try {
-      response = await getAlbumHierarchy(scope ? { libraryScope: scope } : {});
+      response = await getAlbumRail(scope ? { libraryScope: scope } : {});
     } catch (error) {
       if (isLatest()) {
         throw error;
@@ -79,8 +90,30 @@ class RailSession {
       return;
     }
     if (isLatest()) {
-      this.albums = { ...this.albums, [key]: { tree: buildAlbumTree(response), records: flatten(response.roots) } };
+      this.albums = { ...this.albums, [key]: { tree: buildRailAlbumTree(response.albums), records: response.albums } };
     }
+  }
+
+  /**
+   * The workspace's albums with everything the album dialogs read (members, links, origin), in rail
+   * order. Read once and shared until the tree is read again; a failed read is not kept.
+   */
+  fullAlbums(scope?: LibraryViewScope): Promise<AlbumResponseDto[]> {
+    const key = scope ?? '';
+    const kept = this.#fullAlbums.get(key);
+    if (kept) {
+      return kept;
+    }
+    const generation = this.#generation;
+    const read = getAlbumHierarchy(scope ? { libraryScope: scope } : {}).then((response) => flatten(response.roots));
+    this.#fullAlbums.set(key, read);
+    read.catch(() => {
+      if (this.#fullAlbums.get(key) === read) {
+        this.#fullAlbums.delete(key);
+      }
+    });
+    // an answer for the account or access state before a change is never handed out
+    return read.then((albums) => (generation === this.#generation ? albums : []));
   }
 
   /** Read the partners again. A failed read shows none: the rail works without the entry. */

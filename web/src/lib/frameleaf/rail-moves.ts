@@ -7,7 +7,10 @@
  * album where it was in any group they have arranged.
  */
 import { AlbumKind, type AlbumResponseDto } from '@frameleaf/sdk';
-import { canEdit, isOwner } from '$lib/frameleaf/album-directory';
+import { canEdit, isOwner, type AlbumWithRole } from '$lib/frameleaf/album-directory';
+
+/** What a move needs to know of an album: a full one, or a slim rail item (FL-1796). */
+export type RailMoveAlbum = Pick<AlbumResponseDto, 'id' | 'kind' | 'parentId' | 'sortOrder'> & AlbumWithRole;
 
 export type RailDrop = 'before' | 'after' | 'into';
 export type RailUpdate = { id: string; sortOrder?: number; parentId?: string | null };
@@ -34,7 +37,7 @@ export const dropZone = (offsetY: number, height: number, canNest = true): RailD
  * `records` are the albums in the order the sidebar shows them, so siblings keep that order.
  */
 export function planRailMove(
-  records: AlbumResponseDto[],
+  records: RailMoveAlbum[],
   dragId: string,
   targetId: string,
   where: RailDrop,
@@ -54,7 +57,7 @@ export function planRailMove(
     return null;
   }
   // Never into itself or anything inside it.
-  for (let at: AlbumResponseDto | undefined = target; at; at = at.parentId ? byId.get(at.parentId) : undefined) {
+  for (let at: RailMoveAlbum | undefined = target; at; at = at.parentId ? byId.get(at.parentId) : undefined) {
     if (at.id === dragged.id) {
       return null;
     }
@@ -117,7 +120,7 @@ export function planRailMove(
 }
 
 /** Whether albums shown in this order are also in `sortOrder` order (lower first, unplaced last). */
-const followsSortOrder = (albums: AlbumResponseDto[]) =>
+const followsSortOrder = (albums: RailMoveAlbum[]) =>
   albums.every((album, i) => {
     const previous = i > 0 ? (albums[i - 1].sortOrder ?? null) : null;
     const current = album.sortOrder ?? null;
@@ -125,12 +128,7 @@ const followsSortOrder = (albums: AlbumResponseDto[]) =>
   });
 
 /** ⌥↑ and ⌥↓ move an album among its siblings, ⌥→ puts it in the one above, ⌥← takes it out one level. */
-export function planKeyMove(
-  records: AlbumResponseDto[],
-  albumId: string,
-  key: string,
-  userId: string,
-): RailMove | null {
+export function planKeyMove(records: RailMoveAlbum[], albumId: string, key: string, userId: string): RailMove | null {
   const album = records.find(({ id }) => id === albumId);
   if (!album) {
     return null;
