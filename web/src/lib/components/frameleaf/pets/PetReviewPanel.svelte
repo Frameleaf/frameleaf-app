@@ -1,5 +1,6 @@
 <script lang="ts">
   import FrameleafButton from '$lib/components/frameleaf/Button.svelte';
+  import EmptyRow from '$lib/components/frameleaf/EmptyRow.svelte';
   import PetThumbnail from '$lib/components/frameleaf/pets/PetThumbnail.svelte';
   import {
     confidencePercent,
@@ -81,13 +82,11 @@
   </header>
 
   {#if emptyState !== 'none'}
-    <p class="empty">
-      {#if emptyState === 'unavailable'}
-        {$t('frameleaf_pets_review_unavailable')}
-      {:else}
-        {$t('frameleaf_pets_review_all_done')}
-      {/if}
-    </p>
+    <EmptyRow
+      title={emptyState === 'unavailable'
+        ? $t('frameleaf_pets_review_unavailable')
+        : $t('frameleaf_pets_review_all_done')}
+    />
   {:else}
     <ul class="groups">
       {#each groups as group (group.assetId)}
@@ -205,7 +204,6 @@
     color: var(--fl-text);
   }
   .count,
-  .empty,
   .evidence {
     margin: 0;
     font-size: var(--fl-font-small);

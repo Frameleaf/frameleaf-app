@@ -5,6 +5,7 @@
    * "No backups yet." when empty (`design/frameleaf/template/src/Maintenance.jsx:354-420`), and the
    * existing upload of a backup file above it. Replaces the legacy `MaintenanceBackupsList`.
    */
+  import EmptyRow from '$lib/components/frameleaf/EmptyRow.svelte';
   import MaintenanceBackupRow from '$lib/components/frameleaf/MaintenanceBackupRow.svelte';
   import { backupStamp } from '$lib/components/frameleaf/settings/backup-time';
   import OnEvents from '$lib/components/OnEvents.svelte';
@@ -81,7 +82,7 @@
     />
   {/each}
   {#if sorted.length === 0}
-    <p class="mt-empty">{$t('admin.frameleaf_maintenance_backups_empty')}</p>
+    <EmptyRow title={$t('admin.frameleaf_maintenance_backups_empty')} />
   {/if}
 </div>
 
@@ -110,11 +111,5 @@
     display: flex;
     flex-direction: column;
     container: backup-list / inline-size;
-  }
-  .mt-empty {
-    color: var(--fl-muted);
-    font-size: var(--fl-font-small);
-    padding: 8px 0;
-    margin: 0;
   }
 </style>

@@ -1,6 +1,7 @@
 <script lang="ts">
   import Button from '$lib/components/frameleaf/Button.svelte';
   import InlineError from '$lib/components/frameleaf/InlineError.svelte';
+  import ListSkeleton from '$lib/components/frameleaf/ListSkeleton.svelte';
   import {
     createMediaConnection,
     disconnectMediaConnection,
@@ -153,7 +154,7 @@
 {#if !secure}<p class="media-secondary">{$t('frameleaf_boards_media_https_required')}</p>{/if}
 {#if failed}<InlineError compact message={$t('frameleaf_boards_media_connection_action_error')} />{/if}
 {#if loading}
-  <p role="status">{$t('loading')}</p>
+  <ListSkeleton rows={2} />
 {:else if loadFailed}
   <InlineError compact message={$t('frameleaf_boards_media_connections_error')} onRetry={load} />
 {:else}

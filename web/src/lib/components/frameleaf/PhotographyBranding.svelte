@@ -11,6 +11,7 @@
   import { photographyErrorKey } from '$lib/components/frameleaf/PhotographyStatus.svelte';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
+  import Skeleton from '$lib/components/frameleaf/Skeleton.svelte';
   import {
     brandFonts,
     loadBrand,
@@ -257,7 +258,9 @@
 {#if error}<div class="phw-notice" role="alert">
     {error}<Button disabled={busy} onclick={reload}>{$t('frameleaf_photography_reload_branding')}</Button>
   </div>{/if}
-{#if loading}<div class="phw-empty" role="status">{$t('frameleaf_photography_loading_branding')}</div>
+{#if loading}<div aria-busy="true" aria-label={$t('frameleaf_photography_loading_branding')}>
+    <Skeleton variant="block" height="24rem" />
+  </div>
 {:else if draft && stored}
   <form class="phw-detail-layout phw-brand-layout" onsubmit={persist} aria-busy={busy}>
     <section class="phw-brand-main">

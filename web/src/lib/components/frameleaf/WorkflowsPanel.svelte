@@ -8,6 +8,8 @@
   import { emptyDiscoveryQuery, parseDiscoveryQueryText } from '$lib/components/discovery/query';
   import { workflowFromSearch } from '$lib/frameleaf/workflow-source';
   import Button from '$lib/components/frameleaf/Button.svelte';
+  import EmptyRow from '$lib/components/frameleaf/EmptyRow.svelte';
+  import ListSkeleton from '$lib/components/frameleaf/ListSkeleton.svelte';
   import WorkflowDesigner from '$lib/components/frameleaf/WorkflowDesigner.svelte';
   import {
     draftFromWorkflow,
@@ -207,8 +209,10 @@
   {#if error}<p role="alert" class="error">{error}</p>{/if}
   {#if notice}<p role="status" class="notice">{notice}</p>{/if}
 
-  {#if loaded && workflows.length === 0 && !error}
-    <p class="empty">{$t('frameleaf_workflows.empty')}</p>
+  {#if !loaded && !error}
+    <ListSkeleton rows={3} />
+  {:else if loaded && workflows.length === 0 && !error}
+    <EmptyRow title={$t('frameleaf_workflows.empty')} />
   {:else}
     <div class="list">
       {#each workflows as workflow (workflow.id)}
@@ -312,11 +316,6 @@
   .list small.blocked,
   .list small.issue {
     color: var(--fl-warning);
-  }
-  .empty {
-    padding: 2.8rem 1.25rem;
-    text-align: center;
-    color: var(--fl-muted);
   }
   .error {
     color: var(--fl-danger);
