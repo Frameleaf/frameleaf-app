@@ -1,11 +1,11 @@
 <script lang="ts">
+  import GridSkeleton from '$lib/components/frameleaf/GridSkeleton.svelte';
   import { goto } from '$app/navigation';
   import ResultsAssetViewer from '$lib/components/frameleaf/ResultsAssetViewer.svelte';
   import ResultsView from '$lib/components/frameleaf/ResultsView.svelte';
   import UserPageLayout from '$lib/components/layouts/UserPageLayout.svelte';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import EmptyState from '$lib/components/frameleaf/EmptyState.svelte';
-  import Spinner from '$lib/components/frameleaf/Spinner.svelte';
   import { brandedArchiveName } from '$lib/frameleaf/archive-name';
   import {
     DOCUMENT_PAGE_SIZE,
@@ -102,7 +102,8 @@
         nextPage = null;
       }
       loadFailed = true;
-      handleError(error, $t('frameleaf_documents_error_load'));
+      // FL-1810: the page says so in place, with Try again; still logged
+      handleError(error, $t('frameleaf_documents_error_load'), { notify: !reset });
     } finally {
       if (isCurrent()) {
         isLoading = false;
@@ -197,7 +198,7 @@
     <div class="doc-toolbar">
       <p class="doc-count" aria-live="polite">
         {#if isLoading && assets.length === 0}
-          {$t('frameleaf_documents_loading')}
+          <!-- FL-1810: the placeholder below says it is loading -->
         {:else if searching}
           {$t('frameleaf_documents_match_count', { values: { count: total, query: query.trim() } })}
         {:else}
@@ -263,9 +264,9 @@
       </ResultsView>
     </div>
 
-    {#if isLoading}
+    {#if isLoading && assets.length === 0}
       <div class="doc-loading">
-        <Spinner size="xl" />
+        <GridSkeleton tiles={12} minTile="10rem" />
       </div>
     {/if}
   </section>
@@ -391,9 +392,7 @@
     place-content: center;
   }
   .doc-loading {
-    display: flex;
-    justify-content: center;
-    padding: var(--fl-space-12) 0;
+    padding: var(--fl-space-4) 0;
   }
   @media (max-width: 767px) {
     .documents {

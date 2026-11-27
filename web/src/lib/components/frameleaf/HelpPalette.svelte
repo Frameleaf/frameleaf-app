@@ -1,4 +1,7 @@
 <script lang="ts">
+  import InlineError from '$lib/components/frameleaf/InlineError.svelte';
+  import ListSkeleton from '$lib/components/frameleaf/ListSkeleton.svelte';
+  import Skeleton from '$lib/components/frameleaf/Skeleton.svelte';
   import { page } from '$app/state';
   import {
     headingAnchor,
@@ -146,6 +149,8 @@
   );
 
   const load = async () => {
+    // FL-1810: Try again goes back to the placeholder while it reads
+    loadFailed = false;
     try {
       index = helpCache.index = await getHelpIndex();
       loadFailed = false;
@@ -500,9 +505,11 @@
         aria-label={$t('frameleaf_help_panel_title')}
       >
         {#if !index}
-          <p class="sp-empty">
-            {loadFailed ? $t('frameleaf_help_panel_load_failed') : $t('frameleaf_help_panel_loading')}
-          </p>
+          {#if loadFailed}
+            <InlineError message={$t('frameleaf_help_panel_load_failed')} onRetry={load} />
+          {:else}
+            <ListSkeleton rows={4} avatar={false} />
+          {/if}
         {:else if reading}
           <article class="hp-reader" bind:this={readerTop}>
             <button type="button" class="sp-link hp-back" onclick={back}>
@@ -528,7 +535,9 @@
                 <p class="hp-source">{$t('frameleaf_help_panel_article_failed')}</p>
               </div>
             {:else}
-              <p class="sp-empty">{$t('frameleaf_help_panel_loading')}</p>
+              <div role="status" aria-busy="true" aria-label={$t('frameleaf_help_panel_loading')}>
+                <Skeleton variant="text" lines={6} />
+              </div>
             {/if}
           </article>
         {:else if mode === 'ask'}

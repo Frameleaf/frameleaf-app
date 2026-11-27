@@ -28,10 +28,10 @@
    * hidden" with Save. The prototype's "Ask for my PIN before these can be changed" is not drawn: the
    * server always asks, so there is nothing to turn off.
    */
+  import ListSkeleton from '$lib/components/frameleaf/ListSkeleton.svelte';
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
   import Button from '$lib/components/frameleaf/Button.svelte';
-  import Spinner from '$lib/components/frameleaf/Spinner.svelte';
   import OnEvents from '$lib/components/OnEvents.svelte';
   import {
     canCreateTag,
@@ -616,7 +616,7 @@
     {/each}
   </div>
   {#if searchingPeople}
-    <Spinner size="md" label={$t('loading')} />
+    <ListSkeleton rows={2} />
   {/if}
   {#if draft.personIds.length === 0 && personOptions.length === 0 && !searchingPeople}
     <p class="muted">{$t('frameleaf_locked_rules_people_empty')}</p>
@@ -717,7 +717,7 @@
         actions={phase === 'locked' ? unlockAction : undefined}
       >
         {#if phase === 'loading'}
-          <div class="loading"><Spinner size="lg" label={$t('loading')} /></div>
+          <div class="loading"><ListSkeleton rows={3} avatar={false} /></div>
         {/if}
       </Hero>
     {/if}

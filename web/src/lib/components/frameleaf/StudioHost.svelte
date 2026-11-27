@@ -132,6 +132,7 @@
   import { readStudioThemeTokens } from '$lib/frameleaf/studio/theme';
   import { engineControlsStrings } from '$lib/frameleaf/studio/engine-controls-strings';
   import { shellStrings } from '$lib/frameleaf/studio/shell-strings';
+  import { binStrings } from '$lib/frameleaf/studio/bin-strings';
   import { timelineStrings } from '$lib/frameleaf/studio/timeline-strings';
   import { stabiliseEngineStrings } from '$lib/frameleaf/studio/stabilise-strings';
   import { transcriptEngineStrings } from '$lib/frameleaf/studio/transcript-strings';
@@ -564,6 +565,7 @@
     ...engineControlsStrings($t),
     ...shellStrings($t),
     ...timelineStrings($t),
+    ...binStrings($t),
     ...libraryPanelStrings($t),
   });
 

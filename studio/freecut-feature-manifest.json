@@ -17451,9 +17451,10 @@
           "0b7183d4dd",
           "0160-library-view-in-media-bin.patch",
           "0204-upstream-fixes.patch",
-          "0206-studio-not-upstream.patch"
+          "0206-studio-not-upstream.patch",
+          "0212-studio-media-bin.patch"
         ],
-        "note": "FL-636 adds a Library view to the bin: whole-library smart search with people, place, month and photo/video filters through the host; results are added by drag or at the playhead. FL-1819 (0204) ports upstream's readable drop overlay, bounded preview caches and the missing-media dialog closing once media is recovered. FL-1822 (0206): messages say Studio, not the upstream product.",
+        "note": "FL-636 adds a Library view to the bin: whole-library smart search with people, place, month and photo/video filters through the host; results are added by drag or at the playhead. FL-1819 (0204) ports upstream's readable drop overlay, bounded preview caches and the missing-media dialog closing once media is recovered. FL-1822 (0206): messages say Studio, not the upstream product. FL-1822 (0212): the bin is the approved Studio's: Library, Project and Scenes on their own row, search across the panel, a quiet Add files with a menu for subtitles and web addresses (no copy or link storage modes), 32px filter, sort and view controls with names, sentence-case group headings and larger tiles by default.",
         "status": "shipped"
       },
       "id": "module.media-library",
