@@ -117,6 +117,8 @@ export type Events = {
 
   /** FL-43: one of this account's jobs changed (`on_media_operation_update`); only its id is known. */
   MediaOperationUpdate: [{ id: string }];
+  /** FL-1794: the server's job queues moved (`on_queue_progress`); administrators only, about once a second at most. */
+  QueueProgress: [];
 
   ReleaseEvent: [ReleaseEventV1];
 

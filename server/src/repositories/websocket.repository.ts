@@ -74,6 +74,12 @@ export interface ClientEventMap {
    */
   on_media_operation_update: [string];
   /**
+   * FL-1794: the server's job queues moved (a job started or finished, a queue was started or resumed).
+   * Sent to administrators only, at most about once a second, with nothing in it; the page asks the
+   * running-jobs summary again.
+   */
+  on_queue_progress: [];
+  /**
    * FL-155: the Frameleaf Cloud link, licence or a person's Frameleaf account changed. Sent to
    * administrators (and, for `account`, to that person); only the topic travels, and the client
    * reads the admin-only status again.

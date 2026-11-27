@@ -14,6 +14,8 @@ export const CLOUD_WORK_IDLE_POLL_MS = 30_000;
  *
  * FL-1800: with nothing running and the socket connected it asks nothing: a job change the server
  * announces, the socket reconnecting or the tab being shown reads the status again. A hidden tab asks nothing.
+ * FL-1794: a backup another administrator started changes none of this account's jobs, so while the
+ * server says its queues are moving (`on_queue_progress`) the idle look is kept, at its 30 seconds.
  */
 export class CloudWorkSession {
   /** The server's last answer; null until the first. A server without cloud backup answers too. */
@@ -82,6 +84,7 @@ export class CloudWorkSession {
       // a backup or restore is one of the account's jobs; `refresh` folds a burst into one more read
       MediaOperationUpdate: again,
       WebsocketDisconnect: () => this.#schedule(),
+      QueueProgress: () => this.#lookLater(),
     });
     if (typeof document === 'undefined') {
       this.#unlisten = unsubscribe;
@@ -93,6 +96,13 @@ export class CloudWorkSession {
       unsubscribe();
       document.removeEventListener('visibilitychange', onVisibility);
     };
+  }
+
+  /** The server is working on something: look once more at the idle pace, unless a look is already due. */
+  #lookLater() {
+    if (this.#timer === null && this.#subscribers > 0 && !isTabHidden()) {
+      this.#timer = setTimeout(() => void this.refresh().then(() => this.#schedule()), CLOUD_WORK_IDLE_POLL_MS);
+    }
   }
 
   #stop() {

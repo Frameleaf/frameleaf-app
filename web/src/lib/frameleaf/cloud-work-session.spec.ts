@@ -116,4 +116,26 @@ describe('CloudWorkSession', () => {
     expect(sdkMock.getCloudBackupStatus.mock.calls.length).toBe(asked + 1);
     stop();
   });
+
+  /** FL-1794 */
+  it('keeps the idle look while the server says its queues are moving, and only then', async () => {
+    vi.useFakeTimers();
+    websocketStore.connected.set(true);
+    sdkMock.getCloudBackupStatus.mockResolvedValue({ activeRun: null, activeRestore: null } as never);
+    const session = new CloudWorkSession();
+    const stop = session.watch();
+    await vi.advanceTimersByTimeAsync(0);
+
+    // announcements every second: still one look per idle interval
+    for (let second = 0; second < 35; second++) {
+      eventManager.emit('QueueProgress');
+      await vi.advanceTimersByTimeAsync(1000);
+    }
+    expect(sdkMock.getCloudBackupStatus).toHaveBeenCalledTimes(2);
+
+    // the look the last announcements asked for, then nothing once the server is quiet
+    await vi.advanceTimersByTimeAsync(CLOUD_WORK_IDLE_POLL_MS * 4);
+    expect(sdkMock.getCloudBackupStatus).toHaveBeenCalledTimes(3);
+    stop();
+  });
 });
