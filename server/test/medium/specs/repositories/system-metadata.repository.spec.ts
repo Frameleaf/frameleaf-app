@@ -37,6 +37,11 @@ describe(SystemMetadataRepository.name, () => {
     const checked = { ...first, state: 'refused' as const, checkedAt: '2026-11-27T11:00:00.000Z' };
     await expect(sut.setModelDownloadKeyCheck(first, checked)).resolves.toBe(true);
     await expect(sut.get(SystemMetadataKey.ModelDownloadKey)).resolves.toEqual(checked);
+    // a second check of the first answer (another process got there first) does not overwrite it
+    await expect(
+      sut.setModelDownloadKeyCheck(first, { ...first, checkedAt: '2026-11-27T11:30:00.000Z' }),
+    ).resolves.toBe(false);
+    await expect(sut.get(SystemMetadataKey.ModelDownloadKey)).resolves.toEqual(checked);
 
     // Replaced, then removed, while a check of the first key was running: neither is undone.
     const second = { ...first, sealed: 'sealed-2', savedAt: '2026-11-27T12:00:00.000Z' };

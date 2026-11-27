@@ -188,12 +188,12 @@ export class SystemMetadataRepository {
   }
 
   /**
-   * FL-1835: record a check of the model download key only while the stored key is still the one that was
-   * checked (same seal and save time), so a check that finishes after Remove or Replace cannot bring the
-   * earlier key back.
+   * FL-1835: record a check of the model download key only while the stored record is exactly the one that
+   * was checked (same seal, save time and last check), so a check that finishes after Remove, Replace or
+   * another check cannot bring an earlier key or an earlier answer back.
    */
   async setModelDownloadKeyCheck(
-    checked: Pick<ModelDownloadKeyState, 'sealed' | 'savedAt'>,
+    checked: Pick<ModelDownloadKeyState, 'sealed' | 'savedAt' | 'checkedAt'>,
     next: ModelDownloadKeyState,
   ): Promise<boolean> {
     const result = await this.db
@@ -202,6 +202,7 @@ export class SystemMetadataRepository {
       .where('key', '=', SystemMetadataKey.ModelDownloadKey)
       .where(sql<boolean>`"value" ->> 'sealed' = ${checked.sealed}`)
       .where(sql<boolean>`"value" ->> 'savedAt' = ${checked.savedAt}`)
+      .where(sql<boolean>`"value" ->> 'checkedAt' = ${checked.checkedAt}`)
       .executeTakeFirst();
     return Number(result.numUpdatedRows) > 0;
   }

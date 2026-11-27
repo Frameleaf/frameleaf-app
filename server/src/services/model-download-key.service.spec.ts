@@ -22,7 +22,11 @@ describe(ModelDownloadKeyService.name, () => {
       return Promise.resolve();
     });
     mocks.systemMetadata.setModelDownloadKeyCheck.mockImplementation((checked, next) => {
-      if (stored?.sealed !== checked.sealed || stored?.savedAt !== checked.savedAt) {
+      if (
+        stored?.sealed !== checked.sealed ||
+        stored?.savedAt !== checked.savedAt ||
+        stored?.checkedAt !== checked.checkedAt
+      ) {
         return Promise.resolve(false);
       }
       stored = next;
@@ -136,6 +140,20 @@ describe(ModelDownloadKeyService.name, () => {
       stored = undefined;
       return Promise.resolve('accepted');
     });
+    await sut.onBootstrap();
+    sut.onShutdown();
+    expect(mocks.machineLearning.setModelDownloadKey).not.toHaveBeenCalledWith(KEY);
+  });
+
+  it('an older "accepted" never overwrites a "refused" another process wrote meanwhile', async () => {
+    const old = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
+    stored = { sealed: sealModelDownloadKey(HASH, KEY), savedAt: old, state: 'accepted', checkedAt: old };
+    sut.check = vi.fn().mockImplementation(() => {
+      stored = { ...stored!, state: 'refused', checkedAt: new Date().toISOString() };
+      return Promise.resolve('accepted');
+    });
+    await expect(sut.getStatus()).resolves.toMatchObject({ status: 'refused' });
+    expect(stored?.state).toBe('refused');
     await sut.onBootstrap();
     sut.onShutdown();
     expect(mocks.machineLearning.setModelDownloadKey).not.toHaveBeenCalledWith(KEY);
