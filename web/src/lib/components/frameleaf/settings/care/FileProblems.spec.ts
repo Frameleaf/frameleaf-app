@@ -5,7 +5,7 @@ import {
   type FileProblemDto,
   type FileProblemRowDto,
 } from '@frameleaf/sdk';
-import { fireEvent, render, screen, within } from '@testing-library/svelte';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { addMessages } from 'svelte-i18n';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import { SystemConfigDraftStore } from '$lib/frameleaf/system-config-draft.svelte';
@@ -289,5 +289,21 @@ describe('Damaged and missing files (FL-1338)', () => {
     expect(
       screen.getByText('Nothing needs you. Anything Frameleaf can’t fix by itself waits here.'),
     ).toBeInTheDocument();
+  });
+
+  it('shows placeholders while it reads, and a failed read with Try again instead of “nothing needs you” (FL-1810)', async () => {
+    const answers = { fail: true };
+    sdkMock.getFileProblems.mockImplementation(({ tab }) =>
+      answers.fail ? Promise.reject(new Error('offline')) : Promise.resolve(pages[tab]),
+    );
+    render(FileProblems);
+    expect(screen.getByTestId('frameleaf-list-skeleton')).toBeInTheDocument();
+
+    expect(await screen.findByTestId('frameleaf-inline-error')).toBeInTheDocument();
+    expect(screen.queryByText('Nothing needs you. Anything Frameleaf can’t fix by itself waits here.')).toBeNull();
+
+    answers.fail = false;
+    await fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    await waitFor(() => expect(screen.queryByTestId('frameleaf-inline-error')).toBeNull());
   });
 });

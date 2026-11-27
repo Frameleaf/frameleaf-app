@@ -1420,7 +1420,7 @@ export class MemoryService extends BaseService {
       auth.user.id,
       visible.map(({ id }) => id),
     );
-    return visible.map((memory: Memory) => this.mapMemory(memory, auth, curations.get(memory.id)));
+    return visible.map((memory: Memory) => this.mapMemory(memory, auth, curations.get(memory.id), { slim: dto.slim }));
   }
 
   async statistics(auth: AuthDto, dto: MemorySearchDto) {
@@ -1437,7 +1437,8 @@ export class MemoryService extends BaseService {
       if (dto.type !== undefined && dto.type !== type) {
         continue;
       }
-      const subjectDto = { ...dto, type, size: undefined, page: undefined };
+      // only counted, so the slim rows will do (FL-1793)
+      const subjectDto = { ...dto, type, size: undefined, page: undefined, slim: true };
       const named = (await this.memoryRepository.search(auth.user.id, subjectDto, options)) as Memory[];
       excluded += named.length - (await this.withCurrentSubjects(auth, named)).length;
     }

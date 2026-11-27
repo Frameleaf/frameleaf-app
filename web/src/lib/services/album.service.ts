@@ -427,7 +427,7 @@ export const handleCreateAlbumEntry = async (dto: CreateAlbumDto) => {
 
 /**
  * Delete an album, a collection or a shared space. Every caller asks first in the Frameleaf
- * `AlbumConfirmDialog` (the design's `DeleteDialog`, AL-4), so this only performs the delete.
+ * `ConfirmDialog` (the design's `DeleteDialog`, AL-4), so this only performs the delete.
  */
 export const handleDeleteAlbum = async (album: AlbumResponseDto, options?: { notify?: boolean }) => {
   const $t = await getFormatter();

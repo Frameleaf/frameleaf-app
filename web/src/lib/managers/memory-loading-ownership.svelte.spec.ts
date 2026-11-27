@@ -120,7 +120,7 @@ describe('memory page ownership', () => {
     const currentPageLoading = manager.loading;
     expect(currentPageLoading).toBeDefined();
     expect(searchMemories).toHaveBeenCalledTimes(3);
-    expect(searchMemories).toHaveBeenCalledWith({ isHidden: true, order: 'desc', size: 250 });
+    expect(searchMemories).toHaveBeenCalledWith({ isHidden: true, order: 'desc', size: 250, slim: true });
     expect(getMemoryShowLess).toHaveBeenCalledOnce();
     oldStatistics.resolve({ total: 999 });
     await oldLoading;

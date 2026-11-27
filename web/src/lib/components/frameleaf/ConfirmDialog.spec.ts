@@ -4,6 +4,9 @@ import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../../../../../i18n/en.json';
 import ConfirmDialog from './ConfirmDialog.svelte';
 
+vi.mock('$lib/utils/handle-error', () => ({ handleError: vi.fn() }));
+const { handleError } = await import('$lib/utils/handle-error');
+
 describe('ConfirmDialog', () => {
   beforeAll(() => {
     addMessages('dev', en);
@@ -55,5 +58,42 @@ describe('ConfirmDialog', () => {
 
     render(ConfirmDialog, { title: 'Rotate?', confirmText: 'Rotate', onClose: vi.fn() });
     expect(screen.getByRole('button', { name: 'Rotate' })).toHaveAttribute('data-initial-focus');
+  });
+
+  it('stays open and busy while onConfirm runs, then closes; a failure leaves it open', async () => {
+    let finish!: () => void;
+    const onConfirm = vi.fn(() => new Promise<void>((resolve) => (finish = resolve)));
+    const onClose = vi.fn();
+    render(ConfirmDialog, {
+      title: 'Delete “Lake days”?',
+      prompt: 'This can’t be undone.',
+      keepNote: 'Its 37 photos stay in your library.',
+      confirmText: 'Delete album',
+      danger: true,
+      onConfirm,
+      onClose,
+    });
+    expect(screen.getByText('Its 37 photos stay in your library.')).toBeInTheDocument();
+
+    const action = screen.getByRole('button', { name: 'Delete album' });
+    await fireEvent.click(action);
+    expect(action).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Cancel' })).toBeDisabled();
+    expect(onClose).not.toHaveBeenCalled();
+
+    finish();
+    await vi.waitFor(() => expect(onClose).toHaveBeenCalledWith(true));
+  });
+
+  it('stays open when onConfirm fails', async () => {
+    const onClose = vi.fn();
+    const onConfirm = vi.fn().mockRejectedValue(new Error('offline'));
+    render(ConfirmDialog, { title: 'Leave?', confirmText: 'Leave album', onConfirm, onClose });
+
+    const action = screen.getByRole('button', { name: 'Leave album' });
+    await fireEvent.click(action);
+    await vi.waitFor(() => expect(action).not.toBeDisabled());
+    expect(handleError).toHaveBeenCalledOnce();
+    expect(onClose).not.toHaveBeenCalled();
   });
 });

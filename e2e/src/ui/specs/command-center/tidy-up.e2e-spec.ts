@@ -107,10 +107,18 @@ test.describe('Tidy up (FL-1470)', () => {
     const viewer = page.getByRole('dialog', { name: 'Large view' });
     await expect(viewer.getByText('1 of 3')).toBeVisible();
     await expect(viewer.getByText('Saved as a screenshot')).toBeVisible();
+    // FL-1814: the shared light viewer takes the focus and keeps Tab inside it.
+    await expect(viewer.getByRole('button', { name: 'Close' })).toBeFocused();
+    await page.keyboard.press('Shift+Tab');
+    await expect(viewer.locator(':focus')).toHaveCount(1);
+    await page.keyboard.press('Tab');
+    await expect(viewer.getByRole('button', { name: 'Close' })).toBeFocused();
     await page.keyboard.press('k');
     await expect(viewer.getByText('2 of 3')).toBeVisible();
     await page.keyboard.press('Escape');
     await expect(viewer).toBeHidden();
+    // ...and closing it gives the focus back to the photo that opened it.
+    await expect(page.getByRole('button', { name: 'Open in the large view' }).first()).toBeFocused();
 
     await page.getByRole('button', { name: 'Archive 2 photos' }).click();
     await expect(page.getByText('2 photos moved to the Archive')).toBeVisible();

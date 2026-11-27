@@ -18,6 +18,7 @@
    */
   import '$lib/frameleaf/libraries.css';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
+  import FolderChooser from '$lib/components/frameleaf/FolderChooser.svelte';
   import {
     DEFAULT_EXCLUSION_PATTERNS,
     LIBRARY_NAME_MAX_LENGTH,
@@ -28,9 +29,9 @@
     isImportPathFormatValid,
     isScanActive,
   } from '$lib/frameleaf/libraries';
+  import { libraryFolderReader } from '$lib/frameleaf/folder-readers';
   import { getServerErrorMessage } from '$lib/utils/handle-error';
   import {
-    browseLibraryFolders,
     createLibrary,
     updateLibrary,
     type LibraryFolderBrowseResponseDto,
@@ -94,19 +95,9 @@
   let nasPatterns = $state<string[]>(
     DEFAULT_EXCLUSION_PATTERNS.filter((pattern) => !HIDDEN_PATTERNS.includes(pattern)),
   );
-  let browsing = $state<LibraryFolderBrowseResponseDto | null>(null);
   let browseOpen = $state(false);
-  let browseError = $state('');
-  const browse = async (path?: string) => {
-    browseError = '';
-    try {
-      browsing = await browseLibraryFolders({ path });
-      nasPatterns = browsing.defaultExclusionPatterns.filter((pattern) => !HIDDEN_PATTERNS.includes(pattern));
-    } catch (error_) {
-      browseError = getServerErrorMessage(error_) ?? $t('frameleaf_libraries_browse_failed');
-    }
-  };
-  const useFolder = (path: string) => {
+  const useFolder = ({ path, defaultExclusionPatterns }: LibraryFolderBrowseResponseDto) => {
+    nasPatterns = defaultExclusionPatterns.filter((pattern) => !HIDDEN_PATTERNS.includes(pattern));
     if (!importPaths.includes(path)) {
       setPaths([...importPaths.filter((item) => item.trim() !== ''), path]);
     }
@@ -284,56 +275,16 @@
         '/mnt/photos/family',
       )}
       <div class="resource-browse">
-        <button
-          type="button"
-          class="resource-button"
-          aria-expanded={browseOpen}
-          onclick={() => {
-            browseOpen = !browseOpen;
-            if (browseOpen && !browsing) {
-              void browse();
-            }
-          }}
-        >
+        <button type="button" class="resource-button" onclick={() => (browseOpen = true)}>
           {$t('frameleaf_libraries_choose_folder')}
         </button>
         {#if browseOpen}
-          <div class="resource-browser" role="group" aria-label={$t('frameleaf_libraries_choose_folder')}>
-            {#if browseError}
-              <p class="resource-error" role="alert">{browseError}</p>
-            {:else if browsing}
-              <p class="resource-footnote">
-                <code>{browsing.path}</code>
-                {#if !browsing.readable}· {$t('frameleaf_libraries_browse_unreadable')}{/if}
-              </p>
-              <ul>
-                {#if browsing.parent}
-                  <li>
-                    <button type="button" class="resource-button" onclick={() => browse(browsing!.parent!)}
-                      >{$t('frameleaf_libraries_browse_up')}</button
-                    >
-                  </li>
-                {/if}
-                {#each browsing.folders as folder (folder.path)}
-                  <li>
-                    <button type="button" class="resource-button" onclick={() => browse(folder.path)}
-                      >{folder.name}</button
-                    >
-                  </li>
-                {:else}
-                  <li class="resource-footnote">{$t('frameleaf_libraries_browse_empty')}</li>
-                {/each}
-              </ul>
-              {#if browsing.truncated}
-                <p class="resource-footnote">{$t('frameleaf_libraries_browse_truncated')}</p>
-              {/if}
-              {#if browsing.path !== '/' && browsing.readable}
-                <button type="button" class="resource-button primary" onclick={() => useFolder(browsing!.path)}
-                  >{$t('frameleaf_libraries_browse_use')}</button
-                >
-              {/if}
-            {/if}
-          </div>
+          <FolderChooser
+            rootName={$t('frameleaf_cc_group_this_server')}
+            read={libraryFolderReader($t)}
+            onClose={() => (browseOpen = false)}
+            onChoose={(_, listing) => useFolder(listing.extra!)}
+          />
         {/if}
       </div>
 

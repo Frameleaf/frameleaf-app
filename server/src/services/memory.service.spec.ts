@@ -109,6 +109,30 @@ describe(MemoryService.name, () => {
   });
 
   describe('search', () => {
+    it('lists each item slim, with no full asset, when asked (FL-1793)', async () => {
+      const [userId] = newUuids();
+      const asset = AssetFactory.create();
+      const memory = MemoryFactory.from({ ownerId: userId }).asset(asset).build();
+      mocks.memory.search.mockResolvedValue([getForMemory(memory)]);
+
+      const [found] = await sut.search(factory.auth({ user: { id: userId } }), { slim: true });
+
+      expect(mocks.memory.search).toHaveBeenCalledWith(userId, { slim: true }, expect.anything());
+      expect(found.assets).toEqual([]);
+      expect(found.slimAssets).toEqual([
+        {
+          id: asset.id,
+          type: asset.type,
+          thumbhash: expect.toSatisfy((value) => value === null || typeof value === 'string'),
+          fileCreatedAt: expect.any(String),
+          localDateTime: expect.any(String),
+          width: asset.width,
+          height: asset.height,
+          visibility: asset.visibility,
+        },
+      ]);
+    });
+
     it('should search memories with assets', async () => {
       const [userId] = newUuids();
 
