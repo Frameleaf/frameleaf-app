@@ -112,7 +112,7 @@ describe(PartnerPeopleService.name, () => {
           correctionId: null,
         },
       ];
-      return Promise.resolve({ personGroupId: NEW_PG });
+      return Promise.resolve({ personGroupId: NEW_PG, created: true });
     });
     mocks.search.searchFaces.mockResolvedValue([]);
   });
@@ -350,6 +350,42 @@ describe(PartnerPeopleService.name, () => {
 
       expect(mocks.person.recordFaceCorrections).not.toHaveBeenCalled();
       expect(links[0]).toMatchObject({ personGroupId: NEW_PG, kind: 'created' });
+    });
+
+    // FL-1814
+    it("starts a new copy with how sure the partner's dates are", async () => {
+      mocks.person.getProfile.mockImplementation(({ ownerId }) =>
+        Promise.resolve(
+          ownerId === A
+            ? { deathDate: '2020-01-01', notes: 'private', birthDatePrecision: 'month', deathDatePrecision: 'year' }
+            : undefined,
+        ),
+      );
+
+      await sut.copyFaces(copyInput);
+
+      expect(mocks.person.upsertProfile).toHaveBeenCalledWith(
+        { ownerId: B, personGroupId: NEW_PG },
+        { deathDate: '2020-01-01', deathDatePrecision: 'year', birthDatePrecision: 'month' },
+      );
+    });
+
+    it('leaves the details of a copy that was there already (FL-1814)', async () => {
+      mocks.person.getProfile.mockResolvedValue({
+        deathDate: '2020-01-01',
+        notes: null,
+        birthDatePrecision: 'year',
+        deathDatePrecision: null,
+      });
+      const createCopy = mocks.partnerOrigin.createPersonCopy.getMockImplementation()!;
+      mocks.partnerOrigin.createPersonCopy.mockImplementation(async (value, undo) => ({
+        ...((await createCopy(value, undo)) as { personGroupId: string }),
+        created: false,
+      }));
+
+      await sut.copyFaces(copyInput);
+
+      expect(mocks.person.upsertProfile).not.toHaveBeenCalled();
     });
 
     it('creates a new person with an origin when nothing matches', async () => {
@@ -688,6 +724,52 @@ describe(PartnerPeopleService.name, () => {
       });
       // onward to the followers of each copy (A to B to C)
       expect(mocks.partnerOrigin.getPersonFollowers).toHaveBeenCalledWith(B, NEW_PG);
+    });
+
+    // FL-1814
+    it('follows how sure each date is with that date, and not past an owner who changed it', async () => {
+      people.set(`${A}/${PG_A}`, person(A, PG_A, { birthDate: '1987-03-01' }));
+      people.set(`${B}/${NEW_PG}`, person(B, NEW_PG, { birthDate: '1987-03-01' }));
+      mocks.person.getProfile.mockImplementation(({ ownerId }) =>
+        Promise.resolve(
+          ownerId === A
+            ? { deathDate: '2020-01-01', notes: null, birthDatePrecision: 'month', deathDatePrecision: 'about' }
+            : undefined,
+        ),
+      );
+      mocks.partnerOrigin.withPersonOrigin.mockImplementation(async (ownerId, personGroupId, write) =>
+        write({
+          ownerId,
+          personGroupId,
+          sourceOwnerId: A,
+          sourcePersonGroupId: PG_A,
+          following: true,
+          overriddenFields: ownerId === 'c' ? ['birthDate'] : [],
+        } as never),
+      );
+      mocks.partnerOrigin.getPersonFollowers.mockImplementation((ownerId) =>
+        Promise.resolve(
+          ownerId === A
+            ? ([
+                { ownerId: B, personGroupId: NEW_PG, overriddenFields: [] },
+                { ownerId: 'c', personGroupId: 'pg-c', overriddenFields: ['birthDate'] },
+              ] as never)
+            : ([] as never),
+        ),
+      );
+
+      await sut.propagatePerson(A, PG_A);
+
+      expect(mocks.person.upsertProfile).toHaveBeenCalledWith(
+        expect.objectContaining({ ownerId: B, personGroupId: NEW_PG }),
+        { deathDate: '2020-01-01', deathDatePrecision: 'about', birthDatePrecision: 'month' },
+      );
+      // C set their own date of birth: only the date of passing follows
+      expect(mocks.person.upsertProfile).toHaveBeenCalledWith(
+        expect.objectContaining({ ownerId: 'c', personGroupId: 'pg-c' }),
+        { deathDate: '2020-01-01', deathDatePrecision: 'about' },
+      );
+      expect(mocks.event.emit).toHaveBeenCalledWith('PersonChanged', { ownerId: B, personGroupId: NEW_PG });
     });
 
     it('stops at a loop', async () => {
