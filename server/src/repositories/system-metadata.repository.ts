@@ -198,7 +198,7 @@ export class SystemMetadataRepository {
   ): Promise<boolean> {
     const result = await this.db
       .updateTable('system_metadata')
-      .set({ value: sql`${JSON.stringify(next)}::jsonb` } as never)
+      .set({ value: next } as Upsert)
       .where('key', '=', SystemMetadataKey.ModelDownloadKey)
       .where(sql<boolean>`"value" ->> 'sealed' = ${checked.sealed}`)
       .where(sql<boolean>`"value" ->> 'savedAt' = ${checked.savedAt}`)
