@@ -67,6 +67,10 @@ import {
   mdiCertificateOutline,
   mdiCreditCardOutline,
   mdiLinkVariant,
+  mdiPawOutline,
+  mdiMapOutline,
+  mdiCameraOutline,
+  mdiTuneVariant,
 } from '@mdi/js';
 import type { MessageFormatter, Translations } from 'svelte-i18n';
 import { buildAlbumTree, type FrameleafAlbumNode } from '$lib/frameleaf/album-tree';
@@ -103,6 +107,8 @@ import { Route } from '$lib/route';
 
 export interface CommandIndexContext {
   capabilities: RailCapabilities;
+  /** The server has the map. The rail reaches it through Places (FL-1806); the palette names it. */
+  map?: boolean;
   isAdmin: boolean;
 }
 
@@ -139,6 +145,13 @@ export const buildPageCommands = ($t: MessageFormatter, context: CommandIndexCon
   // Destinations that are not rail entries but are real pages the palette should resolve.
   const extras: CommandInput[] = [
     { id: 'memories', title: $t('memories'), icon: mdiClockOutline, href: Route.memories() },
+    // FL-1806: no longer rail entries of their own, but still pages the palette opens directly.
+    ...(context.capabilities.pets
+      ? [{ id: 'pets', title: $t('frameleaf_pets_title'), icon: mdiPawOutline, href: Route.pets() }]
+      : []),
+    ...(context.map ? [{ id: 'map', title: $t('map'), icon: mdiMapOutline, href: Route.map() }] : []),
+    { id: 'raw-support', title: $t('frameleaf_raw_support_nav'), icon: mdiCameraOutline, href: Route.rawSupport() },
+    { id: 'workflows', title: $t('workflows'), icon: mdiTuneVariant, href: Route.workflows() },
     { id: 'duplicates', title: $t('review_duplicates'), icon: mdiContentDuplicate, href: Route.duplicatesUtility() },
     {
       id: 'large-files',

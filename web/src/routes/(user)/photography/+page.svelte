@@ -42,7 +42,7 @@
 
   const start = () => void setClients(true);
 
-  /** "Remove from the top bar": Clients goes back under Tools; shoots and galleries are kept. */
+  /** "Stop using Clients": the page shows the introduction again; shoots and galleries are kept. */
   const removeFromTopBar = async () => {
     leaving = true;
     if (await setClients(false)) {

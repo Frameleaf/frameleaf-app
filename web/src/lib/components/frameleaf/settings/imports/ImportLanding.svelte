@@ -198,7 +198,12 @@
     <div class="pad">
       <Notice title={$t('frameleaf_import_backups_title')}>
         {#snippet action()}
-          <Button onclick={() => goto(commandCenterUrl('backups'))}>{$t('frameleaf_import_open_backup')}</Button>
+          <!-- Backup is the server's; a member's own part of it is what Cloud Backup keeps for them. -->
+          <Button
+            onclick={() =>
+              goto(isAdmin ? commandCenterUrl('backups') : commandCenterUrl('backup', 'cloud-backup-choice'))}
+            >{$t('frameleaf_import_open_backup')}</Button
+          >
         {/snippet}
         {$t('frameleaf_import_backups_body')}
       </Notice>

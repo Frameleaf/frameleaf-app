@@ -11,7 +11,7 @@ import { expect, Page, test } from '@playwright/test';
 import { asBearerAuth, testAssetDir, testAssetDirInternal, utils } from 'src/utils.js';
 
 /**
- * Library Care (FL-69): scan → finding → candidate → review → repair → reconcile, with partial
+ * Library care (FL-69): scan → finding → candidate → review → repair → reconcile, with partial
  * failures and the administrator/owner boundary. Missing originals are made with an external library
  * whose files the test moves on disk, so the scan, the search for originals and the relink all run
  * against real files. The Missing and Damaged media tools are an administrator's (the template marks
@@ -35,7 +35,7 @@ const openMissingMedia = async (page: Page) => {
   await expect(page.getByRole('heading', { name: 'Missing files' })).toBeVisible();
 };
 
-test.describe('Library Care', () => {
+test.describe('Library care', () => {
   let admin: LoginResponseDto;
   let owner: LoginResponseDto;
   const folder = `${testAssetDir}/temp/library-care`;
@@ -71,7 +71,7 @@ test.describe('Library Care', () => {
     const library = await utils.createLibrary(admin.accessToken, { ownerId: admin.userId, importPaths: [internal] });
     await utils.scan(admin.accessToken, library.id);
 
-    // An external original's own checksum is its path; Library Care records the digests of its bytes the
+    // An external original's own checksum is its path; Library care records the digests of its bytes the
     // first time a scan reads it intact, which is what a search later matches a moved copy against.
     await startMissingScan({ headers: asBearerAuth(admin.accessToken) });
     await expect

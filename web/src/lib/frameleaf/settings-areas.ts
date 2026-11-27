@@ -68,11 +68,12 @@ export type SettingsAreaDefinition = {
 
 /** The template's area order (`settingsAreas` in settings-catalog.mjs); the rail groups them by `group`. */
 export const SETTINGS_AREAS: readonly SettingsAreaDefinition[] = Object.freeze([
-  // The template's Command center group: the Overview (status, storage and what needs attention)
-  // and, FL-79, Library analytics. Both are screens of their own rather than section directories.
+  // The Overview (status, storage and what needs attention) heads the list on its own. FL-1806
+  // (approved 2026-11-26): Library analytics is with the library and Backup with the server.
+  // Overview, analytics and backups are screens of their own rather than section directories.
   { id: 'overview', group: 'command', sections: [], adminOnly: true },
-  { id: 'analytics', group: 'command', sections: [], adminOnly: true },
-  { id: 'backups', group: 'command', sections: [], adminOnly: true },
+  { id: 'analytics', group: 'library', sections: [], adminOnly: true },
+  { id: 'backups', group: 'server', sections: [], adminOnly: true },
   // FL-75: `migration` is the template's "Move or export your library", last in this area. FL-71:
   // physical deduplication (the old /admin/physical-deduplication page) is the template's
   // `deduplication` section, after the folder layout.
@@ -256,12 +257,21 @@ export const SETTINGS_AREAS: readonly SettingsAreaDefinition[] = Object.freeze([
   { id: 'history', group: 'personal', sections: [] },
 ]);
 
+/** FL-1806: Settings reads You, Library, Server, after the Overview. */
 export const SETTINGS_GROUP_ORDER: readonly SettingsGroupId[] = Object.freeze([
   'command',
+  'personal',
   'library',
   'server',
-  'personal',
 ]);
+
+/**
+ * FL-1806 (approved 2026-11-26): areas that are places, not preferences. They keep their Command
+ * Center addresses but open beside the library rail, which has an entry for each (Import, Library
+ * care, Trash), and the Settings list leaves them out. Utilities is Library care's tools.
+ */
+export const PLACE_AREAS: readonly SettingsAreaId[] = Object.freeze(['backup', 'care', 'utilities', 'trash']);
+export const isPlaceArea = (area: string | null | undefined): boolean => PLACE_AREAS.includes(area as SettingsAreaId);
 
 /** Where the Command Center opens without an area: the first area the account can use. */
 export const defaultSettingsArea = (isAdmin: boolean): SettingsAreaId => (isAdmin ? 'overview' : 'preferences');

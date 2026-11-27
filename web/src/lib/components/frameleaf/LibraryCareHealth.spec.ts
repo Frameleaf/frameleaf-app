@@ -99,7 +99,7 @@ const renderPage = (items = [item()], initialSummary = summary()) =>
     initialOwner: 'all',
   });
 
-describe('Library Care health tool (FL-69)', () => {
+describe('Library care health tool (FL-69)', () => {
   beforeAll(() => addMessages('dev', en));
   beforeEach(() => {
     state.goto.mockReset();
