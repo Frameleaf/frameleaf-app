@@ -1,0 +1,842 @@
+diff --git a/src/features/editor/components/animate-workspace/animation-preset-library.tsx b/src/features/editor/components/animate-workspace/animation-preset-library.tsx
+index 2d51a3a..8c69de6 100644
+--- a/src/features/editor/components/animate-workspace/animation-preset-library.tsx
++++ b/src/features/editor/components/animate-workspace/animation-preset-library.tsx
+@@ -24,7 +24,7 @@ import { toast } from 'sonner'
+ import { useShallow } from 'zustand/react/shallow'
+ import type { CanvasSettings } from '@/types/transform'
+ import type { AnimationKeyframeSource, AnimatableProperty } from '@/types/keyframe'
+-import type { TextItem, TimelineItem } from '@/types/timeline'
++import type { TextItem, TimelineItem, TimelineTrack } from '@/types/timeline'
+ import type { TextMotionSlot } from '@/types/text-motion'
+ import type {
+   MotionModifierChannel,
+@@ -138,6 +138,61 @@ function isTimelineItem(item: TimelineItem | undefined): item is TimelineItem {
+   return Boolean(item)
+ }
+ 
++// Items-keyed cache for the ordered selection. The library only needs the
++// selected items, but a raw Map+filter+sort selector rebuilt the track-order
++// map and re-sorted on every items-store update while the panel was open.
++let presetSelectedItemsCache: {
++  items: TimelineItem[]
++  tracks: TimelineTrack[]
++  ids: string[]
++  result: TimelineItem[]
++} | null = null
++
++function areSelectionIdListsEqual(previous: readonly string[], next: readonly string[]): boolean {
++  if (previous.length !== next.length) return false
++  for (let index = 0; index < previous.length; index += 1) {
++    if (previous[index] !== next[index]) return false
++  }
++  return true
++}
++
++function selectPresetSelectedItems(
++  state: {
++    items: TimelineItem[]
++    tracks: TimelineTrack[]
++    itemById: Record<string, TimelineItem>
++  },
++  selectedItemIds: readonly string[],
++): TimelineItem[] {
++  const cached = presetSelectedItemsCache
++  if (
++    cached &&
++    cached.items === state.items &&
++    cached.tracks === state.tracks &&
++    areSelectionIdListsEqual(cached.ids, selectedItemIds)
++  ) {
++    return cached.result
++  }
++
++  const orderByTrack = new Map(state.tracks.map((track) => [track.id, track.order ?? 0]))
++  const result = selectedItemIds
++    .map((id) => state.itemById[id])
++    .filter(isTimelineItem)
++    .sort((left, right) => {
++      const frameDelta = left.from - right.from
++      if (frameDelta !== 0) return frameDelta
++      return (orderByTrack.get(left.trackId) ?? 0) - (orderByTrack.get(right.trackId) ?? 0)
++    })
++
++  presetSelectedItemsCache = {
++    items: state.items,
++    tracks: state.tracks,
++    ids: [...selectedItemIds],
++    result,
++  }
++  return result
++}
++
+ interface ModifierEditSettings {
+   intensityScale?: number
+   durationScale?: number
+@@ -529,20 +584,7 @@ export const AnimationPresetLibrary = memo(function AnimationPresetLibrary({
+   const selectedItemIds = itemIds ?? storeSelectedItemIds
+   const selectedItems = useItemsStore(
+     useShallow(
+-      useCallback(
+-        (s) => {
+-          const orderByTrack = new Map(s.tracks.map((track) => [track.id, track.order ?? 0]))
+-          return selectedItemIds
+-            .map((id) => s.itemById[id])
+-            .filter(isTimelineItem)
+-            .sort((left, right) => {
+-              const frameDelta = left.from - right.from
+-              if (frameDelta !== 0) return frameDelta
+-              return (orderByTrack.get(left.trackId) ?? 0) - (orderByTrack.get(right.trackId) ?? 0)
+-            })
+-        },
+-        [selectedItemIds],
+-      ),
++      useCallback((s) => selectPresetSelectedItems(s, selectedItemIds), [selectedItemIds]),
+     ),
+   )
+   const selectedItem = selectedItems[0] ?? null
+diff --git a/src/features/editor/components/properties-sidebar/clip-panel/index.tsx b/src/features/editor/components/properties-sidebar/clip-panel/index.tsx
+index 472f3b7..4a1cdf6 100644
+--- a/src/features/editor/components/properties-sidebar/clip-panel/index.tsx
++++ b/src/features/editor/components/properties-sidebar/clip-panel/index.tsx
+@@ -401,9 +401,18 @@ const DeferredClipPanel = memo(function DeferredClipPanel({
+   snapshot: ClipPanelSnapshot
+ }) {
+   const deferredSnapshot = useDeferredValue(snapshot)
++  // Controlled text fields must receive edits synchronously to retain the caret.
++  const textChanged = snapshot.selectedItems.some((item, index) => {
++    const deferredItem = deferredSnapshot.selectedItems[index]
++    return (
++      item.type === 'text' &&
++      deferredItem?.type === 'text' &&
++      item.text !== deferredItem.text
++    )
++  })
+   return (
+     <ClipPanelCore
+-      selectedItems={deferredSnapshot.selectedItems}
++      selectedItems={textChanged ? snapshot.selectedItems : deferredSnapshot.selectedItems}
+       audioPanelItems={deferredSnapshot.audioPanelItems}
+     />
+   )
+diff --git a/src/features/editor/components/properties-sidebar/clip-panel/text-section.tsx b/src/features/editor/components/properties-sidebar/clip-panel/text-section.tsx
+index c41040c..399ab7e 100644
+--- a/src/features/editor/components/properties-sidebar/clip-panel/text-section.tsx
++++ b/src/features/editor/components/properties-sidebar/clip-panel/text-section.tsx
+@@ -1202,7 +1202,7 @@ function TextSectionComposer({ items, canvas, slots }: TextSectionComposerProps)
+               <div className="space-y-2">
+                 {activeEditorSpans.map((span, index) => (
+                   <div
+-                    key={`${index}:${span.text}`}
++                    key={index}
+                     className="rounded-md border border-border/70 p-2"
+                   >
+                     {(() => {
+diff --git a/src/features/editor/components/properties-sidebar/index.tsx b/src/features/editor/components/properties-sidebar/index.tsx
+index fde00b8..8346756 100644
+--- a/src/features/editor/components/properties-sidebar/index.tsx
++++ b/src/features/editor/components/properties-sidebar/index.tsx
+@@ -55,6 +55,67 @@ function PropertiesPanelLoadingFallback() {
+ 
+ type HeaderItem = Pick<TimelineItem, 'id' | 'label' | 'linkedGroupId' | 'type'>
+ 
++// Selection headers are derived per items-store update. A module cache keyed on
++// the selection contents returns the same array identity while the selected
++// items' header fields are unchanged, so unrelated item edits don't re-render
++// the sidebar header (previously done by stringifying/parsing a JSON signature).
++let selectedItemHeadersCache: { ids: string[]; headers: HeaderItem[] } | null = null
++
++function areIdListsEqual(previous: readonly string[], next: readonly string[]): boolean {
++  if (previous.length !== next.length) return false
++  for (let index = 0; index < previous.length; index += 1) {
++    if (previous[index] !== next[index]) return false
++  }
++  return true
++}
++
++function areHeaderFieldsCurrent(
++  headers: readonly HeaderItem[],
++  itemById: Record<string, TimelineItem>,
++): boolean {
++  for (const header of headers) {
++    const item = itemById[header.id]
++    if (!item) return false
++    if (
++      item.label !== header.label ||
++      item.linkedGroupId !== header.linkedGroupId ||
++      item.type !== header.type
++    ) {
++      return false
++    }
++  }
++  return true
++}
++
++function selectSelectedItemHeaders(
++  state: { itemById: Record<string, TimelineItem> },
++  selectedItemIds: readonly string[],
++): HeaderItem[] {
++  const cached = selectedItemHeadersCache
++  if (
++    cached &&
++    areIdListsEqual(cached.ids, selectedItemIds) &&
++    areHeaderFieldsCurrent(cached.headers, state.itemById)
++  ) {
++    return cached.headers
++  }
++
++  const headers: HeaderItem[] = []
++  for (const itemId of selectedItemIds) {
++    const item = state.itemById[itemId]
++    if (item) {
++      headers.push({
++        id: item.id,
++        label: item.label,
++        linkedGroupId: item.linkedGroupId,
++        type: item.type,
++      })
++    }
++  }
++  selectedItemHeadersCache = { ids: [...selectedItemIds], headers }
++  return headers
++}
++
+ function buildClipHeaderGroups(items: HeaderItem[]) {
+   const groups = new Map<
+     string,
+@@ -146,31 +207,12 @@ export const PropertiesSidebar = memo(function PropertiesSidebar() {
+     activeCompositionId ? s.compositionById[activeCompositionId]?.name : undefined,
+   )
+   const prefersReducedMotion = useReducedMotion()
+-  const selectedItemHeaderSignature = useItemsStore(
++  const selectedItems = useItemsStore(
+     useCallback(
+-      (state) =>
+-        JSON.stringify(
+-          selectedItemIds.flatMap((itemId) => {
+-            const item = state.itemById[itemId]
+-            return item
+-              ? [
+-                  {
+-                    id: item.id,
+-                    label: item.label,
+-                    linkedGroupId: item.linkedGroupId,
+-                    type: item.type,
+-                  } satisfies HeaderItem,
+-                ]
+-              : []
+-          }),
+-        ),
++      (state) => selectSelectedItemHeaders(state, selectedItemIds),
+       [selectedItemIds],
+     ),
+   )
+-  const selectedItems = useMemo(
+-    () => JSON.parse(selectedItemHeaderSignature) as HeaderItem[],
+-    [selectedItemHeaderSignature],
+-  )
+ 
+   const hasClipSelection = selectedItemIds.length > 0
+   const clipHeader = useMemo(() => getClipHeader(selectedItems), [selectedItems])
+diff --git a/src/features/keyframes/components/dopesheet-editor/index.tsx b/src/features/keyframes/components/dopesheet-editor/index.tsx
+index eb3d180..5dc3e65 100644
+--- a/src/features/keyframes/components/dopesheet-editor/index.tsx
++++ b/src/features/keyframes/components/dopesheet-editor/index.tsx
+@@ -179,6 +179,8 @@ import {
+   buildPropertyKeyframeRefs,
+   buildRowKeyframeRefs,
+   removeSelectionIds,
++  resolveShiftRangeSelection,
++  toggleKeyframeInSelection,
+ } from './row-action-helpers'
+ import {
+   getKeyframeGroupLabel,
+@@ -2747,35 +2749,20 @@ export const DopesheetEditor = memo(function DopesheetEditor({
+ 
+       if (event.shiftKey && !event.ctrlKey && !event.metaKey) {
+         const propertyKeyframes = rowKeyframesByProperty.get(property) ?? []
+-        const clickedIndex = propertyKeyframes.findIndex((keyframe) => keyframe.id === keyframeId)
+         const anchorId = selectionAnchorByPropertyRef.current.get(property)
+-        const anchorIndex = anchorId
+-          ? propertyKeyframes.findIndex((keyframe) => keyframe.id === anchorId)
+-          : -1
+-
+-        const nextSelection = new Set(selectedKeyframeIds)
+-        if (clickedIndex >= 0 && anchorIndex >= 0) {
+-          const start = Math.min(clickedIndex, anchorIndex)
+-          const end = Math.max(clickedIndex, anchorIndex)
+-          for (let i = start; i <= end; i++) {
+-            const keyframe = propertyKeyframes[i]
+-            if (keyframe) nextSelection.add(keyframe.id)
+-          }
+-        } else {
+-          nextSelection.add(keyframeId)
+-        }
++        const nextSelection = resolveShiftRangeSelection(
++          propertyKeyframes,
++          keyframeId,
++          anchorId,
++          selectedKeyframeIds,
++        )
+         onSelectionChange?.(nextSelection, { preserveExternalSelection: true })
+         selectionAnchorByPropertyRef.current.set(property, keyframeId)
+         return
+       }
+ 
+       if (event.ctrlKey || event.metaKey) {
+-        const nextSelection = new Set(selectedKeyframeIds)
+-        if (nextSelection.has(keyframeId)) {
+-          nextSelection.delete(keyframeId)
+-        } else {
+-          nextSelection.add(keyframeId)
+-        }
++        const nextSelection = toggleKeyframeInSelection(selectedKeyframeIds, keyframeId)
+         onSelectionChange?.(nextSelection, { preserveExternalSelection: true })
+         selectionAnchorByPropertyRef.current.set(property, keyframeId)
+         return
+diff --git a/src/features/keyframes/components/dopesheet-editor/row-action-helpers.test.ts b/src/features/keyframes/components/dopesheet-editor/row-action-helpers.test.ts
+index b470882..1b29b52 100644
+--- a/src/features/keyframes/components/dopesheet-editor/row-action-helpers.test.ts
++++ b/src/features/keyframes/components/dopesheet-editor/row-action-helpers.test.ts
+@@ -7,6 +7,8 @@ import {
+   buildRowKeyframeRefs,
+   getRemovableGroupCurrentKeyframes,
+   removeSelectionIds,
++  resolveShiftRangeSelection,
++  toggleKeyframeInSelection,
+ } from './row-action-helpers'
+ 
+ describe('row action helpers', () => {
+@@ -51,6 +53,29 @@ describe('row action helpers', () => {
+     ])
+   })
+ 
++  it('selects the inclusive range between clicked and anchor keyframes', () => {
++    const keyframes = rows[0]!.keyframes
++    expect(resolveShiftRangeSelection(keyframes, 'kf-x-2', 'kf-x-1', new Set())).toEqual(
++      new Set(['kf-x-1', 'kf-x-2']),
++    )
++  })
++
++  it('selects just the clicked keyframe when the anchor is missing', () => {
++    const keyframes = rows[0]!.keyframes
++    expect(resolveShiftRangeSelection(keyframes, 'kf-x-2', undefined, new Set(['kf-x-1']))).toEqual(
++      new Set(['kf-x-1', 'kf-x-2']),
++    )
++  })
++
++  it('toggles a keyframe id in and out of the selection', () => {
++    expect(toggleKeyframeInSelection(new Set(['kf-x-1']), 'kf-x-2')).toEqual(
++      new Set(['kf-x-1', 'kf-x-2']),
++    )
++    expect(toggleKeyframeInSelection(new Set(['kf-x-1', 'kf-x-2']), 'kf-x-1')).toEqual(
++      new Set(['kf-x-2']),
++    )
++  })
++
+   it('filters group current keyframes down to unlocked properties', () => {
+     expect(
+       getRemovableGroupCurrentKeyframes(
+diff --git a/src/features/keyframes/components/dopesheet-editor/row-action-helpers.ts b/src/features/keyframes/components/dopesheet-editor/row-action-helpers.ts
+index 6bcb47d..8a7c438 100644
+--- a/src/features/keyframes/components/dopesheet-editor/row-action-helpers.ts
++++ b/src/features/keyframes/components/dopesheet-editor/row-action-helpers.ts
+@@ -62,3 +62,46 @@ export function getRemovableGroupCurrentKeyframes(
+ ): CurrentGroupKeyframeLike[] {
+   return currentKeyframes.filter(({ property }) => !isPropertyLocked(property))
+ }
++
++/**
++ * Shift-click range selection: selects every keyframe between the clicked
++ * keyframe and the anchor (inclusive). Falls back to selecting just the
++ * clicked keyframe when either endpoint has no index.
++ */
++export function resolveShiftRangeSelection(
++  propertyKeyframes: readonly Keyframe[],
++  clickedKeyframeId: string,
++  anchorKeyframeId: string | undefined,
++  selectedKeyframeIds: ReadonlySet<string>,
++): Set<string> {
++  const nextSelection = new Set(selectedKeyframeIds)
++  const clickedIndex = propertyKeyframes.findIndex((keyframe) => keyframe.id === clickedKeyframeId)
++  const anchorIndex = anchorKeyframeId
++    ? propertyKeyframes.findIndex((keyframe) => keyframe.id === anchorKeyframeId)
++    : -1
++  if (clickedIndex >= 0 && anchorIndex >= 0) {
++    const start = Math.min(clickedIndex, anchorIndex)
++    const end = Math.max(clickedIndex, anchorIndex)
++    for (let i = start; i <= end; i++) {
++      const keyframe = propertyKeyframes[i]
++      if (keyframe) nextSelection.add(keyframe.id)
++    }
++  } else {
++    nextSelection.add(clickedKeyframeId)
++  }
++  return nextSelection
++}
++
++/** Ctrl/Cmd-click: toggles a single keyframe in the selection. */
++export function toggleKeyframeInSelection(
++  selectedKeyframeIds: ReadonlySet<string>,
++  keyframeId: string,
++): Set<string> {
++  const nextSelection = new Set(selectedKeyframeIds)
++  if (nextSelection.has(keyframeId)) {
++    nextSelection.delete(keyframeId)
++  } else {
++    nextSelection.add(keyframeId)
++  }
++  return nextSelection
++}
+diff --git a/src/features/media-library/components/media-library.tsx b/src/features/media-library/components/media-library.tsx
+index d708c51..890321e 100644
+--- a/src/features/media-library/components/media-library.tsx
++++ b/src/features/media-library/components/media-library.tsx
+@@ -1292,7 +1292,7 @@ export const MediaLibrary = memo(function MediaLibrary({ onMediaSelect }: MediaL
+ 
+         {/* Drag overlay — absolute sibling, always covers the visible viewport */}
+         {isDragging && (
+-          <div className="absolute inset-0 bg-gradient-to-br from-primary/10 via-transparent to-primary/5 border-2 border-dashed border-primary z-50 flex items-center justify-center pointer-events-none">
++          <div className="absolute inset-0 bg-background/95 bg-gradient-to-br from-primary/15 via-transparent to-primary/10 border-2 border-dashed border-primary z-50 flex items-center justify-center pointer-events-none">
+             <div className="absolute top-2 left-2 w-6 h-6 border-l-2 border-t-2 border-primary" />
+             <div className="absolute top-2 right-2 w-6 h-6 border-r-2 border-t-2 border-primary" />
+             <div className="absolute bottom-2 left-2 w-6 h-6 border-l-2 border-b-2 border-primary" />
+diff --git a/src/features/media-library/stores/media-relinking-actions.test.ts b/src/features/media-library/stores/media-relinking-actions.test.ts
+index 0c7a6d3..8faab1a 100644
+--- a/src/features/media-library/stores/media-relinking-actions.test.ts
++++ b/src/features/media-library/stores/media-relinking-actions.test.ts
+@@ -216,6 +216,42 @@ describe('createRelinkingActions', () => {
+       expect(currentState.brokenMediaIds).toEqual(['media-2'])
+       expect(currentState.brokenMediaInfo!.has('media-1')).toBe(false)
+     })
++
++    it('prunes resolved orphans so the orphaned-clips dialog can auto-close', () => {
++      let currentState: RelinkingState = {
++        brokenMediaIds: ['media-1'],
++        brokenMediaInfo: new Map([
++          ['media-1', { mediaId: 'media-1', fileName: 'a.mp4', errorType: 'file_missing' }],
++        ]),
++        orphanedClips: [
++          {
++            itemId: 'clip-1',
++            mediaId: 'media-1',
++            itemType: 'video',
++            fileName: 'a.mp4',
++            trackId: 'track-1',
++          },
++          {
++            itemId: 'clip-2',
++            mediaId: 'media-2',
++            itemType: 'video',
++            fileName: 'b.mp4',
++            trackId: 'track-1',
++          },
++        ],
++        showOrphanedClipsDialog: true,
++      }
++      const set = vi.fn((updater: RelinkingUpdater) => {
++        currentState = applyStateUpdate(currentState, updater)
++      })
++      const get = vi.fn(() => currentState as MediaLibraryState & MediaLibraryActions)
++
++      const actions = createRelinkingActions(set, get)
++      actions.markMediaHealthy('media-1')
++
++      expect(currentState.brokenMediaIds).toEqual([])
++      expect(currentState.orphanedClips!.map((o) => o.itemId)).toEqual(['clip-2'])
++    })
+   })
+ 
+   describe('dismissMissingMediaWarnings', () => {
+diff --git a/src/features/media-library/stores/media-relinking-actions.ts b/src/features/media-library/stores/media-relinking-actions.ts
+index 63ec029..d8541d0 100644
+--- a/src/features/media-library/stores/media-relinking-actions.ts
++++ b/src/features/media-library/stores/media-relinking-actions.ts
+@@ -183,6 +183,11 @@ export function createRelinkingActions(
+           dismissedMissingMediaIds: (state.dismissedMissingMediaIds ?? []).filter(
+             (bid) => bid !== id,
+           ),
++          // Drop orphan entries for the recovered media so the
++          // orphaned-clips dialog's auto-close effect can fire once the
++          // last one clears. Without this the dialog stays open with
++          // stale content after the media resolves healthy.
++          orphanedClips: (state.orphanedClips ?? []).filter((orphan) => orphan.mediaId !== id),
+         }
+       })
+     },
+diff --git a/src/features/media-library/utils/audio-scrub-preview.test.ts b/src/features/media-library/utils/audio-scrub-preview.test.ts
+index a5ad7b3..2015658 100644
+--- a/src/features/media-library/utils/audio-scrub-preview.test.ts
++++ b/src/features/media-library/utils/audio-scrub-preview.test.ts
+@@ -82,4 +82,67 @@ describe('audio scrub preview', () => {
+ 
+     expect(first.source.stop).toHaveBeenCalledTimes(1)
+   })
++
++  it('evicts decoded buffers beyond the byte budget and re-decodes on demand', async () => {
++    const fake = makeFakeAudioContext()
++    const decodedBuffer = {
++      duration: 10,
++      length: 100,
++      numberOfChannels: 2,
++    } as AudioBuffer
++    const decodeAudioData = vi.fn(async () => decodedBuffer)
++    const context = {
++      ...fake.context,
++      decodeAudioData,
++    } as unknown as AudioContext
++    const fetchArrayBuffer = vi.fn(async (url: string) =>
++      url === 'blob:audio-1' ? new ArrayBuffer(8) : new ArrayBuffer(16),
++    )
++    const scrub = createAudioScrubPreview({
++      createAudioContext: () => context,
++      fetchArrayBuffer,
++      // One buffer is 800 bytes (100 frames × 2 channels × 4 bytes).
++      maxCachedBufferBytes: 800,
++    })
++
++    await scrub.scrub({ mediaId: 'audio-1', mediaUrl: 'blob:audio-1', timeSeconds: 1 })
++    await scrub.scrub({ mediaId: 'audio-2', mediaUrl: 'blob:audio-2', timeSeconds: 1 })
++
++    expect(fetchArrayBuffer).toHaveBeenCalledTimes(2)
++
++    // audio-1 was evicted when audio-2 pushed the cache over budget.
++    await scrub.scrub({ mediaId: 'audio-1', mediaUrl: 'blob:audio-1', timeSeconds: 2 })
++
++    const audioOneFetches = fetchArrayBuffer.mock.calls.filter(([url]) => url === 'blob:audio-1')
++    expect(audioOneFetches).toHaveLength(2)
++    expect(decodeAudioData).toHaveBeenCalledTimes(3)
++  })
++
++  it('drops failed decodes so a later scrub can retry', async () => {
++    const fake = makeFakeAudioContext()
++    let remainingFailures = 1
++    const decodeAudioData = vi.fn(async () => {
++      if (remainingFailures > 0) {
++        remainingFailures -= 1
++        throw new Error('decode failed')
++      }
++      return fake.buffer
++    })
++    const context = {
++      ...fake.context,
++      decodeAudioData,
++    } as unknown as AudioContext
++    const scrub = createAudioScrubPreview({
++      createAudioContext: () => context,
++      fetchArrayBuffer: vi.fn(async () => new ArrayBuffer(8)),
++    })
++
++    await expect(
++      scrub.scrub({ mediaId: 'audio-1', mediaUrl: 'blob:audio-1', timeSeconds: 1 }),
++    ).rejects.toThrow('decode failed')
++
++    await scrub.scrub({ mediaId: 'audio-1', mediaUrl: 'blob:audio-1', timeSeconds: 1 })
++
++    expect(decodeAudioData).toHaveBeenCalledTimes(2)
++  })
+ })
+diff --git a/src/features/media-library/utils/audio-scrub-preview.ts b/src/features/media-library/utils/audio-scrub-preview.ts
+index a611f54..a4fe2ff 100644
+--- a/src/features/media-library/utils/audio-scrub-preview.ts
++++ b/src/features/media-library/utils/audio-scrub-preview.ts
+@@ -16,11 +16,14 @@ interface AudioScrubPreviewOptions {
+   grainDurationSeconds?: number
+   fadeSeconds?: number
+   gain?: number
++  /** Total decoded-PCM budget for cached scrub buffers. Defaults to 64 MB. */
++  maxCachedBufferBytes?: number
+ }
+ 
+ const DEFAULT_GRAIN_DURATION_SECONDS = 0.08
+ const DEFAULT_FADE_SECONDS = 0.008
+ const DEFAULT_GAIN = 0.8
++const DEFAULT_MAX_CACHED_BUFFER_BYTES = 64 * 1024 * 1024
+ 
+ export function getAudioScrubTime(durationSeconds: number, progress: number): number {
+   if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) {
+@@ -46,10 +49,12 @@ export function createAudioScrubPreview(options: AudioScrubPreviewOptions = {})
+   const grainDurationSeconds = options.grainDurationSeconds ?? DEFAULT_GRAIN_DURATION_SECONDS
+   const fadeSeconds = options.fadeSeconds ?? DEFAULT_FADE_SECONDS
+   const gainValue = options.gain ?? DEFAULT_GAIN
++  const maxCachedBufferBytes = options.maxCachedBufferBytes ?? DEFAULT_MAX_CACHED_BUFFER_BYTES
+ 
+   let context: AudioContext | null = null
+   let activeGrain: ActiveGrain | null = null
+   const buffers = new Map<string, Promise<AudioBuffer>>()
++  const bufferBytesById = new Map<string, number>()
+ 
+   const getContext = () => {
+     if (!context) {
+@@ -58,6 +63,24 @@ export function createAudioScrubPreview(options: AudioScrubPreviewOptions = {})
+     return context
+   }
+ 
++  // Scrubbing only ever plays one buffer at a time; a full-song decoded PCM is
++  // ~230 MB, so keep the cache under a byte budget instead of retaining every
++  // media ever scrubbed for the lifetime of the session.
++  const evictOverBudgetBuffers = () => {
++    let totalBytes = 0
++    for (const bytes of bufferBytesById.values()) {
++      totalBytes += bytes
++    }
++    for (const mediaId of buffers.keys()) {
++      if (totalBytes <= maxCachedBufferBytes) break
++      const bytes = bufferBytesById.get(mediaId)
++      if (bytes === undefined) continue
++      buffers.delete(mediaId)
++      bufferBytesById.delete(mediaId)
++      totalBytes -= bytes
++    }
++  }
++
+   const loadBuffer = (mediaId: string, mediaUrl: string) => {
+     const existing = buffers.get(mediaId)
+     if (existing) return existing
+@@ -65,10 +88,20 @@ export function createAudioScrubPreview(options: AudioScrubPreviewOptions = {})
+     const bufferPromise = (async () => {
+       const ctx = getContext()
+       const arrayBuffer = await fetchArrayBuffer(mediaUrl)
+-      return ctx.decodeAudioData(arrayBuffer.slice(0))
++      const decoded = await ctx.decodeAudioData(arrayBuffer.slice(0))
++      bufferBytesById.set(mediaId, decoded.length * decoded.numberOfChannels * 4)
++      evictOverBudgetBuffers()
++      return decoded
+     })()
+ 
+     buffers.set(mediaId, bufferPromise)
++    void bufferPromise.catch(() => {
++      // Failed decodes must not poison the cache — a later scrub can retry.
++      if (buffers.get(mediaId) === bufferPromise) {
++        buffers.delete(mediaId)
++        bufferBytesById.delete(mediaId)
++      }
++    })
+     return bufferPromise
+   }
+ 
+@@ -146,6 +179,7 @@ export function createAudioScrubPreview(options: AudioScrubPreviewOptions = {})
+   const dispose = () => {
+     stop()
+     buffers.clear()
++    bufferBytesById.clear()
+     if (context) {
+       void context.close().catch(() => {})
+       context = null
+diff --git a/src/features/preview/components/video-preview.sync.test.tsx b/src/features/preview/components/video-preview.sync.test.tsx
+index f71dc4a..8a0cc08 100644
+--- a/src/features/preview/components/video-preview.sync.test.tsx
++++ b/src/features/preview/components/video-preview.sync.test.tsx
+@@ -291,6 +291,7 @@ vi.mock('@/infrastructure/browser/blob-url-manager', async () => {
+       },
+       subscribe: mockState.subscribeVersion,
+       getSnapshot: () => mockState.version.current,
++      onRevoke: () => () => {},
+     },
+     useBlobUrlVersion: () =>
+       React.useSyncExternalStore(mockState.subscribeVersion, () => mockState.version.current),
+diff --git a/src/features/preview/utils/decoder-prewarm.ts b/src/features/preview/utils/decoder-prewarm.ts
+index 7f6ffe7..c1a39c3 100644
+--- a/src/features/preview/utils/decoder-prewarm.ts
++++ b/src/features/preview/utils/decoder-prewarm.ts
+@@ -650,6 +650,20 @@ const blobByUrl = new Map<string, Blob>()
+ /** Track sources whose keyframe index has been sent to at least one worker */
+ const keyframesSentForSrc = new Set<string>()
+ 
++// A revoked blob URL can never be drawn or fetched again, and re-resolving the
++// same media mints a new URL — so every cache entry keyed by the old URL is
++// unreachable. Drop it (and its bitmaps) instead of retaining the Blob for the
++// lifetime of the session.
++blobUrlManager.onRevoke((url) => {
++  const hadBlob = blobByUrl.delete(url)
++  const hadBitmap = bitmapCache.has(url) || fallbackBitmapCache.has(url)
++  unavailableBlobUrls.delete(url)
++  keyframesSentForSrc.delete(url)
++  if (hadBlob || hadBitmap) {
++    clearPredecodedCache(url)
++  }
++})
++
+ function getDirectSourceMetadata(src: string) {
+   return getObjectUrlDirectFileMetadata(src) ?? undefined
+ }
+diff --git a/src/infrastructure/browser/blob-url-manager.test.ts b/src/infrastructure/browser/blob-url-manager.test.ts
+index 17ac2c9..db6e5b2 100644
+--- a/src/infrastructure/browser/blob-url-manager.test.ts
++++ b/src/infrastructure/browser/blob-url-manager.test.ts
+@@ -154,4 +154,64 @@ describe('BlobUrlManager', () => {
+       expect(revokedUrls.has(url2)).toBe(true)
+     })
+   })
++
++  describe('onRevoke', () => {
++    it('notifies subscribers when a released refcount hits zero', () => {
++      const seen: string[] = []
++      const unsubscribe = blobUrlManager.onRevoke((url) => seen.push(url))
++      const url = blobUrlManager.acquire('media-1', new Blob(['data']))
++
++      blobUrlManager.release('media-1')
++
++      expect(seen).toEqual([url])
++      unsubscribe()
++    })
++
++    it('does not notify while references remain', () => {
++      const seen: string[] = []
++      const unsubscribe = blobUrlManager.onRevoke((url) => seen.push(url))
++      blobUrlManager.acquire('media-1', new Blob(['data']))
++      blobUrlManager.acquire('media-1', new Blob(['data']))
++
++      blobUrlManager.release('media-1')
++
++      expect(seen).toEqual([])
++      unsubscribe()
++    })
++
++    it('notifies for invalidate and releaseAll', () => {
++      const seen: string[] = []
++      const unsubscribe = blobUrlManager.onRevoke((url) => seen.push(url))
++      const url1 = blobUrlManager.acquire('media-1', new Blob(['a']))
++      const url2 = blobUrlManager.acquire('media-2', new Blob(['b']))
++
++      blobUrlManager.invalidate('media-1')
++      blobUrlManager.releaseAll()
++
++      expect(seen).toEqual([url1, url2])
++      unsubscribe()
++    })
++
++    it('stops notifying after unsubscribe', () => {
++      const seen: string[] = []
++      const unsubscribe = blobUrlManager.onRevoke((url) => seen.push(url))
++      unsubscribe()
++
++      blobUrlManager.acquire('media-1', new Blob(['data']))
++      blobUrlManager.release('media-1')
++
++      expect(seen).toEqual([])
++    })
++
++    it('does not notify for external URLs', () => {
++      const seen: string[] = []
++      const unsubscribe = blobUrlManager.onRevoke((url) => seen.push(url))
++      blobUrlManager.registerUrl('media-1', 'https://example.com/video.mp4')
++
++      blobUrlManager.releaseAll()
++
++      expect(seen).toEqual([])
++      unsubscribe()
++    })
++  })
+ })
+diff --git a/src/infrastructure/browser/blob-url-manager.ts b/src/infrastructure/browser/blob-url-manager.ts
+index cc0db97..10be6ea 100644
+--- a/src/infrastructure/browser/blob-url-manager.ts
++++ b/src/infrastructure/browser/blob-url-manager.ts
+@@ -30,6 +30,7 @@ class BlobUrlManager {
+   private entries = new Map<string, BlobUrlEntry>()
+   private version = 0
+   private listeners = new Set<() => void>()
++  private revokeListeners = new Set<(url: string) => void>()
+ 
+   /** Notify React subscribers that blob URLs have changed */
+   private notify(): void {
+@@ -45,6 +46,16 @@ class BlobUrlManager {
+     return () => this.listeners.delete(listener)
+   }
+ 
++  /**
++   * Subscribe to individual URL revocations. URL-keyed caches (e.g. the
++   * decoder prewarm blob/bitmap caches) use this to drop entries whose Blob
++   * would otherwise be retained for the whole session.
++   */
++  onRevoke = (listener: (url: string) => void): (() => void) => {
++    this.revokeListeners.add(listener)
++    return () => this.revokeListeners.delete(listener)
++  }
++
+   /** Get current version snapshot (for useSyncExternalStore) */
+   getSnapshot = (): number => this.version
+ 
+@@ -134,6 +145,9 @@ class BlobUrlManager {
+     if (entry.external) return
+     unregisterObjectUrl(entry.url)
+     URL.revokeObjectURL(entry.url)
++    for (const listener of this.revokeListeners) {
++      listener(entry.url)
++    }
+   }
+ 
+   /**
+diff --git a/src/features/editor/components/properties-sidebar/clip-panel/index.test.tsx b/src/features/editor/components/properties-sidebar/clip-panel/index.test.tsx
+index c307a6a..d6319c1 100644
+--- a/src/features/editor/components/properties-sidebar/clip-panel/index.test.tsx
++++ b/src/features/editor/components/properties-sidebar/clip-panel/index.test.tsx
+@@ -1,9 +1,11 @@
+ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+ import { flushSync } from 'react-dom'
++import { TooltipProvider } from '@/components/ui/tooltip'
+ import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
+ import { useEditorStore } from '@/shared/state/editor'
+ import { useSelectionStore } from '@/shared/state/selection'
+ import { useItemsStore, useTimelineStore } from '@/features/editor/deps/timeline-store'
++import { updateItem } from '@/features/timeline/stores/actions/item-actions'
+ import { useGizmoStore } from '@/features/editor/deps/preview'
+ import type {
+   AudioItem,
+@@ -59,7 +61,18 @@ vi.mock('./audio-section', () => ({
+ 
+ vi.mock('./text-section', () => ({
+   TextSection: () => <div>Text Body</div>,
+-  TextContentSection: () => <div>Text Content Body</div>,
++  TextContentSection: ({ items }: { items: TimelineItem[] }) => {
++    const item = items[0]
++    return item?.type === 'text' ? (
++      <textarea
++        aria-label="Text content"
++        value={item.text}
++        onChange={(event) => updateItem(item.id, { text: event.target.value })}
++      />
++    ) : (
++      <div>Text Content Body</div>
++    )
++  },
+   TextEffectsSection: () => <div>Text Effects Body</div>,
+ }))
+ 
+@@ -194,6 +207,35 @@ describe('ClipPanel inspector tabs', () => {
+     vi.unstubAllGlobals()
+   })
+ 
++  it('preserves the caret when text is edited in the middle', async () => {
++    const item = {
++      id: 'text-1',
++      type: 'text' as const,
++      trackId: 'track-1',
++      from: 0,
++      durationInFrames: 90,
++      label: 'Hello',
++      text: 'Hello',
++      color: '#ffffff',
++    }
++    resetStores([item], [item.id])
++    render(
++      <TooltipProvider>
++        <ClipPanel />
++      </TooltipProvider>,
++    )
++
++    const field = (await screen.findByRole('textbox', {
++      name: 'Text content',
++    })) as HTMLTextAreaElement
++    field.focus()
++    fireEvent.change(field, { target: { value: 'HeXllo', selectionStart: 3, selectionEnd: 3 } })
++
++    expect(field.value).toBe('HeXllo')
++    expect(field.selectionStart).toBe(3)
++    expect(field.selectionEnd).toBe(3)
++  })
++
+   it('keeps the full inspector idle across repeated gizmo translate commits', async () => {
+     resetStores([NULL_OBJECT], [NULL_OBJECT.id])
+     render(<ClipPanel />)
