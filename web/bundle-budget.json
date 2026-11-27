@@ -100,11 +100,11 @@
   },
   "raises": [
     {
-      "date": "2026-11-26",
-      "reason": "FL-1799: limits set again from a build on main 988ef800b8; main itself already loaded more than its old baseline on Settings, Tools and Workflows (shared shell changes that landed while this was open), and this branch loads less than main on every route",
-      "raised": 97,
-      "bytes": 4024258,
       "added": 0,
+      "bytes": 4024258,
+      "date": "2026-11-26",
+      "raised": 97,
+      "reason": "FL-1799: limits set again from a build on main 988ef800b8; main itself already loaded more than its old baseline on Settings, Tools and Workflows (shared shell changes that landed while this was open), and this branch loads less than main on every route",
       "removed": 0,
       "routes": {
         "/": 2395,
