@@ -14,7 +14,7 @@ import {
 import { jsonArrayFrom } from 'kysely/helpers/postgres';
 import { isEmpty, isUndefined, omitBy } from 'lodash-es';
 import { InjectKysely } from 'nestjs-kysely';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import type { Updateable } from 'kysely';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { SearchFilter } from 'src/dtos/search.dto.js';
@@ -382,6 +382,12 @@ interface TimelineCalendarCursor {
 }
 /** FL-1592: how many whole timeline summaries (one per user and set of filters) each process keeps */
 const CALENDAR_PAGE_CACHE_SIZE = 32;
+/** FL-1792: how often a stored summary served from memory marks itself used, so eviction keeps what is read */
+const TIMELINE_SUMMARY_TOUCH_MS = 60 * 60 * 1000;
+/** FL-1792: how many stored summaries (sets of filters) each person keeps; the least recently used go first */
+const TIMELINE_SUMMARY_STORED_PER_USER = 8;
+type CalendarMonths = Map<string, { fingerprint: string; pages: TimeBucketItem[] }>;
+type RankedPage = TimeBucketItem & { fingerprint?: string };
 export interface TimeBucketItem {
   timeBucket: string;
   count: number;
@@ -546,7 +552,9 @@ const isBestPhotoOf = (eb: ExpressionBuilder<DB, 'asset'>, { ownerId, minScore }
 export class AssetRepository {
   private readonly smartAlbums: SmartAlbumRepository;
   /** FL-1592: per-month calendar page summaries by request, each kept with the fingerprint it was ranked at. */
-  private readonly calendarPageCache = new Map<string, Map<string, { fingerprint: string; pages: TimeBucketItem[] }>>();
+  private readonly calendarPageCache = new Map<string, CalendarMonths>();
+  /** FL-1792: when each stored summary last marked itself used from this process */
+  private readonly timelineSummaryTouchedAt = new Map<string, number>();
   constructor(
     @InjectKysely()
     private db: Kysely<DB>,
@@ -3221,6 +3229,7 @@ export class AssetRepository {
           .$if(!!months, (qb) => qb.where(sql<boolean>`${monthText} = any(${months}::text[])`))
           .select([
             'asset.id',
+            'asset.updateId',
             sql<number>`row_number() over (${window})`.as('position'),
             sql<string | null>`lag(asset.id) over (${window})`.as('previousId'),
             sql<string | null>`lead(asset.id) over (${window})`.as('nextId'),
@@ -3231,8 +3240,15 @@ export class AssetRepository {
           ]);
         // Rank narrow IDs once; each summary lets the client jump directly to a bounded page. FL-820: aggregate
         // only each page's boundary rows and each day's first row, not every ranked row (a third of the time at 1M).
-        const { rows } = await sql<TimeBucketItem>`
+        // FL-1792: each month's fingerprint is taken from the same snapshot as its pages, so a month is never
+        // kept under a fingerprint of another state (a lock added and removed between two statements).
+        const { rows } = await sql<RankedPage>`
         with ranked as (${selection}),
+        fingerprints as (
+          select "timeBucket",
+            count(*) || ':' || sum(hashtextextended(id::text, 0)) || ':' || max("updateId"::text) as fingerprint
+          from ranked group by "timeBucket"
+        ),
         numbered as (
           select *, ((position - 1) / ${pages.pageSize})::integer as page,
             (position - 1) % ${pages.pageSize} = 0 as "pageStart" from ranked
@@ -3244,6 +3260,7 @@ export class AssetRepository {
           (array_agg(id) filter (where position % ${pages.pageSize} = 0 or "nextId" is null))[1] as "lastAssetId",
           jsonb_agg(jsonb_build_object('day', "dayNumber", 'count', "dayCount"))
             filter (where "pageStart" or "previousDay" is distinct from "dayDate") as days
+          ${pages.locateAssetId ? sql`` : sql`, (select f.fingerprint from fingerprints f where f."timeBucket" = numbered."timeBucket") as fingerprint`}
         from numbered
         ${
           pages.locateAssetId
@@ -3270,17 +3287,30 @@ export class AssetRepository {
         order by "timeBucket" ${direction}
       `.execute(this.db);
       const key = JSON.stringify([auth?.user.id, auth?.sharedLink?.id, options, pages.pageSize]);
-      const cached = this.calendarPageCache.get(key);
+      // FL-1792: after a server start the months come from the stored summary, so only those whose
+      // fingerprint moved while the server was down are ranked, not the whole library.
+      // Keyed by the ranking code too, so a release that ranks differently never reads another's months. A
+      // shared link's views are not stored: they would crowd out the owner's own timelines.
+      const storedKey =
+        auth && !auth.sharedLink ? createHash('sha256').update(rank.toString()).update(key).digest('hex') : undefined;
+      const inMemory = this.calendarPageCache.get(key);
+      const cached = inMemory ?? (storedKey ? await this.readTimelineSummary(storedKey) : undefined);
       const stale = months.filter(
         ({ timeBucket, fingerprint }) => cached?.get(timeBucket)?.fingerprint !== fingerprint,
       );
       const ranked = stale.length > 0 ? await rank(stale.map(({ timeBucket }) => timeBucket)) : [];
       const fresh = Map.groupBy(ranked, (page) => page.timeBucket);
-      const next = new Map(
-        months.map(({ timeBucket, fingerprint }) => [
-          timeBucket,
-          { fingerprint, pages: fresh.get(timeBucket) ?? (cached?.get(timeBucket)?.pages || []) },
-        ]),
+      const staleMonths = new Set(stale.map(({ timeBucket }) => timeBucket));
+      const next: CalendarMonths = new Map(
+        months.map(({ timeBucket }) => {
+          if (!staleMonths.has(timeBucket)) {
+            return [timeBucket, cached!.get(timeBucket)!];
+          }
+          // A month the rank no longer found changed in between: shown empty and ranked again next time.
+          const rows = fresh.get(timeBucket) ?? [];
+          const pages = rows.map(({ fingerprint: _, ...page }) => page);
+          return [timeBucket, { fingerprint: rows[0]?.fingerprint ?? '', pages }];
+        }),
       );
       // ponytail: a small per-process LRU of whole summaries; enough for each user's few open timelines.
       this.calendarPageCache.delete(key);
@@ -3288,6 +3318,14 @@ export class AssetRepository {
       for (const old of this.calendarPageCache.keys()) {
         if (this.calendarPageCache.size <= CALENDAR_PAGE_CACHE_SIZE) break;
         this.calendarPageCache.delete(old);
+      }
+      if (storedKey && auth && (stale.length > 0 || cached?.keys().some((timeBucket) => !next.has(timeBucket)))) {
+        const ranked = new Map(stale.map(({ timeBucket }) => [timeBucket, next.get(timeBucket)!]));
+        // A summary that could not be stored is only ranked again after the next start; the request never fails.
+        await this.storeTimelineSummary(storedKey, auth.user.id, ranked, next.keys().toArray()).catch(() => {});
+        this.timelineSummaryTouchedAt.set(storedKey, Date.now());
+      } else if (storedKey) {
+        await this.touchTimelineSummary(storedKey, !inMemory).catch(() => {});
       }
       return next
         .values()
@@ -3302,6 +3340,81 @@ export class AssetRepository {
       .groupBy('timeBucket')
       .orderBy('timeBucket', options.order ?? 'desc')
       .execute() as any as Promise<TimeBucketItem[]>;
+  }
+  /** FL-1792: the months of a stored timeline summary, each with the fingerprint it was ranked at. */
+  @GenerateSql({ params: [DummyValue.STRING] })
+  private async readTimelineSummary(key: string): Promise<CalendarMonths | undefined> {
+    const rows = await this.db
+      .selectFrom('timeline_summary')
+      .select(['timeBucket', 'fingerprint', 'pages'])
+      .where('key', '=', key)
+      .execute();
+    return rows.length > 0
+      ? new Map(
+          rows.map(({ timeBucket, fingerprint, pages }) => [
+            timeBucket,
+            { fingerprint, pages: pages as TimeBucketItem[] },
+          ]),
+        )
+      : undefined;
+  }
+  /**
+   * FL-1792: marks a stored summary used, so the per-person cap drops the ones nobody reads. Served from
+   * memory it does so at most hourly; read back after a start it always does.
+   */
+  private async touchTimelineSummary(key: string, readFromStore: boolean) {
+    const now = Date.now();
+    if (!readFromStore && now - (this.timelineSummaryTouchedAt.get(key) ?? 0) < TIMELINE_SUMMARY_TOUCH_MS) {
+      return;
+    }
+    this.timelineSummaryTouchedAt.set(key, now);
+    await this.db
+      .updateTable('timeline_summary')
+      .set({ usedAt: new Date(now) })
+      .where('key', '=', key)
+      .execute();
+  }
+  /**
+   * FL-1792: stores the months just ranked, forgets the months the summary no longer has, and keeps
+   * only this person's most recently used summaries.
+   */
+  private async storeTimelineSummary(key: string, userId: string, ranked: CalendarMonths, timeBuckets: string[]) {
+    const usedAt = new Date();
+    if (ranked.size > 0) {
+      await this.db
+        .insertInto('timeline_summary')
+        .values(
+          [...ranked].map(([timeBucket, { fingerprint, pages }]) => ({
+            key,
+            timeBucket,
+            userId,
+            fingerprint,
+            pages: sql<unknown>`${JSON.stringify(pages)}::text::jsonb`,
+            usedAt,
+          })),
+        )
+        .onConflict((oc) =>
+          oc.columns(['key', 'timeBucket']).doUpdateSet((eb) => ({
+            fingerprint: eb.ref('excluded.fingerprint'),
+            pages: eb.ref('excluded.pages'),
+            usedAt: eb.ref('excluded.usedAt'),
+          })),
+        )
+        .execute();
+    }
+    await this.db
+      .deleteFrom('timeline_summary')
+      .where('key', '=', key)
+      .where(sql<boolean>`"timeBucket" <> all(${timeBuckets}::text[])`)
+      .execute();
+    // every month of the summary counts as used now, so the cap below never drops it for its old months
+    await this.db.updateTable('timeline_summary').set({ usedAt }).where('key', '=', key).execute();
+    await sql`
+      delete from timeline_summary where "userId" = ${userId}::uuid and key not in (
+        select key from timeline_summary where "userId" = ${userId}::uuid
+        group by key order by max("usedAt") desc limit ${TIMELINE_SUMMARY_STORED_PER_USER}
+      )
+    `.execute(this.db);
   }
   /**
    * FL-33: one curated card per year or month of a timeline request. Each card carries its count,
