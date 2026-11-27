@@ -31,6 +31,7 @@ import {
   upsertTags,
   BulkIdErrorReason,
   type BulkIdResponseDto,
+  type DateDetail,
   type MediaOperationBulkPayloadDto,
   type MediaOperationDetailDto,
   type MediaOperationDto,
@@ -134,6 +135,9 @@ export type BulkPayload = {
    */
   dateAccuracy?: DateAccuracy;
   year?: number;
+  /** FL-1814: with a `year` accuracy, a month (`month` is 1–12) or "around" that year. */
+  dateDetail?: 'month' | 'about';
+  month?: number;
   undoDateFixId?: string;
   dateTimeOriginal?: string;
   timeZone?: string;
@@ -813,7 +817,13 @@ export const runBulkAction = async (
         const year = Number(requirePayload(payload, 'year'));
         try {
           const { batch, skipped: left } = await gateway.applyDateFix({
-            dateDoctorFixDto: { assetIds: ids, dateAccuracy: toSdkDateAccuracy(payload.dateAccuracy), year },
+            dateDoctorFixDto: {
+              assetIds: ids,
+              dateAccuracy: toSdkDateAccuracy(payload.dateAccuracy),
+              year,
+              ...(payload.dateDetail && { dateDetail: payload.dateDetail as DateDetail }),
+              ...(payload.month && { month: payload.month }),
+            },
           });
           const unchanged = new Set(left);
           return finish(

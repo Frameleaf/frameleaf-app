@@ -165,7 +165,7 @@
     padding: 0;
     border: 0;
   }
-  legend {
+  .date-field > legend {
     margin-bottom: var(--fl-space-2);
     padding: 0;
     color: var(--fl-text);

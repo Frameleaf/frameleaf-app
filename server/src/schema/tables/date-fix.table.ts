@@ -1,7 +1,7 @@
 import { Column, CreateDateColumn, ForeignKeyColumn, Index, Table } from '@frameleaf/sql-tools';
 import type { Generated, Timestamp } from '@frameleaf/sql-tools';
 import type { DateFindingCause } from 'src/utils/date-doctor.js';
-import type { DateAccuracy } from 'src/utils/date.js';
+import type { DateAccuracy, DateDetail } from 'src/utils/date.js';
 import { PrimaryGeneratedUuidV7Column } from 'src/decorators.js';
 import { AssetTable } from 'src/schema/tables/asset.table.js';
 import { UserTable } from 'src/schema/tables/user.table.js';
@@ -93,4 +93,14 @@ export class DateFixItemTable {
 
   @Column({ type: 'text', nullable: true })
   newDateAccuracy!: DateAccuracy | null;
+
+  /**
+   * FL-1814: the photo's `dateDetail` (`month`, `about`) before and after. Undo puts the first back, and only while
+   * the photo still has the second: January, "around" and a plain year are the same moment. Mirrors 1795780000000.
+   */
+  @Column({ type: 'text', nullable: true })
+  previousDateDetail!: DateDetail | null;
+
+  @Column({ type: 'text', nullable: true })
+  newDateDetail!: DateDetail | null;
 }

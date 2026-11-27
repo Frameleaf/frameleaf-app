@@ -2,7 +2,6 @@ import type { MessageFormatter } from 'svelte-i18n';
 import {
   approximateGroupDay,
   dateAccuracyOf,
-  decadeChoices,
   formatApproximateDate,
   groupDayAccuracy,
   parseApproximateYear,
@@ -48,13 +47,6 @@ describe('approximate date values (FL-936)', () => {
     for (const value of ['1799', '2027', '197', '19755', 'abc', '', null]) {
       expect(parseApproximateYear(value, 2026)).toBeNull();
     }
-  });
-
-  it('offers every decade from the 1800s to the current one', () => {
-    const decades = decadeChoices(2026);
-    expect(decades[0]).toBe(1800);
-    expect(decades.at(-1)).toBe(2020);
-    expect(decades).toHaveLength(23);
   });
 
   it('keeps the year and decade groups apart from every calendar day', () => {
