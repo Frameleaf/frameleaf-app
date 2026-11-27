@@ -11,6 +11,9 @@
     toPresetDto,
     type PresetSettings,
   } from '$lib/frameleaf/photo-tools';
+  import EmptyRow from '$lib/components/frameleaf/EmptyRow.svelte';
+  import InlineError from '$lib/components/frameleaf/InlineError.svelte';
+  import ListSkeleton from '$lib/components/frameleaf/ListSkeleton.svelte';
   import { getServerErrorMessage, handleError } from '$lib/utils/handle-error';
   import {
     createDevelopPreset,
@@ -42,16 +45,19 @@
   let saving = $state(false);
   let saveError = $state<string | null>(null);
 
-  onMount(async () => {
+  // FL-1810: a list that could not be read says so in place, with Try again (no toast).
+  const load = async () => {
+    loading = true;
+    loadError = null;
     try {
       presets = await getDevelopPresets();
-    } catch (error) {
+    } catch {
       loadError = $t('frameleaf_editor_presets_load_error');
-      handleError(error, loadError);
     } finally {
       loading = false;
     }
-  });
+  };
+  onMount(() => void load());
 
   const sorted = (items: DevelopPresetResponseDto[]) => [...items].sort((a, b) => a.name.localeCompare(b.name));
   const trimmed = $derived(name.trim());
@@ -122,11 +128,11 @@
 
 <h3>{$t('frameleaf_editor_your_presets')}</h3>
 {#if loading}
-  <p aria-busy="true">{$t('loading')}</p>
+  <ListSkeleton rows={2} avatar={false} />
 {:else if loadError}
-  <p class="ed-empty">{loadError}</p>
+  <InlineError compact message={loadError} onRetry={load} />
 {:else if presets.length === 0}
-  <p class="ed-empty">{$t('frameleaf_editor_your_presets_empty')}</p>
+  <EmptyRow title={$t('frameleaf_editor_your_presets_empty')} />
 {:else}
   <ul class="ed-preset-list" aria-label={$t('frameleaf_editor_your_presets')}>
     {#each presets as preset (preset.id)}

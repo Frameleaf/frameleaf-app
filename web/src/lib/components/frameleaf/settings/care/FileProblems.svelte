@@ -14,6 +14,7 @@
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
   import Button from '$lib/components/frameleaf/Button.svelte';
+  import EmptyRow from '$lib/components/frameleaf/EmptyRow.svelte';
   import SegmentedControl from '$lib/components/frameleaf/SegmentedControl.svelte';
   import FileStory from '$lib/components/frameleaf/settings/care/FileStory.svelte';
   import Hero from '$lib/components/frameleaf/settings/kit/Hero.svelte';
@@ -291,9 +292,11 @@
         <SegmentedControl label={$t('frameleaf_files_show')} options={tabs} bind:value={tab} />
       {/snippet}
       {#if loaded && list.items.length === 0}
-        <p class="empty">
-          {tab === FileProblemTab.Needs ? $t('frameleaf_files_empty_needs') : $t('frameleaf_files_empty')}
-        </p>
+        <div class="empty">
+          <EmptyRow
+            title={tab === FileProblemTab.Needs ? $t('frameleaf_files_empty_needs') : $t('frameleaf_files_empty')}
+          />
+        </div>
       {:else if list.items.length > 0}
         <ItemList noMeasure>
           {#each list.items as row (row.id)}
@@ -441,10 +444,7 @@
   }
   /* care.css `.care-files-empty` / `.care-files-more`. */
   .empty {
-    margin: 0;
-    padding: 0 0 var(--fl-space-5);
-    color: var(--fl-muted);
-    font-size: var(--fl-font-callout);
+    padding-bottom: var(--fl-space-5);
   }
   .more {
     padding: var(--fl-space-4) 0 var(--fl-space-5);

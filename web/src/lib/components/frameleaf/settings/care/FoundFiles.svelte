@@ -16,6 +16,7 @@
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
   import Button from '$lib/components/frameleaf/Button.svelte';
+  import EmptyRow from '$lib/components/frameleaf/EmptyRow.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import SegmentedControl from '$lib/components/frameleaf/SegmentedControl.svelte';
   import FoundFileStory from '$lib/components/frameleaf/settings/care/FoundFileStory.svelte';
@@ -510,7 +511,7 @@
         <!-- the hero says so -->
       {:else if tab === 'needs'}
         {#if !summary || summary.groups.length === 0}
-          <p class="empty">{$t('frameleaf_found_empty_needs')}</p>
+          <div class="empty"><EmptyRow title={$t('frameleaf_found_empty_needs')} /></div>
         {:else}
           <ul class="groups">
             {#each summary.groups as group (groupKey(group))}
@@ -592,7 +593,7 @@
       {:else}
         {@const list = lists[tab]}
         {#if list.items.length === 0}
-          <p class="empty">{$t('frameleaf_found_empty')}</p>
+          <div class="empty"><EmptyRow title={$t('frameleaf_found_empty')} /></div>
         {:else}
           {@render grid(list.items)}
           <div class="foot">
@@ -852,10 +853,7 @@
     max-width: 100%;
   }
   .empty {
-    margin: 0;
-    padding: 0 0 var(--fl-space-5);
-    color: var(--fl-muted);
-    font-size: var(--fl-font-callout);
+    padding-bottom: var(--fl-space-5);
   }
   .ask {
     margin: 0 0 var(--fl-space-3);
