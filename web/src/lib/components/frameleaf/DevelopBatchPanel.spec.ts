@@ -254,14 +254,14 @@ describe('batch external editor review', () => {
   it.each([404, 405])('shows old-server capability only for HTTP %s', async (status) => {
     vi.mocked(getDevelopBatchCapabilities).mockRejectedValue({ status });
     mount();
-    await screen.findByText('This server does not support batch external editing yet.');
+    await screen.findByText('This server can’t send photos to another app for editing yet.');
     expect(getDevelopBatches).not.toHaveBeenCalled();
   });
   it.each([401, 500])('retains an HTTP %s capability failure as an error', async (status) => {
     vi.mocked(getDevelopBatchCapabilities).mockRejectedValue({ status });
     mount();
     await screen.findByRole('alert');
-    expect(screen.queryByText('This server does not support batch external editing yet.')).not.toBeInTheDocument();
+    expect(screen.queryByText('This server can’t send photos to another app for editing yet.')).not.toBeInTheDocument();
   });
   it('creates a durable batch before preparing each selected original', async () => {
     vi.mocked(createDevelopBatch).mockResolvedValue({

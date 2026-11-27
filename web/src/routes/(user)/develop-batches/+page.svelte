@@ -8,7 +8,8 @@
 
 <UserPageLayout
   ><main>
-    <h1>{$t('frameleaf_batch.title')}</h1>
+    <!-- FL-1809: named as every way in names it; "Edit in another app" stays the selection's action. -->
+    <h1>{$t('frameleaf_activity_edits_title')}</h1>
     <DevelopBatchPanel initialBatchId={data.batchId} />
   </main></UserPageLayout
 >
