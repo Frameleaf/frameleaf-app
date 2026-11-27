@@ -175,7 +175,13 @@ type ReconciledJob =
   | JobName.Ocr;
 
 /** FL-1827: which photos Best Photos scores (`selectionForBestPhotosScoring`). */
-export type BestPhotosSelection = { force?: boolean; ready?: { search: boolean; faces: boolean }; limit?: number };
+export type BestPhotosSelection = {
+  force?: boolean;
+  ready?: { search: boolean; faces: boolean };
+  limit?: number;
+  /** the scan's place in the library: photos after this id */
+  after?: string;
+};
 
 @Injectable()
 export class AssetJobRepository {
@@ -810,7 +816,7 @@ export class AssetJobRepository {
   /**
    * FL-1827: the photos Best Photos scores. Without `force`, only those with no score: a scored photo is never scored
    * again. `ready`: a photo waits until what its score reads is there (its search embedding, its faces), so the one
-   * score it gets is its full one. `limit`: one share of the paced scan, in id order.
+   * score it gets is its full one. `limit` and `after`: one share of the paced scan, in id order from its place.
    */
   selectionForBestPhotosScoring(options: BestPhotosSelection) {
     return (
@@ -866,6 +872,7 @@ export class AssetJobRepository {
             ]),
           ),
         )
+        .$if(options.after !== undefined, (qb) => qb.where('asset.id', '>', options.after!))
         .$if(options.limit !== undefined, (qb) => qb.orderBy('asset.id').limit(options.limit!))
     );
   }

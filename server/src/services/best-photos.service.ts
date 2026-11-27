@@ -15,6 +15,7 @@ import {
   AssetStatus,
   AssetType,
   AssetVisibility,
+  DatabaseLock,
   FrameleafEnvironment,
   FrameleafWorker,
   JobName,
@@ -26,6 +27,7 @@ import { deferJobUntilDependency } from 'src/queue/dependency.js';
 import { AssetJobRepository } from 'src/repositories/asset-job.repository.js';
 import { BestPhotoScoreUpsert, BestPhotosRepository } from 'src/repositories/best-photos.repository.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
+import { DatabaseRepository } from 'src/repositories/database.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { MediaRepository } from 'src/repositories/media.repository.js';
@@ -83,13 +85,15 @@ const VIDEO_FRAME_SAMPLE_COUNT = 5;
 const VIDEO_SCORE_MAX_DURATION_SECONDS = 15 * 60;
 
 /**
- * FL-1827 (owner, 2026-11-26): the paced scan. One share of unscored photos at a time, the next no sooner than the
- * rest after it, and only once the last share is done, so scoring never piles up behind an import.
+ * FL-1827 (owner, 2026-11-26): the paced scan. It walks the library in id order a share at a time, the next share
+ * only once the last one is done and no sooner than a minute after, so scoring never piles up behind an import. A
+ * pass that reaches the end rests an hour, then starts again from the first photo: a photo that can't be scored (a
+ * very long video, a damaged preview, a Locked photo waiting for its key) is tried once a pass, not every minute,
+ * and holds up nothing behind it.
  */
 const BEST_PHOTOS_SHARE = 1000;
-const BEST_PHOTOS_SHARE_REST_MS = 5 * 60 * 1000;
-/** With nothing left to score, the library is looked through again this often. */
-const BEST_PHOTOS_IDLE_REST_MS = 60 * 60 * 1000;
+const BEST_PHOTOS_TICK_MS = 60 * 1000;
+const BEST_PHOTOS_PASS_REST_MS = 60 * 60 * 1000;
 
 /** FL-978: sigmoid(head(embedding)) for the visual search model that made the embedding, or null. */
 type LearnedAesthetic = { score: number; modelName: string };
@@ -99,6 +103,9 @@ export class BestPhotosService {
   private readonly modelsWithoutHead = new Set<string>();
   private timer?: NodeJS.Timeout;
   private restUntil = 0;
+  /** The scan's place in the library: the last photo of the last share. */
+  private after?: string;
+  private lock = false;
 
   constructor(
     private logger: LoggingRepository,
@@ -108,6 +115,7 @@ export class BestPhotosService {
     private mediaRepository: MediaRepository,
     private configRepository: ConfigRepository,
     private systemMetadataRepository: SystemMetadataRepository,
+    private databaseRepository: DatabaseRepository,
   ) {
     this.logger.setContext(BestPhotosService.name);
   }
@@ -137,11 +145,10 @@ export class BestPhotosService {
     if (this.configRepository.getEnv().environment === FrameleafEnvironment.Testing) {
       return;
     }
+    clearInterval(this.timer);
     this.timer = setInterval(() => {
-      this.queueNextShare().catch((error: unknown) =>
-        this.logger.warn(`Best Photos could not look for photos to score: ${error}`),
-      );
-    }, BEST_PHOTOS_SHARE_REST_MS);
+      this.tick().catch((error: unknown) => this.logger.warn(`Best Photos could not look for photos to score: ${error}`));
+    }, BEST_PHOTOS_TICK_MS);
   }
 
   @OnEvent({ name: 'AppShutdown' })
@@ -158,44 +165,59 @@ export class BestPhotosService {
     return { search: isSmartSearchEnabled(machineLearning), faces: isFacialRecognitionEnabled(machineLearning) };
   }
 
+  /** One worker runs the scan: the one that holds the lock, taken again on every tick until one has it. */
+  private async tick() {
+    this.lock ||= await this.databaseRepository.tryLock(DatabaseLock.BestPhotosScan);
+    if (this.lock) {
+      await this.queueNextShare();
+    }
+  }
+
   /**
-   * FL-1827: the paced scan's tick. A share is queued only when the library is set up: nothing is being scanned in,
-   * read or given a thumbnail, and the last share is done. Each photo also waits for its own search and faces
-   * (`selectionForBestPhotosScoring`). Returns whether a share was queued.
-   * ponytail: the rest is kept in memory; a restart looks again at once, which queues at most one share early.
+   * FL-1827: the paced scan's step. A share is queued only when the library is set up (nothing is coming in or
+   * being made ready, `hasIncomingWork`) and the last share is done. Each photo also waits for its own search and
+   * faces (`selectionForBestPhotosScoring`). Returns whether a share was queued.
+   * ponytail: the place and the rest are kept in memory; a restart starts the pass again from the first photo,
+   * which only looks again at what a pass would anyway.
    */
   async queueNextShare(now = Date.now()): Promise<boolean> {
     if (now < this.restUntil) {
       return false;
     }
-    const feeders = await Promise.all(QUIET_HOURS_FEEDERS.map((name) => this.jobRepository.getJobCounts(name)));
-    if (feeders.some(({ active, waiting, delayed, paused }) => active + waiting + delayed + paused > 0)) {
+    if (await this.jobRepository.hasIncomingWork([...QUIET_HOURS_FEEDERS])) {
       return false;
     }
     const scoring = [JobName.BestPhotosScore, JobName.BestPhotosScoreQueueAll];
-    if (await this.jobRepository.hasLiveJobs(QueueName.BackgroundTask, scoring)) {
+    if (await this.jobRepository.hasRunnableJobs(QueueName.BackgroundTask, scoring)) {
       return false;
     }
-    const next = await this.assetJobRepository
-      .selectionForBestPhotosScoring({ ready: await this.inputs(), limit: 1 })
-      .executeTakeFirst();
-    if (!next) {
-      this.restUntil = now + BEST_PHOTOS_IDLE_REST_MS;
+    const after = this.after;
+    const share = await this.assetJobRepository
+      .selectionForBestPhotosScoring({ ready: await this.inputs(), limit: BEST_PHOTOS_SHARE, after })
+      .execute();
+    const last = share.at(-1);
+    if (!last) {
+      // the end of the pass: the next one starts from the first photo, after a rest
+      this.after = undefined;
+      this.restUntil = now + BEST_PHOTOS_PASS_REST_MS;
       return false;
     }
     await this.jobRepository.queue({
       name: JobName.BestPhotosScoreQueueAll,
-      data: { force: false, limit: BEST_PHOTOS_SHARE },
+      data: { force: false, limit: BEST_PHOTOS_SHARE, ...(after && { after }) },
     });
+    this.after = last.id;
     return true;
   }
 
   @OnJob({ name: JobName.BestPhotosScoreQueueAll, queue: QueueName.BackgroundTask })
-  async handleQueueAll({ force, limit }: JobOf<JobName.BestPhotosScoreQueueAll>): Promise<JobStatus> {
+  async handleQueueAll({ force, limit, after }: JobOf<JobName.BestPhotosScoreQueueAll>): Promise<JobStatus> {
     // Recalculate (`force`) scores every photo again; the scan takes a share of those never scored and ready
     await this.jobRepository.queueSelection(
       JobName.BestPhotosScore,
-      this.assetJobRepository.selectionForBestPhotosScoring(force ? { force } : { ready: await this.inputs(), limit }),
+      this.assetJobRepository.selectionForBestPhotosScoring(
+        force ? { force } : { ready: await this.inputs(), limit, after },
+      ),
       force ? { force: true } : {},
     );
     return JobStatus.Success;

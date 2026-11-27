@@ -384,3 +384,48 @@ describe('progress', () => {
     ]);
   });
 });
+
+/** FL-1827: what keeps the Best Photos scan waiting, read in Postgres. */
+describe('the Best Photos scan waits', () => {
+  const jobs = () => new JobRepository({} as never, {} as never, {} as never, LoggingRepository.create(), db);
+  const set = (id: string, columns: Record<string, unknown>) =>
+    sql`update job set "dependencyReason" = ${(columns.dependencyReason as string) ?? null},
+      "availableAt" = ${(columns.availableAt as string) ?? 'now'}::timestamptz where id = ${id}::uuid`.execute(db);
+
+  it('for a share that can run, not for one waiting on a key or held', async () => {
+    await sql`insert into job_queue(name) values ('backgroundTask') on conflict do nothing`.execute(db);
+    const score = await job('backgroundTask', JobName.BestPhotosScore, 'a', null, { state: 'pending' });
+    const runnable = () => jobs().hasRunnableJobs(QueueName.BackgroundTask, [JobName.BestPhotosScore]);
+    expect(await runnable()).toBe(true);
+    // a Locked photo waiting for its owner's key
+    await set(score, { dependencyReason: 'locked-key-unavailable' });
+    expect(await runnable()).toBe(false);
+    await set(score, { availableAt: 'infinity' });
+    expect(await runnable()).toBe(false);
+    await sql`update job set state = 'active', token = gen_random_uuid() where id = ${score}::uuid`.execute(db);
+    expect(await runnable()).toBe(true);
+  });
+
+  it('while photos come in or are held by setup, not for a paused task or an offline drive', async () => {
+    const incoming = () => jobs().hasIncomingWork([QueueName.ThumbnailGeneration, QueueName.MetadataExtraction]);
+    expect(await incoming()).toBe(false);
+    const thumbnail = await job('thumbnailGeneration', JobName.AssetGenerateThumbnails, 'a', null, { state: 'pending' });
+    expect(await incoming()).toBe(true);
+    // waiting on an offline drive
+    await set(thumbnail, { dependencyReason: 'source-unavailable' });
+    expect(await incoming()).toBe(false);
+    await set(thumbnail, {});
+    // a task someone paused
+    await new SqlQueueStore(db).pause('thumbnailGeneration', true);
+    expect(await incoming()).toBe(false);
+    await new SqlQueueStore(db).pause('thumbnailGeneration', false);
+    // held: by setup it counts, by anything else it does not
+    const runId = randomUUID();
+    await sql`insert into job_run(id, kind, selection, "enumerationDone")
+      values (${runId}::uuid, 'import', ${JSON.stringify({ holds: { [JobName.AssetGenerateThumbnails]: 'setup' } })}::jsonb, true)`.execute(db);
+    await sql`update job set "availableAt" = 'infinity', "runId" = ${runId}::uuid where id = ${thumbnail}::uuid`.execute(db);
+    expect(await incoming()).toBe(true);
+    await sql`update job_run set selection = '{"holds":{}}' where id = ${runId}::uuid`.execute(db);
+    expect(await incoming()).toBe(false);
+  });
+});

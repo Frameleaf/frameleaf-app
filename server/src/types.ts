@@ -690,8 +690,8 @@ export type JobItem =
   | { name: JobName.AssetPaletteQueueAll; data: IBaseJob & { afterId?: string } }
 
   // Best Photos
-  // FL-1827: `limit`: one share of the paced scan; `force` on a score: Recalculate, the one way to score again
-  | { name: JobName.BestPhotosScoreQueueAll; data: IBaseJob & { limit?: number } }
+  // FL-1827: `limit` and `after`: one share of the paced scan; `force` on a score: Recalculate, the one way to score again
+  | { name: JobName.BestPhotosScoreQueueAll; data: IBaseJob & { limit?: number; after?: string } }
   | { name: JobName.BestPhotosScore; data: IEntityJob & { force?: boolean } }
 
   // Media Health

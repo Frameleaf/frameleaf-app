@@ -276,6 +276,11 @@ describe('library scope persistence and personal defaults', () => {
       .selectionForBestPhotosScoring({ ready: { search: false, faces: false }, limit: 2 })
       .execute();
     expect(share.map(({ id }) => id)).toEqual(sorted(all.map(({ id }) => id)).slice(0, 2));
+    // the next share starts after the last photo of this one
+    const next = await jobs
+      .selectionForBestPhotosScoring({ ready: { search: false, faces: false }, limit: 2, after: share.at(-1)!.id })
+      .execute();
+    expect(next.map(({ id }) => id)).toEqual(sorted(all.map(({ id }) => id)).slice(2, 4));
   });
 
   it('excludes design-only pet recognition candidates, worker inputs and similarity neighbours', async () => {

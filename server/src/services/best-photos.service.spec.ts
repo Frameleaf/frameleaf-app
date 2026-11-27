@@ -30,8 +30,8 @@ describe(BestPhotosService.name, () => {
     queueSelection: vitest.fn(),
     guardAssetSource: vitest.fn(),
     queue: vitest.fn(),
-    getJobCounts: vitest.fn(),
-    hasLiveJobs: vitest.fn(),
+    hasIncomingWork: vitest.fn(),
+    hasRunnableJobs: vitest.fn(),
   };
   const mediaRepository = { measureImageQuality: vitest.fn(), transcode: vitest.fn() };
   /** Preview statistics as sharp reports them; the defaults are an ordinary, well-exposed photo. */
@@ -68,6 +68,7 @@ describe(BestPhotosService.name, () => {
       mediaRepository as never,
       configRepository as never,
       systemMetadataRepository as never,
+      { tryLock: vitest.fn() } as never,
     );
   });
 
@@ -410,62 +411,82 @@ describe(BestPhotosService.name, () => {
   });
 
   describe('the paced scan (FL-1827)', () => {
-    const idle = { active: 0, waiting: 0, delayed: 0, paused: 0, completed: 0, failed: 0 };
-    const unscored = (row?: { id: string }) =>
+    /** The photos the selection returns next, as one share. */
+    const unscored = (...ids: string[]) =>
       assetJobRepository.selectionForBestPhotosScoring.mockReturnValue({
-        executeTakeFirst: vitest.fn().mockResolvedValue(row),
+        execute: vitest.fn().mockResolvedValue(ids.map((id) => ({ id }))),
       } as never);
-    const share = { name: JobName.BestPhotosScoreQueueAll, data: { force: false, limit: 1000 } };
 
     beforeEach(() => {
-      jobRepository.getJobCounts.mockResolvedValue(idle);
-      jobRepository.hasLiveJobs.mockResolvedValue(false);
-      unscored({ id: 'asset-1' });
+      jobRepository.hasIncomingWork.mockResolvedValue(false);
+      jobRepository.hasRunnableJobs.mockResolvedValue(false);
+      unscored('a', 'b');
     });
 
-    it('queues one share once the library is set up', async () => {
+    it('queues one share once the library is set up, and walks on from its last photo', async () => {
       await expect(sut.queueNextShare()).resolves.toBe(true);
-      expect(jobRepository.queue).toHaveBeenCalledExactlyOnceWith(share);
+      expect(jobRepository.queue).toHaveBeenLastCalledWith({
+        name: JobName.BestPhotosScoreQueueAll,
+        data: { force: false, limit: 1000 },
+      });
       // a photo waits for what its score reads: here search and faces are on
-      expect(assetJobRepository.selectionForBestPhotosScoring).toHaveBeenCalledWith({
+      expect(assetJobRepository.selectionForBestPhotosScoring).toHaveBeenLastCalledWith({
         ready: { search: true, faces: true },
-        limit: 1,
+        limit: 1000,
+        after: undefined,
+      });
+
+      // the next share starts after the last photo of this one, so a photo that can't be scored holds up nothing
+      unscored('c');
+      await expect(sut.queueNextShare()).resolves.toBe(true);
+      expect(jobRepository.queue).toHaveBeenLastCalledWith({
+        name: JobName.BestPhotosScoreQueueAll,
+        data: { force: false, limit: 1000, after: 'b' },
       });
     });
 
-    it('waits while photos are still being scanned in, read or given thumbnails', async () => {
-      jobRepository.getJobCounts.mockImplementation((name) =>
-        Promise.resolve(name === QueueName.ThumbnailGeneration ? { ...idle, waiting: 3 } : idle),
-      );
+    it('waits while photos are still coming in or being made ready', async () => {
+      jobRepository.hasIncomingWork.mockResolvedValue(true);
       await expect(sut.queueNextShare()).resolves.toBe(false);
+      expect(jobRepository.hasIncomingWork).toHaveBeenCalledWith([
+        QueueName.Library,
+        QueueName.Sidecar,
+        QueueName.MetadataExtraction,
+        QueueName.ThumbnailGeneration,
+      ]);
       expect(jobRepository.queue).not.toHaveBeenCalled();
     });
 
-    it('never queues a share while the last one is not done', async () => {
-      jobRepository.hasLiveJobs.mockResolvedValue(true);
+    it('never queues a share while the last one can still run', async () => {
+      jobRepository.hasRunnableJobs.mockResolvedValue(true);
       await expect(sut.queueNextShare()).resolves.toBe(false);
-      expect(jobRepository.hasLiveJobs).toHaveBeenCalledWith(QueueName.BackgroundTask, [
+      expect(jobRepository.hasRunnableJobs).toHaveBeenCalledWith(QueueName.BackgroundTask, [
         JobName.BestPhotosScore,
         JobName.BestPhotosScoreQueueAll,
       ]);
       expect(jobRepository.queue).not.toHaveBeenCalled();
     });
 
-    it('rests for an hour once nothing is left to score', async () => {
-      unscored();
+    it('rests an hour at the end of a pass, then starts again from the first photo', async () => {
       const now = Date.now();
+      await expect(sut.queueNextShare(now)).resolves.toBe(true);
+      unscored();
       await expect(sut.queueNextShare(now)).resolves.toBe(false);
-      unscored({ id: 'asset-2' });
+      unscored('a');
       await expect(sut.queueNextShare(now + 59 * 60_000)).resolves.toBe(false);
       await expect(sut.queueNextShare(now + 61 * 60_000)).resolves.toBe(true);
+      expect(assetJobRepository.selectionForBestPhotosScoring).toHaveBeenLastCalledWith(
+        expect.objectContaining({ after: undefined }),
+      );
     });
 
-    it('takes a share of photos never scored and ready, and scores each without force', async () => {
-      assetJobRepository.selectionForBestPhotosScoring.mockReturnValue([{ id: 'asset-1' }] as never);
-      await expect(sut.handleQueueAll({ force: false, limit: 1000 })).resolves.toBe(JobStatus.Success);
+    it('takes a share of photos never scored and ready from its place, and scores each without force', async () => {
+      assetJobRepository.selectionForBestPhotosScoring.mockReturnValue([{ id: 'c' }] as never);
+      await expect(sut.handleQueueAll({ force: false, limit: 1000, after: 'b' })).resolves.toBe(JobStatus.Success);
       expect(assetJobRepository.selectionForBestPhotosScoring).toHaveBeenCalledWith({
         ready: { search: true, faces: true },
         limit: 1000,
+        after: 'b',
       });
       expect(jobRepository.queueSelection).toHaveBeenCalledWith(JobName.BestPhotosScore, expect.anything(), {});
     });
