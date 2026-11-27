@@ -31,6 +31,14 @@ describe('clearPrivateBrowserState (FL-80)', () => {
     expect(sessionStorage.getItem('frameleaf.auth.rememberMe')).toBe('false');
   });
 
+  // FL-1811: which information-panel folds were left open is this screen's layout, kept through a lock.
+  it('keeps the information panel folds through a lock or sign-out', () => {
+    localStorage.setItem('frameleaf-viewer-info-folds', '{"text":true}');
+    clearPrivateBrowserState();
+    expect(localStorage.getItem('frameleaf-viewer-info-folds')).toBe('{"text":true}');
+    localStorage.removeItem('frameleaf-viewer-info-folds');
+  });
+
   it('treats a new frameleaf key as private by default', () => {
     expect(isPrivateBrowserKey('frameleaf:some-new-feature:v1')).toBe(true);
     expect(isPrivateBrowserKey('frameleaf.rail.closedSections')).toBe(false);
