@@ -25,6 +25,34 @@ describe(SystemMetadataRepository.name, () => {
     expect(await sut.get(SystemMetadataKey.FrameleafServerId)).toEqual(replacement);
   });
 
+  it('records a model download key check only while the checked key is still stored (FL-1835)', async () => {
+    const sut = new SystemMetadataRepository(defaultDatabase);
+    const first = {
+      sealed: 'sealed-1',
+      savedAt: '2026-11-27T10:00:00.000Z',
+      state: 'accepted' as const,
+      checkedAt: '2026-11-27T10:00:00.000Z',
+    };
+    await sut.set(SystemMetadataKey.ModelDownloadKey, first);
+    const checked = { ...first, state: 'refused' as const, checkedAt: '2026-11-27T11:00:00.000Z' };
+    await expect(sut.setModelDownloadKeyCheck(first, checked)).resolves.toBe(true);
+    await expect(sut.get(SystemMetadataKey.ModelDownloadKey)).resolves.toEqual(checked);
+    // a second check of the first answer (another process got there first) does not overwrite it
+    await expect(
+      sut.setModelDownloadKeyCheck(first, { ...first, checkedAt: '2026-11-27T11:30:00.000Z' }),
+    ).resolves.toBe(false);
+    await expect(sut.get(SystemMetadataKey.ModelDownloadKey)).resolves.toEqual(checked);
+
+    // Replaced, then removed, while a check of the first key was running: neither is undone.
+    const second = { ...first, sealed: 'sealed-2', savedAt: '2026-11-27T12:00:00.000Z' };
+    await sut.set(SystemMetadataKey.ModelDownloadKey, second);
+    await expect(sut.setModelDownloadKeyCheck(first, checked)).resolves.toBe(false);
+    await expect(sut.get(SystemMetadataKey.ModelDownloadKey)).resolves.toEqual(second);
+    await sut.delete(SystemMetadataKey.ModelDownloadKey);
+    await expect(sut.setModelDownloadKeyCheck(second, checked)).resolves.toBe(false);
+    await expect(sut.get(SystemMetadataKey.ModelDownloadKey)).resolves.toBeNull();
+  });
+
   describe('integrity check runs (FL-81)', () => {
     it('counts concurrent batches without losing one, and completes a run once', async () => {
       const sut = new SystemMetadataRepository(defaultDatabase);

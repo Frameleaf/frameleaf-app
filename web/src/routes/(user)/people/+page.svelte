@@ -832,7 +832,6 @@
 {#if dialog?.type === 'merge'}
   <MergePeopleDialog
     person={dialog.person}
-    candidates={people}
     bind:open={dialogOpen}
     onMerged={async (target) => {
       announceMerge(dialog!.person, target);

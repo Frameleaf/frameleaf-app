@@ -16,6 +16,7 @@ export const newSystemMetadataRepositoryMock = (): Mocked<RepositoryInterface<Sy
     updateIntegrityRun: vitest.fn(),
     completeIntegrityRun: vitest.fn(),
     clearIntegrityRun: vitest.fn(),
+    setModelDownloadKeyCheck: vitest.fn(),
     delete: vitest.fn(),
     readFile: vitest.fn(),
   } as Mocked<RepositoryInterface<SystemMetadataRepository>>;

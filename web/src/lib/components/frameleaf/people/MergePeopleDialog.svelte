@@ -2,59 +2,38 @@
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import PersonAvatar from '$lib/components/frameleaf/PersonAvatar.svelte';
-  import { isUnnamedPerson, sortMergeCandidates } from '$lib/frameleaf/people';
+  import PersonPicker from '$lib/components/frameleaf/people/PersonPicker.svelte';
+  import { isUnnamedPerson } from '$lib/frameleaf/people';
   import { eventManager } from '$lib/managers/event-manager.svelte';
   import { handleError } from '$lib/utils/handle-error';
-  import { getAllPeople, getPerson, mergePeople, type PeopleListItemDto, type PersonResponseDto } from '@frameleaf/sdk';
+  import { getPerson, mergePeople, type PersonResponseDto } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
-  import { mdiAccountOutline, mdiArrowRight, mdiCallMerge, mdiCheck } from '@mdi/js';
-  import { onDestroy } from 'svelte';
+  import { mdiAccountOutline, mdiArrowRight, mdiCallMerge } from '@mdi/js';
   import { t } from 'svelte-i18n';
 
   /**
    * "Merge people" (FL-37, PD-4), ported from `MergePeopleDialog` in
-   * design/frameleaf/template/src/People.jsx:434-536. It replaces the legacy full-screen
-   * `MergeFaceSelector`: pick one person and everything tagged as `person` moves to them via
-   * the existing `POST /people/merge`, whose first id survives (so the chosen person keeps
-   * their name, birthday and favorite status).
+   * design/frameleaf/template/src/People.jsx:434-536. Pick one person and everything tagged as
+   * `person` moves to them via `POST /people/merge`, whose first id survives (so the chosen person
+   * keeps their name, birthday and favorite status).
    *
-   * Candidates are the caller's already-loaded people when it has them (the People grid);
-   * otherwise the dialog reads them with `getAllPeople`, hidden people included, as the
-   * prototype lists them, and asks the server for the name being typed (FL-1803).
+   * The list is the one person picker (FL-1814): it searches everyone on the server by name and
+   * shows more on request, so nobody past the first page is out of reach.
    */
+  type Candidate = Pick<PersonResponseDto, 'id' | 'name' | 'updatedAt'> & { assetCount?: number };
   interface Props {
     person: PersonResponseDto & { assetCount?: number };
-    candidates?: PeopleListItemDto[];
     /** A person to preselect, e.g. the one a rename just collided with. */
     initialChoice?: string | null;
     open?: boolean;
-    onMerged: (target: PersonResponseDto) => void | Promise<void>;
+    onMerged: (target: Candidate) => void | Promise<void>;
   }
 
-  let { person, candidates, initialChoice = null, open = $bindable(false), onMerged }: Props = $props();
+  let { person, initialChoice = null, open = $bindable(false), onMerged }: Props = $props();
 
-  type Candidate = PersonResponseDto & { assetCount?: number };
-  let loaded: PeopleListItemDto[] = $state([]);
-  // The preselected person when the list does not include them (a library past the first page).
-  let preselected: Candidate | null = $state(null);
-  // The person clicked, kept while later searches replace the list, so the pick and Merge stay (FL-1803).
-  let picked: Candidate | null = $state(null);
-  let query = $state('');
-  let choice: string | null = $state(null);
+  let target: Candidate | null = $state(null);
   let busy = $state(false);
 
-  const listed = $derived<Candidate[]>(candidates ?? loaded);
-  const people = $derived.by<Candidate[]>(() => {
-    const kept = [preselected, picked].filter(
-      (candidate, index, all): candidate is Candidate =>
-        !!candidate && all.findIndex((other) => other?.id === candidate.id) === index,
-    );
-    const missing = kept.filter((candidate) => listed.every(({ id }) => id !== candidate.id));
-    return missing.length > 0 ? [...missing, ...listed] : listed;
-  });
-  const rows = $derived(sortMergeCandidates(people, person.id, query));
-  const target = $derived(people.find((candidate) => candidate.id === choice) ?? null);
-  const self = $derived(people.find((candidate) => candidate.id === person.id));
   const nameOf = (candidate: { name: string }) => (isUnnamedPerson(candidate) ? $t('unnamed_person') : candidate.name);
   const itemCount = (count: number | undefined) =>
     count === undefined ? '' : $t('frameleaf_people_items_count', { values: { count } });
@@ -63,72 +42,18 @@
     if (!open) {
       return;
     }
-    query = '';
-    choice = initialChoice;
-    preselected = null;
-    picked = null;
-    void (async () => {
-      try {
-        if (!candidates) {
-          await load('');
-        }
-        if (initialChoice && (candidates ?? loaded).every(({ id }) => id !== initialChoice)) {
-          preselected = await getPerson({ id: initialChoice });
-        }
-      } catch (error) {
-        handleError(error, $t('errors.failed_to_load_people'));
-      }
-    })();
-  });
-
-  /** A name search waits for typing to pause, so a word is one request rather than one per letter. */
-  const SEARCH_DELAY_MS = 200;
-  /** People a name search lists: enough to find anyone by a few letters of their name. */
-  const SEARCH_SIZE = 100;
-  // only the newest read may answer, so a slow earlier search never replaces a later one
-  let request = 0;
-  let inFlight: AbortController | undefined;
-  let searchTimer: ReturnType<typeof setTimeout> | undefined;
-  /**
-   * FL-1803: the list the dialog reads itself. With a name typed the server finds the people (hidden
-   * ones included), so someone past the first page can be chosen; with none it is the first page.
-   * A newer read cancels the one before it, and only the newest one's failure is said.
-   */
-  const load = async (name: string) => {
-    const current = ++request;
-    inFlight?.abort();
-    const controller = new AbortController();
-    inFlight = controller;
-    try {
-      const { people } = await getAllPeople(
-        { withHidden: true, size: name ? SEARCH_SIZE : 1000, ...(name && { name }) },
-        { signal: controller.signal },
-      );
-      if (current === request) {
-        loaded = people;
-      }
-    } catch (error) {
-      if (current === request && !controller.signal.aborted) {
-        throw error;
-      }
+    target = null;
+    if (initialChoice) {
+      const id = initialChoice;
+      getPerson({ id })
+        .then((found) => {
+          // a reopen with another preselection, or a pick, since this was asked: this answer is stale
+          if (open && !target && initialChoice === id) {
+            target = found;
+          }
+        })
+        .catch((error: unknown) => handleError(error, $t('errors.failed_to_load_people')));
     }
-  };
-  const onSearch = () => {
-    if (candidates) {
-      return;
-    }
-    clearTimeout(searchTimer);
-    searchTimer = setTimeout(() => {
-      load(query.trim()).catch((error: unknown) => handleError(error, $t('errors.failed_to_load_people')));
-    }, SEARCH_DELAY_MS);
-  };
-  const pick = (candidate: Candidate) => {
-    choice = candidate.id;
-    picked = candidate;
-  };
-  onDestroy(() => {
-    clearTimeout(searchTimer);
-    inFlight?.abort();
   });
 
   const merge = async () => {
@@ -156,7 +81,7 @@
     <div class="side">
       <PersonAvatar {person} size={72} />
       <strong>{nameOf(person)}</strong>
-      <span>{itemCount(person.assetCount ?? self?.assetCount)}</span>
+      <span>{itemCount(person.assetCount)}</span>
     </div>
     <span class="arrow" aria-hidden="true"><Icon icon={mdiArrowRight} size="22" /></span>
     <div class="side" class:empty={!target}>
@@ -172,31 +97,14 @@
     </div>
   </div>
   <p class="hint">{$t('frameleaf_people_merge_description', { values: { name: nameOf(person) } })}</p>
-  <input
-    type="search"
-    class="search"
-    aria-label={$t('frameleaf_people_merge_find')}
-    placeholder={$t('frameleaf_people_find_a_person')}
-    bind:value={query}
-    oninput={onSearch}
-    data-initial-focus
-  />
-  <ul class="list" aria-label={$t('people')}>
-    {#each rows as candidate (candidate.id)}
-      <li>
-        <button type="button" aria-pressed={candidate.id === choice} onclick={() => pick(candidate)}>
-          <PersonAvatar person={candidate} size={40} />
-          <span class="name" class:unnamed={isUnnamedPerson(candidate)}>{nameOf(candidate)}</span>
-          <span class="count">{itemCount(candidate.assetCount)}</span>
-          {#if candidate.id === choice}
-            <Icon icon={mdiCheck} size="18" aria-hidden="true" />
-          {/if}
-        </button>
-      </li>
-    {:else}
-      <li class="empty">{$t('frameleaf_people_merge_no_match')}</li>
-    {/each}
-  </ul>
+  {#if open}
+    <PersonPicker
+      excludeId={person.id}
+      label={$t('frameleaf_people_merge_find')}
+      selectedId={target?.id ?? ''}
+      onPick={(picked) => (target = picked)}
+    />
+  {/if}
   {#snippet actions()}
     <Button onclick={() => (open = false)}>{$t('cancel')}</Button>
     <Button variant="primary" disabled={!target || busy} onclick={merge}>
@@ -260,66 +168,10 @@
     color: var(--fl-muted);
     line-height: 1.5;
   }
-  .search {
-    width: 100%;
-    min-height: var(--fl-control-height);
-    margin-bottom: 10px;
-    font-size: var(--fl-font-size);
-  }
-  .list {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    max-height: 300px;
-    margin: 0;
-    padding: 0;
-    overflow: auto;
-    list-style: none;
-  }
-  .list button {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    width: 100%;
-    min-height: 52px;
-    padding: 6px 10px;
-    color: var(--fl-text);
-    text-align: start;
-    background: none;
-    border: 1px solid transparent;
-    border-radius: var(--fl-radius-control);
-  }
-  .list button:hover {
-    background: var(--fl-raised);
-  }
-  .list button[aria-pressed='true'] {
-    background: var(--fl-accent-soft);
-    border-color: var(--fl-accent);
-  }
-  .name {
-    flex: 1;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .name.unnamed {
-    color: var(--fl-muted);
-    font-style: italic;
-  }
-  .count {
-    color: var(--fl-muted);
-    font-size: var(--fl-font-small);
-  }
-  .empty {
-    padding: 16px;
-    color: var(--fl-muted);
-    text-align: center;
-  }
   @media (max-width: 700px) {
     .preview {
-      gap: 8px;
-      padding: 12px;
+      gap: var(--fl-space-2);
+      padding: var(--fl-space-3);
     }
   }
 </style>

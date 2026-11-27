@@ -144,6 +144,7 @@ import { MemoryHighlightService } from 'src/services/memory-highlight.service.js
 import { MemoryService } from 'src/services/memory.service.js';
 import { MetadataService } from 'src/services/metadata.service.js';
 import { MlDestinationService } from 'src/services/ml-destination.service.js';
+import { ModelDownloadKeyService } from 'src/services/model-download-key.service.js';
 import { NotificationAdminService } from 'src/services/notification-admin.service.js';
 import { NotificationService } from 'src/services/notification.service.js';
 import { OAuthAppService } from 'src/services/oauth-app.service.js';
@@ -341,6 +342,7 @@ export const services = [
   FrameleafLicenseService,
   FrameleafRemoteAccessService,
   HardwareCheckService,
+  ModelDownloadKeyService,
   HelpService,
   ICloudMetadataService,
   ICloudRelationsService,

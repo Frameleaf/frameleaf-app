@@ -3443,6 +3443,17 @@ export type MaintenanceStatusResponseDto = {
     reason?: string;
     task?: string;
 };
+export type ModelDownloadKeyResponseDto = {
+    /** When Hugging Face last answered about the key */
+    checkedAt: string | null;
+    /** When the key was saved */
+    savedAt: string | null;
+    status: ModelDownloadKeyStatus;
+};
+export type ModelDownloadKeyUpdateDto = {
+    /** A Hugging Face access token with Read access */
+    key: string;
+};
 export type NotificationCreateDto = {
     /** Additional notification data */
     data?: {
@@ -28486,6 +28497,41 @@ export function getMaintenanceStatus(opts?: Oazapfts.RequestOpts) {
     }));
 }
 /**
+ * Remove the model download key
+ */
+export function removeModelDownloadKey(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText("/admin/model-download-key", {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+/**
+ * Get the model download key status
+ */
+export function getModelDownloadKey(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: ModelDownloadKeyResponseDto;
+    }>("/admin/model-download-key", {
+        ...opts
+    }));
+}
+/**
+ * Save a model download key
+ */
+export function setModelDownloadKey({ modelDownloadKeyUpdateDto }: {
+    modelDownloadKeyUpdateDto: ModelDownloadKeyUpdateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: ModelDownloadKeyResponseDto;
+    }>("/admin/model-download-key", oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: modelDownloadKeyUpdateDto
+    })));
+}
+/**
  * Create a notification
  */
 export function createNotification({ notificationCreateDto }: {
@@ -47352,6 +47398,11 @@ export enum StorageFolder {
     Thumbs = "thumbs",
     Backups = "backups",
     Exports = "exports"
+}
+export enum ModelDownloadKeyStatus {
+    None = "none",
+    Saved = "saved",
+    Refused = "refused"
 }
 export enum NotificationLevel {
     Success = "success",

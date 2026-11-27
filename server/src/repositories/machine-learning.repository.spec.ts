@@ -465,6 +465,56 @@ describe(MachineLearningRepository.name, () => {
       expect(fetch.mock.calls[0][1].headers).toEqual({ Authorization: 'Bearer lan-token' });
     });
 
+    it("passes the model download key to this server's own ML service only (FL-1825)", async () => {
+      const fetch = vi
+        .fn()
+        .mockImplementation(() =>
+          Promise.resolve(jsonResponse({ [ModelTask.SEARCH]: '[1,2,3]', imageHeight: 1, imageWidth: 1 })),
+        );
+      vi.stubGlobal('fetch', fetch);
+      const key = `hf_${'a'.repeat(34)}`;
+      const clip = { ...defaults.machineLearning.clip };
+
+      await sut.encodeImage(selection(MlDestinationKind.Local, localUrl), imagePath, clip);
+      expect(new Headers(fetch.mock.calls[0][1].headers).get('x-frameleaf-model-download-key')).toBe('');
+
+      sut.setModelDownloadKey(key);
+      await sut.encodeImage(selection(MlDestinationKind.Local, localUrl), imagePath, clip);
+      expect(new Headers(fetch.mock.calls[1][1].headers).get('x-frameleaf-model-download-key')).toBe(key);
+
+      await sut.encodeImage(
+        selection(MlDestinationKind.Lan, lanUrl, () => {}, 'lan-token'),
+        imagePath,
+        clip,
+      );
+      expect(new Headers(fetch.mock.calls[2][1].headers).has('x-frameleaf-model-download-key')).toBe(false);
+
+      // never in plain text across the internet, even to a configured worker
+      // eslint-disable-next-line unicorn/prefer-https -- the plain-HTTP case is the one under test
+      const remote = 'http://ml.example.com:3003';
+      sut.setup({ ...defaults.machineLearning, urls: [remote] });
+      sut.setModelDownloadKey(key);
+      await sut.encodeImage(selection(MlDestinationKind.Local, remote), imagePath, clip);
+      const last = fetch.mock.lastCall!;
+      expect(String(last[0])).toContain('ml.example.com');
+      expect(new Headers(last[1].headers).has('x-frameleaf-model-download-key')).toBe(false);
+
+      // a dotted name with a private-looking prefix can resolve anywhere
+      // eslint-disable-next-line unicorn/prefer-https -- the plain-HTTP case is the one under test
+      const lookalike = 'http://10.ml.example.com:3003';
+      sut.setup({ ...defaults.machineLearning, urls: [lookalike] });
+      sut.setModelDownloadKey(key);
+      await sut.encodeImage(selection(MlDestinationKind.Local, lookalike), imagePath, clip);
+      expect(new Headers(fetch.mock.lastCall![1].headers).has('x-frameleaf-model-download-key')).toBe(false);
+
+      // a private IPv4 address on the home network
+      const lan = 'http://192.168.1.20:3003';
+      sut.setup({ ...defaults.machineLearning, urls: [lan] });
+      sut.setModelDownloadKey(key);
+      await sut.encodeImage(selection(MlDestinationKind.Local, lan), imagePath, clip);
+      expect(new Headers(fetch.mock.lastCall![1].headers).get('x-frameleaf-model-download-key')).toBe(key);
+    });
+
     it('records usage once per request with bytes sent, bytes received and the outcome', async () => {
       const fetch = vi
         .fn()

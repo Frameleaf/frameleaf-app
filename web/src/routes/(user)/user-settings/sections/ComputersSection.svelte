@@ -16,6 +16,7 @@
   import { page } from '$app/state';
   import SegmentedControl from '$lib/components/frameleaf/SegmentedControl.svelte';
   import DesktopHousehold from '$lib/components/frameleaf/computers/DesktopHousehold.svelte';
+  import ModelDownloadKey from '$lib/components/frameleaf/computers/ModelDownloadKey.svelte';
   import WhereWorkRuns from '$lib/components/frameleaf/computers/WhereWorkRuns.svelte';
   import { WorkRunsDraft } from '$lib/components/frameleaf/computers/work-runs-draft.svelte';
   import Button from '$lib/components/frameleaf/Button.svelte';
@@ -526,6 +527,7 @@
               onChange={(value) => (checks.timeout = Math.round(value * 1000))}
             />
           </Row>
+          <ModelDownloadKey />
         {/if}
       {/snippet}
     </WhereWorkRuns>

@@ -54,24 +54,6 @@ export const sortPeopleForGrid = <T extends GridPerson>(people: T[], sort: Peopl
     return byName(a, b);
   });
 
-/**
- * Merge dialog candidates (template/src/People.jsx:438-453): everyone but the person being
- * merged, named people first, then by photo count, then by name.
- */
-export const sortMergeCandidates = <T extends GridPerson & { id: string }>(
-  people: T[],
-  personId: string,
-  query: string,
-): T[] =>
-  people
-    .filter((candidate) => candidate.id !== personId && matchesPersonSearch(candidate, query))
-    .sort(
-      (a, b) =>
-        Number(isUnnamedPerson(a)) - Number(isUnnamedPerson(b)) ||
-        (b.assetCount ?? 0) - (a.assetCount ?? 0) ||
-        a.name.localeCompare(b.name),
-    );
-
 /** Whole years between an ISO `YYYY-MM-DD` birth date and `now`, or null when unset or in the future. */
 export const ageInYears = (birthDate: string | null | undefined, now = new Date()): number | null => {
   const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(birthDate ?? '');

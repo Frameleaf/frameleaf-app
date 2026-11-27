@@ -6,6 +6,14 @@ import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import { personFactory } from '@test-data/factories/person-factory';
 import FixMatchPanel from './FixMatchPanel.svelte';
 
+/** A row of the people picker list (FL-1789), as the panel reads people now. */
+const pick = (person: { id: string; name: string; assetCount?: number }) => ({
+  id: person.id,
+  name: person.name,
+  assetCount: person.assetCount ?? 1,
+  updatedAt: '2026-11-01T00:00:00Z',
+});
+
 describe('FixMatchPanel (PD-3)', () => {
   const person = personFactory.build({ id: 'ada', name: 'Ada' });
   const other = { ...personFactory.build({ id: 'grace', name: 'Grace' }), assetCount: 3, lastSeenAt: null };
@@ -47,7 +55,7 @@ describe('FixMatchPanel (PD-3)', () => {
     sdkMock.getFaces.mockImplementation(({ id }) =>
       Promise.resolve(id === 'one' ? [face('f1', 'ada'), face('f2', 'someone-else')] : [face('f3', 'ada')]),
     );
-    sdkMock.getAllPeople.mockResolvedValue({ people: [other], total: 1, hidden: 0 });
+    sdkMock.getPeoplePicker.mockResolvedValue({ people: [pick(other)], hasNextPage: false });
   });
 
   it('lists only this person’s faces and never reads a Locked photo', async () => {
@@ -98,13 +106,11 @@ describe('FixMatchPanel (PD-3)', () => {
       assetCount: index,
       lastSeenAt: null,
     }));
-    sdkMock.getAllPeople.mockImplementation((options) => {
+    sdkMock.getPeoplePicker.mockImplementation((options) => {
       const { sort, page = 1, size = 500 } = options ?? {};
       const ordered = sort === 'count' ? [...everyone].sort((a, b) => b.assetCount - a.assetCount) : everyone;
       return Promise.resolve({
-        people: ordered.slice((page - 1) * size, page * size),
-        total: everyone.length,
-        hidden: 0,
+        people: ordered.slice((page - 1) * size, page * size).map((row) => pick(row)),
         hasNextPage: page * size < everyone.length,
       });
     });
@@ -115,7 +121,7 @@ describe('FixMatchPanel (PD-3)', () => {
 
     const offered = screen.getAllByRole('menuitem').map((item) => item.textContent?.trim());
     expect(offered.slice(0, 6)).toEqual([1499, 1497, 1495, 1493, 1491, 1489].map((index) => `This is Person ${index}`));
-    expect(sdkMock.getAllPeople).toHaveBeenCalledExactlyOnceWith({
+    expect(sdkMock.getPeoplePicker).toHaveBeenCalledExactlyOnceWith({
       withHidden: false,
       sort: 'count',
       page: 1,
@@ -124,15 +130,9 @@ describe('FixMatchPanel (PD-3)', () => {
   });
 
   it('reads at most five pages when the people with the most photos have no names', async () => {
-    sdkMock.getAllPeople.mockImplementation((options) =>
+    sdkMock.getPeoplePicker.mockImplementation((options) =>
       Promise.resolve({
-        people: Array.from({ length: 200 }, (_, index) => ({
-          ...personFactory.build({ id: `u${options?.page}-${index}`, name: '' }),
-          assetCount: 1,
-          lastSeenAt: null,
-        })),
-        total: 5000,
-        hidden: 0,
+        people: Array.from({ length: 200 }, (_, index) => pick({ id: `u${options?.page}-${index}`, name: '' })),
         hasNextPage: true,
       }),
     );
@@ -141,9 +141,9 @@ describe('FixMatchPanel (PD-3)', () => {
     await fireEvent.click(await screen.findByRole('button', { name: 'Not this person in one.jpg' }));
     await screen.findByRole('menuitem', { name: /Someone else/ });
 
-    await waitFor(() => expect(sdkMock.getAllPeople).toHaveBeenCalledTimes(5));
+    await waitFor(() => expect(sdkMock.getPeoplePicker).toHaveBeenCalledTimes(5));
     await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(sdkMock.getAllPeople).toHaveBeenCalledTimes(5);
+    expect(sdkMock.getPeoplePicker).toHaveBeenCalledTimes(5);
   });
 
   it('takes a face that is nobody off the person with a recoverable soft delete', async () => {
@@ -241,8 +241,13 @@ describe('FixMatchPanel (PD-3)', () => {
     it('moves the selected faces to anyone found with the searchable picker', async () => {
       twoFaces();
       const lin = personFactory.build({ id: 'lin', name: 'Lin' });
-      sdkMock.getAllPeople.mockResolvedValue({ people: [other], total: 1, hidden: 0, hasNextPage: true });
-      sdkMock.searchPerson.mockResolvedValue([lin, person]);
+      sdkMock.getPeoplePicker.mockImplementation((options) =>
+        Promise.resolve(
+          options?.name
+            ? { people: [pick(lin), pick(person)], hasNextPage: false }
+            : { people: [pick(other)], hasNextPage: true },
+        ),
+      );
       sdkMock.correctFace.mockResolvedValue({} as never);
       const onChanged = vi.fn();
       render(FixMatchPanel, { person, onChanged, close: vi.fn() });
@@ -254,10 +259,15 @@ describe('FixMatchPanel (PD-3)', () => {
       await fireEvent.click(screen.getByRole('button', { name: 'Move to…' }));
       const search = await screen.findByRole('searchbox', { name: 'Find a person' });
       await fireEvent.input(search, { target: { value: 'Li' } });
-      await waitFor(() => expect(sdkMock.searchPerson).toHaveBeenCalledWith({ name: 'Li', withHidden: true }));
+      await waitFor(() =>
+        expect(sdkMock.getPeoplePicker).toHaveBeenCalledWith(
+          { withHidden: true, page: 1, size: 50, name: 'Li' },
+          { signal: expect.any(AbortSignal) },
+        ),
+      );
       // the person the faces come from is never offered
       expect(screen.queryByRole('button', { name: 'Ada' })).toBeNull();
-      await fireEvent.click(await screen.findByRole('button', { name: 'Lin' }));
+      await fireEvent.click(await screen.findByRole('button', { name: /^Lin/ }));
 
       await waitFor(() => expect(sdkMock.correctFace).toHaveBeenCalledTimes(2));
       expect(sdkMock.correctFace).toHaveBeenCalledWith({
@@ -277,14 +287,92 @@ describe('FixMatchPanel (PD-3)', () => {
 
     it('pages through everyone when nothing is typed', async () => {
       twoFaces();
-      sdkMock.getAllPeople.mockResolvedValue({ people: [other], total: 60, hidden: 0, hasNextPage: true });
+      sdkMock.getPeoplePicker.mockResolvedValue({ people: [pick(other)], hasNextPage: true });
       render(FixMatchPanel, { person, close: vi.fn() });
 
       await fireEvent.click(await screen.findByRole('checkbox', { name: 'Select the face in one.jpg' }));
       await fireEvent.click(screen.getByRole('button', { name: 'Move to…' }));
       await fireEvent.click(await screen.findByRole('button', { name: 'Show more' }));
 
-      await waitFor(() => expect(sdkMock.getAllPeople).toHaveBeenCalledWith({ withHidden: true, page: 2, size: 50 }));
+      await waitFor(() =>
+        expect(sdkMock.getPeoplePicker).toHaveBeenCalledWith(
+          { withHidden: true, page: 2, size: 50 },
+          expect.anything(),
+        ),
+      );
+    });
+
+    it('makes someone new from the faces the picker opened for, not faces ticked later (FL-1814)', async () => {
+      twoFaces();
+      sdkMock.createPerson.mockResolvedValue(personFactory.build({ id: 'new-one', name: 'Noor' }));
+      sdkMock.correctFace.mockResolvedValue({} as never);
+      render(FixMatchPanel, { person, close: vi.fn() });
+
+      await fireEvent.click(await screen.findByRole('checkbox', { name: 'Select the face in one.jpg' }));
+      await fireEvent.click(screen.getByRole('checkbox', { name: 'Select the face in two.jpg' }));
+      await fireEvent.click(screen.getByRole('button', { name: 'Move to…' }));
+      // a face unticked while the picker is open does not leave the move
+      await fireEvent.click(screen.getByRole('checkbox', { name: 'Select the face in two.jpg' }));
+      await fireEvent.input(await screen.findByRole('searchbox', { name: 'Find a person' }), {
+        target: { value: 'Noor' },
+      });
+      await fireEvent.click(screen.getByRole('button', { name: 'Someone new called “Noor”' }));
+
+      await waitFor(() => expect(sdkMock.correctFace).toHaveBeenCalledTimes(2));
+      for (const id of ['f-one', 'f-two']) {
+        expect(sdkMock.correctFace).toHaveBeenCalledWith(
+          expect.objectContaining({ id, assetFaceCorrectionDto: expect.objectContaining({ personId: 'new-one' }) }),
+        );
+      }
+    });
+
+    it('names someone new for the faces the picker opened for, even after the selection changes (FL-1814)', async () => {
+      twoFaces();
+      sdkMock.createPerson.mockResolvedValue(personFactory.build({ id: 'new-one', name: 'Noor' }));
+      sdkMock.correctFace.mockResolvedValue({} as never);
+      render(FixMatchPanel, { person, close: vi.fn() });
+
+      await fireEvent.click(await screen.findByRole('checkbox', { name: 'Select the face in one.jpg' }));
+      await fireEvent.click(screen.getByRole('checkbox', { name: 'Select the face in two.jpg' }));
+      await fireEvent.click(screen.getByRole('button', { name: 'Move to…' }));
+      await fireEvent.click(await screen.findByRole('button', { name: 'Someone new…' }));
+      // the selection changes while the name is being typed
+      await fireEvent.click(screen.getByRole('checkbox', { name: 'Select the face in two.jpg' }));
+      const name = await screen.findByRole('combobox', { name: 'Name for the new person' });
+      await fireEvent.input(name, { target: { value: 'Noor' } });
+      await fireEvent.submit(name.closest('form')!);
+
+      await waitFor(() => expect(sdkMock.correctFace).toHaveBeenCalledTimes(2));
+    });
+
+    it('asks for the name when someone new is chosen in the picker with nothing typed (FL-1814)', async () => {
+      twoFaces();
+      render(FixMatchPanel, { person, close: vi.fn() });
+
+      await fireEvent.click(await screen.findByRole('checkbox', { name: 'Select the face in one.jpg' }));
+      await fireEvent.click(screen.getByRole('button', { name: 'Move to…' }));
+      await fireEvent.click(await screen.findByRole('button', { name: 'Someone new…' }));
+
+      expect(await screen.findByRole('combobox', { name: 'Name for the new person' })).toBeTruthy();
+      expect(sdkMock.createPerson).not.toHaveBeenCalled();
+    });
+
+    it('makes someone new from the picker with the name typed there (FL-1814)', async () => {
+      twoFaces();
+      sdkMock.createPerson.mockResolvedValue(personFactory.build({ id: 'new-one', name: 'Noor' }));
+      sdkMock.correctFace.mockResolvedValue({} as never);
+      render(FixMatchPanel, { person, close: vi.fn() });
+
+      await fireEvent.click(await screen.findByRole('checkbox', { name: 'Select the face in one.jpg' }));
+      await fireEvent.click(screen.getByRole('checkbox', { name: 'Select the face in two.jpg' }));
+      await fireEvent.click(screen.getByRole('button', { name: 'Move to…' }));
+      await fireEvent.input(await screen.findByRole('searchbox', { name: 'Find a person' }), {
+        target: { value: 'Noor' },
+      });
+      await fireEvent.click(screen.getByRole('button', { name: 'Someone new called “Noor”' }));
+
+      await waitFor(() => expect(sdkMock.createPerson).toHaveBeenCalledWith({ personCreateDto: { name: 'Noor' } }));
+      await waitFor(() => expect(sdkMock.correctFace).toHaveBeenCalledTimes(2));
     });
 
     it('splits the selected faces into someone new', async () => {
@@ -292,7 +380,6 @@ describe('FixMatchPanel (PD-3)', () => {
       const created = personFactory.build({ id: 'new-one', name: 'Noor' });
       sdkMock.createPerson.mockResolvedValue(created);
       sdkMock.correctFace.mockResolvedValue({} as never);
-      sdkMock.searchPerson.mockResolvedValue([]);
       render(FixMatchPanel, { person, close: vi.fn() });
 
       await fireEvent.click(await screen.findByRole('checkbox', { name: 'Select the face in one.jpg' }));
