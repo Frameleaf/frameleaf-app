@@ -157,6 +157,7 @@ const libraryFactory = (library: Partial<Library> = {}) => ({
   name: 'Library',
   readOnly: false,
   folderAlbums: false,
+  folderAlbumOptions: null,
   assets: [],
   ownerId: newUuid(),
   importPaths: [],
