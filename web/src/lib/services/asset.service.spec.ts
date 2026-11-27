@@ -51,6 +51,12 @@ vitest.mock('$lib/utils', async () => {
   };
 });
 
+// FL-826: every download asks which format first; these tests answer Original unless they say otherwise.
+const ask = vi.hoisted(() => ({ format: 'original' as string | undefined }));
+vi.mock('$lib/frameleaf/download-format', async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  askDownloadFormat: vi.fn(() => Promise.resolve(ask.format)),
+}));
 vi.mock(import('$lib/managers/feature-flags-manager.svelte'), function () {
   return {
     featureFlagsManager: { init: vi.fn(), loadFeatureFlags: vi.fn(), value: {} } as never,
@@ -330,6 +336,36 @@ describe('AssetService', () => {
       expect(toastManager.primary).not.toHaveBeenCalled();
     });
 
+    it('downloads a photo in the chosen format as a .jpg, without its motion part (FL-826)', async () => {
+      ask.format = 'web';
+      try {
+        const asset = assetFactory.build({
+          type: AssetTypeEnum.Image,
+          originalFileName: 'asset.heic',
+          livePhotoVideoId: 'motion',
+        });
+        await handleDownloadAsset(asset, { edited: true });
+        expect(getAssetInfo).not.toHaveBeenCalled();
+        expect(downloadAssetFile).toHaveBeenCalledTimes(1);
+        expect(downloadAssetFile).toHaveBeenCalledWith(
+          expect.objectContaining({ id: asset.id, filename: 'asset.jpg', format: 'web' }),
+        );
+      } finally {
+        ask.format = 'original';
+      }
+    });
+
+    it('downloads nothing when the format question is cancelled (FL-826)', async () => {
+      ask.format = undefined;
+      try {
+        const asset = assetFactory.build({ type: AssetTypeEnum.Image, livePhotoVideoId: null });
+        await handleDownloadAsset(asset, { edited: false });
+        expect(downloadAssetFile).not.toHaveBeenCalled();
+      } finally {
+        ask.format = 'original';
+      }
+    });
+
     it('saves the file directly on a public share, as its lightbox does (PublicViewer.jsx:508-517)', async () => {
       const downloadUrl = vitest.spyOn(utils, 'downloadUrl').mockImplementation(() => {});
       const isSharedLink = vitest.spyOn(authManager, 'isSharedLink', 'get').mockReturnValue(true);
@@ -425,10 +461,24 @@ it('does not add a download after the session changes during motion lookup', asy
   const motion = assetFactory.build();
   const response = deferredPromise<typeof motion>();
   vi.mocked(getAssetInfo).mockReturnValueOnce(response.promise);
-  const pending = handleDownloadAsset(assetFactory.build({ livePhotoVideoId: motion.id }), { edited: false });
+  // Not a photo, so nothing is asked first and the lookup starts at once.
+  const pending = handleDownloadAsset(assetFactory.build({ type: AssetTypeEnum.Video, livePhotoVideoId: motion.id }), {
+    edited: false,
+  });
   authManager.reset();
   response.resolve(motion);
   await pending;
+  expect(downloadAssetFile).not.toHaveBeenCalled();
+});
+
+it('does not download after the session changes while the format question is open (FL-826)', async () => {
+  vi.clearAllMocks();
+  const pending = handleDownloadAsset(assetFactory.build({ type: AssetTypeEnum.Image, livePhotoVideoId: null }), {
+    edited: false,
+  });
+  authManager.reset();
+  await pending;
+  expect(getAssetInfo).not.toHaveBeenCalled();
   expect(downloadAssetFile).not.toHaveBeenCalled();
 });
 

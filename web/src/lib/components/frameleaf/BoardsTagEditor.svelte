@@ -13,7 +13,8 @@
   import { tagSuggestions, type TagSuggestion } from '$lib/frameleaf/info-panel';
   import { eventManager } from '$lib/managers/event-manager.svelte';
   import { removeTag, tagAssets } from '$lib/utils/asset-utils';
-  import { getAllTags, upsertTags, type TagResponseDto } from '@frameleaf/sdk';
+  import { invalidateTags, loadAllTags } from '$lib/frameleaf/tag-store';
+  import { upsertTags, type TagResponseDto } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
   import { mdiClose, mdiPlus, mdiTagOutline } from '@mdi/js';
   import { untrack } from 'svelte';
@@ -78,7 +79,7 @@
       return;
     }
     try {
-      allTags = await getAllTags();
+      allTags = await loadAllTags();
     } catch {
       // Suggestions are optional: a new name can still be typed and created.
       allTags = [];
@@ -95,6 +96,9 @@
       if (change.kind === 'add') {
         const known = change.option.create ? undefined : allTags?.find((item) => item.id === change.option.id);
         const tag = known ?? (await upsertTags({ tagUpsertDto: { tags: [change.option.id] } }))[0];
+        if (!known) {
+          invalidateTags();
+        }
         if (!known) {
           allTags = [...(allTags ?? []).filter((item) => item.id !== tag.id), tag];
         }

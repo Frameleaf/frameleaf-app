@@ -24,6 +24,7 @@
   import Row from '$lib/components/frameleaf/settings/kit/Row.svelte';
   import Section from '$lib/components/frameleaf/settings/kit/Section.svelte';
   import { hardwareConsequences, workerFromHardware } from '$lib/frameleaf/cloud-ml';
+  import { formatDateTime } from '$lib/frameleaf/date-format';
   import { applyDescriptionHardwarePreset } from '$lib/frameleaf/enrichment-tasks';
   import { LOCAL_DESCRIPTION_MODELS } from '$lib/frameleaf/local-models';
   import {
@@ -36,6 +37,7 @@
     type ComposeFixId,
     type FixValues,
   } from '$lib/frameleaf/gpu-model-catalog';
+  import { formatCount } from '$lib/frameleaf/number-format';
   import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
   import { getSystemConfigDraft } from '$lib/frameleaf/system-config-draft.svelte';
   import {
@@ -134,10 +136,12 @@
 
   // The sentences end in their own full stop; "12:09 p.m." would make it two.
   const when = (value: string) =>
-    new Date(value)
-      .toLocaleString($locale, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
-      .replace(/\.$/, '');
-  const number = (value: number) => value.toLocaleString($locale, { maximumFractionDigits: 1 });
+    formatDateTime(
+      new Date(value),
+      { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' },
+      $locale,
+    ).replace(/\.$/, '');
+  const number = (value: number) => formatCount(value, $locale, { maximumFractionDigits: 1 });
 
   const hero = $derived.by(() => {
     if (!check) {

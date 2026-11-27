@@ -164,15 +164,45 @@ test.describe('person page', () => {
     await thumbnailUtils.expectThumbnailIsFavorite(page, asset.id);
   });
 
+  test('Download asks which format and downloads in the one chosen (FL-826)', async ({ context, page }) => {
+    await setup(context);
+    const sized: string[] = [];
+    const archived: unknown[] = [];
+    await context.route('**/api/download/info*', (route, request) => {
+      const { format } = request.postDataJSON();
+      sized.push(format);
+      const size = { original: 55_200_000, jpeg: 23_700_000, web: 2_700_000 }[format as string] ?? 0;
+      return route.fulfill({
+        json: { totalSize: size, archives: [{ size, assetIds: request.postDataJSON().assetIds }] },
+      });
+    });
+    await context.route('**/api/download/archive*', (route, request) => {
+      archived.push(request.postDataJSON());
+      return route.fulfill({ contentType: 'application/zip', body: 'zip' });
+    });
+    await openPersonPage(page);
+    const asset = assets[0];
+
+    await thumbnailUtils.ensureSelected(page, asset.id);
+    await selectionBarUtils.action(page, 'Download').click();
+
+    const ask = page.getByRole('dialog', { name: 'Download' });
+    await expect(ask.getByRole('radio', { name: /^Original/ })).toHaveAttribute('aria-checked', 'true');
+    await expect(ask.getByRole('radio', { name: /^Web size \(2048 px\)/ })).toContainText('About 2.');
+    await ask.getByRole('radio', { name: /^Web size/ }).click();
+    await ask.getByRole('button', { name: 'Download', exact: true }).click();
+
+    await expect.poll(() => archived.length).toBe(1);
+    expect(archived[0]).toMatchObject({ assetIds: [asset.id], format: 'web' });
+    expect(sized.at(-1)).toBe('web');
+  });
+
   test('refuses a date of birth in the future and saves a real one', async ({ context, page }) => {
     await setup(context);
     await openPersonPage(page);
 
-    await page
-      .getByRole('toolbar', { name: 'Actions for Ada' })
-      .getByRole('button', { name: 'More actions for Ada' })
-      .click();
-    await page.getByRole('menuitem', { name: 'Add dates' }).click();
+    // FL-1813: dates have one way in, the line under the name
+    await page.getByRole('button', { name: 'Add date of birth' }).click();
     const dialog = page.getByRole('dialog', { name: 'Dates' });
     const field = dialog.getByLabel('Date of birth for Ada');
     const save = dialog.getByRole('button', { name: 'Save', exact: true });
@@ -230,10 +260,8 @@ test.describe('person page', () => {
     const avatar = page.locator('.pd-avatar img');
     const before = await avatar.getAttribute('src');
 
-    await page
-      .getByRole('toolbar', { name: 'Actions for Ada' })
-      .getByRole('button', { name: 'Featured photo' })
-      .click();
+    // FL-1813: the featured photo has one way in, the photo itself
+    await page.getByRole('button', { name: 'Select featured photo for Ada' }).click();
     const dialog = page.getByRole('dialog', { name: 'Select featured photo' });
     // the current featured photo is marked (People.jsx:603-628)
     await expect(dialog.getByRole('radio', { name: 'photo.jpg, current featured photo' })).toHaveAttribute(

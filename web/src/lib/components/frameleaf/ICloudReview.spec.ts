@@ -73,6 +73,18 @@ describe('ICloudReview', () => {
     mocks.acceptICloudReview.mockResolvedValue({ accepted: 2, requeued: 0 });
   });
 
+  it('shows placeholders while it reads, a failed read in place, and then the photos (FL-1810)', async () => {
+    mocks.getICloudReview.mockRejectedValueOnce(new Error('offline'));
+    render(ICloudReview, { connectionId: id, onBack: vi.fn() });
+
+    expect(screen.getByTestId('frameleaf-grid-skeleton')).toBeInTheDocument();
+    expect(screen.queryByText('Loading')).not.toBeInTheDocument();
+    await screen.findByTestId('frameleaf-inline-error');
+    await fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    await screen.findByRole('button', { name: 'IMG_1.HEIC: Details changed' });
+    expect(screen.queryByTestId('frameleaf-inline-error')).not.toBeInTheDocument();
+  });
+
   const show = async () => {
     render(ICloudReview, { connectionId: id, onBack: vi.fn() });
     await screen.findByRole('button', { name: 'IMG_1.HEIC: Details changed' });

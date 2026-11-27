@@ -3,7 +3,7 @@ import { ApiTags } from '@nestjs/swagger';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import { AssetResponseDto } from 'src/dtos/asset-response.dto.js';
-import { FolderSummaryResponseDto } from 'src/dtos/view.dto.js';
+import { FolderAssetsDto, FolderSummaryResponseDto } from 'src/dtos/view.dto.js';
 import { ApiTag, Permission } from 'src/enum.js';
 import { Auth, Authenticated } from 'src/middleware/auth.guard.js';
 import { ViewService } from 'src/services/view.service.js';
@@ -40,10 +40,15 @@ export class ViewController {
   @Authenticated({ permission: Permission.FolderRead })
   @Endpoint({
     summary: 'Retrieve assets by original path',
-    description: 'Retrieve assets that are children of a specific folder.',
-    history: new HistoryBuilder().added('v1').beta('v1').stable('v2'),
+    description:
+      'Retrieve assets that are children of a specific folder. Pass take (and after, from the second page on) to read a large folder a page at a time.',
+    history: new HistoryBuilder()
+      .added('v1')
+      .beta('v1')
+      .stable('v2')
+      .updated('v3.5.0', 'Added take and after, to read a folder a page at a time'),
   })
-  getAssetsByOriginalPath(@Auth() auth: AuthDto, @Query('path') path: string): Promise<AssetResponseDto[]> {
-    return this.service.getAssetsByOriginalPath(auth, path);
+  getAssetsByOriginalPath(@Auth() auth: AuthDto, @Query() dto: FolderAssetsDto): Promise<AssetResponseDto[]> {
+    return this.service.getAssetsByOriginalPath(auth, dto.path, dto);
   }
 }

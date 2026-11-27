@@ -243,6 +243,7 @@ export const PREFERENCE_WORDS: Readonly<Record<string, Words>> = Object.freeze({
   // ACCOUNT-P2, P3, P5: the account preferences added to Downloads, Look & playback and People & sharing.
   'develop.importXmpEdits': { label: 'frameleaf_develop_import_setting' },
   'download.includeSidecar': { label: 'frameleaf_prefs_downloads_details' },
+  'download.defaultFormat': { label: 'frameleaf_prefs_downloads_format' },
   'search.includeArchived': { label: 'frameleaf_prefs_look_archived' },
   // FL-918: Look & playback › Search.
   'search.classic': { label: 'frameleaf_prefs_look_classic_search' },

@@ -15,6 +15,7 @@ import { creatorsStore } from '$lib/frameleaf/creators-store.svelte';
 import { helpPanel } from '$lib/frameleaf/help-panel.svelte';
 import { resetIconCatalogueCache } from '$lib/frameleaf/icon-catalogue';
 import { RAIL_CLOSED_SECTIONS_KEY } from '$lib/frameleaf/navigation';
+import { railSession } from '$lib/frameleaf/rail-session.svelte';
 import { authManager } from '$lib/managers/auth-manager.svelte';
 import { eventManager } from '$lib/managers/event-manager.svelte';
 import { Route } from '$lib/route';
@@ -47,6 +48,7 @@ const headings = () =>
 
 beforeEach(() => {
   addMessages('dev', en);
+  railSession.reset();
   localStorage.clear();
   sidebarCollapsed.set(false);
   albumTreeDropdown.set(false);
@@ -87,6 +89,27 @@ const treeWithIcon = (icon: string | null) => ({
 });
 
 describe('LibraryRail', () => {
+  it('draws the last album tree at once when it mounts again, and reads it again behind it (FL-1796)', async () => {
+    sdkMock.getAlbumHierarchy.mockResolvedValue(treeWithIcon(null));
+    const first = render(LibraryRail);
+    expect(await screen.findByRole('link', { name: 'Album' })).toBeInTheDocument();
+    first.unmount();
+
+    let answer!: (value: never) => void;
+    sdkMock.getAlbumHierarchy.mockReturnValue(
+      new Promise((resolve) => {
+        answer = resolve;
+      }),
+    );
+    render(LibraryRail);
+    // no blank rail while the read is out
+    expect(screen.getByRole('link', { name: 'Album' })).toBeInTheDocument();
+    expect(sdkMock.getAlbumHierarchy).toHaveBeenCalledTimes(2);
+
+    answer({ roots: [] } as never);
+    await waitFor(() => expect(screen.queryByRole('link', { name: 'Album' })).not.toBeInTheDocument());
+  });
+
   it('heads the phone menu with Boards, Studio, Activity and Help (UI review 2026-10-30 #8)', async () => {
     const { container } = render(LibraryRail);
     const group = container.querySelector<HTMLElement>('.fl-phone-sections')!;

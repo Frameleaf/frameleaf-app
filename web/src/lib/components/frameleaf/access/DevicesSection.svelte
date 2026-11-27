@@ -12,6 +12,7 @@
    * how many devices are signed in (or that some have not been used for a while, with "Sign those
    * out"), the devices as rows, "Sign out everywhere else…" on the list, and API keys linked below.
    */
+  import { formatLuxon } from '$lib/frameleaf/date-format';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import { idleDevices } from '$lib/components/frameleaf/settings/security/sign-in';
   import { describeSession, otherSessions, sessionDeviceName, sortSessions } from '$lib/frameleaf/personal-access';
@@ -42,10 +43,10 @@
   const recent = $derived(sorted.filter((session) => !idleIds.has(session.id)));
   const idleSorted = $derived(sorted.filter((session) => idleIds.has(session.id)));
   const since = (session: SessionResponseDto) =>
-    DateTime.fromISO(session.createdAt, { locale: $locale }).toLocaleString(DateTime.DATE_MED);
+    formatLuxon(DateTime.fromISO(session.createdAt, { locale: $locale }), DateTime.DATE_MED);
 
   const lastActive = (session: SessionResponseDto) =>
-    DateTime.fromISO(session.updatedAt, { locale: $locale }).toLocaleString(DateTime.DATETIME_MED);
+    formatLuxon(DateTime.fromISO(session.updatedAt, { locale: $locale }), DateTime.DATETIME_MED);
 
   /** "Safari on a Mac", "Frameleaf app on an iPhone", "A script or tool" (prototype Devices). */
   const deviceName = (session: SessionResponseDto) =>

@@ -359,6 +359,56 @@ from
 where
   "linkedAlbumId" in ($1)
 
+-- AlbumRepository.getRail
+select
+  "album"."id",
+  "album"."albumName",
+  "album"."parentId",
+  "album"."kind",
+  "album"."icon",
+  "album"."color",
+  "album"."sortOrder",
+  "album"."isLocked",
+  "album_user"."role",
+  (
+    exists (
+      select
+      from
+        "album_user" as "au"
+      where
+        "au"."albumId" = "album"."id"
+        and "au"."userId" != $1
+    )
+    or exists (
+      select
+      from
+        "shared_link"
+      where
+        "shared_link"."albumId" = "album"."id"
+    )
+  ) as "shared"
+from
+  "album"
+  inner join "album_user" on "album_user"."albumId" = "album"."id"
+  and "album_user"."userId" = $2
+where
+  "album"."deletedAt" is null
+  and (
+    "album"."libraryScope" in ($3, $4)
+    or exists (
+      select
+      from
+        "album_user"
+      where
+        "album_user"."albumId" = "album"."id"
+        and "album_user"."userId" = $5
+        and "album_user"."role" != $6
+    )
+  )
+order by
+  "album"."sortOrder" asc nulls last,
+  "album"."createdAt" desc
+
 -- AlbumRepository.getAll
 select
   "album".*,

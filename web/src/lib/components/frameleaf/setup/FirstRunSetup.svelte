@@ -64,7 +64,9 @@
     type SetupState,
     readableModelName,
   } from '$lib/frameleaf/first-run-setup';
+  import { formatDateTime } from '$lib/frameleaf/date-format';
   import { saveNotificationLanguage } from '$lib/frameleaf/notification-language';
+  import { formatCount as formatNumber } from '$lib/frameleaf/number-format';
   import { renderStorageTemplate } from '$lib/frameleaf/onboarding';
   import '$lib/frameleaf/auth.css';
   import '$lib/frameleaf/first-run-setup.css';
@@ -596,7 +598,7 @@
     };
     void load();
   });
-  const formatCount = (value: number) => new Intl.NumberFormat($locale).format(Math.round(value));
+  const formatCount = (value: number) => formatNumber(Math.round(value), $locale);
   /** Originals in the unit that fits: an imported library of a few hundred MB never reads as "0.0 TB". */
   const formatSize = (bytes: number) => getByteUnitString(bytes, $locale);
   const hardwareName = (entry: HardwareCheckResponseDto['ml'] | undefined) =>
@@ -1021,7 +1023,21 @@
                     </header>
                     {@render facts([
                       [$t('frameleaf_setup_found_server'), backup.server],
-                      [$t('frameleaf_setup_found_last'), new Date(backup.date).toLocaleString($locale)],
+                      [
+                        $t('frameleaf_setup_found_last'),
+                        formatDateTime(
+                          new Date(backup.date),
+                          {
+                            year: 'numeric',
+                            month: 'numeric',
+                            day: 'numeric',
+                            hour: 'numeric',
+                            minute: 'numeric',
+                            second: 'numeric',
+                          },
+                          $locale,
+                        ),
+                      ],
                       [$t('frameleaf_setup_stat_items'), formatCount(backup.items)],
                       [$t('size'), formatSize(Math.max(0, backup.bytes))],
                     ])}

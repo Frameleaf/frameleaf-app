@@ -40,6 +40,55 @@ describe(DuplicateRepository.name, () => {
     await defaultDatabase?.destroy();
   });
 
+  describe('review paging (FL-1795)', () => {
+    it('walks every group once in id order, never cutting a group or counting a group of one', async () => {
+      const { assetRepository, database, sut, userRepository } = setup();
+      const user = await createUser(userRepository);
+      const other = await createUser(userRepository);
+      const groupIds: string[] = [];
+      const member = async (ownerId: string, duplicateId: string) => {
+        const asset = mediumFactory.assetInsert({ ownerId, type: AssetType.Image, duplicateId });
+        await assetRepository.create(asset);
+        await database.insertInto('asset_exif').values({ assetId: asset.id }).execute();
+        return asset;
+      };
+      for (let index = 0; index < 5; index++) {
+        const duplicateId = mediumFactory.assetInsert({ ownerId: user.id }).id;
+        groupIds.push(duplicateId);
+        for (let copy = 0; copy < index + 2; copy++) {
+          await member(user.id, duplicateId);
+        }
+      }
+      // a group of one, and a group whose other member is another account's: neither is listed
+      const alone = mediumFactory.assetInsert({ ownerId: user.id }).id;
+      await member(user.id, alone);
+      const split = mediumFactory.assetInsert({ ownerId: user.id }).id;
+      await member(user.id, split);
+      await member(other.id, split);
+
+      const whole = await sut.getAll(user.id);
+      expect(whole.map(({ duplicateId }) => duplicateId).toSorted()).toEqual(groupIds.toSorted());
+
+      const paged: Awaited<ReturnType<typeof sut.getAll>> = [];
+      let after: string | undefined;
+      let reads = 0;
+      for (; reads < 5; reads++) {
+        const rows = await sut.getAll(user.id, {}, { take: 2, after });
+        paged.push(...rows);
+        if (rows.length < 2) {
+          break;
+        }
+        after = rows.at(-1)!.duplicateId;
+      }
+      expect(reads).toBe(2);
+      expect(paged.map(({ duplicateId }) => duplicateId)).toEqual(groupIds.toSorted());
+      const sizes = new Map(whole.map(({ duplicateId, assets }) => [duplicateId, assets.length]));
+      for (const { duplicateId, assets } of paged) {
+        expect(assets).toHaveLength(sizes.get(duplicateId)!);
+      }
+    });
+  });
+
   describe('look-alike estimate (FL-520)', () => {
     it('reads the nearest photo in the same library and counts what can be compared', async () => {
       const { assetRepository, database, sut, userRepository } = setup();

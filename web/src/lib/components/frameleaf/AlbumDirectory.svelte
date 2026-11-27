@@ -47,7 +47,8 @@
   import { handleError } from '$lib/utils/handle-error';
   import { getAlbumDragData, isAlbumDrag } from '$lib/utils/album-drag';
   import { openFileUploadDialog } from '$lib/utils/file-uploader';
-  import { AlbumKind, type AlbumResponseDto, type AlbumTreeResponseDto } from '@frameleaf/sdk';
+  import { AlbumKind, getAlbumStats, type AlbumResponseDto, type AlbumTreeResponseDto } from '@frameleaf/sdk';
+  import { debounce } from 'lodash-es';
   import { Icon, toastManager } from '@frameleaf/ui';
   import {
     mdiAccountMultipleOutline,
@@ -251,12 +252,17 @@
   /** New albums, and a library's first load, get their numbers in the background: ask again until they arrive. */
   const STATS_POLL_MS = 3000;
   const STATS_POLL_LIMIT = 20;
+  /** The most ids one stats request takes. */
+  const STATS_IDS_LIMIT = 5000;
   let statsPolls = 0;
+  /** Bumped when the numbers have not arrived yet, to wait and ask once more. */
+  let statsTick = $state(0);
   let polledFor = new Set<string>();
   const pendingStatIds = $derived(everything.filter((album) => album.statsPending).map((album) => album.id));
   $effect(() => {
     // Every new tree restarts the wait, so a slow answer never overlaps the next question.
     void tree;
+    void statsTick;
     if (pendingStatIds.length === 0) {
       statsPolls = 0;
       polledFor = new Set();
@@ -270,22 +276,51 @@
     if (statsPolls >= STATS_POLL_LIMIT) {
       return;
     }
+    const ids = pendingStatIds;
+    let left = false;
     const timer = setTimeout(() => {
       statsPolls += 1;
-      void refresh();
+      // FL-1802: ask for the waiting albums' numbers alone (FL-1791); the whole tree is read again only
+      // once some have arrived. A server or answer without them falls back to reading the tree.
+      // an async call, so a failure to even start the request is caught below like any other
+      void (async () => getAlbumStats({ albumStatsDto: { albumIds: ids.slice(0, STATS_IDS_LIMIT) } }))()
+        .then(({ albums }) => {
+          const stillWaiting = new Set(albums.filter((album) => album.statsPending).map((album) => album.id));
+          return ids.slice(0, STATS_IDS_LIMIT).some((id) => !stillWaiting.has(id));
+        })
+        .catch(() => true)
+        .then((arrived) => {
+          if (left) {
+            return;
+          }
+          if (arrived) {
+            void refresh();
+          } else {
+            statsTick += 1;
+          }
+        });
     }, STATS_POLL_MS);
-    return () => clearTimeout(timer);
+    return () => {
+      left = true;
+      clearTimeout(timer);
+    };
   });
 
-  onMount(() =>
-    eventManager.on({
-      AlbumCreate: () => void refresh(),
-      AlbumUpdate: () => void refresh(),
-      AlbumDelete: () => void refresh(),
-      AlbumUserDelete: () => void refresh(),
-      AlbumShare: () => void refresh(),
-    }),
-  );
+  /** FL-1802: a move or a bulk change announces every album it saved; one read answers the burst. */
+  const refreshSoon = debounce(() => void refresh(), 250);
+  onMount(() => {
+    const stop = eventManager.on({
+      AlbumCreate: refreshSoon,
+      AlbumUpdate: refreshSoon,
+      AlbumDelete: refreshSoon,
+      AlbumUserDelete: refreshSoon,
+      AlbumShare: refreshSoon,
+    });
+    return () => {
+      stop();
+      refreshSoon.cancel();
+    };
+  });
 
   /* ---- actions ---- */
   const openCreate = (kind: AlbumKind, parentId: string | null = null, smart = false) =>

@@ -1,6 +1,7 @@
 import {
   DuplicateDecisionKind,
   DuplicateGroupKind,
+  getDuplicateReview,
   MediaOperationBulkAction,
   MediaOperationStatus,
   type DuplicateDecisionHistoryDto,
@@ -10,10 +11,17 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ReviewGroup } from '$lib/frameleaf/duplicate-review';
 import {
+  DUPLICATE_REVIEW_PAGE_SIZE,
   DuplicateReviewSession,
   newRequestId,
+  readDuplicateReview,
   type DuplicateReviewGateway,
 } from '$lib/frameleaf/duplicate-review-session.svelte';
+
+vi.mock('@frameleaf/sdk', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@frameleaf/sdk')>()),
+  getDuplicateReview: vi.fn(),
+}));
 
 const group = (id: string, members: string[]): ReviewGroup => ({
   duplicateId: id,
@@ -94,13 +102,15 @@ describe('the duplicate review session', () => {
     expect(session.progress.has('lake')).toBe(false);
   });
 
-  it('follows the job and reads the review again from the server when it is done', async () => {
+  it('follows the job and, when it is done, drops the decided group without reading the review again (FL-1795)', async () => {
     await session.decide([lakeDecision]);
     gateway.getOperation.mockResolvedValue(detail({ status: MediaOperationStatus.Completed, processedUnits: '2' }));
 
     await session.poll();
 
-    expect(gateway.getReview).toHaveBeenCalled();
+    expect(gateway.getReview).not.toHaveBeenCalled();
+    // the undo it now offers comes from the history, which is read again
+    expect(gateway.getHistory).toHaveBeenCalledTimes(1);
     expect(session.groups.map(({ duplicateId }) => duplicateId)).toEqual(['forest']);
     expect(session.progress.has('lake')).toBe(false);
     expect(session.tracking).toBe(0);
@@ -143,6 +153,43 @@ describe('the duplicate review session', () => {
       state: 'failed',
       reasonKey: 'frameleaf_bulk_reason_group_changed',
     });
+  });
+
+  it('reads the review again after an undo, which brings groups back (FL-1795)', async () => {
+    gateway.submit.mockResolvedValue({ id: 'undo-1' } as MediaOperationDto);
+    gateway.getReview.mockResolvedValue([lake, forest]);
+    const batch = {
+      operationId: 'job-1',
+      createdAt: '2026-09-23T10:00:00.000Z',
+      undoable: true,
+      automatic: false,
+      groups: [
+        {
+          decisionId: 'decision-1',
+          duplicateId: 'lake',
+          decision: DuplicateDecisionKind.KeepAll,
+          memberIds: ['a', 'b'],
+          keepAssetIds: ['a', 'b'],
+          trashAssetIds: [],
+          applied: true,
+          undone: false,
+          undoing: false,
+        },
+      ],
+    };
+    const afterUndo = new DuplicateReviewSession(
+      { groups: [forest], history: { active: [], recent: [batch] } },
+      { gateway: gateway as unknown as DuplicateReviewGateway, pollMs: 1000 },
+    );
+    await afterUndo.undo();
+    gateway.getOperation.mockResolvedValue(detail({ status: MediaOperationStatus.Completed, processedUnits: '2' }));
+
+    await afterUndo.poll();
+
+    expect(gateway.getReview).toHaveBeenCalledTimes(1);
+    expect(afterUndo.groups.map(({ duplicateId }) => duplicateId)).toEqual(['lake', 'forest']);
+    expect(afterUndo.undoing).toBe(false);
+    afterUndo.destroy();
   });
 
   it('keeps loaders on the groups of a job still running after a reload', () => {
@@ -221,5 +268,24 @@ describe('the duplicate review session', () => {
     } finally {
       Object.defineProperty(crypto, 'randomUUID', { value: original, configurable: true });
     }
+  });
+});
+
+describe('reading the review a page at a time (FL-1795)', () => {
+  it('asks for pages until one comes back short, and hands back every group in order', async () => {
+    const page = (prefix: string, count: number) =>
+      Array.from({ length: count }, (_, index) => group(`${prefix}-${index}`, ['a', 'b']));
+    vi.mocked(getDuplicateReview)
+      .mockResolvedValueOnce(page('first', DUPLICATE_REVIEW_PAGE_SIZE))
+      .mockResolvedValueOnce(page('second', 3));
+
+    const groups = await readDuplicateReview();
+
+    expect(groups).toHaveLength(DUPLICATE_REVIEW_PAGE_SIZE + 3);
+    expect(groups.at(-1)?.duplicateId).toBe('second-2');
+    expect(vi.mocked(getDuplicateReview).mock.calls).toEqual([
+      [{ take: DUPLICATE_REVIEW_PAGE_SIZE }],
+      [{ take: DUPLICATE_REVIEW_PAGE_SIZE, after: `first-${DUPLICATE_REVIEW_PAGE_SIZE - 1}` }],
+    ]);
   });
 });

@@ -6,12 +6,11 @@
  * measures itself, so the same numbers give the same row: 1440px of window leaves 1212px, which
  * shows Add photos, Share, Slideshow and Comments.
  */
-export type FoldableAction = 'matching' | 'links' | 'map' | 'slideshow' | 'movie' | 'download' | 'activity';
+export type FoldableAction = 'matching' | 'map' | 'slideshow' | 'movie' | 'download' | 'activity';
 
 /** Phones, and Boards collections, keep every secondary action in the menu. */
 export const EVERY_FOLDABLE_ACTION: readonly FoldableAction[] = [
   'matching',
-  'links',
   'map',
   'slideshow',
   'movie',
@@ -20,8 +19,8 @@ export const EVERY_FOLDABLE_ACTION: readonly FoldableAction[] = [
 ];
 
 const WIDTH_FOLDS: readonly (readonly [number, readonly FoldableAction[]])[] = [
-  [840, ['links', 'map', 'movie', 'download']],
-  [1060, ['links', 'map']],
+  [840, ['map', 'movie', 'download']],
+  [1060, ['map']],
 ];
 
 /** A header this wide puts its actions beside the title; the title keeps about `WIDE_TITLE` px. */
