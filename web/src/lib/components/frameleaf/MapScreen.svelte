@@ -1,4 +1,6 @@
 <script lang="ts" module>
+  import EmptyRow from '$lib/components/frameleaf/EmptyRow.svelte';
+  import ListSkeleton from '$lib/components/frameleaf/ListSkeleton.svelte';
   import { rovingFocus } from '$lib/frameleaf/roving-focus';
   import { setWorkerUrl } from 'maplibre-gl';
   import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
@@ -1561,9 +1563,9 @@
           {/if}
         </ul>
       {:else if loaded}
-        <p class="list-empty" role="status">{$t('frameleaf_map_list_empty')}</p>
+        <div class="list-empty"><EmptyRow title={$t('frameleaf_map_list_empty')} /></div>
       {:else if !loadFailed}
-        <p class="list-empty" role="status">{$t('frameleaf_map_finding')}</p>
+        <div class="list-empty" aria-label={$t('frameleaf_map_finding')}><ListSkeleton rows={4} /></div>
       {/if}
     </aside>
   {/if}
@@ -2350,10 +2352,7 @@
     color: var(--fl-text);
   }
   .list-empty {
-    padding: 24px 16px;
-    font-size: var(--fl-font-small);
-    line-height: 1.5;
-    color: var(--fl-muted);
+    padding: var(--fl-space-4);
   }
   .empty {
     position: absolute;

@@ -1,4 +1,6 @@
 <script lang="ts">
+  import InlineError from '$lib/components/frameleaf/InlineError.svelte';
+  import Skeleton from '$lib/components/frameleaf/Skeleton.svelte';
   import { formatDate, formatDateTime } from '$lib/frameleaf/date-format';
   import { formatMoney } from '$lib/frameleaf/number-format';
   import { developLabel } from '$lib/frameleaf/develop-label';
@@ -768,13 +770,19 @@
     </div>
     {#if onSection}<PhotographyShootTabs current={panel === 'publishing' ? 'galleries' : panel} {onSection} />{/if}
   </div>
-  {#if error}<div class="phw-notice" role="alert">
+  {#if error && draft}<div class="phw-notice" role="alert">
       {error}<Button disabled={busy} onclick={reload}>{$t('frameleaf_photography_reload')}</Button>
     </div>{/if}
   {#if message}<p class="phd-status" role="status">{message}</p>{/if}
-  {#if !draft}<div class="phw-empty" role="status">
-      {busy ? $t('frameleaf_photography_loading_shoot') : $t('frameleaf_photography_shoot_load_failed')}
+  {#if !draft && busy}<div role="status" aria-busy="true" aria-label={$t('frameleaf_photography_loading_shoot')}>
+      <Skeleton variant="block" height="20rem" />
     </div>
+  {:else if !draft}<InlineError
+      compact
+      message={error || $t('frameleaf_photography_shoot_load_failed')}
+      retryLabel={$t('frameleaf_photography_reload')}
+      onRetry={reload}
+    />
   {:else if shoot.unavailable}<div class="phw-empty">
       {$t('frameleaf_photography_album_unavailable_short')}
     </div>
