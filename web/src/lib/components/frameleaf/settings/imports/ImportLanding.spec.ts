@@ -7,8 +7,10 @@ const sdk = vi.hoisted(() => ({
   listTakeoutImports: vi.fn(),
   listICloudConnections: vi.fn(),
   getAllLibraries: vi.fn(),
+  listBackupDevices: vi.fn(),
 }));
-vi.mock('$app/navigation', () => ({ goto: vi.fn() }));
+const goto = vi.hoisted(() => vi.fn());
+vi.mock('$app/navigation', () => ({ goto }));
 vi.mock('$lib/managers/auth-manager.svelte', () => ({ authManager: { user: { isAdmin: true } } }));
 vi.mock('@frameleaf/sdk', async (original) => ({ ...(await original<typeof import('@frameleaf/sdk')>()), ...sdk }));
 
@@ -18,6 +20,7 @@ describe('Import (FL-365, FL-1808)', () => {
     sdk.listTakeoutImports.mockResolvedValue([]);
     sdk.listICloudConnections.mockResolvedValue({ enabled: true, connections: [] });
     sdk.getAllLibraries.mockResolvedValue([{ id: 'l1', deletedAt: null }]);
+    sdk.listBackupDevices.mockResolvedValue({ devices: [{}, {}, {}], nextOffset: null });
   });
 
   it('opens on the imports, lists every way in, and points backups to Backup', async () => {
@@ -27,6 +30,7 @@ describe('Import (FL-365, FL-1808)', () => {
       expect(screen.getByText(name)).toBeInTheDocument();
     }
     expect(await screen.findByText(/1 folder connected/)).toBeInTheDocument();
+    expect(await screen.findByText('3 phones are backing up.')).toBeInTheDocument();
     expect(screen.getByText('Looking for backups?')).toBeInTheDocument();
   });
 
@@ -42,7 +46,9 @@ describe('Import (FL-365, FL-1808)', () => {
       'Eagle library',
     ]);
     await fireEvent.click(screen.getByRole('button', { name: /Eagle library/ }));
-    expect(eagleImportUi.open).toBe(true);
+    // As the prototype: Boards opens with the Eagle import dialog.
+    await vi.waitFor(() => expect(eagleImportUi.open).toBe(true));
+    expect(goto).toHaveBeenCalledWith('/pro');
   });
 
   it('says when an import is running', async () => {

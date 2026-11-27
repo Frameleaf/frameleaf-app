@@ -10745,6 +10745,7 @@
   "frameleaf_import_out_title": "Porta fuori una copia",
   "frameleaf_import_phone": "Il tuo telefono",
   "frameleaf_import_phone_body": "L’app Frameleaf esegue il backup delle nuove foto mentre le scatti.",
+  "frameleaf_import_phone_connected": "{count, plural, one {# telefono sta facendo il backup.} other {# telefoni stanno facendo il backup.}}",
   "frameleaf_import_status": "Importazioni",
   "frameleaf_index_one_place": "Viene eseguito in un solo posto, così i risultati non mescolano mai due modelli.",
   "frameleaf_info_accept_description": "Accetta",

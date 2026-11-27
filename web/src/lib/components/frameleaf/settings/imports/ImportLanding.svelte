@@ -23,6 +23,7 @@
   import { locale } from '$lib/stores/preferences.store';
   import {
     getAllLibraries,
+    listBackupDevices,
     listICloudConnections,
     listTakeoutImports,
     TakeoutState,
@@ -49,6 +50,7 @@
   let imports = $state<TakeoutResponseDto[] | null>(null);
   let icloud = $state<ICloudConnectionsResponseDto | null>(null);
   let libraries = $state<LibraryResponseDto[] | null>(null);
+  let phones = $state<number | null>(null);
 
   onMount(() => {
     void listTakeoutImports()
@@ -57,6 +59,10 @@
     void listICloudConnections()
       .then((value) => (icloud = value))
       .catch(() => (icloud = null));
+    // FL-1808: the phone row says how many phones back up, as the other rows say their own state.
+    void listBackupDevices({ limit: 100 })
+      .then((value) => (phones = value.devices.length))
+      .catch(() => (phones = null));
     if (authManager.user.isAdmin) {
       void getAllLibraries({})
         .then((value) => (libraries = value.filter((library) => !library.deletedAt)))
@@ -105,7 +111,9 @@
     {
       icon: mdiCellphone,
       title: $t('frameleaf_import_phone'),
-      body: $t('frameleaf_import_phone_body'),
+      body: phones
+        ? $t('frameleaf_import_phone_connected', { values: { count: phones } })
+        : $t('frameleaf_import_phone_body'),
       href: commandCenterUrl('utilities', 'downloads'),
     },
     {
@@ -130,12 +138,16 @@
           },
         ]
       : []),
-    // Into Boards, with its folders and tags (FL-653). The dialog sits beside the library rail.
+    // Into Boards, with its folders and tags (FL-653): as the prototype, Boards opens with the import
+    // dialog, so the import's progress shows in the Boards rail once the dialog is closed.
     {
       icon: mdiViewDashboardOutline,
       title: $t('frameleaf_import_eagle'),
       body: $t('frameleaf_import_eagle_body'),
-      onSelect: () => eagleImportUi.show(),
+      onSelect: async () => {
+        await goto('/pro');
+        eagleImportUi.show();
+      },
     },
   ]);
   const outRows = $derived<LinkRow[]>([

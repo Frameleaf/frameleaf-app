@@ -10745,6 +10745,7 @@
   "frameleaf_import_out_title": "Tirar uma cópia",
   "frameleaf_import_phone": "O seu telemóvel",
   "frameleaf_import_phone_body": "A aplicação Frameleaf faz cópia de segurança das novas fotografias à medida que as tira.",
+  "frameleaf_import_phone_connected": "{count, plural, one {# telemóvel está a fazer cópia de segurança.} other {# telemóveis estão a fazer cópia de segurança.}}",
   "frameleaf_import_status": "Importações",
   "frameleaf_index_one_place": "Executa num só local, para que os resultados nunca misturem dois modelos.",
   "frameleaf_info_accept_description": "Aceitar",

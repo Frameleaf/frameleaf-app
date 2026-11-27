@@ -10648,6 +10648,7 @@
   "frameleaf_import_out_title": "Take a copy out",
   "frameleaf_import_phone": "Your phone",
   "frameleaf_import_phone_body": "The Frameleaf app backs up new photos as you take them.",
+  "frameleaf_import_phone_connected": "{count, plural, one {# phone is backing up.} other {# phones are backing up.}}",
   "frameleaf_import_status": "Imports",
   "frameleaf_index_one_place": "Runs in one place only, so results never mix two models.",
   "frameleaf_info_accept_description": "Accept",

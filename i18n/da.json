@@ -10739,6 +10739,7 @@
   "frameleaf_import_out_title": "Tag en kopi ud",
   "frameleaf_import_phone": "Din telefon",
   "frameleaf_import_phone_body": "Frameleaf-appen sikkerhedskopierer nye fotos, efterhånden som du tager dem.",
+  "frameleaf_import_phone_connected": "{count, plural, one {# telefon sikkerhedskopierer.} other {# telefoner sikkerhedskopierer.}}",
   "frameleaf_import_status": "Importer",
   "frameleaf_index_one_place": "Kører kun ét sted, så resultater aldrig blander to modeller.",
   "frameleaf_info_accept_description": "Acceptér",

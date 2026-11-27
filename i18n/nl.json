@@ -10745,6 +10745,7 @@
   "frameleaf_import_out_title": "Een kopie meenemen",
   "frameleaf_import_phone": "Je telefoon",
   "frameleaf_import_phone_body": "De Frameleaf-app maakt een back-up van nieuwe foto’s terwijl je ze maakt.",
+  "frameleaf_import_phone_connected": "{count, plural, one {# telefoon maakt een back-up.} other {# telefoons maken een back-up.}}",
   "frameleaf_import_status": "Imports",
   "frameleaf_index_one_place": "Draait op één plek, zodat resultaten nooit twee modellen mengen.",
   "frameleaf_info_accept_description": "Accepteren",

@@ -10746,6 +10746,7 @@
   "frameleaf_import_out_title": "Wyeksportuj kopię",
   "frameleaf_import_phone": "Twój telefon",
   "frameleaf_import_phone_body": "Aplikacja Frameleaf tworzy kopię zapasową nowych zdjęć w miarę ich robienia.",
+  "frameleaf_import_phone_connected": "{count, plural, one {# telefon tworzy kopię zapasową.} few {# telefony tworzą kopię zapasową.} many {# telefonów tworzy kopię zapasową.} other {# telefonu tworzy kopię zapasową.}}",
   "frameleaf_import_status": "Importy",
   "frameleaf_index_one_place": "Działa tylko w jednym miejscu, więc wyniki nigdy nie mieszają dwóch modeli.",
   "frameleaf_info_accept_description": "Zaakceptuj",

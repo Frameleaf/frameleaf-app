@@ -10743,6 +10743,7 @@
   "frameleaf_import_out_title": "Exporter une copie",
   "frameleaf_import_phone": "Votre téléphone",
   "frameleaf_import_phone_body": "L’application Frameleaf sauvegarde les nouvelles photos à mesure que vous les prenez.",
+  "frameleaf_import_phone_connected": "{count, plural, one {# téléphone est sauvegardé.} other {# téléphones sont sauvegardés.}}",
   "frameleaf_import_status": "Importations",
   "frameleaf_index_one_place": "S’exécute à un seul endroit pour ne jamais mélanger les résultats de deux modèles.",
   "frameleaf_info_accept_description": "Accepter",

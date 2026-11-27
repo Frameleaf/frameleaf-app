@@ -10745,6 +10745,7 @@
   "frameleaf_import_out_title": "Eine Kopie herausnehmen",
   "frameleaf_import_phone": "Dein Smartphone",
   "frameleaf_import_phone_body": "Die Frameleaf-App sichert neue Fotos, sobald du sie aufnimmst.",
+  "frameleaf_import_phone_connected": "{count, plural, one {# Telefon wird gesichert.} other {# Telefone werden gesichert.}}",
   "frameleaf_import_status": "Importe",
   "frameleaf_index_one_place": "Läuft nur an einem Ort, damit sich in den Ergebnissen nie zwei Modelle mischen.",
   "frameleaf_info_accept_description": "Akzeptieren",
