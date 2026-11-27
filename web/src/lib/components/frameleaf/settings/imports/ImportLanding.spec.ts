@@ -38,7 +38,7 @@ describe('Import (FL-365, FL-1808)', () => {
     const { eagleImportUi } = await import('$lib/frameleaf/eagle/eagle-import-status.svelte');
     render(ImportLanding);
     const ways = await screen.findByRole('region', { name: 'Bring photos in from…' });
-    expect([...ways.querySelectorAll('li strong')].map((row) => row.textContent)).toEqual([
+    expect([...ways.querySelectorAll(':scope li strong')].map((row) => row.textContent)).toEqual([
       'Your phone',
       'Google Photos',
       'iCloud Photos',
