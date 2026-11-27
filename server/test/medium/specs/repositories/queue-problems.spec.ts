@@ -409,7 +409,9 @@ describe('the Best Photos scan waits', () => {
   it('while photos come in or are held by setup, not for a paused task or an offline drive', async () => {
     const incoming = () => jobs().hasIncomingWork([QueueName.ThumbnailGeneration, QueueName.MetadataExtraction]);
     expect(await incoming()).toBe(false);
-    const thumbnail = await job('thumbnailGeneration', JobName.AssetGenerateThumbnails, 'a', null, { state: 'pending' });
+    const thumbnail = await job('thumbnailGeneration', JobName.AssetGenerateThumbnails, 'a', null, {
+      state: 'pending',
+    });
     expect(await incoming()).toBe(true);
     // waiting on an offline drive
     await set(thumbnail, { dependencyReason: 'source-unavailable' });
@@ -422,8 +424,12 @@ describe('the Best Photos scan waits', () => {
     // held: by setup it counts, by anything else it does not
     const runId = randomUUID();
     await sql`insert into job_run(id, kind, selection, "enumerationDone")
-      values (${runId}::uuid, 'import', ${JSON.stringify({ holds: { [JobName.AssetGenerateThumbnails]: 'setup' } })}::jsonb, true)`.execute(db);
-    await sql`update job set "availableAt" = 'infinity', "runId" = ${runId}::uuid where id = ${thumbnail}::uuid`.execute(db);
+      values (${runId}::uuid, 'import', ${JSON.stringify({ holds: { [JobName.AssetGenerateThumbnails]: 'setup' } })}::jsonb, true)`.execute(
+      db,
+    );
+    await sql`update job set "availableAt" = 'infinity', "runId" = ${runId}::uuid where id = ${thumbnail}::uuid`.execute(
+      db,
+    );
     expect(await incoming()).toBe(true);
     await sql`update job_run set selection = '{"holds":{}}' where id = ${runId}::uuid`.execute(db);
     expect(await incoming()).toBe(false);

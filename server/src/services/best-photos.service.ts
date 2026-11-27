@@ -147,7 +147,9 @@ export class BestPhotosService {
     }
     clearInterval(this.timer);
     this.timer = setInterval(() => {
-      this.tick().catch((error: unknown) => this.logger.warn(`Best Photos could not look for photos to score: ${error}`));
+      this.tick().catch((error: unknown) =>
+        this.logger.warn(`Best Photos could not look for photos to score: ${error}`),
+      );
     }, BEST_PHOTOS_TICK_MS);
   }
 
