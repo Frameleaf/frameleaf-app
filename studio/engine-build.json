@@ -958,8 +958,8 @@
     {
       "path": "patches/0212-studio-media-bin.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
-      "sha256": "45f67df484747508039d91325a3b44022970604b26e976732531529462a42b21"
+      "sha256": "c9a293ec515a160b733a272128a9747f4e9571f0408f99de89ee6518d1af0c49"
     }
   ],
-  "sourceSha256": "908d1281cc9f4bf2eb53b2979c1f3ae2febb983bd7307d12ec77669ad2700d4b"
+  "sourceSha256": "23af4f1aabfd81a53909eb907a3d51acb51392b0b98bca06b748c6eca080536d"
 }

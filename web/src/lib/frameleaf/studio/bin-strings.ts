@@ -1,5 +1,5 @@
 /**
- * The words of the editor's media bin (FL-1822): Add files and its menu, the Library, Project and
+ * The words of the editor's media bin (FL-1822): Add files and its menu, the web address dialog, the Library, Project and
  * Scenes switch, search, the type filter and sort, the view toggles and the group headings.
  * Translated by the host, as for the timeline strings (`timeline-strings.ts`): the engine speaks
  * fewer languages than the host, so the host sends its translation in `context.strings` and the
@@ -37,6 +37,12 @@ export const BIN_STRINGS = {
   binThumbSize: { host: 'frameleaf_studio_bin_thumb_size', engine: 'media.library.gridItemSize' },
   binGrid: { host: 'frameleaf_studio_bin_grid', engine: 'media.library.gridView' },
   binList: { host: 'frameleaf_studio_bin_list', engine: 'media.library.listView' },
+  binUrlTitle: { host: 'frameleaf_studio_bin_add_from_url', engine: 'media.library.importFromUrlTitle' },
+  binUrlDescription: { host: 'frameleaf_studio_bin_url_description', engine: 'media.library.importFromUrlDescription' },
+  binUrlHint: { host: 'frameleaf_studio_bin_url_hint', engine: 'media.library.importFromUrlHint' },
+  binUrlSubmit: { host: 'frameleaf_studio_bin_url_submit', engine: 'media.library.importUrlSubmit' },
+  binTypeLabel: { host: 'frameleaf_studio_bin_type_label', engine: 'media.library.filterByType' },
+  binSortLabel: { host: 'frameleaf_studio_bin_sort_label', engine: 'media.library.sortBy' },
   binDropFiles: { host: 'frameleaf_studio_bin_drop_files', engine: 'media.library.dropFilesHere' },
 } as const satisfies Record<string, { host: string; engine: string }>;
 
