@@ -10,6 +10,8 @@
    * one of them changed (already trashed, locked, hidden) since the review. Undo restores exactly
    * the items that moved, through the same review.
    */
+  import EmptyState from '$lib/components/frameleaf/EmptyState.svelte';
+  import InlineError from '$lib/components/frameleaf/InlineError.svelte';
   import { formatLuxon } from '$lib/frameleaf/date-format';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
@@ -477,11 +479,12 @@
       </tbody>
     </table>
     {#if rows.length === 0}
-      <div class="lf-empty">
-        <Icon icon={mdiCheckCircleOutline} size="1.75rem" aria-hidden={true} />
-        <h3>{$t('frameleaf_large_files_empty_title')}</h3>
-        <p>{$t('frameleaf_large_files_empty_help')}</p>
-      </div>
+      <EmptyState
+        compact
+        icon={mdiCheckCircleOutline}
+        title={$t('frameleaf_large_files_empty_title')}
+        message={$t('frameleaf_large_files_empty_help')}
+      />
     {/if}
   </div>
 
@@ -489,7 +492,7 @@
     <details class="lf-history">
       <summary>{$t('library_care_recent_activity')}</summary>
       {#if activityError}
-        <p role="alert" class="lf-history-error">{$t('frameleaf_large_files_activity_unavailable')}</p>
+        <InlineError compact message={$t('frameleaf_large_files_activity_unavailable')} onRetry={loadActivity} />
       {/if}
       <div class="cc-history">
         {#each activity as entry (entry.id)}
@@ -597,9 +600,6 @@
   }
   .lf-history summary {
     cursor: pointer;
-  }
-  .lf-history-error {
-    color: var(--fl-danger);
   }
   /* command-center.css:1012-1051 (.cc-history) */
   .cc-history article {
@@ -779,15 +779,6 @@
     font-size: var(--fl-font-micro);
     color: var(--fl-muted);
     overflow-wrap: anywhere;
-  }
-  .lf-empty {
-    padding: 45px 20px;
-    text-align: center;
-    color: var(--fl-muted);
-  }
-  .lf-empty h3 {
-    margin-top: 16px;
-    color: var(--fl-text);
   }
   .lf-dialog {
     display: flex;
