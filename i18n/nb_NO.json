@@ -22592,6 +22592,7 @@
     "weekday": "På",
     "weekly": "Hver uke"
   },
+  "frameleaf_workflows_load_failed": "Arbeidsflytene dine kunne ikke lastes inn.",
   "frameleaf_workruns_ask_help": "Bare for rader satt til Spør meg hver gang. Du kan fortsatt bytte før arbeidet starter.",
   "frameleaf_workruns_ask_home": "En datamaskin hjemme",
   "frameleaf_workruns_ask_label": "Sted som foreslås når du blir spurt",

@@ -1986,6 +1986,33 @@ describe(MemoryService.name, () => {
         .filter((memory) => memory.type === MemoryType.Birthday)
         .map((memory) => memory.data as Record<string, unknown>);
 
+    it('makes no birthday or anniversary memory for a date known only to its month or year (FL-1814)', async () => {
+      vi.useFakeTimers({ toFake: ['Date'] });
+      vi.setSystemTime(new Date('2026-01-01T12:00:00.000Z'));
+      mocks.memory.getBirthdaySubjects.mockImplementation((_owner, monthDays) =>
+        Promise.resolve(
+          monthDays.includes('01-01')
+            ? [
+                {
+                  subject: 'person',
+                  id: personId,
+                  name: 'Ada',
+                  birthDate: '1950-01-01',
+                  birthDatePrecision: 'year',
+                  deathDate: '2001-01-01',
+                  deathDatePrecision: 'about',
+                },
+              ]
+            : [],
+        ),
+      );
+      mocks.memory.getSubjectAssets.mockResolvedValue(assetsOn(5, Date.UTC(2020, 0, 1)));
+
+      await sut.onMemoriesCreate();
+
+      expect(birthdayMemories()).toEqual([]);
+    });
+
     it('makes a "Remembering" memory with no age on the birthday of a person who has passed (FL-864)', async () => {
       vi.useFakeTimers({ toFake: ['Date'] });
       vi.setSystemTime(new Date('2026-09-25T12:00:00.000Z'));

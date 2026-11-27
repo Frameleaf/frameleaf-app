@@ -78,7 +78,13 @@ describe(SearchService.name, () => {
       const auth = AuthFactory.create();
       const person = PersonFactory.create({ ownerId: auth.user.id });
       mocks.person.getByName.mockResolvedValue([
-        { ...person, deathDate: new Date('2020-03-04'), notes: 'Grandma, loved gardens' },
+        {
+          ...person,
+          deathDate: new Date('2020-03-04'),
+          notes: 'Grandma, loved gardens',
+          birthDatePrecision: null,
+          deathDatePrecision: null,
+        },
       ]);
 
       await expect(sut.searchPerson(auth, { name: 'gardens' })).resolves.toEqual([
@@ -1052,7 +1058,9 @@ describe(SearchService.name, () => {
         name: 'Alice',
         ownerId: authStub.user1.user.id,
       });
-      mocks.person.getByName.mockResolvedValue([{ ...person, deathDate: null, notes: null }]);
+      mocks.person.getByName.mockResolvedValue([
+        { ...person, deathDate: null, notes: null, birthDatePrecision: null, deathDatePrecision: null },
+      ]);
 
       const result = await sut.askSearch(authStub.user1, { query: 'photos of Alice in Banff' });
 
@@ -1109,7 +1117,9 @@ describe(SearchService.name, () => {
         name: 'Alice',
         ownerId: authStub.user1.user.id,
       });
-      mocks.person.getByName.mockResolvedValueOnce([{ ...person, deathDate: null, notes: null }]);
+      mocks.person.getByName.mockResolvedValueOnce([
+        { ...person, deathDate: null, notes: null, birthDatePrecision: null, deathDatePrecision: null },
+      ]);
 
       const resolvedResult = await sut.askSearch(authStub.user1, { query: 'photos of alice in Banff' });
 
@@ -1166,7 +1176,11 @@ describe(SearchService.name, () => {
         ownerId: authStub.user1.user.id,
       });
       mocks.person.getByName.mockImplementation((_userId, name) =>
-        Promise.resolve(name === 'Alice' ? [{ ...person, deathDate: null, notes: null }] : []),
+        Promise.resolve(
+          name === 'Alice'
+            ? [{ ...person, deathDate: null, notes: null, birthDatePrecision: null, deathDatePrecision: null }]
+            : [],
+        ),
       );
       mocks.search.searchPetsByName.mockImplementation((_ownerId, name) =>
         Promise.resolve(name === 'Rex' ? [{ id: petId, name: 'Rex' }] : []),
@@ -1184,21 +1198,27 @@ describe(SearchService.name, () => {
       const max = PersonFactory.create({ personGroupId: 'person-max', name: 'Max', ownerId });
 
       // an exact pet name beats a fuzzy person match
-      mocks.person.getByName.mockResolvedValueOnce([{ ...alex, deathDate: null, notes: null }]);
+      mocks.person.getByName.mockResolvedValueOnce([
+        { ...alex, deathDate: null, notes: null, birthDatePrecision: null, deathDatePrecision: null },
+      ]);
       mocks.search.searchPetsByName.mockResolvedValueOnce([{ id: petId, name: 'Alex' }]);
       const exactPet = await sut.askSearch(authStub.user1, { query: 'photos of alex' });
       expect(exactPet.plan.filters).toEqual(expect.objectContaining({ petIds: [petId] }));
       expect(exactPet.plan.filters).toEqual(expect.not.objectContaining({ personIds: expect.anything() }));
 
       // an exact person name beats an exact pet name
-      mocks.person.getByName.mockResolvedValueOnce([{ ...max, deathDate: null, notes: null }]);
+      mocks.person.getByName.mockResolvedValueOnce([
+        { ...max, deathDate: null, notes: null, birthDatePrecision: null, deathDatePrecision: null },
+      ]);
       mocks.search.searchPetsByName.mockResolvedValueOnce([{ id: petId, name: 'Max' }]);
       const exactPerson = await sut.askSearch(authStub.user1, { query: 'photos of max' });
       expect(exactPerson.plan.filters).toEqual(expect.objectContaining({ personIds: ['person-max'] }));
       expect(exactPerson.plan.filters).toEqual(expect.not.objectContaining({ petIds: expect.anything() }));
 
       // with no exact name the closest person wins over the closest pet, as before pets existed
-      mocks.person.getByName.mockResolvedValueOnce([{ ...alex, deathDate: null, notes: null }]);
+      mocks.person.getByName.mockResolvedValueOnce([
+        { ...alex, deathDate: null, notes: null, birthDatePrecision: null, deathDatePrecision: null },
+      ]);
       mocks.search.searchPetsByName.mockResolvedValueOnce([{ id: petId, name: 'Alexa' }]);
       const fuzzy = await sut.askSearch(authStub.user1, { query: 'photos of alexandr' });
       expect(fuzzy.plan.filters).toEqual(expect.objectContaining({ personIds: ['person-alex'] }));

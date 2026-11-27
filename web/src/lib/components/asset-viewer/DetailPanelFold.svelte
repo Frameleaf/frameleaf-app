@@ -3,9 +3,16 @@
 
   /**
    * Which folds were left open, by fold id. Kept in this browser, beside the panel's own open state
-   * (`asset-viewer-state`): there is no per-account store for viewer layout.
+   * (`asset-viewer-state`): there is no per-account store for viewer layout. It names no content, so
+   * it is a device preference that a lock or sign-out keeps (`DEVICE_PREFERENCE_KEYS`).
    */
-  const folds = new PersistedLocalStorage<Record<string, boolean>>('frameleaf-viewer-info-folds', {});
+  /**
+   * The only folds there are. Fixed names on purpose: the store outlives a sign-out, so it must never
+   * hold anything tied to an item or an account (an asset id, an album name).
+   */
+  export type FoldId = 'details' | 'credits' | 'sensitive' | 'scan' | 'text';
+
+  const folds = new PersistedLocalStorage<Partial<Record<FoldId, boolean>>>('frameleaf-viewer-info-folds', {});
 </script>
 
 <script lang="ts">
@@ -19,7 +26,7 @@
   import type { Snippet } from 'svelte';
 
   type Props = {
-    id: string;
+    id: FoldId;
     label: string;
     /** Keep the headings of the sections inside: for a fold that holds more than one kind of thing. */
     headings?: boolean;
@@ -30,13 +37,13 @@
 
   const onToggle = (event: Event & { currentTarget: HTMLDetailsElement }) => {
     const open = event.currentTarget.open;
-    if (!!folds.current[id] !== open) {
+    if ((folds.current[id] ?? false) !== open) {
       folds.current = { ...folds.current, [id]: open };
     }
   };
 </script>
 
-<details class="fl-fold" class:headings open={!!folds.current[id]} ontoggle={onToggle} data-fold={id}>
+<details class="fl-fold" class:headings open={folds.current[id] ?? false} ontoggle={onToggle} data-fold={id}>
   <summary>
     {label}
     <Icon icon={mdiChevronDown} size="16" aria-hidden />

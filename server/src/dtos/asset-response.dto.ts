@@ -73,6 +73,13 @@ const SanitizedAssetResponseSchema = z
       .describe(
         'Set when only the year (`year`) or the decade (`decade`) of the capture date is known; localDateTime is then the start of that period. Absent or null for an exact date. Other values may be added: treat an unknown one as approximate.',
       ),
+    // FL-1814: a separate field, so clients that read only dateAccuracy keep reading `year` dates as before
+    dateDetail: z
+      .string()
+      .nullish()
+      .describe(
+        'With dateAccuracy `year` only: `month` when the month is known too (localDateTime is then the 1st of it) or `about` when the year itself is a guess. Absent or null otherwise. Other values may be added: treat an unknown one as absent.',
+      ),
     duration: z.int32().min(0).nullable().describe('Video/gif duration in milliseconds (null for static images)'),
     livePhotoVideoId: z.string().nullish().describe('Live photo video ID'),
     hasMetadata: z.boolean().describe('Whether asset has metadata'),
@@ -222,6 +229,8 @@ export type MapAsset = {
   localDateTime: Date;
   /** FL-936: `year` or `decade` when that is all the capture date says */
   dateAccuracy?: string | null;
+  /** FL-1814: `month` or `about` beside a `year` accuracy */
+  dateDetail?: string | null;
   originalFileName: string;
   originalPath: string;
   /** FL-417: the photo's own path while it shares a file kept in another folder */
@@ -319,6 +328,7 @@ export function mapAsset(entity: MaybeDehydrated<MapAsset>, options: AssetMapOpt
       thumbhash: entity.thumbhash ? hexOrBufferToBase64(entity.thumbhash) : null,
       localDateTime: asDateTimeString(entity.localDateTime),
       dateAccuracy: entity.dateAccuracy ?? undefined,
+      dateDetail: entity.dateAccuracy === 'year' ? (entity.dateDetail ?? undefined) : undefined,
       duration: entity.duration,
       livePhotoVideoId: entity.livePhotoVideoId,
       imageEncoding:
@@ -351,6 +361,7 @@ export function mapAsset(entity: MaybeDehydrated<MapAsset>, options: AssetMapOpt
     fileModifiedAt: asDateTimeString(entity.fileModifiedAt),
     localDateTime: asDateTimeString(entity.localDateTime),
     dateAccuracy: entity.dateAccuracy ?? undefined,
+    dateDetail: entity.dateAccuracy === 'year' ? (entity.dateDetail ?? undefined) : undefined,
     updatedAt: asDateTimeString(entity.updatedAt),
     // the viewer's own mark: a shared link acts as its owner, but a visitor never sees the owner's favorites
     // FL-786: anyone else's is the heart they gave it through a shared album or space

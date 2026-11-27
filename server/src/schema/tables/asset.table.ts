@@ -12,7 +12,7 @@ import {
   UpdateDateColumn,
 } from '@frameleaf/sql-tools';
 import type { Generated, Timestamp } from '@frameleaf/sql-tools';
-import type { DateAccuracy } from 'src/utils/date.js';
+import type { DateAccuracy, DateDetail } from 'src/utils/date.js';
 import { UpdateIdColumn, UpdatedAtTrigger } from 'src/decorators.js';
 import { AssetStatus, AssetType, AssetVisibility, ChecksumAlgorithm, LibraryScope } from 'src/enum.js';
 import {
@@ -37,6 +37,10 @@ import { ASSET_CHECKSUM_CONSTRAINT } from 'src/utils/database.js';
 @Check({
   name: 'asset_dateAccuracy_check',
   expression: `"dateAccuracy" = ANY (ARRAY['year'::text, 'decade'::text])`,
+})
+@Check({
+  name: 'asset_dateDetail_check',
+  expression: `"dateDetail" = ANY (ARRAY['month'::text, 'about'::text])`,
 })
 @Trigger({
   name: 'asset_library_scope_refresh_trigger',
@@ -210,6 +214,13 @@ export class AssetTable {
    */
   @Column({ type: 'text', nullable: true })
   dateAccuracy!: DateAccuracy | null;
+
+  /**
+   * FL-1814: with a `year` accuracy, `month` (the date is the 1st of that month) or `about` (the year is a guess).
+   * Read only beside `dateAccuracy = 'year'`; anything else ignores it.
+   */
+  @Column({ type: 'text', nullable: true })
+  dateDetail!: DateDetail | null;
 
   @ForeignKeyColumn(() => StackTable, { nullable: true, onDelete: 'SET NULL', onUpdate: 'CASCADE' })
   stackId!: string | null;

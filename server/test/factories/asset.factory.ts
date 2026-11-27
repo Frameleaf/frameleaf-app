@@ -80,6 +80,7 @@ export class AssetFactory {
       isEdited: false,
       is_nsfw: false,
       dateAccuracy: null,
+      dateDetail: null,
       ...dto,
     });
   }

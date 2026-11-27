@@ -53116,105 +53116,6 @@
       "synchronize": true
     },
     {
-      "name": "person_profile",
-      "columns": [
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "ownerId",
-          "tableName": "person_profile",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "personId",
-          "tableName": "person_profile",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "date",
-          "primary": false,
-          "name": "deathDate",
-          "tableName": "person_profile",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "text",
-          "primary": false,
-          "name": "notes",
-          "tableName": "person_profile",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "updatedAt",
-          "tableName": "person_profile",
-          "nullable": false,
-          "isArray": false,
-          "default": "now()",
-          "synchronize": true
-        }
-      ],
-      "indexes": [],
-      "triggers": [],
-      "constraints": [
-        {
-          "type": "primary-key",
-          "name": "person_profile_pkey",
-          "definition": "PRIMARY KEY (\"ownerId\", \"personId\")",
-          "tableName": "person_profile",
-          "columnNames": [
-            "ownerId",
-            "personId"
-          ],
-          "synchronize": true
-        },
-        {
-          "type": "foreign-key",
-          "name": "person_profile_ownerId_fkey",
-          "definition": "FOREIGN KEY (\"ownerId\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
-          "tableName": "person_profile",
-          "columnNames": [
-            "ownerId"
-          ],
-          "referenceTableName": "user",
-          "referenceColumnNames": [
-            "id"
-          ],
-          "onUpdate": "CASCADE",
-          "onDelete": "CASCADE",
-          "synchronize": true
-        },
-        {
-          "type": "foreign-key",
-          "name": "person_profile_personId_fkey",
-          "definition": "FOREIGN KEY (\"personId\") REFERENCES person_group(id) ON UPDATE CASCADE ON DELETE CASCADE",
-          "tableName": "person_profile",
-          "columnNames": [
-            "personId"
-          ],
-          "referenceTableName": "person_group",
-          "referenceColumnNames": [
-            "id"
-          ],
-          "onUpdate": "CASCADE",
-          "onDelete": "CASCADE",
-          "synchronize": true
-        }
-      ],
-      "synchronize": true
-    },
-    {
       "name": "photo_source",
       "columns": [
         {
@@ -55079,793 +54980,6 @@
           ],
           "onUpdate": "NO ACTION",
           "onDelete": "CASCADE",
-          "synchronize": true
-        }
-      ],
-      "synchronize": true
-    },
-    {
-      "name": "asset",
-      "columns": [
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "id",
-          "tableName": "asset",
-          "nullable": false,
-          "isArray": false,
-          "default": "uuid_generate_v4()",
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "ownerId",
-          "tableName": "asset",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "type",
-          "tableName": "asset",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "originalPath",
-          "tableName": "asset",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "physicalOriginalFileId",
-          "tableName": "asset",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "fileCreatedAt",
-          "tableName": "asset",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "fileModifiedAt",
-          "tableName": "asset",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "boolean",
-          "primary": false,
-          "name": "isFavorite",
-          "tableName": "asset",
-          "nullable": false,
-          "isArray": false,
-          "default": "false",
-          "synchronize": true
-        },
-        {
-          "type": "integer",
-          "primary": false,
-          "name": "duration",
-          "tableName": "asset",
-          "nullable": true,
-          "isArray": false,
-          "numericPrecision": 32,
-          "numericScale": 0,
-          "synchronize": true
-        },
-        {
-          "type": "bytea",
-          "primary": false,
-          "name": "checksum",
-          "tableName": "asset",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "enum",
-          "primary": false,
-          "name": "checksumAlgorithm",
-          "tableName": "asset",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true,
-          "enumName": "asset_checksum_algorithm_enum"
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "livePhotoVideoId",
-          "tableName": "asset",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "updatedAt",
-          "tableName": "asset",
-          "nullable": false,
-          "isArray": false,
-          "default": "now()",
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "createdAt",
-          "tableName": "asset",
-          "nullable": false,
-          "isArray": false,
-          "default": "now()",
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "originalFileName",
-          "tableName": "asset",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "bytea",
-          "primary": false,
-          "name": "thumbhash",
-          "tableName": "asset",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "boolean",
-          "primary": false,
-          "name": "isOffline",
-          "tableName": "asset",
-          "nullable": false,
-          "isArray": false,
-          "default": "false",
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "libraryId",
-          "tableName": "asset",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "boolean",
-          "primary": false,
-          "name": "isExternal",
-          "tableName": "asset",
-          "nullable": false,
-          "isArray": false,
-          "default": "false",
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "deletedAt",
-          "tableName": "asset",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "timestamp with time zone",
-          "primary": false,
-          "name": "localDateTime",
-          "tableName": "asset",
-          "nullable": false,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "stackId",
-          "tableName": "asset",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "duplicateId",
-          "tableName": "asset",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "enum",
-          "primary": false,
-          "name": "status",
-          "tableName": "asset",
-          "nullable": false,
-          "isArray": false,
-          "default": "'active'::assets_status_enum",
-          "synchronize": true,
-          "enumName": "assets_status_enum"
-        },
-        {
-          "type": "uuid",
-          "primary": false,
-          "name": "updateId",
-          "tableName": "asset",
-          "nullable": false,
-          "isArray": false,
-          "default": "immich_uuid_v7()",
-          "synchronize": true
-        },
-        {
-          "type": "enum",
-          "primary": false,
-          "name": "visibility",
-          "tableName": "asset",
-          "nullable": false,
-          "isArray": false,
-          "default": "'timeline'::asset_visibility_enum",
-          "synchronize": true,
-          "enumName": "asset_visibility_enum"
-        },
-        {
-          "type": "integer",
-          "primary": false,
-          "name": "width",
-          "tableName": "asset",
-          "nullable": true,
-          "isArray": false,
-          "numericPrecision": 32,
-          "numericScale": 0,
-          "synchronize": true
-        },
-        {
-          "type": "integer",
-          "primary": false,
-          "name": "height",
-          "tableName": "asset",
-          "nullable": true,
-          "isArray": false,
-          "numericPrecision": 32,
-          "numericScale": 0,
-          "synchronize": true
-        },
-        {
-          "type": "boolean",
-          "primary": false,
-          "name": "isEdited",
-          "tableName": "asset",
-          "nullable": false,
-          "isArray": false,
-          "default": "false",
-          "synchronize": true
-        },
-        {
-          "type": "boolean",
-          "primary": false,
-          "name": "is_nsfw",
-          "tableName": "asset",
-          "nullable": false,
-          "isArray": false,
-          "default": "false",
-          "synchronize": true
-        },
-        {
-          "type": "character varying",
-          "primary": false,
-          "name": "libraryPath",
-          "tableName": "asset",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        },
-        {
-          "type": "enum",
-          "primary": false,
-          "name": "libraryScope",
-          "tableName": "asset",
-          "nullable": false,
-          "isArray": false,
-          "default": "'personal'::library_scope_enum",
-          "synchronize": true,
-          "enumName": "library_scope_enum"
-        },
-        {
-          "type": "text",
-          "primary": false,
-          "name": "dateAccuracy",
-          "tableName": "asset",
-          "nullable": true,
-          "isArray": false,
-          "synchronize": true
-        }
-      ],
-      "indexes": [
-        {
-          "name": "asset_stackId_idx",
-          "definition": "CREATE INDEX \"asset_stackId_idx\" ON public.asset USING btree (\"stackId\")",
-          "tableName": "asset",
-          "columnNames": [
-            "stackId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "asset_owner_filename_order_idx",
-          "definition": "CREATE INDEX asset_owner_filename_order_idx ON public.asset USING btree (\"ownerId\", \"originalFileName\" COLLATE \"und-x-icu\", \"fileCreatedAt\" DESC, id)",
-          "tableName": "asset",
-          "columnNames": [
-            "ownerId",
-            "originalFileName",
-            "fileCreatedAt",
-            "id"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "asset_originalFileName_idx",
-          "definition": "CREATE INDEX \"asset_originalFileName_idx\" ON public.asset USING btree (\"originalFileName\")",
-          "tableName": "asset",
-          "columnNames": [
-            "originalFileName"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "asset_livePhotoVideoId_idx",
-          "definition": "CREATE INDEX \"asset_livePhotoVideoId_idx\" ON public.asset USING btree (\"livePhotoVideoId\")",
-          "tableName": "asset",
-          "columnNames": [
-            "livePhotoVideoId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "asset_libraryId_idx",
-          "definition": "CREATE INDEX \"asset_libraryId_idx\" ON public.asset USING btree (\"libraryId\")",
-          "tableName": "asset",
-          "columnNames": [
-            "libraryId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "asset_duplicateId_idx",
-          "definition": "CREATE INDEX \"asset_duplicateId_idx\" ON public.asset USING btree (\"duplicateId\")",
-          "tableName": "asset",
-          "columnNames": [
-            "duplicateId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "asset_physicalOriginalFileId_idx",
-          "definition": "CREATE INDEX \"asset_physicalOriginalFileId_idx\" ON public.asset USING btree (\"physicalOriginalFileId\")",
-          "tableName": "asset",
-          "columnNames": [
-            "physicalOriginalFileId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "asset_owner_added_page_idx",
-          "definition": "CREATE INDEX asset_owner_added_page_idx ON public.asset USING btree (\"ownerId\", ((date_trunc('MONTH'::text, (\"createdAt\" AT TIME ZONE 'UTC'::text)) AT TIME ZONE 'UTC'::text)), (((\"createdAt\" AT TIME ZONE 'UTC'::text))::date), \"createdAt\", \"originalFileName\", id)",
-          "tableName": "asset",
-          "columnNames": [
-            "ownerId",
-            "createdAt",
-            "originalFileName",
-            "id"
-          ],
-          "expression": "(date_trunc('MONTH'::text, (\"createdAt\" AT TIME ZONE 'UTC'::text)) AT TIME ZONE 'UTC'::text), ((\"createdAt\" AT TIME ZONE 'UTC'::text))::date",
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "asset_id_timeline_notDeleted_idx",
-          "definition": "CREATE INDEX \"asset_id_timeline_notDeleted_idx\" ON public.asset USING btree (id) WHERE ((visibility = 'timeline'::asset_visibility_enum) AND (\"deletedAt\" IS NULL))",
-          "tableName": "asset",
-          "columnNames": [
-            "id"
-          ],
-          "using": "btree",
-          "where": "((visibility = 'timeline'::asset_visibility_enum) AND (\"deletedAt\" IS NULL))",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "asset_createdAt_idx",
-          "definition": "CREATE INDEX \"asset_createdAt_idx\" ON public.asset USING btree (\"createdAt\")",
-          "tableName": "asset",
-          "columnNames": [
-            "createdAt"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "asset_localDateTime_month_idx",
-          "definition": "CREATE INDEX \"asset_localDateTime_month_idx\" ON public.asset USING btree (((date_trunc('MONTH'::text, (\"localDateTime\" AT TIME ZONE 'UTC'::text)) AT TIME ZONE 'UTC'::text)))",
-          "tableName": "asset",
-          "expression": "(date_trunc('MONTH'::text, (\"localDateTime\" AT TIME ZONE 'UTC'::text)) AT TIME ZONE 'UTC'::text)",
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "asset_owner_taken_page_idx",
-          "definition": "CREATE INDEX asset_owner_taken_page_idx ON public.asset USING btree (\"ownerId\", ((date_trunc('MONTH'::text, (\"localDateTime\" AT TIME ZONE 'UTC'::text)) AT TIME ZONE 'UTC'::text)), (((\"localDateTime\" AT TIME ZONE 'UTC'::text))::date), \"fileCreatedAt\", \"originalFileName\", id)",
-          "tableName": "asset",
-          "columnNames": [
-            "ownerId",
-            "fileCreatedAt",
-            "originalFileName",
-            "id"
-          ],
-          "expression": "(date_trunc('MONTH'::text, (\"localDateTime\" AT TIME ZONE 'UTC'::text)) AT TIME ZONE 'UTC'::text), ((\"localDateTime\" AT TIME ZONE 'UTC'::text))::date",
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "asset_localDateTime_idx",
-          "definition": "CREATE INDEX \"asset_localDateTime_idx\" ON public.asset USING btree ((((\"localDateTime\" AT TIME ZONE 'UTC'::text))::date))",
-          "tableName": "asset",
-          "expression": "((\"localDateTime\" AT TIME ZONE 'UTC'::text))::date",
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "asset_originalFilename_trigram_idx",
-          "definition": "CREATE INDEX \"asset_originalFilename_trigram_idx\" ON public.asset USING gin (f_unaccent((\"originalFileName\")::text) gin_trgm_ops)",
-          "tableName": "asset",
-          "expression": "f_unaccent((\"originalFileName\")::text)",
-          "using": "gin",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "idx_asset_is_nsfw",
-          "definition": "CREATE INDEX idx_asset_is_nsfw ON public.asset USING btree (is_nsfw) WHERE (is_nsfw = true)",
-          "tableName": "asset",
-          "columnNames": [
-            "is_nsfw"
-          ],
-          "using": "btree",
-          "where": "(is_nsfw = true)",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "asset_owner_scope_idx",
-          "definition": "CREATE INDEX asset_owner_scope_idx ON public.asset USING btree (\"ownerId\", \"libraryScope\")",
-          "tableName": "asset",
-          "columnNames": [
-            "ownerId",
-            "libraryScope"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "UQ_assets_owner_checksum",
-          "definition": "CREATE UNIQUE INDEX \"UQ_assets_owner_checksum\" ON public.asset USING btree (\"ownerId\", checksum) WHERE (\"libraryId\" IS NULL)",
-          "tableName": "asset",
-          "columnNames": [
-            "ownerId",
-            "checksum"
-          ],
-          "using": "btree",
-          "where": "(\"libraryId\" IS NULL)",
-          "unique": true,
-          "synchronize": true
-        },
-        {
-          "name": "asset_fileCreatedAt_idx",
-          "definition": "CREATE INDEX \"asset_fileCreatedAt_idx\" ON public.asset USING btree (\"fileCreatedAt\")",
-          "tableName": "asset",
-          "columnNames": [
-            "fileCreatedAt"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "asset_id_stackId_idx",
-          "definition": "CREATE INDEX \"asset_id_stackId_idx\" ON public.asset USING btree (id, \"stackId\")",
-          "tableName": "asset",
-          "columnNames": [
-            "id",
-            "stackId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "asset_ownerId_libraryId_checksum_idx",
-          "definition": "CREATE UNIQUE INDEX \"asset_ownerId_libraryId_checksum_idx\" ON public.asset USING btree (\"ownerId\", \"libraryId\", checksum) WHERE (\"libraryId\" IS NOT NULL)",
-          "tableName": "asset",
-          "columnNames": [
-            "ownerId",
-            "libraryId",
-            "checksum"
-          ],
-          "using": "btree",
-          "where": "(\"libraryId\" IS NOT NULL)",
-          "unique": true,
-          "synchronize": true
-        },
-        {
-          "name": "asset_checksum_idx",
-          "definition": "CREATE INDEX asset_checksum_idx ON public.asset USING btree (checksum)",
-          "tableName": "asset",
-          "columnNames": [
-            "checksum"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "asset_originalPath_libraryId_idx",
-          "definition": "CREATE INDEX \"asset_originalPath_libraryId_idx\" ON public.asset USING btree (\"originalPath\", \"libraryId\")",
-          "tableName": "asset",
-          "columnNames": [
-            "originalPath",
-            "libraryId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "asset_ownerId_idx",
-          "definition": "CREATE INDEX \"asset_ownerId_idx\" ON public.asset USING btree (\"ownerId\")",
-          "tableName": "asset",
-          "columnNames": [
-            "ownerId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        },
-        {
-          "name": "asset_updateId_idx",
-          "definition": "CREATE INDEX \"asset_updateId_idx\" ON public.asset USING btree (\"updateId\")",
-          "tableName": "asset",
-          "columnNames": [
-            "updateId"
-          ],
-          "using": "btree",
-          "unique": false,
-          "synchronize": true
-        }
-      ],
-      "triggers": [
-        {
-          "name": "asset_backup_deletion_capture_trigger",
-          "definition": "CREATE TRIGGER asset_backup_deletion_capture_trigger BEFORE DELETE ON public.asset FOR EACH ROW EXECUTE FUNCTION asset_backup_deletion_capture()",
-          "tableName": "asset",
-          "functionName": "asset_backup_deletion_capture",
-          "when": null,
-          "synchronize": true,
-          "actions": [
-            "delete"
-          ],
-          "timing": "before",
-          "scope": "row"
-        },
-        {
-          "name": "asset_delete_audit",
-          "definition": "CREATE TRIGGER asset_delete_audit AFTER DELETE ON public.asset REFERENCING OLD TABLE AS old FOR EACH STATEMENT WHEN ((pg_trigger_depth() = 0)) EXECUTE FUNCTION asset_delete_audit()",
-          "tableName": "asset",
-          "functionName": "asset_delete_audit",
-          "referencingOldTableAs": "old",
-          "when": "(pg_trigger_depth() = 0)",
-          "synchronize": true,
-          "actions": [
-            "delete"
-          ],
-          "timing": "after",
-          "scope": "statement"
-        },
-        {
-          "name": "asset_library_scope_refresh_trigger",
-          "definition": "CREATE TRIGGER asset_library_scope_refresh_trigger AFTER UPDATE ON public.asset FOR EACH ROW EXECUTE FUNCTION asset_library_scope_refresh()",
-          "tableName": "asset",
-          "functionName": "asset_library_scope_refresh",
-          "when": null,
-          "synchronize": true,
-          "actions": [
-            "update"
-          ],
-          "timing": "after",
-          "scope": "row"
-        },
-        {
-          "name": "asset_updatedAt",
-          "definition": "CREATE TRIGGER \"asset_updatedAt\" BEFORE UPDATE ON public.asset FOR EACH ROW EXECUTE FUNCTION updated_at()",
-          "tableName": "asset",
-          "functionName": "updated_at",
-          "when": null,
-          "synchronize": true,
-          "actions": [
-            "update"
-          ],
-          "timing": "before",
-          "scope": "row"
-        },
-        {
-          "name": "media_import_asset_deleted",
-          "definition": "CREATE TRIGGER media_import_asset_deleted AFTER DELETE ON public.asset FOR EACH ROW EXECUTE FUNCTION media_import_asset_removed()",
-          "tableName": "asset",
-          "functionName": "media_import_asset_removed",
-          "when": null,
-          "synchronize": true,
-          "actions": [
-            "delete"
-          ],
-          "timing": "after",
-          "scope": "row"
-        },
-        {
-          "name": "media_import_asset_trashed",
-          "definition": "CREATE TRIGGER media_import_asset_trashed AFTER UPDATE OF \"deletedAt\" ON public.asset FOR EACH ROW EXECUTE FUNCTION media_import_asset_removed()",
-          "tableName": "asset",
-          "functionName": "media_import_asset_removed",
-          "when": null,
-          "synchronize": true,
-          "actions": [
-            "update"
-          ],
-          "timing": "after",
-          "scope": "row"
-        }
-      ],
-      "constraints": [
-        {
-          "type": "primary-key",
-          "name": "asset_pkey",
-          "definition": "PRIMARY KEY (id)",
-          "tableName": "asset",
-          "columnNames": [
-            "id"
-          ],
-          "synchronize": true
-        },
-        {
-          "type": "foreign-key",
-          "name": "asset_libraryId_fkey",
-          "definition": "FOREIGN KEY (\"libraryId\") REFERENCES library(id) ON UPDATE CASCADE ON DELETE CASCADE",
-          "tableName": "asset",
-          "columnNames": [
-            "libraryId"
-          ],
-          "referenceTableName": "library",
-          "referenceColumnNames": [
-            "id"
-          ],
-          "onUpdate": "CASCADE",
-          "onDelete": "CASCADE",
-          "synchronize": true
-        },
-        {
-          "type": "foreign-key",
-          "name": "asset_livePhotoVideoId_fkey",
-          "definition": "FOREIGN KEY (\"livePhotoVideoId\") REFERENCES asset(id) ON UPDATE CASCADE ON DELETE SET NULL",
-          "tableName": "asset",
-          "columnNames": [
-            "livePhotoVideoId"
-          ],
-          "referenceTableName": "asset",
-          "referenceColumnNames": [
-            "id"
-          ],
-          "onUpdate": "CASCADE",
-          "onDelete": "SET NULL",
-          "synchronize": true
-        },
-        {
-          "type": "foreign-key",
-          "name": "asset_ownerId_fkey",
-          "definition": "FOREIGN KEY (\"ownerId\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
-          "tableName": "asset",
-          "columnNames": [
-            "ownerId"
-          ],
-          "referenceTableName": "user",
-          "referenceColumnNames": [
-            "id"
-          ],
-          "onUpdate": "CASCADE",
-          "onDelete": "CASCADE",
-          "synchronize": true
-        },
-        {
-          "type": "foreign-key",
-          "name": "asset_physicalOriginalFileId_fkey",
-          "definition": "FOREIGN KEY (\"physicalOriginalFileId\") REFERENCES physical_file(id) ON UPDATE CASCADE ON DELETE SET NULL",
-          "tableName": "asset",
-          "columnNames": [
-            "physicalOriginalFileId"
-          ],
-          "referenceTableName": "physical_file",
-          "referenceColumnNames": [
-            "id"
-          ],
-          "onUpdate": "CASCADE",
-          "onDelete": "SET NULL",
-          "synchronize": true
-        },
-        {
-          "type": "foreign-key",
-          "name": "asset_stackId_fkey",
-          "definition": "FOREIGN KEY (\"stackId\") REFERENCES stack(id) ON UPDATE CASCADE ON DELETE SET NULL",
-          "tableName": "asset",
-          "columnNames": [
-            "stackId"
-          ],
-          "referenceTableName": "stack",
-          "referenceColumnNames": [
-            "id"
-          ],
-          "onUpdate": "CASCADE",
-          "onDelete": "SET NULL",
-          "synchronize": true
-        },
-        {
-          "type": "check",
-          "name": "asset_dateAccuracy_check",
-          "definition": "CHECK ((\"dateAccuracy\" = ANY (ARRAY['year'::text, 'decade'::text])))",
-          "tableName": "asset",
-          "expression": "((\"dateAccuracy\" = ANY (ARRAY['year'::text, 'decade'::text])))",
           "synchronize": true
         }
       ],
@@ -61179,6 +60293,943 @@
           ],
           "onUpdate": "CASCADE",
           "onDelete": "CASCADE",
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
+    },
+    {
+      "name": "asset",
+      "columns": [
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "id",
+          "tableName": "asset",
+          "nullable": false,
+          "isArray": false,
+          "default": "uuid_generate_v4()",
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "ownerId",
+          "tableName": "asset",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "type",
+          "tableName": "asset",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "originalPath",
+          "tableName": "asset",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "physicalOriginalFileId",
+          "tableName": "asset",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "fileCreatedAt",
+          "tableName": "asset",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "fileModifiedAt",
+          "tableName": "asset",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "boolean",
+          "primary": false,
+          "name": "isFavorite",
+          "tableName": "asset",
+          "nullable": false,
+          "isArray": false,
+          "default": "false",
+          "synchronize": true
+        },
+        {
+          "type": "integer",
+          "primary": false,
+          "name": "duration",
+          "tableName": "asset",
+          "nullable": true,
+          "isArray": false,
+          "numericPrecision": 32,
+          "numericScale": 0,
+          "synchronize": true
+        },
+        {
+          "type": "bytea",
+          "primary": false,
+          "name": "checksum",
+          "tableName": "asset",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "enum",
+          "primary": false,
+          "name": "checksumAlgorithm",
+          "tableName": "asset",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true,
+          "enumName": "asset_checksum_algorithm_enum"
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "livePhotoVideoId",
+          "tableName": "asset",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "updatedAt",
+          "tableName": "asset",
+          "nullable": false,
+          "isArray": false,
+          "default": "now()",
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "createdAt",
+          "tableName": "asset",
+          "nullable": false,
+          "isArray": false,
+          "default": "now()",
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "originalFileName",
+          "tableName": "asset",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "bytea",
+          "primary": false,
+          "name": "thumbhash",
+          "tableName": "asset",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "boolean",
+          "primary": false,
+          "name": "isOffline",
+          "tableName": "asset",
+          "nullable": false,
+          "isArray": false,
+          "default": "false",
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "libraryId",
+          "tableName": "asset",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "boolean",
+          "primary": false,
+          "name": "isExternal",
+          "tableName": "asset",
+          "nullable": false,
+          "isArray": false,
+          "default": "false",
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "deletedAt",
+          "tableName": "asset",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "localDateTime",
+          "tableName": "asset",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "stackId",
+          "tableName": "asset",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "duplicateId",
+          "tableName": "asset",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "enum",
+          "primary": false,
+          "name": "status",
+          "tableName": "asset",
+          "nullable": false,
+          "isArray": false,
+          "default": "'active'::assets_status_enum",
+          "synchronize": true,
+          "enumName": "assets_status_enum"
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "updateId",
+          "tableName": "asset",
+          "nullable": false,
+          "isArray": false,
+          "default": "immich_uuid_v7()",
+          "synchronize": true
+        },
+        {
+          "type": "enum",
+          "primary": false,
+          "name": "visibility",
+          "tableName": "asset",
+          "nullable": false,
+          "isArray": false,
+          "default": "'timeline'::asset_visibility_enum",
+          "synchronize": true,
+          "enumName": "asset_visibility_enum"
+        },
+        {
+          "type": "integer",
+          "primary": false,
+          "name": "width",
+          "tableName": "asset",
+          "nullable": true,
+          "isArray": false,
+          "numericPrecision": 32,
+          "numericScale": 0,
+          "synchronize": true
+        },
+        {
+          "type": "integer",
+          "primary": false,
+          "name": "height",
+          "tableName": "asset",
+          "nullable": true,
+          "isArray": false,
+          "numericPrecision": 32,
+          "numericScale": 0,
+          "synchronize": true
+        },
+        {
+          "type": "boolean",
+          "primary": false,
+          "name": "isEdited",
+          "tableName": "asset",
+          "nullable": false,
+          "isArray": false,
+          "default": "false",
+          "synchronize": true
+        },
+        {
+          "type": "boolean",
+          "primary": false,
+          "name": "is_nsfw",
+          "tableName": "asset",
+          "nullable": false,
+          "isArray": false,
+          "default": "false",
+          "synchronize": true
+        },
+        {
+          "type": "character varying",
+          "primary": false,
+          "name": "libraryPath",
+          "tableName": "asset",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "enum",
+          "primary": false,
+          "name": "libraryScope",
+          "tableName": "asset",
+          "nullable": false,
+          "isArray": false,
+          "default": "'personal'::library_scope_enum",
+          "synchronize": true,
+          "enumName": "library_scope_enum"
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "dateAccuracy",
+          "tableName": "asset",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "dateDetail",
+          "tableName": "asset",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "asset_stackId_idx",
+          "definition": "CREATE INDEX \"asset_stackId_idx\" ON public.asset USING btree (\"stackId\")",
+          "tableName": "asset",
+          "columnNames": [
+            "stackId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "asset_owner_filename_order_idx",
+          "definition": "CREATE INDEX asset_owner_filename_order_idx ON public.asset USING btree (\"ownerId\", \"originalFileName\" COLLATE \"und-x-icu\", \"fileCreatedAt\" DESC, id)",
+          "tableName": "asset",
+          "columnNames": [
+            "ownerId",
+            "originalFileName",
+            "fileCreatedAt",
+            "id"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "asset_originalFileName_idx",
+          "definition": "CREATE INDEX \"asset_originalFileName_idx\" ON public.asset USING btree (\"originalFileName\")",
+          "tableName": "asset",
+          "columnNames": [
+            "originalFileName"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "asset_livePhotoVideoId_idx",
+          "definition": "CREATE INDEX \"asset_livePhotoVideoId_idx\" ON public.asset USING btree (\"livePhotoVideoId\")",
+          "tableName": "asset",
+          "columnNames": [
+            "livePhotoVideoId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "asset_libraryId_idx",
+          "definition": "CREATE INDEX \"asset_libraryId_idx\" ON public.asset USING btree (\"libraryId\")",
+          "tableName": "asset",
+          "columnNames": [
+            "libraryId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "asset_duplicateId_idx",
+          "definition": "CREATE INDEX \"asset_duplicateId_idx\" ON public.asset USING btree (\"duplicateId\")",
+          "tableName": "asset",
+          "columnNames": [
+            "duplicateId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "asset_physicalOriginalFileId_idx",
+          "definition": "CREATE INDEX \"asset_physicalOriginalFileId_idx\" ON public.asset USING btree (\"physicalOriginalFileId\")",
+          "tableName": "asset",
+          "columnNames": [
+            "physicalOriginalFileId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "asset_owner_added_page_idx",
+          "definition": "CREATE INDEX asset_owner_added_page_idx ON public.asset USING btree (\"ownerId\", ((date_trunc('MONTH'::text, (\"createdAt\" AT TIME ZONE 'UTC'::text)) AT TIME ZONE 'UTC'::text)), (((\"createdAt\" AT TIME ZONE 'UTC'::text))::date), \"createdAt\", \"originalFileName\", id)",
+          "tableName": "asset",
+          "columnNames": [
+            "ownerId",
+            "createdAt",
+            "originalFileName",
+            "id"
+          ],
+          "expression": "(date_trunc('MONTH'::text, (\"createdAt\" AT TIME ZONE 'UTC'::text)) AT TIME ZONE 'UTC'::text), ((\"createdAt\" AT TIME ZONE 'UTC'::text))::date",
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "asset_id_timeline_notDeleted_idx",
+          "definition": "CREATE INDEX \"asset_id_timeline_notDeleted_idx\" ON public.asset USING btree (id) WHERE ((visibility = 'timeline'::asset_visibility_enum) AND (\"deletedAt\" IS NULL))",
+          "tableName": "asset",
+          "columnNames": [
+            "id"
+          ],
+          "using": "btree",
+          "where": "((visibility = 'timeline'::asset_visibility_enum) AND (\"deletedAt\" IS NULL))",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "asset_createdAt_idx",
+          "definition": "CREATE INDEX \"asset_createdAt_idx\" ON public.asset USING btree (\"createdAt\")",
+          "tableName": "asset",
+          "columnNames": [
+            "createdAt"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "asset_localDateTime_month_idx",
+          "definition": "CREATE INDEX \"asset_localDateTime_month_idx\" ON public.asset USING btree (((date_trunc('MONTH'::text, (\"localDateTime\" AT TIME ZONE 'UTC'::text)) AT TIME ZONE 'UTC'::text)))",
+          "tableName": "asset",
+          "expression": "(date_trunc('MONTH'::text, (\"localDateTime\" AT TIME ZONE 'UTC'::text)) AT TIME ZONE 'UTC'::text)",
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "asset_owner_taken_page_idx",
+          "definition": "CREATE INDEX asset_owner_taken_page_idx ON public.asset USING btree (\"ownerId\", ((date_trunc('MONTH'::text, (\"localDateTime\" AT TIME ZONE 'UTC'::text)) AT TIME ZONE 'UTC'::text)), (((\"localDateTime\" AT TIME ZONE 'UTC'::text))::date), \"fileCreatedAt\", \"originalFileName\", id)",
+          "tableName": "asset",
+          "columnNames": [
+            "ownerId",
+            "fileCreatedAt",
+            "originalFileName",
+            "id"
+          ],
+          "expression": "(date_trunc('MONTH'::text, (\"localDateTime\" AT TIME ZONE 'UTC'::text)) AT TIME ZONE 'UTC'::text), ((\"localDateTime\" AT TIME ZONE 'UTC'::text))::date",
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "asset_localDateTime_idx",
+          "definition": "CREATE INDEX \"asset_localDateTime_idx\" ON public.asset USING btree ((((\"localDateTime\" AT TIME ZONE 'UTC'::text))::date))",
+          "tableName": "asset",
+          "expression": "((\"localDateTime\" AT TIME ZONE 'UTC'::text))::date",
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "asset_originalFilename_trigram_idx",
+          "definition": "CREATE INDEX \"asset_originalFilename_trigram_idx\" ON public.asset USING gin (f_unaccent((\"originalFileName\")::text) gin_trgm_ops)",
+          "tableName": "asset",
+          "expression": "f_unaccent((\"originalFileName\")::text)",
+          "using": "gin",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "idx_asset_is_nsfw",
+          "definition": "CREATE INDEX idx_asset_is_nsfw ON public.asset USING btree (is_nsfw) WHERE (is_nsfw = true)",
+          "tableName": "asset",
+          "columnNames": [
+            "is_nsfw"
+          ],
+          "using": "btree",
+          "where": "(is_nsfw = true)",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "asset_owner_scope_idx",
+          "definition": "CREATE INDEX asset_owner_scope_idx ON public.asset USING btree (\"ownerId\", \"libraryScope\")",
+          "tableName": "asset",
+          "columnNames": [
+            "ownerId",
+            "libraryScope"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "UQ_assets_owner_checksum",
+          "definition": "CREATE UNIQUE INDEX \"UQ_assets_owner_checksum\" ON public.asset USING btree (\"ownerId\", checksum) WHERE (\"libraryId\" IS NULL)",
+          "tableName": "asset",
+          "columnNames": [
+            "ownerId",
+            "checksum"
+          ],
+          "using": "btree",
+          "where": "(\"libraryId\" IS NULL)",
+          "unique": true,
+          "synchronize": true
+        },
+        {
+          "name": "asset_fileCreatedAt_idx",
+          "definition": "CREATE INDEX \"asset_fileCreatedAt_idx\" ON public.asset USING btree (\"fileCreatedAt\")",
+          "tableName": "asset",
+          "columnNames": [
+            "fileCreatedAt"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "asset_id_stackId_idx",
+          "definition": "CREATE INDEX \"asset_id_stackId_idx\" ON public.asset USING btree (id, \"stackId\")",
+          "tableName": "asset",
+          "columnNames": [
+            "id",
+            "stackId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "asset_ownerId_libraryId_checksum_idx",
+          "definition": "CREATE UNIQUE INDEX \"asset_ownerId_libraryId_checksum_idx\" ON public.asset USING btree (\"ownerId\", \"libraryId\", checksum) WHERE (\"libraryId\" IS NOT NULL)",
+          "tableName": "asset",
+          "columnNames": [
+            "ownerId",
+            "libraryId",
+            "checksum"
+          ],
+          "using": "btree",
+          "where": "(\"libraryId\" IS NOT NULL)",
+          "unique": true,
+          "synchronize": true
+        },
+        {
+          "name": "asset_checksum_idx",
+          "definition": "CREATE INDEX asset_checksum_idx ON public.asset USING btree (checksum)",
+          "tableName": "asset",
+          "columnNames": [
+            "checksum"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "asset_originalPath_libraryId_idx",
+          "definition": "CREATE INDEX \"asset_originalPath_libraryId_idx\" ON public.asset USING btree (\"originalPath\", \"libraryId\")",
+          "tableName": "asset",
+          "columnNames": [
+            "originalPath",
+            "libraryId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "asset_ownerId_idx",
+          "definition": "CREATE INDEX \"asset_ownerId_idx\" ON public.asset USING btree (\"ownerId\")",
+          "tableName": "asset",
+          "columnNames": [
+            "ownerId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        },
+        {
+          "name": "asset_updateId_idx",
+          "definition": "CREATE INDEX \"asset_updateId_idx\" ON public.asset USING btree (\"updateId\")",
+          "tableName": "asset",
+          "columnNames": [
+            "updateId"
+          ],
+          "using": "btree",
+          "unique": false,
+          "synchronize": true
+        }
+      ],
+      "triggers": [
+        {
+          "name": "asset_backup_deletion_capture_trigger",
+          "definition": "CREATE TRIGGER asset_backup_deletion_capture_trigger BEFORE DELETE ON public.asset FOR EACH ROW EXECUTE FUNCTION asset_backup_deletion_capture()",
+          "tableName": "asset",
+          "functionName": "asset_backup_deletion_capture",
+          "when": null,
+          "synchronize": true,
+          "actions": [
+            "delete"
+          ],
+          "timing": "before",
+          "scope": "row"
+        },
+        {
+          "name": "asset_delete_audit",
+          "definition": "CREATE TRIGGER asset_delete_audit AFTER DELETE ON public.asset REFERENCING OLD TABLE AS old FOR EACH STATEMENT WHEN ((pg_trigger_depth() = 0)) EXECUTE FUNCTION asset_delete_audit()",
+          "tableName": "asset",
+          "functionName": "asset_delete_audit",
+          "referencingOldTableAs": "old",
+          "when": "(pg_trigger_depth() = 0)",
+          "synchronize": true,
+          "actions": [
+            "delete"
+          ],
+          "timing": "after",
+          "scope": "statement"
+        },
+        {
+          "name": "asset_library_scope_refresh_trigger",
+          "definition": "CREATE TRIGGER asset_library_scope_refresh_trigger AFTER UPDATE ON public.asset FOR EACH ROW EXECUTE FUNCTION asset_library_scope_refresh()",
+          "tableName": "asset",
+          "functionName": "asset_library_scope_refresh",
+          "when": null,
+          "synchronize": true,
+          "actions": [
+            "update"
+          ],
+          "timing": "after",
+          "scope": "row"
+        },
+        {
+          "name": "asset_updatedAt",
+          "definition": "CREATE TRIGGER \"asset_updatedAt\" BEFORE UPDATE ON public.asset FOR EACH ROW EXECUTE FUNCTION updated_at()",
+          "tableName": "asset",
+          "functionName": "updated_at",
+          "when": null,
+          "synchronize": true,
+          "actions": [
+            "update"
+          ],
+          "timing": "before",
+          "scope": "row"
+        },
+        {
+          "name": "media_import_asset_deleted",
+          "definition": "CREATE TRIGGER media_import_asset_deleted AFTER DELETE ON public.asset FOR EACH ROW EXECUTE FUNCTION media_import_asset_removed()",
+          "tableName": "asset",
+          "functionName": "media_import_asset_removed",
+          "when": null,
+          "synchronize": true,
+          "actions": [
+            "delete"
+          ],
+          "timing": "after",
+          "scope": "row"
+        },
+        {
+          "name": "media_import_asset_trashed",
+          "definition": "CREATE TRIGGER media_import_asset_trashed AFTER UPDATE OF \"deletedAt\" ON public.asset FOR EACH ROW EXECUTE FUNCTION media_import_asset_removed()",
+          "tableName": "asset",
+          "functionName": "media_import_asset_removed",
+          "when": null,
+          "synchronize": true,
+          "actions": [
+            "update"
+          ],
+          "timing": "after",
+          "scope": "row"
+        }
+      ],
+      "constraints": [
+        {
+          "type": "primary-key",
+          "name": "asset_pkey",
+          "definition": "PRIMARY KEY (id)",
+          "tableName": "asset",
+          "columnNames": [
+            "id"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "asset_libraryId_fkey",
+          "definition": "FOREIGN KEY (\"libraryId\") REFERENCES library(id) ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "asset",
+          "columnNames": [
+            "libraryId"
+          ],
+          "referenceTableName": "library",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "asset_livePhotoVideoId_fkey",
+          "definition": "FOREIGN KEY (\"livePhotoVideoId\") REFERENCES asset(id) ON UPDATE CASCADE ON DELETE SET NULL",
+          "tableName": "asset",
+          "columnNames": [
+            "livePhotoVideoId"
+          ],
+          "referenceTableName": "asset",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "SET NULL",
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "asset_ownerId_fkey",
+          "definition": "FOREIGN KEY (\"ownerId\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "asset",
+          "columnNames": [
+            "ownerId"
+          ],
+          "referenceTableName": "user",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "asset_physicalOriginalFileId_fkey",
+          "definition": "FOREIGN KEY (\"physicalOriginalFileId\") REFERENCES physical_file(id) ON UPDATE CASCADE ON DELETE SET NULL",
+          "tableName": "asset",
+          "columnNames": [
+            "physicalOriginalFileId"
+          ],
+          "referenceTableName": "physical_file",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "SET NULL",
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "asset_stackId_fkey",
+          "definition": "FOREIGN KEY (\"stackId\") REFERENCES stack(id) ON UPDATE CASCADE ON DELETE SET NULL",
+          "tableName": "asset",
+          "columnNames": [
+            "stackId"
+          ],
+          "referenceTableName": "stack",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "SET NULL",
+          "synchronize": true
+        },
+        {
+          "type": "check",
+          "name": "asset_dateAccuracy_check",
+          "definition": "CHECK ((\"dateAccuracy\" = ANY (ARRAY['year'::text, 'decade'::text])))",
+          "tableName": "asset",
+          "expression": "((\"dateAccuracy\" = ANY (ARRAY['year'::text, 'decade'::text])))",
+          "synchronize": true
+        },
+        {
+          "type": "check",
+          "name": "asset_dateDetail_check",
+          "definition": "CHECK ((\"dateDetail\" = ANY (ARRAY['month'::text, 'about'::text])))",
+          "tableName": "asset",
+          "expression": "((\"dateDetail\" = ANY (ARRAY['month'::text, 'about'::text])))",
+          "synchronize": true
+        }
+      ],
+      "synchronize": true
+    },
+    {
+      "name": "person_profile",
+      "columns": [
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "ownerId",
+          "tableName": "person_profile",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "uuid",
+          "primary": false,
+          "name": "personId",
+          "tableName": "person_profile",
+          "nullable": false,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "date",
+          "primary": false,
+          "name": "deathDate",
+          "tableName": "person_profile",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "notes",
+          "tableName": "person_profile",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "timestamp with time zone",
+          "primary": false,
+          "name": "updatedAt",
+          "tableName": "person_profile",
+          "nullable": false,
+          "isArray": false,
+          "default": "now()",
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "birthDatePrecision",
+          "tableName": "person_profile",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        },
+        {
+          "type": "text",
+          "primary": false,
+          "name": "deathDatePrecision",
+          "tableName": "person_profile",
+          "nullable": true,
+          "isArray": false,
+          "synchronize": true
+        }
+      ],
+      "indexes": [],
+      "triggers": [],
+      "constraints": [
+        {
+          "type": "primary-key",
+          "name": "person_profile_pkey",
+          "definition": "PRIMARY KEY (\"ownerId\", \"personId\")",
+          "tableName": "person_profile",
+          "columnNames": [
+            "ownerId",
+            "personId"
+          ],
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "person_profile_ownerId_fkey",
+          "definition": "FOREIGN KEY (\"ownerId\") REFERENCES \"user\"(id) ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "person_profile",
+          "columnNames": [
+            "ownerId"
+          ],
+          "referenceTableName": "user",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        },
+        {
+          "type": "foreign-key",
+          "name": "person_profile_personId_fkey",
+          "definition": "FOREIGN KEY (\"personId\") REFERENCES person_group(id) ON UPDATE CASCADE ON DELETE CASCADE",
+          "tableName": "person_profile",
+          "columnNames": [
+            "personId"
+          ],
+          "referenceTableName": "person_group",
+          "referenceColumnNames": [
+            "id"
+          ],
+          "onUpdate": "CASCADE",
+          "onDelete": "CASCADE",
+          "synchronize": true
+        },
+        {
+          "type": "check",
+          "name": "person_profile_birthDatePrecision_check",
+          "definition": "CHECK ((\"birthDatePrecision\" = ANY (ARRAY['month'::text, 'year'::text, 'about'::text])))",
+          "tableName": "person_profile",
+          "expression": "((\"birthDatePrecision\" = ANY (ARRAY['month'::text, 'year'::text, 'about'::text])))",
+          "synchronize": true
+        },
+        {
+          "type": "check",
+          "name": "person_profile_deathDatePrecision_check",
+          "definition": "CHECK ((\"deathDatePrecision\" = ANY (ARRAY['month'::text, 'year'::text, 'about'::text])))",
+          "tableName": "person_profile",
+          "expression": "((\"deathDatePrecision\" = ANY (ARRAY['month'::text, 'year'::text, 'about'::text])))",
           "synchronize": true
         }
       ],

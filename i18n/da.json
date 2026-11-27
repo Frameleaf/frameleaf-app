@@ -22586,6 +22586,7 @@
     "weekday": "På",
     "weekly": "Hver uge"
   },
+  "frameleaf_workflows_load_failed": "Dine arbejdsgange kunne ikke indlæses.",
   "frameleaf_workruns_ask_help": "Kun for rækker sat til Spørg mig hver gang. Du kan stadig skifte, før arbejdet starter.",
   "frameleaf_workruns_ask_home": "En computer derhjemme",
   "frameleaf_workruns_ask_label": "Sted, der foreslås, når du bliver spurgt",

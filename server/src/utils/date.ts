@@ -83,6 +83,26 @@ export const getAssetDateTimeUpdates = (
 export const DATE_ACCURACIES = ['year', 'decade'] as const;
 export type DateAccuracy = (typeof DATE_ACCURACIES)[number];
 
+/**
+ * FL-1814: what a `year` date says beyond its year. `month`: the month is known too, and the date is the 1st of
+ * it; `about`: the year itself is a guess ("around 1987"). Only ever beside `dateAccuracy: 'year'`, so a reader
+ * that knows only `dateAccuracy` still reads the right year.
+ */
+export const DATE_DETAILS = ['month', 'about'] as const;
+export type DateDetail = (typeof DATE_DETAILS)[number];
+
+/**
+ * FL-1814: how much of a person's date of birth or passing is known. Null is the exact day; otherwise the date is
+ * stored as the start of the period: the 1st of the month (`month`), or 1 January (`year`, and `about` when the
+ * year itself is a guess).
+ */
+export const LIFE_DATE_PRECISIONS = ['month', 'year', 'about'] as const;
+export type LifeDatePrecision = (typeof LIFE_DATE_PRECISIONS)[number];
+
+/** FL-1814: whether an ISO day (`YYYY-MM-DD`) is where a period of this precision starts. */
+export const isLifeDatePeriodStart = (date: string, precision: LifeDatePrecision) =>
+  precision === 'month' ? /^\d{4}-\d{2}-01$/.test(date) : /^\d{4}-01-01$/.test(date);
+
 /** FL-936: the earliest year a photo can be dated to by year or decade. */
 export const MIN_APPROXIMATE_YEAR = 1800;
 
@@ -107,21 +127,32 @@ export const getPeriodStart = (year: number, accuracy: DateAccuracy) =>
 export const getCaptureYear = (dateTimeOriginal: string) =>
   DateTime.fromISO(dateTimeOriginal, { setZone: true, zone: 'UTC' }).year;
 
+/** FL-1814: the 1st of the month a capture date names, on its own clock, at midnight UTC, as a year date is. */
+export const getMonthStart = (dateTimeOriginal: string) => {
+  const local = DateTime.fromISO(dateTimeOriginal, { setZone: true, zone: 'UTC' });
+  return `${String(local.year).padStart(4, '0')}-${String(local.month).padStart(2, '0')}-01T00:00:00.000Z`;
+};
+
 /**
  * FL-936: a date edit as it is stored. With an accuracy the date becomes the start of its year or decade; a date
  * sent without one is exact again. An edit that names neither is returned as it is.
  */
-export const withApproximateDate = <T extends { dateTimeOriginal?: string; dateAccuracy?: DateAccuracy | null }>(
+export const withApproximateDate = <
+  T extends { dateTimeOriginal?: string; dateAccuracy?: DateAccuracy | null; dateDetail?: DateDetail | null },
+>(
   dto: T,
 ): T => {
   if (dto.dateTimeOriginal === undefined && dto.dateAccuracy === undefined) {
     return dto;
   }
   const dateAccuracy = dto.dateAccuracy ?? null;
-  return {
-    ...dto,
-    dateAccuracy,
-    ...(dateAccuracy &&
-      dto.dateTimeOriginal && { dateTimeOriginal: getPeriodStart(getCaptureYear(dto.dateTimeOriginal), dateAccuracy) }),
-  };
+  // FL-1814: the detail goes with a `year` accuracy only; any other edit of the date clears it
+  const dateDetail = dateAccuracy === 'year' ? (dto.dateDetail ?? null) : null;
+  const start =
+    dateAccuracy && dto.dateTimeOriginal
+      ? dateDetail === 'month'
+        ? getMonthStart(dto.dateTimeOriginal)
+        : getPeriodStart(getCaptureYear(dto.dateTimeOriginal), dateAccuracy)
+      : undefined;
+  return { ...dto, dateAccuracy, dateDetail, ...(start && { dateTimeOriginal: start }) };
 };

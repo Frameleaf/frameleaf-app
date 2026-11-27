@@ -1,0 +1,230 @@
+diff --git a/src/features/editor/components/properties-sidebar/clip-panel/layout-section.tsx b/src/features/editor/components/properties-sidebar/clip-panel/layout-section.tsx
+index bd48601..3337d8a 100644
+--- a/src/features/editor/components/properties-sidebar/clip-panel/layout-section.tsx
++++ b/src/features/editor/components/properties-sidebar/clip-panel/layout-section.tsx
+@@ -188,6 +188,7 @@ const PositionAxisControl = memo(function PositionAxisControl({
+         onLiveChange={onLiveChange}
+         label={axis.toUpperCase()}
+         unit="px"
++        compactUnit
+         step={1}
+         className="flex-1"
+       />
+@@ -822,6 +823,7 @@ export const LayoutSection = memo(function LayoutSection({
+             onLiveChange={handleWidthLiveChange}
+             label="W"
+             unit="px"
++            compactUnit
+             min={1}
+             max={7680}
+             step={1}
+@@ -855,6 +857,7 @@ export const LayoutSection = memo(function LayoutSection({
+             onLiveChange={handleHeightLiveChange}
+             label="H"
+             unit="px"
++            compactUnit
+             min={1}
+             max={7680}
+             step={1}
+@@ -918,6 +921,7 @@ export const LayoutSection = memo(function LayoutSection({
+                 onLiveChange={handleAnchorXLiveChange}
+                 label="X"
+                 unit="px"
++                compactUnit
+                 step={1}
+                 className="flex-1 min-w-0"
+               />
+@@ -934,6 +938,7 @@ export const LayoutSection = memo(function LayoutSection({
+                 onLiveChange={handleAnchorYLiveChange}
+                 label="Y"
+                 unit="px"
++                compactUnit
+                 step={1}
+                 className="flex-1 min-w-0"
+               />
+diff --git a/src/shared/ui/property-controls/number-input.tsx b/src/shared/ui/property-controls/number-input.tsx
+index f2e6278..6cfb695 100644
+--- a/src/shared/ui/property-controls/number-input.tsx
++++ b/src/shared/ui/property-controls/number-input.tsx
+@@ -26,6 +26,12 @@ interface NumberInputProps {
+   onUnitClick?: () => void
+   /** Tooltip / accessible name for the unit button. */
+   unitTitle?: string
++  /**
++   * Drop the unit suffix when the field is narrower than 5.5rem, so a paired field beside keyframe,
++   * link and reset buttons still shows its whole value (FL-1822). Needs a field with a set width (a
++   * container is sized as if it had no content), so it is opt-in.
++   */
++  compactUnit?: boolean
+ }
+ 
+ /**
+@@ -54,6 +60,7 @@ export function NumberInput({
+   unitWidth = 20,
+   onUnitClick,
+   unitTitle,
++  compactUnit = false,
+ }: NumberInputProps) {
+   const inputRef = useRef<HTMLInputElement>(null)
+   const textEditStateRef = useRef<'clean' | 'dirty' | 'committed'>('clean')
+@@ -228,7 +235,8 @@ export function NumberInput({
+   return (
+     <div
+       className={cn(
+-        'relative flex items-center h-7 bg-secondary border border-input rounded-md overflow-hidden transition-colors',
++        'relative flex items-center h-[34px] bg-secondary border border-input rounded-md overflow-hidden transition-colors',
++        compactUnit && '@container',
+         'focus-within:ring-1 focus-within:ring-ring focus-within:border-ring',
+         isScrubbing && 'ring-1 ring-ring border-ring',
+         disabled && 'opacity-50 cursor-not-allowed',
+@@ -240,7 +248,7 @@ export function NumberInput({
+     >
+       {/* Label prefix */}
+       {label && (
+-        <span className="pl-2 pr-1 text-[10px] text-muted-foreground select-none pointer-events-none">
++        <span className="pl-2 pr-1 text-[11px] text-muted-foreground select-none pointer-events-none">
+           {label}
+         </span>
+       )}
+@@ -259,7 +267,7 @@ export function NumberInput({
+         disabled={disabled}
+         placeholder={isMixed ? 'Mixed' : placeholder}
+         className={cn(
+-          'flex-1 h-full bg-transparent text-xs font-mono tabular-nums text-foreground outline-none',
++          'flex-1 h-full bg-transparent text-[13px] font-mono tabular-nums text-foreground outline-none',
+           'px-1 min-w-0 cursor-text',
+           isMixed && 'italic text-muted-foreground',
+         )}
+@@ -276,14 +284,17 @@ export function NumberInput({
+           disabled={disabled}
+           title={unitTitle}
+           aria-label={unitTitle}
+-          className="pr-2 pl-1 text-[10px] text-muted-foreground select-none text-right cursor-pointer hover:text-foreground disabled:cursor-not-allowed"
++          className="pr-2 pl-1 text-[11px] text-muted-foreground select-none text-right cursor-pointer hover:text-foreground disabled:cursor-not-allowed"
+           style={{ minWidth: unitWidth }}
+         >
+           {unit}
+         </button>
+       ) : (
+         <span
+-          className="pr-2 text-[10px] text-muted-foreground select-none pointer-events-none text-right"
++          className={cn(
++            'pr-2 text-[11px] text-muted-foreground select-none pointer-events-none text-right',
++            compactUnit && '@max-[5.5rem]:hidden',
++          )}
+           style={{ minWidth: unitWidth }}
+         >
+           {unit}
+diff --git a/src/shared/ui/property-controls/property-group-header.tsx b/src/shared/ui/property-controls/property-group-header.tsx
+index 17a4008..479df06 100644
+--- a/src/shared/ui/property-controls/property-group-header.tsx
++++ b/src/shared/ui/property-controls/property-group-header.tsx
+@@ -17,7 +17,7 @@ export function PropertyGroupHeader({ children, className }: PropertyGroupHeader
+     <div
+       className={cn(
+         // Pure text style — callers add their own vertical spacing.
+-        'text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground',
++        'text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground',
+         className,
+       )}
+     >
+diff --git a/src/shared/ui/property-controls/property-row.tsx b/src/shared/ui/property-controls/property-row.tsx
+index d44200f..d8eea27 100644
+--- a/src/shared/ui/property-controls/property-row.tsx
++++ b/src/shared/ui/property-controls/property-row.tsx
+@@ -9,15 +9,16 @@ interface PropertyRowProps {
+ }
+ 
+ /**
+- * Consistent two-column layout for property controls.
+- * Label on left, control on right.
++ * A labelled property control, as the approved Frameleaf Studio inspector lays out its fields
++ * (FL-1822): the label above, the control across the panel's full width. A label to the left left
++ * paired fields with keyframe and reset buttons too narrow to show their values.
+  */
+ export function PropertyRow({ label, children, tooltip, className }: PropertyRowProps) {
+-  const labelContent = <span className="text-xs text-muted-foreground min-w-[56px]">{label}</span>
++  const labelContent = <span className="self-start text-xs text-muted-foreground">{label}</span>
+ 
+   return (
+-    <div className={cn('flex items-center justify-between gap-2 min-w-0 py-1', className)}>
+-      {tooltip ? (
++    <div className={cn('flex flex-col gap-1.5 min-w-0 py-1', className)}>
++      {!label ? null : tooltip ? (
+         <Tooltip>
+           <TooltipTrigger asChild>{labelContent}</TooltipTrigger>
+           <TooltipContent side="left" className="max-w-[200px]">
+@@ -27,7 +28,7 @@ export function PropertyRow({ label, children, tooltip, className }: PropertyRow
+       ) : (
+         labelContent
+       )}
+-      <div className="flex-1 min-w-0 flex items-center">{children}</div>
++      <div className="w-full min-w-0 flex items-center">{children}</div>
+     </div>
+   )
+ }
+diff --git a/src/shared/ui/property-controls/property-section.tsx b/src/shared/ui/property-controls/property-section.tsx
+index a5f5e17..fc44186 100644
+--- a/src/shared/ui/property-controls/property-section.tsx
++++ b/src/shared/ui/property-controls/property-section.tsx
+@@ -63,17 +63,17 @@ export function PropertySection({
+       <CollapsibleTrigger
+         onClick={handleTriggerClick}
+         onKeyDown={handleTriggerKeyDown}
+-        className="flex items-center gap-2 w-full py-2 hover:bg-secondary/50 rounded-md px-2 -mx-2 transition-colors"
++        className="flex items-center gap-2 w-full min-h-9 py-2 hover:bg-secondary/50 rounded-md px-2 -mx-2 transition-colors"
+       >
+         <ChevronRight
+           className={cn('w-3 h-3 text-muted-foreground transition-transform', open && 'rotate-90')}
+         />
+         {Icon && <Icon className="w-3 h-3 text-muted-foreground" />}
+-        <span className="text-xs font-semibold tracking-wide uppercase text-muted-foreground">
++        <span className="text-[11px] font-semibold tracking-[0.08em] uppercase text-muted-foreground">
+           {title}
+         </span>
+       </CollapsibleTrigger>
+-      <CollapsibleContent className="pt-1 pb-2 space-y-0">{children}</CollapsibleContent>
++      <CollapsibleContent className="flex flex-col gap-2 pt-1 pb-4">{children}</CollapsibleContent>
+     </Collapsible>
+   )
+ }
+diff --git a/src/shared/ui/property-controls/slider-input.tsx b/src/shared/ui/property-controls/slider-input.tsx
+index 05a7d75..d8a8b52 100644
+--- a/src/shared/ui/property-controls/slider-input.tsx
++++ b/src/shared/ui/property-controls/slider-input.tsx
+@@ -579,7 +579,7 @@ export const SliderInput = memo(function SliderInput({
+       <div
+         ref={trackRef}
+         className={cn(
+-          'relative flex items-center h-7 rounded-md overflow-hidden select-none touch-none',
++          'relative flex items-center h-[34px] rounded-md overflow-hidden select-none touch-none',
+           'bg-secondary border border-input',
+           'transition-colors duration-150',
+           isActive && 'border-ring/50',
+@@ -641,7 +641,7 @@ export const SliderInput = memo(function SliderInput({
+         {label && (
+           <span
+             ref={labelRef}
+-            className="absolute left-2 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground pointer-events-none"
++            className="absolute left-2 top-1/2 -translate-y-1/2 text-[11px] text-muted-foreground pointer-events-none"
+           >
+             {label}
+           </span>
+@@ -656,7 +656,7 @@ export const SliderInput = memo(function SliderInput({
+             autoComplete="off"
+             data-bwignore="true"
+             inputMode="decimal"
+-            className="absolute right-1.5 top-1/2 -translate-y-1/2 w-14 h-5 text-xs font-mono tabular-nums text-foreground text-right bg-background/80 border border-ring rounded px-1 outline-none"
++            className="absolute right-1.5 top-1/2 -translate-y-1/2 w-16 h-6 text-[13px] font-mono tabular-nums text-foreground text-right bg-background/80 border border-ring rounded px-1 outline-none"
+             value={inputValue}
+             onChange={handleInputChange}
+             onKeyDown={handleInputKeyDown}
+@@ -671,7 +671,7 @@ export const SliderInput = memo(function SliderInput({
+             aria-label={ariaLabel ?? label}
+             disabled={disabled}
+             className={cn(
+-              'absolute right-2 top-1/2 -translate-y-1/2 text-xs font-mono tabular-nums cursor-text',
++              'absolute right-2 top-1/2 -translate-y-1/2 text-[13px] font-mono tabular-nums cursor-text',
+               'text-muted-foreground hover:text-foreground transition-colors duration-150 focus-visible:outline focus-visible:outline-ring focus-visible:rounded-sm',
+               isMixed && localValue === null && 'italic opacity-50',
+             )}

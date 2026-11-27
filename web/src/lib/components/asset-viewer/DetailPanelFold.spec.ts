@@ -14,44 +14,44 @@ const EMPTY = ':not(:has(> :not(summary)))';
 // The store is read once, when the component module loads; each test uses its own fold id.
 describe('DetailPanelFold (FL-1811)', () => {
   it('starts closed, under a summary that names it', () => {
-    render(DetailPanelFold, { id: 'closed', label: 'File and camera', children: section });
-    expect(fold('closed').open).toBe(false);
-    expect(fold('closed').querySelector('summary')).toHaveTextContent('File and camera');
+    render(DetailPanelFold, { id: 'details', label: 'File and camera', children: section });
+    expect(fold('details').open).toBe(false);
+    expect(fold('details').querySelector('summary')).toHaveTextContent('File and camera');
     // The content stays mounted while closed, so the fold knows whether it has anything to show.
     expect(screen.getByTestId('inside')).toBeInTheDocument();
     expect(screen.getByTestId('inside')).not.toBeVisible();
   });
 
   it('remembers that it was left open, and that it was closed again', async () => {
-    const first = render(DetailPanelFold, { id: 'kept', label: 'Credits', children: section });
-    fold('kept').open = true;
-    await waitFor(() => expect(stored()).toMatchObject({ kept: true }));
+    const first = render(DetailPanelFold, { id: 'credits', label: 'Credits', children: section });
+    fold('credits').open = true;
+    await waitFor(() => expect(stored()).toMatchObject({ credits: true }));
     first.unmount();
 
-    const second = render(DetailPanelFold, { id: 'kept', label: 'Credits', children: section });
-    expect(fold('kept').open).toBe(true);
+    const second = render(DetailPanelFold, { id: 'credits', label: 'Credits', children: section });
+    expect(fold('credits').open).toBe(true);
     expect(screen.getByTestId('inside')).toBeVisible();
-    fold('kept').open = false;
-    await waitFor(() => expect(stored()).toMatchObject({ kept: false }));
+    fold('credits').open = false;
+    await waitFor(() => expect(stored()).toMatchObject({ credits: false }));
     second.unmount();
 
-    render(DetailPanelFold, { id: 'kept', label: 'Credits', children: section });
-    expect(fold('kept').open).toBe(false);
+    render(DetailPanelFold, { id: 'credits', label: 'Credits', children: section });
+    expect(fold('credits').open).toBe(false);
   });
 
   it('remembers each fold on its own', async () => {
-    render(DetailPanelFold, { id: 'one', label: 'One', children: section });
-    render(DetailPanelFold, { id: 'two', label: 'Two', children: section });
-    fold('one').open = true;
-    await waitFor(() => expect(stored()).toMatchObject({ one: true }));
-    expect(fold('two').open).toBe(false);
-    expect(stored().two).toBeUndefined();
+    render(DetailPanelFold, { id: 'sensitive', label: 'One', children: section });
+    render(DetailPanelFold, { id: 'scan', label: 'Two', children: section });
+    fold('sensitive').open = true;
+    await waitFor(() => expect(stored()).toMatchObject({ sensitive: true }));
+    expect(fold('scan').open).toBe(false);
+    expect(stored().scan).toBeUndefined();
   });
 
   it('has nothing but its summary when there is nothing to show, which is what hides it', () => {
-    render(DetailPanelFold, { id: 'empty', label: 'Scan', children: content('<!---->') });
-    render(DetailPanelFold, { id: 'full', label: 'Scan', children: section });
-    expect(fold('empty').matches(EMPTY)).toBe(true);
-    expect(fold('full').matches(EMPTY)).toBe(false);
+    render(DetailPanelFold, { id: 'text', label: 'Scan', children: content('<!---->') });
+    render(DetailPanelFold, { id: 'details', label: 'Scan', children: section });
+    expect(fold('text').matches(EMPTY)).toBe(true);
+    expect(fold('details').matches(EMPTY)).toBe(false);
   });
 });

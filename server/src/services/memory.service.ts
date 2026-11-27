@@ -679,14 +679,20 @@ export class MemoryService extends BaseService {
       const deathDate = subject.deathDate?.slice(0, 10);
       // FL-864: once the date of passing is reached, the birthday is a "Remembering {name}" memory with no age
       const passed = !!deathDate && deathDate <= date;
-      if (subject.birthDate && birthdayOn(subject.birthDate, target.year) === date) {
+      // FL-1814: a date known only to the month or the year has no day to remember
+      if (subject.birthDate && !subject.birthDatePrecision && birthdayOn(subject.birthDate, target.year) === date) {
         await this.createSubjectDayMemory(ownerId, target.year, date, subject, {
           age: passed ? null : birthdayAge(subject.birthDate, target.year),
           ...(passed && { inMemoriam: true }),
         });
       }
       // FL-864: and so is each anniversary of the passing, from the year after
-      if (deathDate && Number(deathDate.slice(0, 4)) < target.year && birthdayOn(deathDate, target.year) === date) {
+      if (
+        deathDate &&
+        !subject.deathDatePrecision &&
+        Number(deathDate.slice(0, 4)) < target.year &&
+        birthdayOn(deathDate, target.year) === date
+      ) {
         await this.createSubjectDayMemory(ownerId, target.year, date, subject, {
           age: null,
           inMemoriam: true,

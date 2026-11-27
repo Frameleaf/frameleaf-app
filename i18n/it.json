@@ -22592,6 +22592,7 @@
     "weekday": "Il",
     "weekly": "Ogni settimana"
   },
+  "frameleaf_workflows_load_failed": "Impossibile caricare i tuoi flussi di lavoro.",
   "frameleaf_workruns_ask_help": "Solo per le righe impostate su Chiedimelo ogni volta. Puoi comunque cambiare prima che il lavoro inizi.",
   "frameleaf_workruns_ask_home": "Un computer di casa",
   "frameleaf_workruns_ask_label": "Luogo suggerito quando ti viene chiesto",
