@@ -1,7 +1,7 @@
 import { BadRequestException, ConflictException } from '@nestjs/common';
 import { Kysely, sql } from 'kysely';
 import { AlbumSourceKind, AlbumSourceOutcome } from 'src/dtos/album-source.dto.js';
-import { AlbumKind, AlbumUserRole, AssetLockReason, SharedLinkType } from 'src/enum.js';
+import { AlbumKind, AlbumUserRole, AssetLockReason, DatabaseLock, SharedLinkType } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AlbumChangeRunRepository } from 'src/repositories/album-change-run.repository.js';
 import { AlbumMergeRepository } from 'src/repositories/album-merge.repository.js';
@@ -12,6 +12,7 @@ import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { ClassificationRepository } from 'src/repositories/classification.repository.js';
 import { EventRepository } from 'src/repositories/event.repository.js';
 import { JobRepository } from 'src/repositories/job.repository.js';
+import { LibraryRepository } from 'src/repositories/library.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { PartnerOriginRepository } from 'src/repositories/partner-origin.repository.js';
 import { PartnerRepository } from 'src/repositories/partner.repository.js';
@@ -586,8 +587,26 @@ describe(AlbumMergeService.name, () => {
           .where('libraryId', '=', library.id)
           .executeTakeFirstOrThrow();
 
+      // a folder-album sync running at the time (it holds the lock): the merge is refused, nothing moves
+      await ctx.database.connection().execute(async (connection) => {
+        await sql`SELECT pg_advisory_lock(${DatabaseLock.LibraryFolderAlbums})`.execute(connection);
+        try {
+          await expect(sut.merge(auth, winner.album.id, { otherId: loser.album.id })).rejects.toBeInstanceOf(
+            ConflictException,
+          );
+        } finally {
+          await sql`SELECT pg_advisory_unlock(${DatabaseLock.LibraryFolderAlbums})`.execute(connection);
+        }
+      });
+      await expect(link()).resolves.toEqual({ albumId: loser.album.id, isUserEdited: false });
+
       await sut.merge(auth, winner.album.id, { otherId: loser.album.id });
       await expect(link()).resolves.toEqual({ albumId: winner.album.id, isUserEdited: true });
+      // changing the library's rules to match later leaves the merged folder kept
+      await new LibraryRepository(ctx.database).setFolderAlbumsKept(library.id, false);
+      await expect(
+        ctx.database.selectFrom('library_folder_album').select('isKept').where('libraryId', '=', library.id).execute(),
+      ).resolves.toEqual([{ isKept: true }]);
 
       await runs.undoLatest(auth);
       await expect(link()).resolves.toEqual({ albumId: loser.album.id, isUserEdited: false });

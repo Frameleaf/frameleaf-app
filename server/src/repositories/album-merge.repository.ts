@@ -1,7 +1,7 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
 import { Kysely, sql } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
-import { AlbumKind, AlbumUserRole } from 'src/enum.js';
+import { AlbumKind, AlbumUserRole, DatabaseLock } from 'src/enum.js';
 import {
   ALBUM_CHANGE_SOFT_DELETED,
   type AlbumChangeInput,
@@ -216,6 +216,7 @@ export class AlbumMergeRepository {
     loserId: string,
     winnerId: string,
   ): Promise<{ id: string; folderPath: string; isUserEdited: boolean; isKept: boolean }[]> {
+    await this.holdFolderAlbumSync(loserId);
     const { rows } = await sql<{ id: string; folderPath: string; isUserEdited: boolean; isKept: boolean }>`
       WITH old AS (
         SELECT id, "isUserEdited", "isKept" FROM library_folder_album WHERE "albumId" = ${loserId}::uuid FOR UPDATE
@@ -225,6 +226,26 @@ export class AlbumMergeRepository {
       RETURNING link.id, link."folderPath", old."isUserEdited", old."isKept"
     `.execute(this.db);
     return rows;
+  }
+
+  /**
+   * FL-1837: a folder-album sync reads the links once and decides from them, so no link moves while one runs. The lock
+   * is held to the end of this transaction; with a sync running the merge is refused rather than kept waiting (it
+   * holds album rows the sync may need).
+   */
+  private async holdFolderAlbumSync(albumId: string): Promise<void> {
+    const { rows } = await sql<{ linked: boolean }>`
+      SELECT EXISTS (SELECT 1 FROM library_folder_album WHERE "albumId" = ${albumId}::uuid) AS linked
+    `.execute(this.db);
+    if (!rows[0]?.linked) {
+      return;
+    }
+    const { rows: held } = await sql<{ held: boolean }>`
+      SELECT pg_try_advisory_xact_lock(${DatabaseLock.LibraryFolderAlbums}) AS held
+    `.execute(this.db);
+    if (!held[0]?.held) {
+      throw new ConflictException('Albums from folders are being updated. Try again in a minute.');
+    }
   }
 
   /** What the person chose albums for: a loser that was chosen becomes the winner, so nothing drops out. */
@@ -401,6 +422,9 @@ export class AlbumMergeRepository {
   }
 
   async reverseFolderAlbums(changes: AlbumChangeRow[]): Promise<AlbumChangeReversal> {
+    if (changes.length > 0) {
+      await this.holdFolderAlbumSync(changes[0].albumId);
+    }
     let reversed = 0;
     const skipped: string[] = [];
     for (const change of changes) {

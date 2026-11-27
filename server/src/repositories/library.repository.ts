@@ -20,6 +20,9 @@ import { folderOf, isFolderPhoto } from 'src/utils/folder-albums.js';
 import { LibraryScanStopReason, libraryPathsFingerprint } from 'src/utils/library-scan.js';
 import { isNotLocked } from 'src/utils/locked.js';
 
+/** FL-1837: `AlbumChangeKind.FolderAlbumMoved` (album-merge.repository.ts), written out to keep the modules apart. */
+const FOLDER_ALBUM_MOVED = 'album.folder_album_moved';
+
 /**
  * What removing a library would take with it (FL-78). Counts only: never a path, a name or an id of
  * anything inside it. Locked media is left out of every count an administrator sees (FL-34); the
@@ -516,14 +519,20 @@ export class LibraryRepository {
     return { albums: Number(rows[0]?.albums ?? 0), empty: Number(rows[0]?.empty ?? 0) };
   }
 
-  /** FL-1837: albums made so far stay as they are (`kept`) or follow the library's rules again. */
+  /**
+   * FL-1837: albums made so far stay as they are (`kept`) or follow the library's rules again. A folder whose album was
+   * merged into another (and not undone) stays kept either way: the merged album is the owner's.
+   */
   @GenerateSql({ params: [DummyValue.UUID, true] })
   async setFolderAlbumsKept(libraryId: string, kept: boolean): Promise<void> {
-    await this.db
-      .updateTable('library_folder_album')
-      .set({ isKept: kept })
-      .where('libraryId', '=', asUuid(libraryId))
-      .execute();
+    await sql`
+      UPDATE library_folder_album link SET "isKept" = ${kept}
+      WHERE link."libraryId" = ${asUuid(libraryId)}
+        AND (${kept} OR NOT EXISTS (
+          SELECT 1 FROM album_change change
+          WHERE change.kind = ${FOLDER_ALBUM_MOVED} AND change."albumId" = link."albumId"
+            AND change.after->>'id' = link.id::text
+        ))`.execute(this.db);
   }
 
   /** The library's folder albums, with the album's name, place and kind as they are now. */

@@ -479,11 +479,24 @@ WHERE
   link."libraryId" = $1::uuid
 
 -- LibraryRepository.setFolderAlbumsKept
-update "library_folder_album"
-set
+UPDATE library_folder_album link
+SET
   "isKept" = $1
-where
-  "libraryId" = $2::uuid
+WHERE
+  link."libraryId" = $2::uuid
+  AND (
+    $3
+    OR NOT EXISTS (
+      SELECT
+        1
+      FROM
+        album_change change
+      WHERE
+        change.kind = $4
+        AND change."albumId" = link."albumId"
+        AND change.after ->> 'id' = link.id::text
+    )
+  )
 
 -- LibraryRepository.getFolderAlbums
 select
