@@ -1,0 +1,2441 @@
+diff --git a/src/app/route-error.tsx b/src/app/route-error.tsx
+index ef0af67..8054519 100644
+--- a/src/app/route-error.tsx
++++ b/src/app/route-error.tsx
+@@ -21,7 +21,6 @@ import {
+   RefreshCw,
+ } from 'lucide-react'
+ 
+-import { FreeCutLogo } from '@/components/brand/freecut-logo'
+ import { Button } from '@/components/ui/button'
+ import { createLogger } from '@/shared/logging/logger'
+ import {
+@@ -117,8 +116,6 @@ export function RouteErrorScreen({ error, reset }: ErrorComponentProps) {
+       />
+ 
+       <div className="w-full max-w-md">
+-        <FreeCutLogo variant="full" size="md" className="mb-6 justify-center" />
+-
+         <main className="rounded-2xl border border-border/80 bg-card/70 px-6 py-8 text-center shadow-2xl shadow-black/20 backdrop-blur-sm sm:px-8">
+           <div
+             className={
+diff --git a/src/features/editor/components/toolbar.tsx b/src/features/editor/components/toolbar.tsx
+index 67e4c8f..8e21aad 100644
+--- a/src/features/editor/components/toolbar.tsx
++++ b/src/features/editor/components/toolbar.tsx
+@@ -3,7 +3,6 @@ import { useNavigate } from '@tanstack/react-router'
+ import { useTranslation } from 'react-i18next'
+ import {
+   ArrowLeft,
+-  BookOpen,
+   Bug,
+   ChevronDown,
+   Download,
+@@ -12,7 +11,6 @@ import {
+   ListVideo,
+   Save,
+   Settings,
+-  Sparkles,
+   Video,
+ } from 'lucide-react'
+ import { Button } from '@/components/ui/button'
+@@ -30,11 +28,8 @@ import { SettingsDialog } from './settings-dialog'
+ import { ShortcutsDialog } from './shortcuts-dialog'
+ import { UnsavedChangesDialog } from './unsaved-changes-dialog'
+ import { WorkspaceSwitcher } from './workspace-switcher'
+-import { WhatsNewDialog } from './whats-new-dialog'
+-import { hasUnseenChangelog } from './whats-new-seen'
+ import { EDITOR_LAYOUT_CSS_VALUES } from '@/config/editor-layout'
+ import { cn } from '@/shared/ui/cn'
+-import { LanguageSwitcher } from '@/shared/ui/language-switcher'
+ import { useDebugStore } from '@/features/editor/stores/debug-store'
+ import { useItemsStore, useTimelineStore } from '@/features/editor/deps/timeline-store'
+ import { useMediaLibraryStore } from '@/features/editor/deps/media-library'
+@@ -86,8 +81,6 @@ export const Toolbar = memo(function Toolbar({
+   const [showUnsavedDialog, setShowUnsavedDialog] = useState(false)
+   const [showShortcutsDialog, setShowShortcutsDialog] = useState(false)
+   const [showSettingsDialog, setShowSettingsDialog] = useState(false)
+-  const [showWhatsNewDialog, setShowWhatsNewDialog] = useState(false)
+-  const [hasUnseenWhatsNew, setHasUnseenWhatsNew] = useState(false)
+   const [isSaveAnimating, setIsSaveAnimating] = useState(false)
+   const [saveAnimationKey, setSaveAnimationKey] = useState(0)
+   const saveAnimationTimeoutRef = useRef<number | undefined>(undefined)
+@@ -105,10 +98,6 @@ export const Toolbar = memo(function Toolbar({
+     }
+   }, [brokenMediaIds, itemCount, maxItemEndFrame, mediaDependencyIds, project.fps])
+ 
+-  useEffect(() => {
+-    setHasUnseenWhatsNew(hasUnseenChangelog())
+-  }, [])
+-
+   useEffect(() => {
+     return () => {
+       if (saveAnimationTimeoutRef.current !== undefined) {
+@@ -117,11 +106,6 @@ export const Toolbar = memo(function Toolbar({
+     }
+   }, [])
+ 
+-  const openWhatsNew = () => {
+-    setHasUnseenWhatsNew(false)
+-    setShowWhatsNewDialog(true)
+-  }
+-
+   const handleBackClick = () => {
+     if (useTimelineStore.getState().isDirty) {
+       setShowUnsavedDialog(true)
+@@ -216,43 +200,12 @@ export const Toolbar = memo(function Toolbar({
+ 
+       <SettingsDialog open={showSettingsDialog} onOpenChange={setShowSettingsDialog} />
+ 
+-      <WhatsNewDialog open={showWhatsNewDialog} onOpenChange={setShowWhatsNewDialog} />
+-
+       <div className="flex items-center gap-1.5">
+         {import.meta.env.DEV && import.meta.env.VITE_SHOW_DEBUG_PANEL !== 'false' && (
+           <DebugPopover projectId={projectId} />
+         )}
+ 
+         {/* Utility */}
+-        <Button variant="outline" size="icon" className="h-7 w-7" asChild>
+-          <a
+-            href="/docs"
+-            target="_blank"
+-            rel="noopener noreferrer"
+-            data-tooltip="User Guide"
+-            data-tooltip-side="bottom"
+-            aria-label="User Guide"
+-          >
+-            <BookOpen className="h-4 w-4" />
+-          </a>
+-        </Button>
+-        <Button
+-          variant="outline"
+-          size="icon"
+-          className="h-7 w-7 relative"
+-          onClick={openWhatsNew}
+-          data-tooltip={t('toolbar.whatsNew')}
+-          data-tooltip-side="bottom"
+-          aria-label={t('toolbar.whatsNewAria')}
+-        >
+-          <Sparkles className="h-4 w-4" />
+-          {hasUnseenWhatsNew && (
+-            <span
+-              className="absolute top-1 right-1 h-1.5 w-1.5 rounded-full bg-primary"
+-              aria-hidden="true"
+-            />
+-          )}
+-        </Button>
+         <Button
+           variant="outline"
+           size="icon"
+@@ -275,7 +228,6 @@ export const Toolbar = memo(function Toolbar({
+         >
+           <Keyboard className="h-4 w-4" />
+         </Button>
+-        <LanguageSwitcher size="sm" align="end" side="bottom" />
+ 
+         <Separator orientation="vertical" className="h-5" />
+ 
+diff --git a/src/features/media-library/components/media-card.test.tsx b/src/features/media-library/components/media-card.test.tsx
+index 69f027d..4ab1f56 100644
+--- a/src/features/media-library/components/media-card.test.tsx
++++ b/src/features/media-library/components/media-card.test.tsx
+@@ -591,7 +591,7 @@ describe('MediaCard', () => {
+     expect(mediaStoreState.openMissingMediaDialog).toHaveBeenCalledTimes(1)
+     expect(mediaStoreState.showNotification).toHaveBeenCalledWith({
+       type: 'error',
+-      message: 'FreeCut needs permission to read "movie.mkv" before extracting subtitles.',
++      message: 'Studio needs permission to read "movie.mkv" before extracting subtitles.',
+     })
+   })
+ 
+@@ -619,7 +619,7 @@ describe('MediaCard', () => {
+       expect(mediaStoreState.showNotification).toHaveBeenCalledWith({
+         type: 'error',
+         message:
+-          'FreeCut could not read "movie.mkv" right now. Close any app using it and try again.',
++          'Studio could not read "movie.mkv" right now. Close any app using it and try again.',
+       })
+     })
+     expect(embeddedSubtitlePickerStoreMocks.open).not.toHaveBeenCalled()
+diff --git a/src/i18n/locales/de.json b/src/i18n/locales/de.json
+index 2a9197a..a2e16ed 100644
+--- a/src/i18n/locales/de.json
++++ b/src/i18n/locales/de.json
+@@ -11,8 +11,8 @@
+     "reloadWithoutSaving": "Ohne Speichern neu laden",
+     "dockPanel": "Panel andocken",
+     "installPrompt": {
+-      "label": "FreeCut installieren",
+-      "title": "FreeCut installieren",
++      "label": "Studio installieren",
++      "title": "Studio installieren",
+       "description": "Starte es vom Desktop oder Startbildschirm.",
+       "install": "Installieren",
+       "notNow": "Jetzt nicht",
+diff --git a/src/i18n/locales/en.json b/src/i18n/locales/en.json
+index 92eeb1b..6ab7b25 100644
+--- a/src/i18n/locales/en.json
++++ b/src/i18n/locales/en.json
+@@ -12,8 +12,8 @@
+     "reloadWithoutSaving": "Reload without saving",
+     "dockPanel": "Dock panel",
+     "installPrompt": {
+-      "label": "Install FreeCut",
+-      "title": "Install FreeCut",
++      "label": "Install Studio",
++      "title": "Install Studio",
+       "description": "Launch it from your desktop or home screen.",
+       "install": "Install",
+       "notNow": "Not now",
+diff --git a/src/i18n/locales/es.json b/src/i18n/locales/es.json
+index ec56dcb..2fd4acb 100644
+--- a/src/i18n/locales/es.json
++++ b/src/i18n/locales/es.json
+@@ -11,8 +11,8 @@
+     "reloadWithoutSaving": "Recargar sin guardar",
+     "dockPanel": "Acoplar panel",
+     "installPrompt": {
+-      "label": "Instalar FreeCut",
+-      "title": "Instalar FreeCut",
++      "label": "Instalar Studio",
++      "title": "Instalar Studio",
+       "description": "Ábrelo desde tu escritorio o pantalla de inicio.",
+       "install": "Instalar",
+       "notNow": "Ahora no",
+diff --git a/src/i18n/locales/fr.json b/src/i18n/locales/fr.json
+index 25560f9..1448b32 100644
+--- a/src/i18n/locales/fr.json
++++ b/src/i18n/locales/fr.json
+@@ -11,8 +11,8 @@
+     "reloadWithoutSaving": "Recharger sans enregistrer",
+     "dockPanel": "Ancrer le panneau",
+     "installPrompt": {
+-      "label": "Installer FreeCut",
+-      "title": "Installer FreeCut",
++      "label": "Installer Studio",
++      "title": "Installer Studio",
+       "description": "Lancez-le depuis votre bureau ou écran d’accueil.",
+       "install": "Installer",
+       "notNow": "Pas maintenant",
+diff --git a/src/i18n/locales/ja.json b/src/i18n/locales/ja.json
+index 35fdae6..246dc7d 100644
+--- a/src/i18n/locales/ja.json
++++ b/src/i18n/locales/ja.json
+@@ -11,8 +11,8 @@
+     "reloadWithoutSaving": "保存せずに再読み込み",
+     "dockPanel": "パネルをドック",
+     "installPrompt": {
+-      "label": "FreeCut をインストール",
+-      "title": "FreeCut をインストール",
++      "label": "Studio をインストール",
++      "title": "Studio をインストール",
+       "description": "デスクトップまたはホーム画面から起動できます。",
+       "install": "インストール",
+       "notNow": "今はしない",
+diff --git a/src/i18n/locales/ko.json b/src/i18n/locales/ko.json
+index f205fb8..0fdc56e 100644
+--- a/src/i18n/locales/ko.json
++++ b/src/i18n/locales/ko.json
+@@ -11,8 +11,8 @@
+     "reloadWithoutSaving": "저장하지 않고 다시 로드",
+     "dockPanel": "패널 도킹",
+     "installPrompt": {
+-      "label": "FreeCut 설치",
+-      "title": "FreeCut 설치",
++      "label": "Studio 설치",
++      "title": "Studio 설치",
+       "description": "데스크톱이나 홈 화면에서 실행하세요.",
+       "install": "설치",
+       "notNow": "나중에",
+diff --git a/src/i18n/locales/partials/de/changelog.json b/src/i18n/locales/partials/de/changelog.json
+index 366bb55..20b37c1 100644
+--- a/src/i18n/locales/partials/de/changelog.json
++++ b/src/i18n/locales/partials/de/changelog.json
+@@ -1,16 +1,16 @@
+ {
+   "changelog": {
+-    "homeAria": "FreeCut-Startseite",
++    "homeAria": "Studio-Startseite",
+     "backToHome": "Zurück zur Startseite",
+     "releaseNotes": "Versionshinweise",
+-    "title": "Neu in FreeCut",
++    "title": "Neu in Studio",
+     "description": "Ein wöchentlicher Überblick über neue Bearbeitungswerkzeuge, Verbesserungen am Arbeitsablauf und Fehlerbehebungen. Die neueste Version ist geöffnet; klappe eine frühere Woche auf, um die vollständige Änderungsliste zu sehen.",
+     "latest": "Neueste",
+     "changeCount_one": "{{count}} Änderung",
+     "changeCount_other": "{{count}} Änderungen",
+     "initialRelease": "Erstveröffentlichung",
+     "ctaTitle": "Bereit, etwas zu erstellen?",
+-    "ctaDescription": "Öffne FreeCut und setze die neuesten Werkzeuge ein.",
+-    "openFreeCut": "FreeCut öffnen"
++    "ctaDescription": "Öffne Studio und setze die neuesten Werkzeuge ein.",
++    "openFreeCut": "Studio öffnen"
+   }
+ }
+diff --git a/src/i18n/locales/partials/de/editor.json b/src/i18n/locales/partials/de/editor.json
+index 25241c6..21101d4 100644
+--- a/src/i18n/locales/partials/de/editor.json
++++ b/src/i18n/locales/partials/de/editor.json
+@@ -281,7 +281,7 @@
+     "projectUpgradeDialog": {
+       "title": "Projekt vor dem Öffnen aktualisieren",
+       "versionMismatch": "<strong>{{projectName}}</strong> wurde mit dem Projektschema v{{storedSchemaVersion}} gespeichert, aber dieser Build erwartet v{{currentSchemaVersion}}.",
+-      "explanation": "FreeCut kann es vor dem Laden des Editors aktualisieren. Zuerst wird eine Sicherung des Zustands vor der Aktualisierung erstellt, damit du die alten Daten wiederherstellen kannst, falls etwas nicht stimmt.",
++      "explanation": "Studio kann es vor dem Laden des Editors aktualisieren. Zuerst wird eine Sicherung des Zustands vor der Aktualisierung erstellt, damit du die alten Daten wiederherstellen kannst, falls etwas nicht stimmt.",
+       "backupCopy": "Sicherungskopie: <strong>{{backupName}}</strong>",
+       "creatingBackup": "Sicherung wird erstellt...",
+       "confirm": "Sicherung erstellen & aktualisieren"
+@@ -663,7 +663,7 @@
+       "clip": "Clip",
+       "size": "Größe",
+       "frameRate": "Bildrate",
+-      "fpsRoundedHint": "FreeCut passt importiertes Video an die nächstgelegene unterstützte Projekt-Bildrate an. Dieser Clip würde {{fps}} fps verwenden.",
++      "fpsRoundedHint": "Studio passt importiertes Video an die nächstgelegene unterstützte Projekt-Bildrate an. Dieser Clip würde {{fps}} fps verwenden.",
+       "keepCurrent": "Aktuelle behalten",
+       "fpsOnly": "Nur FPS",
+       "sizeOnly": "Nur Größe",
+@@ -672,14 +672,14 @@
+       "matchSize": "Größe anpassen"
+     },
+     "editor": {
+-      "appLabel": "FreeCut Videoeditor",
++      "appLabel": "Studio Videoeditor",
+       "upgrading": "Projekt wird aktualisiert…",
+       "backupCreated": "Sicherung vor der Aktualisierung erstellt",
+       "backupFailed": "Sicherung vor der Aktualisierung konnte nicht erstellt werden",
+       "tryAgain": "Bitte erneut versuchen.",
+       "projectSaved": "Projekt gespeichert",
+       "projectSaveFailed": "Projekt konnte nicht gespeichert werden",
+-      "projectBundle": "FreeCut-Projektpaket"
++      "projectBundle": "Studio-Projektpaket"
+     },
+     "audioMeters": {
+       "meters": "Pegelanzeigen",
+@@ -927,7 +927,7 @@
+         "savedToLibrary": "\"{{fileName}}\" wurde in der Medienbibliothek gespeichert.",
+         "savedAndAdded": "\"{{fileName}}\" wurde gespeichert und zur Timeline hinzugefügt."
+       },
+-      "defaultTtsPrompt": "Welcome to freecut. This voice was generated locally in the browser.",
++      "defaultTtsPrompt": "Welcome to Studio. This voice was generated locally in the browser.",
+       "musicPresets": {
+         "lofiChillLabel": "Lo-fi Chill",
+         "lofiChillPrompt": "Warm lo-fi beat with dusty drums, mellow bass, and a dreamy synth lead",
+diff --git a/src/i18n/locales/partials/de/export.json b/src/i18n/locales/partials/de/export.json
+index 4c69c85..d53090f 100644
+--- a/src/i18n/locales/partials/de/export.json
++++ b/src/i18n/locales/partials/de/export.json
+@@ -132,7 +132,7 @@
+         },
+         "video-codec-fallback": {
+           "title": "Codec-Fallback wird verwendet",
+-          "detail": "Der ausgewählte Codec ist hier nicht verfügbar. FreeCut exportiert stattdessen {{codec}} in {{container}}.",
++          "detail": "Der ausgewählte Codec ist hier nicht verfügbar. Studio exportiert stattdessen {{codec}} in {{container}}.",
+           "fix": "Behalte diesen Fallback bei oder wähle manuell einen anderen unterstützten Codec."
+         },
+         "video-codec-supported": {
+@@ -155,7 +155,7 @@
+         },
+         "worker-animated-image-fallback": {
+           "title": "Animierte Bilder benötigen Export im Hauptthread",
+-          "detail": "GIF-/WebP-Bildelemente können im Export-Worker noch nicht gerendert werden. FreeCut wechselt automatisch zum Fallback.",
++          "detail": "GIF-/WebP-Bildelemente können im Export-Worker noch nicht gerendert werden. Studio wechselt automatisch zum Fallback.",
+           "fix": "Ersetze animierte Bilder vor dem Export durch Videoclips, um einen schnelleren Worker-Export zu ermöglichen."
+         },
+         "worker-audio-context-fallback": {
+diff --git a/src/i18n/locales/partials/de/media.json b/src/i18n/locales/partials/de/media.json
+index deb34ca..6d6715a 100644
+--- a/src/i18n/locales/partials/de/media.json
++++ b/src/i18n/locales/partials/de/media.json
+@@ -27,10 +27,10 @@
+       "stopAudio": "Audio stoppen",
+       "subtitlesCachedAll": "Untertitel zwischengespeichert",
+       "subtitlesCachedPartial": "Untertitel teilweise zwischengespeichert",
+-      "subtitlesCannotRead": "FreeCut kann „{{name}}\" gerade nicht lesen. Schließe jede App, die sie verwendet, und versuche es erneut.",
++      "subtitlesCannotRead": "Studio kann „{{name}}\" gerade nicht lesen. Schließe jede App, die sie verwendet, und versuche es erneut.",
+       "subtitlesExtractFailed": "Untertitel-Extraktion fehlgeschlagen",
+-      "subtitlesFileMissing": "FreeCut findet „{{name}}\" nicht mehr.",
+-      "subtitlesNeedPermission": "FreeCut benötigt Zugriff auf „{{name}}\", bevor Untertitel extrahiert werden können.",
++      "subtitlesFileMissing": "Studio findet „{{name}}\" nicht mehr.",
++      "subtitlesNeedPermission": "Studio benötigt Zugriff auf „{{name}}\", bevor Untertitel extrahiert werden können.",
+       "subtitlesScanFailed": "Untertitelsuche fehlgeschlagen",
+       "transcribeFailed": "Transkription fehlgeschlagen",
+       "transcribing": "Wird transkribiert",
+@@ -228,9 +228,9 @@
+     },
+     "missingMedia": {
+       "title": "Fehlende Medien",
+-      "description": "FreeCut kann auf {{count}} Mediendateien nicht zugreifen. Suche die Dateien oder arbeite offline weiter.",
+-      "description_one": "FreeCut kann auf {{count}} Mediendatei nicht zugreifen. Suche die Datei oder arbeite offline weiter.",
+-      "description_other": "FreeCut kann auf {{count}} Mediendateien nicht zugreifen. Suche die Dateien oder arbeite offline weiter.",
++      "description": "Studio kann auf {{count}} Mediendateien nicht zugreifen. Suche die Dateien oder arbeite offline weiter.",
++      "description_one": "Studio kann auf {{count}} Mediendatei nicht zugreifen. Suche die Datei oder arbeite offline weiter.",
++      "description_other": "Studio kann auf {{count}} Mediendateien nicht zugreifen. Suche die Dateien oder arbeite offline weiter.",
+       "needPermission": "{{count}} benötigen Berechtigung",
+       "needPermission_one": "{{count}} benötigt Berechtigung",
+       "needPermission_other": "{{count}} benötigen Berechtigung",
+diff --git a/src/i18n/locales/partials/de/projects.json b/src/i18n/locales/partials/de/projects.json
+index 5e76a71..855bb18 100644
+--- a/src/i18n/locales/partials/de/projects.json
++++ b/src/i18n/locales/partials/de/projects.json
+@@ -112,7 +112,7 @@
+       "selectedCount_other": "{{count}} ausgewählt",
+       "deleteN_one": "{{count}} löschen",
+       "deleteN_other": "{{count}} löschen",
+-      "welcomeTitle": "Willkommen bei FreeCut",
++      "welcomeTitle": "Willkommen bei Studio",
+       "welcomeDescription": "Beginne, indem du dein erstes Videoprojekt erstellst. Wähle deine Auflösung, Bildrate und leg los mit dem Bearbeiten!",
+       "noResultsTitle": "Keine Projekte gefunden",
+       "noResultsDescription": "Wir konnten keine Projekte finden, die deinen Suchkriterien entsprechen. Versuche, deine Filter oder Suchbegriffe anzupassen.",
+@@ -179,9 +179,9 @@
+     },
+     "workspaceGate": {
+       "unsupportedBrowser": "Nicht unterstützter Browser",
+-      "unsupportedBrowserDescription": "FreeCut benötigt einen Chromium-basierten Browser (Chrome, Edge, Brave, Arc) für seinen Arbeitsbereich-Ordnerspeicher. Firefox und Safari unterstützen die File System Access API noch nicht.",
++      "unsupportedBrowserDescription": "Studio benötigt einen Chromium-basierten Browser (Chrome, Edge, Brave, Arc) für seinen Arbeitsbereich-Ordnerspeicher. Firefox und Safari unterstützen die File System Access API noch nicht.",
+       "pickTitle": "Wähle deinen Arbeitsbereich-Ordner",
+-      "pickDescription": "FreeCut speichert alle deine Projekte, Medien und Caches als einfache Dateien in einem Ordner, den du kontrollierst. Wähle einen beliebigen Ordner auf der Festplatte – deine Projekte werden dort gespeichert.",
++      "pickDescription": "Studio speichert alle deine Projekte, Medien und Caches als einfache Dateien in einem Ordner, den du kontrollierst. Wähle einen beliebigen Ordner auf der Festplatte – deine Projekte werden dort gespeichert.",
+       "chooseFolder": "Ordner auswählen",
+       "workspaceGuide": "Workspace-Anleitung",
+       "pickTip": "Tipp: Wähle einen Ordner in Dropbox, iCloud oder Google Drive, um Projekte über Geräte hinweg zu synchronisieren. Du kannst ihn später verschieben.",
+@@ -190,7 +190,7 @@
+       "chooseDifferentFolder": "Anderen Ordner auswählen",
+       "reconnect": "Erneut verbinden",
+       "folderPermissionDenied": "Die Berechtigung wurde nicht erteilt. Wähle einen Ordner und erlaube Lese-/Schreibzugriff, um fortzufahren.",
+-      "folderPickFailed": "FreeCut konnte diesen Ordner nicht öffnen. Versuche es mit einem normalen bearbeitbaren Ordner und erlaube Lese-/Schreibzugriff.",
++      "folderPickFailed": "Studio konnte diesen Ordner nicht öffnen. Versuche es mit einem normalen bearbeitbaren Ordner und erlaube Lese-/Schreibzugriff.",
+       "reconnectPermissionDenied": "Berechtigung verweigert. Verbinde den Arbeitsbereich erneut oder wähle einen anderen Ordner."
+     },
+     "workspaceIndicator": {
+@@ -264,15 +264,15 @@
+       "showcaseSubheading": "Eine komplette Videobearbeitungssuite, direkt in deinem Browser.",
+       "screenshot": "Screenshot",
+       "seeItInAction": "In Aktion sehen",
+-      "seeItInActionSubheading": "Sieh dir eine kurze Demo der Bearbeitungsfunktionen von FreeCut an.",
+-      "demoPreviewAlt": "FreeCut-Demovorschau",
++      "seeItInActionSubheading": "Sieh dir eine kurze Demo der Bearbeitungsfunktionen von Studio an.",
++      "demoPreviewAlt": "Studio-Demovorschau",
+       "watchDemoOnYouTube": "Demo auf YouTube ansehen",
+       "faqHeading": "Häufig gestellte Fragen",
+-      "faqSubheading": "Alles, was du über FreeCut wissen musst.",
++      "faqSubheading": "Alles, was du über Studio wissen musst.",
+       "ctaHeading": "Bereit, mit dem Bearbeiten zu beginnen?",
+       "ctaSubheading": "Leg los und erstelle dein erstes Projekt in Sekunden.",
+       "startEditing": "Mit dem Bearbeiten beginnen",
+-      "footer": "MIT-Lizenz © {{year}} FreeCut",
++      "footer": "MIT-Lizenz © {{year}} Studio",
+       "showcase": {
+         "timeline": {
+           "title": "Timeline-Bearbeitung",
+@@ -309,12 +309,12 @@
+       },
+       "faq": {
+         "free": {
+-          "question": "Ist FreeCut wirklich kostenlos?",
+-          "answer": "Ja, FreeCut ist vollständig kostenlos und Open Source unter der MIT-Lizenz. Es gibt keine versteckten Gebühren, Abonnements oder Wasserzeichen."
++          "question": "Ist Studio wirklich kostenlos?",
++          "answer": "Ja, Studio ist vollständig kostenlos und Open Source unter der MIT-Lizenz. Es gibt keine versteckten Gebühren, Abonnements oder Wasserzeichen."
+         },
+         "install": {
+           "question": "Muss ich etwas installieren?",
+-          "answer": "Keine Installation erforderlich. FreeCut läuft vollständig in deinem Browser. Öffne einfach die Website und beginne mit dem Bearbeiten."
++          "answer": "Keine Installation erforderlich. Studio läuft vollständig in deinem Browser. Öffne einfach die Website und beginne mit dem Bearbeiten."
+         },
+         "storage": {
+           "question": "Wo werden meine Videos gespeichert?",
+@@ -322,7 +322,7 @@
+         },
+         "browsers": {
+           "question": "Welche Browser werden unterstützt?",
+-          "answerP1": "FreeCut funktioniert derzeit am besten in Chrome oder Edge 113+. Es stützt sich auf moderne Browser-APIs wie WebGPU, WebCodecs, OPFS und File System Access, daher ist der vollständige Workflow derzeit Chromium-orientiert.",
++          "answerP1": "Studio funktioniert derzeit am besten in Chrome oder Edge 113+. Es stützt sich auf moderne Browser-APIs wie WebGPU, WebCodecs, OPFS und File System Access, daher ist der vollständige Workflow derzeit Chromium-orientiert.",
+           "answerP2": "<strong>Brave-Nutzer:</strong> Die File System Access API ist standardmäßig deaktiviert. Um sie zu aktivieren, gehe zu <code>brave://flags/#file-system-access-api</code>, stelle sie auf <strong>Enabled</strong> und starte den Browser neu."
+         },
+         "exportFormats": {
+@@ -557,7 +557,7 @@
+     },
+     "routeError": {
+       "title": "Etwas ist schiefgelaufen",
+-      "description": "FreeCut konnte diese Seite nicht vollständig laden.",
++      "description": "Studio konnte diese Seite nicht vollständig laden.",
+       "projectNotFoundTitle": "Dieses Projekt wurde nicht gefunden",
+       "projectNotFoundDescription": "Es wurde möglicherweise verschoben, gelöscht oder über einen alten Link geöffnet. Deine anderen Projekte sind weiterhin in deinem Arbeitsbereich verfügbar.",
+       "backToProjects": "Zurück zu den Projekten",
+@@ -565,9 +565,9 @@
+       "copyDetails": "Fehlerdetails kopieren",
+       "detailsCopied": "Fehlerdetails kopiert",
+       "copyFailed": "Details konnten nicht kopiert werden",
+-      "causePermission": "FreeCut hat keine Berechtigung mehr für deinen Arbeitsordner. Verbinde ihn erneut oder wähle einen anderen Ordner.",
++      "causePermission": "Studio hat keine Berechtigung mehr für deinen Arbeitsordner. Verbinde ihn erneut oder wähle einen anderen Ordner.",
+       "causeMissing": "Dein Arbeitsordner wurde nicht gefunden. Möglicherweise wurde er verschoben, umbenannt oder gelöscht.",
+-      "causeUnsupported": "Dein Arbeitsordner liegt auf einem Laufwerk, das nicht alles unterstützt, was FreeCut benötigt. Cloud-synchronisierte Ordner und Netzwerkordner verhalten sich häufig so. Ein Ordner auf einer lokalen Festplatte behebt das meist."
++      "causeUnsupported": "Dein Arbeitsordner liegt auf einem Laufwerk, das nicht alles unterstützt, was Studio benötigt. Cloud-synchronisierte Ordner und Netzwerkordner verhalten sich häufig so. Ein Ordner auf einer lokalen Festplatte behebt das meist."
+     }
+   }
+ }
+diff --git a/src/i18n/locales/partials/de/remaining-ui.json b/src/i18n/locales/partials/de/remaining-ui.json
+index 1e4be84..84c8934 100644
+--- a/src/i18n/locales/partials/de/remaining-ui.json
++++ b/src/i18n/locales/partials/de/remaining-ui.json
+@@ -186,7 +186,7 @@
+         "savedToLibrary": "\"{{fileName}}\" wurde in der Medienbibliothek gespeichert.",
+         "savedAndAdded": "\"{{fileName}}\" wurde gespeichert und zur Timeline hinzugefügt."
+       },
+-      "defaultTtsPrompt": "Welcome to freecut. This voice was generated locally in the browser.",
++      "defaultTtsPrompt": "Welcome to Studio. This voice was generated locally in the browser.",
+       "musicPresets": {
+         "lofiChillLabel": "Lo-fi Chill",
+         "lofiChillPrompt": "Warm lo-fi beat with dusty drums, mellow bass, and a dreamy synth lead",
+diff --git a/src/i18n/locales/partials/en/changelog.json b/src/i18n/locales/partials/en/changelog.json
+index 197174b..e810859 100644
+--- a/src/i18n/locales/partials/en/changelog.json
++++ b/src/i18n/locales/partials/en/changelog.json
+@@ -1,16 +1,16 @@
+ {
+   "changelog": {
+-    "homeAria": "FreeCut home",
++    "homeAria": "Studio home",
+     "backToHome": "Back to home",
+     "releaseNotes": "Release notes",
+-    "title": "What's new in FreeCut",
++    "title": "What's new in Studio",
+     "description": "A weekly cut of new editing tools, workflow improvements, and fixes. The newest release is open; expand any earlier week to see its full change list.",
+     "latest": "Latest",
+     "changeCount_one": "{{count}} change",
+     "changeCount_other": "{{count}} changes",
+     "initialRelease": "Initial release",
+     "ctaTitle": "Ready to make something?",
+-    "ctaDescription": "Open FreeCut and put the latest tools to work.",
+-    "openFreeCut": "Open FreeCut"
++    "ctaDescription": "Open Studio and put the latest tools to work.",
++    "openFreeCut": "Open Studio"
+   }
+ }
+diff --git a/src/i18n/locales/partials/en/editor.json b/src/i18n/locales/partials/en/editor.json
+index 5992817..e016249 100644
+--- a/src/i18n/locales/partials/en/editor.json
++++ b/src/i18n/locales/partials/en/editor.json
+@@ -281,7 +281,7 @@
+     "projectUpgradeDialog": {
+       "title": "Upgrade Project Before Opening",
+       "versionMismatch": "<strong>{{projectName}}</strong> was saved with project schema v{{storedSchemaVersion}}, but this build expects v{{currentSchemaVersion}}.",
+-      "explanation": "FreeCut can upgrade it for you before loading the editor. A backup of the pre-upgrade project will be created first so you can restore the old data if anything looks off.",
++      "explanation": "Studio can upgrade it for you before loading the editor. A backup of the pre-upgrade project will be created first so you can restore the old data if anything looks off.",
+       "backupCopy": "Backup copy: <strong>{{backupName}}</strong>",
+       "creatingBackup": "Creating Backup...",
+       "confirm": "Create Backup & Upgrade"
+@@ -705,7 +705,7 @@
+       "clip": "Clip",
+       "size": "Size",
+       "frameRate": "Frame rate",
+-      "fpsRoundedHint": "FreeCut matches imported video to the closest supported project frame rate. This clip would use {{fps}} fps.",
++      "fpsRoundedHint": "Studio matches imported video to the closest supported project frame rate. This clip would use {{fps}} fps.",
+       "keepCurrent": "Keep Current",
+       "fpsOnly": "FPS Only",
+       "sizeOnly": "Size Only",
+@@ -725,14 +725,14 @@
+       }
+     },
+     "editor": {
+-      "appLabel": "FreeCut Video Editor",
++      "appLabel": "Studio Video Editor",
+       "upgrading": "Upgrading project…",
+       "backupCreated": "Backup created before upgrade",
+       "backupFailed": "Failed to create backup before upgrade",
+       "tryAgain": "Please try again.",
+       "projectSaved": "Project saved",
+       "projectSaveFailed": "Failed to save project",
+-      "projectBundle": "FreeCut Project Bundle"
++      "projectBundle": "Studio Project Bundle"
+     },
+     "audioMeters": {
+       "meters": "Meters",
+@@ -980,7 +980,7 @@
+         "savedToLibrary": "Saved \"{{fileName}}\" to the media library.",
+         "savedAndAdded": "Saved \"{{fileName}}\" and added to timeline."
+       },
+-      "defaultTtsPrompt": "Welcome to freecut. This voice was generated locally in the browser.",
++      "defaultTtsPrompt": "Welcome to Studio. This voice was generated locally in the browser.",
+       "musicPresets": {
+         "lofiChillLabel": "Lo-fi Chill",
+         "lofiChillPrompt": "Warm lo-fi beat with dusty drums, mellow bass, and a dreamy synth lead",
+diff --git a/src/i18n/locales/partials/en/export.json b/src/i18n/locales/partials/en/export.json
+index 4caad92..e805a40 100644
+--- a/src/i18n/locales/partials/en/export.json
++++ b/src/i18n/locales/partials/en/export.json
+@@ -156,7 +156,7 @@
+         },
+         "video-codec-fallback": {
+           "title": "Codec fallback will be used",
+-          "detail": "The selected codec is unavailable here. FreeCut will export {{codec}} in {{container}} instead.",
++          "detail": "The selected codec is unavailable here. Studio will export {{codec}} in {{container}} instead.",
+           "fix": "Keep this fallback or choose another supported codec manually."
+         },
+         "video-codec-supported": {
+@@ -183,7 +183,7 @@
+         },
+         "worker-animated-image-fallback": {
+           "title": "Animated images require main-thread export",
+-          "detail": "GIF/WebP image items cannot render in the export worker yet. FreeCut will fall back automatically.",
++          "detail": "GIF/WebP image items cannot render in the export worker yet. Studio will fall back automatically.",
+           "fix": "For faster worker export, replace animated images with video clips before exporting."
+         },
+         "worker-audio-context-fallback": {
+diff --git a/src/i18n/locales/partials/en/media.json b/src/i18n/locales/partials/en/media.json
+index 2c7df29..9efd99b 100644
+--- a/src/i18n/locales/partials/en/media.json
++++ b/src/i18n/locales/partials/en/media.json
+@@ -27,10 +27,10 @@
+       "stopAudio": "Stop Audio",
+       "subtitlesCachedAll": "Subtitles Cached All",
+       "subtitlesCachedPartial": "Subtitles Cached Partial",
+-      "subtitlesCannotRead": "FreeCut could not read \"{{name}}\" right now. Close any app using it and try again.",
++      "subtitlesCannotRead": "Studio could not read \"{{name}}\" right now. Close any app using it and try again.",
+       "subtitlesExtractFailed": "Subtitles Extract Failed",
+-      "subtitlesFileMissing": "FreeCut can't find \"{{name}}\" anymore.",
+-      "subtitlesNeedPermission": "FreeCut needs permission to read \"{{name}}\" before extracting subtitles.",
++      "subtitlesFileMissing": "Studio can't find \"{{name}}\" anymore.",
++      "subtitlesNeedPermission": "Studio needs permission to read \"{{name}}\" before extracting subtitles.",
+       "subtitlesScanFailed": "Subtitles Scan Failed",
+       "transcribeFailed": "Transcribe Failed",
+       "transcribing": "Transcribing",
+@@ -241,9 +241,9 @@
+     },
+     "missingMedia": {
+       "title": "Missing Media",
+-      "description": "FreeCut cannot access {{count}} media files. Locate the files or keep working offline.",
+-      "description_one": "FreeCut cannot access {{count}} media file. Locate the file or keep working offline.",
+-      "description_other": "FreeCut cannot access {{count}} media files. Locate the files or keep working offline.",
++      "description": "Studio cannot access {{count}} media files. Locate the files or keep working offline.",
++      "description_one": "Studio cannot access {{count}} media file. Locate the file or keep working offline.",
++      "description_other": "Studio cannot access {{count}} media files. Locate the files or keep working offline.",
+       "needPermission": "{{count}} need permission",
+       "needPermission_one": "{{count}} needs permission",
+       "needPermission_other": "{{count}} need permission",
+diff --git a/src/i18n/locales/partials/en/projects.json b/src/i18n/locales/partials/en/projects.json
+index 4083f67..a5037f7 100644
+--- a/src/i18n/locales/partials/en/projects.json
++++ b/src/i18n/locales/partials/en/projects.json
+@@ -114,7 +114,7 @@
+       "selectedCount_other": "{{count}} selected",
+       "deleteN_one": "Delete {{count}}",
+       "deleteN_other": "Delete {{count}}",
+-      "welcomeTitle": "Welcome to FreeCut",
++      "welcomeTitle": "Welcome to Studio",
+       "welcomeDescription": "Get started by creating your first video project. Choose your resolution, frame rate, and start editing!",
+       "noResultsTitle": "No projects found",
+       "noResultsDescription": "We couldn't find any projects matching your search criteria. Try adjusting your filters or search terms.",
+@@ -181,9 +181,9 @@
+     },
+     "workspaceGate": {
+       "unsupportedBrowser": "Unsupported browser",
+-      "unsupportedBrowserDescription": "FreeCut requires a Chromium-based browser (Chrome, Edge, Brave, Arc) for its workspace folder storage. Firefox and Safari don't yet support the File System Access API.",
++      "unsupportedBrowserDescription": "Studio requires a Chromium-based browser (Chrome, Edge, Brave, Arc) for its workspace folder storage. Firefox and Safari don't yet support the File System Access API.",
+       "pickTitle": "Pick your workspace folder",
+-      "pickDescription": "FreeCut stores all your projects, media, and caches as plain files in a folder you control. Pick any folder on disk — your projects will live there.",
++      "pickDescription": "Studio stores all your projects, media, and caches as plain files in a folder you control. Pick any folder on disk — your projects will live there.",
+       "chooseFolder": "Choose folder",
+       "workspaceGuide": "Workspace guide",
+       "pickTip": "Tip: pick a folder in Dropbox, iCloud, or Google Drive to sync projects across devices. You can move it later.",
+@@ -192,7 +192,7 @@
+       "chooseDifferentFolder": "Choose a different folder",
+       "reconnect": "Reconnect",
+       "folderPermissionDenied": "Permission was not granted. Choose a folder and allow read/write access to continue.",
+-      "folderPickFailed": "FreeCut could not open that folder. Try a normal folder you can edit, then grant read/write access.",
++      "folderPickFailed": "Studio could not open that folder. Try a normal folder you can edit, then grant read/write access.",
+       "reconnectPermissionDenied": "Permission was denied. Reconnect the workspace or choose a different folder."
+     },
+     "workspaceIndicator": {
+@@ -266,15 +266,15 @@
+       "showcaseSubheading": "A complete video editing suite, right in your browser.",
+       "screenshot": "Screenshot",
+       "seeItInAction": "See it in Action",
+-      "seeItInActionSubheading": "Watch a quick demo of FreeCut's editing capabilities.",
+-      "demoPreviewAlt": "FreeCut demo preview",
++      "seeItInActionSubheading": "Watch a quick demo of Studio's editing capabilities.",
++      "demoPreviewAlt": "Studio demo preview",
+       "watchDemoOnYouTube": "Watch Demo on YouTube",
+       "faqHeading": "Frequently Asked Questions",
+-      "faqSubheading": "Everything you need to know about FreeCut.",
++      "faqSubheading": "Everything you need to know about Studio.",
+       "ctaHeading": "Ready to start editing?",
+       "ctaSubheading": "Jump in and create your first project in seconds.",
+       "startEditing": "Start Editing",
+-      "footer": "MIT License © {{year}} FreeCut",
++      "footer": "MIT License © {{year}} Studio",
+       "showcase": {
+         "timeline": {
+           "title": "Timeline Editing",
+@@ -311,12 +311,12 @@
+       },
+       "faq": {
+         "free": {
+-          "question": "Is FreeCut really free?",
+-          "answer": "Yes, FreeCut is completely free and open source under the MIT license. There are no hidden fees, subscriptions, or watermarks."
++          "question": "Is Studio really free?",
++          "answer": "Yes, Studio is completely free and open source under the MIT license. There are no hidden fees, subscriptions, or watermarks."
+         },
+         "install": {
+           "question": "Do I need to install anything?",
+-          "answer": "No installation required. FreeCut runs entirely in your browser. Just open the website and start editing."
++          "answer": "No installation required. Studio runs entirely in your browser. Just open the website and start editing."
+         },
+         "storage": {
+           "question": "Where are my videos stored?",
+@@ -324,7 +324,7 @@
+         },
+         "browsers": {
+           "question": "What browsers are supported?",
+-          "answerP1": "FreeCut currently works best in Chrome or Edge 113+. It relies on modern browser APIs like WebGPU, WebCodecs, OPFS, and File System Access, so the full workflow is currently Chromium-first.",
++          "answerP1": "Studio currently works best in Chrome or Edge 113+. It relies on modern browser APIs like WebGPU, WebCodecs, OPFS, and File System Access, so the full workflow is currently Chromium-first.",
+           "answerP2": "<strong>Brave users:</strong> The File System Access API is disabled by default. To enable it, navigate to <code>brave://flags/#file-system-access-api</code>, set it to <strong>Enabled</strong>, and relaunch the browser."
+         },
+         "exportFormats": {
+@@ -559,7 +559,7 @@
+     },
+     "routeError": {
+       "title": "Something went wrong",
+-      "description": "FreeCut could not finish loading this page.",
++      "description": "Studio could not finish loading this page.",
+       "projectNotFoundTitle": "We couldn't find this project",
+       "projectNotFoundDescription": "It may have been moved, deleted, or opened from an old link. Your other projects are still available in your workspace.",
+       "backToProjects": "Back to projects",
+@@ -567,9 +567,9 @@
+       "copyDetails": "Copy error details",
+       "detailsCopied": "Error details copied",
+       "copyFailed": "Couldn't copy details",
+-      "causePermission": "FreeCut no longer has permission to use your workspace folder. Reconnect it, or choose a different folder.",
++      "causePermission": "Studio no longer has permission to use your workspace folder. Reconnect it, or choose a different folder.",
+       "causeMissing": "Your workspace folder could not be found. It may have been moved, renamed, or deleted.",
+-      "causeUnsupported": "Your workspace folder is on a drive that does not support everything FreeCut needs. Cloud-synced and network folders often behave this way. Choosing a folder on a local disk usually fixes it."
++      "causeUnsupported": "Your workspace folder is on a drive that does not support everything Studio needs. Cloud-synced and network folders often behave this way. Choosing a folder on a local disk usually fixes it."
+     }
+   }
+ }
+diff --git a/src/i18n/locales/partials/en/remaining-ui.json b/src/i18n/locales/partials/en/remaining-ui.json
+index 1060554..c2a18b4 100644
+--- a/src/i18n/locales/partials/en/remaining-ui.json
++++ b/src/i18n/locales/partials/en/remaining-ui.json
+@@ -186,7 +186,7 @@
+         "savedToLibrary": "Saved \"{{fileName}}\" to the media library.",
+         "savedAndAdded": "Saved \"{{fileName}}\" and added to timeline."
+       },
+-      "defaultTtsPrompt": "Welcome to freecut. This voice was generated locally in the browser.",
++      "defaultTtsPrompt": "Welcome to Studio. This voice was generated locally in the browser.",
+       "musicPresets": {
+         "lofiChillLabel": "Lo-fi Chill",
+         "lofiChillPrompt": "Warm lo-fi beat with dusty drums, mellow bass, and a dreamy synth lead",
+diff --git a/src/i18n/locales/partials/es/changelog.json b/src/i18n/locales/partials/es/changelog.json
+index d7c7723..c94b0c1 100644
+--- a/src/i18n/locales/partials/es/changelog.json
++++ b/src/i18n/locales/partials/es/changelog.json
+@@ -1,16 +1,16 @@
+ {
+   "changelog": {
+-    "homeAria": "Inicio de FreeCut",
++    "homeAria": "Inicio de Studio",
+     "backToHome": "Volver al inicio",
+     "releaseNotes": "Notas de la versión",
+-    "title": "Novedades de FreeCut",
++    "title": "Novedades de Studio",
+     "description": "Un resumen semanal de nuevas herramientas de edición, mejoras del flujo de trabajo y correcciones. La versión más reciente está abierta; despliega cualquier semana anterior para ver la lista completa de cambios.",
+     "latest": "Más reciente",
+     "changeCount_one": "{{count}} cambio",
+     "changeCount_other": "{{count}} cambios",
+     "initialRelease": "Versión inicial",
+     "ctaTitle": "¿Listo para crear algo?",
+-    "ctaDescription": "Abre FreeCut y pon a trabajar las herramientas más recientes.",
+-    "openFreeCut": "Abrir FreeCut"
++    "ctaDescription": "Abre Studio y pon a trabajar las herramientas más recientes.",
++    "openFreeCut": "Abrir Studio"
+   }
+ }
+diff --git a/src/i18n/locales/partials/es/editor.json b/src/i18n/locales/partials/es/editor.json
+index 4c23894..97ee880 100644
+--- a/src/i18n/locales/partials/es/editor.json
++++ b/src/i18n/locales/partials/es/editor.json
+@@ -281,7 +281,7 @@
+     "projectUpgradeDialog": {
+       "title": "Actualizar el proyecto antes de abrirlo",
+       "versionMismatch": "<strong>{{projectName}}</strong> se guardó con el esquema de proyecto v{{storedSchemaVersion}}, pero esta versión espera v{{currentSchemaVersion}}.",
+-      "explanation": "FreeCut puede actualizarlo antes de cargar el editor. Primero se creará una copia de seguridad previa a la actualización para que puedas restaurar los datos antiguos si algo no va bien.",
++      "explanation": "Studio puede actualizarlo antes de cargar el editor. Primero se creará una copia de seguridad previa a la actualización para que puedas restaurar los datos antiguos si algo no va bien.",
+       "backupCopy": "Copia de seguridad: <strong>{{backupName}}</strong>",
+       "creatingBackup": "Creando copia de seguridad...",
+       "confirm": "Crear copia y actualizar"
+@@ -663,7 +663,7 @@
+       "clip": "Clip",
+       "size": "Tamaño",
+       "frameRate": "Velocidad de fotogramas",
+-      "fpsRoundedHint": "FreeCut ajusta el vídeo importado a la velocidad de fotogramas de proyecto compatible más cercana. Este clip usaría {{fps}} fps.",
++      "fpsRoundedHint": "Studio ajusta el vídeo importado a la velocidad de fotogramas de proyecto compatible más cercana. Este clip usaría {{fps}} fps.",
+       "keepCurrent": "Mantener actual",
+       "fpsOnly": "Solo FPS",
+       "sizeOnly": "Solo tamaño",
+@@ -672,14 +672,14 @@
+       "matchSize": "Ajustar tamaño"
+     },
+     "editor": {
+-      "appLabel": "Editor de vídeo FreeCut",
++      "appLabel": "Editor de vídeo Studio",
+       "upgrading": "Actualizando proyecto…",
+       "backupCreated": "Copia de seguridad creada antes de actualizar",
+       "backupFailed": "Error al crear la copia de seguridad antes de actualizar",
+       "tryAgain": "Inténtalo de nuevo.",
+       "projectSaved": "Proyecto guardado",
+       "projectSaveFailed": "Error al guardar el proyecto",
+-      "projectBundle": "Paquete de proyecto FreeCut"
++      "projectBundle": "Paquete de proyecto Studio"
+     },
+     "audioMeters": {
+       "meters": "Medidores",
+@@ -927,7 +927,7 @@
+         "savedToLibrary": "Se guardó \"{{fileName}}\" en la biblioteca multimedia.",
+         "savedAndAdded": "Se guardó \"{{fileName}}\" y se añadió a la línea de tiempo."
+       },
+-      "defaultTtsPrompt": "Welcome to freecut. This voice was generated locally in the browser.",
++      "defaultTtsPrompt": "Welcome to Studio. This voice was generated locally in the browser.",
+       "musicPresets": {
+         "lofiChillLabel": "Lo-fi Chill",
+         "lofiChillPrompt": "Warm lo-fi beat with dusty drums, mellow bass, and a dreamy synth lead",
+diff --git a/src/i18n/locales/partials/es/export.json b/src/i18n/locales/partials/es/export.json
+index 1a5d414..e7ba7a4 100644
+--- a/src/i18n/locales/partials/es/export.json
++++ b/src/i18n/locales/partials/es/export.json
+@@ -132,7 +132,7 @@
+         },
+         "video-codec-fallback": {
+           "title": "Se usará un códec alternativo",
+-          "detail": "El códec seleccionado no está disponible aquí. FreeCut exportará {{codec}} en {{container}} en su lugar.",
++          "detail": "El códec seleccionado no está disponible aquí. Studio exportará {{codec}} en {{container}} en su lugar.",
+           "fix": "Mantén este modo alternativo o elige manualmente otro códec compatible."
+         },
+         "video-codec-supported": {
+@@ -155,7 +155,7 @@
+         },
+         "worker-animated-image-fallback": {
+           "title": "Las imágenes animadas requieren exportación en el hilo principal",
+-          "detail": "Los elementos GIF/WebP aún no pueden renderizarse en el worker de exportación. FreeCut usará automáticamente el modo alternativo.",
++          "detail": "Los elementos GIF/WebP aún no pueden renderizarse en el worker de exportación. Studio usará automáticamente el modo alternativo.",
+           "fix": "Para una exportación con worker más rápida, reemplaza las imágenes animadas por clips de vídeo antes de exportar."
+         },
+         "worker-audio-context-fallback": {
+diff --git a/src/i18n/locales/partials/es/media.json b/src/i18n/locales/partials/es/media.json
+index 0da34de..1c41917 100644
+--- a/src/i18n/locales/partials/es/media.json
++++ b/src/i18n/locales/partials/es/media.json
+@@ -27,10 +27,10 @@
+       "stopAudio": "Detener audio",
+       "subtitlesCachedAll": "Subtítulos en caché",
+       "subtitlesCachedPartial": "Algunos subtítulos en caché",
+-      "subtitlesCannotRead": "FreeCut no puede leer \"{{name}}\" en este momento. Cierra la app que lo esté usando e inténtalo de nuevo.",
++      "subtitlesCannotRead": "Studio no puede leer \"{{name}}\" en este momento. Cierra la app que lo esté usando e inténtalo de nuevo.",
+       "subtitlesExtractFailed": "No se pudieron extraer los subtítulos",
+-      "subtitlesFileMissing": "FreeCut ya no encuentra \"{{name}}\".",
+-      "subtitlesNeedPermission": "FreeCut necesita permiso para leer \"{{name}}\" antes de extraer los subtítulos.",
++      "subtitlesFileMissing": "Studio ya no encuentra \"{{name}}\".",
++      "subtitlesNeedPermission": "Studio necesita permiso para leer \"{{name}}\" antes de extraer los subtítulos.",
+       "subtitlesScanFailed": "Falló la búsqueda de subtítulos",
+       "transcribeFailed": "No se pudo transcribir",
+       "transcribing": "Transcribiendo",
+@@ -228,9 +228,9 @@
+     },
+     "missingMedia": {
+       "title": "Medios faltantes",
+-      "description": "FreeCut no puede acceder a {{count}} archivos multimedia. Localiza los archivos o sigue trabajando sin conexión.",
+-      "description_one": "FreeCut no puede acceder a {{count}} archivo multimedia. Localiza el archivo o sigue trabajando sin conexión.",
+-      "description_other": "FreeCut no puede acceder a {{count}} archivos multimedia. Localiza los archivos o sigue trabajando sin conexión.",
++      "description": "Studio no puede acceder a {{count}} archivos multimedia. Localiza los archivos o sigue trabajando sin conexión.",
++      "description_one": "Studio no puede acceder a {{count}} archivo multimedia. Localiza el archivo o sigue trabajando sin conexión.",
++      "description_other": "Studio no puede acceder a {{count}} archivos multimedia. Localiza los archivos o sigue trabajando sin conexión.",
+       "needPermission": "{{count}} necesitan permiso",
+       "needPermission_one": "{{count}} necesita permiso",
+       "needPermission_other": "{{count}} necesitan permiso",
+diff --git a/src/i18n/locales/partials/es/projects.json b/src/i18n/locales/partials/es/projects.json
+index 2fbda2d..0fcf8dc 100644
+--- a/src/i18n/locales/partials/es/projects.json
++++ b/src/i18n/locales/partials/es/projects.json
+@@ -112,7 +112,7 @@
+       "selectedCount_other": "{{count}} seleccionados",
+       "deleteN_one": "Eliminar {{count}}",
+       "deleteN_other": "Eliminar {{count}}",
+-      "welcomeTitle": "Te damos la bienvenida a FreeCut",
++      "welcomeTitle": "Te damos la bienvenida a Studio",
+       "welcomeDescription": "Empieza creando tu primer proyecto de video. Elige la resolución, la frecuencia de fotogramas y empieza a editar.",
+       "noResultsTitle": "No se encontraron proyectos",
+       "noResultsDescription": "No encontramos ningún proyecto que coincida con tu búsqueda. Prueba a ajustar los filtros o los términos de búsqueda.",
+@@ -179,9 +179,9 @@
+     },
+     "workspaceGate": {
+       "unsupportedBrowser": "Navegador no compatible",
+-      "unsupportedBrowserDescription": "FreeCut requiere un navegador basado en Chromium (Chrome, Edge, Brave, Arc) para su almacenamiento en carpeta de espacio de trabajo. Firefox y Safari aún no admiten la File System Access API.",
++      "unsupportedBrowserDescription": "Studio requiere un navegador basado en Chromium (Chrome, Edge, Brave, Arc) para su almacenamiento en carpeta de espacio de trabajo. Firefox y Safari aún no admiten la File System Access API.",
+       "pickTitle": "Elige tu carpeta de espacio de trabajo",
+-      "pickDescription": "FreeCut almacena todos tus proyectos, medios y cachés como archivos sencillos en una carpeta que tú controlas. Elige cualquier carpeta del disco: tus proyectos vivirán allí.",
++      "pickDescription": "Studio almacena todos tus proyectos, medios y cachés como archivos sencillos en una carpeta que tú controlas. Elige cualquier carpeta del disco: tus proyectos vivirán allí.",
+       "chooseFolder": "Elegir carpeta",
+       "workspaceGuide": "Guía del espacio de trabajo",
+       "pickTip": "Consejo: elige una carpeta en Dropbox, iCloud o Google Drive para sincronizar proyectos entre dispositivos. Puedes moverla más tarde.",
+@@ -190,7 +190,7 @@
+       "chooseDifferentFolder": "Elegir otra carpeta",
+       "reconnect": "Reconectar",
+       "folderPermissionDenied": "No se concedió el permiso. Elige una carpeta y permite acceso de lectura/escritura para continuar.",
+-      "folderPickFailed": "FreeCut no pudo abrir esa carpeta. Prueba una carpeta normal que puedas editar y concede acceso de lectura/escritura.",
++      "folderPickFailed": "Studio no pudo abrir esa carpeta. Prueba una carpeta normal que puedas editar y concede acceso de lectura/escritura.",
+       "reconnectPermissionDenied": "Permiso denegado. Reconecta el espacio de trabajo o elige otra carpeta."
+     },
+     "workspaceIndicator": {
+@@ -264,15 +264,15 @@
+       "showcaseSubheading": "Un conjunto completo de edición de video, directamente en tu navegador.",
+       "screenshot": "Captura de pantalla",
+       "seeItInAction": "Míralo en acción",
+-      "seeItInActionSubheading": "Mira una breve demostración de las capacidades de edición de FreeCut.",
+-      "demoPreviewAlt": "Vista previa de la demo de FreeCut",
++      "seeItInActionSubheading": "Mira una breve demostración de las capacidades de edición de Studio.",
++      "demoPreviewAlt": "Vista previa de la demo de Studio",
+       "watchDemoOnYouTube": "Ver la demo en YouTube",
+       "faqHeading": "Preguntas frecuentes",
+-      "faqSubheading": "Todo lo que necesitas saber sobre FreeCut.",
++      "faqSubheading": "Todo lo que necesitas saber sobre Studio.",
+       "ctaHeading": "¿Listo para empezar a editar?",
+       "ctaSubheading": "Lánzate y crea tu primer proyecto en segundos.",
+       "startEditing": "Empezar a editar",
+-      "footer": "Licencia MIT © {{year}} FreeCut",
++      "footer": "Licencia MIT © {{year}} Studio",
+       "showcase": {
+         "timeline": {
+           "title": "Edición en la línea de tiempo",
+@@ -309,12 +309,12 @@
+       },
+       "faq": {
+         "free": {
+-          "question": "¿FreeCut es realmente gratis?",
+-          "answer": "Sí, FreeCut es completamente gratis y de código abierto bajo la licencia MIT. No hay tarifas ocultas, suscripciones ni marcas de agua."
++          "question": "¿Studio es realmente gratis?",
++          "answer": "Sí, Studio es completamente gratis y de código abierto bajo la licencia MIT. No hay tarifas ocultas, suscripciones ni marcas de agua."
+         },
+         "install": {
+           "question": "¿Necesito instalar algo?",
+-          "answer": "No se requiere instalación. FreeCut funciona enteramente en tu navegador. Solo abre el sitio web y empieza a editar."
++          "answer": "No se requiere instalación. Studio funciona enteramente en tu navegador. Solo abre el sitio web y empieza a editar."
+         },
+         "storage": {
+           "question": "¿Dónde se guardan mis videos?",
+@@ -322,7 +322,7 @@
+         },
+         "browsers": {
+           "question": "¿Qué navegadores son compatibles?",
+-          "answerP1": "FreeCut funciona mejor en Chrome o Edge 113+. Depende de APIs modernas del navegador como WebGPU, WebCodecs, OPFS y File System Access, por lo que el flujo completo es actualmente Chromium-first.",
++          "answerP1": "Studio funciona mejor en Chrome o Edge 113+. Depende de APIs modernas del navegador como WebGPU, WebCodecs, OPFS y File System Access, por lo que el flujo completo es actualmente Chromium-first.",
+           "answerP2": "<strong>Usuarios de Brave:</strong> la File System Access API está desactivada por defecto. Para activarla, ve a <code>brave://flags/#file-system-access-api</code>, ponla en <strong>Enabled</strong> y reinicia el navegador."
+         },
+         "exportFormats": {
+@@ -557,7 +557,7 @@
+     },
+     "routeError": {
+       "title": "Algo salió mal",
+-      "description": "FreeCut no pudo terminar de cargar esta página.",
++      "description": "Studio no pudo terminar de cargar esta página.",
+       "projectNotFoundTitle": "No encontramos este proyecto",
+       "projectNotFoundDescription": "Puede que se haya movido, eliminado o abierto desde un enlace antiguo. Tus demás proyectos siguen disponibles en tu espacio de trabajo.",
+       "backToProjects": "Volver a proyectos",
+@@ -565,9 +565,9 @@
+       "copyDetails": "Copiar detalles del error",
+       "detailsCopied": "Detalles del error copiados",
+       "copyFailed": "No se pudieron copiar los detalles",
+-      "causePermission": "FreeCut ya no tiene permiso para usar tu carpeta de trabajo. Vuelve a conectarla o elige otra carpeta.",
++      "causePermission": "Studio ya no tiene permiso para usar tu carpeta de trabajo. Vuelve a conectarla o elige otra carpeta.",
+       "causeMissing": "No se encontró tu carpeta de trabajo. Puede que se haya movido, renombrado o eliminado.",
+-      "causeUnsupported": "Tu carpeta de trabajo está en una unidad que no admite todo lo que FreeCut necesita. Las carpetas sincronizadas en la nube y las de red suelen comportarse así. Elegir una carpeta en un disco local suele solucionarlo."
++      "causeUnsupported": "Tu carpeta de trabajo está en una unidad que no admite todo lo que Studio necesita. Las carpetas sincronizadas en la nube y las de red suelen comportarse así. Elegir una carpeta en un disco local suele solucionarlo."
+     }
+   }
+ }
+diff --git a/src/i18n/locales/partials/es/remaining-ui.json b/src/i18n/locales/partials/es/remaining-ui.json
+index 207a333..55944e0 100644
+--- a/src/i18n/locales/partials/es/remaining-ui.json
++++ b/src/i18n/locales/partials/es/remaining-ui.json
+@@ -186,7 +186,7 @@
+         "savedToLibrary": "Se guardó \"{{fileName}}\" en la biblioteca multimedia.",
+         "savedAndAdded": "Se guardó \"{{fileName}}\" y se añadió a la línea de tiempo."
+       },
+-      "defaultTtsPrompt": "Welcome to freecut. This voice was generated locally in the browser.",
++      "defaultTtsPrompt": "Welcome to Studio. This voice was generated locally in the browser.",
+       "musicPresets": {
+         "lofiChillLabel": "Lo-fi Chill",
+         "lofiChillPrompt": "Warm lo-fi beat with dusty drums, mellow bass, and a dreamy synth lead",
+diff --git a/src/i18n/locales/partials/fr/changelog.json b/src/i18n/locales/partials/fr/changelog.json
+index 0dd0648..8798f28 100644
+--- a/src/i18n/locales/partials/fr/changelog.json
++++ b/src/i18n/locales/partials/fr/changelog.json
+@@ -1,16 +1,16 @@
+ {
+   "changelog": {
+-    "homeAria": "Accueil FreeCut",
++    "homeAria": "Accueil Studio",
+     "backToHome": "Retour à l'accueil",
+     "releaseNotes": "Notes de version",
+-    "title": "Nouveautés de FreeCut",
++    "title": "Nouveautés de Studio",
+     "description": "Un aperçu hebdomadaire des nouveaux outils de montage, des améliorations du flux de travail et des corrections. La version la plus récente est ouverte ; dépliez une semaine précédente pour voir la liste complète des modifications.",
+     "latest": "Dernière version",
+     "changeCount_one": "{{count}} modification",
+     "changeCount_other": "{{count}} modifications",
+     "initialRelease": "Version initiale",
+     "ctaTitle": "Prêt à créer quelque chose ?",
+-    "ctaDescription": "Ouvrez FreeCut et mettez les derniers outils à contribution.",
+-    "openFreeCut": "Ouvrir FreeCut"
++    "ctaDescription": "Ouvrez Studio et mettez les derniers outils à contribution.",
++    "openFreeCut": "Ouvrir Studio"
+   }
+ }
+diff --git a/src/i18n/locales/partials/fr/editor.json b/src/i18n/locales/partials/fr/editor.json
+index bcb492f..2863905 100644
+--- a/src/i18n/locales/partials/fr/editor.json
++++ b/src/i18n/locales/partials/fr/editor.json
+@@ -281,7 +281,7 @@
+     "projectUpgradeDialog": {
+       "title": "Mettre à jour le projet avant de l'ouvrir",
+       "versionMismatch": "<strong>{{projectName}}</strong> a été enregistré avec le schéma de projet v{{storedSchemaVersion}}, mais cette version attend v{{currentSchemaVersion}}.",
+-      "explanation": "FreeCut peut le mettre à jour avant de charger l'éditeur. Une sauvegarde de l'état précédent sera créée d'abord afin que vous puissiez restaurer les anciennes données si nécessaire.",
++      "explanation": "Studio peut le mettre à jour avant de charger l'éditeur. Une sauvegarde de l'état précédent sera créée d'abord afin que vous puissiez restaurer les anciennes données si nécessaire.",
+       "backupCopy": "Copie de sauvegarde : <strong>{{backupName}}</strong>",
+       "creatingBackup": "Création de la sauvegarde...",
+       "confirm": "Sauvegarder et mettre à jour"
+@@ -663,7 +663,7 @@
+       "clip": "Clip",
+       "size": "Taille",
+       "frameRate": "Fréquence d'images",
+-      "fpsRoundedHint": "FreeCut adapte la vidéo importée à la fréquence d'images de projet prise en charge la plus proche. Ce clip utiliserait {{fps}} fps.",
++      "fpsRoundedHint": "Studio adapte la vidéo importée à la fréquence d'images de projet prise en charge la plus proche. Ce clip utiliserait {{fps}} fps.",
+       "keepCurrent": "Conserver l'actuel",
+       "fpsOnly": "FPS uniquement",
+       "sizeOnly": "Taille uniquement",
+@@ -672,14 +672,14 @@
+       "matchSize": "Adapter la taille"
+     },
+     "editor": {
+-      "appLabel": "Éditeur vidéo FreeCut",
++      "appLabel": "Éditeur vidéo Studio",
+       "upgrading": "Mise à niveau du projet…",
+       "backupCreated": "Sauvegarde créée avant la mise à jour",
+       "backupFailed": "Échec de la création de la sauvegarde avant la mise à jour",
+       "tryAgain": "Veuillez réessayer.",
+       "projectSaved": "Projet enregistré",
+       "projectSaveFailed": "Échec de l'enregistrement du projet",
+-      "projectBundle": "Paquet de projet FreeCut"
++      "projectBundle": "Paquet de projet Studio"
+     },
+     "audioMeters": {
+       "meters": "Vu-mètres",
+@@ -927,7 +927,7 @@
+         "savedToLibrary": "« {{fileName}} » a été enregistré dans la bibliothèque multimédia.",
+         "savedAndAdded": "« {{fileName}} » a été enregistré et ajouté à la timeline."
+       },
+-      "defaultTtsPrompt": "Welcome to freecut. This voice was generated locally in the browser.",
++      "defaultTtsPrompt": "Welcome to Studio. This voice was generated locally in the browser.",
+       "musicPresets": {
+         "lofiChillLabel": "Lo-fi Chill",
+         "lofiChillPrompt": "Warm lo-fi beat with dusty drums, mellow bass, and a dreamy synth lead",
+diff --git a/src/i18n/locales/partials/fr/export.json b/src/i18n/locales/partials/fr/export.json
+index e6808a1..659021e 100644
+--- a/src/i18n/locales/partials/fr/export.json
++++ b/src/i18n/locales/partials/fr/export.json
+@@ -132,7 +132,7 @@
+         },
+         "video-codec-fallback": {
+           "title": "Un codec de repli sera utilisé",
+-          "detail": "Le codec sélectionné n’est pas disponible ici. FreeCut exportera plutôt {{codec}} dans {{container}}.",
++          "detail": "Le codec sélectionné n’est pas disponible ici. Studio exportera plutôt {{codec}} dans {{container}}.",
+           "fix": "Conservez ce repli ou choisissez manuellement un autre codec pris en charge."
+         },
+         "video-codec-supported": {
+@@ -155,7 +155,7 @@
+         },
+         "worker-animated-image-fallback": {
+           "title": "Les images animées nécessitent l’exportation sur le thread principal",
+-          "detail": "Les éléments GIF/WebP ne peuvent pas encore être rendus dans le worker d’exportation. FreeCut basculera automatiquement en repli.",
++          "detail": "Les éléments GIF/WebP ne peuvent pas encore être rendus dans le worker d’exportation. Studio basculera automatiquement en repli.",
+           "fix": "Pour une exportation par worker plus rapide, remplacez les images animées par des clips vidéo avant d’exporter."
+         },
+         "worker-audio-context-fallback": {
+diff --git a/src/i18n/locales/partials/fr/media.json b/src/i18n/locales/partials/fr/media.json
+index 037e98b..917fd5d 100644
+--- a/src/i18n/locales/partials/fr/media.json
++++ b/src/i18n/locales/partials/fr/media.json
+@@ -27,10 +27,10 @@
+       "stopAudio": "Arrêter l'audio",
+       "subtitlesCachedAll": "Sous-titres mis en cache",
+       "subtitlesCachedPartial": "Sous-titres partiellement mis en cache",
+-      "subtitlesCannotRead": "FreeCut ne peut pas lire « {{name}} » pour le moment. Fermez toute appli qui l'utilise et réessayez.",
++      "subtitlesCannotRead": "Studio ne peut pas lire « {{name}} » pour le moment. Fermez toute appli qui l'utilise et réessayez.",
+       "subtitlesExtractFailed": "Échec de l'extraction des sous-titres",
+-      "subtitlesFileMissing": "FreeCut ne trouve plus « {{name}} ».",
+-      "subtitlesNeedPermission": "FreeCut a besoin d'autorisation pour lire « {{name}} » avant d'extraire les sous-titres.",
++      "subtitlesFileMissing": "Studio ne trouve plus « {{name}} ».",
++      "subtitlesNeedPermission": "Studio a besoin d'autorisation pour lire « {{name}} » avant d'extraire les sous-titres.",
+       "subtitlesScanFailed": "Échec de l'analyse des sous-titres",
+       "transcribeFailed": "Échec de la transcription",
+       "transcribing": "Transcription en cours",
+@@ -228,9 +228,9 @@
+     },
+     "missingMedia": {
+       "title": "Médias manquants",
+-      "description": "FreeCut ne peut pas accéder à {{count}} fichiers multimédias. Localisez les fichiers ou continuez hors ligne.",
+-      "description_one": "FreeCut ne peut pas accéder à {{count}} fichier multimédia. Localisez le fichier ou continuez hors ligne.",
+-      "description_other": "FreeCut ne peut pas accéder à {{count}} fichiers multimédias. Localisez les fichiers ou continuez hors ligne.",
++      "description": "Studio ne peut pas accéder à {{count}} fichiers multimédias. Localisez les fichiers ou continuez hors ligne.",
++      "description_one": "Studio ne peut pas accéder à {{count}} fichier multimédia. Localisez le fichier ou continuez hors ligne.",
++      "description_other": "Studio ne peut pas accéder à {{count}} fichiers multimédias. Localisez les fichiers ou continuez hors ligne.",
+       "needPermission": "{{count}} nécessitent une autorisation",
+       "needPermission_one": "{{count}} nécessite une autorisation",
+       "needPermission_other": "{{count}} nécessitent une autorisation",
+diff --git a/src/i18n/locales/partials/fr/projects.json b/src/i18n/locales/partials/fr/projects.json
+index c922c22..3c7624c 100644
+--- a/src/i18n/locales/partials/fr/projects.json
++++ b/src/i18n/locales/partials/fr/projects.json
+@@ -112,7 +112,7 @@
+       "selectedCount_other": "{{count}} sélectionnés",
+       "deleteN_one": "Supprimer {{count}}",
+       "deleteN_other": "Supprimer {{count}}",
+-      "welcomeTitle": "Bienvenue sur FreeCut",
++      "welcomeTitle": "Bienvenue sur Studio",
+       "welcomeDescription": "Commencez par créer votre premier projet vidéo. Choisissez votre résolution, votre fréquence d'images, et commencez à monter !",
+       "noResultsTitle": "Aucun projet trouvé",
+       "noResultsDescription": "Nous n'avons trouvé aucun projet correspondant à vos critères de recherche. Essayez d'ajuster vos filtres ou vos termes de recherche.",
+@@ -179,9 +179,9 @@
+     },
+     "workspaceGate": {
+       "unsupportedBrowser": "Navigateur non pris en charge",
+-      "unsupportedBrowserDescription": "FreeCut nécessite un navigateur basé sur Chromium (Chrome, Edge, Brave, Arc) pour son stockage en dossier d'espace de travail. Firefox et Safari ne prennent pas encore en charge la File System Access API.",
++      "unsupportedBrowserDescription": "Studio nécessite un navigateur basé sur Chromium (Chrome, Edge, Brave, Arc) pour son stockage en dossier d'espace de travail. Firefox et Safari ne prennent pas encore en charge la File System Access API.",
+       "pickTitle": "Choisissez votre dossier d'espace de travail",
+-      "pickDescription": "FreeCut stocke tous vos projets, médias et caches sous forme de fichiers simples dans un dossier que vous contrôlez. Choisissez n'importe quel dossier sur le disque — vos projets y résideront.",
++      "pickDescription": "Studio stocke tous vos projets, médias et caches sous forme de fichiers simples dans un dossier que vous contrôlez. Choisissez n'importe quel dossier sur le disque — vos projets y résideront.",
+       "chooseFolder": "Choisir un dossier",
+       "workspaceGuide": "Guide de l'espace de travail",
+       "pickTip": "Astuce : choisissez un dossier dans Dropbox, iCloud ou Google Drive pour synchroniser les projets entre appareils. Vous pourrez le déplacer plus tard.",
+@@ -190,7 +190,7 @@
+       "chooseDifferentFolder": "Choisir un autre dossier",
+       "reconnect": "Reconnecter",
+       "folderPermissionDenied": "L’autorisation n’a pas été accordée. Choisissez un dossier et autorisez l’accès en lecture/écriture pour continuer.",
+-      "folderPickFailed": "FreeCut n’a pas pu ouvrir ce dossier. Essayez un dossier normal que vous pouvez modifier, puis autorisez l’accès en lecture/écriture.",
++      "folderPickFailed": "Studio n’a pas pu ouvrir ce dossier. Essayez un dossier normal que vous pouvez modifier, puis autorisez l’accès en lecture/écriture.",
+       "reconnectPermissionDenied": "Autorisation refusée. Reconnectez l’espace de travail ou choisissez un autre dossier."
+     },
+     "workspaceIndicator": {
+@@ -264,15 +264,15 @@
+       "showcaseSubheading": "Une suite de montage vidéo complète, directement dans votre navigateur.",
+       "screenshot": "Capture d'écran",
+       "seeItInAction": "Voir en action",
+-      "seeItInActionSubheading": "Regardez une démonstration rapide des capacités de montage de FreeCut.",
+-      "demoPreviewAlt": "Aperçu de la démo de FreeCut",
++      "seeItInActionSubheading": "Regardez une démonstration rapide des capacités de montage de Studio.",
++      "demoPreviewAlt": "Aperçu de la démo de Studio",
+       "watchDemoOnYouTube": "Regarder la démo sur YouTube",
+       "faqHeading": "Questions fréquentes",
+-      "faqSubheading": "Tout ce que vous devez savoir sur FreeCut.",
++      "faqSubheading": "Tout ce que vous devez savoir sur Studio.",
+       "ctaHeading": "Prêt à commencer le montage ?",
+       "ctaSubheading": "Lancez-vous et créez votre premier projet en quelques secondes.",
+       "startEditing": "Commencer le montage",
+-      "footer": "Licence MIT © {{year}} FreeCut",
++      "footer": "Licence MIT © {{year}} Studio",
+       "showcase": {
+         "timeline": {
+           "title": "Montage sur la timeline",
+@@ -309,12 +309,12 @@
+       },
+       "faq": {
+         "free": {
+-          "question": "FreeCut est-il vraiment gratuit ?",
+-          "answer": "Oui, FreeCut est entièrement gratuit et open source sous licence MIT. Il n'y a aucun frais caché, abonnement ou filigrane."
++          "question": "Studio est-il vraiment gratuit ?",
++          "answer": "Oui, Studio est entièrement gratuit et open source sous licence MIT. Il n'y a aucun frais caché, abonnement ou filigrane."
+         },
+         "install": {
+           "question": "Dois-je installer quelque chose ?",
+-          "answer": "Aucune installation requise. FreeCut fonctionne entièrement dans votre navigateur. Ouvrez simplement le site web et commencez le montage."
++          "answer": "Aucune installation requise. Studio fonctionne entièrement dans votre navigateur. Ouvrez simplement le site web et commencez le montage."
+         },
+         "storage": {
+           "question": "Où mes vidéos sont-elles stockées ?",
+@@ -322,7 +322,7 @@
+         },
+         "browsers": {
+           "question": "Quels navigateurs sont pris en charge ?",
+-          "answerP1": "FreeCut fonctionne actuellement le mieux dans Chrome ou Edge 113+. Il s'appuie sur des API de navigateur modernes comme WebGPU, WebCodecs, OPFS et File System Access, donc le flux complet est actuellement axé sur Chromium.",
++          "answerP1": "Studio fonctionne actuellement le mieux dans Chrome ou Edge 113+. Il s'appuie sur des API de navigateur modernes comme WebGPU, WebCodecs, OPFS et File System Access, donc le flux complet est actuellement axé sur Chromium.",
+           "answerP2": "<strong>Utilisateurs de Brave :</strong> la File System Access API est désactivée par défaut. Pour l'activer, allez à <code>brave://flags/#file-system-access-api</code>, réglez-la sur <strong>Enabled</strong>, puis relancez le navigateur."
+         },
+         "exportFormats": {
+@@ -557,7 +557,7 @@
+     },
+     "routeError": {
+       "title": "Une erreur est survenue",
+-      "description": "FreeCut n'a pas pu terminer le chargement de cette page.",
++      "description": "Studio n'a pas pu terminer le chargement de cette page.",
+       "projectNotFoundTitle": "Ce projet est introuvable",
+       "projectNotFoundDescription": "Il a peut-être été déplacé, supprimé ou ouvert depuis un ancien lien. Vos autres projets sont toujours disponibles dans votre espace de travail.",
+       "backToProjects": "Retour aux projets",
+@@ -565,9 +565,9 @@
+       "copyDetails": "Copier les détails de l'erreur",
+       "detailsCopied": "Détails de l'erreur copiés",
+       "copyFailed": "Impossible de copier les détails",
+-      "causePermission": "FreeCut n'a plus l'autorisation d'utiliser votre dossier de travail. Reconnectez-le ou choisissez un autre dossier.",
++      "causePermission": "Studio n'a plus l'autorisation d'utiliser votre dossier de travail. Reconnectez-le ou choisissez un autre dossier.",
+       "causeMissing": "Votre dossier de travail est introuvable. Il a peut-être été déplacé, renommé ou supprimé.",
+-      "causeUnsupported": "Votre dossier de travail se trouve sur un disque qui ne prend pas en charge tout ce dont FreeCut a besoin. Les dossiers synchronisés dans le cloud et les dossiers réseau se comportent souvent ainsi. Choisir un dossier sur un disque local résout généralement le problème."
++      "causeUnsupported": "Votre dossier de travail se trouve sur un disque qui ne prend pas en charge tout ce dont Studio a besoin. Les dossiers synchronisés dans le cloud et les dossiers réseau se comportent souvent ainsi. Choisir un dossier sur un disque local résout généralement le problème."
+     }
+   }
+ }
+diff --git a/src/i18n/locales/partials/fr/remaining-ui.json b/src/i18n/locales/partials/fr/remaining-ui.json
+index 11a640c..30fe581 100644
+--- a/src/i18n/locales/partials/fr/remaining-ui.json
++++ b/src/i18n/locales/partials/fr/remaining-ui.json
+@@ -186,7 +186,7 @@
+         "savedToLibrary": "« {{fileName}} » a été enregistré dans la bibliothèque multimédia.",
+         "savedAndAdded": "« {{fileName}} » a été enregistré et ajouté à la timeline."
+       },
+-      "defaultTtsPrompt": "Welcome to freecut. This voice was generated locally in the browser.",
++      "defaultTtsPrompt": "Welcome to Studio. This voice was generated locally in the browser.",
+       "musicPresets": {
+         "lofiChillLabel": "Lo-fi Chill",
+         "lofiChillPrompt": "Warm lo-fi beat with dusty drums, mellow bass, and a dreamy synth lead",
+diff --git a/src/i18n/locales/partials/ja/changelog.json b/src/i18n/locales/partials/ja/changelog.json
+index 3faf420..7ee5793 100644
+--- a/src/i18n/locales/partials/ja/changelog.json
++++ b/src/i18n/locales/partials/ja/changelog.json
+@@ -1,16 +1,16 @@
+ {
+   "changelog": {
+-    "homeAria": "FreeCut ホーム",
++    "homeAria": "Studio ホーム",
+     "backToHome": "ホームに戻る",
+     "releaseNotes": "リリースノート",
+-    "title": "FreeCut の新着情報",
++    "title": "Studio の新着情報",
+     "description": "新しい編集ツール、ワークフローの改善、修正点を毎週まとめてお届けします。最新のリリースは展開されています。以前の週を展開すると、変更点の一覧を確認できます。",
+     "latest": "最新",
+     "changeCount_one": "{{count}} 件の変更",
+     "changeCount_other": "{{count}} 件の変更",
+     "initialRelease": "初回リリース",
+     "ctaTitle": "何か作ってみませんか？",
+-    "ctaDescription": "FreeCut を開いて、最新のツールを活用しましょう。",
+-    "openFreeCut": "FreeCut を開く"
++    "ctaDescription": "Studio を開いて、最新のツールを活用しましょう。",
++    "openFreeCut": "Studio を開く"
+   }
+ }
+diff --git a/src/i18n/locales/partials/ja/editor.json b/src/i18n/locales/partials/ja/editor.json
+index 8679b4e..b2da27b 100644
+--- a/src/i18n/locales/partials/ja/editor.json
++++ b/src/i18n/locales/partials/ja/editor.json
+@@ -281,7 +281,7 @@
+     "projectUpgradeDialog": {
+       "title": "開く前にプロジェクトをアップグレード",
+       "versionMismatch": "<strong>{{projectName}}</strong>はプロジェクトスキーマ v{{storedSchemaVersion}} で保存されていますが、このビルドは v{{currentSchemaVersion}} を必要とします。",
+-      "explanation": "FreeCutはエディターを読み込む前にアップグレードできます。問題があった場合に元のデータを復元できるよう、まずアップグレード前のバックアップを作成します。",
++      "explanation": "Studioはエディターを読み込む前にアップグレードできます。問題があった場合に元のデータを復元できるよう、まずアップグレード前のバックアップを作成します。",
+       "backupCopy": "バックアップコピー：<strong>{{backupName}}</strong>",
+       "creatingBackup": "バックアップを作成中...",
+       "confirm": "バックアップを作成してアップグレード"
+@@ -663,7 +663,7 @@
+       "clip": "クリップ",
+       "size": "サイズ",
+       "frameRate": "フレームレート",
+-      "fpsRoundedHint": "FreeCutはインポートしたビデオを最も近い対応プロジェクトフレームレートに合わせます。このクリップは {{fps}} fps を使用します。",
++      "fpsRoundedHint": "Studioはインポートしたビデオを最も近い対応プロジェクトフレームレートに合わせます。このクリップは {{fps}} fps を使用します。",
+       "keepCurrent": "現在のままにする",
+       "fpsOnly": "FPSのみ",
+       "sizeOnly": "サイズのみ",
+@@ -672,14 +672,14 @@
+       "matchSize": "サイズを合わせる"
+     },
+     "editor": {
+-      "appLabel": "FreeCut ビデオエディター",
++      "appLabel": "Studio ビデオエディター",
+       "upgrading": "プロジェクトをアップグレード中…",
+       "backupCreated": "アップグレード前にバックアップを作成しました",
+       "backupFailed": "アップグレード前のバックアップ作成に失敗しました",
+       "tryAgain": "もう一度お試しください。",
+       "projectSaved": "プロジェクトを保存しました",
+       "projectSaveFailed": "プロジェクトの保存に失敗しました",
+-      "projectBundle": "FreeCut プロジェクトバンドル"
++      "projectBundle": "Studio プロジェクトバンドル"
+     },
+     "audioMeters": {
+       "meters": "メーター",
+@@ -927,7 +927,7 @@
+         "savedToLibrary": "\"{{fileName}}\" をメディアライブラリに保存しました。",
+         "savedAndAdded": "\"{{fileName}}\" を保存してタイムラインに追加しました。"
+       },
+-      "defaultTtsPrompt": "Welcome to freecut. This voice was generated locally in the browser.",
++      "defaultTtsPrompt": "Welcome to Studio. This voice was generated locally in the browser.",
+       "musicPresets": {
+         "lofiChillLabel": "Lo-fi チル",
+         "lofiChillPrompt": "温かい lo-fi ビート、ダスティなドラム、メロウなベース、夢のようなシンセリード",
+diff --git a/src/i18n/locales/partials/ja/export.json b/src/i18n/locales/partials/ja/export.json
+index 60dda00..a2a7407 100644
+--- a/src/i18n/locales/partials/ja/export.json
++++ b/src/i18n/locales/partials/ja/export.json
+@@ -132,7 +132,7 @@
+         },
+         "video-codec-fallback": {
+           "title": "代替コーデックを使用します",
+-          "detail": "選択したコーデックはここでは使用できません。FreeCut は代わりに {{container}} で {{codec}} を書き出します。",
++          "detail": "選択したコーデックはここでは使用できません。Studio は代わりに {{container}} で {{codec}} を書き出します。",
+           "fix": "この代替設定を使うか、対応している別のコーデックを手動で選択してください。"
+         },
+         "video-codec-supported": {
+@@ -155,7 +155,7 @@
+         },
+         "worker-animated-image-fallback": {
+           "title": "アニメーション画像はメインスレッド書き出しが必要です",
+-          "detail": "GIF/WebP 画像アイテムはまだ書き出しワーカーでレンダリングできません。FreeCut は自動的にフォールバックします。",
++          "detail": "GIF/WebP 画像アイテムはまだ書き出しワーカーでレンダリングできません。Studio は自動的にフォールバックします。",
+           "fix": "より高速なワーカー書き出しのため、書き出す前にアニメーション画像を動画クリップに置き換えてください。"
+         },
+         "worker-audio-context-fallback": {
+diff --git a/src/i18n/locales/partials/ja/media.json b/src/i18n/locales/partials/ja/media.json
+index 0132e39..c6fff0b 100644
+--- a/src/i18n/locales/partials/ja/media.json
++++ b/src/i18n/locales/partials/ja/media.json
+@@ -27,9 +27,9 @@
+       "stopAudio": "オーディオを停止",
+       "subtitlesCachedAll": "字幕をキャッシュ済み",
+       "subtitlesCachedPartial": "一部の字幕をキャッシュ済み",
+-      "subtitlesCannotRead": "FreeCut は今「{{name}}」を読み込めません。使用中のアプリを閉じて再試行してください。",
++      "subtitlesCannotRead": "Studio は今「{{name}}」を読み込めません。使用中のアプリを閉じて再試行してください。",
+       "subtitlesExtractFailed": "字幕の抽出に失敗しました",
+-      "subtitlesFileMissing": "FreeCut は「{{name}}」を見つけられなくなりました。",
++      "subtitlesFileMissing": "Studio は「{{name}}」を見つけられなくなりました。",
+       "subtitlesNeedPermission": "字幕を抽出する前に「{{name}}」へのアクセス許可が必要です。",
+       "subtitlesScanFailed": "字幕スキャンに失敗しました",
+       "transcribeFailed": "文字起こしに失敗しました",
+@@ -228,9 +228,9 @@
+     },
+     "missingMedia": {
+       "title": "メディアが見つかりません",
+-      "description": "FreeCut は {{count}} 件のメディアファイルにアクセスできません。ファイルを指定するか、オフラインで作業を続けてください。",
+-      "description_one": "FreeCut は {{count}} 件のメディアファイルにアクセスできません。ファイルを指定するか、オフラインで作業を続けてください。",
+-      "description_other": "FreeCut は {{count}} 件のメディアファイルにアクセスできません。ファイルを指定するか、オフラインで作業を続けてください。",
++      "description": "Studio は {{count}} 件のメディアファイルにアクセスできません。ファイルを指定するか、オフラインで作業を続けてください。",
++      "description_one": "Studio は {{count}} 件のメディアファイルにアクセスできません。ファイルを指定するか、オフラインで作業を続けてください。",
++      "description_other": "Studio は {{count}} 件のメディアファイルにアクセスできません。ファイルを指定するか、オフラインで作業を続けてください。",
+       "needPermission": "{{count}} 件に権限が必要です",
+       "needPermission_one": "{{count}} 件に権限が必要です",
+       "needPermission_other": "{{count}} 件に権限が必要です",
+diff --git a/src/i18n/locales/partials/ja/projects.json b/src/i18n/locales/partials/ja/projects.json
+index 97c4295..f44213d 100644
+--- a/src/i18n/locales/partials/ja/projects.json
++++ b/src/i18n/locales/partials/ja/projects.json
+@@ -112,7 +112,7 @@
+       "selectedCount_other": "{{count}}件選択中",
+       "deleteN_one": "{{count}}件削除",
+       "deleteN_other": "{{count}}件削除",
+-      "welcomeTitle": "FreeCutへようこそ",
++      "welcomeTitle": "Studioへようこそ",
+       "welcomeDescription": "最初の動画プロジェクトを作成して始めましょう。解像度とフレームレートを選んで、編集を開始してください！",
+       "noResultsTitle": "プロジェクトが見つかりません",
+       "noResultsDescription": "検索条件に一致するプロジェクトが見つかりませんでした。フィルターや検索語句を調整してみてください。",
+@@ -179,9 +179,9 @@
+     },
+     "workspaceGate": {
+       "unsupportedBrowser": "サポートされていないブラウザ",
+-      "unsupportedBrowserDescription": "FreeCutのワークスペースフォルダストレージには、Chromiumベースのブラウザ（Chrome、Edge、Brave、Arc）が必要です。FirefoxとSafariはまだFile System Access APIをサポートしていません。",
++      "unsupportedBrowserDescription": "Studioのワークスペースフォルダストレージには、Chromiumベースのブラウザ（Chrome、Edge、Brave、Arc）が必要です。FirefoxとSafariはまだFile System Access APIをサポートしていません。",
+       "pickTitle": "ワークスペースフォルダを選択",
+-      "pickDescription": "FreeCutは、すべてのプロジェクト、メディア、キャッシュを、あなたが管理するフォルダ内のプレーンファイルとして保存します。ディスク上の任意のフォルダを選んでください。プロジェクトはそこに保存されます。",
++      "pickDescription": "Studioは、すべてのプロジェクト、メディア、キャッシュを、あなたが管理するフォルダ内のプレーンファイルとして保存します。ディスク上の任意のフォルダを選んでください。プロジェクトはそこに保存されます。",
+       "chooseFolder": "フォルダを選択",
+       "workspaceGuide": "ワークスペースガイド",
+       "pickTip": "ヒント: Dropbox、iCloud、Google Drive 内のフォルダを選ぶと、デバイス間でプロジェクトを同期できます。後で移動することもできます。",
+@@ -190,7 +190,7 @@
+       "chooseDifferentFolder": "別のフォルダを選択",
+       "reconnect": "再接続",
+       "folderPermissionDenied": "権限が付与されませんでした。続行するにはフォルダーを選択し、読み書きアクセスを許可してください。",
+-      "folderPickFailed": "FreeCut はそのフォルダーを開けませんでした。編集できる通常のフォルダーを選び、読み書きアクセスを許可してください。",
++      "folderPickFailed": "Studio はそのフォルダーを開けませんでした。編集できる通常のフォルダーを選び、読み書きアクセスを許可してください。",
+       "reconnectPermissionDenied": "権限が拒否されました。ワークスペースを再接続するか、別のフォルダーを選択してください。"
+     },
+     "workspaceIndicator": {
+@@ -264,15 +264,15 @@
+       "showcaseSubheading": "完全な動画編集スイートを、ブラウザの中で。",
+       "screenshot": "スクリーンショット",
+       "seeItInAction": "動作を見る",
+-      "seeItInActionSubheading": "FreeCutの編集機能のクイックデモをご覧ください。",
+-      "demoPreviewAlt": "FreeCutデモのプレビュー",
++      "seeItInActionSubheading": "Studioの編集機能のクイックデモをご覧ください。",
++      "demoPreviewAlt": "Studioデモのプレビュー",
+       "watchDemoOnYouTube": "YouTubeでデモを見る",
+       "faqHeading": "よくある質問",
+-      "faqSubheading": "FreeCutについて知っておくべきすべて。",
++      "faqSubheading": "Studioについて知っておくべきすべて。",
+       "ctaHeading": "編集を始める準備はできましたか？",
+       "ctaSubheading": "さっそく数秒で最初のプロジェクトを作成しましょう。",
+       "startEditing": "編集を始める",
+-      "footer": "MITライセンス © {{year}} FreeCut",
++      "footer": "MITライセンス © {{year}} Studio",
+       "showcase": {
+         "timeline": {
+           "title": "タイムライン編集",
+@@ -309,12 +309,12 @@
+       },
+       "faq": {
+         "free": {
+-          "question": "FreeCutは本当に無料ですか？",
+-          "answer": "はい、FreeCutはMITライセンスの下で完全に無料かつオープンソースです。隠れた料金、サブスクリプション、ウォーターマークはありません。"
++          "question": "Studioは本当に無料ですか？",
++          "answer": "はい、StudioはMITライセンスの下で完全に無料かつオープンソースです。隠れた料金、サブスクリプション、ウォーターマークはありません。"
+         },
+         "install": {
+           "question": "何かインストールする必要がありますか？",
+-          "answer": "インストールは不要です。FreeCutは完全にブラウザ内で動作します。ウェブサイトを開いて編集を始めるだけです。"
++          "answer": "インストールは不要です。Studioは完全にブラウザ内で動作します。ウェブサイトを開いて編集を始めるだけです。"
+         },
+         "storage": {
+           "question": "動画はどこに保存されますか？",
+@@ -322,7 +322,7 @@
+         },
+         "browsers": {
+           "question": "対応しているブラウザは？",
+-          "answerP1": "FreeCutは現在、ChromeまたはEdge 113以降で最も快適に動作します。WebGPU、WebCodecs、OPFS、File System AccessなどのモダンなブラウザAPIに依存しているため、現時点ではフルワークフローはChromium優先です。",
++          "answerP1": "Studioは現在、ChromeまたはEdge 113以降で最も快適に動作します。WebGPU、WebCodecs、OPFS、File System AccessなどのモダンなブラウザAPIに依存しているため、現時点ではフルワークフローはChromium優先です。",
+           "answerP2": "<strong>Braveユーザーの方:</strong> File System Access APIはデフォルトで無効になっています。有効にするには、<code>brave://flags/#file-system-access-api</code>に移動し、<strong>Enabled</strong>に設定して、ブラウザを再起動してください。"
+         },
+         "exportFormats": {
+@@ -557,7 +557,7 @@
+     },
+     "routeError": {
+       "title": "問題が発生しました",
+-      "description": "FreeCut はこのページの読み込みを完了できませんでした。",
++      "description": "Studio はこのページの読み込みを完了できませんでした。",
+       "projectNotFoundTitle": "このプロジェクトが見つかりません",
+       "projectNotFoundDescription": "移動または削除されたか、古いリンクから開かれた可能性があります。他のプロジェクトは引き続きワークスペースで利用できます。",
+       "backToProjects": "プロジェクト一覧に戻る",
+@@ -565,9 +565,9 @@
+       "copyDetails": "エラーの詳細をコピー",
+       "detailsCopied": "エラーの詳細をコピーしました",
+       "copyFailed": "詳細をコピーできませんでした",
+-      "causePermission": "FreeCut はワークスペースフォルダーを使用する権限を失いました。再接続するか、別のフォルダーを選択してください。",
++      "causePermission": "Studio はワークスペースフォルダーを使用する権限を失いました。再接続するか、別のフォルダーを選択してください。",
+       "causeMissing": "ワークスペースフォルダーが見つかりません。移動、名前の変更、または削除された可能性があります。",
+-      "causeUnsupported": "ワークスペースフォルダーは、FreeCut に必要な機能をすべてサポートしていないドライブ上にあります。クラウド同期フォルダーやネットワークフォルダーではよくあることです。ローカルディスク上のフォルダーを選ぶと、たいていは解決します。"
++      "causeUnsupported": "ワークスペースフォルダーは、Studio に必要な機能をすべてサポートしていないドライブ上にあります。クラウド同期フォルダーやネットワークフォルダーではよくあることです。ローカルディスク上のフォルダーを選ぶと、たいていは解決します。"
+     }
+   }
+ }
+diff --git a/src/i18n/locales/partials/ja/remaining-ui.json b/src/i18n/locales/partials/ja/remaining-ui.json
+index 08f2e34..7e15012 100644
+--- a/src/i18n/locales/partials/ja/remaining-ui.json
++++ b/src/i18n/locales/partials/ja/remaining-ui.json
+@@ -186,7 +186,7 @@
+         "savedToLibrary": "\"{{fileName}}\" をメディアライブラリに保存しました。",
+         "savedAndAdded": "\"{{fileName}}\" を保存してタイムラインに追加しました。"
+       },
+-      "defaultTtsPrompt": "Welcome to freecut. This voice was generated locally in the browser.",
++      "defaultTtsPrompt": "Welcome to Studio. This voice was generated locally in the browser.",
+       "musicPresets": {
+         "lofiChillLabel": "Lo-fi チル",
+         "lofiChillPrompt": "温かい lo-fi ビート、ダスティなドラム、メロウなベース、夢のようなシンセリード",
+diff --git a/src/i18n/locales/partials/ko/changelog.json b/src/i18n/locales/partials/ko/changelog.json
+index fb93efe..b4bea13 100644
+--- a/src/i18n/locales/partials/ko/changelog.json
++++ b/src/i18n/locales/partials/ko/changelog.json
+@@ -1,16 +1,16 @@
+ {
+   "changelog": {
+-    "homeAria": "FreeCut 홈",
++    "homeAria": "Studio 홈",
+     "backToHome": "홈으로 돌아가기",
+     "releaseNotes": "릴리스 노트",
+-    "title": "FreeCut의 새로운 소식",
++    "title": "Studio의 새로운 소식",
+     "description": "새로운 편집 도구, 워크플로 개선 사항, 수정 내용을 매주 정리해 알려드립니다. 최신 릴리스는 펼쳐져 있으며, 이전 주를 펼치면 전체 변경 목록을 볼 수 있습니다.",
+     "latest": "최신",
+     "changeCount_one": "변경 사항 {{count}}개",
+     "changeCount_other": "변경 사항 {{count}}개",
+     "initialRelease": "최초 릴리스",
+     "ctaTitle": "무언가 만들어 볼 준비가 되셨나요?",
+-    "ctaDescription": "FreeCut을 열고 최신 도구를 활용해 보세요.",
+-    "openFreeCut": "FreeCut 열기"
++    "ctaDescription": "Studio를 열고 최신 도구를 활용해 보세요.",
++    "openFreeCut": "Studio 열기"
+   }
+ }
+diff --git a/src/i18n/locales/partials/ko/editor.json b/src/i18n/locales/partials/ko/editor.json
+index c40b104..1eb5474 100644
+--- a/src/i18n/locales/partials/ko/editor.json
++++ b/src/i18n/locales/partials/ko/editor.json
+@@ -281,7 +281,7 @@
+     "projectUpgradeDialog": {
+       "title": "열기 전에 프로젝트 업그레이드",
+       "versionMismatch": "<strong>{{projectName}}</strong>은(는) 프로젝트 스키마 v{{storedSchemaVersion}}으로 저장되었지만 이 빌드는 v{{currentSchemaVersion}}을(를) 필요로 합니다.",
+-      "explanation": "FreeCut은 편집기를 로드하기 전에 업그레이드할 수 있습니다. 문제가 있을 경우 이전 데이터를 복원할 수 있도록 먼저 업그레이드 전 백업이 생성됩니다.",
++      "explanation": "Studio는 편집기를 로드하기 전에 업그레이드할 수 있습니다. 문제가 있을 경우 이전 데이터를 복원할 수 있도록 먼저 업그레이드 전 백업이 생성됩니다.",
+       "backupCopy": "백업 사본: <strong>{{backupName}}</strong>",
+       "creatingBackup": "백업 생성 중...",
+       "confirm": "백업 생성 후 업그레이드"
+@@ -663,7 +663,7 @@
+       "clip": "클립",
+       "size": "크기",
+       "frameRate": "프레임 레이트",
+-      "fpsRoundedHint": "FreeCut은 가져온 비디오를 가장 가까운 지원 프로젝트 프레임 레이트에 맞춥니다. 이 클립은 {{fps}} fps를 사용합니다.",
++      "fpsRoundedHint": "Studio는 가져온 비디오를 가장 가까운 지원 프로젝트 프레임 레이트에 맞춥니다. 이 클립은 {{fps}} fps를 사용합니다.",
+       "keepCurrent": "현재 유지",
+       "fpsOnly": "FPS만",
+       "sizeOnly": "크기만",
+@@ -672,14 +672,14 @@
+       "matchSize": "크기 맞추기"
+     },
+     "editor": {
+-      "appLabel": "FreeCut 비디오 편집기",
++      "appLabel": "Studio 비디오 편집기",
+       "upgrading": "프로젝트 업그레이드 중…",
+       "backupCreated": "업그레이드 전 백업이 생성되었습니다",
+       "backupFailed": "업그레이드 전 백업 생성에 실패했습니다",
+       "tryAgain": "다시 시도하세요.",
+       "projectSaved": "프로젝트가 저장되었습니다",
+       "projectSaveFailed": "프로젝트 저장에 실패했습니다",
+-      "projectBundle": "FreeCut 프로젝트 번들"
++      "projectBundle": "Studio 프로젝트 번들"
+     },
+     "audioMeters": {
+       "meters": "미터",
+@@ -927,7 +927,7 @@
+         "savedToLibrary": "\"{{fileName}}\"이(가) 미디어 라이브러리에 저장되었습니다.",
+         "savedAndAdded": "\"{{fileName}}\"이(가) 저장되어 타임라인에 추가되었습니다."
+       },
+-      "defaultTtsPrompt": "Welcome to freecut. This voice was generated locally in the browser.",
++      "defaultTtsPrompt": "Welcome to Studio. This voice was generated locally in the browser.",
+       "musicPresets": {
+         "lofiChillLabel": "Lo-fi 칠",
+         "lofiChillPrompt": "따뜻한 lo-fi 비트, 먼지 느낌의 드럼, 부드러운 베이스, 꿈같은 신스 리드",
+diff --git a/src/i18n/locales/partials/ko/export.json b/src/i18n/locales/partials/ko/export.json
+index ab0a818..290268d 100644
+--- a/src/i18n/locales/partials/ko/export.json
++++ b/src/i18n/locales/partials/ko/export.json
+@@ -132,7 +132,7 @@
+         },
+         "video-codec-fallback": {
+           "title": "대체 코덱이 사용됩니다",
+-          "detail": "선택한 코덱을 여기에서 사용할 수 없습니다. FreeCut은 대신 {{container}}에서 {{codec}}로 내보냅니다.",
++          "detail": "선택한 코덱을 여기에서 사용할 수 없습니다. Studio는 대신 {{container}}에서 {{codec}}로 내보냅니다.",
+           "fix": "이 대체 설정을 유지하거나 지원되는 다른 코덱을 직접 선택하세요."
+         },
+         "video-codec-supported": {
+@@ -155,7 +155,7 @@
+         },
+         "worker-animated-image-fallback": {
+           "title": "애니메이션 이미지는 메인 스레드 내보내기가 필요합니다",
+-          "detail": "GIF/WebP 이미지 항목은 아직 내보내기 워커에서 렌더링할 수 없습니다. FreeCut이 자동으로 폴백합니다.",
++          "detail": "GIF/WebP 이미지 항목은 아직 내보내기 워커에서 렌더링할 수 없습니다. Studio가 자동으로 폴백합니다.",
+           "fix": "더 빠른 워커 내보내기를 위해 내보내기 전에 애니메이션 이미지를 비디오 클립으로 바꾸세요."
+         },
+         "worker-audio-context-fallback": {
+diff --git a/src/i18n/locales/partials/ko/media.json b/src/i18n/locales/partials/ko/media.json
+index 5a49958..0e1b27d 100644
+--- a/src/i18n/locales/partials/ko/media.json
++++ b/src/i18n/locales/partials/ko/media.json
+@@ -27,9 +27,9 @@
+       "stopAudio": "오디오 정지",
+       "subtitlesCachedAll": "자막 캐시 완료",
+       "subtitlesCachedPartial": "자막이 일부만 캐시됨",
+-      "subtitlesCannotRead": "FreeCut가 지금 \"{{name}}\"을(를) 읽을 수 없습니다. 사용 중인 앱을 닫고 다시 시도하세요.",
++      "subtitlesCannotRead": "Studio가 지금 \"{{name}}\"을(를) 읽을 수 없습니다. 사용 중인 앱을 닫고 다시 시도하세요.",
+       "subtitlesExtractFailed": "자막 추출에 실패했습니다",
+-      "subtitlesFileMissing": "FreeCut가 더 이상 \"{{name}}\"을(를) 찾을 수 없습니다.",
++      "subtitlesFileMissing": "Studio가 더 이상 \"{{name}}\"을(를) 찾을 수 없습니다.",
+       "subtitlesNeedPermission": "자막을 추출하기 전에 \"{{name}}\"에 대한 권한이 필요합니다.",
+       "subtitlesScanFailed": "자막 검색 실패",
+       "transcribeFailed": "전사 실패",
+@@ -228,9 +228,9 @@
+     },
+     "missingMedia": {
+       "title": "누락된 미디어",
+-      "description": "FreeCut가 미디어 파일 {{count}}개에 접근할 수 없습니다. 파일을 찾거나 오프라인으로 계속 작업하세요.",
+-      "description_one": "FreeCut가 미디어 파일 {{count}}개에 접근할 수 없습니다. 파일을 찾거나 오프라인으로 계속 작업하세요.",
+-      "description_other": "FreeCut가 미디어 파일 {{count}}개에 접근할 수 없습니다. 파일을 찾거나 오프라인으로 계속 작업하세요.",
++      "description": "Studio가 미디어 파일 {{count}}개에 접근할 수 없습니다. 파일을 찾거나 오프라인으로 계속 작업하세요.",
++      "description_one": "Studio가 미디어 파일 {{count}}개에 접근할 수 없습니다. 파일을 찾거나 오프라인으로 계속 작업하세요.",
++      "description_other": "Studio가 미디어 파일 {{count}}개에 접근할 수 없습니다. 파일을 찾거나 오프라인으로 계속 작업하세요.",
+       "needPermission": "{{count}}개 권한 필요",
+       "needPermission_one": "{{count}}개 권한 필요",
+       "needPermission_other": "{{count}}개 권한 필요",
+diff --git a/src/i18n/locales/partials/ko/projects.json b/src/i18n/locales/partials/ko/projects.json
+index d55ae52..eddd0da 100644
+--- a/src/i18n/locales/partials/ko/projects.json
++++ b/src/i18n/locales/partials/ko/projects.json
+@@ -112,7 +112,7 @@
+       "selectedCount_other": "{{count}}개 선택됨",
+       "deleteN_one": "{{count}}개 삭제",
+       "deleteN_other": "{{count}}개 삭제",
+-      "welcomeTitle": "FreeCut에 오신 것을 환영합니다",
++      "welcomeTitle": "Studio에 오신 것을 환영합니다",
+       "welcomeDescription": "첫 번째 동영상 프로젝트를 만들어 시작하세요. 해상도와 프레임 속도를 선택하고 편집을 시작하세요!",
+       "noResultsTitle": "프로젝트를 찾을 수 없습니다",
+       "noResultsDescription": "검색 조건과 일치하는 프로젝트를 찾을 수 없습니다. 필터나 검색어를 조정해 보세요.",
+@@ -179,9 +179,9 @@
+     },
+     "workspaceGate": {
+       "unsupportedBrowser": "지원되지 않는 브라우저",
+-      "unsupportedBrowserDescription": "FreeCut의 작업 공간 폴더 저장소에는 Chromium 기반 브라우저(Chrome, Edge, Brave, Arc)가 필요합니다. Firefox와 Safari는 아직 File System Access API를 지원하지 않습니다.",
++      "unsupportedBrowserDescription": "Studio의 작업 공간 폴더 저장소에는 Chromium 기반 브라우저(Chrome, Edge, Brave, Arc)가 필요합니다. Firefox와 Safari는 아직 File System Access API를 지원하지 않습니다.",
+       "pickTitle": "작업 공간 폴더 선택",
+-      "pickDescription": "FreeCut은 모든 프로젝트, 미디어, 캐시를 사용자가 관리하는 폴더에 일반 파일로 저장합니다. 디스크의 아무 폴더나 선택하세요 — 프로젝트가 그곳에 저장됩니다.",
++      "pickDescription": "Studio는 모든 프로젝트, 미디어, 캐시를 사용자가 관리하는 폴더에 일반 파일로 저장합니다. 디스크의 아무 폴더나 선택하세요 — 프로젝트가 그곳에 저장됩니다.",
+       "chooseFolder": "폴더 선택",
+       "workspaceGuide": "작업 공간 가이드",
+       "pickTip": "팁: Dropbox, iCloud, Google Drive 내의 폴더를 선택하면 기기 간에 프로젝트를 동기화할 수 있습니다. 나중에 옮길 수 있습니다.",
+@@ -190,7 +190,7 @@
+       "chooseDifferentFolder": "다른 폴더 선택",
+       "reconnect": "다시 연결",
+       "folderPermissionDenied": "권한이 부여되지 않았습니다. 계속하려면 폴더를 선택하고 읽기/쓰기 접근을 허용하세요.",
+-      "folderPickFailed": "FreeCut이 해당 폴더를 열 수 없습니다. 편집할 수 있는 일반 폴더를 선택한 뒤 읽기/쓰기 접근을 허용하세요.",
++      "folderPickFailed": "Studio가 해당 폴더를 열 수 없습니다. 편집할 수 있는 일반 폴더를 선택한 뒤 읽기/쓰기 접근을 허용하세요.",
+       "reconnectPermissionDenied": "권한이 거부되었습니다. 워크스페이스를 다시 연결하거나 다른 폴더를 선택하세요."
+     },
+     "workspaceIndicator": {
+@@ -264,15 +264,15 @@
+       "showcaseSubheading": "완전한 동영상 편집 도구 모음을 브라우저에서.",
+       "screenshot": "스크린샷",
+       "seeItInAction": "실제로 보기",
+-      "seeItInActionSubheading": "FreeCut 편집 기능의 빠른 데모를 확인하세요.",
+-      "demoPreviewAlt": "FreeCut 데모 미리보기",
++      "seeItInActionSubheading": "Studio 편집 기능의 빠른 데모를 확인하세요.",
++      "demoPreviewAlt": "Studio 데모 미리보기",
+       "watchDemoOnYouTube": "YouTube에서 데모 보기",
+       "faqHeading": "자주 묻는 질문",
+-      "faqSubheading": "FreeCut에 대해 알아야 할 모든 것.",
++      "faqSubheading": "Studio에 대해 알아야 할 모든 것.",
+       "ctaHeading": "편집을 시작할 준비가 되셨나요?",
+       "ctaSubheading": "바로 시작해서 몇 초 만에 첫 프로젝트를 만드세요.",
+       "startEditing": "편집 시작",
+-      "footer": "MIT 라이선스 © {{year}} FreeCut",
++      "footer": "MIT 라이선스 © {{year}} Studio",
+       "showcase": {
+         "timeline": {
+           "title": "타임라인 편집",
+@@ -309,12 +309,12 @@
+       },
+       "faq": {
+         "free": {
+-          "question": "FreeCut은 정말 무료인가요?",
+-          "answer": "네, FreeCut은 MIT 라이선스 하에 완전히 무료이며 오픈 소스입니다. 숨겨진 요금, 구독, 워터마크가 없습니다."
++          "question": "Studio는 정말 무료인가요?",
++          "answer": "네, Studio는 MIT 라이선스 하에 완전히 무료이며 오픈 소스입니다. 숨겨진 요금, 구독, 워터마크가 없습니다."
+         },
+         "install": {
+           "question": "설치해야 하는 것이 있나요?",
+-          "answer": "설치가 필요 없습니다. FreeCut은 전적으로 브라우저에서 실행됩니다. 웹사이트를 열고 편집을 시작하기만 하면 됩니다."
++          "answer": "설치가 필요 없습니다. Studio는 전적으로 브라우저에서 실행됩니다. 웹사이트를 열고 편집을 시작하기만 하면 됩니다."
+         },
+         "storage": {
+           "question": "내 동영상은 어디에 저장되나요?",
+@@ -322,7 +322,7 @@
+         },
+         "browsers": {
+           "question": "어떤 브라우저가 지원되나요?",
+-          "answerP1": "FreeCut은 현재 Chrome 또는 Edge 113 이상에서 가장 잘 작동합니다. WebGPU, WebCodecs, OPFS, File System Access 같은 최신 브라우저 API에 의존하므로 현재 전체 워크플로는 Chromium 우선입니다.",
++          "answerP1": "Studio는 현재 Chrome 또는 Edge 113 이상에서 가장 잘 작동합니다. WebGPU, WebCodecs, OPFS, File System Access 같은 최신 브라우저 API에 의존하므로 현재 전체 워크플로는 Chromium 우선입니다.",
+           "answerP2": "<strong>Brave 사용자:</strong> File System Access API는 기본적으로 비활성화되어 있습니다. 활성화하려면 <code>brave://flags/#file-system-access-api</code>로 이동하여 <strong>Enabled</strong>로 설정한 다음 브라우저를 다시 시작하세요."
+         },
+         "exportFormats": {
+@@ -557,7 +557,7 @@
+     },
+     "routeError": {
+       "title": "문제가 발생했습니다",
+-      "description": "FreeCut이 이 페이지를 모두 불러오지 못했습니다.",
++      "description": "Studio가 이 페이지를 모두 불러오지 못했습니다.",
+       "projectNotFoundTitle": "이 프로젝트를 찾을 수 없습니다",
+       "projectNotFoundDescription": "프로젝트가 이동 또는 삭제되었거나 오래된 링크에서 열렸을 수 있습니다. 다른 프로젝트는 작업 공간에서 계속 사용할 수 있습니다.",
+       "backToProjects": "프로젝트로 돌아가기",
+@@ -565,9 +565,9 @@
+       "copyDetails": "오류 세부 정보 복사",
+       "detailsCopied": "오류 세부 정보를 복사했습니다",
+       "copyFailed": "세부 정보를 복사하지 못했습니다",
+-      "causePermission": "FreeCut에 작업 폴더를 사용할 권한이 더 이상 없습니다. 다시 연결하거나 다른 폴더를 선택하세요.",
++      "causePermission": "Studio에 작업 폴더를 사용할 권한이 더 이상 없습니다. 다시 연결하거나 다른 폴더를 선택하세요.",
+       "causeMissing": "작업 폴더를 찾을 수 없습니다. 이동되었거나 이름이 변경되었거나 삭제되었을 수 있습니다.",
+-      "causeUnsupported": "작업 폴더가 FreeCut에 필요한 기능을 모두 지원하지 않는 드라이브에 있습니다. 클라우드 동기화 폴더나 네트워크 폴더에서 흔히 발생합니다. 로컬 디스크의 폴더를 선택하면 대부분 해결됩니다."
++      "causeUnsupported": "작업 폴더가 Studio에 필요한 기능을 모두 지원하지 않는 드라이브에 있습니다. 클라우드 동기화 폴더나 네트워크 폴더에서 흔히 발생합니다. 로컬 디스크의 폴더를 선택하면 대부분 해결됩니다."
+     }
+   }
+ }
+diff --git a/src/i18n/locales/partials/ko/remaining-ui.json b/src/i18n/locales/partials/ko/remaining-ui.json
+index c52caeb..c4de4a4 100644
+--- a/src/i18n/locales/partials/ko/remaining-ui.json
++++ b/src/i18n/locales/partials/ko/remaining-ui.json
+@@ -186,7 +186,7 @@
+         "savedToLibrary": "\"{{fileName}}\"이(가) 미디어 라이브러리에 저장되었습니다.",
+         "savedAndAdded": "\"{{fileName}}\"이(가) 저장되어 타임라인에 추가되었습니다."
+       },
+-      "defaultTtsPrompt": "Welcome to freecut. This voice was generated locally in the browser.",
++      "defaultTtsPrompt": "Welcome to Studio. This voice was generated locally in the browser.",
+       "musicPresets": {
+         "lofiChillLabel": "Lo-fi 칠",
+         "lofiChillPrompt": "따뜻한 lo-fi 비트, 먼지 느낌의 드럼, 부드러운 베이스, 꿈같은 신스 리드",
+diff --git a/src/i18n/locales/partials/pt-BR/changelog.json b/src/i18n/locales/partials/pt-BR/changelog.json
+index 3d4ab29..ce30c97 100644
+--- a/src/i18n/locales/partials/pt-BR/changelog.json
++++ b/src/i18n/locales/partials/pt-BR/changelog.json
+@@ -1,16 +1,16 @@
+ {
+   "changelog": {
+-    "homeAria": "Página inicial do FreeCut",
++    "homeAria": "Página inicial do Studio",
+     "backToHome": "Voltar ao início",
+     "releaseNotes": "Notas da versão",
+-    "title": "Novidades no FreeCut",
++    "title": "Novidades no Studio",
+     "description": "Um resumo semanal de novas ferramentas de edição, melhorias no fluxo de trabalho e correções. A versão mais recente está aberta; expanda qualquer semana anterior para ver a lista completa de alterações.",
+     "latest": "Mais recente",
+     "changeCount_one": "{{count}} alteração",
+     "changeCount_other": "{{count}} alterações",
+     "initialRelease": "Versão inicial",
+     "ctaTitle": "Pronto para criar algo?",
+-    "ctaDescription": "Abra o FreeCut e coloque as ferramentas mais recentes em ação.",
+-    "openFreeCut": "Abrir o FreeCut"
++    "ctaDescription": "Abra o Studio e coloque as ferramentas mais recentes em ação.",
++    "openFreeCut": "Abrir o Studio"
+   }
+ }
+diff --git a/src/i18n/locales/partials/pt-BR/editor.json b/src/i18n/locales/partials/pt-BR/editor.json
+index e607e6f..f25c5e4 100644
+--- a/src/i18n/locales/partials/pt-BR/editor.json
++++ b/src/i18n/locales/partials/pt-BR/editor.json
+@@ -281,7 +281,7 @@
+     "projectUpgradeDialog": {
+       "title": "Atualizar o projeto antes de abrir",
+       "versionMismatch": "<strong>{{projectName}}</strong> foi salvo com o esquema de projeto v{{storedSchemaVersion}}, mas esta versão espera v{{currentSchemaVersion}}.",
+-      "explanation": "O FreeCut pode atualizá-lo antes de carregar o editor. Primeiro será criado um backup do estado anterior à atualização para que você possa restaurar os dados antigos se algo parecer errado.",
++      "explanation": "O Studio pode atualizá-lo antes de carregar o editor. Primeiro será criado um backup do estado anterior à atualização para que você possa restaurar os dados antigos se algo parecer errado.",
+       "backupCopy": "Cópia de backup: <strong>{{backupName}}</strong>",
+       "creatingBackup": "Criando backup...",
+       "confirm": "Criar backup e atualizar"
+@@ -663,7 +663,7 @@
+       "clip": "Clipe",
+       "size": "Tamanho",
+       "frameRate": "Taxa de quadros",
+-      "fpsRoundedHint": "O FreeCut ajusta o vídeo importado para a taxa de quadros de projeto compatível mais próxima. Este clipe usaria {{fps}} fps.",
++      "fpsRoundedHint": "O Studio ajusta o vídeo importado para a taxa de quadros de projeto compatível mais próxima. Este clipe usaria {{fps}} fps.",
+       "keepCurrent": "Manter atual",
+       "fpsOnly": "Apenas FPS",
+       "sizeOnly": "Apenas tamanho",
+@@ -672,14 +672,14 @@
+       "matchSize": "Ajustar tamanho"
+     },
+     "editor": {
+-      "appLabel": "Editor de vídeo FreeCut",
++      "appLabel": "Editor de vídeo Studio",
+       "upgrading": "Atualizando projeto…",
+       "backupCreated": "Backup criado antes da atualização",
+       "backupFailed": "Falha ao criar backup antes da atualização",
+       "tryAgain": "Tente novamente.",
+       "projectSaved": "Projeto salvo",
+       "projectSaveFailed": "Falha ao salvar o projeto",
+-      "projectBundle": "Pacote de projeto FreeCut"
++      "projectBundle": "Pacote de projeto Studio"
+     },
+     "audioMeters": {
+       "meters": "Medidores",
+@@ -927,7 +927,7 @@
+         "savedToLibrary": "\"{{fileName}}\" foi salvo na biblioteca de mídia.",
+         "savedAndAdded": "\"{{fileName}}\" foi salvo e adicionado à linha do tempo."
+       },
+-      "defaultTtsPrompt": "Welcome to freecut. This voice was generated locally in the browser.",
++      "defaultTtsPrompt": "Welcome to Studio. This voice was generated locally in the browser.",
+       "musicPresets": {
+         "lofiChillLabel": "Lo-fi tranquilo",
+         "lofiChillPrompt": "Batida lo-fi quente com bateria vintage, baixo suave e lead de sintetizador sonhador",
+diff --git a/src/i18n/locales/partials/pt-BR/export.json b/src/i18n/locales/partials/pt-BR/export.json
+index 683e9b6..d10ea03 100644
+--- a/src/i18n/locales/partials/pt-BR/export.json
++++ b/src/i18n/locales/partials/pt-BR/export.json
+@@ -132,7 +132,7 @@
+         },
+         "video-codec-fallback": {
+           "title": "Um codec alternativo será usado",
+-          "detail": "O codec selecionado não está disponível aqui. O FreeCut exportará {{codec}} em {{container}} em vez disso.",
++          "detail": "O codec selecionado não está disponível aqui. O Studio exportará {{codec}} em {{container}} em vez disso.",
+           "fix": "Mantenha esse fallback ou escolha manualmente outro codec compatível."
+         },
+         "video-codec-supported": {
+@@ -155,7 +155,7 @@
+         },
+         "worker-animated-image-fallback": {
+           "title": "Imagens animadas exigem exportação na thread principal",
+-          "detail": "Itens de imagem GIF/WebP ainda não podem ser renderizados no worker de exportação. O FreeCut usará o fallback automaticamente.",
++          "detail": "Itens de imagem GIF/WebP ainda não podem ser renderizados no worker de exportação. O Studio usará o fallback automaticamente.",
+           "fix": "Para uma exportação por worker mais rápida, substitua imagens animadas por clipes de vídeo antes de exportar."
+         },
+         "worker-audio-context-fallback": {
+diff --git a/src/i18n/locales/partials/pt-BR/media.json b/src/i18n/locales/partials/pt-BR/media.json
+index 7e99fed..74f83a0 100644
+--- a/src/i18n/locales/partials/pt-BR/media.json
++++ b/src/i18n/locales/partials/pt-BR/media.json
+@@ -27,10 +27,10 @@
+       "stopAudio": "Parar audio",
+       "subtitlesCachedAll": "Todas as legendas em cache",
+       "subtitlesCachedPartial": "Algumas legendas em cache",
+-      "subtitlesCannotRead": "FreeCut nao conseguiu ler \"{{name}}\" agora. Feche qualquer app que esteja usando o arquivo e tente novamente.",
++      "subtitlesCannotRead": "Studio nao conseguiu ler \"{{name}}\" agora. Feche qualquer app que esteja usando o arquivo e tente novamente.",
+       "subtitlesExtractFailed": "Falha ao extrair legendas",
+-      "subtitlesFileMissing": "FreeCut nao consegue mais encontrar \"{{name}}\".",
+-      "subtitlesNeedPermission": "FreeCut precisa de permissao para ler \"{{name}}\" antes de extrair legendas.",
++      "subtitlesFileMissing": "Studio nao consegue mais encontrar \"{{name}}\".",
++      "subtitlesNeedPermission": "Studio precisa de permissao para ler \"{{name}}\" antes de extrair legendas.",
+       "subtitlesScanFailed": "Falha ao escanear legendas",
+       "transcribeFailed": "Falha na transcricao",
+       "transcribing": "Transcrevendo",
+@@ -228,9 +228,9 @@
+     },
+     "missingMedia": {
+       "title": "Mídia ausente",
+-      "description": "O FreeCut não consegue acessar {{count}} arquivos de mídia. Localize os arquivos ou continue trabalhando offline.",
+-      "description_one": "O FreeCut não consegue acessar {{count}} arquivo de mídia. Localize o arquivo ou continue trabalhando offline.",
+-      "description_other": "O FreeCut não consegue acessar {{count}} arquivos de mídia. Localize os arquivos ou continue trabalhando offline.",
++      "description": "O Studio não consegue acessar {{count}} arquivos de mídia. Localize os arquivos ou continue trabalhando offline.",
++      "description_one": "O Studio não consegue acessar {{count}} arquivo de mídia. Localize o arquivo ou continue trabalhando offline.",
++      "description_other": "O Studio não consegue acessar {{count}} arquivos de mídia. Localize os arquivos ou continue trabalhando offline.",
+       "needPermission": "{{count}} precisam de permissão",
+       "needPermission_one": "{{count}} precisa de permissão",
+       "needPermission_other": "{{count}} precisam de permissão",
+diff --git a/src/i18n/locales/partials/pt-BR/projects.json b/src/i18n/locales/partials/pt-BR/projects.json
+index ef4148d..79b6b18 100644
+--- a/src/i18n/locales/partials/pt-BR/projects.json
++++ b/src/i18n/locales/partials/pt-BR/projects.json
+@@ -112,7 +112,7 @@
+       "selectedCount_other": "{{count}} selecionados",
+       "deleteN_one": "Excluir {{count}}",
+       "deleteN_other": "Excluir {{count}}",
+-      "welcomeTitle": "Bem-vindo ao FreeCut",
++      "welcomeTitle": "Bem-vindo ao Studio",
+       "welcomeDescription": "Comece criando seu primeiro projeto de vídeo. Escolha sua resolução, taxa de quadros e comece a editar!",
+       "noResultsTitle": "Nenhum projeto encontrado",
+       "noResultsDescription": "Não encontramos nenhum projeto que corresponda aos seus critérios de pesquisa. Tente ajustar seus filtros ou termos de pesquisa.",
+@@ -179,9 +179,9 @@
+     },
+     "workspaceGate": {
+       "unsupportedBrowser": "Navegador não compatível",
+-      "unsupportedBrowserDescription": "O FreeCut requer um navegador baseado em Chromium (Chrome, Edge, Brave, Arc) para seu armazenamento em pasta de área de trabalho. Firefox e Safari ainda não oferecem suporte à File System Access API.",
++      "unsupportedBrowserDescription": "O Studio requer um navegador baseado em Chromium (Chrome, Edge, Brave, Arc) para seu armazenamento em pasta de área de trabalho. Firefox e Safari ainda não oferecem suporte à File System Access API.",
+       "pickTitle": "Escolha sua pasta de área de trabalho",
+-      "pickDescription": "O FreeCut armazena todos os seus projetos, mídias e caches como arquivos simples em uma pasta que você controla. Escolha qualquer pasta no disco — seus projetos viverão lá.",
++      "pickDescription": "O Studio armazena todos os seus projetos, mídias e caches como arquivos simples em uma pasta que você controla. Escolha qualquer pasta no disco — seus projetos viverão lá.",
+       "chooseFolder": "Escolher pasta",
+       "workspaceGuide": "Guia do espaço de trabalho",
+       "pickTip": "Dica: escolha uma pasta no Dropbox, iCloud ou Google Drive para sincronizar projetos entre dispositivos. Você pode movê-la depois.",
+@@ -190,7 +190,7 @@
+       "chooseDifferentFolder": "Escolher outra pasta",
+       "reconnect": "Reconectar",
+       "folderPermissionDenied": "A permissão não foi concedida. Escolha uma pasta e permita acesso de leitura/gravação para continuar.",
+-      "folderPickFailed": "O FreeCut não conseguiu abrir essa pasta. Tente uma pasta normal que você possa editar e conceda acesso de leitura/gravação.",
++      "folderPickFailed": "O Studio não conseguiu abrir essa pasta. Tente uma pasta normal que você possa editar e conceda acesso de leitura/gravação.",
+       "reconnectPermissionDenied": "Permissão negada. Reconecte o espaço de trabalho ou escolha outra pasta."
+     },
+     "workspaceIndicator": {
+@@ -264,15 +264,15 @@
+       "showcaseSubheading": "Um conjunto completo de edição de vídeo, diretamente no seu navegador.",
+       "screenshot": "Captura de tela",
+       "seeItInAction": "Veja em ação",
+-      "seeItInActionSubheading": "Assista a uma demonstração rápida dos recursos de edição do FreeCut.",
+-      "demoPreviewAlt": "Prévia da demonstração do FreeCut",
++      "seeItInActionSubheading": "Assista a uma demonstração rápida dos recursos de edição do Studio.",
++      "demoPreviewAlt": "Prévia da demonstração do Studio",
+       "watchDemoOnYouTube": "Assistir à demonstração no YouTube",
+       "faqHeading": "Perguntas frequentes",
+-      "faqSubheading": "Tudo o que você precisa saber sobre o FreeCut.",
++      "faqSubheading": "Tudo o que você precisa saber sobre o Studio.",
+       "ctaHeading": "Pronto para começar a editar?",
+       "ctaSubheading": "Mergulhe e crie seu primeiro projeto em segundos.",
+       "startEditing": "Começar a editar",
+-      "footer": "Licença MIT © {{year}} FreeCut",
++      "footer": "Licença MIT © {{year}} Studio",
+       "showcase": {
+         "timeline": {
+           "title": "Edição na linha do tempo",
+@@ -309,12 +309,12 @@
+       },
+       "faq": {
+         "free": {
+-          "question": "O FreeCut é realmente gratuito?",
+-          "answer": "Sim, o FreeCut é totalmente gratuito e de código aberto sob a licença MIT. Não há taxas ocultas, assinaturas ou marcas d'água."
++          "question": "O Studio é realmente gratuito?",
++          "answer": "Sim, o Studio é totalmente gratuito e de código aberto sob a licença MIT. Não há taxas ocultas, assinaturas ou marcas d'água."
+         },
+         "install": {
+           "question": "Preciso instalar alguma coisa?",
+-          "answer": "Nenhuma instalação necessária. O FreeCut funciona inteiramente no seu navegador. Basta abrir o site e começar a editar."
++          "answer": "Nenhuma instalação necessária. O Studio funciona inteiramente no seu navegador. Basta abrir o site e começar a editar."
+         },
+         "storage": {
+           "question": "Onde meus vídeos são armazenados?",
+@@ -322,7 +322,7 @@
+         },
+         "browsers": {
+           "question": "Quais navegadores são compatíveis?",
+-          "answerP1": "O FreeCut funciona melhor no Chrome ou Edge 113+. Ele depende de APIs modernas do navegador como WebGPU, WebCodecs, OPFS e File System Access, então o fluxo completo é atualmente voltado para o Chromium.",
++          "answerP1": "O Studio funciona melhor no Chrome ou Edge 113+. Ele depende de APIs modernas do navegador como WebGPU, WebCodecs, OPFS e File System Access, então o fluxo completo é atualmente voltado para o Chromium.",
+           "answerP2": "<strong>Usuários do Brave:</strong> a File System Access API está desativada por padrão. Para ativá-la, vá para <code>brave://flags/#file-system-access-api</code>, defina como <strong>Enabled</strong> e reinicie o navegador."
+         },
+         "exportFormats": {
+@@ -557,7 +557,7 @@
+     },
+     "routeError": {
+       "title": "Algo deu errado",
+-      "description": "O FreeCut não conseguiu terminar de carregar esta página.",
++      "description": "O Studio não conseguiu terminar de carregar esta página.",
+       "projectNotFoundTitle": "Não encontramos este projeto",
+       "projectNotFoundDescription": "Ele pode ter sido movido, excluído ou aberto por um link antigo. Seus outros projetos continuam disponíveis no espaço de trabalho.",
+       "backToProjects": "Voltar aos projetos",
+@@ -565,9 +565,9 @@
+       "copyDetails": "Copiar detalhes do erro",
+       "detailsCopied": "Detalhes do erro copiados",
+       "copyFailed": "Não foi possível copiar os detalhes",
+-      "causePermission": "O FreeCut não tem mais permissão para usar sua pasta de trabalho. Reconecte-a ou escolha outra pasta.",
++      "causePermission": "O Studio não tem mais permissão para usar sua pasta de trabalho. Reconecte-a ou escolha outra pasta.",
+       "causeMissing": "Sua pasta de trabalho não foi encontrada. Ela pode ter sido movida, renomeada ou excluída.",
+-      "causeUnsupported": "Sua pasta de trabalho está em uma unidade que não oferece suporte a tudo o que o FreeCut precisa. Pastas sincronizadas na nuvem e pastas de rede costumam se comportar assim. Escolher uma pasta em um disco local geralmente resolve."
++      "causeUnsupported": "Sua pasta de trabalho está em uma unidade que não oferece suporte a tudo o que o Studio precisa. Pastas sincronizadas na nuvem e pastas de rede costumam se comportar assim. Escolher uma pasta em um disco local geralmente resolve."
+     }
+   }
+ }
+diff --git a/src/i18n/locales/partials/pt-BR/remaining-ui.json b/src/i18n/locales/partials/pt-BR/remaining-ui.json
+index 8a93161..9280661 100644
+--- a/src/i18n/locales/partials/pt-BR/remaining-ui.json
++++ b/src/i18n/locales/partials/pt-BR/remaining-ui.json
+@@ -186,7 +186,7 @@
+         "savedToLibrary": "\"{{fileName}}\" foi salvo na biblioteca de mídia.",
+         "savedAndAdded": "\"{{fileName}}\" foi salvo e adicionado à linha do tempo."
+       },
+-      "defaultTtsPrompt": "Welcome to freecut. This voice was generated locally in the browser.",
++      "defaultTtsPrompt": "Welcome to Studio. This voice was generated locally in the browser.",
+       "musicPresets": {
+         "lofiChillLabel": "Lo-fi tranquilo",
+         "lofiChillPrompt": "Batida lo-fi quente com bateria vintage, baixo suave e lead de sintetizador sonhador",
+diff --git a/src/i18n/locales/partials/tr/changelog.json b/src/i18n/locales/partials/tr/changelog.json
+index 3bc3065..41b1729 100644
+--- a/src/i18n/locales/partials/tr/changelog.json
++++ b/src/i18n/locales/partials/tr/changelog.json
+@@ -1,16 +1,16 @@
+ {
+   "changelog": {
+-    "homeAria": "FreeCut ana sayfası",
++    "homeAria": "Studio ana sayfası",
+     "backToHome": "Ana sayfaya dön",
+     "releaseNotes": "Sürüm notları",
+-    "title": "FreeCut'taki yenilikler",
++    "title": "Studio'daki yenilikler",
+     "description": "Yeni düzenleme araçları, iş akışı iyileştirmeleri ve düzeltmelerden oluşan haftalık bir derleme. En yeni sürüm açık; değişikliklerin tam listesini görmek için önceki haftalardan birini genişletin.",
+     "latest": "En yeni",
+     "changeCount_one": "{{count}} değişiklik",
+     "changeCount_other": "{{count}} değişiklik",
+     "initialRelease": "İlk sürüm",
+     "ctaTitle": "Bir şeyler üretmeye hazır mısınız?",
+-    "ctaDescription": "FreeCut'i açın ve en yeni araçları kullanmaya başlayın.",
+-    "openFreeCut": "FreeCut'i aç"
++    "ctaDescription": "Studio'yu açın ve en yeni araçları kullanmaya başlayın.",
++    "openFreeCut": "Studio'yu aç"
+   }
+ }
+diff --git a/src/i18n/locales/partials/tr/editor.json b/src/i18n/locales/partials/tr/editor.json
+index 82eeca5..5e33c73 100644
+--- a/src/i18n/locales/partials/tr/editor.json
++++ b/src/i18n/locales/partials/tr/editor.json
+@@ -281,7 +281,7 @@
+     "projectUpgradeDialog": {
+       "title": "Açmadan Önce Projeyi Yükselt",
+       "versionMismatch": "<strong>{{projectName}}</strong> proje şeması v{{storedSchemaVersion}} ile kaydedilmiş, ancak bu sürüm v{{currentSchemaVersion}} bekliyor.",
+-      "explanation": "FreeCut, editörü yüklemeden önce projeyi sizin için yükseltebilir. Bir şey ters görünürse eski veriye dönebilmeniz için önce yükseltme öncesi bir yedek oluşturulur.",
++      "explanation": "Studio, editörü yüklemeden önce projeyi sizin için yükseltebilir. Bir şey ters görünürse eski veriye dönebilmeniz için önce yükseltme öncesi bir yedek oluşturulur.",
+       "backupCopy": "Yedek kopya: <strong>{{backupName}}</strong>",
+       "creatingBackup": "Yedek Oluşturuluyor...",
+       "confirm": "Yedek Oluştur ve Yükselt"
+@@ -663,7 +663,7 @@
+       "clip": "Klip",
+       "size": "Boyut",
+       "frameRate": "Kare hızı",
+-      "fpsRoundedHint": "FreeCut içe aktarılan videoyu en yakın desteklenen proje kare hızına eşler. Bu klip {{fps}} fps kullanır.",
++      "fpsRoundedHint": "Studio içe aktarılan videoyu en yakın desteklenen proje kare hızına eşler. Bu klip {{fps}} fps kullanır.",
+       "keepCurrent": "Geçerli Olanı Koru",
+       "fpsOnly": "Yalnızca FPS",
+       "sizeOnly": "Yalnızca Boyut",
+@@ -672,14 +672,14 @@
+       "matchSize": "Boyutu Eşle"
+     },
+     "editor": {
+-      "appLabel": "FreeCut Video Editörü",
++      "appLabel": "Studio Video Editörü",
+       "upgrading": "Proje yükseltiliyor…",
+       "backupCreated": "Yükseltmeden önce yedek oluşturuldu",
+       "backupFailed": "Yükseltmeden önce yedek oluşturulamadı",
+       "tryAgain": "Lütfen tekrar deneyin.",
+       "projectSaved": "Proje kaydedildi",
+       "projectSaveFailed": "Proje kaydedilemedi",
+-      "projectBundle": "FreeCut Proje Paketi"
++      "projectBundle": "Studio Proje Paketi"
+     },
+     "audioMeters": {
+       "meters": "Sayaçlar",
+@@ -927,7 +927,7 @@
+         "savedToLibrary": "\"{{fileName}}\" medya kitaplığına kaydedildi.",
+         "savedAndAdded": "\"{{fileName}}\" kaydedildi ve zaman çizelgesine eklendi."
+       },
+-      "defaultTtsPrompt": "FreeCut'a hoş geldiniz. Bu ses tarayıcıda yerel olarak oluşturuldu.",
++      "defaultTtsPrompt": "Studio'ya hoş geldiniz. Bu ses tarayıcıda yerel olarak oluşturuldu.",
+       "musicPresets": {
+         "lofiChillLabel": "Lo-fi Rahat",
+         "lofiChillPrompt": "Tozlu davullar, yumuşak bas ve rüya gibi synth melodisiyle sıcak lo-fi beat",
+diff --git a/src/i18n/locales/partials/tr/export.json b/src/i18n/locales/partials/tr/export.json
+index 6c13673..2af6e91 100644
+--- a/src/i18n/locales/partials/tr/export.json
++++ b/src/i18n/locales/partials/tr/export.json
+@@ -132,7 +132,7 @@
+         },
+         "video-codec-fallback": {
+           "title": "Kodek geri dönüşü kullanılacak",
+-          "detail": "Seçilen kodek burada kullanılamıyor. FreeCut bunun yerine {{container}} içinde {{codec}} dışa aktaracak.",
++          "detail": "Seçilen kodek burada kullanılamıyor. Studio bunun yerine {{container}} içinde {{codec}} dışa aktaracak.",
+           "fix": "Bu geri dönüşü koruyun veya desteklenen başka bir kodeği elle seçin."
+         },
+         "video-codec-supported": {
+@@ -155,7 +155,7 @@
+         },
+         "worker-animated-image-fallback": {
+           "title": "Animasyonlu görseller ana iş parçacığında dışa aktarma gerektirir",
+-          "detail": "GIF/WebP görsel öğeleri henüz dışa aktarma worker’ında render edilemiyor. FreeCut otomatik olarak geri dönüş yolunu kullanacak.",
++          "detail": "GIF/WebP görsel öğeleri henüz dışa aktarma worker’ında render edilemiyor. Studio otomatik olarak geri dönüş yolunu kullanacak.",
+           "fix": "Daha hızlı worker dışa aktarımı için, dışa aktarmadan önce animasyonlu görselleri video kliplerle değiştirin."
+         },
+         "worker-audio-context-fallback": {
+diff --git a/src/i18n/locales/partials/tr/media.json b/src/i18n/locales/partials/tr/media.json
+index 6e45614..0819357 100644
+--- a/src/i18n/locales/partials/tr/media.json
++++ b/src/i18n/locales/partials/tr/media.json
+@@ -27,10 +27,10 @@
+       "stopAudio": "Sesi durdur",
+       "subtitlesCachedAll": "Tüm altyazılar önbellekte",
+       "subtitlesCachedPartial": "Altyazıların bir kısmı önbellekte",
+-      "subtitlesCannotRead": "FreeCut şu anda \"{{name}}\" dosyasını okuyamadı. Onu kullanan uygulamaları kapatıp tekrar deneyin.",
++      "subtitlesCannotRead": "Studio şu anda \"{{name}}\" dosyasını okuyamadı. Onu kullanan uygulamaları kapatıp tekrar deneyin.",
+       "subtitlesExtractFailed": "Altyazılar çıkarılamadı",
+-      "subtitlesFileMissing": "FreeCut artık \"{{name}}\" dosyasını bulamıyor.",
+-      "subtitlesNeedPermission": "Altyazıları çıkarmadan önce FreeCut'ın \"{{name}}\" dosyasını okuma iznine ihtiyacı var.",
++      "subtitlesFileMissing": "Studio artık \"{{name}}\" dosyasını bulamıyor.",
++      "subtitlesNeedPermission": "Altyazıları çıkarmadan önce Studio'nun \"{{name}}\" dosyasını okuma iznine ihtiyacı var.",
+       "subtitlesScanFailed": "Altyazı taraması başarısız",
+       "transcribeFailed": "Transkripsiyon başarısız",
+       "transcribing": "Transkripsiyon yapılıyor",
+@@ -228,9 +228,9 @@
+     },
+     "missingMedia": {
+       "title": "Eksik medya",
+-      "description": "FreeCut {{count}} medya dosyasına erişemiyor. Dosyaları bulun veya çevrimdışı çalışmaya devam edin.",
+-      "description_one": "FreeCut {{count}} medya dosyasına erişemiyor. Dosyayı bulun veya çevrimdışı çalışmaya devam edin.",
+-      "description_other": "FreeCut {{count}} medya dosyasına erişemiyor. Dosyaları bulun veya çevrimdışı çalışmaya devam edin.",
++      "description": "Studio {{count}} medya dosyasına erişemiyor. Dosyaları bulun veya çevrimdışı çalışmaya devam edin.",
++      "description_one": "Studio {{count}} medya dosyasına erişemiyor. Dosyayı bulun veya çevrimdışı çalışmaya devam edin.",
++      "description_other": "Studio {{count}} medya dosyasına erişemiyor. Dosyaları bulun veya çevrimdışı çalışmaya devam edin.",
+       "needPermission": "{{count}} izin gerektiriyor",
+       "needPermission_one": "{{count}} izin gerektiriyor",
+       "needPermission_other": "{{count}} izin gerektiriyor",
+diff --git a/src/i18n/locales/partials/tr/projects.json b/src/i18n/locales/partials/tr/projects.json
+index d5fd71d..cbc0cec 100644
+--- a/src/i18n/locales/partials/tr/projects.json
++++ b/src/i18n/locales/partials/tr/projects.json
+@@ -112,7 +112,7 @@
+       "selectedCount_other": "{{count}} seçili",
+       "deleteN_one": "{{count}} sil",
+       "deleteN_other": "{{count}} sil",
+-      "welcomeTitle": "FreeCut'a Hoş Geldiniz",
++      "welcomeTitle": "Studio'ya Hoş Geldiniz",
+       "welcomeDescription": "İlk video projenizi oluşturarak başlayın. Çözünürlüğünüzü ve kare hızınızı seçin, sonra düzenlemeye başlayın!",
+       "noResultsTitle": "Proje bulunamadı",
+       "noResultsDescription": "Arama ölçütlerinizle eşleşen proje bulamadık. Filtreleri veya arama terimlerini değiştirmeyi deneyin.",
+@@ -189,15 +189,15 @@
+       "showcaseSubheading": "Eksiksiz bir video düzenleme paketi, doğrudan tarayıcınızda.",
+       "screenshot": "Ekran görüntüsü",
+       "seeItInAction": "Çalışırken Gör",
+-      "seeItInActionSubheading": "FreeCut'ın düzenleme yeteneklerinin kısa bir demosunu izleyin.",
+-      "demoPreviewAlt": "FreeCut demo önizlemesi",
++      "seeItInActionSubheading": "Studio'nun düzenleme yeteneklerinin kısa bir demosunu izleyin.",
++      "demoPreviewAlt": "Studio demo önizlemesi",
+       "watchDemoOnYouTube": "Demoyu YouTube'da İzle",
+       "faqHeading": "Sık Sorulan Sorular",
+-      "faqSubheading": "FreeCut hakkında bilmeniz gereken her şey.",
++      "faqSubheading": "Studio hakkında bilmeniz gereken her şey.",
+       "ctaHeading": "Düzenlemeye başlamaya hazır mısınız?",
+       "ctaSubheading": "Hemen girin ve ilk projenizi saniyeler içinde oluşturun.",
+       "startEditing": "Düzenlemeye Başla",
+-      "footer": "MIT Lisansı © {{year}} FreeCut",
++      "footer": "MIT Lisansı © {{year}} Studio",
+       "showcase": {
+         "timeline": {
+           "title": "Zaman Çizelgesi Düzenleme",
+@@ -234,12 +234,12 @@
+       },
+       "faq": {
+         "free": {
+-          "question": "FreeCut gerçekten ücretsiz mi?",
+-          "answer": "Evet, FreeCut MIT lisansı altında tamamen ücretsiz ve açık kaynaklıdır. Gizli ücret, abonelik veya filigran yoktur."
++          "question": "Studio gerçekten ücretsiz mi?",
++          "answer": "Evet, Studio MIT lisansı altında tamamen ücretsiz ve açık kaynaklıdır. Gizli ücret, abonelik veya filigran yoktur."
+         },
+         "install": {
+           "question": "Bir şey yüklemem gerekiyor mu?",
+-          "answer": "Kurulum gerekmez. FreeCut tamamen tarayıcınızda çalışır. Web sitesini açın ve düzenlemeye başlayın."
++          "answer": "Kurulum gerekmez. Studio tamamen tarayıcınızda çalışır. Web sitesini açın ve düzenlemeye başlayın."
+         },
+         "storage": {
+           "question": "Videolarım nerede saklanır?",
+@@ -247,7 +247,7 @@
+         },
+         "browsers": {
+           "question": "Hangi tarayıcılar destekleniyor?",
+-          "answerP1": "FreeCut şu anda Chrome veya Edge 113+ üzerinde en iyi şekilde çalışır. WebGPU, WebCodecs, OPFS ve File System Access gibi modern tarayıcı API'lerine dayanır; bu yüzden tam iş akışı şimdilik Chromium önceliklidir.",
++          "answerP1": "Studio şu anda Chrome veya Edge 113+ üzerinde en iyi şekilde çalışır. WebGPU, WebCodecs, OPFS ve File System Access gibi modern tarayıcı API'lerine dayanır; bu yüzden tam iş akışı şimdilik Chromium önceliklidir.",
+           "answerP2": "<strong>Brave kullanıcıları:</strong> File System Access API varsayılan olarak kapalıdır. Etkinleştirmek için <code>brave://flags/#file-system-access-api</code> adresine gidin, <strong>Enabled</strong> yapın ve tarayıcıyı yeniden başlatın."
+         },
+         "exportFormats": {
+@@ -267,9 +267,9 @@
+     },
+     "workspaceGate": {
+       "unsupportedBrowser": "Desteklenmeyen tarayıcı",
+-      "unsupportedBrowserDescription": "FreeCut çalışma alanı klasörü depolaması için Chromium tabanlı bir tarayıcı (Chrome, Edge, Brave, Arc) gerektirir. Firefox ve Safari henüz File System Access API'yi desteklemiyor.",
++      "unsupportedBrowserDescription": "Studio çalışma alanı klasörü depolaması için Chromium tabanlı bir tarayıcı (Chrome, Edge, Brave, Arc) gerektirir. Firefox ve Safari henüz File System Access API'yi desteklemiyor.",
+       "pickTitle": "Çalışma alanı klasörünüzü seçin",
+-      "pickDescription": "FreeCut tüm projelerinizi, medyanızı ve önbelleklerinizi kontrol ettiğiniz bir klasörde düz dosyalar olarak saklar. Diskte herhangi bir klasör seçin; projeleriniz orada yaşar.",
++      "pickDescription": "Studio tüm projelerinizi, medyanızı ve önbelleklerinizi kontrol ettiğiniz bir klasörde düz dosyalar olarak saklar. Diskte herhangi bir klasör seçin; projeleriniz orada yaşar.",
+       "chooseFolder": "Klasör seç",
+       "workspaceGuide": "Çalışma alanı kılavuzu",
+       "pickTip": "İpucu: projeleri cihazlar arasında eşitlemek için Dropbox, iCloud veya Google Drive içinde bir klasör seçin. Daha sonra taşıyabilirsiniz.",
+@@ -278,7 +278,7 @@
+       "chooseDifferentFolder": "Farklı bir klasör seç",
+       "reconnect": "Yeniden bağlan",
+       "folderPermissionDenied": "İzin verilmedi. Devam etmek için bir klasör seçin ve okuma/yazma erişimine izin verin.",
+-      "folderPickFailed": "FreeCut bu klasörü açamadı. Düzenleyebileceğiniz normal bir klasör deneyin ve okuma/yazma erişimine izin verin.",
++      "folderPickFailed": "Studio bu klasörü açamadı. Düzenleyebileceğiniz normal bir klasör deneyin ve okuma/yazma erişimine izin verin.",
+       "reconnectPermissionDenied": "İzin reddedildi. Çalışma alanını yeniden bağlayın veya farklı bir klasör seçin."
+     },
+     "workspaceIndicator": {
+@@ -557,7 +557,7 @@
+     },
+     "routeError": {
+       "title": "Bir şeyler ters gitti",
+-      "description": "FreeCut bu sayfayı yüklemeyi tamamlayamadı.",
++      "description": "Studio bu sayfayı yüklemeyi tamamlayamadı.",
+       "projectNotFoundTitle": "Bu projeyi bulamadık",
+       "projectNotFoundDescription": "Proje taşınmış, silinmiş veya eski bir bağlantıdan açılmış olabilir. Diğer projeleriniz çalışma alanınızda kullanılmaya devam edebilir.",
+       "backToProjects": "Projelere dön",
+@@ -565,9 +565,9 @@
+       "copyDetails": "Hata ayrıntılarını kopyala",
+       "detailsCopied": "Hata ayrıntıları kopyalandı",
+       "copyFailed": "Ayrıntılar kopyalanamadı",
+-      "causePermission": "FreeCut artık çalışma klasörünüzü kullanma iznine sahip değil. Yeniden bağlayın veya başka bir klasör seçin.",
++      "causePermission": "Studio artık çalışma klasörünüzü kullanma iznine sahip değil. Yeniden bağlayın veya başka bir klasör seçin.",
+       "causeMissing": "Çalışma klasörünüz bulunamadı. Taşınmış, yeniden adlandırılmış veya silinmiş olabilir.",
+-      "causeUnsupported": "Çalışma klasörünüz, FreeCut'ın ihtiyaç duyduğu her şeyi desteklemeyen bir sürücüde. Buluta eşitlenen klasörler ve ağ klasörleri genellikle böyle davranır. Yerel bir diskteki klasörü seçmek sorunu genellikle çözer."
++      "causeUnsupported": "Çalışma klasörünüz, Studio'nun ihtiyaç duyduğu her şeyi desteklemeyen bir sürücüde. Buluta eşitlenen klasörler ve ağ klasörleri genellikle böyle davranır. Yerel bir diskteki klasörü seçmek sorunu genellikle çözer."
+     }
+   }
+ }
+diff --git a/src/i18n/locales/partials/tr/remaining-ui.json b/src/i18n/locales/partials/tr/remaining-ui.json
+index c169781..1ec592f 100644
+--- a/src/i18n/locales/partials/tr/remaining-ui.json
++++ b/src/i18n/locales/partials/tr/remaining-ui.json
+@@ -186,7 +186,7 @@
+         "savedToLibrary": "\"{{fileName}}\" medya kitaplığına kaydedildi.",
+         "savedAndAdded": "\"{{fileName}}\" kaydedildi ve zaman çizelgesine eklendi."
+       },
+-      "defaultTtsPrompt": "FreeCut'a hoş geldiniz. Bu ses tarayıcıda yerel olarak oluşturuldu.",
++      "defaultTtsPrompt": "Studio'ya hoş geldiniz. Bu ses tarayıcıda yerel olarak oluşturuldu.",
+       "musicPresets": {
+         "lofiChillLabel": "Lo-fi Rahat",
+         "lofiChillPrompt": "Tozlu davullar, yumuşak bas ve rüya gibi synth melodisiyle sıcak lo-fi beat",
+diff --git a/src/i18n/locales/partials/zh/changelog.json b/src/i18n/locales/partials/zh/changelog.json
+index 9f15981..b10b3ed 100644
+--- a/src/i18n/locales/partials/zh/changelog.json
++++ b/src/i18n/locales/partials/zh/changelog.json
+@@ -1,16 +1,16 @@
+ {
+   "changelog": {
+-    "homeAria": "FreeCut 首页",
++    "homeAria": "Studio 首页",
+     "backToHome": "返回首页",
+     "releaseNotes": "版本说明",
+-    "title": "FreeCut 新功能",
++    "title": "Studio 新功能",
+     "description": "每周汇总新的编辑工具、工作流程改进和问题修复。最新版本已展开；展开之前的任意一周即可查看完整变更列表。",
+     "latest": "最新",
+     "changeCount_one": "{{count}} 项变更",
+     "changeCount_other": "{{count}} 项变更",
+     "initialRelease": "初始版本",
+     "ctaTitle": "准备好创作了吗？",
+-    "ctaDescription": "打开 FreeCut，使用最新工具开始创作。",
+-    "openFreeCut": "打开 FreeCut"
++    "ctaDescription": "打开 Studio，使用最新工具开始创作。",
++    "openFreeCut": "打开 Studio"
+   }
+ }
+diff --git a/src/i18n/locales/partials/zh/editor.json b/src/i18n/locales/partials/zh/editor.json
+index 01a961e..94b2dc9 100644
+--- a/src/i18n/locales/partials/zh/editor.json
++++ b/src/i18n/locales/partials/zh/editor.json
+@@ -281,7 +281,7 @@
+     "projectUpgradeDialog": {
+       "title": "打开前升级项目",
+       "versionMismatch": "<strong>{{projectName}}</strong> 使用项目架构 v{{storedSchemaVersion}} 保存，但此版本需要 v{{currentSchemaVersion}}。",
+-      "explanation": "FreeCut 可以在加载编辑器之前为你升级它。会先创建升级前的备份，以便在出现问题时恢复旧数据。",
++      "explanation": "Studio 可以在加载编辑器之前为你升级它。会先创建升级前的备份，以便在出现问题时恢复旧数据。",
+       "backupCopy": "备份副本：<strong>{{backupName}}</strong>",
+       "creatingBackup": "正在创建备份...",
+       "confirm": "创建备份并升级"
+@@ -663,7 +663,7 @@
+       "clip": "片段",
+       "size": "尺寸",
+       "frameRate": "帧率",
+-      "fpsRoundedHint": "FreeCut 会将导入的视频匹配到最接近的受支持项目帧率。此片段将使用 {{fps}} fps。",
++      "fpsRoundedHint": "Studio 会将导入的视频匹配到最接近的受支持项目帧率。此片段将使用 {{fps}} fps。",
+       "keepCurrent": "保持当前",
+       "fpsOnly": "仅帧率",
+       "sizeOnly": "仅尺寸",
+@@ -672,14 +672,14 @@
+       "matchSize": "匹配尺寸"
+     },
+     "editor": {
+-      "appLabel": "FreeCut 视频编辑器",
++      "appLabel": "Studio 视频编辑器",
+       "upgrading": "正在升级项目…",
+       "backupCreated": "升级前已创建备份",
+       "backupFailed": "升级前创建备份失败",
+       "tryAgain": "请重试。",
+       "projectSaved": "项目已保存",
+       "projectSaveFailed": "保存项目失败",
+-      "projectBundle": "FreeCut 项目包"
++      "projectBundle": "Studio 项目包"
+     },
+     "audioMeters": {
+       "meters": "电平表",
+@@ -927,7 +927,7 @@
+         "savedToLibrary": "已将\"{{fileName}}\"保存到媒体库。",
+         "savedAndAdded": "已保存\"{{fileName}}\"并添加到时间线。"
+       },
+-      "defaultTtsPrompt": "Welcome to freecut. This voice was generated locally in the browser.",
++      "defaultTtsPrompt": "Welcome to Studio. This voice was generated locally in the browser.",
+       "musicPresets": {
+         "lofiChillLabel": "Lo-fi 放松",
+         "lofiChillPrompt": "温暖的 lo-fi 节拍，配有复古鼓点、柔和低音和梦幻合成器主旋律",
+diff --git a/src/i18n/locales/partials/zh/export.json b/src/i18n/locales/partials/zh/export.json
+index 8d7d8b7..32c132c 100644
+--- a/src/i18n/locales/partials/zh/export.json
++++ b/src/i18n/locales/partials/zh/export.json
+@@ -132,7 +132,7 @@
+         },
+         "video-codec-fallback": {
+           "title": "将使用编解码器回退",
+-          "detail": "所选编解码器在此处不可用。FreeCut 将改为以 {{container}} 导出 {{codec}}。",
++          "detail": "所选编解码器在此处不可用。Studio 将改为以 {{container}} 导出 {{codec}}。",
+           "fix": "保留此回退，或手动选择其他受支持的编解码器。"
+         },
+         "video-codec-supported": {
+@@ -155,7 +155,7 @@
+         },
+         "worker-animated-image-fallback": {
+           "title": "动画图片需要主线程导出",
+-          "detail": "GIF/WebP 图片项目尚无法在导出 worker 中渲染。FreeCut 将自动回退。",
++          "detail": "GIF/WebP 图片项目尚无法在导出 worker 中渲染。Studio 将自动回退。",
+           "fix": "如需更快的 worker 导出，请在导出前将动画图片替换为视频片段。"
+         },
+         "worker-audio-context-fallback": {
+diff --git a/src/i18n/locales/partials/zh/media.json b/src/i18n/locales/partials/zh/media.json
+index e638c54..523d19a 100644
+--- a/src/i18n/locales/partials/zh/media.json
++++ b/src/i18n/locales/partials/zh/media.json
+@@ -27,10 +27,10 @@
+       "stopAudio": "停止音频",
+       "subtitlesCachedAll": "字幕已全部缓存",
+       "subtitlesCachedPartial": "字幕已部分缓存",
+-      "subtitlesCannotRead": "FreeCut 当前无法读取 \"{{name}}\"。请关闭正在使用它的应用后重试。",
++      "subtitlesCannotRead": "Studio 当前无法读取 \"{{name}}\"。请关闭正在使用它的应用后重试。",
+       "subtitlesExtractFailed": "字幕提取失败",
+-      "subtitlesFileMissing": "FreeCut 找不到 \"{{name}}\"。",
+-      "subtitlesNeedPermission": "提取字幕前，FreeCut 需要读取 \"{{name}}\" 的权限。",
++      "subtitlesFileMissing": "Studio 找不到 \"{{name}}\"。",
++      "subtitlesNeedPermission": "提取字幕前，Studio 需要读取 \"{{name}}\" 的权限。",
+       "subtitlesScanFailed": "字幕扫描失败",
+       "transcribeFailed": "转录失败",
+       "transcribing": "正在转录",
+@@ -228,9 +228,9 @@
+     },
+     "missingMedia": {
+       "title": "缺失媒体",
+-      "description": "FreeCut 无法访问 {{count}} 个媒体文件。请定位文件，或继续离线工作。",
+-      "description_one": "FreeCut 无法访问 {{count}} 个媒体文件。请定位文件，或继续离线工作。",
+-      "description_other": "FreeCut 无法访问 {{count}} 个媒体文件。请定位文件，或继续离线工作。",
++      "description": "Studio 无法访问 {{count}} 个媒体文件。请定位文件，或继续离线工作。",
++      "description_one": "Studio 无法访问 {{count}} 个媒体文件。请定位文件，或继续离线工作。",
++      "description_other": "Studio 无法访问 {{count}} 个媒体文件。请定位文件，或继续离线工作。",
+       "needPermission": "{{count}} 个需要权限",
+       "needPermission_one": "{{count}} 个需要权限",
+       "needPermission_other": "{{count}} 个需要权限",
+diff --git a/src/i18n/locales/partials/zh/projects.json b/src/i18n/locales/partials/zh/projects.json
+index 8cef84c..e203340 100644
+--- a/src/i18n/locales/partials/zh/projects.json
++++ b/src/i18n/locales/partials/zh/projects.json
+@@ -112,7 +112,7 @@
+       "selectedCount_other": "已选 {{count}} 个",
+       "deleteN_one": "删除 {{count}} 个",
+       "deleteN_other": "删除 {{count}} 个",
+-      "welcomeTitle": "欢迎使用 FreeCut",
++      "welcomeTitle": "欢迎使用 Studio",
+       "welcomeDescription": "创建你的第一个视频项目开始吧。选择分辨率和帧率，然后开始编辑！",
+       "noResultsTitle": "未找到项目",
+       "noResultsDescription": "我们找不到符合你搜索条件的项目。请尝试调整筛选条件或搜索词。",
+@@ -179,9 +179,9 @@
+     },
+     "workspaceGate": {
+       "unsupportedBrowser": "不支持的浏览器",
+-      "unsupportedBrowserDescription": "FreeCut 的工作区文件夹存储需要基于 Chromium 的浏览器（Chrome、Edge、Brave、Arc）。Firefox 和 Safari 尚不支持 File System Access API。",
++      "unsupportedBrowserDescription": "Studio 的工作区文件夹存储需要基于 Chromium 的浏览器（Chrome、Edge、Brave、Arc）。Firefox 和 Safari 尚不支持 File System Access API。",
+       "pickTitle": "选择你的工作区文件夹",
+-      "pickDescription": "FreeCut 将你的所有项目、媒体和缓存作为普通文件存储在你控制的文件夹中。选择磁盘上的任意文件夹——你的项目将存放在那里。",
++      "pickDescription": "Studio 将你的所有项目、媒体和缓存作为普通文件存储在你控制的文件夹中。选择磁盘上的任意文件夹——你的项目将存放在那里。",
+       "chooseFolder": "选择文件夹",
+       "workspaceGuide": "工作区指南",
+       "pickTip": "提示：选择 Dropbox、iCloud 或 Google Drive 中的文件夹，可在多个设备间同步项目。你可以稍后移动它。",
+@@ -190,7 +190,7 @@
+       "chooseDifferentFolder": "选择其他文件夹",
+       "reconnect": "重新连接",
+       "folderPermissionDenied": "未授予权限。请选择一个文件夹并允许读写访问后继续。",
+-      "folderPickFailed": "FreeCut 无法打开该文件夹。请尝试选择一个可编辑的普通文件夹，并授予读写访问权限。",
++      "folderPickFailed": "Studio 无法打开该文件夹。请尝试选择一个可编辑的普通文件夹，并授予读写访问权限。",
+       "reconnectPermissionDenied": "权限被拒绝。请重新连接工作区或选择其他文件夹。"
+     },
+     "workspaceIndicator": {
+@@ -264,15 +264,15 @@
+       "showcaseSubheading": "完整的视频编辑套件，就在你的浏览器中。",
+       "screenshot": "截图",
+       "seeItInAction": "查看实际效果",
+-      "seeItInActionSubheading": "观看 FreeCut 编辑功能的快速演示。",
+-      "demoPreviewAlt": "FreeCut 演示预览",
++      "seeItInActionSubheading": "观看 Studio 编辑功能的快速演示。",
++      "demoPreviewAlt": "Studio 演示预览",
+       "watchDemoOnYouTube": "在 YouTube 上观看演示",
+       "faqHeading": "常见问题",
+-      "faqSubheading": "关于 FreeCut 你需要知道的一切。",
++      "faqSubheading": "关于 Studio 你需要知道的一切。",
+       "ctaHeading": "准备好开始编辑了吗？",
+       "ctaSubheading": "立即开始，几秒钟内创建你的第一个项目。",
+       "startEditing": "开始编辑",
+-      "footer": "MIT 许可证 © {{year}} FreeCut",
++      "footer": "MIT 许可证 © {{year}} Studio",
+       "showcase": {
+         "timeline": {
+           "title": "时间线编辑",
+@@ -309,12 +309,12 @@
+       },
+       "faq": {
+         "free": {
+-          "question": "FreeCut 真的免费吗？",
+-          "answer": "是的，FreeCut 在 MIT 许可证下完全免费且开源。没有隐藏费用、订阅或水印。"
++          "question": "Studio 真的免费吗？",
++          "answer": "是的，Studio 在 MIT 许可证下完全免费且开源。没有隐藏费用、订阅或水印。"
+         },
+         "install": {
+           "question": "我需要安装什么吗？",
+-          "answer": "无需安装。FreeCut 完全在你的浏览器中运行。只需打开网站即可开始编辑。"
++          "answer": "无需安装。Studio 完全在你的浏览器中运行。只需打开网站即可开始编辑。"
+         },
+         "storage": {
+           "question": "我的视频存储在哪里？",
+@@ -322,7 +322,7 @@
+         },
+         "browsers": {
+           "question": "支持哪些浏览器？",
+-          "answerP1": "FreeCut 目前在 Chrome 或 Edge 113+ 上效果最佳。它依赖 WebGPU、WebCodecs、OPFS 和 File System Access 等现代浏览器 API，因此完整的工作流程目前以 Chromium 为先。",
++          "answerP1": "Studio 目前在 Chrome 或 Edge 113+ 上效果最佳。它依赖 WebGPU、WebCodecs、OPFS 和 File System Access 等现代浏览器 API，因此完整的工作流程目前以 Chromium 为先。",
+           "answerP2": "<strong>Brave 用户：</strong>File System Access API 默认处于禁用状态。要启用它，请前往 <code>brave://flags/#file-system-access-api</code>，将其设置为 <strong>Enabled</strong>，然后重新启动浏览器。"
+         },
+         "exportFormats": {
+@@ -557,7 +557,7 @@
+     },
+     "routeError": {
+       "title": "出了点问题",
+-      "description": "FreeCut 无法完成此页面的加载。",
++      "description": "Studio 无法完成此页面的加载。",
+       "projectNotFoundTitle": "找不到此项目",
+       "projectNotFoundDescription": "该项目可能已被移动或删除，或者你打开的是旧链接。工作区中的其他项目仍然可用。",
+       "backToProjects": "返回项目列表",
+@@ -565,9 +565,9 @@
+       "copyDetails": "复制错误详情",
+       "detailsCopied": "已复制错误详情",
+       "copyFailed": "无法复制详情",
+-      "causePermission": "FreeCut 已失去使用工作区文件夹的权限。请重新连接，或选择其他文件夹。",
++      "causePermission": "Studio 已失去使用工作区文件夹的权限。请重新连接，或选择其他文件夹。",
+       "causeMissing": "找不到你的工作区文件夹。它可能已被移动、重命名或删除。",
+-      "causeUnsupported": "你的工作区文件夹位于不支持 FreeCut 所需全部功能的驱动器上。云同步文件夹和网络文件夹经常如此。选择本地磁盘上的文件夹通常可以解决。"
++      "causeUnsupported": "你的工作区文件夹位于不支持 Studio 所需全部功能的驱动器上。云同步文件夹和网络文件夹经常如此。选择本地磁盘上的文件夹通常可以解决。"
+     }
+   }
+ }
+diff --git a/src/i18n/locales/partials/zh/remaining-ui.json b/src/i18n/locales/partials/zh/remaining-ui.json
+index 052792d..c2d554d 100644
+--- a/src/i18n/locales/partials/zh/remaining-ui.json
++++ b/src/i18n/locales/partials/zh/remaining-ui.json
+@@ -186,7 +186,7 @@
+         "savedToLibrary": "已将\"{{fileName}}\"保存到媒体库。",
+         "savedAndAdded": "已保存\"{{fileName}}\"并添加到时间线。"
+       },
+-      "defaultTtsPrompt": "Welcome to freecut. This voice was generated locally in the browser.",
++      "defaultTtsPrompt": "Welcome to Studio. This voice was generated locally in the browser.",
+       "musicPresets": {
+         "lofiChillLabel": "Lo-fi 放松",
+         "lofiChillPrompt": "温暖的 lo-fi 节拍，配有复古鼓点、柔和低音和梦幻合成器主旋律",
+diff --git a/src/i18n/locales/pt-BR.json b/src/i18n/locales/pt-BR.json
+index ffed477..24aef2c 100644
+--- a/src/i18n/locales/pt-BR.json
++++ b/src/i18n/locales/pt-BR.json
+@@ -11,8 +11,8 @@
+     "reloadWithoutSaving": "Recarregar sem salvar",
+     "dockPanel": "Encaixar painel",
+     "installPrompt": {
+-      "label": "Instalar FreeCut",
+-      "title": "Instalar FreeCut",
++      "label": "Instalar Studio",
++      "title": "Instalar Studio",
+       "description": "Abra pelo desktop ou pela tela inicial.",
+       "install": "Instalar",
+       "notNow": "Agora não",
+diff --git a/src/i18n/locales/tr.json b/src/i18n/locales/tr.json
+index e588d2c..f6080e1 100644
+--- a/src/i18n/locales/tr.json
++++ b/src/i18n/locales/tr.json
+@@ -11,8 +11,8 @@
+     "reloadWithoutSaving": "Kaydetmeden Yeniden Yükle",
+     "dockPanel": "Paneli sabitle",
+     "installPrompt": {
+-      "label": "FreeCut’ı yükle",
+-      "title": "FreeCut’ı yükle",
++      "label": "Studio'yu yükle",
++      "title": "Studio'yu yükle",
+       "description": "Masaüstünden veya ana ekrandan aç.",
+       "install": "Yükle",
+       "notNow": "Şimdi değil",
+diff --git a/src/i18n/locales/zh.json b/src/i18n/locales/zh.json
+index ad79200..d0a1765 100644
+--- a/src/i18n/locales/zh.json
++++ b/src/i18n/locales/zh.json
+@@ -11,8 +11,8 @@
+     "reloadWithoutSaving": "不保存直接重新加载",
+     "dockPanel": "停靠面板",
+     "installPrompt": {
+-      "label": "安装 FreeCut",
+-      "title": "安装 FreeCut",
++      "label": "安装 Studio",
++      "title": "安装 Studio",
+       "description": "从桌面或主屏幕启动。",
+       "install": "安装",
+       "notNow": "暂不",

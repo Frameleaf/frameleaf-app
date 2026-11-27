@@ -160,7 +160,11 @@ export function compositionSourcesFor(sourceSha256) {
     // FL-1556 transitions and grades in linear HDR; changes no composition or raster producer.
     sourceSha256 === 'a4d2a7c6100e9c888b3f24c8804fe4646c761805fdbfc7b7ad2a10fc1da1726d' ||
     // FL-1562 editor controls (fonts, transition sound, channels, markers, grade panels); changes no composition or raster producer.
-    sourceSha256 === 'fdf1a4993020b356126619f968109dcc9d889c19242f1900fac996ef08bf84ac'
+    sourceSha256 === 'fdf1a4993020b356126619f968109dcc9d889c19242f1900fac996ef08bf84ac' ||
+    // FL-1819/FL-1822 upstream fixes, theme accent and Studio wording; changes no composition or raster producer.
+    sourceSha256 === 'dc26d4a87723f78a97719cf9ed71afa535620c1be044c57502ec83cace9610d4' ||
+    // FL-1830 resource policy for the Frameleaf model mirror; changes no composition or raster producer.
+    sourceSha256 === '62f1f7453d93e5dd309986dee2894c76b4fee07c7a4c2e3a8d27abf98694d1e0'
   )
     return {
       ...COMPOSITION_SOURCES,

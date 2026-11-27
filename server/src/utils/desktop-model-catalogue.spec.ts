@@ -17,8 +17,8 @@ const raw = (): unknown =>
   JSON.parse(readFileSync(join(process.cwd(), 'resources/desktop/model-catalogue.json'), 'utf8'));
 it('preserves every prior binding and selects the qualified precision-corrected CPU profiles', () => {
   const catalogue = parseDesktopModelCatalogue(raw());
-  expect(catalogue.epoch).toBe(20);
-  expect(catalogue.profiles).toHaveLength(206);
+  expect(catalogue.epoch).toBe(21);
+  expect(catalogue.profiles).toHaveLength(215);
   expect(
     createHash('sha256')
       .update(canonicalJson(catalogue.profiles.slice(0, 27)))
@@ -38,7 +38,7 @@ it('preserves every prior binding and selects the qualified precision-corrected 
 });
 it('validates the approved default model and preserves exact config, source and provider identity', () => {
   const catalogue = parseDesktopModelCatalogue(raw());
-  expect(catalogue.profiles).toHaveLength(206);
+  expect(catalogue.profiles).toHaveLength(215);
   for (const profile of catalogue.profiles) {
     if (profile.workload !== 'clip') continue;
     expect(profile.embeddingDimensions).toBe(CLIP_MODEL_INFO[profile.modelName].dimSize);
@@ -283,6 +283,16 @@ it('binds a fresh canonical NAS nonce with the same digest as the native contrac
       ),
     '41abae7572292327a31bf47a4f9262eadd170b91646c95b7220c3e9c64b472d6',
     'de56abfb20b6b32791d113beb300deb815ca0c70e5c0191acddca71572c700b6',
+    // epoch 21 (FL-1831): the nine processor profiles of the 594a747f build
+    'd5cf8f268724d73ca94befa7689c50352c1c450d193d389651a445753feca68a',
+    '68cae3aec553cb1ae089a368a33fe815d115f7844c981d234e552bd4a6dd0b9f',
+    '120b6870ca750805364d093442aad33b978dd9ff0c2e8b2c68b9556f1539df32',
+    '1d4b87d865656b9e72023d6f93b1b2b5ed5a71b48fb4fca14da5f85b549f0a27',
+    'd06e6fb0246f5c82c7fd8e036be0986178d50ff852982c667dea7d63c9dfaf49',
+    'ed4bfb583a462bb039c9576ebeebebaf19ad6fbdfcfaf02080d5db826242fc65',
+    'c81792e3a7388ad55dedafb82daa59bd61488f83ee44733d40cc3af4a9c076dc',
+    '54773c5263a84366438f825a10ec5d226a48ed34b2c90909ba4df2a91fcdc0e7',
+    '4e307cc81ab3153a483377eacc4dafe21f4aa476594d040f645278ca65c05330',
   ];
   expect(catalogue.profiles).toHaveLength(pinned.length);
   for (const [index, profile] of catalogue.profiles.entries()) {
@@ -423,7 +433,7 @@ it('preserves all CPU profiles while admitting only the proved CoreML CLIP sourc
 it('selects current-main CoreML profiles with distinct preprocessing while preserving prior bindings', () => {
   const catalogue = parseDesktopModelCatalogue(raw());
   expect(catalogue.epoch).toBeGreaterThanOrEqual(9);
-  expect(catalogue.profiles).toHaveLength(206);
+  expect(catalogue.profiles).toHaveLength(215);
   expect(
     createHash('sha256')
       .update(canonicalJson(catalogue.profiles.slice(0, 24)))
@@ -454,8 +464,8 @@ it('selects current-main CoreML profiles with distinct preprocessing while prese
 
 it('selects exact current CPU and CoreML profiles while preserving all historical bindings', () => {
   const catalogue = parseDesktopModelCatalogue(raw());
-  expect(catalogue.epoch).toBe(20);
-  expect(catalogue.profiles).toHaveLength(206);
+  expect(catalogue.epoch).toBe(21);
+  expect(catalogue.profiles).toHaveLength(215);
   expect(
     createHash('sha256')
       .update(canonicalJson(catalogue.profiles.slice(0, 32)))
@@ -491,8 +501,8 @@ it('selects exact current CPU and CoreML profiles while preserving all historica
 
 it('epoch 12 adds CUDA and OpenVINO twins of the current CPU profiles and keeps every prior binding', () => {
   const catalogue = parseDesktopModelCatalogue(raw());
-  expect(catalogue.epoch).toBe(20);
-  expect(catalogue.profiles).toHaveLength(206);
+  expect(catalogue.epoch).toBe(21);
+  expect(catalogue.profiles).toHaveLength(215);
   expect(
     createHash('sha256')
       .update(canonicalJson(catalogue.profiles.slice(0, 42)))
@@ -517,8 +527,8 @@ it('epoch 12 adds CUDA and OpenVINO twins of the current CPU profiles and keeps 
 
 it('epoch 13 qualifies every selectable model the desktop runtimes can run and keeps every prior binding', () => {
   const catalogue = parseDesktopModelCatalogue(raw());
-  expect(catalogue.epoch).toBe(20);
-  expect(catalogue.profiles).toHaveLength(206);
+  expect(catalogue.epoch).toBe(21);
+  expect(catalogue.profiles).toHaveLength(215);
   expect(
     createHash('sha256')
       .update(canonicalJson(catalogue.profiles.slice(0, 42)))
@@ -577,8 +587,8 @@ it('epoch 13 qualifies every selectable model the desktop runtimes can run and k
 
 it('epoch 14 appended a twin of every f2c451a6 profile; epoch 16 names the runtime source that works on every provider', () => {
   const catalogue = parseDesktopModelCatalogue(raw());
-  expect(catalogue.epoch).toBe(20);
-  expect(catalogue.profiles).toHaveLength(206);
+  expect(catalogue.epoch).toBe(21);
+  expect(catalogue.profiles).toHaveLength(215);
   expect(
     createHash('sha256')
       .update(canonicalJson(catalogue.profiles.slice(0, 102)))
@@ -613,6 +623,7 @@ it('epoch 14 appended a twin of every f2c451a6 profile; epoch 16 names the runti
 it.each([
   [17, 162, 171, '95593fc6887c74a705c85b0ab8c9685c79afb0e4'],
   [18, 171, 180, '24ea593e19ce160b2e1dd8cdafb0c15ff34240d0'],
+  [21, 206, 215, '594a747fc8c50e6b7108cd0a58e21cae775ed381'],
 ])(
   "epoch %i adds the server's own AI build as a smart-search revision and changes nothing before it",
   (_epoch, start, end, revision) => {

@@ -125,6 +125,16 @@ Bound prediction verifies current artifacts and preprocessing before and after i
 
 Changing the producer implementation changes preprocessing identity. The existing signed CPU runtime and catalogue remain pinned to their independently qualified fc1a632 bytes; this endpoint does not qualify a replacement runtime or authorize model scope. A freshly signed runtime/catalogue, producer-pair/index admission, explicit pool/LAN authority and automatic orchestration remain required. Never relabel existing unknown vectors or reindex on sign-in.
 
+## Epoch 21: the server's own AI after the model source change (FL-1831)
+
+Epoch 21 appends nine processor profiles for runtime source `594a747f` (`594a747fc8c50e6b7108cd0a58e21cae775ed381`, the FL-1825 merge, the last commit on `main` that changed the preprocessing sources): the image encoder and both text encoders of `ViT-B-16-SigLIP-384__webli`, `ViT-B-32__openai` and `ViT-SO400M-16-SigLIP2-384__webli`. `model-spaces.json` epoch 11 gives each model's three a space. Nothing before them changes.
+
+Why: FL-1825 changed `config.py` and `models/base.py` (the model source became the Frameleaf organisation on Hugging Face, with an optional access token), so the preprocessing identity became `c6d907a7…` and `check-ml-catalogue-identity.mjs` failed. Each new profile is a twin of the newest processor profile of the same request: the same model files, fixture and reference output, under the new identity.
+
+How: `machine-learning/scripts/recut_desktop_catalogue.py`, which staged each model from the default source, now Hugging Face, and qualified it from the source tree. All nine reproduced their reference output (`ready-cpu`, macOS arm64, onnxruntime 1.31.0). A Hugging Face download carries its own `README.md`, `.gitattributes` and `refs/main` revision, so since FL-1831 the qualifier and the server's bound requests compare only the files that decide a model's output (not snapshot refs, dotfiles or read-me files); every model file still matches the profile exactly.
+
+Frameleaf Desktop still downloads every catalogue file, card included, from the mirror at the profile's revision.
+
 ## Epoch 20: photo descriptions on Frameleaf Desktop (FD-31)
 
 Epoch 20 appends 17 profiles for the desktop runtime source `35ba35dd` (`35ba35dda671b99eb9c027e9168e185c31ebabf1`, branch `aj/fd-31-runtime-source`: `b3905b4a` plus the native Qwen binding of FL-1424 and FD-31). Nothing before them changes.

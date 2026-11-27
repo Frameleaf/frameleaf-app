@@ -914,7 +914,22 @@
       "path": "patches/0203-grade-panels.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "454cd76c4acc7db05b775054f576a84fd6fb6244dcb9905904f1d15aae7c250a"
+    },
+    {
+      "path": "patches/0204-upstream-fixes.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "a3a4c6bd29839ba09049c87e508ef2f42bc1e80193c9b5cb85b5f821e896a15c"
+    },
+    {
+      "path": "patches/0205-frameleaf-accent.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "69bfdf1d85fbe3257d4d86c6341553fa4d223487d489218fb350c1dc59421c80"
+    },
+    {
+      "path": "patches/0206-studio-not-upstream.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "5a1f3cb0504a4f40679ea72c67017801f0e4fae55c8a188b9f9e7f04569e9f86"
     }
   ],
-  "sourceSha256": "fdf1a4993020b356126619f968109dcc9d889c19242f1900fac996ef08bf84ac"
+  "sourceSha256": "62f1f7453d93e5dd309986dee2894c76b4fee07c7a4c2e3a8d27abf98694d1e0"
 }

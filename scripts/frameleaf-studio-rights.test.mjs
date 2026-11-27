@@ -226,19 +226,21 @@ test("historical approvals stay bound to their rows and the changed ONNX runtime
     inventoryApproval[0].source,
     /Approve this exact seven-file inventory/,
   );
-  // The five-file Parakeet inventory served from the Frameleaf model mirror was approved on 2026-10-31 (FL-685).
-  const mirrorApproval = approval.resources.filter(
-    (entry) => entry.approvedOn === "2026-10-31",
+  // The five-file Parakeet inventory, approved on 2026-10-31 from the Frameleaf model mirror (FL-685), was approved
+  // again on 2026-11-26 when it moved to the Frameleaf organisation on Hugging Face (FL-1830).
+  const parakeetApproval = approval.resources.filter(
+    (entry) => entry.approvedOn === "2026-11-26",
   );
   assert.deepEqual(
-    mirrorApproval.map((entry) => entry.id),
+    parakeetApproval.map((entry) => entry.id),
     ["model:Olicorne/parakeet-tdt-0.6b-v3-smoothquant-onnx"],
   );
+  assert.match(parakeetApproval[0].source, /host 100% on our HF organization/);
   assert.equal(
     (mirror.match(/approvedOn: '2026-09-25'/g) ?? []).length,
     209 - 65 - 1 - 1,
   );
-  assert.equal((mirror.match(/approvedOn: '2026-10-31'/g) ?? []).length, 1);
+  assert.equal((mirror.match(/approvedOn: '2026-11-26'/g) ?? []).length, 1);
   assert.equal(
     (mirror.match(/approvedOn: '2026-09-29'/g) ?? []).length,
     1 + 65,

@@ -5,7 +5,7 @@ import { defineConfig } from 'vitest/config';
 
 const serverRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
-// Network check (FL-330): default ML models must resolve on the Frameleaf model mirror. Not part of the offline unit suite.
+// Network check (FL-330): default ML models must resolve on the default model source (the Frameleaf organisation on Hugging Face). Not part of the offline unit suite.
 export default defineConfig({
   resolve: {
     tsconfigPaths: true,

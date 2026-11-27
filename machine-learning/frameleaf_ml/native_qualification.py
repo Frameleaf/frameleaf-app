@@ -53,6 +53,26 @@ class Contract(BaseModel):
     )
 
 
+_SNAPSHOT_REF = re.compile(r"^models--[^/]+/refs/")
+
+
+def decisive_files(hashes: dict[str, str]) -> dict[str, str]:
+    """The files that decide a model's output, by path: not snapshot refs, dotfiles or read-me files.
+
+    A ref only names the revision a download came from, and a card or attributes file is never loaded, so the
+    same model files from another host (the Frameleaf organisation on Hugging Face rather than the old mirror)
+    still match a catalogue profile. Every other file, weights included, must match exactly. The server's Cloud
+    identity leaves out the same files (`identityFilePaths` in server/src/utils/cloud-model-identity.ts).
+    """
+    return {
+        name: digest
+        for name, digest in hashes.items()
+        if not _SNAPSHOT_REF.match(name)
+        and not any(part.startswith(".") for part in name.split("/"))
+        and not name.lower().endswith(".md")
+    }
+
+
 class StagedModel(Contract):
     name: str = Field(pattern=r"^[A-Za-z0-9_.-]{1,128}$")
     task: ModelTask
@@ -212,14 +232,14 @@ def verify_models(
             if require_staged
             else cache_hashes(model.cache_dir, reuse=reuse_checks)
         )
-        if actual != item.artifacts:
+        if decisive_files(actual) != decisive_files(item.artifacts):
             raise ValueError("native_staged_hash_mismatch")
         if model.model_path.suffix != ".onnx":
             raise ValueError("native_engine_qualification_not_supported")
         if reuse_checks:
-            _validate_external_weights_once(model.model_path, model.cache_dir, item.artifacts)
+            _validate_external_weights_once(model.model_path, model.cache_dir, decisive_files(item.artifacts))
         else:
-            validate_external_weights(model.model_path, model.cache_dir, item.artifacts)
+            validate_external_weights(model.model_path, model.cache_dir, decisive_files(item.artifacts))
         models.append(model)
     return entries, models
 
@@ -335,7 +355,7 @@ async def qualify(
             if not evidence or not {model.model_path.resolve() for model in models}.issubset(executed):
                 raise ValueError("native_model_execution_missing")
             for item, model in zip(spec.models, models):
-                if cache_hashes(model.cache_dir) != item.artifacts:
+                if decisive_files(cache_hashes(model.cache_dir)) != decisive_files(item.artifacts):
                     raise ValueError("native_staged_hash_changed_during_inference")
             after = snapshot()
             if before["fingerprint"] != after["fingerprint"]:

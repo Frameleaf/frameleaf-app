@@ -10,7 +10,7 @@ server's own AI refuses every catalogue identity (see server/scripts/check-ml-ca
 
 For each smart-search profile of the newest processor revision this appends a twin for this build: the same
 model files, fixture and reference output, under this build's preprocessing identity and so a new model
-key. A twin is appended only after the model was staged from the model mirror and
+key. A twin is appended only after the model was staged from the model source (by default the Frameleaf organisation on Hugging Face) and
 `frameleaf_ml.native_qualification`, run from this tree, reproduced the reference output (`ready-cpu`).
 Each model's twins get their own space in `model-spaces.json`. Nothing already in either file is changed
 or removed; both epochs go up by one. It only ever adds processor (CPU) profiles.

@@ -74,7 +74,6 @@
   /** FL-801: the zoom controls act on a playing or paused video. */
   const videoZoom = $derived(zoomable && isVideoAsset(asset));
   const lookingAround = $derived(!assetViewerManager.isPanoramaFlattened);
-  const fullscreenEnabled = typeof document !== 'undefined' && !!document.fullscreenEnabled;
 
   const togglePlay = () => {
     assetViewerManager.animatedZoom(1);
@@ -215,19 +214,18 @@
         </button>
       </span>
     {/if}
-    <!-- A browser that cannot go full screen (iPhone Safari) gets no button rather than a dead one. -->
-    {#if fullscreenEnabled || fullscreen}
-      <button
-        type="button"
-        class="fl-tool fl-fullscreen"
-        aria-label={fullscreen ? $t('frameleaf_viewer_exit_fullscreen') : $t('frameleaf_viewer_enter_fullscreen')}
-        title={fullscreen ? $t('frameleaf_viewer_exit_fullscreen') : $t('frameleaf_viewer_enter_fullscreen')}
-        aria-pressed={fullscreen}
-        onclick={onToggleFullscreen}
-      >
-        <Icon icon={fullscreen ? mdiFullscreenExit : mdiFullscreen} size="21" aria-hidden />
-      </button>
-    {/if}
+    <!-- FL-1833: always offered; a browser with no Fullscreen API (iPad browsers on WebKit's embedded
+         view, iPhone) gets the viewer's own full screen instead. -->
+    <button
+      type="button"
+      class="fl-tool fl-fullscreen"
+      aria-label={fullscreen ? $t('frameleaf_viewer_exit_fullscreen') : $t('frameleaf_viewer_enter_fullscreen')}
+      title={fullscreen ? $t('frameleaf_viewer_exit_fullscreen') : $t('frameleaf_viewer_enter_fullscreen')}
+      aria-pressed={fullscreen}
+      onclick={onToggleFullscreen}
+    >
+      <Icon icon={fullscreen ? mdiFullscreenExit : mdiFullscreen} size="21" aria-hidden />
+    </button>
   </div>
 </footer>
 

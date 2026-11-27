@@ -140,4 +140,50 @@ test.describe('slideshow on a touch tablet', () => {
     await page.mouse.click(x, y);
     await expect(viewer(page)).not.toHaveClass(/chrome-hidden/);
   });
+
+  // FL-1833: a full-screen slideshow, with the browser's Fullscreen API and without it.
+  test('the footer takes a slideshow full screen and back', async ({ page }) => {
+    await startSlideshow(page);
+    const footer = page.getByTestId('viewer-footer');
+    await footer.getByRole('button', { name: 'Enter full screen' }).tap();
+    await expect(footer.getByRole('button', { name: 'Exit full screen' })).toBeAttached();
+    // with the browser's own full screen the viewer is the full-screen element; the slideshow plays on
+    const native = await page.evaluate(
+      () => !!(document.fullscreenElement ?? (document as any).webkitFullscreenElement),
+    );
+    const { x, y } = middle(page);
+    if (!native) {
+      // no Fullscreen API here: the viewer's own full screen tucks the controls away
+      await expect(viewer(page)).toHaveClass(/chrome-hidden/);
+      await page.touchscreen.tap(x, y);
+    }
+    await expect(viewer(page)).not.toHaveClass(/chrome-hidden/);
+    await footer.getByRole('button', { name: 'Exit full screen' }).tap();
+    await expect(footer.getByRole('button', { name: 'Enter full screen' })).toBeVisible();
+    await expect(footer.getByRole('button', { name: 'Pause slideshow' })).toBeVisible();
+  });
+
+  test("a browser without the Fullscreen API gets the viewer's own full screen", async ({ context, page }) => {
+    // as in a browser built on WebKit's embedded view, which may not offer element full screen
+    await context.addInitScript(() => {
+      Object.defineProperties(Document.prototype, {
+        fullscreenEnabled: { get: () => false, configurable: true },
+        webkitFullscreenEnabled: { get: () => false, configurable: true },
+      });
+    });
+    await startSlideshow(page);
+    const footer = page.getByTestId('viewer-footer');
+    await footer.getByRole('button', { name: 'Enter full screen' }).tap();
+    await expect(viewer(page)).toHaveClass(/chrome-hidden/);
+    await expect(page.locator('[data-viewer-footer]')).toHaveCSS('opacity', '0');
+    expect(await page.evaluate(() => document.fullscreenElement)).toBeNull();
+
+    // a tap brings the controls back, with Exit full screen among them
+    const { x, y } = middle(page);
+    await page.touchscreen.tap(x, y);
+    await expect(viewer(page)).not.toHaveClass(/chrome-hidden/);
+    await footer.getByRole('button', { name: 'Exit full screen' }).tap();
+    await expect(footer.getByRole('button', { name: 'Enter full screen' })).toBeVisible();
+    await expect(footer.getByRole('button', { name: 'Pause slideshow' })).toBeVisible();
+  });
 });

@@ -123,8 +123,15 @@ export const slideshowStage =
       });
       animations = specs.map(({ keyframes, options }) => target.animate(keyframes, options));
       if (untrack(paused)) {
-        for (const animation of animations) {
-          animation.pause();
+        // FL-1833: an item reached while the slideshow is held (paused, or its settings open) arrives
+        // at once. Every entrance starts transparent, so holding it at its first frame left the
+        // canvas blank until play resumed; only the slow Ken Burns move waits for play.
+        for (const [index, animation] of animations.entries()) {
+          if (specs[index].options.fill === 'backwards') {
+            animation.finish();
+          } else {
+            animation.pause();
+          }
         }
       }
 
