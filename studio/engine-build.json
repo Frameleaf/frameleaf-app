@@ -959,7 +959,12 @@
       "path": "patches/0212-studio-media-bin.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "c9a293ec515a160b733a272128a9747f4e9571f0408f99de89ee6518d1af0c49"
+    },
+    {
+      "path": "patches/0213-studio-add-panel.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "3677a0a1325ca0f9c9bae9c6a02bf2711c8a4281b06b95e5ee0b555320a508eb"
     }
   ],
-  "sourceSha256": "23af4f1aabfd81a53909eb907a3d51acb51392b0b98bca06b748c6eca080536d"
+  "sourceSha256": "3ac1e51c2bb62cdd299b8912a1080fc8dc4e559eb439eabf59368bba1b90b25c"
 }
