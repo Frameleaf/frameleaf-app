@@ -34,7 +34,8 @@ describe('Command Center utilities', () => {
     expect(utilityTool('preservation')).toBeUndefined();
   });
   it('places utility links in the existing user settings namespace and opens Care as its settings area', () => {
-    expect(Route.utilities()).toBe('/user-settings?area=utilities');
+    // FL-1807: the Tools directory is gone; its address opens Library care.
+    expect(Route.utilities()).toBe('/user-settings?area=care');
     // September 24: Library care is the Library care settings area, the hub for fixes.
     expect(Route.libraryCare()).toBe('/user-settings?area=care');
     expect(Route.duplicatesUtility({ index: 2 })).toBe('/user-settings?area=utilities&section=duplicates&index=2');
