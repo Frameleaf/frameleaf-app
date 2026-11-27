@@ -331,6 +331,10 @@
     flex-wrap: wrap;
     min-height: var(--fl-control-target);
   }
+  /* a button is as wide as its words, not the section */
+  .automation > :global(button) {
+    justify-self: start;
+  }
   .row {
     display: flex;
     flex-wrap: wrap;
@@ -345,8 +349,9 @@
   }
   input:not([type='checkbox']),
   select {
-    min-height: var(--fl-control-height);
-    padding: var(--fl-space-2) var(--fl-space-3);
+    box-sizing: border-box;
+    height: var(--fl-control-height);
+    padding: 0 var(--fl-space-3);
     border: 1px solid var(--fl-border);
     border-radius: var(--fl-radius-control);
     background: var(--fl-surface);
