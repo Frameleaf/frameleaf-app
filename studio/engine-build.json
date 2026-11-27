@@ -968,8 +968,8 @@
     {
       "path": "patches/0214-studio-keyframes-lane.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
-      "sha256": "cba690ed67099dcb2b63eafe808f9a36313ae633bfe9e18800919ebf7267e9c1"
+      "sha256": "133c6ab24b72eb4b3b4d30b5d4afcfa2f383ee0974a804750259ed18e24e67ef"
     }
   ],
-  "sourceSha256": "382b04527b0611b00174d4e6ce901b8c8a53cfc41cba0482266c8bc7781708fb"
+  "sourceSha256": "bef6795aeaa5943a88bf3f381db912ead258c5d536d607e723abca8cf9d3b929"
 }

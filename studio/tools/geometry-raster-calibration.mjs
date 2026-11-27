@@ -318,7 +318,7 @@ export function validateBaseRaster(capture, envelope, binding) {
             '3ac1e51c2bb62cdd299b8912a1080fc8dc4e559eb439eabf59368bba1b90b25c' ||
           // FL-1822 the keyframes lane's header and labels; raster producer bytes unchanged.
           binding.sourceSha256 ===
-            '382b04527b0611b00174d4e6ce901b8c8a53cfc41cba0482266c8bc7781708fb')),
+            'bef6795aeaa5943a88bf3f381db912ead258c5d536d607e723abca8cf9d3b929')),
     'SOURCE_BROWSER',
   )
   check(

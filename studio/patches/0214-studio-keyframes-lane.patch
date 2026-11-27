@@ -1,3 +1,29 @@
+diff --git a/src/features/keyframes/components/dopesheet-editor/compound-property-inputs.test.tsx b/src/features/keyframes/components/dopesheet-editor/compound-property-inputs.test.tsx
+index c82cec2..a3ced49 100644
+--- a/src/features/keyframes/components/dopesheet-editor/compound-property-inputs.test.tsx
++++ b/src/features/keyframes/components/dopesheet-editor/compound-property-inputs.test.tsx
+@@ -309,7 +309,7 @@ describe('CompoundPropertyInputs', () => {
+       />,
+     )
+ 
+-    expect(screen.getByTestId('compound-property-inputs')).toHaveClass('w-[132px]')
++    expect(screen.getByTestId('compound-property-inputs')).toHaveClass('w-[122px]')
+   })
+ 
+   it('commits a horizontal scrub on release when live preview is unavailable', () => {
+diff --git a/src/features/keyframes/components/dopesheet-editor/compound-property-inputs.tsx b/src/features/keyframes/components/dopesheet-editor/compound-property-inputs.tsx
+index 7870cf7..d4f0c45 100644
+--- a/src/features/keyframes/components/dopesheet-editor/compound-property-inputs.tsx
++++ b/src/features/keyframes/components/dopesheet-editor/compound-property-inputs.tsx
+@@ -260,7 +260,7 @@ export function CompoundPropertyInputs({
+   return (
+     <div
+       className={`flex shrink-0 items-center overflow-hidden rounded-sm border border-border/70 ${
+-        spacious ? 'w-[192px]' : 'w-[132px]'
++        spacious ? 'w-[192px]' : 'w-[122px]'
+       } ${config.linked ? 'border-primary/50 text-primary' : ''}`}
+       data-testid="compound-property-inputs"
+     >
 diff --git a/src/features/keyframes/components/dopesheet-editor/dopesheet-header-frame-inputs.tsx b/src/features/keyframes/components/dopesheet-editor/dopesheet-header-frame-inputs.tsx
 index a146a35..16c9f2c 100644
 --- a/src/features/keyframes/components/dopesheet-editor/dopesheet-header-frame-inputs.tsx
@@ -128,7 +154,7 @@ index 81d2b32..36aa7b5 100644
      fireEvent.blur(input)
  
 diff --git a/src/features/keyframes/components/dopesheet-editor/index.tsx b/src/features/keyframes/components/dopesheet-editor/index.tsx
-index 96e8bad..2c4281a 100644
+index 96e8bad..d4344f5 100644
 --- a/src/features/keyframes/components/dopesheet-editor/index.tsx
 +++ b/src/features/keyframes/components/dopesheet-editor/index.tsx
 @@ -3920,8 +3920,8 @@ export const DopesheetEditor = memo(function DopesheetEditor({
@@ -138,7 +164,7 @@ index 96e8bad..2c4281a 100644
 -              'flex h-full min-w-0 items-center overflow-hidden pr-1 text-[9px] font-medium leading-none text-foreground/90',
 -              compoundRow ? 'w-[54px] shrink-0 pl-1' : classic ? 'flex-1 pl-1' : 'flex-1 pl-[10px]',
 +              'flex h-full min-w-0 items-center overflow-hidden pr-1 text-[11px] font-medium leading-none text-foreground/90',
-+              compoundRow ? 'w-[82px] shrink-0 pl-1' : classic ? 'flex-1 pl-1' : 'flex-1 pl-[10px]',
++              compoundRow ? 'w-[72px] shrink-0 pl-1' : classic ? 'flex-1 pl-1' : 'flex-1 pl-[10px]',
              )}
              title={rowLabel}
            >
@@ -157,7 +183,7 @@ index 96e8bad..2c4281a 100644
        >
 -        <div className="flex min-h-7 flex-shrink-0 items-center justify-between gap-2 px-1">
 -          <div className="flex min-w-0 items-center gap-2">
-+        <div className="flex min-h-9 flex-shrink-0 items-center justify-between gap-2 px-2">
++        <div className="flex min-h-8 flex-shrink-0 items-center justify-between gap-2 px-2">
 +          <div className="flex min-w-0 items-center gap-3">
 +            <span className="whitespace-nowrap text-[13px] font-semibold text-foreground">
 +              {t('timeline.keyframeEditor.title')}
@@ -182,7 +208,7 @@ index a582690..104e972 100644
                )}
              </span>
 diff --git a/src/i18n/locales/partials/en/keyframes.json b/src/i18n/locales/partials/en/keyframes.json
-index 9eb2e65..87eebc6 100644
+index 9eb2e65..65b250b 100644
 --- a/src/i18n/locales/partials/en/keyframes.json
 +++ b/src/i18n/locales/partials/en/keyframes.json
 @@ -1,7 +1,7 @@
@@ -212,3 +238,16 @@ index 9eb2e65..87eebc6 100644
        "animatedProperties": "Animated",
        "allProperties": "All",
        "linkedExpression": "Linked to {{source}}",
+@@ -120,9 +120,9 @@
+     "groups": {
+       "transform": "Transform",
+       "composite": "Composite",
+-      "textTypography": "Text Typography",
+-      "textBackground": "Text Background",
+-      "textAppearance": "Text Appearance",
++      "textTypography": "Text typography",
++      "textBackground": "Text background",
++      "textAppearance": "Text appearance",
+       "crop": "Crop",
+       "audio": "Audio",
+       "effects": "Effects",
