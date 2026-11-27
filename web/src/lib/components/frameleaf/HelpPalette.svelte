@@ -149,6 +149,8 @@
   );
 
   const load = async () => {
+    // FL-1810: Try again goes back to the placeholder while it reads
+    loadFailed = false;
     try {
       index = helpCache.index = await getHelpIndex();
       loadFailed = false;
@@ -504,7 +506,7 @@
       >
         {#if !index}
           {#if loadFailed}
-            <InlineError compact message={$t('frameleaf_help_panel_load_failed')} onRetry={load} />
+            <InlineError message={$t('frameleaf_help_panel_load_failed')} onRetry={load} />
           {:else}
             <ListSkeleton rows={4} avatar={false} />
           {/if}

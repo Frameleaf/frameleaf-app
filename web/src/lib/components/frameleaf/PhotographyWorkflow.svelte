@@ -1,4 +1,5 @@
 <script lang="ts">
+  import EmptyState from '$lib/components/frameleaf/EmptyState.svelte';
   import InlineError from '$lib/components/frameleaf/InlineError.svelte';
   import Skeleton from '$lib/components/frameleaf/Skeleton.svelte';
   import { formatDate, formatDateTime } from '$lib/frameleaf/date-format';
@@ -774,11 +775,10 @@
       {error}<Button disabled={busy} onclick={reload}>{$t('frameleaf_photography_reload')}</Button>
     </div>{/if}
   {#if message}<p class="phd-status" role="status">{message}</p>{/if}
-  {#if !draft && busy}<div role="status" aria-busy="true" aria-label={$t('frameleaf_photography_loading_shoot')}>
+  {#if !draft && !error}<div role="status" aria-busy="true" aria-label={$t('frameleaf_photography_loading_shoot')}>
       <Skeleton variant="block" height="20rem" />
     </div>
   {:else if !draft}<InlineError
-      compact
       message={error || $t('frameleaf_photography_shoot_load_failed')}
       retryLabel={$t('frameleaf_photography_reload')}
       onRetry={reload}
@@ -1505,7 +1505,7 @@
                 >{$t('frameleaf_photography_preset_replace')}</Button
               >
             </div>
-          </div>{:else}<p>{$t('frameleaf_photography_presets_none')}</p>{/each}
+          </div>{:else}<EmptyState compact message={$t('frameleaf_photography_presets_none')} />{/each}
         <details>
           <summary>{$t('frameleaf_photography_snapshots')}</summary><Button
             disabled={busy || !presetName.trim() || draft.presets.length >= 30}
@@ -1909,7 +1909,7 @@
                   })}</Button
                 >{/each}
             </div>
-          </article>{:else}<p>{$t('frameleaf_photography_no_selections')}</p>{/each}
+          </article>{:else}<EmptyState compact message={$t('frameleaf_photography_no_selections')} />{/each}
       </section>
       <section class="phd-card">
         <h3>{$t('frameleaf_photography_orders_title')}</h3>
@@ -1959,9 +1959,10 @@
                   >{$t('frameleaf_photography_cancel_quote')}</Button
                 >{/if}
             </div>
-          </article>{:else}<p>
-            {$t('frameleaf_photography_no_orders')}
-          </p>{/each}{#each draft.receipts as receipt (receipt.id)}<small
+          </article>{:else}<EmptyState
+            compact
+            message={$t('frameleaf_photography_no_orders')}
+          />{/each}{#each draft.receipts as receipt (receipt.id)}<small
             >{formatDateTime(
               new Date(receipt.createdAt),
               {
@@ -2179,7 +2180,7 @@
                       : $t('frameleaf_photography_allow_downloads')}</Button
                   >
                 </div>
-              </div>{:else}<p>{$t('frameleaf_photography_no_recipients')}</p>{/each}
+              </div>{:else}<EmptyState compact message={$t('frameleaf_photography_no_recipients')} />{/each}
           </section>
         </div>
         <aside class="phw-inspector" aria-labelledby="phx-gallery-settings">

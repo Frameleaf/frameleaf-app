@@ -1562,10 +1562,10 @@
             <li class="list-more" aria-hidden="true" bind:this={listEnd}></li>
           {/if}
         </ul>
-      {:else if loaded}
+      {:else if loaded && !loadFailed}
         <div class="list-empty"><EmptyRow title={$t('frameleaf_map_list_empty')} /></div>
       {:else if !loadFailed}
-        <div class="list-empty" aria-label={$t('frameleaf_map_finding')}><ListSkeleton rows={4} /></div>
+        <div class="list-empty"><ListSkeleton rows={4} /></div>
       {/if}
     </aside>
   {/if}
