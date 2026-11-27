@@ -472,6 +472,16 @@ export class LibraryRepository {
     return rows.map((row) => ({ folderPath: row.folderPath, photos: Number(row.photos), items: Number(row.items) }));
   }
 
+  /** FL-1837: every folder the library has items in, offline and trashed ones too (not Locked ones). */
+  @GenerateSql({ params: [DummyValue.UUID] })
+  async getFolderPaths(libraryId: string): Promise<string[]> {
+    const { rows } = await sql<{ folderPath: string }>`
+      SELECT DISTINCT ${folderOf('asset')} AS "folderPath"
+      FROM asset
+      WHERE asset."libraryId" = ${asUuid(libraryId)} AND ${isNotLocked('asset')}`.execute(this.db);
+    return rows.map(({ folderPath }) => folderPath);
+  }
+
   /** FL-1837: how many folder albums a library has, and how many of them show nothing. */
   @GenerateSql({ params: [DummyValue.UUID] })
   async getFolderAlbumCounts(libraryId: string): Promise<{ albums: number; empty: number }> {

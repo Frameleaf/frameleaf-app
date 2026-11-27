@@ -558,6 +558,41 @@ describe(AlbumMergeService.name, () => {
       await expect(deletedAt(loser.album.id)).resolves.toEqual({ deletedAt: null });
     });
 
+    it('FL-1837: a merged library folder album keeps syncing into the merged album, and Undo points it back', async () => {
+      const { sut, ctx, runs } = setup();
+      const { user } = await ctx.newUser();
+      const auth = factory.auth({ user: { id: user.id } });
+      const winner = await albumWith(ctx, user.id, 2);
+      const loser = await albumWith(ctx, user.id, 1);
+      const library = await ctx.database
+        .insertInto('library')
+        .values({
+          ownerId: user.id,
+          name: 'Folder',
+          importPaths: ['/fl1837'],
+          exclusionPatterns: [],
+          folderAlbums: true,
+        })
+        .returning('id')
+        .executeTakeFirstOrThrow();
+      await ctx.database
+        .insertInto('library_folder_album')
+        .values({ libraryId: library.id, folderPath: '/fl1837/Trip', albumId: loser.album.id })
+        .execute();
+      const link = () =>
+        ctx.database
+          .selectFrom('library_folder_album')
+          .select(['albumId', 'isUserEdited'])
+          .where('libraryId', '=', library.id)
+          .executeTakeFirstOrThrow();
+
+      await sut.merge(auth, winner.album.id, { otherId: loser.album.id });
+      await expect(link()).resolves.toEqual({ albumId: winner.album.id, isUserEdited: true });
+
+      await runs.undoLatest(auth);
+      await expect(link()).resolves.toEqual({ albumId: loser.album.id, isUserEdited: false });
+    });
+
     it('follows a merged-away import folder and a backup choice', async () => {
       const { sut, ctx } = setup();
       const { user } = await ctx.newUser();

@@ -425,12 +425,20 @@ export class LibraryService extends BaseService {
     let bytes = 0;
     let complete = true;
     const folders = new Map<string, number>();
+    // FL-1837: photos the folder's skips leave out, by folder, so the folder albums preview can say why one is empty
+    const skipped = new Map<string, number>();
     try {
       const batches = this.storageRepository.walkLibrary({
         pathsToCrawl: [folder],
         includeHidden: false,
         exclusionPatterns,
         take: 500,
+        onSkipped: (file) => {
+          const parent = path.posix.dirname(file);
+          if (skipped.has(parent) || skipped.size < FOLDER_ESTIMATE_FOLDERS) {
+            skipped.set(parent, (skipped.get(parent) ?? 0) + 1);
+          }
+        },
       });
       for await (const batch of batches) {
         for (const file of batch) {
@@ -459,7 +467,11 @@ export class LibraryService extends BaseService {
       count,
       bytes,
       complete,
-      folders: [...folders].map(([folderPath, folderCount]) => ({ path: folderPath, count: folderCount })),
+      folders: [...new Set([...folders.keys(), ...skipped.keys()])].map((folderPath) => ({
+        path: folderPath,
+        count: folders.get(folderPath) ?? 0,
+        skipped: skipped.get(folderPath) ?? 0,
+      })),
     };
   }
 

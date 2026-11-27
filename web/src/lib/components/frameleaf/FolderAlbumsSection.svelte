@@ -268,12 +268,24 @@
         <h3>{$t('frameleaf_folder_albums_inside_title')}</h3>
         <p class="hint">{$t('frameleaf_folder_albums_inside_hint')}</p>
         <ul class="inside">
-          {#each names as { name, folders: found } (name)}
+          {#each names as { name, folders: found, empty, skipped } (name)}
             <li>
               <Icon icon={mdiFolderOutline} size="20" />
               <span class="inside-name">
                 <strong>{name}</strong>
-                <small>{$t('frameleaf_folder_albums_inside_count', { values: { count: found } })}</small>
+                <small>
+                  {[
+                    $t('frameleaf_folder_albums_inside_count', { values: { count: found } }),
+                    empty === 0
+                      ? undefined
+                      : empty === found
+                        ? $t('frameleaf_folder_albums_inside_all_empty')
+                        : $t('frameleaf_folder_albums_inside_some_empty', { values: { count: empty } }),
+                  ]
+                    .filter(Boolean)
+                    .join(' · ')}
+                  {#if skipped}{$t('frameleaf_folder_albums_inside_skipped')}{/if}
+                </small>
               </span>
               <SegmentedControl
                 label={$t('frameleaf_folder_albums_rule_label', { values: { name } })}

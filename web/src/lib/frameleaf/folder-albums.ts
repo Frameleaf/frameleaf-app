@@ -162,22 +162,26 @@ export const folderAlbumCounts = (plan: FolderAlbumNode[]) => {
  */
 export const subfolderNames = (
   rootsIn: string[],
-  folders: { path: string; count: number }[],
+  folders: { path: string; count: number; skipped?: number }[],
   options: FolderAlbumOptionsDto,
 ) => {
   const roots = [...new Set(rootsIn.map((root) => trim(root)))];
   const level = options.shape === FolderAlbumShape.Every ? 1 : levelOf(options);
-  const found = new Map<string, Set<string>>();
+  // each folder of that name, with the photos shown and skipped in it and below it
+  const found = new Map<string, Map<string, { photos: number; skipped: number }>>();
   const names = new Map<string, string>();
-  for (const { path } of folders) {
+  for (const { path, count, skipped = 0 } of folders) {
     const chain = walk(roots, path)?.chain;
     if (!chain || chain.length < level + 2) {
       continue;
     }
     const name = baseName(chain[level + 1]);
     const key = name.toLowerCase();
-    const seen = found.get(key) ?? new Set<string>();
-    seen.add(chain[level]);
+    const seen = found.get(key) ?? new Map<string, { photos: number; skipped: number }>();
+    const totals = seen.get(chain[level + 1]) ?? { photos: 0, skipped: 0 };
+    totals.photos += count;
+    totals.skipped += skipped;
+    seen.set(chain[level + 1], totals);
     found.set(key, seen);
     // the first spelling found names the row
     if (!names.has(key)) {
@@ -185,7 +189,17 @@ export const subfolderNames = (
     }
   }
   return [...found]
-    .map(([key, albumFolders]) => ({ name: names.get(key)!, folders: albumFolders.size }))
+    .map(([key, instances]) => {
+      const empty = [...instances.values()].filter(({ photos }) => photos === 0);
+      return {
+        name: names.get(key)!,
+        folders: instances.size,
+        /** folders of this name holding nothing a folder album shows */
+        empty: empty.length,
+        /** whether those hold photos this folder's skips leave out, such as RAW files */
+        skipped: empty.some(({ skipped }) => skipped > 0),
+      };
+    })
     .sort((a, b) => b.folders - a.folders || a.name.localeCompare(b.name));
 };
 

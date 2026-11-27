@@ -19,6 +19,7 @@ export const AlbumChangeKind = {
   SourceLinkMoved: 'album.source_link_moved',
   ICloudAlbumMoved: 'album.icloud_album_moved',
   TakeoutFolderMoved: 'album.takeout_folder_moved',
+  FolderAlbumMoved: 'album.folder_album_moved',
   ChoiceMoved: 'album.choice_moved',
   LockChanged: 'album.lock_changed',
   SoftDeleted: ALBUM_CHANGE_SOFT_DELETED,
@@ -206,6 +207,25 @@ export class AlbumMergeRepository {
     return rows;
   }
 
+  /**
+   * FL-1837: a library folder whose album is merged keeps syncing into the merged album instead of making its album
+   * again. The link counts as the owner's edit from then on, so the sync never renames or removes the merged album.
+   */
+  async moveFolderAlbums(
+    loserId: string,
+    winnerId: string,
+  ): Promise<{ id: string; folderPath: string; isUserEdited: boolean }[]> {
+    const { rows } = await sql<{ id: string; folderPath: string; isUserEdited: boolean }>`
+      WITH old AS (
+        SELECT id, "isUserEdited" FROM library_folder_album WHERE "albumId" = ${loserId}::uuid FOR UPDATE
+      )
+      UPDATE library_folder_album link SET "albumId" = ${winnerId}::uuid, "isUserEdited" = true
+      FROM old WHERE link.id = old.id
+      RETURNING link.id, link."folderPath", old."isUserEdited"
+    `.execute(this.db);
+    return rows;
+  }
+
   /** What the person chose albums for: a loser that was chosen becomes the winner, so nothing drops out. */
   async moveChoices(loserId: string, winnerId: string, ownerId: string): Promise<AlbumChangeInput[]> {
     const changes: AlbumChangeInput[] = [];
@@ -372,6 +392,25 @@ export class AlbumMergeRepository {
       `.execute(this.db);
       if (Number(numAffectedRows ?? 0) === 0) {
         skipped.push(folder);
+      } else {
+        reversed += 1;
+      }
+    }
+    return { reversed, skipped };
+  }
+
+  async reverseFolderAlbums(changes: AlbumChangeRow[]): Promise<AlbumChangeReversal> {
+    let reversed = 0;
+    const skipped: string[] = [];
+    for (const change of changes) {
+      const { albumId, isUserEdited } = change.before as { albumId: string; isUserEdited: boolean };
+      const { id, folderPath } = change.after as { id: string; folderPath: string };
+      const { numAffectedRows } = await sql`
+        UPDATE library_folder_album SET "albumId" = ${albumId}::uuid, "isUserEdited" = ${isUserEdited}
+        WHERE id = ${id}::uuid AND "albumId" = ${change.albumId}::uuid
+      `.execute(this.db);
+      if (Number(numAffectedRows ?? 0) === 0) {
+        skipped.push(folderPath);
       } else {
         reversed += 1;
       }

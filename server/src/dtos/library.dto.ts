@@ -338,6 +338,12 @@ const LibraryFolderEstimateResponseSchema = z
           .object({
             path: z.string().describe('A folder holding photos or videos, without a trailing slash'),
             count: z.int().min(0).describe('Photos and videos directly in it'),
+            skipped: z
+              .int()
+              .min(0)
+              .describe(
+                'Photos and videos directly in it that the exclusion patterns skip (FL-1837); count may then be 0',
+              ),
           })
           .meta({ id: 'LibraryFolderEstimateFolderDto' }),
       )

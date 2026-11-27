@@ -412,6 +412,28 @@ WHERE
 GROUP BY
   1
 
+-- LibraryRepository.getFolderPaths
+SELECT DISTINCT
+  coalesce(
+    nullif(
+      substring("asset"."originalPath", '^(.*)/[^/]*$'),
+      ''
+    ),
+    '/'
+  ) AS "folderPath"
+FROM
+  asset
+WHERE
+  asset."libraryId" = $1::uuid
+  AND not exists (
+    select
+      1
+    from
+      asset_lock
+    where
+      asset_lock."assetId" = "asset"."id"
+  )
+
 -- LibraryRepository.getFolderAlbumCounts
 SELECT
   count(*) AS albums,

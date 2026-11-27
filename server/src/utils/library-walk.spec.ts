@@ -39,6 +39,25 @@ describe('bounded library source walk', () => {
     await fs.writeFile(file, 'source remains read-only');
   };
 
+  it('tells which photos its exclusion patterns skip, not other files or skipped folders', async () => {
+    await write(path.join(root, 'event', 'Capture', 'a.jpg'));
+    await write(path.join(root, 'event', 'RAW', 'a.cr3'));
+    await write(path.join(root, 'event', 'RAW', 'notes.txt'));
+    await write(path.join(root, '@eaDir', 'b.jpg'));
+    const skipped: string[] = [];
+
+    const found = await collect({
+      ...options([root]),
+      exclusionPatterns: ['**/*.cr3', '**/@eaDir/**'],
+      onSkipped: (file) => {
+        skipped.push(file);
+      },
+    });
+
+    expect(found).toEqual([path.join(root, 'event', 'Capture', 'a.jpg')]);
+    expect(skipped).toEqual([path.join(root, 'event', 'RAW', 'a.cr3')]);
+  });
+
   it('tells the queue it is alive while walking a tree that yields no media', async () => {
     await write(path.join(root, 'a.txt'));
     await write(path.join(root, 'b.txt'));
