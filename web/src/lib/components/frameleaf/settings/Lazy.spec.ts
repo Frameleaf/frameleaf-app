@@ -18,13 +18,17 @@ describe('a settings page fetched when it opens (FL-1799)', () => {
     expect(screen.queryByRole('status')).toBeNull();
   });
 
-  it('offers to try again when the code cannot be fetched', async () => {
-    const load = vi
-      .fn<() => Promise<{ default: typeof MockBackupArea }>>()
-      .mockRejectedValueOnce(new Error('offline'))
-      .mockResolvedValue({ default: MockBackupArea });
-    render(Lazy, { props: { load, props: { page: 'overview' } } });
-    (await screen.findByRole('button')).click();
-    expect(await screen.findByTestId('backup-area')).toHaveTextContent('overview');
+  it('reloads the page to try again when the code cannot be fetched (a release the tab predates)', async () => {
+    const reload = vi.fn();
+    vi.stubGlobal('location', { ...location, reload });
+    try {
+      const load = vi.fn<() => Promise<{ default: typeof MockBackupArea }>>().mockRejectedValue(new Error('gone'));
+      render(Lazy, { props: { load, props: { page: 'overview' } } });
+      (await screen.findByRole('button')).click();
+      expect(reload).toHaveBeenCalledOnce();
+      expect(load).toHaveBeenCalledOnce();
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });

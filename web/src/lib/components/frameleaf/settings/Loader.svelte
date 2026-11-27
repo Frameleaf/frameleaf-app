@@ -9,7 +9,16 @@
   import type { Snippet } from 'svelte';
   import { t } from 'svelte-i18n';
 
-  let { load, children }: { load: () => Promise<T>; children: Snippet<[T]> } = $props();
+  let {
+    load,
+    children,
+    onRetry,
+  }: {
+    load: () => Promise<T>;
+    children: Snippet<[T]>;
+    /** What "Try again" does instead of loading again. */
+    onRetry?: () => void;
+  } = $props();
 
   let data = $state<{ value: T }>();
   let failed = $state(false);
@@ -40,7 +49,7 @@
 {#if data}
   {@render children(data.value)}
 {:else if failed}
-  <InlineError message={$t('frameleaf_cc_section_load_failed')} onRetry={() => attempt++} />
+  <InlineError message={$t('frameleaf_cc_section_load_failed')} onRetry={onRetry ?? (() => attempt++)} />
 {:else}
   <div class="loading" role="status" aria-busy="true">
     <span class="sr-only">{$t('loading')}</span>

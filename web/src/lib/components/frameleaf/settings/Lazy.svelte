@@ -14,10 +14,15 @@
   };
 
   let { load, props = {} }: Props = $props();
+
+  // A page's code that failed to arrive is usually from a release this tab predates: the browser
+  // keeps the failure, so only a reload fetches the current files. Unsaved server settings come back
+  // from the tab's draft journal.
+  const reload = () => location.reload();
 </script>
 
 {#key load}
-  <Loader {load}>
+  <Loader {load} onRetry={reload}>
     {#snippet children(module)}
       <module.default {...props} />
     {/snippet}
