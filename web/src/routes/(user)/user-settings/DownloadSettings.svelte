@@ -27,15 +27,28 @@
     type AccountPreferenceKey,
   } from '$lib/frameleaf/account-preferences';
   import { createOwnPreferencesDraft } from '$lib/frameleaf/own-preferences-draft';
-  import { t } from 'svelte-i18n';
+  import { DOWNLOAD_FORMATS } from '$lib/frameleaf/download-format';
+  import { t, type Translations } from 'svelte-i18n';
 
   const keys: AccountPreferenceKey[] = [
+    'download.defaultFormat',
     'download.includeEmbeddedVideos',
     'download.includeSidecar',
     'download.archiveSize',
   ];
   const store = createOwnPreferencesDraft(keys);
   const draft = $derived(store.draft);
+
+  // FL-826: the format the Download question starts on.
+  const format = $derived(DOWNLOAD_FORMATS.find((id) => id === draft['download.defaultFormat']) ?? DOWNLOAD_FORMATS[0]);
+  const formatOptions = $derived(
+    DOWNLOAD_FORMATS.map((id) => ({
+      value: id,
+      label: $t(
+        id === 'web' ? 'frameleaf_download_format_web_short' : (`frameleaf_download_format_${id}` as Translations),
+      ),
+    })),
+  );
 
   const SIZES = [2, 4, 10];
   const RECOMMENDED = 4;
@@ -89,6 +102,19 @@
 <OwnPreferencesForm {store}>
   <KitPage>
     <Section title={$t('frameleaf_prefs_downloads_contains')}>
+      <Row
+        label={$t('frameleaf_prefs_downloads_format')}
+        help={$t('frameleaf_prefs_downloads_format_help', {
+          values: { note: $t(`frameleaf_download_format_${format}_note` as Translations) },
+        })}
+      >
+        <SegmentedControl
+          label={$t('frameleaf_prefs_downloads_format')}
+          options={formatOptions}
+          value={format}
+          onChange={(value) => store.set('download.defaultFormat', value)}
+        />
+      </Row>
       <Row label={$t('frameleaf_prefs_downloads_motion')} help={$t('frameleaf_prefs_downloads_motion_help')}>
         <Switch
           label={$t('frameleaf_prefs_downloads_motion_label')}

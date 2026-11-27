@@ -4,6 +4,8 @@
    * step, the numbers, and the key that signed it. "Download report" saves the signed file (FL-879), which
    * names the same key fingerprint; "Print" prints the report alone (the print styles below).
    */
+  import { formatDateTime } from '$lib/frameleaf/date-format';
+  import { formatCount } from '$lib/frameleaf/number-format';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import InlineError from '$lib/components/frameleaf/InlineError.svelte';
   import Skeleton from '$lib/components/frameleaf/Skeleton.svelte';
@@ -40,9 +42,8 @@
   };
   onMount(() => void load());
 
-  const moment = (iso: string) =>
-    new Intl.DateTimeFormat($locale, { dateStyle: 'full', timeStyle: 'short' }).format(new Date(iso));
-  const number = (value: number) => value.toLocaleString($locale);
+  const moment = (iso: string) => formatDateTime(new Date(iso), { dateStyle: 'full', timeStyle: 'short' }, $locale);
+  const number = (value: number) => formatCount(value, $locale);
   const STEP_WORDS: Record<DrillStepId, Translations> = {
     fetch: 'frameleaf_restore_drill_step_fetch',
     unlock: 'frameleaf_restore_drill_step_unlock',

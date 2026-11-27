@@ -29,6 +29,8 @@ import {
   AssetFaceUpdateDto,
   MergePersonDto,
   MergeSuggestionsResponseDto,
+  PeoplePickerResponseDto,
+  PeoplePickerSearchDto,
   PeopleResponseDto,
   PeopleUpdateDto,
   PersonCorrectionDto,
@@ -82,6 +84,18 @@ export class PersonController {
   })
   getAllPeople(@Auth() auth: AuthDto, @Query() options: PersonSearchDto): Promise<PeopleResponseDto> {
     return this.service.getAll(auth, options);
+  }
+
+  @Get('picker')
+  @Authenticated({ permission: Permission.PersonRead })
+  @Endpoint({
+    summary: 'Get people for a picker',
+    description:
+      'Retrieve the people list with only what a picker or a filter needs to draw a row: id, name, thumbnail version and photo count. Takes the same name search, order and pages as the people list.',
+    history: new HistoryBuilder().added('v3.2.1').alpha('v3.2.1'),
+  })
+  getPeoplePicker(@Auth() auth: AuthDto, @Query() options: PeoplePickerSearchDto): Promise<PeoplePickerResponseDto> {
+    return this.service.getPicker(auth, options);
   }
 
   @Post()

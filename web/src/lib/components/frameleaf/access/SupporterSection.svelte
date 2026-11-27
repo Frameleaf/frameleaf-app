@@ -11,6 +11,7 @@
    * - A server key is an administrator's: it is refused here and activated under Frameleaf Cloud →
    *   Licence, so a personal key is never registered for the server and the reverse.
    */
+  import { formatDate } from '$lib/frameleaf/date-format';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Field from '$lib/components/frameleaf/settings/kit/Field.svelte';
   import Hero from '$lib/components/frameleaf/settings/kit/Hero.svelte';
@@ -57,7 +58,7 @@
   let confirmRemove = $state(false);
   const activatedOn = $derived(
     personal?.activatedAt
-      ? new Date(personal.activatedAt).toLocaleDateString($locale, { day: 'numeric', month: 'long', year: 'numeric' })
+      ? formatDate(new Date(personal.activatedAt), { day: 'numeric', month: 'long', year: 'numeric' }, $locale)
       : '',
   );
   const hero = $derived(

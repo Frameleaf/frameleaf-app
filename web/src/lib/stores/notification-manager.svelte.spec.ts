@@ -6,6 +6,7 @@ const events = vi.hoisted<{
   AuthLogin?: (user: { userId: string }) => Promise<void>;
   AuthLogout?: () => void;
   AuthUserLoaded?: (user: { id: string }) => void;
+  WebsocketConnect?: () => void;
 }>(() => ({}));
 const handleError = vi.hoisted(() => vi.fn());
 vi.mock('$lib/managers/event-manager.svelte', () => ({
@@ -297,4 +298,38 @@ it('retires a previous account read on identity load without starting another pr
   await pending;
   expect(sdkMock.getNotifications).toHaveBeenCalledTimes(1);
   expect(notificationManager.notifications).toEqual([]);
+});
+
+/** FL-1796: the top bar asks on every mount; only the first one of an account reaches the server. */
+describe('load', () => {
+  it('reads the list once, then leaves it to the socket', async () => {
+    sdkMock.getNotifications.mockResolvedValue([notification('first')]);
+    await notificationManager.load();
+    await notificationManager.load();
+    expect(sdkMock.getNotifications).toHaveBeenCalledTimes(1);
+    expect(notificationManager.notifications.map(({ id }) => id)).toEqual(['first']);
+  });
+
+  it('asks again after a failed read, and for the next account', async () => {
+    sdkMock.getNotifications.mockRejectedValueOnce(new Error('offline'));
+    await notificationManager.load();
+    sdkMock.getNotifications.mockResolvedValue([]);
+    await notificationManager.load();
+    expect(sdkMock.getNotifications).toHaveBeenCalledTimes(2);
+
+    events.AuthLogout?.();
+    await notificationManager.load();
+    expect(sdkMock.getNotifications).toHaveBeenCalledTimes(3);
+  });
+
+  it('reads again when the socket reconnects, since pushes were missed meanwhile', async () => {
+    events.WebsocketConnect?.();
+    expect(sdkMock.getNotifications).not.toHaveBeenCalled();
+
+    sdkMock.getNotifications.mockResolvedValue([]);
+    await notificationManager.load();
+    sdkMock.getNotifications.mockResolvedValue([notification('missed')]);
+    events.WebsocketConnect?.();
+    await vi.waitFor(() => expect(notificationManager.notifications.map(({ id }) => id)).toEqual(['missed']));
+  });
 });

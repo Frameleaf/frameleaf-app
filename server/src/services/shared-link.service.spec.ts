@@ -70,6 +70,54 @@ describe(SharedLinkService.name, () => {
     });
   });
 
+  describe('getPage (FL-1795)', () => {
+    it('returns one page, the counts of every page, and where the next page starts', async () => {
+      const links = [SharedLinkFactory.create(), SharedLinkFactory.create()].map((link, index) => ({
+        ...listed(link),
+        cursorAt: `2026-11-0${index + 1} 10:00:00.123456+00`,
+      }));
+      mocks.sharedLink.getAll.mockResolvedValue(links);
+      mocks.sharedLink.getCounts.mockResolvedValue({ album: 3, individual: 4 });
+
+      const page = await sut.getPage(authStub.user1, { take: 2 });
+
+      expect(mocks.sharedLink.getAll).toHaveBeenCalledWith({ userId: authStub.user1.user.id, take: 2 });
+      expect(page.links.map(({ id }) => id)).toEqual(links.map(({ id }) => id));
+      expect(page).toMatchObject({ albumCount: 3, individualCount: 4 });
+      expect(page.nextCursor).toEqual(expect.any(String));
+
+      await sut.getPage(authStub.user1, { take: 2, cursor: page.nextCursor! });
+      expect(mocks.sharedLink.getAll).toHaveBeenLastCalledWith({
+        userId: authStub.user1.user.id,
+        take: 2,
+        after: { at: '2026-11-02 10:00:00.123456+00', id: links[1].id },
+      });
+    });
+
+    it('says there is no next page when the page is not full', async () => {
+      mocks.sharedLink.getAll.mockResolvedValue([
+        { ...listed(SharedLinkFactory.create()), cursorAt: '2026-11-01 10:00:00+00' },
+      ]);
+      mocks.sharedLink.getCounts.mockResolvedValue({ album: 0, individual: 1 });
+
+      await expect(sut.getPage(authStub.user1, { take: 2 })).resolves.toMatchObject({ nextCursor: null });
+    });
+
+    it('refuses a cursor it did not hand out', async () => {
+      const made = Buffer.from("x' or 1=1|now()").toString('base64url');
+      await expect(sut.getPage(authStub.user1, { take: 2, cursor: made })).rejects.toBeInstanceOf(BadRequestException);
+      await expect(sut.getPage(authStub.user1, { take: 2, cursor: 'nonsense' })).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+      // well formed, but a time that cannot exist would fail in Postgres instead (FL-1795 review)
+      const impossible = Buffer.from(`${newUuid()}|2026-02-30 25:61:61+00`).toString('base64url');
+      await expect(sut.getPage(authStub.user1, { take: 2, cursor: impossible })).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+      expect(mocks.sharedLink.getAll).not.toHaveBeenCalled();
+    });
+  });
+
   describe('public address (FL-305)', () => {
     it("carries each link's public address on the external domain, by slug or by key", async () => {
       mocks.systemMetadata.get.mockResolvedValue({ server: { externalDomain: 'https://photos.example.com/' } });

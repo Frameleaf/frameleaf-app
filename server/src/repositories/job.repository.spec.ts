@@ -4,6 +4,7 @@ import { Kysely } from 'kysely';
 import { JobName, JobStatus, QueueName } from 'src/enum.js';
 import { QUEUE_EXECUTION_CAPACITY, queueAdmission } from 'src/queue/admission.js';
 import { queueExecution } from 'src/queue/context.js';
+import { onJobSettled } from 'src/queue/settled.js';
 import { QUEUE_TIMING, QueueClaim, QueueExecution } from 'src/queue/types.js';
 import { ConfigRepository } from 'src/repositories/config.repository.js';
 import { EventRepository } from 'src/repositories/event.repository.js';
@@ -97,6 +98,16 @@ describe(JobRepository.name, () => {
       { jobId: 'fix-asset', deduplication: { id: 'fix-asset', keepLastIfActive: true } },
       // and once it waits for another fix it puts itself back under a person's key, which Try again never cancels
       { jobId: 'fix-asset/ptry-2-1', delay: 60_000 },
+    ]);
+  });
+
+  it("keeps one waiting refresh of an owner's merge suggestions and leaves the nightly cleanup alone (FL-1790)", async () => {
+    await sut.queue({ name: JobName.PersonCleanup, data: { mergeCandidatesOwnerId: 'owner' } });
+    await sut.queue({ name: JobName.PersonCleanup });
+
+    expect(enqueue.mock.calls.map(([items]) => items[0].options)).toEqual([
+      { delay: 60_000, deduplication: { id: 'PersonCleanup:merge-candidates:owner', keepLastIfActive: true } },
+      undefined,
     ]);
   });
 
@@ -772,6 +783,28 @@ describe(JobRepository.name, () => {
       expect(sut['store'].complete).not.toHaveBeenCalled();
       expect(sut['store'].defer).toHaveBeenCalledExactlyOnceWith(late, 'local-capacity');
       expect(attemptEvidence.recordStoppedAttempt).toHaveBeenCalledWith(sut['store'].db, late.id, late.token);
+    });
+
+    it.each([
+      ['succeeds', () => Promise.resolve()],
+      ['fails', () => Promise.reject(new Error('corrupt file'))],
+      [
+        'is deferred',
+        () => {
+          queueExecution.getStore()!.dependencyReason = 'destination-unavailable';
+          return Promise.reject(new Error('refused'));
+        },
+      ],
+    ])('tells settle listeners when a job %s (FL-1794)', async (_outcome, run) => {
+      const settled = vi.fn();
+      const stop = onJobSettled(settled);
+      sut['eventRepository'].emit = vi.fn().mockImplementation(run);
+      try {
+        await sut['execute'](claim(7), new AbortController());
+        expect(settled).toHaveBeenCalledExactlyOnceWith(QueueName.BackgroundTask);
+      } finally {
+        stop();
+      }
     });
 
     it('warns once per queue and reason when dependency refusals defer jobs, instead of logging each as a failure', async () => {

@@ -23,7 +23,7 @@ beforeEach(() => {
   addMessages('dev', en);
 });
 
-describe('AddFolderPage folder list (FL-1495)', () => {
+describe('AddFolderPage folder list (FL-1495), in the shared folder chooser (FL-1814)', () => {
   it('explains Manager and links to it when a folder has nothing inside on a Manager install', async () => {
     sdkMock.getManagerAccess.mockResolvedValue({ url: 'http://nas:2284' } as never);
     sdkMock.browseLibraryFolders.mockResolvedValue(listing([]));
@@ -35,7 +35,7 @@ describe('AddFolderPage folder list (FL-1495)', () => {
       'href',
       'http://nas:2284/#services',
     );
-    expect(screen.queryByText(en.frameleaf_libraries_browse_empty)).not.toBeInTheDocument();
+    expect(screen.queryByText(en.frameleaf_takeout_folder_none)).not.toBeInTheDocument();
   });
 
   it('says only connected folders are listed when there are some', async () => {
@@ -54,7 +54,7 @@ describe('AddFolderPage folder list (FL-1495)', () => {
     render(AddFolderPage, props);
     await open();
 
-    expect(await screen.findByText(en.frameleaf_libraries_browse_empty)).toBeInTheDocument();
+    expect(await screen.findByText(en.frameleaf_takeout_folder_none)).toBeInTheDocument();
     expect(screen.queryByText(en.frameleaf_libraries_browse_none_title)).not.toBeInTheDocument();
   });
 
@@ -69,7 +69,7 @@ describe('AddFolderPage folder list (FL-1495)', () => {
     await fireEvent.focus(document.defaultView!);
 
     expect(await screen.findByRole('button', { name: 'user' })).toBeInTheDocument();
-    expect(sdkMock.browseLibraryFolders).toHaveBeenLastCalledWith({ path: '/mnt' });
+    expect(sdkMock.browseLibraryFolders).toHaveBeenCalledTimes(2);
   });
 
   it('keeps the plain empty line on an install without Manager', async () => {
@@ -78,7 +78,7 @@ describe('AddFolderPage folder list (FL-1495)', () => {
     render(AddFolderPage, props);
     await open();
 
-    expect(await screen.findByText(en.frameleaf_libraries_browse_empty)).toBeInTheDocument();
+    expect(await screen.findByText(en.frameleaf_takeout_folder_none)).toBeInTheDocument();
     expect(screen.queryByText(en.frameleaf_libraries_browse_none_title)).not.toBeInTheDocument();
   });
 });

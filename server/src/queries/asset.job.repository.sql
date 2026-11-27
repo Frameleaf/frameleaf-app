@@ -919,23 +919,40 @@ where
       "asset_file"."assetId" = "asset"."id"
       and "asset_file"."type" = 'preview'
   )
+  and not exists (
+    select
+    from
+      "asset_best_photo_score"
+    where
+      "asset_best_photo_score"."assetId" = "asset"."id"
+  )
   and (
-    not exists (
-      select
-      from
-        "asset_best_photo_score"
-      where
-        "asset_best_photo_score"."assetId" = "asset"."id"
-    )
+    "asset"."type" = 'VIDEO'
+    or "asset"."createdAt" < now() - interval '7 days'
     or exists (
       select
       from
-        "asset_best_photo_score"
+        "smart_search"
       where
-        "asset_best_photo_score"."assetId" = "asset"."id"
-        and "asset_best_photo_score"."scoreVersion" < $3
+        "smart_search"."assetId" = "asset"."id"
     )
   )
+  and (
+    "asset"."type" = 'VIDEO'
+    or "asset"."createdAt" < now() - interval '7 days'
+    or exists (
+      select
+      from
+        "asset_job_status"
+      where
+        "asset_job_status"."assetId" = "asset"."id"
+        and "asset_job_status"."facesRecognizedAt" is not null
+    )
+  )
+order by
+  "asset"."id"
+limit
+  $3
 
 -- AssetJobRepository.countBestPhotosWithoutLearnedScore
 select
@@ -988,14 +1005,13 @@ select
     where
       "smart_search"."assetId" = "asset"."id"
   ) as "embedding",
-  (
+  exists (
     select
-      "asset_best_photo_score"."metadata"
     from
       "asset_best_photo_score"
     where
       "asset_best_photo_score"."assetId" = "asset"."id"
-  ) as "scoreMetadata"
+  ) as "scored"
 from
   "asset"
 where

@@ -41,9 +41,7 @@ it('offers no keep action on the stack card', () => {
 describe('menu keep action', () => {
   const setup = async () => {
     const pending = deferredPromise<boolean>();
-    vi.spyOn(modalManager, 'showDialog').mockReturnValue(
-      pending.promise as ReturnType<typeof sdkMock.removeAssetFromStack>,
-    );
+    vi.spyOn(modalManager, 'show').mockReturnValue(pending.promise as ReturnType<typeof sdkMock.removeAssetFromStack>);
     const original = selection('original');
     const callbacks = { onAction: vi.fn() };
     const view = render(KeepThisDeleteOthers, { ...original, ...callbacks });

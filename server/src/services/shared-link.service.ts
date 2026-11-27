@@ -21,6 +21,8 @@ import {
   SharedLinkDirectImageDto,
   SharedLinkEditDto,
   SharedLinkLoginDto,
+  SharedLinkPageDto,
+  SharedLinkPageResponseDto,
   SharedLinkResponseDto,
   SharedLinkSearchDto,
   isDirectImageLink,
@@ -59,6 +61,33 @@ export const isBcryptHash = (value: string) => BCRYPT_HASH.test(value);
  * cannot produce a token. (The identity directory sits on the media volume with the database backups,
  * so a copy of that volume carries both.) Tokens are compared in constant time.
  */
+/** FL-1795: where a page of links ended: the last link's stored creation time, in full, and its id. */
+const encodePageCursor = ({ at, id }: { at: string; id: string }) => Buffer.from(`${id}|${at}`).toString('base64url');
+
+const decodePageCursor = (cursor: string): { at: string; id: string } => {
+  const [id, at] = Buffer.from(cursor, 'base64url').toString().split('|', 2);
+  if (
+    !/^[\da-f]{8}(-[\da-f]{4}){3}-[\da-f]{12}$/i.test(id ?? '') ||
+    !/^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d(\.\d+)?[+-]\d\d(:\d\d)?$/.test(at ?? '')
+  ) {
+    throw new BadRequestException('Invalid cursor');
+  }
+  // A time that cannot exist (month 13, February 30) would reach Postgres and fail there.
+  const [year, month, day, hour, minute, second] = at.split(/[ :.+-]/).map(Number);
+  const time = new Date(Date.UTC(year, month - 1, day, hour, minute, second));
+  if (
+    time.getUTCFullYear() !== year ||
+    time.getUTCMonth() !== month - 1 ||
+    time.getUTCDate() !== day ||
+    time.getUTCHours() !== hour ||
+    time.getUTCMinutes() !== minute ||
+    time.getUTCSeconds() !== second
+  ) {
+    throw new BadRequestException('Invalid cursor');
+  }
+  return { at, id };
+};
+
 @Injectable()
 export class SharedLinkService extends BaseService {
   @Inject(SignInSecurityService)
@@ -71,6 +100,25 @@ export class SharedLinkService extends BaseService {
       nsfwOptions ? { ...searchOptions, ...nsfwOptions } : searchOptions,
     );
     return Promise.all(links.map((link) => this.mapSharedLink(auth, link, { stripAssetMetadata: false })));
+  }
+
+  /**
+   * FL-1795: the list a page at a time, newest first, with how many links there are of each type so a
+   * client can count them without reading them all.
+   */
+  async getPage(auth: AuthDto, { take, cursor }: SharedLinkPageDto): Promise<SharedLinkPageResponseDto> {
+    const after = cursor === undefined ? undefined : decodePageCursor(cursor);
+    const [links, counts] = await Promise.all([
+      this.sharedLinkRepository.getAll({ userId: auth.user.id, ...this.nsfwOptions(auth), take, after }),
+      this.sharedLinkRepository.getCounts(auth.user.id),
+    ]);
+    const last = links.length === take ? links.at(-1) : undefined;
+    return {
+      links: await Promise.all(links.map((link) => this.mapSharedLink(auth, link, { stripAssetMetadata: false }))),
+      nextCursor: last?.cursorAt ? encodePageCursor({ at: last.cursorAt, id: last.id }) : null,
+      albumCount: counts.album,
+      individualCount: counts.individual,
+    };
   }
 
   async login(auth: AuthDto, dto: SharedLinkLoginDto, details?: LoginDetails) {

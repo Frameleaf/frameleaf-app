@@ -9,6 +9,10 @@
   import { page as appPage } from '$app/state';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
+  import LightViewer from '$lib/components/frameleaf/LightViewer.svelte';
+  import EmptyState from '$lib/components/frameleaf/EmptyState.svelte';
+  import GridSkeleton from '$lib/components/frameleaf/GridSkeleton.svelte';
+  import InlineError from '$lib/components/frameleaf/InlineError.svelte';
   import { icloudErrorKey } from '$lib/frameleaf/icloud-sync';
   import { Route } from '$lib/route';
   import { getAssetMediaUrl } from '$lib/utils';
@@ -32,7 +36,6 @@
     mdiChevronLeft,
     mdiChevronRight,
     mdiClockOutline,
-    mdiClose,
     mdiImageOutline,
     mdiLockOutline,
   } from '@mdi/js';
@@ -230,9 +233,6 @@
       return;
     }
     const actions: Record<string, () => void> = {
-      Escape: () => (openId = null),
-      ArrowRight: () => void step(1),
-      ArrowLeft: () => void step(-1),
       a: () => void acceptOpen(),
       l: leaveOpen,
     };
@@ -312,19 +312,24 @@
   {#if said}
     <p class="icr-said" role="status"><Icon icon={mdiCheckCircleOutline} size="18" /> {said}</p>
   {/if}
-  {#if error}
+  {#if error && review}
     <p class="icr-error" role="alert">{error}</p>
   {/if}
 
   {#if !review}
-    {#if !error}<p class="icr-loading" role="status">{$t('loading')}</p>{/if}
+    <!-- FL-1810: placeholders in the shape of the grid, and a failed read says so in place -->
+    {#if error}
+      <InlineError compact message={error} onRetry={() => load(1)} />
+    {:else}
+      <GridSkeleton tiles={8} />
+    {/if}
   {:else if totalWaiting === 0}
-    <div class="icr-empty">
-      <Icon icon={mdiCheckCircleOutline} size="36" />
-      <h3>{$t('frameleaf_icloud_review_empty_title')}</h3>
-      <p>{$t('frameleaf_icloud_review_empty')}</p>
-      <Button onclick={onBack}>{$t('frameleaf_icloud_review_back')}</Button>
-    </div>
+    <EmptyState
+      icon={mdiCheckCircleOutline}
+      title={$t('frameleaf_icloud_review_empty_title')}
+      message={$t('frameleaf_icloud_review_empty')}
+      secondaryAction={{ label: $t('frameleaf_icloud_review_back'), onClick: onBack }}
+    />
   {:else}
     <div class="icr-filters" role="group" aria-label={$t('frameleaf_icloud_review_reasons')}>
       <button type="button" class:on={!group} aria-pressed={!group} onclick={() => choose(undefined)}>
@@ -440,85 +445,63 @@
 </div>
 
 {#if open}
-  <div class="icr-viewer" role="dialog" aria-modal="true" aria-label={open.fileName ?? $t('frameleaf_icloud_untitled')}>
-    <div class="icr-stage">
-      <header>
-        <span>
-          {$t('frameleaf_icloud_review_position', {
-            values: {
-              position: number((current - 1) * (review?.size ?? PAGE_SIZE) + openIndex + 1),
-              total: number(review?.total ?? 0),
-            },
-          })}
-        </span>
-        <button type="button" class="icr-round" aria-label={$t('close')} onclick={() => (openId = null)}>
-          <Icon icon={mdiClose} size="22" />
-        </button>
-      </header>
-      <div class="icr-frame">
-        <button
-          type="button"
-          class="icr-round"
-          aria-label={$t('previous')}
-          disabled={!hasPrevious}
-          onclick={() => void step(-1)}
-        >
-          <Icon icon={mdiChevronLeft} size="28" />
-        </button>
-        <div class="icr-sides">
-          <figure>
-            <figcaption>{$t('frameleaf_icloud_review_in_icloud')}</figcaption>
-            {#if open.icloudAssetId}
-              <div class="icr-shot">
-                <img src={thumb(open.icloudAssetId, AssetMediaSize.Preview)} alt={open.fileName ?? ''} />
-              </div>
-            {:else}
-              <div class="icr-shot icr-none">
-                <Icon icon={mdiImageOutline} size="32" />
-                <span>{$t('frameleaf_icloud_review_icloud_none')}</span>
-              </div>
-            {/if}
-          </figure>
-          <figure>
-            <figcaption>{$t('frameleaf_icloud_review_in_library')}</figcaption>
-            {#if open.previewAssetId}
-              <div class="icr-shot" class:is-group={open.relatedAssetIds.length > 0}>
-                <img src={thumb(open.previewAssetId, AssetMediaSize.Preview)} alt={open.fileName ?? ''} />
-                {#if open.relatedAssetIds.length > 0}
-                  <div class="icr-with">
-                    <small>
-                      {$t(
-                        open.group === ICloudReviewGroup.Edits
-                          ? 'frameleaf_icloud_review_with_edits'
-                          : 'frameleaf_icloud_review_with_stack',
-                      )}
-                    </small>
-                    {#each open.relatedAssetIds as id (id)}
-                      <img src={thumb(id)} alt="" />
-                    {/each}
-                  </div>
-                {/if}
-              </div>
-            {:else}
-              <div class="icr-shot icr-none">
-                <Icon icon={mdiImageOutline} size="32" />
-                <span>{$t('frameleaf_icloud_review_library_none')}</span>
+  <LightViewer
+    label={open.fileName ?? $t('frameleaf_icloud_untitled')}
+    position={$t('frameleaf_icloud_review_position', {
+      values: {
+        position: number((current - 1) * (review?.size ?? PAGE_SIZE) + openIndex + 1),
+        total: number(review?.total ?? 0),
+      },
+    })}
+    {hasPrevious}
+    {hasNext}
+    onPrevious={() => void step(-1)}
+    onNext={() => void step(1)}
+    onClose={() => (openId = null)}
+  >
+    <div class="icr-sides">
+      <figure>
+        <figcaption>{$t('frameleaf_icloud_review_in_icloud')}</figcaption>
+        {#if open.icloudAssetId}
+          <div class="icr-shot">
+            <img src={thumb(open.icloudAssetId, AssetMediaSize.Preview)} alt={open.fileName ?? ''} />
+          </div>
+        {:else}
+          <div class="icr-shot icr-none">
+            <Icon icon={mdiImageOutline} size="32" />
+            <span>{$t('frameleaf_icloud_review_icloud_none')}</span>
+          </div>
+        {/if}
+      </figure>
+      <figure>
+        <figcaption>{$t('frameleaf_icloud_review_in_library')}</figcaption>
+        {#if open.previewAssetId}
+          <div class="icr-shot" class:is-group={open.relatedAssetIds.length > 0}>
+            <img src={thumb(open.previewAssetId, AssetMediaSize.Preview)} alt={open.fileName ?? ''} />
+            {#if open.relatedAssetIds.length > 0}
+              <div class="icr-with">
+                <small>
+                  {$t(
+                    open.group === ICloudReviewGroup.Edits
+                      ? 'frameleaf_icloud_review_with_edits'
+                      : 'frameleaf_icloud_review_with_stack',
+                  )}
+                </small>
+                {#each open.relatedAssetIds as id (id)}
+                  <img src={thumb(id)} alt="" />
+                {/each}
               </div>
             {/if}
-          </figure>
-        </div>
-        <button
-          type="button"
-          class="icr-round"
-          aria-label={$t('next')}
-          disabled={!hasNext}
-          onclick={() => void step(1)}
-        >
-          <Icon icon={mdiChevronRight} size="28" />
-        </button>
-      </div>
+          </div>
+        {:else}
+          <div class="icr-shot icr-none">
+            <Icon icon={mdiImageOutline} size="32" />
+            <span>{$t('frameleaf_icloud_review_library_none')}</span>
+          </div>
+        {/if}
+      </figure>
     </div>
-    <aside>
+    {#snippet aside()}
       <div class="icr-side">
         <p class="icr-overline">{$t('frameleaf_icloud_review_why')}</p>
         <h3>{$t(GROUP_KEYS[open.group])}</h3>
@@ -583,8 +566,8 @@
           {$t('frameleaf_icloud_review_accept')} <kbd>A</kbd>
         </Button>
       </div>
-    </aside>
-  </div>
+    {/snippet}
+  </LightViewer>
 {/if}
 
 <Dialog
@@ -631,11 +614,6 @@
     font-size: var(--fl-font-xl);
   }
   .icr-head p,
-  .icr-loading {
-    margin: 0;
-    color: var(--fl-muted);
-    font-size: var(--fl-font-md);
-  }
   .icr-note {
     display: flex;
     flex-wrap: wrap;
@@ -674,24 +652,6 @@
   }
   .icr-error {
     color: var(--fl-danger);
-  }
-  .icr-empty {
-    display: grid;
-    gap: 8px;
-    justify-items: center;
-    padding: 56px 24px;
-    border: 1px solid var(--fl-border);
-    border-radius: var(--fl-radius-card);
-    background: var(--fl-panel);
-    text-align: center;
-  }
-  .icr-empty h3,
-  .icr-empty p {
-    margin: 0;
-  }
-  .icr-empty p {
-    margin-bottom: 8px;
-    color: var(--fl-muted);
   }
   .icr-filters {
     display: flex;
@@ -848,8 +808,7 @@
     color: var(--fl-text);
     cursor: pointer;
   }
-  .icr-page:disabled,
-  .icr-round:disabled {
+  .icr-page:disabled {
     opacity: 0.35;
     cursor: default;
   }
@@ -878,38 +837,6 @@
     gap: 12px;
     justify-content: flex-end;
   }
-  .icr-viewer {
-    position: fixed;
-    inset: 0;
-    z-index: 50;
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) 360px;
-    background: rgb(8 8 9);
-    color: #fff;
-  }
-  .icr-stage {
-    display: grid;
-    grid-template-rows: auto minmax(0, 1fr);
-    min-width: 0;
-    min-height: 0;
-    padding: 16px 24px 24px;
-  }
-  .icr-stage header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: 12px;
-    color: rgb(255 255 255 / 0.72);
-    font-size: var(--fl-font-md);
-  }
-  .icr-frame {
-    display: grid;
-    grid-template-columns: auto minmax(0, 1fr) auto;
-    gap: 16px;
-    align-content: center;
-    align-items: center;
-    min-height: 0;
-  }
   .icr-sides {
     display: grid;
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
@@ -924,7 +851,7 @@
     margin: 0;
   }
   .icr-sides figcaption {
-    color: rgb(255 255 255 / 0.72);
+    color: var(--fl-muted);
     font-size: var(--fl-font-md);
     font-weight: var(--fl-weight-medium);
   }
@@ -934,7 +861,7 @@
     min-height: 0;
     padding: 12px;
     border-radius: var(--fl-radius-lg);
-    background: rgb(255 255 255 / 0.06);
+    background: var(--fl-raised);
   }
   .icr-shot img {
     display: block;
@@ -955,7 +882,7 @@
     flex-wrap: wrap;
     gap: 8px;
     align-items: center;
-    color: rgb(255 255 255 / 0.6);
+    color: var(--fl-muted);
     font-size: var(--fl-font-sm);
   }
   .icr-with img {
@@ -968,9 +895,9 @@
     aspect-ratio: 3 / 2;
     gap: 8px;
     align-content: center;
-    border: 1px dashed rgb(255 255 255 / 0.24);
+    border: 1px dashed var(--fl-border);
     background: none;
-    color: rgb(255 255 255 / 0.6);
+    color: var(--fl-muted);
     font-size: var(--fl-font-md);
     text-align: center;
   }
@@ -983,7 +910,7 @@
   .icr-diff th,
   .icr-diff td {
     padding: 8px;
-    border-bottom: 1px solid rgb(255 255 255 / 0.14);
+    border-bottom: 1px solid var(--fl-border);
     text-align: start;
     vertical-align: top;
   }
@@ -993,7 +920,7 @@
   }
   .icr-diff thead th,
   .icr-diff tbody th {
-    color: rgb(255 255 255 / 0.6);
+    color: var(--fl-muted);
     font-weight: var(--fl-weight-medium);
   }
   .icr-diff tbody th {
@@ -1001,24 +928,6 @@
   }
   .icr-diff tbody td {
     font-weight: var(--fl-weight-medium);
-  }
-  .icr-round {
-    display: grid;
-    place-items: center;
-    width: 44px;
-    height: 44px;
-    border: 0;
-    border-radius: 50%;
-    background: rgb(255 255 255 / 0.12);
-    color: #fff;
-    cursor: pointer;
-  }
-  .icr-viewer aside {
-    display: grid;
-    grid-template-rows: minmax(0, 1fr) auto;
-    min-height: 0;
-    border-inline-start: 1px solid rgb(255 255 255 / 0.14);
-    background: rgb(24 24 27);
   }
   .icr-side {
     padding: 24px;
@@ -1031,11 +940,11 @@
   }
   .icr-side p {
     margin: 0 0 24px;
-    color: rgb(255 255 255 / 0.82);
+    color: var(--fl-text);
   }
   .icr-side .icr-overline {
     margin-bottom: 8px;
-    color: rgb(255 255 255 / 0.6);
+    color: var(--fl-muted);
     font-size: var(--fl-font-xs);
     font-weight: var(--fl-weight-medium);
   }
@@ -1045,7 +954,7 @@
     gap: 8px;
     margin: 0;
     padding-top: 16px;
-    border-top: 1px solid rgb(255 255 255 / 0.14);
+    border-top: 1px solid var(--fl-border);
   }
   .icr-side dl div {
     display: flex;
@@ -1053,7 +962,7 @@
     justify-content: space-between;
   }
   .icr-side dt {
-    color: rgb(255 255 255 / 0.6);
+    color: var(--fl-muted);
   }
   .icr-side dd {
     margin: 0;
@@ -1065,7 +974,7 @@
     grid-template-columns: 1fr 1fr;
     gap: 12px;
     padding: 16px 24px;
-    border-top: 1px solid rgb(255 255 255 / 0.14);
+    border-top: 1px solid var(--fl-border);
   }
   .icr-actions kbd {
     margin-inline-start: 6px;
@@ -1100,31 +1009,8 @@
       flex: 1 1 0;
       min-width: 0;
     }
-    .icr-viewer {
-      grid-template-rows: minmax(0, 1fr) minmax(0, 46vh);
-      grid-template-columns: minmax(0, 1fr);
-    }
-    .icr-stage {
-      padding: 12px 16px;
-    }
-    /* both photos need the full width, so previous and next sit beneath them */
-    .icr-frame {
-      grid-template-areas: 'sides sides' 'prev next';
-      grid-template-rows: minmax(0, 1fr) auto;
-      grid-template-columns: auto auto;
-      gap: 12px 8px;
-    }
     .icr-sides {
-      grid-area: sides;
       gap: 8px;
-    }
-    .icr-frame > .icr-round:first-child {
-      grid-area: prev;
-      justify-self: start;
-    }
-    .icr-frame > .icr-round:last-child {
-      grid-area: next;
-      justify-self: end;
     }
     .icr-sides figcaption {
       font-size: var(--fl-font-sm);
@@ -1156,10 +1042,6 @@
     }
     .icr-diff {
       margin-bottom: 16px;
-    }
-    .icr-viewer aside {
-      border-top: 1px solid rgb(255 255 255 / 0.14);
-      border-inline-start: 0;
     }
     .icr-side {
       padding: 16px;

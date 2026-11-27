@@ -1,6 +1,11 @@
-import { getAssetsByOriginalPath, getFolderSummary, type FolderSummaryResponseDto } from '@frameleaf/sdk';
+import {
+  getAssetsByOriginalPath,
+  getFolderSummary,
+  type AssetResponseDto,
+  type FolderSummaryResponseDto,
+} from '@frameleaf/sdk';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { foldersStore } from '$lib/stores/folders.svelte';
+import { FOLDER_FILES_KEPT, foldersStore } from '$lib/stores/folders.svelte';
 
 vi.mock('$lib/managers/event-manager.svelte', () => ({
   eventManager: {
@@ -79,6 +84,29 @@ describe('foldersStore', () => {
     foldersStore.bustAssetCache();
     await foldersStore.fetchAssetsByPath('/a');
     expect(getAssetsByOriginalPath).toHaveBeenCalledTimes(2);
+  });
+
+  it('reads a folder in one request (FL-1795 review)', async () => {
+    vi.mocked(getAssetsByOriginalPath).mockResolvedValue([{ id: 'one' } as AssetResponseDto]);
+
+    await expect(foldersStore.fetchAssetsByPath('/big')).resolves.toHaveLength(1);
+    expect(getAssetsByOriginalPath).toHaveBeenCalledExactlyOnceWith({ path: '/big' });
+  });
+
+  it('keeps the files of the last few folders only, the ones opened most recently (FL-1795)', async () => {
+    vi.mocked(getAssetsByOriginalPath).mockResolvedValue([]);
+    for (let index = 0; index < FOLDER_FILES_KEPT; index++) {
+      await foldersStore.fetchAssetsByPath(`/folder-${index}`);
+    }
+    // opened again, so it is no longer the one opened longest ago
+    await foldersStore.fetchAssetsByPath('/folder-0');
+    await foldersStore.fetchAssetsByPath('/one-more');
+    expect(getAssetsByOriginalPath).toHaveBeenCalledTimes(FOLDER_FILES_KEPT + 1);
+
+    await foldersStore.fetchAssetsByPath('/folder-0');
+    expect(getAssetsByOriginalPath).toHaveBeenCalledTimes(FOLDER_FILES_KEPT + 1);
+    await foldersStore.fetchAssetsByPath('/folder-1');
+    expect(getAssetsByOriginalPath).toHaveBeenCalledTimes(FOLDER_FILES_KEPT + 2);
   });
 
   it("never stores the previous account's tree or files when they arrive after logout", async () => {

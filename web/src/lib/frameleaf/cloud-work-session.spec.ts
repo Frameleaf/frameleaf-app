@@ -2,6 +2,8 @@ import { CloudBackupRunState, CloudBackupTask, type CloudBackupStatusResponseDto
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import { CLOUD_WORK_IDLE_POLL_MS, CloudWorkSession } from '$lib/frameleaf/cloud-work-session.svelte';
+import { eventManager } from '$lib/managers/event-manager.svelte';
+import { websocketStore } from '$lib/stores/websocket';
 
 const running = {
   activeRun: {
@@ -16,9 +18,16 @@ const running = {
 } as unknown as CloudBackupStatusResponseDto;
 
 describe('CloudWorkSession', () => {
+  const show = (state: DocumentVisibilityState) => {
+    Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => state });
+    document.dispatchEvent(new Event('visibilitychange'));
+  };
+
   afterEach(() => {
     vi.useRealTimers();
     vi.resetAllMocks();
+    websocketStore.connected.set(false);
+    show('visible');
   });
 
   it('shows the run in progress as a cloud row, and keeps it, marked unreachable, when a read fails', async () => {
@@ -64,5 +73,69 @@ describe('CloudWorkSession', () => {
     stopB();
     await vi.advanceTimersByTimeAsync(CLOUD_WORK_IDLE_POLL_MS * 2);
     expect(sdkMock.getCloudBackupStatus.mock.calls.length).toBe(asked + 1);
+  });
+
+  /** FL-1800 */
+  it('asks nothing while idle with the socket connected, and reads again when a job changes', async () => {
+    vi.useFakeTimers();
+    websocketStore.connected.set(true);
+    sdkMock.getCloudBackupStatus.mockResolvedValue({ activeRun: null, activeRestore: null } as never);
+    const session = new CloudWorkSession();
+    const stop = session.watch();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(sdkMock.getCloudBackupStatus).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(CLOUD_WORK_IDLE_POLL_MS * 10);
+    expect(sdkMock.getCloudBackupStatus).toHaveBeenCalledTimes(1);
+
+    sdkMock.getCloudBackupStatus.mockResolvedValue(running);
+    eventManager.emit('MediaOperationUpdate', { id: 'op-1' });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(session.rows.map((row) => row.operationId)).toEqual(['op-1']);
+    // work is running: the fast pace is back
+    await vi.advanceTimersByTimeAsync(CLOUD_WORK_IDLE_POLL_MS);
+    expect(sdkMock.getCloudBackupStatus.mock.calls.length).toBeGreaterThan(3);
+    stop();
+  });
+
+  it('asks nothing while the tab is hidden, even with a backup running, and asks at once when shown', async () => {
+    vi.useFakeTimers();
+    sdkMock.getCloudBackupStatus.mockResolvedValue(running);
+    const session = new CloudWorkSession();
+    const stop = session.watch();
+    await vi.advanceTimersByTimeAsync(0);
+    show('hidden');
+    const asked = sdkMock.getCloudBackupStatus.mock.calls.length;
+
+    eventManager.emit('MediaOperationUpdate', { id: 'op-1' });
+    await vi.advanceTimersByTimeAsync(CLOUD_WORK_IDLE_POLL_MS * 4);
+    expect(sdkMock.getCloudBackupStatus.mock.calls.length).toBe(asked);
+
+    show('visible');
+    await vi.advanceTimersByTimeAsync(0);
+    expect(sdkMock.getCloudBackupStatus.mock.calls.length).toBe(asked + 1);
+    stop();
+  });
+
+  /** FL-1794 */
+  it('keeps the idle look while the server says its queues are moving, and only then', async () => {
+    vi.useFakeTimers();
+    websocketStore.connected.set(true);
+    sdkMock.getCloudBackupStatus.mockResolvedValue({ activeRun: null, activeRestore: null } as never);
+    const session = new CloudWorkSession();
+    const stop = session.watch();
+    await vi.advanceTimersByTimeAsync(0);
+
+    // announcements every second: still one look per idle interval
+    for (let second = 0; second < 35; second++) {
+      eventManager.emit('QueueProgress');
+      await vi.advanceTimersByTimeAsync(1000);
+    }
+    expect(sdkMock.getCloudBackupStatus).toHaveBeenCalledTimes(2);
+
+    // the look the last announcements asked for, then nothing once the server is quiet
+    await vi.advanceTimersByTimeAsync(CLOUD_WORK_IDLE_POLL_MS * 4);
+    expect(sdkMock.getCloudBackupStatus).toHaveBeenCalledTimes(3);
+    stop();
   });
 });

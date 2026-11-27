@@ -6,8 +6,9 @@
   import { canEdit, canMerge, isOwner } from '$lib/frameleaf/album-directory';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { Route } from '$lib/route';
+  import { handleError } from '$lib/utils/handle-error';
   import { openFileUploadDialog } from '$lib/utils/file-uploader';
-  import { AlbumKind, type AlbumResponseDto } from '@frameleaf/sdk';
+  import { AlbumKind, getAlbumInfo, type AlbumRailItemDto, type AlbumResponseDto } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
   import {
     mdiAccountMultipleOutline,
@@ -29,6 +30,7 @@
     mdiRenameOutline,
     mdiUpload,
   } from '@mdi/js';
+  import { untrack } from 'svelte';
   import { t } from 'svelte-i18n';
 
   /**
@@ -38,15 +40,43 @@
    * created there. Rename happens in the sidebar row itself (`onRename`).
    */
   interface Props {
-    /** Every album, collection and space the sidebar shows, as the server sent them. */
-    albums: AlbumResponseDto[];
+    /** Every album, collection and space the sidebar shows, from the slim rail list (FL-1796). */
+    albums: AlbumRailItemDto[];
+    /**
+     * The same albums in full (members, links, origin), which the dialogs need. Asked for when a menu
+     * opens; a command waits for it.
+     */
+    fullAlbums: () => Promise<AlbumResponseDto[]>;
     onRename: (id: string) => void;
     onRefresh: () => Promise<void> | void;
   }
 
-  let { albums, onRename, onRefresh }: Props = $props();
+  let { albums, fullAlbums, onRename, onRefresh }: Props = $props();
 
-  type Target = { album: AlbumResponseDto } | { section: 'albums' | 'spaces' };
+  type Target = { album: AlbumRailItemDto } | { section: 'albums' | 'spaces' };
+  /** The full albums once read, for the dialogs and for what only they tell (a partner copy cannot merge). */
+  let full = $state<AlbumResponseDto[] | null>(null);
+  let fullRequest: Promise<AlbumResponseDto[]> | null = null;
+  const loadFull = () => {
+    fullRequest ??= fullAlbums()
+      .then((albums) => (full = albums))
+      .catch((error: unknown) => {
+        fullRequest = null;
+        throw error;
+      });
+    return fullRequest;
+  };
+  // A new list from the server means the full albums are read again. What was read stays until the new
+  // answer arrives, so a dialog that is open keeps its lists.
+  $effect(() => {
+    void albums;
+    untrack(() => {
+      fullRequest = null;
+      if (full) {
+        void loadFull().catch(() => {});
+      }
+    });
+  });
   let target = $state<Target | null>(null);
   let at = $state<{ x: number; y: number } | null>(null);
   let actions: AlbumActions | undefined = $state();
@@ -54,13 +84,29 @@
   let used = $state(false);
   // A command chosen before they have loaded runs as soon as they are there.
   let pending: ((loaded: AlbumActions) => unknown) | null = null;
-  const run = (command: (loaded: AlbumActions) => unknown) => {
+  const start = (command: (loaded: AlbumActions) => unknown) => {
     if (actions) {
       void command(actions);
     } else {
       pending = command;
     }
   };
+  /** A command on the album the menu is open for: it gets the full album, read first if need be. */
+  const runFor = (id: string, command: (loaded: AlbumActions, album: AlbumResponseDto) => unknown) =>
+    void loadFull()
+      .then((albums) => {
+        // An album the full list does not hold yet (just created, or read a moment apart) is read on its own.
+        const known = albums.find((candidate) => candidate.id === id);
+        return Promise.resolve(known ?? getAlbumInfo({ id })).then((album) =>
+          start((loaded) => command(loaded, album)),
+        );
+      })
+      .catch((error: unknown) => handleError(error, $t('errors.frameleaf_unable_to_load_albums')));
+  /** A command that needs no album (create), or only the directory the dialogs choose from. */
+  const run = (command: (loaded: AlbumActions) => unknown) =>
+    void loadFull()
+      .catch(() => [])
+      .then(() => start(command));
   $effect(() => {
     if (actions && pending) {
       const command = pending;
@@ -73,10 +119,10 @@
   // The dialogs choose parents and move targets by `parentId`, so the flat list serves as the directory.
   const tree = $derived({
     collections: [],
-    albums: albums.filter(({ kind }) => kind !== AlbumKind.Space),
-    spaces: albums.filter(({ kind }) => kind === AlbumKind.Space),
+    albums: (full ?? []).filter(({ kind }) => kind !== AlbumKind.Space),
+    spaces: (full ?? []).filter(({ kind }) => kind === AlbumKind.Space),
   });
-  const nameOf = (album: AlbumResponseDto | undefined) => album?.albumName || $t('unnamed_album');
+  const nameOf = (album: { albumName: string } | undefined) => album?.albumName || $t('unnamed_album');
 
   /** Opens the menu for the album with this id at the point; false when the sidebar does not know it. */
   export const openFor = (id: string, point: { x: number; y: number }) => {
@@ -87,12 +133,16 @@
     target = { album };
     at = point;
     used = true;
+    void loadFull().catch(() => {
+      // a command asks again, and says so if it still fails
+    });
     return true;
   };
   export const openHeading = (section: 'albums' | 'spaces', point: { x: number; y: number }) => {
     target = { section };
     at = point;
     used = true;
+    void loadFull().catch(() => {});
   };
 
   const label = $derived(
@@ -129,34 +179,37 @@
       </MenuItem>
     {/if}
     {#if editor && !space}
-      <MenuItem onSelect={() => run((loaded) => loaded.appearance(album, hasChildren))}>
+      <MenuItem onSelect={() => runFor(album.id, (loaded, album) => loaded.appearance(album, hasChildren))}>
         <Icon icon={mdiPaletteOutline} size="18" aria-hidden={true} />{$t('frameleaf_album_color_menu')}
       </MenuItem>
     {/if}
     {#if editor}
-      <MenuItem onSelect={() => run((loaded) => loaded.edit(album))}>
+      <MenuItem onSelect={() => runFor(album.id, (loaded, album) => loaded.edit(album))}>
         <Icon icon={mdiPencilOutline} size="18" aria-hidden={true} />
         {album.smartRuleId ? $t('frameleaf_albums_edit_rules') : $t('frameleaf_album_edit_details')}
       </MenuItem>
     {/if}
     {#if owner && !space}
-      <MenuItem onSelect={() => run((loaded) => loaded.openMove(album))}>
+      <MenuItem onSelect={() => runFor(album.id, (loaded, album) => loaded.openMove(album))}>
         <Icon icon={mdiFolderMoveOutline} size="18" aria-hidden={true} />{$t('frameleaf_albums_move_to')}
       </MenuItem>
-      {#if canMerge(album, currentUserId)}
-        <MenuItem onSelect={() => run((loaded) => loaded.openMerge(album))}>
+      {@const fullAlbum = full?.find(({ id }) => id === album.id)}
+      <!-- Only the full album says whether this is a partner's copy, which cannot merge. Until it is read the
+           entry holds its place, so nothing below it moves under the pointer. -->
+      {#if fullAlbum ? canMerge(fullAlbum, currentUserId) : album.kind === AlbumKind.Album && !album.isSmart}
+        <MenuItem disabled={!fullAlbum} onSelect={() => runFor(album.id, (loaded, album) => loaded.openMerge(album))}>
           <Icon icon={mdiCallMerge} size="18" aria-hidden={true} />{$t('frameleaf_albums_merge_with')}
         </MenuItem>
       {/if}
       {#if parent}
-        <MenuItem onSelect={() => run((loaded) => loaded.move(album, null))}>
+        <MenuItem onSelect={() => runFor(album.id, (loaded, album) => loaded.move(album, null))}>
           <Icon icon={mdiArrowCollapseUp} size="18" aria-hidden={true} />
           {$t('frameleaf_albums_take_out', { values: { name: nameOf(parent) } })}
         </MenuItem>
       {/if}
     {/if}
     {#if owner && album.kind === AlbumKind.Album}
-      <MenuItem onSelect={() => run((loaded) => loaded.toggleLock(album))}>
+      <MenuItem onSelect={() => runFor(album.id, (loaded, album) => loaded.toggleLock(album))}>
         <Icon icon={album.isLocked ? mdiLockOpenVariantOutline : mdiLockOutline} size="18" aria-hidden={true} />
         {album.isLocked ? $t('frameleaf_albums_unlock') : $t('frameleaf_albums_lock')}
       </MenuItem>
@@ -173,23 +226,23 @@
         <Icon icon={mdiAccountMultipleOutline} size="18" aria-hidden={true} />{$t('frameleaf_albums_members')}
       </MenuItem>
     {:else}
-      <MenuItem onSelect={() => run((loaded) => loaded.share(album))}>
+      <MenuItem onSelect={() => runFor(album.id, (loaded, album) => loaded.share(album))}>
         <Icon icon={owner ? mdiAccountPlusOutline : mdiAccountMultipleOutline} size="18" aria-hidden={true} />
         {owner ? $t('share') : $t('frameleaf_albums_members')}
       </MenuItem>
     {/if}
     {#if owner}
-      <MenuItem onSelect={() => run((loaded) => loaded.link(album))}>
+      <MenuItem onSelect={() => runFor(album.id, (loaded, album) => loaded.link(album))}>
         <Icon icon={mdiLinkVariant} size="18" aria-hidden={true} />{$t('frameleaf_albums_create_link')}
       </MenuItem>
     {/if}
     <div class="menu-separator" role="separator"></div>
     {#if owner}
-      <MenuItem onSelect={() => run((loaded) => loaded.remove(album))}>
+      <MenuItem onSelect={() => runFor(album.id, (loaded, album) => loaded.remove(album))}>
         <Icon icon={mdiDeleteOutline} size="18" aria-hidden={true} />{$t('delete')}
       </MenuItem>
     {:else}
-      <MenuItem onSelect={() => run((loaded) => loaded.leave(album))}>
+      <MenuItem onSelect={() => runFor(album.id, (loaded, album) => loaded.leave(album))}>
         <Icon icon={mdiLogoutVariant} size="18" aria-hidden={true} />{$t('leave')}
       </MenuItem>
     {/if}

@@ -244,6 +244,51 @@ where
 order by
   "shared_link"."createdAt" desc
 
+-- SharedLinkRepository.getCounts
+select
+  "shared_link"."type",
+  count(*)::int as "count"
+from
+  "shared_link"
+where
+  "shared_link"."userId" = $1
+  and (
+    "shared_link"."type" = $2
+    or exists (
+      select
+        1 as "one"
+      from
+        "album"
+        inner join lateral (
+          select
+            "id",
+            "name",
+            "email",
+            "avatarColor",
+            "profileImagePath",
+            "profileChangedAt"
+          from
+            "user"
+          where
+            exists (
+              select
+              from
+                "album_user"
+              where
+                "album_user"."role" = 'owner'
+                and "album_user"."albumId" = "album"."id"
+                and "album_user"."userId" = "user"."id"
+            )
+            and "user"."deletedAt" is null
+        ) as "owner" on true
+      where
+        "album"."id" = "shared_link"."albumId"
+        and "album"."deletedAt" is null
+    )
+  )
+group by
+  "shared_link"."type"
+
 -- SharedLinkRepository.getAll
 select
   "shared_link".*,
@@ -395,7 +440,165 @@ where
   )
   and "shared_link"."albumId" = $6
 order by
-  "shared_link"."createdAt" desc
+  "shared_link"."createdAt" desc,
+  "shared_link"."id" desc
+
+-- SharedLinkRepository.getAll (page)
+select
+  "shared_link".*,
+  (
+    select
+      coalesce(json_agg(agg), '[]')
+    from
+      (
+        select
+          "asset".*
+        from
+          "shared_link_asset"
+          inner join "asset" on "asset"."id" = "shared_link_asset"."assetId"
+        where
+          "shared_link"."id" = "shared_link_asset"."sharedLinkId"
+          and "asset"."deletedAt" is null
+          and not exists (
+            select
+              1
+            from
+              asset_lock
+            where
+              asset_lock."assetId" = "asset"."id"
+          )
+        order by
+          "asset"."fileCreatedAt" asc
+        limit
+          $1
+      ) as agg
+  ) as "assets",
+  coalesce(
+    (
+      select
+        "shared_link_option"."webSizeOnly"
+      from
+        "shared_link_option"
+      where
+        "shared_link_option"."sharedLinkId" = "shared_link"."id"
+    ),
+    false
+  ) as "webSizeOnly",
+  case
+    when "shared_link"."type" = $2 then (
+      select
+        count(*)::int as "count"
+      from
+        "album_asset"
+        inner join "asset" on "asset"."id" = "album_asset"."assetId"
+      where
+        "album_asset"."albumId" = "shared_link"."albumId"
+        and "asset"."deletedAt" is null
+        and not exists (
+          select
+            1
+          from
+            asset_lock
+          where
+            asset_lock."assetId" = "asset"."id"
+        )
+    )
+    else (
+      select
+        count(*)::int as "count"
+      from
+        "shared_link_asset"
+        inner join "asset" on "asset"."id" = "shared_link_asset"."assetId"
+      where
+        "shared_link"."id" = "shared_link_asset"."sharedLinkId"
+        and "asset"."deletedAt" is null
+        and not exists (
+          select
+            1
+          from
+            asset_lock
+          where
+            asset_lock."assetId" = "asset"."id"
+        )
+    )
+  end as "assetCount",
+  (
+    select
+      coalesce(json_agg(agg), '[]')
+    from
+      (
+        select
+          "asset"."id"
+        from
+          "album_asset"
+          inner join "asset" on "asset"."id" = "album_asset"."assetId"
+          inner join "album" as "cover_album" on "cover_album"."id" = "album_asset"."albumId"
+        where
+          "album_asset"."albumId" = "shared_link"."albumId"
+          and "asset"."deletedAt" is null
+          and not exists (
+            select
+              1
+            from
+              asset_lock
+            where
+              asset_lock."assetId" = "asset"."id"
+          )
+        order by
+          "asset"."id" = "cover_album"."albumThumbnailAssetId" desc,
+          "asset"."fileCreatedAt" desc
+        limit
+          $3
+      ) as agg
+  ) as "coverAssets",
+  to_json("album") as "album",
+  "shared_link"."createdAt"::text as "cursorAt"
+from
+  "shared_link"
+  left join lateral (
+    select
+      "album".*,
+      to_json("owner") as "owner"
+    from
+      "album"
+      inner join lateral (
+        select
+          "id",
+          "name",
+          "email",
+          "avatarColor",
+          "profileImagePath",
+          "profileChangedAt"
+        from
+          "user"
+        where
+          exists (
+            select
+            from
+              "album_user"
+            where
+              "album_user"."role" = 'owner'
+              and "album_user"."albumId" = "album"."id"
+              and "album_user"."userId" = "user"."id"
+          )
+          and "user"."deletedAt" is null
+      ) as "owner" on true
+    where
+      "album"."id" = "shared_link"."albumId"
+      and "album"."deletedAt" is null
+  ) as "album" on true
+where
+  "shared_link"."userId" = $4
+  and (
+    "shared_link"."type" = $5
+    or "album"."id" is not null
+  )
+  and ("shared_link"."createdAt", "shared_link"."id") < ($6::timestamptz, $7::uuid)
+order by
+  "shared_link"."createdAt" desc,
+  "shared_link"."id" desc
+limit
+  $8
 
 -- SharedLinkRepository.getByKey
 select

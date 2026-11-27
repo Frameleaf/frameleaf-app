@@ -33795,7 +33795,30 @@
       "get": {
         "description": "Your duplicate groups, each read as a whole: whether it holds copies of one photo or frames of a burst, the evidence behind the suggested keeper, and whether this session may decide it. A group with photos this session does not see, or with another account’s photo, is listed but cannot be decided.",
         "operationId": "getDuplicateReview",
-        "parameters": [],
+        "parameters": [
+          {
+            "name": "after",
+            "required": false,
+            "in": "query",
+            "description": "duplicateId of the last group of the page before; only with take",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "take",
+            "required": false,
+            "in": "query",
+            "description": "Most groups to return. With it the review is read a page at a time, in group ID order: a page shorter than this is the last one. Without it every group is returned.",
+            "schema": {
+              "minimum": 1,
+              "maximum": 500,
+              "type": "integer"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -33834,6 +33857,11 @@
           {
             "version": "v3.0.0",
             "state": "Alpha"
+          },
+          {
+            "version": "v3.5.0",
+            "state": "Updated",
+            "description": "Added take and after, to read the review a page at a time"
           }
         ],
         "x-immich-permission": "duplicate.read",
@@ -43777,6 +43805,21 @@
             }
           },
           {
+            "name": "slim",
+            "required": false,
+            "in": "query",
+            "description": "Leave `assets` empty and list each item in `slimAssets` instead, for lists that only draw covers",
+            "x-immich-history": [
+              {
+                "version": "v3",
+                "state": "Added"
+              }
+            ],
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
             "name": "type",
             "required": false,
             "in": "query",
@@ -44486,6 +44529,21 @@
               "minimum": 1,
               "maximum": 9007199254740991,
               "type": "integer"
+            }
+          },
+          {
+            "name": "slim",
+            "required": false,
+            "in": "query",
+            "description": "Leave `assets` empty and list each item in `slimAssets` instead, for lists that only draw covers",
+            "x-immich-history": [
+              {
+                "version": "v3",
+                "state": "Added"
+              }
+            ],
+            "schema": {
+              "type": "boolean"
             }
           },
           {
@@ -47917,6 +47975,15 @@
             }
           },
           {
+            "name": "name",
+            "required": false,
+            "in": "query",
+            "description": "Only people whose name contains this text, whatever the case; empty matches everyone",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "name": "page",
             "required": false,
             "in": "query",
@@ -47938,6 +48005,15 @@
               "maximum": 1000,
               "default": 500,
               "type": "integer"
+            }
+          },
+          {
+            "name": "sort",
+            "required": false,
+            "in": "query",
+            "description": "Order: by name (unnamed people last), by photo count, or by the most recent photo. Without it, favorites first, then named people by the number of faces. Ignored with closestPersonId or closestAssetId.",
+            "schema": {
+              "$ref": "#/components/schemas/PeopleSort"
             }
           },
           {
@@ -48594,6 +48670,104 @@
           }
         ],
         "x-immich-permission": "person.update",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/people/picker": {
+      "get": {
+        "description": "Retrieve the people list with only what a picker or a filter needs to draw a row: id, name, thumbnail version and photo count. Takes the same name search, order and pages as the people list.",
+        "operationId": "getPeoplePicker",
+        "parameters": [
+          {
+            "name": "name",
+            "required": false,
+            "in": "query",
+            "description": "Only people whose name contains this text, whatever the case; empty matches everyone",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "description": "Page number for pagination",
+            "schema": {
+              "minimum": 1,
+              "maximum": 9007199254740991,
+              "default": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "name": "size",
+            "required": false,
+            "in": "query",
+            "description": "Number of items per page",
+            "schema": {
+              "minimum": 1,
+              "maximum": 1000,
+              "default": 500,
+              "type": "integer"
+            }
+          },
+          {
+            "name": "sort",
+            "required": false,
+            "in": "query",
+            "description": "Order: by name (unnamed people last), by photo count, or by the most recent photo. Without it, favorites first, then named people by the number of faces. Ignored with closestPersonId or closestAssetId.",
+            "schema": {
+              "$ref": "#/components/schemas/PeopleSort"
+            }
+          },
+          {
+            "name": "withHidden",
+            "required": false,
+            "in": "query",
+            "description": "Include hidden people",
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PeoplePickerResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get people for a picker",
+        "tags": [
+          "People"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.1",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.1",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "person.read",
         "x-immich-state": "Alpha"
       }
     },
@@ -64002,6 +64176,75 @@
           }
         ],
         "x-immich-state": "Stable"
+      }
+    },
+    "/shared-links/page": {
+      "get": {
+        "description": "Your shared links, newest first, a page at a time, with how many album links and links to chosen items you have in all.",
+        "operationId": "getSharedLinkPage",
+        "parameters": [
+          {
+            "name": "cursor",
+            "required": false,
+            "in": "query",
+            "description": "nextCursor of the page before; omitted for the first page",
+            "schema": {
+              "maxLength": 200,
+              "type": "string"
+            }
+          },
+          {
+            "name": "take",
+            "required": false,
+            "in": "query",
+            "description": "Most links to return",
+            "schema": {
+              "minimum": 1,
+              "maximum": 200,
+              "default": 60,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SharedLinkPageResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Retrieve shared links a page at a time",
+        "tags": [
+          "Shared links"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.5.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.5.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "sharedLink.read",
+        "x-immich-state": "Alpha"
       }
     },
     "/shared-links/{id}": {
@@ -81936,15 +82179,38 @@
     },
     "/view/folder": {
       "get": {
-        "description": "Retrieve assets that are children of a specific folder.",
+        "description": "Retrieve assets that are children of a specific folder. Pass take (and after, from the second page on) to read a large folder a page at a time.",
         "operationId": "getAssetsByOriginalPath",
         "parameters": [
+          {
+            "name": "after",
+            "required": false,
+            "in": "query",
+            "description": "ID of the last asset of the page before; only with take",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            }
+          },
           {
             "name": "path",
             "required": true,
             "in": "query",
+            "description": "Folder path",
             "schema": {
               "type": "string"
+            }
+          },
+          {
+            "name": "take",
+            "required": false,
+            "in": "query",
+            "description": "Most assets to return. With it the folder is read a page at a time, in asset ID order: a page shorter than this is the last one. Without it every asset is returned, in file name order.",
+            "schema": {
+              "minimum": 1,
+              "maximum": 1000,
+              "type": "integer"
             }
           }
         ],
@@ -81990,6 +82256,11 @@
           {
             "version": "v2",
             "state": "Stable"
+          },
+          {
+            "version": "v3.5.0",
+            "state": "Updated",
+            "description": "Added take and after, to read a folder a page at a time"
           }
         ],
         "x-immich-permission": "folder.read",
@@ -114688,6 +114959,23 @@
         ],
         "type": "object"
       },
+      "DuplicateReviewPageDto": {
+        "properties": {
+          "after": {
+            "description": "duplicateId of the last group of the page before; only with take",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "take": {
+            "description": "Most groups to return. With it the review is read a page at a time, in group ID order: a page shorter than this is the last one. Without it every group is returned.",
+            "maximum": 500,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
       "DuplicateReviewQualityDto": {
         "properties": {
           "assetId": {
@@ -116806,6 +117094,30 @@
           "previewsReady",
           "receipt",
           "revision"
+        ],
+        "type": "object"
+      },
+      "FolderAssetsDto": {
+        "properties": {
+          "after": {
+            "description": "ID of the last asset of the page before; only with take",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "path": {
+            "description": "Folder path",
+            "type": "string"
+          },
+          "take": {
+            "description": "Most assets to return. With it the folder is read a page at a time, in asset ID order: a page shorter than this is the last one. Without it every asset is returned, in file name order.",
+            "maximum": 1000,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "path"
         ],
         "type": "object"
       },
@@ -136419,6 +136731,7 @@
       "MemoryResponseDto": {
         "properties": {
           "assets": {
+            "description": "The items; empty when the search asked for `slim`",
             "items": {
               "$ref": "#/components/schemas/AssetResponseDto"
             },
@@ -136504,6 +136817,19 @@
             "format": "date-time",
             "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
             "type": "string"
+          },
+          "slimAssets": {
+            "description": "The items in the same order, when the search asked for `slim`",
+            "items": {
+              "$ref": "#/components/schemas/MemorySlimAssetDto"
+            },
+            "type": "array",
+            "x-immich-history": [
+              {
+                "version": "v3",
+                "state": "Added"
+              }
+            ]
           },
           "title": {
             "description": "The owner's own title, when they set one",
@@ -136594,6 +136920,16 @@
             "minimum": 1,
             "type": "integer"
           },
+          "slim": {
+            "description": "Leave `assets` empty and list each item in `slimAssets` instead, for lists that only draw covers",
+            "type": "boolean",
+            "x-immich-history": [
+              {
+                "version": "v3",
+                "state": "Added"
+              }
+            ]
+          },
           "type": {
             "$ref": "#/components/schemas/MemoryType"
           }
@@ -136664,6 +137000,62 @@
           "kind",
           "name",
           "value"
+        ],
+        "type": "object"
+      },
+      "MemorySlimAssetDto": {
+        "properties": {
+          "fileCreatedAt": {
+            "description": "When the file was captured (UTC)",
+            "format": "date-time",
+            "type": "string"
+          },
+          "height": {
+            "description": "Asset height",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
+          "id": {
+            "description": "Asset ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "localDateTime": {
+            "description": "Local date and time of capture",
+            "format": "date-time",
+            "type": "string"
+          },
+          "thumbhash": {
+            "description": "Thumbhash (base64), also the thumbnail cache key",
+            "nullable": true,
+            "type": "string"
+          },
+          "type": {
+            "$ref": "#/components/schemas/AssetTypeEnum"
+          },
+          "visibility": {
+            "$ref": "#/components/schemas/AssetVisibility"
+          },
+          "width": {
+            "description": "Asset width",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "fileCreatedAt",
+          "height",
+          "id",
+          "localDateTime",
+          "thumbhash",
+          "type",
+          "visibility",
+          "width"
         ],
         "type": "object"
       },
@@ -141113,6 +141505,86 @@
         ],
         "type": "object"
       },
+      "PeoplePickerItemDto": {
+        "properties": {
+          "assetCount": {
+            "description": "Number of timeline assets showing this person",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "id": {
+            "description": "Person ID",
+            "type": "string"
+          },
+          "name": {
+            "description": "Person name",
+            "type": "string"
+          },
+          "updatedAt": {
+            "description": "Last update date; the version of the thumbnail URL",
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "assetCount",
+          "id",
+          "name",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "PeoplePickerResponseDto": {
+        "properties": {
+          "hasNextPage": {
+            "description": "Whether there are more pages",
+            "type": "boolean"
+          },
+          "people": {
+            "items": {
+              "$ref": "#/components/schemas/PeoplePickerItemDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "hasNextPage",
+          "people"
+        ],
+        "type": "object"
+      },
+      "PeoplePickerSearchDto": {
+        "properties": {
+          "name": {
+            "description": "Only people whose name contains this text, whatever the case; empty matches everyone",
+            "type": "string"
+          },
+          "page": {
+            "default": 1,
+            "description": "Page number for pagination",
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "size": {
+            "default": 500,
+            "description": "Number of items per page",
+            "maximum": 1000,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "sort": {
+            "$ref": "#/components/schemas/PeopleSort",
+            "description": "Order: by name (unnamed people last), by photo count, or by the most recent photo. Without it, favorites first, then named people by the number of faces. Ignored with closestPersonId or closestAssetId."
+          },
+          "withHidden": {
+            "description": "Include hidden people",
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
       "PeopleResponse": {
         "properties": {
           "enabled": {
@@ -141205,6 +141677,14 @@
           "total"
         ],
         "type": "object"
+      },
+      "PeopleSort": {
+        "enum": [
+          "name",
+          "count",
+          "recent"
+        ],
+        "type": "string"
       },
       "PeopleUpdate": {
         "properties": {
@@ -142293,6 +142773,10 @@
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
             "type": "string"
           },
+          "name": {
+            "description": "Only people whose name contains this text, whatever the case; empty matches everyone",
+            "type": "string"
+          },
           "page": {
             "default": 1,
             "description": "Page number for pagination",
@@ -142306,6 +142790,10 @@
             "maximum": 1000,
             "minimum": 1,
             "type": "integer"
+          },
+          "sort": {
+            "$ref": "#/components/schemas/PeopleSort",
+            "description": "Order: by name (unnamed people last), by photo count, or by the most recent photo. Without it, favorites first, then named people by the number of faces. Ignored with closestPersonId or closestAssetId."
           },
           "withHidden": {
             "description": "Include hidden people",
@@ -165360,6 +165848,10 @@
             "minimum": -9007199254740991,
             "type": "integer"
           },
+          "cause": {
+            "$ref": "#/components/schemas/QueueProblemCause",
+            "description": "What went wrong, for a failed job (FL-1785)"
+          },
           "data": {
             "additionalProperties": {},
             "description": "Job data payload",
@@ -165967,6 +166459,12 @@
             "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
             "type": "string"
           },
+          "done": {
+            "description": "Jobs of this queue finished since it last had nothing to do (FL-1785). With what is running and waiting, how far along it is",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
           "name": {
             "$ref": "#/components/schemas/QueueName"
           },
@@ -165975,6 +166473,12 @@
             "format": "date-time",
             "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
             "type": "string"
+          },
+          "perHour": {
+            "description": "Jobs finished an hour at the pace of the last ten minutes; absent when none finished",
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
           },
           "reason": {
             "allOf": [
@@ -174689,6 +175193,58 @@
         },
         "required": [
           "name"
+        ],
+        "type": "object"
+      },
+      "SharedLinkPageDto": {
+        "properties": {
+          "cursor": {
+            "description": "nextCursor of the page before; omitted for the first page",
+            "maxLength": 200,
+            "type": "string"
+          },
+          "take": {
+            "default": 60,
+            "description": "Most links to return",
+            "maximum": 200,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "SharedLinkPageResponseDto": {
+        "properties": {
+          "albumCount": {
+            "description": "All your album links, on every page",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "individualCount": {
+            "description": "All your links to chosen items, on every page",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "links": {
+            "description": "Newest first",
+            "items": {
+              "$ref": "#/components/schemas/SharedLinkResponseDto"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "description": "Pass as cursor for the next page; null when there are no more",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "albumCount",
+          "individualCount",
+          "links",
+          "nextCursor"
         ],
         "type": "object"
       },

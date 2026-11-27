@@ -43,8 +43,15 @@ export type DuplicateReviewGateway = {
   getOperation: (id: string) => Promise<MediaOperationDetailDto>;
 };
 
+/**
+ * The whole review in one read. ponytail: the server can page it (`take`, `after`), but every page
+ * still costs close to a whole read there, and every figure on the page counts all the groups, so
+ * paging bought nothing (FL-1795 review). Page it once the server picks a page's groups cheaply.
+ */
+export const readDuplicateReview = (): Promise<ReviewGroup[]> => getDuplicateReview({});
+
 export const duplicateReviewGateway: DuplicateReviewGateway = {
-  getReview: () => getDuplicateReview(),
+  getReview: readDuplicateReview,
   getHistory: () => getDuplicateDecisions(),
   submit: (action, groups, requestId) =>
     createBulkMediaOperation({
@@ -88,7 +95,8 @@ export const newRequestId = (): string | undefined => {
 };
 
 export class DuplicateReviewSession {
-  groups = $state<ReviewGroup[]>([]);
+  // FL-1795: only ever replaced whole, so thousands of groups and their photos are not tracked field by field
+  groups = $state.raw<ReviewGroup[]>([]);
   history = $state<DuplicateDecisionHistoryDto>({ recent: [], active: [] });
   /** Per group, by duplicate id. Reactive: a queue row re-renders when its entry changes. */
   readonly progress = new SvelteMap<string, GroupProgress>();
@@ -103,6 +111,8 @@ export class DuplicateReviewSession {
   loading = $state(false);
 
   #jobs = new Map<string, TrackedJob>();
+  /** A finished decision left a group whose outcome the job does not say: only reading the review again settles it. */
+  #unaccounted = false;
 
   /** Whether a tracked job is running `action`. */
   #hasJob(action: MediaOperationBulkAction) {
@@ -315,8 +325,39 @@ export class DuplicateReviewSession {
     this.#schedule();
   }
 
+  /**
+   * FL-1795: what a finished decision job leaves behind, without reading the review again. The groups
+   * it decided have left the review on the server (`apply` already keeps them in `reviewed`), a photo
+   * belongs to one group only so no other group changed, and only the history is asked for again.
+   */
+  async #dropDecided(): Promise<void> {
+    if (this.#destroyed) {
+      return;
+    }
+    const decided = new Set<string>();
+    for (const [duplicateId, progress] of this.progress) {
+      if (progress.state === 'done') {
+        decided.add(duplicateId);
+      }
+    }
+    if (decided.size > 0) {
+      this.groups = this.groups.filter((group) => !decided.has(group.duplicateId));
+      for (const duplicateId of decided) {
+        this.progress.delete(duplicateId);
+      }
+    }
+    const history = await this.#gateway.getHistory();
+    if (this.#destroyed) {
+      return;
+    }
+    this.history = history;
+    this.#resumeActive();
+  }
+
   async #pollAll() {
     let finished = false;
+    // an undo brings groups back, which only the server can list
+    let undone = false;
     for (const [operationId, job] of this.#jobs) {
       if (this.#destroyed) {
         return;
@@ -330,6 +371,7 @@ export class DuplicateReviewSession {
       }
       if (this.apply(operationId, job, detail)) {
         finished = true;
+        undone ||= job.action === MediaOperationBulkAction.UndoDuplicates;
       }
     }
     if (finished) {
@@ -337,9 +379,15 @@ export class DuplicateReviewSession {
         this.undoing = false;
       }
       try {
-        await this.refresh();
+        if (undone || this.#unaccounted) {
+          await this.refresh();
+          // only once the server has answered: a failed read leaves the next finished job to read again
+          this.#unaccounted = false;
+        } else {
+          await this.#dropDecided();
+        }
       } catch {
-        // the tiles already show the outcome; the next finished job reads the review again
+        // the tiles already show the outcome; the next finished job settles the review again
       }
     }
   }
@@ -369,9 +417,18 @@ export class DuplicateReviewSession {
       return false;
     }
     this.#jobs.delete(operationId);
+    const outcome = [...groupProgressFrom(job.groups, detail).values()];
+    // A cancelled job, one whose report was cut short, or one where a group failed part-way may have
+    // changed groups it does not report as done; only the server can say what is left of them.
+    if (
+      job.action === MediaOperationBulkAction.ResolveDuplicates &&
+      outcome.some((entry) => entry === null || entry.state === 'failed')
+    ) {
+      this.#unaccounted = true;
+    }
     this.#onSettled?.({
       action: job.action,
-      failed: [...groupProgressFrom(job.groups, detail).values()].filter((entry) => entry?.state === 'failed').length,
+      failed: outcome.filter((entry) => entry?.state === 'failed').length,
     });
     return true;
   }

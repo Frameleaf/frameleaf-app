@@ -1,6 +1,7 @@
 import {
   DuplicateDecisionKind,
   DuplicateGroupKind,
+  getDuplicateReview,
   MediaOperationBulkAction,
   MediaOperationStatus,
   type DuplicateDecisionHistoryDto,
@@ -12,8 +13,14 @@ import type { ReviewGroup } from '$lib/frameleaf/duplicate-review';
 import {
   DuplicateReviewSession,
   newRequestId,
+  readDuplicateReview,
   type DuplicateReviewGateway,
 } from '$lib/frameleaf/duplicate-review-session.svelte';
+
+vi.mock('@frameleaf/sdk', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@frameleaf/sdk')>()),
+  getDuplicateReview: vi.fn(),
+}));
 
 const group = (id: string, members: string[]): ReviewGroup => ({
   duplicateId: id,
@@ -94,13 +101,15 @@ describe('the duplicate review session', () => {
     expect(session.progress.has('lake')).toBe(false);
   });
 
-  it('follows the job and reads the review again from the server when it is done', async () => {
+  it('follows the job and, when it is done, drops the decided group without reading the review again (FL-1795)', async () => {
     await session.decide([lakeDecision]);
     gateway.getOperation.mockResolvedValue(detail({ status: MediaOperationStatus.Completed, processedUnits: '2' }));
 
     await session.poll();
 
-    expect(gateway.getReview).toHaveBeenCalled();
+    expect(gateway.getReview).not.toHaveBeenCalled();
+    // the undo it now offers comes from the history, which is read again
+    expect(gateway.getHistory).toHaveBeenCalledTimes(1);
     expect(session.groups.map(({ duplicateId }) => duplicateId)).toEqual(['forest']);
     expect(session.progress.has('lake')).toBe(false);
     expect(session.tracking).toBe(0);
@@ -143,6 +152,74 @@ describe('the duplicate review session', () => {
       state: 'failed',
       reasonKey: 'frameleaf_bulk_reason_group_changed',
     });
+    // a group that failed may have lost some of its photos: the review is read again (FL-1795 review)
+    expect(gateway.getReview).toHaveBeenCalledTimes(1);
+  });
+
+  it('reads the review again after an undo, which brings groups back (FL-1795)', async () => {
+    gateway.submit.mockResolvedValue({ id: 'undo-1' } as MediaOperationDto);
+    gateway.getReview.mockResolvedValue([lake, forest]);
+    const batch = {
+      operationId: 'job-1',
+      createdAt: '2026-09-23T10:00:00.000Z',
+      undoable: true,
+      automatic: false,
+      groups: [
+        {
+          decisionId: 'decision-1',
+          duplicateId: 'lake',
+          decision: DuplicateDecisionKind.KeepAll,
+          memberIds: ['a', 'b'],
+          keepAssetIds: ['a', 'b'],
+          trashAssetIds: [],
+          applied: true,
+          undone: false,
+          undoing: false,
+        },
+      ],
+    };
+    const afterUndo = new DuplicateReviewSession(
+      { groups: [forest], history: { active: [], recent: [batch] } },
+      { gateway: gateway as unknown as DuplicateReviewGateway, pollMs: 1000 },
+    );
+    await afterUndo.undo();
+    gateway.getOperation.mockResolvedValue(detail({ status: MediaOperationStatus.Completed, processedUnits: '2' }));
+
+    await afterUndo.poll();
+
+    expect(gateway.getReview).toHaveBeenCalledTimes(1);
+    expect(afterUndo.groups.map(({ duplicateId }) => duplicateId)).toEqual(['lake', 'forest']);
+    expect(afterUndo.undoing).toBe(false);
+    afterUndo.destroy();
+  });
+
+  it('reads the review again when a finished job does not say what became of a group (FL-1795 review)', async () => {
+    await session.decide([lakeDecision]);
+    gateway.getReview.mockResolvedValue([forest]);
+    // cancelled before it reached the group: neither done, failed nor pending
+    gateway.getOperation.mockResolvedValue(detail({ status: MediaOperationStatus.Cancelled, processedUnits: '0' }));
+
+    await session.poll();
+
+    expect(gateway.getReview).toHaveBeenCalledTimes(1);
+    expect(session.groups.map(({ duplicateId }) => duplicateId)).toEqual(['forest']);
+  });
+
+  it('reads the review again on the next finished job when the first re-read failed (FL-1795 review)', async () => {
+    gateway.submit.mockResolvedValueOnce({ id: 'job-1' } as MediaOperationDto);
+    gateway.submit.mockResolvedValueOnce({ id: 'job-2' } as MediaOperationDto);
+    await session.decide([lakeDecision]);
+    gateway.getReview.mockRejectedValueOnce(new Error('offline'));
+    gateway.getOperation.mockResolvedValue(detail({ status: MediaOperationStatus.Cancelled, processedUnits: '0' }));
+    await session.poll();
+    expect(gateway.getReview).toHaveBeenCalledTimes(1);
+
+    await session.decide([{ ...lakeDecision, duplicateId: 'forest', memberIds: ['c', 'd'] }]);
+    gateway.getOperation.mockResolvedValue(detail({ status: MediaOperationStatus.Completed, processedUnits: '2' }));
+    gateway.getReview.mockResolvedValue([lake]);
+    await session.poll();
+
+    expect(gateway.getReview).toHaveBeenCalledTimes(2);
   });
 
   it('keeps loaders on the groups of a job still running after a reload', () => {
@@ -221,5 +298,16 @@ describe('the duplicate review session', () => {
     } finally {
       Object.defineProperty(crypto, 'randomUUID', { value: original, configurable: true });
     }
+  });
+});
+
+describe('reading the review (FL-1795)', () => {
+  it('reads the whole review in one request', async () => {
+    vi.mocked(getDuplicateReview).mockResolvedValueOnce([group('lake', ['a', 'b'])]);
+
+    const groups = await readDuplicateReview();
+
+    expect(groups.map(({ duplicateId }) => duplicateId)).toEqual(['lake']);
+    expect(getDuplicateReview).toHaveBeenCalledExactlyOnceWith({});
   });
 });

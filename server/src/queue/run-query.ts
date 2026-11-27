@@ -370,6 +370,29 @@ async function retryingTasks(
 }
 
 /**
+ * FL-1826: the part of an open run whose jobs are gone. A photo whose every task finished over an hour ago is deleted
+ * from `job` by the coordinator (`foldOpenRunsPage`) and counted here instead, in `job_run.selection.folded`, so a
+ * long import no longer keeps millions of finished rows. `roots`: photos; `tasks`: their tasks by name, with the queue
+ * each ran in (no job may be left to say it) and when the earliest was queued. Everything that counts a run's jobs
+ * adds this.
+ */
+export type RunFolded = { roots: number; tasks: Record<string, { n: number; queue: string; since?: string }> };
+export const foldedOf = (value: unknown): RunFolded => {
+  const folded = value as Partial<RunFolded> | null | undefined;
+  return folded && typeof folded === 'object' && typeof folded.roots === 'number' && folded.tasks
+    ? { roots: folded.roots, tasks: folded.tasks }
+    : { roots: 0, tasks: {} };
+};
+export async function readFolded(db: QueryExecutorProvider, runId: string): Promise<RunFolded> {
+  const {
+    rows: [row],
+  } = await sql<{ folded: unknown }>`select selection->'folded' folded from job_run where id = ${runId}::uuid`.execute(
+    db,
+  );
+  return foldedOf(row?.folded);
+}
+
+/**
  * FL-1656: a run's jobs counted (`RunTally`). Two passes over `job_run_progress` ("runId","rootItemKey",name,state),
  * both answered from the index: one grouped by root in index order, one by stage and state; then the deferred tasks
  * (their own index) and each stage's queue. Its cost grows with the run, so only the coordinator and a small run's
@@ -390,6 +413,16 @@ export async function tallyRun(db: QueryExecutorProvider, runId: string): Promis
     from job where "runId" = ${runId}::uuid and state = 'pending' and "dependencyReason" is not null
     group by name, "dependencyReason"`.execute(db);
   const queues = await stageQueues(db, runId, [...new Set(tasks.map((task) => task.name))]);
+  // FL-1826: the photos folded out of `job` finished every task. Read after the jobs, so a page folded while this
+  // counted is counted twice, not lost, until the next count
+  const folded = await readFolded(db, runId);
+  if (folded.roots > 0) roots.push({ top: 1, live: null, rooted: true, n: folded.roots });
+  for (const [name, { n, queue }] of Object.entries(folded.tasks)) {
+    const completed = tasks.find((task) => task.name === name && task.state === 'completed');
+    if (completed) completed.n += n;
+    else tasks.push({ name, state: 'completed', n });
+    if (!queues.has(name)) queues.set(name, queue);
+  }
   return { roots, tasks, deferred, queues: Object.fromEntries(queues) };
 }
 
@@ -1211,8 +1244,20 @@ const QUEUE_ITEM_JOBS: Partial<Record<string, string>> = {
 export async function observeQueueRun(db: QueryExecutorProvider, name: string, itemJob = QUEUE_ITEM_JOBS[name]) {
   // Passed as values, not a subquery: the planner then reads each open run's own job count. A subquery is
   // planned for an average run, which after a large scan means a pass over the queue's whole history.
-  const { rows: open } = await sql<{ id: string }>`select id from job_run where "finishedAt" is null`.execute(db);
+  const { rows: open } = await sql<{ id: string; folded: unknown }>`select id, selection->'folded' folded
+    from job_run where "finishedAt" is null`.execute(db);
   const openRuns = open.map(({ id }) => id);
+  // FL-1826: the tasks of this queue that open runs finished and no longer keep as jobs
+  const folded = open.flatMap((run) =>
+    Object.entries(foldedOf(run.folded).tasks).filter(([, task]) => task.queue === name),
+  );
+  const foldedDone = folded.reduce((sum, [, task]) => sum + task.n, 0);
+  const foldedItems = folded.filter(([task]) => task === itemJob).reduce((sum, [, task]) => sum + task.n, 0);
+  // their pace is measured from the earliest of them, folded or not
+  let foldedSince: Date | null = null;
+  for (const [task, { since }] of folded) {
+    if (task === itemJob && since && (!foldedSince || new Date(since) < foldedSince)) foldedSince = new Date(since);
+  }
   const {
     rows: [{ itemsDone, itemsLeft, itemsStartedAt, ...row }],
   } = await sql<{
@@ -1275,8 +1320,11 @@ export async function observeQueueRun(db: QueryExecutorProvider, name: string, i
         and count(*) filter (where state = 'active') = 0
         and coalesce(max(greatest("progressAt", "startedAt", "finishedAt")), min("createdAt")) < now() - interval '2 minutes', false) "noDispatchBacklog"
       from current_jobs`.execute(db);
-  const items = { done: itemsDone, total: itemsDone + itemsLeft, startedAt: itemsStartedAt };
-  return { ...row, items: itemJob ? items : null };
+  const done = itemsDone + foldedItems;
+  const startedAt =
+    foldedSince && (!itemsStartedAt || foldedSince < new Date(itemsStartedAt)) ? foldedSince : itemsStartedAt;
+  const items = { done, total: done + itemsLeft, startedAt };
+  return { ...row, processed: row.processed + foldedDone, items: itemJob ? items : null };
 }
 
 /**
