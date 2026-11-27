@@ -37,6 +37,7 @@ def model_directory(cache: Path, model: str) -> Path:
 
 def verify_qwen(spec: "QualificationSpec", cache: Path) -> str:
     """The model the spec binds, once its staged files are the approved ones."""
+    from .native_qualification import decisive_files
     from .staging import verify_staged
 
     if len(spec.models) != 1 or spec.models[0].name not in MODELS:
@@ -58,7 +59,7 @@ def verify_qwen(spec: "QualificationSpec", cache: Path) -> str:
     directory = model_directory(cache, model)
     if directory.is_symlink() or directory.parent.is_symlink():
         raise ValueError("native_qwen_directory_invalid")
-    if verify_staged(directory) != item.artifacts:
+    if decisive_files(verify_staged(directory)) != decisive_files(item.artifacts):
         raise ValueError("native_qwen_artifact_changed")
     for artifact in ARTIFACTS:
         with (directory / artifact).open("rb") as stream:

@@ -6,7 +6,7 @@ images listed in test-fixtures/golden-set/images.json, with the server defaults:
 - smart search: the CLIP visual encoder of ViT-B-16-SigLIP-384__webli;
 - faces: buffalo_l detection (minScore 0.7) followed by recognition.
 
-Models come from the configured model source (the Frameleaf model mirror by default) at the
+Models come from the configured model source (the Frameleaf organisation on Hugging Face by default) at the
 revisions pinned in server/resources/desktop/model-catalogue.json, and each downloaded model file is
 checked against the byte sizes recorded there. Vectors are the raw model output rows, exactly as the
 service returns them and the server stores them (not L2 normalised).

@@ -178,6 +178,45 @@ def test_verified_model_uses_one_fresh_hash_scan_for_receipt_and_approved_manife
         verify_models(spec, tmp_path / "cache", require_staged=require_staged)
 
 
+@pytest.mark.parametrize("require_staged", [True, False])
+def test_same_model_files_from_another_host_still_match(tmp_path, monkeypatch, synthetic_clip_cache, require_staged):
+    """FL-1831: a Hugging Face download brings its own card, attributes file and revision ref."""
+    from frameleaf_ml import staging
+    from frameleaf_ml.config import settings
+    from frameleaf_ml.native_qualification import ModelBindingSpec, preprocessing_identity, verify_models
+
+    name, cache, hashes = synthetic_clip_cache
+    monkeypatch.setattr(settings, "cache_folder", tmp_path / "cache")
+    pinned = {
+        **hashes,
+        "README.md": "1" * 64,
+        ".gitattributes": "2" * 64,
+        f"models--frameleaf--{name}/refs/main": "3" * 64,
+    }
+    spec = ModelBindingSpec.model_validate(
+        {
+            "protocolVersion": 1,
+            "modelKey": "fixture",
+            "preprocessingSha256": preprocessing_identity(),
+            "entries": {"clip": {"textual": {"modelName": name}}},
+            "models": [{"name": name, "task": "clip", "type": "textual", "artifacts": pinned}],
+        }
+    )
+    (cache / "README.md").write_text("# another card")
+    (cache / ".gitattributes").write_text("*.onnx filter=lfs")
+    ref = cache / f"models--frameleaf--{name}" / "refs" / "main"
+    ref.parent.mkdir(parents=True)
+    ref.write_text("f" * 40)
+    (cache / staging.RECEIPT).write_text(json.dumps(staging.cache_hashes(cache)))
+    verify_models(spec, tmp_path / "cache", require_staged=require_staged)
+
+    weights = next(path for path in cache.rglob("*.onnx"))
+    weights.write_bytes(weights.read_bytes() + b"\0")
+    (cache / staging.RECEIPT).write_text(json.dumps(staging.cache_hashes(cache)))
+    with pytest.raises(ValueError, match="native_staged_hash_mismatch"):
+        verify_models(spec, tmp_path / "cache", require_staged=require_staged, reuse_checks=False)
+
+
 def test_reused_hashes_follow_any_change_to_a_file(tmp_path) -> None:
     from frameleaf_ml import staging
 
@@ -604,3 +643,24 @@ def test_a_profile_that_stays_open_fails_a_passed_qualification_but_never_hides_
     with pytest.raises(PermissionError):
         native_qualification.remove_profiles(None, tmp_path, raise_errors=True)
     assert len(calls) == 1
+
+
+def test_decisive_files_leave_out_refs_dotfiles_and_cards_only() -> None:
+    from frameleaf_ml.native_qualification import decisive_files
+
+    files = {
+        "models--frameleaf--m/refs/main": "1" * 64,
+        ".gitattributes": "2" * 64,
+        "README.md": "3" * 64,
+        "visual/.cache/x": "4" * 64,
+        "visual/model.onnx": "5" * 64,
+        "config.json": "6" * 64,
+        "textual/tokenizer.json": "7" * 64,
+        "models--frameleaf--m/blobs/abc": "8" * 64,
+    }
+    assert decisive_files(files) == {
+        "visual/model.onnx": "5" * 64,
+        "config.json": "6" * 64,
+        "textual/tokenizer.json": "7" * 64,
+        "models--frameleaf--m/blobs/abc": "8" * 64,
+    }

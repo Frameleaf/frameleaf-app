@@ -462,7 +462,7 @@
       "covers": [
         "ml:insightface:*"
       ],
-      "source": "Hugging Face cards immich-app/<model> (license: other, insightface) linking the InsightFace python-package licence section; the model files are served from the Frameleaf model mirror (models.frameleaf.cloud, frameleaf/<model>)"
+      "source": "Hugging Face cards immich-app/<model> (license: other, insightface) linking the InsightFace python-package licence section; the model files are served from the Frameleaf organisation on Hugging Face (huggingface.co/frameleaf/<model>)"
     },
     {
       "status": "looked-up",
@@ -597,7 +597,7 @@
     },
     {
       "status": "looked-up",
-      "notice": "Clean Up Remove fills (owner decision 2026-10-08): the big-lama weights as the fp32 ONNX export lama_fp32.onnx by Carve (huggingface.co/Carve/LaMa-ONNX, revision c3c0c9e468934d62e79c329e35d82dd09ff8c444, SHA-256 1faef5301d78db7dda502fe59966957ec4b79dd64e16f03ed96913c7a4eb68d6), served unchanged by the Frameleaf model mirror. Runs on the instance-local ML worker only.",
+      "notice": "Clean Up Remove fills (owner decision 2026-10-08): the big-lama weights as the fp32 ONNX export lama_fp32.onnx by Carve (huggingface.co/Carve/LaMa-ONNX, revision c3c0c9e468934d62e79c329e35d82dd09ff8c444, SHA-256 1faef5301d78db7dda502fe59966957ec4b79dd64e16f03ed96913c7a4eb68d6), served unchanged by the Frameleaf organisation on Hugging Face. Runs on the instance-local ML worker only.",
       "id": "lama-inpaint",
       "group": "library-models",
       "name": "LaMa big-lama inpainting (ONNX conversion)",
@@ -611,11 +611,11 @@
       "covers": [
         "ml:inpaint:*"
       ],
-      "source": "advimman/lama repository LICENSE (Apache-2.0); Hugging Face card Carve/LaMa-ONNX (license: apache-2.0); the model file is served from the Frameleaf model mirror (models.frameleaf.cloud, frameleaf/frameleaf-inpaint)"
+      "source": "advimman/lama repository LICENSE (Apache-2.0); Hugging Face card Carve/LaMa-ONNX (license: apache-2.0); the model file is served from the Frameleaf organisation on Hugging Face (huggingface.co/frameleaf/frameleaf-inpaint)"
     },
     {
       "status": "looked-up",
-      "notice": "Studio captions on the server (owner decision 2026-10-09): OpenAI Whisper large-v3-turbo (on a GPU) and small (on a CPU) as CTranslate2 conversions run by faster-whisper (MIT, SYSTRAN) on CTranslate2 (MIT, OpenNMT): dropbox-dash/faster-whisper-large-v3-turbo revision 0a363e9161cbc7ed1431c9597a8ceaf0c4f78fcf (model.bin SHA-256 e76620f83d5f5b69efd3d87e3dc180c1bd21df9fbebacfd4335e5e1efcc018da) and Systran/faster-whisper-small revision 536b0662742c02347bc0e980a01041f333bce120 (model.bin SHA-256 3e305921506d8872816023e4c273e75d2419fb89b24da97b4fe7bce14170d671), served unchanged by the Frameleaf model mirror. Runs on this server's ML worker or a home-network worker the owner names; never on Frameleaf Cloud from this path.",
+      "notice": "Studio captions on the server (owner decision 2026-10-09): OpenAI Whisper large-v3-turbo (on a GPU) and small (on a CPU) as CTranslate2 conversions run by faster-whisper (MIT, SYSTRAN) on CTranslate2 (MIT, OpenNMT): dropbox-dash/faster-whisper-large-v3-turbo revision 0a363e9161cbc7ed1431c9597a8ceaf0c4f78fcf (model.bin SHA-256 e76620f83d5f5b69efd3d87e3dc180c1bd21df9fbebacfd4335e5e1efcc018da) and Systran/faster-whisper-small revision 536b0662742c02347bc0e980a01041f333bce120 (model.bin SHA-256 3e305921506d8872816023e4c273e75d2419fb89b24da97b4fe7bce14170d671), served unchanged by the Frameleaf organisation on Hugging Face. Runs on this server's ML worker or a home-network worker the owner names; never on Frameleaf Cloud from this path.",
       "id": "whisper-transcribe",
       "group": "library-models",
       "name": "Whisper speech recognition for Studio captions (large-v3-turbo, small; CTranslate2 conversions)",
@@ -630,11 +630,11 @@
       "covers": [
         "ml:transcribe:*"
       ],
-      "source": "OpenAI Whisper repository LICENSE (MIT); Hugging Face cards openai/whisper-large-v3-turbo (mit), openai/whisper-small (apache-2.0), dropbox-dash/faster-whisper-large-v3-turbo (mit), Systran/faster-whisper-small (mit); faster-whisper and CTranslate2 on PyPI (MIT); the model files are served from the Frameleaf model mirror (models.frameleaf.cloud, frameleaf/whisper-large-v3-turbo and frameleaf/whisper-small)"
+      "source": "OpenAI Whisper repository LICENSE (MIT); Hugging Face cards openai/whisper-large-v3-turbo (mit), openai/whisper-small (apache-2.0), dropbox-dash/faster-whisper-large-v3-turbo (mit), Systran/faster-whisper-small (mit); faster-whisper and CTranslate2 on PyPI (MIT); the model files are served from the Frameleaf organisation on Hugging Face (huggingface.co/frameleaf/whisper-large-v3-turbo and huggingface.co/frameleaf/whisper-small)"
     },
     {
       "status": "looked-up",
-      "notice": "Studio captions in other languages (owner decision 2026-10-29, FL-641): Meta AI's M2M100 418M as the int8 CTranslate2 conversion jncraton/m2m100_418M-ct2-int8 revision 7c1b2620a4e58dacecbd8bf89cfd6da7eb9eb7b0 (model.bin SHA-256 d6703dd9f920ff896e45c3d97b490761bed5944937b90bbe6a7245f5652542d4), run by CTranslate2 (MIT, OpenNMT) with SentencePiece (Apache-2.0, Google), served unchanged by the Frameleaf model mirror. Only caption text is sent; it runs on this server's ML worker or a computer at home.",
+      "notice": "Studio captions in other languages (owner decision 2026-10-29, FL-641): Meta AI's M2M100 418M as the int8 CTranslate2 conversion jncraton/m2m100_418M-ct2-int8 revision 7c1b2620a4e58dacecbd8bf89cfd6da7eb9eb7b0 (model.bin SHA-256 d6703dd9f920ff896e45c3d97b490761bed5944937b90bbe6a7245f5652542d4), run by CTranslate2 (MIT, OpenNMT) with SentencePiece (Apache-2.0, Google), served unchanged by the Frameleaf organisation on Hugging Face. Only caption text is sent; it runs on this server's ML worker or a computer at home.",
       "id": "m2m100-translate",
       "group": "library-models",
       "name": "M2M100 418M translation for Studio captions (CTranslate2 conversion)",
@@ -649,7 +649,7 @@
       "covers": [
         "ml:translate:*"
       ],
-      "source": "fairseq repository LICENSE (MIT); model cards facebook/m2m100_418M (mit) and jncraton/m2m100_418M-ct2-int8 (mit); CTranslate2 (MIT) and sentencepiece (Apache-2.0) on PyPI; the model files are served from the Frameleaf model mirror (models.frameleaf.cloud, frameleaf/m2m100-418m)"
+      "source": "fairseq repository LICENSE (MIT); model cards facebook/m2m100_418M (mit) and jncraton/m2m100_418M-ct2-int8 (mit); CTranslate2 (MIT) and sentencepiece (Apache-2.0) on PyPI; the model files are served from the Frameleaf organisation on Hugging Face (huggingface.co/frameleaf/m2m100-418m)"
     },
     {
       "status": "recorded",
