@@ -50,7 +50,7 @@ export const lifeDateField = (
   date: string | null | undefined,
   precision: string | null | undefined,
 ): DateFieldValue => ({
-  sure: precision === 'month' || precision === 'year' || precision === 'about' ? precision : 'day',
+  sure: (['month', 'year', 'about'] as const).find((known) => known === precision) ?? 'day',
   ...parts(date, new Date()),
 });
 

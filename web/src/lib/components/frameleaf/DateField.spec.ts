@@ -73,6 +73,6 @@ describe('DateField', () => {
     expect(isDateFieldValid(value({ year: 2023, month: 2, day: 29 }))).toBe(false);
     expect(isDateFieldValid(value({ month: 4, day: 31 }))).toBe(false);
     expect(isDateFieldValid(value({ year: 1799, sure: 'year' }))).toBe(false);
-    expect(isDateFieldValid(value({ year: Number.NaN, sure: 'year' }))).toBe(false);
+    expect(isDateFieldValid(value({ year: NaN, sure: 'year' }))).toBe(false);
   });
 });

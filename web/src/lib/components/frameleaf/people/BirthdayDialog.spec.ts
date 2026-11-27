@@ -25,10 +25,14 @@ describe('BirthdayDialog (PD-5, FL-864)', () => {
   const field = (name: string) => within(screen.getByRole('group', { name }));
   const setDay = async (name: string, { day, month, year }: { day?: number; month?: number; year?: number }) => {
     const group = field(name);
-    if (day !== undefined) await fireEvent.input(group.getByLabelText('Day'), { target: { value: String(day) } });
+    if (day !== undefined) {
+      await fireEvent.input(group.getByLabelText('Day'), { target: { value: String(day) } });
+    }
     if (month !== undefined)
-      await fireEvent.change(group.getByLabelText('Month'), { target: { value: String(month) } });
-    if (year !== undefined) await fireEvent.input(group.getByLabelText('Year'), { target: { value: String(year) } });
+      {await fireEvent.change(group.getByLabelText('Month'), { target: { value: String(month) } });}
+    if (year !== undefined) {
+      await fireEvent.input(group.getByLabelText('Year'), { target: { value: String(year) } });
+    }
   };
   const save = () => screen.getByRole('button', { name: 'Save' }) as HTMLButtonElement;
 

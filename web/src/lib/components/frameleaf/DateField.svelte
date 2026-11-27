@@ -23,7 +23,7 @@
 
   /** Whether the value can be saved: a whole year in range, and a real day when the day is known. */
   export const isDateFieldValid = (value: DateFieldValue, minYear = 1800, maxYear = new Date().getFullYear()) =>
-    Number.isInteger(value.year) &&
+    Number.isSafeInteger(value.year) &&
     value.year >= minYear &&
     value.year <= maxYear &&
     (value.sure !== 'day' || isRealDay(value));
@@ -44,7 +44,7 @@
    * `decade` is offered only when the date was already stored that way, so opening one shows it as it is and
    * changes nothing until something else is picked.
    */
-  import { locale } from '$lib/stores/preferences.store';
+  import { formatDate, formatTime } from '$lib/frameleaf/date-format';
   import { Icon } from '@frameleaf/ui';
   import { mdiCalendarClock } from '@mdi/js';
   import { t } from 'svelte-i18n';
@@ -75,37 +75,32 @@
     { value: 'about', label: $t('frameleaf_date_field_sure_about') },
     ...(value.sure === 'decade' ? [{ value: 'decade' as const, label: $t('frameleaf_date_precision_decade') }] : []),
   ]);
-  const months = $derived(
-    Array.from({ length: 12 }, (_, index) =>
-      new Intl.DateTimeFormat($locale, { month: 'long', timeZone: 'UTC' }).format(new Date(Date.UTC(2000, index, 1))),
-    ),
-  );
+  // the person's own date format and language (date-format.ts), on the local calendar
+  const months = Array.from({ length: 12 }, (_, index) => formatDate(new Date(2000, index, 1), { month: 'long' }));
 
-  const yearOk = $derived(Number.isInteger(value.year) && value.year >= minYear && value.year <= maxYear);
+  const yearOk = $derived(Number.isSafeInteger(value.year) && value.year >= minYear && value.year <= maxYear);
   const said = $derived.by(() => {
     if (!yearOk) {
       return $t('frameleaf_date_year_range', { values: { min: String(minYear), max: String(maxYear) } });
     }
-    const at = new Date(Date.UTC(value.year, value.month - 1, value.day));
-    const format = (options: Intl.DateTimeFormatOptions) =>
-      new Intl.DateTimeFormat($locale, { ...options, timeZone: 'UTC' }).format(at);
+    const at = new Date(value.year, value.month - 1, value.day);
+    // a year before 100 would read as 19xx without this
+    at.setFullYear(value.year);
     switch (value.sure) {
       case 'day': {
         if (!isRealDay(value)) {
           return $t('frameleaf_date_field_not_a_day');
         }
-        const day = format({ year: 'numeric', month: 'long', day: 'numeric' });
+        const day = formatDate(at, { year: 'numeric', month: 'long', day: 'numeric' });
         if (!withTime || !value.time) {
           return day;
         }
         const [hour, minute] = value.time.split(':').map(Number);
-        const time = new Intl.DateTimeFormat($locale, { hour: 'numeric', minute: '2-digit', timeZone: 'UTC' }).format(
-          new Date(Date.UTC(2000, 0, 1, hour, minute)),
-        );
+        const time = formatTime(new Date(2000, 0, 1, hour, minute), { hour: 'numeric', minute: '2-digit' });
         return $t('frameleaf_date_field_day_at', { values: { day, time } });
       }
       case 'month': {
-        return format({ year: 'numeric', month: 'long' });
+        return formatDate(at, { year: 'numeric', month: 'long' });
       }
       case 'year': {
         return String(value.year);
