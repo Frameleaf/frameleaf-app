@@ -288,13 +288,14 @@ export class AlbumService extends BaseService {
 
   /** The add-to-album picker's Recent group. Counts only items this session may see. */
   async getRecentlyAdded(auth: AuthDto, dto: AlbumViewDto = {}): Promise<AlbumRecentlyAddedResponseDto> {
-    const albumIds = await this.albumRepository.getRecentlyAddedIds(auth.user.id, {
-      ...this.nsfwOptions(auth),
-      libraryScope: dto.libraryScope ?? LibraryScope.Personal,
-      // FL-780 (TM-5): a connected app is never told a Locked album exists
-      ...(auth.oauthApp ? { excludeLocked: true } : {}),
-    });
-    return { albumIds };
+    const libraryScope = dto.libraryScope ?? LibraryScope.Personal;
+    // FL-780 (TM-5): a connected app is never told a Locked album exists
+    const locked = auth.oauthApp ? { excludeLocked: true } : {};
+    const [albumIds, usedAlbumIds] = await Promise.all([
+      this.albumRepository.getRecentlyAddedIds(auth.user.id, { ...this.nsfwOptions(auth), libraryScope, ...locked }),
+      this.albumRepository.getRecentlyUsedIds(auth.user.id, { libraryScope, ...locked }),
+    ]);
+    return { albumIds, usedAlbumIds };
   }
 
   async getAll(
@@ -1213,6 +1214,10 @@ export class AlbumService extends BaseService {
     );
 
     const newAssetIds = results.filter(({ success }) => success).map(({ id }) => id);
+    // FL-1814: a person adding by hand uses the album; a shared link's sync does not.
+    if (newAssetIds.length > 0 && !sourceLinkId) {
+      await this.albumRepository.recordUse(auth.user.id, [id]);
+    }
     // FL-869: what is added to a custom-order album goes at the end of its order.
     if (album.isCustomOrder && newAssetIds.length > 0) {
       await this.albumRepository.order.placeUnplaced(id, album.order);
@@ -1311,6 +1316,12 @@ export class AlbumService extends BaseService {
         [AlbumOriginField.Membership],
       );
     });
+
+    // FL-1814: the albums that took something lead this account's "Used lately".
+    await this.albumRepository.recordUse(
+      auth.user.id,
+      added.map(({ albumId }) => albumId),
+    );
 
     // A locked album locks what it was given before anything decides what members see: covers and
     // notifications only ever come from items still shown to them.

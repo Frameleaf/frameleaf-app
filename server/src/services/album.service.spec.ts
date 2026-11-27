@@ -61,8 +61,15 @@ describe(AlbumService.name, () => {
   describe('getRecentlyAdded', () => {
     it('returns the albums in the order the repository ranks them', async () => {
       mocks.album.getRecentlyAddedIds.mockResolvedValue(['album-2', 'album-1']);
+      mocks.album.getRecentlyUsedIds.mockResolvedValue(['album-3']);
 
-      await expect(sut.getRecentlyAdded(authStub.admin)).resolves.toEqual({ albumIds: ['album-2', 'album-1'] });
+      await expect(sut.getRecentlyAdded(authStub.admin)).resolves.toEqual({
+        albumIds: ['album-2', 'album-1'],
+        usedAlbumIds: ['album-3'],
+      });
+      expect(mocks.album.getRecentlyUsedIds).toHaveBeenCalledWith(authStub.admin.user.id, {
+        libraryScope: LibraryScope.Personal,
+      });
       expect(mocks.album.getRecentlyAddedIds).toHaveBeenCalledWith(
         authStub.admin.user.id,
         expect.objectContaining({ libraryScope: LibraryScope.Personal }),
@@ -71,6 +78,7 @@ describe(AlbumService.name, () => {
 
     it('never tells a connected app about a Locked album', async () => {
       mocks.album.getRecentlyAddedIds.mockResolvedValue([]);
+      mocks.album.getRecentlyUsedIds.mockResolvedValue([]);
 
       await sut.getRecentlyAdded({ ...authStub.admin, oauthApp: { id: 'app' } } as unknown as AuthDto, {
         libraryScope: LibraryScope.Design,
@@ -80,6 +88,10 @@ describe(AlbumService.name, () => {
         authStub.admin.user.id,
         expect.objectContaining({ excludeLocked: true, libraryScope: LibraryScope.Design }),
       );
+      expect(mocks.album.getRecentlyUsedIds).toHaveBeenCalledWith(authStub.admin.user.id, {
+        excludeLocked: true,
+        libraryScope: LibraryScope.Design,
+      });
     });
   });
 
@@ -2820,6 +2832,34 @@ describe(AlbumService.name, () => {
       expect(mocks.asset.lock).toHaveBeenCalledWith([mine.id], AssetLockReason.Marked, owner.id);
     });
 
+    it('records the album as used lately by the person who added (FL-1814)', async () => {
+      const owner = UserFactory.create();
+      const album = AlbumFactory.from().owner(owner).build();
+      const asset = AssetFactory.create({ ownerId: owner.id });
+      mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set([album.id]));
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.album.getById.mockResolvedValue(getForAlbum(album));
+      mocks.album.getAssetIds.mockResolvedValueOnce(new Set());
+
+      await sut.addAssets(AuthFactory.create(owner), album.id, { ids: [asset.id] });
+
+      expect(mocks.album.recordUse).toHaveBeenCalledWith(owner.id, [album.id]);
+    });
+
+    it('records nothing when nothing was added (FL-1814)', async () => {
+      const owner = UserFactory.create();
+      const album = AlbumFactory.from().owner(owner).build();
+      const asset = AssetFactory.create({ ownerId: owner.id });
+      mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set([album.id]));
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.album.getById.mockResolvedValue(getForAlbum(album));
+      mocks.album.getAssetIds.mockResolvedValueOnce(new Set([asset.id]));
+
+      await sut.addAssets(AuthFactory.create(owner), album.id, { ids: [asset.id] });
+
+      expect(mocks.album.recordUse).not.toHaveBeenCalled();
+    });
+
     it.each(['add', 'bulk-add'] as const)('never makes an item it just locked the cover (%s)', async (action) => {
       const owner = UserFactory.create();
       const album = AlbumFactory.from({ isLocked: true }).owner(owner).build();
@@ -3323,7 +3363,8 @@ describe(AlbumService.name, () => {
         { albumId: album2.id, assetId: asset1.id },
         { albumId: album2.id, assetId: asset2.id },
         { albumId: album2.id, assetId: asset3.id },
-      ]);
+      ]);      ]);
+      expect(mocks.album.recordUse).toHaveBeenCalledWith(owner.id, [album1.id, album2.id]);
     });
 
     it('should not set the thumbnail if the album has one already', async () => {

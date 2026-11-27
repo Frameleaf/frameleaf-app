@@ -45,6 +45,7 @@ import { AlbumAssetAuditTable } from 'src/schema/tables/album-asset-audit.table.
 import { AlbumAssetTable } from 'src/schema/tables/album-asset.table.js';
 import { AlbumAuditTable } from 'src/schema/tables/album-audit.table.js';
 import { AlbumBookmarkTable } from 'src/schema/tables/album-bookmark.table.js';
+import { AlbumRecentUseTable } from 'src/schema/tables/album-recent-use.table.js';
 import { AlbumChangeRunTable } from 'src/schema/tables/album-change-run.table.js';
 import { AlbumChangeTable } from 'src/schema/tables/album-change.table.js';
 import { AlbumCleanupApplyTable } from 'src/schema/tables/album-cleanup-apply.table.js';
@@ -457,6 +458,7 @@ export class ImmichDatabase {
     OAuthSpentRefreshTokenTable,
     BookmarkTable,
     AlbumBookmarkTable,
+    AlbumRecentUseTable,
     AlbumChangeRunTable,
     AlbumChangeTable,
     AlbumCleanupApplyTable,
@@ -841,6 +843,7 @@ export interface DB extends QueueDatabase {
   oauth_spent_refresh_token: OAuthSpentRefreshTokenTable;
   bookmark: BookmarkTable;
   album_bookmark: AlbumBookmarkTable;
+  album_recent_use: AlbumRecentUseTable;
   album_change_run: AlbumChangeRunTable;
   album_change: AlbumChangeTable;
   album_cleanup_apply: AlbumCleanupApplyTable;

@@ -331,6 +331,56 @@ export class AlbumRepository {
     );
   }
 
+  /** FL-1814: this account just added items to these albums; they lead its picker's "Used lately". */
+  @GenerateSql({ params: [DummyValue.UUID, [DummyValue.UUID]] })
+  async recordUse(userId: string, albumIds: string[]): Promise<void> {
+    if (albumIds.length === 0) {
+      return;
+    }
+    await this.db
+      .insertInto('album_recent_use')
+      .values([...new Set(albumIds)].map((albumId) => ({ userId, albumId })))
+      .onConflict((oc) => oc.columns(['userId', 'albumId']).doUpdateSet({ usedAt: sql`now()` }))
+      .execute();
+  }
+
+  /**
+   * FL-1814: the albums this account itself last added items to, most recent first, among those it may
+   * still add to (owner or editor, not deleted), in the same library scope as the album list.
+   */
+  @GenerateSql({ params: [DummyValue.UUID, { libraryScope: LibraryScope.Personal }] })
+  async getRecentlyUsedIds(
+    userId: string,
+    options: { libraryScope?: LibraryViewScope; excludeLocked?: boolean } = {},
+    limit = 10,
+  ): Promise<string[]> {
+    const rows = await this.db
+      .selectFrom('album_recent_use')
+      .innerJoin('album', 'album.id', 'album_recent_use.albumId')
+      .innerJoin('album_user', (join) =>
+        join.onRef('album_user.albumId', '=', 'album.id').on('album_user.userId', '=', userId),
+      )
+      .select('album_recent_use.albumId')
+      .where('album_recent_use.userId', '=', userId)
+      .where('album_user.role', 'in', [AlbumUserRole.Owner, AlbumUserRole.Editor])
+      .where('album.deletedAt', 'is', null)
+      .$if(options.excludeLocked === true, (qb) => qb.where('album.isLocked', '=', false))
+      .$if(!!options.libraryScope, (qb) =>
+        qb.where((eb) =>
+          eb.or([
+            libraryScopePredicate(options.libraryScope!, 'album'),
+            ...(options.libraryScope === LibraryScope.Personal
+              ? [eb('album_user.role', '!=', AlbumUserRole.Owner)]
+              : []),
+          ]),
+        ),
+      )
+      .orderBy('album_recent_use.usedAt', 'desc')
+      .limit(limit)
+      .execute();
+    return rows.map(({ albumId }) => albumId);
+  }
+
   /**
    * Albums the user owns or edits, the one that most recently received a visible item first.
    * ponytail: reads the user's album memberships on each picker open; add an (albumId, createdAt)
