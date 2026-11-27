@@ -178,7 +178,9 @@ export function compositionSourcesFor(sourceSha256) {
     // FL-1822 the Add panel and two-tone transition previews; changes no composition or raster producer.
     sourceSha256 === '3ac1e51c2bb62cdd299b8912a1080fc8dc4e559eb439eabf59368bba1b90b25c' ||
     // FL-1822 the keyframes lane's header and labels; changes no composition or raster producer.
-    sourceSha256 === '7bf91610b9e5169164d516910acd08a18ff905506bcbfd597f2216a4248d761b'
+    sourceSha256 === '7bf91610b9e5169164d516910acd08a18ff905506bcbfd597f2216a4248d761b' ||
+    // FL-1822 the colour workspace's grading rows, wheel values, curves and scopes header; changes no composition or raster producer.
+    sourceSha256 === '5314d5b161ff2fed20a0a954d05aef9cba1dad32f114c0bfe8365d3b4bf7f446'
   )
     return {
       ...COMPOSITION_SOURCES,
