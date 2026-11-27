@@ -237,6 +237,9 @@ export class DuplicateRepository {
             .groupBy('asset.duplicateId')
             // A page is cut from whole groups: a group of one is left out before the cut, so only the last
             // page is ever short.
+            // ponytail: the limit sits over the grouping and its per-photo JSON, so a page can cost close to
+            // a whole read; pick the page's group ids first, with an (ownerId, duplicateId) index, before a
+            // client pages through it. The web reads the review whole for now (FL-1795 review).
             .$if(!!page, (qb) =>
               qb
                 .having((eb) => eb(eb.fn.countAll(), '>', 1))
