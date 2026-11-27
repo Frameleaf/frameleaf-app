@@ -100,6 +100,8 @@
   // the faces the searchable picker or the new-name field is choosing a person for
   let picking: Row[] | null = $state(null);
   let namingSelection = $state(false);
+  /** The faces the open naming form will move: the ticked ones when it opened, or the picker's (FL-1814). */
+  let namingTargets: Row[] = $state([]);
   let busy = $state(false);
   let message = $state('');
   let heading: HTMLHeadingElement | undefined = $state();
@@ -316,6 +318,10 @@
     let done = 0;
     try {
       for (const row of targets) {
+        // a face fixed through its own row while the picker or the naming form was open is left alone
+        if (resolved.has(row.face.id)) {
+          continue;
+        }
         try {
           await action(row);
           changed = true;
@@ -330,6 +336,7 @@
       busy = false;
       picking = null;
       namingSelection = false;
+      namingTargets = [];
       naming = null;
       if (done > 0) {
         message = summary(done);
@@ -363,8 +370,8 @@
     );
   };
 
-  const createForSelection = async (newName: string) => {
-    const targets = selectedRows;
+  /** Makes someone new for exactly these faces: what the picker or the naming form opened for (FL-1814). */
+  const createForSelection = async (newName: string, targets: Row[]) => {
     if (!newName || targets.length === 0) {
       namingSelection = false;
       return;
@@ -400,8 +407,9 @@
         naming = targets[0].face.id;
       }
     } else if (name) {
-      void createForSelection(name);
+      void createForSelection(name, targets);
     } else {
+      namingTargets = targets;
       namingSelection = true;
     }
   };
@@ -555,8 +563,11 @@
         person={{ id: 'new-selection', name: '' }}
         placeholder={$t('frameleaf_people_fix_new_name')}
         label={$t('frameleaf_people_fix_new_name_label')}
-        onCommit={(newName) => void createForSelection(newName)}
-        onCancel={() => (namingSelection = false)}
+        onCommit={(newName) => void createForSelection(newName, namingTargets)}
+        onCancel={() => {
+          namingSelection = false;
+          namingTargets = [];
+        }}
       />
     </div>
   {/if}
@@ -567,7 +578,13 @@
         <Icon icon={mdiAccountArrowRightOutline} size="16" aria-hidden="true" />
         {$t('frameleaf_people_fix_move_to')}
       </Button>
-      <Button disabled={busy} onclick={() => (namingSelection = true)}>
+      <Button
+        disabled={busy}
+        onclick={() => {
+          namingTargets = selectedRows;
+          namingSelection = true;
+        }}
+      >
         <Icon icon={mdiAccountPlusOutline} size="16" aria-hidden="true" />
         {$t('frameleaf_people_fix_someone_new')}
       </Button>
