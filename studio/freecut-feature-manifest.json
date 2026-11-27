@@ -15116,8 +15116,10 @@
           "0014-effects-float-transport.patch",
           "0039-effect-parameter-meaning.patch",
           "0049-portable-lut-import.patch",
-          "b4113f6f99"
+          "b4113f6f99",
+          "0215-studio-colour-workspace.patch"
         ],
+        "note": "FL-1822 (0215): in the Colour workspace each grading value has its label above it, so no label runs into the next column; wheel values sit two to a row so they read in full; curve channels wrap instead of hiding Master; the scopes' signal and revision line is out of view; the keyframes header stays on one line; and the keyframe ruler takes a coarser step on a narrow lane so its numbers stay apart.",
         "status": "shipped"
       },
       "id": "module.effects",

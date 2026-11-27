@@ -969,7 +969,12 @@
       "path": "patches/0214-studio-keyframes-lane.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "4ec09c313d61e6585d8da6c34606ea51407bdb926f6c1ec3f97b62bf88283771"
+    },
+    {
+      "path": "patches/0215-studio-colour-workspace.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "842ad36c4ef3054f25c2641125c573078e68c6ce1f2ae36d4efe1b0d3caa2786"
     }
   ],
-  "sourceSha256": "7bf91610b9e5169164d516910acd08a18ff905506bcbfd597f2216a4248d761b"
+  "sourceSha256": "3e370166b4723cebd729da3d0a5be033f003ade966dfbdcd9b48c2edbafc367d"
 }

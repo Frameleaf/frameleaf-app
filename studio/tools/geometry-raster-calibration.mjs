@@ -318,7 +318,10 @@ export function validateBaseRaster(capture, envelope, binding) {
             '3ac1e51c2bb62cdd299b8912a1080fc8dc4e559eb439eabf59368bba1b90b25c' ||
           // FL-1822 the keyframes lane's header and labels; raster producer bytes unchanged.
           binding.sourceSha256 ===
-            '7bf91610b9e5169164d516910acd08a18ff905506bcbfd597f2216a4248d761b')),
+            '7bf91610b9e5169164d516910acd08a18ff905506bcbfd597f2216a4248d761b' ||
+          // FL-1822 the colour workspace's grading rows, wheel values, curves and scopes header; raster producer bytes unchanged.
+          binding.sourceSha256 ===
+            '3e370166b4723cebd729da3d0a5be033f003ade966dfbdcd9b48c2edbafc367d')),
     'SOURCE_BROWSER',
   )
   check(
