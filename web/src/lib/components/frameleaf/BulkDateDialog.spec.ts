@@ -188,6 +188,38 @@ describe('BulkDateDialog (FL-32, T-19)', () => {
       expect(onSubmit).toHaveBeenCalledWith({ dateMode: 'set', dateAccuracy: 'year', year: 1975 });
     });
 
+    it('opens a shared year without Apply, so a month or "around" it cannot see is never dropped', async () => {
+      const onSubmit = vi.fn();
+      renderWithTooltips(BulkDateDialog, {
+        count: 2,
+        assets: [
+          { ...item('a', '1987-03-01T00:00', 0), dateAccuracy: 'year' },
+          { ...item('b', '1987-03-01T00:00', 0), dateAccuracy: 'year' },
+        ],
+        onSubmit,
+      });
+      expect(screen.getByLabelText('frameleaf_date_field_how_sure')).toHaveValue('year');
+      expect(screen.getByRole('button', { name: 'frameleaf_bulk_apply_to' })).toBeDisabled();
+      await sure('month');
+      await apply();
+      expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ dateDetail: 'month', month: 3, year: 1987 }));
+    });
+
+    it('says why a month not yet begun cannot be applied', async () => {
+      const now = new Date();
+      renderWithTooltips(BulkDateDialog, {
+        count: 1,
+        assets: [item('a', `${now.getFullYear()}-01-01T00:00`, 0)],
+        onSubmit: vi.fn(),
+      });
+      await sure('month');
+      await fireEvent.change(screen.getByLabelText('month'), { target: { value: '12' } });
+      if (now.getMonth() < 11) {
+        expect(screen.getAllByText('frameleaf_people_birthday_future').length).toBeGreaterThan(0);
+        expect(screen.getByRole('button', { name: 'frameleaf_bulk_apply_to' })).toBeDisabled();
+      }
+    });
+
     it('opens on a decade the whole selection shares, and sends it back unchanged', async () => {
       const onSubmit = vi.fn();
       renderWithTooltips(BulkDateDialog, {

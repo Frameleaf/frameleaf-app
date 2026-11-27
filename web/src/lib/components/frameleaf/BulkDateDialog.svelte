@@ -6,7 +6,13 @@
   import type { BulkAsset } from '$lib/frameleaf/bulk-actions';
   import { dateAccuracyOf, MIN_APPROXIMATE_YEAR } from '$lib/frameleaf/approximate-date';
   import { formatDate } from '$lib/frameleaf/date-format';
-  import { dateFieldStart, isDateFieldValid, photoDateField, type DateFieldValue } from '$lib/frameleaf/date-field';
+  import {
+    dateFieldStart,
+    isDateFieldValid,
+    isFutureMonth,
+    photoDateField,
+    type DateFieldValue,
+  } from '$lib/frameleaf/date-field';
   import type { BulkPayload } from '$lib/frameleaf/bulk-operations';
   import {
     splitLocalDateTime,
@@ -107,7 +113,7 @@
   let direction = $state<'later' | 'earlier'>('later');
   /** The chosen zone by id; empty until chosen where nothing honest can be pre-selected. */
   let zoneValue = $state('');
-  let touchedDate = false;
+  let touchedDate = $state(false);
   let touchedZone = false;
 
   /** Pre-fill from the first item's capture time, and keep zones, until the person changes them. */
@@ -150,7 +156,9 @@
     mode === 'set'
       ? field.sure === 'day'
         ? date !== '' && /^\d{2}:\d{2}$/.test(time) && zoneChosen && !resolving
-        : fieldOk
+        : // a shared year may be a month or "around" the timeline cannot see: Apply waits for a change, so
+          // opening and applying never drops it
+          fieldOk && (touchedDate || sharedAccuracy !== 'year')
       : Number.isFinite(Number(amount)) && Number(amount) > 0,
   );
 
@@ -174,8 +182,11 @@
 
   const approximatePreview = $derived.by(() => {
     if (!fieldOk) {
-      // the field itself says what is wrong
-      return $t('frameleaf_date_enter_year');
+      return isFutureMonth(field)
+        ? $t('frameleaf_people_birthday_future')
+        : Number.isSafeInteger(field.year)
+          ? $t('frameleaf_date_year_range', { values: { min: String(minYear), max: String(maxYear) } })
+          : $t('frameleaf_date_enter_year');
     }
     const year = String(field.year);
     switch (field.sure) {

@@ -7984,7 +7984,6 @@
   "frameleaf_date_field_sure_month": "Month and year",
   "frameleaf_date_field_sure_year": "Year only",
   "frameleaf_date_precision_decade": "Decade",
-  "frameleaf_date_precision_year": "Year",
   "frameleaf_date_will_show_decade": "This photo will show “circa {decade}s” and sit at the start of {decade} in your timeline.",
   "frameleaf_date_will_show_year": "This photo will show “{year}” and sit at the start of {year} in your timeline.",
   "frameleaf_date_year_only": "Year only",

@@ -8082,7 +8082,6 @@
   "frameleaf_date_field_sure_month": "Miesiąc i rok",
   "frameleaf_date_field_sure_year": "Tylko rok",
   "frameleaf_date_precision_decade": "Dekada",
-  "frameleaf_date_precision_year": "Rok",
   "frameleaf_date_will_show_decade": "To zdjęcie będzie opisane jako „około lat {decade}.” i trafi na początek roku {decade} na osi czasu.",
   "frameleaf_date_will_show_year": "To zdjęcie będzie opisane jako „{year}” i trafi na początek roku {year} na osi czasu.",
   "frameleaf_date_year_only": "Tylko rok",

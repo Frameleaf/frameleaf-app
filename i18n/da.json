@@ -8075,7 +8075,6 @@
   "frameleaf_date_field_sure_month": "Måned og år",
   "frameleaf_date_field_sure_year": "Kun året",
   "frameleaf_date_precision_decade": "Årti",
-  "frameleaf_date_precision_year": "År",
   "frameleaf_date_will_show_decade": "Dette billede viser ”omkring {decade}’erne” og placeres i starten af {decade} på din tidslinje.",
   "frameleaf_date_will_show_year": "Dette billede viser ”{year}” og placeres i starten af {year} på din tidslinje.",
   "frameleaf_date_year_only": "Kun år",

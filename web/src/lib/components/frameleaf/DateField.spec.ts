@@ -75,6 +75,8 @@ describe('DateField', () => {
     expect(isDateFieldValid(value({ month: 4, day: 31 }))).toBe(false);
     expect(isDateFieldValid(value({ year: 1799, sure: 'year' }))).toBe(false);
     expect(isDateFieldValid(value({ year: NaN, sure: 'year' }))).toBe(false);
+    // years 1–99 are those years, not 1901–1999
+    expect(isDateFieldValid(value({ year: 50, month: 3, day: 15 }), 1, 9999)).toBe(true);
   });
 
   it('refuses a month that has not begun, as the server does', async () => {
