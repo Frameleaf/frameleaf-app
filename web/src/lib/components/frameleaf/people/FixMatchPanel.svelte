@@ -317,8 +317,11 @@
     busy = true;
     let done = 0;
     try {
-      // a face fixed through its own row while the picker or the naming form was open is left alone
-      for (const row of targets.filter(({ face }) => !resolved.has(face.id))) {
+      for (const row of targets) {
+        // a face fixed through its own row while the picker or the naming form was open is left alone
+        if (resolved.has(row.face.id)) {
+          continue;
+        }
         try {
           await action(row);
           changed = true;
