@@ -1805,6 +1805,30 @@ export class PreservationRepository {
         .execute(),
     );
   }
+  /** FL-1840: the album a package's album became for this owner at an earlier restoration, or merged into since. */
+  async getRestoredAlbumId(
+    ownerId: string,
+    packageIdentity: string,
+    sourceAlbumId: string,
+  ): Promise<string | undefined> {
+    const row = await this.db
+      .selectFrom('preservation_album')
+      .select('albumId')
+      .where('ownerId', '=', ownerId)
+      .where('packageIdentity', '=', packageIdentity)
+      .where('sourceAlbumId', '=', sourceAlbumId)
+      .executeTakeFirst();
+    return row?.albumId;
+  }
+  async setRestoredAlbumId(ownerId: string, packageIdentity: string, sourceAlbumId: string, albumId: string) {
+    await this.write((db) =>
+      db
+        .insertInto('preservation_album')
+        .values({ ownerId, packageIdentity, sourceAlbumId, albumId })
+        .onConflict((oc) => oc.columns(['ownerId', 'packageIdentity', 'sourceAlbumId']).doUpdateSet({ albumId }))
+        .execute(),
+    );
+  }
   /** An album the owner owns, by id. */
   getOwnedAlbum(ownerId: string, albumId: string) {
     return this.db

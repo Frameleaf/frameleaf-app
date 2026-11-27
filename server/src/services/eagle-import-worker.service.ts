@@ -247,15 +247,27 @@ export class EagleImportWorkerService {
     const total = library.items.filter((item) => isComing(item, supported)).length;
     await this.repository.save(row.id, this.workerId, { total });
     const target = this.targetOf(row);
+    // Keyed by names from the library's own JSON: `__proto__` or `constructor` must be an ordinary key here.
+    const albums = Object.assign(Object.create(null) as Record<string, string>, row.albums);
+    const rootAlbumId = target.mode === 'inside' && target.inside !== 'new' ? target.inside : row.rootAlbumId;
+    // FL-1840: a resumed run checks the albums it made before. One the person deleted meanwhile stays gone: its
+    // folder keeps an empty id, so it is neither made again nor filed into.
+    const live = await this.repository.liveAlbumIds(row.ownerId, [
+      ...new Set([...Object.values(albums).filter(Boolean), ...(rootAlbumId ? [rootAlbumId] : [])]),
+    ]);
+    for (const [folderId, albumId] of Object.entries(albums)) {
+      if (albumId && !live.has(albumId)) {
+        albums[folderId] = '';
+      }
+    }
     return {
       row,
       auth,
       library,
       target,
-      // Keyed by names from the library's own JSON: `__proto__` or `constructor` must be an ordinary key here.
-      albums: Object.assign(Object.create(null) as Record<string, string>, row.albums),
+      albums,
       tagIds: Object.assign(Object.create(null) as Record<string, string>, row.tagIds),
-      rootAlbumId: target.mode === 'inside' && target.inside !== 'new' ? target.inside : row.rootAlbumId,
+      rootAlbumId: rootAlbumId && live.has(rootAlbumId) ? rootAlbumId : null,
       failed: new Set(row.failed),
       recent: [...row.recent],
       collectionNames: new Map(),
@@ -289,7 +301,8 @@ export class EagleImportWorkerService {
   private async makeCollections(run: EagleRun) {
     const { library, target, auth } = run;
     if (target.mode === 'inside') {
-      if (target.inside === 'new' && !run.rootAlbumId) {
+      // a collection this import made that the person has since put away is not made again
+      if (target.inside === 'new' && !run.rootAlbumId && !run.row.rootAlbumId) {
         this.throwIfReleased(run);
         const album = await this.albums.create(auth, {
           albumName: EAGLE_DEFAULT_COLLECTION,
@@ -311,7 +324,8 @@ export class EagleImportWorkerService {
         return;
       }
       this.throwIfReleased(run);
-      const parentId = folder.parent ? run.albums[folder.parent] : (run.rootAlbumId ?? undefined);
+      // a parent the person deleted puts its new subfolders where the import goes
+      const parentId = (folder.parent && run.albums[folder.parent]) || (run.rootAlbumId ?? undefined);
       const colour = eagleColour(folder.color);
       const album = await this.albums.create(auth, {
         albumName: name,
@@ -350,7 +364,9 @@ export class EagleImportWorkerService {
       this.throwIfReleased(run);
       const filed = item.folders.filter((id) => run.albums[id]);
       const albumIds = filed.map((id) => run.albums[id]);
-      if (albumIds.length === 0 && run.target.mode === 'inside' && run.rootAlbumId) {
+      // an item whose folder's album the person deleted is not filed anywhere instead
+      const removed = item.folders.some((id) => run.albums[id] === '');
+      if (albumIds.length === 0 && !removed && run.target.mode === 'inside' && run.rootAlbumId) {
         albumIds.push(run.rootAlbumId);
       }
       if (albumIds.length > 0) {

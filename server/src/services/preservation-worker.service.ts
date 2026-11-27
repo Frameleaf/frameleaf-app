@@ -2178,6 +2178,13 @@ export class PreservationWorkerService {
       if (sourceParent && !mapped.has(sourceParent)) continue;
       const parentId = sourceParent ? (mapped.get(sourceParent) ?? null) : null;
 
+      // FL-1840: the album an earlier restoration of this package found or made, or the one it was merged into.
+      const restoredId = await this.repository.getRestoredAlbumId(ownerId, identity, album.id);
+      const restored = restoredId && (await this.repository.getOwnedAlbum(ownerId, restoredId));
+      if (restored) {
+        mapped.set(album.id, restored.id);
+        continue;
+      }
       const same = await this.repository.getOwnedAlbum(ownerId, album.id);
       if (same && same.kind === album.kind) {
         mapped.set(album.id, same.id);
@@ -2213,6 +2220,9 @@ export class PreservationWorkerService {
         ownerId,
       );
       mapped.set(album.id, derived);
+    }
+    for (const [sourceAlbumId, albumId] of mapped) {
+      await this.repository.setRestoredAlbumId(ownerId, identity, sourceAlbumId, albumId);
     }
     return mapped;
   }

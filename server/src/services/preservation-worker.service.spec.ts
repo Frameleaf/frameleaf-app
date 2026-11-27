@@ -189,6 +189,8 @@ describe(PreservationWorkerService.name, () => {
       addDocumentEdit: vi.fn().mockResolvedValue(true),
       addManualMoment: vi.fn().mockResolvedValue(true),
       getOwnedAlbum: vi.fn().mockResolvedValue(undefined),
+      getRestoredAlbumId: vi.fn().mockResolvedValue(undefined),
+      setRestoredAlbumId: vi.fn().mockResolvedValue(undefined),
       albumExists: vi.fn().mockResolvedValue(false),
       findOwnedAlbumsByName: vi.fn().mockResolvedValue([]),
       getOwnedPerson: vi.fn().mockResolvedValue(undefined),
@@ -1372,6 +1374,25 @@ describe(PreservationWorkerService.name, () => {
       expect(mapped.get(albumId)).toBeDefined();
       expect(mapped.get(albumId)).not.toBe(albumId);
       expect(albumRepository.create).not.toHaveBeenCalled();
+    });
+
+    it('goes to the album an earlier restore recorded, such as the one it was merged into (FL-1840)', async () => {
+      const albumId = newUuid();
+      const identity = newUuidV7();
+      const merged = newUuid();
+      repository.getRestoredAlbumId.mockResolvedValue(merged);
+      repository.getOwnedAlbum.mockImplementation((_owner: string, id: string) =>
+        Promise.resolve(id === merged ? { id, kind: 'album', parentId: null } : undefined),
+      );
+
+      const mapped = (await worker().ensureAlbums(ownerId, identity, [
+        { id: albumId, name: 'Italy', description: '', kind: 'album', parentId: null, icon: null, order: null },
+      ])) as Map<string, string>;
+
+      expect(repository.getRestoredAlbumId).toHaveBeenCalledWith(ownerId, identity, albumId);
+      expect(mapped.get(albumId)).toBe(merged);
+      expect(albumRepository.create).not.toHaveBeenCalled();
+      expect(repository.setRestoredAlbumId).toHaveBeenCalledWith(ownerId, identity, albumId, merged);
     });
 
     it('creates a missing album once, with an id derived from the package', async () => {

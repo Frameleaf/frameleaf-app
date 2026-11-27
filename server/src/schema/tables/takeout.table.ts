@@ -273,10 +273,14 @@ export class TakeoutPairTable {
 }
 
 /**
- * The album an export folder became, per owner, so a second import of the same export adds to the
- * albums the first one made instead of making them again.
+ * The album an export folder became, per owner and source, so a second import of the same export adds to the
+ * albums the first one made instead of making them again. `source` is '' for a Google Photos export and the import
+ * connection's id for a connection's runs, so a Dropbox "Trips" and a Drive "Trips" are two albums.
+ *
+ * FL-1840: the row outlives its album. A null `albumId` means the person deleted the album, so a later import leaves
+ * it gone; a merge points the row at the album it was merged into.
  */
-@Unique({ columns: ['ownerId', 'folder'] })
+@Unique({ name: 'takeout_album_ownerId_source_folder_uq', columns: ['ownerId', 'source', 'folder'] })
 @Table('takeout_album')
 export class TakeoutAlbumTable {
   @PrimaryGeneratedUuidV7Column()
@@ -285,9 +289,12 @@ export class TakeoutAlbumTable {
   @ForeignKeyColumn(() => UserTable, { onDelete: 'CASCADE', onUpdate: 'CASCADE', nullable: false })
   ownerId!: string;
 
+  @Column({ default: '' })
+  source!: Generated<string>;
+
   @Column()
   folder!: string;
 
-  @ForeignKeyColumn(() => AlbumTable, { onDelete: 'CASCADE', onUpdate: 'CASCADE', nullable: false })
-  albumId!: string;
+  @ForeignKeyColumn(() => AlbumTable, { onDelete: 'SET NULL', onUpdate: 'CASCADE', nullable: true })
+  albumId!: string | null;
 }

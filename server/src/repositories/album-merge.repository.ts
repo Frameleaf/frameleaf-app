@@ -19,6 +19,8 @@ export const AlbumChangeKind = {
   SourceLinkMoved: 'album.source_link_moved',
   ICloudAlbumMoved: 'album.icloud_album_moved',
   TakeoutFolderMoved: 'album.takeout_folder_moved',
+  ImportAlbumMoved: 'album.import_album_moved',
+  EagleAlbumMoved: 'album.eagle_album_moved',
   ChoiceMoved: 'album.choice_moved',
   LockChanged: 'album.lock_changed',
   SoftDeleted: ALBUM_CHANGE_SOFT_DELETED,
@@ -32,6 +34,20 @@ export interface MergeAlbumRow {
   isLocked: boolean;
   kind: string;
 }
+
+/**
+ * FL-1840: importers that remember an album by its id in one column. A merge points them at the winner so the next
+ * import, subscription check, catalog read-in or restoration adds to the merged album instead of making it again.
+ */
+type ImportAlbumTable =
+  'media_creator' | 'media_subscription' | 'media_import' | 'photo_source_album' | 'preservation_album';
+const IMPORT_ALBUM_TABLES: ImportAlbumTable[] = [
+  'media_creator',
+  'media_subscription',
+  'media_import',
+  'photo_source_album',
+  'preservation_album',
+];
 
 /** Lists a person picks albums for: what they chose must not silently drop out when an album goes. */
 type ChoiceTable = 'cloud_backup_selection' | 'speech_settings';
@@ -206,6 +222,55 @@ export class AlbumMergeRepository {
     return rows;
   }
 
+  /** FL-1840: points every importer mapping of the loser at the winner. One change per row moved. */
+  async moveImportAlbums(loserId: string, winnerId: string): Promise<AlbumChangeInput[]> {
+    const changes: AlbumChangeInput[] = [];
+    for (const table of IMPORT_ALBUM_TABLES) {
+      const { rows } = await sql<{ id: string }>`
+        UPDATE ${sql.table(table)} SET "albumId" = ${winnerId}::uuid WHERE "albumId" = ${loserId}::uuid RETURNING id
+      `.execute(this.db);
+      for (const { id } of rows) {
+        changes.push({
+          kind: AlbumChangeKind.ImportAlbumMoved,
+          albumId: winnerId,
+          before: { table, albumId: loserId },
+          after: { id },
+        });
+      }
+    }
+    return changes;
+  }
+
+  /** FL-1840: an Eagle import's folders (and the collection it went inside) that became the loser now go to the winner. */
+  async moveEagleAlbums(loserId: string, winnerId: string): Promise<AlbumChangeInput[]> {
+    const { rows } = await sql<{ id: string; folders: string[] | null; root: boolean }>`
+      WITH found AS (
+        SELECT id, "rootAlbumId" = ${loserId}::uuid AS root,
+          (SELECT array_agg(entry.key ORDER BY entry.key) FROM jsonb_each_text(albums) entry WHERE entry.value = ${loserId}::text)
+            AS folders
+        FROM eagle_import
+        WHERE "rootAlbumId" = ${loserId}::uuid
+          OR EXISTS (SELECT 1 FROM jsonb_each_text(albums) entry WHERE entry.value = ${loserId}::text)
+        FOR UPDATE
+      ), moved AS (
+        UPDATE eagle_import SET
+          "rootAlbumId" = CASE WHEN found.root THEN ${winnerId}::uuid ELSE eagle_import."rootAlbumId" END,
+          albums = CASE WHEN found.folders IS NULL THEN eagle_import.albums ELSE (
+            SELECT jsonb_object_agg(entry.key, CASE WHEN entry.value = ${loserId}::text THEN ${winnerId}::text ELSE entry.value END)
+            FROM jsonb_each_text(eagle_import.albums) entry) END
+        FROM found WHERE eagle_import.id = found.id
+        RETURNING eagle_import.id
+      )
+      SELECT found.id, found.folders, coalesce(found.root, false) AS root FROM found JOIN moved ON moved.id = found.id
+    `.execute(this.db);
+    return rows.map(({ id, folders, root }) => ({
+      kind: AlbumChangeKind.EagleAlbumMoved,
+      albumId: winnerId,
+      before: { albumId: loserId },
+      after: { id, folders: folders ?? [], root },
+    }));
+  }
+
   /** What the person chose albums for: a loser that was chosen becomes the winner, so nothing drops out. */
   async moveChoices(loserId: string, winnerId: string, ownerId: string): Promise<AlbumChangeInput[]> {
     const changes: AlbumChangeInput[] = [];
@@ -377,6 +442,49 @@ export class AlbumMergeRepository {
       }
     }
     return { reversed, skipped };
+  }
+
+  /** Points an importer mapping back at the merged-away album, unless it was moved again since. */
+  async reverseImportAlbums(changes: AlbumChangeRow[]): Promise<AlbumChangeReversal> {
+    let reversed = 0;
+    for (const change of changes) {
+      const { table, albumId } = change.before as { table: ImportAlbumTable; albumId: string };
+      const { id } = change.after as { id: string };
+      if (!change.albumId || !IMPORT_ALBUM_TABLES.includes(table)) {
+        continue;
+      }
+      const { numAffectedRows } = await sql`
+        UPDATE ${sql.table(table)} SET "albumId" = ${albumId}::uuid
+        WHERE id = ${id}::uuid AND "albumId" = ${change.albumId}::uuid
+      `.execute(this.db);
+      reversed += Number(numAffectedRows ?? 0);
+    }
+    return { reversed, skipped: [] };
+  }
+
+  /** Puts an Eagle import's folders back on the merged-away album where they still point at the winner. */
+  async reverseEagleAlbums(changes: AlbumChangeRow[]): Promise<AlbumChangeReversal> {
+    let reversed = 0;
+    for (const change of changes) {
+      if (!change.albumId) {
+        continue;
+      }
+      const { albumId } = change.before as { albumId: string };
+      const { id, folders, root } = change.after as { id: string; folders: string[]; root: boolean };
+      const { numAffectedRows } = await sql`
+        UPDATE eagle_import SET
+          "rootAlbumId" = CASE WHEN ${root} AND "rootAlbumId" = ${change.albumId}::uuid THEN ${albumId}::uuid
+            ELSE "rootAlbumId" END,
+          albums = coalesce((
+            SELECT jsonb_object_agg(entry.key,
+              CASE WHEN entry.key = ANY(${folders}::text[]) AND entry.value = ${change.albumId}::text THEN ${albumId}::text
+                ELSE entry.value END)
+            FROM jsonb_each_text(albums) entry), '{}'::jsonb)
+        WHERE id = ${id}::uuid
+      `.execute(this.db);
+      reversed += Number(numAffectedRows ?? 0);
+    }
+    return { reversed, skipped: [] };
   }
 
   async reverseChoices(changes: AlbumChangeRow[]): Promise<AlbumChangeReversal> {

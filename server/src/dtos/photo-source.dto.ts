@@ -171,6 +171,9 @@ const catalogItemSchema = z
               .max(16)
               .describe('The collection sets the collection sits in, outermost first'),
             name: plainText(255).describe('The collection name'),
+            id: plainText(255)
+              .optional()
+              .describe("The catalog's own id for the collection, so its album is found again after either is renamed"),
           })
           .strict(),
       )

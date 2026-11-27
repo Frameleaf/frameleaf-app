@@ -584,6 +584,90 @@ describe(AlbumMergeService.name, () => {
     });
   });
 
+  describe('importer mappings (FL-1840)', () => {
+    it('moves media, Eagle, catalog and preservation mappings to the winner, and undo puts them back', async () => {
+      const { sut, ctx, runs } = setup();
+      const { user } = await ctx.newUser();
+      const auth = factory.auth({ user: { id: user.id } });
+      const winner = await albumWith(ctx, user.id, 2);
+      const loser = await albumWith(ctx, user.id, 1);
+      const { album: other } = await ctx.newAlbum({ ownerId: user.id });
+      const { id: creatorId } = await ctx.database
+        .insertInto('media_creator')
+        .values({ ownerId: user.id, provider: 'youtube', creatorId: 'c1', name: 'Creator', albumId: loser.album.id })
+        .returning('id')
+        .executeTakeFirstOrThrow();
+      const { id: eagleId } = await ctx.database
+        .insertInto('eagle_import')
+        .values({
+          ownerId: user.id,
+          rootId: '0',
+          relativePath: 'Design.library',
+          libraryPath: '/import/Design.library',
+          libraryName: 'Design',
+          fingerprint: 'f',
+          target: sql<never>`'{"mode":"top"}'::text::jsonb`,
+          albums: sql<never>`${JSON.stringify({ F1: loser.album.id, F2: other.id })}::text::jsonb`,
+        })
+        .returning('id')
+        .executeTakeFirstOrThrow();
+      await ctx.database
+        .insertInto('photo_source_album')
+        .values({ ownerId: user.id, catalog: 'lightroom:cat', collectionId: 'c1', albumId: loser.album.id })
+        .execute();
+      await ctx.database
+        .insertInto('preservation_album')
+        .values({ ownerId: user.id, packageIdentity: 'pkg', sourceAlbumId: 'a1', albumId: loser.album.id })
+        .execute();
+      const read = async () => ({
+        creator: (
+          await ctx.database
+            .selectFrom('media_creator')
+            .select('albumId')
+            .where('id', '=', creatorId)
+            .executeTakeFirstOrThrow()
+        ).albumId,
+        eagle: (
+          await ctx.database
+            .selectFrom('eagle_import')
+            .select('albums')
+            .where('id', '=', eagleId)
+            .executeTakeFirstOrThrow()
+        ).albums,
+        catalog: (
+          await ctx.database
+            .selectFrom('photo_source_album')
+            .select('albumId')
+            .where('ownerId', '=', user.id)
+            .executeTakeFirstOrThrow()
+        ).albumId,
+        preservation: (
+          await ctx.database
+            .selectFrom('preservation_album')
+            .select('albumId')
+            .where('ownerId', '=', user.id)
+            .executeTakeFirstOrThrow()
+        ).albumId,
+      });
+
+      await sut.merge(auth, winner.album.id, { otherId: loser.album.id });
+      await expect(read()).resolves.toEqual({
+        creator: winner.album.id,
+        eagle: { F1: winner.album.id, F2: other.id },
+        catalog: winner.album.id,
+        preservation: winner.album.id,
+      });
+
+      await runs.undoLatest(auth);
+      await expect(read()).resolves.toEqual({
+        creator: loser.album.id,
+        eagle: { F1: loser.album.id, F2: other.id },
+        catalog: loser.album.id,
+        preservation: loser.album.id,
+      });
+    });
+  });
+
   describe('undo', () => {
     it('restores the album and takes back what the merge added', async () => {
       const { sut, ctx, runs } = setup();

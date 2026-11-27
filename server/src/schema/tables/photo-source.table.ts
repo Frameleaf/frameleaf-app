@@ -8,7 +8,9 @@ import {
   Unique,
 } from '@frameleaf/sql-tools';
 import type { Generated, Timestamp } from '@frameleaf/sql-tools';
+import { PrimaryGeneratedUuidV7Column } from 'src/decorators.js';
 import type { Int8Writable } from 'src/schema/int8-writable.js';
+import { AlbumTable } from 'src/schema/tables/album.table.js';
 import { DesktopDeviceTable } from 'src/schema/tables/desktop-device.table.js';
 import { UserTable } from 'src/schema/tables/user.table.js';
 
@@ -58,4 +60,21 @@ export class PhotoSourceResourceTable {
   @Column({ type: 'uuid', nullable: true }) uploadResourceId!: string | null;
   @Column({ type: 'timestamp with time zone', nullable: true }) verifiedAt!: Timestamp | null;
   @CreateDateColumn() createdAt!: Generated<Timestamp>;
+}
+
+/**
+ * FL-1840: the album a catalog collection became, by the catalog's own collection id, so a collection renamed in
+ * the catalog or an album renamed in Frameleaf keeps receiving the collection's photos. `catalog` is
+ * `<app>:<catalogId>` (or `source:<id>` for a source that names no catalog). A null `albumId` means the person
+ * deleted the album: a later read-in leaves it gone.
+ */
+@Table('photo_source_album')
+@Unique({ name: 'photo_source_album_ownerId_catalog_collectionId_uq', columns: ['ownerId', 'catalog', 'collectionId'] })
+export class PhotoSourceAlbumTable {
+  @PrimaryGeneratedUuidV7Column() id!: Generated<string>;
+  @ForeignKeyColumn(() => UserTable, { onDelete: 'CASCADE', onUpdate: 'CASCADE', index: false }) ownerId!: string;
+  @Column() catalog!: string;
+  @Column() collectionId!: string;
+  @ForeignKeyColumn(() => AlbumTable, { onDelete: 'SET NULL', onUpdate: 'CASCADE', nullable: true })
+  albumId!: string | null;
 }

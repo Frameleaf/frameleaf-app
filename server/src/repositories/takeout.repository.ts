@@ -1040,8 +1040,11 @@ export class TakeoutRepository {
   /* ------------------------------------------------------------------ */
   /* Albums and assets                                                   */
   /* ------------------------------------------------------------------ */
-  /** The album an export folder became for this owner, while it exists and they still own it. */
-  async getAlbumFor(ownerId: string, folder: string): Promise<string | undefined> {
+  /**
+   * The album an export folder became for this owner and source, while it exists and they still own it. `source`
+   * is '' for a Google Photos export and the connection's id for a connection's runs.
+   */
+  async getAlbumFor(ownerId: string, source: string, folder: string): Promise<string | undefined> {
     const { rows } = await sql<{
       albumId: string;
     }>`
@@ -1050,53 +1053,59 @@ export class TakeoutRepository {
       inner join album on album.id = mapping."albumId" and album."deletedAt" is null
       inner join album_user owner on owner."albumId" = album.id and owner."userId" = ${ownerId}::uuid
         and owner.role = ${AlbumUserRole.Owner}
-      where mapping."ownerId" = ${ownerId}::uuid and mapping.folder = ${folder}
+      where mapping."ownerId" = ${ownerId}::uuid and mapping.source = ${source} and mapping.folder = ${folder}
     `.execute(this.db);
     return rows[0]?.albumId;
   }
-  /** FL-1300: the album this folder became was removed on purpose by the person, so a later import leaves it gone. */
-  async isFolderAlbumRemoved(ownerId: string, folder: string): Promise<boolean> {
+  /**
+   * FL-1300, FL-1840: the album this folder became was removed on purpose by the person (deleted, which leaves the
+   * mapping without an album, or put in the trash), so a later import leaves it gone.
+   */
+  async isFolderAlbumRemoved(ownerId: string, source: string, folder: string): Promise<boolean> {
     const { rows } = await sql`
       select 1
       from takeout_album mapping
-      inner join album on album.id = mapping."albumId" and album."deletedAt" is not null
-      where mapping."ownerId" = ${ownerId}::uuid and mapping.folder = ${folder}
+      left join album on album.id = mapping."albumId"
+      where mapping."ownerId" = ${ownerId}::uuid and mapping.source = ${source} and mapping.folder = ${folder}
+        and (mapping."albumId" is null or album."deletedAt" is not null)
     `.execute(this.db);
     return rows.length > 0;
   }
   /**
    * Record the album a folder became, unless another run recorded a usable one first: the album that
-   * is recorded is returned, and the caller removes its own when it lost. A mapping whose album was
-   * deleted, or is no longer the owner's, is replaced.
+   * is recorded is returned, and the caller removes its own when it lost. A mapping whose album is no
+   * longer the owner's is replaced; one the person removed is left alone, and null is returned.
    */
-  async setAlbumFor(ownerId: string, folder: string, albumId: string): Promise<string> {
+  async setAlbumFor(ownerId: string, source: string, folder: string, albumId: string): Promise<string | null> {
     return this.db.transaction().execute(async (tx) => {
       await sql`
         delete from takeout_album mapping
-        where mapping."ownerId" = ${ownerId}::uuid and mapping.folder = ${folder}
+        where mapping."ownerId" = ${ownerId}::uuid and mapping.source = ${source} and mapping.folder = ${folder}
+          and mapping."albumId" is not null
           and not exists (
             select 1 from album
             inner join album_user owner on owner."albumId" = album.id and owner."userId" = ${ownerId}::uuid
               and owner.role = ${AlbumUserRole.Owner}
-            where album.id = mapping."albumId" and album."deletedAt" is null
+            where album.id = mapping."albumId"
           )
       `.execute(tx);
       const { rows } = await sql<{
         albumId: string;
       }>`
-        insert into takeout_album ("ownerId", folder, "albumId") values (${ownerId}::uuid, ${folder}, ${albumId}::uuid)
-        on conflict ("ownerId", folder) do nothing
+        insert into takeout_album ("ownerId", source, folder, "albumId")
+        values (${ownerId}::uuid, ${source}, ${folder}, ${albumId}::uuid)
+        on conflict ("ownerId", source, folder) do nothing
         returning "albumId"
       `.execute(tx);
       if (rows[0]) {
         return rows[0].albumId;
       }
       const { rows: existing } = await sql<{
-        albumId: string;
+        albumId: string | null;
       }>`
-        select "albumId" from takeout_album where "ownerId" = ${ownerId}::uuid and folder = ${folder}
+        select "albumId" from takeout_album where "ownerId" = ${ownerId}::uuid and source = ${source} and folder = ${folder}
       `.execute(tx);
-      return existing[0]?.albumId ?? albumId;
+      return existing.length > 0 ? existing[0].albumId : albumId;
     });
   }
   async getAssetState(assetId: string): Promise<TakeoutAssetState | undefined> {

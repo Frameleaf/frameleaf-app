@@ -35,6 +35,8 @@ const target = (overrides: Partial<CatalogTarget> = {}): CatalogTarget => {
 
 /** A service over an in-memory library, so a second read-in sees what the first one wrote. */
 const setup = (rows: CatalogTarget[]) => {
+  // FL-1840: collection id → album id, null once the person removed the album
+  const collectionAlbums = new Map<string, string | null>();
   const library = new Map(rows.map((row) => [row.id, row]));
   const byAsset = (assetId: string) => library.values().find((row) => row.assetId === assetId)!;
   const repository = {
@@ -42,6 +44,16 @@ const setup = (rows: CatalogTarget[]) => {
       Promise.resolve(ids.flatMap((id) => (library.has(id) ? [{ ...library.get(id)! }] : []))),
     ),
     findCatalogAlbum: vi.fn().mockResolvedValue(undefined),
+    getCatalogKey: vi.fn().mockResolvedValue('lightroom:catalog-1'),
+    getCatalogCollectionAlbum: vi.fn((_owner: string, _catalog: string, id: string) =>
+      Promise.resolve(collectionAlbums.has(id) ? { albumId: collectionAlbums.get(id)! } : undefined),
+    ),
+    setCatalogCollectionAlbum: vi.fn((_owner: string, _catalog: string, id: string, albumId: string) => {
+      if (!collectionAlbums.has(id)) {
+        collectionAlbums.set(id, albumId);
+      }
+      return Promise.resolve(collectionAlbums.get(id)!);
+    }),
   };
   const assetRepository = {
     upsertMetadata: vi.fn((assetId: string, [{ value }]: [{ key: string; value: Record<string, unknown> }]) => {
@@ -81,7 +93,7 @@ const setup = (rows: CatalogTarget[]) => {
     { setContext: vi.fn(), log: vi.fn() } as never,
   );
   const apply = (items: PhotoSourceCatalogItem[], auth = authStub.user1) => service.apply(auth, sourceId, { items });
-  return { library, repository, assetRepository, assets, tags, albums, apply };
+  return { library, repository, assetRepository, assets, tags, albums, apply, collectionAlbums };
 };
 
 const writes = (ctx: ReturnType<typeof setup>) =>
@@ -283,6 +295,63 @@ describe(PhotoSourceCatalogService.name, () => {
       ids: [row.assetId],
     });
     expect(row.applied).toEqual({ tags: ['Dogs', 'Parks'], collections: [['Pets'], ['Walks']] });
+  });
+
+  describe('collections the catalog names by id (FL-1840)', () => {
+    it('keeps a renamed collection going to the album it became', async () => {
+      const first = target();
+      const second = target();
+      const ctx = setup([first, second]);
+
+      await ctx.apply([{ itemId: first.id, collections: [{ path: ['Trips'], name: 'Paris', id: 'c1' }] }]);
+      ctx.albums.create.mockClear();
+      ctx.albums.addAssets.mockClear();
+      await ctx.apply([{ itemId: second.id, collections: [{ path: [], name: 'Paris 2024', id: 'c1' }] }]);
+
+      expect(ctx.repository.getCatalogKey).toHaveBeenCalledWith('user-id', sourceId);
+      expect(ctx.albums.create).not.toHaveBeenCalled();
+      expect(ctx.albums.addAssets).toHaveBeenCalledExactlyOnceWith(authStub.user1, 'album:Paris', {
+        ids: [second.assetId],
+      });
+    });
+
+    it('does not add an item again when only the collection’s name changed', async () => {
+      const row = target();
+      const ctx = setup([row]);
+
+      await ctx.apply([{ itemId: row.id, collections: [{ path: [], name: 'Paris', id: 'c1' }] }]);
+      expect(row.applied).toEqual({ collections: [['Paris']], collectionIds: ['c1'] });
+      ctx.albums.addAssets.mockClear();
+
+      const result = await ctx.apply([{ itemId: row.id, collections: [{ path: [], name: 'Paris 2024', id: 'c1' }] }]);
+
+      expect(result.items[0].status).toBe('unchanged');
+      expect(ctx.albums.addAssets).not.toHaveBeenCalled();
+    });
+
+    it('leaves an album the person removed gone', async () => {
+      const row = target();
+      const ctx = setup([row]);
+      ctx.collectionAlbums.set('c1', null);
+
+      await ctx.apply([{ itemId: row.id, collections: [{ path: [], name: 'Paris', id: 'c1' }] }]);
+
+      expect(ctx.albums.create).not.toHaveBeenCalled();
+      expect(ctx.albums.addAssets).not.toHaveBeenCalled();
+    });
+
+    it('remembers by id the album an earlier read-in found by name, without adding the item again', async () => {
+      const row = target({ applied: { collections: [['Paris']] } });
+      const ctx = setup([row]);
+      ctx.repository.findCatalogAlbum.mockResolvedValue({ id: 'existing-paris' });
+
+      await ctx.apply([{ itemId: row.id, collections: [{ path: [], name: 'Paris', id: 'c1' }] }]);
+
+      expect(ctx.collectionAlbums.get('c1')).toBe('existing-paris');
+      expect(ctx.albums.create).not.toHaveBeenCalled();
+      expect(ctx.albums.addAssets).not.toHaveBeenCalled();
+      expect(row.applied).toEqual({ collections: [['Paris']], collectionIds: ['c1'] });
+    });
   });
 
   it('shares tags and albums across items in one batch', async () => {
