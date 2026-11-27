@@ -13,12 +13,17 @@ import {
 import { equivalentDesktopModelKeys } from 'src/utils/desktop-model-equivalents.js';
 import { canonicalJson } from 'src/utils/object.js';
 
+// FL-1839: each released desktop runtime source, and its twin that compares only output-deciding files.
+const DECISIVE_SOURCES = new Map([
+  ['b3905b4aebd22e48a1a3843c2831efcef543336e', '8f59d32af167975a3469c53fa7d8f7dc96ae0aeb'],
+  ['35ba35dda671b99eb9c027e9168e185c31ebabf1', 'eab833240036a10b33c1eff5155be154793143cc'],
+]);
 const raw = (): unknown =>
   JSON.parse(readFileSync(join(process.cwd(), 'resources/desktop/model-catalogue.json'), 'utf8'));
 it('preserves every prior binding and selects the qualified precision-corrected CPU profiles', () => {
   const catalogue = parseDesktopModelCatalogue(raw());
-  expect(catalogue.epoch).toBe(21);
-  expect(catalogue.profiles).toHaveLength(215);
+  expect(catalogue.epoch).toBe(22);
+  expect(catalogue.profiles).toHaveLength(292);
   expect(
     createHash('sha256')
       .update(canonicalJson(catalogue.profiles.slice(0, 27)))
@@ -38,7 +43,7 @@ it('preserves every prior binding and selects the qualified precision-corrected 
 });
 it('validates the approved default model and preserves exact config, source and provider identity', () => {
   const catalogue = parseDesktopModelCatalogue(raw());
-  expect(catalogue.profiles).toHaveLength(215);
+  expect(catalogue.profiles).toHaveLength(292);
   for (const profile of catalogue.profiles) {
     if (profile.workload !== 'clip') continue;
     expect(profile.embeddingDimensions).toBe(CLIP_MODEL_INFO[profile.modelName].dimSize);
@@ -269,7 +274,7 @@ it('binds a fresh canonical NAS nonce with the same digest as the native contrac
     'dbd40028db0e64138b9b7ceb56b5984c957eb49ee63fd976d9a18a540d9062a8',
     'febd9e10d3f3878417e1d359237cfa559d32374c89f062db90f31490ff8bfc51',
   );
-  const pinned = [
+  const beforeTwins = [
     ...expected,
     // epoch 20 (FD-31): the processor twins of b3905b4a under the desktop runtime source 35ba35dd (the same
     // specification, so the same digest), then the Qwen3.5-4B and Qwen2.5-VL-7B-Instruct description profiles, from this implementation.
@@ -293,6 +298,14 @@ it('binds a fresh canonical NAS nonce with the same digest as the native contrac
     'c81792e3a7388ad55dedafb82daa59bd61488f83ee44733d40cc3af4a9c076dc',
     '54773c5263a84366438f825a10ec5d226a48ed34b2c90909ba4df2a91fcdc0e7',
     '4e307cc81ab3153a483377eacc4dafe21f4aa476594d040f645278ca65c05330',
+  ];
+  const pinned = [
+    ...beforeTwins,
+    // epoch 22 (FL-1839): a twin of every b3905b4a and 35ba35dd profile under the runtime sources that compare
+    // only output-deciding files (the same specification, so the same digest)
+    ...catalogue.profiles
+      .slice(0, 215)
+      .flatMap((profile, index) => (DECISIVE_SOURCES.has(profile.runtimeSourceRevision) ? [beforeTwins[index]] : [])),
   ];
   expect(catalogue.profiles).toHaveLength(pinned.length);
   for (const [index, profile] of catalogue.profiles.entries()) {
@@ -433,7 +446,7 @@ it('preserves all CPU profiles while admitting only the proved CoreML CLIP sourc
 it('selects current-main CoreML profiles with distinct preprocessing while preserving prior bindings', () => {
   const catalogue = parseDesktopModelCatalogue(raw());
   expect(catalogue.epoch).toBeGreaterThanOrEqual(9);
-  expect(catalogue.profiles).toHaveLength(215);
+  expect(catalogue.profiles).toHaveLength(292);
   expect(
     createHash('sha256')
       .update(canonicalJson(catalogue.profiles.slice(0, 24)))
@@ -464,8 +477,8 @@ it('selects current-main CoreML profiles with distinct preprocessing while prese
 
 it('selects exact current CPU and CoreML profiles while preserving all historical bindings', () => {
   const catalogue = parseDesktopModelCatalogue(raw());
-  expect(catalogue.epoch).toBe(21);
-  expect(catalogue.profiles).toHaveLength(215);
+  expect(catalogue.epoch).toBe(22);
+  expect(catalogue.profiles).toHaveLength(292);
   expect(
     createHash('sha256')
       .update(canonicalJson(catalogue.profiles.slice(0, 32)))
@@ -501,8 +514,8 @@ it('selects exact current CPU and CoreML profiles while preserving all historica
 
 it('epoch 12 adds CUDA and OpenVINO twins of the current CPU profiles and keeps every prior binding', () => {
   const catalogue = parseDesktopModelCatalogue(raw());
-  expect(catalogue.epoch).toBe(21);
-  expect(catalogue.profiles).toHaveLength(215);
+  expect(catalogue.epoch).toBe(22);
+  expect(catalogue.profiles).toHaveLength(292);
   expect(
     createHash('sha256')
       .update(canonicalJson(catalogue.profiles.slice(0, 42)))
@@ -527,8 +540,8 @@ it('epoch 12 adds CUDA and OpenVINO twins of the current CPU profiles and keeps 
 
 it('epoch 13 qualifies every selectable model the desktop runtimes can run and keeps every prior binding', () => {
   const catalogue = parseDesktopModelCatalogue(raw());
-  expect(catalogue.epoch).toBe(21);
-  expect(catalogue.profiles).toHaveLength(215);
+  expect(catalogue.epoch).toBe(22);
+  expect(catalogue.profiles).toHaveLength(292);
   expect(
     createHash('sha256')
       .update(canonicalJson(catalogue.profiles.slice(0, 42)))
@@ -587,8 +600,8 @@ it('epoch 13 qualifies every selectable model the desktop runtimes can run and k
 
 it('epoch 14 appended a twin of every f2c451a6 profile; epoch 16 names the runtime source that works on every provider', () => {
   const catalogue = parseDesktopModelCatalogue(raw());
-  expect(catalogue.epoch).toBe(21);
-  expect(catalogue.profiles).toHaveLength(215);
+  expect(catalogue.epoch).toBe(22);
+  expect(catalogue.profiles).toHaveLength(292);
   expect(
     createHash('sha256')
       .update(canonicalJson(catalogue.profiles.slice(0, 102)))
@@ -711,4 +724,38 @@ describe('FD-31 description profiles', () => {
     ocr.spec.engine = 'qwen-gguf';
     expect(() => parse(ocr)).toThrow();
   });
+});
+
+it('epoch 22 appends a twin of every b3905b4a and 35ba35dd profile for the source that compares only output-deciding files', () => {
+  const catalogue = parseDesktopModelCatalogue(raw());
+  expect(catalogue.epoch).toBe(22);
+  const before = catalogue.profiles.slice(0, 215);
+  const originals = before.filter((profile) => DECISIVE_SOURCES.has(profile.runtimeSourceRevision));
+  const twins = catalogue.profiles.slice(215);
+  expect(originals).toHaveLength(77);
+  expect(twins).toHaveLength(77);
+  for (const [index, twin] of twins.entries()) {
+    const original = originals[index];
+    // the same model key, files, fixture, preprocessing and reference output: only the runtime source differs
+    expect(twin).toEqual({ ...original, runtimeSourceRevision: DECISIVE_SOURCES.get(original.runtimeSourceRevision) });
+    expect(
+      matchDesktopModelProfile(
+        catalogue,
+        twin.modelName,
+        twin.spec.entries,
+        twin.runtimeSourceRevision,
+        twin.spec.provider,
+      ),
+    ).toEqual(twin);
+  }
+  const count = (source: string, provider: string) =>
+    twins.filter((profile) => profile.runtimeSourceRevision === source && profile.spec.provider === provider).length;
+  expect(count('eab833240036a10b33c1eff5155be154793143cc', 'CPUExecutionProvider')).toBe(17);
+  for (const provider of [
+    'CPUExecutionProvider',
+    'CoreMLExecutionProvider',
+    'CUDAExecutionProvider',
+    'OpenVINOExecutionProvider',
+  ])
+    expect(count('8f59d32af167975a3469c53fa7d8f7dc96ae0aeb', provider)).toBe(15);
 });
