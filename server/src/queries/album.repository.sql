@@ -874,6 +874,31 @@ RETURNING
   member."assetId"
 commit
 
+-- AlbumRepository.getSharedAlbumIds
+select
+  "album"."id"
+from
+  "album"
+where
+  "album"."id" = any ($1::uuid[])
+  and (
+    exists (
+      select
+      from
+        "album_user"
+      where
+        "album_user"."albumId" = "album"."id"
+        and "album_user"."role" != $2
+    )
+    or exists (
+      select
+      from
+        "shared_link"
+      where
+        "shared_link"."albumId" = "album"."id"
+    )
+  )
+
 -- AlbumRepository.getFolderAlbumSources
 select
   "library_folder_album"."albumId",
