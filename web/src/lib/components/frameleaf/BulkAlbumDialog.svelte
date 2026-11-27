@@ -1,6 +1,7 @@
 <script lang="ts">
   import AlbumMark from '$lib/components/frameleaf/AlbumMark.svelte';
-  import Spinner from '$lib/components/frameleaf/Spinner.svelte';
+  import InlineError from '$lib/components/frameleaf/InlineError.svelte';
+  import ListSkeleton from '$lib/components/frameleaf/ListSkeleton.svelte';
   import BulkFormDialog from '$lib/components/frameleaf/BulkFormDialog.svelte';
   import {
     albumTargetRows,
@@ -293,10 +294,10 @@
   </label>
   <ul aria-busy={status === 'loading'}>
     {#if status === 'loading'}
-      <li class="empty"><Spinner /></li>
+      <li class="empty"><ListSkeleton rows={3} /></li>
     {:else if status === 'failed'}
       <li class="empty">
-        <button type="button" class="more" onclick={() => void load()}>{$t('retry')}</button>
+        <InlineError compact message={$t('frameleaf_bulk_album_load_failed')} onRetry={() => load()} />
       </li>
     {:else}
       {#if canCreate}
