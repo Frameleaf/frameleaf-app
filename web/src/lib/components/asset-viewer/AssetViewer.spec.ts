@@ -330,7 +330,7 @@ describe('AssetViewer', () => {
     const removal = deferred<void>();
     const confirmation = deferred<boolean>();
     vi.mocked(removeAssetFromStack).mockReturnValue(removal.promise as ReturnType<typeof removeAssetFromStack>);
-    const dialog = vi.spyOn(modalManager, 'showDialog').mockReturnValue(confirmation.promise);
+    const dialog = vi.spyOn(modalManager, 'show').mockReturnValue(confirmation.promise as never);
     const onClose = vi.fn();
     const onAction = vi.fn();
     try {

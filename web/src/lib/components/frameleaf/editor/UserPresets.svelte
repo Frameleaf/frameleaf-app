@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { confirmFrameleaf } from '$lib/frameleaf/confirm';
   /**
    * "Your presets" in the Presets panel (FL-64). A preset saves the current develop settings —
    * sliders, look, strength and masks, never the crop — under a name, and applies them to any
@@ -11,6 +12,9 @@
     toPresetDto,
     type PresetSettings,
   } from '$lib/frameleaf/photo-tools';
+  import EmptyRow from '$lib/components/frameleaf/EmptyRow.svelte';
+  import InlineError from '$lib/components/frameleaf/InlineError.svelte';
+  import ListSkeleton from '$lib/components/frameleaf/ListSkeleton.svelte';
   import { getServerErrorMessage, handleError } from '$lib/utils/handle-error';
   import {
     createDevelopPreset,
@@ -19,7 +23,7 @@
     updateDevelopPreset,
     type DevelopPresetResponseDto,
   } from '@frameleaf/sdk';
-  import { Icon, modalManager, toastManager } from '@frameleaf/ui';
+  import { Icon, toastManager } from '@frameleaf/ui';
   import { mdiContentSaveOutline, mdiDeleteOutline, mdiPlus } from '@mdi/js';
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';
@@ -42,16 +46,21 @@
   let saving = $state(false);
   let saveError = $state<string | null>(null);
 
-  onMount(async () => {
+  // FL-1810: a list that could not be read says so in place, with Try again (no toast).
+  const load = async () => {
+    loading = true;
+    loadError = null;
     try {
       presets = await getDevelopPresets();
     } catch (error) {
       loadError = $t('frameleaf_editor_presets_load_error');
-      handleError(error, loadError);
+      // logs, and handles a sign-in that has expired, without the toast
+      handleError(error, loadError, { notify: false });
     } finally {
       loading = false;
     }
-  });
+  };
+  onMount(() => void load());
 
   const sorted = (items: DevelopPresetResponseDto[]) => [...items].sort((a, b) => a.name.localeCompare(b.name));
   const trimmed = $derived(name.trim());
@@ -103,10 +112,11 @@
   };
 
   const remove = async (preset: DevelopPresetResponseDto) => {
-    const confirmed = await modalManager.showDialog({
+    const confirmed = await confirmFrameleaf({
       title: $t('frameleaf_editor_preset_delete_title'),
       prompt: $t('frameleaf_editor_preset_delete_prompt', { values: { name: preset.name } }),
-      confirmText: $t('delete'),
+      confirmText: $t('frameleaf_editor_preset_delete_title'),
+      danger: true,
     });
     if (!confirmed) {
       return;
@@ -122,11 +132,11 @@
 
 <h3>{$t('frameleaf_editor_your_presets')}</h3>
 {#if loading}
-  <p aria-busy="true">{$t('loading')}</p>
+  <ListSkeleton rows={2} avatar={false} />
 {:else if loadError}
-  <p class="ed-empty">{loadError}</p>
+  <InlineError compact message={loadError} onRetry={load} />
 {:else if presets.length === 0}
-  <p class="ed-empty">{$t('frameleaf_editor_your_presets_empty')}</p>
+  <EmptyRow title={$t('frameleaf_editor_your_presets_empty')} />
 {:else}
   <ul class="ed-preset-list" aria-label={$t('frameleaf_editor_your_presets')}>
     {#each presets as preset (preset.id)}

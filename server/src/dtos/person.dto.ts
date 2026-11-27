@@ -67,6 +67,9 @@ const MergePersonSchema = z
   })
   .meta({ id: 'MergePersonDto' });
 
+/** FL-1789: the People grid's sorts. A request value only; no response carries it. */
+const PeopleSortSchema = z.enum(['name', 'count', 'recent']).meta({ id: 'PeopleSort' });
+
 const PersonSearchSchema = z
   .object({
     withHidden: stringToBool.optional().describe('Include hidden people'),
@@ -74,6 +77,14 @@ const PersonSearchSchema = z
     closestAssetId: z.uuidv4().optional().describe('Closest asset ID for similarity search'),
     page: z.coerce.number().int().min(1).default(1).describe('Page number for pagination'),
     size: z.coerce.number().int().min(1).max(1000).default(500).describe('Number of items per page'),
+    name: z
+      .string()
+      .trim()
+      .optional()
+      .describe('Only people whose name contains this text, whatever the case; empty matches everyone'),
+    sort: PeopleSortSchema.optional().describe(
+      'Order: by name (unnamed people last), by photo count, or by the most recent photo. Without it, favorites first, then named people by the number of faces. Ignored with closestPersonId or closestAssetId.',
+    ),
   })
   .meta({ id: 'PersonSearchDto' });
 
@@ -215,6 +226,10 @@ export class PersonUpdateDto extends createZodDto(PersonUpdateSchema) {}
 export class PeopleUpdateDto extends createZodDto(PeopleUpdateSchema) {}
 export class MergePersonDto extends createZodDto(MergePersonSchema) {}
 export class PersonSearchDto extends createZodDto(PersonSearchSchema) {}
+/** FL-1789: the picker list takes the list's name search, order and pages, not its similarity search. */
+export class PeoplePickerSearchDto extends createZodDto(
+  PersonSearchSchema.omit({ closestPersonId: true, closestAssetId: true }).meta({ id: 'PeoplePickerSearchDto' }),
+) {}
 export class PersonResponseDto extends createZodDto(PersonResponseSchema) {}
 export class PersonRelativeDto extends createZodDto(PersonRelativeSchema) {}
 export class PersonRelationshipsResponseDto extends createZodDto(PersonRelationshipsResponseSchema) {}
@@ -596,6 +611,24 @@ const PeopleListItemSchema = PersonResponseSchema.extend({
     .nullable()
     .describe('Capture date of the most recent timeline asset showing this person'),
 }).meta({ id: 'PeopleListItemDto' });
+
+// FL-1789: what a picker or a filter's list of people needs to draw a row, and no more.
+const PeoplePickerItemSchema = z
+  .object({
+    id: z.string().describe('Person ID'),
+    name: z.string().describe('Person name'),
+    updatedAt: z.string().meta({ format: 'date-time' }).describe('Last update date; the version of the thumbnail URL'),
+    assetCount: z.int().min(0).describe('Number of timeline assets showing this person'),
+  })
+  .meta({ id: 'PeoplePickerItemDto' });
+
+const PeoplePickerResponseSchema = z
+  .object({
+    people: z.array(PeoplePickerItemSchema),
+    hasNextPage: z.boolean().describe('Whether there are more pages'),
+  })
+  .meta({ id: 'PeoplePickerResponseDto' });
+export class PeoplePickerResponseDto extends createZodDto(PeoplePickerResponseSchema) {}
 
 const PeopleResponseSchema = z
   .object({

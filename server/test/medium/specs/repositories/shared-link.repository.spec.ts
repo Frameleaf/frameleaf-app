@@ -79,6 +79,11 @@ describe('shared-link list paging', () => {
     await link(user.id, { albumId: gone.id });
     await link(other.id, { assetIds: [] });
     await database.updateTable('album').set({ deletedAt: new Date() }).where('id', '=', gone.id).execute();
+    // an album whose owner is deleting their account is not listed, so it is not counted either (FL-1795 review)
+    const { user: leaving } = await ctx.newUser();
+    const { album: orphaned } = await ctx.newAlbum({ ownerId: leaving.id });
+    await link(user.id, { albumId: orphaned.id });
+    await database.updateTable('user').set({ deletedAt: new Date() }).where('id', '=', leaving.id).execute();
     // links made in one statement share a creation time to the microsecond: the id still orders them
     await database.updateTable('shared_link').set({ createdAt: new Date() }).where('userId', '=', user.id).execute();
 

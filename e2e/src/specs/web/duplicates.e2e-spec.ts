@@ -104,7 +104,7 @@ test.describe('Duplicate review', () => {
     );
   };
 
-  const reviewGroups = () => getDuplicateReview({ headers: asBearerAuth(admin.accessToken) });
+  const reviewGroups = () => getDuplicateReview({}, { headers: asBearerAuth(admin.accessToken) });
 
   /** The applied decision of one group, as the server recorded it, or null while it runs. */
   const appliedDecision = async (duplicateId: string) => {

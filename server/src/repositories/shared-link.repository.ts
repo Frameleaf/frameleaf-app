@@ -32,11 +32,19 @@ export type SharedLinkSearchOptions = HiddenContentQueryOptions & {
   after?: { at: string; id: string };
 };
 
-/** A link's own, or its album still exists: the links a list shows. */
+/**
+ * The links `getAll` lists: a link to chosen items, or one whose album still exists and still has an
+ * owner whose account is not being deleted (the same album and owner joins `getAll` reads them with).
+ */
 const isListed = (eb: ExpressionBuilder<DB, 'shared_link'>) =>
   eb.or([
     eb('shared_link.type', '=', SharedLinkType.Individual),
-    eb.exists(withSharedLinkAlbum(eb).clearSelect().select(sql.lit(1).as('one'))),
+    eb.exists(
+      withSharedLinkAlbum(eb)
+        .innerJoinLateral(withAlbumOwner, (join) => join.onTrue())
+        .clearSelect()
+        .select(sql.lit(1).as('one')),
+    ),
   ]);
 
 type SharedLinkPrivacyOptions = HiddenContentQueryOptions;

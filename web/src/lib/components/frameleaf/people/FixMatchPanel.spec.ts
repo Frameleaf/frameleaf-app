@@ -91,6 +91,61 @@ describe('FixMatchPanel (PD-3)', () => {
     expect(close).toHaveBeenCalledOnce();
   });
 
+  // FL-1803: "Not this person" offered the six with the most photos among the first 500 people only.
+  it('offers the six named people with the most photos, wherever they are in the list', async () => {
+    const everyone = Array.from({ length: 1500 }, (_, index) => ({
+      ...personFactory.build({ id: `p${index}`, name: index % 2 === 0 ? '' : `Person ${index}` }),
+      assetCount: index,
+      lastSeenAt: null,
+    }));
+    sdkMock.getAllPeople.mockImplementation((options) => {
+      const { sort, page = 1, size = 500 } = options ?? {};
+      const ordered = sort === 'count' ? [...everyone].sort((a, b) => b.assetCount - a.assetCount) : everyone;
+      return Promise.resolve({
+        people: ordered.slice((page - 1) * size, page * size),
+        total: everyone.length,
+        hidden: 0,
+        hasNextPage: page * size < everyone.length,
+      });
+    });
+    render(FixMatchPanel, { person, close: vi.fn() });
+
+    await fireEvent.click(await screen.findByRole('button', { name: 'Not this person in one.jpg' }));
+    await screen.findByRole('menuitem', { name: 'This is Person 1499' });
+
+    const offered = screen.getAllByRole('menuitem').map((item) => item.textContent?.trim());
+    expect(offered.slice(0, 6)).toEqual([1499, 1497, 1495, 1493, 1491, 1489].map((index) => `This is Person ${index}`));
+    expect(sdkMock.getAllPeople).toHaveBeenCalledExactlyOnceWith({
+      withHidden: false,
+      sort: 'count',
+      page: 1,
+      size: 200,
+    });
+  });
+
+  it('reads at most five pages when the people with the most photos have no names', async () => {
+    sdkMock.getAllPeople.mockImplementation((options) =>
+      Promise.resolve({
+        people: Array.from({ length: 200 }, (_, index) => ({
+          ...personFactory.build({ id: `u${options?.page}-${index}`, name: '' }),
+          assetCount: 1,
+          lastSeenAt: null,
+        })),
+        total: 5000,
+        hidden: 0,
+        hasNextPage: true,
+      }),
+    );
+    render(FixMatchPanel, { person, close: vi.fn() });
+
+    await fireEvent.click(await screen.findByRole('button', { name: 'Not this person in one.jpg' }));
+    await screen.findByRole('menuitem', { name: /Someone else/ });
+
+    await waitFor(() => expect(sdkMock.getAllPeople).toHaveBeenCalledTimes(5));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(sdkMock.getAllPeople).toHaveBeenCalledTimes(5);
+  });
+
   it('takes a face that is nobody off the person with a recoverable soft delete', async () => {
     sdkMock.deleteFace.mockResolvedValue(undefined as never);
     render(FixMatchPanel, { person, close: vi.fn() });

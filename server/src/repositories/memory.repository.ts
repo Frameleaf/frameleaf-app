@@ -114,6 +114,17 @@ const withoutPrivateOnlyMemories = (eb: ExpressionBuilder<DB, 'memory'>, options
     ),
   ]);
 };
+/** FL-1793: the asset columns behind `MemorySlimAssetDto`. */
+const memorySlimAssetColumns = [
+  'asset.id',
+  'asset.type',
+  'asset.thumbhash',
+  'asset.fileCreatedAt',
+  'asset.localDateTime',
+  'asset.width',
+  'asset.height',
+  'asset.visibility',
+] as const;
 /** FL-1394: the city each item was taken in, which names an "on this day" memory ("One year ago in Jasper"). */
 const memoryAssetCity = (eb: ExpressionBuilder<DB, 'asset'>) =>
   eb.selectFrom('asset_exif').select('asset_exif.city').whereRef('asset_exif.assetId', '=', 'asset.id').as('city');
@@ -323,6 +334,7 @@ export class MemoryRepository implements IBulkAsset {
     { name: 'date filter', params: [DummyValue.UUID, { for: DummyValue.DATE }, { excludeNsfw: true }] },
     { name: 'upcoming filter', params: [DummyValue.UUID, { isUpcoming: true }, { excludeNsfw: true }] },
     { name: 'not upcoming filter', params: [DummyValue.UUID, { isUpcoming: false }, { excludeNsfw: true }] },
+    { name: 'slim', params: [DummyValue.UUID, { slim: true }, { excludeNsfw: true }] },
   )
   search(ownerId: string, dto: MemorySearchDto, options: MemoryPrivacyOptions = {}) {
     return this.searchBuilder(ownerId, dto, options)
@@ -330,7 +342,9 @@ export class MemoryRepository implements IBulkAsset {
         jsonArrayFrom(
           eb
             .selectFrom('asset')
-            .selectAll('asset')
+            // FL-1793: a list asks for `slim` and gets only what `mapMemory` puts in `slimAssets`
+            .$if(!dto.slim, (qb) => qb.selectAll('asset'))
+            .$if(!!dto.slim, (qb) => qb.select(memorySlimAssetColumns))
             .select(memoryAssetCity)
             .innerJoin('memory_asset', 'asset.id', 'memory_asset.assetId')
             .whereRef('memory_asset.memoriesId', '=', 'memory.id')

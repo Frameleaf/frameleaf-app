@@ -174,6 +174,15 @@ type ReconciledJob =
   | JobName.AssetDetectFaces
   | JobName.Ocr;
 
+/** FL-1827: which photos Best Photos scores (`selectionForBestPhotosScoring`). */
+export type BestPhotosSelection = {
+  force?: boolean;
+  ready?: { search: boolean; faces: boolean };
+  limit?: number;
+  /** the scan's place in the library: photos after this id */
+  after?: string;
+};
+
 @Injectable()
 export class AssetJobRepository {
   constructor(@InjectKysely() private db: Kysely<DB>) {
@@ -799,12 +808,17 @@ export class AssetJobRepository {
       .executeTakeFirst();
   }
 
-  @GenerateSql({ params: [{ force: false, scoreVersion: 1 }], stream: true })
-  streamForBestPhotosScoring(options: { force?: boolean; scoreVersion: number }) {
+  @GenerateSql({ params: [{ force: false, ready: { search: true, faces: true }, limit: 1000 }], stream: true })
+  streamForBestPhotosScoring(options: BestPhotosSelection) {
     return this.selectionForBestPhotosScoring(options).stream();
   }
 
-  selectionForBestPhotosScoring(options: { force?: boolean; scoreVersion: number }) {
+  /**
+   * FL-1827: the photos Best Photos scores. Without `force`, only those with no score: a scored photo is never scored
+   * again. `ready`: a photo waits until what its score reads is there (its search embedding, its faces), so the one
+   * score it gets is its full one. `limit` and `after`: one share of the paced scan, in id order from its place.
+   */
+  selectionForBestPhotosScoring(options: BestPhotosSelection) {
     return (
       this.db
         .selectFrom('asset')
@@ -825,21 +839,41 @@ export class AssetJobRepository {
         )
         .$if(!options.force, (qb) =>
           qb.where((eb) =>
-            eb.or([
-              eb.not(
-                eb.exists(
-                  eb.selectFrom('asset_best_photo_score').whereRef('asset_best_photo_score.assetId', '=', 'asset.id'),
-                ),
+            eb.not(
+              eb.exists(
+                eb.selectFrom('asset_best_photo_score').whereRef('asset_best_photo_score.assetId', '=', 'asset.id'),
               ),
+            ),
+          ),
+        )
+        // a video's score reads its frames only
+        // ponytail: a photo whose search or faces never arrive (a failed job, a paused task) is scored without them
+        // after a week, not left out for good; Recalculate gives it the full score later
+        .$if(!!options.ready?.search, (qb) =>
+          qb.where((eb) =>
+            eb.or([
+              eb('asset.type', '=', sql.lit(AssetType.Video)),
+              eb('asset.createdAt', '<', sql<Date>`now() - interval '7 days'`),
+              eb.exists(eb.selectFrom('smart_search').whereRef('smart_search.assetId', '=', 'asset.id')),
+            ]),
+          ),
+        )
+        .$if(!!options.ready?.faces, (qb) =>
+          qb.where((eb) =>
+            eb.or([
+              eb('asset.type', '=', sql.lit(AssetType.Video)),
+              eb('asset.createdAt', '<', sql<Date>`now() - interval '7 days'`),
               eb.exists(
                 eb
-                  .selectFrom('asset_best_photo_score')
-                  .whereRef('asset_best_photo_score.assetId', '=', 'asset.id')
-                  .where('asset_best_photo_score.scoreVersion', '<', options.scoreVersion),
+                  .selectFrom('asset_job_status')
+                  .whereRef('asset_job_status.assetId', '=', 'asset.id')
+                  .where('asset_job_status.facesRecognizedAt', 'is not', null),
               ),
             ]),
           ),
         )
+        .$if(options.after !== undefined, (qb) => qb.where('asset.id', '>', options.after!))
+        .$if(options.limit !== undefined, (qb) => qb.orderBy('asset.id').limit(options.limit!))
     );
   }
 
@@ -887,12 +921,10 @@ export class AssetJobRepository {
           .select('smart_search.embedding')
           .whereRef('smart_search.assetId', '=', 'asset.id')
           .as('embedding'),
-        // FL-978: an embedding-only re-score reuses the stored image statistics
+        // FL-1827: a photo with a score is not scored again
         eb
-          .selectFrom('asset_best_photo_score')
-          .select('asset_best_photo_score.metadata')
-          .whereRef('asset_best_photo_score.assetId', '=', 'asset.id')
-          .as('scoreMetadata'),
+          .exists(eb.selectFrom('asset_best_photo_score').whereRef('asset_best_photo_score.assetId', '=', 'asset.id'))
+          .as('scored'),
       ])
       .where('asset.id', '=', id)
       .executeTakeFirst();

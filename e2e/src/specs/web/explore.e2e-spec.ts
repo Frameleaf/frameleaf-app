@@ -161,9 +161,9 @@ test.describe('Explore', () => {
   });
 
   test('Best Photos without quality scores says so instead of ranking by stars (FL-50)', async ({ context, page }) => {
-    // Uploads are scored locally in the background (BestPhotosScore follows thumbnail generation and
-    // face detection), so this library already has scores. Give one item five stars, let every job
-    // that could score it finish, then clear the scores: a rated library with nothing scored.
+    // FL-1827: photos are scored by a paced scan that never runs on a test server, so this library has no
+    // scores. Give one item five stars, let its jobs finish, and clear any score all the same: a rated
+    // library with nothing scored.
     await updateAsset({ id: first.id, updateAssetDto: { rating: 5 } }, { headers: asBearerAuth(admin.accessToken) });
     for (const queue of uploadQueues) {
       await utils.waitForQueueFinish(admin.accessToken, queue);
