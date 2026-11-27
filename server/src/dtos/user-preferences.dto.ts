@@ -11,11 +11,23 @@ import {
   withoutLockedSavedSearches,
 } from 'src/utils/preferences.js';
 
+/** FL-1836: the sidebar's Pinned list stays short enough to read at a glance. */
+export const PINNED_ALBUMS_MAX = 50;
+
 const AlbumsUpdateSchema = z
   .object({
     defaultAssetOrder: AssetOrderSchema.optional(),
     showPartnerAlbums: z.boolean().optional().describe('Whether albums a partner shared appear in the album list'),
     cleanupBannerDismissed: z.boolean().optional().describe('The Magic Albums cleanup banner has been dismissed'),
+    pinned: z
+      .array(z.uuidv4())
+      .max(PINNED_ALBUMS_MAX)
+      .optional()
+      .describe('FL-1836: albums pinned to the sidebar, in the order last saved'),
+    pinnedCustomOrder: z
+      .boolean()
+      .optional()
+      .describe('FL-1836: pinned albums keep the saved order; false lists them A to Z'),
   })
   .optional()
   .describe('Album preferences')
@@ -436,6 +448,8 @@ const AlbumsResponseSchema = z
     defaultAssetOrder: AssetOrderSchema,
     showPartnerAlbums: z.boolean().describe('Whether albums a partner shared appear in the album list'),
     cleanupBannerDismissed: z.boolean().describe('The Magic Albums cleanup banner has been dismissed'),
+    pinned: z.array(z.uuidv4()).describe('FL-1836: albums pinned to the sidebar, in the order last saved'),
+    pinnedCustomOrder: z.boolean().describe('FL-1836: pinned albums keep the saved order; false lists them A to Z'),
   })
   .meta({ id: 'AlbumsResponse' });
 

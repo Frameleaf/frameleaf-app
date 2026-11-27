@@ -401,7 +401,8 @@ export const handleSetAlbumOrder = async (parentId: string | null, albumIds: str
   const $t = await getFormatter();
 
   try {
-    await setAlbumOrder({ albumOrderDto: { parentId, albumIds } });
+    // FL-1836: the Albums page shows real siblings (an album inside an album too), as the server's hierarchy does.
+    await setAlbumOrder({ albumOrderDto: { parentId, albumIds, hierarchy: true } });
     return true;
   } catch (error) {
     if (isStaleDirectoryError(error)) {

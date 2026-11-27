@@ -89563,6 +89563,19 @@
           "defaultAssetOrder": {
             "$ref": "#/components/schemas/AssetOrder"
           },
+          "pinned": {
+            "description": "FL-1836: albums pinned to the sidebar, in the order last saved",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "pinnedCustomOrder": {
+            "description": "FL-1836: pinned albums keep the saved order; false lists them A to Z",
+            "type": "boolean"
+          },
           "showPartnerAlbums": {
             "description": "Whether albums a partner shared appear in the album list",
             "type": "boolean"
@@ -89571,6 +89584,8 @@
         "required": [
           "cleanupBannerDismissed",
           "defaultAssetOrder",
+          "pinned",
+          "pinnedCustomOrder",
           "showPartnerAlbums"
         ],
         "type": "object"
@@ -89584,6 +89599,20 @@
           },
           "defaultAssetOrder": {
             "$ref": "#/components/schemas/AssetOrder"
+          },
+          "pinned": {
+            "description": "FL-1836: albums pinned to the sidebar, in the order last saved",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "maxItems": 50,
+            "type": "array"
+          },
+          "pinnedCustomOrder": {
+            "description": "FL-1836: pinned albums keep the saved order; false lists them A to Z",
+            "type": "boolean"
           },
           "showPartnerAlbums": {
             "description": "Whether albums a partner shared appear in the album list",

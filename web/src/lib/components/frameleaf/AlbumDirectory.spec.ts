@@ -46,6 +46,7 @@ vi.mock('$lib/managers/auth-manager.svelte', () => ({
   authManager: {
     user: { id: 'me', isAdmin: false, name: 'Me', email: 'me@example.com' },
     params: {},
+    preferences: { albums: { pinned: [], pinnedCustomOrder: false } },
     // A toast's Undo only acts for the session that showed it (toast.ts); this session never changes.
     captureSession: () => () => true,
   },
@@ -59,8 +60,11 @@ const owned = (overrides: Parameters<typeof albumFactory.build>[0] = {}) =>
   albumFactory.build({ albumUsers: [{ user: me, role: AlbumUserRole.Owner }], ...overrides });
 
 const family = owned({ id: 'family', albumName: 'Family', kind: AlbumKind.Collection, description: 'The three of us' });
-const rockies = owned({ id: 'rockies', albumName: 'Summer in the Rockies', parentId: 'family', assetCount: 10 });
-const winter = owned({ id: 'winter', albumName: 'Winter 2026', parentId: 'family', assetCount: 0 });
+// FL-1836: a collection is one tile that opens in place, so the albums most tests act on stand at the top level
+// and Family holds an album of its own.
+const rockies = owned({ id: 'rockies', albumName: 'Summer in the Rockies', assetCount: 10 });
+const winter = owned({ id: 'winter', albumName: 'Winter 2026', assetCount: 0 });
+const cabin = owned({ id: 'cabin', albumName: 'Cabin weekend', parentId: 'family', assetCount: 4 });
 const trail = albumFactory.build({
   id: 'trail',
   albumName: 'Trail camera',
@@ -82,13 +86,13 @@ const space = owned({
 });
 
 const tree: AlbumTreeResponseDto = {
-  collections: [{ collection: family, albums: [rockies, winter], albumCount: 2, assetCount: 10 }],
-  albums: [trail],
+  collections: [{ collection: family, albums: [cabin], albumCount: 1, assetCount: 4 }],
+  albums: [rockies, winter, trail],
   spaces: [space],
 };
 
 /** The line under the filters (drag hint, "your albums changed"); outcomes are toasts, also `status`. */
-const directoryStatus = () => within(screen.getByRole('region', { name: 'Albums' })).getByRole('status');
+const directoryStatus = () => within(document.querySelector('.status') as HTMLElement).getByRole('status');
 
 describe('AlbumDirectory', () => {
   beforeAll(async () => {
@@ -113,23 +117,69 @@ describe('AlbumDirectory', () => {
     app.routerStarted = true;
     localStorage.clear();
     // The view (filter pill, grid or list) is a persisted store that outlives a single mount.
-    albumDirectoryView.set({ ...defaultAlbumDirectoryView });
+    // Empty albums show here (the page hides them by default), so every album in the fixture has a tile.
+    albumDirectoryView.set({ ...defaultAlbumDirectoryView, hideEmpty: false });
   });
 
-  it('renders one shelf per collection with its albums, then other albums, then shared spaces', () => {
+  it('shows the top level grouped by kind, with a collection as one tile that opens in place (FL-1836)', () => {
     renderWithTooltips(AlbumDirectory, { tree, onRefresh: vi.fn() });
 
-    const shelf = screen.getByRole('region', { name: 'Family' });
-    expect(shelf).toHaveTextContent('2 albums');
-    expect(shelf).toHaveTextContent('10 items');
-    expect(shelf).toHaveTextContent('The three of us');
-    expect(shelf.querySelector('article[aria-label="Summer in the Rockies"]')).not.toBeNull();
-    expect(shelf.querySelector('article[aria-label="Winter 2026"]')).not.toBeNull();
+    const collections = screen.getByRole('region', { name: 'Collections' });
+    const familyTile = within(collections).getByRole('article', { name: 'Family' });
+    expect(familyTile).toHaveTextContent('1 album');
+    expect(familyTile.querySelector('a[href="/albums?in=family"]')).not.toBeNull();
+    // Its album stays inside it: never listed at the top level with the collection's name above it.
+    expect(screen.queryByRole('article', { name: 'Cabin weekend' })).toBeNull();
 
-    expect(screen.getByRole('region', { name: 'Other albums' })).toHaveTextContent('Trail camera');
+    const albumsSection = screen
+      .getAllByRole('region', { name: 'Albums' })
+      .find((el) => el.classList.contains('group'));
+    expect(within(albumsSection!).getAllByRole('article')).toHaveLength(2);
+    expect(screen.getByRole('region', { name: 'Smart albums' })).toHaveTextContent('Trail camera');
     expect(screen.getByRole('region', { name: 'Shared spaces' })).toHaveTextContent('Family Space');
     expect(screen.getByRole('heading', { level: 1, name: 'Albums' })).toBeInTheDocument();
-    expect(screen.getByText('3 albums · 1 collection · 2 shared')).toBeInTheDocument();
+    expect(screen.getByText('4 albums · 1 collection · 1 shared space')).toBeInTheDocument();
+  });
+
+  it('opens a collection in place, with a path back to the top and what it holds (FL-1836)', () => {
+    app.page.url = new URL('http://localhost/albums?in=family');
+    renderWithTooltips(AlbumDirectory, { tree, onRefresh: vi.fn() });
+
+    const path = screen.getByRole('navigation', { name: 'Where you are' });
+    expect(within(path).getByRole('link', { name: 'Albums' })).toHaveAttribute('href', '/albums');
+    expect(within(path).getByRole('link', { name: 'Family' })).toHaveAttribute('aria-current', 'page');
+    expect(screen.getByRole('heading', { level: 1, name: 'Family' })).toBeInTheDocument();
+    expect(screen.getByText(/1 album inside/)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'View all photos' })).toHaveAttribute('href', '/albums/family');
+    expect(screen.getByRole('article', { name: 'Cabin weekend' })).toBeInTheDocument();
+    expect(screen.queryByRole('article', { name: 'Summer in the Rockies' })).toBeNull();
+  });
+
+  it('hides empty albums by default and says how many (FL-1836)', () => {
+    albumDirectoryView.set({ ...defaultAlbumDirectoryView });
+    renderWithTooltips(AlbumDirectory, { tree, onRefresh: vi.fn() });
+
+    expect(screen.queryByRole('article', { name: 'Winter 2026' })).toBeNull();
+    expect(screen.getByRole('article', { name: 'Summer in the Rockies' })).toBeInTheDocument();
+    expect(screen.getByText(/1 empty hidden/)).toBeInTheDocument();
+  });
+
+  it('groups by year when asked, and orders the level from the Order button (FL-1836)', async () => {
+    const dated = {
+      collections: [],
+      albums: [
+        owned({ id: 'a', albumName: 'Old', assetCount: 1, endDate: '2019-05-01T00:00:00.000Z' }),
+        owned({ id: 'b', albumName: 'New', assetCount: 1, endDate: '2026-11-01T00:00:00.000Z' }),
+      ],
+      spaces: [],
+    };
+    renderWithTooltips(AlbumDirectory, { tree: dated, onRefresh: vi.fn() });
+    await fireEvent.click(screen.getByRole('button', { name: 'Group albums' }));
+    await fireEvent.click(await screen.findByRole('menuitemcheckbox', { name: 'Year' }));
+    const headings = () => screen.getAllByRole('heading', { level: 2 }).map((heading) => heading.textContent);
+    expect(headings()).toEqual(['2026', '2019']);
+    await fireEvent.click(screen.getByRole('button', { name: 'Order: Newest first' }));
+    expect(headings()).toEqual(['2019', '2026']);
   });
 
   // FL-1411 (M12): on a phone sort is a 48px button at the start edge; a menu hung from its end opens off screen.
@@ -159,26 +209,6 @@ describe('AlbumDirectory', () => {
     }
   });
 
-  // FL-1411 (M10): "Other albums" only means something beside a collection or a shared space.
-  it('shows no "Other albums" heading when there are no collections or shared spaces', () => {
-    renderWithTooltips(AlbumDirectory, { tree: { collections: [], albums: [trail], spaces: [] }, onRefresh: vi.fn() });
-
-    expect(screen.getByRole('article', { name: 'Trail camera' })).toBeInTheDocument();
-    expect(screen.queryByRole('heading', { name: /Other albums/ })).toBeNull();
-    expect(screen.queryByRole('region', { name: 'Other albums' })).toBeNull();
-  });
-
-  it.each([
-    ['a collection', { collections: tree.collections, albums: [trail], spaces: [] }],
-    ['a shared space', { collections: [], albums: [trail], spaces: [space] }],
-  ])('keeps the "Other albums" heading beside %s', (_, withOthers) => {
-    renderWithTooltips(AlbumDirectory, { tree: withOthers, onRefresh: vi.fn() });
-
-    const other = screen.getByRole('region', { name: 'Other albums' });
-    expect(within(other).getByRole('heading', { level: 2 })).toHaveTextContent('Other albums');
-    expect(other).toHaveTextContent('Trail camera');
-  });
-
   it('offers the filter pills, and the Smart pill keeps only smart albums', async () => {
     renderWithTooltips(AlbumDirectory, { tree, onRefresh: vi.fn() });
 
@@ -192,18 +222,18 @@ describe('AlbumDirectory', () => {
     expect(screen.queryByRole('region', { name: 'Shared spaces' })).toBeNull();
   });
 
-  it('searches by name and keeps the list view on shelves', async () => {
+  it('searches every level, says where each result lives, and keeps the list view (FL-1836)', async () => {
     renderWithTooltips(AlbumDirectory, { tree, onRefresh: vi.fn() });
 
     await fireEvent.click(screen.getByRole('button', { name: 'List view' }));
     expect(screen.getByRole('button', { name: 'List view' })).toHaveAttribute('aria-pressed', 'true');
-    expect(screen.getByRole('region', { name: 'Family' }).querySelector('[role="list"]')).not.toBeNull();
+    expect(document.querySelector('[role="list"]')).not.toBeNull();
 
-    await fireEvent.input(screen.getByRole('searchbox', { name: 'Search albums' }), { target: { value: 'winter' } });
-    const shelf = screen.getByRole('region', { name: 'Family' });
-    expect(shelf.querySelector('article[aria-label="Winter 2026"]')).not.toBeNull();
-    expect(shelf.querySelector('article[aria-label="Summer in the Rockies"]')).toBeNull();
-    expect(screen.queryByRole('region', { name: 'Other albums' })).toBeNull();
+    await fireEvent.input(screen.getByRole('searchbox', { name: 'Search albums' }), { target: { value: 'cabin' } });
+    const found = screen.getByRole('article', { name: 'Cabin weekend' });
+    expect(found).toHaveTextContent('in Family');
+    expect(screen.queryByRole('article', { name: 'Summer in the Rockies' })).toBeNull();
+    expect(screen.getByText(/1 result across every level/)).toBeInTheDocument();
   });
 
   it('shows the one empty-page pattern, and nothing to arrange, when there is nothing (FL-1412)', () => {
@@ -258,57 +288,80 @@ describe('AlbumDirectory', () => {
     await waitFor(() =>
       expect(sdkMock.moveAlbumToCollection).toHaveBeenCalledWith({
         id: 'rockies',
-        moveAlbumDto: { collectionId: 'winter', expectedParentId: 'family' },
+        moveAlbumDto: { collectionId: 'winter', expectedParentId: null },
       }),
     );
-    // Undo puts it back in the collection it came from.
+    // Undo puts it back where it came from: the top level.
     await fireEvent.click(await screen.findByRole('button', { name: 'Undo' }));
     await waitFor(() =>
       expect(sdkMock.moveAlbumToCollection).toHaveBeenLastCalledWith({
         id: 'rockies',
-        moveAlbumDto: { collectionId: 'family', expectedParentId: 'winter' },
+        moveAlbumDto: { collectionId: null, expectedParentId: 'winter' },
       }),
     );
     await waitFor(() => expect(screen.queryByRole('button', { name: 'Undo' })).toBeNull());
   });
 
-  it('moves an album into a collection through the server and refreshes', async () => {
+  it('takes an album out of its collection through the server and refreshes', async () => {
     const onRefresh = vi.fn();
-    const moved = { ...rockies, parentId: null };
-    sdkMock.moveAlbumToCollection.mockResolvedValue(moved);
+    sdkMock.moveAlbumToCollection.mockResolvedValue({ ...cabin, parentId: null });
+    app.page.url = new URL('http://localhost/albums?in=family');
     renderWithTooltips(AlbumDirectory, { tree, onRefresh });
 
     const rootDrop = document.querySelector('.root-drop') as HTMLElement;
     const dataTransfer = {
       types: ['application/x-immich-album-id'],
-      getData: () => 'rockies',
+      getData: () => 'cabin',
       setData: vi.fn(),
       effectAllowed: 'move',
       dropEffect: 'none',
     };
-    const tile = screen.getByRole('article', { name: 'Summer in the Rockies' });
+    const tile = screen.getByRole('article', { name: 'Cabin weekend' });
     await fireEvent.dragStart(tile, { dataTransfer });
     await fireEvent.dragOver(rootDrop, { dataTransfer });
     await fireEvent.drop(rootDrop, { dataTransfer });
 
     await waitFor(() =>
       expect(sdkMock.moveAlbumToCollection).toHaveBeenCalledWith({
-        id: 'rockies',
+        id: 'cabin',
         // Where this page last saw it, so a move from an outdated directory is refused (FL-52).
         moveAlbumDto: { collectionId: null, expectedParentId: 'family' },
       }),
     );
     await waitFor(() => expect(onRefresh).toHaveBeenCalled());
     // Said in a toast at the foot of the page, not in the line under the filters.
-    expect(await screen.findByText(/“Summer in the Rockies” is now on its own/)).toBeInTheDocument();
+    expect(await screen.findByText(/“Cabin weekend” is now on its own/)).toBeInTheDocument();
     expect(directoryStatus()).toHaveTextContent('');
 
     // Undo moves it back to the collection it came from.
     await fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
     await waitFor(() =>
       expect(sdkMock.moveAlbumToCollection).toHaveBeenLastCalledWith({
-        id: 'rockies',
+        id: 'cabin',
         moveAlbumDto: { collectionId: 'family', expectedParentId: null },
+      }),
+    );
+  });
+
+  it('moves a dragged album to the top level when it lands on "Albums" in the path (FL-1836)', async () => {
+    sdkMock.moveAlbumToCollection.mockResolvedValue({ ...cabin, parentId: null });
+    app.page.url = new URL('http://localhost/albums?in=family');
+    renderWithTooltips(AlbumDirectory, { tree, onRefresh: vi.fn() });
+    const dataTransfer = {
+      types: ['application/x-immich-album-id'],
+      getData: () => 'cabin',
+      setData: vi.fn(),
+      effectAllowed: 'move',
+      dropEffect: 'none',
+    };
+    await fireEvent.dragStart(screen.getByRole('article', { name: 'Cabin weekend' }), { dataTransfer });
+    const top = within(screen.getByRole('navigation', { name: 'Where you are' })).getByRole('link', { name: 'Albums' });
+    await fireEvent.dragOver(top, { dataTransfer });
+    await fireEvent.drop(top, { dataTransfer });
+    await waitFor(() =>
+      expect(sdkMock.moveAlbumToCollection).toHaveBeenCalledWith({
+        id: 'cabin',
+        moveAlbumDto: { collectionId: null, expectedParentId: 'family' },
       }),
     );
   });
@@ -316,29 +369,14 @@ describe('AlbumDirectory', () => {
   it('keeps shared spaces top level, opening on their own page, with a link to waiting invitations', () => {
     renderWithTooltips(AlbumDirectory, { tree, spaceInvitations: 2, onRefresh: vi.fn() });
 
-    const shelf = screen.getByRole('region', { name: 'Shared spaces' });
-    const tile = shelf.querySelector('article[aria-label="Family Space"]') as HTMLElement;
+    const spaces = screen.getByRole('region', { name: 'Shared spaces' });
+    const tile = spaces.querySelector('article[aria-label="Family Space"]') as HTMLElement;
     expect(tile).toHaveAttribute('draggable', 'false');
     expect(tile.querySelector('a[href="/albums/space"]')).not.toBeNull();
     expect(
-      screen.getByRole('region', { name: 'Family' }).querySelector('article[aria-label="Family Space"]'),
+      screen.getByRole('region', { name: 'Collections' }).querySelector('article[aria-label="Family Space"]'),
     ).toBeNull();
-
     expect(screen.getByRole('link', { name: '2 invitations waiting' })).toHaveAttribute('href', '/sharing');
-    // SHARING-P9: the prototype's plain heading, without the extra hint and Open Sharing link.
-    expect(screen.queryByRole('link', { name: 'Open Sharing' })).toBeNull();
-    expect(shelf).not.toHaveTextContent('A shared space is a top-level library');
-  });
-
-  it('offers to make the first shared space when there are albums but no spaces', () => {
-    renderWithTooltips(AlbumDirectory, { tree: { ...tree, spaces: [] }, onRefresh: vi.fn() });
-
-    const shelf = screen.getByRole('region', { name: 'Shared spaces' });
-    expect(shelf).toHaveTextContent('No shared spaces yet');
-    // With nothing to show, one line says what a shared space is.
-    expect(shelf).toHaveTextContent('A shared space is a top-level library');
-    expect(screen.getByRole('button', { name: 'New shared space' })).toBeInTheDocument();
-    expect(screen.queryByRole('link', { name: /invitations? waiting/ })).toBeNull();
   });
 
   it('opens the create dialog the rail asked for, once, and drops the request from the address', async () => {
@@ -394,7 +432,7 @@ describe('AlbumDirectory', () => {
     expect(app.replaceState).not.toHaveBeenCalled();
   });
 
-  it('opens an album’s menu at the pointer on a right-click, and a collection’s on its shelf', async () => {
+  it('opens an album’s menu at the pointer on a right-click, and a collection’s on its tile', async () => {
     renderWithTooltips(AlbumDirectory, { tree, onRefresh: vi.fn() });
 
     const tile = document.querySelector('article[aria-label="Summer in the Rockies"]') as HTMLElement;
@@ -404,14 +442,13 @@ describe('AlbumDirectory', () => {
     expect(menu.parentElement).toBe(document.body);
     expect(menu.style.left).toBe('120px');
     expect(within(menu).getByRole('menuitem', { name: 'Delete' })).toBeInTheDocument();
-    // The album inside the shelf gets its own menu, not the collection's.
+    expect(within(menu).getByRole('menuitem', { name: 'Pin to sidebar' })).toBeInTheDocument();
     expect(screen.queryByRole('menu', { name: 'Actions for Family' })).toBeNull();
 
     await fireEvent.keyDown(document, { key: 'Escape' });
     await waitFor(() => expect(screen.queryByRole('menu', { name: 'Actions for Summer in the Rockies' })).toBeNull());
 
-    const shelf = screen.getByRole('region', { name: 'Family' });
-    await fireEvent.contextMenu(shelf, { clientX: 40, clientY: 40 });
+    await fireEvent.contextMenu(screen.getByRole('article', { name: 'Family' }), { clientX: 40, clientY: 40 });
     expect(await screen.findByRole('menu', { name: 'Actions for Family' })).toBeInTheDocument();
   });
 
@@ -425,6 +462,8 @@ describe('AlbumDirectory', () => {
         }),
       );
       renderWithTooltips(AlbumDirectory, { tree: { collections: [], albums: many, spaces: [] }, onRefresh: vi.fn() });
+      // A section shows two rows of tiles first (FL-1836).
+      await fireEvent.click(screen.getByRole('button', { name: /^Show \d+ more/ }));
 
       await fireEvent.click(screen.getByRole('button', { name: 'Actions for Trip 14' }));
       const menu = within(await screen.findByRole('menu', { name: 'Actions for Trip 14' }));
@@ -440,6 +479,26 @@ describe('AlbumDirectory', () => {
       });
       expect(dialog.getByRole('radio', { name: /Trip 04/ })).toBeEnabled();
     });
+  });
+
+  it('selects only the albums on screen with Select all, never those past "Show more" (FL-1836)', async () => {
+    const many = Array.from({ length: 20 }, (_, index) =>
+      owned({ id: `many-${index}`, albumName: `Many ${index}`, assetCount: 1 }),
+    );
+    renderWithTooltips(AlbumDirectory, { tree: { collections: [], albums: many, spaces: [] }, onRefresh: vi.fn() });
+    await fireEvent.click(screen.getByRole('button', { name: 'Select' }));
+    const bar = within(screen.getByRole('toolbar', { name: 'Actions for the chosen albums' }));
+    await fireEvent.click(bar.getByRole('button', { name: 'Select all' }));
+    expect(bar.getByRole('status')).toHaveTextContent('12 selected');
+  });
+
+  it('offers no arranging while empty albums are hidden from the group (FL-1836)', async () => {
+    albumDirectoryView.set({ ...defaultAlbumDirectoryView, sort: 'custom', group: 'none', hideEmpty: true });
+    renderWithTooltips(AlbumDirectory, { tree, onRefresh: vi.fn() });
+    await fireEvent.click(screen.getByRole('button', { name: 'Actions for Summer in the Rockies' }));
+    const menu = within(await screen.findByRole('menu', { name: 'Actions for Summer in the Rockies' }));
+    expect(menu.queryByRole('menuitem', { name: 'Move earlier' })).toBeNull();
+    expect(menu.queryByRole('menuitem', { name: 'Move later' })).toBeNull();
   });
 
   describe('choosing several albums', () => {
@@ -477,7 +536,7 @@ describe('AlbumDirectory', () => {
       await waitFor(() => expect(sdkMock.moveAlbumToCollection).toHaveBeenCalledTimes(2));
       expect(sdkMock.moveAlbumToCollection).toHaveBeenCalledWith({
         id: 'winter',
-        moveAlbumDto: { collectionId: 'trips', expectedParentId: 'family' },
+        moveAlbumDto: { collectionId: 'trips', expectedParentId: null },
       });
       // One refresh for the lot, not one per album.
       await waitFor(() => expect(onRefresh).toHaveBeenCalledTimes(1));
@@ -688,7 +747,7 @@ describe('AlbumDirectory', () => {
 
     const dialog = await screen.findByRole('dialog', { name: 'Delete “Family”?' });
     expect(dialog).toHaveTextContent(
-      'The collection is removed. Its children move to its parent, or to the top level. Its 2 child albums stay in your library.',
+      'The collection is removed. Its children move to its parent, or to the top level. Its 1 child album stays in your library.',
     );
     expect(dialog.textContent?.match(/stays? in your library/g)).toHaveLength(1);
 
@@ -762,13 +821,7 @@ describe('AlbumDirectory', () => {
   it('unlocks a locked album from its menu without asking (FL-1296)', async () => {
     sdkMock.updateAlbumInfo.mockResolvedValue({ ...rockies, isLocked: false });
     const locked = { ...rockies, isLocked: true };
-    const lockedTree = {
-      ...tree,
-      collections: tree.collections.map((shelf) => ({
-        ...shelf,
-        albums: shelf.albums.map((album) => (album.id === rockies.id ? locked : album)),
-      })),
-    };
+    const lockedTree = { ...tree, albums: tree.albums.map((album) => (album.id === rockies.id ? locked : album)) };
     renderWithTooltips(AlbumDirectory, { tree: lockedTree, onRefresh: vi.fn() });
 
     await fireEvent.click(screen.getByRole('button', { name: 'Actions for Summer in the Rockies' }));
@@ -829,22 +882,21 @@ describe('AlbumDirectory', () => {
   });
 
   describe('custom order (FL-52)', () => {
-    const useCustomOrder = () => albumDirectoryView.set({ ...defaultAlbumDirectoryView, sort: 'custom' });
+    // FL-1836: arranging works on the whole level, so it is offered with Group by None.
+    const useCustomOrder = () =>
+      albumDirectoryView.set({ ...defaultAlbumDirectoryView, sort: 'custom', group: 'none', hideEmpty: false });
 
     it('offers “Custom order” in the Frameleaf sort menu and shows the server’s own order', async () => {
-      const reordered: AlbumTreeResponseDto = {
-        ...tree,
-        collections: [{ ...tree.collections[0], albums: [winter, rockies] }],
-      };
+      const reordered: AlbumTreeResponseDto = { ...tree, albums: [winter, rockies, trail] };
       renderWithTooltips(AlbumDirectory, { tree: reordered, onRefresh: vi.fn() });
 
       await fireEvent.click(screen.getByRole('button', { name: 'Sort albums' }));
       const menu = within(await screen.findByRole('menu', { name: 'Sort albums' }));
-      expect(menu.getByRole('menuitemcheckbox', { name: 'Last modified' })).toHaveAttribute('aria-checked', 'true');
+      expect(menu.getByRole('menuitemcheckbox', { name: 'Date of photos' })).toHaveAttribute('aria-checked', 'true');
       await fireEvent.click(menu.getByRole('menuitemcheckbox', { name: 'Custom order' }));
 
-      const shelf = screen.getByRole('region', { name: 'Family' });
-      const names = [...shelf.querySelectorAll('article')].map((tile) => tile.getAttribute('aria-label'));
+      const section = screen.getAllByRole('region', { name: 'Albums' }).find((el) => el.classList.contains('group'));
+      const names = [...section!.querySelectorAll('article')].map((tile) => tile.getAttribute('aria-label'));
       expect(names).toEqual(['Winter 2026', 'Summer in the Rockies']);
     });
 
@@ -856,17 +908,15 @@ describe('AlbumDirectory', () => {
 
       await fireEvent.click(screen.getByRole('button', { name: 'Actions for Winter 2026' }));
       const menu = within(await screen.findByRole('menu', { name: 'Actions for Winter 2026' }));
-      // Winter is last in its collection, so it can only go earlier.
-      expect(menu.queryByRole('menuitem', { name: 'Move later' })).toBeNull();
       await fireEvent.click(menu.getByRole('menuitem', { name: 'Move earlier' }));
 
       await waitFor(() =>
         expect(sdkMock.setAlbumOrder).toHaveBeenCalledWith({
-          albumOrderDto: { parentId: 'family', albumIds: ['winter', 'rockies'] },
+          albumOrderDto: { parentId: null, albumIds: ['family', 'winter', 'rockies', 'trail'], hierarchy: true },
         }),
       );
       await waitFor(() => expect(onRefresh).toHaveBeenCalled());
-      const announcement = await screen.findByText(/“Winter 2026” is now 1 of 2/);
+      const announcement = await screen.findByText(/“Winter 2026” is now 2 of 4/);
       expect(announcement.closest('[role="status"]')).toHaveAttribute('data-testid', 'frameleaf-toast');
       // the moved tile is marked so the eye finds it
       await waitFor(() => expect(screen.getByRole('article', { name: 'Winter 2026' })).toHaveClass('moved'));
@@ -890,7 +940,11 @@ describe('AlbumDirectory', () => {
 
       await waitFor(() =>
         expect(sdkMock.setAlbumOrder).toHaveBeenCalledWith({
-          albumOrderDto: { parentId: null, albumIds: ['trips', 'family'] },
+          albumOrderDto: {
+            parentId: null,
+            albumIds: ['trips', 'family', 'rockies', 'winter', 'trail'],
+            hierarchy: true,
+          },
         }),
       );
     });
@@ -916,10 +970,10 @@ describe('AlbumDirectory', () => {
 
       await waitFor(() =>
         expect(sdkMock.setAlbumOrder).toHaveBeenCalledWith({
-          albumOrderDto: { parentId: 'family', albumIds: ['winter', 'rockies'] },
+          albumOrderDto: { parentId: null, albumIds: ['family', 'winter', 'rockies', 'trail'], hierarchy: true },
         }),
       );
-      // Arranging inside the collection never moves the album anywhere.
+      // Arranging never moves the album anywhere.
       expect(sdkMock.moveAlbumToCollection).not.toHaveBeenCalled();
     });
 
@@ -956,12 +1010,13 @@ describe('AlbumDirectory', () => {
     it('reloads and says so when a move is refused because the album was moved since (stale moved node)', async () => {
       const onRefresh = vi.fn();
       sdkMock.moveAlbumToCollection.mockRejectedValue(Object.assign(new Error('Conflict'), { status: 409 }));
+      app.page.url = new URL('http://localhost/albums?in=family');
       renderWithTooltips(AlbumDirectory, { tree, onRefresh });
 
-      await fireEvent.click(screen.getByRole('button', { name: 'Actions for Summer in the Rockies' }));
-      const menu = within(await screen.findByRole('menu', { name: 'Actions for Summer in the Rockies' }));
+      await fireEvent.click(screen.getByRole('button', { name: 'Actions for Cabin weekend' }));
+      const menu = within(await screen.findByRole('menu', { name: 'Actions for Cabin weekend' }));
       await fireEvent.click(menu.getByRole('menuitem', { name: 'Move to…' }));
-      const dialog = within(await screen.findByRole('dialog', { name: /Move “Summer in the Rockies”/ }));
+      const dialog = within(await screen.findByRole('dialog', { name: /Move “Cabin weekend”/ }));
       await fireEvent.click(dialog.getByRole('radio', { name: /Top level/ }));
       await fireEvent.click(dialog.getByRole('button', { name: 'Move here' }));
 
@@ -997,7 +1052,7 @@ describe('AlbumDirectory', () => {
     await waitFor(() =>
       expect(sdkMock.moveAlbumToCollection).toHaveBeenCalledWith({
         id: 'rockies',
-        moveAlbumDto: { collectionId: 'trips', expectedParentId: 'family' },
+        moveAlbumDto: { collectionId: 'trips', expectedParentId: null },
       }),
     );
     await waitFor(() => expect(onRefresh).toHaveBeenCalled());
@@ -1015,12 +1070,12 @@ describe('AlbumDirectory', () => {
     const self = dialog.getByRole('radio', { name: /^Family This is the one/ });
     expect(self).toBeDisabled();
     expect(self).toHaveAccessibleDescription('This is the one you’re moving');
-    const inside = dialog.getByRole('radio', { name: /Summer in the Rockies/ });
+    const inside = dialog.getByRole('radio', { name: /Cabin weekend/ });
     expect(inside).toBeDisabled();
     expect(inside).toHaveAccessibleDescription('It’s inside the one you’re moving');
 
     await fireEvent.input(dialog.getByRole('searchbox', { name: 'Find a collection' }), {
-      target: { value: 'rockies' },
+      target: { value: 'cabin' },
     });
     expect(dialog.getByText('Family')).toBeInTheDocument();
     expect(dialog.queryByRole('radio', { name: /Top level/ })).toBeNull();
@@ -1100,7 +1155,7 @@ describe('AlbumDirectory', () => {
 
     it.each(['grid', 'list'] as const)('builds a %s tile and its menu only once it nears the view', async (mode) => {
       useObserver();
-      albumDirectoryView.set({ ...defaultAlbumDirectoryView, view: mode });
+      albumDirectoryView.set({ ...defaultAlbumDirectoryView, view: mode, hideEmpty: false });
       const near = owned({ id: 'near', albumName: 'Near' });
       const far = owned({ id: 'far', albumName: 'Far' });
       renderWithTooltips(AlbumDirectory, { tree: flatTree(near, far), onRefresh: vi.fn() });
@@ -1129,10 +1184,12 @@ describe('AlbumDirectory', () => {
       expect(screen.getByRole('article', { name: 'Kept' })).toBeInTheDocument();
     });
 
-    it('still lists every album by its cell while tiles are waiting', () => {
+    it('still lists every album by its cell while tiles are waiting', async () => {
       useObserver();
       const albums = Array.from({ length: 50 }, (_, index) => owned({ id: `album-${index}` }));
       renderWithTooltips(AlbumDirectory, { tree: flatTree(...albums), onRefresh: vi.fn() });
+      // Two rows first, then the rest of the section on request (FL-1836).
+      await fireEvent.click(screen.getByRole('button', { name: /^Show 38 more/ }));
 
       expect(document.querySelectorAll('[data-testid="album-placeholder"]')).toHaveLength(50);
     });
@@ -1301,7 +1358,7 @@ describe('AlbumDirectory', () => {
       expect(menu.getByRole('menuitem', { name: 'Download' })).toBeEnabled();
     });
 
-    it('leaves out a shelf’s total until every album in it has been counted', () => {
+    it('leaves out a collection’s total until every album in it has been counted', () => {
       const shelfAlbum = owned({ id: 'inside', parentId: 'family', assetCount: 0, statsPending: true });
       renderWithTooltips(AlbumDirectory, {
         tree: {
@@ -1312,9 +1369,9 @@ describe('AlbumDirectory', () => {
         onRefresh: vi.fn(),
       });
 
-      const shelf = screen.getByRole('region', { name: 'Family' });
-      expect(shelf).toHaveTextContent('1 album');
-      expect(shelf).not.toHaveTextContent('Empty');
+      const tile = screen.getByRole('article', { name: 'Family' });
+      expect(tile).toHaveTextContent('1 album');
+      expect(tile).not.toHaveTextContent('Empty');
     });
   });
 });

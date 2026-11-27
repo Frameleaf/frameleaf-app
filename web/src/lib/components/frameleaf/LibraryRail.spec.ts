@@ -17,6 +17,7 @@ import { creatorsStore } from '$lib/frameleaf/creators-store.svelte';
 import { helpPanel } from '$lib/frameleaf/help-panel.svelte';
 import { resetIconCatalogueCache } from '$lib/frameleaf/icon-catalogue';
 import { RAIL_CLOSED_SECTIONS_KEY } from '$lib/frameleaf/navigation';
+import { recentAlbumIds } from '$lib/frameleaf/pinned-albums';
 import { railSession } from '$lib/frameleaf/rail-session.svelte';
 import { authManager } from '$lib/managers/auth-manager.svelte';
 import { eventManager } from '$lib/managers/event-manager.svelte';
@@ -83,6 +84,16 @@ const serve = (hierarchy: HierarchyFixture | unknown) => {
   sdkMock.getAlbumHierarchy.mockResolvedValue(hierarchy as never);
 };
 
+/** FL-1836: the Albums section lists only pinned and recent albums; specs pin the ones they look at. */
+const pin = (pinned: string[], pinnedCustomOrder = false) => {
+  const preferences = preferencesFactory.build();
+  authManager.setPreferences({ ...preferences, albums: { ...preferences.albums, pinned, pinnedCustomOrder } });
+};
+const albumsSection = () => {
+  const id = screen.getByRole('button', { name: 'Albums' }).getAttribute('aria-controls')!;
+  return within(document.querySelector<HTMLElement>(`#${id}`)!);
+};
+
 const headings = () =>
   screen
     .getAllByRole('button', { expanded: true })
@@ -94,6 +105,7 @@ beforeEach(() => {
   addMessages('dev', en);
   railSession.reset();
   localStorage.clear();
+  recentAlbumIds.set([]);
   sidebarCollapsed.set(false);
   albumTreeDropdown.set(false);
   resetIconCatalogueCache();
@@ -135,6 +147,7 @@ const treeWithIcon = (icon: string | null) => ({
 describe('LibraryRail', () => {
   it('draws the last album tree at once when it mounts again, and reads it again behind it (FL-1796)', async () => {
     serve(treeWithIcon(null));
+    pin(['album']);
     const first = render(LibraryRail);
     expect(await screen.findByRole('link', { name: 'Album' })).toBeInTheDocument();
     first.unmount();
@@ -184,30 +197,34 @@ describe('LibraryRail', () => {
     [null, mdiFolderOutline],
     ['__proto__', mdiFolderOutline],
     ['mdiUnknown', mdiFolderOutline],
-  ])('renders stored %s geometry for every tree node while preserving its link', async (icon, expected) => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(Response.json({ mdiCameraBurst })));
-    serve(treeWithIcon(icon));
-    albumTreeDropdown.set(true);
-    app.page.url = new URL(Route.viewAlbum({ id: 'child' }), 'http://localhost');
-    render(LibraryRail);
+  ])(
+    'renders stored %s geometry for every pinned album and space while preserving its link',
+    async (icon, expected) => {
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(Response.json({ mdiCameraBurst })));
+      serve(treeWithIcon(icon));
+      pin(['collection', 'child', 'album']);
+      app.page.url = new URL(Route.viewAlbum({ id: 'child' }), 'http://localhost');
+      render(LibraryRail);
 
-    for (const [name, id] of [
-      ['Collection', 'collection'],
-      ['Child', 'child'],
-      ['Album', 'album'],
-      ['Space', 'space'],
-    ]) {
-      const link = await screen.findByRole('link', { name });
-      await waitFor(() => expect(link.querySelector('path')).toHaveAttribute('d', expected));
-      // Every node, a shared space too, opens in the album (library) view.
-      expect(link).toHaveAttribute('href', Route.viewAlbum({ id }));
-      expect(link.querySelector('svg')).toHaveAttribute('aria-hidden', 'true');
-    }
-    expect(screen.getByRole('link', { name: 'Child' })).toHaveAttribute('aria-current', 'page');
-    expect(fetch).toHaveBeenCalledTimes(icon?.startsWith('mdi') ? 1 : 0);
-  });
+      for (const [name, id] of [
+        ['Collection', 'collection'],
+        ['Child', 'child'],
+        ['Album', 'album'],
+        ['Space', 'space'],
+      ]) {
+        const link = await screen.findByRole('link', { name });
+        await waitFor(() => expect(link.querySelector('path')).toHaveAttribute('d', expected));
+        // Every node, a shared space too, opens in the album (library) view.
+        expect(link).toHaveAttribute('href', Route.viewAlbum({ id }));
+        expect(link.querySelector('svg')).toHaveAttribute('aria-hidden', 'true');
+      }
+      expect(screen.getByRole('link', { name: 'Child' })).toHaveAttribute('aria-current', 'page');
+      expect(fetch).toHaveBeenCalledTimes(icon?.startsWith('mdi') ? 1 : 0);
+    },
+  );
 
-  it('moves an album up with Alt and the up arrow, and saves its new place', async () => {
+  it('moves a Boards collection up with Alt and the up arrow, and saves its new place', async () => {
+    app.page.url = new URL('http://localhost/pro');
     const me = authManager.user;
     const owned = (id: string, sortOrder: number) =>
       albumFactory.build({
@@ -231,7 +248,7 @@ describe('LibraryRail', () => {
     const updated = vi.fn();
     const off = eventManager.on({ AlbumUpdate: updated });
     render(LibraryRail);
-    const summer = await screen.findByRole('link', { name: 'Summer' });
+    const summer = await screen.findByRole('link', { name: /^Summer/ });
     expect(summer).toHaveAttribute('draggable', 'true');
     await fireEvent.keyDown(summer, { key: 'ArrowUp', altKey: true });
     await waitFor(() =>
@@ -240,7 +257,12 @@ describe('LibraryRail', () => {
     // Also as the person's own order, which the server shows first (FL-1240).
     await waitFor(() =>
       expect(sdkMock.setAlbumOrder).toHaveBeenCalledWith({
-        albumOrderDto: { parentId: null, albumIds: ['Summer', 'Hikes'], hierarchy: true },
+        albumOrderDto: {
+          parentId: null,
+          albumIds: ['Summer', 'Hikes'],
+          hierarchy: true,
+          libraryScope: LibraryViewScope.Design,
+        },
       }),
     );
     // An open Albums page hears of it, and the sidebar reads the tree again to show the new order.
@@ -249,7 +271,8 @@ describe('LibraryRail', () => {
     off();
   });
 
-  it('moves an album in a group arranged on the Albums page by saving that order, not a sortOrder (FL-1240)', async () => {
+  it('moves a Boards collection in a group already arranged by saving that order, not a sortOrder (FL-1240)', async () => {
+    app.page.url = new URL('http://localhost/pro');
     const me = authManager.user;
     const owned = (id: string, sortOrder: number) =>
       albumFactory.build({
@@ -272,10 +295,15 @@ describe('LibraryRail', () => {
     const updated = vi.fn();
     const off = eventManager.on({ AlbumUpdate: updated });
     render(LibraryRail);
-    await fireEvent.keyDown(await screen.findByRole('link', { name: 'Trips' }), { key: 'ArrowUp', altKey: true });
+    await fireEvent.keyDown(await screen.findByRole('link', { name: /^Trips/ }), { key: 'ArrowUp', altKey: true });
     await waitFor(() =>
       expect(sdkMock.setAlbumOrder).toHaveBeenCalledWith({
-        albumOrderDto: { parentId: null, albumIds: ['Summer', 'Trips', 'Hikes'], hierarchy: true },
+        albumOrderDto: {
+          parentId: null,
+          albumIds: ['Summer', 'Trips', 'Hikes'],
+          hierarchy: true,
+          libraryScope: LibraryViewScope.Design,
+        },
       }),
     );
     expect(sdkMock.updateAlbumInfo).not.toHaveBeenCalled();
@@ -284,7 +312,8 @@ describe('LibraryRail', () => {
     off();
   });
 
-  it('expands each nested branch without hiding its own page link', async () => {
+  it('expands each nested Boards branch without hiding its own page link', async () => {
+    app.page.url = new URL('http://localhost/pro');
     serve({
       roots: [
         {
@@ -314,18 +343,20 @@ describe('LibraryRail', () => {
       ],
     });
     render(LibraryRail);
-    expect(await screen.findByRole('link', { name: 'Root' })).toHaveAttribute('href', Route.viewAlbum({ id: 'root' }));
-    expect(screen.queryByRole('link', { name: 'Leaf' })).toBeNull();
+    const path = (link: HTMLElement) => new URL(link.getAttribute('href')!, 'http://localhost').pathname;
+    expect(path(await screen.findByRole('link', { name: /^Root/ }))).toBe(Route.viewAlbum({ id: 'root' }));
+    expect(screen.queryByRole('link', { name: /^Leaf/ })).toBeNull();
     await fireEvent.click(screen.getByRole('button', { name: /Expand Root/ }));
     await fireEvent.click(await screen.findByRole('button', { name: /Expand Nested/ }));
-    expect(await screen.findByRole('link', { name: 'Leaf' })).toHaveAttribute('href', Route.viewAlbum({ id: 'leaf' }));
+    expect(path(await screen.findByRole('link', { name: /^Leaf/ }))).toBe(Route.viewAlbum({ id: 'leaf' }));
     await fireEvent.click(screen.getByRole('button', { name: /Collapse Root/ }));
-    expect(screen.queryByRole('link', { name: 'Leaf' })).toBeNull();
+    expect(screen.queryByRole('link', { name: /^Leaf/ })).toBeNull();
   });
 
   it('updates stored icon geometry after an album event and releases the subscription on unmount', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(Response.json({ mdiCameraBurst, mdiHeartOutline })));
     serve(treeWithIcon('mdiCameraBurst'));
+    pin(['album']);
     const { unmount } = render(LibraryRail);
     const link = await screen.findByRole('link', { name: 'Album' });
     await waitFor(() => expect(link.querySelector('path')).toHaveAttribute('d', mdiCameraBurst));
@@ -353,8 +384,9 @@ describe('LibraryRail', () => {
     expect(screen.queryByRole('navigation', { name: 'Primary' })).toBeNull();
   });
 
-  it('lists saved searches in Albums, after the album tree and before Shared links', async () => {
-    authManager.setPreferences(preferencesFactory.build({ sharedLinks: { enabled: true, sidebarWeb: true } } as never));
+  it('lists saved searches in Albums, after the pinned albums and before Shared links', async () => {
+    const preferences = preferencesFactory.build({ sharedLinks: { enabled: true, sidebarWeb: true } } as never);
+    authManager.setPreferences({ ...preferences, albums: { ...preferences.albums, pinned: ['album-1'] } });
     serve({
       roots: [{ album: { id: 'album-1', albumName: 'Porto', kind: AlbumKind.Album }, children: [] }],
     } as never);
@@ -755,6 +787,159 @@ describe('LibraryRail in Boards', () => {
   });
 });
 
+describe('LibraryRail pinned and recent albums (FL-1836)', () => {
+  const album = (id: string, albumName: string) => ({
+    album: albumFactory.build({ id, albumName, kind: AlbumKind.Album, parentId: null }),
+    children: [],
+  });
+  const names = (links: HTMLElement[]) => links.map((link) => link.textContent?.trim());
+  const pinnedRows = () =>
+    names(
+      albumsSection()
+        .queryAllByRole('link')
+        .filter((link) => link.dataset.pinned !== undefined),
+    );
+  const saved = (pinned: string[], pinnedCustomOrder: boolean) => {
+    const preferences = preferencesFactory.build();
+    return { ...preferences, albums: { ...preferences.albums, pinned, pinnedCustomOrder } };
+  };
+
+  beforeEach(() => {
+    serve({
+      roots: [
+        album('t10', 'Trip 10'),
+        album('t2', 'Trip 2'),
+        album('beach', 'beach'),
+        album('other', 'Other'),
+        album('more', 'More'),
+      ],
+    });
+  });
+
+  it('lists the pinned albums A to Z, numbers in order, and not the rest of the tree', async () => {
+    pin(['t10', 't2', 'beach', 'gone']);
+    render(LibraryRail);
+    await albumsSection().findByRole('link', { name: 'beach' });
+
+    expect(albumsSection().getByRole('heading', { level: 3, name: 'Pinned' })).toBeInTheDocument();
+    expect(pinnedRows()).toEqual(['beach', 'Trip 2', 'Trip 10']);
+    expect(albumsSection().getByRole('link', { name: 'All albums' })).toBeInTheDocument();
+    expect(albumsSection().queryByRole('link', { name: 'Other' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Sort A to Z' })).toBeNull();
+    // nothing opened yet on this device
+    expect(albumsSection().queryByRole('heading', { name: 'Recent' })).toBeNull();
+  });
+
+  it('keeps the order the person set, and Sort A to Z goes back to alphabetical', async () => {
+    pin(['t10', 'beach', 't2'], true);
+    sdkMock.updateMyPreferences.mockResolvedValue(saved(['t10', 'beach', 't2'], false));
+    render(LibraryRail);
+    await albumsSection().findByRole('link', { name: 'beach' });
+    expect(pinnedRows()).toEqual(['Trip 10', 'beach', 'Trip 2']);
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Sort A to Z' }));
+    expect(sdkMock.updateMyPreferences).toHaveBeenCalledWith({
+      userPreferencesUpdateDto: { albums: { pinned: ['t10', 'beach', 't2'], pinnedCustomOrder: false } },
+    });
+    await waitFor(() => expect(pinnedRows()).toEqual(['beach', 'Trip 2', 'Trip 10']));
+    expect(screen.queryByRole('button', { name: 'Sort A to Z' })).toBeNull();
+  });
+
+  it('moves a pinned album down with Alt and the down arrow, and keeps that order from then on', async () => {
+    pin(['t10', 't2', 'beach']);
+    sdkMock.updateMyPreferences.mockResolvedValue(saved(['t2', 'beach', 't10'], true));
+    render(LibraryRail);
+    const beach = await albumsSection().findByRole('link', { name: 'beach' });
+    expect(beach).toHaveAttribute('draggable', 'true');
+
+    await fireEvent.keyDown(beach, { key: 'ArrowDown', altKey: true });
+    expect(sdkMock.updateMyPreferences).toHaveBeenCalledWith({
+      userPreferencesUpdateDto: { albums: { pinned: ['t2', 'beach', 't10'], pinnedCustomOrder: true } },
+    });
+    await waitFor(() => expect(pinnedRows()).toEqual(['Trip 2', 'beach', 'Trip 10']));
+    expect(await screen.findByRole('button', { name: 'Sort A to Z' })).toBeInTheDocument();
+    await waitFor(() => expect(document.activeElement).toBe(albumsSection().getByRole('link', { name: 'beach' })));
+    // the tree's own moves never run for a pinned album
+    expect(sdkMock.setAlbumOrder).not.toHaveBeenCalled();
+  });
+
+  it('saves the order a drag leaves', async () => {
+    pin(['t10', 't2', 'beach']);
+    sdkMock.updateMyPreferences.mockResolvedValue(saved(['t10', 'beach', 't2'], true));
+    render(LibraryRail);
+    const trip10 = await albumsSection().findByRole('link', { name: 'Trip 10' });
+    const beach = albumsSection().getByRole('link', { name: 'beach' });
+
+    await fireEvent.dragStart(trip10);
+    await fireEvent.dragOver(beach);
+    expect(pinnedRows()).toEqual(['Trip 10', 'beach', 'Trip 2']);
+    await fireEvent.drop(beach);
+    await fireEvent.dragEnd(trip10);
+    expect(sdkMock.updateMyPreferences).toHaveBeenCalledWith({
+      userPreferencesUpdateDto: { albums: { pinned: ['t10', 'beach', 't2'], pinnedCustomOrder: true } },
+    });
+    await waitFor(() => expect(pinnedRows()).toEqual(['Trip 10', 'beach', 'Trip 2']));
+  });
+
+  it('puts the order back when a drag is let go outside the list', async () => {
+    pin(['t10', 't2', 'beach']);
+    render(LibraryRail);
+    const trip10 = await albumsSection().findByRole('link', { name: 'Trip 10' });
+    await fireEvent.dragStart(trip10);
+    await fireEvent.dragOver(albumsSection().getByRole('link', { name: 'beach' }));
+    await fireEvent.dragEnd(trip10);
+    expect(pinnedRows()).toEqual(['beach', 'Trip 2', 'Trip 10']);
+    expect(sdkMock.updateMyPreferences).not.toHaveBeenCalled();
+  });
+
+  it('lists up to five albums opened on this device under Recent, newest first, leaving out pinned ones', async () => {
+    recentAlbumIds.set(['other', 'beach', 'gone', 'more', 't10', 't2']);
+    pin(['beach']);
+    render(LibraryRail);
+    await albumsSection().findByRole('link', { name: 'Other' });
+
+    const recent = albumsSection().getByRole('heading', { level: 3, name: 'Recent' });
+    expect(recent).toBeInTheDocument();
+    const rows = albumsSection()
+      .getAllByRole('link')
+      .filter((link) => link.compareDocumentPosition(recent) & Node.DOCUMENT_POSITION_PRECEDING)
+      .filter((link) => !!link.dataset.albumId);
+    expect(names(rows)).toEqual(['Other', 'More', 'Trip 10', 'Trip 2']);
+    expect(rows[0]).toHaveAttribute('href', Route.viewAlbum({ id: 'other' }));
+    expect(rows[0]).not.toHaveAttribute('draggable');
+  });
+
+  it('caps Recent at five', async () => {
+    serve({
+      roots: ['a', 'b', 'c', 'd', 'e', 'f'].map((id) => album(id, `Album ${id}`)),
+    });
+    recentAlbumIds.set(['a', 'b', 'c', 'd', 'e', 'f']);
+    render(LibraryRail);
+    await albumsSection().findByRole('link', { name: 'Album a' });
+    expect(albumsSection().queryByRole('link', { name: 'Album f' })).toBeNull();
+    expect(albumsSection().getAllByRole('link', { name: /^Album / })).toHaveLength(5);
+    // nothing pinned: no Pinned sub-heading
+    expect(albumsSection().queryByRole('heading', { name: 'Pinned' })).toBeNull();
+  });
+
+  it('shows neither sub-heading with nothing pinned or opened', async () => {
+    render(LibraryRail);
+    await waitFor(() => expect(sdkMock.getAlbumRail).toHaveBeenCalled());
+    expect(albumsSection().queryAllByRole('heading', { level: 3 })).toHaveLength(0);
+    expect(albumsSection().getByRole('link', { name: 'All albums' })).toBeInTheDocument();
+  });
+
+  it('opens the album menu from a recent album too', async () => {
+    recentAlbumIds.set(['other']);
+    render(LibraryRail);
+    await fireEvent.contextMenu(await albumsSection().findByRole('link', { name: 'Other' }), {
+      clientX: 30,
+      clientY: 40,
+    });
+    expect(await screen.findByRole('menu', { name: 'Actions for Other' })).toBeInTheDocument();
+  });
+});
+
 describe('LibraryRail right-click menu (approved design, 2026-11-04)', () => {
   const me = userAdminFactory.build({ id: 'me' });
   const mine = (overrides: Parameters<typeof albumFactory.build>[0]) =>
@@ -779,7 +964,7 @@ describe('LibraryRail right-click menu (approved design, 2026-11-04)', () => {
 
   beforeEach(() => {
     authManager.setUser(me);
-    albumTreeDropdown.set(true);
+    pin(['family', 'rockies']);
     serve({
       roots: [{ album: family, children: [{ album: rockies, children: [] }] }],
     });

@@ -12,6 +12,8 @@ export const preferencesFactory = Sync.makeFactory<UserPreferencesResponseDto>({
     defaultAssetOrder: AssetOrder.Desc,
     showPartnerAlbums: true,
     cleanupBannerDismissed: false,
+    pinned: [],
+    pinnedCustomOrder: false,
   },
   cast: {
     adminDisabled: false,

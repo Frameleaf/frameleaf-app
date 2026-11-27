@@ -4504,6 +4504,10 @@ export type AlbumsResponse = {
     /** The Magic Albums cleanup banner has been dismissed */
     cleanupBannerDismissed: boolean;
     defaultAssetOrder: AssetOrder;
+    /** FL-1836: albums pinned to the sidebar, in the order last saved */
+    pinned: string[];
+    /** FL-1836: pinned albums keep the saved order; false lists them A to Z */
+    pinnedCustomOrder: boolean;
     /** Whether albums a partner shared appear in the album list */
     showPartnerAlbums: boolean;
 };
@@ -4732,6 +4736,10 @@ export type AlbumsUpdate = {
     /** The Magic Albums cleanup banner has been dismissed */
     cleanupBannerDismissed?: boolean;
     defaultAssetOrder?: AssetOrder;
+    /** FL-1836: albums pinned to the sidebar, in the order last saved */
+    pinned?: string[];
+    /** FL-1836: pinned albums keep the saved order; false lists them A to Z */
+    pinnedCustomOrder?: boolean;
     /** Whether albums a partner shared appear in the album list */
     showPartnerAlbums?: boolean;
 };

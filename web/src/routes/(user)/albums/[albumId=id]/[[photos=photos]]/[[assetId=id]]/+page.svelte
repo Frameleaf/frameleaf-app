@@ -36,6 +36,7 @@
     type CollectionItems,
   } from '$lib/frameleaf/boards-download';
   import { publishCollectionPage } from '$lib/frameleaf/collection-page-request';
+  import { rememberOpenedAlbum } from '$lib/frameleaf/pinned-albums';
   import { albumSearchContext } from '$lib/frameleaf/search-context';
   import { writeLibraryView, readLibraryView, createLibrarySession } from '$lib/frameleaf/library-session';
   import { onLibraryAccessChange } from '$lib/frameleaf/library-access';
@@ -150,6 +151,8 @@
 
   const currentUserId = $derived(authManager.user.id);
   const albumId = $derived(album.id);
+  // FL-1836: the sidebar's Recent lists the albums opened on this device.
+  $effect(() => rememberOpenedAlbum(albumId));
   let alive = true;
   const albumView = $derived({ albumId, isCurrentSession: authManager.captureSession() });
   const isCurrentView = (view: typeof albumView) => alive && view === albumView && view.isCurrentSession();

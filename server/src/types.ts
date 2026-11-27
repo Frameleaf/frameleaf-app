@@ -1879,6 +1879,10 @@ export type UserPreferences = {
     defaultAssetOrder: AssetOrder;
     showPartnerAlbums: boolean;
     cleanupBannerDismissed: boolean;
+    /** FL-1836: albums pinned to the sidebar, in the order last saved. */
+    pinned: string[];
+    /** FL-1836: false lists the pinned albums A to Z; true keeps the order the person dragged them into. */
+    pinnedCustomOrder: boolean;
   };
   folders: {
     enabled: boolean;

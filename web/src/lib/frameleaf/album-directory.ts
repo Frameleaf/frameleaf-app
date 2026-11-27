@@ -7,19 +7,23 @@ import {
   type UserResponseDto,
 } from '@frameleaf/sdk';
 
-export const albumDirectoryFilters = ['all', 'owned', 'shared', 'smart'] as const;
+/*
+ * FL-1836 (approved design 2026-11-27, prototype `src/AlbumsV2.jsx`): one Albums page with one structure at
+ * every level. A collection, or an album holding albums, is one tile that opens in place; Group by (Kind by
+ * default, Source, Year, Month, Owner, None), Sort and Order arrange the level; empty albums are hidden unless
+ * asked for.
+ */
+export const albumDirectoryFilters = ['all', 'owned', 'shared', 'smart', 'folders'] as const;
 export type AlbumDirectoryFilter = (typeof albumDirectoryFilters)[number];
 
-export const albumDirectorySorts = [
-  'modified',
-  'created',
-  'title',
-  'items',
-  'recent-photo',
-  'oldest-photo',
-  'custom',
-] as const;
+export const albumDirectorySorts = ['date', 'title', 'opened', 'modified', 'items', 'custom'] as const;
 export type AlbumDirectorySort = (typeof albumDirectorySorts)[number];
+
+export const albumDirectoryGroups = ['kind', 'source', 'year', 'month', 'owner', 'none'] as const;
+export type AlbumDirectoryGroup = (typeof albumDirectoryGroups)[number];
+
+export const albumDirectoryOrders = ['asc', 'desc'] as const;
+export type AlbumDirectoryOrder = (typeof albumDirectoryOrders)[number];
 
 export const albumDirectoryViews = ['grid', 'list'] as const;
 export type AlbumDirectoryViewMode = (typeof albumDirectoryViews)[number];
@@ -27,32 +31,50 @@ export type AlbumDirectoryViewMode = (typeof albumDirectoryViews)[number];
 export interface AlbumDirectoryView {
   filter: AlbumDirectoryFilter;
   sort: AlbumDirectorySort;
+  order: AlbumDirectoryOrder;
+  group: AlbumDirectoryGroup;
   view: AlbumDirectoryViewMode;
-  /** Collection ids whose shelf is collapsed. */
+  hideEmpty: boolean;
+  collectionsFirst: boolean;
+  /** Group ids whose section is folded. */
   collapsed: string[];
 }
 
 export const defaultAlbumDirectoryView: AlbumDirectoryView = {
   filter: 'all',
-  sort: 'modified',
+  sort: 'date',
+  order: 'desc',
+  group: 'kind',
   view: 'grid',
+  hideEmpty: true,
+  collectionsFirst: false,
   collapsed: [],
 };
 
-const isFilter = (value: unknown): value is AlbumDirectoryFilter =>
-  albumDirectoryFilters.includes(value as AlbumDirectoryFilter);
-const isSort = (value: unknown): value is AlbumDirectorySort =>
-  albumDirectorySorts.includes(value as AlbumDirectorySort);
-const isViewMode = (value: unknown): value is AlbumDirectoryViewMode =>
-  albumDirectoryViews.includes(value as AlbumDirectoryViewMode);
+const oneOf = <T extends string>(list: readonly T[], value: unknown): value is T => list.includes(value as T);
+
+/** Sorts saved before FL-1836, and the order each one meant. */
+const legacySorts: Record<string, [AlbumDirectorySort, AlbumDirectoryOrder]> = {
+  'recent-photo': ['date', 'desc'],
+  'oldest-photo': ['date', 'asc'],
+  created: ['modified', 'desc'],
+};
 
 /** Repair a persisted view (per-device convenience only) so a stale or edited value never breaks the page. */
 export const normalizeAlbumDirectoryView = (value: unknown): AlbumDirectoryView => {
   const raw = value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+  const legacy = typeof raw.sort === 'string' ? legacySorts[raw.sort] : undefined;
+  const sort = oneOf(albumDirectorySorts, raw.sort) ? raw.sort : (legacy?.[0] ?? defaultAlbumDirectoryView.sort);
+  const fallbackOrder = legacy?.[1] ?? (sort === 'title' ? 'asc' : defaultAlbumDirectoryView.order);
   return {
-    filter: isFilter(raw.filter) ? raw.filter : defaultAlbumDirectoryView.filter,
-    sort: isSort(raw.sort) ? raw.sort : defaultAlbumDirectoryView.sort,
-    view: isViewMode(raw.view) ? raw.view : defaultAlbumDirectoryView.view,
+    filter: oneOf(albumDirectoryFilters, raw.filter) ? raw.filter : defaultAlbumDirectoryView.filter,
+    sort,
+    order: oneOf(albumDirectoryOrders, raw.order) ? raw.order : fallbackOrder,
+    group: oneOf(albumDirectoryGroups, raw.group) ? raw.group : defaultAlbumDirectoryView.group,
+    view: oneOf(albumDirectoryViews, raw.view) ? raw.view : defaultAlbumDirectoryView.view,
+    hideEmpty: typeof raw.hideEmpty === 'boolean' ? raw.hideEmpty : defaultAlbumDirectoryView.hideEmpty,
+    collectionsFirst:
+      typeof raw.collectionsFirst === 'boolean' ? raw.collectionsFirst : defaultAlbumDirectoryView.collectionsFirst,
     collapsed: Array.isArray(raw.collapsed)
       ? raw.collapsed.filter((id): id is string => typeof id === 'string').slice(0, 200)
       : [],
@@ -110,6 +132,9 @@ export const matchesFilter = (album: AlbumResponseDto, filter: AlbumDirectoryFil
     case 'smart': {
       return album.isSmart === true;
     }
+    case 'folders': {
+      return !!album.folderAlbum;
+    }
   }
 };
 
@@ -142,118 +167,316 @@ const compareDates = (a: string | undefined, b: string | undefined, direction: '
   return direction === 'asc' ? left - right : right - left;
 };
 
-export const compareAlbums = (sort: AlbumDirectorySort) => (a: AlbumResponseDto, b: AlbumResponseDto) => {
-  switch (sort) {
-    case 'title': {
-      return a.albumName.localeCompare(b.albumName) || a.id.localeCompare(b.id);
+/** Names compare as people read them, so "2026-11-19 - …" and "Album 10" fall in order. */
+const nameCollator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
+const compareNames = (a: AlbumResponseDto, b: AlbumResponseDto) =>
+  nameCollator.compare(a.albumName, b.albumName) || a.id.localeCompare(b.id);
+
+/**
+ * The order a level is listed in. `opened` is the albums opened on this device, most recent first
+ * (`recentAlbumIds`); albums never opened here follow by when they last changed.
+ */
+export const compareAlbums =
+  (sort: AlbumDirectorySort, order: AlbumDirectoryOrder = 'desc', opened: string[] = []) =>
+  (a: AlbumResponseDto, b: AlbumResponseDto): number => {
+    const flip = order === 'asc' ? -1 : 1;
+    switch (sort) {
+      case 'title': {
+        return (order === 'asc' ? 1 : -1) * compareNames(a, b);
+      }
+      case 'items': {
+        return flip * (b.assetCount - a.assetCount) || compareNames(a, b);
+      }
+      case 'date': {
+        return compareDates(a.endDate, b.endDate, order) || compareNames(a, b);
+      }
+      case 'opened': {
+        const rank = (album: AlbumResponseDto) => {
+          const index = opened.indexOf(album.id);
+          return index === -1 ? Infinity : index;
+        };
+        if (rank(a) !== rank(b)) {
+          // Albums never opened on this device go last whichever way the list runs.
+          if (rank(a) === Infinity || rank(b) === Infinity) {
+            return rank(a) === Infinity ? 1 : -1;
+          }
+          return (rank(a) < rank(b) ? -1 : 1) * flip;
+        }
+        return compareDates(a.updatedAt, b.updatedAt, order) || compareNames(a, b);
+      }
+      case 'modified': {
+        return compareDates(a.updatedAt, b.updatedAt, order) || compareNames(a, b);
+      }
+      case 'custom': {
+        // The server returns every group in the person's own order (FL-52); a stable sort keeps it.
+        return 0;
+      }
     }
-    case 'items': {
-      return b.assetCount - a.assetCount || a.albumName.localeCompare(b.albumName);
+  };
+
+/** What a section of the page holds; its heading words are the page's to choose (`groupLabel`). */
+export interface AlbumGroup {
+  /** `kind:albums`, `source:folders`, `year:2026`, `month:2026-11`, `owner:<user id>`, `none`, … */
+  id: string;
+  albums: AlbumResponseDto[];
+}
+
+export interface AlbumBrowse {
+  /** The collection or album being looked inside, or undefined at the top level. */
+  here?: AlbumResponseDto;
+  /** From the top level down to `here`, for the path bar. */
+  path: AlbumResponseDto[];
+  groups: AlbumGroup[];
+  /** Every album and collection listed on screen, in order, for Select all. */
+  listed: AlbumResponseDto[];
+  /** Albums directly inside each album or collection that are shown (empty ones left out while hidden). */
+  inside: Map<string, number>;
+  /**
+   * Items in each album or collection with everything inside it: the server's total for a collection
+   * (`AlbumCollectionResponseDto.assetCount`), otherwise the album's own items and those of the albums in it.
+   */
+  items: Map<string, number>;
+  totals: { albums: number; collections: number; spaces: number; emptyHidden: number };
+  /** Items at this level left out because they are empty (`hideEmpty`): an order can't be arranged around them. */
+  hiddenHere: number;
+  searching: boolean;
+  /** Nothing to show here (after filter, search and hiding empty albums). */
+  empty: boolean;
+}
+
+export interface BrowseOptions {
+  inside: string | null;
+  filter: AlbumDirectoryFilter;
+  sort: AlbumDirectorySort;
+  order: AlbumDirectoryOrder;
+  group: AlbumDirectoryGroup;
+  hideEmpty: boolean;
+  collectionsFirst: boolean;
+  search: string;
+  userId: string;
+  /** Albums opened on this device, most recent first. */
+  opened?: string[];
+}
+
+const kindKey = (album: AlbumResponseDto) =>
+  album.kind === AlbumKind.Space
+    ? 'kind:spaces'
+    : album.isSmart
+      ? 'kind:smart'
+      : album.kind === AlbumKind.Collection
+        ? 'kind:collections'
+        : 'kind:albums';
+const kindOrder = ['kind:collections', 'kind:albums', 'kind:smart', 'kind:spaces'];
+const sourceOrder = ['source:made', 'source:folders', 'source:shared', 'source:smart', 'source:spaces'];
+
+export const groupKeyOf = (album: AlbumResponseDto, group: AlbumDirectoryGroup, userId: string): string => {
+  switch (group) {
+    case 'kind': {
+      return kindKey(album);
     }
-    case 'created': {
-      return compareDates(a.createdAt, b.createdAt, 'desc') || a.albumName.localeCompare(b.albumName);
+    case 'source': {
+      if (album.kind === AlbumKind.Space) {
+        return 'source:spaces';
+      }
+      if (album.isSmart) {
+        return 'source:smart';
+      }
+      if (!isOwner(album, userId)) {
+        return 'source:shared';
+      }
+      return album.folderAlbum ? 'source:folders' : 'source:made';
     }
-    case 'recent-photo': {
-      return compareDates(a.endDate, b.endDate, 'desc') || a.albumName.localeCompare(b.albumName);
+    case 'year': {
+      const date = album.endDate ?? album.startDate;
+      return date ? `year:${date.slice(0, 4)}` : 'year:none';
     }
-    case 'oldest-photo': {
-      return compareDates(a.startDate, b.startDate, 'asc') || a.albumName.localeCompare(b.albumName);
+    case 'month': {
+      const date = album.endDate ?? album.startDate;
+      return date ? `month:${date.slice(0, 7)}` : 'month:none';
     }
-    case 'modified': {
-      return compareDates(a.updatedAt, b.updatedAt, 'desc') || a.albumName.localeCompare(b.albumName);
+    case 'owner': {
+      const owner = album.albumUsers.find(({ role }) => role === AlbumUserRole.Owner)?.user;
+      return !owner || owner.id === userId ? 'owner:me' : `owner:${owner.id}`;
     }
-    case 'custom': {
-      // The server returns every group in the person's own order (FL-52); a stable sort keeps it.
-      return 0;
+    case 'none': {
+      return 'none';
     }
   }
 };
 
-export interface AlbumShelf {
-  collection: AlbumResponseDto;
-  /** Albums shown under the shelf after filter and search. */
-  albums: AlbumResponseDto[];
-  /** Every album in the collection, for the mosaic and the counts. */
-  all: AlbumResponseDto[];
-  albumCount: number;
-  assetCount: number;
-}
-
-export interface AlbumDirectoryArrangement {
-  shelves: AlbumShelf[];
-  /** Albums that stand on their own. */
-  albums: AlbumResponseDto[];
-  spaces: AlbumResponseDto[];
-  /** Totals over everything visible to the user, before filter and search. */
-  totals: { albums: number; collections: number; shared: number };
-  searching: boolean;
-  empty: boolean;
-}
-
-export interface ArrangeOptions {
-  filter: AlbumDirectoryFilter;
-  sort: AlbumDirectorySort;
-  search: string;
-  userId: string;
-}
+/** Sections in the order they are shown: fixed for kind and source, by date for year and month, you first for owner. */
+const orderGroups = (groups: AlbumGroup[], group: AlbumDirectoryGroup, order: AlbumDirectoryOrder) => {
+  const at = (list: string[], id: string) => {
+    const index = list.indexOf(id);
+    return index === -1 ? list.length : index;
+  };
+  const byDate = (a: AlbumGroup, b: AlbumGroup) => {
+    // "No photos yet" goes last whichever way the dates run.
+    if (a.id.endsWith(':none') || b.id.endsWith(':none')) {
+      return Number(a.id.endsWith(':none')) - Number(b.id.endsWith(':none'));
+    }
+    return order === 'asc' ? a.id.localeCompare(b.id) : b.id.localeCompare(a.id);
+  };
+  switch (group) {
+    case 'kind': {
+      return groups.sort((a, b) => at(kindOrder, a.id) - at(kindOrder, b.id));
+    }
+    case 'source': {
+      return groups.sort((a, b) => at(sourceOrder, a.id) - at(sourceOrder, b.id));
+    }
+    case 'year':
+    case 'month': {
+      return groups.sort(byDate);
+    }
+    case 'owner': {
+      return groups.sort((a, b) => Number(b.id === 'owner:me') - Number(a.id === 'owner:me'));
+    }
+    case 'none': {
+      return groups;
+    }
+  }
+};
 
 /**
- * Lay the tree out the way the page renders it. While searching, a shelf shows
- * the albums that match; a collection whose own name matches keeps all of its
- * albums; shelves with no hit disappear. Without a search, a shelf stays
- * visible when it or any of its albums passes the filter.
+ * Lay out one level of the directory the way the page renders it (FL-1836). Without a search the level
+ * is what sits directly in `inside` (the top level when null; an album whose parent the viewer cannot
+ * see counts as top level). A search looks through every level below `inside` instead, and each result
+ * says where it lives. Spaces never count as empty.
  */
-export const arrangeAlbumDirectory = (
-  tree: AlbumTreeResponseDto,
-  { filter, sort, search, userId }: ArrangeOptions,
-): AlbumDirectoryArrangement => {
-  const compare = compareAlbums(sort);
-  const searching = searchTokens(search).length > 0;
-  const passes = (album: AlbumResponseDto) => matchesFilter(album, filter, userId) && matchesSearch(album, search);
+export const browseAlbumDirectory = (tree: AlbumTreeResponseDto, options: BrowseOptions): AlbumBrowse => {
+  const { inside, filter, sort, order, group, hideEmpty, collectionsFirst, search, userId, opened = [] } = options;
+  const everything = directoryAlbums(tree);
+  const byId = new Map(everything.map((album) => [album.id, album]));
+  const parentOf = effectiveParents(everything);
+  const children = new Map<string, AlbumResponseDto[]>();
+  for (const album of everything) {
+    const parentId = parentOf.get(album.id);
+    if (parentId) {
+      children.set(parentId, [...(children.get(parentId) ?? []), album]);
+    }
+  }
+  const descendants = function* (album: AlbumResponseDto, seen = new Set<string>()): Generator<AlbumResponseDto> {
+    for (const child of children.get(album.id) ?? []) {
+      if (!seen.has(child.id)) {
+        seen.add(child.id);
+        yield child;
+        yield* descendants(child, seen);
+      }
+    }
+  };
 
-  const shelves: AlbumShelf[] = [];
-  for (const node of [...tree.collections].sort((a, b) => compare(a.collection, b.collection))) {
-    const all = [...node.albums].sort(compare);
-    const listed = all.filter((album) => matchesFilter(album, filter, userId));
-    const hits = listed.filter((album) => matchesSearch(album, search));
-    const selfMatch = passes(node.collection);
-    const albums = searching ? (hits.length > 0 ? hits : selfMatch ? listed : []) : listed;
-    const visible = searching
-      ? hits.length > 0 || selfMatch
-      : albums.length > 0 || matchesFilter(node.collection, filter, userId);
-    if (visible) {
-      shelves.push({
-        collection: node.collection,
-        albums,
-        all,
-        albumCount: node.albumCount,
-        assetCount: node.assetCount,
-      });
+  const contentMemo = new Map<string, boolean>();
+  const hasContent = (album: AlbumResponseDto): boolean => {
+    let known = contentMemo.get(album.id);
+    if (known === undefined) {
+      known =
+        album.kind === AlbumKind.Space ||
+        album.assetCount > 0 ||
+        !!album.statsPending ||
+        // A collection with nothing in it yet is a place to put albums, not an empty album.
+        (album.kind === AlbumKind.Collection && !children.has(album.id)) ||
+        descendants(album).some((child) => child.assetCount > 0 || !!child.statsPending);
+      contentMemo.set(album.id, known);
+    }
+    return known;
+  };
+  const shown = (album: AlbumResponseDto) => !hideEmpty || hasContent(album);
+  /** A tile passes the filter when it, or anything inside it, does: a collection of smart albums shows under Smart. */
+  const passes = (album: AlbumResponseDto) =>
+    matchesFilter(album, filter, userId) || descendants(album).some((child) => matchesFilter(child, filter, userId));
+
+  const here = inside ? byId.get(inside) : undefined;
+  const path = here ? [...albumAncestorsIn(byId, here), here] : [];
+  const searching = searchTokens(search).length > 0;
+  const belowHere = here ? new Set([...descendants(here)].map(({ id }) => id)) : undefined;
+  const level = searching
+    ? everything.filter(
+        (album) => album.id !== here?.id && (!belowHere || belowHere.has(album.id)) && matchesSearch(album, search),
+      )
+    : everything.filter((album) => (parentOf.get(album.id) ?? null) === (here?.id ?? null));
+
+  const holds = (album: AlbumResponseDto) => (album.kind === AlbumKind.Collection || children.has(album.id) ? 0 : 1);
+  const compare = compareAlbums(sort, order, opened);
+  const filtered = level.filter((album) => (searching ? matchesFilter(album, filter, userId) : passes(album)));
+  const listed = filtered
+    .filter((album) => shown(album))
+    .sort((a, b) => (collectionsFirst ? holds(a) - holds(b) : 0) || compare(a, b));
+
+  const sections = new Map<string, AlbumResponseDto[]>();
+  for (const album of listed) {
+    const key = groupKeyOf(album, group, userId);
+    sections.set(key, [...(sections.get(key) ?? []), album]);
+  }
+  const groups = orderGroups(
+    [...sections].map(([id, albums]) => ({ id, albums })),
+    group,
+    order,
+  );
+
+  const insideCounts = new Map<string, number>();
+  for (const [id, list] of children) {
+    insideCounts.set(id, list.filter((child) => child.kind !== AlbumKind.Space && shown(child)).length);
+  }
+
+  const itemTotals = new Map<string, number>();
+  for (const album of everything) {
+    if (children.has(album.id) || album.kind === AlbumKind.Collection) {
+      itemTotals.set(
+        album.id,
+        descendants(album).reduce((sum, child) => sum + child.assetCount, album.assetCount),
+      );
     }
   }
 
-  const albums = tree.albums.filter((node) => passes(node)).sort(compare);
-  const spaces = tree.spaces.filter((node) => passes(node)).sort(compare);
-
-  const everything = [
-    ...tree.collections.flatMap((node) => [node.collection, ...node.albums]),
-    ...tree.albums,
-    ...tree.spaces,
-  ];
-  const totals = {
-    albums: everything.filter((album) => album.kind === AlbumKind.Album).length,
-    collections: tree.collections.length,
-    shared: everything.filter((album) => isSharedWithPeople(album)).length,
-  };
+  const emptyHidden = hideEmpty
+    ? everything.filter((album) => album.kind === AlbumKind.Album && !hasContent(album)).length
+    : 0;
 
   return {
-    shelves,
-    albums,
-    spaces,
-    totals,
+    here,
+    path,
+    groups,
+    listed: groups.flatMap(({ albums }) => albums),
+    inside: insideCounts,
+    items: itemTotals,
+    totals: {
+      albums: everything.filter((album) => album.kind === AlbumKind.Album).length,
+      collections: everything.filter((album) => album.kind === AlbumKind.Collection).length,
+      spaces: everything.filter((album) => album.kind === AlbumKind.Space).length,
+      emptyHidden,
+    },
+    hiddenHere: filtered.length - listed.length,
     searching,
-    empty: shelves.length === 0 && albums.length === 0 && spaces.length === 0,
+    empty: listed.length === 0,
   };
+};
+
+/**
+ * Where each album sits in the hierarchy the page browses, as the server's own hierarchy does
+ * (`albumOrderGroup` with `hierarchy`): an album whose parent the viewer can't see, a shared space, and
+ * an album under a shared space are at the top level; so is any album caught in a parent cycle.
+ */
+export const effectiveParents = (albums: AlbumResponseDto[]): Map<string, string | null> => {
+  const byId = new Map(albums.map((album) => [album.id, album]));
+  const parents = new Map<string, string | null>();
+  for (const album of albums) {
+    const parent = album.parentId ? byId.get(album.parentId) : undefined;
+    parents.set(
+      album.id,
+      parent && album.kind !== AlbumKind.Space && parent.kind !== AlbumKind.Space ? parent.id : null,
+    );
+  }
+  for (const album of albums) {
+    const seen = new Set([album.id]);
+    for (let up = parents.get(album.id); up; up = parents.get(up) ?? null) {
+      if (seen.has(up)) {
+        parents.set(album.id, null);
+        break;
+      }
+      seen.add(up);
+    }
+  }
+  return parents;
 };
 
 /**
@@ -267,20 +490,25 @@ export interface AlbumOrderGroup {
 }
 
 export const orderGroupOf = (tree: AlbumTreeResponseDto, albumId: string): AlbumOrderGroup | undefined => {
-  if (tree.collections.some(({ collection }) => collection.id === albumId)) {
-    return { parentId: null, ids: tree.collections.map(({ collection }) => collection.id) };
+  // FL-1836: the siblings the page shows together, as the server groups them with `hierarchy: true`.
+  const all = directoryAlbums(tree);
+  const album = all.find(({ id }) => id === albumId);
+  if (!album) {
+    return undefined;
   }
-  for (const node of tree.collections) {
-    if (node.albums.some(({ id }) => id === albumId)) {
-      return { parentId: node.collection.id, ids: node.albums.map(({ id }) => id) };
-    }
-  }
-  if (tree.albums.some(({ id }) => id === albumId)) {
-    return { parentId: null, ids: tree.albums.map(({ id }) => id) };
-  }
-  if (tree.spaces.some(({ id }) => id === albumId)) {
-    return { parentId: null, ids: tree.spaces.map(({ id }) => id) };
-  }
+  const parents = effectiveParents(all);
+  const parentId = parents.get(albumId) ?? null;
+  const isSpace = album.kind === AlbumKind.Space;
+  return {
+    parentId,
+    ids: all
+      .filter(
+        (item) =>
+          (parents.get(item.id) ?? null) === parentId &&
+          (parentId !== null || (item.kind === AlbumKind.Space) === isSpace),
+      )
+      .map(({ id }) => id),
+  };
 };
 
 /** The group's ids with `albumId` moved `step` places (−1 earlier, +1 later); undefined at an end. */
