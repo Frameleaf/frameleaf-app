@@ -87,8 +87,9 @@ const GB = 2 ** 30;
  * FL-1828: WAL. Every job writes to many indexes of a large table, so after each checkpoint the first change to each
  * page writes the whole page into the WAL: about 30 MB a second under steady background work, which filled the
  * default 16 MB WAL buffer over and over, so every write (the websocket heartbeat too) waited for the disk to take
- * WAL, and statements timed out on slow storage. zstd compresses those page images; checkpoints every 15 minutes
- * instead of 5 write them a third as often; a larger buffer absorbs the bursts.
+ * WAL, and statements timed out on slow storage. zstd compresses those page images (about a quarter of the WAL,
+ * so checkpoints, which heavy work triggers by WAL size, come about four times less often); a larger buffer absorbs
+ * the bursts; and under light work the 15-minute timer, not 5, sets how often the page images come back.
  */
 export function postgresTuning(bytes: number): { shm_size: string; command: string[] } {
   const ram = bytes >= GB ? Math.round(bytes / GB) * 1024 : Math.max(64, Math.floor(bytes / MB));
