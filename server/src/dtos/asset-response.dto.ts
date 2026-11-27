@@ -329,7 +329,6 @@ export function mapAsset(entity: MaybeDehydrated<MapAsset>, options: AssetMapOpt
       localDateTime: asDateTimeString(entity.localDateTime),
       dateAccuracy: entity.dateAccuracy ?? undefined,
       dateDetail: entity.dateAccuracy === 'year' ? (entity.dateDetail ?? undefined) : undefined,
-      dateDetail: entity.dateAccuracy === 'year' ? (entity.dateDetail ?? undefined) : undefined,
       duration: entity.duration,
       livePhotoVideoId: entity.livePhotoVideoId,
       imageEncoding:
