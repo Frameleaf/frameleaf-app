@@ -17,8 +17,8 @@ const raw = (): unknown =>
   JSON.parse(readFileSync(join(process.cwd(), 'resources/desktop/model-catalogue.json'), 'utf8'));
 it('preserves every prior binding and selects the qualified precision-corrected CPU profiles', () => {
   const catalogue = parseDesktopModelCatalogue(raw());
-  expect(catalogue.epoch).toBe(20);
-  expect(catalogue.profiles).toHaveLength(206);
+  expect(catalogue.epoch).toBe(21);
+  expect(catalogue.profiles).toHaveLength(215);
   expect(
     createHash('sha256')
       .update(canonicalJson(catalogue.profiles.slice(0, 27)))
@@ -38,7 +38,7 @@ it('preserves every prior binding and selects the qualified precision-corrected 
 });
 it('validates the approved default model and preserves exact config, source and provider identity', () => {
   const catalogue = parseDesktopModelCatalogue(raw());
-  expect(catalogue.profiles).toHaveLength(206);
+  expect(catalogue.profiles).toHaveLength(215);
   for (const profile of catalogue.profiles) {
     if (profile.workload !== 'clip') continue;
     expect(profile.embeddingDimensions).toBe(CLIP_MODEL_INFO[profile.modelName].dimSize);
@@ -423,7 +423,7 @@ it('preserves all CPU profiles while admitting only the proved CoreML CLIP sourc
 it('selects current-main CoreML profiles with distinct preprocessing while preserving prior bindings', () => {
   const catalogue = parseDesktopModelCatalogue(raw());
   expect(catalogue.epoch).toBeGreaterThanOrEqual(9);
-  expect(catalogue.profiles).toHaveLength(206);
+  expect(catalogue.profiles).toHaveLength(215);
   expect(
     createHash('sha256')
       .update(canonicalJson(catalogue.profiles.slice(0, 24)))
@@ -454,8 +454,8 @@ it('selects current-main CoreML profiles with distinct preprocessing while prese
 
 it('selects exact current CPU and CoreML profiles while preserving all historical bindings', () => {
   const catalogue = parseDesktopModelCatalogue(raw());
-  expect(catalogue.epoch).toBe(20);
-  expect(catalogue.profiles).toHaveLength(206);
+  expect(catalogue.epoch).toBe(21);
+  expect(catalogue.profiles).toHaveLength(215);
   expect(
     createHash('sha256')
       .update(canonicalJson(catalogue.profiles.slice(0, 32)))
@@ -491,8 +491,8 @@ it('selects exact current CPU and CoreML profiles while preserving all historica
 
 it('epoch 12 adds CUDA and OpenVINO twins of the current CPU profiles and keeps every prior binding', () => {
   const catalogue = parseDesktopModelCatalogue(raw());
-  expect(catalogue.epoch).toBe(20);
-  expect(catalogue.profiles).toHaveLength(206);
+  expect(catalogue.epoch).toBe(21);
+  expect(catalogue.profiles).toHaveLength(215);
   expect(
     createHash('sha256')
       .update(canonicalJson(catalogue.profiles.slice(0, 42)))
@@ -517,8 +517,8 @@ it('epoch 12 adds CUDA and OpenVINO twins of the current CPU profiles and keeps 
 
 it('epoch 13 qualifies every selectable model the desktop runtimes can run and keeps every prior binding', () => {
   const catalogue = parseDesktopModelCatalogue(raw());
-  expect(catalogue.epoch).toBe(20);
-  expect(catalogue.profiles).toHaveLength(206);
+  expect(catalogue.epoch).toBe(21);
+  expect(catalogue.profiles).toHaveLength(215);
   expect(
     createHash('sha256')
       .update(canonicalJson(catalogue.profiles.slice(0, 42)))
@@ -577,8 +577,8 @@ it('epoch 13 qualifies every selectable model the desktop runtimes can run and k
 
 it('epoch 14 appended a twin of every f2c451a6 profile; epoch 16 names the runtime source that works on every provider', () => {
   const catalogue = parseDesktopModelCatalogue(raw());
-  expect(catalogue.epoch).toBe(20);
-  expect(catalogue.profiles).toHaveLength(206);
+  expect(catalogue.epoch).toBe(21);
+  expect(catalogue.profiles).toHaveLength(215);
   expect(
     createHash('sha256')
       .update(canonicalJson(catalogue.profiles.slice(0, 102)))
