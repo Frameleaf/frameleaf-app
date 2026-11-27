@@ -9,6 +9,8 @@
    * path from the album directory's parent chain. A collection without a colour keeps the plain
    * icon colour; a failed read is shown in place with a Retry.
    */
+  import EmptyRow from '$lib/components/frameleaf/EmptyRow.svelte';
+  import ListSkeleton from '$lib/components/frameleaf/ListSkeleton.svelte';
   import AlbumIcon from '$lib/components/frameleaf/AlbumIcon.svelte';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import InlineError from '$lib/components/frameleaf/InlineError.svelte';
@@ -118,9 +120,9 @@
   {#if failed}
     <InlineError compact message={$t('frameleaf_boards_collections_unavailable')} onRetry={() => generation++} />
   {:else if loading}
-    <p role="status">{$t('loading')}</p>
+    <ListSkeleton rows={2} avatar={false} />
   {:else if entries.length === 0}
-    <p>{$t('frameleaf_boards_collections_empty')}</p>
+    <EmptyRow title={$t('frameleaf_boards_collections_empty')} />
   {:else}
     <ul>
       {#each entries as { album, path } (album.id)}
@@ -153,11 +155,6 @@
     margin: 0;
     color: var(--fl-muted);
     font-size: 12px;
-  }
-  p {
-    margin: 0;
-    color: var(--fl-muted);
-    font-size: var(--fl-font-small);
   }
   ul {
     display: grid;

@@ -1,9 +1,9 @@
 <script lang="ts">
+  import GridSkeleton from '$lib/components/frameleaf/GridSkeleton.svelte';
   import InlineError from '$lib/components/frameleaf/InlineError.svelte';
-  import Spinner from '$lib/components/frameleaf/Spinner.svelte';
   import { rovingFocus } from '$lib/frameleaf/roving-focus';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
-  import Status from '$lib/components/frameleaf/Status.svelte';
+  import EmptyRow from '$lib/components/frameleaf/EmptyRow.svelte';
   import { handleUpdateAlbumInfo } from '$lib/services/album.service';
   import { getAssetMediaUrl } from '$lib/utils';
   import {
@@ -104,7 +104,7 @@
 <Dialog title={$t('frameleaf_album_cover_title')} closeLabel={$t('close')} bind:open>
   <div class="cover">
     {#if loading}
-      <div class="loading"><Spinner /></div>
+      <div class="loading"><GridSkeleton tiles={12} columns={6} /></div>
     {:else if failed}
       <InlineError
         message={$t('frameleaf_album_cover_load_failed')}
@@ -113,7 +113,7 @@
         compact
       />
     {:else if assets.length === 0}
-      <Status message={$t('frameleaf_album_cover_empty')} />
+      <EmptyRow title={$t('frameleaf_album_cover_empty')} />
     {:else}
       <div class="grid" role="radiogroup" use:rovingFocus aria-label={$t('frameleaf_album_cover_title')}>
         {#each assets as asset (asset.id)}
@@ -223,9 +223,6 @@
     opacity: 0.6;
   }
   .loading {
-    display: flex;
-    justify-content: center;
-    padding: var(--fl-space-6) 0;
-    color: var(--fl-muted);
+    padding-top: var(--fl-space-2);
   }
 </style>
