@@ -339,4 +339,45 @@ describe(FolderAlbumService.name, () => {
     await defaultDatabase.deleteFrom('album_asset').where('assetId', '=', edit.id).execute();
     expect(await bucket()).toEqual({ [original.id]: 0, [renamed.id]: 2 });
   });
+
+  it('FL-1838: one album brings its Edits album back in, and takes it out again, deleting no photo', async () => {
+    const { sut, ctx } = setup();
+    const { library, file } = await newLibrary(ctx, ['/fl1838b/events']);
+    await ctx.get(LibraryRepository).update(library.id, { folderAlbumOptions: EVENT_FOLDER_ALBUM_OPTIONS });
+    const root = '/fl1838b/events/2026-11-19 - Nathan';
+    const other = '/fl1838b/events/2026-11-20 - Park';
+    const original = await file(`${root}/Original/IMG_1.JPG`);
+    const edit = await file(`${root}/Edits/IMG_1-edit.jpg`);
+    const otherEdit = await file(`${other}/Edits/IMG_9-edit.jpg`);
+    await file(`${other}/Original/IMG_9.JPG`);
+    await sut.sync(library.id);
+    const event = await folderAlbum(defaultDatabase, library.id, root);
+    const editsAlbum = await folderAlbum(defaultDatabase, library.id, `${root}/Edits`);
+    expect(editsAlbum).toMatchObject({ parentId: event!.id });
+    expect(await membersOf(defaultDatabase, event!.id)).toEqual([original.id]);
+
+    // this album only: Edits with the others
+    const albums = ctx.get(AlbumRepository);
+    const link = await albums.getFolderAlbumLink(event!.id);
+    await albums.setFolderAlbumChoices(link!.id, resolveAlbumFolderChoices({ folders: { Edits: 'with' } }));
+    await sut.sync(library.id);
+    expect(await folderAlbum(defaultDatabase, library.id, `${root}/Edits`)).toBeUndefined();
+    expect(await membersOf(defaultDatabase, event!.id)).toEqual([original.id, edit.id].toSorted());
+    // the other event keeps the library's rule
+    expect(
+      await membersOf(defaultDatabase, (await folderAlbum(defaultDatabase, library.id, `${other}/Edits`))!.id),
+    ).toEqual([otherEdit.id]);
+    const assetIds = (
+      await defaultDatabase.selectFrom('asset').select('id').where('id', 'in', [edit.id]).execute()
+    ).map(({ id }) => id);
+    expect(assetIds).toEqual([edit.id]);
+
+    // and back to an album inside
+    await albums.setFolderAlbumChoices(link!.id, resolveAlbumFolderChoices({ folders: { Edits: 'album' } }));
+    await sut.sync(library.id);
+    const again = await folderAlbum(defaultDatabase, library.id, `${root}/Edits`);
+    expect(again).toMatchObject({ parentId: event!.id });
+    expect(await membersOf(defaultDatabase, again!.id)).toEqual([edit.id]);
+    expect(await membersOf(defaultDatabase, event!.id)).toEqual([original.id]);
+  });
 });
