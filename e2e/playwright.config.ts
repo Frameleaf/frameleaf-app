@@ -84,6 +84,20 @@ const config: PlaywrightTestConfig = {
     // project is added here. Firefox is not installed by any CI/devcontainer `playwright install`
     // today (both call sites pin `chromium` only) - install it first (`playwright install firefox`)
     // before running either new script.
+    // FL-1832: the iPad touch specs in Playwright's WebKit with an iPad profile. The `ui` project runs
+    // the same files in Chromium with touch on; this lane needs `playwright install webkit`, so it
+    // exists only when PLAYWRIGHT_IPAD_WEBKIT is set.
+    ...(process.env.PLAYWRIGHT_IPAD_WEBKIT
+      ? [
+          {
+            name: 'ui-ipad-webkit',
+            use: { ...devices['iPad Pro 11'], serviceWorkers: 'block' as const },
+            testDir: './src/ui/specs',
+            testMatch: /.*-touch\.e2e-spec\.ts/,
+            workers: 1,
+          },
+        ]
+      : []),
     ...(process.env.PLAYWRIGHT_STUDIO_FIREFOX
       ? [
           {

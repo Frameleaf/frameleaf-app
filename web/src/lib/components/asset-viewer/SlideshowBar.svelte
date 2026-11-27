@@ -132,21 +132,48 @@
   // A tap on the photo toggles the chrome and a swipe down shows it (MediaViewer.jsx:559-583).
   const CHROME = '[data-viewer-chrome]';
   const inChrome = (node: EventTarget | Element | null) => node instanceof Element && !!node.closest(CHROME);
+  /*
+   * FL-1832: on an iPad (all its browsers are WebKit) the tap must survive what iPadOS does to a
+   * touch, none of which a mouse does:
+   * - a finger drifts a few points while it rests, so a touch may travel UIKit's tap allowance
+   *   (10 pt) where a mouse click keeps the template's 6 px;
+   * - while the slideshow decodes the next photo the handlers can run late, so the press is timed
+   *   by the events' own timestamps rather than by when the handler ran;
+   * - iPadOS may end a still touch with `pointercancel` instead of `pointerup` when its own gesture
+   *   recognizers take it, so a cancelled touch that never moved still counts as the tap.
+   * The canvas also takes `touch-action: none` during a slideshow (AssetViewer), so no pan or zoom
+   * of the page claims the touch in the first place.
+   */
+  const TAP_MS = 280;
+  const tapSlop = (event: PointerEvent) => (event.pointerType === 'mouse' ? 6 : 10);
   // the state at pointerdown decides the toggle, so a swipe-down reveal in between cannot undo it
-  let tap: { x: number; y: number; time: number; hidden: boolean } | undefined;
+  let tap: { id: number; x: number; y: number; time: number; hidden: boolean; travel: number } | undefined;
   const onPointerDown = (event: PointerEvent) => {
     const target = event.target as Element | null;
+    // a second finger (a pinch) is never a tap; the same pointer pressing again replaces a press whose release never arrived
     tap =
-      target?.closest?.('[data-viewer-content]') && !inChrome(target)
-        ? { x: event.clientX, y: event.clientY, time: performance.now(), hidden: chromeHidden }
+      (!tap || tap.id === event.pointerId) && target?.closest?.('[data-viewer-content]') && !inChrome(target)
+        ? {
+            id: event.pointerId,
+            x: event.clientX,
+            y: event.clientY,
+            time: event.timeStamp,
+            hidden: chromeHidden,
+            travel: 0,
+          }
         : undefined;
+  };
+  const onPointerMove = (event: PointerEvent) => {
+    if (tap?.id === event.pointerId) {
+      tap.travel = Math.max(tap.travel, Math.hypot(event.clientX - tap.x, event.clientY - tap.y));
+    }
   };
   const onPointerUp = (event: PointerEvent) => {
     const start = tap;
-    tap = undefined;
-    if (!start) {
+    if (start?.id !== event.pointerId) {
       return;
     }
+    tap = undefined;
     const dx = event.clientX - start.x;
     const dy = event.clientY - start.y;
     // a swipe down reveals the chrome (source behaviour)
@@ -154,10 +181,21 @@
       chromeHidden = false;
       return;
     }
-    if (!(Math.hypot(dx, dy) < 6) || performance.now() - start.time >= 280) {
+    const travel = Math.max(start.travel, Math.hypot(dx, dy));
+    if (travel < tapSlop(event) && event.timeStamp - start.time < TAP_MS) {
+      chromeHidden = !start.hidden;
+    }
+  };
+  const onPointerCancel = (event: PointerEvent) => {
+    const start = tap;
+    if (start?.id !== event.pointerId) {
       return;
     }
-    chromeHidden = !start.hidden;
+    tap = undefined;
+    // the cancel's own position may be (0, 0), so only the moves seen before it count
+    if (event.pointerType !== 'mouse' && start.travel < tapSlop(event) && event.timeStamp - start.time < TAP_MS) {
+      chromeHidden = !start.hidden;
+    }
   };
 
   // the settings panel keeps the chrome on screen
@@ -232,7 +270,13 @@
   });
 </script>
 
-<svelte:document use:shortcuts={shortcutBindings} onpointerdown={onPointerDown} onpointerup={onPointerUp} />
+<svelte:document
+  use:shortcuts={shortcutBindings}
+  onpointerdown={onPointerDown}
+  onpointermove={onPointerMove}
+  onpointerup={onPointerUp}
+  onpointercancel={onPointerCancel}
+/>
 
 <!-- media-viewer.css:425-450: the thin accent line along the top of the canvas, under the header -->
 {#if !isVideoSlide}
