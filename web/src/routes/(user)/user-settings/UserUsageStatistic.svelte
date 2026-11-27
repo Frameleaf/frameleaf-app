@@ -17,6 +17,7 @@
   import Meter from '$lib/components/frameleaf/settings/kit/Meter.svelte';
   import Section from '$lib/components/frameleaf/settings/kit/Section.svelte';
   import Skeleton from '$lib/elements/Skeleton.svelte';
+  import { formatCount } from '$lib/frameleaf/number-format';
   import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { locale } from '$lib/stores/preferences.store';
@@ -76,7 +77,7 @@
       .catch(() => (taken = null));
   });
 
-  const count = (value: number) => value.toLocaleString($locale);
+  const count = (value: number) => formatCount(value, $locale);
   const size = (bytes: number) => getByteUnitString(bytes, $locale);
 
   // The room used and the limit are on the person's own record.

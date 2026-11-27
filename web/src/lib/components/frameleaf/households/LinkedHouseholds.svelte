@@ -6,6 +6,7 @@
    * An invitation lives only as long as this page: the server has no list of open invitations and
    * no way to withdraw one, so the waiting row offers Show and not the mock's Cancel.
    */
+  import { formatDate } from '$lib/frameleaf/date-format';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import HouseholdAcceptDialog from '$lib/components/frameleaf/households/HouseholdAcceptDialog.svelte';
   import HouseholdInviteDialog from '$lib/components/frameleaf/households/HouseholdInviteDialog.svelte';
@@ -130,12 +131,9 @@
     said = $t('frameleaf_households_unlinked', { values: { name: link.householdName } });
   };
 
-  const longDate = (iso: string) =>
-    new Intl.DateTimeFormat($locale ?? undefined, { dateStyle: 'long' }).format(new Date(iso));
+  const longDate = (iso: string) => formatDate(new Date(iso), { dateStyle: 'long' }, $locale ?? 'default');
   const inviteDate = (iso: string) =>
-    new Intl.DateTimeFormat($locale ?? undefined, { weekday: 'long', month: 'long', day: 'numeric' }).format(
-      new Date(iso),
-    );
+    formatDate(new Date(iso), { weekday: 'long', month: 'long', day: 'numeric' }, $locale ?? 'default');
   const ago = (iso: string) =>
     DateTime.fromISO(iso)
       .setLocale($locale ?? 'en')

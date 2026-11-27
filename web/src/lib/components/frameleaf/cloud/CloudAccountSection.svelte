@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { formatDateTime } from '$lib/frameleaf/date-format';
   import { locale } from '$lib/stores/preferences.store';
   /**
    * Settings → Frameleaf Cloud → Account & link (FL-154, FL-155): the prototype's `AccountLink`
@@ -68,7 +69,7 @@
   const expired = $derived(status?.state === 'pending' && codeExpired);
 
   const formatWhen = (value: string | null | undefined) =>
-    value ? new Intl.DateTimeFormat($locale, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value)) : '—';
+    value ? formatDateTime(new Date(value), { dateStyle: 'medium', timeStyle: 'short' }, $locale) : '—';
 
   const act = async (call: () => Promise<unknown>, success = '') => {
     busy = true;

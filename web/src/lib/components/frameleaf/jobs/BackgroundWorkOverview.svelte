@@ -23,6 +23,7 @@
   import Section from '$lib/components/frameleaf/settings/kit/Section.svelte';
   import { summariseWork, workLeft, workNow, workState, type WorkRow, type WorkState } from '$lib/frameleaf/computers';
   import { isFeatureOff, JOB_QUEUE_CATEGORIES, JOB_QUEUES, type JobTab } from '$lib/frameleaf/job-queues';
+  import { formatCount } from '$lib/frameleaf/number-format';
   import { commandCenterUrl } from '$lib/frameleaf/settings-areas';
   import type { SystemConfigDraftStore } from '$lib/frameleaf/system-config-draft.svelte';
   import {
@@ -92,7 +93,7 @@
     onRetry: () => void;
   } = $props();
 
-  const number = (value: number) => value.toLocaleString($locale);
+  const number = (value: number) => formatCount(value, $locale);
   const name = ({ definition }: Pick<WorkRow, 'definition'>) => $t(`frameleaf_work_${definition.key}` as Translations);
   const does = ({ definition }: WorkRow) => $t(`frameleaf_work_${definition.key}_does` as Translations);
 
