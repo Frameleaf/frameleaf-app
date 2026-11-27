@@ -484,4 +484,75 @@ describe('memoryManager slim list', () => {
       'memory-0',
     ]);
   });
+
+  /** Answers the list, the hidden list and a read of one memory by what each request asks for. */
+  const answer = ({ list, opened }: { list: MemoryResponseDto[]; opened?: MemoryResponseDto }) => {
+    vi.mocked(memoriesStatistics).mockResolvedValue({ total: list.length });
+    vi.mocked(searchMemories).mockImplementation((query) =>
+      Promise.resolve(query.id ? (opened ? [opened] : []) : query.isHidden ? [] : list),
+    );
+  };
+
+  it('never shows a read sent before a lock to the locked session', async () => {
+    memoryManager.memories = [slim('memory-1', ['asset-1'])];
+    const beforeLock = deferredPromise<MemoryResponseDto[]>();
+    vi.mocked(searchMemories).mockReturnValueOnce(beforeLock.promise);
+    const opening = memoryManager.loadMemory('memory-1');
+
+    // the lock reloads the list; the open memory comes back slim and is read again in the new state
+    answer({ list: [slim('memory-1', ['asset-1'])], opened: full('memory-1', ['asset-1']) });
+    await memoryManager.reloadForSessionAccess();
+    await vi.waitFor(() => expect(memoryManager.current?.asset.id).toBe('asset-1'));
+    const afterLock = memoryManager.memories[0].assets;
+
+    beforeLock.resolve([full('memory-1', ['asset-1', 'revealed'])]);
+    await expect(opening).resolves.toBeUndefined();
+    expect(memoryManager.memories[0].assets).toBe(afterLock);
+    expect(memoryManager.memories[0].slimAssets.map(({ id }) => id)).toEqual(['asset-1']);
+    expect(vi.mocked(searchMemories).mock.calls.filter(([query]) => query.id === 'memory-1')).toHaveLength(2);
+  });
+
+  it('reads a memory again rather than bring back an item hidden while it was read', async () => {
+    memoryManager.memories = [slim('memory-1', ['asset-1', 'hidden-meanwhile'])];
+    const read = deferredPromise<MemoryResponseDto[]>();
+    vi.mocked(searchMemories).mockReturnValueOnce(read.promise);
+    vi.mocked(searchMemories).mockResolvedValueOnce([full('memory-1', ['asset-1'])]);
+    const opening = memoryManager.loadMemory('memory-1');
+
+    await memoryManager.hideAssets(['hidden-meanwhile']);
+    read.resolve([full('memory-1', ['asset-1', 'hidden-meanwhile'])]);
+    const opened = await opening;
+
+    expect(opened?.assets.map(({ id }) => id)).toEqual(['asset-1']);
+    expect(memoryManager.memories[0].slimAssets.map(({ id }) => id)).toEqual(['asset-1']);
+  });
+
+  it('keeps the open memory showing through an ordinary reload, but not through a lock', async () => {
+    memoryManager.memories = [slim('memory-1', ['asset-1', 'asset-2'])];
+    vi.mocked(searchMemories).mockResolvedValueOnce([full('memory-1', ['asset-1', 'asset-2'])]);
+    await memoryManager.loadMemory('memory-1');
+    expect(memoryManager.current?.asset.id).toBe('asset-1');
+
+    // "Show less" reloads the list; the open memory's items are unchanged, so they are kept
+    answer({ list: [slim('memory-1', ['asset-2', 'asset-1'])] });
+    await memoryManager.addShowLess({ kind: MemoryShowLessKind.Date, value: '01-01' });
+    expect(memoryManager.current?.asset.id).toBe('asset-1');
+    expect(memoryManager.memories[0].assets.map(({ id }) => id)).toEqual(['asset-2', 'asset-1']);
+    expect(vi.mocked(searchMemories).mock.calls.filter(([query]) => query.id === 'memory-1')).toHaveLength(1);
+
+    answer({ list: [slim('memory-1', ['asset-1', 'asset-2'])], opened: full('memory-1', ['asset-1', 'asset-2']) });
+    await memoryManager.reloadForSessionAccess();
+    await vi.waitFor(() =>
+      expect(vi.mocked(searchMemories).mock.calls.filter(([query]) => query.id === 'memory-1')).toHaveLength(2),
+    );
+  });
+
+  it('tries a failed read of the opened memory once more', async () => {
+    memoryManager.memories = [slim('memory-1', ['asset-1'])];
+    vi.mocked(searchMemories).mockRejectedValueOnce(new Error('offline'));
+    vi.mocked(searchMemories).mockResolvedValueOnce([full('memory-1', ['asset-1'])]);
+
+    await expect(memoryManager.loadMemory('memory-1')).resolves.toMatchObject({ id: 'memory-1' });
+    expect(memoryManager.current?.asset.id).toBe('asset-1');
+  });
 });

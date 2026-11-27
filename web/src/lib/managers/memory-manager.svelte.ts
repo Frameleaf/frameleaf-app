@@ -55,6 +55,10 @@ const toSlimAsset = (asset: AssetResponseDto): MemorySlimAssetDto => ({
   visibility: asset.visibility,
 });
 
+/** Whether full items are exactly the memory's current items (same ids, any order). */
+const sameItems = (assets: AssetResponseDto[], slimAssets: MemorySlimAssetDto[]) =>
+  assets.length === slimAssets.length && slimAssets.every(({ id }) => assets.some((asset) => asset.id === id));
+
 /** A memory as the server sent it, with `slimAssets` filled from its full items when it came with those. */
 const withSlimAssets = (memory: MemoryResponseDto): LoadedMemory =>
   Object.assign(memory, {
@@ -93,6 +97,16 @@ class MemoryManager {
   #received = 0;
   #queued: boolean = false;
   #generation = 0;
+  /**
+   * FL-1793: bumped by a lock, an unlock and a sign-out, the changes after which nothing read before
+   * may be shown again. Full items kept across an ordinary reload (`#keptItems`) carry the value they
+   * were kept at and are used only while it is unchanged.
+   */
+  #accessGeneration = 0;
+  /** FL-1793: bumped by every local edit of a memory's items, so a read sent before it is not written over it. */
+  #edits = 0;
+  /** FL-1793: the full items of opened memories, kept by `clearCache` so a reload does not empty the player. */
+  #keptItems: { accessGeneration: number; items: Map<string, AssetResponseDto[]> } | undefined;
 
   constructor() {
     // FL-62: the first page already honours the owner's Memory settings.
@@ -100,6 +114,7 @@ class MemoryManager {
     eventManager.on({
       AuthLogout: () => {
         this.clearCache();
+        this.#accessGeneration++;
         this.hidden = [];
         this.showLess = [];
       },
@@ -141,6 +156,8 @@ class MemoryManager {
   /** Drop every memory this session state loaded and read them again (a page in flight is discarded). */
   async reloadForSessionAccess() {
     this.clearCache();
+    // what the other state read is never shown again, nor reused by a read still in flight
+    this.#accessGeneration++;
     this.hidden = [];
     this.showLess = [];
     await Promise.all([this.initialize(), this.loadHidden(), this.loadShowLess()]);
@@ -327,27 +344,45 @@ class MemoryManager {
     return memory;
   }
 
-  /** Reads in flight, so the page load and a background read of the same memory share one request. */
-  #fullLoads = new Map<string, Promise<MemoryResponseDto | undefined>>();
+  /**
+   * Reads in flight, so the page load and a background read of the same memory share one request. A
+   * read is shared only by callers in the same session state and after the same local edits; a lock,
+   * an unlock or a reload (`clearCache`) empties the map.
+   */
+  #fullLoads = new Map<string, { edits: number; read: Promise<MemoryResponseDto | undefined> }>();
 
-  async #loadFull(id: string) {
+  async #loadFull(id: string, retried = false): Promise<LoadedMemory | undefined> {
     const memory = this.#getMemory(id);
     if (memory && memory.assets.length > 0) {
       return memory;
     }
 
     const isCurrent = this.#captureState();
+    const edits = this.#edits;
     let pending = this.#fullLoads.get(id);
-    if (!pending) {
-      pending = searchMemories({ id })
+    if (pending?.edits !== edits) {
+      const read = searchMemories({ id })
         .then(([found]) => found)
         .catch(() => undefined)
-        .finally(() => this.#fullLoads.delete(id));
+        .finally(() => {
+          if (this.#fullLoads.get(id)?.read === read) {
+            this.#fullLoads.delete(id);
+          }
+        });
+      pending = { edits, read };
       this.#fullLoads.set(id, pending);
     }
-    const found = await pending;
+    const found = await pending.read;
     if (!isCurrent()) {
       return;
+    }
+    if (this.#edits !== edits) {
+      // an item was hidden, removed or put back while this was read: read again once rather than undo it
+      return retried ? this.#getMemory(id) : this.#loadFull(id, true);
+    }
+    if (!found && !retried) {
+      // a failed read leaves the player with nothing to show, so it is tried once more
+      return this.#loadFull(id, true);
     }
     // A memory whose items were all removed has nothing to show (it is deleted once its Undo closes).
     if (!found || found.assets.length === 0) {
@@ -373,6 +408,7 @@ class MemoryManager {
     }
 
     const idSet = new Set<string>(ids);
+    this.#edits++;
     for (const memory of this.memories) {
       memory.assets = memory.assets.filter((asset) => !idSet.has(asset.id));
       memory.slimAssets = memory.slimAssets.filter((asset) => !idSet.has(asset.id));
@@ -412,6 +448,7 @@ class MemoryManager {
     if (removed.find((result) => result.id === asset.id)?.success !== true) {
       throw new Error('Unable to remove the item from this memory');
     }
+    this.#edits++;
     memory.assets.splice(assetIndex, 1);
     memory.slimAssets = memory.slimAssets.filter(({ id }) => id !== asset.id);
     const memoryIndex = this.memories.indexOf(memory);
@@ -475,6 +512,7 @@ class MemoryManager {
     if (restored.find((result) => result.id === asset.id)?.success !== true) {
       throw new Error('Unable to restore the item to this memory');
     }
+    this.#edits++;
     memory.assets.splice(Math.min(assetIndex, memory.assets.length), 0, asset);
     memory.slimAssets.splice(Math.min(assetIndex, memory.slimAssets.length), 0, toSlimAsset(asset));
     if (emptied && !this.memories.includes(memory)) {
@@ -609,6 +647,7 @@ class MemoryManager {
         const ordered = curation.assetOrder!.map((assetId) => byId.get(assetId)).filter((asset) => asset !== undefined);
         return [...ordered, ...assets.filter((asset) => !curation.assetOrder!.includes(asset.id))];
       };
+      this.#edits++;
       memory.assets = reorder(memory.assets);
       memory.slimAssets = reorder(memory.slimAssets);
     }
@@ -685,6 +724,11 @@ class MemoryManager {
   }
 
   private clearCache() {
+    const kept = new Map(
+      this.memories.filter((memory) => memory.assets.length > 0).map((memory) => [memory.id, memory.assets] as const),
+    );
+    this.#keptItems = kept.size > 0 ? { accessGeneration: this.#accessGeneration, items: kept } : undefined;
+    this.#fullLoads.clear();
     this.#generation++;
     this.#loading = undefined;
     this.#queued = false;
@@ -732,17 +776,24 @@ class MemoryManager {
       this.#received += items.length;
       this.#total = total;
       const knownIds = new Set(this.memories.map(({ id }) => id));
+      const kept = this.#keptItems?.accessGeneration === this.#accessGeneration ? this.#keptItems.items : undefined;
       for (const received of items) {
         const item = withSlimAssets(received);
+        // An opened memory keeps its full items through an ordinary reload while they are still exactly
+        // its items, so the player does not go blank; a lock, an unlock or a sign-out never reuses them.
+        const keptAssets = kept?.get(item.id);
+        if (keptAssets && sameItems(keptAssets, item.slimAssets)) {
+          item.assets = item.slimAssets.map(({ id }) => keptAssets.find((asset) => asset.id === id)!);
+        }
         // Empty memories count toward pagination but never appear in the list.
         if (item.slimAssets.length > 0 && !knownIds.has(item.id)) {
           knownIds.add(item.id);
           this.memories.push(item);
         }
       }
-      // A reload while the player is open (a lock, the hourly refresh) reads the open memory's items again.
+      // A reload while the player is open reads the open memory's items again when they were not kept.
       const openId = page.params?.id;
-      if (openId && this.#getMemory(openId)) {
+      if (openId && this.#getMemory(openId)?.assets.length === 0) {
         void this.loadMemory(openId);
       }
 
