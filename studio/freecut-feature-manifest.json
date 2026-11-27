@@ -13753,8 +13753,12 @@
           "e6bca4d7d8",
           "0024-project-master-mute.patch",
           "0058-preview-layout-keyboard-accessibility.patch",
-          "0113-crop-rotation-keyboard-entry.patch"
+          "0113-crop-rotation-keyboard-entry.patch",
+          "0204-upstream-fixes.patch",
+          "0205-frameleaf-accent.patch",
+          "0206-studio-not-upstream.patch"
         ],
+        "note": "FL-1819 (0204) ports upstream fixes made after the pin: the caret stays put while a title is typed in the inspector, and the inspector's selection is memoised. FL-1822: 0205 replaces every hard-coded upstream accent with the theme accent; 0206 removes the upstream product's name, logo, changelog button, docs link and language menu from the hosted editor.",
         "status": "shipped"
       },
       "id": "module.editor",
@@ -16172,8 +16176,11 @@
           "0022-expression-dependency-budget.patch",
           "0047-edge-keyframe-marker-overflow.patch",
           "66c16f6bcf",
-          "314181de9b"
+          "314181de9b",
+          "0204-upstream-fixes.patch",
+          "0205-frameleaf-accent.patch"
         ],
+        "note": "FL-1819 (0204) ports upstream's shift-click range selection in the keyframe sheet. FL-1822 (0205): link, curve and easing marks use the theme accent.",
         "status": "shipped"
       },
       "id": "module.keyframes",
@@ -17440,9 +17447,11 @@
           "0126-project-copy-media-entry-references.patch",
           "0132-anime4k-retained-provenance.patch",
           "0b7183d4dd",
-          "0160-library-view-in-media-bin.patch"
+          "0160-library-view-in-media-bin.patch",
+          "0204-upstream-fixes.patch",
+          "0206-studio-not-upstream.patch"
         ],
-        "note": "FL-636 adds a Library view to the bin: whole-library smart search with people, place, month and photo/video filters through the host; results are added by drag or at the playhead.",
+        "note": "FL-636 adds a Library view to the bin: whole-library smart search with people, place, month and photo/video filters through the host; results are added by drag or at the playhead. FL-1819 (0204) ports upstream's readable drop overlay, bounded preview caches and the missing-media dialog closing once media is recovered. FL-1822 (0206): messages say Studio, not the upstream product.",
         "status": "shipped"
       },
       "id": "module.media-library",

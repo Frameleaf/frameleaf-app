@@ -1,0 +1,533 @@
+diff --git a/src/features/editor/components/compose-workspace/compositing-timeline.tsx b/src/features/editor/components/compose-workspace/compositing-timeline.tsx
+index 1603f4f..395b3db 100644
+--- a/src/features/editor/components/compose-workspace/compositing-timeline.tsx
++++ b/src/features/editor/components/compose-workspace/compositing-timeline.tsx
+@@ -6329,7 +6329,7 @@ const CompositingTimelineCore = memo(function CompositingTimelineCore({
+                     className={cn(
+                       'relative border-b border-border/70',
+                       isDragging && 'z-30 opacity-85 shadow-lg',
+-                      'data-[transform-parent-link-hover=true]:bg-orange-500/10 data-[transform-parent-link-hover=true]:ring-1 data-[transform-parent-link-hover=true]:ring-inset data-[transform-parent-link-hover=true]:ring-orange-400/70',
++                      'data-[transform-parent-link-hover=true]:bg-primary/10 data-[transform-parent-link-hover=true]:ring-1 data-[transform-parent-link-hover=true]:ring-inset data-[transform-parent-link-hover=true]:ring-primary/70',
+                       'data-[transform-parent-link-rejected=true]:bg-red-500/10 data-[transform-parent-link-rejected=true]:ring-1 data-[transform-parent-link-rejected=true]:ring-inset data-[transform-parent-link-rejected=true]:ring-red-400/70',
+                     )}
+                   >
+@@ -6571,7 +6571,7 @@ const CompositingTimelineCore = memo(function CompositingTimelineCore({
+                               className={cn(
+                                 'flex h-6 w-6 shrink-0 touch-none items-center justify-center rounded-sm outline-none transition-colors hover:bg-accent focus-visible:ring-1 focus-visible:ring-primary',
+                                 parentItemId
+-                                  ? 'text-orange-400'
++                                  ? 'text-primary'
+                                   : 'text-muted-foreground hover:text-foreground',
+                               )}
+                             >
+diff --git a/src/features/editor/components/local-inference-status-pill.tsx b/src/features/editor/components/local-inference-status-pill.tsx
+index 3a8a411..9815a26 100644
+--- a/src/features/editor/components/local-inference-status-pill.tsx
++++ b/src/features/editor/components/local-inference-status-pill.tsx
+@@ -75,9 +75,9 @@ export function LocalInferenceStatusPill() {
+           className="hidden items-center gap-2 rounded-md border border-border/70 bg-secondary/35 px-2.5 py-1 lg:flex"
+         >
+           {summary.state === 'loading' || summary.state === 'running' ? (
+-            <Loader2 className="h-3.5 w-3.5 animate-spin text-orange-500" />
++            <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
+           ) : (
+-            <Cpu className="h-3.5 w-3.5 text-orange-500" />
++            <Cpu className="h-3.5 w-3.5 text-primary" />
+           )}
+           <div className="min-w-0">
+             <div className="text-[10px] font-medium leading-none">{getStateLabel(summary)}</div>
+diff --git a/src/features/editor/components/mini-timeline/mini-film-tile.tsx b/src/features/editor/components/mini-timeline/mini-film-tile.tsx
+index 680a0ca..0c1084d 100644
+--- a/src/features/editor/components/mini-timeline/mini-film-tile.tsx
++++ b/src/features/editor/components/mini-timeline/mini-film-tile.tsx
+@@ -43,7 +43,7 @@ export const MiniFilmTile = memo(function MiniFilmTile({
+       data-clip-id={dataClipId}
+       className={`group grid shrink-0 grid-rows-[20px_1fr_16px] overflow-hidden rounded-[3px] border bg-[#17181d] text-left shadow-sm transition-colors ${
+         selected
+-          ? 'border-orange-500 shadow-[0_0_0_1px_rgba(249,115,22,0.65)]'
++          ? 'border-primary ring-1 ring-primary/65'
+           : 'border-zinc-700 hover:border-zinc-500'
+       }`}
+       style={{ width: MINI_FILM_TILE_WIDTH, height: MINI_FILM_TILE_HEIGHT }}
+diff --git a/src/features/editor/components/mini-timeline/mini-timeline-track-lanes.tsx b/src/features/editor/components/mini-timeline/mini-timeline-track-lanes.tsx
+index 6fa591e..416510b 100644
+--- a/src/features/editor/components/mini-timeline/mini-timeline-track-lanes.tsx
++++ b/src/features/editor/components/mini-timeline/mini-timeline-track-lanes.tsx
+@@ -78,7 +78,7 @@ export const MiniTimelineTrackLanes = memo(function MiniTimelineTrackLanes({
+             rowHeight >= 10 ? Math.max(8, Math.min(16, rowHeight - 4)) : Math.max(4, rowHeight - 2)
+           const clipTop = laneIndex * rowHeight + Math.max(1, (rowHeight - clipHeight) / 2)
+           const clipTone = selected
+-            ? 'border-orange-500 bg-orange-500/20 shadow-[0_0_0_1px_rgba(249,115,22,0.45)]'
++            ? 'border-primary bg-primary/20 ring-1 ring-primary/45'
+             : muted
+               ? 'border-zinc-600/60 bg-zinc-500/20 opacity-70 hover:opacity-100'
+               : 'border-sky-500/70 bg-sky-500/45 hover:border-sky-300'
+diff --git a/src/features/editor/components/toolbar.tsx b/src/features/editor/components/toolbar.tsx
+index 71c9309..67e4c8f 100644
+--- a/src/features/editor/components/toolbar.tsx
++++ b/src/features/editor/components/toolbar.tsx
+@@ -44,7 +44,7 @@ const SAVE_ANIMATION_MIN_MS = 1800
+ const SaveDirtyIndicator = memo(function SaveDirtyIndicator() {
+   const isDirty = useTimelineStore((state) => state.isDirty)
+   return isDirty ? (
+-    <span className="absolute -right-1 -top-1 h-2 w-2 animate-pulse rounded-full bg-orange-500" />
++    <span className="absolute -right-1 -top-1 h-2 w-2 animate-pulse rounded-full bg-primary" />
+   ) : null
+ })
+ 
+diff --git a/src/features/keyframes/components/dopesheet-editor/compound-property-inputs.tsx b/src/features/keyframes/components/dopesheet-editor/compound-property-inputs.tsx
+index 309eecc..7870cf7 100644
+--- a/src/features/keyframes/components/dopesheet-editor/compound-property-inputs.tsx
++++ b/src/features/keyframes/components/dopesheet-editor/compound-property-inputs.tsx
+@@ -261,7 +261,7 @@ export function CompoundPropertyInputs({
+     <div
+       className={`flex shrink-0 items-center overflow-hidden rounded-sm border border-border/70 ${
+         spacious ? 'w-[192px]' : 'w-[132px]'
+-      } ${config.linked ? 'border-orange-500/50 text-orange-400' : ''}`}
++      } ${config.linked ? 'border-primary/50 text-primary' : ''}`}
+       data-testid="compound-property-inputs"
+     >
+       {config.axisLink ? (
+diff --git a/src/features/keyframes/components/dopesheet-editor/dopesheet-legend-popover.tsx b/src/features/keyframes/components/dopesheet-editor/dopesheet-legend-popover.tsx
+index 818b946..6ae4fd7 100644
+--- a/src/features/keyframes/components/dopesheet-editor/dopesheet-legend-popover.tsx
++++ b/src/features/keyframes/components/dopesheet-editor/dopesheet-legend-popover.tsx
+@@ -43,7 +43,7 @@ export function DopesheetLegendPopover({ disabled }: DopesheetLegendPopoverProps
+         </p>
+         <ul className="mb-2 space-y-1 text-muted-foreground">
+           <li className="flex items-start gap-1.5">
+-            <LineChart className="mt-px h-3 w-3 flex-shrink-0 text-orange-500" />
++            <LineChart className="mt-px h-3 w-3 flex-shrink-0 text-primary" />
+             <span>{t('timeline.keyframeEditor.legend.iconCurve')}</span>
+           </li>
+           <li className="flex items-start gap-1.5">
+diff --git a/src/features/keyframes/components/dopesheet-editor/easing-curve-editor.tsx b/src/features/keyframes/components/dopesheet-editor/easing-curve-editor.tsx
+index bf91200..549c210 100644
+--- a/src/features/keyframes/components/dopesheet-editor/easing-curve-editor.tsx
++++ b/src/features/keyframes/components/dopesheet-editor/easing-curve-editor.tsx
+@@ -555,7 +555,7 @@ function PositionPreview({ config, duration }: { config: EasingConfig; duration:
+           <>
+             <div className="absolute inset-x-3 top-1/2 border-t border-dashed border-white/20" />
+             <div
+-              className="absolute top-1/2 h-3.5 w-3.5 -translate-y-1/2 rounded-full bg-orange-400"
++              className="absolute top-1/2 h-3.5 w-3.5 -translate-y-1/2 rounded-full bg-primary"
+               // pos 0→1 spans the full dashed track (dot center hits each end);
+               // clamp keeps small spring overshoot inside the box instead of clipping.
+               style={{
+@@ -566,14 +566,14 @@ function PositionPreview({ config, duration }: { config: EasingConfig; duration:
+         ) : mode === 'rotate' ? (
+           // Rounded square + orientation pip so the spin is actually visible.
+           <div
+-            className="relative size-9 rounded-[5px] bg-orange-400"
++            className="relative size-9 rounded-[5px] bg-primary"
+             style={{ transform: `rotate(${pos * 180}deg)` }}
+           >
+             <span className="absolute left-1/2 top-1 size-1.5 -translate-x-1/2 rounded-full bg-black/40" />
+           </div>
+         ) : (
+           <div
+-            className="size-9 rounded-full bg-orange-400"
++            className="size-9 rounded-full bg-primary"
+             style={
+               mode === 'scale'
+                 ? { transform: `scale(${Math.max(0, pos)})` }
+diff --git a/src/features/keyframes/components/dopesheet-editor/easing-preset-thumbnail.css b/src/features/keyframes/components/dopesheet-editor/easing-preset-thumbnail.css
+index 3a3bd75..1067ae6 100644
+--- a/src/features/keyframes/components/dopesheet-editor/easing-preset-thumbnail.css
++++ b/src/features/keyframes/components/dopesheet-editor/easing-preset-thumbnail.css
+@@ -1,6 +1,6 @@
+ /**
+  * Square easing-preset thumbnails. Each tile shows a muted dot grid, a white
+- * easing curve, and an orange marker resting at the curve's start. On hover the
++ * easing curve, and an accent marker resting at the curve's start. On hover the
+  * marker rides the curve (via CSS motion path) to preview the timing. The
+  * animation is paused at rest, so a grid of ~25 thumbnails costs nothing until
+  * hovered — matching motion-preset-thumbnail.css.
+@@ -21,7 +21,7 @@
+   height: 7px;
+   width: 7px;
+   border-radius: 9999px;
+-  background: #fb923c; /* orange-400 */
++  background: var(--primary);
+   offset-anchor: center;
+   offset-distance: 0%;
+   animation: ep-run 1.15s ease-in-out infinite alternate;
+diff --git a/src/features/keyframes/components/dopesheet-editor/index.tsx b/src/features/keyframes/components/dopesheet-editor/index.tsx
+index 5dc3e65..96e8bad 100644
+--- a/src/features/keyframes/components/dopesheet-editor/index.tsx
++++ b/src/features/keyframes/components/dopesheet-editor/index.tsx
+@@ -3688,7 +3688,7 @@ export const DopesheetEditor = memo(function DopesheetEditor({
+                   MINI_ICON_BUTTON_CLASS,
+                   'self-center text-muted-foreground hover:text-foreground',
+                   curveVisible
+-                    ? 'text-orange-500 hover:text-orange-400'
++                    ? 'text-primary hover:text-primary/80'
+                     : 'opacity-30 hover:opacity-60',
+                 )}
+                 onClick={(event) => {
+@@ -3811,7 +3811,7 @@ export const DopesheetEditor = memo(function DopesheetEditor({
+                       size="sm"
+                       className={cn(
+                         MINI_ICON_BUTTON_CLASS,
+-                        'self-center text-orange-400 hover:bg-orange-500/10 hover:text-orange-300',
++                        'self-center text-primary hover:bg-primary/10 hover:text-primary/80',
+                       )}
+                       onPointerDown={(event) => {
+                         event.stopPropagation()
+@@ -3934,7 +3934,7 @@ export const DopesheetEditor = memo(function DopesheetEditor({
+                 className={cn(
+                   MINI_ICON_BUTTON_CLASS,
+                   'ml-0.5 self-center text-muted-foreground hover:text-foreground',
+-                  axisConstraint.constrained && 'text-orange-400 hover:text-orange-300',
++                  axisConstraint.constrained && 'text-primary hover:text-primary/80',
+                 )}
+                 onClick={(event) => {
+                   event.stopPropagation()
+@@ -4091,7 +4091,7 @@ export const DopesheetEditor = memo(function DopesheetEditor({
+                       ? 'w-[80px]'
+                       : 'w-[44px]',
+                   !isColorAnimatableProperty(row.property) && 'cursor-ew-resize select-none',
+-                  propertyLink && 'text-orange-400',
++                  propertyLink && 'text-primary',
+                 )}
+                 disabled={
+                   disabled ||
+@@ -4337,7 +4337,7 @@ export const DopesheetEditor = memo(function DopesheetEditor({
+                 MINI_ICON_BUTTON_CLASS,
+                 'self-center text-muted-foreground hover:text-foreground',
+                 curveVisible
+-                  ? 'text-orange-500 hover:text-orange-400'
++                  ? 'text-primary hover:text-primary/80'
+                   : 'opacity-30 hover:opacity-60',
+               )}
+               onClick={(event) => {
+diff --git a/src/features/keyframes/components/dopesheet-editor/mini-zoom-control.tsx b/src/features/keyframes/components/dopesheet-editor/mini-zoom-control.tsx
+index 2481a90..29cf4db 100644
+--- a/src/features/keyframes/components/dopesheet-editor/mini-zoom-control.tsx
++++ b/src/features/keyframes/components/dopesheet-editor/mini-zoom-control.tsx
+@@ -138,7 +138,7 @@ export function MiniZoomControl({
+       >
+         <span className="pointer-events-none absolute inset-x-1 top-1/2 h-px -translate-y-1/2 bg-muted-foreground/45" />
+         <span
+-          className="pointer-events-none absolute top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full border border-orange-400/80 bg-background shadow-[0_0_0_1px_rgba(0,0,0,0.35)]"
++          className="pointer-events-none absolute top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full border border-primary/80 bg-background shadow-[0_0_0_1px_rgba(0,0,0,0.35)]"
+           style={{ left: thumbLeft }}
+         />
+       </button>
+diff --git a/src/features/keyframes/components/value-graph-editor/graph-curve.tsx b/src/features/keyframes/components/value-graph-editor/graph-curve.tsx
+index 38fe9b5..18bd54d 100644
+--- a/src/features/keyframes/components/value-graph-editor/graph-curve.tsx
++++ b/src/features/keyframes/components/value-graph-editor/graph-curve.tsx
+@@ -55,8 +55,8 @@ const GraphCurve = memo(function GraphCurve({
+     return points.join(' ')
+   }, [startPoint, endPoint, easingConfig])
+ 
+-  // Always use orange for curves (blue glow added when selected)
+-  const color = strokeColor || '#f97316'
++  // Always use the accent for curves (blue glow added when selected)
++  const color = strokeColor || 'var(--primary)'
+ 
+   return (
+     <g className="graph-curve" style={{ pointerEvents: 'none' }}>
+diff --git a/src/features/keyframes/components/value-graph-editor/index.tsx b/src/features/keyframes/components/value-graph-editor/index.tsx
+index f5dc99e..dddd548 100644
+--- a/src/features/keyframes/components/value-graph-editor/index.tsx
++++ b/src/features/keyframes/components/value-graph-editor/index.tsx
+@@ -1389,7 +1389,7 @@ const ValueGraphEditorBase = memo(function ValueGraphEditorBase({
+                   y1={draggingPoint.y}
+                   x2={graphRight}
+                   y2={draggingPoint.y}
+-                  stroke="#f97316"
++                  className="stroke-primary"
+                   strokeWidth={1.5}
+                   strokeDasharray="6 3"
+                   opacity={0.8}
+@@ -1402,7 +1402,7 @@ const ValueGraphEditorBase = memo(function ValueGraphEditorBase({
+                   y1={graphTop}
+                   x2={draggingPoint.x}
+                   y2={graphBottom}
+-                  stroke="#f97316"
++                  className="stroke-primary"
+                   strokeWidth={1.5}
+                   strokeDasharray="6 3"
+                   opacity={0.8}
+diff --git a/src/features/media-library/components/media-library.tsx b/src/features/media-library/components/media-library.tsx
+index 890321e..ee767ee 100644
+--- a/src/features/media-library/components/media-library.tsx
++++ b/src/features/media-library/components/media-library.tsx
+@@ -940,7 +940,7 @@ export const MediaLibrary = memo(function MediaLibrary({ onMediaSelect }: MediaL
+         <div
+           className={`mx-4 mt-3 p-2.5 rounded text-xs animate-in slide-in-from-top-2 duration-200 ${
+             notification.type === 'info'
+-              ? 'bg-orange-500/10 border border-orange-500/30'
++              ? 'bg-primary/10 border border-primary/30'
+               : notification.type === 'warning'
+                 ? 'bg-yellow-500/10 border border-yellow-500/30'
+                 : notification.type === 'success'
+@@ -953,7 +953,7 @@ export const MediaLibrary = memo(function MediaLibrary({ onMediaSelect }: MediaL
+               <Info
+                 className={`w-3.5 h-3.5 flex-shrink-0 ${
+                   notification.type === 'info'
+-                    ? 'text-orange-500'
++                    ? 'text-primary'
+                     : notification.type === 'warning'
+                       ? 'text-yellow-500'
+                       : notification.type === 'success'
+@@ -964,7 +964,7 @@ export const MediaLibrary = memo(function MediaLibrary({ onMediaSelect }: MediaL
+               <p
+                 className={`leading-relaxed line-clamp-2 ${
+                   notification.type === 'info'
+-                    ? 'text-orange-600 dark:text-orange-400'
++                    ? 'text-primary'
+                     : notification.type === 'warning'
+                       ? 'text-yellow-600 dark:text-yellow-400'
+                       : notification.type === 'success'
+diff --git a/src/features/preview/components/gizmo-handles.tsx b/src/features/preview/components/gizmo-handles.tsx
+index 4868bd2..100f3a0 100644
+--- a/src/features/preview/components/gizmo-handles.tsx
++++ b/src/features/preview/components/gizmo-handles.tsx
+@@ -29,7 +29,7 @@ interface GizmoHandlesProps {
+   rotation: number
+   /** Whether currently interacting (darker border color) */
+   isInteracting: boolean
+-  /** Whether this is a mask shape (uses cyan instead of orange) */
++  /** Whether this is a mask shape (uses cyan instead of the accent) */
+   isMask?: boolean
+   /** Called when dragging starts on the border (translate) */
+   onTranslateStart: (e: React.MouseEvent) => void
+@@ -100,8 +100,8 @@ export function GizmoHandles({
+       ? '#0891b2'
+       : '#06b6d4' // Cyan for masks
+     : isInteracting
+-      ? '#ea580c'
+-      : '#f97316' // Orange for regular
++      ? 'color-mix(in oklab, var(--primary) 80%, black)'
++      : 'var(--primary)' // The accent for regular
+ 
+   return (
+     <>
+@@ -145,7 +145,7 @@ export function GizmoHandles({
+           return (
+             <div
+               key={handle}
+-              className="bg-white border border-orange-500"
++              className="bg-white border border-primary"
+               style={{ ...getHandleStyle(handle), zIndex: 102 }}
+               role="button"
+               aria-label={handleLabels[handle]}
+@@ -160,7 +160,7 @@ export function GizmoHandles({
+       {cropRect && onCropStart && (
+         <>
+           <div
+-            className="pointer-events-none absolute border border-orange-400/80"
++            className="pointer-events-none absolute border border-primary/80"
+             style={{
+               left: cropRect.left,
+               top: cropRect.top,
+@@ -188,7 +188,7 @@ export function GizmoHandles({
+             return (
+               <div
+                 key={edge}
+-                className="absolute border border-white bg-orange-500 shadow-sm"
++                className="absolute border border-white bg-primary shadow-sm"
+                 style={{
+                   left,
+                   top,
+@@ -213,7 +213,7 @@ export function GizmoHandles({
+ 
+       {/* Rotation handle */}
+       <div
+-        className="absolute bg-white border border-orange-500 rounded-full cursor-crosshair"
++        className="absolute bg-white border border-primary rounded-full cursor-crosshair"
+         style={{
+           width: 10,
+           height: 10,
+@@ -231,7 +231,7 @@ export function GizmoHandles({
+ 
+       {/* Rotation guide line */}
+       <div
+-        className="absolute border-l border-dashed border-orange-500 pointer-events-none"
++        className="absolute border-l border-dashed border-primary pointer-events-none"
+         style={{
+           left: '50%',
+           top: -ROTATION_HANDLE_OFFSET + 10,
+diff --git a/src/features/preview/components/selectable-item.tsx b/src/features/preview/components/selectable-item.tsx
+index f8462e4..e9035d9 100644
+--- a/src/features/preview/components/selectable-item.tsx
++++ b/src/features/preview/components/selectable-item.tsx
+@@ -102,7 +102,9 @@ export function SelectableItem({
+         // Z-index to render above GroupGizmo border but below handles
+         zIndex: 5,
+         // Subtle hover indicator (only for unselected items) - outline only
+-        border: showHover ? '3px solid rgba(249, 115, 22, 0.4)' : '2px solid transparent',
++        border: showHover
++          ? '3px solid color-mix(in oklab, var(--primary) 40%, transparent)'
++          : '2px solid transparent',
+       }}
+       data-gizmo="selectable-item"
+       data-translate-blocked={translateBlocked || undefined}
+diff --git a/src/features/timeline/components/timeline-drop-ghost-previews.test.tsx b/src/features/timeline/components/timeline-drop-ghost-previews.test.tsx
+index a08d07e..a4731dd 100644
+--- a/src/features/timeline/components/timeline-drop-ghost-previews.test.tsx
++++ b/src/features/timeline/components/timeline-drop-ghost-previews.test.tsx
+@@ -23,7 +23,7 @@ describe('TimelineDropGhostPreviews', () => {
+ 
+     const ghost = screen.getByText('Drop media').parentElement
+     expect(ghost?.className).toContain('inset-y-0')
+-    expect(ghost?.className).toContain('border-orange-500')
++    expect(ghost?.className).toContain('border-primary')
+     expect(ghost).toHaveStyle({ left: '12px', width: '48px' })
+   })
+ 
+diff --git a/src/features/timeline/components/timeline-item-canvas-rendering.ts b/src/features/timeline/components/timeline-item-canvas-rendering.ts
+index c4a3420..4c8250e 100644
+--- a/src/features/timeline/components/timeline-item-canvas-rendering.ts
++++ b/src/features/timeline/components/timeline-item-canvas-rendering.ts
+@@ -52,10 +52,10 @@ const PALETTE_BY_TYPE: Partial<Record<TimelineItem['type'], TimelineCanvasClipPa
+     text: 'rgba(250, 250, 250, 0.94)',
+   },
+   shape: {
+-    fill: 'rgba(249, 115, 22, 0.34)',
+-    stroke: 'rgba(251, 146, 60, 0.84)',
+-    labelFill: 'rgba(154, 52, 18, 0.3)',
+-    text: 'rgba(255, 247, 237, 0.96)',
++    fill: 'rgba(52, 80, 107, 0.34)',
++    stroke: 'rgba(107, 143, 181, 0.84)',
++    labelFill: 'rgba(30, 48, 66, 0.32)',
++    text: 'rgba(238, 243, 247, 0.96)',
+   },
+   adjustment: {
+     fill: 'rgba(168, 85, 247, 0.34)',
+diff --git a/src/features/timeline/components/timeline-item/audio-fade-handles.tsx b/src/features/timeline/components/timeline-item/audio-fade-handles.tsx
+index 4ced9fb..9195dd6 100644
+--- a/src/features/timeline/components/timeline-item/audio-fade-handles.tsx
++++ b/src/features/timeline/components/timeline-item/audio-fade-handles.tsx
+@@ -87,11 +87,11 @@ export const AudioFadeHandles = memo(function AudioFadeHandles({
+     const isActive = curveEditingHandle === handle || hoveredHandle === handle
+ 
+     return cn(
+-      'absolute h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border border-orange-200/90 shadow-[0_0_0_1px_rgba(15,23,42,0.2)] transition-opacity cursor-move touch-none before:absolute before:-inset-[8px] before:content-[""] focus-visible:outline-none',
++      'absolute h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/80 shadow-[0_0_0_1px_rgba(15,23,42,0.2)] transition-opacity cursor-move touch-none before:absolute before:-inset-[8px] before:content-[""] focus-visible:outline-none',
+       densityPointerClass,
+       isActive
+-        ? 'bg-orange-500 opacity-100'
+-        : 'bg-orange-400/90 opacity-0 group-hover/timeline-item:opacity-100',
++        ? 'bg-primary opacity-100'
++        : 'bg-primary/90 opacity-0 group-hover/timeline-item:opacity-100',
+     )
+   }
+ 
+diff --git a/src/features/timeline/components/timeline-item/drag-blocked-tooltip.tsx b/src/features/timeline/components/timeline-item/drag-blocked-tooltip.tsx
+index 2562b39..599cc86 100644
+--- a/src/features/timeline/components/timeline-item/drag-blocked-tooltip.tsx
++++ b/src/features/timeline/components/timeline-item/drag-blocked-tooltip.tsx
+@@ -27,7 +27,7 @@ export const DragBlockedTooltip = memo(function DragBlockedTooltip({
+       <div
+         className={[
+           'overflow-hidden rounded-md px-3 py-1.5 text-xs text-white shadow-lg',
+-          hint.tone === 'danger' ? 'bg-red-500' : 'bg-orange-500',
++          hint.tone === 'danger' ? 'bg-red-500' : 'bg-amber-500',
+         ].join(' ')}
+       >
+         {hint.message}
+diff --git a/src/features/timeline/components/timeline-item/stretch-handles.tsx b/src/features/timeline/components/timeline-item/stretch-handles.tsx
+index c0626b4..e7eb2c6 100644
+--- a/src/features/timeline/components/timeline-item/stretch-handles.tsx
++++ b/src/features/timeline/components/timeline-item/stretch-handles.tsx
+@@ -50,7 +50,7 @@ export const StretchHandles = memo(function StretchHandles({
+       >
+         <div
+           className={cn(
+-            'absolute inset-y-0 left-0 w-px rounded-l-sm bg-orange-400/85 shadow-[0_0_0_1px_rgba(255,255,255,0.12)]',
++            'absolute inset-y-0 left-0 w-px rounded-l-sm bg-primary/85 shadow-[0_0_0_1px_rgba(255,255,255,0.12)]',
+             isStretching && stretchHandle === 'start' && 'opacity-0',
+             stretchConstrained &&
+               stretchHandle === 'start' &&
+@@ -69,7 +69,7 @@ export const StretchHandles = memo(function StretchHandles({
+       >
+         <div
+           className={cn(
+-            'absolute inset-y-0 right-0 w-px rounded-r-sm bg-orange-400/85 shadow-[0_0_0_1px_rgba(255,255,255,0.12)]',
++            'absolute inset-y-0 right-0 w-px rounded-r-sm bg-primary/85 shadow-[0_0_0_1px_rgba(255,255,255,0.12)]',
+             isStretching && stretchHandle === 'end' && 'opacity-0',
+             stretchConstrained &&
+               stretchHandle === 'end' &&
+diff --git a/src/features/timeline/components/transition-item.tsx b/src/features/timeline/components/transition-item.tsx
+index ec283c6..92bd44e 100644
+--- a/src/features/timeline/components/transition-item.tsx
++++ b/src/features/timeline/components/transition-item.tsx
+@@ -648,7 +648,7 @@ export const TransitionItem = memo(function TransitionItem({
+           data-transition-id={transition.id}
+           className={cn(
+             'absolute inset-y-0 overflow-visible rounded-sm pointer-events-none',
+-            isSelected && 'ring-2 ring-inset ring-orange-400',
++            isSelected && 'ring-2 ring-inset ring-primary',
+             dragPreviewMatches && 'ring-2 ring-inset ring-amber-300',
+             isResizing && 'ring-2 ring-inset ring-purple-400',
+           )}
+@@ -672,7 +672,7 @@ export const TransitionItem = memo(function TransitionItem({
+             className={cn(
+               'pointer-events-none relative h-full w-full rounded-sm border transition-colors',
+               showOrangeBridge
+-                ? 'border-orange-400/90 bg-orange-500/10 shadow-[0_0_0_1px_rgba(251,146,60,0.18)]'
++                ? 'border-primary/90 bg-primary/10 ring-1 ring-primary/20'
+                 : 'border-slate-100/80 shadow-[0_0_0_1px_rgba(248,250,252,0.1)]',
+             )}
+           >
+diff --git a/src/features/timeline/theme.css b/src/features/timeline/theme.css
+index c0fe17d..90aeeaf 100644
+--- a/src/features/timeline/theme.css
++++ b/src/features/timeline/theme.css
+@@ -285,13 +285,13 @@ body.timeline-external-media-drag [data-transition-id] * {
+   );
+ }
+ 
+-/* Shape clip gradient background - subtle orange tint */
++/* Shape clip gradient background - subtle blue tint */
+ .bg-shape-gradient {
+   background: linear-gradient(
+     to bottom,
+-    oklch(0.2 0.02 45) 0%,
+-    oklch(0.28 0.02 45) 50%,
+-    oklch(0.2 0.02 45) 100%
++    oklch(0.2 0.02 250) 0%,
++    oklch(0.28 0.02 250) 50%,
++    oklch(0.2 0.02 250) 100%
+   );
+ }
+ 
+diff --git a/src/features/timeline/utils/drag-drop-preview.test.ts b/src/features/timeline/utils/drag-drop-preview.test.ts
+index aa1cb96..42933cd 100644
+--- a/src/features/timeline/utils/drag-drop-preview.test.ts
++++ b/src/features/timeline/utils/drag-drop-preview.test.ts
+@@ -16,7 +16,7 @@ describe('drag-drop-preview', () => {
+ 
+   it('returns the expected item classes for preview types', () => {
+     expect(getGhostPreviewItemClasses('composition')).toBe('border-violet-400 bg-violet-600/20')
+-    expect(getGhostPreviewItemClasses('external-file')).toBe('border-orange-500 bg-orange-500/15')
++    expect(getGhostPreviewItemClasses('external-file')).toBe('border-primary bg-primary/15')
+     expect(getGhostPreviewItemClasses('image')).toBe('border-timeline-image bg-timeline-image/20')
+   })
+ 
+diff --git a/src/features/timeline/utils/drag-drop-preview.ts b/src/features/timeline/utils/drag-drop-preview.ts
+index 3fd4c94..32c6bd2 100644
+--- a/src/features/timeline/utils/drag-drop-preview.ts
++++ b/src/features/timeline/utils/drag-drop-preview.ts
+@@ -53,7 +53,7 @@ export function getGhostHighlightClasses(ghostPreviews: TimelineGhostPreviewLike
+     return 'border-violet-400/60 bg-violet-600/10'
+   }
+   if (ghostPreviews.some((ghost) => ghost.type === 'external-file')) {
+-    return 'border-orange-500/60 bg-orange-500/10'
++    return 'border-primary/60 bg-primary/10'
+   }
+   return 'border-primary/50 bg-primary/10'
+ }
+@@ -63,7 +63,7 @@ export function getGhostPreviewItemClasses(type: TimelineGhostPreviewType): stri
+     return 'border-violet-400 bg-violet-600/20'
+   }
+   if (type === 'external-file') {
+-    return 'border-orange-500 bg-orange-500/15'
++    return 'border-primary bg-primary/15'
+   }
+   if (type === 'video') {
+     return 'border-timeline-video bg-timeline-video/20'

@@ -242,6 +242,21 @@ double-click or Delete to remove; nothing changes while the effect is off). In a
 (`useProjectIsHdr`: a stored HDR range or any placed HDR source, nested compositions included, by the renderer's
 `deriveSourceWorkingRange`); the refusal itself is unchanged.
 
+Patch 0204 ports six upstream changes made after the pinned revision, without moving the pin
+(FL-1819): the caret stays where it is while a title is typed in the inspector, shift-click selects a
+range of keyframes in the sheet, the inspector's selection is memoised, the media library's drop
+overlay is readable, two preview caches are bounded when media is released, and the missing-media
+dialog closes once nothing is left to relink. Each carries upstream's regression test or one written
+against this tree. The scrub cache port also keeps the buffer being scrubbed and evicts the least
+recently used one first: upstream evicted in insertion order, so a track over the 64 MB budget evicted
+itself and was re-decoded on every scrub event. Patch 0205 replaces every hard-coded upstream accent colour with the theme accent
+(FL-1822); the drag-blocked hint becomes amber because it is a caution, and the multi-series graph
+palette and the hue-spectrum gradient are colour data and stay. Patch 0206 removes the upstream
+product from the hosted editor: its name in all nine engine locales becomes Studio (Turkish suffixes
+and Korean particles follow the new name), the error screen
+loses its logo, and the header loses the docs link, the upstream changelog and the second language
+menu (the host owns the language). None of the three changes a composition or raster producer.
+
 Patch 0185 (FL-1564) adds four transitions other editors use: Film Dissolve (a cross dissolve mixed in
 linear light), Cross Zoom (both clips zoom with a radial blur, `strength`), Cube Spin (the clips are two
 faces of a box turning a quarter turn in perspective, four directions) and Page Peel (the outgoing clip
