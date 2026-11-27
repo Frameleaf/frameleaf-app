@@ -26,7 +26,8 @@ describe('FolderChooser', () => {
     await init({ fallbackLocale: 'en', initialLocale: 'en' });
   });
   beforeEach(() => {
-    read.mockClear();
+    read.mockReset();
+    read.mockImplementation((trail: FolderEntry[]) => Promise.resolve(TREE[trail.at(-1)?.id ?? '']));
     HTMLDialogElement.prototype.showModal ??= vi.fn(function (this: HTMLDialogElement) {
       this.open = true;
     });
@@ -79,5 +80,37 @@ describe('FolderChooser', () => {
     expect(await screen.findByText(en.frameleaf_libraries_browse_failed)).toBeInTheDocument();
     await fireEvent.click(screen.getByRole('button', { name: en.frameleaf_error_retry }));
     expect(await button('mnt')).toBeInTheDocument();
+  });
+
+  it('never leaves the folder just left clickable while the next one loads', async () => {
+    let release!: () => void;
+    read.mockImplementation((trail: FolderEntry[]) => {
+      const id = trail.at(-1)?.id ?? '';
+      return id === '/mnt' ? new Promise((resolve) => (release = () => resolve(TREE[id]))) : Promise.resolve(TREE[id]);
+    });
+    open();
+    await fireEvent.click(await button('mnt'));
+    expect(screen.queryByRole('button', { name: 'mnt' })).toHaveAttribute('aria-current', 'page');
+    // the top level's "mnt" row is gone; only the trail's "mnt" is left
+    expect(screen.getAllByRole('button', { name: 'mnt' })).toHaveLength(1);
+    release();
+    expect(await button(/^photos/)).toBeInTheDocument();
+  });
+
+  it('puts the focus on the first folder on open and after each move', async () => {
+    open();
+    await vi.waitFor(() => expect(screen.getByRole('button', { name: 'mnt' })).toHaveFocus());
+    await fireEvent.click(screen.getByRole('button', { name: 'mnt' }));
+    await vi.waitFor(() => expect(screen.getByRole('button', { name: /^photos/ })).toHaveFocus());
+  });
+
+  it('says why in its own words when reading fails, and gives Retry the focus after a move', async () => {
+    open();
+    await fireEvent.click(await button('mnt'));
+    read.mockRejectedValueOnce(new Error('Internal server error'));
+    await fireEvent.click(await button(/^photos/));
+    expect(await screen.findByText(en.frameleaf_libraries_browse_failed)).toBeInTheDocument();
+    expect(screen.queryByText('Internal server error')).not.toBeInTheDocument();
+    await vi.waitFor(() => expect(screen.getByRole('button', { name: en.frameleaf_error_retry })).toHaveFocus());
   });
 });

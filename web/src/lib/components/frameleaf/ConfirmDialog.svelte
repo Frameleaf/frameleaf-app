@@ -19,7 +19,7 @@
   import { handleError } from '$lib/utils/handle-error';
   import { Icon } from '@frameleaf/ui';
   import { mdiImageMultipleOutline } from '@mdi/js';
-  import type { Snippet } from 'svelte';
+  import { tick, type Snippet } from 'svelte';
   import { t } from 'svelte-i18n';
 
   let {
@@ -50,22 +50,52 @@
 
   let busy = $state(false);
   let confirmed = false;
+  let actionButton: HTMLButtonElement | undefined = $state();
+
+  // Each opening starts unanswered, even when the parent reopens it before the last exit finished.
+  $effect(() => {
+    if (open) {
+      confirmed = false;
+    }
+  });
 
   const confirm = async () => {
     if (onConfirm) {
       busy = true;
+      let failed = false;
       try {
         await onConfirm();
       } catch (error) {
         // Stay open: the action did not happen, and the person can try again or cancel.
         handleError(error, $t('error'));
-        return;
+        failed = true;
       } finally {
         busy = false;
+      }
+      if (failed) {
+        // The button was disabled while it ran, which dropped the focus; give it back.
+        await tick();
+        actionButton?.focus();
+        return;
       }
     }
     confirmed = true;
     open = false;
+  };
+
+  // A second Escape can't be cancelled on a <dialog>, so stop the key itself while the action runs.
+  const holdEscape = (event: KeyboardEvent) => {
+    if (busy && event.key === 'Escape') {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+  };
+
+  // While the action runs, Escape and the close button wait for it, as Cancel does.
+  const requestClose = () => {
+    if (!busy) {
+      open = false;
+    }
   };
 
   // The answer is reported once the sheet has finished leaving, so the exit is not cut short.
@@ -76,7 +106,9 @@
   };
 </script>
 
-<Dialog bind:open {title} closeLabel={$t('close')} {onClosed}>
+<svelte:window onkeydowncapture={holdEscape} />
+
+<Dialog bind:open {title} closeLabel={$t('close')} {onClosed} onRequestClose={requestClose}>
   <div class="body">
     {#if typeof prompt === 'string'}
       <p>{prompt}</p>
@@ -104,6 +136,7 @@
       class:primary={!danger}
       class:fl-danger={danger}
       data-initial-focus={danger ? undefined : ''}
+      bind:this={actionButton}
       disabled={disabled || busy}
       onclick={() => void confirm()}>{confirmText}</button
     >

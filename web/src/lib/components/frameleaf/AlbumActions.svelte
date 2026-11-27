@@ -556,6 +556,7 @@
     title={$t('frameleaf_albums_lock_many_title', { values: { count: albums.length } })}
     prompt={$t('frameleaf_album_lock_body')}
     confirmText={$t('frameleaf_album_options_locked')}
+    danger
     bind:open={bulkLockDialog.open}
     onConfirm={() => setLockedMany(albums, true)}
   />
@@ -609,6 +610,7 @@
     title={$t('frameleaf_album_lock_title', { values: { name: nameOf(album) } })}
     prompt={$t('frameleaf_album_lock_body')}
     confirmText={$t('frameleaf_album_options_locked')}
+    danger
     bind:open={lockDialog.open}
     onConfirm={() => setLocked(album, true)}
   />
