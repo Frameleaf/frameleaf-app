@@ -47945,6 +47945,15 @@
             }
           },
           {
+            "name": "name",
+            "required": false,
+            "in": "query",
+            "description": "Only people whose name contains this text, whatever the case; empty matches everyone",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "name": "page",
             "required": false,
             "in": "query",
@@ -47966,6 +47975,15 @@
               "maximum": 1000,
               "default": 500,
               "type": "integer"
+            }
+          },
+          {
+            "name": "sort",
+            "required": false,
+            "in": "query",
+            "description": "Order: by name (unnamed people last), by photo count, or by the most recent photo. Without it, favorites first, then named people by the number of faces. Ignored with closestPersonId or closestAssetId.",
+            "schema": {
+              "$ref": "#/components/schemas/PeopleSort"
             }
           },
           {
@@ -48622,6 +48640,104 @@
           }
         ],
         "x-immich-permission": "person.update",
+        "x-immich-state": "Alpha"
+      }
+    },
+    "/people/picker": {
+      "get": {
+        "description": "Retrieve the people list with only what a picker or a filter needs to draw a row: id, name, thumbnail version and photo count. Takes the same name search, order and pages as the people list.",
+        "operationId": "getPeoplePicker",
+        "parameters": [
+          {
+            "name": "name",
+            "required": false,
+            "in": "query",
+            "description": "Only people whose name contains this text, whatever the case; empty matches everyone",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "description": "Page number for pagination",
+            "schema": {
+              "minimum": 1,
+              "maximum": 9007199254740991,
+              "default": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "name": "size",
+            "required": false,
+            "in": "query",
+            "description": "Number of items per page",
+            "schema": {
+              "minimum": 1,
+              "maximum": 1000,
+              "default": 500,
+              "type": "integer"
+            }
+          },
+          {
+            "name": "sort",
+            "required": false,
+            "in": "query",
+            "description": "Order: by name (unnamed people last), by photo count, or by the most recent photo. Without it, favorites first, then named people by the number of faces. Ignored with closestPersonId or closestAssetId.",
+            "schema": {
+              "$ref": "#/components/schemas/PeopleSort"
+            }
+          },
+          {
+            "name": "withHidden",
+            "required": false,
+            "in": "query",
+            "description": "Include hidden people",
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PeoplePickerResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Get people for a picker",
+        "tags": [
+          "People"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.2.1",
+            "state": "Added"
+          },
+          {
+            "version": "v3.2.1",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "person.read",
         "x-immich-state": "Alpha"
       }
     },
@@ -141279,6 +141395,86 @@
         ],
         "type": "object"
       },
+      "PeoplePickerItemDto": {
+        "properties": {
+          "assetCount": {
+            "description": "Number of timeline assets showing this person",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "id": {
+            "description": "Person ID",
+            "type": "string"
+          },
+          "name": {
+            "description": "Person name",
+            "type": "string"
+          },
+          "updatedAt": {
+            "description": "Last update date; the version of the thumbnail URL",
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "assetCount",
+          "id",
+          "name",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "PeoplePickerResponseDto": {
+        "properties": {
+          "hasNextPage": {
+            "description": "Whether there are more pages",
+            "type": "boolean"
+          },
+          "people": {
+            "items": {
+              "$ref": "#/components/schemas/PeoplePickerItemDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "hasNextPage",
+          "people"
+        ],
+        "type": "object"
+      },
+      "PeoplePickerSearchDto": {
+        "properties": {
+          "name": {
+            "description": "Only people whose name contains this text, whatever the case; empty matches everyone",
+            "type": "string"
+          },
+          "page": {
+            "default": 1,
+            "description": "Page number for pagination",
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "size": {
+            "default": 500,
+            "description": "Number of items per page",
+            "maximum": 1000,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "sort": {
+            "$ref": "#/components/schemas/PeopleSort",
+            "description": "Order: by name (unnamed people last), by photo count, or by the most recent photo. Without it, favorites first, then named people by the number of faces. Ignored with closestPersonId or closestAssetId."
+          },
+          "withHidden": {
+            "description": "Include hidden people",
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
       "PeopleResponse": {
         "properties": {
           "enabled": {
@@ -141371,6 +141567,14 @@
           "total"
         ],
         "type": "object"
+      },
+      "PeopleSort": {
+        "enum": [
+          "name",
+          "count",
+          "recent"
+        ],
+        "type": "string"
       },
       "PeopleUpdate": {
         "properties": {
@@ -142459,6 +142663,10 @@
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
             "type": "string"
           },
+          "name": {
+            "description": "Only people whose name contains this text, whatever the case; empty matches everyone",
+            "type": "string"
+          },
           "page": {
             "default": 1,
             "description": "Page number for pagination",
@@ -142472,6 +142680,10 @@
             "maximum": 1000,
             "minimum": 1,
             "type": "integer"
+          },
+          "sort": {
+            "$ref": "#/components/schemas/PeopleSort",
+            "description": "Order: by name (unnamed people last), by photo count, or by the most recent photo. Without it, favorites first, then named people by the number of faces. Ignored with closestPersonId or closestAssetId."
           },
           "withHidden": {
             "description": "Include hidden people",
