@@ -1,0 +1,214 @@
+diff --git a/src/features/keyframes/components/dopesheet-editor/dopesheet-header-frame-inputs.tsx b/src/features/keyframes/components/dopesheet-editor/dopesheet-header-frame-inputs.tsx
+index a146a35..16c9f2c 100644
+--- a/src/features/keyframes/components/dopesheet-editor/dopesheet-header-frame-inputs.tsx
++++ b/src/features/keyframes/components/dopesheet-editor/dopesheet-header-frame-inputs.tsx
+@@ -38,9 +38,9 @@ export function DopesheetHeaderFrameInputs({
+   const inputDisabled = disabled || !inputsEnabled
+ 
+   return (
+-    <div className="flex items-center gap-1">
+-      <div className="flex items-center gap-0.5">
+-        <span className="text-[10px] text-muted-foreground">
++    <div className="flex items-center gap-3">
++      <div className="flex items-center gap-1.5">
++        <span className="text-xs text-muted-foreground">
+           {t('timeline.keyframeEditor.local')}
+         </span>
+         <Input
+@@ -61,15 +61,15 @@ export function DopesheetHeaderFrameInputs({
+             handleHeaderFrameInputKeyDown(event, 'local', commitLocalFrameInput)
+           }
+           aria-label={t('timeline.keyframeEditor.localFrame')}
+-          className="h-5 w-12 px-1 text-center text-[10px] [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
++          className="h-6 w-14 px-1 text-center text-xs [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+           min={0}
+           max={Math.max(totalFrames - 1, 0)}
+           disabled={inputDisabled}
+         />
+       </div>
+       {globalFrame !== null && (
+-        <div className="flex items-center gap-0.5">
+-          <span className="text-[10px] text-muted-foreground">
++        <div className="flex items-center gap-1.5">
++          <span className="text-xs text-muted-foreground">
+             {t('timeline.keyframeEditor.global')}
+           </span>
+           <Input
+@@ -90,7 +90,7 @@ export function DopesheetHeaderFrameInputs({
+               handleHeaderFrameInputKeyDown(event, 'global', commitGlobalFrameInput)
+             }
+             aria-label={t('timeline.keyframeEditor.globalFrame')}
+-            className="h-5 w-14 px-1 text-center text-[10px] [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
++            className="h-6 w-16 px-1 text-center text-xs [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+             disabled={inputDisabled}
+           />
+         </div>
+diff --git a/src/features/keyframes/components/dopesheet-editor/dopesheet-ruler-header.tsx b/src/features/keyframes/components/dopesheet-editor/dopesheet-ruler-header.tsx
+index 47052b4..400f530 100644
+--- a/src/features/keyframes/components/dopesheet-editor/dopesheet-ruler-header.tsx
++++ b/src/features/keyframes/components/dopesheet-editor/dopesheet-ruler-header.tsx
+@@ -34,7 +34,7 @@ export function DopesheetRulerHeader({
+   return (
+     <div className="grid border-b border-border bg-muted/25" style={propertyGridStyle}>
+       <div
+-        className="flex items-center justify-between gap-2 px-1 text-[10px] font-medium text-muted-foreground"
++        className="flex items-center justify-between gap-2 px-1.5 text-xs font-medium text-muted-foreground"
+         style={{ height: RULER_HEIGHT }}
+       >
+         <span>{t('timeline.keyframeEditor.property')}</span>
+@@ -42,7 +42,7 @@ export function DopesheetRulerHeader({
+           <div
+             role="group"
+             aria-label={t('timeline.keyframeEditor.propertyVisibility')}
+-            className="flex h-[18px] shrink-0 items-center rounded border border-border/70 bg-background/70 p-px"
++            className="flex h-5 shrink-0 items-center rounded border border-border/70 bg-background/70 p-px"
+           >
+             {(['keyframed', 'all'] as const).map((filter) => {
+               const selected = propertyFilter === filter
+@@ -51,7 +51,7 @@ export function DopesheetRulerHeader({
+                   key={filter}
+                   type="button"
+                   aria-pressed={selected}
+-                  className={`h-4 rounded px-1.5 text-[9px] leading-none transition-colors ${
++                  className={`h-[18px] rounded px-1.5 text-[11px] leading-none transition-colors ${
+                     selected
+                       ? 'bg-accent text-foreground'
+                       : 'text-muted-foreground hover:text-foreground'
+diff --git a/src/features/keyframes/components/dopesheet-editor/header-frame-readout.test.tsx b/src/features/keyframes/components/dopesheet-editor/header-frame-readout.test.tsx
+index 81d2b32..36aa7b5 100644
+--- a/src/features/keyframes/components/dopesheet-editor/header-frame-readout.test.tsx
++++ b/src/features/keyframes/components/dopesheet-editor/header-frame-readout.test.tsx
+@@ -48,8 +48,8 @@ describe('DopesheetEditor header frame inputs', () => {
+       selectedKeyframeIds: new Set(['kf-x-1']),
+     })
+ 
+-    expect(screen.getByLabelText('Local frame')).toHaveValue(20)
+-    expect(screen.getByLabelText('Global frame')).toHaveValue(50)
++    expect(screen.getByLabelText('Frame within the clip')).toHaveValue(20)
++    expect(screen.getByLabelText('Frame within the project')).toHaveValue(50)
+   })
+ 
+   it('shows mixed selections as blank inputs with a dash placeholder', () => {
+@@ -57,8 +57,8 @@ describe('DopesheetEditor header frame inputs', () => {
+       selectedKeyframeIds: new Set(['kf-x-1', 'kf-x-2']),
+     })
+ 
+-    const localInput = screen.getByLabelText('Local frame') as HTMLInputElement
+-    const globalInput = screen.getByLabelText('Global frame') as HTMLInputElement
++    const localInput = screen.getByLabelText('Frame within the clip') as HTMLInputElement
++    const globalInput = screen.getByLabelText('Frame within the project') as HTMLInputElement
+ 
+     expect(localInput.value).toBe('')
+     expect(localInput).toHaveAttribute('placeholder', '-')
+@@ -74,7 +74,7 @@ describe('DopesheetEditor header frame inputs', () => {
+       selectedKeyframeIds: new Set(['kf-x-1']),
+     })
+ 
+-    const input = screen.getByLabelText('Local frame')
++    const input = screen.getByLabelText('Frame within the clip')
+     fireEvent.change(input, { target: { value: '24' } })
+     fireEvent.blur(input)
+ 
+@@ -91,7 +91,7 @@ describe('DopesheetEditor header frame inputs', () => {
+       selectedKeyframeIds: new Set(['kf-x-1']),
+     })
+ 
+-    const input = screen.getByLabelText('Local frame')
++    const input = screen.getByLabelText('Frame within the clip')
+     fireEvent.change(input, { target: { value: '40' } })
+     fireEvent.blur(input)
+ 
+@@ -109,7 +109,7 @@ describe('DopesheetEditor header frame inputs', () => {
+       selectedKeyframeIds: new Set(['kf-x-1', 'kf-y-1']),
+     })
+ 
+-    const input = screen.getByLabelText('Global frame')
++    const input = screen.getByLabelText('Frame within the project')
+     fireEvent.change(input, { target: { value: '55' } })
+     fireEvent.blur(input)
+ 
+diff --git a/src/features/keyframes/components/dopesheet-editor/index.tsx b/src/features/keyframes/components/dopesheet-editor/index.tsx
+index 96e8bad..2c4281a 100644
+--- a/src/features/keyframes/components/dopesheet-editor/index.tsx
++++ b/src/features/keyframes/components/dopesheet-editor/index.tsx
+@@ -3920,8 +3920,8 @@ export const DopesheetEditor = memo(function DopesheetEditor({
+           </div>
+           <div
+             className={cn(
+-              'flex h-full min-w-0 items-center overflow-hidden pr-1 text-[9px] font-medium leading-none text-foreground/90',
+-              compoundRow ? 'w-[54px] shrink-0 pl-1' : classic ? 'flex-1 pl-1' : 'flex-1 pl-[10px]',
++              'flex h-full min-w-0 items-center overflow-hidden pr-1 text-[11px] font-medium leading-none text-foreground/90',
++              compoundRow ? 'w-[82px] shrink-0 pl-1' : classic ? 'flex-1 pl-1' : 'flex-1 pl-[10px]',
+             )}
+             title={rowLabel}
+           >
+@@ -4445,7 +4445,7 @@ export const DopesheetEditor = memo(function DopesheetEditor({
+                 )}
+               />
+             )}
+-            <span className="truncate pl-px text-[9px] font-semibold uppercase leading-none tracking-[0.08em] text-foreground">
++            <span className="truncate pl-px text-[11px] font-semibold leading-none text-foreground">
+               {groupLabel}
+             </span>
+           </button>
+@@ -5129,8 +5129,11 @@ export const DopesheetEditor = memo(function DopesheetEditor({
+         className={cn('flex h-full flex-col gap-0.5 overflow-hidden', className)}
+         style={{ height, width }}
+       >
+-        <div className="flex min-h-7 flex-shrink-0 items-center justify-between gap-2 px-1">
+-          <div className="flex min-w-0 items-center gap-2">
++        <div className="flex min-h-9 flex-shrink-0 items-center justify-between gap-2 px-2">
++          <div className="flex min-w-0 items-center gap-3">
++            <span className="whitespace-nowrap text-[13px] font-semibold text-foreground">
++              {t('timeline.keyframeEditor.title')}
++            </span>
+             <span className="whitespace-nowrap text-xs text-muted-foreground">
+               {t('timeline.keyframeEditor.keyframes', {
+                 count: visibleKeyframes.length,
+diff --git a/src/features/timeline/components/keyframe-graph-panel.tsx b/src/features/timeline/components/keyframe-graph-panel.tsx
+index a582690..104e972 100644
+--- a/src/features/timeline/components/keyframe-graph-panel.tsx
++++ b/src/features/timeline/components/keyframe-graph-panel.tsx
+@@ -3427,10 +3427,7 @@ export const KeyframeGraphPanel = memo(function KeyframeGraphPanel({
+                 : t('timeline.keyframeEditor.title')}
+               {selectedItemForEditor && (
+                 <span className="ml-2 text-foreground">
+-                  - {selectedItemForEditor.label || selectedItemForEditor.type}
+-                  <span className="ml-1 text-muted-foreground">
+-                    ({selectedItemForEditor.id.slice(0, 8)})
+-                  </span>
++                  · {selectedItemForEditor.label || selectedItemForEditor.type}
+                 </span>
+               )}
+             </span>
+diff --git a/src/i18n/locales/partials/en/keyframes.json b/src/i18n/locales/partials/en/keyframes.json
+index 9eb2e65..87eebc6 100644
+--- a/src/i18n/locales/partials/en/keyframes.json
++++ b/src/i18n/locales/partials/en/keyframes.json
+@@ -1,7 +1,7 @@
+ {
+   "timeline": {
+     "keyframeEditor": {
+-      "title": "Keyframe Editor",
++      "title": "Keyframes",
+       "graph": "Graph",
+       "sheet": "Sheet",
+       "split": "Split",
+@@ -19,12 +19,12 @@
+       "graphLabel": "Graph: {{property}}",
+       "keyframes_one": "{{count}} keyframe",
+       "keyframes_other": "{{count}} keyframes",
+-      "local": "Local",
+-      "global": "Global",
+-      "localFrame": "Local frame",
+-      "globalFrame": "Global frame",
++      "local": "In clip",
++      "global": "In project",
++      "localFrame": "Frame within the clip",
++      "globalFrame": "Frame within the project",
+       "property": "Property",
+-      "propertyVisibility": "Property visibility",
++      "propertyVisibility": "Which properties to show",
+       "animatedProperties": "Animated",
+       "allProperties": "All",
+       "linkedExpression": "Linked to {{source}}",
