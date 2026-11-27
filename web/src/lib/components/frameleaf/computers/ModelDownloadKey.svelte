@@ -18,6 +18,7 @@
     isHttpError,
     removeModelDownloadKey,
     setModelDownloadKey,
+    ModelDownloadKeyStatus,
     type ModelDownloadKeyResponseDto,
   } from '@frameleaf/sdk';
   import { toastManager } from '@frameleaf/ui';
@@ -91,7 +92,7 @@
     problem = null;
     try {
       await removeModelDownloadKey();
-      status = { status: 'none', savedAt: null, checkedAt: null };
+      status = { status: ModelDownloadKeyStatus.None, savedAt: null, checkedAt: null };
       open = false;
       toastManager.primary($t('frameleaf_model_download_key_removed_toast'));
     } catch {
@@ -104,11 +105,11 @@
 
 {#if status}
   <Row label={$t('frameleaf_model_download_key_label')} help={$t('frameleaf_model_download_key_help')}>
-    {#if status.status === 'none'}
+    {#if status.status === ModelDownloadKeyStatus.None}
       <Button onclick={() => show('add')}>{$t('frameleaf_model_download_key_add')}</Button>
     {:else}
       <span class="actions">
-        {#if status.status === 'saved'}
+        {#if status.status === ModelDownloadKeyStatus.Saved}
           <Pill tone="good">{$t('frameleaf_model_download_key_saved')}</Pill>
         {:else}
           <Pill tone="warn">{$t('frameleaf_model_download_key_refused')}</Pill>
@@ -118,7 +119,7 @@
       </span>
     {/if}
   </Row>
-  {#if status.status === 'refused'}
+  {#if status.status === ModelDownloadKeyStatus.Refused}
     <Notice tone="warn" title={$t('frameleaf_model_download_key_stopped_title')}>
       {$t('frameleaf_model_download_key_stopped_body')}
     </Notice>
@@ -127,7 +128,7 @@
 
 {#if dialog === 'add'}
   <Dialog
-    title={status?.status === 'none'
+    title={status?.status === ModelDownloadKeyStatus.None
       ? $t('frameleaf_model_download_key_add_title')
       : $t('frameleaf_model_download_key_replace_title')}
     closeLabel={$t('close')}

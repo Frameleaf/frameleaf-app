@@ -91,7 +91,6 @@ import { FrameleafLicenseService } from 'src/services/frameleaf-license.service.
 import { FrameleafRemoteAccessService } from 'src/services/frameleaf-remote-access.service.js';
 import { FrameleafServerSetupService } from 'src/services/frameleaf-server-setup.service.js';
 import { HardwareCheckService } from 'src/services/hardware-check.service.js';
-import { ModelDownloadKeyService } from 'src/services/model-download-key.service.js';
 import { HelpService } from 'src/services/help.service.js';
 import { HlsService } from 'src/services/hls.service.js';
 import { HouseholdLinkService } from 'src/services/household-link.service.js';
@@ -145,6 +144,7 @@ import { MemoryHighlightService } from 'src/services/memory-highlight.service.js
 import { MemoryService } from 'src/services/memory.service.js';
 import { MetadataService } from 'src/services/metadata.service.js';
 import { MlDestinationService } from 'src/services/ml-destination.service.js';
+import { ModelDownloadKeyService } from 'src/services/model-download-key.service.js';
 import { NotificationAdminService } from 'src/services/notification-admin.service.js';
 import { NotificationService } from 'src/services/notification.service.js';
 import { OAuthAppService } from 'src/services/oauth-app.service.js';

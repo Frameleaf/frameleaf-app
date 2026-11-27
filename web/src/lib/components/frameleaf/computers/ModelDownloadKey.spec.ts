@@ -1,3 +1,4 @@
+import { ModelDownloadKeyStatus } from '@frameleaf/sdk';
 import { render, screen, waitFor } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import { addMessages } from 'svelte-i18n';
@@ -8,8 +9,12 @@ import en from '../../../../../../i18n/en.json';
 /** FL-1825: Settings → Computers → Advanced → Connections → Faster model downloads. */
 
 const KEY = `hf_${'a'.repeat(34)}`;
-const none = { status: 'none' as const, savedAt: null, checkedAt: null };
-const saved = { status: 'saved' as const, savedAt: '2026-11-27T10:00:00.000Z', checkedAt: '2026-11-27T10:00:00.000Z' };
+const none = { status: ModelDownloadKeyStatus.None, savedAt: null, checkedAt: null };
+const saved = {
+  status: ModelDownloadKeyStatus.Saved,
+  savedAt: '2026-11-27T10:00:00.000Z',
+  checkedAt: '2026-11-27T10:00:00.000Z',
+};
 
 describe('ModelDownloadKey', () => {
   beforeAll(() => addMessages('dev', en));
@@ -58,7 +63,7 @@ describe('ModelDownloadKey', () => {
   });
 
   it('says when Hugging Face stopped accepting a saved key', async () => {
-    sdkMock.getModelDownloadKey.mockResolvedValue({ ...saved, status: 'refused' });
+    sdkMock.getModelDownloadKey.mockResolvedValue({ ...saved, status: ModelDownloadKeyStatus.Refused });
     render(ModelDownloadKey);
     expect(await screen.findByText(en.frameleaf_model_download_key_refused)).toBeInTheDocument();
     expect(screen.getByText(en.frameleaf_model_download_key_stopped_title)).toBeInTheDocument();
@@ -67,7 +72,7 @@ describe('ModelDownloadKey', () => {
 
   it('removes the key after asking', async () => {
     sdkMock.getModelDownloadKey.mockResolvedValue(saved);
-    sdkMock.removeModelDownloadKey.mockResolvedValue();
+    sdkMock.removeModelDownloadKey.mockResolvedValue(undefined as never);
     render(ModelDownloadKey);
     await userEvent.click(await screen.findByRole('button', { name: en.frameleaf_model_download_key_remove }));
     await userEvent.click(await screen.findByRole('button', { name: en.frameleaf_model_download_key_remove_confirm }));
