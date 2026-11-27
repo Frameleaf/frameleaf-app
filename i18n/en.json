@@ -3285,6 +3285,7 @@
   "frameleaf_album_people_chip": "{name} · {count, number}",
   "frameleaf_album_people_clear": "Clear people",
   "frameleaf_album_people_title": "People in this album",
+  "frameleaf_album_picker_used_lately": "Used lately",
   "frameleaf_album_private": "Private",
   "frameleaf_album_private_share_it": "Private · share it",
   "frameleaf_album_remove_member_body": "They lose access to “{name}”. You can invite them again later; a shared space invitation has to be accepted again.",

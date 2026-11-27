@@ -281,7 +281,8 @@ where
     or "album_user"."role" != $7
   )
 order by
-  "album_recent_use"."usedAt" desc
+  "album_recent_use"."usedAt" desc,
+  "album_recent_use"."albumId"
 limit
   $8
 

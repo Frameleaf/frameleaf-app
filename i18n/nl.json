@@ -3382,6 +3382,7 @@
   "frameleaf_album_people_chip": "{name} · {count, number}",
   "frameleaf_album_people_clear": "Mensen wissen",
   "frameleaf_album_people_title": "Mensen in dit album",
+  "frameleaf_album_picker_used_lately": "Onlangs gebruikt",
   "frameleaf_album_private": "Privé",
   "frameleaf_album_private_share_it": "Privé · deel het",
   "frameleaf_album_remove_member_body": "Ze verliezen toegang tot “{name}”. Je kunt ze later opnieuw uitnodigen; een uitnodiging voor een gedeelde ruimte moet opnieuw worden geaccepteerd.",
