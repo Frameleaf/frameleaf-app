@@ -25,6 +25,8 @@ const RELOAD_MS = 10_000;
 @Injectable()
 export class ModelDownloadKeyService extends BaseService {
   private timer?: NodeJS.Timeout;
+  /** Bumped by Save and Remove, so a background read that started earlier never undoes them. */
+  private generation = 0;
   /** Replaced in tests; the one outbound call this feature makes. */
   check: (key: string) => Promise<ModelDownloadKeyCheck> = (key) => checkModelDownloadKey(key);
 
@@ -62,6 +64,7 @@ export class ModelDownloadKeyService extends BaseService {
       checkedAt: now,
     };
     await this.systemMetadataRepository.set(SystemMetadataKey.ModelDownloadKey, next);
+    this.generation++;
     this.machineLearningRepository.setModelDownloadKey(key);
     this.logger.log('A Hugging Face key for model downloads was saved');
     return toDto(next);
@@ -69,6 +72,7 @@ export class ModelDownloadKeyService extends BaseService {
 
   async remove(): Promise<void> {
     await this.systemMetadataRepository.delete(SystemMetadataKey.ModelDownloadKey);
+    this.generation++;
     this.machineLearningRepository.setModelDownloadKey(null);
   }
 
@@ -80,9 +84,16 @@ export class ModelDownloadKeyService extends BaseService {
    */
   private async reload() {
     try {
+      const generation = this.generation;
+      const before = await this.stored();
       const stored = await this.refresh();
       const key = stored?.state === 'accepted' ? openModelDownloadKey(await this.keyedHash(), stored.sealed) : null;
-      this.machineLearningRepository.setModelDownloadKey(key);
+      // A Save or Remove here, or in another server process, while this read was running wins: the
+      // answer is applied only if nothing changed since, so an older read never brings a key back.
+      const current = await this.stored();
+      if (generation === this.generation && sameRecord(current, before)) {
+        this.machineLearningRepository.setModelDownloadKey(key);
+      }
     } catch (error) {
       this.logger.warn(`Could not read the model download key: ${error}`);
     }
@@ -113,9 +124,6 @@ export class ModelDownloadKeyService extends BaseService {
     if (!(await this.systemMetadataRepository.setModelDownloadKeyCheck(stored, next))) {
       return this.stored();
     }
-    if (next.state === 'refused') {
-      this.machineLearningRepository.setModelDownloadKey(null);
-    }
     return next;
   }
 
@@ -137,3 +145,7 @@ const toDto = (stored: ModelDownloadKeyState | null): ModelDownloadKeyResponseDt
   savedAt: stored?.savedAt ?? null,
   checkedAt: stored?.checkedAt ?? null,
 });
+
+/** The same saved key: neither removed nor replaced in between (the check fields may differ). */
+const sameRecord = (a: ModelDownloadKeyState | null, b: ModelDownloadKeyState | null) =>
+  a?.sealed === b?.sealed && a?.savedAt === b?.savedAt;

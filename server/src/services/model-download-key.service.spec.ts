@@ -87,6 +87,35 @@ describe(ModelDownloadKeyService.name, () => {
     expect(stored).toBeUndefined();
   });
 
+  it('a background read that started before Remove never hands the old key to the ML service', async () => {
+    const old = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
+    stored = { sealed: sealModelDownloadKey(HASH, KEY), savedAt: old, state: 'accepted', checkedAt: old };
+    sut.check = vi.fn().mockImplementation(async () => {
+      await sut.remove();
+      return 'unreachable';
+    });
+    await sut.onBootstrap();
+    sut.onShutdown();
+    expect(mocks.machineLearning.setModelDownloadKey).toHaveBeenLastCalledWith(null);
+    expect(mocks.machineLearning.setModelDownloadKey).not.toHaveBeenCalledWith(KEY);
+  });
+
+  it('a background read that started before Replace never hands the old key to the ML service', async () => {
+    const other = `hf_${'b'.repeat(34)}`;
+    const old = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
+    stored = { sealed: sealModelDownloadKey(HASH, KEY), savedAt: old, state: 'accepted', checkedAt: old };
+    const check = vi.fn().mockResolvedValue('accepted');
+    check.mockImplementationOnce(async () => {
+      await sut.save({ key: other });
+      return 'accepted';
+    });
+    sut.check = check;
+    await sut.onBootstrap();
+    sut.onShutdown();
+    expect(mocks.machineLearning.setModelDownloadKey).toHaveBeenLastCalledWith(other);
+    expect(mocks.machineLearning.setModelDownloadKey).not.toHaveBeenCalledWith(KEY);
+  });
+
   it('keeps the last answer when Hugging Face cannot be reached', async () => {
     sut.check = vi.fn().mockResolvedValue('unreachable');
     const old = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
