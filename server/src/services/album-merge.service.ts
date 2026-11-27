@@ -347,11 +347,11 @@ export class AlbumMergeService extends BaseService {
         after: folder,
       });
     }
-    for (const { id, folderPath, isUserEdited } of await merge.moveFolderAlbums(loser.id, winner.id)) {
+    for (const { id, folderPath, isUserEdited, isKept } of await merge.moveFolderAlbums(loser.id, winner.id)) {
       await runs.recordChange(tx, runId, {
         kind: AlbumChangeKind.FolderAlbumMoved,
         albumId: winner.id,
-        before: { albumId: loser.id, isUserEdited },
+        before: { albumId: loser.id, isUserEdited, isKept },
         after: { id, folderPath },
       });
     }

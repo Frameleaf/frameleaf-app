@@ -81,8 +81,21 @@ const fakeWorld = (mocks: ServiceMocks, importPaths: string[]) => {
     }
     return Promise.resolve([...counts].map(([folderPath, row]) => ({ folderPath, ...row })));
   });
-  mocks.library.getFolderPaths.mockImplementation(() =>
-    Promise.resolve([...new Set(assets.filter((asset) => ofLibrary(asset)).map((asset) => folderOf(asset)))]),
+  mocks.library.getFolderPaths.mockImplementation((_libraryId, under) =>
+    Promise.resolve([
+      ...new Set(
+        assets
+          .filter((asset) => ofLibrary(asset) && under.some((folder) => asset.originalPath.startsWith(`${folder}/`)))
+          .map((asset) => folderOf(asset)),
+      ),
+    ]),
+  );
+  mocks.library.getFolderAlbumLinks.mockImplementation((linkId, albumId) =>
+    Promise.resolve(
+      links
+        .filter(({ id, albumId: linked }) => id === linkId || linked === albumId)
+        .map(({ id, albumId: linked }) => ({ id, albumId: linked })),
+    ),
   );
   mocks.library.setFolderAlbumsKept.mockImplementation((_libraryId, kept) => {
     for (const link of links) {
@@ -571,7 +584,7 @@ describe(FolderAlbumService.name, () => {
       // the owner merges Trip into Beach: Trip's link follows to Beach as the owner's edit (AlbumMergeRepository)
       world.members.get(beach.id)!.add(world.assets[0].id);
       const link = world.links.find(({ folderPath }) => folderPath === '/photos/Trip')!;
-      Object.assign(link, { albumId: beach.id, isUserEdited: true });
+      Object.assign(link, { albumId: beach.id, isUserEdited: true, isKept: true });
       world.albums.delete(trip.id);
 
       world.addFile('/photos/Trip/c.jpg');
@@ -589,6 +602,20 @@ describe(FolderAlbumService.name, () => {
       await expect(sut.sync(world.library.id)).resolves.toMatchObject({ removed: 0 });
       expect(world.albums.has(beach.id)).toBe(true);
       expect(world.albumFor('/photos/Beach')).toBeUndefined();
+    });
+
+    it('leaves an album alone when a merge moved its folder while the sync ran', async () => {
+      const world = fakeWorld(mocks, ['/photos']);
+      world.addFile('/photos/Trip/a.jpg');
+      await sut.sync(world.library.id);
+      const trip = world.albumFor('/photos/Trip')!;
+      const link = world.links.find(({ folderPath }) => folderPath === '/photos/Trip')!;
+      world.removeFile('/photos/Trip/a.jpg');
+      // the merge commits after the sync read the links: by the time it would delete, the link points elsewhere
+      mocks.library.getFolderAlbumLinks.mockResolvedValueOnce([{ id: link.id, albumId: 'merged-album' }]);
+
+      await expect(sut.sync(world.library.id)).resolves.toMatchObject({ removed: 0 });
+      expect(world.albums.has(trip.id)).toBe(true);
     });
 
     it('does nothing for a library with folder albums off', async () => {

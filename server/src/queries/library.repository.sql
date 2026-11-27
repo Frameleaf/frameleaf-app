@@ -433,6 +433,26 @@ WHERE
     where
       asset_lock."assetId" = "asset"."id"
   )
+  AND EXISTS (
+    SELECT
+      1
+    FROM
+      unnest($2::text[]) AS gone (path)
+    WHERE
+      starts_with(asset."originalPath", gone.path || '/')
+  )
+
+-- LibraryRepository.getFolderAlbumLinks
+select
+  "id",
+  "albumId"
+from
+  "library_folder_album"
+where
+  (
+    "id" = $1::uuid
+    or "albumId" = $2::uuid
+  )
 
 -- LibraryRepository.getFolderAlbumCounts
 SELECT

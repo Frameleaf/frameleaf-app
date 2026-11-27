@@ -178,10 +178,11 @@ export const subfolderNames = (
     const name = baseName(chain[level + 1]);
     const key = name.toLowerCase();
     const seen = found.get(key) ?? new Map<string, { photos: number; skipped: number }>();
-    const totals = seen.get(chain[level + 1]) ?? { photos: 0, skipped: 0 };
+    // one per album folder, however the name is spelled there
+    const totals = seen.get(chain[level]) ?? { photos: 0, skipped: 0 };
     totals.photos += count;
     totals.skipped += skipped;
-    seen.set(chain[level + 1], totals);
+    seen.set(chain[level], totals);
     found.set(key, seen);
     // the first spelling found names the row
     if (!names.has(key)) {

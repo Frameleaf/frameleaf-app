@@ -209,19 +209,20 @@ export class AlbumMergeRepository {
 
   /**
    * FL-1837: a library folder whose album is merged keeps syncing into the merged album instead of making its album
-   * again. The link counts as the owner's edit from then on, so the sync never renames or removes the merged album.
+   * again. The link counts as the owner's edit and is kept as it is (`isKept`), so the sync never renames, moves or
+   * removes the merged album, and the folder's own photos keep joining it.
    */
   async moveFolderAlbums(
     loserId: string,
     winnerId: string,
-  ): Promise<{ id: string; folderPath: string; isUserEdited: boolean }[]> {
-    const { rows } = await sql<{ id: string; folderPath: string; isUserEdited: boolean }>`
+  ): Promise<{ id: string; folderPath: string; isUserEdited: boolean; isKept: boolean }[]> {
+    const { rows } = await sql<{ id: string; folderPath: string; isUserEdited: boolean; isKept: boolean }>`
       WITH old AS (
-        SELECT id, "isUserEdited" FROM library_folder_album WHERE "albumId" = ${loserId}::uuid FOR UPDATE
+        SELECT id, "isUserEdited", "isKept" FROM library_folder_album WHERE "albumId" = ${loserId}::uuid FOR UPDATE
       )
-      UPDATE library_folder_album link SET "albumId" = ${winnerId}::uuid, "isUserEdited" = true
+      UPDATE library_folder_album link SET "albumId" = ${winnerId}::uuid, "isUserEdited" = true, "isKept" = true
       FROM old WHERE link.id = old.id
-      RETURNING link.id, link."folderPath", old."isUserEdited"
+      RETURNING link.id, link."folderPath", old."isUserEdited", old."isKept"
     `.execute(this.db);
     return rows;
   }
@@ -403,10 +404,15 @@ export class AlbumMergeRepository {
     let reversed = 0;
     const skipped: string[] = [];
     for (const change of changes) {
-      const { albumId, isUserEdited } = change.before as { albumId: string; isUserEdited: boolean };
+      const { albumId, isUserEdited, isKept } = change.before as {
+        albumId: string;
+        isUserEdited: boolean;
+        isKept?: boolean;
+      };
       const { id, folderPath } = change.after as { id: string; folderPath: string };
       const { numAffectedRows } = await sql`
-        UPDATE library_folder_album SET "albumId" = ${albumId}::uuid, "isUserEdited" = ${isUserEdited}
+        UPDATE library_folder_album
+        SET "albumId" = ${albumId}::uuid, "isUserEdited" = ${isUserEdited}, "isKept" = ${isKept ?? false}
         WHERE id = ${id}::uuid AND "albumId" = ${change.albumId}::uuid
       `.execute(this.db);
       if (Number(numAffectedRows ?? 0) === 0) {

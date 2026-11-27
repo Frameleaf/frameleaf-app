@@ -7,9 +7,9 @@ import en from '../../../../../i18n/en.json';
 const estimate = {
   complete: true,
   folders: [
-    { path: '/mnt/nas/family', count: 38 },
-    { path: '/mnt/nas/family/2024/Banff', count: 212 },
-    { path: '/mnt/nas/family/2025/Summer/Camping', count: 140 },
+    { path: '/mnt/nas/family', count: 38, skipped: 0 },
+    { path: '/mnt/nas/family/2024/Banff', count: 212, skipped: 0 },
+    { path: '/mnt/nas/family/2025/Summer/Camping', count: 140, skipped: 0 },
   ],
 };
 const base = {

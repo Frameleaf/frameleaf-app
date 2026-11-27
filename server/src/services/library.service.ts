@@ -435,7 +435,8 @@ export class LibraryService extends BaseService {
         take: 500,
         onSkipped: (file) => {
           const parent = path.posix.dirname(file);
-          if (skipped.has(parent) || skipped.size < FOLDER_ESTIMATE_FOLDERS) {
+          // one cap for both maps: the answer lists at most FOLDER_ESTIMATE_FOLDERS folders
+          if (skipped.has(parent) || folders.has(parent) || folders.size + skipped.size < FOLDER_ESTIMATE_FOLDERS) {
             skipped.set(parent, (skipped.get(parent) ?? 0) + 1);
           }
         },
@@ -444,7 +445,7 @@ export class LibraryService extends BaseService {
         for (const file of batch) {
           count++;
           const parent = path.posix.dirname(file);
-          if (folders.has(parent) || folders.size < FOLDER_ESTIMATE_FOLDERS) {
+          if (folders.has(parent) || skipped.has(parent) || folders.size + skipped.size < FOLDER_ESTIMATE_FOLDERS) {
             folders.set(parent, (folders.get(parent) ?? 0) + 1);
           }
           bytes += await this.storageRepository

@@ -92,7 +92,7 @@ describe('AddFolderPage folder albums (FL-838)', () => {
       count: 2,
       bytes: 10,
       complete: true,
-      folders: [{ path: '/mnt/photos/trip', count: 2 }],
+      folders: [{ path: '/mnt/photos/trip', count: 2, skipped: 0 }],
     });
     sdkMock.createLibrary.mockResolvedValue({ id: 'library-1' } as never);
     sdkMock.scanLibrary.mockResolvedValue(undefined as never);

@@ -361,13 +361,14 @@ export class FolderAlbumService extends BaseService {
         await this.moveIntoPlannedAlbum(byPath, tree, roots, link);
         continue;
       }
-      // FL-1837: an album another folder was merged into stays while that folder keeps it; only this link goes
-      const sharedWith = byPath
-        .values()
-        .some(
-          (other) =>
-            other.albumId === link.albumId && other.folderPath !== link.folderPath && keep.has(other.folderPath),
-        );
+      // FL-1837: read again now, as a merge may have moved links since this sync started. An album another folder was
+      // merged into stays while that folder keeps it (only this link goes); a link a merge moved is left alone.
+      const now = await this.libraryRepository.getFolderAlbumLinks(link.id, link.albumId);
+      const mine = now.find(({ id }) => id === link.id);
+      if (!mine || mine.albumId !== link.albumId) {
+        continue;
+      }
+      const sharedWith = now.some(({ id }) => id !== link.id);
       if (sharedWith) {
         await this.libraryRepository.deleteFolderAlbum(link.id);
         byPath.delete(link.folderPath);
@@ -483,7 +484,10 @@ export class FolderAlbumService extends BaseService {
     // FL-1837: an album holds the photos of every folder that joins it (an event folder's Capture, Videos…), so it is
     // matched by all their files. A gone album's folders are planned again over every folder the library has had,
     // the ones whose files went offline too.
-    const known = await this.libraryRepository.getFolderPaths(libraryId);
+    if (newFolders.length === 0) {
+      return new Map<string, string>();
+    }
+    const known = await this.libraryRepository.getFolderPaths(libraryId, goneFolders);
     const before = planFolderAlbums(
       roots,
       known.map((folderPath) => ({ folderPath, photos: 1 })),

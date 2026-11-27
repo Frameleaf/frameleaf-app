@@ -472,14 +472,33 @@ export class LibraryRepository {
     return rows.map((row) => ({ folderPath: row.folderPath, photos: Number(row.photos), items: Number(row.items) }));
   }
 
-  /** FL-1837: every folder the library has items in, offline and trashed ones too (not Locked ones). */
-  @GenerateSql({ params: [DummyValue.UUID] })
-  async getFolderPaths(libraryId: string): Promise<string[]> {
+  /**
+   * FL-1837: the folders at or below `under` the library has items in, offline and trashed ones too (not Locked ones),
+   * to work out which folders joined a gone album.
+   */
+  @GenerateSql({ params: [DummyValue.UUID, [DummyValue.STRING]] })
+  async getFolderPaths(libraryId: string, under: string[]): Promise<string[]> {
+    if (under.length === 0) {
+      return [];
+    }
     const { rows } = await sql<{ folderPath: string }>`
       SELECT DISTINCT ${folderOf('asset')} AS "folderPath"
       FROM asset
-      WHERE asset."libraryId" = ${asUuid(libraryId)} AND ${isNotLocked('asset')}`.execute(this.db);
+      WHERE asset."libraryId" = ${asUuid(libraryId)} AND ${isNotLocked('asset')}
+        AND EXISTS (
+          SELECT 1 FROM unnest(${under}::text[]) AS gone(path) WHERE starts_with(asset."originalPath", gone.path || '/')
+        )`.execute(this.db);
     return rows.map(({ folderPath }) => folderPath);
+  }
+
+  /** FL-1837: this link, and every link of the library pointing at this album, as they are now. */
+  @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID] })
+  getFolderAlbumLinks(linkId: string, albumId: string) {
+    return this.db
+      .selectFrom('library_folder_album')
+      .select(['id', 'albumId'])
+      .where((eb) => eb.or([eb('id', '=', asUuid(linkId)), eb('albumId', '=', asUuid(albumId))]))
+      .execute();
   }
 
   /** FL-1837: how many folder albums a library has, and how many of them show nothing. */
