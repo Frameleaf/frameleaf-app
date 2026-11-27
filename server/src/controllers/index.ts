@@ -109,6 +109,7 @@ import {
 import { MediaOperationController } from 'src/controllers/media-operation.controller.js';
 import { MemoryController } from 'src/controllers/memory.controller.js';
 import { MlDestinationController } from 'src/controllers/ml-destination.controller.js';
+import { ModelDownloadKeyController } from 'src/controllers/model-download-key.controller.js';
 import { NotificationAdminController } from 'src/controllers/notification-admin.controller.js';
 import { NotificationController } from 'src/controllers/notification.controller.js';
 import {
@@ -267,6 +268,7 @@ export const controllers = [
   CastController,
   CloudBackupOwnerController,
   HardwareCheckController,
+  ModelDownloadKeyController,
   HelpController,
   ICloudSyncController,
   ICloudIdentityController,

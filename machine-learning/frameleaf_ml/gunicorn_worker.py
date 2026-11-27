@@ -18,7 +18,10 @@ class CustomUvicornServer(Server):
 
 class CustomUvicornWorker(UvicornWorker):
     async def _serve(self) -> None:
-        self.config.app = self.wsgi
+        from .download_key import ModelDownloadKeyMiddleware
+
+        # FL-1825: outside main.py, so the preprocessing identity stays the same.
+        self.config.app = ModelDownloadKeyMiddleware(self.wsgi)
         server = CustomUvicornServer(config=self.config)
         self._install_sigquit_handler()
         await server.serve(sockets=self.sockets)
