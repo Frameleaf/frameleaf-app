@@ -1,5 +1,7 @@
 <script lang="ts">
-  import Spinner from '$lib/components/frameleaf/Spinner.svelte';
+  import EmptyRow from '$lib/components/frameleaf/EmptyRow.svelte';
+  import GridSkeleton from '$lib/components/frameleaf/GridSkeleton.svelte';
+  import InlineError from '$lib/components/frameleaf/InlineError.svelte';
   import ResultsView from '$lib/components/frameleaf/ResultsView.svelte';
   import { namedArchiveName } from '$lib/frameleaf/archive-name';
   import { librarySession } from '$lib/frameleaf/library-session.svelte';
@@ -7,7 +9,8 @@
   import type { SpacePhotoSet } from '$lib/frameleaf/space-photos.svelte';
   import type { TimelineAsset } from '$lib/managers/timeline-manager/types';
   import { toTimelineAsset } from '$lib/utils/timeline-util';
-  import { getAllTags, type AlbumResponseDto } from '@frameleaf/sdk';
+  import { loadAllTags } from '$lib/frameleaf/tag-store';
+  import { type AlbumResponseDto } from '@frameleaf/sdk';
   import { onMount, untrack } from 'svelte';
   import { t } from 'svelte-i18n';
 
@@ -103,7 +106,7 @@
   });
 
   onMount(() => {
-    void getAllTags()
+    void loadAllTags()
       .then((tags) => (tagOptions = tags.map(({ id, value }) => ({ id, name: value }))))
       .catch(() => {
         // Tagging simply offers no existing tags if they cannot be read.
@@ -125,20 +128,15 @@
   >
     {#snippet empty()}
       {#if !photos.loading && !photos.failed}
-        <p class="empty">
-          {filter ? $t('frameleaf_spaces_new_only_empty') : $t('frameleaf_spaces_timeline_empty')}
-        </p>
+        <EmptyRow title={filter ? $t('frameleaf_spaces_new_only_empty') : $t('frameleaf_spaces_timeline_empty')} />
       {/if}
     {/snippet}
   </ResultsView>
 
   {#if photos.loading}
-    <div class="loading"><Spinner /></div>
+    <div class="loading"><GridSkeleton tiles={8} /></div>
   {:else if photos.failed}
-    <p class="empty">
-      {$t('frameleaf_spaces_error_timeline')}
-      <button type="button" onclick={() => void photos.retry()}>{$t('retry')}</button>
-    </p>
+    <InlineError compact message={$t('frameleaf_spaces_error_timeline')} onRetry={() => photos.retry()} />
   {/if}
 </section>
 
@@ -149,28 +147,7 @@
     gap: 0.5rem;
     color: var(--fl-text);
   }
-  .empty {
-    margin: 0;
-    padding: 2rem 0;
-    color: var(--fl-muted);
-    font-size: 0.875rem;
-    text-align: center;
-  }
-  button {
-    margin-inline-start: 0.5rem;
-    padding: 0 0.75rem;
-    min-height: 32px;
-    border: 1px solid var(--fl-border);
-    border-radius: var(--fl-radius);
-    background: var(--fl-raised);
-    color: var(--fl-text);
-    font-size: 0.75rem;
-    font-weight: 600;
-  }
   .loading {
-    display: flex;
-    justify-content: center;
-    padding: var(--fl-space-6) 0;
-    color: var(--fl-muted);
+    padding-top: var(--fl-space-2);
   }
 </style>

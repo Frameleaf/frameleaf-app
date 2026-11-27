@@ -1,6 +1,6 @@
 // FL-330: every default machine-learning model the server asks for must resolve on the model source the ML service
 // downloads from by default. Run with `pnpm exec vitest run --config test/vitest.config.model-mirror.mjs`; it calls
-// the Frameleaf model mirror, so it lives outside the offline unit suite and runs in the model-mirror-defaults workflow.
+// Hugging Face, so it lives outside the offline unit suite and runs in the model-mirror-defaults workflow.
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -26,17 +26,18 @@ const models = [
   { task: 'ocr', name: ocr.modelName },
 ];
 
-describe('default models on the model mirror', () => {
-  it('uses the Frameleaf model mirror by default', () => {
-    expect(readDefaultModelSource()).toBe('https://models.frameleaf.cloud');
+describe('default models on the model source', () => {
+  it('uses the Frameleaf organisation on Hugging Face by default', () => {
+    expect(readDefaultModelSource()).toBe('https://huggingface.co');
   });
 
   it.each(models)('serves the default $task model $name', async ({ name }) => {
     const url = `${source}/api/models/${MODEL_SOURCE_ORG}/${encodeURIComponent(name)}/revision/main`;
     const response = await fetch(url, { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(30_000) });
-    expect(response.status, `${url} must answer 200; publish the model on the mirror before making it a default`).toBe(
-      200,
-    );
+    expect(
+      response.status,
+      `${url} must answer 200; publish the model on Hugging Face before making it a default`,
+    ).toBe(200);
     const listing = (await response.json()) as { siblings?: Array<{ rfilename: string }> };
     const files = (listing.siblings ?? []).map(({ rfilename }) => rfilename);
     expect(

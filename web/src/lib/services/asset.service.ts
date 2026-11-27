@@ -2,6 +2,7 @@ import {
   AssetJobName,
   AssetMediaSize,
   AssetTypeEnum,
+  DownloadFormat,
   AssetVisibility,
   getAssetInfo,
   removeAssetFromAlbum,
@@ -50,6 +51,7 @@ import { get } from 'svelte/store';
 import { goto } from '$app/navigation';
 import ShareSheetModal from '$lib/components/frameleaf/ShareSheetModal.svelte';
 import { ProjectionType } from '$lib/constants';
+import { askDownloadFormat, convertedFileName } from '$lib/frameleaf/download-format';
 import { currentDevelopPlaybackRevision } from '$lib/frameleaf/playback-revision.svelte';
 import { canSendCopies, isSendable, sendCopiesWithFeedback, sendCopyPermitted } from '$lib/frameleaf/send-copy';
 import { actsAsRegular } from '$lib/frameleaf/session-access.svelte';
@@ -460,15 +462,28 @@ export const handleDownloadAsset = async (asset: AssetResponseDto, { edited }: {
     sharedLink === authManager.isSharedLink &&
     params.key === authManager.params.key &&
     params.slug === authManager.params.slug;
+  // FL-826: a photo asks which format; a video is always its original. Cancelling downloads nothing.
+  const chosen =
+    asset.type === AssetTypeEnum.Image
+      ? await askDownloadFormat({ count: 1, info: { assetIds: [asset.id] } })
+      : DownloadFormat.Original;
+  // The session is captured before the question, so signing out while it is open downloads nothing.
+  if (!chosen || !isCurrent()) {
+    return;
+  }
+  const format = chosen === DownloadFormat.Original ? undefined : chosen;
   // `edited` is the version on screen (owner, 2026-10-16). When that is the owner's develop version,
   // it is named exactly, so the file saved is the one the viewer shows even if another becomes current.
   const revisionId = (edited && currentDevelopPlaybackRevision(asset)) || undefined;
-  const assets: { filename: string; id: string; size?: number; revisionId?: string }[] = [
+  type Part = { filename: string; id: string; size?: number; revisionId?: string; format?: 'jpeg' | 'web' };
+  const assets: Part[] = [
     {
-      filename: asset.originalFileName,
+      filename: format ? convertedFileName(asset.originalFileName) : asset.originalFileName,
       id: asset.id,
       size: asset.exifInfo?.fileSizeInByte ?? undefined,
-      revisionId,
+      // A named develop version is a finished file of its own; a conversion is made from what is shown.
+      revisionId: format ? undefined : revisionId,
+      format,
     },
   ];
 
@@ -477,7 +492,8 @@ export const handleDownloadAsset = async (asset: AssetResponseDto, { edited }: {
   };
 
   // An edited still downloads on its own: the motion part belongs to the original.
-  if (asset.livePhotoVideoId && !(edited && (asset.isEdited || revisionId))) {
+  // A converted photo downloads on its own too: a JPEG beside a loose clip is no Live Photo.
+  if (asset.livePhotoVideoId && !format && !(edited && (asset.isEdited || revisionId))) {
     const motionAsset = await getAssetInfo({ ...params, id: asset.livePhotoVideoId });
     if (!isCurrent()) {
       return;
@@ -502,7 +518,7 @@ export const handleDownloadAsset = async (asset: AssetResponseDto, { edited }: {
 
   // A public share's lightbox saves the file directly (PublicViewer.jsx:508-517).
   if (authManager.isSharedLink) {
-    for (const [index, { filename, id }] of assets.entries()) {
+    for (const [index, { filename, id, format }] of assets.entries()) {
       if (index > 0) {
         // Play nice with Safari, which drops a second download started in the same tick.
         await sleep(500);
@@ -510,15 +526,15 @@ export const handleDownloadAsset = async (asset: AssetResponseDto, { edited }: {
       if (!isCurrent()) {
         return;
       }
-      downloadUrl(getAssetMediaUrl({ id, size: AssetMediaSize.Original, edited }), filename);
+      downloadUrl(getAssetMediaUrl({ id, size: AssetMediaSize.Original, edited, format }), filename);
     }
     return;
   }
 
   // FL-45 D-3: each file is its own row in the download panel, with progress, Cancel and Retry,
   // and is saved from there (UploadPanel.jsx `DownloadPanel`).
-  for (const { filename, id, size, revisionId } of assets) {
-    downloadAssetFile({ id, filename, edited, size, ...(revisionId && { revisionId }) });
+  for (const { filename, id, size, revisionId, format } of assets) {
+    downloadAssetFile({ id, filename, edited, size, ...(revisionId && { revisionId }), ...(format && { format }) });
   }
 };
 

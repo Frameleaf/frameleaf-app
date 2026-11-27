@@ -26,7 +26,7 @@
     libraryPreferenceKey,
     type LibraryLayout,
   } from '$lib/frameleaf/library-session';
-  import type { DisplayFormat } from '$lib/frameleaf/date-format';
+  import { formatDateTime, type DisplayFormat } from '$lib/frameleaf/date-format';
   import { saveNotificationLanguage } from '$lib/frameleaf/notification-language';
   import { createOwnPreferencesDraft } from '$lib/frameleaf/own-preferences-draft';
   import { authManager } from '$lib/managers/auth-manager.svelte';
@@ -357,11 +357,11 @@
         help={reuploadOpen
           ? $t('frameleaf_prefs_look_reupload_help_on', {
               values: {
-                until: new Date(reuploadUntil).toLocaleString($i18nLocale ?? undefined, {
-                  weekday: 'short',
-                  hour: 'numeric',
-                  minute: '2-digit',
-                }),
+                until: formatDateTime(
+                  new Date(reuploadUntil),
+                  { weekday: 'short', hour: 'numeric', minute: '2-digit' },
+                  $i18nLocale ?? 'default',
+                ),
               },
             })
           : $t('frameleaf_prefs_look_reupload_help')}

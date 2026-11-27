@@ -30,7 +30,7 @@
   import { browser } from '$app/env';
   import { afterNavigate, goto, replaceState } from '$app/navigation';
   import { page } from '$app/state';
-  import BulkConfirmDialog from '$lib/components/frameleaf/BulkConfirmDialog.svelte';
+  import ConfirmDialog from '$lib/components/frameleaf/ConfirmDialog.svelte';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import LibraryEmptyState from '$lib/components/frameleaf/LibraryEmptyState.svelte';
@@ -61,7 +61,7 @@
   import { namedEntitySegments, withArchiveDetail } from '$lib/frameleaf/archive-name';
   import { preparesArchiveOnServer } from '$lib/frameleaf/archive-operations';
   import type { BulkAsset, BulkActionContext, BulkActionId } from '$lib/frameleaf/bulk-actions';
-  import { bulkStateById, type BulkPayload } from '$lib/frameleaf/bulk-operations';
+  import { bulkStateById, matchingScope, type BulkPayload } from '$lib/frameleaf/bulk-operations';
   import { BulkController } from '$lib/frameleaf/bulk-controller.svelte';
   import { durableBulkTracker } from '$lib/frameleaf/durable-bulk-tracker.svelte';
   import { type FilterEntityKind, resolveEntityNames } from '$lib/frameleaf/filter-entity-names';
@@ -327,9 +327,16 @@
    * The server's "select everything matching" resolves the page's own scope, which a view that adds
    * archived items, hides partner photos or opens stacks no longer is: then the bar selects what is loaded.
    */
-  const selectAll = $derived(
-    pageSelectAll === 'matching' && JSON.stringify(options) !== JSON.stringify(pageOptions) ? 'loaded' : pageSelectAll,
+  const viewChanged = $derived(JSON.stringify(options) !== JSON.stringify(pageOptions));
+  /**
+   * FL-1804: a page that asked for "what is loaded" but whose own request the server can resolve
+   * exactly (an album, a tag, a pet, the archive) selects by that scope instead, so Select all never
+   * has to load every month. A public share has no search to ask.
+   */
+  const pageScope = $derived(
+    pageSelectAll === 'loaded' && !publicView && !selectionMode && !viewChanged ? matchingScope(pageOptions) : null,
   );
+  const selectAll = $derived(viewChanged ? 'loaded' : pageScope ? 'matching' : pageSelectAll);
 
   let helpOpen = $state(false);
   let restored = false;
@@ -1045,7 +1052,10 @@
     }
     if (frozen) {
       // Frozen at submit: editing the filter afterwards cannot change what the operation touches.
-      void bulk.runMatching(id, frozen, { payload, submittedTotal: session.total });
+      void bulk.runMatching(id, frozen, {
+        payload,
+        submittedTotal: pageScope ? (manager.assetCount ?? null) : session.total,
+      });
       // A selection made while a download's name was looked up is not this action's to clear.
       if (frozen === snapshot) {
         session.clearSelection();
@@ -1085,6 +1095,11 @@
   };
 
   const selectAllMatching = async () => {
+    if (pageScope) {
+      // The grid's own count is this scope's count, so there is nothing to ask the server yet.
+      session.dispatch({ type: 'selection', ids: loadedIds(), allMatching: true, scope: pageScope });
+      return;
+    }
     const revision = session.revision;
     const total = await bulk.count(session.state);
     if (revision !== session.revision) {
@@ -1095,6 +1110,15 @@
       session.applyTotal(total, session.revision);
     }
   };
+
+  /**
+   * Select all. A page scope goes to the server only when months would otherwise have to be fetched:
+   * with everything already loaded, the plain selection costs nothing and keeps every action.
+   */
+  const selectEverything = () =>
+    selectAll === 'loaded' || (pageScope && manager.months.every((month) => month.isLoaded))
+      ? selectAllLoaded()
+      : selectAllMatching();
 
   const focusedId = () => session.session.scrollAnchor ?? session.selection.at(-1) ?? null;
 
@@ -2180,7 +2204,7 @@
         onDialogSettled={(_id, submitted) => onBarDialogSettled(submitted)}
         {resolveCaptureTimes}
         count={session.selection.length}
-        total={selectAll === 'loaded' ? (manager.assetCount ?? null) : (session.total ?? resultCount)}
+        total={selectAll === 'loaded' || pageScope ? (manager.assetCount ?? null) : (session.total ?? resultCount)}
         assets={selectedAssets}
         selectedIds={session.selection}
         context={{ ...bulkContext, currentUserId, snapshot: !!snapshot }}
@@ -2190,7 +2214,7 @@
         onAction={runBulk}
         onUndo={() => void bulk.undo?.run()}
         onClear={() => session.clearSelection()}
-        onSelectAllMatching={() => void (selectAll === 'loaded' ? selectAllLoaded() : selectAllMatching())}
+        onSelectAllMatching={() => void selectEverything()}
         onCancelOperation={(requestId) => bulk.cancel(requestId)}
         onRetryOperation={(operation) => void bulk.retry(operation)}
         onDismissOperation={(requestId) => bulk.dismiss(requestId)}
@@ -2233,12 +2257,11 @@
 </div>
 
 {#if archiveConfirm}
-  <BulkConfirmDialog
-    count={archiveConfirm.count}
+  <ConfirmDialog
+    title={$t('frameleaf_bulk_archive')}
+    prompt={$t('frameleaf_bulk_archive_matching_confirm', { values: { count: archiveConfirm.count } })}
+    confirmText={$t('frameleaf_bulk_archive')}
     bind:open={archiveConfirmOpen}
-    labelKey="frameleaf_bulk_archive"
-    messageKey="frameleaf_bulk_archive_matching_confirm"
-    danger={false}
     onConfirm={() => void confirmMatchingArchive()}
   />
 {/if}
@@ -2294,7 +2317,7 @@
           disabled={resultCount === 0}
           onclick={() => {
             moreActionsOpen = false;
-            void (selectAll === 'loaded' ? selectAllLoaded() : selectAllMatching());
+            void selectEverything();
           }}
         >
           {resultCount === null

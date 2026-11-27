@@ -52,6 +52,7 @@ import { toSdkDateAccuracy, type DateAccuracy } from '$lib/frameleaf/approximate
 import type { BulkActionId } from '$lib/frameleaf/bulk-actions';
 import type { LibraryViewState } from '$lib/frameleaf/library-session';
 import { handledLockedKeyError } from '$lib/frameleaf/locked-key-prompt';
+import { invalidateTags } from '$lib/frameleaf/tag-store';
 
 /**
  * Execution of the Frameleaf selection bar's bulk actions (FL-32).
@@ -459,9 +460,33 @@ export const snapshotSearch = (state: LibraryViewState): SnapshotSearch => {
   // FL-48: the same query-to-request translation the search page uses — calendar-day bounds become
   // the datetimes the server accepts — so a matching set is exactly the set the view showed.
   let filter: SearchFilter = toServerFilter(state.query.filter ?? {});
+  const unsupported: SnapshotSearch = { kind: 'unsupported', reasonKey: 'frameleaf_bulk_reason_scope_unsupported' };
+  // FL-1804: the page scopes a snapshot can carry (`matchingScope`). Each is required on top of the
+  // query's own condition on the same field, never instead of it.
+  if (state.scope.kind === 'tag' || state.scope.kind === 'pet') {
+    if (!state.scope.id) {
+      return unsupported;
+    }
+    const field = state.scope.kind === 'tag' ? 'tagIds' : 'petIds';
+    const ids = filter[field];
+    filter[field] = ids
+      ? { ...ids, all: [...new Set([...(ids.all ?? []), state.scope.id])] }
+      : { any: [state.scope.id] };
+  } else if (state.scope.kind === 'archive') {
+    // The archive page shows archived items only; a query that names another visibility is not it.
+    if (filter.visibility) {
+      return unsupported;
+    }
+    filter.visibility = { eq: AssetVisibility.Archive };
+  }
+  if ((state.scope.kind === 'album' || state.scope.kind === 'space') && state.scope.id && !filter.visibility) {
+    // An album or space page shows its archived members too; the search default alone (timeline
+    // only) would leave them out of the matching set.
+    filter.visibility = { in: [AssetVisibility.Timeline, AssetVisibility.Archive] };
+  }
   if (state.scope.kind === 'album') {
     if (!state.scope.id) {
-      return { kind: 'unsupported', reasonKey: 'frameleaf_bulk_reason_scope_unsupported' };
+      return unsupported;
     }
     // The scope is required on top of any album condition the query already has, never instead of it.
     const albums = filter.albumIds;
@@ -526,6 +551,41 @@ export const snapshotSearch = (state: LibraryViewState): SnapshotSearch => {
   return { kind: 'metadata', dto: { filter, size: SNAPSHOT_PAGE_SIZE, ...enrichment } };
 };
 
+/**
+ * FL-1804: the scope a page's own timeline request stands for, when the structured search can return
+ * exactly the items that page shows; null when it cannot, and Select all then selects what is loaded.
+ *
+ * Only these requests qualify (checked against the server's timeline and search queries):
+ *  - an album: `{ albumId, order }`;
+ *  - a tag with its child tags: `{ visibility: timeline, tagId }`;
+ *  - a pet: `{ visibility: timeline, petId }`;
+ *  - the archive: `{ visibility: archive }`.
+ * Anything else is refused rather than approximated. A person page also shows other people's photos
+ * from shared albums, which the search does not; a request with `withStacked` shows one item per
+ * stack where the search returns every member; "this tag only" and Best photos have no filter.
+ */
+export const matchingScope = (options: Record<string, unknown> | undefined): LibraryViewState['scope'] | null => {
+  const entries = Object.entries(options ?? {}).filter(([, value]) => value !== undefined);
+  const only = (...keys: string[]) => entries.every(([key]) => keys.includes(key));
+  const { albumId, tagId, petId, visibility } = Object.fromEntries(entries);
+  if (typeof albumId === 'string' && albumId) {
+    return only('albumId', 'order') ? { kind: 'album', id: albumId } : null;
+  }
+  if (visibility === AssetVisibility.Archive) {
+    return only('visibility') ? { kind: 'archive' } : null;
+  }
+  if (visibility !== AssetVisibility.Timeline) {
+    return null;
+  }
+  if (typeof tagId === 'string' && tagId) {
+    return only('visibility', 'tagId') ? { kind: 'tag', id: tagId } : null;
+  }
+  if (typeof petId === 'string' && petId) {
+    return only('visibility', 'petId') ? { kind: 'pet', id: petId } : null;
+  }
+  return null;
+};
+
 /** The count the "Select all n" control offers, taken from the same frozen state. */
 export const countMatching = async (
   state: LibraryViewState,
@@ -545,6 +605,12 @@ export const countMatching = async (
   });
   return total;
 };
+
+/**
+ * FL-1804: scopes that are a page of their own. Select all there used to load and act on every
+ * item, so their matching set is never cut short; the jobs it becomes are split downstream.
+ */
+const PAGE_SCOPES: ReadonlySet<string> = new Set(['album', 'tag', 'pet', 'archive']);
 
 export type ResolvedSnapshot = {
   ids: string[];
@@ -566,7 +632,7 @@ export const resolveMatchingIds = async (
     gateway,
     signal,
     onProgress,
-    limit = SNAPSHOT_MAX_ITEMS,
+    limit = PAGE_SCOPES.has(state.scope.kind) ? Infinity : SNAPSHOT_MAX_ITEMS,
   }: {
     gateway: Pick<BulkGateway, 'searchAssets' | 'searchSmart'>;
     signal?: AbortSignal;
@@ -640,6 +706,7 @@ const resolveTagIds = async (payload: BulkPayload | undefined, gateway: BulkGate
     return distinct(existing);
   }
   const created = await gateway.upsertTags({ tagUpsertDto: { tags: names } });
+  invalidateTags();
   return distinct([...existing, ...created.map((tag) => tag.id)]);
 };
 

@@ -123,7 +123,8 @@ const DuplicateReviewPageSchema = z
       .describe(
         'Most groups to return. With it the review is read a page at a time, in group ID order: a page shorter than this is the last one. Without it every group is returned.',
       ),
-    after: z.uuidv4().optional().describe('duplicateId of the last group of the page before; only with take'),
+    // any version: the identical-files run names its groups with v5 ids
+    after: z.uuid().optional().describe('duplicateId of the last group of the page before; only with take'),
   })
   .meta({ id: 'DuplicateReviewPageDto' });
 

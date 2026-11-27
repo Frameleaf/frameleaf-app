@@ -177,6 +177,10 @@ test.describe('Transfers', () => {
         .getByRole('region', { name: 'Selected items' })
         .getByRole('button', { name: 'Download', exact: true })
         .click();
+      // FL-826: Download asks which format first; it starts on Original
+      const ask = page.getByRole('dialog', { name: 'Download 2 items' });
+      await expect(ask.getByRole('radio', { name: /^Original/ })).toHaveAttribute('aria-checked', 'true');
+      await ask.getByRole('button', { name: 'Download', exact: true }).click();
 
       const panel = page.getByRole('region', { name: 'Downloads' });
       await expect(panel.getByText('2 downloads ready')).toBeVisible();

@@ -6,7 +6,7 @@ import postgres from 'postgres';
 import type { ConfigRepository } from 'src/repositories/config.repository.js';
 import { coalescedTask } from 'src/queue/coalesced-task.js';
 import { queueNotifications } from 'src/queue/notifications.js';
-import { pruneQueueHistoryPage } from 'src/queue/retention.js';
+import { foldOpenRunsPage, pruneQueueHistoryPage } from 'src/queue/retention.js';
 import { finishRuns, refreshRunCounts } from 'src/queue/run-summary.js';
 import { SqlQueueStore } from 'src/queue/store.js';
 import { QUEUE_EXECUTION_CAPACITY, QUEUE_TIMING, QueueClaim, QueueWorkerMessage } from 'src/queue/types.js';
@@ -141,6 +141,15 @@ export async function coordinate({
           while (!stopping) {
             const page = await pruneQueueHistoryPage(maintenanceDb);
             if (!page?.fullPage || (page.pruned === 0 && !page.due) || performance.now() >= deadline) break;
+          }
+        });
+        // FL-1826: an open run's photos whose every task finished over an hour ago leave `job` for the run's totals.
+        // Its own few seconds: a long import finishes jobs faster than one page a sweep can fold them.
+        await step(async () => {
+          const deadline = performance.now() + QUEUE_TIMING.pruneBudget;
+          while (!stopping) {
+            const page = await foldOpenRunsPage(maintenanceDb);
+            if (!page?.more || performance.now() >= deadline) break;
           }
         });
         // FL-1265: runs whose work has ended are finished, their counts written once.

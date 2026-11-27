@@ -24743,7 +24743,7 @@ export type PartnerSearchDto = {
     direction: PartnerDirection;
 };
 export type PeoplePickerSearchDto = {
-    /** Only people whose name contains this text, whatever the case */
+    /** Only people whose name contains this text, whatever the case; empty matches everyone */
     name?: string;
     /** Page number for pagination */
     page?: number;
@@ -24765,7 +24765,7 @@ export type PersonSearchDto = {
     closestAssetId?: string;
     /** Closest person ID for similarity search */
     closestPersonId?: string;
-    /** Only people whose name contains this text, whatever the case */
+    /** Only people whose name contains this text, whatever the case; empty matches everyone */
     name?: string;
     /** Page number for pagination */
     page?: number;

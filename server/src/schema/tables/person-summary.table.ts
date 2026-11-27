@@ -8,7 +8,8 @@ import { UserTable } from 'src/schema/tables/user.table.js';
  * aggregates faces. A count depends on who is reading, so each row belongs to one viewer variant:
  * `viewerKey` is a hash of everything that decides which photos count (`personViewerKey`). A session
  * without its PIN has a different key from an unlocked one and can never read a number that includes
- * Locked items. A person with no photo this variant may see has no row.
+ * Locked items. A person with no photo this variant may see has no row. When the rows were counted,
+ * and how changes since are recognised, is kept once per variant in `person_summary_state`.
  */
 @Table({ name: 'person_summary' })
 export class PersonSummaryTable {
@@ -31,12 +32,4 @@ export class PersonSummaryTable {
 
   @Column({ type: 'timestamp with time zone', nullable: true })
   lastSeenAt!: Timestamp | null;
-
-  /** When the variant's numbers were read, the same on all of its rows; taken before the read. */
-  @Column({ type: 'timestamp with time zone' })
-  computedAt!: Timestamp;
-
-  /** A digest of the changes seen in the look-back before `computedAt` when it was read; see `syncSummaries`. */
-  @Column({ type: 'text' })
-  changeToken!: string;
 }

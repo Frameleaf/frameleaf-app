@@ -77,7 +77,11 @@ const PersonSearchSchema = z
     closestAssetId: z.uuidv4().optional().describe('Closest asset ID for similarity search'),
     page: z.coerce.number().int().min(1).default(1).describe('Page number for pagination'),
     size: z.coerce.number().int().min(1).max(1000).default(500).describe('Number of items per page'),
-    name: z.string().trim().min(1).optional().describe('Only people whose name contains this text, whatever the case'),
+    name: z
+      .string()
+      .trim()
+      .optional()
+      .describe('Only people whose name contains this text, whatever the case; empty matches everyone'),
     sort: PeopleSortSchema.optional().describe(
       'Order: by name (unnamed people last), by photo count, or by the most recent photo. Without it, favorites first, then named people by the number of faces. Ignored with closestPersonId or closestAssetId.',
     ),

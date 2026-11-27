@@ -215,7 +215,7 @@ graph.
   the operator reports that the mirror now serves the model. The operator's 2026-10-03 live-stack report records 263 of 263 items
   re-embedded on the default model at 768 dimensions with no failures; this qualification branch has not independently verified that run.
 - **Guard:** `server/test/model-mirror/default-models.spec.ts` (`pnpm test:model-mirror` in `server/`, workflow
-  `model-mirror-defaults.yml`) checks that every default CLIP, facial-recognition and OCR model answers 200 on the mirror.
+  `model-mirror-defaults.yml`) checks that every default CLIP, facial-recognition and OCR model answers 200 on the default model source.
   It runs on pull requests that touch the ML defaults or model source, and weekly.
 - **API impact:** none. No operationIds changed.
 

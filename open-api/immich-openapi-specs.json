@@ -33803,7 +33803,7 @@
             "description": "duplicateId of the last group of the page before; only with take",
             "schema": {
               "format": "uuid",
-              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
               "type": "string"
             }
           },
@@ -47948,9 +47948,8 @@
             "name": "name",
             "required": false,
             "in": "query",
-            "description": "Only people whose name contains this text, whatever the case",
+            "description": "Only people whose name contains this text, whatever the case; empty matches everyone",
             "schema": {
-              "minLength": 1,
               "type": "string"
             }
           },
@@ -48653,9 +48652,8 @@
             "name": "name",
             "required": false,
             "in": "query",
-            "description": "Only people whose name contains this text, whatever the case",
+            "description": "Only people whose name contains this text, whatever the case; empty matches everyone",
             "schema": {
-              "minLength": 1,
               "type": "string"
             }
           },
@@ -82161,7 +82159,7 @@
             "description": "ID of the last asset of the page before; only with take",
             "schema": {
               "format": "uuid",
-              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
               "type": "string"
             }
           },
@@ -114936,7 +114934,7 @@
           "after": {
             "description": "duplicateId of the last group of the page before; only with take",
             "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
             "type": "string"
           },
           "take": {
@@ -117074,7 +117072,7 @@
           "after": {
             "description": "ID of the last asset of the page before; only with take",
             "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
             "type": "string"
           },
           "path": {
@@ -141449,8 +141447,7 @@
       "PeoplePickerSearchDto": {
         "properties": {
           "name": {
-            "description": "Only people whose name contains this text, whatever the case",
-            "minLength": 1,
+            "description": "Only people whose name contains this text, whatever the case; empty matches everyone",
             "type": "string"
           },
           "page": {
@@ -142667,8 +142664,7 @@
             "type": "string"
           },
           "name": {
-            "description": "Only people whose name contains this text, whatever the case",
-            "minLength": 1,
+            "description": "Only people whose name contains this text, whatever the case; empty matches everyone",
             "type": "string"
           },
           "page": {

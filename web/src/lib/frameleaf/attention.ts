@@ -19,6 +19,7 @@ import { mdiHarddisk, mdiProgressAlert, mdiShieldAlertOutline, mdiUpdate } from 
 import type { Translations } from 'svelte-i18n';
 import { BACKUP_PLACE_COPY } from '$lib/components/frameleaf/backup/backup-places';
 import type { BackupPlaceId } from '$lib/frameleaf/backup-overview';
+import { formatDate, formatTime } from '$lib/frameleaf/date-format';
 import { jobQueue } from '$lib/frameleaf/job-queues';
 import { backupPageUrl, commandCenterUrl } from '$lib/frameleaf/settings-areas';
 
@@ -69,14 +70,14 @@ export const momentWords = (
   date: Date,
   { locale, now = new Date() }: Pick<AttentionSayings, 'locale' | 'now'> = {},
 ): Words => {
-  const time = new Intl.DateTimeFormat(locale, { hour: 'numeric', minute: '2-digit' }).format(date);
+  const time = formatTime(date, { hour: 'numeric', minute: '2-digit' }, locale ?? 'default');
   const dayOf = (value: Date) => new Date(value.getFullYear(), value.getMonth(), value.getDate()).getTime();
   const days = Math.round((dayOf(now) - dayOf(date)) / DAY_MS);
-  const day = new Intl.DateTimeFormat(locale, {
-    day: 'numeric',
-    month: 'short',
-    year: date.getFullYear() === now.getFullYear() ? undefined : 'numeric',
-  }).format(date);
+  const day = formatDate(
+    date,
+    { day: 'numeric', month: 'short', year: date.getFullYear() === now.getFullYear() ? undefined : 'numeric' },
+    locale ?? 'default',
+  );
   const kind = days === 0 ? 'today' : days === 1 ? 'yesterday' : 'day';
   return { key: `frameleaf_attention_${phrase}_${kind}` as Translations, values: { time, day } };
 };

@@ -1,5 +1,6 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
+  import { formatDate } from '$lib/frameleaf/date-format';
   import { dateFormats } from '$lib/constants';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { Route } from '$lib/route';
@@ -22,7 +23,7 @@
   };
 
   const dateLocaleString = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString($locale, dateFormats.album);
+    return formatDate(new Date(dateString), dateFormats.album, $locale);
   };
 
   const oncontextmenu = (event: MouseEvent) => {
