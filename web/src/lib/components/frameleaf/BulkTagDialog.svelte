@@ -1,7 +1,7 @@
 <script lang="ts">
   import BulkFormDialog from '$lib/components/frameleaf/BulkFormDialog.svelte';
   import type { BulkPayload } from '$lib/frameleaf/bulk-operations';
-  import { getAllTags } from '@frameleaf/sdk';
+  import { loadAllTags } from '$lib/frameleaf/tag-store';
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';
 
@@ -43,7 +43,7 @@
   const loadTags = async () => {
     loading = true;
     try {
-      const tags = await getAllTags();
+      const tags = await loadAllTags();
       loaded = (tags ?? []).map(({ id, value }) => ({ id, name: value }));
     } catch {
       // Without the list the dialog still tags by name: the upsert reuses an existing tag.

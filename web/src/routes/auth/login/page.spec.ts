@@ -28,7 +28,9 @@ import en from '../../../../../i18n/en.json';
 import Page from './+page.svelte';
 
 vi.mock('$app/navigation', () => ({ goto: vi.fn() }));
-vi.mock('@frameleaf/sdk', () => ({
+// The rest of the SDK stays real: the date helper's account lookup loads modules that name it (FL-1805).
+vi.mock('@frameleaf/sdk', async (original) => ({
+  ...(await original<typeof import('@frameleaf/sdk')>()),
   login: vi.fn(),
   loginTwoFactor: vi.fn(),
   isHttpError: vi.fn(() => false),

@@ -54,7 +54,7 @@ chunk's first frame as context (`trailingContextFrame`), so the frames between t
 too; that context frame is not returned.
 
 The weights come from the Frameleaf model source (`frameleaf/rife-4.25`, served from
-`MACHINE_LEARNING_MODEL_SOURCE_URL`, by default https://models.frameleaf.cloud). A weight with a
+`MACHINE_LEARNING_MODEL_SOURCE_URL`, by default https://huggingface.co). A weight with a
 `source` entry is downloaded with
 
 ```sh

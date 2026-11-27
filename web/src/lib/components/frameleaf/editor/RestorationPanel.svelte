@@ -1,4 +1,5 @@
 <script lang="ts" module>
+  import { formatDateTime } from '$lib/frameleaf/date-format';
   import { rovingFocus } from '$lib/frameleaf/roving-focus';
   /** What the panel asks the stage to show: two real files, before and after. */
   export type RestorationCompareRequest = {
@@ -981,7 +982,14 @@
   const itemTitle = (item: AssetRestorationResponseDto) =>
     isPhotoOperation(item) ? photoVersionName(item) : enhanceTitle(item);
 
-  const formatDate = (value: string | null) => (value ? new Date(value).toLocaleString($locale ?? undefined) : '');
+  const formatDate = (value: string | null) =>
+    value
+      ? formatDateTime(
+          new Date(value),
+          { year: 'numeric', month: 'numeric', day: 'numeric', hour: 'numeric', minute: 'numeric', second: 'numeric' },
+          $locale ?? 'default',
+        )
+      : '';
 </script>
 
 <div class={subsection ? 'rs-subsection' : 'ed-panel-body'} data-testid="restoration-panel">

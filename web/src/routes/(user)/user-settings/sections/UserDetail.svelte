@@ -14,6 +14,7 @@
   import Skeleton from '$lib/components/frameleaf/Skeleton.svelte';
   import OnEvents from '$lib/components/OnEvents.svelte';
   import PageHeading from '$lib/components/frameleaf/settings/kit/PageHeading.svelte';
+  import { formatDate } from '$lib/frameleaf/date-format';
   import { locale } from '$lib/stores/preferences.store';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { Route } from '$lib/route';
@@ -126,11 +127,7 @@
         values: {
           email: user.email,
           role: user.isAdmin ? $t('frameleaf_users_role_admin') : $t('frameleaf_userpage_role_member'),
-          date: new Date(user.createdAt).toLocaleDateString($locale, {
-            day: 'numeric',
-            month: 'short',
-            year: 'numeric',
-          }),
+          date: formatDate(new Date(user.createdAt), { day: 'numeric', month: 'short', year: 'numeric' }, $locale),
         },
       })}
       back={{ href: Route.users(), label: $t('frameleaf_settings_area_users') }}

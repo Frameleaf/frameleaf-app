@@ -5,6 +5,7 @@
  * from the one response that carries it (spec §11).
  */
 import { LockedEncryptionMode, LockedEncryptionState, type LockedEncryptionStatusResponseDto } from '@frameleaf/sdk';
+import { formatDate, formatTime } from '$lib/frameleaf/date-format';
 
 /** The server's minimum for a passphrase (`LockedEncryptionEnableDto`). */
 export const PASSPHRASE_MIN_LENGTH = 12;
@@ -103,7 +104,7 @@ export const printRecoveryKey = (title: string, lines: string[]) => {
 /** When the open key is asked for again, in the prototype's words: "6:14 PM today", "tomorrow, 10:14 AM", "Tuesday, 10:14 AM". */
 export const untilParts = (expiresAt: string, now: Date, locale?: string) => {
   const at = new Date(expiresAt);
-  const time = at.toLocaleTimeString(locale, { hour: 'numeric', minute: '2-digit' });
+  const time = formatTime(at, { hour: 'numeric', minute: '2-digit' }, locale ?? 'default');
   const startOfDay = (date: Date) => new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
   const days = Math.round((startOfDay(at) - startOfDay(now)) / 86_400_000);
   if (days <= 0) {
@@ -113,9 +114,9 @@ export const untilParts = (expiresAt: string, now: Date, locale?: string) => {
     return { kind: 'tomorrow' as const, time };
   }
   if (days < 7) {
-    return { kind: 'day' as const, time, day: at.toLocaleDateString(locale, { weekday: 'long' }) };
+    return { kind: 'day' as const, time, day: formatDate(at, { weekday: 'long' }, locale ?? 'default') };
   }
-  return { kind: 'day' as const, time, day: at.toLocaleDateString(locale, { dateStyle: 'medium' }) };
+  return { kind: 'day' as const, time, day: formatDate(at, { dateStyle: 'medium' }, locale ?? 'default') };
 };
 
 /** The 423 a Locked read or action answers while the key isn't open (spec §8, §6.2). */

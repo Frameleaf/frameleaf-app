@@ -4,6 +4,7 @@
    * form and the short code, each with Copy, and when it stops working. Linking needs nothing more
    * from this side, so the only action is Done.
    */
+  import { formatDate } from '$lib/frameleaf/date-format';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
   import { copyToClipboard } from '$lib/utils';
@@ -23,9 +24,7 @@
   let copied = $state('');
 
   const expires = $derived(new Date(invitation.expiresAt));
-  const date = $derived(
-    new Intl.DateTimeFormat($locale ?? undefined, { weekday: 'long', month: 'long', day: 'numeric' }).format(expires),
-  );
+  const date = $derived(formatDate(expires, { weekday: 'long', month: 'long', day: 'numeric' }, $locale ?? 'default'));
   const days = $derived(Math.max(1, Math.round((expires.getTime() - Date.now()) / 86_400_000)));
 
   const copy = async (label: string, value: string) => {

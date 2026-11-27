@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { formatDate } from '$lib/frameleaf/date-format';
   import { locale } from '$lib/stores/preferences.store';
   import { rovingFocus } from '$lib/frameleaf/roving-focus';
   /**
@@ -104,7 +105,7 @@
   const busyBucket = $derived(!!restoring || !!status.activeRun);
   const needsKey = $derived(status.keyMode === CloudBackupKeyMode.OwnMemory && !status.keyLoaded);
   const day = (value: string | null | undefined) =>
-    value ? new Intl.DateTimeFormat($locale, { dateStyle: 'medium' }).format(new Date(value)) : '—';
+    value ? formatDate(new Date(value), { dateStyle: 'medium' }, $locale) : '—';
 
   onMount(() => {
     if (findings) {

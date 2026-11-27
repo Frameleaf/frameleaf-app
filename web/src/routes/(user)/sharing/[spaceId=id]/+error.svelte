@@ -3,7 +3,6 @@
   import FrameleafErrorPage from '$lib/components/frameleaf/FrameleafErrorPage.svelte';
   import Theme from '$lib/components/frameleaf/Theme.svelte';
   import UserPageLayout from '$lib/components/layouts/UserPageLayout.svelte';
-  import UserSidebar from '$lib/components/shared-components/side-bar/UserSidebar.svelte';
   import { errorStatus, spaceErrorKind, type ErrorPageAction } from '$lib/frameleaf/error-page';
   import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
   import { Route } from '$lib/route';
@@ -43,10 +42,6 @@
 </script>
 
 <UserPageLayout>
-  {#snippet sidebar()}
-    <UserSidebar />
-  {/snippet}
-
   <Theme theme={themeManager.value === AppTheme.Dark ? 'dark' : 'light'}>
     {#if kind === 'unavailable'}
       <FrameleafErrorPage
