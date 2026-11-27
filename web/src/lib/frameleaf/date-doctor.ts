@@ -11,7 +11,7 @@ import {
   type DateDoctorTimeDto,
 } from '@frameleaf/sdk';
 import { DateTime, Duration } from 'luxon';
-import { formatDate, formatLuxon } from '$lib/frameleaf/date-format';
+import { formatDate, formatDateRange, formatLuxon } from '$lib/frameleaf/date-format';
 
 /** A fix can be undone for this many days (FL-930). */
 export const UNDO_DAYS = 30;
@@ -116,8 +116,7 @@ export const dayWords = (days: string[], locale: string) => {
     return formatDate(first, options, locale);
   }
   const last = new Date(`${days.at(-1) ?? days[0]}T00:00:00Z`);
-  // eslint-disable-next-line no-restricted-syntax -- a range of days ("12 – 15 May 2024"), which the date helper does not write
-  return new Intl.DateTimeFormat(locale, options).formatRange(first, last);
+  return formatDateRange(first, last, options, locale);
 };
 
 /** The i18n key and values of a card's sentence ("Camera clock was 3 hours behind on 12 May 2024"). */

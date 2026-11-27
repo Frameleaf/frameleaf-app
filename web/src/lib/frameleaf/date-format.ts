@@ -188,3 +188,35 @@ export const formatTime = (
   locale: string | undefined = defaultLocale(),
   format: DisplayFormat = displayFormat(),
 ) => formatDateTime(date, options, locale, format);
+
+/**
+ * A run of dates ("12 – 15 May 2024", "Oct – Nov 2026"). While the format is `auto`, or the options
+ * have no day for an order to apply to, this is exactly `Intl.DateTimeFormat#formatRange`. Once the
+ * person has chosen a date order, both ends are written in that order ("12/05/2024 – 15/05/2024"),
+ * and a range within one day is that one date.
+ */
+export const formatDateRange = (
+  start: Date | number | string,
+  end: Date | number | string,
+  options: Intl.DateTimeFormatOptions = MEDIUM_DATE,
+  locale: string | undefined = defaultLocale(),
+  format: DisplayFormat = displayFormat(),
+): string => {
+  const from = start instanceof Date ? start : new Date(start);
+  const to = end instanceof Date ? end : new Date(end);
+  const resolved = locale === 'default' ? undefined : locale;
+  if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) {
+    return '';
+  }
+  const fields = options.dateStyle ? DATE_STYLE_FIELDS[options.dateStyle] : pick(options, DATE_KEYS);
+  if (format.dateFormat === 'auto' || !fields.day) {
+    const clock: Intl.DateTimeFormatOptions =
+      format.hourCycle !== 'auto' && Object.keys(pick(options, TIME_KEYS)).some((key) => key !== 'timeZoneName')
+        ? { hourCycle: format.hourCycle, hour12: undefined }
+        : {};
+    return formatterFor(resolved, { ...options, ...clock }).formatRange(from, to);
+  }
+  const first = formatDateTime(from, options, resolved ?? 'default', format);
+  const last = formatDateTime(to, options, resolved ?? 'default', format);
+  return first === last ? first : `${first} – ${last}`;
+};

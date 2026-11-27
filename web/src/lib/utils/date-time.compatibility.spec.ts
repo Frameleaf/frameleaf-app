@@ -19,8 +19,11 @@ describe('album range formatting', () => {
       expect(getAlbumDateRange('2022-01-01', '2022-02-01')).toBe('Jan 1 – Feb 1, 2022');
       expect(getShortDateRange('2022-01-01', '2022-02-01')).toBe('Jan – Feb 2022');
     }
+    // FL-1805: the date helper keeps the formatters now, one per locale and set of options.
+    const same = (options: Intl.DateTimeFormatOptions | undefined, style: Intl.DateTimeFormatOptions) =>
+      JSON.stringify(options) === JSON.stringify(style);
     const rangeCalls = formatter.mock.calls.filter(
-      ([, options]) => options === dateFormats.album || options === dateFormats.albumShort,
+      ([, options]) => same(options, dateFormats.album) || same(options, dateFormats.albumShort),
     );
     expect(rangeCalls).toHaveLength(2);
   });
@@ -45,7 +48,8 @@ describe('album range formatting', () => {
     expect(() => getAlbumDateRange('2022-01-01', '2022-02-01')).toThrow(RangeError);
     locale.set('en');
     expect(getAlbumDateRange('2022-01-01', '2022-02-01')).toBe('Jan 1 – Feb 1, 2022');
-    expect(() => getAlbumDateRange('invalid', '2022-02-01')).toThrow(RangeError);
+    // FL-1805: an invalid date gives no range instead of an error that would break the album card.
+    expect(getAlbumDateRange('invalid', '2022-02-01')).toBe('');
     expect(getAlbumDateRange('2022-02-01', '2022-01-01')).toBe('Feb 1 – Jan 1, 2022');
     expect(getShortDateRange('2022-01-31', '2022-01-01')).toBe('January 2022');
   });
