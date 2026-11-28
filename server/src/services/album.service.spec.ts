@@ -4233,6 +4233,9 @@ describe(AlbumService.name, () => {
         originalFileName: 'IMG_1.CR3',
         takenAt: new Date('2026-11-19T10:00:00Z'),
         isVideo: false,
+        ownerId: 'owner',
+        isLocked: false,
+        visible: true,
       },
       {
         id: 'orig-1',
@@ -4240,6 +4243,9 @@ describe(AlbumService.name, () => {
         originalFileName: 'IMG_1.JPG',
         takenAt: new Date('2026-11-19T10:00:00Z'),
         isVideo: false,
+        ownerId: 'owner',
+        isLocked: false,
+        visible: true,
       },
       {
         id: 'orig-2',
@@ -4247,6 +4253,9 @@ describe(AlbumService.name, () => {
         originalFileName: 'IMG_2.JPG',
         takenAt: new Date('2026-11-19T11:00:00Z'),
         isVideo: false,
+        ownerId: 'owner',
+        isLocked: false,
+        visible: true,
       },
       {
         id: 'video-1',
@@ -4254,6 +4263,9 @@ describe(AlbumService.name, () => {
         originalFileName: 'clip.MOV',
         takenAt: new Date('2026-11-19T12:00:00Z'),
         isVideo: true,
+        ownerId: 'owner',
+        isLocked: false,
+        visible: true,
       },
     ];
 
@@ -4328,6 +4340,45 @@ describe(AlbumService.name, () => {
       expect(result.canEdit).toBe(false);
       expect(result.folderPath).toBeUndefined();
       expect(result.libraryName).toBeUndefined();
+    });
+
+    it('FL-1841: lists only what this viewer may see (the query decides: Locked, hidden content, others rules)', async () => {
+      mocks.album.getFolderAlbumLink.mockResolvedValue(link());
+      mocks.album.getFolderAlbumItems.mockResolvedValue([
+        ...items,
+        {
+          id: 'locked-1',
+          ownerId: authStub.admin.user.id,
+          folder: 'Original',
+          originalFileName: 'IMG_9.JPG',
+          takenAt: new Date('2026-11-19T13:00:00Z'),
+          isVideo: false,
+          isLocked: true,
+          visible: false,
+        },
+      ]);
+      const result = await sut.getFolders(authStub.admin, albumId);
+      expect(result.folders.find(({ name }) => name === 'Original')?.photos).toBe(2);
+    });
+
+    it('FL-1841: puts in front the first version this viewer may see', async () => {
+      mocks.album.getFolderAlbumLink.mockResolvedValue(link());
+      mocks.album.getFolderVersions.mockResolvedValue([
+        { id: 'orig-1', originalFileName: 'IMG_1.JPG', folder: 'Original', matchedBy: 'name', isCandidate: true },
+        { id: 'raw-1', originalFileName: 'IMG_1.CR3', folder: 'RAW', matchedBy: 'name', isCandidate: false },
+      ]);
+      await expect(sut.getVersions(authStub.admin, albumId, { assetId: 'raw-1' })).resolves.toEqual({
+        versions: [
+          { id: 'orig-1', originalFileName: 'IMG_1.JPG', folder: 'Original', matchedBy: 'name', isFront: true },
+          { id: 'raw-1', originalFileName: 'IMG_1.CR3', folder: 'RAW', matchedBy: 'name', isFront: false },
+        ],
+      });
+      expect(mocks.album.getFolderVersions).toHaveBeenCalledWith(
+        albumId,
+        'raw-1',
+        expect.objectContaining({ exclude: expect.arrayContaining(['raw']), prefer: ['edits', 'original', 'raw'] }),
+        expect.any(Object),
+      );
     });
 
     it('refuses an album not made from a folder', async () => {

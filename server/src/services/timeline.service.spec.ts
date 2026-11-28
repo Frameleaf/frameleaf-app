@@ -922,7 +922,25 @@ describe(TimelineService.name, () => {
         folderPath: '/photos/Event',
         exclude: expect.arrayContaining(['raw', 'video', 'videos', 'edits']),
         oneVersion: true,
+        prefer: ['edits'],
       });
+    });
+
+    it('FL-1841: a narrowed album shows every file that matches', async () => {
+      mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set([albumId]));
+      mocks.album.getFolderAlbumLink.mockResolvedValue({
+        id: 'link',
+        albumId,
+        libraryId: 'library',
+        folderPath: '/photos/Event',
+        displayChoices: null,
+        libraryName: 'Family photos',
+        libraryOwnerId: authStub.admin.user.id,
+        libraryDisplay: null,
+      });
+      mocks.asset.getTimeBuckets.mockResolvedValue([]);
+      await sut.getTimeBuckets(authStub.admin, { albumId, isFavorite: true });
+      expect(mocks.asset.getTimeBuckets.mock.calls[0][0].albumView).toMatchObject({ oneVersion: false });
     });
 
     it('needs an album for albumFolder', async () => {

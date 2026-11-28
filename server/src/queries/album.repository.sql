@@ -937,6 +937,7 @@ where
 -- AlbumRepository.getFolderAlbumItems
 select
   "asset"."id",
+  "asset"."ownerId",
   "asset"."originalFileName",
   "asset"."fileCreatedAt" as "takenAt",
   (
@@ -967,26 +968,39 @@ select
       else ''
     end
   ) as "folder",
-  asset.type = 'VIDEO' as "isVideo"
+  asset.type = 'VIDEO' as "isVideo",
+  exists (
+    select
+      1
+    from
+      asset_lock
+    where
+      asset_lock."assetId" = "asset"."id"
+  ) as "isLocked",
+  (
+    "asset"."deletedAt" is null
+    and "asset"."type" in ('IMAGE', 'VIDEO')
+    and (
+      "asset"."visibility" in ('archive', 'timeline')
+      and not exists (
+        select
+          1
+        from
+          asset_lock
+        where
+          asset_lock."assetId" = "asset"."id"
+      )
+    )
+  ) as "visible"
 from
   "album_asset"
   inner join "asset" on "asset"."id" = "album_asset"."assetId"
 where
   "album_asset"."albumId" = $4::uuid
-  and (
-    "asset"."isOffline" = false
-    AND "asset"."deletedAt" IS NULL
-    AND "asset"."visibility" IN ('timeline', 'archive')
-    AND "asset"."type" IN ('IMAGE', 'VIDEO')
-    AND not exists (
-      select
-        1
-      from
-        asset_lock
-      where
-        asset_lock."assetId" = "asset"."id"
-    )
-  )
+  and "asset"."deletedAt" is null
+  and "asset"."isOffline" = $5
+  and "asset"."visibility" in ($6, $7)
+  and "asset"."type" in ($8, $9)
 
 -- AlbumRepository.getFolderAlbumChildren
 select
@@ -1073,7 +1087,36 @@ select
       else ''
     end
   ) as "folder",
-  version."assetId" = version."frontAssetId" as "isFront"
+  lower(
+    (
+      case
+        when left(
+          coalesce(
+            nullif(
+              substring("asset"."originalPath", '^(.*)/[^/]*$'),
+              ''
+            ),
+            '/'
+          ),
+          char_length($4::text)
+        ) = $5::text then split_part(
+          substr(
+            coalesce(
+              nullif(
+                substring("asset"."originalPath", '^(.*)/[^/]*$'),
+                ''
+              ),
+              '/'
+            ),
+            char_length($6::text) + 1
+          ),
+          '/',
+          1
+        )
+        else ''
+      end
+    )
+  ) <> all ($7::text[]) as "isCandidate"
 from
   "album_folder_version" as "mine"
   inner join "album_folder_version" as "version" on "version"."albumId" = "mine"."albumId"
@@ -1082,26 +1125,121 @@ from
   and "album_asset"."assetId" = "version"."assetId"
   inner join "asset" on "asset"."id" = "version"."assetId"
 where
-  "mine"."albumId" = $4::uuid
-  and "mine"."assetId" = $5::uuid
+  "mine"."albumId" = $8::uuid
+  and "mine"."assetId" = $9::uuid
   and (
-    "asset"."isOffline" = false
-    AND "asset"."deletedAt" IS NULL
-    AND "asset"."visibility" IN ('timeline', 'archive')
-    AND "asset"."type" IN ('IMAGE', 'VIDEO')
-    AND not exists (
-      select
-        1
-      from
-        asset_lock
-      where
-        asset_lock."assetId" = "asset"."id"
+    "asset"."deletedAt" is null
+    and "asset"."type" in ('IMAGE', 'VIDEO')
+    and (
+      "asset"."visibility" in ('archive', 'timeline')
+      and not exists (
+        select
+          1
+        from
+          asset_lock
+        where
+          asset_lock."assetId" = "asset"."id"
+      )
     )
   )
 order by
-  version."assetId" = version."frontAssetId" desc,
-  "asset"."fileCreatedAt",
-  "asset"."originalFileName"
+  lower(
+    (
+      case
+        when left(
+          coalesce(
+            nullif(
+              substring("asset"."originalPath", '^(.*)/[^/]*$'),
+              ''
+            ),
+            '/'
+          ),
+          char_length($10::text)
+        ) = $11::text then split_part(
+          substr(
+            coalesce(
+              nullif(
+                substring("asset"."originalPath", '^(.*)/[^/]*$'),
+                ''
+              ),
+              '/'
+            ),
+            char_length($12::text) + 1
+          ),
+          '/',
+          1
+        )
+        else ''
+      end
+    )
+  ) <> all ($13::text[]) desc,
+  coalesce(
+    array_position(
+      $14::text[],
+      lower(
+        (
+          case
+            when left(
+              coalesce(
+                nullif(
+                  substring("asset"."originalPath", '^(.*)/[^/]*$'),
+                  ''
+                ),
+                '/'
+              ),
+              char_length($15::text)
+            ) = $16::text then split_part(
+              substr(
+                coalesce(
+                  nullif(
+                    substring("asset"."originalPath", '^(.*)/[^/]*$'),
+                    ''
+                  ),
+                  '/'
+                ),
+                char_length($17::text) + 1
+              ),
+              '/',
+              1
+            )
+            else ''
+          end
+        )
+      )
+    ),
+    100000
+  ),
+  lower(
+    (
+      case
+        when left(
+          coalesce(
+            nullif(
+              substring("asset"."originalPath", '^(.*)/[^/]*$'),
+              ''
+            ),
+            '/'
+          ),
+          char_length($18::text)
+        ) = $19::text then split_part(
+          substr(
+            coalesce(
+              nullif(
+                substring("asset"."originalPath", '^(.*)/[^/]*$'),
+                ''
+              ),
+              '/'
+            ),
+            char_length($20::text) + 1
+          ),
+          '/',
+          1
+        )
+        else ''
+      end
+    )
+  ),
+  asset.id::text
 
 -- AlbumRepository.getFolderAlbumSources
 select

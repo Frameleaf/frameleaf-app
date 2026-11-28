@@ -72,11 +72,14 @@ import {
   recordAssetEdit,
 } from 'src/services/partner-copy.service.js';
 import {
+  type VersionViewer,
+  albumFolderView,
   folderDisplay,
   refreshAlbumFolderVersions,
   resolveAlbumFolderChoices,
   subfolderOf,
   subfolderRulesOf,
+  viewerVersions,
 } from 'src/utils/album-folders.js';
 import {
   AlbumTreeOf,
@@ -128,6 +131,17 @@ const SUMMARY_CHANGE_MARGIN_MS = 2 * 60 * 1000;
 /** A variant in use is recomputed daily, so a row this old belongs to one nobody reads any more. */
 const SUMMARY_ABANDONED_AFTER_MS = 30 * 24 * 60 * 60 * 1000;
 const millis = (value: Date | string) => new Date(value).getTime();
+
+/**
+ * FL-1841: what an album's timeline shows this viewer (`TimelineService.buildTimeBucketOptions` for an album): their
+ * hidden content, their own Locked items in an elevated session, and never another member's item matching its owner's
+ * Locked rules.
+ */
+const albumVersionViewer = (auth: AuthDto): VersionViewer => ({
+  ...getPrivacyQueryOptions(auth),
+  ...getLockedVisibilityOptions(auth),
+  ...getOthersRulesQueryOptions(auth),
+});
 
 @Injectable()
 export class AlbumService extends BaseService {
@@ -726,21 +740,16 @@ export class AlbumService extends BaseService {
     await this.requireAccess({ auth, permission: Permission.AlbumRead, ids: [id] });
     const link = await this.requireFolderAlbumLink(id);
     const choices = resolveAlbumFolderChoices(link.displayChoices ?? link.libraryDisplay);
-    const { items, rows, matchedByName, matchedByTime, changed } = await refreshAlbumFolderVersions(
-      this.albumRepository,
-      id,
-      link.folderPath,
-      choices,
-    );
+    const { rows, changed } = await refreshAlbumFolderVersions(this.albumRepository, id, link.folderPath, choices);
+    // FL-1841: what this viewer may see, by the album read's own rules (Locked, hidden content, others' rules)
+    const items = await this.albumRepository.getFolderAlbumItems(id, link.folderPath, albumVersionViewer(auth));
+    const listed = items.filter((item) => item.visible);
+    const { behind: behindForViewer, matchedByName, matchedByTime } = viewerVersions(rows, items, choices);
+    const behind = choices.versions === 'one' ? behindForViewer : new Set<string>();
     // FL-1837's albums inside this one: their photos are theirs, not this album's
     const children = await this.albumRepository.getFolderAlbumChildren(id, link.libraryId, link.folderPath);
-    const behind = new Set(
-      choices.versions === 'one'
-        ? rows.filter((row) => row.assetId !== row.frontAssetId).map((row) => row.assetId)
-        : [],
-    );
     const byFolder = new Map<string, typeof items>();
-    for (const item of items.toSorted((a, b) => new Date(a.takenAt).getTime() - new Date(b.takenAt).getTime())) {
+    for (const item of listed.toSorted((a, b) => new Date(a.takenAt).getTime() - new Date(b.takenAt).getTime())) {
       byFolder.set(item.folder, [...(byFolder.get(item.folder) ?? []), item]);
     }
     const childOf = new Map(
@@ -752,7 +761,7 @@ export class AlbumService extends BaseService {
     ]
       .filter(Boolean)
       .toSorted((a, b) => a.localeCompare(b));
-    const shown = items.filter((item) => {
+    const shown = listed.filter((item) => {
       const display = displayOf(item.folder);
       return display === 'section' || (display === 'with' && !behind.has(item.id));
     });
@@ -859,7 +868,23 @@ export class AlbumService extends BaseService {
     if (!link) {
       return { versions: [] };
     }
-    return { versions: await this.albumRepository.getFolderVersions(id, assetId, link.folderPath) };
+    const view = albumFolderView(
+      id,
+      link.folderPath,
+      resolveAlbumFolderChoices(link.displayChoices ?? link.libraryDisplay),
+    );
+    // FL-1841: what the album's timeline shows this viewer, so the version in front is the same one
+    const rows = await this.albumRepository.getFolderVersions(id, assetId, view, albumVersionViewer(auth));
+    const front = rows.find((row) => row.isCandidate);
+    return {
+      versions: rows.map(({ id, originalFileName, folder, matchedBy }) => ({
+        id,
+        originalFileName,
+        folder,
+        matchedBy,
+        isFront: id === front?.id,
+      })),
+    };
   }
 
   private async requireFolderAlbumLink(id: string) {
