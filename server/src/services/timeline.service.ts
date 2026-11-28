@@ -177,7 +177,10 @@ export class TimelineService extends BaseService {
       !!dto.isTrashed ||
       !!dto.assetType ||
       !!bestPhotos ||
-      !!dto.imageEnrichment;
+      !!dto.imageEnrichment ||
+      !!dto.withStacked ||
+      !!userId ||
+      !!dto.libraryScope;
     const albumView = view && narrowed ? { ...view, oneVersion: false } : view;
     let userIds: string[] | undefined;
 
