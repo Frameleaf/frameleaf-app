@@ -54,6 +54,7 @@
   import {
     emptyStudioCapabilities,
     type StudioAuthContext,
+    type StudioWorkspaceMode,
     type StudioCommandEngine,
     type StudioDraftResult,
     type StudioHostServices,
@@ -708,6 +709,48 @@
    * the job is estimated and confirmed on its own; Use in Studio adds a finished version to the bin.
    */
   let restoreRequest = $state<{ assetId: string | null; focus: StudioRestoreFocus; nonce: number } | null>(null);
+  /**
+   * Basic or Advanced (the approved Studio's header switch, FL-1822), remembered per project in this
+   * browser. Basic is the start, as in the approved Studio; Advanced shows the editor's advanced tools.
+   */
+  // An unsaved draft is not remembered: a new project starts in Basic, and the draft's choice
+  // carries over to the project its first save (or Save as copy) creates.
+  const modeKey = $derived(project.id === STUDIO_DRAFT_PROJECT_ID ? null : `frameleaf.studio.mode.${project.id}`);
+  let mode = $state<StudioWorkspaceMode>('basic');
+  const storeMode = (key: string, value: StudioWorkspaceMode) => {
+    try {
+      globalThis.localStorage?.setItem(key, value);
+    } catch {
+      // A private window without storage keeps the choice for this page only.
+    }
+  };
+  $effect(() => {
+    const key = modeKey;
+    untrack(() => {
+      if (!key) {
+        return;
+      }
+      let stored: string | null = null;
+      try {
+        stored = globalThis.localStorage?.getItem(key) ?? null;
+      } catch {
+        // Unreadable storage keeps the current choice.
+      }
+      if (stored === 'basic' || stored === 'advanced') {
+        mode = stored;
+      } else {
+        storeMode(key, mode);
+      }
+    });
+  });
+  $effect(() => {
+    const value = mode;
+    const key = untrack(() => modeKey);
+    if (key) {
+      storeMode(key, value);
+    }
+  });
+
   const openRestore = (assetId: string | null, focus: StudioRestoreFocus) => {
     restoreRequest = { assetId, focus, nonce: (restoreRequest?.nonce ?? 0) + 1 };
   };
@@ -2001,6 +2044,7 @@
   {unavailableRestorations}
   onUseRestoration={accessLost || forbidden ? undefined : onUseRestoration}
   {restoreRequest}
+  bind:mode
   unsupportedSources={sessionState?.resources?.unsupportedSources ?? []}
   {session}
   {saveStatus}
