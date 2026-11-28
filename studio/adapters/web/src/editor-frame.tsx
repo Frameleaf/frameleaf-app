@@ -25,6 +25,7 @@
  * session's cookies, and its media requests use them.
  */
 import { applyStudioMode } from './studio-mode'
+import { applyNumberLocale } from './number-locale'
 import { StrictMode, Suspense, lazy, useEffect, useState } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { RouterProvider, createMemoryHistory, createRouter } from '@tanstack/react-router'
@@ -1038,6 +1039,7 @@ let generatedRevoked = false
 
 async function mount(context: StudioHostContext): Promise<void> {
   applyTheme(context)
+  applyNumberLocale(context)
   applyStudioMode(context)
   await i18nReady
   await changeAppLanguage(context.auth.locale).catch(() => undefined)
@@ -1155,6 +1157,7 @@ async function mount(context: StudioHostContext): Promise<void> {
 async function update(context: StudioHostContext): Promise<void> {
   // The mode is the store's, not the session's: a switch made while the editor mounts still counts.
   applyStudioMode(context)
+  applyNumberLocale(context)
   const state = session
   if (!state || state.disposed) return
   if (vectorIdentity(state.context) !== vectorIdentity(context)) state.vectors.invalidate()

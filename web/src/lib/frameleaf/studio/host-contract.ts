@@ -68,6 +68,11 @@ export interface StudioAuthContext {
   avatarUrl: string | null;
   /** BCP 47 tag the shell resolved, so the engine formats numbers and dates the same way. */
   locale: string;
+  /**
+   * The person's "Dates and numbers" choice (FL-1822), a BCP 47 tag, which can differ from the
+   * interface language. Absent means the device's format. The editor writes numbers with it.
+   */
+  numberLocale?: string;
 }
 
 export type StudioAssetKind = 'image' | 'video';

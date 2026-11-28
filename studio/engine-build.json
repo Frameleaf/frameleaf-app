@@ -999,7 +999,12 @@
       "path": "patches/0220-studio-basic-mode.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "8adf7dd370b40cef898bdda19699ce708094584ed10068370cc2d772b0a85cf7"
+    },
+    {
+      "path": "patches/0221-studio-number-locale.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "ef0199787c818d77611d19f48d764cb65c34a9af4456d3ddc8edb63bcab0c984"
     }
   ],
-  "sourceSha256": "e0cd1a91849639adbaa22f9058cc7c3895ee31068533ce73fc9086c99287b395"
+  "sourceSha256": "eb8bd3cad28c2c808ad2d64714b1e71224639d6e7006f4b9304b11d1ec697c46"
 }

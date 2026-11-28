@@ -1,0 +1,114 @@
+diff --git a/src/features/editor/components/settings-dialog.tsx b/src/features/editor/components/settings-dialog.tsx
+index 0c5eec5..3a309a8 100644
+--- a/src/features/editor/components/settings-dialog.tsx
++++ b/src/features/editor/components/settings-dialog.tsx
+@@ -1,5 +1,6 @@
+ import { useState, useCallback, useEffect, useRef } from 'react'
+ import { useTranslation } from 'react-i18next'
++import { formatNumber } from '@/i18n'
+ import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
+ import type { TFunction } from 'i18next'
+ import type { MediaMetadata } from '@/types/storage'
+@@ -365,8 +366,11 @@ async function regenerateProjectThumbnails(
+   return result
+ }
+ 
+-/** A length in the reader's own number format ("0,5" in French), apart from the plural count. */
+-const formatSeconds = (seconds: number) => new Intl.NumberFormat().format(seconds)
++/**
++ * A length in the host's number format ("0,5" for French), apart from the plural count, even when
++ * the browser's own locale differs.
++ */
++const formatSeconds = (seconds: number) => formatNumber(seconds)
+ 
+ /** The lengths Editor settings offers, as the approved Studio's settings (FL-1822). */
+ const PHOTO_LENGTH_SECONDS = [2, 3, 5, 8, 10] as const
+diff --git a/src/i18n/index.ts b/src/i18n/index.ts
+index b580633..568fa84 100644
+--- a/src/i18n/index.ts
++++ b/src/i18n/index.ts
+@@ -130,6 +130,32 @@ export async function loadLanguageResources(lang: string): Promise<void> {
+   loadedLanguages.add(resolved)
+ }
+ 
++/**
++ * The locale numbers are written in (FL-1822). A host sets it from its own "dates and numbers"
++ * choice, which may differ from the language the editor's text is in; unset, numbers follow the
++ * device, as they always have.
++ */
++let numberLocale: string | undefined
++
++function toNumberLocale(lang: string): string | undefined {
++  try {
++    const tag = lang.replace('_', '-')
++    return Intl.NumberFormat.supportedLocalesOf(tag).length > 0 ? tag : undefined
++  } catch {
++    return undefined
++  }
++}
++
++/** Write numbers in this locale; `undefined`, or a tag Intl can't use, means the device's. */
++export function setNumberLocale(lang: string | undefined): void {
++  numberLocale = lang ? toNumberLocale(lang) : undefined
++}
++
++/** A number in the chosen number format ("0,5" for French), whatever the browser's locale. */
++export function formatNumber(value: number): string {
++  return new Intl.NumberFormat(numberLocale).format(value)
++}
++
+ export async function changeAppLanguage(lang: string): Promise<void> {
+   const resolved = resolveSupportedLanguage(lang)
+   await loadLanguageResources(resolved)
+@@ -142,9 +168,7 @@ export const i18nReady: Promise<void> = (async () => {
+   const persistedLanguage =
+     typeof localStorage === 'undefined' ? null : localStorage.getItem(I18N_STORAGE_KEY)
+   const detectedLanguage = typeof navigator === 'undefined' ? DEFAULT_LANGUAGE : navigator.language
+-  const initial = resolveSupportedLanguage(
+-    persistedLanguage ?? detectedLanguage,
+-  )
++  const initial = resolveSupportedLanguage(persistedLanguage ?? detectedLanguage)
+   if (initial !== DEFAULT_LANGUAGE) await loadLanguageResources(initial)
+ })().catch((err) => {
+   log.error('Failed to preload language resources', err)
+diff --git a/src/i18n/number-locale.test.ts b/src/i18n/number-locale.test.ts
+new file mode 100644
+index 0000000..54ee034
+--- /dev/null
++++ b/src/i18n/number-locale.test.ts
+@@ -0,0 +1,35 @@
++// @vitest-environment node
++
++import { afterEach, describe, expect, it, vi } from 'vitest'
++import { changeAppLanguage, formatNumber, i18n, setNumberLocale } from './index'
++
++describe('formatNumber (FL-1822)', () => {
++  afterEach(() => {
++    vi.unstubAllGlobals()
++    setNumberLocale(undefined)
++  })
++
++  it("writes numbers in the host's number format, not the browser's", () => {
++    vi.stubGlobal('navigator', { language: 'en-US', languages: ['en-US'] })
++    setNumberLocale('fr-FR')
++    expect(formatNumber(0.5)).toBe('0,5')
++  })
++
++  it("is independent of the editor's text language", async () => {
++    await changeAppLanguage('da')
++    expect(i18n.language).toBe('en')
++    setNumberLocale('da')
++    expect(formatNumber(1.5)).toBe('1,5')
++    setNumberLocale('en-US')
++    await changeAppLanguage('fr')
++    expect(formatNumber(0.5)).toBe('0.5')
++    await changeAppLanguage('en')
++  })
++
++  it("follows the device when unset or when the tag can't be used", () => {
++    const device = new Intl.NumberFormat().format(0.5)
++    expect(formatNumber(0.5)).toBe(device)
++    setNumberLocale('not a locale!')
++    expect(formatNumber(0.5)).toBe(device)
++  })
++})
