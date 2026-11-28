@@ -1013,8 +1013,8 @@
     {
       "path": "patches/0223-studio-keyframes-lane-rows.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
-      "sha256": "c4774c6de3201b32661bbf823f90a084b2d5918b6e12c7c50b9c9d5cabafe03a"
+      "sha256": "39ecd17916b0926a75bd88c3790b7589ee91690050376cdd25d24b3c9677d564"
     }
   ],
-  "sourceSha256": "e961a69eeb613bcd9fbffcacbd141c909a8da89b1c9fa18ed2ced88dcd7565c6"
+  "sourceSha256": "f190fc7e390d41772b8c35deeb1821aa07f036dcfb20548edbd2de5dfca7bbd2"
 }

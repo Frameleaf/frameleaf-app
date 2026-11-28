@@ -196,7 +196,7 @@ export function compositionSourcesFor(sourceSha256) {
     // FL-1822 Add > Titles gains the approved Studio's title styles; changes no composition or raster producer.
     sourceSha256 === 'fab442c9929363129ea2adc61295d7a633618aefbd8381324bbbf5b05271a5ab' ||
     // FL-1822 Edit's keyframes lane rows, diamond column and Easing menu; changes no composition or raster producer.
-    sourceSha256 === 'e961a69eeb613bcd9fbffcacbd141c909a8da89b1c9fa18ed2ced88dcd7565c6'
+    sourceSha256 === 'f190fc7e390d41772b8c35deeb1821aa07f036dcfb20548edbd2de5dfca7bbd2'
   )
     return {
       ...COMPOSITION_SOURCES,

@@ -125,7 +125,7 @@ index 308319f..5628605 100644
      <div
        className="flex items-center gap-0.5 rounded-md border border-border/80 bg-muted/20 px-0.5 py-0.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]"
 diff --git a/src/features/keyframes/components/dopesheet-editor/index.tsx b/src/features/keyframes/components/dopesheet-editor/index.tsx
-index 6a1ac58..258c720 100644
+index 6a1ac58..6fba0a6 100644
 --- a/src/features/keyframes/components/dopesheet-editor/index.tsx
 +++ b/src/features/keyframes/components/dopesheet-editor/index.tsx
 @@ -138,6 +138,7 @@ import {
@@ -260,7 +260,7 @@ index 6a1ac58..258c720 100644
 +              variant="ghost"
 +              size="sm"
 +              className={cn(
-+                'h-7 w-6 shrink-0 p-0 hover:bg-transparent',
++                'h-7 w-5 shrink-0 p-0 hover:bg-transparent',
 +                row.controls.hasKeyframeAtCurrentFrame
 +                  ? 'text-primary hover:text-primary'
 +                  : 'text-muted-foreground hover:text-foreground',
