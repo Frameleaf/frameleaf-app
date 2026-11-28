@@ -296,6 +296,6 @@
     overflow-x: auto;
   }
   .empty {
-    padding-bottom: var(--fl-space-4);
+    padding-bottom: var(--fl-space-5);
   }
 </style>

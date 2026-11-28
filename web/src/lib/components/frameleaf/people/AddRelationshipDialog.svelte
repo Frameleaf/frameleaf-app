@@ -159,8 +159,8 @@
     cursor: pointer;
   }
   .choice.on {
-    color: var(--fl-accent-strong);
-    font-weight: var(--fl-weight-semibold);
+    color: var(--fl-accent);
+    font-weight: 600;
     background: var(--fl-accent-soft);
     border-color: var(--fl-accent);
   }
@@ -186,17 +186,17 @@
     margin: 0;
     padding: 12px 16px;
     line-height: 1.5;
-    background: color-mix(in srgb, var(--fl-sys-red) 10%, transparent);
-    border: 1px solid color-mix(in srgb, var(--fl-sys-red) 45%, var(--fl-border));
+    background: color-mix(in srgb, var(--fl-danger) 10%, transparent);
+    border: 1px solid color-mix(in srgb, var(--fl-danger) 45%, var(--fl-border));
     border-radius: var(--fl-radius-card);
   }
   .alert :global(svg) {
     flex-shrink: 0;
     margin-top: 2px;
-    color: var(--fl-sys-red);
+    color: var(--fl-danger);
   }
   .alert strong {
     display: block;
-    font-weight: var(--fl-weight-semibold);
+    font-weight: 600;
   }
 </style>

@@ -160,7 +160,7 @@
     gap: 4px 12px;
     margin: 0;
     font-size: var(--fl-font-size);
-    font-weight: var(--fl-weight-semibold);
+    font-weight: 600;
   }
   h2 small,
   .actions small {

@@ -500,12 +500,12 @@
     align-items: baseline;
     gap: var(--fl-space-2);
     margin: 0 0 var(--fl-space-3);
-    font-size: var(--fl-font-lg);
+    font-size: var(--fl-font-headline);
   }
   .group h2 span {
     color: var(--fl-muted);
     font-size: var(--fl-font-small);
-    font-weight: var(--fl-weight-medium);
+    font-weight: 500;
   }
   .grid {
     display: grid;
@@ -530,7 +530,7 @@
     overflow: hidden;
     background: var(--fl-raised);
     border: 0;
-    border-radius: var(--fl-radius-lg);
+    border-radius: var(--fl-radius-card);
     cursor: zoom-in;
   }
   .open img {
@@ -629,7 +629,7 @@
     margin-inline-start: 6px;
     padding: 0 6px;
     font: inherit;
-    font-size: var(--fl-font-xs);
+    font-size: var(--fl-font-micro);
     border: 1px solid currentColor;
     border-radius: 4px;
     opacity: 0.7;

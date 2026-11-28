@@ -994,3 +994,23 @@ describe('Frameleaf theme contract', () => {
     }
   });
 });
+
+// A token that is named but never declared silently falls back to the inherited value, which is how
+// a field ends up in 12px type or a tab never goes bold. Uses that carry their own fallback are fine.
+it('uses no --fl token that is never declared', () => {
+  const files = (readdirSync('src', { recursive: true }) as string[])
+    .filter((name) => /\.(svelte|css|ts)$/.test(name) && !name.endsWith('.spec.ts'))
+    .map((name) => ({ name, text: readFileSync(`src/${name}`, 'utf8') }));
+  const declared = new Set<string>();
+  for (const { text } of files) {
+    for (const match of text.matchAll(/(--fl-[\w-]+)\s*[:=]|['"`](--fl-[\w-]+)['"`]/g)) {
+      declared.add(match[1] ?? match[2]);
+    }
+  }
+  const missing = files.flatMap(({ name, text }) =>
+    [...text.matchAll(/var\(\s*(--fl-[\w-]+)\s*\)/g)]
+      .filter((match) => !declared.has(match[1]))
+      .map((match) => `${name}: ${match[1]}`),
+  );
+  expect(missing).toEqual([]);
+});

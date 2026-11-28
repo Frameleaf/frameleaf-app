@@ -149,7 +149,7 @@
   }
   input {
     padding: 0.65rem 0.8rem;
-    border: 1px solid var(--fl-line);
+    border: 1px solid var(--fl-border);
     border-radius: 0.6rem;
   }
   section {

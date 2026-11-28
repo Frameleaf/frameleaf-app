@@ -105,12 +105,8 @@
 {/if}
 
 <style>
+  /* The Albums page supplies the gutter; this only keeps the notice off the toolbar under it. */
   .folder-albums-notice {
-    padding: var(--fl-space-4) var(--fl-space-6) 0;
-  }
-  @media (max-width: 767px) {
-    .folder-albums-notice {
-      padding: var(--fl-space-4) var(--fl-space-4) 0;
-    }
+    margin-bottom: var(--fl-space-6);
   }
 </style>

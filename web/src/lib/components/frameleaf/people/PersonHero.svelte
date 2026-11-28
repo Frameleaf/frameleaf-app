@@ -588,7 +588,7 @@
     border-color: var(--fl-border);
     background: var(--fl-raised);
     color: var(--fl-text);
-    font-weight: var(--fl-weight-semibold);
+    font-weight: 600;
   }
   .pd-fix-link {
     min-height: 44px;

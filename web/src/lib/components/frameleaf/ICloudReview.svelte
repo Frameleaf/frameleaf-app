@@ -338,7 +338,7 @@
     {#if error}
       <InlineError compact message={error} onRetry={() => load(1)} />
     {:else}
-      <GridSkeleton tiles={8} />
+      <GridSkeleton tiles={8} minTile="150px" />
     {/if}
   {:else if totalWaiting === 0}
     <EmptyState
@@ -631,9 +631,13 @@
   }
   .icr-head h2 {
     margin: 0 0 4px;
-    font-size: var(--fl-font-xl);
+    font-size: var(--fl-font-title);
   }
-  .icr-head p,
+  .icr-head p {
+    margin: 0;
+    color: var(--fl-muted);
+    font-size: var(--fl-font-size);
+  }
   .icr-note {
     display: flex;
     flex-wrap: wrap;
@@ -644,7 +648,7 @@
     border: 1px solid var(--fl-border);
     border-radius: var(--fl-radius-card);
     background: var(--fl-panel);
-    font-size: var(--fl-font-md);
+    font-size: var(--fl-font-size);
   }
   .icr-note span {
     flex: 1 1 200px;
@@ -657,7 +661,7 @@
     border: 1px solid var(--fl-border);
     border-radius: var(--fl-radius-card);
     background: var(--fl-panel);
-    font-size: var(--fl-font-md);
+    font-size: var(--fl-font-size);
   }
   .icr-explain p {
     margin: 0;
@@ -668,7 +672,7 @@
     gap: 8px;
     align-items: center;
     margin: 0 0 20px;
-    font-size: var(--fl-font-md);
+    font-size: var(--fl-font-size);
   }
   .icr-error {
     color: var(--fl-danger);
@@ -690,7 +694,7 @@
     background: var(--fl-raised);
     color: var(--fl-text);
     font: inherit;
-    font-size: var(--fl-font-md);
+    font-size: var(--fl-font-size);
     cursor: pointer;
   }
   .icr-filters span {
@@ -721,7 +725,7 @@
     padding: 0;
     overflow: hidden;
     border: 0;
-    border-radius: var(--fl-radius-lg);
+    border-radius: var(--fl-radius-card);
     background: var(--fl-raised);
     color: var(--fl-muted);
     cursor: zoom-in;
@@ -749,7 +753,7 @@
     width: 44px;
     height: 44px;
     border: 2px solid #fff;
-    border-radius: var(--fl-radius-md);
+    border-radius: var(--fl-radius-control);
     box-shadow: var(--fl-shadow-2);
   }
   .icr-tag {
@@ -760,8 +764,8 @@
     padding: 20px 8px 8px;
     background: linear-gradient(transparent, rgb(0 0 0 / 0.72));
     color: #fff;
-    font-size: var(--fl-font-xs);
-    font-weight: var(--fl-weight-medium);
+    font-size: var(--fl-font-micro);
+    font-weight: 500;
     text-align: start;
   }
   .later .icr-photo {
@@ -778,7 +782,7 @@
     background: var(--fl-raised);
     color: var(--fl-text);
     font: inherit;
-    font-size: var(--fl-font-sm);
+    font-size: var(--fl-font-small);
     cursor: pointer;
   }
   .icr-choice[aria-pressed='true'] {
@@ -809,12 +813,12 @@
   .icr-bar nav span {
     display: grid;
     min-width: 132px;
-    font-size: var(--fl-font-md);
+    font-size: var(--fl-font-size);
     text-align: center;
   }
   .icr-bar small {
     color: var(--fl-muted);
-    font-size: var(--fl-font-xs);
+    font-size: var(--fl-font-micro);
   }
   .icr-page {
     display: grid;
@@ -838,7 +842,7 @@
     margin: 0 0 16px;
     padding: 0;
     list-style: none;
-    font-size: var(--fl-font-md);
+    font-size: var(--fl-font-size);
   }
   .icr-summary strong {
     display: inline-block;
@@ -849,7 +853,7 @@
   .icr-dialog-note {
     margin: 0 0 20px;
     color: var(--fl-muted);
-    font-size: var(--fl-font-md);
+    font-size: var(--fl-font-size);
   }
   .icr-dialog-actions {
     display: flex;
@@ -872,15 +876,15 @@
   }
   .icr-sides figcaption {
     color: var(--fl-muted);
-    font-size: var(--fl-font-md);
-    font-weight: var(--fl-weight-medium);
+    font-size: var(--fl-font-size);
+    font-weight: 500;
   }
   .icr-shot {
     display: grid;
     place-items: center;
     min-height: 0;
     padding: 12px;
-    border-radius: var(--fl-radius-lg);
+    border-radius: var(--fl-radius-card);
     background: var(--fl-raised);
   }
   .icr-shot img {
@@ -888,7 +892,7 @@
     max-width: 100%;
     max-height: calc(100vh - 180px);
     object-fit: contain;
-    border-radius: var(--fl-radius-md);
+    border-radius: var(--fl-radius-control);
   }
   /* a group: the photo itself large, the photos it sits with small beneath */
   .icr-shot.is-group {
@@ -903,13 +907,13 @@
     gap: 8px;
     align-items: center;
     color: var(--fl-muted);
-    font-size: var(--fl-font-sm);
+    font-size: var(--fl-font-small);
   }
   .icr-with img {
     width: 64px;
     height: 64px;
     object-fit: cover;
-    border-radius: var(--fl-radius-md);
+    border-radius: var(--fl-radius-control);
   }
   .icr-none {
     aspect-ratio: 3 / 2;
@@ -918,14 +922,14 @@
     border: 1px dashed var(--fl-border);
     background: none;
     color: var(--fl-muted);
-    font-size: var(--fl-font-md);
+    font-size: var(--fl-font-size);
     text-align: center;
   }
   .icr-diff {
     width: 100%;
     margin-bottom: 24px;
     border-collapse: collapse;
-    font-size: var(--fl-font-sm);
+    font-size: var(--fl-font-small);
   }
   .icr-diff th,
   .icr-diff td {
@@ -941,22 +945,22 @@
   .icr-diff thead th,
   .icr-diff tbody th {
     color: var(--fl-muted);
-    font-weight: var(--fl-weight-medium);
+    font-weight: 500;
   }
   .icr-diff tbody th {
     font-weight: inherit;
   }
   .icr-diff tbody td {
-    font-weight: var(--fl-weight-medium);
+    font-weight: 500;
   }
   .icr-side {
     padding: 24px;
     overflow-y: auto;
-    font-size: var(--fl-font-md);
+    font-size: var(--fl-font-size);
   }
   .icr-side h3 {
     margin: 0 0 8px;
-    font-size: var(--fl-font-xl);
+    font-size: var(--fl-font-title);
   }
   .icr-side p {
     margin: 0 0 24px;
@@ -965,8 +969,8 @@
   .icr-side .icr-overline {
     margin-bottom: 8px;
     color: var(--fl-muted);
-    font-size: var(--fl-font-xs);
-    font-weight: var(--fl-weight-medium);
+    font-size: var(--fl-font-micro);
+    font-weight: 500;
   }
   .icr-side dl {
     display: grid;
@@ -1002,7 +1006,7 @@
     border: 1px solid currentColor;
     border-radius: 4px;
     font: inherit;
-    font-size: var(--fl-font-xs);
+    font-size: var(--fl-font-micro);
     opacity: 0.7;
   }
 
@@ -1015,7 +1019,7 @@
       display: none;
     }
     .icr-choice {
-      font-size: var(--fl-font-xs);
+      font-size: var(--fl-font-micro);
     }
     .icr-bar,
     .icr-bar nav,
@@ -1033,7 +1037,7 @@
       gap: 8px;
     }
     .icr-sides figcaption {
-      font-size: var(--fl-font-sm);
+      font-size: var(--fl-font-small);
     }
     .icr-shot {
       padding: 8px;

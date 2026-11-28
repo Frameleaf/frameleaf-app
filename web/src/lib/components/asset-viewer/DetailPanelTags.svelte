@@ -393,7 +393,8 @@
   .fl-no-tags {
     margin: 0;
     color: var(--fl-viewer-muted);
-    font-size: var(--fl-font-small, 13px);
+    /* The same size as the People and Pets lines above it. */
+    font-size: var(--fl-font-size);
   }
 
   .fl-combobox {

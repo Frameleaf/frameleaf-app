@@ -219,7 +219,7 @@
     </IconButton>
   </header>
   {@render tabs?.()}
-  <ul class="pd-history-list">
+  <ul class="pd-history-list" class:is-empty={corrections.length === 0}>
     {#each corrections as correction (correction.id)}
       <li class="pd-history-row" class:is-undone={!!correction.undoneAt}>
         {#if correction.evidence}
@@ -340,6 +340,10 @@
     color: var(--fl-muted);
     font-size: var(--fl-font-small);
     line-height: 1.5;
+  }
+  .pd-history-list.is-empty {
+    flex: none;
+    padding-block: 0;
   }
   .pd-history-list {
     display: flex;

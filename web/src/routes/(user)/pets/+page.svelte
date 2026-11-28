@@ -607,7 +607,7 @@
     min-width: 12rem;
     max-width: 24rem;
     min-height: var(--fl-control-height);
-    padding: var(--fl-space-2) var(--fl-space-3);
+    padding: 0 var(--fl-space-3);
     color: var(--fl-text);
     background: var(--fl-raised);
     border: 1px solid var(--fl-border);

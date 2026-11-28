@@ -620,7 +620,7 @@
     padding-bottom: var(--fl-space-6);
   }
   .empty {
-    padding-top: var(--fl-space-4);
+    padding-bottom: var(--fl-space-5);
   }
   @container kit (max-width: 620px) {
     .choices {
