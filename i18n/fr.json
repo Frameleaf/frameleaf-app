@@ -20420,6 +20420,7 @@
   "frameleaf_studio_dialog_settings_undo_history": "Historique d'annulation",
   "frameleaf_studio_dialog_shortcuts_hide_keyboard": "Masquer le clavier",
   "frameleaf_studio_dialog_shortcuts_hint": "Choisissez une commande, puis appuyez sur Enregistrer pour lui donner de nouvelles touches",
+  "frameleaf_studio_dialog_shortcuts_record": "Enregistrer",
   "frameleaf_studio_dialog_shortcuts_reset_all": "Réinitialiser tous les raccourcis",
   "frameleaf_studio_dialog_shortcuts_selected": "Commande sélectionnée",
   "frameleaf_studio_dialog_shortcuts_show_keyboard": "Afficher le clavier",

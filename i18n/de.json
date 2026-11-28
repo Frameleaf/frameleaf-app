@@ -20422,6 +20422,7 @@
   "frameleaf_studio_dialog_settings_undo_history": "Rückgängig-Verlauf",
   "frameleaf_studio_dialog_shortcuts_hide_keyboard": "Tastatur ausblenden",
   "frameleaf_studio_dialog_shortcuts_hint": "Wähle einen Befehl und drücke dann Aufnehmen, um ihm neue Tasten zu geben",
+  "frameleaf_studio_dialog_shortcuts_record": "Aufnehmen",
   "frameleaf_studio_dialog_shortcuts_reset_all": "Alle Tastenkürzel zurücksetzen",
   "frameleaf_studio_dialog_shortcuts_selected": "Ausgewählter Befehl",
   "frameleaf_studio_dialog_shortcuts_show_keyboard": "Tastatur zeigen",

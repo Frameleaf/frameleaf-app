@@ -20325,6 +20325,7 @@
   "frameleaf_studio_dialog_settings_undo_history": "Undo history",
   "frameleaf_studio_dialog_shortcuts_hide_keyboard": "Hide keyboard",
   "frameleaf_studio_dialog_shortcuts_hint": "Choose a command, then press Record to give it new keys",
+  "frameleaf_studio_dialog_shortcuts_record": "Record",
   "frameleaf_studio_dialog_shortcuts_reset_all": "Reset all shortcuts",
   "frameleaf_studio_dialog_shortcuts_selected": "Selected command",
   "frameleaf_studio_dialog_shortcuts_show_keyboard": "Show keyboard",

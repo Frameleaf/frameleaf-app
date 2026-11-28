@@ -20422,6 +20422,7 @@
   "frameleaf_studio_dialog_settings_undo_history": "Cronologia annullamenti",
   "frameleaf_studio_dialog_shortcuts_hide_keyboard": "Nascondi tastiera",
   "frameleaf_studio_dialog_shortcuts_hint": "Scegli un comando, poi premi Registra per assegnargli nuovi tasti",
+  "frameleaf_studio_dialog_shortcuts_record": "Registra",
   "frameleaf_studio_dialog_shortcuts_reset_all": "Ripristina tutte le scorciatoie",
   "frameleaf_studio_dialog_shortcuts_selected": "Comando selezionato",
   "frameleaf_studio_dialog_shortcuts_show_keyboard": "Mostra tastiera",

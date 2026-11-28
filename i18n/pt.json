@@ -20422,6 +20422,7 @@
   "frameleaf_studio_dialog_settings_undo_history": "Histórico de anulação",
   "frameleaf_studio_dialog_shortcuts_hide_keyboard": "Ocultar teclado",
   "frameleaf_studio_dialog_shortcuts_hint": "Escolha um comando e prima Gravar para lhe dar teclas novas",
+  "frameleaf_studio_dialog_shortcuts_record": "Gravar",
   "frameleaf_studio_dialog_shortcuts_reset_all": "Repor todos os atalhos",
   "frameleaf_studio_dialog_shortcuts_selected": "Comando selecionado",
   "frameleaf_studio_dialog_shortcuts_show_keyboard": "Mostrar teclado",

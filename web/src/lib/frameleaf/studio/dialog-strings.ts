@@ -12,6 +12,11 @@ export const DIALOG_STRINGS = {
     host: 'frameleaf_studio_dialog_shortcuts_selected',
     engine: 'projects.settings.hotkeys.selectedCommand',
   },
+  // The hint names Record, so the button must read the same word in every language.
+  dialogShortcutsRecord: {
+    host: 'frameleaf_studio_dialog_shortcuts_record',
+    engine: 'projects.settings.hotkeys.record',
+  },
   dialogShortcutsResetAll: {
     host: 'frameleaf_studio_dialog_shortcuts_reset_all',
     engine: 'projects.settings.hotkeys.resetAll',
