@@ -15390,6 +15390,128 @@
         "x-immich-permission": "album.read"
       }
     },
+    "/albums/{id}/folders": {
+      "get": {
+        "description": "For an album made from a folder (one of your external libraries keeps it in sync): the folders inside its folder (such as Original, RAW, Edits and Video), how each shows in the album, the photos found in more than one of them and how they matched, and what the album shows with these choices. 400 for any other album.",
+        "operationId": "getAlbumFolders",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AlbumFoldersResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Retrieve how the folders in an album show",
+        "tags": [
+          "Albums"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.5.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.5.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "album.read",
+        "x-immich-state": "Alpha"
+      },
+      "put": {
+        "description": "Per folder inside an album made from a folder: with the others, in a section of its own, as an album inside, or hidden (hidden photos stay in the library, in search and in the folder); and whether the same photo in more than one folder shows once or every time. With applyToLibrary the choices become the library's, for every album from it without a choice of its own. Only the library's owner may change them.",
+        "operationId": "updateAlbumFolders",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AlbumFoldersUpdateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AlbumFoldersResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Choose how the folders in an album show",
+        "tags": [
+          "Albums"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.5.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.5.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "album.update",
+        "x-immich-state": "Alpha"
+      }
+    },
     "/albums/{id}/items": {
       "get": {
         "description": "Ordered by kind then ID. Counts apply media privacy filters and keep assetCount separate from bookmarkCount.",
@@ -16650,6 +16772,74 @@
         ],
         "x-immich-permission": "albumUser.create",
         "x-immich-state": "Stable"
+      }
+    },
+    "/albums/{id}/versions": {
+      "get": {
+        "description": "For an album made from a folder: the files of the same photo found in more than one of its folders (matched by file name, or by capture time for an edit saved under a new name), the one the album shows in front first. Empty when the photo has no others.",
+        "operationId": "getAlbumVersions",
+        "parameters": [
+          {
+            "name": "assetId",
+            "required": true,
+            "in": "query",
+            "description": "A photo in the album",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AlbumVersionsResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Retrieve the versions of a photo in an album",
+        "tags": [
+          "Albums"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3.5.0",
+            "state": "Added"
+          },
+          {
+            "version": "v3.5.0",
+            "state": "Alpha"
+          }
+        ],
+        "x-immich-permission": "album.read",
+        "x-immich-state": "Alpha"
       }
     },
     "/analytics": {
@@ -76007,6 +76197,17 @@
             }
           },
           {
+            "name": "albumFolder",
+            "required": false,
+            "in": "query",
+            "description": "With albumId, for an album made from a folder: only the photos in this folder inside the album's folder (matched without regard to case), every file of it. Without it, such an album returns its main photos as its folder choices say (GET /albums/{id}/folders): the folders shown with the others, and with versions `one` only the version in front",
+            "schema": {
+              "minLength": 1,
+              "maxLength": 255,
+              "type": "string"
+            }
+          },
+          {
             "name": "albumId",
             "required": false,
             "in": "query",
@@ -76372,6 +76573,17 @@
         "operationId": "getTimeBuckets",
         "parameters": [
           {
+            "name": "albumFolder",
+            "required": false,
+            "in": "query",
+            "description": "With albumId, for an album made from a folder: only the photos in this folder inside the album's folder (matched without regard to case), every file of it. Without it, such an album returns its main photos as its folder choices say (GET /albums/{id}/folders): the folders shown with the others, and with versions `one` only the version in front",
+            "schema": {
+              "minLength": 1,
+              "maxLength": 255,
+              "type": "string"
+            }
+          },
+          {
             "name": "albumId",
             "required": false,
             "in": "query",
@@ -76712,6 +76924,17 @@
         "operationId": "getTimelineDatesToCheck",
         "parameters": [
           {
+            "name": "albumFolder",
+            "required": false,
+            "in": "query",
+            "description": "With albumId, for an album made from a folder: only the photos in this folder inside the album's folder (matched without regard to case), every file of it. Without it, such an album returns its main photos as its folder choices say (GET /albums/{id}/folders): the folders shown with the others, and with versions `one` only the version in front",
+            "schema": {
+              "minLength": 1,
+              "maxLength": 255,
+              "type": "string"
+            }
+          },
+          {
             "name": "albumId",
             "required": false,
             "in": "query",
@@ -77013,6 +77236,17 @@
         "description": "Curated Years and Months cards for the same filters as the time buckets: per year or month the count, a key photo (highest Best Photos score, then rating, then most recent), highlights for months and the top three places.",
         "operationId": "getTimelineHighlights",
         "parameters": [
+          {
+            "name": "albumFolder",
+            "required": false,
+            "in": "query",
+            "description": "With albumId, for an album made from a folder: only the photos in this folder inside the album's folder (matched without regard to case), every file of it. Without it, such an album returns its main photos as its folder choices say (GET /albums/{id}/folders): the folders shown with the others, and with versions `one` only the version in front",
+            "schema": {
+              "minLength": 1,
+              "maxLength": 255,
+              "type": "string"
+            }
+          },
           {
             "name": "albumId",
             "required": false,
@@ -77342,6 +77576,17 @@
             "description": "Continue after the previous ordered page cursor; overrides skip",
             "schema": {
               "maxLength": 8192,
+              "type": "string"
+            }
+          },
+          {
+            "name": "albumFolder",
+            "required": false,
+            "in": "query",
+            "description": "With albumId, for an album made from a folder: only the photos in this folder inside the album's folder (matched without regard to case), every file of it. Without it, such an album returns its main photos as its folder choices say (GET /albums/{id}/folders): the folders shown with the others, and with versions `one` only the version in front",
+            "schema": {
+              "minLength": 1,
+              "maxLength": 255,
               "type": "string"
             }
           },
@@ -87924,6 +88169,122 @@
         ],
         "type": "object"
       },
+      "AlbumFolderDisplay": {
+        "description": "with: its photos sit with the others; section: in a headed section of their own below them; album: as an album inside this one; hidden: not shown in the album (they stay in the library, in search and in the folder)",
+        "enum": [
+          "with",
+          "section",
+          "album",
+          "hidden"
+        ],
+        "type": "string"
+      },
+      "AlbumFolderDto": {
+        "properties": {
+          "display": {
+            "$ref": "#/components/schemas/AlbumFolderDisplay"
+          },
+          "name": {
+            "description": "The folder inside the album's folder",
+            "type": "string"
+          },
+          "photos": {
+            "description": "Photos in it",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "videos": {
+            "description": "Videos in it",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "display",
+          "name",
+          "photos",
+          "videos"
+        ],
+        "type": "object"
+      },
+      "AlbumFolderInsideDto": {
+        "properties": {
+          "albumId": {
+            "description": "The album made for the folder, inside this one",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "count": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "coverAssetId": {
+            "format": "uuid",
+            "nullable": true,
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "albumId",
+          "count",
+          "coverAssetId",
+          "name"
+        ],
+        "type": "object"
+      },
+      "AlbumFolderItemDto": {
+        "properties": {
+          "id": {
+            "description": "Asset ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "isVideo": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "isVideo"
+        ],
+        "type": "object"
+      },
+      "AlbumFolderSectionDto": {
+        "properties": {
+          "count": {
+            "description": "Photos and videos in the section",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "items": {
+            "description": "The first 21 of them, oldest first",
+            "items": {
+              "$ref": "#/components/schemas/AlbumFolderItemDto"
+            },
+            "type": "array"
+          },
+          "name": {
+            "description": "The folder",
+            "type": "string"
+          }
+        },
+        "required": [
+          "count",
+          "items",
+          "name"
+        ],
+        "type": "object"
+      },
       "AlbumFolderSourceDto": {
         "properties": {
           "folderPath": {
@@ -87940,6 +88301,151 @@
         "required": [
           "folderPath",
           "libraryId"
+        ],
+        "type": "object"
+      },
+      "AlbumFolderVersions": {
+        "description": "The same photo in more than one folder. one: the version from the folder first in `prefer` stands in front, the others behind it; each: every file shows",
+        "enum": [
+          "one",
+          "each"
+        ],
+        "type": "string"
+      },
+      "AlbumFoldersResponseDto": {
+        "properties": {
+          "albums": {
+            "description": "The folders that have an album of their own inside this one (an album inside)",
+            "items": {
+              "$ref": "#/components/schemas/AlbumFolderInsideDto"
+            },
+            "type": "array"
+          },
+          "canEdit": {
+            "description": "Whether you may change these choices (the library's owner)",
+            "type": "boolean"
+          },
+          "folderPath": {
+            "description": "The album's folder on the server; told only to the library's owner",
+            "type": "string"
+          },
+          "folders": {
+            "description": "The folders inside the album's folder, by name, each with how it shows",
+            "items": {
+              "$ref": "#/components/schemas/AlbumFolderDto"
+            },
+            "type": "array"
+          },
+          "libraryId": {
+            "description": "The library the album's folder is in; told only to its owner",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "libraryName": {
+            "description": "The library's name; told only to its owner",
+            "type": "string"
+          },
+          "matchedByName": {
+            "description": "Photos found in more than one file that matched by file name",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "matchedByTime": {
+            "description": "Photos found in more than one file that needed the capture time, for an edit saved under a new name",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "prefer": {
+            "description": "The folders whose version stands in front, first wins",
+            "items": {
+              "maxLength": 255,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 100,
+            "type": "array"
+          },
+          "sections": {
+            "description": "The folders shown in a section of their own, in folder order",
+            "items": {
+              "$ref": "#/components/schemas/AlbumFolderSectionDto"
+            },
+            "type": "array"
+          },
+          "shownPhotos": {
+            "description": "Photos the album shows with these choices",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "shownVideos": {
+            "description": "Videos the album shows with these choices",
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "usesLibraryChoice": {
+            "description": "The album has no choice of its own and follows its library's",
+            "type": "boolean"
+          },
+          "versions": {
+            "$ref": "#/components/schemas/AlbumFolderVersions"
+          },
+          "versionsChanged": {
+            "description": "The versions were worked out again just now, so a timeline read before this is out of date",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "albums",
+          "canEdit",
+          "folders",
+          "matchedByName",
+          "matchedByTime",
+          "prefer",
+          "sections",
+          "shownPhotos",
+          "shownVideos",
+          "usesLibraryChoice",
+          "versions",
+          "versionsChanged"
+        ],
+        "type": "object"
+      },
+      "AlbumFoldersUpdateDto": {
+        "properties": {
+          "applyToLibrary": {
+            "description": "Use these for every album from the album's library: they become the library's choice, which this album then follows. Albums with a choice of their own keep it.",
+            "type": "boolean"
+          },
+          "folders": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/AlbumFolderDisplay"
+            },
+            "description": "Per folder name (matched without regard to case). A folder left out uses the default: RAW hidden, Video and Videos in their own section, any other with the others",
+            "type": "object"
+          },
+          "prefer": {
+            "description": "The folders whose version stands in front, first wins",
+            "items": {
+              "maxLength": 255,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 100,
+            "type": "array"
+          },
+          "versions": {
+            "$ref": "#/components/schemas/AlbumFolderVersions"
+          }
+        },
+        "required": [
+          "folders",
+          "prefer",
+          "versions"
         ],
         "type": "object"
       },
@@ -89548,6 +90054,68 @@
           "viewer"
         ],
         "type": "string"
+      },
+      "AlbumVersionDto": {
+        "properties": {
+          "folder": {
+            "description": "The folder inside the album's folder holding it ('' for the album's folder)",
+            "type": "string"
+          },
+          "id": {
+            "description": "Asset ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "isFront": {
+            "description": "The version the album shows in front",
+            "type": "boolean"
+          },
+          "matchedBy": {
+            "description": "name or time: how it was matched",
+            "type": "string"
+          },
+          "originalFileName": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "folder",
+          "id",
+          "isFront",
+          "matchedBy",
+          "originalFileName"
+        ],
+        "type": "object"
+      },
+      "AlbumVersionsDto": {
+        "properties": {
+          "assetId": {
+            "description": "A photo in the album",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "assetId"
+        ],
+        "type": "object"
+      },
+      "AlbumVersionsResponseDto": {
+        "properties": {
+          "versions": {
+            "description": "The versions of the photo, the one in front first; empty when it has none",
+            "items": {
+              "$ref": "#/components/schemas/AlbumVersionDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "versions"
+        ],
+        "type": "object"
       },
       "AlbumViewDto": {
         "properties": {
@@ -190598,6 +191166,12 @@
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
             "type": "string"
           },
+          "albumFolder": {
+            "description": "With albumId, for an album made from a folder: only the photos in this folder inside the album's folder (matched without regard to case), every file of it. Without it, such an album returns its main photos as its folder choices say (GET /albums/{id}/folders): the folders shown with the others, and with versions `one` only the version in front",
+            "maxLength": 255,
+            "minLength": 1,
+            "type": "string"
+          },
           "albumId": {
             "description": "Filter assets belonging to a specific album",
             "format": "uuid",
@@ -191000,6 +191574,15 @@
             },
             "type": "array"
           },
+          "versionCount": {
+            "description": "For an album made from a folder that shows each photo once: how many versions stand behind each photo, itself included (0 or 1 when it has no others), aligned with id",
+            "items": {
+              "maximum": 2147483647,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "type": "array"
+          },
           "visibility": {
             "description": "Array of visibility statuses for each asset (e.g., ARCHIVE, TIMELINE, HIDDEN, LOCKED)",
             "items": {
@@ -191046,6 +191629,12 @@
       },
       "TimeBucketDto": {
         "properties": {
+          "albumFolder": {
+            "description": "With albumId, for an album made from a folder: only the photos in this folder inside the album's folder (matched without regard to case), every file of it. Without it, such an album returns its main photos as its folder choices say (GET /albums/{id}/folders): the folders shown with the others, and with versions `one` only the version in front",
+            "maxLength": 255,
+            "minLength": 1,
+            "type": "string"
+          },
           "albumId": {
             "description": "Filter assets belonging to a specific album",
             "format": "uuid",
@@ -191273,6 +191862,12 @@
       },
       "TimelineDatesToCheckDto": {
         "properties": {
+          "albumFolder": {
+            "description": "With albumId, for an album made from a folder: only the photos in this folder inside the album's folder (matched without regard to case), every file of it. Without it, such an album returns its main photos as its folder choices say (GET /albums/{id}/folders): the folders shown with the others, and with versions `one` only the version in front",
+            "maxLength": 255,
+            "minLength": 1,
+            "type": "string"
+          },
           "albumId": {
             "description": "Filter assets belonging to a specific album",
             "format": "uuid",
@@ -191497,6 +192092,12 @@
       },
       "TimelineHighlightsDto": {
         "properties": {
+          "albumFolder": {
+            "description": "With albumId, for an album made from a folder: only the photos in this folder inside the album's folder (matched without regard to case), every file of it. Without it, such an album returns its main photos as its folder choices say (GET /albums/{id}/folders): the folders shown with the others, and with versions `one` only the version in front",
+            "maxLength": 255,
+            "minLength": 1,
+            "type": "string"
+          },
           "albumId": {
             "description": "Filter assets belonging to a specific album",
             "format": "uuid",
@@ -191637,6 +192238,12 @@
           "after": {
             "description": "Continue after the previous ordered page cursor; overrides skip",
             "maxLength": 8192,
+            "type": "string"
+          },
+          "albumFolder": {
+            "description": "With albumId, for an album made from a folder: only the photos in this folder inside the album's folder (matched without regard to case), every file of it. Without it, such an album returns its main photos as its folder choices say (GET /albums/{id}/folders): the folders shown with the others, and with versions `one` only the version in front",
+            "maxLength": 255,
+            "minLength": 1,
             "type": "string"
           },
           "albumId": {
