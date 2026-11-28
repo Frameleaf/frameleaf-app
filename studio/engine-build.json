@@ -1008,8 +1008,8 @@
     {
       "path": "patches/0222-studio-title-styles.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
-      "sha256": "ad9a2128bab22f82b5542caf0cf89b4860e29af409ee0d690346903eb8edc08c"
+      "sha256": "4830f118d356eac31b4c147ef325323be6ffa152c8006b5c15f5d2e8182ce87b"
     }
   ],
-  "sourceSha256": "cd3ad7e3a810af9aa97114fd879f4db74f544f13f57e30032baf38a35481d377"
+  "sourceSha256": "fab442c9929363129ea2adc61295d7a633618aefbd8381324bbbf5b05271a5ab"
 }

@@ -342,7 +342,7 @@ export function validateBaseRaster(capture, envelope, binding) {
             'eb8bd3cad28c2c808ad2d64714b1e71224639d6e7006f4b9304b11d1ec697c46' ||
           // FL-1822 Add > Titles gains the approved Studio's title styles; raster producer bytes unchanged.
           binding.sourceSha256 ===
-            'cd3ad7e3a810af9aa97114fd879f4db74f544f13f57e30032baf38a35481d377')),
+            'fab442c9929363129ea2adc61295d7a633618aefbd8381324bbbf5b05271a5ab')),
     'SOURCE_BROWSER',
   )
   check(

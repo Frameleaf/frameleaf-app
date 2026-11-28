@@ -1,8 +1,14 @@
 diff --git a/src/features/editor/components/media-sidebar.test.tsx b/src/features/editor/components/media-sidebar.test.tsx
-index e61cf30..0b3b7fd 100644
+index e61cf30..a17945c 100644
 --- a/src/features/editor/components/media-sidebar.test.tsx
 +++ b/src/features/editor/components/media-sidebar.test.tsx
-@@ -6,7 +6,9 @@ vi.mock('@/features/editor/deps/media-library', async (importOriginal) => ({
+@@ -1,12 +1,15 @@
+ import { fireEvent, render, screen } from '@testing-library/react'
+ import { beforeEach, describe, expect, it, vi } from 'vite-plus/test'
+ import { useEditorStore } from '@/shared/state/editor'
++import { useTimelineStore } from '@/features/timeline/stores/timeline-store-facade'
+ 
+ vi.mock('@/features/editor/deps/media-library', async (importOriginal) => ({
    ...(await importOriginal<typeof import('@/features/editor/deps/media-library')>()),
    MediaLibrary: () => <div data-testid="media-library" />,
  }))
@@ -13,7 +19,7 @@ index e61cf30..0b3b7fd 100644
  
  const { MediaSidebar } = await import('./media-sidebar')
  
-@@ -38,11 +40,16 @@ describe('Add panel (FL-1822)', () => {
+@@ -38,11 +41,16 @@ describe('Add panel (FL-1822)', () => {
        'Animations',
      ])
      expect(screen.getByRole('button', { name: 'Titles' })).toHaveAttribute('aria-pressed', 'true')
@@ -32,7 +38,7 @@ index e61cf30..0b3b7fd 100644
      expect(screen.getByTestId('transitions')).toBeInTheDocument()
      expect(add).toHaveAttribute('aria-pressed', 'true')
  
-@@ -57,4 +64,25 @@ describe('Add panel (FL-1822)', () => {
+@@ -57,4 +65,36 @@ describe('Add panel (FL-1822)', () => {
      fireEvent.click(screen.getByRole('button', { name: 'Add' }))
      expect(useEditorStore.getState().activeTab).toBe('effects')
    })
@@ -57,9 +63,20 @@ index e61cf30..0b3b7fd 100644
 +    expect(more).not.toContain('Quote')
 +    expect(more).toHaveLength(12)
 +  })
++  it('names a clip added from a featured tile as the tile reads', () => {
++    useEditorStore.setState({ activeTab: 'text' })
++    render(<MediaSidebar />)
++    fireEvent.click(screen.getByRole('button', { name: 'Big title' }))
++    const added = useTimelineStore.getState().items.at(-1)
++    expect(added).toMatchObject({
++      type: 'text',
++      label: 'Big title',
++      textStylePresetId: 'big-title',
++    })
++  })
  })
 diff --git a/src/features/editor/components/media-sidebar.tsx b/src/features/editor/components/media-sidebar.tsx
-index 0bf1199..07ea6a9 100644
+index 0bf1199..e03d033 100644
 --- a/src/features/editor/components/media-sidebar.tsx
 +++ b/src/features/editor/components/media-sidebar.tsx
 @@ -1,4 +1,4 @@
@@ -188,7 +205,26 @@ index 0bf1199..07ea6a9 100644
  const DEFAULT_TEXT_TEMPLATE_LABEL = 'Text'
  const ADD_TEXT_TEMPLATE_LABEL = 'Add Text'
  
-@@ -432,8 +522,7 @@ export const MediaSidebar = memo(function MediaSidebar() {
+@@ -383,7 +473,7 @@ export const MediaSidebar = memo(function MediaSidebar() {
+   // Add text item on its own new layer at the playhead, matching what dragging
+   // the same preset onto the canvas does (minus the cursor-driven position).
+   const handleAddText = useCallback(
+-    (presetId?: (typeof TEXT_STYLE_PRESETS)[number]['id']) => {
++    (presetId?: (typeof TEXT_STYLE_PRESETS)[number]['id'], label?: string) => {
+       // Read all needed state from stores directly to avoid subscriptions
+       const { tracks, fps, addItemOnNewTrack } = useTimelineStore.getState()
+       const { activeTrackId, selectItems, setActiveTrack } = useSelectionStore.getState()
+@@ -414,7 +504,8 @@ export const MediaSidebar = memo(function MediaSidebar() {
+           canvasHeight,
+           fps,
+         },
+-        label: textStylePreset?.label,
++        // A featured tile names the clip as the tile reads, as its drag does.
++        label: label ?? textStylePreset?.label,
+         text: t('editor.textSection.defaultText'),
+         textStylePresetId: presetId,
+       })
+@@ -432,8 +523,7 @@ export const MediaSidebar = memo(function MediaSidebar() {
      const { tracks, fps, addItemOnNewTrack } = useTimelineStore.getState()
      const { activeTrackId, selectItems, setActiveTrack } = useSelectionStore.getState()
      const currentProject = useProjectStore.getState().currentProject
@@ -198,7 +234,7 @@ index 0bf1199..07ea6a9 100644
      const activeComposition = activeCompositionId
        ? useCompositionsStore.getState().getComposition(activeCompositionId)
        : undefined
-@@ -520,28 +609,40 @@ export const MediaSidebar = memo(function MediaSidebar() {
+@@ -520,28 +610,40 @@ export const MediaSidebar = memo(function MediaSidebar() {
    const { gpuCategories, triggerPreviews } = useGpuEffectPreviewData()
    // Which effect/preset tile is hovered — drives its live sweep animation.
    const [hoveredEffectKey, setHoveredEffectKey] = useState<string | null>(null)
@@ -257,7 +293,7 @@ index 0bf1199..07ea6a9 100644
    ]
    const activeAddCategory = addCategories.find((category) => category.id === activeTab)
    const [lastAddTab, setLastAddTab] = useState<(typeof addCategories)[number]['id']>('text')
-@@ -637,20 +738,21 @@ export const MediaSidebar = memo(function MediaSidebar() {
+@@ -637,20 +739,21 @@ export const MediaSidebar = memo(function MediaSidebar() {
          {/* Category Icons */}
          <div className="flex flex-col gap-1 py-1.5">
            {categories.map(({ id, icon: Icon, label }) => {
@@ -292,7 +328,7 @@ index 0bf1199..07ea6a9 100644
                  w-9 h-9 rounded-lg flex items-center justify-center transition-[transform,background-color,color] duration-150 active:scale-95
                  ${
                    isActive
-@@ -658,13 +760,13 @@ export const MediaSidebar = memo(function MediaSidebar() {
+@@ -658,13 +761,13 @@ export const MediaSidebar = memo(function MediaSidebar() {
                      : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50'
                  }
                `}
@@ -313,7 +349,7 @@ index 0bf1199..07ea6a9 100644
              )
            })}
          </div>
-@@ -742,7 +844,11 @@ export const MediaSidebar = memo(function MediaSidebar() {
+@@ -742,7 +845,11 @@ export const MediaSidebar = memo(function MediaSidebar() {
  
              {activeAddCategory && (
                <div className="flex-shrink-0 border-b border-border px-3 pt-3 pb-3 space-y-2.5">
@@ -326,7 +362,7 @@ index 0bf1199..07ea6a9 100644
                    {addCategories.map((category) => (
                      <button
                        key={category.id}
-@@ -760,7 +866,9 @@ export const MediaSidebar = memo(function MediaSidebar() {
+@@ -760,7 +867,9 @@ export const MediaSidebar = memo(function MediaSidebar() {
                      </button>
                    ))}
                  </div>
@@ -337,7 +373,7 @@ index 0bf1199..07ea6a9 100644
                </div>
              )}
  
-@@ -775,76 +883,86 @@ export const MediaSidebar = memo(function MediaSidebar() {
+@@ -775,76 +884,86 @@ export const MediaSidebar = memo(function MediaSidebar() {
              <div
                className={`min-h-0 flex-1 overflow-y-auto p-3 ${activeTab === 'text' ? 'block' : 'hidden'}`}
              >
@@ -367,7 +403,7 @@ index 0bf1199..07ea6a9 100644
 +                          onDragEnd={handleTemplateDragEnd}
 +                          onClick={() => {
 +                            if (shouldSuppressGeneratedItemClick()) return
-+                            handleAddText(id)
++                            handleAddText(id, t(labelKey))
 +                          }}
 +                          className={TITLE_TILE_CLASS}
 +                        >
