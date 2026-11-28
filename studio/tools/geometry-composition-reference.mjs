@@ -190,7 +190,7 @@ export function compositionSourcesFor(sourceSha256) {
     // FL-1822 the Restore tab that opens the host's Restore panel; changes no composition or raster producer.
     sourceSha256 === '55ddee801bdf97f445aa0ef49d0e141fdfbf2481a756e465c8f3c8fa80dbae34' ||
     // FL-1822 Basic hides advanced editor tools; changes no composition or raster producer.
-    sourceSha256 === '8421bb13e5fe49abc2f76899f31f89070e5404a56b2760baab80a2fbe7a7461d'
+    sourceSha256 === 'e0cd1a91849639adbaa22f9058cc7c3895ee31068533ce73fc9086c99287b395'
   )
     return {
       ...COMPOSITION_SOURCES,

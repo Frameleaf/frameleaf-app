@@ -1153,6 +1153,8 @@ async function mount(context: StudioHostContext): Promise<void> {
 }
 
 async function update(context: StudioHostContext): Promise<void> {
+  // The mode is the store's, not the session's: a switch made while the editor mounts still counts.
+  applyStudioMode(context)
   const state = session
   if (!state || state.disposed) return
   if (vectorIdentity(state.context) !== vectorIdentity(context)) state.vectors.invalidate()
@@ -1166,7 +1168,6 @@ async function update(context: StudioHostContext): Promise<void> {
   }
   state.context = context
   applyTheme(context)
-  applyStudioMode(context)
   if (context.seekRequest && context.seekRequest.id !== previous.seekRequest?.id) {
     seekTo(context.seekRequest)
   }

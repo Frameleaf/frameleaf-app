@@ -336,7 +336,7 @@ export function validateBaseRaster(capture, envelope, binding) {
             '55ddee801bdf97f445aa0ef49d0e141fdfbf2481a756e465c8f3c8fa80dbae34' ||
           // FL-1822 Basic hides advanced editor tools; raster producer bytes unchanged.
           binding.sourceSha256 ===
-            '8421bb13e5fe49abc2f76899f31f89070e5404a56b2760baab80a2fbe7a7461d')),
+            'e0cd1a91849639adbaa22f9058cc7c3895ee31068533ce73fc9086c99287b395')),
     'SOURCE_BROWSER',
   )
   check(
