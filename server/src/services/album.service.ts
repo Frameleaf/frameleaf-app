@@ -729,7 +729,8 @@ export class AlbumService extends BaseService {
       ...((await this.recoveredAlbumIds()).has(album.id) && { recovered: true }),
       ...(await this.folderSourceOf(auth, album.id)),
       // every viewer's page reads the album's folder sections, not only the library owner's
-      ...((await this.albumRepository.getFolderAlbumLink(album.id)) && { fromFolder: true }),
+      // (not a share link's visitor: the folders are not theirs to read, and their page shows every photo together)
+      ...(!auth.sharedLink && (await this.albumRepository.getFolderAlbumLink(album.id)) && { fromFolder: true }),
     };
   }
 
@@ -749,7 +750,17 @@ export class AlbumService extends BaseService {
     const { behind: behindForViewer, matchedByName, matchedByTime } = viewerVersions(rows, items, choices);
     const behind = choices.versions === 'one' ? behindForViewer : new Set<string>();
     // FL-1837's albums inside this one: their photos are theirs, not this album's
-    const children = await this.albumRepository.getFolderAlbumChildren(id, link.libraryId, link.folderPath);
+    // only the ones this viewer may open: an album shared with them says nothing of the albums inside it that are not
+    const everyChild = await this.albumRepository.getFolderAlbumChildren(id, link.libraryId, link.folderPath);
+    const readable =
+      everyChild.length === 0 || auth.sharedLink
+        ? new Set<string>()
+        : await this.checkAccess({
+            auth,
+            permission: Permission.AlbumRead,
+            ids: everyChild.map((child) => child.albumId),
+          });
+    const children = everyChild.filter((child) => readable.has(child.albumId));
     const byFolder = new Map<string, typeof items>();
     for (const item of listed.toSorted((a, b) => new Date(a.takenAt).getTime() - new Date(b.takenAt).getTime())) {
       const inFolder = byFolder.get(item.folder);

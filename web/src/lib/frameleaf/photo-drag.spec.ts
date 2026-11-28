@@ -12,6 +12,14 @@ describe('photos dragged onto a sidebar album', () => {
     endPhotoDrag();
     expect(draggedPhotos()).toBeNull();
     stop();
+    // every match selected, not all loaded: nothing is dragged, so a part of it is never added
+    const stopAll = providePhotoSelection(() => undefined);
+    const refused = drag();
+    const prevented = vi.spyOn(refused, 'preventDefault');
+    startPhotoDrag(refused, 'a');
+    expect(prevented).toHaveBeenCalled();
+    expect(draggedPhotos()).toBeNull();
+    stopAll();
     startPhotoDrag(drag(), 'a');
     expect(draggedPhotos()).toEqual(['a']);
     endPhotoDrag();

@@ -234,6 +234,17 @@
       selected.clear();
     });
   });
+  // A selection is of albums on screen: one that left the list (a search cleared, an empty album hidden again) leaves it.
+  $effect(() => {
+    const listed = new Set(browse.listed.map(({ id }) => id));
+    untrack(() => {
+      for (const id of selected) {
+        if (!listed.has(id)) {
+          selected.delete(id);
+        }
+      }
+    });
+  });
   // While a pin is still being saved the menu already says what it will be.
   const pinned = $derived(new Set($pendingPins ?? authManager.preferences.albums.pinned));
   const showFolders = $derived(everything.some((album) => !!album.folderAlbum));

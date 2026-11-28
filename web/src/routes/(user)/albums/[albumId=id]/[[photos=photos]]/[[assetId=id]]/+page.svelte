@@ -652,6 +652,8 @@
         if (!controller.signal.aborted) {
           // and no sections drawn from an earlier read, or their photos would show twice
           albumFolders = undefined;
+          // nor the album left narrowed to a folder whose chip is gone
+          albumFolder = undefined;
           foldersFailedFor = id;
         }
       });

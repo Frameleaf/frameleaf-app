@@ -321,6 +321,8 @@ export class FolderAlbumService extends BaseService {
         !!parent &&
         !parent.isUserEdited &&
         !parent.isKept &&
+        // renamed since the last sync: theirs too, though not yet marked
+        isAutoName(parent) &&
         !tree.has(parent.folderPath) &&
         isSameOrInside(node.folderPath, parent.folderPath);
       const intoNew = link.parentId === null && !!node.parentPath && madeNow.has(node.parentPath);
