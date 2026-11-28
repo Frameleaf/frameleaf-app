@@ -979,7 +979,12 @@
       "path": "patches/0216-studio-dialogs.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "53ada9752eb7c6d6b33fc109dd2923f5a2dfad6afad93add665a4f933cc41004"
+    },
+    {
+      "path": "patches/0217-studio-settings-lengths.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "c50777e56234af29deb5f7b9ba98fd9411e432ea31acbf40dbc53270a7eff806"
     }
   ],
-  "sourceSha256": "ce724b328bdb2bfffaca09bbbb6a55a35bc9f166a40262bec81a480e1b2df0db"
+  "sourceSha256": "27f9d388c97579a41d81652acd2867e5a781609fcade414907548859557395a9"
 }
