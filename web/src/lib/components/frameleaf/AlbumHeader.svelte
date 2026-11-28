@@ -1671,12 +1671,22 @@
     display: inline-flex;
     align-items: center;
     gap: 0.375rem;
-    padding: 0.125rem var(--fl-space-2);
+    /*
+     * A small leading inset, pulled back out of the row: the words sit as far from the separator
+     * as their neighbours do and line up with the line above when the row wraps, and the hover
+     * box and focus ring still start inside the row's clipped edge.
+     */
+    margin-inline-start: calc(-1 * var(--fl-space-1));
+    padding-block: 0.125rem;
+    padding-inline: var(--fl-space-1) var(--fl-space-2);
     font: inherit;
     color: var(--fl-muted);
     background: transparent;
     border: 1px solid transparent;
     border-radius: var(--fl-radius);
+  }
+  .summary > * + .members::before {
+    inset-inline-start: calc(-0.5 * var(--summary-gap) - 1.5px + var(--fl-space-1));
   }
   .members:hover {
     background: var(--fl-raised);

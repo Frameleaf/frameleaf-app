@@ -117,8 +117,8 @@
   };
 </script>
 
-<header class="heading">
-  {#if selected}
+{#if selected}
+  <header class="heading">
     <SettingsOverline>
       <button type="button" onclick={back}>{parentTool ? $t(parentTool.titleKey) : home.title}</button>
       <Icon icon={mdiChevronRight} size="0.875rem" aria-hidden={true} />
@@ -126,8 +126,8 @@
     </SettingsOverline>
     <h1>{$t(selected.titleKey)}</h1>
     <p>{$t(selected.descriptionKey)}</p>
-  {/if}
-</header>
+  </header>
+{/if}
 
 {#if !selected}
   <div class="tool-loading" role="status" aria-busy="true"><span class="sr-only">{$t('loading')}</span></div>

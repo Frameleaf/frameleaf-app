@@ -345,15 +345,16 @@
     justify-content: space-between;
     gap: var(--fl-space-4) var(--fl-space-5);
   }
+  /* The page title and its line, as every library page draws them. */
   .heading h1 {
     margin: 0;
-    font-size: 1.5rem;
-    font-weight: 700;
+    font: var(--fl-type-display);
+    letter-spacing: var(--fl-tracking-display);
   }
   .heading p {
     margin: var(--fl-space-2) 0 0;
     color: var(--fl-muted);
-    font-size: 0.875rem;
+    font-size: var(--fl-font-callout);
     max-width: 40rem;
   }
   .primary {

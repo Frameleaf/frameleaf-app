@@ -434,7 +434,7 @@
     padding: 0.75rem;
     border: 1px solid var(--fl-border);
     border-radius: 0.5rem;
-    background: var(--fl-surface);
+    background: var(--fl-panel);
     color: inherit;
     font: inherit;
   }

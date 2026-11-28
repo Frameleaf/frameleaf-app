@@ -104,7 +104,7 @@
 <Dialog title={$t('frameleaf_album_cover_title')} closeLabel={$t('close')} bind:open>
   <div class="cover">
     {#if loading}
-      <div class="loading"><GridSkeleton tiles={12} columns={6} /></div>
+      <div class="loading"><GridSkeleton tiles={12} minTile="5.5rem" /></div>
     {:else if failed}
       <InlineError
         message={$t('frameleaf_album_cover_load_failed')}

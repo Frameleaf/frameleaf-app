@@ -1025,7 +1025,7 @@
                 ondragleave={() => (overPath = undefined)}
                 ondrop={(event) => void onPathDrop(event, step)}
               >
-                {nameOf(step)}
+                <span>{nameOf(step)}</span>
               </a>
             </li>
           {/each}
@@ -1619,7 +1619,7 @@
   .heading p {
     margin: var(--fl-space-2) 0 0;
     color: var(--fl-muted);
-    font-size: 0.875rem;
+    font-size: var(--fl-font-callout);
   }
   .tools {
     display: flex;
@@ -1811,6 +1811,7 @@
     display: inline-flex;
     align-items: center;
     gap: var(--fl-space-2);
+    min-width: 0;
     max-width: 26rem;
     min-height: var(--fl-control-height);
     padding: 0 var(--fl-space-3);
@@ -1818,6 +1819,10 @@
     color: var(--fl-muted);
     text-decoration: none;
     white-space: nowrap;
+  }
+  /* The name is what shortens: an ellipsis never shows on the flex row itself. */
+  .crumb span {
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
   }
@@ -1836,7 +1841,7 @@
     margin-bottom: var(--fl-space-6);
     padding: var(--fl-space-6);
     border: 1px solid var(--fl-border);
-    border-radius: var(--fl-radius-xl, var(--fl-radius-card));
+    border-radius: var(--fl-radius-card);
     background: var(--fl-panel);
   }
   .here-cover {
@@ -1959,7 +1964,8 @@
   .group-head {
     position: sticky;
     top: 0;
-    z-index: 2;
+    /* Over the tiles' choosing overlay (z-index 2), which would otherwise paint across it. */
+    z-index: 3;
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -1977,6 +1983,7 @@
     border: 0;
     background: none;
     color: var(--fl-text);
+    font: inherit;
   }
   .fold :global(svg) {
     color: var(--fl-muted);
@@ -1989,9 +1996,6 @@
     margin: 0;
     font-size: 1.125rem;
     font-weight: 600;
-  }
-  .fold {
-    font: inherit;
   }
   .notice-slot[hidden] {
     display: none;
@@ -2154,8 +2158,6 @@
     }
     .tools {
       flex-wrap: nowrap;
-    }
-    .tools {
       width: 100%;
     }
     .search {

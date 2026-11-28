@@ -170,7 +170,7 @@
     flex-shrink: 0;
     align-items: center;
     gap: var(--fl-space-2);
-    min-height: var(--fl-control-compact);
+    min-height: var(--fl-control-height-compact);
     padding: 0 var(--fl-space-3);
     border: 1px solid var(--fl-border);
     border-radius: var(--fl-radius-pill);
@@ -223,7 +223,7 @@
   @media (max-width: 47.99rem) {
     .fl-activity {
       justify-content: center;
-      min-width: var(--fl-control-compact);
+      min-width: var(--fl-control-height-compact);
       padding: 0;
       border-color: transparent;
       background: transparent;

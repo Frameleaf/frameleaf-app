@@ -1415,25 +1415,24 @@
     background: color-mix(in srgb, var(--fl-text) 12%, var(--fl-raised));
     border-color: color-mix(in srgb, var(--fl-text) 28%, var(--fl-border));
   }
-  /* A person's round avatar (people photos are the squircles), as `PersonAvatar` draws it. */
   /* The approved Studio's `.fls-mode`: a two-segment control. */
   .fl-studio-mode {
     display: inline-flex;
     flex-shrink: 0;
     padding: 2px;
     border: 1px solid var(--fl-border);
-    border-radius: 999px;
+    border-radius: var(--fl-radius-pill);
     background: var(--fl-canvas);
   }
   .fl-studio-mode button {
     min-height: 26px;
     padding: 0 0.75rem;
     border: 0;
-    border-radius: 999px;
+    border-radius: var(--fl-radius-pill);
     background: transparent;
     color: var(--fl-muted);
     font: inherit;
-    font-size: 0.8125rem;
+    font-size: var(--fl-font-callout);
     white-space: nowrap;
     cursor: pointer;
   }
@@ -1446,6 +1445,7 @@
     outline: var(--fl-focus-ring);
     outline-offset: var(--fl-focus-offset);
   }
+  /* A person's round avatar (people photos are the squircles), as `PersonAvatar` draws it. */
   .fl-studio-avatar {
     display: inline-grid;
     place-items: center;
