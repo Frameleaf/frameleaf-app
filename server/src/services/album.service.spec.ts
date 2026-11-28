@@ -4312,6 +4312,17 @@ describe(AlbumService.name, () => {
       expect(result.folders.map(({ name }) => name)).not.toContain('Edits');
     });
 
+    it('tells a connected app none of the albums inside, as one of them may be Locked', async () => {
+      const saved = link();
+      mocks.access.album.checkOwnerAccess.mockImplementation((_userId, ids) => Promise.resolve(new Set(ids)));
+      mocks.album.getFolderAlbumLink.mockResolvedValue(saved);
+      mocks.album.getFolderAlbumChildren.mockResolvedValue([
+        { albumId: newUuid(), folderPath: `${saved.folderPath}/Edits`, coverAssetId: null, count: 4 },
+      ]);
+      const app = { ...authStub.admin, oauthApp: { id: 'app' } } as never;
+      await expect(sut.getFolders(app, albumId)).resolves.toMatchObject({ albums: [] });
+    });
+
     it('asks for no sync when no folder gets or loses an album inside', async () => {
       mocks.album.getFolderAlbumLink.mockResolvedValue(link());
       await sut.updateFolders(authStub.admin, albumId, { folders: { RAW: 'section' }, versions: 'one', prefer: [] });

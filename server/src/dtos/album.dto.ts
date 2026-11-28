@@ -384,7 +384,7 @@ export const AlbumResponseSchema = z
       .boolean()
       .optional()
       .describe(
-        "True when the album was made from a folder and shows its folders as chosen (GET /albums/{id}/folders), told to everyone who can open the album; which folder is told only to the library's owner (folderAlbum). Populated by GET /albums/{id}.",
+        "True when the album was made from a folder and shows its folders as chosen (GET /albums/{id}/folders), told to everyone signed in who can open the album (not to a share link's visitor, who gets every photo together); which folder is told only to the library's owner (folderAlbum). Populated by GET /albums/{id}.",
       ),
   })
   .meta({ id: 'AlbumResponseDto' });

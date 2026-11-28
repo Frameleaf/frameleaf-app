@@ -753,7 +753,9 @@ export class AlbumService extends BaseService {
     // only the ones this viewer may open: an album shared with them says nothing of the albums inside it that are not
     const everyChild = await this.albumRepository.getFolderAlbumChildren(id, link.libraryId, link.folderPath);
     const readable =
-      everyChild.length === 0 || auth.sharedLink
+      // ponytail: none for a connected app either, as a Locked album is one that does not exist to it (FL-780) and
+      // these rows do not say which are Locked; list the unlocked ones if an app ever needs them
+      everyChild.length === 0 || auth.sharedLink || auth.oauthApp
         ? new Set<string>()
         : await this.checkAccess({
             auth,

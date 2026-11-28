@@ -89195,7 +89195,7 @@
             "description": "Present when the album was made for a folder of one of your external libraries and is kept in sync with it. Only the library's owner is told. Populated by GET /albums, GET /albums/tree, GET /albums/hierarchy and GET /albums/{id}."
           },
           "fromFolder": {
-            "description": "True when the album was made from a folder and shows its folders as chosen (GET /albums/{id}/folders), told to everyone who can open the album; which folder is told only to the library's owner (folderAlbum). Populated by GET /albums/{id}.",
+            "description": "True when the album was made from a folder and shows its folders as chosen (GET /albums/{id}/folders), told to everyone signed in who can open the album (not to a share link's visitor, who gets every photo together); which folder is told only to the library's owner (folderAlbum). Populated by GET /albums/{id}.",
             "type": "boolean"
           },
           "hasSharedLink": {
