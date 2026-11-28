@@ -1,6 +1,10 @@
 import { sql } from 'kysely';
 import type { AlbumRepository } from 'src/repositories/album.repository.js';
-import { type SubfolderRule, folderOf, isFolderPhoto } from 'src/utils/folder-albums.js';
+import { AssetType, AssetVisibility } from 'src/enum.js';
+import { getHiddenContentFilter, hiddenContentAssetIdExists, hiddenFromOthers } from 'src/utils/database.js';
+import { type SubfolderRule, folderOf } from 'src/utils/folder-albums.js';
+import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
+import { isDefaultVisible, notLockedOrOwnedBy } from 'src/utils/locked.js';
 
 /**
  * FL-1838: "Folders in this album". An album made from a folder holds the photos of the folders inside it (Original,
@@ -223,6 +227,8 @@ export type AlbumFolderView = {
   /** lower case: the folders not shown with the others */
   exclude: string[];
   oneVersion: boolean;
+  /** lower case: the show-in-front order */
+  prefer: string[];
 };
 
 export const albumFolderView = (
@@ -239,6 +245,7 @@ export const albumFolderView = (
     ...new Set([...Object.keys(DEFAULT_DISPLAY), ...Object.keys(choices.folders)].map((name) => name.toLowerCase())),
   ].filter((name) => folderDisplay(choices, name) !== 'with'),
   oneVersion: choices.versions === 'one',
+  prefer: choices.prefer.map((name) => name.toLowerCase()),
 });
 
 /** Works the album's versions out again; true when they changed. */
@@ -263,8 +270,56 @@ export const refreshAlbumFolderVersions = async (
   return { ...result, items, changed };
 };
 
-/** Whether the album view shows the asset row `asset` (see `AlbumFolderView`). */
-export const albumFolderPredicate = (view: AlbumFolderView) => {
+/** What one viewer may see (the timeline's own options): their Locked session, hidden content and others' rules. */
+export type VersionViewer = HiddenContentQueryOptions & { lockedOwnerId?: string; revealLockedOwnerId?: string };
+
+/**
+ * FL-1841: whether the viewer may see the asset row `alias` in the album, by the album read's own rules: on the timeline
+ * or in the archive, not trashed or offline, Locked only when it is the viewer's own in an elevated session, and not
+ * hidden by their hidden content or by its owner's Locked rules.
+ */
+export const versionVisibleTo = (alias: string, viewer: VersionViewer) => {
+  const parts = [
+    sql`${sql.ref(`${alias}.deletedAt`)} is null`,
+    sql`${sql.ref(`${alias}.isOffline`)} = false`,
+    sql`${sql.ref(`${alias}.type`)} in (${sql.lit(AssetType.Image)}, ${sql.lit(AssetType.Video)})`,
+    viewer.lockedOwnerId
+      ? sql`(${sql.ref(`${alias}.visibility`)} in (${sql.lit(AssetVisibility.Archive)}, ${sql.lit(AssetVisibility.Timeline)})
+          and ${notLockedOrOwnedBy(viewer.lockedOwnerId, alias)})`
+      : isDefaultVisible(alias, viewer.revealLockedOwnerId),
+  ];
+  if (viewer.othersRulesViewerId !== undefined) {
+    parts.push(sql`not ${hiddenFromOthers(viewer.othersRulesViewerId, alias)}`);
+  }
+  const filter = getHiddenContentFilter(viewer);
+  if (filter && !viewer.onlyHiddenContent) {
+    parts.push(sql`not ${hiddenContentAssetIdExists(sql.ref(`${alias}.id`), filter)}`);
+  }
+  return sql<boolean>`(${sql.join(parts, sql` and `)})`;
+};
+
+/** A version's place in the show-in-front order, then its folder, then its id: lower stands in front. */
+const versionRank = (view: AlbumFolderView, alias: string) => {
+  const folder = sql`lower(${subfolderSql(view.folderPath, alias)})`;
+  return sql`(coalesce(array_position(${view.prefer}::text[], ${folder}), ${sql.lit(PREFER_LAST)}), ${folder}, ${sql.ref(`${alias}.id`)}::text)`;
+};
+const PREFER_LAST = 100_000;
+
+/**
+ * The other versions of the asset row `asset` that are in the album: `album_folder_version` groups them by the version
+ * the sync put in front, which here only names the group. Which one stands in front is decided per viewer.
+ */
+const otherVersions = (view: AlbumFolderView, alias: string) => sql`album_folder_version me
+  inner join album_folder_version other on other."albumId" = me."albumId" and other."frontAssetId" = me."frontAssetId"
+  inner join album_asset other_member on other_member."albumId" = other."albumId" and other_member."assetId" = other."assetId"
+  inner join asset ${sql.id(alias)} on ${sql.ref(`${alias}.id`)} = other."assetId"`;
+
+/**
+ * Whether the album view shows the asset row `asset` (see `AlbumFolderView`). With "show it once" a photo stands back
+ * when another version of it is one this viewer may see, from a folder shown with the others, and earlier in the
+ * show-in-front order (FL-1841): a version hidden from them, by their rules or Locked, leaves the next one in front.
+ */
+export const albumFolderPredicate = (view: AlbumFolderView, viewer: VersionViewer = {}) => {
   const folder = sql`lower(${subfolderSql(view.folderPath)})`;
   if (view.only !== undefined) {
     return sql<boolean>`${folder} = ${view.only}`;
@@ -274,19 +329,17 @@ export const albumFolderPredicate = (view: AlbumFolderView) => {
     parts.push(sql`${folder} <> all(${view.exclude}::text[])`);
   }
   if (view.oneVersion) {
-    // behind a version the album still shows; one taken out, trashed, offline or Locked leaves its versions showing
-    parts.push(sql`not exists (select 1 from album_folder_version v
-      inner join album_asset front_member on front_member."albumId" = v."albumId" and front_member."assetId" = v."frontAssetId"
-      inner join asset front on front.id = v."frontAssetId"
-      where v."albumId" = ${view.albumId}::uuid and v."assetId" = asset.id and v."frontAssetId" <> asset.id
-        and ${isFolderPhoto('front')})`);
+    const otherFolder = sql`lower(${subfolderSql(view.folderPath, 'better')})`;
+    parts.push(sql`not exists (select 1 from ${otherVersions(view, 'better')}
+      where me."albumId" = ${view.albumId}::uuid and me."assetId" = asset.id and other."assetId" <> asset.id
+        ${view.exclude.length > 0 ? sql`and ${otherFolder} <> all(${view.exclude}::text[])` : sql``}
+        and ${versionVisibleTo('better', viewer)}
+        and ${versionRank(view, 'better')} < ${versionRank(view, 'asset')})`);
   }
   return parts.length > 0 ? sql<boolean>`(${sql.join(parts, sql` and `)})` : sql<boolean>`true`;
 };
 
-/** How many versions stand behind the asset row `asset`, itself included (0 when it has none). */
-export const albumVersionCount = (view: AlbumFolderView) =>
-  sql<number>`(select count(*) from album_folder_version v
-    inner join album_asset member on member."albumId" = v."albumId" and member."assetId" = v."assetId"
-    inner join asset version on version.id = v."assetId"
-    where v."albumId" = ${view.albumId}::uuid and v."frontAssetId" = asset.id and ${isFolderPhoto('version')})::int`;
+/** How many versions of the asset row `asset` this viewer may see, itself included (0 when it has none). */
+export const albumVersionCount = (view: AlbumFolderView, viewer: VersionViewer = {}) =>
+  sql<number>`(select count(*) from ${otherVersions(view, 'version')}
+    where me."albumId" = ${view.albumId}::uuid and me."assetId" = asset.id and ${versionVisibleTo('version', viewer)})::int`;

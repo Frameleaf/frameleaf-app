@@ -18,7 +18,7 @@ import { columns } from 'src/database.js';
 import { Chunked, ChunkedArray, ChunkedSet, DummyValue, GenerateSql } from 'src/decorators.js';
 import { AlbumUserCreateDto, MapAlbumDto } from 'src/dtos/album.dto.js';
 import { AuthDto } from 'src/dtos/auth.dto.js';
-import { AlbumUserRole, LibraryScope, type LibraryViewScope } from 'src/enum.js';
+import { AlbumUserRole, AssetType, AssetVisibility, LibraryScope, type LibraryViewScope } from 'src/enum.js';
 import { publicationDatabase } from 'src/queue/transaction.js';
 import { ALBUM_CHANGE_SOFT_DELETED } from 'src/repositories/album-change-run.repository.js';
 import { AlbumOrderRepository } from 'src/repositories/album-order.repository.js';
@@ -30,7 +30,13 @@ import { AlbumChangeRunStatus } from 'src/schema/tables/album-change-run.table.j
 import { AlbumTable } from 'src/schema/tables/album.table.js';
 import { AssetExifTable } from 'src/schema/tables/asset-exif.table.js';
 import { albumCoverCandidates } from 'src/utils/album-cover.js';
-import { type AlbumFolderChoices, subfolderSql } from 'src/utils/album-folders.js';
+import {
+  type AlbumFolderChoices,
+  type AlbumFolderView,
+  type VersionViewer,
+  subfolderSql,
+  versionVisibleTo,
+} from 'src/utils/album-folders.js';
 import { albumCoverReplacement, albumNewestCover, getBestPhotoScoreTable } from 'src/utils/cover-references.js';
 import {
   anyUuid,
@@ -44,7 +50,7 @@ import { hasGoodDate } from 'src/utils/date-sanity.js';
 import { folderOf, isFolderPhoto } from 'src/utils/folder-albums.js';
 import { type HiddenContentQueryOptions, everyOwnersRules } from 'src/utils/hidden-content.js';
 import { libraryScopePredicate } from 'src/utils/library-scope.js';
-import { isNotLocked, notLockedOrOwnedBy } from 'src/utils/locked.js';
+import { isLocked, isNotLocked, notLockedOrOwnedBy } from 'src/utils/locked.js';
 
 // shortcut: hierarchy edits serialize across users; shard this lock if measured contention warrants it.
 export const lockAlbumHierarchy = async (
@@ -1434,18 +1440,24 @@ export class AlbumRepository {
   /** FL-1838: the album's items that are not in the trash, each with the folder inside the album's folder holding it. */
   @GenerateSql({ params: [DummyValue.UUID, DummyValue.STRING] })
   getFolderAlbumItems(albumId: string, folderPath: string) {
+    // FL-1841: Locked items take part in the versions too; each read decides who may see them
     return this.db
       .selectFrom('album_asset')
       .innerJoin('asset', 'asset.id', 'album_asset.assetId')
       .select([
         'asset.id',
+        'asset.ownerId',
         'asset.originalFileName',
         'asset.fileCreatedAt as takenAt',
         subfolderSql(folderPath).as('folder'),
         sql<boolean>`asset.type = 'VIDEO'`.as('isVideo'),
+        isLocked('asset').as('isLocked'),
       ])
       .where('album_asset.albumId', '=', asUuid(albumId))
-      .where(isFolderPhoto('asset'))
+      .where('asset.deletedAt', 'is', null)
+      .where('asset.isOffline', '=', false)
+      .where('asset.visibility', 'in', [AssetVisibility.Timeline, AssetVisibility.Archive])
+      .where('asset.type', 'in', [AssetType.Image, AssetType.Video])
       .execute();
   }
 
@@ -1520,8 +1532,25 @@ export class AlbumRepository {
   }
 
   /** FL-1838: the versions of the photo `assetId` in the album, the one in front first; empty when it has none. */
-  @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID, DummyValue.STRING] })
-  getFolderVersions(albumId: string, assetId: string, folderPath: string) {
+  @GenerateSql({
+    params: [
+      DummyValue.UUID,
+      DummyValue.UUID,
+      {
+        albumId: DummyValue.UUID,
+        folderPath: DummyValue.STRING,
+        exclude: ['raw'],
+        oneVersion: true,
+        prefer: ['edits'],
+      },
+      {},
+    ],
+  })
+  getFolderVersions(albumId: string, assetId: string, view: AlbumFolderView, viewer: VersionViewer) {
+    // FL-1841: the versions this viewer may see; the first from a folder shown with the others is in front for them
+    const folder = sql<string>`lower(${subfolderSql(view.folderPath)})`;
+    const candidate =
+      view.exclude.length > 0 ? sql<boolean>`${folder} <> all(${view.exclude}::text[])` : sql<boolean>`true`;
     return this.db
       .selectFrom('album_folder_version as mine')
       .innerJoin('album_folder_version as version', (join) =>
@@ -1535,15 +1564,16 @@ export class AlbumRepository {
         'asset.id',
         'asset.originalFileName',
         'version.matchedBy',
-        subfolderSql(folderPath).as('folder'),
-        sql<boolean>`version."assetId" = version."frontAssetId"`.as('isFront'),
+        subfolderSql(view.folderPath).as('folder'),
+        candidate.as('isCandidate'),
       ])
       .where('mine.albumId', '=', asUuid(albumId))
       .where('mine.assetId', '=', asUuid(assetId))
-      .where(isFolderPhoto('asset'))
-      .orderBy(sql`version."assetId" = version."frontAssetId"`, 'desc')
-      .orderBy('asset.fileCreatedAt')
-      .orderBy('asset.originalFileName')
+      .where(versionVisibleTo('asset', viewer))
+      .orderBy(candidate, 'desc')
+      .orderBy(sql`coalesce(array_position(${view.prefer}::text[], ${folder}), 100000)`)
+      .orderBy(folder)
+      .orderBy(sql`asset.id::text`)
       .execute();
   }
 

@@ -922,6 +922,7 @@ describe(TimelineService.name, () => {
         folderPath: '/photos/Event',
         exclude: expect.arrayContaining(['raw', 'video', 'videos', 'edits']),
         oneVersion: true,
+        prefer: ['edits'],
       });
     });
 

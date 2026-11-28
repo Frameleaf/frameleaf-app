@@ -1,5 +1,5 @@
 import { Kysely } from 'kysely';
-import { AlbumKind, AssetType, ChecksumAlgorithm } from 'src/enum.js';
+import { AlbumKind, AssetLockReason, AssetType, ChecksumAlgorithm } from 'src/enum.js';
 import { AlbumSummaryRepository } from 'src/repositories/album-summary.repository.js';
 import { AlbumRepository } from 'src/repositories/album.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
@@ -13,7 +13,7 @@ import { PartnerRepository } from 'src/repositories/partner.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
 import { DB } from 'src/schema/index.js';
 import { FolderAlbumService } from 'src/services/folder-album.service.js';
-import { albumFolderView, resolveAlbumFolderChoices } from 'src/utils/album-folders.js';
+import { type VersionViewer, albumFolderView, resolveAlbumFolderChoices } from 'src/utils/album-folders.js';
 import { EVENT_FOLDER_ALBUM_OPTIONS, LEGACY_FOLDER_ALBUM_OPTIONS } from 'src/utils/folder-albums.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { getKyselyDB } from 'test/utils.js';
@@ -387,5 +387,78 @@ describe(FolderAlbumService.name, () => {
     expect(again).toMatchObject({ parentId: event!.id });
     expect(await membersOf(defaultDatabase, again!.id)).toEqual([edit.id]);
     expect(await membersOf(defaultDatabase, event!.id)).toEqual([original.id]);
+  });
+
+  it('FL-1841: the version in front is the first one each viewer may see (Locked, hidden content)', async () => {
+    const { sut, ctx } = setup();
+    const { user, library, file } = await newLibrary(ctx, ['/fl1841/events']);
+    await ctx.get(LibraryRepository).update(library.id, {
+      folderAlbumOptions: { ...EVENT_FOLDER_ALBUM_OPTIONS, subfolders: { edits: 'join' } },
+    });
+    const root = '/fl1841/events/2026-11-19 - Nathan';
+    const at = new Date('2026-11-19T10:00:00Z');
+    const raw = await file(`${root}/RAW/IMG_1.CR3`, { takenAt: at });
+    const original = await file(`${root}/Original/IMG_1.JPG`, { takenAt: at });
+    const edit = await file(`${root}/Edits/IMG_1-edit.jpg`, { takenAt: at });
+    for (const { id } of [raw, original, edit]) {
+      await ctx.newExif({ assetId: id, make: 'Canon' });
+    }
+    // the edit, which stands in front, is Locked
+    await defaultDatabase
+      .insertInto('asset_lock')
+      .values({ assetId: edit.id, reason: AssetLockReason.Marked })
+      .execute();
+    await sut.sync(library.id);
+    const event = await folderAlbum(defaultDatabase, library.id, root);
+
+    const assets = ctx.get(AssetRepository);
+    const albums = ctx.get(AlbumRepository);
+    const view = albumFolderView(event!.id, root, resolveAlbumFolderChoices(null));
+    const auth = { user: { id: user.id } } as never;
+    const bucket = async (viewer: VersionViewer) => {
+      const { assets: json } = await assets.getTimeBucket(
+        '2026-11-01',
+        { albumId: event!.id, albumView: view, ...viewer },
+        auth,
+      );
+      const parsed = JSON.parse(json) as { id: string[]; versionCount?: number[] };
+      return Object.fromEntries(parsed.id.map((id, index) => [id, parsed.versionCount?.[index] ?? null]));
+    };
+    const fronts = async (viewer: VersionViewer) =>
+      (await albums.getFolderVersions(event!.id, raw.id, view, viewer)).map(({ id, isCandidate }) => [id, isCandidate]);
+
+    // a session that may not see Locked items gets the original in front; the edit is neither shown nor counted
+    expect(await bucket({})).toEqual({ [original.id]: 2 });
+    expect(await fronts({})).toEqual([
+      [original.id, true],
+      [raw.id, false],
+    ]);
+    // the owner's elevated session: the Locked edit takes its place in front, with the others behind it
+    expect(await bucket({ lockedOwnerId: user.id })).toEqual({ [edit.id]: 3 });
+    expect((await fronts({ lockedOwnerId: user.id }))[0]).toEqual([edit.id, true]);
+
+    // hidden content: a viewer whose rules hide the original gets the next version they may see
+    await defaultDatabase.deleteFrom('asset_lock').where('assetId', '=', edit.id).execute();
+    const tag = await defaultDatabase
+      .insertInto('tag')
+      .values({ userId: user.id, value: 'fl1841-hidden' })
+      .returning('id')
+      .executeTakeFirstOrThrow();
+    await defaultDatabase
+      .insertInto('tag_closure')
+      .values({ id_ancestor: tag.id, id_descendant: tag.id })
+      .onConflict((oc) => oc.doNothing())
+      .execute();
+    await defaultDatabase.insertInto('tag_asset').values({ tagId: tag.id, assetId: edit.id }).execute();
+    const hiddenContent = {
+      userId: user.id,
+      includeNsfw: false,
+      tagIds: [tag.id],
+      personIds: [],
+      petIds: [],
+      scope: 'owned' as const,
+    };
+    expect(await bucket({})).toEqual({ [edit.id]: 3 });
+    expect(await bucket({ hiddenContent })).toEqual({ [original.id]: 2 });
   });
 });
