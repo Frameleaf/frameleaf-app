@@ -330,7 +330,7 @@ export function validateBaseRaster(capture, envelope, binding) {
             '39fb6738dcf99ffcf04d7b73e72b24b0e8988a0e0a93f1883bc855db1a009741' ||
           // FL-1822 the Audio, Captions and Transcript workspace tabs; raster producer bytes unchanged.
           binding.sourceSha256 ===
-            '2310f8147dfcebd23d58738aa7f389090c7944ea10a0c554db64dd33257e328b')),
+            '6c5e608dea365d31407dc456b84d25e28b3ddaf8934ebd7f82dc73d7657ce677')),
     'SOURCE_BROWSER',
   )
   check(

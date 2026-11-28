@@ -988,8 +988,8 @@
     {
       "path": "patches/0218-studio-workspace-tabs.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
-      "sha256": "4956d1ec3f3b3383473cc58213d7fe2e684a3575557c11c460a47042439c1799"
+      "sha256": "9d895681602cdd73302f5ee203ef2ec81b1182193dbf428befac28e9dd2cd205"
     }
   ],
-  "sourceSha256": "2310f8147dfcebd23d58738aa7f389090c7944ea10a0c554db64dd33257e328b"
+  "sourceSha256": "6c5e608dea365d31407dc456b84d25e28b3ddaf8934ebd7f82dc73d7657ce677"
 }
