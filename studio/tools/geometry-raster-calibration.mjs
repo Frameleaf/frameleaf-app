@@ -348,7 +348,7 @@ export function validateBaseRaster(capture, envelope, binding) {
             'f190fc7e390d41772b8c35deeb1821aa07f036dcfb20548edbd2de5dfca7bbd2' ||
           // FL-1822 panel titles and the Colour clip strip; raster producer bytes unchanged.
           binding.sourceSha256 ===
-            'e6da159fcb6e905676c6296ea5a6eaf72b5ad89f86f4d8761f5f35f579c2b488')),
+            'e1ea739148d1305a8943d659bb67504b76764c1ab7d324cd5585126e24d68016')),
     'SOURCE_BROWSER',
   )
   check(

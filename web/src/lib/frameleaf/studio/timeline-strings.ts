@@ -195,6 +195,20 @@ export const TIMELINE_STRINGS = {
     host: 'frameleaf_studio_panel_close_color_scopes',
     engine: 'editor.panelTitles.closeColorScopes',
   },
+  panelResetColorScopesWidth: {
+    host: 'frameleaf_studio_panel_reset_color_scopes_width',
+    engine: 'editor.panelTitles.resetColorScopesWidth',
+  },
+  panelShowColorScopes: { host: 'frameleaf_studio_panel_show_color_scopes', engine: 'timeline.header.showColorScopes' },
+  panelShowColorScopesTooltip: {
+    host: 'frameleaf_studio_panel_show_color_scopes',
+    engine: 'timeline.header.showColorScopesTooltip',
+  },
+  panelHideColorScopes: { host: 'frameleaf_studio_panel_hide_color_scopes', engine: 'timeline.header.hideColorScopes' },
+  panelHideColorScopesTooltip: {
+    host: 'frameleaf_studio_panel_hide_color_scopes',
+    engine: 'timeline.header.hideColorScopesTooltip',
+  },
 } as const satisfies Record<string, { host: string; engine: string; values?: readonly string[] }>;
 
 export type TimelineString = keyof typeof TIMELINE_STRINGS;

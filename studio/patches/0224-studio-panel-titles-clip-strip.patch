@@ -1,5 +1,5 @@
 diff --git a/src/features/editor/components/audio-meter-panel.tsx b/src/features/editor/components/audio-meter-panel.tsx
-index 81c0654..a048266 100644
+index 81c0654..880e1fb 100644
 --- a/src/features/editor/components/audio-meter-panel.tsx
 +++ b/src/features/editor/components/audio-meter-panel.tsx
 @@ -1,3 +1,4 @@
@@ -7,15 +7,39 @@ index 81c0654..a048266 100644
  import { masterGainAtFrame } from '@/shared/utils/master-audio'
  import {
    lazy,
-@@ -1124,7 +1125,7 @@ export const AudioMeterPanel = memo(function AudioMeterPanel() {
+@@ -1124,7 +1125,10 @@ export const AudioMeterPanel = memo(function AudioMeterPanel() {
            className="flex min-w-0 items-center justify-between gap-1 border-b border-border bg-secondary/20 px-1.5"
            style={{ height: EDITOR_LAYOUT_CSS_VALUES.timelineTracksHeaderHeight }}
          >
 -          <span className="min-w-0 text-xs text-muted-foreground font-mono uppercase tracking-[0.12em]">
-+          <span className={`min-w-0 truncate ${PANEL_TITLE_CLASS}`}>
++          <span
++            className={`min-w-0 truncate ${PANEL_TITLE_CLASS}`}
++            title={t('editor.audioMeters.meters')}
++          >
              {t('editor.audioMeters.meters')}
            </span>
            {modeDropdown}
+diff --git a/src/features/editor/components/audio-mixer-view.tsx b/src/features/editor/components/audio-mixer-view.tsx
+index e940798..435f02f 100644
+--- a/src/features/editor/components/audio-mixer-view.tsx
++++ b/src/features/editor/components/audio-mixer-view.tsx
+@@ -1,3 +1,4 @@
++import { PANEL_TITLE_CLASS } from '@/shared/ui/panel-title'
+ import {
+   memo,
+   useCallback,
+@@ -1167,7 +1168,10 @@ export const AudioMixerView = memo(function AudioMixerView({
+           className="flex min-w-0 items-center justify-between gap-2 border-b border-border bg-secondary/20 px-2"
+           style={{ height: EDITOR_LAYOUT_CSS_VALUES.timelineTracksHeaderHeight }}
+         >
+-          <span className="min-w-0 text-xs text-muted-foreground font-mono uppercase tracking-[0.18em]">
++          <span
++            className={`min-w-0 truncate ${PANEL_TITLE_CLASS}`}
++            title={t('editor.audioMeters.mixer')}
++          >
+             {t('editor.audioMeters.mixer')}
+           </span>
+           {headerExtra ?? (
 diff --git a/src/features/editor/components/color-timeline-navigator.tsx b/src/features/editor/components/color-timeline-navigator.tsx
 index c028d1e..834ce7a 100644
 --- a/src/features/editor/components/color-timeline-navigator.tsx
@@ -121,10 +145,19 @@ index 0000000..d663f69
 +  })
 +})
 diff --git a/src/features/editor/components/mini-timeline/mini-timeline-track-lanes.tsx b/src/features/editor/components/mini-timeline/mini-timeline-track-lanes.tsx
-index 416510b..9dda675 100644
+index 416510b..7222883 100644
 --- a/src/features/editor/components/mini-timeline/mini-timeline-track-lanes.tsx
 +++ b/src/features/editor/components/mini-timeline/mini-timeline-track-lanes.tsx
-@@ -77,11 +77,21 @@ export const MiniTimelineTrackLanes = memo(function MiniTimelineTrackLanes({
+@@ -66,7 +66,7 @@ export const MiniTimelineTrackLanes = memo(function MiniTimelineTrackLanes({
+         {tracks.map((track, index) => (
+           <div
+             key={track.id}
+-            className="absolute left-0 right-0 border-t border-zinc-700/70"
++            className="absolute left-0 right-0 border-t border-border/70"
+             style={{ top: index * rowHeight }}
+           />
+         ))}
+@@ -77,11 +77,25 @@ export const MiniTimelineTrackLanes = memo(function MiniTimelineTrackLanes({
            const clipHeight =
              rowHeight >= 10 ? Math.max(8, Math.min(16, rowHeight - 4)) : Math.max(4, rowHeight - 2)
            const clipTop = laneIndex * rowHeight + Math.max(1, (rowHeight - clipHeight) / 2)
@@ -137,7 +170,11 @@ index 416510b..9dda675 100644
 +                ? 'bg-timeline-text/40'
 +                : clip.type === 'shape'
 +                  ? 'bg-timeline-shape/40'
-+                  : 'bg-timeline-video'
++                  : clip.type === 'adjustment'
++                    ? 'bg-purple-500/30'
++                    : clip.type === 'composition'
++                      ? 'bg-violet-600/40'
++                      : 'bg-timeline-video'
            const clipTone = selected
 -            ? 'border-primary bg-primary/20 ring-1 ring-primary/45'
 +            ? `border-primary ring-1 ring-primary/60 ${kindTone}`
@@ -163,7 +200,7 @@ index 0989125..88b0618 100644
  
  /**
 diff --git a/src/features/editor/components/preview-area.tsx b/src/features/editor/components/preview-area.tsx
-index 6cd7910..74fbc61 100644
+index 6cd7910..2aa3a2a 100644
 --- a/src/features/editor/components/preview-area.tsx
 +++ b/src/features/editor/components/preview-area.tsx
 @@ -1,3 +1,4 @@
@@ -171,7 +208,15 @@ index 6cd7910..74fbc61 100644
  import { useState, useEffect, useRef, useCallback, memo, useMemo, lazy, Suspense } from 'react'
  import { Columns2 } from 'lucide-react'
  import {
-@@ -628,7 +629,7 @@ export const PreviewArea = memo(function PreviewArea({
+@@ -621,14 +622,14 @@ export const PreviewArea = memo(function PreviewArea({
+         className={`flex flex-col min-w-0 min-h-0 ${hasSidePanels ? '' : 'flex-1'}`}
+         style={hasSidePanels ? { width: `${programPanelPercent}%` } : undefined}
+         role="region"
+-        aria-label="Program monitor"
++        aria-label={t('editor.panelTitles.program')}
+       >
+         {hasSidePanels && (
+           <div
              className="border-b border-border flex items-center px-3 flex-shrink-0"
              style={{ height: EDITOR_LAYOUT_CSS_VALUES.previewSplitHeaderHeight }}
            >
@@ -180,6 +225,17 @@ index 6cd7910..74fbc61 100644
            </div>
          )}
  
+@@ -794,8 +795,8 @@ export const PreviewArea = memo(function PreviewArea({
+               reversed
+               disabled={isMaskEditingActive}
+               showReset={Math.abs(displayedScopesSplitPercent - scopesResetPercent) > 0.5}
+-              resetLabel="Reset color scopes width"
+-              resetTooltip="Reset Color Scopes Width"
++              resetLabel={t('editor.panelTitles.resetColorScopesWidth')}
++              resetTooltip={t('editor.panelTitles.resetColorScopesWidth')}
+             />
+           </InteractionLockRegion>
+           <InteractionLockRegion
 diff --git a/src/features/editor/components/properties-sidebar/index.tsx b/src/features/editor/components/properties-sidebar/index.tsx
 index 8346756..c6d50cb 100644
 --- a/src/features/editor/components/properties-sidebar/index.tsx
@@ -377,7 +433,7 @@ index 1063dcd..da9f500 100644
              onClick={onClose}
              className="p-1 rounded hover:bg-muted transition-colors shrink-0"
 diff --git a/src/features/timeline/components/keyframe-graph-panel.tsx b/src/features/timeline/components/keyframe-graph-panel.tsx
-index 104e972..5f0a699 100644
+index 104e972..81ff15b 100644
 --- a/src/features/timeline/components/keyframe-graph-panel.tsx
 +++ b/src/features/timeline/components/keyframe-graph-panel.tsx
 @@ -1,3 +1,4 @@
@@ -415,31 +471,66 @@ index 104e972..5f0a699 100644
      [allItemsById, allKeyframesByItemId, canvas, currentFrame],
    )
    const handleSetPropertyExpression = useCallback(
-@@ -3421,7 +3431,7 @@ export const KeyframeGraphPanel = memo(function KeyframeGraphPanel({
+@@ -3420,13 +3430,13 @@ export const KeyframeGraphPanel = memo(function KeyframeGraphPanel({
+ 
        {surface !== 'edit' && (
          <div className="h-8 flex items-center justify-between px-3 bg-secondary/30 border-b border-border">
-           <div className="flex items-center gap-2">
+-          <div className="flex items-center gap-2">
 -            <span className="text-xs font-medium text-muted-foreground">
-+            <span className={PANEL_TITLE_CLASS}>
++          <div className="flex min-w-0 items-center gap-2">
++            <span className={`min-w-0 truncate ${PANEL_TITLE_CLASS}`}>
                {surface === 'motion'
                  ? t('editor.compose.motionCurves')
                  : t('timeline.keyframeEditor.title')}
+               {selectedItemForEditor && (
+-                <span className="ml-2 text-foreground">
++                <span className="ml-2 font-normal text-muted-foreground">
+                   · {selectedItemForEditor.label || selectedItemForEditor.type}
+                 </span>
+               )}
 diff --git a/src/i18n/locales/partials/en/editor.json b/src/i18n/locales/partials/en/editor.json
-index 9be735b..5e688c2 100644
+index 9be735b..6466408 100644
 --- a/src/i18n/locales/partials/en/editor.json
 +++ b/src/i18n/locales/partials/en/editor.json
-@@ -1,5 +1,11 @@
+@@ -1,5 +1,12 @@
  {
    "editor": {
 +    "panelTitles": {
 +      "program": "Program",
 +      "source": "Source: {{name}}",
 +      "colorScopes": "Color scopes",
-+      "closeColorScopes": "Close color scopes"
++      "closeColorScopes": "Close color scopes",
++      "resetColorScopesWidth": "Reset color scopes width"
 +    },
      "compose": {
        "title": "Compositions",
        "newComposition": "New composition",
+diff --git a/src/i18n/locales/partials/en/timeline.json b/src/i18n/locales/partials/en/timeline.json
+index 53f24e3..4a3835c 100644
+--- a/src/i18n/locales/partials/en/timeline.json
++++ b/src/i18n/locales/partials/en/timeline.json
+@@ -157,8 +157,8 @@
+       "enableSnapping": "Enable Snapping",
+       "audioSkimmingDisabled": "Audio Skimming Disabled",
+       "audioSkimmingEnabled": "Audio Skimming Enabled",
+-      "hideColorScopes": "Hide Color Scopes",
+-      "hideColorScopesTooltip": "Hide Color Scopes",
++      "hideColorScopes": "Hide color scopes",
++      "hideColorScopesTooltip": "Hide color scopes",
+       "linkedSelectionOff": "Linked Selection Off",
+       "linkedSelectionOn": "Linked Selection On",
+       "linkedSelectionTooltip": "Linked selection: {{state}} ({{shortcut}})",
+@@ -178,8 +178,8 @@
+       "setInPointTooltip": "Set In Point",
+       "setOutPoint": "Set Out Point",
+       "setOutPointTooltip": "Set Out Point",
+-      "showColorScopes": "Show Color Scopes",
+-      "showColorScopesTooltip": "Show Color Scopes",
++      "showColorScopes": "Show color scopes",
++      "showColorScopesTooltip": "Show color scopes",
+       "slideTool": "Slide Tool",
+       "slipSlideTools": "Slip Slide Tools",
+       "slipSlideToolsTooltip": "Slip Slide Tools",
 diff --git a/src/shared/ui/panel-title.ts b/src/shared/ui/panel-title.ts
 new file mode 100644
 index 0000000..3b05128
