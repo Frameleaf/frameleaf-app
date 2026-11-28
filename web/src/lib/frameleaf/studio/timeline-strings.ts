@@ -56,6 +56,27 @@ export const TIMELINE_STRINGS = {
   timelineUndoTooltip: { host: 'frameleaf_studio_timeline_undo', engine: 'timeline.header.undoTooltip' },
   timelineRedo: { host: 'frameleaf_studio_timeline_redo', engine: 'timeline.header.redo' },
   timelineRedoTooltip: { host: 'frameleaf_studio_timeline_redo', engine: 'timeline.header.redoTooltip' },
+  // Undo and redo name the edit they act on once there is one.
+  timelineUndoWithLabel: {
+    host: 'frameleaf_studio_timeline_undo_with_label',
+    engine: 'timeline.header.undoWithLabel',
+    values: ['label'],
+  },
+  timelineUndoWithLabelTooltip: {
+    host: 'frameleaf_studio_timeline_undo_with_label',
+    engine: 'timeline.header.undoWithLabelTooltip',
+    values: ['label'],
+  },
+  timelineRedoWithLabel: {
+    host: 'frameleaf_studio_timeline_redo_with_label',
+    engine: 'timeline.header.redoWithLabel',
+    values: ['label'],
+  },
+  timelineRedoWithLabelTooltip: {
+    host: 'frameleaf_studio_timeline_redo_with_label',
+    engine: 'timeline.header.redoWithLabelTooltip',
+    values: ['label'],
+  },
   timelineKeyframesShow: {
     host: 'frameleaf_studio_timeline_keyframes_show',
     engine: 'timeline.keyframeEditor.editLane.show',
@@ -162,6 +183,20 @@ export const TIMELINE_STRINGS = {
   timelineKeyframesAll: {
     host: 'frameleaf_studio_timeline_keyframes_all',
     engine: 'timeline.keyframeEditor.allProperties',
+  },
+  timelineKeyframesCountOne: {
+    host: 'frameleaf_studio_timeline_keyframes_count_one',
+    engine: 'timeline.keyframeEditor.keyframes_one',
+    values: ['count'],
+  },
+  timelineKeyframesCountOther: {
+    host: 'frameleaf_studio_timeline_keyframes_count_other',
+    engine: 'timeline.keyframeEditor.keyframes_other',
+    values: ['count'],
+  },
+  timelineKeyframesFiltered: {
+    host: 'frameleaf_studio_timeline_keyframes_filtered',
+    engine: 'timeline.keyframeEditor.filtered',
   },
 } as const satisfies Record<string, { host: string; engine: string; values?: readonly string[] }>;
 

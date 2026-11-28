@@ -219,6 +219,12 @@ export const ENGINE_CONTROLS_STRINGS = {
     engine: 'engineControls.grade.hue.addPoint',
   },
   controlsGradeHueHint: { host: 'frameleaf_studio_controls_grade_hue_hint', engine: 'engineControls.grade.hue.hint' },
+  // The scopes' warning (FL-1822): the two states that change how far the readings can be trusted.
+  controlsScopeFloatUnavailable: {
+    host: 'frameleaf_studio_controls_scope_float_unavailable',
+    engine: 'preview.scopes.floatUnavailable',
+  },
+  controlsScopeStale: { host: 'frameleaf_studio_controls_scope_stale', engine: 'preview.scopes.stale' },
 } as const satisfies Record<string, { host: string; engine: string; values?: readonly string[] }>;
 
 export type EngineControlsString = keyof typeof ENGINE_CONTROLS_STRINGS;

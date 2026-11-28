@@ -282,6 +282,72 @@ their timecode once set, voice-over (red only while recording), and a More menu 
 selection, sound while scrubbing and clearing In and Out or markers. Its words are host-translated
 (`web/src/lib/frameleaf/studio/timeline-strings.ts`) in all eleven languages.
 
+Patch 0211 makes each track head one row: kind and name, then bordered buttons to hide a picture
+track or mute a sound track, solo, lock and keep in sync, highlighted when not in the usual state;
+close gaps and the other track actions stay in the right-click menu. The Align row leaves the strip
+above the transport for the inspector's Transform group as "Align in the frame", and spacing evenly
+shows once three clips are chosen.
+
+Patch 0212 lays the media bin out as the approved Studio does: Library, Project and Scenes on their
+own row with a quiet pressed state, search across the panel, Add files as a quiet button with a menu
+for subtitles and web addresses, 32px filter, sort and view controls named in sentence case, and
+tiles in two columns to start. Its words are host-translated (`bin-strings.ts`).
+
+Patch 0213 makes the left rail Media, Add, Transcript and AI. Add holds the titles, shapes, effects,
+transitions and animations panels behind chips with a one-line hint; tiles are two columns with
+labels that wrap, and transition previews play between two-tone stills in the clip colours.
+
+Patch 0214 makes the keyframes lane readable: it opens with a Keyframes title and its count, the
+frame fields read In clip and In project, the Property, Animated and All header and the row labels
+are 11 to 12px with room for Position, group headings are sentence case and the docked title drops
+the clip's internal id.
+
+Patch 0215 tidies the colour workspace: each grading value has its label above it, wheel values read
+in full with the master level beside the wheel's name and R, G and B in one row, curve channels wrap
+without covering the panel header, and the scopes' signal and revision line is out of view, replaced
+by an amber warning when the scopes read a fallback capture or a frame that is no longer current.
+The keyframe ruler takes a coarser step on a narrow lane so its numbers stay apart.
+
+Patch 0216 restyles the Keyboard shortcuts and Editor settings dialogs and keeps their features.
+Keyboard shortcuts still remaps keys but leads with the command list, with the on-screen keyboard
+behind Show keyboard and Reset all shortcuts named apart from its confirm button; Editor settings
+keeps its four pages with sentence-case labels and drops the auto-save interval, since the host
+saves as you work. Their words are host-translated (`dialog-strings.ts`).
+
+Patch 0217 adds two Editor settings: Default photo length (2 to 10 seconds, 3 to start, used for
+photos added to the timeline) and Default transition length (each transition's own length unless one
+is chosen, also used when a transition is dragged or clicked onto a cut). The settings say they apply
+to every project on this device, and the shortcuts editor marks changed commands as Changed.
+
+Patch 0218 completes the tab bar with Audio, Captions and Transcript. Audio opens the clip
+inspector's sound tab at full height, Captions the transcript and captions panel beside the
+full-height inspector, and Transcript that panel with the timeline at full width; leaving Captions or
+Transcript closes the left panel again if it was closed before.
+
+Patch 0219 ends the tab bar with Restore, a button styled like the tabs. Restoration runs in the
+host's Restore panel, so a host build substitutes `restore-service` and the button asks the host to
+open that panel; the engine on its own does not offer it.
+
+Patch 0220 makes the editor follow the host's Basic or Advanced (the editor store's `advancedTools`;
+absent means Basic). Basic hides Transform's fields, the colour scopes and the colour wheels and
+curves, except on a clip already graded with them, so a grade made in Advanced can still be seen,
+changed or reset. The engine on its own keeps every tool.
+
+Patch 0221 writes Editor settings' lengths in the number format the host sets (the person's "Dates
+and numbers" choice, or the device's), not the browser's or the editor's text language.
+
+Patch 0222 makes Add > Titles lead with the approved Studio's calm title styles in two groups,
+Simple (Lower third, Caption bar, Big title, Minimal) and Two lines (Name and place, Date and place,
+Quote, Chapter card), drawn in the clip colours; six of them are new title styles, and every other
+style follows under More styles. Their names are host-translated (`bin-strings.ts`).
+
+Patch 0223 clears polish leftovers of the patches above without changing behaviour: the zoom and
+voice-over buttons are 32px like the rest of the toolbar, the bin's remaining header buttons and its
+Type and Sort menus match Add files, the last inspector selects and number fields take 0208's 34px
+field and group headings its 11px heading, both dialogs use the theme's border and surface colours,
+the rail's collapse button is named for screen readers, and the scopes' warning, undo and redo with
+the edit's name, the changed-shortcut count and the keyframe count are host-translated.
+
 Patch 0185 (FL-1564) adds four transitions other editors use: Film Dissolve (a cross dissolve mixed in
 linear light), Cross Zoom (both clips zoom with a radial blur, `strength`), Cube Spin (the clips are two
 faces of a box turning a quarter turn in perspective, four directions) and Page Peel (the outgoing clip

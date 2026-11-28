@@ -29,6 +29,7 @@ describe('engine control strings (FL-1562, FL-1555, FL-1561, FL-1563, FL-1559)',
     expect(strings.controlsChannelsMonoLeft).toBe('Mono from left');
     expect(strings.controlsMarkersTimeIn).toBe('{{time}} in');
     expect(strings.controlsGradeHuePoint).toBe('Point at hue {{degrees}}°');
+    expect(strings.controlsScopeStale).toBe('These readings may not match the current frame.');
     expect(Object.keys(strings)).toEqual(Object.keys(ENGINE_CONTROLS_STRINGS));
   });
 });
