@@ -148,8 +148,10 @@ export class FolderAlbumService extends BaseService {
       if (library.ownerId !== ownerId || !library.folderAlbums || options.shape !== 'every' || library.deletedAt) {
         continue;
       }
-      // reading every folder of a large library is not free: once per library until it changes or is checked again
-      const key = `${library.id}:${new Date(library.updatedAt).getTime()}:${library.refreshedAt ? new Date(library.refreshedAt).getTime() : 0}`;
+      // reading every folder of a large library is not free: once per library until it changes, is checked again or
+      // its albums are made (their number is in the key, so an answer read before the first sync is not kept)
+      const made = await this.libraryRepository.getFolderAlbumCounts(library.id);
+      const key = `${library.id}:${new Date(library.updatedAt).getTime()}:${library.refreshedAt ? new Date(library.refreshedAt).getTime() : 0}:${made.albums}`;
       if (suggestionCache.has(key)) {
         const cached = suggestionCache.get(key);
         if (cached) {
@@ -157,7 +159,7 @@ export class FolderAlbumService extends BaseService {
         }
         continue;
       }
-      const suggestion = await this.readSuggestion(library, options);
+      const suggestion = await this.readSuggestion(library, options, made);
       for (const old of suggestionCache.keys().filter((old) => old.startsWith(`${library.id}:`))) {
         suggestionCache.delete(old);
       }
@@ -172,13 +174,13 @@ export class FolderAlbumService extends BaseService {
   private async readSuggestion(
     library: { id: string; name: string; importPaths: string[] },
     options: FolderAlbumSuggestion['options'],
+    { albums, empty }: { albums: number; empty: number },
   ): Promise<FolderAlbumSuggestion | undefined> {
     const roots = this.rootsOf(library);
     const counts = await this.libraryRepository.getFolderPhotoCounts(library.id);
     if (!looksLikeEventFolders(roots, counts)) {
       return;
     }
-    const { albums, empty } = await this.libraryRepository.getFolderAlbumCounts(library.id);
     const suggestedAlbums = planFolderAlbums(roots, counts, EVENT_FOLDER_ALBUM_OPTIONS, library.name).size;
     return suggestedAlbums < albums
       ? { libraryId: library.id, name: library.name, albums, empty, suggestedAlbums, options }
@@ -314,7 +316,13 @@ export class FolderAlbumService extends BaseService {
         continue;
       }
       const parent = link.parentId ? linkOfAlbum.get(link.parentId) : undefined;
-      const outOfGone = !!parent && !tree.has(parent.folderPath) && isSameOrInside(node.folderPath, parent.folderPath);
+      // not out of one the owner made their own or kept: an album inside it may be there by their hand
+      const outOfGone =
+        !!parent &&
+        !parent.isUserEdited &&
+        !parent.isKept &&
+        !tree.has(parent.folderPath) &&
+        isSameOrInside(node.folderPath, parent.folderPath);
       const intoNew = link.parentId === null && !!node.parentPath && madeNow.has(node.parentPath);
       if (!outOfGone && !intoNew) {
         continue;

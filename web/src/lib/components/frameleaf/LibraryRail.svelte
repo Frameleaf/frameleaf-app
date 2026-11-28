@@ -411,7 +411,14 @@
    */
   let photoDropId = $state<string | null>(null);
   const photoTarget = (event: DragEvent) => {
-    if (!draggedPhotos() || !(event.target instanceof Element)) {
+    // an album being moved or a pin reordered is not photos, and neither are files from the computer
+    if (
+      !draggedPhotos() ||
+      dragId ||
+      pinDragId ||
+      event.dataTransfer?.types.includes('Files') ||
+      !(event.target instanceof Element)
+    ) {
       return;
     }
     const id = event.target.closest<HTMLElement>('a[data-album-id]')?.dataset.albumId;

@@ -641,6 +641,7 @@
           return;
         }
         albumFolders = result;
+        foldersFailedFor = undefined;
         // the versions were worked out again: the photos read before then may show one twice
         if (result.versionsChanged) {
           void timelineManager?.refresh();
@@ -649,6 +650,8 @@
       // without the sections the timeline is asked for their photos too (`albumSections` below)
       .catch(() => {
         if (!controller.signal.aborted) {
+          // and no sections drawn from an earlier read, or their photos would show twice
+          albumFolders = undefined;
           foldersFailedFor = id;
         }
       });

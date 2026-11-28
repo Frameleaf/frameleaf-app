@@ -21,7 +21,8 @@ export const startPhotoDrag = (event: DragEvent, assetId: string) => {
   dragged = selected.includes(assetId) ? [...selected] : [assetId];
   if (event.dataTransfer) {
     event.dataTransfer.effectAllowed = 'copy';
-    event.dataTransfer.setData('text/plain', String(dragged.length));
+    // a type of its own: a browser needs some data to start a drag, and text would be typed into a field it lands on
+    event.dataTransfer.setData('application/x-frameleaf-photos', String(dragged.length));
   }
 };
 
