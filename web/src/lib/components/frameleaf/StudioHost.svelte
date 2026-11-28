@@ -1728,6 +1728,10 @@
     .fl-studio-label:not(.keep) {
       display: none;
     }
+    /* Basic and Advanced keep their words, which the switch needs, in less room. */
+    .fl-studio-mode button {
+      padding: 0 0.5rem;
+    }
   }
   /* 700px: the header wraps and the title takes a row of its own, as the prototype did. */
   @media (max-width: 43.75rem) {

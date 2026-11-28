@@ -713,25 +713,41 @@
    * Basic or Advanced (the approved Studio's header switch, FL-1822), remembered per project in this
    * browser. Basic is the start, as in the approved Studio; Advanced shows the editor's advanced tools.
    */
-  const modeKey = $derived(`frameleaf.studio.mode.${project.id}`);
+  // An unsaved draft is not remembered: a new project starts in Basic, and the draft's choice
+  // carries over to the project its first save (or Save as copy) creates.
+  const modeKey = $derived(project.id === STUDIO_DRAFT_PROJECT_ID ? null : `frameleaf.studio.mode.${project.id}`);
   let mode = $state<StudioWorkspaceMode>('basic');
+  const storeMode = (key: string, value: StudioWorkspaceMode) => {
+    try {
+      globalThis.localStorage?.setItem(key, value);
+    } catch {
+      // A private window without storage keeps the choice for this page only.
+    }
+  };
   $effect(() => {
     const key = modeKey;
     untrack(() => {
+      if (!key) {
+        return;
+      }
+      let stored: string | null = null;
       try {
-        mode = globalThis.localStorage?.getItem(key) === 'advanced' ? 'advanced' : 'basic';
+        stored = globalThis.localStorage?.getItem(key) ?? null;
       } catch {
-        mode = 'basic';
+        // Unreadable storage keeps the current choice.
+      }
+      if (stored === 'basic' || stored === 'advanced') {
+        mode = stored;
+      } else {
+        storeMode(key, mode);
       }
     });
   });
   $effect(() => {
     const value = mode;
     const key = untrack(() => modeKey);
-    try {
-      globalThis.localStorage?.setItem(key, value);
-    } catch {
-      // A private window without storage keeps the choice for this page only.
+    if (key) {
+      storeMode(key, value);
     }
   });
 
