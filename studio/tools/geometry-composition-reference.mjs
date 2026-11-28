@@ -194,7 +194,9 @@ export function compositionSourcesFor(sourceSha256) {
     // FL-1822 Editor settings writes lengths in the host's number format; changes no composition or raster producer.
     sourceSha256 === 'eb8bd3cad28c2c808ad2d64714b1e71224639d6e7006f4b9304b11d1ec697c46' ||
     // FL-1822 Add > Titles gains the approved Studio's title styles; changes no composition or raster producer.
-    sourceSha256 === 'fab442c9929363129ea2adc61295d7a633618aefbd8381324bbbf5b05271a5ab'
+    sourceSha256 === 'fab442c9929363129ea2adc61295d7a633618aefbd8381324bbbf5b05271a5ab' ||
+    // FL-1822 Edit's keyframes lane rows, diamond column and Easing menu; changes no composition or raster producer.
+    sourceSha256 === 'e961a69eeb613bcd9fbffcacbd141c909a8da89b1c9fa18ed2ced88dcd7565c6'
   )
     return {
       ...COMPOSITION_SOURCES,

@@ -1,0 +1,521 @@
+diff --git a/src/features/keyframes/components/dopesheet-editor/dopesheet-constants.ts b/src/features/keyframes/components/dopesheet-editor/dopesheet-constants.ts
+index d966fd3..313b063 100644
+--- a/src/features/keyframes/components/dopesheet-editor/dopesheet-constants.ts
++++ b/src/features/keyframes/components/dopesheet-editor/dopesheet-constants.ts
+@@ -10,6 +10,8 @@ export const MIN_VISIBLE_FRAMES = 20
+ export const SNAP_THRESHOLD_PX = 8
+ export const GROUP_HEADER_HEIGHT = 22
+ export const ROW_HEIGHT = 30
++/** Row height of Edit's keyframes lane (`classic`), as in the approved Studio (FL-1822). */
++export const LANE_ROW_HEIGHT = 44
+ export const RULER_HEIGHT = 22
+ /** Width of the sheet's vertical scrollbar strip, right of the scroll viewport. */
+ export const SHEET_SCROLLBAR_STRIP_WIDTH = 12
+diff --git a/src/features/keyframes/components/dopesheet-editor/dopesheet-interpolation-buttons.test.tsx b/src/features/keyframes/components/dopesheet-editor/dopesheet-interpolation-buttons.test.tsx
+new file mode 100644
+index 0000000..f2129cf
+--- /dev/null
++++ b/src/features/keyframes/components/dopesheet-editor/dopesheet-interpolation-buttons.test.tsx
+@@ -0,0 +1,32 @@
++import { fireEvent, render, screen } from '@testing-library/react'
++import { describe, expect, it, vi } from 'vite-plus/test'
++import { DopesheetInterpolationButtons } from './dopesheet-interpolation-buttons'
++
++const options = [
++  { value: 'linear' as const, label: 'Linear' },
++  { value: 'ease-in-out' as const, label: 'Ease in and out' },
++]
++
++describe('Easing menu of the keyframes lane (FL-1822)', () => {
++  it('names the selected easing and picks another from the menu', async () => {
++    const onSelect = vi.fn()
++    render(
++      <DopesheetInterpolationButtons
++        menu
++        options={options}
++        selected="ease-in-out"
++        disabled={false}
++        onSelect={onSelect}
++      />,
++    )
++    const trigger = screen.getByRole('button', { name: 'Easing: Ease in and out' })
++    fireEvent.pointerDown(trigger, { button: 0, ctrlKey: false, pointerType: 'mouse' })
++    fireEvent.click(await screen.findByRole('menuitemcheckbox', { name: 'Linear' }))
++    expect(onSelect).toHaveBeenCalledWith('linear')
++  })
++
++  it('reads Easing and is unavailable with no keyframe selected', () => {
++    render(<DopesheetInterpolationButtons menu options={options} selected={null} disabled />)
++    expect(screen.getByRole('button', { name: 'Easing' })).toBeDisabled()
++  })
++})
+diff --git a/src/features/keyframes/components/dopesheet-editor/dopesheet-interpolation-buttons.tsx b/src/features/keyframes/components/dopesheet-editor/dopesheet-interpolation-buttons.tsx
+index 308319f..5628605 100644
+--- a/src/features/keyframes/components/dopesheet-editor/dopesheet-interpolation-buttons.tsx
++++ b/src/features/keyframes/components/dopesheet-editor/dopesheet-interpolation-buttons.tsx
+@@ -3,12 +3,21 @@ import type { EasingType } from '@/types/keyframe'
+ import { cn } from '@/shared/ui/cn'
+ import { Button } from '@/components/ui/button'
+ import { InterpolationTypeIcon } from './interpolation-type-icon'
++import { ChevronDown } from 'lucide-react'
++import {
++  DropdownMenu,
++  DropdownMenuCheckboxItem,
++  DropdownMenuContent,
++  DropdownMenuTrigger,
++} from '@/components/ui/dropdown-menu'
+ 
+ interface DopesheetInterpolationButtonsProps {
+   options: ReadonlyArray<{ value: EasingType; label: string }>
+   selected: EasingType | null | undefined
+   disabled: boolean
+   onSelect?: (value: EasingType) => void
++  /** Edit's keyframes lane shows one Easing menu, as in the approved Studio (FL-1822). */
++  menu?: boolean
+ }
+ 
+ export function DopesheetInterpolationButtons({
+@@ -16,6 +25,7 @@ export function DopesheetInterpolationButtons({
+   selected,
+   disabled,
+   onSelect,
++  menu = false,
+ }: DopesheetInterpolationButtonsProps) {
+   const { t } = useTranslation()
+ 
+@@ -23,6 +33,40 @@ export function DopesheetInterpolationButtons({
+     return null
+   }
+ 
++  if (menu) {
++    const current = options.find((option) => option.value === selected)
++    const easingLabel = t('timeline.keyframeEditor.easingMenu', { defaultValue: 'Easing' })
++    return (
++      <DropdownMenu>
++        <DropdownMenuTrigger asChild disabled={disabled || !onSelect}>
++          <Button
++            variant="outline"
++            size="sm"
++            className="h-7 gap-1.5 px-2.5 text-xs font-normal"
++            aria-label={current ? `${easingLabel}: ${current.label}` : easingLabel}
++          >
++            {current ? <InterpolationTypeIcon type={current.value} /> : null}
++            <span>{current?.label ?? easingLabel}</span>
++            <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
++          </Button>
++        </DropdownMenuTrigger>
++        <DropdownMenuContent align="end" className="min-w-[13rem]">
++          {options.map((option) => (
++            <DropdownMenuCheckboxItem
++              key={option.value}
++              checked={option.value === selected}
++              onSelect={() => onSelect?.(option.value)}
++              className="gap-2 text-[13px]"
++            >
++              <InterpolationTypeIcon type={option.value} />
++              {option.label}
++            </DropdownMenuCheckboxItem>
++          ))}
++        </DropdownMenuContent>
++      </DropdownMenu>
++    )
++  }
++
+   return (
+     <div
+       className="flex items-center gap-0.5 rounded-md border border-border/80 bg-muted/20 px-0.5 py-0.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]"
+diff --git a/src/features/keyframes/components/dopesheet-editor/index.tsx b/src/features/keyframes/components/dopesheet-editor/index.tsx
+index 6a1ac58..258c720 100644
+--- a/src/features/keyframes/components/dopesheet-editor/index.tsx
++++ b/src/features/keyframes/components/dopesheet-editor/index.tsx
+@@ -138,6 +138,7 @@ import {
+   PROPERTY_COLUMN_WIDTH,
+   SPACIOUS_PROPERTY_COLUMN_WIDTH,
+   ROW_HEIGHT,
++  LANE_ROW_HEIGHT,
+   RULER_HEIGHT,
+   SHEET_SCROLLBAR_STRIP_WIDTH,
+   SNAP_THRESHOLD_PX,
+@@ -1600,13 +1601,7 @@ export const DopesheetEditor = memo(function DopesheetEditor({
+     linkedTimelineViewportWidth !== undefined &&
+     linkedTimelineViewportWidth > 0
+   const timelineCellBorderWidth =
+-    presentation === 'classic'
+-      ? hasLinkedTimelineAxis
+-        ? 0
+-        : 1
+-      : presentation === 'lanes'
+-        ? 1
+-        : 0
++    presentation === 'classic' ? (hasLinkedTimelineAxis ? 0 : 1) : presentation === 'lanes' ? 1 : 0
+   const effectiveTimelineWidth = Math.max(
+     hasLinkedTimelineAxis
+       ? linkedTimelineViewportWidth
+@@ -1715,12 +1710,8 @@ export const DopesheetEditor = memo(function DopesheetEditor({
+   }, [affectedFrameRange, effectiveTimelineWidth, frameToX])
+   const sharedGridFrameToX = useCallback(
+     (frame: number) =>
+-      getFrameAxisX(
+-        frame,
+-        viewport,
+-        effectiveTimelineWidth + timelineCellBorderWidth,
+-        0,
+-      ) - timelineCellBorderWidth,
++      getFrameAxisX(frame, viewport, effectiveTimelineWidth + timelineCellBorderWidth, 0) -
++      timelineCellBorderWidth,
+     [effectiveTimelineWidth, timelineCellBorderWidth, viewport],
+   )
+   const getRenderedKeyframeX = useCallback(
+@@ -1839,10 +1830,12 @@ export const DopesheetEditor = memo(function DopesheetEditor({
+     }
+     return positions
+   }, [sheetRowsStructure, getRenderedKeyframeX])
++  // Edit's keyframes lane has the approved Studio's taller rows (FL-1822).
++  const rowHeight = presentation === 'classic' ? LANE_ROW_HEIGHT : ROW_HEIGHT
+   const renderedSheetEntries = useMemo(() => {
+     const entries: RenderedSheetEntry[] = []
+     const textMotionRowCount = presentation === 'classic' ? textMotionBands.length : 0
+-    let top = textMotionRowCount * ROW_HEIGHT
++    let top = textMotionRowCount * rowHeight
+ 
+     for (const group of groupedSheetRows) {
+       const inline = presentation === 'classic' || inlinePropertyGroupIdSet.has(group.id)
+@@ -1857,7 +1850,7 @@ export const DopesheetEditor = memo(function DopesheetEditor({
+ 
+       for (const row of group.rows) {
+         entries.push({ type: 'row', row, top, indented: !inline })
+-        top += ROW_HEIGHT
++        top += rowHeight
+       }
+     }
+ 
+@@ -1870,6 +1863,7 @@ export const DopesheetEditor = memo(function DopesheetEditor({
+     groupedSheetRows,
+     inlinePropertyGroupIdSet,
+     presentation,
++    rowHeight,
+     textMotionBands.length,
+   ])
+   useLayoutEffect(() => {
+@@ -1908,12 +1902,18 @@ export const DopesheetEditor = memo(function DopesheetEditor({
+             {
+               keyframeId: keyframe.id,
+               x,
+-              y: entry.top + ROW_HEIGHT / 2,
++              y: entry.top + rowHeight / 2,
+             },
+           ]
+         })
+       }),
+-    [getRenderedKeyframeX, isPropertyLocked, renderedKeyframeXById, renderedSheetEntries.entries],
++    [
++      getRenderedKeyframeX,
++      isPropertyLocked,
++      renderedKeyframeXById,
++      renderedSheetEntries.entries,
++      rowHeight,
++    ],
+   )
+ 
+   const xToFrame = useCallback(
+@@ -1970,8 +1970,7 @@ export const DopesheetEditor = memo(function DopesheetEditor({
+     if (timelineGridDivisions && timelineGridDivisions > 0) {
+       return Array.from(
+         { length: timelineGridDivisions + 1 },
+-        (_, index) =>
+-          viewport.startFrame + (index / timelineGridDivisions) * frameRange,
++        (_, index) => viewport.startFrame + (index / timelineGridDivisions) * frameRange,
+       )
+     }
+     const step = getNiceTickStep(frameRange, effectiveTimelineWidth)
+@@ -3578,6 +3577,7 @@ export const DopesheetEditor = memo(function DopesheetEditor({
+   const renderPropertyRowContent = useCallback(
+     (row: DopesheetPropertyRow, options?: { classic?: boolean; indented?: boolean }) => {
+       const classic = options?.classic ?? false
++      const lane = presentation === 'classic'
+       const rowLocked = isPropertyLocked(row.property)
+       const axisConstraint = axisConstraintByProperty[row.property]
+       const compoundRow = compoundPropertyRows[row.property]
+@@ -3922,7 +3922,11 @@ export const DopesheetEditor = memo(function DopesheetEditor({
+           <div
+             className={cn(
+               'flex h-full min-w-0 items-center overflow-hidden text-[11px] font-medium leading-none text-foreground/90',
+-              compoundRow ? 'w-[72px] shrink-0 pl-1' : classic ? 'flex-1 pl-1 pr-1' : 'flex-1 pl-[10px] pr-1',
++              compoundRow
++                ? 'w-[72px] shrink-0 pl-1'
++                : classic
++                  ? 'flex-1 pl-1 pr-1'
++                  : 'flex-1 pl-[10px] pr-1',
+             )}
+             title={rowLabel}
+           >
+@@ -3962,6 +3966,65 @@ export const DopesheetEditor = memo(function DopesheetEditor({
+               </Button>
+             ) : null}
+           </div>
++          {/* The approved Studio's lane puts the add/remove diamond in its own column (FL-1822). */}
++          {lane && (
++            <Button
++              type="button"
++              variant="ghost"
++              size="sm"
++              className={cn(
++                'h-7 w-6 shrink-0 p-0 hover:bg-transparent',
++                row.controls.hasKeyframeAtCurrentFrame
++                  ? 'text-primary hover:text-primary'
++                  : 'text-muted-foreground hover:text-foreground',
++                isCurrentFrameBlocked &&
++                  !row.controls.hasKeyframeAtCurrentFrame &&
++                  'opacity-40 cursor-not-allowed',
++              )}
++              onClick={() => handleRowToggleKeyframe(row.property, row.controls.currentKeyframes)}
++              disabled={
++                disabled ||
++                rowLocked ||
++                (!row.controls.hasKeyframeAtCurrentFrame &&
++                  (isCurrentFrameBlocked || !onAddKeyframe))
++              }
++              title={
++                !row.controls.hasKeyframeAtCurrentFrame && isCurrentFrameBlocked
++                  ? t('timeline.keyframeEditor.transitionBlocked')
++                  : row.controls.hasKeyframeAtCurrentFrame
++                    ? t('timeline.keyframeEditor.removePropertyKeyframeAtPlayhead', {
++                        property: rowLabel,
++                        defaultValue: `Remove ${rowLabel} keyframe at playhead`,
++                      })
++                    : t('timeline.keyframeEditor.togglePropertyKeyframeAtPlayhead', {
++                        property: rowLabel,
++                        defaultValue: `Toggle ${rowLabel} keyframe at playhead`,
++                      })
++              }
++              aria-label={
++                !row.controls.hasKeyframeAtCurrentFrame && isCurrentFrameBlocked
++                  ? t('timeline.keyframeEditor.transitionBlocked')
++                  : row.controls.hasKeyframeAtCurrentFrame
++                    ? t('timeline.keyframeEditor.removePropertyKeyframeAtPlayhead', {
++                        property: rowLabel,
++                        defaultValue: `Remove ${rowLabel} keyframe at playhead`,
++                      })
++                    : t('timeline.keyframeEditor.togglePropertyKeyframeAtPlayhead', {
++                        property: rowLabel,
++                        defaultValue: `Toggle ${rowLabel} keyframe at playhead`,
++                      })
++              }
++            >
++              <span
++                className={cn(
++                  'block h-[10px] w-[10px] rotate-45 border-[1.5px] transition-colors',
++                  row.controls.hasKeyframeAtCurrentFrame
++                    ? 'border-primary bg-primary'
++                    : 'border-current bg-transparent',
++                )}
++              />
++            </Button>
++          )}
+           <div className="ml-auto flex items-center gap-0">
+             {compoundRow ? (
+               <CompoundPropertyInputs
+@@ -4111,7 +4174,12 @@ export const DopesheetEditor = memo(function DopesheetEditor({
+                 })}
+               />
+             )}
+-            <div className="flex w-[60px] shrink-0 items-center gap-0 rounded-sm border border-border/70 bg-background/85 px-0">
++            <div
++              className={cn(
++                'flex shrink-0 items-center gap-0 rounded-sm border border-border/70 bg-background/85 px-0',
++                lane ? 'w-[40px]' : 'w-[60px]',
++              )}
++            >
+               <Button
+                 type="button"
+                 variant="ghost"
+@@ -4130,62 +4198,66 @@ export const DopesheetEditor = memo(function DopesheetEditor({
+               >
+                 <ChevronLeft className="h-[9px] w-[9px]" />
+               </Button>
+-              <Button
+-                type="button"
+-                variant="ghost"
+-                size="sm"
+-                className={cn(
+-                  'h-5 w-5 p-0 hover:bg-transparent',
+-                  row.controls.hasKeyframeAtCurrentFrame
+-                    ? 'text-neutral-200 hover:text-neutral-200'
+-                    : 'text-muted-foreground hover:text-foreground',
+-                  isCurrentFrameBlocked &&
+-                    !row.controls.hasKeyframeAtCurrentFrame &&
+-                    'opacity-40 cursor-not-allowed',
+-                )}
+-                onClick={() => handleRowToggleKeyframe(row.property, row.controls.currentKeyframes)}
+-                disabled={
+-                  disabled ||
+-                  rowLocked ||
+-                  (!row.controls.hasKeyframeAtCurrentFrame &&
+-                    (isCurrentFrameBlocked || !onAddKeyframe))
+-                }
+-                title={
+-                  !row.controls.hasKeyframeAtCurrentFrame && isCurrentFrameBlocked
+-                    ? t('timeline.keyframeEditor.transitionBlocked')
+-                    : row.controls.hasKeyframeAtCurrentFrame
+-                      ? t('timeline.keyframeEditor.removePropertyKeyframeAtPlayhead', {
+-                          property: rowLabel,
+-                          defaultValue: `Remove ${rowLabel} keyframe at playhead`,
+-                        })
+-                      : t('timeline.keyframeEditor.togglePropertyKeyframeAtPlayhead', {
+-                          property: rowLabel,
+-                          defaultValue: `Toggle ${rowLabel} keyframe at playhead`,
+-                        })
+-                }
+-                aria-label={
+-                  !row.controls.hasKeyframeAtCurrentFrame && isCurrentFrameBlocked
+-                    ? t('timeline.keyframeEditor.transitionBlocked')
+-                    : row.controls.hasKeyframeAtCurrentFrame
+-                      ? t('timeline.keyframeEditor.removePropertyKeyframeAtPlayhead', {
+-                          property: rowLabel,
+-                          defaultValue: `Remove ${rowLabel} keyframe at playhead`,
+-                        })
+-                      : t('timeline.keyframeEditor.togglePropertyKeyframeAtPlayhead', {
+-                          property: rowLabel,
+-                          defaultValue: `Toggle ${rowLabel} keyframe at playhead`,
+-                        })
+-                }
+-              >
+-                <span
++              {!lane && (
++                <Button
++                  type="button"
++                  variant="ghost"
++                  size="sm"
+                   className={cn(
+-                    'block h-[7px] w-[7px] rotate-45 border transition-colors',
++                    'h-5 w-5 p-0 hover:bg-transparent',
+                     row.controls.hasKeyframeAtCurrentFrame
+-                      ? 'border-neutral-200 bg-neutral-200'
+-                      : 'border-current bg-transparent',
++                      ? 'text-neutral-200 hover:text-neutral-200'
++                      : 'text-muted-foreground hover:text-foreground',
++                    isCurrentFrameBlocked &&
++                      !row.controls.hasKeyframeAtCurrentFrame &&
++                      'opacity-40 cursor-not-allowed',
+                   )}
+-                />
+-              </Button>
++                  onClick={() =>
++                    handleRowToggleKeyframe(row.property, row.controls.currentKeyframes)
++                  }
++                  disabled={
++                    disabled ||
++                    rowLocked ||
++                    (!row.controls.hasKeyframeAtCurrentFrame &&
++                      (isCurrentFrameBlocked || !onAddKeyframe))
++                  }
++                  title={
++                    !row.controls.hasKeyframeAtCurrentFrame && isCurrentFrameBlocked
++                      ? t('timeline.keyframeEditor.transitionBlocked')
++                      : row.controls.hasKeyframeAtCurrentFrame
++                        ? t('timeline.keyframeEditor.removePropertyKeyframeAtPlayhead', {
++                            property: rowLabel,
++                            defaultValue: `Remove ${rowLabel} keyframe at playhead`,
++                          })
++                        : t('timeline.keyframeEditor.togglePropertyKeyframeAtPlayhead', {
++                            property: rowLabel,
++                            defaultValue: `Toggle ${rowLabel} keyframe at playhead`,
++                          })
++                  }
++                  aria-label={
++                    !row.controls.hasKeyframeAtCurrentFrame && isCurrentFrameBlocked
++                      ? t('timeline.keyframeEditor.transitionBlocked')
++                      : row.controls.hasKeyframeAtCurrentFrame
++                        ? t('timeline.keyframeEditor.removePropertyKeyframeAtPlayhead', {
++                            property: rowLabel,
++                            defaultValue: `Remove ${rowLabel} keyframe at playhead`,
++                          })
++                        : t('timeline.keyframeEditor.togglePropertyKeyframeAtPlayhead', {
++                            property: rowLabel,
++                            defaultValue: `Toggle ${rowLabel} keyframe at playhead`,
++                          })
++                  }
++                >
++                  <span
++                    className={cn(
++                      'block h-[7px] w-[7px] rotate-45 border transition-colors',
++                      row.controls.hasKeyframeAtCurrentFrame
++                        ? 'border-neutral-200 bg-neutral-200'
++                        : 'border-current bg-transparent',
++                    )}
++                  />
++                </Button>
++              )}
+               <Button
+                 type="button"
+                 variant="ghost"
+@@ -4337,9 +4409,7 @@ export const DopesheetEditor = memo(function DopesheetEditor({
+               className={cn(
+                 MINI_ICON_BUTTON_CLASS,
+                 'self-center text-muted-foreground hover:text-foreground',
+-                curveVisible
+-                  ? 'text-primary hover:text-primary/80'
+-                  : 'opacity-30 hover:opacity-60',
++                curveVisible ? 'text-primary hover:text-primary/80' : 'opacity-30 hover:opacity-60',
+               )}
+               onClick={(event) => {
+                 event.stopPropagation()
+@@ -4698,11 +4768,11 @@ export const DopesheetEditor = memo(function DopesheetEditor({
+   const propertyTimelineRowStyle = useMemo(
+     () => ({
+       ...propertyGridStyle,
+-      height: ROW_HEIGHT,
++      height: rowHeight,
+       contentVisibility: presentation === 'lanes' ? ('auto' as const) : undefined,
+-      containIntrinsicSize: presentation === 'lanes' ? `auto ${ROW_HEIGHT}px` : undefined,
++      containIntrinsicSize: presentation === 'lanes' ? `auto ${rowHeight}px` : undefined,
+     }),
+-    [presentation, propertyGridStyle],
++    [presentation, propertyGridStyle, rowHeight],
+   )
+   const rowElements = useMemo(
+     () => [
+@@ -4861,7 +4931,7 @@ export const DopesheetEditor = memo(function DopesheetEditor({
+           <div
+             key={row.property}
+             className="border-b border-border/60"
+-            style={{ height: ROW_HEIGHT }}
++            style={{ height: rowHeight }}
+           >
+             {renderPropertyRowContent(row, { indented: !inline })}
+           </div>
+@@ -4893,6 +4963,7 @@ export const DopesheetEditor = memo(function DopesheetEditor({
+       inlinePropertyGroupIdSet,
+       renderGroupHeaderContent,
+       renderPropertyRowContent,
++      rowHeight,
+     ],
+   )
+   const emptyStateMessage = hasPropertyFilters
+@@ -5176,6 +5247,14 @@ export const DopesheetEditor = memo(function DopesheetEditor({
+               handleHeaderFrameInputKeyDown={handleHeaderFrameInputKeyDown}
+             />
+           </div>
++          {/* The approved Studio's lane sets the easing of the selected keys from one menu (FL-1822). */}
++          <DopesheetInterpolationButtons
++            menu
++            options={interpolationOptions}
++            selected={selectedInterpolation}
++            disabled={disabled || interpolationDisabled}
++            onSelect={onInterpolationChange}
++          />
+         </div>
+ 
+         <div
+diff --git a/src/i18n/locales/partials/en/keyframes.json b/src/i18n/locales/partials/en/keyframes.json
+index 65b250b..4cf2aa5 100644
+--- a/src/i18n/locales/partials/en/keyframes.json
++++ b/src/i18n/locales/partials/en/keyframes.json
+@@ -63,6 +63,7 @@
+       "displayTimeRulerFrames": "Display time ruler in frames",
+       "showAllHandles": "Show all handles",
+       "autoZoomGraphHeight": "Auto zoom graph height",
++      "easingMenu": "Easing",
+       "easing": {
+         "hold": "Hold",
+         "linear": "Linear",

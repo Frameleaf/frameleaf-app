@@ -1,11 +1,11 @@
 /**
  * The words of the editor's timeline (FL-1822): the toolbar's Tool menu, In and Out, More menu and
- * tooltips; the track buttons and menu; the keyframes lane's header; and the Align row that moved
- * from above the transport into the inspector's Transform group. Translated by the host, as for the
- * shell strings (`shell-strings.ts`): the engine speaks fewer languages than the host, so the host
- * sends its translation in `context.strings` and the adapter writes it over the engine key. A value
- * filled in at run time travels as an i18next `{{name}}` marker. Several engine keys can share one
- * host message.
+ * tooltips; the track buttons and menu; the keyframes lane's header and Easing menu; and the Align
+ * row that moved from above the transport into the inspector's Transform group. Translated by the
+ * host, as for the shell strings (`shell-strings.ts`): the engine speaks fewer languages than the
+ * host, so the host sends its translation in `context.strings` and the adapter writes it over the
+ * engine key. A value filled in at run time travels as an i18next `{{name}}` marker. Several engine
+ * keys can share one host message.
  */
 export const TIMELINE_STRINGS = {
   timelineToolSelect: { host: 'frameleaf_studio_timeline_tool_select', engine: 'timeline.header.tools.select' },
@@ -162,6 +162,30 @@ export const TIMELINE_STRINGS = {
   timelineKeyframesAll: {
     host: 'frameleaf_studio_timeline_keyframes_all',
     engine: 'timeline.keyframeEditor.allProperties',
+  },
+  keyframesEasing: {
+    host: 'frameleaf_studio_timeline_keyframes_easing',
+    engine: 'timeline.keyframeEditor.easingMenu',
+  },
+  keyframesEasingHold: {
+    host: 'frameleaf_studio_timeline_keyframes_easing_hold',
+    engine: 'timeline.keyframeEditor.easing.hold',
+  },
+  keyframesEasingLinear: {
+    host: 'frameleaf_studio_timeline_keyframes_easing_linear',
+    engine: 'timeline.keyframeEditor.easing.linear',
+  },
+  keyframesEasingIn: {
+    host: 'frameleaf_studio_timeline_keyframes_easing_ease_in',
+    engine: 'timeline.keyframeEditor.easing.easeIn',
+  },
+  keyframesEasingInOut: {
+    host: 'frameleaf_studio_timeline_keyframes_easing_ease_in_out',
+    engine: 'timeline.keyframeEditor.easing.easeInOut',
+  },
+  keyframesEasingOut: {
+    host: 'frameleaf_studio_timeline_keyframes_easing_ease_out',
+    engine: 'timeline.keyframeEditor.easing.easeOut',
   },
 } as const satisfies Record<string, { host: string; engine: string; values?: readonly string[] }>;
 
