@@ -1,0 +1,496 @@
+diff --git a/src/features/editor/components/settings-dialog.tsx b/src/features/editor/components/settings-dialog.tsx
+index 91b54de..0c5eec5 100644
+--- a/src/features/editor/components/settings-dialog.tsx
++++ b/src/features/editor/components/settings-dialog.tsx
+@@ -365,11 +365,58 @@ async function regenerateProjectThumbnails(
+   return result
+ }
+ 
++/** A length in the reader's own number format ("0,5" in French), apart from the plural count. */
++const formatSeconds = (seconds: number) => new Intl.NumberFormat().format(seconds)
++
++/** The lengths Editor settings offers, as the approved Studio's settings (FL-1822). */
++const PHOTO_LENGTH_SECONDS = [2, 3, 5, 8, 10] as const
++const TRANSITION_LENGTH_SECONDS = [0.25, 0.5, 0.6, 1, 2] as const
++
++function LengthSelect({
++  label,
++  value,
++  options,
++  onChange,
++}: {
++  label: string
++  value: string
++  options: Array<{ value: string; label: string }>
++  onChange: (value: string) => void
++}) {
++  // A length saved before the list changed still shows rather than a blank field.
++  const listed = options.some((option) => option.value === value)
++    ? options
++    : [...options, { value, label: value }]
++  return (
++    <div className="flex items-center justify-between gap-3">
++      <Label className="text-sm">{label}</Label>
++      <Select value={value} onValueChange={onChange}>
++        <SelectTrigger className="w-60 shrink-0" aria-label={label}>
++          <SelectValue />
++        </SelectTrigger>
++        <SelectContent>
++          {listed.map((option) => (
++            <SelectPrimitive.Item
++              key={option.value}
++              value={option.value}
++              className="relative flex w-full cursor-default select-none items-center rounded-sm py-1.5 pl-2 pr-2 text-sm outline-none focus:bg-accent focus:text-accent-foreground"
++            >
++              <SelectPrimitive.ItemText>{option.label}</SelectPrimitive.ItemText>
++            </SelectPrimitive.Item>
++          ))}
++        </SelectContent>
++      </Select>
++    </div>
++  )
++}
++
+ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
+   const { t } = useTranslation()
+   const snapEnabled = useSettingsStore((s) => s.snapEnabled)
+   const showWaveforms = useSettingsStore((s) => s.showWaveforms)
+   const showFilmstrips = useSettingsStore((s) => s.showFilmstrips)
++  const defaultPhotoSeconds = useSettingsStore((s) => s.defaultPhotoSeconds)
++  const defaultTransitionSeconds = useSettingsStore((s) => s.defaultTransitionSeconds)
+   const enableFilmstripExtraction = useSettingsStore((s) => s.enableFilmstripExtraction)
+   const autoSaveInterval = useSettingsStore((s) => s.autoSaveInterval)
+   const maxUndoHistory = useSettingsStore((s) => s.maxUndoHistory)
+@@ -596,6 +643,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
+                 <button
+                   key={section.id}
+                   type="button"
++                  aria-current={activeSection === section.id ? 'page' : undefined}
+                   onClick={() => setActiveSection(section.id)}
+                   className={cn(
+                     'flex items-center gap-2 rounded-lg px-3 py-2 text-left text-[13px] transition-colors duration-150 ease-out motion-reduce:transition-none',
+@@ -746,6 +794,9 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
+                             </div>
+                           </div>
+                         )}
++                        <p className="pt-2 text-xs text-muted-foreground">
++                          {t('settings.appliesToDevice')}
++                        </p>
+                       </div>
+                     )}
+ 
+@@ -858,6 +909,9 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
+                             ))}
+                           </div>
+                         </div>
++                        <p className="pt-2 text-xs text-muted-foreground">
++                          {t('settings.appliesToDevice')}
++                        </p>
+                       </div>
+                     )}
+ 
+@@ -905,6 +959,45 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
+                             onCheckedChange={(v) => setSetting('enableFilmstripExtraction', v)}
+                           />
+                         </div>
++                        <LengthSelect
++                          label={t('settings.timeline.defaultPhotoLength')}
++                          value={String(defaultPhotoSeconds)}
++                          options={PHOTO_LENGTH_SECONDS.map((seconds) => ({
++                            value: String(seconds),
++                            label: t('settings.timeline.lengthSeconds', {
++                              count: seconds,
++                              seconds: formatSeconds(seconds),
++                            }),
++                          }))}
++                          onChange={(value) => setSetting('defaultPhotoSeconds', Number(value))}
++                        />
++                        <LengthSelect
++                          label={t('settings.timeline.defaultTransitionLength')}
++                          value={
++                            defaultTransitionSeconds === null
++                              ? 'own'
++                              : String(defaultTransitionSeconds)
++                          }
++                          options={[
++                            { value: 'own', label: t('settings.timeline.transitionOwnLength') },
++                            ...TRANSITION_LENGTH_SECONDS.map((seconds) => ({
++                              value: String(seconds),
++                              label: t('settings.timeline.lengthSeconds', {
++                                count: seconds,
++                                seconds: formatSeconds(seconds),
++                              }),
++                            })),
++                          ]}
++                          onChange={(value) =>
++                            setSetting(
++                              'defaultTransitionSeconds',
++                              value === 'own' ? null : Number(value),
++                            )
++                          }
++                        />
++                        <p className="pt-2 text-xs text-muted-foreground">
++                          {t('settings.appliesToDevice')}
++                        </p>
+                       </div>
+                     )}
+ 
+diff --git a/src/features/settings/components/hotkey-editor.tsx b/src/features/settings/components/hotkey-editor.tsx
+index b5430f4..79c6cb0 100644
+--- a/src/features/settings/components/hotkey-editor.tsx
++++ b/src/features/settings/components/hotkey-editor.tsx
+@@ -891,6 +891,8 @@ export function HotkeyEditor() {
+     if (token === 'mod' || token === 'alt' || token === 'shift') return
+     stopCapture()
+     setHoveredToken(null)
++    // A key the chosen command already uses keeps it chosen (FL-1822).
++    if (splitHotkeyBinding(hotkeys[selectedKey]).includes(token)) return
+     const sections = activeLayer ? [activeLayer] : HOTKEY_EDITOR_SECTIONS
+     for (const section of sections) {
+       for (const item of section.items) {
+diff --git a/src/features/settings/stores/settings-store.ts b/src/features/settings/stores/settings-store.ts
+index 1afa70f..cd156dc 100644
+--- a/src/features/settings/stores/settings-store.ts
++++ b/src/features/settings/stores/settings-store.ts
+@@ -32,6 +32,10 @@ interface AppSettings {
+   showWaveforms: boolean
+   showFilmstrips: boolean
+   enableFilmstripExtraction: boolean
++  // Length of a photo added to the timeline, in seconds (FL-1822).
++  defaultPhotoSeconds: number
++  // Length of a new transition in seconds, or null for each transition's own length (FL-1822).
++  defaultTransitionSeconds: number | null
+ 
+   // Interface
+   editorDensity: EditorDensityPresetName
+@@ -65,6 +69,18 @@ interface AppSettings {
+ 
+ export type CaptionSearchMode = 'keyword' | 'semantic'
+ 
++const DEFAULT_PHOTO_SECONDS = 3
++
++function normalizePhotoSeconds(value: unknown): number {
++  return typeof value === 'number' && Number.isFinite(value) && value > 0
++    ? value
++    : DEFAULT_PHOTO_SECONDS
++}
++
++function normalizeTransitionSeconds(value: unknown): number | null {
++  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : null
++}
++
+ function normalizeCaptionSearchMode(value: unknown): CaptionSearchMode {
+   return value === 'semantic' ? 'semantic' : 'keyword'
+ }
+@@ -143,6 +159,8 @@ const DEFAULT_SETTINGS: AppSettings = {
+   showWaveforms: true,
+   showFilmstrips: true,
+   enableFilmstripExtraction: true,
++  defaultPhotoSeconds: DEFAULT_PHOTO_SECONDS,
++  defaultTransitionSeconds: null,
+ 
+   // Interface
+   editorDensity: DEFAULT_EDITOR_DENSITY_PRESET,
+@@ -326,6 +344,8 @@ export const useSettingsStore = create<SettingsStore>()(
+             captioningIntervalUnit,
+           ),
+           captionSearchMode: normalizeCaptionSearchMode(typedState.captionSearchMode),
++          defaultPhotoSeconds: normalizePhotoSeconds(typedState.defaultPhotoSeconds),
++          defaultTransitionSeconds: normalizeTransitionSeconds(typedState.defaultTransitionSeconds),
+           defaultCaptionStylePresetId: normalizeCaptionStylePresetId(
+             typedState.defaultCaptionStylePresetId,
+           ),
+diff --git a/src/features/timeline/stores/actions/transition-actions.default-length.test.ts b/src/features/timeline/stores/actions/transition-actions.default-length.test.ts
+new file mode 100644
+index 0000000..9db0bf0
+--- /dev/null
++++ b/src/features/timeline/stores/actions/transition-actions.default-length.test.ts
+@@ -0,0 +1,72 @@
++// @vitest-environment node
++
++import { afterEach, beforeEach, describe, expect, it } from 'vite-plus/test'
++import { makeTimelineTrack as makeTrack, makeTimelineVideoItem } from '../../test-helpers'
++import { useItemsStore } from '../items-store'
++import { useTransitionsStore } from '../transitions-store'
++import { useKeyframesStore } from '../keyframes-store'
++import { useTimelineCommandStore } from '../timeline-command-store'
++import { useTimelineSettingsStore } from '../timeline-settings-store'
++import { useSettingsStore } from '../../deps/settings'
++import { TRANSITION_CONFIGS } from '@/types/transition'
++import { addTransition } from './transition-actions'
++import { resolveTransitionTargetForEdge } from '../../utils/transition-targets'
++
++describe('the default transition length setting (FL-1822)', () => {
++  beforeEach(() => {
++    useTimelineCommandStore.getState().clearHistory()
++    useTimelineSettingsStore.setState({ fps: 30, isDirty: false })
++    useItemsStore
++      .getState()
++      .setTracks([makeTrack({ id: 'video-track', name: 'V1', order: 0, kind: 'video' })])
++    useItemsStore.getState().setItems([
++      makeTimelineVideoItem({
++        id: 'left',
++        trackId: 'video-track',
++        from: 0,
++        durationInFrames: 90,
++        sourceDuration: 300,
++      }),
++      makeTimelineVideoItem({
++        id: 'right',
++        trackId: 'video-track',
++        from: 90,
++        durationInFrames: 90,
++        sourceStart: 60,
++        sourceEnd: 150,
++        sourceDuration: 300,
++      }),
++    ])
++    useTransitionsStore.getState().setTransitions([])
++    useKeyframesStore.getState().setKeyframes([])
++  })
++
++  afterEach(() => {
++    useSettingsStore.getState().setSetting('defaultTransitionSeconds', null)
++  })
++
++  it("uses each transition's own length when no length is chosen", () => {
++    expect(addTransition('left', 'right', 'crossfade')).toBe(true)
++    expect(useTransitionsStore.getState().transitions[0]?.durationInFrames).toBe(
++      TRANSITION_CONFIGS.crossfade.defaultDuration,
++    )
++  })
++
++  it('uses the chosen length in seconds at the project frame rate', () => {
++    useSettingsStore.getState().setSetting('defaultTransitionSeconds', 0.5)
++    expect(addTransition('left', 'right', 'crossfade')).toBe(true)
++    expect(useTransitionsStore.getState().transitions[0]?.durationInFrames).toBe(15)
++  })
++
++  it('suggests the chosen length when a transition is dragged or clicked onto a cut', () => {
++    useSettingsStore.getState().setSetting('defaultTransitionSeconds', 0.5)
++    const target = resolveTransitionTargetForEdge({
++      itemId: 'left',
++      edge: 'right',
++      items: useItemsStore.getState().items,
++      transitions: [],
++      timelineFps: 30,
++    })
++    expect(target?.suggestedDurationInFrames).toBe(15)
++  })
++})
+diff --git a/src/features/timeline/stores/actions/transition-actions.ts b/src/features/timeline/stores/actions/transition-actions.ts
+index 84a7130..4378f8d 100644
+--- a/src/features/timeline/stores/actions/transition-actions.ts
++++ b/src/features/timeline/stores/actions/transition-actions.ts
+@@ -17,6 +17,8 @@ import { TRANSITION_CONFIGS } from '@/types/transition'
+ import { useItemsStore } from '../items-store'
+ import { useTransitionsStore } from '../transitions-store'
+ import { useTimelineSettingsStore } from '../timeline-settings-store'
++import { useSettingsStore } from '../../deps/settings'
++import { getDefaultTransitionDurationInFrames } from '../../utils/transition-targets'
+ import {
+   canAddTransition,
+   areFramesAligned,
+@@ -62,7 +64,12 @@ export function addTransition(
+       }
+ 
+       const config = TRANSITION_CONFIGS[type]
+-      const requestedDuration = durationInFrames ?? config.defaultDuration
++      const settingSeconds = useSettingsStore.getState().defaultTransitionSeconds
++      const requestedDuration =
++        durationInFrames ??
++        (settingSeconds
++          ? getDefaultTransitionDurationInFrames(useTimelineSettingsStore.getState().fps)
++          : config.defaultDuration)
+       let duration = Math.max(1, Math.min(Math.round(requestedDuration), maxByClipDuration))
+ 
+       const leftEnd = leftClip.from + leftClip.durationInFrames
+diff --git a/src/features/timeline/utils/dropped-media.test.ts b/src/features/timeline/utils/dropped-media.test.ts
+index c5ece9c..3b0ae56 100644
+--- a/src/features/timeline/utils/dropped-media.test.ts
++++ b/src/features/timeline/utils/dropped-media.test.ts
+@@ -7,6 +7,7 @@ import {
+   buildDroppedMediaTimelineItems,
+   getDroppedMediaDurationInFrames,
+ } from './dropped-media'
++import { useSettingsStore } from '../deps/settings'
+ 
+ function makeMedia(overrides: Partial<MediaMetadata> = {}): MediaMetadata {
+   return {
+@@ -34,6 +35,15 @@ describe('getDroppedMediaDurationInFrames', () => {
+   it('defaults still images to three seconds', () => {
+     expect(getDroppedMediaDurationInFrames({ duration: 0 }, 'image', 30)).toBe(90)
+   })
++
++  it('uses the default photo length from Editor settings (FL-1822)', () => {
++    useSettingsStore.getState().setSetting('defaultPhotoSeconds', 5)
++    try {
++      expect(getDroppedMediaDurationInFrames({ duration: 0 }, 'image', 30)).toBe(150)
++    } finally {
++      useSettingsStore.getState().setSetting('defaultPhotoSeconds', 3)
++    }
++  })
+ })
+ 
+ describe('buildDroppedMediaTimelineItem', () => {
+diff --git a/src/features/timeline/utils/dropped-media.ts b/src/features/timeline/utils/dropped-media.ts
+index dd0704b..500834a 100644
+--- a/src/features/timeline/utils/dropped-media.ts
++++ b/src/features/timeline/utils/dropped-media.ts
+@@ -7,6 +7,7 @@ import {
+   type MediaTimelineItemType,
+   type MediaTimelinePlacement,
+ } from './media-timeline-item-builder'
++import { useSettingsStore } from '../deps/settings'
+ 
+ export type DroppableMediaType = MediaTimelineItemType
+ 
+@@ -21,6 +22,9 @@ export function getDroppedMediaDurationInFrames(
+   media: Pick<MediaMetadata, 'duration'> & Partial<Pick<MediaMetadata, 'fps'>>,
+   mediaType: DroppableMediaType,
+   timelineFps: number,
++  // Editor settings' photo length; host commands pass a fixed length so a graph never depends on
++  // the device it was built on (FL-1822).
++  photoSeconds: number = useSettingsStore.getState().defaultPhotoSeconds,
+ ): number {
+   if (mediaType === 'lottie') {
+     const lottieFrames = Math.round(media.duration * (media.fps || timelineFps))
+@@ -33,7 +37,7 @@ export function getDroppedMediaDurationInFrames(
+     return durationInFrames
+   }
+ 
+-  return mediaType === 'image' ? timelineFps * 3 : timelineFps
++  return mediaType === 'image' ? Math.max(1, Math.round(timelineFps * photoSeconds)) : timelineFps
+ }
+ 
+ export function buildDroppedMediaTimelineItem(params: {
+diff --git a/src/features/timeline/utils/transition-targets.ts b/src/features/timeline/utils/transition-targets.ts
+index 80aacbf..bb120f0 100644
+--- a/src/features/timeline/utils/transition-targets.ts
++++ b/src/features/timeline/utils/transition-targets.ts
+@@ -1,4 +1,5 @@
+ import { TRANSITION_CONFIGS, type Transition } from '@/types/transition'
++import { useSettingsStore } from '../deps/settings'
+ import type { TimelineItem } from '@/types/timeline'
+ import {
+   areFramesAligned,
+@@ -7,6 +8,17 @@ import {
+   isTransitionPair,
+ } from './transition-utils'
+ 
++/**
++ * The length a new transition gets when nothing asks for one: the Editor settings length in
++ * seconds at the project frame rate, or crossfade's own length (FL-1822).
++ */
++export function getDefaultTransitionDurationInFrames(timelineFps: number): number {
++  const seconds = useSettingsStore.getState().defaultTransitionSeconds
++  return seconds
++    ? Math.max(1, Math.round(seconds * timelineFps))
++    : TRANSITION_CONFIGS.crossfade.defaultDuration
++}
++
+ export interface ResolvedTransitionTarget {
+   leftClipId: string
+   rightClipId: string
+@@ -131,11 +143,12 @@ export function resolveTransitionTargetForEdge(params: {
+     edge,
+     items,
+     transitions,
+-    preferredDurationInFrames = TRANSITION_CONFIGS.crossfade.defaultDuration,
+     alignment = 0.5,
+     allowDurationClamp = true,
+     timelineFps = 30,
+   } = params
++  const preferredDurationInFrames =
++    params.preferredDurationInFrames ?? getDefaultTransitionDurationInFrames(timelineFps)
+ 
+   const item = items.find((candidate) => candidate.id === itemId)
+   if (!item || !isTransitionPair(item, item) || isLinkedSoundClip(item, items)) return null
+@@ -199,11 +212,12 @@ export function resolveTransitionTargetFromSelection(params: {
+     selectedItemIds,
+     items,
+     transitions,
+-    preferredDurationInFrames = TRANSITION_CONFIGS.crossfade.defaultDuration,
+     alignment = 0.5,
+     allowDurationClamp = true,
+     timelineFps = 30,
+   } = params
++  const preferredDurationInFrames =
++    params.preferredDurationInFrames ?? getDefaultTransitionDurationInFrames(timelineFps)
+ 
+   if (selectedItemIds.length !== 1) return null
+   const itemId = selectedItemIds[0]!
+diff --git a/src/i18n/locales/en.json b/src/i18n/locales/en.json
+index 56611f5..c6bcba7 100644
+--- a/src/i18n/locales/en.json
++++ b/src/i18n/locales/en.json
+@@ -114,12 +114,17 @@
+       "defaultCaptionStyleDescription": "Style applied to captions generated from transcripts or AI captioning."
+     },
+     "timeline": {
+-      "snapByDefault": "Snap by Default",
++      "snapByDefault": "Snap by default",
+       "snapByDefaultDescription": "Sets the initial snap state when a project opens.",
+       "showWaveforms": "Show waveforms",
+       "showFilmstrips": "Show filmstrips",
+       "enableFilmstripExtraction": "Make filmstrips",
+-      "enableFilmstripExtractionDescription": "Generate video thumbnail strips during import and timeline display."
++      "enableFilmstripExtractionDescription": "Generate video thumbnail strips during import and timeline display.",
++      "defaultPhotoLength": "Default photo length",
++      "defaultTransitionLength": "Default transition length",
++      "transitionOwnLength": "Each transition's own length",
++      "lengthSeconds_one": "{{seconds}} second",
++      "lengthSeconds_other": "{{seconds}} seconds"
+     },
+     "storage": {
+       "generateMissingProxies": "Make missing proxies",
+@@ -175,6 +180,7 @@
+       "actionClearCache": "Clear cache",
+       "actionRegenerateThumbnails": "Regenerate thumbnails",
+       "actionDeleteProxies": "Delete proxies"
+-    }
++    },
++    "appliesToDevice": "These apply to every project you edit on this device."
+   }
+ }
+diff --git a/src/i18n/locales/partials/en/projects.json b/src/i18n/locales/partials/en/projects.json
+index 055f8be..117ab5c 100644
+--- a/src/i18n/locales/partials/en/projects.json
++++ b/src/i18n/locales/partials/en/projects.json
+@@ -373,11 +373,11 @@
+       "hotkeys": {
+         "title": "Keyboard shortcuts",
+         "subtitle": "Choose a command, then press Record to give it new keys",
+-        "customCount_one": "{{count}} custom",
+-        "customCount_other": "{{count}} custom",
++        "customCount_one": "{{count}} changed",
++        "customCount_other": "{{count}} changed",
+         "all": "All",
+         "selectedCommand": "Selected command",
+-        "custom": "Custom",
++        "custom": "Changed",
+         "current": "Current",
+         "default": "Default",
+         "browserOverride": "Browser override",
+@@ -518,7 +518,7 @@
+         "searchResultCount_one": "{{count}} result",
+         "searchResultCount_other": "{{count}} results",
+         "filters": {
+-          "custom": "Customized",
++          "custom": "Changed",
+           "conflicts": "Conflicts",
+           "unassigned": "Unassigned"
+         },
+diff --git a/src/i18n/locales/partials/en/remaining-ui.json b/src/i18n/locales/partials/en/remaining-ui.json
+index d5095e5..0dc4796 100644
+--- a/src/i18n/locales/partials/en/remaining-ui.json
++++ b/src/i18n/locales/partials/en/remaining-ui.json
+@@ -287,7 +287,7 @@
+         "importedCommands": "{{count}} command(s) imported",
+         "remappedCount": "{{count}} remapped",
+         "ignoredCount": "{{count}} ignored",
+-        "customCount": "{{count}} custom"
++        "customCount": "{{count}} changed"
+       },
+       "localInference": {
+         "activeJobs": "{{count}} active job(s)",

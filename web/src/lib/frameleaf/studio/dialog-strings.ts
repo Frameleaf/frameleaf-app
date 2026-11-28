@@ -70,15 +70,56 @@ export const DIALOG_STRINGS = {
     host: 'frameleaf_studio_dialog_settings_clear_cache',
     engine: 'settings.storage.clearCache',
   },
-} as const satisfies Record<string, { host: string; engine: string }>;
+  dialogShortcutsChanged: {
+    host: 'frameleaf_studio_dialog_shortcuts_changed',
+    engine: 'projects.settings.hotkeys.custom',
+  },
+  dialogShortcutsChangedFilter: {
+    host: 'frameleaf_studio_dialog_shortcuts_changed',
+    engine: 'projects.settings.hotkeys.filters.custom',
+  },
+  dialogSettingsApplies: { host: 'frameleaf_studio_dialog_settings_applies', engine: 'settings.appliesToDevice' },
+  dialogSettingsSnapDefault: {
+    host: 'frameleaf_studio_dialog_settings_snap_default',
+    engine: 'settings.timeline.snapByDefault',
+  },
+  dialogSettingsPhotoLength: {
+    host: 'frameleaf_studio_dialog_settings_photo_length',
+    engine: 'settings.timeline.defaultPhotoLength',
+  },
+  dialogSettingsTransitionLength: {
+    host: 'frameleaf_studio_dialog_settings_transition_length',
+    engine: 'settings.timeline.defaultTransitionLength',
+  },
+  dialogSettingsTransitionOwn: {
+    host: 'frameleaf_studio_dialog_settings_transition_own',
+    engine: 'settings.timeline.transitionOwnLength',
+  },
+  dialogSettingsSecondsOne: {
+    host: 'frameleaf_studio_dialog_settings_seconds_one',
+    engine: 'settings.timeline.lengthSeconds_one',
+    values: ['seconds'],
+  },
+  dialogSettingsSecondsOther: {
+    host: 'frameleaf_studio_dialog_settings_seconds_other',
+    engine: 'settings.timeline.lengthSeconds_other',
+    values: ['seconds'],
+  },
+} as const satisfies Record<string, { host: string; engine: string; values?: readonly string[] }>;
 
 export type DialogString = keyof typeof DIALOG_STRINGS;
 
 type DialogHostKey = (typeof DIALOG_STRINGS)[DialogString]['host'];
+type Translate = (key: DialogHostKey, options?: { values?: Record<string, string> }) => string;
 
-/** The host's translation of every dialog string. */
-export function dialogStrings(translate: (key: DialogHostKey) => string): Record<DialogString, string> {
-  return Object.fromEntries(
-    Object.entries(DIALOG_STRINGS).map(([name, entry]) => [name, translate(entry.host)]),
-  ) as Record<DialogString, string>;
+/** The host's translation of every dialog string, with engine `{{name}}` markers left in place. */
+export function dialogStrings(translate: Translate): Record<DialogString, string> {
+  const strings = {} as Record<DialogString, string>;
+  for (const [name, entry] of Object.entries(DIALOG_STRINGS) as Array<
+    [DialogString, { host: DialogHostKey; values?: readonly string[] }]
+  >) {
+    const values = Object.fromEntries((entry.values ?? []).map((value) => [value, `{{${value}}}`]));
+    strings[name] = entry.values ? translate(entry.host, { values }) : translate(entry.host);
+  }
+  return strings;
 }

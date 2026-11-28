@@ -324,7 +324,10 @@ export function validateBaseRaster(capture, envelope, binding) {
             '3e370166b4723cebd729da3d0a5be033f003ade966dfbdcd9b48c2edbafc367d' ||
           // FL-1822 the Keyboard shortcuts and Editor settings dialogs restyled; raster producer bytes unchanged.
           binding.sourceSha256 ===
-            'ce724b328bdb2bfffaca09bbbb6a55a35bc9f166a40262bec81a480e1b2df0db')),
+            'ce724b328bdb2bfffaca09bbbb6a55a35bc9f166a40262bec81a480e1b2df0db' ||
+          // FL-1822 default photo and transition lengths in Editor settings; raster producer bytes unchanged.
+          binding.sourceSha256 ===
+            '39fb6738dcf99ffcf04d7b73e72b24b0e8988a0e0a93f1883bc855db1a009741')),
     'SOURCE_BROWSER',
   )
   check(
