@@ -1,5 +1,6 @@
 import { sql } from 'kysely';
 import type { AlbumRepository } from 'src/repositories/album.repository.js';
+import { TimelineDatesToCheck, hasDateToCheck, hasGoodDate } from 'src/utils/date-sanity.js';
 import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { AssetType, AssetVisibility } from 'src/enum.js';
 import { getHiddenContentFilter, hiddenContentAssetIdExists, hiddenFromOthers } from 'src/utils/database.js';
@@ -84,6 +85,8 @@ export type AlbumFolderItem = {
   /** capture time */
   takenAt: Date | string;
   isVideo: boolean;
+  /** FL-1841: a Locked item joins its photo by name, but never decides a pairing by capture time */
+  isLocked?: boolean;
 };
 
 export type AlbumFolderVersionRow = { assetId: string; frontAssetId: string; matchedBy: 'name' | 'time' };
@@ -147,6 +150,10 @@ export const matchAlbumVersions = (items: AlbumFolderItem[], choices: AlbumFolde
     `${item.isVideo ? 'v' : 'p'}:${Math.floor(new Date(item.takenAt).getTime() / 1000)}`;
   const atMoment = new Map<string, typeof groups>();
   for (const group of groups) {
+    // what only the owner's elevated session may see never changes how the photos others see pair up
+    if (group.members.every((item) => item.isLocked)) {
+      continue;
+    }
     for (const key of new Set(group.members.map((item) => moment(item)))) {
       atMoment.set(key, [...(atMoment.get(key) ?? []), group]);
     }
@@ -157,6 +164,9 @@ export const matchAlbumVersions = (items: AlbumFolderItem[], choices: AlbumFolde
       continue;
     }
     const [item] = group.members;
+    if (item.isLocked) {
+      continue;
+    }
     const atThatMoment = atMoment.get(moment(item)) ?? [];
     const other = atThatMoment.find((candidate) => candidate !== group);
     if (
@@ -248,6 +258,60 @@ export const albumFolderView = (
   prefer: choices.prefer.map((name) => name.toLowerCase()),
 });
 
+/**
+ * FL-1841: for one viewer, the version of each group that stands in front (the first they may see, from a folder shown
+ * with the others, in show-in-front order, then folder, then id, as `albumFolderPredicate` decides it), the versions
+ * behind it, and how many groups they see in more than one version, matched by name only or by capture time.
+ */
+export const viewerVersions = (
+  rows: AlbumFolderVersionRow[],
+  items: { id: string; folder: string; visible: boolean }[],
+  choices: AlbumFolderChoices,
+) => {
+  const byId = new Map(items.filter((item) => item.visible).map((item) => [item.id, item]));
+  const groups = new Map<string, AlbumFolderVersionRow[]>();
+  for (const row of rows) {
+    if (byId.has(row.assetId)) {
+      groups.set(row.frontAssetId, [...(groups.get(row.frontAssetId) ?? []), row]);
+    }
+  }
+  const prefer = choices.prefer.map((name) => name.toLowerCase());
+  const rank = (id: string) => {
+    const folder = byId.get(id)!.folder.toLowerCase();
+    const index = prefer.indexOf(folder);
+    return [index === -1 ? Number.MAX_SAFE_INTEGER : index, folder, id] as const;
+  };
+  const before = (a: string, b: string) => {
+    const [x, y] = [rank(a), rank(b)];
+    return x[0] - y[0] || (x[1] < y[1] ? -1 : x[1] > y[1] ? 1 : x[2] < y[2] ? -1 : 1);
+  };
+  const behind = new Set<string>();
+  let matchedByName = 0;
+  let matchedByTime = 0;
+  for (const members of groups.values()) {
+    if (members.length < 2) {
+      continue;
+    }
+    if (members.some((row) => row.matchedBy === 'time')) {
+      matchedByTime++;
+    } else {
+      matchedByName++;
+    }
+    const front = members
+      .map((row) => row.assetId)
+      .filter((id) => folderDisplay(choices, byId.get(id)!.folder) === 'with')
+      .toSorted(before)[0];
+    if (front) {
+      for (const row of members) {
+        if (row.assetId !== front) {
+          behind.add(row.assetId);
+        }
+      }
+    }
+  }
+  return { behind, matchedByName, matchedByTime };
+};
+
 /** Works the album's versions out again; true when they changed. */
 export const refreshAlbumFolderVersions = async (
   albumRepository: Pick<AlbumRepository, 'getFolderAlbumItems' | 'getFolderVersionRows' | 'replaceFolderVersions'>,
@@ -271,17 +335,22 @@ export const refreshAlbumFolderVersions = async (
 };
 
 /** What one viewer may see (the timeline's own options): their Locked session, hidden content and others' rules. */
-export type VersionViewer = HiddenContentQueryOptions & { lockedOwnerId?: string; revealLockedOwnerId?: string };
+export type VersionViewer = HiddenContentQueryOptions & {
+  lockedOwnerId?: string;
+  revealLockedOwnerId?: string;
+  /** FL-1410: the timeline leaves out, or keeps only, the photos whose date cannot be right */
+  datesToCheck?: TimelineDatesToCheck;
+};
 
 /**
  * FL-1841: whether the viewer may see the asset row `alias` in the album, by the album read's own rules: on the timeline
- * or in the archive, not trashed or offline, Locked only when it is the viewer's own in an elevated session, and not
- * hidden by their hidden content or by its owner's Locked rules.
+ * or in the archive, not trashed, Locked only when it is the viewer's own in an elevated session, and not hidden by
+ * their hidden content or by its owner's Locked rules (or, in the hidden-content view, only what that view shows). An
+ * offline version still stands in front, with its Offline badge, as the timeline shows it.
  */
 export const versionVisibleTo = (alias: string, viewer: VersionViewer) => {
   const parts = [
     sql`${sql.ref(`${alias}.deletedAt`)} is null`,
-    sql`${sql.ref(`${alias}.isOffline`)} = false`,
     sql`${sql.ref(`${alias}.type`)} in (${sql.lit(AssetType.Image)}, ${sql.lit(AssetType.Video)})`,
     viewer.lockedOwnerId
       ? sql`(${sql.ref(`${alias}.visibility`)} in (${sql.lit(AssetVisibility.Archive)}, ${sql.lit(AssetVisibility.Timeline)})
@@ -292,8 +361,12 @@ export const versionVisibleTo = (alias: string, viewer: VersionViewer) => {
     parts.push(sql`not ${hiddenFromOthers(viewer.othersRulesViewerId, alias)}`);
   }
   const filter = getHiddenContentFilter(viewer);
-  if (filter && !viewer.onlyHiddenContent) {
-    parts.push(sql`not ${hiddenContentAssetIdExists(sql.ref(`${alias}.id`), filter)}`);
+  if (filter) {
+    const hidden = hiddenContentAssetIdExists(sql.ref(`${alias}.id`), filter);
+    parts.push(viewer.onlyHiddenContent ? hidden : sql`not ${hidden}`);
+  }
+  if (viewer.datesToCheck) {
+    parts.push(viewer.datesToCheck === TimelineDatesToCheck.Only ? hasDateToCheck(alias) : hasGoodDate(alias));
   }
   return sql<boolean>`(${sql.join(parts, sql` and `)})`;
 };

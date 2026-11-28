@@ -466,5 +466,7 @@ describe(FolderAlbumService.name, () => {
     };
     expect(await bucket({})).toEqual({ [edit.id]: 3 });
     expect(await bucket({ hiddenContent })).toEqual({ [original.id]: 2 });
+    // the hidden-content view shows only the hidden edit, never nothing
+    expect(await bucket({ onlyHiddenContent: hiddenContent })).toEqual({ [edit.id]: 1 });
   });
 });

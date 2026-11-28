@@ -1439,7 +1439,7 @@ export class AlbumRepository {
 
   /** FL-1838: the album's items that are not in the trash, each with the folder inside the album's folder holding it. */
   @GenerateSql({ params: [DummyValue.UUID, DummyValue.STRING] })
-  getFolderAlbumItems(albumId: string, folderPath: string) {
+  getFolderAlbumItems(albumId: string, folderPath: string, viewer: VersionViewer = {}) {
     // FL-1841: Locked items take part in the versions too; each read decides who may see them
     return this.db
       .selectFrom('album_asset')
@@ -1452,6 +1452,7 @@ export class AlbumRepository {
         subfolderSql(folderPath).as('folder'),
         sql<boolean>`asset.type = 'VIDEO'`.as('isVideo'),
         isLocked('asset').as('isLocked'),
+        versionVisibleTo('asset', viewer).as('visible'),
       ])
       .where('album_asset.albumId', '=', asUuid(albumId))
       .where('asset.deletedAt', 'is', null)

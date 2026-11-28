@@ -163,7 +163,22 @@ export class TimelineService extends BaseService {
 
   private async buildTimeBucketOptions(auth: AuthDto, dto: TimeBucketDto): Promise<TimeBucketOptions> {
     const { userId, suppressedOnly, lockReason, bestPhotos, albumFolder, ...options } = dto;
-    const albumView = await this.albumFolderViewFor(dto.albumId, albumFolder);
+    const view = await this.albumFolderViewFor(dto.albumId, albumFolder);
+    // FL-1841: a narrowed album (favourites, the filters, a person, a place, another visibility) shows every file that
+    // matches: a version standing in front that does not match would otherwise leave the photo shown nowhere
+    const narrowed =
+      dto.isFavorite !== undefined ||
+      !!dto.filter ||
+      !!dto.personId ||
+      !!dto.petId ||
+      !!dto.tagId ||
+      !!dto.bbox ||
+      !!dto.visibility ||
+      !!dto.isTrashed ||
+      !!dto.assetType ||
+      !!bestPhotos ||
+      !!dto.imageEnrichment;
+    const albumView = view && narrowed ? { ...view, oneVersion: false } : view;
     let userIds: string[] | undefined;
 
     // FL-326 (spec §4.8): a timeline holds only its owner's rows; what partners share arrives as copies

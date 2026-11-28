@@ -79,6 +79,7 @@ import {
   resolveAlbumFolderChoices,
   subfolderOf,
   subfolderRulesOf,
+  viewerVersions,
 } from 'src/utils/album-folders.js';
 import {
   AlbumTreeOf,
@@ -739,22 +740,14 @@ export class AlbumService extends BaseService {
     await this.requireAccess({ auth, permission: Permission.AlbumRead, ids: [id] });
     const link = await this.requireFolderAlbumLink(id);
     const choices = resolveAlbumFolderChoices(link.displayChoices ?? link.libraryDisplay);
-    const { items, rows, matchedByName, matchedByTime, changed } = await refreshAlbumFolderVersions(
-      this.albumRepository,
-      id,
-      link.folderPath,
-      choices,
-    );
+    const { rows, changed } = await refreshAlbumFolderVersions(this.albumRepository, id, link.folderPath, choices);
+    // FL-1841: what this viewer may see, by the album read's own rules (Locked, hidden content, others' rules)
+    const items = await this.albumRepository.getFolderAlbumItems(id, link.folderPath, albumVersionViewer(auth));
+    const listed = items.filter((item) => item.visible);
+    const { behind: behindForViewer, matchedByName, matchedByTime } = viewerVersions(rows, items, choices);
+    const behind = choices.versions === 'one' ? behindForViewer : new Set<string>();
     // FL-1837's albums inside this one: their photos are theirs, not this album's
     const children = await this.albumRepository.getFolderAlbumChildren(id, link.libraryId, link.folderPath);
-    const behind = new Set(
-      choices.versions === 'one'
-        ? rows.filter((row) => row.assetId !== row.frontAssetId).map((row) => row.assetId)
-        : [],
-    );
-    // FL-1841: Locked items take part in the versions, but are listed only for their owner's elevated session
-    const { lockedOwnerId } = getLockedVisibilityOptions(auth);
-    const listed = items.filter((item) => !item.isLocked || (!!lockedOwnerId && item.ownerId === lockedOwnerId));
     const byFolder = new Map<string, typeof items>();
     for (const item of listed.toSorted((a, b) => new Date(a.takenAt).getTime() - new Date(b.takenAt).getTime())) {
       byFolder.set(item.folder, [...(byFolder.get(item.folder) ?? []), item]);

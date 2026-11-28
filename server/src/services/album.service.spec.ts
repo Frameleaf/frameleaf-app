@@ -4235,6 +4235,7 @@ describe(AlbumService.name, () => {
         isVideo: false,
         ownerId: 'owner',
         isLocked: false,
+        visible: true,
       },
       {
         id: 'orig-1',
@@ -4244,6 +4245,7 @@ describe(AlbumService.name, () => {
         isVideo: false,
         ownerId: 'owner',
         isLocked: false,
+        visible: true,
       },
       {
         id: 'orig-2',
@@ -4253,6 +4255,7 @@ describe(AlbumService.name, () => {
         isVideo: false,
         ownerId: 'owner',
         isLocked: false,
+        visible: true,
       },
       {
         id: 'video-1',
@@ -4262,6 +4265,7 @@ describe(AlbumService.name, () => {
         isVideo: true,
         ownerId: 'owner',
         isLocked: false,
+        visible: true,
       },
     ];
 
@@ -4338,7 +4342,7 @@ describe(AlbumService.name, () => {
       expect(result.libraryName).toBeUndefined();
     });
 
-    it('FL-1841: lists Locked items only for their owner in an elevated session', async () => {
+    it('FL-1841: lists only what this viewer may see (the query decides: Locked, hidden content, others rules)', async () => {
       mocks.album.getFolderAlbumLink.mockResolvedValue(link());
       mocks.album.getFolderAlbumItems.mockResolvedValue([
         ...items,
@@ -4350,6 +4354,7 @@ describe(AlbumService.name, () => {
           takenAt: new Date('2026-11-19T13:00:00Z'),
           isVideo: false,
           isLocked: true,
+          visible: false,
         },
       ]);
       const result = await sut.getFolders(authStub.admin, albumId);
