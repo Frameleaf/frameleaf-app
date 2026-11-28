@@ -1445,7 +1445,7 @@ export class AlbumRepository {
         sql<boolean>`asset.type = 'VIDEO'`.as('isVideo'),
       ])
       .where('album_asset.albumId', '=', asUuid(albumId))
-      .where('asset.deletedAt', 'is', null)
+      .where(isFolderPhoto('asset'))
       .execute();
   }
 
@@ -1501,12 +1501,19 @@ export class AlbumRepository {
   /** FL-1838: the album's versions, worked out again (`matchAlbumVersions`). */
   async replaceFolderVersions(albumId: string, rows: { assetId: string; frontAssetId: string; matchedBy: string }[]) {
     await this.db.transaction().execute(async (tx) => {
+      // one writer per album at a time, so two recomputes never leave a mix of both
+      await sql`select pg_advisory_xact_lock(hashtext(${`album_folder_version:${albumId}`}))`.execute(tx);
       await tx.deleteFrom('album_folder_version').where('albumId', '=', asUuid(albumId)).execute();
       for (const part of chunk(rows, 1000)) {
         await tx
           .insertInto('album_folder_version')
           .values(part.map((row) => ({ ...row, albumId })))
-          .onConflict((oc) => oc.doNothing())
+          .onConflict((oc) =>
+            oc.columns(['albumId', 'assetId']).doUpdateSet((eb) => ({
+              frontAssetId: eb.ref('excluded.frontAssetId'),
+              matchedBy: eb.ref('excluded.matchedBy'),
+            })),
+          )
           .execute();
       }
     });
@@ -1533,7 +1540,7 @@ export class AlbumRepository {
       ])
       .where('mine.albumId', '=', asUuid(albumId))
       .where('mine.assetId', '=', asUuid(assetId))
-      .where('asset.deletedAt', 'is', null)
+      .where(isFolderPhoto('asset'))
       .orderBy(sql`version."assetId" = version."frontAssetId"`, 'desc')
       .orderBy('asset.fileCreatedAt')
       .orderBy('asset.originalFileName')

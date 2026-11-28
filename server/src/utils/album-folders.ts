@@ -1,6 +1,6 @@
 import { sql } from 'kysely';
 import type { AlbumRepository } from 'src/repositories/album.repository.js';
-import { type SubfolderRule, folderOf } from 'src/utils/folder-albums.js';
+import { type SubfolderRule, folderOf, isFolderPhoto } from 'src/utils/folder-albums.js';
 
 /**
  * FL-1838: "Folders in this album". An album made from a folder holds the photos of the folders inside it (Original,
@@ -84,6 +84,9 @@ export type AlbumFolderItem = {
 
 export type AlbumFolderVersionRow = { assetId: string; frontAssetId: string; matchedBy: 'name' | 'time' };
 
+/** Files sharing a name are versions of one photo only when taken within this long of each other. */
+const NAME_MATCH_WINDOW = 60 * 60 * 1000;
+
 const EDIT_SUFFIX = /(?:[ ._-](?:edit|edited|copy|final|export|exported)\d*| \(\d+\))$/i;
 
 /** A file's name without its extension and without what an editor adds to it: IMG_4821.CR3, IMG_4821-edit.jpg → img_4821. */
@@ -116,10 +119,25 @@ export const matchAlbumVersions = (items: AlbumFolderItem[], choices: AlbumFolde
     const key = `${item.isVideo ? 'v' : 'p'}:${fileStem(item.originalFileName)}`;
     byName.set(key, [...(byName.get(key) ?? []), item]);
   }
-  const groups = byName
-    .values()
-    .map((members) => ({ members, byTime: new Set<string>() }))
-    .toArray();
+  // A name only matches across folders, and only photos taken within an hour of each other: two cameras, or a
+  // counter that started again, give different photos the same name (IMG_0001.JPG in Day 1 and in Day 2).
+  const time = (item: AlbumFolderItem) => new Date(item.takenAt).getTime();
+  const groups: { members: AlbumFolderItem[]; byTime: Set<string> }[] = [];
+  for (const sameName of byName.values()) {
+    const clusters: AlbumFolderItem[][] = [];
+    for (const item of sameName.toSorted((a, b) => time(a) - time(b))) {
+      const cluster = clusters.find(
+        (members) =>
+          members.every(({ folder }) => folder !== item.folder) && time(item) - time(members[0]) <= NAME_MATCH_WINDOW,
+      );
+      if (cluster) {
+        cluster.push(item);
+      } else {
+        clusters.push([item]);
+      }
+    }
+    groups.push(...clusters.map((members) => ({ members, byTime: new Set<string>() })));
+  }
   // a single file whose name matched nothing joins the one group taken at the same second in another folder
   const moment = (item: AlbumFolderItem) =>
     `${item.isVideo ? 'v' : 'p'}:${Math.floor(new Date(item.takenAt).getTime() / 1000)}`;
@@ -256,10 +274,12 @@ export const albumFolderPredicate = (view: AlbumFolderView) => {
     parts.push(sql`${folder} <> all(${view.exclude}::text[])`);
   }
   if (view.oneVersion) {
-    // behind a version still in the album; one taken out of it leaves its versions showing
+    // behind a version the album still shows; one taken out, trashed, offline or Locked leaves its versions showing
     parts.push(sql`not exists (select 1 from album_folder_version v
-      inner join album_asset front on front."albumId" = v."albumId" and front."assetId" = v."frontAssetId"
-      where v."albumId" = ${view.albumId}::uuid and v."assetId" = asset.id and v."frontAssetId" <> asset.id)`);
+      inner join album_asset front_member on front_member."albumId" = v."albumId" and front_member."assetId" = v."frontAssetId"
+      inner join asset front on front.id = v."frontAssetId"
+      where v."albumId" = ${view.albumId}::uuid and v."assetId" = asset.id and v."frontAssetId" <> asset.id
+        and ${isFolderPhoto('front')})`);
   }
   return parts.length > 0 ? sql<boolean>`(${sql.join(parts, sql` and `)})` : sql<boolean>`true`;
 };
@@ -267,4 +287,6 @@ export const albumFolderPredicate = (view: AlbumFolderView) => {
 /** How many versions stand behind the asset row `asset`, itself included (0 when it has none). */
 export const albumVersionCount = (view: AlbumFolderView) =>
   sql<number>`(select count(*) from album_folder_version v
-    where v."albumId" = ${view.albumId}::uuid and v."frontAssetId" = asset.id)::int`;
+    inner join album_asset member on member."albumId" = v."albumId" and member."assetId" = v."assetId"
+    inner join asset version on version.id = v."assetId"
+    where v."albumId" = ${view.albumId}::uuid and v."frontAssetId" = asset.id and ${isFolderPhoto('version')})::int`;

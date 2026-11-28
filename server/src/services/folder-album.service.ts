@@ -18,6 +18,7 @@ import {
   FolderAlbumOptions,
   FolderAlbumPlanNode,
   FolderCount,
+  SubfolderRule,
   autoNames,
   fileKey,
   looksLikeEventFolders,
@@ -227,7 +228,12 @@ export class FolderAlbumService extends BaseService {
     const original = new Map(byPath);
 
     // Folders renamed or moved: their albums follow, so nothing the owner did to them is lost.
-    const moves = await this.findMovedFolders(libraryId, tree, byPath, { roots, options, name: library.name });
+    const moves = await this.findMovedFolders(libraryId, tree, byPath, {
+      roots,
+      options,
+      name: library.name,
+      albumRules,
+    });
     const previousPaths: { folderPath: string; albumId: string }[] = [];
     // a moved album with the name its old folder gave it takes the new folder's name
     const movedAuto = new Set<string>();
@@ -483,7 +489,17 @@ export class FolderAlbumService extends BaseService {
     libraryId: string,
     tree: Map<string, FolderAlbumPlanNode>,
     byPath: Map<string, FolderAlbumLink>,
-    { roots, options, name }: { roots: string[]; options: FolderAlbumOptions; name: string },
+    {
+      roots,
+      options,
+      name,
+      albumRules,
+    }: {
+      roots: string[];
+      options: FolderAlbumOptions;
+      name: string;
+      albumRules: ReadonlyMap<string, Readonly<Record<string, SubfolderRule>>>;
+    },
   ) {
     const goneFolders = byPath
       .keys()
@@ -508,6 +524,8 @@ export class FolderAlbumService extends BaseService {
       known.map((folderPath) => ({ folderPath, photos: 1 })),
       { ...options, skipEmpty: true },
       name,
+      // FL-1838: a gone album was planned with its own folder rules, so it is planned again with them
+      albumRules,
     );
     const albumsOf = (lists: [string, string[]][]) => {
       const byFolder = new Map<string, string[]>();

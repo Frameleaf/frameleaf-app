@@ -339,6 +339,10 @@ describe(FolderAlbumService.name, () => {
     expect(Object.keys(await bucket(undefined, each)).toSorted()).toEqual(
       [raw.id, original.id, edit.id, lonely.id, renamed.id, video.id].toSorted(),
     );
+    // a version in front in the trash leaves the others showing
+    await defaultDatabase.updateTable('asset').set({ deletedAt: new Date() }).where('id', '=', renamed.id).execute();
+    expect(await bucket()).toEqual({ [edit.id]: 3, [lonely.id]: 0 });
+    await defaultDatabase.updateTable('asset').set({ deletedAt: null }).where('id', '=', renamed.id).execute();
     // a version in front taken out of the album leaves the others showing
     await defaultDatabase.deleteFrom('album_asset').where('assetId', '=', edit.id).execute();
     expect(await bucket()).toEqual({ [original.id]: 0, [renamed.id]: 2 });

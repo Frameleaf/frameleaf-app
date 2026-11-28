@@ -973,7 +973,20 @@ from
   inner join "asset" on "asset"."id" = "album_asset"."assetId"
 where
   "album_asset"."albumId" = $4::uuid
-  and "asset"."deletedAt" is null
+  and (
+    "asset"."isOffline" = false
+    AND "asset"."deletedAt" IS NULL
+    AND "asset"."visibility" IN ('timeline', 'archive')
+    AND "asset"."type" IN ('IMAGE', 'VIDEO')
+    AND not exists (
+      select
+        1
+      from
+        asset_lock
+      where
+        asset_lock."assetId" = "asset"."id"
+    )
+  )
 
 -- AlbumRepository.getFolderAlbumChildren
 select
@@ -1071,7 +1084,20 @@ from
 where
   "mine"."albumId" = $4::uuid
   and "mine"."assetId" = $5::uuid
-  and "asset"."deletedAt" is null
+  and (
+    "asset"."isOffline" = false
+    AND "asset"."deletedAt" IS NULL
+    AND "asset"."visibility" IN ('timeline', 'archive')
+    AND "asset"."type" IN ('IMAGE', 'VIDEO')
+    AND not exists (
+      select
+        1
+      from
+        asset_lock
+      where
+        asset_lock."assetId" = "asset"."id"
+    )
+  )
 order by
   version."assetId" = version."frontAssetId" desc,
   "asset"."fileCreatedAt",

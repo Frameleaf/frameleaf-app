@@ -140,4 +140,14 @@ describe('album folders', () => {
     expect(plan.get('/p/B/RAW')?.parentPath).toBe('/p/B');
     expect(plan.get('/p/B')?.members).toEqual([]);
   });
+
+  it('never merges different photos that share a name: two days, or two files in one folder', () => {
+    const items = [
+      item('day1', 'Day1', 'IMG_0001.JPG', '2026-11-19T10:00:00.000Z'),
+      item('day2', 'Day2', 'IMG_0001.JPG', '2026-11-20T10:00:00.000Z'),
+      item('copy-a', 'Original', 'photo.jpg', '2026-11-19T12:00:00.000Z'),
+      item('copy-b', 'Original', 'photo (1).jpg', '2026-11-19T12:00:00.000Z'),
+    ];
+    expect(matchAlbumVersions(items, DEFAULT_ALBUM_FOLDER_CHOICES).rows).toEqual([]);
+  });
 });
