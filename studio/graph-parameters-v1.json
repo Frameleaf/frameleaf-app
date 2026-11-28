@@ -5258,6 +5258,164 @@
           "textStylePresetId": "badge",
           "textStyleScale": 1
         }
+      },
+      {
+        "id": "caption-bar",
+        "fontSize": {
+          "size": "title",
+          "multiplier": 0.45
+        },
+        "fields": {
+          "fontFamily": "Inter",
+          "fontWeight": "medium",
+          "fontStyle": "normal",
+          "underline": false,
+          "color": "#ffffff",
+          "backgroundColor": "#0000008c",
+          "backgroundRadius": 0,
+          "textAlign": "center",
+          "verticalAlign": "middle",
+          "lineHeight": 1.2,
+          "letterSpacing": 0,
+          "textPadding": 20,
+          "textStylePresetId": "caption-bar",
+          "textStyleScale": 1
+        }
+      },
+      {
+        "id": "big-title",
+        "fontSize": {
+          "size": "display",
+          "multiplier": 1
+        },
+        "fields": {
+          "fontFamily": "Inter Tight",
+          "fontWeight": "bold",
+          "fontStyle": "normal",
+          "underline": false,
+          "color": "#ffffff",
+          "backgroundRadius": 0,
+          "textAlign": "center",
+          "verticalAlign": "middle",
+          "lineHeight": 0.95,
+          "letterSpacing": -1,
+          "textPadding": 16,
+          "textShadow": {
+            "offsetX": 0,
+            "offsetY": 6,
+            "blur": 18,
+            "color": "#111827"
+          },
+          "textStylePresetId": "big-title",
+          "textStyleScale": 1
+        }
+      },
+      {
+        "id": "minimal-title",
+        "fontSize": {
+          "size": "title",
+          "multiplier": 0.503
+        },
+        "fields": {
+          "fontFamily": "Inter",
+          "fontWeight": "normal",
+          "fontStyle": "normal",
+          "underline": false,
+          "color": "#ffffff",
+          "backgroundRadius": 0,
+          "textAlign": "center",
+          "verticalAlign": "middle",
+          "lineHeight": 1.1,
+          "letterSpacing": 1,
+          "textPadding": 16,
+          "textShadow": {
+            "offsetX": 0,
+            "offsetY": 4,
+            "blur": 14,
+            "color": "#000000"
+          },
+          "textStylePresetId": "minimal-title",
+          "textStyleScale": 1
+        }
+      },
+      {
+        "id": "name-and-place",
+        "fontSize": {
+          "size": "title",
+          "multiplier": 0.6
+        },
+        "fields": {
+          "fontFamily": "Inter",
+          "fontWeight": "semibold",
+          "fontStyle": "normal",
+          "underline": false,
+          "color": "#ffffff",
+          "backgroundRadius": 0,
+          "textAlign": "left",
+          "verticalAlign": "middle",
+          "lineHeight": 1.1,
+          "letterSpacing": 0,
+          "textPadding": 20,
+          "textShadow": {
+            "offsetX": 0,
+            "offsetY": 6,
+            "blur": 18,
+            "color": "#030712"
+          },
+          "textStylePresetId": "name-and-place",
+          "textStyleScale": 1
+        }
+      },
+      {
+        "id": "date-and-place",
+        "fontSize": {
+          "size": "title",
+          "multiplier": 0.6
+        },
+        "fields": {
+          "fontFamily": "Inter",
+          "fontWeight": "semibold",
+          "fontStyle": "normal",
+          "underline": false,
+          "color": "#ffffff",
+          "backgroundRadius": 0,
+          "textAlign": "right",
+          "verticalAlign": "middle",
+          "lineHeight": 1.1,
+          "letterSpacing": 0,
+          "textPadding": 20,
+          "textShadow": {
+            "offsetX": 0,
+            "offsetY": 6,
+            "blur": 18,
+            "color": "#030712"
+          },
+          "textStylePresetId": "date-and-place",
+          "textStyleScale": 1
+        }
+      },
+      {
+        "id": "chapter-card",
+        "fontSize": {
+          "size": "title",
+          "multiplier": 0.7
+        },
+        "fields": {
+          "fontFamily": "Inter Tight",
+          "fontWeight": "bold",
+          "fontStyle": "normal",
+          "underline": false,
+          "color": "#ffffff",
+          "backgroundColor": "#4f3f75",
+          "backgroundRadius": 20,
+          "textAlign": "center",
+          "verticalAlign": "middle",
+          "lineHeight": 1.05,
+          "letterSpacing": -1,
+          "textPadding": 28,
+          "textStylePresetId": "chapter-card",
+          "textStyleScale": 1
+        }
       }
     ]
   },
@@ -6725,5 +6883,5 @@
       "section": "13.8.5"
     }
   ],
-  "contentSha256": "66a3c02de6292078698019ce03159c046e76800f83223a0a44693713149966ed"
+  "contentSha256": "7a70612573c69cec0a2578d8fabbe23ea487729cc42073cbb7bc840e21e3a545"
 }

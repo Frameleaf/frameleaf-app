@@ -339,7 +339,10 @@ export function validateBaseRaster(capture, envelope, binding) {
             'e0cd1a91849639adbaa22f9058cc7c3895ee31068533ce73fc9086c99287b395' ||
           // FL-1822 Editor settings writes lengths in the host's number format; raster producer bytes unchanged.
           binding.sourceSha256 ===
-            'eb8bd3cad28c2c808ad2d64714b1e71224639d6e7006f4b9304b11d1ec697c46')),
+            'eb8bd3cad28c2c808ad2d64714b1e71224639d6e7006f4b9304b11d1ec697c46' ||
+          // FL-1822 Add > Titles gains the approved Studio's title styles; raster producer bytes unchanged.
+          binding.sourceSha256 ===
+            'cd3ad7e3a810af9aa97114fd879f4db74f544f13f57e30032baf38a35481d377')),
     'SOURCE_BROWSER',
   )
   check(

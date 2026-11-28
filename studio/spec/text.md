@@ -174,7 +174,7 @@ The stroke is drawn once per line for the whole line, also in inline flow. Becau
 **Colours and alpha.** What a native client **writes** and what it must **read** differ.
 
 - **Writer.** `title.setStyle` accepts, and a native client writes, only `#rrggbb` and `#rrggbbaa` (hexadecimal digits of either case), stored as given (protocol 14.3.4).
-- **Reader.** A graph may hold other forms, written by the web editor and by the engine's caption styles. A native client must draw these six: `#rgb`, `#rgba`, `#rrggbb`, `#rrggbbaa` (either case; a short form doubles each digit), `rgb(r, g, b)` and `rgba(r, g, b, a)` with r, g and b whole numbers from 0 to 255 and a a decimal from 0 to 1, separated by commas with optional spaces. These cover everything the engine itself writes: its title styles and captions use six-digit hex in either case, and its caption styles use `rgba(r, g, b, a)` for `backgroundColor` and `textShadow.color`. The alpha of a functional form is round(255 a) ÷ 255.
+- **Reader.** A graph may hold other forms, written by the web editor and by the engine's caption styles. A native client must draw these six: `#rgb`, `#rgba`, `#rrggbb`, `#rrggbbaa` (either case; a short form doubles each digit), `rgb(r, g, b)` and `rgba(r, g, b, a)` with r, g and b whole numbers from 0 to 255 and a a decimal from 0 to 1, separated by commas with optional spaces. These cover everything the engine itself writes: its title styles and captions use six-digit hex in either case (the `caption-bar` style's `backgroundColor` is the eight-digit `#0000008c`), and its caption styles use `rgba(r, g, b, a)` for `backgroundColor` and `textShadow.color`. The alpha of a functional form is round(255 a) ÷ 255.
 - **Anything else** (a colour name, `hsl()`, `oklch()`, percentages, the space-separated syntax) the engine draws by the CSS rules. A native client is not required to: it keeps the value in the graph and draws that field's default (X1), or no background, shadow or stroke where the default is none.
 
 `#rrggbb` is opaque; the last two digits of `#rrggbbaa` are the alpha a = value ÷ 255. The alpha applies per draw, as coverage × a, source-over:
@@ -223,6 +223,12 @@ round is to the nearest integer, halves towards positive infinity. `backgroundCo
 | `launch-stack` | 1: size max(16, round(0.26 z)), weight bold, colour `#67e8f9`, letter spacing 2. 2: nothing. 3: size max(20, round(0.4 z)), weight medium, colour `#bfdbfe`. |
 | `event-card` | 1: size max(18, round(0.28 z)), weight bold, colour `#fca5a5`, letter spacing 2. 2: nothing. 3: size max(22, round(0.38 z)), weight semibold, colour `#bfdbfe`, letter spacing 1. |
 | `badge` | 1: letter spacing 2. |
+| `name-and-place` | 1: weight bold. 2: size max(20, round(0.55 z)), weight medium, colour `#e5e7eb`. |
+| `date-and-place` | 1: weight bold. 2: size max(20, round(0.55 z)), weight medium, colour `#e5e7eb`. |
+| `chapter-card` | 1: nothing. 2: size max(20, round(0.45 z)), weight medium, colour `#e5e7eb`. |
+| `caption-bar` | none: spans keep their own style fields. |
+| `big-title` | none: spans keep their own style fields. |
+| `minimal-title` | none: spans keep their own style fields. |
 | the other five | none: spans keep their own style fields. |
 
 The span letter spacings 1 and 2 are not scaled. This restyling is the same computation the web editor runs when a preset is applied; it is specified here because an animated scale re-runs it every frame.

@@ -130137,6 +130137,770 @@
       }
     },
     {
+      "id": "title.add/preset-caption-bar",
+      "story": "FL-1822",
+      "covers": [
+        "title.add"
+      ],
+      "summary": "The title style caption-bar, by its id.",
+      "base": "empty-30",
+      "envelopes": [
+        {
+          "id": "title.add",
+          "payload": {
+            "text": "Summit",
+            "at": {
+              "num": 0,
+              "den": 1
+            },
+            "style": "caption-bar"
+          },
+          "revision": 1,
+          "idempotencyKey": "fl1822:title.add/preset-caption-bar",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "expect": {
+        "status": "applied",
+        "digest": "fdd60191c9f44011693aab9b348e586cb3abc8d6b68b1d92838d5dae31f12c87",
+        "envelopeDigest": "02c1a6be8e8e9f4302c2aa956fb65e8ad959d457ca4a96fa61395532e1bb946c",
+        "fixedPoint": true,
+        "clockIndependent": true,
+        "draws": [
+          [
+            {
+              "draw": 0,
+              "id": "695f113d-2851-4c48-b420-fff354626fde",
+              "at": [
+                "timeline.items[0].id"
+              ]
+            }
+          ]
+        ],
+        "graph": {
+          "id": "fl-graph-protocol",
+          "name": "Graph protocol",
+          "description": "",
+          "createdAt": 0,
+          "updatedAt": 0,
+          "duration": 0,
+          "schemaVersion": 15,
+          "metadata": {
+            "width": 1920,
+            "height": 1080,
+            "fps": 30,
+            "frameRate": {
+              "num": 30,
+              "den": 1
+            }
+          },
+          "timeline": {
+            "tracks": [
+              {
+                "id": "v1",
+                "name": "V1",
+                "kind": "video",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 0,
+                "syncLock": true,
+                "volume": 0,
+                "items": []
+              },
+              {
+                "id": "a1",
+                "name": "A1",
+                "kind": "audio",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 1,
+                "syncLock": true,
+                "volume": 0,
+                "items": []
+              }
+            ],
+            "items": [
+              {
+                "id": "695f113d-2851-4c48-b420-fff354626fde",
+                "type": "text",
+                "trackId": "v1",
+                "from": 0,
+                "durationInFrames": 90,
+                "label": "Summit",
+                "text": "Summit",
+                "color": "#ffffff",
+                "fontSize": 41,
+                "fontFamily": "Inter",
+                "fontWeight": "medium",
+                "fontStyle": "normal",
+                "underline": false,
+                "backgroundColor": "#0000008c",
+                "backgroundRadius": 0,
+                "textAlign": "center",
+                "verticalAlign": "middle",
+                "lineHeight": 1.2,
+                "letterSpacing": 0,
+                "textPadding": 20,
+                "textStylePresetId": "caption-bar",
+                "textStyleScale": 1
+              }
+            ],
+            "masterBusDb": 0,
+            "masterBusMuted": false,
+            "currentFrame": 0,
+            "zoomLevel": 1,
+            "scrollPosition": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "title.add/preset-big-title",
+      "story": "FL-1822",
+      "covers": [
+        "title.add"
+      ],
+      "summary": "The title style big-title, by its id.",
+      "base": "empty-30",
+      "envelopes": [
+        {
+          "id": "title.add",
+          "payload": {
+            "text": "Summit",
+            "at": {
+              "num": 0,
+              "den": 1
+            },
+            "style": "big-title"
+          },
+          "revision": 1,
+          "idempotencyKey": "fl1822:title.add/preset-big-title",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "expect": {
+        "status": "applied",
+        "digest": "b222828966fbf09123d61a6745c9b4e1f900a359b93985b52da32a3fcd599f26",
+        "envelopeDigest": "aafed126c86897417accf7e25a6bbbf1f8afdde680e01fb68ad9aea7207c0e5d",
+        "fixedPoint": true,
+        "clockIndependent": true,
+        "draws": [
+          [
+            {
+              "draw": 0,
+              "id": "71292211-3cde-463b-86a9-a43f8bc3e3e6",
+              "at": [
+                "timeline.items[0].id"
+              ]
+            }
+          ]
+        ],
+        "graph": {
+          "id": "fl-graph-protocol",
+          "name": "Graph protocol",
+          "description": "",
+          "createdAt": 0,
+          "updatedAt": 0,
+          "duration": 0,
+          "schemaVersion": 15,
+          "metadata": {
+            "width": 1920,
+            "height": 1080,
+            "fps": 30,
+            "frameRate": {
+              "num": 30,
+              "den": 1
+            }
+          },
+          "timeline": {
+            "tracks": [
+              {
+                "id": "v1",
+                "name": "V1",
+                "kind": "video",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 0,
+                "syncLock": true,
+                "volume": 0,
+                "items": []
+              },
+              {
+                "id": "a1",
+                "name": "A1",
+                "kind": "audio",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 1,
+                "syncLock": true,
+                "volume": 0,
+                "items": []
+              }
+            ],
+            "items": [
+              {
+                "id": "71292211-3cde-463b-86a9-a43f8bc3e3e6",
+                "type": "text",
+                "trackId": "v1",
+                "from": 0,
+                "durationInFrames": 90,
+                "label": "Summit",
+                "text": "Summit",
+                "color": "#ffffff",
+                "fontSize": 119,
+                "fontFamily": "Inter Tight",
+                "fontWeight": "bold",
+                "fontStyle": "normal",
+                "underline": false,
+                "backgroundRadius": 0,
+                "textAlign": "center",
+                "verticalAlign": "middle",
+                "lineHeight": 0.95,
+                "letterSpacing": -1,
+                "textPadding": 16,
+                "textShadow": {
+                  "offsetX": 0,
+                  "offsetY": 6,
+                  "blur": 18,
+                  "color": "#111827"
+                },
+                "textStylePresetId": "big-title",
+                "textStyleScale": 1
+              }
+            ],
+            "masterBusDb": 0,
+            "masterBusMuted": false,
+            "currentFrame": 0,
+            "zoomLevel": 1,
+            "scrollPosition": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "title.add/preset-minimal-title",
+      "story": "FL-1822",
+      "covers": [
+        "title.add"
+      ],
+      "summary": "The title style minimal-title, by its id.",
+      "base": "empty-30",
+      "envelopes": [
+        {
+          "id": "title.add",
+          "payload": {
+            "text": "Summit",
+            "at": {
+              "num": 0,
+              "den": 1
+            },
+            "style": "minimal-title"
+          },
+          "revision": 1,
+          "idempotencyKey": "fl1822:title.add/preset-minimal-title",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "expect": {
+        "status": "applied",
+        "digest": "35ffb938ba318e33b3f874587cd925be58eb9c43e02332c90181b0f567140832",
+        "envelopeDigest": "5fab05434ee4c5d69b94a43b6411babdc30d8243d4a9a0fb812c3948fa4af85e",
+        "fixedPoint": true,
+        "clockIndependent": true,
+        "draws": [
+          [
+            {
+              "draw": 0,
+              "id": "fca726a3-fb0c-49d5-98a8-32fd9c2e5d4f",
+              "at": [
+                "timeline.items[0].id"
+              ]
+            }
+          ]
+        ],
+        "graph": {
+          "id": "fl-graph-protocol",
+          "name": "Graph protocol",
+          "description": "",
+          "createdAt": 0,
+          "updatedAt": 0,
+          "duration": 0,
+          "schemaVersion": 15,
+          "metadata": {
+            "width": 1920,
+            "height": 1080,
+            "fps": 30,
+            "frameRate": {
+              "num": 30,
+              "den": 1
+            }
+          },
+          "timeline": {
+            "tracks": [
+              {
+                "id": "v1",
+                "name": "V1",
+                "kind": "video",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 0,
+                "syncLock": true,
+                "volume": 0,
+                "items": []
+              },
+              {
+                "id": "a1",
+                "name": "A1",
+                "kind": "audio",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 1,
+                "syncLock": true,
+                "volume": 0,
+                "items": []
+              }
+            ],
+            "items": [
+              {
+                "id": "fca726a3-fb0c-49d5-98a8-32fd9c2e5d4f",
+                "type": "text",
+                "trackId": "v1",
+                "from": 0,
+                "durationInFrames": 90,
+                "label": "Summit",
+                "text": "Summit",
+                "color": "#ffffff",
+                "fontSize": 46,
+                "fontFamily": "Inter",
+                "fontWeight": "normal",
+                "fontStyle": "normal",
+                "underline": false,
+                "backgroundRadius": 0,
+                "textAlign": "center",
+                "verticalAlign": "middle",
+                "lineHeight": 1.1,
+                "letterSpacing": 1,
+                "textPadding": 16,
+                "textShadow": {
+                  "offsetX": 0,
+                  "offsetY": 4,
+                  "blur": 14,
+                  "color": "#000000"
+                },
+                "textStylePresetId": "minimal-title",
+                "textStyleScale": 1
+              }
+            ],
+            "masterBusDb": 0,
+            "masterBusMuted": false,
+            "currentFrame": 0,
+            "zoomLevel": 1,
+            "scrollPosition": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "title.add/preset-name-and-place",
+      "story": "FL-1822",
+      "covers": [
+        "title.add"
+      ],
+      "summary": "The title style name-and-place, by its id.",
+      "base": "empty-30",
+      "envelopes": [
+        {
+          "id": "title.add",
+          "payload": {
+            "text": "Summit",
+            "at": {
+              "num": 0,
+              "den": 1
+            },
+            "style": "name-and-place"
+          },
+          "revision": 1,
+          "idempotencyKey": "fl1822:title.add/preset-name-and-place",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "expect": {
+        "status": "applied",
+        "digest": "3d2e74481c3c68202f48031e7e6c15650841f2c7c716bad0658b7acb45fa4595",
+        "envelopeDigest": "e5c566b01a88bab669cfc368019e8ac456fb60a0a0128433a2f570b309b4696c",
+        "fixedPoint": true,
+        "clockIndependent": true,
+        "draws": [
+          [
+            {
+              "draw": 0,
+              "id": "01d0ea83-1a11-473a-902a-3a943605f44f",
+              "at": [
+                "timeline.items[0].id"
+              ]
+            }
+          ]
+        ],
+        "graph": {
+          "id": "fl-graph-protocol",
+          "name": "Graph protocol",
+          "description": "",
+          "createdAt": 0,
+          "updatedAt": 0,
+          "duration": 0,
+          "schemaVersion": 15,
+          "metadata": {
+            "width": 1920,
+            "height": 1080,
+            "fps": 30,
+            "frameRate": {
+              "num": 30,
+              "den": 1
+            }
+          },
+          "timeline": {
+            "tracks": [
+              {
+                "id": "v1",
+                "name": "V1",
+                "kind": "video",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 0,
+                "syncLock": true,
+                "volume": 0,
+                "items": []
+              },
+              {
+                "id": "a1",
+                "name": "A1",
+                "kind": "audio",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 1,
+                "syncLock": true,
+                "volume": 0,
+                "items": []
+              }
+            ],
+            "items": [
+              {
+                "id": "01d0ea83-1a11-473a-902a-3a943605f44f",
+                "type": "text",
+                "trackId": "v1",
+                "from": 0,
+                "durationInFrames": 90,
+                "label": "Summit",
+                "text": "Summit",
+                "color": "#ffffff",
+                "fontSize": 55,
+                "fontFamily": "Inter",
+                "fontWeight": "semibold",
+                "fontStyle": "normal",
+                "underline": false,
+                "backgroundRadius": 0,
+                "textAlign": "left",
+                "verticalAlign": "middle",
+                "lineHeight": 1.1,
+                "letterSpacing": 0,
+                "textPadding": 20,
+                "textShadow": {
+                  "offsetX": 0,
+                  "offsetY": 6,
+                  "blur": 18,
+                  "color": "#030712"
+                },
+                "textStylePresetId": "name-and-place",
+                "textStyleScale": 1
+              }
+            ],
+            "masterBusDb": 0,
+            "masterBusMuted": false,
+            "currentFrame": 0,
+            "zoomLevel": 1,
+            "scrollPosition": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "title.add/preset-date-and-place",
+      "story": "FL-1822",
+      "covers": [
+        "title.add"
+      ],
+      "summary": "The title style date-and-place, by its id.",
+      "base": "empty-30",
+      "envelopes": [
+        {
+          "id": "title.add",
+          "payload": {
+            "text": "Summit",
+            "at": {
+              "num": 0,
+              "den": 1
+            },
+            "style": "date-and-place"
+          },
+          "revision": 1,
+          "idempotencyKey": "fl1822:title.add/preset-date-and-place",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "expect": {
+        "status": "applied",
+        "digest": "48785529754de14a3c75190a7abb3ae1ba3a08a2ab733f703e8d3302b6a3ce7e",
+        "envelopeDigest": "21489e2c64f381dbf1e691da1a7c5bf5beafea2ed7a982859d29d8c4bdd0d63c",
+        "fixedPoint": true,
+        "clockIndependent": true,
+        "draws": [
+          [
+            {
+              "draw": 0,
+              "id": "9ae07b69-12da-4c1a-850f-20f0e0fe1d30",
+              "at": [
+                "timeline.items[0].id"
+              ]
+            }
+          ]
+        ],
+        "graph": {
+          "id": "fl-graph-protocol",
+          "name": "Graph protocol",
+          "description": "",
+          "createdAt": 0,
+          "updatedAt": 0,
+          "duration": 0,
+          "schemaVersion": 15,
+          "metadata": {
+            "width": 1920,
+            "height": 1080,
+            "fps": 30,
+            "frameRate": {
+              "num": 30,
+              "den": 1
+            }
+          },
+          "timeline": {
+            "tracks": [
+              {
+                "id": "v1",
+                "name": "V1",
+                "kind": "video",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 0,
+                "syncLock": true,
+                "volume": 0,
+                "items": []
+              },
+              {
+                "id": "a1",
+                "name": "A1",
+                "kind": "audio",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 1,
+                "syncLock": true,
+                "volume": 0,
+                "items": []
+              }
+            ],
+            "items": [
+              {
+                "id": "9ae07b69-12da-4c1a-850f-20f0e0fe1d30",
+                "type": "text",
+                "trackId": "v1",
+                "from": 0,
+                "durationInFrames": 90,
+                "label": "Summit",
+                "text": "Summit",
+                "color": "#ffffff",
+                "fontSize": 55,
+                "fontFamily": "Inter",
+                "fontWeight": "semibold",
+                "fontStyle": "normal",
+                "underline": false,
+                "backgroundRadius": 0,
+                "textAlign": "right",
+                "verticalAlign": "middle",
+                "lineHeight": 1.1,
+                "letterSpacing": 0,
+                "textPadding": 20,
+                "textShadow": {
+                  "offsetX": 0,
+                  "offsetY": 6,
+                  "blur": 18,
+                  "color": "#030712"
+                },
+                "textStylePresetId": "date-and-place",
+                "textStyleScale": 1
+              }
+            ],
+            "masterBusDb": 0,
+            "masterBusMuted": false,
+            "currentFrame": 0,
+            "zoomLevel": 1,
+            "scrollPosition": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "title.add/preset-chapter-card",
+      "story": "FL-1822",
+      "covers": [
+        "title.add"
+      ],
+      "summary": "The title style chapter-card, by its id.",
+      "base": "empty-30",
+      "envelopes": [
+        {
+          "id": "title.add",
+          "payload": {
+            "text": "Summit",
+            "at": {
+              "num": 0,
+              "den": 1
+            },
+            "style": "chapter-card"
+          },
+          "revision": 1,
+          "idempotencyKey": "fl1822:title.add/preset-chapter-card",
+          "issuedAt": 1758800000000
+        }
+      ],
+      "expect": {
+        "status": "applied",
+        "digest": "d6deafe2742a354cc8169488398976c0da9dd50d54653a2c0cab3297a84b4b78",
+        "envelopeDigest": "64af4ba2b55a4d7543c5c9b69214cf1bbb5d28d8cfad170fd79975556d70ae53",
+        "fixedPoint": true,
+        "clockIndependent": true,
+        "draws": [
+          [
+            {
+              "draw": 0,
+              "id": "35c1c34a-2568-48a0-8e13-c8046c40d92c",
+              "at": [
+                "timeline.items[0].id"
+              ]
+            }
+          ]
+        ],
+        "graph": {
+          "id": "fl-graph-protocol",
+          "name": "Graph protocol",
+          "description": "",
+          "createdAt": 0,
+          "updatedAt": 0,
+          "duration": 0,
+          "schemaVersion": 15,
+          "metadata": {
+            "width": 1920,
+            "height": 1080,
+            "fps": 30,
+            "frameRate": {
+              "num": 30,
+              "den": 1
+            }
+          },
+          "timeline": {
+            "tracks": [
+              {
+                "id": "v1",
+                "name": "V1",
+                "kind": "video",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 0,
+                "syncLock": true,
+                "volume": 0,
+                "items": []
+              },
+              {
+                "id": "a1",
+                "name": "A1",
+                "kind": "audio",
+                "height": 100,
+                "locked": false,
+                "visible": true,
+                "muted": false,
+                "solo": false,
+                "order": 1,
+                "syncLock": true,
+                "volume": 0,
+                "items": []
+              }
+            ],
+            "items": [
+              {
+                "id": "35c1c34a-2568-48a0-8e13-c8046c40d92c",
+                "type": "text",
+                "trackId": "v1",
+                "from": 0,
+                "durationInFrames": 90,
+                "label": "Summit",
+                "text": "Summit",
+                "color": "#ffffff",
+                "fontSize": 64,
+                "fontFamily": "Inter Tight",
+                "fontWeight": "bold",
+                "fontStyle": "normal",
+                "underline": false,
+                "backgroundColor": "#4f3f75",
+                "backgroundRadius": 20,
+                "textAlign": "center",
+                "verticalAlign": "middle",
+                "lineHeight": 1.05,
+                "letterSpacing": -1,
+                "textPadding": 28,
+                "textStylePresetId": "chapter-card",
+                "textStyleScale": 1
+              }
+            ],
+            "masterBusDb": 0,
+            "masterBusMuted": false,
+            "currentFrame": 0,
+            "zoomLevel": 1,
+            "scrollPosition": 0
+          }
+        }
+      }
+    },
+    {
       "id": "title.add/style-plain-and-bold-by-id",
       "story": "FL-309",
       "covers": [

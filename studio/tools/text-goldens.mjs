@@ -773,6 +773,9 @@ const TEMPLATE_SPANS = {
   'event-card': (z) => [{ fontSize: Math.max(18, round(z * 0.28)), fontWeight: 'bold', color: '#fca5a5', letterSpacing: 2 }, {},
     { fontSize: Math.max(22, round(z * 0.38)), fontWeight: 'semibold', color: '#bfdbfe', letterSpacing: 1 }],
   badge: () => [{ letterSpacing: 2 }],
+  'name-and-place': (z) => [{ fontWeight: 'bold' }, { fontSize: Math.max(20, round(z * 0.55)), fontWeight: 'medium', color: '#e5e7eb' }],
+  'date-and-place': (z) => [{ fontWeight: 'bold' }, { fontSize: Math.max(20, round(z * 0.55)), fontWeight: 'medium', color: '#e5e7eb' }],
+  'chapter-card': (z) => [{}, { fontSize: Math.max(20, round(z * 0.45)), fontWeight: 'medium', color: '#e5e7eb' }],
 };
 export const ANIMATED_STYLE_FIELDS = ['fontSize', 'fontFamily', 'fontWeight', 'fontStyle', 'underline', 'color', 'backgroundColor', 'backgroundRadius',
   'textAlign', 'verticalAlign', 'lineHeight', 'letterSpacing', 'textPadding', 'textShadow', 'stroke', 'textSpans', 'textStyleScale'];
