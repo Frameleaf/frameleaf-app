@@ -915,7 +915,7 @@ describe(TimelineService.name, () => {
         libraryDisplay: null,
       });
       mocks.asset.getTimeBuckets.mockResolvedValue([]);
-      await sut.getTimeBuckets(authStub.admin, { albumId });
+      await sut.getTimeBuckets(authStub.admin, { albumId, albumSections: true });
       const [options] = mocks.asset.getTimeBuckets.mock.calls[0];
       expect(options.albumView).toEqual({
         albumId,
@@ -924,6 +924,11 @@ describe(TimelineService.name, () => {
         oneVersion: true,
         prefer: ['edits'],
       });
+      // a client that draws no sections (a share link's page, an app without them) gets their photos with the
+      // others: a Video folder's clips are never shown nowhere
+      await sut.getTimeBuckets(authStub.admin, { albumId });
+      const [withSections] = mocks.asset.getTimeBuckets.mock.calls[1];
+      expect(withSections.albumView?.exclude.toSorted()).toEqual(['edits', 'raw']);
     });
 
     it('FL-1841: a narrowed album shows every file that matches', async () => {

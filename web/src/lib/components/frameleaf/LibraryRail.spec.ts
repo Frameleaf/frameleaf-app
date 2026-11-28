@@ -988,6 +988,8 @@ describe('LibraryRail right-click menu (approved design, 2026-11-04)', () => {
     ).toEqual([
       'New album in Rockies',
       'Rename',
+      // it is pinned (that is why it is in the sidebar): unpinned where the pin shows
+      'Unpin from sidebar',
       'Icon and colour…',
       'Edit details',
       'Move to…',

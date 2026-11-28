@@ -75,10 +75,16 @@
   import { Route } from '$lib/route';
   import { mediaQueryManager } from '$lib/stores/media-query-manager.svelte';
   import { albumTreeDropdown, sidebarCollapsed } from '$lib/stores/preferences.store';
-  import { handleCreateAlbumEntry, handleUpdateAlbumInfo, isStaleDirectoryError } from '$lib/services/album.service';
+  import {
+    addAssetsToAlbums,
+    handleCreateAlbumEntry,
+    handleUpdateAlbumInfo,
+    isStaleDirectoryError,
+  } from '$lib/services/album.service';
   import { handleError } from '$lib/utils/handle-error';
   import { dropZone, planKeyMove, planRailMove, type RailDrop, type RailMove } from '$lib/frameleaf/rail-moves';
   import { canEdit } from '$lib/frameleaf/album-directory';
+  import { draggedPhotos, endPhotoDrag } from '$lib/frameleaf/photo-drag';
   import {
     AlbumKind,
     AssetTypeEnum,
@@ -398,6 +404,44 @@
           },
         };
   const dropClass = (id: string) => (drop?.id === id ? `fl-drop-${drop.where}` : '');
+
+  /**
+   * Photos dragged from a grid onto an album here are added to it. One listener on the rail serves every album
+   * row (the tree, Pinned, Recent); the rows' own drag handlers are for moving albums and step aside for photos.
+   */
+  let photoDropId = $state<string | null>(null);
+  const photoTarget = (event: DragEvent) => {
+    if (!draggedPhotos() || !(event.target instanceof Element)) {
+      return;
+    }
+    const id = event.target.closest<HTMLElement>('a[data-album-id]')?.dataset.albumId;
+    const album = id ? albumRecords.find((record) => record.id === id) : undefined;
+    // a collection holds albums, not photos; a smart album fills itself
+    return album && album.kind !== AlbumKind.Collection && !album.isSmart && canEdit(album, authManager.user.id)
+      ? album.id
+      : undefined;
+  };
+  const onPhotoDragOver = (event: DragEvent) => {
+    const id = photoTarget(event);
+    photoDropId = id ?? null;
+    if (id) {
+      event.preventDefault();
+      if (event.dataTransfer) {
+        event.dataTransfer.dropEffect = 'copy';
+      }
+    }
+  };
+  const onPhotoDrop = (event: DragEvent) => {
+    const id = photoTarget(event);
+    const assetIds = draggedPhotos();
+    photoDropId = null;
+    endPhotoDrag();
+    if (!id || !assetIds) {
+      return;
+    }
+    event.preventDefault();
+    void addAssetsToAlbums([id], assetIds, { notify: true }).then(() => refreshAlbums());
+  };
 
   const finishRename = async (node: FrameleafAlbumNode, value: string | null) => {
     renaming = null;
@@ -1043,6 +1087,7 @@
       data-sveltekit-preload-data="hover"
       {...typeof icon === 'string' ? {} : (attrs ?? moveAttrs(icon))}
       class:fl-dragging={typeof icon !== 'string' && (dragId === icon.id || pinDragId === icon.id)}
+      class:fl-photo-drop={typeof icon !== 'string' && photoDropId === icon.id}
       data-drop={typeof icon === 'string' ? undefined : dropClass(icon.id) || undefined}
     >
       {#if typeof icon === 'string'}
@@ -1094,6 +1139,7 @@
             aria-current={isAlbumCurrent(node) ? 'page' : undefined}
             data-album-id={node.id}
             data-sveltekit-preload-data="hover"
+            class:fl-photo-drop={photoDropId === node.id}
             {...moveAttrs(node)}
             class:fl-dragging={dragId === node.id}
             data-drop={dropClass(node.id) || undefined}
@@ -1508,8 +1554,13 @@
 <svelte:document oncontextmenu={onRailContextMenu} onkeydown={onRailKeydown} />
 
 <Sidebar ariaLabel={$t('frameleaf_rail_navigation')} header={railHeader} footer={railFooter}>
+  <!-- svelte-ignore a11y_no_static_element_interactions (a drop target for the mouse; the keyboard has Add to album) -->
   <div
     bind:this={railElement}
+    ondragover={onPhotoDragOver}
+    ondragleave={() => (photoDropId = null)}
+    ondrop={onPhotoDrop}
+    data-photo-drop={photoDropId ?? undefined}
     class="frameleaf fl-rail"
     class:fl-icon-only={iconOnly}
     class:is-collapsing={collapsing}
@@ -1674,6 +1725,7 @@
   :global(.fl-link[data-drop='fl-drop-after']) {
     box-shadow: inset 0 -2px 0 var(--fl-accent);
   }
+  :global(.fl-link.fl-photo-drop),
   :global(.fl-link[data-drop='fl-drop-into']) {
     background: var(--fl-accent-soft);
     outline: 1px solid var(--fl-accent);

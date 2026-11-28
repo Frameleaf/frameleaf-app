@@ -25,6 +25,7 @@
    * part. Nothing here downloads an original.
    */
   import { formatApproximateDate } from '$lib/frameleaf/approximate-date';
+  import { endPhotoDrag, startPhotoDrag } from '$lib/frameleaf/photo-drag';
   import ImageThumbnail from '$lib/components/assets/thumbnail/ImageThumbnail.svelte';
   import TileJobState from '$lib/components/frameleaf/TileJobState.svelte';
   import { beginDragSelect, DRAG_SELECT_EVENT } from '$lib/components/timeline/drag-select';
@@ -492,6 +493,9 @@
   class:has-actions={hasQuickActions && !selecting}
   class:is-revealing={revealing}
   use:dragSelected
+  draggable={coarsePointer ? undefined : true}
+  ondragstart={(event) => startPhotoDrag(event, asset.id)}
+  ondragend={endPhotoDrag}
   aria-busy={job?.state === 'pending' ? true : undefined}
   data-asset-id={asset.id}
   data-layout={layout}

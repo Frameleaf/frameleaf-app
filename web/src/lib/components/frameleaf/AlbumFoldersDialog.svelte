@@ -25,6 +25,7 @@
     mdiImageOutline,
     mdiVideoOutline,
   } from '@mdi/js';
+  import { untrack } from 'svelte';
   import { t } from 'svelte-i18n';
 
   interface Props {
@@ -46,7 +47,10 @@
   /** The show-in-front list: the saved order, then any folder it leaves out, so each folder can be placed. */
   const preferOrder = (saved: string[]) => {
     const names = folders.folders.map(({ name }) => name);
-    const known = saved.filter((name) => names.some((each) => each.toLowerCase() === name.toLowerCase()));
+    // by the folder's own spelling ("edits" for a saved "Edits"): `display` is keyed by it
+    const known = saved
+      .map((name) => names.find((each) => each.toLowerCase() === name.toLowerCase()))
+      .filter((name): name is string => !!name);
     return [...known, ...names.filter((name) => known.every((each) => each.toLowerCase() !== name.toLowerCase()))];
   };
 
@@ -54,10 +58,13 @@
     if (!open) {
       return;
     }
-    display = Object.fromEntries(folders.folders.map(({ name, display }) => [name, display]));
-    versions = folders.versions;
-    prefer = preferOrder(folders.prefer);
-    applyToLibrary = false;
+    // only when it opens: the album reading its folders again (a scan adding photos) must not undo choices in hand
+    untrack(() => {
+      display = Object.fromEntries(folders.folders.map(({ name, display }) => [name, display]));
+      versions = folders.versions;
+      prefer = preferOrder(folders.prefer);
+      applyToLibrary = false;
+    });
   });
 
   const folderName = $derived(folders.folderPath?.split('/').findLast(Boolean) ?? '');

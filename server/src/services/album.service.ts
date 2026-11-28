@@ -728,6 +728,8 @@ export class AlbumService extends BaseService {
       ...(await this.originOf(auth, album.id)),
       ...((await this.recoveredAlbumIds()).has(album.id) && { recovered: true }),
       ...(await this.folderSourceOf(auth, album.id)),
+      // every viewer's page reads the album's folder sections, not only the library owner's
+      ...((await this.albumRepository.getFolderAlbumLink(album.id)) && { fromFolder: true }),
     };
   }
 
@@ -750,7 +752,12 @@ export class AlbumService extends BaseService {
     const children = await this.albumRepository.getFolderAlbumChildren(id, link.libraryId, link.folderPath);
     const byFolder = new Map<string, typeof items>();
     for (const item of listed.toSorted((a, b) => new Date(a.takenAt).getTime() - new Date(b.takenAt).getTime())) {
-      byFolder.set(item.folder, [...(byFolder.get(item.folder) ?? []), item]);
+      const inFolder = byFolder.get(item.folder);
+      if (inFolder) {
+        inFolder.push(item);
+      } else {
+        byFolder.set(item.folder, [item]);
+      }
     }
     const childOf = new Map(
       children.map((child) => [subfolderOf(child.folderPath, link.folderPath).toLowerCase(), child]),
@@ -766,11 +773,15 @@ export class AlbumService extends BaseService {
       return display === 'section' || (display === 'with' && !behind.has(item.id));
     });
     const isOwner = !auth.sharedLink && link.libraryOwnerId === auth.user.id;
+    // With "an album for every folder" each folder inside is its own album and this one holds its own folder only:
+    // there is nothing to choose, and a choice saved here changed nothing. No folders are listed, so no dialog.
+    const library = await this.libraryRepository.get(link.libraryId);
+    const everyFolder = resolveFolderAlbumOptions(library?.folderAlbumOptions).shape === 'every';
     return {
       ...(isOwner && { libraryId: link.libraryId, libraryName: link.libraryName, folderPath: link.folderPath }),
-      canEdit: isOwner,
+      canEdit: isOwner && !everyFolder,
       usesLibraryChoice: link.displayChoices === null,
-      folders: names.map((name) => {
+      folders: (everyFolder ? [] : names).map((name) => {
         const inFolder = byFolder.get(name) ?? [];
         const videos = inFolder.filter((item) => item.isVideo).length;
         const child = childOf.get(name.toLowerCase());

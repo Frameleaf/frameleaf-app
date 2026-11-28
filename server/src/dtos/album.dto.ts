@@ -379,6 +379,13 @@ export const AlbumResponseSchema = z
     folderAlbum: AlbumFolderSourceSchema.optional().describe(
       "Present when the album was made for a folder of one of your external libraries and is kept in sync with it. Only the library's owner is told. Populated by GET /albums, GET /albums/tree, GET /albums/hierarchy and GET /albums/{id}.",
     ),
+    // FL-1838
+    fromFolder: z
+      .boolean()
+      .optional()
+      .describe(
+        "True when the album was made from a folder and shows its folders as chosen (GET /albums/{id}/folders), told to everyone who can open the album; which folder is told only to the library's owner (folderAlbum). Populated by GET /albums/{id}.",
+      ),
   })
   .meta({ id: 'AlbumResponseDto' });
 

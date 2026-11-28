@@ -1623,6 +1623,8 @@
     text-transform: uppercase;
   }
   .badge-pill :global(svg) {
+    /* the icon is a block by default, which put it on a line of its own above the label */
+    display: inline-block;
     margin-inline-end: var(--fl-space-1);
     vertical-align: -2px;
   }

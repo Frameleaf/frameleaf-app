@@ -257,7 +257,14 @@
     handlePromiseError(loadCollectionAssets(collectionCursor, collectionRequest, albumId, album.order));
   };
 
-  const assetCount = $derived(isCollection ? (node?.assetCount ?? collectionAssets.length) : album.assetCount);
+  // FL-1838: an album made from a folder counts what it shows (no hidden RAW, each photo once), as its grid does
+  const assetCount = $derived(
+    isCollection
+      ? (node?.assetCount ?? collectionAssets.length)
+      : albumFolders
+        ? albumFolders.shownPhotos + albumFolders.shownVideos
+        : album.assetCount,
+  );
 
   /* ------------------------------------------------------------------ */
   /* Library session and bulk actions                                    */
@@ -608,18 +615,20 @@
 
   /**
    * FL-1838: an album made from a folder with folders inside it (Original, RAW, Edits, Video): how each folder shows
-   * here, read once the album is known. The library's owner is told the folder, so only they get the chips and the
-   * dialog; everyone sees the album as those choices make it.
+   * here, read once the album is known. Everyone who can open the album sees it as those choices make it, the
+   * sections too (`fromFolder`); only the library's owner is told the folder and gets the dialog.
    */
   let albumFolders = $state<AlbumFoldersResponseDto>();
   /** The folder a chip narrowed the album to. */
   let albumFolder = $state<string>();
   let foldersOpen = $state(false);
+  /** The album whose folders could not be read: its sections' photos then come with the others, never nowhere. */
+  let foldersFailedFor = $state<string>();
   const showFolders = $derived(!!albumFolders && albumFolders.folders.length > 0);
   $effect(() => {
     const id = albumId;
     void album.assetCount;
-    if (!album.folderAlbum) {
+    if (!album.fromFolder && !album.folderAlbum) {
       albumFolders = undefined;
       albumFolder = undefined;
       return;
@@ -637,13 +646,19 @@
           void timelineManager?.refresh();
         }
       })
-      // the chips are a shortcut: without them the album still shows as its folder choices say
-      .catch(() => {});
+      // without the sections the timeline is asked for their photos too (`albumSections` below)
+      .catch(() => {
+        if (!controller.signal.aborted) {
+          foldersFailedFor = id;
+        }
+      });
     return () => controller.abort();
   });
   $effect(() => {
     void albumId;
     albumFolder = undefined;
+    // another album's chips and sections never show here while this one's are read
+    albumFolders = undefined;
   });
   const onFoldersSaved = (saved: AlbumFoldersResponseDto) => {
     albumFolders = saved;
@@ -651,7 +666,13 @@
     void timelineManager?.refresh();
   };
 
-  const options = $derived({ albumId, order: album.order, ...(albumFolder && { albumFolder }) });
+  const options = $derived({
+    albumId,
+    order: album.order,
+    ...(albumFolder && { albumFolder }),
+    // this page draws the folders' own sections, so the timeline leaves their photos out
+    ...(album.fromFolder && foldersFailedFor !== albumId && { albumSections: true }),
+  });
 
   $effect(() => {
     if (!album.isActivityEnabled && activityManager.commentCount === 0) {
@@ -827,7 +848,10 @@
 {/snippet}
 
 {#snippet suggestions()}
-  {#if !isCollection && !isSpace && canChangeAlbum}
+  <!-- ponytail: no trip suggestions on an album made from a folder: they offered its own Edits album's photos
+       ("18 more photos look like they're from this trip"). Bring them back once the server leaves out the photos
+       of the albums inside it and of its hidden folders. -->
+  {#if !isCollection && !isSpace && canChangeAlbum && !album.fromFolder && !album.folderAlbum}
     {#key albumId}
       {@const view = albumView}
       <!-- FL-1092 / FL-1093: photos that look like they're from this album's trip. -->

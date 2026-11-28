@@ -4274,7 +4274,13 @@ describe(AlbumService.name, () => {
       mocks.album.getFolderAlbumItems.mockResolvedValue(items);
       mocks.album.getFolderVersionRows.mockResolvedValue([]);
       mocks.album.getFolderAlbumChildren.mockResolvedValue([]);
+      mocks.library.get.mockResolvedValue({ id: libraryId, folderAlbumOptions: { shape: 'events' } } as never);
+    });
+
+    it('lists no folders to choose from when every folder is its own album', async () => {
+      mocks.album.getFolderAlbumLink.mockResolvedValue(link());
       mocks.library.get.mockResolvedValue({ id: libraryId, folderAlbumOptions: null } as never);
+      await expect(sut.getFolders(authStub.admin, albumId)).resolves.toMatchObject({ folders: [], canEdit: false });
     });
 
     it("shows FL-1837's albums inside as albums inside, and lets one come back into the album", async () => {

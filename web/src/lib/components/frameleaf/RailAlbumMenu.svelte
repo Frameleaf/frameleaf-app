@@ -4,6 +4,7 @@
   import Menu from '$lib/components/frameleaf/Menu.svelte';
   import MenuItem from '$lib/components/frameleaf/MenuItem.svelte';
   import { canEdit, canMerge, isOwner } from '$lib/frameleaf/album-directory';
+  import { pendingPins, togglePinned } from '$lib/frameleaf/pinned-albums';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { Route } from '$lib/route';
   import { handleError } from '$lib/utils/handle-error';
@@ -26,6 +27,8 @@
     mdiLogoutVariant,
     mdiPaletteOutline,
     mdiPencilOutline,
+    mdiPin,
+    mdiPinOff,
     mdiPlus,
     mdiRenameOutline,
     mdiUpload,
@@ -160,6 +163,11 @@
     {@const space = album.kind === AlbumKind.Space}
     {@const parent = album.parentId ? albums.find(({ id }) => id === album.parentId) : undefined}
     {@const hasChildren = albums.some(({ parentId }) => parentId === album.id)}
+    {@const isPinned = (
+      $pendingPins ??
+      (authManager.authenticated ? authManager.preferences.albums.pinned : undefined) ??
+      []
+    ).includes(album.id)}
     {#if editor && !space}
       <MenuItem onSelect={() => run((loaded) => loaded.create(AlbumKind.Album, album.id))}>
         <Icon icon={mdiPlus} size="18" aria-hidden={true} />
@@ -178,6 +186,11 @@
         <Icon icon={mdiRenameOutline} size="18" aria-hidden={true} />{$t('rename')}
       </MenuItem>
     {/if}
+    <!-- Unpin where the pin shows: the Albums page hides an empty pinned album, so it could not be unpinned there. -->
+    <MenuItem onSelect={() => void togglePinned(album.id)}>
+      <Icon icon={isPinned ? mdiPinOff : mdiPin} size="18" aria-hidden={true} />
+      {isPinned ? $t('frameleaf_albums_unpin') : $t('frameleaf_albums_pin')}
+    </MenuItem>
     {#if editor && !space}
       <MenuItem onSelect={() => runFor(album.id, (loaded, album) => loaded.appearance(album, hasChildren))}>
         <Icon icon={mdiPaletteOutline} size="18" aria-hidden={true} />{$t('frameleaf_album_color_menu')}

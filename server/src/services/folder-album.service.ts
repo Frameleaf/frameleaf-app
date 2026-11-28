@@ -130,6 +130,13 @@ export class FolderAlbumService extends BaseService {
     await this.queueSync(libraryId);
   }
 
+  /** "New folders only", ahead of the rules being saved: the albums made so far are kept from this moment. */
+  async keepExisting(libraryId: string): Promise<void> {
+    await this.databaseRepository.withLock(DatabaseLock.LibraryFolderAlbums, () =>
+      this.libraryRepository.setFolderAlbumsKept(libraryId, true),
+    );
+  }
+
   /**
    * FL-1837: the owner's libraries that made an album for each folder of a folder-by-event layout, and how many
    * albums one album for each event folder would keep instead. The Albums page offers that change once.
@@ -150,25 +157,32 @@ export class FolderAlbumService extends BaseService {
         }
         continue;
       }
-      const roots = this.rootsOf(library);
-      const counts = await this.libraryRepository.getFolderPhotoCounts(library.id);
-      if (!looksLikeEventFolders(roots, counts)) {
-        continue;
+      const suggestion = await this.readSuggestion(library, options);
+      for (const old of suggestionCache.keys().filter((old) => old.startsWith(`${library.id}:`))) {
+        suggestionCache.delete(old);
       }
-      const { albums, empty } = await this.libraryRepository.getFolderAlbumCounts(library.id);
-      const suggested = planFolderAlbums(roots, counts, EVENT_FOLDER_ALBUM_OPTIONS, library.name).size;
-      if (suggested < albums) {
-        suggestions.push({
-          libraryId: library.id,
-          name: library.name,
-          albums,
-          empty,
-          suggestedAlbums: suggested,
-          options,
-        });
+      suggestionCache.set(key, suggestion);
+      if (suggestion) {
+        suggestions.push(suggestion);
       }
     }
     return suggestions;
+  }
+
+  private async readSuggestion(
+    library: { id: string; name: string; importPaths: string[] },
+    options: FolderAlbumSuggestion['options'],
+  ): Promise<FolderAlbumSuggestion | undefined> {
+    const roots = this.rootsOf(library);
+    const counts = await this.libraryRepository.getFolderPhotoCounts(library.id);
+    if (!looksLikeEventFolders(roots, counts)) {
+      return;
+    }
+    const { albums, empty } = await this.libraryRepository.getFolderAlbumCounts(library.id);
+    const suggestedAlbums = planFolderAlbums(roots, counts, EVENT_FOLDER_ALBUM_OPTIONS, library.name).size;
+    return suggestedAlbums < albums
+      ? { libraryId: library.id, name: library.name, albums, empty, suggestedAlbums, options }
+      : undefined;
   }
 
   private rootsOf(library: { importPaths: string[] }) {
@@ -229,6 +243,7 @@ export class FolderAlbumService extends BaseService {
 
     // Folders renamed or moved: their albums follow, so nothing the owner did to them is lost.
     const moves = await this.findMovedFolders(libraryId, tree, byPath, {
+      counts,
       roots,
       options,
       name: library.name,
@@ -272,6 +287,7 @@ export class FolderAlbumService extends BaseService {
       .values()
       .toArray()
       .toSorted((a, b) => a.depth - b.depth || a.folderPath.localeCompare(b.folderPath));
+    const madeNow = new Set<string>();
     for (const node of nodes) {
       const link = byPath.get(node.folderPath);
       if (link) {
@@ -283,7 +299,34 @@ export class FolderAlbumService extends BaseService {
         continue;
       }
       byPath.set(node.folderPath, await this.createAlbum(libraryId, ownerId, node, order, byPath));
+      madeNow.add(node.folderPath);
       result.created++;
+    }
+
+    // "Folders above become collections" changed: an album the sync placed follows to where the rules put it now.
+    // Only out of the album of a folder above that no longer gets one, or into one made just now: anywhere else is
+    // where the owner put it, and that wins.
+    const linkOfAlbum = new Map(original.values().map((link) => [link.albumId, link]));
+    for (const node of nodes) {
+      const link = byPath.get(node.folderPath)!;
+      const plannedParentId = node.parentPath ? (byPath.get(node.parentPath)?.albumId ?? null) : null;
+      if (link.isKept || madeNow.has(node.folderPath) || link.parentId === plannedParentId) {
+        continue;
+      }
+      const parent = link.parentId ? linkOfAlbum.get(link.parentId) : undefined;
+      const outOfGone = !!parent && !tree.has(parent.folderPath) && isSameOrInside(node.folderPath, parent.folderPath);
+      const intoNew = link.parentId === null && !!node.parentPath && madeNow.has(node.parentPath);
+      if (!outOfGone && !intoNew) {
+        continue;
+      }
+      try {
+        await this.albumRepository.reparent(link.albumId, plannedParentId, link.parentId);
+        byPath.set(node.folderPath, { ...link, parentId: plannedParentId });
+      } catch (error) {
+        if (!(error instanceof ConflictException)) {
+          throw error;
+        }
+      }
     }
 
     // A moved folder's album follows it to its new parent folder, unless the owner moved the album elsewhere.
@@ -374,9 +417,13 @@ export class FolderAlbumService extends BaseService {
       .toSorted((a, b) => b.folderPath.length - a.folderPath.length);
     const keep = new Set(byPath.keys().filter((folderPath) => tree.has(folderPath) || edited.has(folderPath)));
     for (const link of gone) {
+      // an album still inside it: one the rules moved out above no longer holds it here
       const keepsSomething =
         !roots.includes(link.folderPath) &&
-        [...keep].some((folderPath) => folderPath.startsWith(`${link.folderPath}/`));
+        [...keep].some(
+          (folderPath) =>
+            folderPath.startsWith(`${link.folderPath}/`) && byPath.get(folderPath)?.parentId === link.albumId,
+        );
       if (edited.has(link.folderPath) || keepsSomething) {
         keep.add(link.folderPath);
         await this.moveIntoPlannedAlbum(byPath, tree, roots, link);
@@ -490,20 +537,26 @@ export class FolderAlbumService extends BaseService {
     tree: Map<string, FolderAlbumPlanNode>,
     byPath: Map<string, FolderAlbumLink>,
     {
+      counts,
       roots,
       options,
       name,
       albumRules,
     }: {
+      counts: FolderCount[];
       roots: string[];
       options: FolderAlbumOptions;
       name: string;
       albumRules: ReadonlyMap<string, Readonly<Record<string, SubfolderRule>>>;
     },
   ) {
+    // A folder whose files are still where they were did not move: the rules stopped giving it an album. Matching
+    // it by its files would hand its album (its name, the people it is shared with) to the folder above, which
+    // holds every one of those files and those of its other folders too.
+    const inPlace = new Set(counts.filter(({ items, photos }) => (items ?? photos) > 0).map((row) => row.folderPath));
     const goneFolders = byPath
       .keys()
-      .filter((folderPath) => !tree.has(folderPath))
+      .filter((folderPath) => !tree.has(folderPath) && !inPlace.has(folderPath))
       .toArray();
     const free = new Set(tree.keys().filter((folderPath) => !byPath.has(folderPath)));
     if (goneFolders.length === 0 || free.size === 0) {

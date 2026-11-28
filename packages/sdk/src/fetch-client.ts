@@ -5275,6 +5275,8 @@ export type AlbumResponseDto = {
     endDate?: string;
     /** Present when the album was made for a folder of one of your external libraries and is kept in sync with it. Only the library's owner is told. Populated by GET /albums, GET /albums/tree, GET /albums/hierarchy and GET /albums/{id}. */
     folderAlbum?: AlbumFolderSourceDto;
+    /** True when the album was made from a folder and shows its folders as chosen (GET /albums/{id}/folders), told to everyone who can open the album; which folder is told only to the library's owner (folderAlbum). Populated by GET /albums/{id}. */
+    fromFolder?: boolean;
     /** Has shared link */
     hasSharedLink: boolean;
     /** Uploads into this album are checked for several photos on one scan */
@@ -25885,6 +25887,8 @@ export type TimeBucketAssetDto = {
     albumFolder?: string;
     /** Filter assets belonging to a specific album */
     albumId?: string;
+    /** With albumId, for an album made from a folder: true leaves out the photos of the folders shown in a section of their own, for a client that draws those sections from GET /albums/{id}/folders. Left out, they come with the others, so a client that draws no sections still shows every photo */
+    albumSections?: boolean;
     /** Filter assets by media type */
     assetType?: AssetTypeEnum;
     /** Bounding box coordinates as west,south,east,north (WGS84) */
@@ -25949,6 +25953,8 @@ export type TimeBucketDto = {
     albumFolder?: string;
     /** Filter assets belonging to a specific album */
     albumId?: string;
+    /** With albumId, for an album made from a folder: true leaves out the photos of the folders shown in a section of their own, for a client that draws those sections from GET /albums/{id}/folders. Left out, they come with the others, so a client that draws no sections still shows every photo */
+    albumSections?: boolean;
     /** Filter assets by media type */
     assetType?: AssetTypeEnum;
     /** Bounding box coordinates as west,south,east,north (WGS84) */
@@ -26007,6 +26013,8 @@ export type TimelineDatesToCheckDto = {
     albumFolder?: string;
     /** Filter assets belonging to a specific album */
     albumId?: string;
+    /** With albumId, for an album made from a folder: true leaves out the photos of the folders shown in a section of their own, for a client that draws those sections from GET /albums/{id}/folders. Left out, they come with the others, so a client that draws no sections still shows every photo */
+    albumSections?: boolean;
     /** Filter assets by media type */
     assetType?: AssetTypeEnum;
     /** Bounding box coordinates as west,south,east,north (WGS84) */
@@ -26059,6 +26067,8 @@ export type TimelineHighlightsDto = {
     albumFolder?: string;
     /** Filter assets belonging to a specific album */
     albumId?: string;
+    /** With albumId, for an album made from a folder: true leaves out the photos of the folders shown in a section of their own, for a client that draws those sections from GET /albums/{id}/folders. Left out, they come with the others, so a client that draws no sections still shows every photo */
+    albumSections?: boolean;
     /** Filter assets by media type */
     assetType?: AssetTypeEnum;
     /** Bounding box coordinates as west,south,east,north (WGS84) */
@@ -26116,6 +26126,8 @@ export type TimelineOrderedDto = {
     albumFolder?: string;
     /** Filter assets belonging to a specific album */
     albumId?: string;
+    /** With albumId, for an album made from a folder: true leaves out the photos of the folders shown in a section of their own, for a client that draws those sections from GET /albums/{id}/folders. Left out, they come with the others, so a client that draws no sections still shows every photo */
+    albumSections?: boolean;
     /** Filter assets by media type */
     assetType?: AssetTypeEnum;
     /** Bounding box coordinates as west,south,east,north (WGS84) */
@@ -44980,10 +44992,11 @@ export function getTidiedAway({ kind, page, size }: {
 /**
  * Get time bucket
  */
-export function getTimeBucket({ after, albumFolder, albumId, assetType, bbox, before, bestPhotos, dateType, datesToCheck, filter, firstAssetId, imageEnrichment, isFavorite, isTrashed, key, lastAssetId, libraryScope, lockReason, membershipAlbumId, order, orderBy, personId, petId, slug, suppressedOnly, tagId, take, timeBucket, userId, visibility, withChildTags, withCoordinates, withPartners, withStacked }: {
+export function getTimeBucket({ after, albumFolder, albumId, albumSections, assetType, bbox, before, bestPhotos, dateType, datesToCheck, filter, firstAssetId, imageEnrichment, isFavorite, isTrashed, key, lastAssetId, libraryScope, lockReason, membershipAlbumId, order, orderBy, personId, petId, slug, suppressedOnly, tagId, take, timeBucket, userId, visibility, withChildTags, withCoordinates, withPartners, withStacked }: {
     after?: string;
     albumFolder?: string;
     albumId?: string;
+    albumSections?: boolean;
     assetType?: AssetTypeEnum;
     bbox?: string;
     before?: string;
@@ -45023,6 +45036,7 @@ export function getTimeBucket({ after, albumFolder, albumId, assetType, bbox, be
         after,
         albumFolder,
         albumId,
+        albumSections,
         assetType,
         bbox,
         before,
@@ -45061,9 +45075,10 @@ export function getTimeBucket({ after, albumFolder, albumId, assetType, bbox, be
 /**
  * Get time buckets
  */
-export function getTimeBuckets({ albumFolder, albumId, assetType, bbox, bestPhotos, dateType, datesToCheck, filter, imageEnrichment, isFavorite, isTrashed, key, libraryScope, locateAssetId, lockReason, order, orderBy, pageSize, personId, petId, slug, sort, suppressedOnly, tagId, userId, visibility, withChildTags, withCoordinates, withPartners, withStacked }: {
+export function getTimeBuckets({ albumFolder, albumId, albumSections, assetType, bbox, bestPhotos, dateType, datesToCheck, filter, imageEnrichment, isFavorite, isTrashed, key, libraryScope, locateAssetId, lockReason, order, orderBy, pageSize, personId, petId, slug, sort, suppressedOnly, tagId, userId, visibility, withChildTags, withCoordinates, withPartners, withStacked }: {
     albumFolder?: string;
     albumId?: string;
+    albumSections?: boolean;
     assetType?: AssetTypeEnum;
     bbox?: string;
     bestPhotos?: boolean;
@@ -45099,6 +45114,7 @@ export function getTimeBuckets({ albumFolder, albumId, assetType, bbox, bestPhot
     }>(`/timeline/buckets${QS.query(QS.explode({
         albumFolder,
         albumId,
+        albumSections,
         assetType,
         bbox,
         bestPhotos,
@@ -45134,9 +45150,10 @@ export function getTimeBuckets({ albumFolder, albumId, assetType, bbox, bestPhot
 /**
  * Get the dates to check
  */
-export function getTimelineDatesToCheck({ albumFolder, albumId, assetType, bbox, bestPhotos, dateType, filter, imageEnrichment, isFavorite, isTrashed, key, libraryScope, lockReason, order, orderBy, pageSize, personId, petId, slug, suppressedOnly, tagId, userId, visibility, withChildTags, withCoordinates, withPartners, withStacked }: {
+export function getTimelineDatesToCheck({ albumFolder, albumId, albumSections, assetType, bbox, bestPhotos, dateType, filter, imageEnrichment, isFavorite, isTrashed, key, libraryScope, lockReason, order, orderBy, pageSize, personId, petId, slug, suppressedOnly, tagId, userId, visibility, withChildTags, withCoordinates, withPartners, withStacked }: {
     albumFolder?: string;
     albumId?: string;
+    albumSections?: boolean;
     assetType?: AssetTypeEnum;
     bbox?: string;
     bestPhotos?: boolean;
@@ -45169,6 +45186,7 @@ export function getTimelineDatesToCheck({ albumFolder, albumId, assetType, bbox,
     }>(`/timeline/dates-to-check${QS.query(QS.explode({
         albumFolder,
         albumId,
+        albumSections,
         assetType,
         bbox,
         bestPhotos,
@@ -45201,9 +45219,10 @@ export function getTimelineDatesToCheck({ albumFolder, albumId, assetType, bbox,
 /**
  * Get timeline highlights
  */
-export function getTimelineHighlights({ albumFolder, albumId, assetType, bbox, bestPhotos, dateType, datesToCheck, filter, grouping, highlightCount, imageEnrichment, isFavorite, isTrashed, key, libraryScope, lockReason, order, orderBy, personId, petId, slug, suppressedOnly, tagId, userId, visibility, withChildTags, withCoordinates, withPartners, withStacked }: {
+export function getTimelineHighlights({ albumFolder, albumId, albumSections, assetType, bbox, bestPhotos, dateType, datesToCheck, filter, grouping, highlightCount, imageEnrichment, isFavorite, isTrashed, key, libraryScope, lockReason, order, orderBy, personId, petId, slug, suppressedOnly, tagId, userId, visibility, withChildTags, withCoordinates, withPartners, withStacked }: {
     albumFolder?: string;
     albumId?: string;
+    albumSections?: boolean;
     assetType?: AssetTypeEnum;
     bbox?: string;
     bestPhotos?: boolean;
@@ -45238,6 +45257,7 @@ export function getTimelineHighlights({ albumFolder, albumId, assetType, bbox, b
     }>(`/timeline/highlights${QS.query(QS.explode({
         albumFolder,
         albumId,
+        albumSections,
         assetType,
         bbox,
         bestPhotos,
@@ -45272,10 +45292,11 @@ export function getTimelineHighlights({ albumFolder, albumId, assetType, bbox, b
 /**
  * Get the timeline in a flat order
  */
-export function getTimelineOrdered({ after, albumFolder, albumId, assetType, bbox, before, bestPhotos, dateType, datesToCheck, filter, imageEnrichment, isFavorite, isTrashed, key, libraryScope, lockReason, order, orderBy, personId, petId, skip, slug, sort, suppressedOnly, tagId, take, userId, visibility, withChildTags, withCoordinates, withPartners, withStacked }: {
+export function getTimelineOrdered({ after, albumFolder, albumId, albumSections, assetType, bbox, before, bestPhotos, dateType, datesToCheck, filter, imageEnrichment, isFavorite, isTrashed, key, libraryScope, lockReason, order, orderBy, personId, petId, skip, slug, sort, suppressedOnly, tagId, take, userId, visibility, withChildTags, withCoordinates, withPartners, withStacked }: {
     after?: string;
     albumFolder?: string;
     albumId?: string;
+    albumSections?: boolean;
     assetType?: AssetTypeEnum;
     bbox?: string;
     before?: string;
@@ -45313,6 +45334,7 @@ export function getTimelineOrdered({ after, albumFolder, albumId, assetType, bbo
         after,
         albumFolder,
         albumId,
+        albumSections,
         assetType,
         bbox,
         before,

@@ -713,6 +713,26 @@ describe(FolderAlbumService.name, () => {
       expect(mocks.asset.deleteAll).not.toHaveBeenCalled();
     });
 
+    it('never hands a shared album to the folder above when the rules stop giving its folder an album', async () => {
+      const world = fakeWorld(mocks, ['/photos']);
+      world.addFile('/photos/2024/Wedding/a.jpg');
+      world.addFile('/photos/2024/Park/b.jpg');
+      events(world, { shape: 'level', level: 2, collectionsAbove: false });
+      await sut.sync(world.library.id);
+      const wedding = world.albumFor('/photos/2024/Wedding')!;
+      expect(world.albumFor('/photos/2024')).toBeUndefined();
+      world.shared.add(wedding.id);
+
+      events(world, { shape: 'level', level: 1 });
+      await sut.sync(world.library.id);
+
+      // the year gets an album of its own; the people the wedding was shared with still see the wedding only
+      const year = world.albumFor('/photos/2024')!;
+      expect(year.id).not.toBe(wedding.id);
+      expect(world.albumFor('/photos/2024/Wedding')).toMatchObject({ id: wedding.id, parentId: year.id });
+      expect(world.photosOf('/photos/2024/Wedding')).toEqual(['/photos/2024/Wedding/a.jpg']);
+    });
+
     it('takes photos out of an album when their folder gets an album of its own, and puts them back on Undo', async () => {
       const world = eventLibrary();
       events(world, { subfolders: { export: 'join' } });

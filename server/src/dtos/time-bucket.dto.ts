@@ -42,6 +42,11 @@ const TimeBucketQueryBaseSchema = z
       .describe(
         "With albumId, for an album made from a folder: only the photos in this folder inside the album's folder (matched without regard to case), every file of it. Without it, such an album returns its main photos as its folder choices say (GET /albums/{id}/folders): the folders shown with the others, and with versions `one` only the version in front",
       ),
+    albumSections: stringToBool
+      .optional()
+      .describe(
+        'With albumId, for an album made from a folder: true leaves out the photos of the folders shown in a section of their own, for a client that draws those sections from GET /albums/{id}/folders. Left out, they come with the others, so a client that draws no sections still shows every photo',
+      ),
     assetType: AssetTypeSchema.optional().describe('Filter assets by media type'),
     personId: z.uuidv4().optional().describe('Filter assets containing a specific person (face recognition)'),
     petId: z.uuidv4().optional().describe('Filter assets in which the caller confirmed one of their own pets'),

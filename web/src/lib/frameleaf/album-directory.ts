@@ -492,7 +492,8 @@ export const browseAlbumDirectory = (tree: AlbumTreeResponseDto, options: Browse
   const compare = compareAlbums(sort, order, opened, factsOf, locale);
   const filtered = level.filter((album) => (searching ? matchesFilter(album, filter, userId) : passes(album)));
   const listed = filtered
-    .filter((album) => shown(album))
+    // a search finds an album by name, an empty one too: "no albums match" for one just made would be wrong
+    .filter((album) => searching || shown(album))
     .sort((a, b) => (collectionsFirst ? holds(a) - holds(b) : 0) || compare(a, b));
 
   const sections = new Map<string, AlbumResponseDto[]>();
