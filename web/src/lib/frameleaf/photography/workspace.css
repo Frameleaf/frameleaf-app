@@ -1978,7 +1978,7 @@
   margin: 20px 0 0;
   padding: 15px 12px;
   list-style: none;
-  border-radius: var(--fl-radius-md);
+  border-radius: var(--fl-radius-control);
   background: var(--fl-canvas);
   font-size: var(--fl-font-small);
   color: var(--fl-muted);
@@ -2033,13 +2033,13 @@
   gap: 2px;
   margin: 12px 0;
   padding: 3px;
-  border-radius: var(--fl-radius-md);
+  border-radius: var(--fl-radius-control);
   background: var(--fl-canvas);
 }
 .phw-see-tabs button {
   padding: 6px 12px;
   border: 0;
-  border-radius: calc(var(--fl-radius-md) - 2px);
+  border-radius: calc(var(--fl-radius-control) - 2px);
   background: transparent;
   color: var(--fl-muted);
   font: inherit;
@@ -2332,7 +2332,7 @@
   height: auto;
   aspect-ratio: 4 / 3;
   object-fit: cover;
-  border-radius: var(--fl-radius-md);
+  border-radius: var(--fl-radius-control);
 }
 /* The caption under each pick; PhotographyThumb's placeholder is a span too, so it is excluded. */
 .phw-client-picks li > span:not(.ph-thumb-missing) {

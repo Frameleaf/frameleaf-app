@@ -69,29 +69,40 @@
     z-index: 1001;
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 8px 12px;
+    gap: var(--fl-space-2);
+    /* Stays inside a phone's width; more versions than fit scroll sideways. */
+    max-width: calc(100vw - 2 * var(--fl-space-4));
+    padding: var(--fl-space-2) var(--fl-space-3);
+    overflow-x: auto;
     color: #fff;
     background: rgb(0 0 0 / 0.7);
-    border-radius: var(--fl-radius, 12px);
+    border-radius: var(--fl-radius);
     transform: translateX(-50%);
   }
   .label {
+    flex: none;
     font-size: var(--fl-font-small);
     font-weight: 600;
   }
   .version {
     display: flex;
+    flex: none;
     flex-direction: column;
     align-items: center;
-    gap: 4px;
-    padding: 4px;
+    gap: var(--fl-space-1);
+    padding: var(--fl-space-1);
     color: inherit;
     background: none;
     border: 2px solid transparent;
-    border-radius: 8px;
-    font-size: 0.75rem;
+    border-radius: var(--fl-radius-sm);
+    font-size: var(--fl-font-small);
     cursor: pointer;
+  }
+  .version span {
+    max-width: 96px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .version[aria-current='true'] {
     border-color: var(--fl-accent, #22c55e);
@@ -100,6 +111,6 @@
     width: 48px;
     height: 48px;
     object-fit: cover;
-    border-radius: 4px;
+    border-radius: var(--fl-radius-xs);
   }
 </style>

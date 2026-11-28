@@ -193,7 +193,7 @@
       {/each}
     </div>
     {#if loading}
-      <div class="loading"><GridSkeleton tiles={6} columns={6} /></div>
+      <div class="loading"><GridSkeleton tiles={6} minTile="112px" /></div>
     {:else if nextCursor}
       <div class="more">
         <Button onclick={() => void load(nextCursor!)}>{$t('frameleaf_people_show_more')}</Button>

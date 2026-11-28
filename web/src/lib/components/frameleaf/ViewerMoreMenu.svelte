@@ -516,13 +516,13 @@
       {/if}
       {#if imageDisplayInMenu}
         <MenuOption
-          text={$t('frameleaf_image_display_auto')}
+          text={`${$t('frameleaf_image_display')}: ${$t('frameleaf_image_display_auto')}`}
           subtitle={$imageViewingPreference === 'auto' ? $t('selected') : ''}
           icon={$imageViewingPreference === 'auto' ? mdiCheckCircleOutline : undefined}
           onClick={() => imageViewingPreference.set('auto')}
         />
         <MenuOption
-          text={$t('frameleaf_image_display_sdr')}
+          text={`${$t('frameleaf_image_display')}: ${$t('frameleaf_image_display_sdr')}`}
           subtitle={$imageViewingPreference === 'sdr' ? $t('selected') : ''}
           icon={$imageViewingPreference === 'sdr' ? mdiCheckCircleOutline : undefined}
           onClick={() => imageViewingPreference.set('sdr')}

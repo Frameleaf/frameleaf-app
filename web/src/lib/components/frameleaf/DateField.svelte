@@ -189,7 +189,7 @@
     padding: 0 var(--fl-space-3);
     color: var(--fl-text);
     font: inherit;
-    font-size: var(--fl-font-md);
+    font-size: var(--fl-font-size);
     background: var(--fl-raised);
     border: 1px solid var(--fl-border);
     border-radius: var(--fl-radius-control);

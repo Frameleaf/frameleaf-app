@@ -450,16 +450,14 @@
   }
   .sheet {
     position: absolute;
-    left: 10%;
-    right: 10%;
+    inset-inline: 10%;
     height: 12px;
     border-radius: var(--fl-radius-card) var(--fl-radius-card) 0 0;
     background: color-mix(in srgb, var(--fl-text), transparent 62%);
   }
   .sheet.two {
     top: 0;
-    left: 18%;
-    right: 18%;
+    inset-inline: 18%;
     background: color-mix(in srgb, var(--fl-text), transparent 80%);
   }
   .sheet.one {
@@ -467,7 +465,7 @@
   }
   .inside-badge {
     position: absolute;
-    left: var(--fl-space-2);
+    inset-inline-start: var(--fl-space-2);
     bottom: var(--fl-space-2);
     display: inline-flex;
     align-items: center;

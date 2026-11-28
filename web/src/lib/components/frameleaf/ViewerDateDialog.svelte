@@ -178,7 +178,7 @@
     }}
   >
     <DateField
-      label={$t('edit_date_and_time')}
+      label={$t('date')}
       withTime
       focusOnOpen
       {minYear}
@@ -226,23 +226,22 @@
 <style>
   .mv-form {
     display: grid;
-    gap: 4px;
+    gap: var(--fl-space-4);
   }
 
   .mv-form label {
     display: grid;
-    gap: 6px;
-    margin: 0 0 12px;
+    gap: var(--fl-space-2);
     font-size: var(--fl-font-small);
     color: var(--fl-muted);
   }
 
   .mv-form select {
-    min-height: 36px;
-    padding: 6px 10px;
+    min-height: 44px;
+    padding: 0 var(--fl-space-3);
     border: 1px solid var(--fl-border);
     border-radius: var(--fl-radius-control);
-    background: var(--fl-canvas);
+    background: var(--fl-raised);
     color: var(--fl-text);
     font: inherit;
     font-size: var(--fl-font-size);

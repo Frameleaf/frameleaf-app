@@ -182,7 +182,7 @@
     justify-content: space-between;
     gap: var(--fl-space-4);
     padding: var(--fl-space-4) var(--fl-space-6);
-    font-size: var(--fl-font-md);
+    font-size: var(--fl-font-size);
   }
   .what {
     display: flex;

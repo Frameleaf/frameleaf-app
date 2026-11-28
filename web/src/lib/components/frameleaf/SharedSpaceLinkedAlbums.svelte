@@ -196,7 +196,11 @@
     font-size: 1rem;
     font-weight: 700;
   }
-  .hint,
+  .hint {
+    margin: 0;
+    color: var(--fl-muted);
+    font-size: 0.8125rem;
+  }
   .controls {
     display: flex;
     flex-wrap: wrap;

@@ -284,7 +284,7 @@
     margin: 0;
     color: var(--fl-muted);
     font-size: var(--fl-font-small);
-    font-weight: var(--fl-weight-semibold);
+    font-weight: 600;
     letter-spacing: 0.8px;
     text-transform: uppercase;
   }
@@ -309,12 +309,12 @@
     border-color: var(--fl-accent);
     background: var(--fl-accent-soft);
   }
-  @media (max-width: 900px) {
+  @container kit (max-width: 900px) {
     .body {
       grid-template-columns: minmax(0, 1fr);
     }
   }
-  @media (max-width: 520px) {
+  @container kit (max-width: 520px) {
     .rules li {
       flex-wrap: wrap;
     }
