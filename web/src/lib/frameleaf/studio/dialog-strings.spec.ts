@@ -21,7 +21,7 @@ describe('editor dialog strings (FL-1822)', () => {
     );
     expect(strings.dialogShortcutsTitle).toBe('Keyboard shortcuts');
     expect(strings.dialogSettingsTitle).toBe('Editor settings');
-    expect(strings.dialogSettingsSecondsOther).toBe('{{count}} seconds');
+    expect(strings.dialogSettingsSecondsOther).toBe('{{seconds}} seconds');
     expect(strings.dialogShortcutsChangedFilter).toBe(strings.dialogShortcutsChanged);
     expect(Object.keys(strings)).toEqual(Object.keys(DIALOG_STRINGS));
   });

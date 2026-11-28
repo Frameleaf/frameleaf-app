@@ -184,7 +184,7 @@ export function compositionSourcesFor(sourceSha256) {
     // FL-1822 the Keyboard shortcuts and Editor settings dialogs restyled; changes no composition or raster producer.
     sourceSha256 === 'ce724b328bdb2bfffaca09bbbb6a55a35bc9f166a40262bec81a480e1b2df0db' ||
     // FL-1822 default photo and transition lengths in Editor settings; changes no composition or raster producer.
-    sourceSha256 === '27f9d388c97579a41d81652acd2867e5a781609fcade414907548859557395a9'
+    sourceSha256 === '39fb6738dcf99ffcf04d7b73e72b24b0e8988a0e0a93f1883bc855db1a009741'
   )
     return {
       ...COMPOSITION_SOURCES,

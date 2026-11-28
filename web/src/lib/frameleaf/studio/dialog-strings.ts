@@ -98,12 +98,12 @@ export const DIALOG_STRINGS = {
   dialogSettingsSecondsOne: {
     host: 'frameleaf_studio_dialog_settings_seconds_one',
     engine: 'settings.timeline.lengthSeconds_one',
-    values: ['count'],
+    values: ['seconds'],
   },
   dialogSettingsSecondsOther: {
     host: 'frameleaf_studio_dialog_settings_seconds_other',
     engine: 'settings.timeline.lengthSeconds_other',
-    values: ['count'],
+    values: ['seconds'],
   },
 } as const satisfies Record<string, { host: string; engine: string; values?: readonly string[] }>;
 

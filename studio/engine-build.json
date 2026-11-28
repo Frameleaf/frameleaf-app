@@ -983,8 +983,8 @@
     {
       "path": "patches/0217-studio-settings-lengths.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
-      "sha256": "c50777e56234af29deb5f7b9ba98fd9411e432ea31acbf40dbc53270a7eff806"
+      "sha256": "0f9340a1b728be353963b4c2658ff9a37ac5586465f4c884ac314e2a5446aab7"
     }
   ],
-  "sourceSha256": "27f9d388c97579a41d81652acd2867e5a781609fcade414907548859557395a9"
+  "sourceSha256": "39fb6738dcf99ffcf04d7b73e72b24b0e8988a0e0a93f1883bc855db1a009741"
 }

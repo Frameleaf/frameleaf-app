@@ -1656,7 +1656,9 @@ const handlers: Record<string, Handler> = {
       invalid(`kind: "${kind}" does not match the asset`)
     }
     if ((track.kind ?? 'video') !== 'video') invalid('trackId: library media goes on a video track')
-    const natural = getDroppedMediaDurationInFrames(source!, mediaType as 'image' | 'video', fps)
+    // A photo's length is fixed here, not taken from this device's Editor settings, so the same
+    // command builds the same graph everywhere (FL-1822).
+    const natural = getDroppedMediaDurationInFrames(source!, mediaType as 'image' | 'video', fps, 3)
     if (mediaType === 'video' && duration !== undefined && duration > natural) {
       invalid('duration is longer than the source')
     }
