@@ -198,7 +198,9 @@ export function compositionSourcesFor(sourceSha256) {
     // FL-1822 Edit's keyframes lane rows, diamond column and Easing menu; changes no composition or raster producer.
     sourceSha256 === 'f190fc7e390d41772b8c35deeb1821aa07f036dcfb20548edbd2de5dfca7bbd2' ||
     // FL-1822 panel titles and the Colour clip strip; changes no composition or raster producer.
-    sourceSha256 === 'e1ea739148d1305a8943d659bb67504b76764c1ab7d324cd5585126e24d68016'
+    sourceSha256 === 'e1ea739148d1305a8943d659bb67504b76764c1ab7d324cd5585126e24d68016' ||
+    // FL-1822 Basic Color keeps the primaries' sliders; changes no composition or raster producer.
+    sourceSha256 === 'e541a40fbf2e404ace9df8dcef9a1c8d5fe7c02d4564dbcc43ff75dfb32b3c3b'
   )
     return {
       ...COMPOSITION_SOURCES,
