@@ -63,6 +63,7 @@ import { AssetFileTable } from 'src/schema/tables/asset-file.table.js';
 import { AssetJobStatusTable } from 'src/schema/tables/asset-job-status.table.js';
 import { AssetMetadataTable } from 'src/schema/tables/asset-metadata.table.js';
 import { AssetTable } from 'src/schema/tables/asset.table.js';
+import { type AlbumFolderView, albumFolderPredicate, albumVersionCount } from 'src/utils/album-folders.js';
 import { getLivePhotoMotion } from 'src/utils/asset.util.js';
 import { releaseLockedCoverReferences } from 'src/utils/cover-references.js';
 import {
@@ -273,6 +274,8 @@ interface AssetBuilderOptions extends HiddenContentQueryOptions {
   isTrashed?: boolean;
   isDuplicate?: boolean;
   albumId?: string;
+  /** FL-1838: with `albumId`, what an album made from a folder shows of itself (see `albumFolderPredicate`) */
+  albumView?: AlbumFolderView;
   tagId?: string;
   personId?: string;
   /** FL-58: one of the viewer's own pets; matched against confirmed pet observations only */
@@ -3095,6 +3098,7 @@ export class AssetRepository {
             .innerJoin('album_asset', 'asset.id', 'album_asset.assetId')
             .where('album_asset.albumId', '=', asUuid(options.albumId!)),
         )
+        .$if(!!options.albumId && !!options.albumView, (qb) => qb.where(albumFolderPredicate(options.albumView!)))
         .$if(!!options.personId, (qb) => hasPeople(qb, [options.personId!]))
         .$if(!!options.petId, (qb) => hasPets(qb, [options.petId!], auth?.user.id))
         .$if(!!options.withStacked, (qb) =>
@@ -3750,6 +3754,11 @@ export class AssetRepository {
               ),
             ),
           )
+          .$if(!!options.albumId && !!options.albumView, (qb) => qb.where(albumFolderPredicate(options.albumView!)))
+          // FL-1838: with "show it once", how many versions stand behind each photo
+          .$if(!!options.albumId && !!options.albumView?.oneVersion && options.albumView.only === undefined, (qb) =>
+            qb.select(albumVersionCount(options.albumView!).as('versionCount')),
+          )
           .$if(!!options.personId, (qb) => hasPeople(qb, [options.personId!]))
           .$if(!!options.petId, (qb) => hasPets(qb, [options.petId!], auth.user.id))
           .$if(!!options.userIds, (qb) =>
@@ -3896,6 +3905,9 @@ export class AssetRepository {
             eb.fn.coalesce(eb.fn('array_agg', ['status']), sql.lit('{}')).as('status'),
             eb.fn.coalesce(eb.fn('array_agg', ['thumbhash']), sql.lit('{}')).as('thumbhash'),
           ])
+          .$if(!!options.albumId && !!options.albumView?.oneVersion && options.albumView.only === undefined, (qb) =>
+            qb.select(sql<number[]>`coalesce(array_agg("versionCount"), '{}')`.as('versionCount')),
+          )
           .$if(!!calendarPage, (qb) =>
             qb.select([
               sql<string | null>`(array_agg(id::text))[1]`.as('startCursor'),

@@ -5769,6 +5769,77 @@ export type AlbumDescendantCountResponseDto = {
     /** Number of descendant albums (children, grandchildren, etc.) */
     count: number;
 };
+export type AlbumFolderInsideDto = {
+    /** The album made for the folder, inside this one */
+    albumId: string;
+    count: number;
+    coverAssetId: string | null;
+    name: string;
+};
+export type AlbumFolderDto = {
+    display: AlbumFolderDisplay;
+    /** The folder inside the album's folder */
+    name: string;
+    /** Photos in it */
+    photos: number;
+    /** Videos in it */
+    videos: number;
+};
+export type AlbumFolderItemDto = {
+    /** Asset ID */
+    id: string;
+    isVideo: boolean;
+};
+export type AlbumFolderSectionDto = {
+    /** Photos and videos in the section */
+    count: number;
+    /** The first 21 of them, oldest first */
+    items: AlbumFolderItemDto[];
+    /** The folder */
+    name: string;
+};
+export type AlbumFoldersResponseDto = {
+    /** The folders that have an album of their own inside this one (an album inside) */
+    albums: AlbumFolderInsideDto[];
+    /** Whether you may change these choices (the library's owner) */
+    canEdit: boolean;
+    /** The album's folder on the server; told only to the library's owner */
+    folderPath?: string;
+    /** The folders inside the album's folder, by name, each with how it shows */
+    folders: AlbumFolderDto[];
+    /** The library the album's folder is in; told only to its owner */
+    libraryId?: string;
+    /** The library's name; told only to its owner */
+    libraryName?: string;
+    /** Photos found in more than one file that matched by file name */
+    matchedByName: number;
+    /** Photos found in more than one file that needed the capture time, for an edit saved under a new name */
+    matchedByTime: number;
+    /** The folders whose version stands in front, first wins */
+    prefer: string[];
+    /** The folders shown in a section of their own, in folder order */
+    sections: AlbumFolderSectionDto[];
+    /** Photos the album shows with these choices */
+    shownPhotos: number;
+    /** Videos the album shows with these choices */
+    shownVideos: number;
+    /** The album has no choice of its own and follows its library's */
+    usesLibraryChoice: boolean;
+    versions: AlbumFolderVersions;
+    /** The versions were worked out again just now, so a timeline read before this is out of date */
+    versionsChanged: boolean;
+};
+export type AlbumFoldersUpdateDto = {
+    /** Use these for every album from the album's library: they become the library's choice, which this album then follows. Albums with a choice of their own keep it. */
+    applyToLibrary?: boolean;
+    /** Per folder name (matched without regard to case). A folder left out uses the default: RAW hidden, Video and Videos in their own section, any other with the others */
+    folders: {
+        [key: string]: AlbumFolderDisplay;
+    };
+    /** The folders whose version stands in front, first wins */
+    prefer: string[];
+    versions: AlbumFolderVersions;
+};
 export type PlaceNamesLocalizedDto = {
     /** City name in `lang`, or the English `city` where it has no translation */
     city: string | null;
@@ -6344,6 +6415,21 @@ export type AlbumUserAddDto = {
 export type AddUsersDto = {
     /** Album users to add */
     albumUsers: AlbumUserAddDto[];
+};
+export type AlbumVersionDto = {
+    /** The folder inside the album's folder holding it ('' for the album's folder) */
+    folder: string;
+    /** Asset ID */
+    id: string;
+    /** The version the album shows in front */
+    isFront: boolean;
+    /** name or time: how it was matched */
+    matchedBy: string;
+    originalFileName: string;
+};
+export type AlbumVersionsResponseDto = {
+    /** The versions of the photo, the one in front first; empty when it has none */
+    versions: AlbumVersionDto[];
 };
 export type AnalyticsAlbumDto = {
     id: string;
@@ -22698,6 +22784,8 @@ export type TimeBucketAssetResponseDto = {
     startCursor?: string | null;
     /** Array of BlurHash strings for generating asset previews (base64 encoded) */
     thumbhash: (string | null)[];
+    /** For an album made from a folder that shows each photo once: how many versions stand behind each photo, itself included (0 or 1 when it has no others), aligned with id */
+    versionCount?: number[];
     /** Array of visibility statuses for each asset (e.g., ARCHIVE, TIMELINE, HIDDEN, LOCKED) */
     visibility: AssetVisibility[];
     /** Array of widths in pixels (null when unknown). Omitted for shared links that hide EXIF */
@@ -23822,6 +23910,10 @@ export type AlbumMapMarkerDto = {
     withPartners?: boolean;
     /** Accepted for the shared map settings; has no effect on an album map */
     withSharedAlbums?: boolean;
+};
+export type AlbumVersionsDto = {
+    /** A photo in the album */
+    assetId: string;
 };
 export type AlbumViewDto = {
     libraryScope?: LibraryViewScope;
@@ -25789,6 +25881,8 @@ export type TidyUpPageQueryDto = {
 export type TimeBucketAssetDto = {
     /** Read after this calendar-page asset ID; requires take and cannot be combined with before */
     after?: string;
+    /** With albumId, for an album made from a folder: only the photos in this folder inside the album's folder (matched without regard to case), every file of it. Without it, such an album returns its main photos as its folder choices say (GET /albums/{id}/folders): the folders shown with the others, and with versions `one` only the version in front */
+    albumFolder?: string;
     /** Filter assets belonging to a specific album */
     albumId?: string;
     /** Filter assets by media type */
@@ -25851,6 +25945,8 @@ export type TimeBucketAssetDto = {
     withStacked?: boolean;
 };
 export type TimeBucketDto = {
+    /** With albumId, for an album made from a folder: only the photos in this folder inside the album's folder (matched without regard to case), every file of it. Without it, such an album returns its main photos as its folder choices say (GET /albums/{id}/folders): the folders shown with the others, and with versions `one` only the version in front */
+    albumFolder?: string;
     /** Filter assets belonging to a specific album */
     albumId?: string;
     /** Filter assets by media type */
@@ -25907,6 +26003,8 @@ export type TimeBucketDto = {
     withStacked?: boolean;
 };
 export type TimelineDatesToCheckDto = {
+    /** With albumId, for an album made from a folder: only the photos in this folder inside the album's folder (matched without regard to case), every file of it. Without it, such an album returns its main photos as its folder choices say (GET /albums/{id}/folders): the folders shown with the others, and with versions `one` only the version in front */
+    albumFolder?: string;
     /** Filter assets belonging to a specific album */
     albumId?: string;
     /** Filter assets by media type */
@@ -25957,6 +26055,8 @@ export type TimelineDatesToCheckDto = {
     withStacked?: boolean;
 };
 export type TimelineHighlightsDto = {
+    /** With albumId, for an album made from a folder: only the photos in this folder inside the album's folder (matched without regard to case), every file of it. Without it, such an album returns its main photos as its folder choices say (GET /albums/{id}/folders): the folders shown with the others, and with versions `one` only the version in front */
+    albumFolder?: string;
     /** Filter assets belonging to a specific album */
     albumId?: string;
     /** Filter assets by media type */
@@ -26012,6 +26112,8 @@ export type TimelineHighlightsDto = {
 export type TimelineOrderedDto = {
     /** Continue after the previous ordered page cursor; overrides skip */
     after?: string;
+    /** With albumId, for an album made from a folder: only the photos in this folder inside the album's folder (matched without regard to case), every file of it. Without it, such an album returns its main photos as its folder choices say (GET /albums/{id}/folders): the folders shown with the others, and with versions `one` only the version in front */
+    albumFolder?: string;
     /** Filter assets belonging to a specific album */
     albumId?: string;
     /** Filter assets by media type */
@@ -29878,6 +29980,35 @@ export function getAlbumDescendantCount({ id }: {
     }));
 }
 /**
+ * Retrieve how the folders in an album show
+ */
+export function getAlbumFolders({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AlbumFoldersResponseDto;
+    }>(`/albums/${encodeURIComponent(id)}/folders`, {
+        ...opts
+    }));
+}
+/**
+ * Choose how the folders in an album show
+ */
+export function updateAlbumFolders({ id, albumFoldersUpdateDto }: {
+    id: string;
+    albumFoldersUpdateDto: AlbumFoldersUpdateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AlbumFoldersResponseDto;
+    }>(`/albums/${encodeURIComponent(id)}/folders`, oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: albumFoldersUpdateDto
+    })));
+}
+/**
  * Retrieve a page of assets and bookmarks in an album
  */
 export function getAlbumItems({ afterId, afterKind, id, key, limit, slug }: {
@@ -30164,6 +30295,22 @@ export function addUsersToAlbum({ id, addUsersDto }: {
         method: "PUT",
         body: addUsersDto
     })));
+}
+/**
+ * Retrieve the versions of a photo in an album
+ */
+export function getAlbumVersions({ assetId, id }: {
+    assetId: string;
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: AlbumVersionsResponseDto;
+    }>(`/albums/${encodeURIComponent(id)}/versions${QS.query(QS.explode({
+        assetId
+    }))}`, {
+        ...opts
+    }));
 }
 /**
  * Retrieve library analytics
@@ -44833,8 +44980,9 @@ export function getTidiedAway({ kind, page, size }: {
 /**
  * Get time bucket
  */
-export function getTimeBucket({ after, albumId, assetType, bbox, before, bestPhotos, dateType, datesToCheck, filter, firstAssetId, imageEnrichment, isFavorite, isTrashed, key, lastAssetId, libraryScope, lockReason, membershipAlbumId, order, orderBy, personId, petId, slug, suppressedOnly, tagId, take, timeBucket, userId, visibility, withChildTags, withCoordinates, withPartners, withStacked }: {
+export function getTimeBucket({ after, albumFolder, albumId, assetType, bbox, before, bestPhotos, dateType, datesToCheck, filter, firstAssetId, imageEnrichment, isFavorite, isTrashed, key, lastAssetId, libraryScope, lockReason, membershipAlbumId, order, orderBy, personId, petId, slug, suppressedOnly, tagId, take, timeBucket, userId, visibility, withChildTags, withCoordinates, withPartners, withStacked }: {
     after?: string;
+    albumFolder?: string;
     albumId?: string;
     assetType?: AssetTypeEnum;
     bbox?: string;
@@ -44873,6 +45021,7 @@ export function getTimeBucket({ after, albumId, assetType, bbox, before, bestPho
         data: TimeBucketAssetResponseDto;
     }>(`/timeline/bucket${QS.query(QS.explode({
         after,
+        albumFolder,
         albumId,
         assetType,
         bbox,
@@ -44912,7 +45061,8 @@ export function getTimeBucket({ after, albumId, assetType, bbox, before, bestPho
 /**
  * Get time buckets
  */
-export function getTimeBuckets({ albumId, assetType, bbox, bestPhotos, dateType, datesToCheck, filter, imageEnrichment, isFavorite, isTrashed, key, libraryScope, locateAssetId, lockReason, order, orderBy, pageSize, personId, petId, slug, sort, suppressedOnly, tagId, userId, visibility, withChildTags, withCoordinates, withPartners, withStacked }: {
+export function getTimeBuckets({ albumFolder, albumId, assetType, bbox, bestPhotos, dateType, datesToCheck, filter, imageEnrichment, isFavorite, isTrashed, key, libraryScope, locateAssetId, lockReason, order, orderBy, pageSize, personId, petId, slug, sort, suppressedOnly, tagId, userId, visibility, withChildTags, withCoordinates, withPartners, withStacked }: {
+    albumFolder?: string;
     albumId?: string;
     assetType?: AssetTypeEnum;
     bbox?: string;
@@ -44947,6 +45097,7 @@ export function getTimeBuckets({ albumId, assetType, bbox, bestPhotos, dateType,
         status: 200;
         data: TimeBucketsResponseDto[];
     }>(`/timeline/buckets${QS.query(QS.explode({
+        albumFolder,
         albumId,
         assetType,
         bbox,
@@ -44983,7 +45134,8 @@ export function getTimeBuckets({ albumId, assetType, bbox, bestPhotos, dateType,
 /**
  * Get the dates to check
  */
-export function getTimelineDatesToCheck({ albumId, assetType, bbox, bestPhotos, dateType, filter, imageEnrichment, isFavorite, isTrashed, key, libraryScope, lockReason, order, orderBy, pageSize, personId, petId, slug, suppressedOnly, tagId, userId, visibility, withChildTags, withCoordinates, withPartners, withStacked }: {
+export function getTimelineDatesToCheck({ albumFolder, albumId, assetType, bbox, bestPhotos, dateType, filter, imageEnrichment, isFavorite, isTrashed, key, libraryScope, lockReason, order, orderBy, pageSize, personId, petId, slug, suppressedOnly, tagId, userId, visibility, withChildTags, withCoordinates, withPartners, withStacked }: {
+    albumFolder?: string;
     albumId?: string;
     assetType?: AssetTypeEnum;
     bbox?: string;
@@ -45015,6 +45167,7 @@ export function getTimelineDatesToCheck({ albumId, assetType, bbox, bestPhotos, 
         status: 200;
         data: TimelineDatesToCheckResponseDto;
     }>(`/timeline/dates-to-check${QS.query(QS.explode({
+        albumFolder,
         albumId,
         assetType,
         bbox,
@@ -45048,7 +45201,8 @@ export function getTimelineDatesToCheck({ albumId, assetType, bbox, bestPhotos, 
 /**
  * Get timeline highlights
  */
-export function getTimelineHighlights({ albumId, assetType, bbox, bestPhotos, dateType, datesToCheck, filter, grouping, highlightCount, imageEnrichment, isFavorite, isTrashed, key, libraryScope, lockReason, order, orderBy, personId, petId, slug, suppressedOnly, tagId, userId, visibility, withChildTags, withCoordinates, withPartners, withStacked }: {
+export function getTimelineHighlights({ albumFolder, albumId, assetType, bbox, bestPhotos, dateType, datesToCheck, filter, grouping, highlightCount, imageEnrichment, isFavorite, isTrashed, key, libraryScope, lockReason, order, orderBy, personId, petId, slug, suppressedOnly, tagId, userId, visibility, withChildTags, withCoordinates, withPartners, withStacked }: {
+    albumFolder?: string;
     albumId?: string;
     assetType?: AssetTypeEnum;
     bbox?: string;
@@ -45082,6 +45236,7 @@ export function getTimelineHighlights({ albumId, assetType, bbox, bestPhotos, da
         status: 200;
         data: TimelineHighlightResponseDto[];
     }>(`/timeline/highlights${QS.query(QS.explode({
+        albumFolder,
         albumId,
         assetType,
         bbox,
@@ -45117,8 +45272,9 @@ export function getTimelineHighlights({ albumId, assetType, bbox, bestPhotos, da
 /**
  * Get the timeline in a flat order
  */
-export function getTimelineOrdered({ after, albumId, assetType, bbox, before, bestPhotos, dateType, datesToCheck, filter, imageEnrichment, isFavorite, isTrashed, key, libraryScope, lockReason, order, orderBy, personId, petId, skip, slug, sort, suppressedOnly, tagId, take, userId, visibility, withChildTags, withCoordinates, withPartners, withStacked }: {
+export function getTimelineOrdered({ after, albumFolder, albumId, assetType, bbox, before, bestPhotos, dateType, datesToCheck, filter, imageEnrichment, isFavorite, isTrashed, key, libraryScope, lockReason, order, orderBy, personId, petId, skip, slug, sort, suppressedOnly, tagId, take, userId, visibility, withChildTags, withCoordinates, withPartners, withStacked }: {
     after?: string;
+    albumFolder?: string;
     albumId?: string;
     assetType?: AssetTypeEnum;
     bbox?: string;
@@ -45155,6 +45311,7 @@ export function getTimelineOrdered({ after, albumId, assetType, bbox, before, be
         data: TimeBucketAssetResponseDto;
     }>(`/timeline/ordered${QS.query(QS.explode({
         after,
+        albumFolder,
         albumId,
         assetType,
         bbox,
@@ -47955,6 +48112,16 @@ export enum AlbumCleanupOperationType {
     Combine = "combine",
     Heal = "heal",
     Remove = "remove"
+}
+export enum AlbumFolderDisplay {
+    With = "with",
+    Section = "section",
+    Album = "album",
+    Hidden = "hidden"
+}
+export enum AlbumFolderVersions {
+    One = "one",
+    Each = "each"
 }
 export enum LibraryItemKind {
     Asset = "asset",

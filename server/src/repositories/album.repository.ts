@@ -10,6 +10,7 @@ import {
   sql,
 } from 'kysely';
 import { jsonArrayFrom, jsonObjectFrom } from 'kysely/helpers/postgres';
+import { chunk } from 'lodash-es';
 import { InjectKysely } from 'nestjs-kysely';
 import type { Insertable } from 'kysely';
 import type { LockedVisibilityOptions } from 'src/utils/locked-visibility.js';
@@ -29,6 +30,7 @@ import { AlbumChangeRunStatus } from 'src/schema/tables/album-change-run.table.j
 import { AlbumTable } from 'src/schema/tables/album.table.js';
 import { AssetExifTable } from 'src/schema/tables/asset-exif.table.js';
 import { albumCoverCandidates } from 'src/utils/album-cover.js';
+import { type AlbumFolderChoices, subfolderSql } from 'src/utils/album-folders.js';
 import { albumCoverReplacement, albumNewestCover, getBestPhotoScoreTable } from 'src/utils/cover-references.js';
 import {
   anyUuid,
@@ -1403,6 +1405,164 @@ export class AlbumRepository {
       )
       .execute();
     return new Set(rows.map(({ id }) => id));
+  }
+
+  /**
+   * FL-1838: the folder link behind an album made from a folder, with its own folder choices and its library's, for
+   * whoever may read the album. Null when the album was not made from a folder.
+   */
+  @GenerateSql({ params: [DummyValue.UUID] })
+  getFolderAlbumLink(albumId: string) {
+    return this.db
+      .selectFrom('library_folder_album')
+      .innerJoin('library', 'library.id', 'library_folder_album.libraryId')
+      .select([
+        'library_folder_album.id',
+        'library_folder_album.albumId',
+        'library_folder_album.libraryId',
+        'library_folder_album.folderPath',
+        'library_folder_album.displayChoices',
+        'library.name as libraryName',
+        'library.ownerId as libraryOwnerId',
+        'library.folderAlbumDisplay as libraryDisplay',
+      ])
+      .where('library_folder_album.albumId', '=', asUuid(albumId))
+      .where('library.deletedAt', 'is', null)
+      .executeTakeFirst();
+  }
+
+  /** FL-1838: the album's items that are not in the trash, each with the folder inside the album's folder holding it. */
+  @GenerateSql({ params: [DummyValue.UUID, DummyValue.STRING] })
+  getFolderAlbumItems(albumId: string, folderPath: string) {
+    return this.db
+      .selectFrom('album_asset')
+      .innerJoin('asset', 'asset.id', 'album_asset.assetId')
+      .select([
+        'asset.id',
+        'asset.originalFileName',
+        'asset.fileCreatedAt as takenAt',
+        subfolderSql(folderPath).as('folder'),
+        sql<boolean>`asset.type = 'VIDEO'`.as('isVideo'),
+      ])
+      .where('album_asset.albumId', '=', asUuid(albumId))
+      .where(isFolderPhoto('asset'))
+      .execute();
+  }
+
+  /**
+   * FL-1838: the folder albums made for folders directly inside this album's folder (FL-1837's "album inside"), with
+   * how many items each holds and its cover.
+   */
+  @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID, DummyValue.STRING] })
+  getFolderAlbumChildren(albumId: string, libraryId: string, folderPath: string) {
+    const prefix = folderPath === '/' ? '/' : `${folderPath}/`;
+    return this.db
+      .selectFrom('library_folder_album')
+      .innerJoin('album', 'album.id', 'library_folder_album.albumId')
+      .select((eb) => [
+        'library_folder_album.albumId',
+        'library_folder_album.folderPath',
+        'album.albumThumbnailAssetId as coverAssetId',
+        eb
+          .selectFrom('album_asset')
+          .select((eb) => eb.fn.countAll<number>().as('count'))
+          .whereRef('album_asset.albumId', '=', 'album.id')
+          .as('count'),
+      ])
+      .where('library_folder_album.libraryId', '=', asUuid(libraryId))
+      .where('album.parentId', '=', asUuid(albumId))
+      .where('album.deletedAt', 'is', null)
+      .where(sql<boolean>`left(library_folder_album."folderPath", char_length(${prefix}::text)) = ${prefix}::text`)
+      .where(sql<boolean>`strpos(substr(library_folder_album."folderPath", char_length(${prefix}::text) + 1), '/') = 0`)
+      .execute();
+  }
+
+  /** FL-1838: the album's versions as stored. */
+  @GenerateSql({ params: [DummyValue.UUID] })
+  getFolderVersionRows(albumId: string) {
+    return this.db
+      .selectFrom('album_folder_version')
+      .select(['assetId', 'frontAssetId', 'matchedBy'])
+      .where('albumId', '=', asUuid(albumId))
+      .execute();
+  }
+
+  /** FL-1838: the albums from a library that follow its folder choices, having none of their own. */
+  @GenerateSql({ params: [DummyValue.UUID] })
+  getFolderAlbumsFollowingLibrary(libraryId: string) {
+    return this.db
+      .selectFrom('library_folder_album')
+      .select(['albumId', 'folderPath'])
+      .where('libraryId', '=', asUuid(libraryId))
+      .where('displayChoices', 'is', null)
+      .execute();
+  }
+
+  /** FL-1838: the album's versions, worked out again (`matchAlbumVersions`). */
+  async replaceFolderVersions(albumId: string, rows: { assetId: string; frontAssetId: string; matchedBy: string }[]) {
+    await this.db.transaction().execute(async (tx) => {
+      // one writer per album at a time, so two recomputes never leave a mix of both
+      await sql`select pg_advisory_xact_lock(hashtext(${`album_folder_version:${albumId}`}))`.execute(tx);
+      await tx.deleteFrom('album_folder_version').where('albumId', '=', asUuid(albumId)).execute();
+      for (const part of chunk(rows, 1000)) {
+        await tx
+          .insertInto('album_folder_version')
+          .values(part.map((row) => ({ ...row, albumId })))
+          .onConflict((oc) =>
+            oc.columns(['albumId', 'assetId']).doUpdateSet((eb) => ({
+              frontAssetId: eb.ref('excluded.frontAssetId'),
+              matchedBy: eb.ref('excluded.matchedBy'),
+            })),
+          )
+          .execute();
+      }
+    });
+  }
+
+  /** FL-1838: the versions of the photo `assetId` in the album, the one in front first; empty when it has none. */
+  @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID, DummyValue.STRING] })
+  getFolderVersions(albumId: string, assetId: string, folderPath: string) {
+    return this.db
+      .selectFrom('album_folder_version as mine')
+      .innerJoin('album_folder_version as version', (join) =>
+        join.onRef('version.albumId', '=', 'mine.albumId').onRef('version.frontAssetId', '=', 'mine.frontAssetId'),
+      )
+      .innerJoin('album_asset', (join) =>
+        join.onRef('album_asset.albumId', '=', 'version.albumId').onRef('album_asset.assetId', '=', 'version.assetId'),
+      )
+      .innerJoin('asset', 'asset.id', 'version.assetId')
+      .select([
+        'asset.id',
+        'asset.originalFileName',
+        'version.matchedBy',
+        subfolderSql(folderPath).as('folder'),
+        sql<boolean>`version."assetId" = version."frontAssetId"`.as('isFront'),
+      ])
+      .where('mine.albumId', '=', asUuid(albumId))
+      .where('mine.assetId', '=', asUuid(assetId))
+      .where(isFolderPhoto('asset'))
+      .orderBy(sql`version."assetId" = version."frontAssetId"`, 'desc')
+      .orderBy('asset.fileCreatedAt')
+      .orderBy('asset.originalFileName')
+      .execute();
+  }
+
+  /** FL-1838: this album's own folder choices; null follows its library's. */
+  async setFolderAlbumChoices(linkId: string, choices: AlbumFolderChoices | null) {
+    await this.db
+      .updateTable('library_folder_album')
+      .set({ displayChoices: choices })
+      .where('id', '=', asUuid(linkId))
+      .execute();
+  }
+
+  /** FL-1838: the library's folder choices, for every album from it without a choice of its own. */
+  async setLibraryFolderChoices(libraryId: string, choices: AlbumFolderChoices) {
+    await this.db
+      .updateTable('library')
+      .set({ folderAlbumDisplay: choices })
+      .where('id', '=', asUuid(libraryId))
+      .execute();
   }
 
   /** FL-838: the library folder behind each of these albums, told only to the library's owner. */

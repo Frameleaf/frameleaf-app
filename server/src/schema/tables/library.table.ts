@@ -8,6 +8,7 @@ import {
   UpdateDateColumn,
 } from '@frameleaf/sql-tools';
 import type { Generated, Timestamp } from '@frameleaf/sql-tools';
+import type { AlbumFolderChoices } from 'src/utils/album-folders.js';
 import type { FolderAlbumOptions } from 'src/utils/folder-albums.js';
 import { UpdateIdColumn, UpdatedAtTrigger } from 'src/decorators.js';
 import { UserTable } from 'src/schema/tables/user.table.js';
@@ -40,6 +41,10 @@ export class LibraryTable {
   // FL-1837: which folders become albums; null for a library from before, which makes an album for every folder
   @Column({ type: 'jsonb', nullable: true })
   folderAlbumOptions!: FolderAlbumOptions | null;
+
+  // FL-1838: how the folders inside its albums show there, for every album without a choice of its own
+  @Column({ type: 'jsonb', nullable: true })
+  folderAlbumDisplay!: AlbumFolderChoices | null;
 
   @CreateDateColumn()
   createdAt!: Generated<Timestamp>;

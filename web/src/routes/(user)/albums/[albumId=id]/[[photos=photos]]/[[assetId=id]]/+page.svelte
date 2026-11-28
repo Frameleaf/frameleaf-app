@@ -5,7 +5,11 @@
   import { navigating, page } from '$app/state';
   import { scrollMemoryClearer } from '$lib/actions/scroll-memory';
   import ActivityPanel from '$lib/components/frameleaf/ActivityPanel.svelte';
+  import AlbumFolderSections from '$lib/components/frameleaf/AlbumFolderSections.svelte';
+  import AlbumFoldersDialog from '$lib/components/frameleaf/AlbumFoldersDialog.svelte';
+  import AlbumFolderStrip from '$lib/components/frameleaf/AlbumFolderStrip.svelte';
   import AlbumHeader from '$lib/components/frameleaf/AlbumHeader.svelte';
+  import AlbumVersionsStrip from '$lib/components/frameleaf/AlbumVersionsStrip.svelte';
   import AlbumPeopleChips from '$lib/components/frameleaf/AlbumPeopleChips.svelte';
   import AlbumSuggestions from '$lib/components/frameleaf/AlbumSuggestions.svelte';
   import InlineError from '$lib/components/frameleaf/InlineError.svelte';
@@ -61,12 +65,14 @@
   import {
     AlbumKind,
     AlbumUserRole,
+    getAlbumFolders,
     getAlbumInfo,
     getAlbumItems,
     getTimelineDatesToCheck,
     LibraryScope,
     LibraryViewScope,
     searchAssets,
+    type AlbumFoldersResponseDto,
     type AlbumResponseDto,
     type AssetResponseDto,
     type TagResponseDto,
@@ -600,7 +606,52 @@
     }
   });
 
-  const options = $derived({ albumId, order: album.order });
+  /**
+   * FL-1838: an album made from a folder with folders inside it (Original, RAW, Edits, Video): how each folder shows
+   * here, read once the album is known. The library's owner is told the folder, so only they get the chips and the
+   * dialog; everyone sees the album as those choices make it.
+   */
+  let albumFolders = $state<AlbumFoldersResponseDto>();
+  /** The folder a chip narrowed the album to. */
+  let albumFolder = $state<string>();
+  let foldersOpen = $state(false);
+  const showFolders = $derived(!!albumFolders && albumFolders.folders.length > 0);
+  $effect(() => {
+    const id = albumId;
+    void album.assetCount;
+    if (!album.folderAlbum) {
+      albumFolders = undefined;
+      albumFolder = undefined;
+      return;
+    }
+    const view = albumView;
+    const controller = new AbortController();
+    getAlbumFolders({ id }, { signal: controller.signal })
+      .then((result) => {
+        if (controller.signal.aborted || !isCurrentView(view)) {
+          return;
+        }
+        albumFolders = result;
+        // the versions were worked out again: the photos read before then may show one twice
+        if (result.versionsChanged) {
+          void timelineManager?.refresh();
+        }
+      })
+      // the chips are a shortcut: without them the album still shows as its folder choices say
+      .catch(() => {});
+    return () => controller.abort();
+  });
+  $effect(() => {
+    void albumId;
+    albumFolder = undefined;
+  });
+  const onFoldersSaved = (saved: AlbumFoldersResponseDto) => {
+    albumFolders = saved;
+    albumFolder = undefined;
+    void timelineManager?.refresh();
+  };
+
+  const options = $derived({ albumId, order: album.order, ...(albumFolder && { albumFolder }) });
 
   $effect(() => {
     if (!album.isActivityEnabled && activityManager.commentCount === 0) {
@@ -768,6 +819,7 @@
       datesToCheck={mixedAlbum ? mixedDatesToCheck?.count : timelineManager?.datesToCheckCount}
       onFixDates={() => void (mixedAlbum ? fixMixedDates() : libraryView?.fixDates())}
       onDownload={boardsCollection ? () => (downloadOpen = true) : undefined}
+      onFolders={showFolders && albumFolders?.canEdit ? () => (foldersOpen = true) : undefined}
       {addMenu}
     />
     {#if mixedAlbum}{@render suggestions()}{/if}
@@ -876,6 +928,14 @@
 
       <!-- Under the header's hairline, as the prototype's notices sit (review-1030-shell.css). -->
       {#snippet subheader()}
+        {#if showFolders && albumFolders}
+          <AlbumFolderStrip
+            folders={albumFolders}
+            selected={albumFolder}
+            onSelect={(folder) => (albumFolder = folder)}
+            onOpenSettings={albumFolders.canEdit ? () => (foldersOpen = true) : undefined}
+          />
+        {/if}
         <!-- FL-809: the people in this album, as chips that narrow it to everyone chosen. -->
         {#key albumId}
           <AlbumPeopleChips {albumId} refreshKey={album.assetCount} />
@@ -885,22 +945,33 @@
 
       <!-- FL-1412 (M13): an empty album says how photos get here; whoever can add them gets the way to,
            as the quiet button: the header's Add photos is this page's one filled button (BRAND.md). -->
+      {#snippet footer()}
+        {#if showFolders && albumFolders && !albumFolder && albumFolders.sections.length > 0}
+          <AlbumFolderSections
+            folders={albumFolders}
+            onOpen={(assetId) => void navigate({ targetRoute: 'current', assetId })}
+            onShowAll={(folder) => (albumFolder = folder)}
+          />
+        {/if}
+      {/snippet}
+
       {#snippet empty()}
         {@const canAdd = canChangeAlbum && !album.isSmart}
-        <LibraryEmptyState
-          icon={mdiImagePlusOutline}
-          title={$t('frameleaf_album_empty_title')}
-          message={$t(
-            album.isSmart
-              ? 'frameleaf_albums_empty_smart_text'
-              : canAdd
-                ? 'frameleaf_album_empty_body'
-                : 'frameleaf_album_empty_viewer',
-          )}
-          action={canAdd
-            ? { label: $t('add_photos'), onClick: () => handlePromiseError(addPhotosFromLibrary()) }
-            : undefined}
-        />
+        <!-- FL-1838: every photo is in a folder's own section below, so the album is not empty -->
+        {#if !(showFolders && !albumFolder && albumFolders?.sections.length)}<LibraryEmptyState
+            icon={mdiImagePlusOutline}
+            title={$t('frameleaf_album_empty_title')}
+            message={$t(
+              album.isSmart
+                ? 'frameleaf_albums_empty_smart_text'
+                : canAdd
+                  ? 'frameleaf_album_empty_body'
+                  : 'frameleaf_album_empty_viewer',
+            )}
+            action={canAdd
+              ? { label: $t('add_photos'), onClick: () => handlePromiseError(addPhotosFromLibrary()) }
+              : undefined}
+          />{/if}
       {/snippet}
 
       {#snippet viewer()}
@@ -914,6 +985,13 @@
               withStacked
               activityPanel={isSpace ? spaceAssetComments : undefined}
             />
+            {#if albumFolders && assetViewerManager.asset}
+              <AlbumVersionsStrip
+                {albumId}
+                assetId={assetViewerManager.asset.id}
+                onPick={(assetId) => void navigate({ targetRoute: 'current', assetId })}
+              />
+            {/if}
           {/if}
         </Portal>
       {/snippet}
@@ -944,6 +1022,10 @@
     </Theme>
   {/if}
 </UserPageLayout>
+
+{#if foldersOpen && albumFolders}
+  <AlbumFoldersDialog {albumId} folders={albumFolders} bind:open={foldersOpen} onSaved={onFoldersSaved} />
+{/if}
 
 {#if downloadOpen}{#await import('$lib/components/frameleaf/BoardsDownloadDialog.svelte') then { default: BoardsDownloadDialog }}
     <BoardsDownloadDialog

@@ -1,5 +1,5 @@
 import { Kysely } from 'kysely';
-import { AlbumKind, ChecksumAlgorithm } from 'src/enum.js';
+import { AlbumKind, AssetType, ChecksumAlgorithm } from 'src/enum.js';
 import { AlbumSummaryRepository } from 'src/repositories/album-summary.repository.js';
 import { AlbumRepository } from 'src/repositories/album.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
@@ -13,6 +13,7 @@ import { PartnerRepository } from 'src/repositories/partner.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
 import { DB } from 'src/schema/index.js';
 import { FolderAlbumService } from 'src/services/folder-album.service.js';
+import { albumFolderView, resolveAlbumFolderChoices } from 'src/utils/album-folders.js';
 import { EVENT_FOLDER_ALBUM_OPTIONS, LEGACY_FOLDER_ALBUM_OPTIONS } from 'src/utils/folder-albums.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { getKyselyDB } from 'test/utils.js';
@@ -51,7 +52,10 @@ const newLibrary = async (ctx: Context, importPaths: string[]) => {
     exclusionPatterns: [],
     folderAlbums: true,
   });
-  const file = async (originalPath: string, options: { isOffline?: boolean; fileModifiedAt?: Date } = {}) => {
+  const file = async (
+    originalPath: string,
+    options: { isOffline?: boolean; fileModifiedAt?: Date; takenAt?: Date; type?: AssetType } = {},
+  ) => {
     const { asset } = await ctx.newAsset({
       ownerId: user.id,
       libraryId: library.id,
@@ -62,6 +66,8 @@ const newLibrary = async (ctx: Context, importPaths: string[]) => {
       fileModifiedAt: options.fileModifiedAt ?? new Date('2024-06-01T12:00:00Z'),
       isOffline: options.isOffline ?? false,
       deletedAt: options.isOffline ? new Date() : null,
+      ...(options.takenAt && { fileCreatedAt: options.takenAt, localDateTime: options.takenAt }),
+      ...(options.type && { type: options.type }),
     });
     return asset;
   };
@@ -283,5 +289,103 @@ describe(FolderAlbumService.name, () => {
       new Map([[album.id, { libraryId: library.id, folderPath: '/fl838/source' }]]),
     );
     expect(await albums.getFolderAlbumSources([album.id], other.id)).toEqual(new Map());
+  });
+
+  it('FL-1838: an album shows its folders as chosen, each photo once with its versions behind it', async () => {
+    const { sut, ctx } = setup();
+    const { user, library, file } = await newLibrary(ctx, ['/fl1838/events']);
+    await ctx.get(LibraryRepository).update(library.id, {
+      folderAlbumOptions: { ...EVENT_FOLDER_ALBUM_OPTIONS, subfolders: { edits: 'join' } },
+    });
+    const root = '/fl1838/events/2026-11-19 - Nathan';
+    const at = (hour: number) => new Date(`2026-11-19T${String(hour).padStart(2, '0')}:00:00Z`);
+    const raw = await file(`${root}/RAW/IMG_1.CR3`, { takenAt: at(10) });
+    const original = await file(`${root}/Original/IMG_1.JPG`, { takenAt: at(10) });
+    const edit = await file(`${root}/Edits/IMG_1-edit.jpg`, { takenAt: at(10) });
+    const lonely = await file(`${root}/Original/IMG_2.JPG`, { takenAt: at(11) });
+    const renamed = await file(`${root}/Edits/Nathan-hug.jpg`, { takenAt: at(11) });
+    const video = await file(`${root}/Video/clip.mp4`, { takenAt: at(12), type: AssetType.Video });
+    // the timeline's columns come with each photo's metadata
+    for (const { id } of [raw, original, edit, lonely, renamed, video]) {
+      await ctx.newExif({ assetId: id, make: 'Canon' });
+    }
+    await sut.sync(library.id);
+    const event = await folderAlbum(defaultDatabase, library.id, root);
+    expect(await membersOf(defaultDatabase, event!.id)).toHaveLength(6);
+
+    const albums = ctx.get(AlbumRepository);
+    const link = await albums.getFolderAlbumLink(event!.id);
+    expect(link).toMatchObject({ folderPath: root, displayChoices: null, libraryOwnerId: user.id });
+    const versions = await albums.getFolderVersions(event!.id, raw.id, root);
+    expect(versions.map(({ id, folder, isFront }) => [id, folder, isFront])).toEqual([
+      [edit.id, 'Edits', true],
+      [raw.id, 'RAW', false],
+      [original.id, 'Original', false],
+    ]);
+
+    const assets = ctx.get(AssetRepository);
+    const auth = { user: { id: user.id } } as never;
+    const bucket = async (only?: string, choices = resolveAlbumFolderChoices(null)) => {
+      const albumView = albumFolderView(event!.id, root, choices, only);
+      const { assets: json } = await assets.getTimeBucket('2026-11-01', { albumId: event!.id, albumView }, auth);
+      const parsed = JSON.parse(json) as { id: string[]; versionCount?: number[] };
+      return Object.fromEntries(parsed.id.map((id, index) => [id, parsed.versionCount?.[index] ?? null]));
+    };
+    // RAW hidden, Video in its own section, the edits in front of their originals
+    expect(await bucket()).toEqual({ [edit.id]: 3, [renamed.id]: 2 });
+    expect(await bucket('raw')).toEqual({ [raw.id]: null });
+    expect(await bucket('Video')).toEqual({ [video.id]: null });
+    const each = resolveAlbumFolderChoices({ versions: 'each', folders: { RAW: 'with', Video: 'with' } });
+    expect(Object.keys(await bucket(undefined, each)).toSorted()).toEqual(
+      [raw.id, original.id, edit.id, lonely.id, renamed.id, video.id].toSorted(),
+    );
+    // a version in front in the trash leaves the others showing
+    await defaultDatabase.updateTable('asset').set({ deletedAt: new Date() }).where('id', '=', renamed.id).execute();
+    expect(await bucket()).toEqual({ [edit.id]: 3, [lonely.id]: 0 });
+    await defaultDatabase.updateTable('asset').set({ deletedAt: null }).where('id', '=', renamed.id).execute();
+    // a version in front taken out of the album leaves the others showing
+    await defaultDatabase.deleteFrom('album_asset').where('assetId', '=', edit.id).execute();
+    expect(await bucket()).toEqual({ [original.id]: 0, [renamed.id]: 2 });
+  });
+
+  it('FL-1838: one album brings its Edits album back in, and takes it out again, deleting no photo', async () => {
+    const { sut, ctx } = setup();
+    const { library, file } = await newLibrary(ctx, ['/fl1838b/events']);
+    await ctx.get(LibraryRepository).update(library.id, { folderAlbumOptions: EVENT_FOLDER_ALBUM_OPTIONS });
+    const root = '/fl1838b/events/2026-11-19 - Nathan';
+    const other = '/fl1838b/events/2026-11-20 - Park';
+    const original = await file(`${root}/Original/IMG_1.JPG`);
+    const edit = await file(`${root}/Edits/IMG_1-edit.jpg`);
+    const otherEdit = await file(`${other}/Edits/IMG_9-edit.jpg`);
+    await file(`${other}/Original/IMG_9.JPG`);
+    await sut.sync(library.id);
+    const event = await folderAlbum(defaultDatabase, library.id, root);
+    const editsAlbum = await folderAlbum(defaultDatabase, library.id, `${root}/Edits`);
+    expect(editsAlbum).toMatchObject({ parentId: event!.id });
+    expect(await membersOf(defaultDatabase, event!.id)).toEqual([original.id]);
+
+    // this album only: Edits with the others
+    const albums = ctx.get(AlbumRepository);
+    const link = await albums.getFolderAlbumLink(event!.id);
+    await albums.setFolderAlbumChoices(link!.id, resolveAlbumFolderChoices({ folders: { Edits: 'with' } }));
+    await sut.sync(library.id);
+    expect(await folderAlbum(defaultDatabase, library.id, `${root}/Edits`)).toBeUndefined();
+    expect(await membersOf(defaultDatabase, event!.id)).toEqual([original.id, edit.id].toSorted());
+    // the other event keeps the library's rule
+    expect(
+      await membersOf(defaultDatabase, (await folderAlbum(defaultDatabase, library.id, `${other}/Edits`))!.id),
+    ).toEqual([otherEdit.id]);
+    const assetIds = (
+      await defaultDatabase.selectFrom('asset').select('id').where('id', 'in', [edit.id]).execute()
+    ).map(({ id }) => id);
+    expect(assetIds).toEqual([edit.id]);
+
+    // and back to an album inside
+    await albums.setFolderAlbumChoices(link!.id, resolveAlbumFolderChoices({ folders: { Edits: 'album' } }));
+    await sut.sync(library.id);
+    const again = await folderAlbum(defaultDatabase, library.id, `${root}/Edits`);
+    expect(again).toMatchObject({ parentId: event!.id });
+    expect(await membersOf(defaultDatabase, again!.id)).toEqual([edit.id]);
+    expect(await membersOf(defaultDatabase, event!.id)).toEqual([original.id]);
   });
 });

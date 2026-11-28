@@ -16,8 +16,11 @@ import type { DB } from 'src/schema/index.js';
 import { ALBUM_ICON_GROUPS, ALBUM_ICON_NAMES, MDI_ICON_CATALOGUE_VERSION } from 'src/constants/album-icons.js';
 import { OnEvent } from 'src/decorators.js';
 import {
+  ALBUM_FOLDER_SECTION_ITEMS,
   AddUsersDto,
   AlbumDescendantCountResponseDto,
+  AlbumFoldersResponseDto,
+  AlbumFoldersUpdateDto,
   AlbumHierarchyResponseDto,
   AlbumIconCatalogueResponseDto,
   AlbumOrderDto,
@@ -30,6 +33,8 @@ import {
   AlbumStatsDto,
   AlbumStatsResponseDto,
   AlbumTreeResponseDto,
+  AlbumVersionsDto,
+  AlbumVersionsResponseDto,
   AlbumViewDto,
   AlbumsAddAssetsDto,
   AlbumsAddAssetsResponseDto,
@@ -49,6 +54,7 @@ import {
   AlbumKind,
   AlbumUserRole,
   FrameleafWorker,
+  JobName,
   LibraryScope,
   Permission,
   PushEventType,
@@ -66,6 +72,13 @@ import {
   recordAssetEdit,
 } from 'src/services/partner-copy.service.js';
 import {
+  folderDisplay,
+  refreshAlbumFolderVersions,
+  resolveAlbumFolderChoices,
+  subfolderOf,
+  subfolderRulesOf,
+} from 'src/utils/album-folders.js';
+import {
   AlbumTreeOf,
   albumOrderGroup,
   buildAlbumHierarchy,
@@ -76,6 +89,7 @@ import {
 import { albumViewerKey } from 'src/utils/album-viewer-key.js';
 import { addAssets, removeAssets } from 'src/utils/asset.util.js';
 import { asDateTimeString } from 'src/utils/date.js';
+import { resolveFolderAlbumOptions } from 'src/utils/folder-albums.js';
 import {
   everyOwnersRules,
   getHiddenContentQueryOptions,
@@ -701,6 +715,159 @@ export class AlbumService extends BaseService {
       ...((await this.recoveredAlbumIds()).has(album.id) && { recovered: true }),
       ...(await this.folderSourceOf(auth, album.id)),
     };
+  }
+
+  /**
+   * FL-1838: "Folders in this album" for an album made from a folder: the folders inside its folder, how each shows,
+   * the same photo found in more than one of them, and what the album shows with these choices. The versions are worked
+   * out again here, so the page reads its timeline after this.
+   */
+  async getFolders(auth: AuthDto, id: string): Promise<AlbumFoldersResponseDto> {
+    await this.requireAccess({ auth, permission: Permission.AlbumRead, ids: [id] });
+    const link = await this.requireFolderAlbumLink(id);
+    const choices = resolveAlbumFolderChoices(link.displayChoices ?? link.libraryDisplay);
+    const { items, rows, matchedByName, matchedByTime, changed } = await refreshAlbumFolderVersions(
+      this.albumRepository,
+      id,
+      link.folderPath,
+      choices,
+    );
+    // FL-1837's albums inside this one: their photos are theirs, not this album's
+    const children = await this.albumRepository.getFolderAlbumChildren(id, link.libraryId, link.folderPath);
+    const behind = new Set(
+      choices.versions === 'one'
+        ? rows.filter((row) => row.assetId !== row.frontAssetId).map((row) => row.assetId)
+        : [],
+    );
+    const byFolder = new Map<string, typeof items>();
+    for (const item of items.toSorted((a, b) => new Date(a.takenAt).getTime() - new Date(b.takenAt).getTime())) {
+      byFolder.set(item.folder, [...(byFolder.get(item.folder) ?? []), item]);
+    }
+    const childOf = new Map(
+      children.map((child) => [subfolderOf(child.folderPath, link.folderPath).toLowerCase(), child]),
+    );
+    const displayOf = (name: string) => (childOf.has(name.toLowerCase()) ? 'album' : folderDisplay(choices, name));
+    const names = [
+      ...new Set([...byFolder.keys(), ...children.map((child) => subfolderOf(child.folderPath, link.folderPath))]),
+    ]
+      .filter(Boolean)
+      .toSorted((a, b) => a.localeCompare(b));
+    const shown = items.filter((item) => {
+      const display = displayOf(item.folder);
+      return display === 'section' || (display === 'with' && !behind.has(item.id));
+    });
+    const isOwner = !auth.sharedLink && link.libraryOwnerId === auth.user.id;
+    return {
+      ...(isOwner && { libraryId: link.libraryId, libraryName: link.libraryName, folderPath: link.folderPath }),
+      canEdit: isOwner,
+      usesLibraryChoice: link.displayChoices === null,
+      folders: names.map((name) => {
+        const inFolder = byFolder.get(name) ?? [];
+        const videos = inFolder.filter((item) => item.isVideo).length;
+        const child = childOf.get(name.toLowerCase());
+        return child
+          ? { name, photos: Number(child.count), videos: 0, display: 'album' as const }
+          : { name, photos: inFolder.length - videos, videos, display: displayOf(name) };
+      }),
+      versions: choices.versions,
+      prefer: choices.prefer,
+      matchedByName,
+      matchedByTime,
+      shownPhotos: shown.filter((item) => !item.isVideo).length,
+      shownVideos: shown.filter((item) => item.isVideo).length,
+      sections: names
+        .filter((name) => displayOf(name) === 'section')
+        .map((name) => ({
+          name,
+          count: byFolder.get(name)?.length ?? 0,
+          items: (byFolder.get(name) ?? [])
+            .slice(0, ALBUM_FOLDER_SECTION_ITEMS)
+            .map(({ id, isVideo }) => ({ id, isVideo })),
+        }))
+        .filter((section) => section.count > 0),
+      albums: children
+        .map((child) => ({
+          albumId: child.albumId,
+          name: subfolderOf(child.folderPath, link.folderPath),
+          count: Number(child.count),
+          coverAssetId: child.coverAssetId,
+        }))
+        .toSorted((a, b) => a.name.localeCompare(b.name)),
+      versionsChanged: changed,
+    };
+  }
+
+  /**
+   * FL-1838: saves how the folders inside an album made from a folder show there, for the album or, with
+   * `applyToLibrary`, for every album from its library that has no choice of its own (this one then follows it). An
+   * album inside is FL-1837's: a real album the folder-album sync makes, so a change to which folders get one asks for
+   * a sync, and for the library it becomes the library's own rule for that folder.
+   */
+  async updateFolders(auth: AuthDto, id: string, dto: AlbumFoldersUpdateDto): Promise<AlbumFoldersResponseDto> {
+    await this.requireAccess({ auth, permission: Permission.AlbumUpdate, ids: [id] });
+    const link = await this.requireFolderAlbumLink(id);
+    if (auth.sharedLink || link.libraryOwnerId !== auth.user.id) {
+      throw new ForbiddenException("Only the library's owner chooses how its folders show");
+    }
+    const { applyToLibrary, ...choices } = dto;
+    const saved = resolveAlbumFolderChoices(choices);
+    const before = await this.getFolders(auth, id);
+    const insideBefore = before.folders
+      .filter(({ display }) => display === 'album')
+      .map(({ name }) => name.toLowerCase());
+    if (applyToLibrary) {
+      await this.albumRepository.setLibraryFolderChoices(link.libraryId, saved);
+      await this.albumRepository.setFolderAlbumChoices(link.id, null);
+      const library = await this.libraryRepository.get(link.libraryId);
+      if (library) {
+        const options = resolveFolderAlbumOptions(library.folderAlbumOptions);
+        const subfolders = Object.fromEntries(
+          Object.entries(options.subfolders).filter(([name]) => !(name.toLowerCase() in subfolderRulesOf(saved))),
+        );
+        await this.libraryRepository.update(link.libraryId, {
+          folderAlbumOptions: { ...options, subfolders: { ...subfolders, ...subfolderRulesOf(saved) } },
+        });
+      }
+      for (const other of await this.albumRepository.getFolderAlbumsFollowingLibrary(link.libraryId)) {
+        if (other.albumId !== id) {
+          await refreshAlbumFolderVersions(this.albumRepository, other.albumId, other.folderPath, saved);
+          await this.eventRepository.emit('AlbumUpdate', {
+            id: other.albumId,
+            userIds: [auth.user.id],
+            recipientIds: [],
+          });
+        }
+      }
+      await this.jobRepository.queue({ name: JobName.LibraryFolderAlbumSync, data: { id: link.libraryId } });
+    } else {
+      await this.albumRepository.setFolderAlbumChoices(link.id, saved);
+      const insideAfter = before.folders
+        .map(({ name }) => name)
+        .filter((name) => folderDisplay(saved, name) === 'album')
+        .map((name) => name.toLowerCase());
+      if (insideAfter.toSorted().join('/') !== insideBefore.toSorted().join('/')) {
+        await this.jobRepository.queue({ name: JobName.LibraryFolderAlbumSync, data: { id: link.libraryId } });
+      }
+    }
+    return this.getFolders(auth, id);
+  }
+
+  /** FL-1838: the versions of one photo in an album made from a folder, the one in front first. */
+  async getVersions(auth: AuthDto, id: string, { assetId }: AlbumVersionsDto): Promise<AlbumVersionsResponseDto> {
+    await this.requireAccess({ auth, permission: Permission.AlbumRead, ids: [id] });
+    const link = await this.albumRepository.getFolderAlbumLink(id);
+    if (!link) {
+      return { versions: [] };
+    }
+    return { versions: await this.albumRepository.getFolderVersions(id, assetId, link.folderPath) };
+  }
+
+  private async requireFolderAlbumLink(id: string) {
+    const link = await this.albumRepository.getFolderAlbumLink(id);
+    if (!link) {
+      throw new BadRequestException('This album was not made from a folder');
+    }
+    return link;
   }
 
   /** FL-838: the library folder behind each album, told only to the library's owner (never through a shared link). */

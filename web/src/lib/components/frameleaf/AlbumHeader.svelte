@@ -90,6 +90,7 @@
     mdiDeleteOutline,
     mdiDotsHorizontal,
     mdiDownloadOutline,
+    mdiFolderCogOutline,
     mdiFolderMoveOutline,
     mdiFolderMultipleOutline,
     mdiImageMultipleOutline,
@@ -180,6 +181,8 @@
      */
     datesToCheck?: number;
     onFixDates?: () => void;
+    /** FL-1838: opens "Folders in this album", on an album made from a folder that has folders inside it. */
+    onFolders?: () => void;
   }
 
   let {
@@ -209,6 +212,7 @@
     pendingInvites = 0,
     datesToCheck = 0,
     onFixDates,
+    onFolders,
   }: Props = $props();
   const download = () => (onDownload ? onDownload() : void handleDownloadAlbum(album));
 
@@ -939,6 +943,13 @@
       </button>
     {/if}
 
+    {#if onFolders && inRow('folders')}
+      <button type="button" class="action fl-control" onclick={() => onFolders?.()}>
+        <Icon icon={mdiFolderCogOutline} size="18" />
+        <span>{$t('frameleaf_album_folders_button')}</span>
+      </button>
+    {/if}
+
     <span class="spacer"></span>
 
     <Menu label={$t('frameleaf_album_more_actions')} align="end">
@@ -1041,6 +1052,12 @@
           <MenuItem disabled={assetCount === 0} onSelect={download}>
             <Icon icon={mdiDownloadOutline} size="18" />
             {$t('download')}
+          </MenuItem>
+        {/if}
+        {#if onFolders && !inRow('folders')}
+          <MenuItem onSelect={() => onFolders?.()}>
+            <Icon icon={mdiFolderCogOutline} size="18" />
+            {$t('frameleaf_album_folders_button')}
           </MenuItem>
         {/if}
         {#if onToggleActivity && !inRow('activity')}

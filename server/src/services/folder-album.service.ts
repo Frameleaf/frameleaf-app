@@ -8,10 +8,17 @@ import { AlbumOriginField } from 'src/repositories/partner-origin.repository.js'
 import { BaseService } from 'src/services/base.service.js';
 import { queueAlbumCopies, recordAlbumEdit } from 'src/services/partner-copy.service.js';
 import {
+  type AlbumFolderChoices,
+  refreshAlbumFolderVersions,
+  resolveAlbumFolderChoices,
+  subfolderRulesOf,
+} from 'src/utils/album-folders.js';
+import {
   EVENT_FOLDER_ALBUM_OPTIONS,
   FolderAlbumOptions,
   FolderAlbumPlanNode,
   FolderCount,
+  SubfolderRule,
   autoNames,
   fileKey,
   looksLikeEventFolders,
@@ -42,6 +49,7 @@ type FolderAlbumLink = {
   albumId: string;
   isUserEdited: boolean;
   isKept: boolean;
+  displayChoices: AlbumFolderChoices | null;
   albumName: string;
   parentId: string | null;
   kind: string;
@@ -200,11 +208,19 @@ export class FolderAlbumService extends BaseService {
       .filter((link) => link.isKept)
       .toArray();
     const keptPaths = new Set(kept.map(({ folderPath }) => folderPath));
+    // FL-1838: an album's own "Folders in this album" choices: an album inside, or in the album
+    const albumRules = new Map(
+      byPath
+        .values()
+        .filter((link) => !!link.displayChoices)
+        .map((link) => [link.folderPath, subfolderRulesOf(resolveAlbumFolderChoices(link.displayChoices))] as const),
+    );
     const tree = planFolderAlbums(
       roots,
       counts.filter(({ folderPath }) => !keptPaths.has(folderPath)),
       options,
       library.name,
+      albumRules,
     );
     this.addKept(tree, kept, counts, roots, options.skipEmpty);
 
@@ -212,7 +228,12 @@ export class FolderAlbumService extends BaseService {
     const original = new Map(byPath);
 
     // Folders renamed or moved: their albums follow, so nothing the owner did to them is lost.
-    const moves = await this.findMovedFolders(libraryId, tree, byPath, { roots, options, name: library.name });
+    const moves = await this.findMovedFolders(libraryId, tree, byPath, {
+      roots,
+      options,
+      name: library.name,
+      albumRules,
+    });
     const previousPaths: { folderPath: string; albumId: string }[] = [];
     // a moved album with the name its old folder gave it takes the new folder's name
     const movedAuto = new Set<string>();
@@ -468,7 +489,17 @@ export class FolderAlbumService extends BaseService {
     libraryId: string,
     tree: Map<string, FolderAlbumPlanNode>,
     byPath: Map<string, FolderAlbumLink>,
-    { roots, options, name }: { roots: string[]; options: FolderAlbumOptions; name: string },
+    {
+      roots,
+      options,
+      name,
+      albumRules,
+    }: {
+      roots: string[];
+      options: FolderAlbumOptions;
+      name: string;
+      albumRules: ReadonlyMap<string, Readonly<Record<string, SubfolderRule>>>;
+    },
   ) {
     const goneFolders = byPath
       .keys()
@@ -493,6 +524,8 @@ export class FolderAlbumService extends BaseService {
       known.map((folderPath) => ({ folderPath, photos: 1 })),
       { ...options, skipEmpty: true },
       name,
+      // FL-1838: a gone album was planned with its own folder rules, so it is planned again with them
+      albumRules,
     );
     const albumsOf = (lists: [string, string[]][]) => {
       const byFolder = new Map<string, string[]>();
@@ -584,6 +617,14 @@ export class FolderAlbumService extends BaseService {
     }
     await this.albumRepository.updateThumbnails(albumIds);
     await this.albumRepository.updateNewestCovers(albumIds);
+    // FL-1838: the same photo in more than one of an album's folders, worked out again for the photos that came in
+    for (const albumId of albumIds) {
+      const link = await this.albumRepository.getFolderAlbumLink(albumId);
+      if (link) {
+        const choices = resolveAlbumFolderChoices(link.displayChoices ?? link.libraryDisplay);
+        await refreshAlbumFolderVersions(this.albumRepository, albumId, link.folderPath, choices);
+      }
+    }
     // FL-1837: an album list that read these albums while the membership write was running stored them as empty, and
     // that write's change time (its start) can be too old for the list to notice. Their numbers are read again.
     await this.albumSummaryRepository.deleteByAlbumIds(albumIds);

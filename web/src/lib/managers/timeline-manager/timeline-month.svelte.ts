@@ -539,6 +539,11 @@ export function* bucketTimelineAssets(bucketAssets: TimeBucketAssetResponseDto):
       timelineAsset.latitude = latitude;
       timelineAsset.longitude = longitude;
     }
+    // FL-1838: an album made from a folder that shows each photo once: the versions behind this one
+    const versionCount = bucketAssets.versionCount?.[i];
+    if (versionCount && versionCount > 1) {
+      timelineAsset.versionCount = versionCount;
+    }
     // FL-936: the column is null on nearly every page, and then nothing is added to the asset
     const dateAccuracy = bucketAssets.dateAccuracy?.[i];
     if (dateAccuracy) {

@@ -5,6 +5,8 @@ import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import {
   AddUsersDto,
   AlbumDescendantCountResponseDto,
+  AlbumFoldersResponseDto,
+  AlbumFoldersUpdateDto,
   AlbumHierarchyResponseDto,
   AlbumIconCatalogueResponseDto,
   AlbumOrderDto,
@@ -17,6 +19,8 @@ import {
   AlbumStatsResponseDto,
   AlbumTreeResponseDto,
   AlbumUserParamDto,
+  AlbumVersionsDto,
+  AlbumVersionsResponseDto,
   AlbumViewDto,
   AlbumsAddAssetsDto,
   AlbumsAddAssetsResponseDto,
@@ -185,6 +189,50 @@ export class AlbumController {
     @Body() dto: UpdateAlbumDto,
   ): Promise<AlbumResponseDto> {
     return this.service.update(auth, id, dto);
+  }
+
+  @Get(':id/folders')
+  @Authenticated({ permission: Permission.AlbumRead })
+  @Endpoint({
+    summary: 'Retrieve how the folders in an album show',
+    description:
+      'For an album made from a folder (one of your external libraries keeps it in sync): the folders inside its folder (such as Original, RAW, Edits and Video), how each shows in the album, the photos found in more than one of them and how they matched, and what the album shows with these choices. 400 for any other album.',
+    history: new HistoryBuilder().added('v3.5.0').alpha('v3.5.0'),
+  })
+  getAlbumFolders(@Auth() auth: AuthDto, @Param() { id }: UUIDParamDto): Promise<AlbumFoldersResponseDto> {
+    return this.service.getFolders(auth, id);
+  }
+
+  @Put(':id/folders')
+  @Authenticated({ permission: Permission.AlbumUpdate })
+  @Endpoint({
+    summary: 'Choose how the folders in an album show',
+    description:
+      "Per folder inside an album made from a folder: with the others, in a section of its own, as an album inside, or hidden (hidden photos stay in the library, in search and in the folder); and whether the same photo in more than one folder shows once or every time. With applyToLibrary the choices become the library's, for every album from it without a choice of its own. Only the library's owner may change them.",
+    history: new HistoryBuilder().added('v3.5.0').alpha('v3.5.0'),
+  })
+  updateAlbumFolders(
+    @Auth() auth: AuthDto,
+    @Param() { id }: UUIDParamDto,
+    @Body() dto: AlbumFoldersUpdateDto,
+  ): Promise<AlbumFoldersResponseDto> {
+    return this.service.updateFolders(auth, id, dto);
+  }
+
+  @Get(':id/versions')
+  @Authenticated({ permission: Permission.AlbumRead })
+  @Endpoint({
+    summary: 'Retrieve the versions of a photo in an album',
+    description:
+      'For an album made from a folder: the files of the same photo found in more than one of its folders (matched by file name, or by capture time for an edit saved under a new name), the one the album shows in front first. Empty when the photo has no others.',
+    history: new HistoryBuilder().added('v3.5.0').alpha('v3.5.0'),
+  })
+  getAlbumVersions(
+    @Auth() auth: AuthDto,
+    @Param() { id }: UUIDParamDto,
+    @Query() dto: AlbumVersionsDto,
+  ): Promise<AlbumVersionsResponseDto> {
+    return this.service.getVersions(auth, id, dto);
   }
 
   @Delete(':id')

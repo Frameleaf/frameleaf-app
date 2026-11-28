@@ -917,6 +917,192 @@ where
     )
   )
 
+-- AlbumRepository.getFolderAlbumLink
+select
+  "library_folder_album"."id",
+  "library_folder_album"."albumId",
+  "library_folder_album"."libraryId",
+  "library_folder_album"."folderPath",
+  "library_folder_album"."displayChoices",
+  "library"."name" as "libraryName",
+  "library"."ownerId" as "libraryOwnerId",
+  "library"."folderAlbumDisplay" as "libraryDisplay"
+from
+  "library_folder_album"
+  inner join "library" on "library"."id" = "library_folder_album"."libraryId"
+where
+  "library_folder_album"."albumId" = $1::uuid
+  and "library"."deletedAt" is null
+
+-- AlbumRepository.getFolderAlbumItems
+select
+  "asset"."id",
+  "asset"."originalFileName",
+  "asset"."fileCreatedAt" as "takenAt",
+  (
+    case
+      when left(
+        coalesce(
+          nullif(
+            substring("asset"."originalPath", '^(.*)/[^/]*$'),
+            ''
+          ),
+          '/'
+        ),
+        char_length($1::text)
+      ) = $2::text then split_part(
+        substr(
+          coalesce(
+            nullif(
+              substring("asset"."originalPath", '^(.*)/[^/]*$'),
+              ''
+            ),
+            '/'
+          ),
+          char_length($3::text) + 1
+        ),
+        '/',
+        1
+      )
+      else ''
+    end
+  ) as "folder",
+  asset.type = 'VIDEO' as "isVideo"
+from
+  "album_asset"
+  inner join "asset" on "asset"."id" = "album_asset"."assetId"
+where
+  "album_asset"."albumId" = $4::uuid
+  and (
+    "asset"."isOffline" = false
+    AND "asset"."deletedAt" IS NULL
+    AND "asset"."visibility" IN ('timeline', 'archive')
+    AND "asset"."type" IN ('IMAGE', 'VIDEO')
+    AND not exists (
+      select
+        1
+      from
+        asset_lock
+      where
+        asset_lock."assetId" = "asset"."id"
+    )
+  )
+
+-- AlbumRepository.getFolderAlbumChildren
+select
+  "library_folder_album"."albumId",
+  "library_folder_album"."folderPath",
+  "album"."albumThumbnailAssetId" as "coverAssetId",
+  (
+    select
+      count(*) as "count"
+    from
+      "album_asset"
+    where
+      "album_asset"."albumId" = "album"."id"
+  ) as "count"
+from
+  "library_folder_album"
+  inner join "album" on "album"."id" = "library_folder_album"."albumId"
+where
+  "library_folder_album"."libraryId" = $1::uuid
+  and "album"."parentId" = $2::uuid
+  and "album"."deletedAt" is null
+  and left(
+    library_folder_album."folderPath",
+    char_length($3::text)
+  ) = $4::text
+  and strpos(
+    substr(
+      library_folder_album."folderPath",
+      char_length($5::text) + 1
+    ),
+    '/'
+  ) = 0
+
+-- AlbumRepository.getFolderVersionRows
+select
+  "assetId",
+  "frontAssetId",
+  "matchedBy"
+from
+  "album_folder_version"
+where
+  "albumId" = $1::uuid
+
+-- AlbumRepository.getFolderAlbumsFollowingLibrary
+select
+  "albumId",
+  "folderPath"
+from
+  "library_folder_album"
+where
+  "libraryId" = $1::uuid
+  and "displayChoices" is null
+
+-- AlbumRepository.getFolderVersions
+select
+  "asset"."id",
+  "asset"."originalFileName",
+  "version"."matchedBy",
+  (
+    case
+      when left(
+        coalesce(
+          nullif(
+            substring("asset"."originalPath", '^(.*)/[^/]*$'),
+            ''
+          ),
+          '/'
+        ),
+        char_length($1::text)
+      ) = $2::text then split_part(
+        substr(
+          coalesce(
+            nullif(
+              substring("asset"."originalPath", '^(.*)/[^/]*$'),
+              ''
+            ),
+            '/'
+          ),
+          char_length($3::text) + 1
+        ),
+        '/',
+        1
+      )
+      else ''
+    end
+  ) as "folder",
+  version."assetId" = version."frontAssetId" as "isFront"
+from
+  "album_folder_version" as "mine"
+  inner join "album_folder_version" as "version" on "version"."albumId" = "mine"."albumId"
+  and "version"."frontAssetId" = "mine"."frontAssetId"
+  inner join "album_asset" on "album_asset"."albumId" = "version"."albumId"
+  and "album_asset"."assetId" = "version"."assetId"
+  inner join "asset" on "asset"."id" = "version"."assetId"
+where
+  "mine"."albumId" = $4::uuid
+  and "mine"."assetId" = $5::uuid
+  and (
+    "asset"."isOffline" = false
+    AND "asset"."deletedAt" IS NULL
+    AND "asset"."visibility" IN ('timeline', 'archive')
+    AND "asset"."type" IN ('IMAGE', 'VIDEO')
+    AND not exists (
+      select
+        1
+      from
+        asset_lock
+      where
+        asset_lock."assetId" = "asset"."id"
+    )
+  )
+order by
+  version."assetId" = version."frontAssetId" desc,
+  "asset"."fileCreatedAt",
+  "asset"."originalFileName"
+
 -- AlbumRepository.getFolderAlbumSources
 select
   "library_folder_album"."albumId",

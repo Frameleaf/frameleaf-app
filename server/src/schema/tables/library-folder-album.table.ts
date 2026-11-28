@@ -1,5 +1,6 @@
 import { Column, ForeignKeyColumn, PrimaryGeneratedColumn, Table, Unique } from '@frameleaf/sql-tools';
 import type { Generated } from '@frameleaf/sql-tools';
+import type { AlbumFolderChoices } from 'src/utils/album-folders.js';
 import { AlbumTable } from 'src/schema/tables/album.table.js';
 import { LibraryTable } from 'src/schema/tables/library.table.js';
 
@@ -30,4 +31,8 @@ export class LibraryFolderAlbumTable {
   // FL-1837: kept as made when the library's rules changed ("new folders only"): it keeps its own folder's photos
   @Column({ type: 'boolean', default: false })
   isKept!: Generated<boolean>;
+
+  // FL-1838: how each folder inside this album's folder shows in it; null follows the library's choice
+  @Column({ type: 'jsonb', nullable: true })
+  displayChoices!: AlbumFolderChoices | null;
 }
