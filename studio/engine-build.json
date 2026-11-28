@@ -994,7 +994,12 @@
       "path": "patches/0219-studio-restore-tab.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "b672995045f1a25c02f239aefca6820224ccd6940b4c0c6fbb643d470e62ef88"
+    },
+    {
+      "path": "patches/0220-studio-basic-mode.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "8adf7dd370b40cef898bdda19699ce708094584ed10068370cc2d772b0a85cf7"
     }
   ],
-  "sourceSha256": "55ddee801bdf97f445aa0ef49d0e141fdfbf2481a756e465c8f3c8fa80dbae34"
+  "sourceSha256": "e0cd1a91849639adbaa22f9058cc7c3895ee31068533ce73fc9086c99287b395"
 }
