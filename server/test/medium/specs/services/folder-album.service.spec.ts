@@ -316,11 +316,17 @@ describe(FolderAlbumService.name, () => {
     const albums = ctx.get(AlbumRepository);
     const link = await albums.getFolderAlbumLink(event!.id);
     expect(link).toMatchObject({ folderPath: root, displayChoices: null, libraryOwnerId: user.id });
-    const versions = await albums.getFolderVersions(event!.id, raw.id, root);
-    expect(versions.map(({ id, folder, isFront }) => [id, folder, isFront])).toEqual([
+    const versions = await albums.getFolderVersions(
+      event!.id,
+      raw.id,
+      albumFolderView(event!.id, root, resolveAlbumFolderChoices(null)),
+      {},
+    );
+    // the versions in show-in-front order; RAW is hidden, so it never stands in front
+    expect(versions.map(({ id, folder, isCandidate }) => [id, folder, isCandidate])).toEqual([
       [edit.id, 'Edits', true],
+      [original.id, 'Original', true],
       [raw.id, 'RAW', false],
-      [original.id, 'Original', false],
     ]);
 
     const assets = ctx.get(AssetRepository);
@@ -341,11 +347,11 @@ describe(FolderAlbumService.name, () => {
     );
     // a version in front in the trash leaves the others showing
     await defaultDatabase.updateTable('asset').set({ deletedAt: new Date() }).where('id', '=', renamed.id).execute();
-    expect(await bucket()).toEqual({ [edit.id]: 3, [lonely.id]: 0 });
+    expect(await bucket()).toEqual({ [edit.id]: 3, [lonely.id]: 1 });
     await defaultDatabase.updateTable('asset').set({ deletedAt: null }).where('id', '=', renamed.id).execute();
     // a version in front taken out of the album leaves the others showing
     await defaultDatabase.deleteFrom('album_asset').where('assetId', '=', edit.id).execute();
-    expect(await bucket()).toEqual({ [original.id]: 0, [renamed.id]: 2 });
+    expect(await bucket()).toEqual({ [original.id]: 2, [renamed.id]: 2 });
   });
 
   it('FL-1838: one album brings its Edits album back in, and takes it out again, deleting no photo', async () => {
@@ -403,12 +409,12 @@ describe(FolderAlbumService.name, () => {
     for (const { id } of [raw, original, edit]) {
       await ctx.newExif({ assetId: id, make: 'Canon' });
     }
-    // the edit, which stands in front, is Locked
+    await sut.sync(library.id);
+    // the edit, which stands in front, is Locked once it is in the album (the sync never adds a Locked item)
     await defaultDatabase
       .insertInto('asset_lock')
       .values({ assetId: edit.id, reason: AssetLockReason.Marked })
       .execute();
-    await sut.sync(library.id);
     const event = await folderAlbum(defaultDatabase, library.id, root);
 
     const assets = ctx.get(AssetRepository);
