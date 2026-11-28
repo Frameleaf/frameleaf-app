@@ -3098,7 +3098,9 @@ export class AssetRepository {
             .innerJoin('album_asset', 'asset.id', 'album_asset.assetId')
             .where('album_asset.albumId', '=', asUuid(options.albumId!)),
         )
-        .$if(!!options.albumId && !!options.albumView, (qb) => qb.where(albumFolderPredicate(options.albumView!)))
+        .$if(!!options.albumId && !!options.albumView, (qb) =>
+          qb.where(albumFolderPredicate(options.albumView!, options)),
+        )
         .$if(!!options.personId, (qb) => hasPeople(qb, [options.personId!]))
         .$if(!!options.petId, (qb) => hasPets(qb, [options.petId!], auth?.user.id))
         .$if(!!options.withStacked, (qb) =>
@@ -3754,10 +3756,12 @@ export class AssetRepository {
               ),
             ),
           )
-          .$if(!!options.albumId && !!options.albumView, (qb) => qb.where(albumFolderPredicate(options.albumView!)))
+          .$if(!!options.albumId && !!options.albumView, (qb) =>
+            qb.where(albumFolderPredicate(options.albumView!, options)),
+          )
           // FL-1838: with "show it once", how many versions stand behind each photo
           .$if(!!options.albumId && !!options.albumView?.oneVersion && options.albumView.only === undefined, (qb) =>
-            qb.select(albumVersionCount(options.albumView!).as('versionCount')),
+            qb.select(albumVersionCount(options.albumView!, options).as('versionCount')),
           )
           .$if(!!options.personId, (qb) => hasPeople(qb, [options.personId!]))
           .$if(!!options.petId, (qb) => hasPets(qb, [options.petId!], auth.user.id))

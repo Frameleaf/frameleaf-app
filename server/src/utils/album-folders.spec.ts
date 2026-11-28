@@ -9,6 +9,7 @@ import {
   resolveAlbumFolderChoices,
   subfolderOf,
   subfolderRulesOf,
+  viewerVersions,
 } from 'src/utils/album-folders.js';
 import { EVENT_FOLDER_ALBUM_OPTIONS, type SubfolderRule, planFolderAlbums } from 'src/utils/folder-albums.js';
 
@@ -149,5 +150,45 @@ describe('album folders', () => {
       item('copy-b', 'Original', 'photo (1).jpg', '2026-11-19T12:00:00.000Z'),
     ];
     expect(matchAlbumVersions(items, DEFAULT_ALBUM_FOLDER_CHOICES).rows).toEqual([]);
+  });
+
+  it('FL-1841: works out the front and the counts for one viewer', () => {
+    const rows = [
+      { assetId: 'edit', frontAssetId: 'edit', matchedBy: 'name' as const },
+      { assetId: 'orig', frontAssetId: 'edit', matchedBy: 'name' as const },
+      { assetId: 'raw', frontAssetId: 'edit', matchedBy: 'name' as const },
+    ];
+    const items = (editVisible: boolean) => [
+      { id: 'edit', folder: 'Edits', visible: editVisible },
+      { id: 'orig', folder: 'Original', visible: true },
+      { id: 'raw', folder: 'RAW', visible: true },
+    ];
+    expect(viewerVersions(rows, items(true), DEFAULT_ALBUM_FOLDER_CHOICES)).toEqual({
+      behind: new Set(['orig', 'raw']),
+      matchedByName: 1,
+      matchedByTime: 0,
+    });
+    // the edit is hidden from this viewer: the original stands in front for them
+    expect(viewerVersions(rows, items(false), DEFAULT_ALBUM_FOLDER_CHOICES).behind).toEqual(new Set(['raw']));
+    // a group this viewer sees in one version only is not counted
+    expect(
+      viewerVersions(
+        rows.slice(0, 2),
+        [
+          { id: 'edit', folder: 'Edits', visible: false },
+          { id: 'orig', folder: 'Original', visible: true },
+        ],
+        DEFAULT_ALBUM_FOLDER_CHOICES,
+      ),
+    ).toEqual({ behind: new Set(), matchedByName: 0, matchedByTime: 0 });
+  });
+
+  it('FL-1841: a Locked item never decides a pairing by capture time', () => {
+    const items = [
+      item('orig-2', 'Original', 'IMG_2.JPG', '2026-11-19T11:00:00.000Z'),
+      item('edit-2', 'Edits', 'Nathan-hug-final.jpg', '2026-11-19T11:00:00.000Z'),
+      { ...item('locked', 'Edits', 'private.jpg', '2026-11-19T11:00:00.000Z'), isLocked: true },
+    ];
+    expect(matchAlbumVersions(items, DEFAULT_ALBUM_FOLDER_CHOICES).matchedByTime).toBe(1);
   });
 });
