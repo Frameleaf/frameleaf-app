@@ -34,12 +34,31 @@ it.each(['LibraryView', 'ResultsView'])('%s discards a select-all count for an o
     bulk: { count: () => count.promise },
     loadedIds: () => ['a'],
     assets: [{ id: 'a' }],
+    // FL-1804: the Library itself has no page scope, so it still asks the server for the count.
+    pageScope: undefined,
   });
   const selecting = select();
   session.revision++;
   count.resolve(100);
   await selecting;
   expect(session.dispatch).not.toHaveBeenCalled();
+  expect(session.applyTotal).not.toHaveBeenCalled();
+});
+
+it('LibraryView selects all by the page scope without asking for a count (FL-1804)', async () => {
+  const session = { revision: 1, state: {}, dispatch: vi.fn(), applyTotal: vi.fn() };
+  const count = vi.fn();
+  const scope = { kind: 'album', id: 'album-1' };
+  const select = closure('LibraryView', 'const selectAllMatching =', '\n  };', 'selectAllMatching', {
+    session,
+    bulk: { count },
+    loadedIds: () => ['a'],
+    assets: [{ id: 'a' }],
+    pageScope: scope,
+  });
+  await select();
+  expect(count).not.toHaveBeenCalled();
+  expect(session.dispatch).toHaveBeenCalledWith({ type: 'selection', ids: ['a'], allMatching: true, scope });
   expect(session.applyTotal).not.toHaveBeenCalled();
 });
 
