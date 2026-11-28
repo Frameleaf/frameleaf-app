@@ -75,6 +75,15 @@
     background: rgb(0 0 0 / 0.7);
     border-radius: var(--fl-radius, 12px);
     transform: translateX(-50%);
+    /* many versions or long names stay on screen: the row scrolls, a name is cut with an ellipsis */
+    max-width: calc(100vw - 32px);
+    overflow-x: auto;
+  }
+  .version span {
+    max-width: 96px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .label {
     font-size: var(--fl-font-small);

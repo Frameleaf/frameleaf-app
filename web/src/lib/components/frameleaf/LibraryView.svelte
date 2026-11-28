@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { providePhotoSelection } from '$lib/frameleaf/photo-drag';
   import { isForwardKey } from '$lib/frameleaf/reading-direction';
   /**
    * The library page: Timeline, Browse and Work bound to one live session (FL-33).
@@ -421,6 +422,15 @@
 
   const showInfoPanel = $derived(canShowInfoPanel && inspectorOpen && !sidePanelOpen && !filterPanelOpen);
   const selecting = $derived(session.selection.length > 0);
+  // Dragging a selected photo onto an album in the sidebar takes the whole selection with it.
+  // "Select all matching" holds more than is loaded: no drag then, as it would add only a part of what is selected.
+  // The drag is refused with the reason the selection bar gives for the actions it cannot offer then.
+  $effect(() =>
+    providePhotoSelection(
+      () => (session.session.selectionSnapshot ? undefined : session.selection),
+      () => toastManager.primary($t('frameleaf_selection_needs_picked_items')),
+    ),
+  );
   // The root names its theme itself: the page area has no themed ancestor to inherit one from.
   const appTheme = $derived(themeManager.value === AppTheme.Dark ? 'dark' : 'light');
   /** FL-61: the Compare view (culling) is open over the results, which stay where they were. */

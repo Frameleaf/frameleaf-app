@@ -4274,12 +4274,21 @@ describe(AlbumService.name, () => {
       mocks.album.getFolderAlbumItems.mockResolvedValue(items);
       mocks.album.getFolderVersionRows.mockResolvedValue([]);
       mocks.album.getFolderAlbumChildren.mockResolvedValue([]);
+      mocks.library.get.mockResolvedValue({ id: libraryId, folderAlbumOptions: { shape: 'events' } } as never);
+    });
+
+    it('lists no folders to choose from when every folder is its own album', async () => {
+      mocks.album.getFolderAlbumLink.mockResolvedValue(link());
       mocks.library.get.mockResolvedValue({ id: libraryId, folderAlbumOptions: null } as never);
+      await expect(sut.getFolders(authStub.admin, albumId)).resolves.toMatchObject({ folders: [], canEdit: false });
     });
 
     it("shows FL-1837's albums inside as albums inside, and lets one come back into the album", async () => {
       const saved = link();
       const editsAlbumId = newUuid();
+      mocks.access.album.checkOwnerAccess.mockImplementation((_userId, ids) =>
+        Promise.resolve(new Set([...ids].filter((id) => id === albumId || id === editsAlbumId))),
+      );
       mocks.album.getFolderAlbumLink.mockResolvedValue(saved);
       mocks.album.getFolderAlbumChildren.mockResolvedValue([
         { albumId: editsAlbumId, folderPath: `${saved.folderPath}/Edits`, coverAssetId: null, count: 4 },
@@ -4290,6 +4299,28 @@ describe(AlbumService.name, () => {
 
       await sut.updateFolders(authStub.admin, albumId, { folders: { Edits: 'with' }, versions: 'one', prefer: [] });
       expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.LibraryFolderAlbumSync, data: { id: libraryId } });
+    });
+
+    it('leaves out an album inside that the viewer may not open', async () => {
+      const saved = link();
+      mocks.album.getFolderAlbumLink.mockResolvedValue(saved);
+      mocks.album.getFolderAlbumChildren.mockResolvedValue([
+        { albumId: newUuid(), folderPath: `${saved.folderPath}/Edits`, coverAssetId: null, count: 4 },
+      ]);
+      const result = await sut.getFolders(authStub.admin, albumId);
+      expect(result.albums).toEqual([]);
+      expect(result.folders.map(({ name }) => name)).not.toContain('Edits');
+    });
+
+    it('tells a connected app none of the albums inside, as one of them may be Locked', async () => {
+      const saved = link();
+      mocks.access.album.checkOwnerAccess.mockImplementation((_userId, ids) => Promise.resolve(new Set(ids)));
+      mocks.album.getFolderAlbumLink.mockResolvedValue(saved);
+      mocks.album.getFolderAlbumChildren.mockResolvedValue([
+        { albumId: newUuid(), folderPath: `${saved.folderPath}/Edits`, coverAssetId: null, count: 4 },
+      ]);
+      const app = { ...authStub.admin, oauthApp: { id: 'app' } } as never;
+      await expect(sut.getFolders(app, albumId)).resolves.toMatchObject({ albums: [] });
     });
 
     it('asks for no sync when no folder gets or loses an album inside', async () => {

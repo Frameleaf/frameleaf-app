@@ -585,6 +585,17 @@ export class LibraryService extends BaseService {
       this.requireValidExclusionPatterns(update.exclusionPatterns);
     }
 
+    const rulesChange =
+      !!dto.folderAlbumOptions &&
+      !isDeepStrictEqual(
+        resolveFolderAlbumOptions(dto.folderAlbumOptions),
+        resolveFolderAlbumOptions(existing.folderAlbumOptions),
+      );
+    if (rulesChange && existing.folderAlbums && dto.folderAlbums !== false && dto.folderAlbumExisting === 'newOnly') {
+      // kept before the new rules are saved: a sync already waiting must not read them first and remove the albums
+      await this.folderAlbums.keepExisting(id);
+    }
+
     const library = await this.libraryRepository.update(id, update);
     await this.recordAdminEvents([libraryEvent(auth, library, AdminAuditAction.LibraryUpdated)]);
 
@@ -594,14 +605,7 @@ export class LibraryService extends BaseService {
       await this.folderAlbums.queueSync(id);
     } else if (dto.folderAlbums === false && existing.folderAlbums) {
       await this.folderAlbums.removeAll(id, { removeAlbums: dto.removeFolderAlbums === true });
-    } else if (
-      library.folderAlbums &&
-      dto.folderAlbumOptions &&
-      !isDeepStrictEqual(
-        resolveFolderAlbumOptions(dto.folderAlbumOptions),
-        resolveFolderAlbumOptions(existing.folderAlbumOptions),
-      )
-    ) {
+    } else if (library.folderAlbums && rulesChange) {
       // FL-1837: new rules change the albums made so far to match, or leave them and apply to new folders only
       await this.folderAlbums.applyToExisting(id, dto.folderAlbumExisting ?? 'match');
     }

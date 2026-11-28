@@ -76219,6 +76219,15 @@
             }
           },
           {
+            "name": "albumSections",
+            "required": false,
+            "in": "query",
+            "description": "With albumId, for an album made from a folder: true leaves out the photos of the folders shown in a section of their own, for a client that draws those sections from GET /albums/{id}/folders. Left out, they come with the others, so a client that draws no sections still shows every photo",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
             "name": "assetType",
             "required": false,
             "in": "query",
@@ -76595,6 +76604,15 @@
             }
           },
           {
+            "name": "albumSections",
+            "required": false,
+            "in": "query",
+            "description": "With albumId, for an album made from a folder: true leaves out the photos of the folders shown in a section of their own, for a client that draws those sections from GET /albums/{id}/folders. Left out, they come with the others, so a client that draws no sections still shows every photo",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
             "name": "assetType",
             "required": false,
             "in": "query",
@@ -76946,6 +76964,15 @@
             }
           },
           {
+            "name": "albumSections",
+            "required": false,
+            "in": "query",
+            "description": "With albumId, for an album made from a folder: true leaves out the photos of the folders shown in a section of their own, for a client that draws those sections from GET /albums/{id}/folders. Left out, they come with the others, so a client that draws no sections still shows every photo",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
             "name": "assetType",
             "required": false,
             "in": "query",
@@ -77256,6 +77283,15 @@
               "format": "uuid",
               "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
               "type": "string"
+            }
+          },
+          {
+            "name": "albumSections",
+            "required": false,
+            "in": "query",
+            "description": "With albumId, for an album made from a folder: true leaves out the photos of the folders shown in a section of their own, for a client that draws those sections from GET /albums/{id}/folders. Left out, they come with the others, so a client that draws no sections still shows every photo",
+            "schema": {
+              "type": "boolean"
             }
           },
           {
@@ -77599,6 +77635,15 @@
               "format": "uuid",
               "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
               "type": "string"
+            }
+          },
+          {
+            "name": "albumSections",
+            "required": false,
+            "in": "query",
+            "description": "With albumId, for an album made from a folder: true leaves out the photos of the folders shown in a section of their own, for a client that draws those sections from GET /albums/{id}/folders. Left out, they come with the others, so a client that draws no sections still shows every photo",
+            "schema": {
+              "type": "boolean"
             }
           },
           {
@@ -89148,6 +89193,10 @@
           "folderAlbum": {
             "$ref": "#/components/schemas/AlbumFolderSourceDto",
             "description": "Present when the album was made for a folder of one of your external libraries and is kept in sync with it. Only the library's owner is told. Populated by GET /albums, GET /albums/tree, GET /albums/hierarchy and GET /albums/{id}."
+          },
+          "fromFolder": {
+            "description": "True when the album was made from a folder and shows its folders as chosen (GET /albums/{id}/folders), told to everyone signed in who can open the album (not to a share link's visitor, who gets every photo together); which folder is told only to the library's owner (folderAlbum). Populated by GET /albums/{id}.",
+            "type": "boolean"
           },
           "hasSharedLink": {
             "description": "Has shared link",
@@ -191178,6 +191227,10 @@
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
             "type": "string"
           },
+          "albumSections": {
+            "description": "With albumId, for an album made from a folder: true leaves out the photos of the folders shown in a section of their own, for a client that draws those sections from GET /albums/{id}/folders. Left out, they come with the others, so a client that draws no sections still shows every photo",
+            "type": "boolean"
+          },
           "assetType": {
             "$ref": "#/components/schemas/AssetTypeEnum",
             "description": "Filter assets by media type"
@@ -191641,6 +191694,10 @@
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
             "type": "string"
           },
+          "albumSections": {
+            "description": "With albumId, for an album made from a folder: true leaves out the photos of the folders shown in a section of their own, for a client that draws those sections from GET /albums/{id}/folders. Left out, they come with the others, so a client that draws no sections still shows every photo",
+            "type": "boolean"
+          },
           "assetType": {
             "$ref": "#/components/schemas/AssetTypeEnum",
             "description": "Filter assets by media type"
@@ -191874,6 +191931,10 @@
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
             "type": "string"
           },
+          "albumSections": {
+            "description": "With albumId, for an album made from a folder: true leaves out the photos of the folders shown in a section of their own, for a client that draws those sections from GET /albums/{id}/folders. Left out, they come with the others, so a client that draws no sections still shows every photo",
+            "type": "boolean"
+          },
           "assetType": {
             "$ref": "#/components/schemas/AssetTypeEnum",
             "description": "Filter assets by media type"
@@ -192104,6 +192165,10 @@
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
             "type": "string"
           },
+          "albumSections": {
+            "description": "With albumId, for an album made from a folder: true leaves out the photos of the folders shown in a section of their own, for a client that draws those sections from GET /albums/{id}/folders. Left out, they come with the others, so a client that draws no sections still shows every photo",
+            "type": "boolean"
+          },
           "assetType": {
             "$ref": "#/components/schemas/AssetTypeEnum",
             "description": "Filter assets by media type"
@@ -192251,6 +192316,10 @@
             "format": "uuid",
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
             "type": "string"
+          },
+          "albumSections": {
+            "description": "With albumId, for an album made from a folder: true leaves out the photos of the folders shown in a section of their own, for a client that draws those sections from GET /albums/{id}/folders. Left out, they come with the others, so a client that draws no sections still shows every photo",
+            "type": "boolean"
           },
           "assetType": {
             "$ref": "#/components/schemas/AssetTypeEnum",

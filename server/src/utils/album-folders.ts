@@ -246,6 +246,8 @@ export const albumFolderView = (
   folderPath: string,
   choices: AlbumFolderChoices,
   only?: string,
+  /** The caller draws the sections itself (GET /albums/{id}/folders), so their photos are left out here. */
+  sectionsApart = true,
 ): AlbumFolderView => ({
   albumId,
   folderPath,
@@ -253,7 +255,10 @@ export const albumFolderView = (
   // every name not shown with the others is a default or a choice; any other folder joins them
   exclude: [
     ...new Set([...Object.keys(DEFAULT_DISPLAY), ...Object.keys(choices.folders)].map((name) => name.toLowerCase())),
-  ].filter((name) => folderDisplay(choices, name) !== 'with'),
+  ].filter((name) => {
+    const display = folderDisplay(choices, name);
+    return display !== 'with' && (sectionsApart || display !== 'section');
+  }),
   oneVersion: choices.versions === 'one',
   prefer: choices.prefer.map((name) => name.toLowerCase()),
 });

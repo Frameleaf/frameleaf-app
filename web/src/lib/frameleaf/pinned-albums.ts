@@ -92,12 +92,14 @@ export const pinnedAlbumIds = () => current().pinned;
 export const isPinned = (albumId: string) => pinnedAlbumIds().includes(albumId);
 
 /**
- * Pin an album (it joins the end of a custom order) or unpin it. `known` are the albums the person can
- * still reach: pins of albums deleted or shared away since are dropped here, so they never use up the limit.
+ * Pin an album (it joins the end of a custom order) or unpin it. `known` are the albums this page can see:
+ * only when the limit is reached are the other pins dropped to make room, as a page lists one workspace's
+ * albums and the pins of the other workspace must survive a pin made here.
  */
 export const togglePinned = (albumId: string, known?: (id: string) => boolean) => {
   const { pinned: saved, custom } = current();
-  const pinned = known ? saved.filter((id) => id === albumId || known(id)) : saved;
+  const pinned =
+    known && saved.length >= PINNED_ALBUMS_MAX && !saved.includes(albumId) ? saved.filter((id) => known(id)) : saved;
   if (pinned.includes(albumId)) {
     return save(
       pinned.filter((id) => id !== albumId),

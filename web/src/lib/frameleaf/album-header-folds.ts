@@ -16,7 +16,7 @@ export const EVERY_FOLDABLE_ACTION: readonly FoldableAction[] = [
   'movie',
   'download',
   'activity',
-  // FL-1838: "Folders in this album", on an album made from a folder; it folds only with everything else
+  // FL-1838: "Folders in this album", on an album made from a folder
   'folders',
 ];
 
@@ -44,6 +44,11 @@ export const foldedAlbumActions = (width: number): readonly FoldableAction[] => 
   if (width <= FOLD_ALL) {
     return EVERY_FOLDABLE_ACTION;
   }
-  const room = isWideAlbumHeader(width) ? width - WIDE_TITLE : width;
-  return WIDTH_FOLDS.find(([max]) => room <= max)?.[1] ?? [];
+  const wide = isWideAlbumHeader(width);
+  const room = wide ? width - WIDE_TITLE : width;
+  const folds = WIDTH_FOLDS.find(([max]) => room <= max)?.[1] ?? [];
+  // FL-1838: beside the title, a fifth button ("Folders in this album", the longest) took the title's room and cut
+  // the album's name short at 1440px. While anything folds there it goes in "…" too; on its own row below the title
+  // it has the room.
+  return wide && folds.length > 0 ? [...folds, 'folders'] : folds;
 };

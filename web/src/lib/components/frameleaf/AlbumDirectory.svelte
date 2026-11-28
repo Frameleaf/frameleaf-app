@@ -230,6 +230,19 @@
       search = '';
       expanded.clear();
       groupChosenHere = false;
+      // a selection acts on what is on screen: albums chosen on another level are not
+      selected.clear();
+    });
+  });
+  // A selection is of albums on screen: one that left the list (a search cleared, an empty album hidden again) leaves it.
+  $effect(() => {
+    const listed = new Set(browse.listed.map(({ id }) => id));
+    untrack(() => {
+      for (const id of selected) {
+        if (!listed.has(id)) {
+          selected.delete(id);
+        }
+      }
     });
   });
   // While a pin is still being saved the menu already says what it will be.
@@ -1318,11 +1331,15 @@
         title={$t('frameleaf_albums_empty_search_title')}
         message={$t('frameleaf_albums_empty_search_text')}
       />
-    {:else if here}
+    {:else if here || browse.hiddenHere > 0}
+      <!-- Only empty albums here, and they are hidden: "No albums yet" would be wrong, so say so and offer them. -->
       <EmptyState
         icon={mdiImageAlbum}
         title={$t('frameleaf_albums_empty_here_title')}
         message={$t('frameleaf_albums_empty_here_text')}
+        secondaryAction={browse.hiddenHere > 0
+          ? { label: $t('frameleaf_albums_show_empty'), onClick: () => setView({ hideEmpty: false }) }
+          : undefined}
       />
     {:else if view.filter === 'shared' && !nothingYet}
       <EmptyState

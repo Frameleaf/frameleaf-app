@@ -78,13 +78,21 @@
   }: Props = $props();
 
   let read = $state<Estimate | null>(null);
+  let readFailed = $state(false);
+  let attempt = $state(0);
+  // By value: the page hands over a new array each time it refreshes (every 2s while a scan runs), and the same
+  // folders must not be walked again for that.
+  const rootsKey = $derived(roots.join('\n'));
+  const skipsKey = $derived(exclusionPatterns.join('\n'));
   $effect(() => {
-    if (given !== undefined || !checked || roots.length === 0) {
+    void attempt;
+    if (given !== undefined || !checked || !rootsKey) {
       return;
     }
-    const paths = roots;
-    const skips = exclusionPatterns;
+    const paths = rootsKey.split('\n');
+    const skips = skipsKey ? skipsKey.split('\n') : [];
     let active = true;
+    readFailed = false;
     void Promise.all(paths.map((path) => estimateLibraryFolder({ path, exclusionPatterns: skips })))
       .then((answers) => {
         if (active) {
@@ -97,6 +105,8 @@
       .catch(() => {
         if (active) {
           read = null;
+          // said, with a way to try again: "Looking at what is in this folder…" would never end
+          readFailed = true;
         }
       });
     return () => {
@@ -326,7 +336,10 @@
     </Row>
 
     <div class="preview" role="status" data-testid="folder-albums-preview">
-      {#if !made || !before}
+      {#if readFailed}
+        <p>{$t('frameleaf_folder_albums_read_failed')}</p>
+        <Button onclick={() => attempt++}>{$t('retry')}</Button>
+      {:else if !made || !before}
         <p>{$t('frameleaf_addfolder_counting')}</p>
       {:else}
         <p>

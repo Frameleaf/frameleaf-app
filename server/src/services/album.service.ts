@@ -728,6 +728,9 @@ export class AlbumService extends BaseService {
       ...(await this.originOf(auth, album.id)),
       ...((await this.recoveredAlbumIds()).has(album.id) && { recovered: true }),
       ...(await this.folderSourceOf(auth, album.id)),
+      // every viewer's page reads the album's folder sections, not only the library owner's
+      // (not a share link's visitor: the folders are not theirs to read, and their page shows every photo together)
+      ...(!auth.sharedLink && (await this.albumRepository.getFolderAlbumLink(album.id)) && { fromFolder: true }),
     };
   }
 
@@ -747,10 +750,27 @@ export class AlbumService extends BaseService {
     const { behind: behindForViewer, matchedByName, matchedByTime } = viewerVersions(rows, items, choices);
     const behind = choices.versions === 'one' ? behindForViewer : new Set<string>();
     // FL-1837's albums inside this one: their photos are theirs, not this album's
-    const children = await this.albumRepository.getFolderAlbumChildren(id, link.libraryId, link.folderPath);
+    // only the ones this viewer may open: an album shared with them says nothing of the albums inside it that are not
+    const everyChild = await this.albumRepository.getFolderAlbumChildren(id, link.libraryId, link.folderPath);
+    const readable =
+      // ponytail: none for a connected app either, as a Locked album is one that does not exist to it (FL-780) and
+      // these rows do not say which are Locked; list the unlocked ones if an app ever needs them
+      everyChild.length === 0 || auth.sharedLink || auth.oauthApp
+        ? new Set<string>()
+        : await this.checkAccess({
+            auth,
+            permission: Permission.AlbumRead,
+            ids: everyChild.map((child) => child.albumId),
+          });
+    const children = everyChild.filter((child) => readable.has(child.albumId));
     const byFolder = new Map<string, typeof items>();
     for (const item of listed.toSorted((a, b) => new Date(a.takenAt).getTime() - new Date(b.takenAt).getTime())) {
-      byFolder.set(item.folder, [...(byFolder.get(item.folder) ?? []), item]);
+      const inFolder = byFolder.get(item.folder);
+      if (inFolder) {
+        inFolder.push(item);
+      } else {
+        byFolder.set(item.folder, [item]);
+      }
     }
     const childOf = new Map(
       children.map((child) => [subfolderOf(child.folderPath, link.folderPath).toLowerCase(), child]),
@@ -766,11 +786,15 @@ export class AlbumService extends BaseService {
       return display === 'section' || (display === 'with' && !behind.has(item.id));
     });
     const isOwner = !auth.sharedLink && link.libraryOwnerId === auth.user.id;
+    // With "an album for every folder" each folder inside is its own album and this one holds its own folder only:
+    // there is nothing to choose, and a choice saved here changed nothing. No folders are listed, so no dialog.
+    const library = await this.libraryRepository.get(link.libraryId);
+    const everyFolder = resolveFolderAlbumOptions(library?.folderAlbumOptions).shape === 'every';
     return {
       ...(isOwner && { libraryId: link.libraryId, libraryName: link.libraryName, folderPath: link.folderPath }),
-      canEdit: isOwner,
+      canEdit: isOwner && !everyFolder,
       usesLibraryChoice: link.displayChoices === null,
-      folders: names.map((name) => {
+      folders: (everyFolder ? [] : names).map((name) => {
         const inFolder = byFolder.get(name) ?? [];
         const videos = inFolder.filter((item) => item.isVideo).length;
         const child = childOf.get(name.toLowerCase());

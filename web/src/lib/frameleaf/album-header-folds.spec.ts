@@ -10,12 +10,13 @@ describe('album header folds (prototype CollectionHeader.jsx)', () => {
   // Add photos, Share, Slideshow and Comments left in the row.
   it('puts the actions beside the title from 1180px and folds by the room left after the title', () => {
     expect(isWideAlbumHeader(1212)).toBe(true);
-    expect(foldedAlbumActions(1212)).toEqual(['map', 'movie', 'download']);
+    // FL-1838: there "Folders in this album" folds too, so a fifth button never cuts the album's name short
+    expect(foldedAlbumActions(1212)).toEqual(['map', 'movie', 'download', 'folders']);
     expect(isWideAlbumHeader(1180)).toBe(true);
-    expect(foldedAlbumActions(1180)).toEqual(['map', 'movie', 'download']);
+    expect(foldedAlbumActions(1180)).toEqual(['map', 'movie', 'download', 'folders']);
     // 560px of title leaves 841px to 1060px: only Map folds
-    expect(foldedAlbumActions(1401)).toEqual(['map']);
-    expect(foldedAlbumActions(1620)).toEqual(['map']);
+    expect(foldedAlbumActions(1401)).toEqual(['map', 'folders']);
+    expect(foldedAlbumActions(1620)).toEqual(['map', 'folders']);
     expect(foldedAlbumActions(1621)).toEqual([]);
   });
 

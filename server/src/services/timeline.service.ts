@@ -162,8 +162,8 @@ export class TimelineService extends BaseService {
   }
 
   private async buildTimeBucketOptions(auth: AuthDto, dto: TimeBucketDto): Promise<TimeBucketOptions> {
-    const { userId, suppressedOnly, lockReason, bestPhotos, albumFolder, ...options } = dto;
-    const view = await this.albumFolderViewFor(dto.albumId, albumFolder);
+    const { userId, suppressedOnly, lockReason, bestPhotos, albumFolder, albumSections, ...options } = dto;
+    const view = await this.albumFolderViewFor(dto.albumId, albumFolder, albumSections === true);
     // FL-1841: a narrowed album (favourites, the filters, a person, a place, another visibility) shows every file that
     // matches: a version standing in front that does not match would otherwise leave the photo shown nowhere
     const narrowed =
@@ -217,7 +217,11 @@ export class TimelineService extends BaseService {
   }
 
   /** FL-1838: what an album made from a folder shows of itself, from its folder choices (or its library's). */
-  private async albumFolderViewFor(albumId: string | undefined, albumFolder: string | undefined) {
+  private async albumFolderViewFor(
+    albumId: string | undefined,
+    albumFolder: string | undefined,
+    sectionsApart: boolean,
+  ) {
     if (!albumId) {
       if (albumFolder !== undefined) {
         throw new BadRequestException('albumFolder requires albumId');
@@ -232,7 +236,9 @@ export class TimelineService extends BaseService {
       return;
     }
     const choices = resolveAlbumFolderChoices(link.displayChoices ?? link.libraryDisplay);
-    return albumFolderView(albumId, link.folderPath, choices, albumFolder);
+    // Only a client that draws the sections has their photos left out: for any other (a share link's page, an app
+    // that has no sections yet) a folder's own section would be photos shown nowhere.
+    return albumFolderView(albumId, link.folderPath, choices, albumFolder, sectionsApart);
   }
 
   private async timeBucketChecks(auth: AuthDto, dto: TimeBucketDto) {
