@@ -305,6 +305,10 @@ describe(FolderAlbumService.name, () => {
     const lonely = await file(`${root}/Original/IMG_2.JPG`, { takenAt: at(11) });
     const renamed = await file(`${root}/Edits/Nathan-hug.jpg`, { takenAt: at(11) });
     const video = await file(`${root}/Video/clip.mp4`, { takenAt: at(12), type: AssetType.Video });
+    // the timeline's columns come with each photo's metadata
+    for (const { id } of [raw, original, edit, lonely, renamed, video]) {
+      await ctx.newExif({ assetId: id, make: 'Canon' });
+    }
     await sut.sync(library.id);
     const event = await folderAlbum(defaultDatabase, library.id, root);
     expect(await membersOf(defaultDatabase, event!.id)).toHaveLength(6);

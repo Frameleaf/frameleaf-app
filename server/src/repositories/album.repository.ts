@@ -1544,7 +1544,7 @@ export class AlbumRepository {
   async setFolderAlbumChoices(linkId: string, choices: AlbumFolderChoices | null) {
     await this.db
       .updateTable('library_folder_album')
-      .set({ displayChoices: choices === null ? null : sql`${JSON.stringify(choices)}::jsonb` })
+      .set({ displayChoices: choices })
       .where('id', '=', asUuid(linkId))
       .execute();
   }
@@ -1553,7 +1553,7 @@ export class AlbumRepository {
   async setLibraryFolderChoices(libraryId: string, choices: AlbumFolderChoices) {
     await this.db
       .updateTable('library')
-      .set({ folderAlbumDisplay: sql`${JSON.stringify(choices)}::jsonb` })
+      .set({ folderAlbumDisplay: choices })
       .where('id', '=', asUuid(libraryId))
       .execute();
   }
