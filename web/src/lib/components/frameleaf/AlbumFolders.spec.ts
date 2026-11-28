@@ -44,7 +44,7 @@ describe('Folders in this album', () => {
     vi.resetAllMocks();
   });
 
-  it('narrows the album with a chip per folder shown, says what is hidden, and opens the albums inside', async () => {
+  it('narrows the album with a chip per folder shown, says what is hidden, ', async () => {
     const onSelect = vi.fn();
     const onOpenSettings = vi.fn();
     render(AlbumFolderStrip, { folders: folders(), onSelect, onOpenSettings });
@@ -59,7 +59,6 @@ describe('Folders in this album', () => {
 
     await fireEvent.click(screen.getByRole('button', { name: 'RAW hidden' }));
     expect(onOpenSettings).toHaveBeenCalled();
-    expect(screen.getByRole('link', { name: /Edits/ })).toHaveAttribute('href', `/albums/${editsAlbumId}`);
   });
 
   it('saves each folder, the show-in-front order and the library choice', async () => {

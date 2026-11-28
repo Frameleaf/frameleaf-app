@@ -98,10 +98,17 @@
     },
   ]);
 
+  /** Only folders shown with the others or hidden have versions to put in front; the rest keep their place. */
+  const ranked = $derived(
+    prefer.filter((name) => display[name] === AlbumFolderDisplay.With || display[name] === AlbumFolderDisplay.Hidden),
+  );
+  /** Swaps a ranked folder with the ranked one above or below it, leaving the others where they are. */
   const move = (index: number, by: number) => {
     const next = [...prefer];
-    const [name] = next.splice(index, 1);
-    next.splice(index + by, 0, name);
+    const from = next.indexOf(ranked[index]);
+    const to = next.indexOf(ranked[index + by]);
+    next[from] = ranked[index + by];
+    next[to] = ranked[index];
     prefer = next;
   };
 
@@ -179,7 +186,7 @@
       <div class="prefer">
         <span class="prefer-label" id={`${groupId}-front`}>{$t('frameleaf_album_folders_front')}</span>
         <ol aria-labelledby={`${groupId}-front`}>
-          {#each prefer as name, index (name)}
+          {#each ranked as name, index (name)}
             <li>
               <span class="rank">{index + 1}</span>
               <span class="prefer-name">{name}</span>
@@ -200,7 +207,7 @@
                   type="button"
                   class="fl-control"
                   aria-label={$t('frameleaf_album_folders_move_down', { values: { folder: name } })}
-                  disabled={index === prefer.length - 1}
+                  disabled={index === ranked.length - 1}
                   onclick={() => move(index, 1)}
                 >
                   <Icon icon={mdiChevronDown} size="18" />

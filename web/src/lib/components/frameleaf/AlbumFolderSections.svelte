@@ -8,6 +8,7 @@
   import { Icon } from '@frameleaf/ui';
   import { mdiPlay } from '@mdi/js';
   import { locale, t } from 'svelte-i18n';
+  import { SvelteSet } from 'svelte/reactivity';
 
   interface Props {
     folders: AlbumFoldersResponseDto;
@@ -16,6 +17,8 @@
   }
 
   let { folders, onOpen, onShowAll }: Props = $props();
+  /** Thumbnails not made yet */
+  const missing = new SvelteSet<string>();
 </script>
 
 {#each folders.sections as section (section.name)}
@@ -26,7 +29,14 @@
     <div class="grid">
       {#each section.items as item (item.id)}
         <button type="button" class="tile" onclick={() => onOpen(item.id)}>
-          <img src={getAssetMediaUrl({ id: item.id, size: AssetMediaSize.Thumbnail })} alt="" loading="lazy" />
+          <!-- a thumbnail not made yet leaves the tile's surface, not a broken image -->
+          <img
+            src={getAssetMediaUrl({ id: item.id, size: AssetMediaSize.Thumbnail })}
+            alt=""
+            loading="lazy"
+            class:missing={missing.has(item.id)}
+            onerror={() => missing.add(item.id)}
+          />
           {#if item.isVideo}
             <span class="badge" aria-label={$t('video')}><Icon icon={mdiPlay} size="14" /></span>
           {/if}
@@ -81,6 +91,9 @@
     height: 100%;
     object-fit: cover;
     display: block;
+  }
+  .tile img.missing {
+    visibility: hidden;
   }
   .tile:focus-visible {
     outline: 2px solid var(--fl-accent);

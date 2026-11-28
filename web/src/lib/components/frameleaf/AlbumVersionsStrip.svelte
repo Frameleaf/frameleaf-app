@@ -7,6 +7,7 @@
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { getAssetMediaUrl } from '$lib/utils';
   import { AssetMediaSize, getAlbumVersions, type AlbumVersionDto } from '@frameleaf/sdk';
+  import { untrack } from 'svelte';
   import { t } from 'svelte-i18n';
 
   interface Props {
@@ -23,12 +24,13 @@
 
   $effect(() => {
     const id = assetId;
-    if (inGroup(id)) {
+    // the row it shows is read, not watched: only opening another photo reads the versions again
+    if (untrack(() => inGroup(id))) {
       return;
     }
     const current = authManager.captureSession();
     const controller = new AbortController();
-    versions = [];
+    untrack(() => (versions = []));
     getAlbumVersions({ id: albumId, assetId: id }, { signal: controller.signal })
       .then((result) => {
         if (!controller.signal.aborted && current() && assetId === id) {

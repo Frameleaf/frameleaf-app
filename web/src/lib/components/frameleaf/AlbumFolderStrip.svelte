@@ -1,13 +1,12 @@
 <script lang="ts">
   /**
    * FL-1838 (prototype `AlbumPageV2.jsx`, approved 2026-11-27): on an album made from a folder with folders inside it,
-   * a chip for each folder shown narrows the album to it, "RAW hidden" says what the album leaves out and opens
-   * "Folders in this album", and the folders that have an album of their own inside this one (FL-1837's "album inside") are tiles that open it.
+   * a chip for each folder shown narrows the album to it, and "RAW hidden" says what the album leaves out and opens
+   * "Folders in this album". Folders with an album of their own inside this one (FL-1837's "album inside") are among
+   * the header's albums, so they get no chip.
    */
   import Button from '$lib/components/frameleaf/Button.svelte';
-  import { Route } from '$lib/route';
-  import { getAssetMediaUrl } from '$lib/utils';
-  import { AlbumFolderDisplay, AssetMediaSize, type AlbumFoldersResponseDto } from '@frameleaf/sdk';
+  import { AlbumFolderDisplay, type AlbumFoldersResponseDto } from '@frameleaf/sdk';
   import { Icon } from '@frameleaf/ui';
   import { mdiEyeOffOutline } from '@mdi/js';
   import { locale, t } from 'svelte-i18n';
@@ -51,31 +50,6 @@
   {/if}
 </div>
 
-{#if folders.albums.length > 0 && !selected}
-  <section class="inside" aria-labelledby="fl-album-folders-inside">
-    <h2 id="fl-album-folders-inside">{$t('frameleaf_album_folders_albums_inside')}</h2>
-    <div class="albums">
-      {#each folders.albums as inside (inside.name)}
-        <a class="album fl-control" href={Route.viewAlbum({ id: inside.albumId })}>
-          {#if inside.coverAssetId}
-            <img
-              src={getAssetMediaUrl({ id: inside.coverAssetId, size: AssetMediaSize.Thumbnail })}
-              alt=""
-              loading="lazy"
-            />
-          {:else}
-            <span class="cover-empty"></span>
-          {/if}
-          <span class="album-text">
-            <strong>{inside.name}</strong>
-            <small>{$t('frameleaf_album_folders_items', { values: { count: inside.count } })}</small>
-          </span>
-        </a>
-      {/each}
-    </div>
-  </section>
-{/if}
-
 <style>
   /* albums-v2.css `.ap2-folders`: 8px between controls, the hidden button at the end of the row. */
   .fl-album-folders {
@@ -95,48 +69,5 @@
     margin-inline-start: 6px;
     color: var(--fl-muted);
     font-variant-numeric: tabular-nums;
-  }
-  /* `.ap2-section`: a section heading 12px above what it heads, 24px between sections. */
-  .inside {
-    padding-block: 12px 24px;
-  }
-  h2 {
-    margin: 0 0 12px;
-    font-size: var(--fl-font-small);
-    font-weight: 600;
-    color: var(--fl-text);
-  }
-  .albums {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 12px;
-  }
-  .album {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 8px 16px 8px 8px;
-    color: var(--fl-text);
-    background: var(--fl-raised);
-    border: 1px solid var(--fl-border);
-    border-radius: var(--fl-radius);
-    text-align: start;
-    text-decoration: none;
-  }
-  .album img,
-  .cover-empty {
-    width: 56px;
-    height: 56px;
-    object-fit: cover;
-    border-radius: calc(var(--fl-radius) - 2px);
-    background: var(--fl-border);
-  }
-  .album-text {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-  }
-  .album-text small {
-    color: var(--fl-muted);
   }
 </style>
