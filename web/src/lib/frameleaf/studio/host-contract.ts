@@ -42,6 +42,7 @@ import { studioCapabilityIds } from './commands';
 import type { StudioCapabilityId, StudioCommandEnvelope, StudioCommandResult, StudioDuration } from './commands';
 import type { StudioCutoutRequest, StudioCutoutState, StudioCutoutSubjectRef } from './cutout';
 import type { CutoutEngineString } from './cutout-strings';
+import type { DialogString } from './dialog-strings';
 import type { EngineControlsString } from './engine-controls-strings';
 import type { StudioGeneratedMedia } from './generated-media';
 import type { LibraryPanelString } from './library-strings';
@@ -478,6 +479,8 @@ export type StudioAdapterString =
   | TimelineString
   /** The editor's media bin (FL-1822), the same way. */
   | BinString
+  /** The editor's Keyboard shortcuts and Editor settings dialogs (FL-1822), the same way. */
+  | DialogString
   /** The bin's Library view (FL-636), drawn by the adapter. */
   | LibraryPanelString;
 

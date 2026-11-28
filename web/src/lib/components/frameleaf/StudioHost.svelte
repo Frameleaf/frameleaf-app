@@ -133,6 +133,7 @@
   import { engineControlsStrings } from '$lib/frameleaf/studio/engine-controls-strings';
   import { shellStrings } from '$lib/frameleaf/studio/shell-strings';
   import { binStrings } from '$lib/frameleaf/studio/bin-strings';
+  import { dialogStrings } from '$lib/frameleaf/studio/dialog-strings';
   import { timelineStrings } from '$lib/frameleaf/studio/timeline-strings';
   import { stabiliseEngineStrings } from '$lib/frameleaf/studio/stabilise-strings';
   import { transcriptEngineStrings } from '$lib/frameleaf/studio/transcript-strings';
@@ -566,6 +567,7 @@
     ...shellStrings($t),
     ...timelineStrings($t),
     ...binStrings($t),
+    ...dialogStrings($t),
     ...libraryPanelStrings($t),
   });
 
