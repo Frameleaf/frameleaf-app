@@ -11,6 +11,12 @@ export const SHELL_STRINGS = {
   shellWorkspaceEdit: { host: 'frameleaf_studio_shell_workspace_edit', engine: 'toolbar.workspaces.edit' },
   shellWorkspaceColor: { host: 'frameleaf_studio_shell_workspace_color', engine: 'toolbar.workspaces.color' },
   shellWorkspaceMotion: { host: 'frameleaf_studio_shell_workspace_motion', engine: 'toolbar.workspaces.motion' },
+  shellWorkspaceAudio: { host: 'frameleaf_studio_shell_workspace_audio', engine: 'toolbar.workspaces.audio' },
+  shellWorkspaceCaptions: { host: 'frameleaf_studio_shell_workspace_captions', engine: 'toolbar.workspaces.captions' },
+  shellWorkspaceTranscript: {
+    host: 'frameleaf_studio_shell_workspace_transcript',
+    engine: 'toolbar.workspaces.transcript',
+  },
   shellMore: { host: 'frameleaf_studio_shell_more', engine: 'toolbar.more' },
   shellShortcuts: { host: 'frameleaf_studio_shell_shortcuts', engine: 'toolbar.keyboardShortcutsItem' },
   shellSettings: { host: 'frameleaf_studio_shell_settings', engine: 'toolbar.editorSettingsItem' },

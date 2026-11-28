@@ -1,0 +1,315 @@
+diff --git a/src/config/editor-workspaces.test.ts b/src/config/editor-workspaces.test.ts
+index e946f8e..13b69d8 100644
+--- a/src/config/editor-workspaces.test.ts
++++ b/src/config/editor-workspaces.test.ts
+@@ -8,3 +8,11 @@ describe('normalizeEditorWorkspaceId', () => {
+     expect(normalizeEditorWorkspaceId('compose')).toBe('motion')
+   })
+ })
++
++describe('the approved Studio tabs (FL-1822)', () => {
++  it('keeps Audio, Captions and Transcript as workspaces', () => {
++    for (const id of ['audio', 'captions', 'transcript'] as const) {
++      expect(normalizeEditorWorkspaceId(id)).toBe(id)
++    }
++  })
++})
+diff --git a/src/config/editor-workspaces.ts b/src/config/editor-workspaces.ts
+index fc579fa..2e1c3a0 100644
+--- a/src/config/editor-workspaces.ts
++++ b/src/config/editor-workspaces.ts
+@@ -7,7 +7,7 @@
+  * panel inside a workspace, and their per-workspace tweaks are persisted
+  * by the editor store (`editor:workspaceLayout:<id>` in localStorage).
+  */
+-export type EditorWorkspaceId = 'edit' | 'color' | 'motion'
++export type EditorWorkspaceId = 'edit' | 'color' | 'audio' | 'motion' | 'captions' | 'transcript'
+ 
+ export type EditorSidebarTab =
+   | 'media'
+@@ -43,12 +43,53 @@ const EDITOR_WORKSPACE_PRESETS: Record<EditorWorkspaceId, EditorWorkspaceLayout>
+     // the full column height by default.
+     propertiesFullColumn: true,
+   },
++  // The approved Studio's further tabs (FL-1822) open panels the editor already has.
++  audio: {
++    colorScopesOpen: false,
++    clipInspectorTab: 'audio',
++    activeTab: 'media',
++    propertiesFullColumn: true,
++  },
+   motion: {
+     colorScopesOpen: false,
+     clipInspectorTab: 'video',
+     activeTab: 'media',
+     propertiesFullColumn: false,
+   },
++  // Captions are made and corrected in the transcript panel; their look is set in the inspector.
++  captions: {
++    colorScopesOpen: false,
++    clipInspectorTab: 'video',
++    activeTab: 'transcript',
++    propertiesFullColumn: true,
++  },
++  transcript: {
++    colorScopesOpen: false,
++    clipInspectorTab: 'video',
++    activeTab: 'transcript',
++    propertiesFullColumn: false,
++  },
++}
++
++/** Workspaces whose panel lives in the left column, so switching to them opens it. */
++export const EDITOR_WORKSPACES_OPEN_LEFT_PANEL: ReadonlySet<EditorWorkspaceId> = new Set([
++  'captions',
++  'transcript',
++])
++
++/**
++ * The panel that defines a workspace. Applied on every switch so a saved
++ * layout (or a fallback the inspector persisted) can't open the tab elsewhere.
++ */
++export const EDITOR_WORKSPACE_DEFINING_PANEL: Partial<
++  Record<
++    EditorWorkspaceId,
++    { clipInspectorTab?: EditorClipInspectorTab; activeTab?: EditorSidebarTab }
++  >
++> = {
++  audio: { clipInspectorTab: 'audio' },
++  captions: { activeTab: 'transcript' },
++  transcript: { activeTab: 'transcript' },
+ }
+ 
+ /**
+@@ -59,14 +100,19 @@ const EDITOR_WORKSPACE_PRESETS: Record<EditorWorkspaceId, EditorWorkspaceLayout>
+ export const EDITOR_WORKSPACE_TIMELINE_SIZE: Record<EditorWorkspaceId, number | null> = {
+   edit: null,
+   color: 18,
++  audio: null,
+   // Motion reuses the standard split and swaps only the timeline surface.
+   motion: null,
++  captions: null,
++  transcript: null,
+ }
+ 
+ const DEFAULT_EDITOR_WORKSPACE: EditorWorkspaceId = 'edit'
+ 
+ export function normalizeEditorWorkspaceId(value: unknown): EditorWorkspaceId {
+-  if (value === 'color') return 'color'
++  if (value === 'color' || value === 'audio' || value === 'captions' || value === 'transcript') {
++    return value
++  }
+   // Animate and Compose were separate historical surfaces. Both now migrate
+   // into the single Motion workspace so persisted sessions cannot reopen the
+   // disconnected legacy editor.
+diff --git a/src/features/editor/components/workspace-switcher.tsx b/src/features/editor/components/workspace-switcher.tsx
+index 053438f..35d4c28 100644
+--- a/src/features/editor/components/workspace-switcher.tsx
++++ b/src/features/editor/components/workspace-switcher.tsx
+@@ -10,7 +10,10 @@ const WORKSPACE_ITEMS: readonly {
+ }[] = [
+   { id: 'edit', labelKey: 'toolbar.workspaces.edit' },
+   { id: 'color', labelKey: 'toolbar.workspaces.color' },
++  { id: 'audio', labelKey: 'toolbar.workspaces.audio' },
+   { id: 'motion', labelKey: 'toolbar.workspaces.motion' },
++  { id: 'captions', labelKey: 'toolbar.workspaces.captions' },
++  { id: 'transcript', labelKey: 'toolbar.workspaces.transcript' },
+ ]
+ 
+ /**
+@@ -24,7 +27,11 @@ export const WorkspaceSwitcher = memo(function WorkspaceSwitcher() {
+   const setWorkspace = useEditorStore((s) => s.setWorkspace)
+ 
+   return (
+-    <div role="tablist" aria-label={t('toolbar.workspaces.label')} className="flex items-stretch gap-1">
++    <div
++      role="tablist"
++      aria-label={t('toolbar.workspaces.label')}
++      className="flex items-stretch gap-1"
++    >
+       {WORKSPACE_ITEMS.map(({ id, labelKey }) => {
+         const isActive = workspace === id
+         return (
+@@ -35,7 +42,7 @@ export const WorkspaceSwitcher = memo(function WorkspaceSwitcher() {
+             aria-selected={isActive}
+             onClick={() => setWorkspace(id)}
+             className={cn(
+-              'relative flex items-center px-3 text-sm transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset',
++              'relative flex items-center px-3 text-sm whitespace-nowrap transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset',
+               isActive
+                 ? 'font-medium text-foreground after:absolute after:inset-x-3 after:bottom-0 after:h-0.5 after:rounded-full after:bg-primary'
+                 : 'text-muted-foreground hover:text-foreground',
+diff --git a/src/features/editor/stores/editor-store.test.ts b/src/features/editor/stores/editor-store.test.ts
+index 3c16e46..1028df0 100644
+--- a/src/features/editor/stores/editor-store.test.ts
++++ b/src/features/editor/stores/editor-store.test.ts
+@@ -18,6 +18,9 @@ describe('editor-store', () => {
+     localStorage.removeItem('editor:workspaceLayout:edit')
+     localStorage.removeItem('editor:workspaceLayout:color')
+     localStorage.removeItem('editor:workspaceLayout:animate')
++    localStorage.removeItem('editor:workspaceLayout:audio')
++    localStorage.removeItem('editor:workspaceLayout:captions')
++    localStorage.removeItem('editor:workspaceLayout:transcript')
+     localStorage.removeItem('editor:workspaceTimelineSize:edit')
+     localStorage.removeItem('editor:workspaceTimelineSize:color')
+     localStorage.removeItem('editor:workspaceTimelineSize:animate')
+@@ -28,6 +31,7 @@ describe('editor-store', () => {
+       activePanel: null,
+       workspace: 'edit',
+       leftSidebarOpen: true,
++      leftSidebarReopenedByWorkspace: false,
+       rightSidebarOpen: true,
+       keyframeEditorShortcutScopeActive: false,
+       activeTab: 'media',
+@@ -183,6 +187,40 @@ describe('editor-store', () => {
+     expect(useEditorStore.getState().colorScopesOpen).toBe(false)
+   })
+ 
++  it('opens the matching panels for Audio, Captions and Transcript (FL-1822)', () => {
++    useEditorStore.getState().setLeftSidebarOpen(false)
++    useEditorStore.getState().setWorkspace('transcript')
++    expect(useEditorStore.getState().activeTab).toBe('transcript')
++    expect(useEditorStore.getState().leftSidebarOpen).toBe(true)
++    expect(useEditorStore.getState().propertiesFullColumn).toBe(false)
++
++    useEditorStore.getState().setWorkspace('captions')
++    expect(useEditorStore.getState().activeTab).toBe('transcript')
++    expect(useEditorStore.getState().propertiesFullColumn).toBe(true)
++
++    useEditorStore.getState().setWorkspace('audio')
++    expect(useEditorStore.getState().clipInspectorTab).toBe('audio')
++    // Leaving the panel workspaces closes the left panel the user had closed.
++    expect(useEditorStore.getState().leftSidebarOpen).toBe(false)
++  })
++
++  it('keeps each tab on its own panel after a saved change elsewhere (FL-1822)', () => {
++    useEditorStore.getState().setWorkspace('audio')
++    useEditorStore.getState().setClipInspectorTab('video')
++    useEditorStore.getState().setWorkspace('captions')
++    useEditorStore.getState().setActiveTab('media')
++    useEditorStore.getState().setWorkspace('audio')
++    expect(useEditorStore.getState().clipInspectorTab).toBe('audio')
++    useEditorStore.getState().setWorkspace('captions')
++    expect(useEditorStore.getState().activeTab).toBe('transcript')
++  })
++
++  it('leaves the left panel open on return when the user opened it (FL-1822)', () => {
++    useEditorStore.getState().setWorkspace('transcript')
++    useEditorStore.getState().setWorkspace('edit')
++    expect(useEditorStore.getState().leftSidebarOpen).toBe(true)
++  })
++
+   it('applies the workspace preset when switching workspaces', () => {
+     expect(useEditorStore.getState().workspace).toBe('edit')
+ 
+diff --git a/src/i18n/locales/en.json b/src/i18n/locales/en.json
+index c6bcba7..7e26d87 100644
+--- a/src/i18n/locales/en.json
++++ b/src/i18n/locales/en.json
+@@ -48,7 +48,10 @@
+       "label": "Workspaces",
+       "edit": "Edit",
+       "color": "Color",
+-      "animate": "Animate"
++      "animate": "Animate",
++      "audio": "Audio",
++      "captions": "Captions",
++      "transcript": "Transcript"
+     },
+     "backToProjects": "Back to Projects",
+     "backToProjectsAria": "Back to projects",
+diff --git a/src/shared/logging/preview-scrub-performance.ts b/src/shared/logging/preview-scrub-performance.ts
+index b3611d7..8e1ed93 100644
+--- a/src/shared/logging/preview-scrub-performance.ts
++++ b/src/shared/logging/preview-scrub-performance.ts
+@@ -1,4 +1,11 @@
+-export type PreviewScrubWorkspace = 'edit' | 'color' | 'animate' | 'motion'
++export type PreviewScrubWorkspace =
++  | 'edit'
++  | 'color'
++  | 'animate'
++  | 'motion'
++  | 'audio'
++  | 'captions'
++  | 'transcript'
+ 
+ export interface PreviewScrubRequestSample {
+   seq: number
+diff --git a/src/shared/state/editor/store.ts b/src/shared/state/editor/store.ts
+index 2d035b3..445c764 100644
+--- a/src/shared/state/editor/store.ts
++++ b/src/shared/state/editor/store.ts
+@@ -6,6 +6,8 @@ import {
+   getRightEditorSidebarBounds,
+ } from '@/config/editor-layout'
+ import {
++  EDITOR_WORKSPACE_DEFINING_PANEL,
++  EDITOR_WORKSPACES_OPEN_LEFT_PANEL,
+   normalizeEditorWorkspaceId,
+   normalizeEditorWorkspaceLayout,
+   type EditorWorkspaceId,
+@@ -123,6 +125,7 @@ export const useEditorStore = create<EditorState & EditorActions>((set) => ({
+   // State
+   activePanel: null,
+   leftSidebarOpen: true,
++  leftSidebarReopenedByWorkspace: false,
+   rightSidebarOpen: true,
+   keyframeEditorShortcutScopeActive: false,
+   transcriptEditorShortcutScopeActive: false,
+@@ -167,13 +170,18 @@ export const useEditorStore = create<EditorState & EditorActions>((set) => ({
+ 
+   // Actions
+   setActivePanel: (panel) => set({ activePanel: panel }),
+-  setLeftSidebarOpen: (open) => set({ leftSidebarOpen: open }),
++  setLeftSidebarOpen: (open) =>
++    set({ leftSidebarOpen: open, leftSidebarReopenedByWorkspace: false }),
+   setRightSidebarOpen: (open) => set({ rightSidebarOpen: open }),
+   setKeyframeEditorShortcutScopeActive: (active) =>
+     set({ keyframeEditorShortcutScopeActive: active }),
+   setTranscriptEditorShortcutScopeActive: (active) =>
+     set({ transcriptEditorShortcutScopeActive: active }),
+-  toggleLeftSidebar: () => set((state) => ({ leftSidebarOpen: !state.leftSidebarOpen })),
++  toggleLeftSidebar: () =>
++    set((state) => ({
++      leftSidebarOpen: !state.leftSidebarOpen,
++      leftSidebarReopenedByWorkspace: false,
++    })),
+   toggleRightSidebar: () => set((state) => ({ rightSidebarOpen: !state.rightSidebarOpen })),
+   setWorkspace: (workspace) =>
+     set((state) => {
+@@ -196,7 +204,21 @@ export const useEditorStore = create<EditorState & EditorActions>((set) => ({
+         /* noop */
+       }
+ 
+-      return { workspace, ...loadEditorWorkspaceLayout(workspace) }
++      const opensLeftPanel = EDITOR_WORKSPACES_OPEN_LEFT_PANEL.has(workspace)
++      return {
++        workspace,
++        ...loadEditorWorkspaceLayout(workspace),
++        ...EDITOR_WORKSPACE_DEFINING_PANEL[workspace],
++        ...(opensLeftPanel
++          ? {
++              leftSidebarOpen: true,
++              leftSidebarReopenedByWorkspace:
++                state.leftSidebarReopenedByWorkspace || !state.leftSidebarOpen,
++            }
++          : state.leftSidebarReopenedByWorkspace
++            ? { leftSidebarOpen: false, leftSidebarReopenedByWorkspace: false }
++            : {}),
++      }
+     }),
+   setActiveTab: (tab) =>
+     set((state) => {
+diff --git a/src/shared/state/editor/types.ts b/src/shared/state/editor/types.ts
+index d86d80d..1fcaf4e 100644
+--- a/src/shared/state/editor/types.ts
++++ b/src/shared/state/editor/types.ts
+@@ -11,6 +11,8 @@ export type TrackSizePreset = 'compact' | 'medium' | 'large'
+ export interface EditorState {
+   activePanel: 'media' | 'effects' | 'properties' | null
+   leftSidebarOpen: boolean
++  /** True when a workspace opened a closed left panel; leaving it closes the panel again. */
++  leftSidebarReopenedByWorkspace: boolean
+   rightSidebarOpen: boolean
+   keyframeEditorShortcutScopeActive: boolean
+   /** True while the transcript editor owns Delete/Backspace (pointer or focus within). */
