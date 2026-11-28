@@ -984,7 +984,12 @@
       "path": "patches/0217-studio-settings-lengths.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "0f9340a1b728be353963b4c2658ff9a37ac5586465f4c884ac314e2a5446aab7"
+    },
+    {
+      "path": "patches/0218-studio-workspace-tabs.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "4956d1ec3f3b3383473cc58213d7fe2e684a3575557c11c460a47042439c1799"
     }
   ],
-  "sourceSha256": "39fb6738dcf99ffcf04d7b73e72b24b0e8988a0e0a93f1883bc855db1a009741"
+  "sourceSha256": "2310f8147dfcebd23d58738aa7f389090c7944ea10a0c554db64dd33257e328b"
 }
