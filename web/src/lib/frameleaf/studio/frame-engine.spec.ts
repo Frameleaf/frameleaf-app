@@ -59,6 +59,7 @@ const services = (): StudioHostServices => ({
   reportTransport: vi.fn(),
   reportLocalPreviewSupport: vi.fn(),
   requestExport: vi.fn(),
+  requestRestore: vi.fn(),
 });
 
 /**
@@ -323,6 +324,7 @@ describe('studio editor frame (FL-88)', () => {
     });
     port.postMessage({ type: 'dirty', dirty: true });
     port.postMessage({ type: 'request-export', kind: 'video' });
+    port.postMessage({ type: 'request-restore' });
     port.postMessage({ type: 'navigate', target: { kind: 'library' } });
     port.postMessage({ type: 'playhead', time: { num: 5, den: 2 } });
     port.postMessage({ type: 'playhead', time: { num: 1.5, den: 2 } });
@@ -365,6 +367,7 @@ describe('studio editor frame (FL-88)', () => {
     expect(host.setDirty).toHaveBeenCalledWith(true);
     // The editor's Export opens the host's export dialog; nothing renders inside the editor.
     expect(host.requestExport).toHaveBeenCalledWith('video');
+    expect(host.requestRestore).toHaveBeenCalledTimes(1);
     expect(host.navigate).toHaveBeenCalledWith({ kind: 'library' });
     // Only an exact rational crosses into the host.
     expect(host.reportPlayhead).toHaveBeenCalledTimes(1);

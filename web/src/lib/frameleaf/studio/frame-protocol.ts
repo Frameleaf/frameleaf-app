@@ -75,7 +75,9 @@ export type StudioFrameToHostMessage =
    */
   | { type: 'transport'; playing: boolean; time: { num: number; den: number }; seek: boolean }
   /** The editor's Export: the host opens its own export dialog (render workers, rights, Activity). */
-  | { type: 'request-export'; kind: 'video' };
+  | { type: 'request-export'; kind: 'video' }
+  /** The editor's Restore tab (FL-1822): the host opens its own Restore panel. */
+  | { type: 'request-restore' };
 
 /* Host → command frame (FL-92): apply canonical commands to a graph with the real engine. */
 export interface StudioCommandApplyRequest {

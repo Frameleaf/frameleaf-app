@@ -41,6 +41,8 @@ const substitutedModules = {
   '@/features/editor/components/properties-sidebar/clip-panel/stabilise-service': 'stabilise-service.ts',
   // FL-637: "Clean up voice" runs on the project's server, not in the editor.
   '@/features/editor/components/properties-sidebar/clip-panel/voice-cleanup-service': 'voice-cleanup-service.ts',
+  // FL-1822: the Restore tab opens the host's Restore panel.
+  '@/features/editor/restore-service': 'restore-service.ts',
 }
 
 /** Feature rows this build implements and tests (FL-92's command rows); FL-85 owns the rest. */
