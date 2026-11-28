@@ -600,6 +600,15 @@
             <span class="fl-sr">{$t('stacked_assets_count', { values: { count: stackCount } })}</span>
           </span>
         {/if}
+        {#if (asset.versionCount ?? 0) > 1}
+          <!-- FL-1838: the versions standing behind this photo in an album made from a folder -->
+          {@const label = $t('frameleaf_album_folders_versions_badge', { values: { count: asset.versionCount } })}
+          <span class="fl-badge" title={label}>
+            <Icon icon={mdiLayersOutline} size="12" />
+            {asset.versionCount}
+            <span class="fl-sr">{label}</span>
+          </span>
+        {/if}
         {#if isLocked || sensitive}
           {@const label = isLocked ? $t(lockLabelKey) : $t('frameleaf_library_badge_sensitive')}
           <span class="fl-badge fl-badge-icon" title={label}>

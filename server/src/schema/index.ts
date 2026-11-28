@@ -50,6 +50,7 @@ import { AlbumChangeTable } from 'src/schema/tables/album-change.table.js';
 import { AlbumCleanupApplyTable } from 'src/schema/tables/album-cleanup-apply.table.js';
 import { AlbumCleanupSnapshotTable } from 'src/schema/tables/album-cleanup-snapshot.table.js';
 import { AlbumClosureTable } from 'src/schema/tables/album-closure.table.js';
+import { AlbumFolderVersionTable } from 'src/schema/tables/album-folder-version.table.js';
 import { AlbumRecentUseTable } from 'src/schema/tables/album-recent-use.table.js';
 import {
   AlbumSuggestionAutoAddTable,
@@ -549,6 +550,7 @@ export class ImmichDatabase {
     LibraryTable,
     LibraryFolderAlbumTable,
     LibraryFolderAlbumAssetTable,
+    AlbumFolderVersionTable,
     AssetScanCropTable,
     AssetPrintBackTable,
     HouseholdLinkTable,
@@ -902,6 +904,7 @@ export interface DB extends QueueDatabase {
   library: LibraryTable;
   library_folder_album: LibraryFolderAlbumTable;
   library_folder_album_asset: LibraryFolderAlbumAssetTable;
+  album_folder_version: AlbumFolderVersionTable;
   asset_scan_crop: AssetScanCropTable;
   asset_print_back: AssetPrintBackTable;
 

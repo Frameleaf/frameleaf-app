@@ -50,6 +50,8 @@ export type TimelineAsset = {
   isVideo: boolean;
   isImage: boolean;
   stack: AssetStackResponseDto | null;
+  /** FL-1838: the versions standing behind this photo in an album made from a folder, itself included. */
+  versionCount?: number;
   duration: number | null;
   projectionType: string | null;
   livePhotoVideoId: string | null;

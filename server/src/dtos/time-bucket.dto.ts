@@ -34,6 +34,14 @@ const TimeBucketQueryBaseSchema = z
     libraryScope: LibraryViewScopeSchema.optional(),
     userId: z.uuidv4().optional().describe('Filter assets by specific user ID'),
     albumId: z.uuidv4().optional().describe('Filter assets belonging to a specific album'),
+    albumFolder: z
+      .string()
+      .min(1)
+      .max(255)
+      .optional()
+      .describe(
+        "With albumId, for an album made from a folder: only the photos in this folder inside the album's folder (matched without regard to case), every file of it. Without it, such an album returns its main photos as its folder choices say (GET /albums/{id}/folders): the folders shown with the others, and with versions `one` only the version in front",
+      ),
     assetType: AssetTypeSchema.optional().describe('Filter assets by media type'),
     personId: z.uuidv4().optional().describe('Filter assets containing a specific person (face recognition)'),
     petId: z.uuidv4().optional().describe('Filter assets in which the caller confirmed one of their own pets'),
@@ -297,6 +305,12 @@ const TimeBucketAssetResponseSchema = z
     duration: z
       .array(z.int32().min(0).nullable())
       .describe('Array of video/gif durations in milliseconds (null for static images)'),
+    versionCount: z
+      .array(z.int32().min(0))
+      .optional()
+      .describe(
+        'For an album made from a folder that shows each photo once: how many versions stand behind each photo, itself included (0 or 1 when it has no others), aligned with id',
+      ),
     stack: z
       .array(stackTupleSchema)
       .optional()

@@ -147,6 +147,8 @@
      * the header, the rows and the scrubber keep this much room from them.
      */
     gutter?: number;
+    /** Rendered below the last photo, inside the scroll area (FL-1838: an album's folders in sections of their own). */
+    footer?: Snippet;
   };
 
   let {
@@ -180,7 +182,14 @@
     empty,
     onFixDates,
     gutter = 0,
+    footer,
   }: Props = $props();
+  /** The bottom spacer's height without a footer (`TimelineManager.bottomSectionHeight`). */
+  const BOTTOM_SPACE = 60;
+  let footerHeight = $state(0);
+  $effect(() => {
+    timelineManager.bottomSectionHeight = footer ? Math.max(BOTTOM_SPACE, footerHeight) : BOTTOM_SPACE;
+  });
 
   let scrollable = $state<HTMLElement>();
   let root = $state<HTMLElement>();
@@ -1817,7 +1826,11 @@
           class="fl-timeline-bottom"
           style:height="{timelineManager.bottomSectionHeight}px"
           style:transform={`translate3d(0,${timelineManager.physicalViewerHeight - timelineManager.bottomSectionHeight}px,0)`}
-        ></div>
+        >
+          {#if footer}
+            <div bind:clientHeight={footerHeight}>{@render footer()}</div>
+          {/if}
+        </div>
       </div>
     </section>
 
