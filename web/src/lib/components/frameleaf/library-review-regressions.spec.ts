@@ -59,6 +59,7 @@ it('LibraryView selects all by the page scope without asking for a count (FL-180
   await select();
   expect(count).not.toHaveBeenCalled();
   expect(session.dispatch).toHaveBeenCalledWith({ type: 'selection', ids: ['a'], allMatching: true, scope });
+  expect(session.applyTotal).not.toHaveBeenCalled();
 });
 
 it('LibraryView leaves shortcuts to an open modal', () => {
