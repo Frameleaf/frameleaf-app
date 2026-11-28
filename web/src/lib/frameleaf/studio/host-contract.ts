@@ -645,6 +645,11 @@ export interface StudioHostServices {
    */
   requestExport?(kind: 'video'): void;
   /**
+   * The editor's Restore tab (FL-1822). The host opens its Restore panel (FL-115, FL-162); without
+   * this the tab still shows and does nothing.
+   */
+  requestRestore?(): void;
+  /**
    * Cut out the subject (FL-639): who the editor's cut-out card can follow in a clip of the head
    * revision (the named people recognised in it, or the main subject). Optional: without these three
    * the card is not offered.

@@ -1,0 +1,152 @@
+diff --git a/src/features/editor/components/workspace-switcher.test.tsx b/src/features/editor/components/workspace-switcher.test.tsx
+new file mode 100644
+index 0000000..a4be3e8
+--- /dev/null
++++ b/src/features/editor/components/workspace-switcher.test.tsx
+@@ -0,0 +1,22 @@
++import { cleanup, render, screen } from '@testing-library/react'
++import { afterEach, describe, expect, it, vi } from 'vite-plus/test'
++import { WorkspaceSwitcher } from './workspace-switcher'
++
++vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }))
++
++describe('WorkspaceSwitcher', () => {
++  afterEach(cleanup)
++
++  it('draws the six workspace tabs and no Restore without a host panel (FL-1822)', () => {
++    render(<WorkspaceSwitcher />)
++    expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual([
++      'toolbar.workspaces.edit',
++      'toolbar.workspaces.color',
++      'toolbar.workspaces.audio',
++      'toolbar.workspaces.motion',
++      'toolbar.workspaces.captions',
++      'toolbar.workspaces.transcript',
++    ])
++    expect(screen.queryByRole('button', { name: 'toolbar.workspaces.restore' })).toBeNull()
++  })
++})
+diff --git a/src/features/editor/components/workspace-switcher.tsx b/src/features/editor/components/workspace-switcher.tsx
+index 35d4c28..8da8cd5 100644
+--- a/src/features/editor/components/workspace-switcher.tsx
++++ b/src/features/editor/components/workspace-switcher.tsx
+@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
+ import { useEditorStore } from '@/shared/state/editor'
+ import { cn } from '@/shared/ui/cn'
+ import type { EditorWorkspaceId } from '@/config/editor-workspaces'
++import { requestRestore, restoreAvailable } from '@/features/editor/restore-service'
+ 
+ const WORKSPACE_ITEMS: readonly {
+   id: EditorWorkspaceId
+@@ -16,10 +17,15 @@ const WORKSPACE_ITEMS: readonly {
+   { id: 'transcript', labelKey: 'toolbar.workspaces.transcript' },
+ ]
+ 
++const TAB_CLASS =
++  'relative flex items-center px-3 text-sm whitespace-nowrap transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset'
++
+ /**
+  * Workspace tabs. Switching applies a panel layout preset (scopes, inspector tab, sidebar tab,
+  * timeline split) without touching selection, playhead, or project state. Drawn as the approved
+  * Studio's text tabs (FL-1822): the chosen one is full-strength text over an accent underline.
++ * Restore, last, is the host's own panel rather than a layout, so it is a button styled as a tab
++ * that asks the host to open it, and only where a host offers one.
+  */
+ export const WorkspaceSwitcher = memo(function WorkspaceSwitcher() {
+   const { t } = useTranslation()
+@@ -27,31 +33,42 @@ export const WorkspaceSwitcher = memo(function WorkspaceSwitcher() {
+   const setWorkspace = useEditorStore((s) => s.setWorkspace)
+ 
+   return (
+-    <div
+-      role="tablist"
+-      aria-label={t('toolbar.workspaces.label')}
+-      className="flex items-stretch gap-1"
+-    >
+-      {WORKSPACE_ITEMS.map(({ id, labelKey }) => {
+-        const isActive = workspace === id
+-        return (
+-          <button
+-            key={id}
+-            type="button"
+-            role="tab"
+-            aria-selected={isActive}
+-            onClick={() => setWorkspace(id)}
+-            className={cn(
+-              'relative flex items-center px-3 text-sm whitespace-nowrap transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset',
+-              isActive
+-                ? 'font-medium text-foreground after:absolute after:inset-x-3 after:bottom-0 after:h-0.5 after:rounded-full after:bg-primary'
+-                : 'text-muted-foreground hover:text-foreground',
+-            )}
+-          >
+-            {t(labelKey)}
+-          </button>
+-        )
+-      })}
++    <div className="flex items-stretch gap-1">
++      <div
++        role="tablist"
++        aria-label={t('toolbar.workspaces.label')}
++        className="flex items-stretch gap-1"
++      >
++        {WORKSPACE_ITEMS.map(({ id, labelKey }) => {
++          const isActive = workspace === id
++          return (
++            <button
++              key={id}
++              type="button"
++              role="tab"
++              aria-selected={isActive}
++              onClick={() => setWorkspace(id)}
++              className={cn(
++                TAB_CLASS,
++                isActive
++                  ? 'font-medium text-foreground after:absolute after:inset-x-3 after:bottom-0 after:h-0.5 after:rounded-full after:bg-primary'
++                  : 'text-muted-foreground hover:text-foreground',
++              )}
++            >
++              {t(labelKey)}
++            </button>
++          )
++        })}
++      </div>
++      {restoreAvailable && (
++        <button
++          type="button"
++          onClick={requestRestore}
++          className={cn(TAB_CLASS, 'text-muted-foreground hover:text-foreground')}
++        >
++          {t('toolbar.workspaces.restore')}
++        </button>
++      )}
+     </div>
+   )
+ })
+diff --git a/src/features/editor/restore-service.ts b/src/features/editor/restore-service.ts
+new file mode 100644
+index 0000000..bd17788
+--- /dev/null
++++ b/src/features/editor/restore-service.ts
+@@ -0,0 +1,10 @@
++/**
++ * Restore (FL-1822): the approved Studio's Restore tab.
++ *
++ * Restoration runs as a job on the host's server, in the host's own Restore panel. On its own the
++ * engine has no such panel, so the tab is not offered; a host build substitutes this module with
++ * one that asks the host to open its panel.
++ */
++export const restoreAvailable: boolean = false
++
++export function requestRestore(): void {}
+diff --git a/src/i18n/locales/en.json b/src/i18n/locales/en.json
+index 7e26d87..3107dc5 100644
+--- a/src/i18n/locales/en.json
++++ b/src/i18n/locales/en.json
+@@ -51,6 +51,7 @@
+       "animate": "Animate",
+       "audio": "Audio",
+       "captions": "Captions",
++      "restore": "Restore",
+       "transcript": "Transcript"
+     },
+     "backToProjects": "Back to Projects",

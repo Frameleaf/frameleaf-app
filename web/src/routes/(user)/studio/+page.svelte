@@ -1261,6 +1261,8 @@
         toastManager.danger($t('frameleaf_studio_export_unavailable'));
       }
     },
+    // The editor's Restore tab opens the same panel as the header's Restore (FL-1822).
+    requestRestore: () => openRestore(null, 'restore'),
   };
 
   /**

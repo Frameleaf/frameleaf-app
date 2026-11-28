@@ -566,6 +566,10 @@ export const createFrameStudioEngine = ({
           services.requestExport?.('video');
           break;
         }
+        case 'request-restore': {
+          services.requestRestore?.();
+          break;
+        }
         case 'playhead': {
           const { num, den } = message.time ?? {};
           if (Number.isSafeInteger(num) && Number.isSafeInteger(den) && den > 0) {

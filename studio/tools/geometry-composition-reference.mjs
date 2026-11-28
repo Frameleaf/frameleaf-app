@@ -186,7 +186,9 @@ export function compositionSourcesFor(sourceSha256) {
     // FL-1822 default photo and transition lengths in Editor settings; changes no composition or raster producer.
     sourceSha256 === '39fb6738dcf99ffcf04d7b73e72b24b0e8988a0e0a93f1883bc855db1a009741' ||
     // FL-1822 the Audio, Captions and Transcript workspace tabs; changes no composition or raster producer.
-    sourceSha256 === '6c5e608dea365d31407dc456b84d25e28b3ddaf8934ebd7f82dc73d7657ce677'
+    sourceSha256 === '6c5e608dea365d31407dc456b84d25e28b3ddaf8934ebd7f82dc73d7657ce677' ||
+    // FL-1822 the Restore tab that opens the host's Restore panel; changes no composition or raster producer.
+    sourceSha256 === '55ddee801bdf97f445aa0ef49d0e141fdfbf2481a756e465c8f3c8fa80dbae34'
   )
     return {
       ...COMPOSITION_SOURCES,

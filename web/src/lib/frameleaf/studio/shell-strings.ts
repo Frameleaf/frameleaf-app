@@ -13,6 +13,7 @@ export const SHELL_STRINGS = {
   shellWorkspaceMotion: { host: 'frameleaf_studio_shell_workspace_motion', engine: 'toolbar.workspaces.motion' },
   shellWorkspaceAudio: { host: 'frameleaf_studio_shell_workspace_audio', engine: 'toolbar.workspaces.audio' },
   shellWorkspaceCaptions: { host: 'frameleaf_studio_shell_workspace_captions', engine: 'toolbar.workspaces.captions' },
+  shellWorkspaceRestore: { host: 'frameleaf_studio_shell_workspace_restore', engine: 'toolbar.workspaces.restore' },
   shellWorkspaceTranscript: {
     host: 'frameleaf_studio_shell_workspace_transcript',
     engine: 'toolbar.workspaces.transcript',
