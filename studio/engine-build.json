@@ -1009,7 +1009,12 @@
       "path": "patches/0222-studio-title-styles.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "4830f118d356eac31b4c147ef325323be6ffa152c8006b5c15f5d2e8182ce87b"
+    },
+    {
+      "path": "patches/0223-studio-keyframes-lane-rows.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "39ecd17916b0926a75bd88c3790b7589ee91690050376cdd25d24b3c9677d564"
     }
   ],
-  "sourceSha256": "fab442c9929363129ea2adc61295d7a633618aefbd8381324bbbf5b05271a5ab"
+  "sourceSha256": "f190fc7e390d41772b8c35deeb1821aa07f036dcfb20548edbd2de5dfca7bbd2"
 }
