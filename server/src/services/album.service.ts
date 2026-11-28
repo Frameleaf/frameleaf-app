@@ -72,13 +72,13 @@ import {
   recordAssetEdit,
 } from 'src/services/partner-copy.service.js';
 import {
+  type VersionViewer,
   albumFolderView,
   folderDisplay,
   refreshAlbumFolderVersions,
   resolveAlbumFolderChoices,
   subfolderOf,
   subfolderRulesOf,
-  type VersionViewer,
 } from 'src/utils/album-folders.js';
 import {
   AlbumTreeOf,

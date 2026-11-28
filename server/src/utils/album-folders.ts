@@ -1,9 +1,9 @@
 import { sql } from 'kysely';
 import type { AlbumRepository } from 'src/repositories/album.repository.js';
+import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { AssetType, AssetVisibility } from 'src/enum.js';
 import { getHiddenContentFilter, hiddenContentAssetIdExists, hiddenFromOthers } from 'src/utils/database.js';
 import { type SubfolderRule, folderOf } from 'src/utils/folder-albums.js';
-import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { isDefaultVisible, notLockedOrOwnedBy } from 'src/utils/locked.js';
 
 /**
