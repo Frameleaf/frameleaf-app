@@ -24,6 +24,7 @@
  * through the host port. That is a design rule, not a sandbox: this document is same-origin with the
  * session's cookies, and its media requests use them.
  */
+import { applyNumberLocale } from './number-locale'
 import { StrictMode, Suspense, lazy, useEffect, useState } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { RouterProvider, createMemoryHistory, createRouter } from '@tanstack/react-router'
@@ -1037,6 +1038,7 @@ let generatedRevoked = false
 
 async function mount(context: StudioHostContext): Promise<void> {
   applyTheme(context)
+  applyNumberLocale(context)
   await i18nReady
   await changeAppLanguage(context.auth.locale).catch(() => undefined)
   applyHostEngineStrings(i18n, context.strings)
@@ -1151,6 +1153,7 @@ async function mount(context: StudioHostContext): Promise<void> {
 }
 
 async function update(context: StudioHostContext): Promise<void> {
+  applyNumberLocale(context)
   const state = session
   if (!state || state.disposed) return
   if (vectorIdentity(state.context) !== vectorIdentity(context)) state.vectors.invalidate()

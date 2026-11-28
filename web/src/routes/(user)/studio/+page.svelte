@@ -14,6 +14,7 @@
   import { beforeNavigate, goto, replaceState } from '$app/navigation';
   import { onDestroy, onMount, tick, untrack } from 'svelte';
   import { locale, t, type Translations } from 'svelte-i18n';
+  import { locale as numberLocale } from '$lib/stores/preferences.store';
   import { toastManager } from '@frameleaf/ui';
   import Button from '$lib/components/frameleaf/Button.svelte';
   import Dialog from '$lib/components/frameleaf/Dialog.svelte';
@@ -384,6 +385,8 @@
     // The shell's resolved locale, so the editor formats times the same way the rest of
     // the app does rather than following the browser when the person chose otherwise.
     locale: $locale ?? globalThis.navigator?.language ?? 'en',
+    // FL-1822: numbers follow "Dates and numbers", as everywhere else in the app.
+    numberLocale: $numberLocale === 'default' ? undefined : $numberLocale,
   });
 
   /**

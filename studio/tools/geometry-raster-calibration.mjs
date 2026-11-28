@@ -334,9 +334,9 @@ export function validateBaseRaster(capture, envelope, binding) {
           // FL-1822 the Restore tab that opens the host's Restore panel; raster producer bytes unchanged.
           binding.sourceSha256 ===
             '55ddee801bdf97f445aa0ef49d0e141fdfbf2481a756e465c8f3c8fa80dbae34' ||
-          // FL-1822 Editor settings writes lengths in the host's locale; raster producer bytes unchanged.
+          // FL-1822 Editor settings writes lengths in the host's number format; raster producer bytes unchanged.
           binding.sourceSha256 ===
-            'ef7de831f1c7ff414308192183bda29f3abb9b6d6793d1f1f7ae20ee2c2b5fec')),
+            '713672674a6d4517aa82f06c46c682fe9fee90eed981d6faa5163ee06d7329d6')),
     'SOURCE_BROWSER',
   )
   check(
