@@ -27,6 +27,10 @@ describe('timeline toolbar strings (FL-1822)', () => {
     expect(strings.timelineSetInTooltip).toBe(strings.timelineSetIn);
     expect(strings.timelineTrackNotSynced).toBe('Not kept in sync. Click to keep this track in sync');
     expect(strings.timelineAlignTitle).toBe('Align in the frame');
+    expect(strings.timelineUndoWithLabel).toBe('Undo {{label}}');
+    expect(strings.timelineRedoWithLabelTooltip).toBe('Redo {{label}}');
+    expect(strings.timelineKeyframesCountOne).toBe('{{count}} keyframe');
+    expect(strings.timelineKeyframesCountOther).toBe('{{count}} keyframes');
     expect(Object.keys(strings)).toEqual(Object.keys(TIMELINE_STRINGS));
   });
 });

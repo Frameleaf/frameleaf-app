@@ -78,6 +78,16 @@ export const DIALOG_STRINGS = {
     host: 'frameleaf_studio_dialog_shortcuts_changed',
     engine: 'projects.settings.hotkeys.filters.custom',
   },
+  dialogShortcutsChangedCountOne: {
+    host: 'frameleaf_studio_dialog_shortcuts_changed_count_one',
+    engine: 'projects.settings.hotkeys.customCount_one',
+    values: ['count'],
+  },
+  dialogShortcutsChangedCountOther: {
+    host: 'frameleaf_studio_dialog_shortcuts_changed_count_other',
+    engine: 'projects.settings.hotkeys.customCount_other',
+    values: ['count'],
+  },
   dialogSettingsApplies: { host: 'frameleaf_studio_dialog_settings_applies', engine: 'settings.appliesToDevice' },
   dialogSettingsSnapDefault: {
     host: 'frameleaf_studio_dialog_settings_snap_default',

@@ -1024,7 +1024,12 @@
       "path": "patches/0225-studio-basic-color-sliders.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "53d5a77b26fb3e42a2f19bebd65d4db3378783def06b0cb23922c065bd18683d"
+    },
+    {
+      "path": "patches/0226-studio-polish-leftovers.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "0cd91518924a67826f47c0c85fcbd257bba597ee6a989b56c7c70c58b03620a0"
     }
   ],
-  "sourceSha256": "e541a40fbf2e404ace9df8dcef9a1c8d5fe7c02d4564dbcc43ff75dfb32b3c3b"
+  "sourceSha256": "31b0ea48ac87cbd9117ab1b225ea7fb0bcaab4601333675c5a386685f3b73a87"
 }

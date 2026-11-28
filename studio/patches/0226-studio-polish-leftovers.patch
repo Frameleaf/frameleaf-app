@@ -1,0 +1,973 @@
+diff --git a/src/features/editor/components/animate-workspace/animation-preset-library.tsx b/src/features/editor/components/animate-workspace/animation-preset-library.tsx
+index 8c69de6..104a7b3 100644
+--- a/src/features/editor/components/animate-workspace/animation-preset-library.tsx
++++ b/src/features/editor/components/animate-workspace/animation-preset-library.tsx
+@@ -314,7 +314,7 @@ const ContinuousMotionRow = memo(function ContinuousMotionRow({
+         </div>
+         <Separator />
+         <div className="space-y-1.5">
+-          <div className="text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
++          <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+             {t('timeline.keyframeEditor.parameters')}
+           </div>
+           {modulator.properties.map((property) => (
+@@ -369,7 +369,7 @@ const StageSection = memo(function StageSection({
+   return (
+     <Collapsible open={open} onOpenChange={setOpen} className="flex flex-col gap-2">
+       <CollapsibleTrigger className="group flex items-center justify-between gap-2 text-left">
+-        <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
++        <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+           {title}
+         </span>
+         <ChevronDown
+@@ -408,7 +408,7 @@ const MotionPresetSection = memo(function MotionPresetSection({
+   return (
+     <section className="flex flex-col gap-1.5">
+       {showHeading ? (
+-        <h3 className="text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
++        <h3 className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+           {t(`editor.motionPresets.categories.${category}`)}
+         </h3>
+       ) : null}
+@@ -470,7 +470,7 @@ const MotionPresetControls = memo(function MotionPresetControls({
+ 
+   return (
+     <div className="flex flex-col gap-1.5 rounded-md border border-border/60 bg-secondary/20 p-2">
+-      <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
++      <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+         {t('editor.animateStages.presetParameters')}
+       </span>
+       <span className="text-[9px] leading-snug text-muted-foreground">
+@@ -1661,7 +1661,7 @@ export const AnimationPresetLibrary = memo(function AnimationPresetLibrary({
+                 modulators, audio pulse. Each removable thing carries an ✕. ── */}
+             {hasAnyAnimation && (
+               <section className="flex flex-col gap-2 rounded-md border border-border/60 bg-secondary/20 p-2">
+-                <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
++                <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                   {t('editor.animateStages.appliedTitle')}
+                 </span>
+                 <div className="flex flex-col gap-1">
+@@ -1875,7 +1875,7 @@ export const AnimationPresetLibrary = memo(function AnimationPresetLibrary({
+             {/* ── Saved animations — user-captured presets, also declarative ── */}
+             {!filtersActive || filteredSavedPresets.length > 0 ? (
+               <section className="flex flex-col gap-1">
+-                <h3 className="text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
++                <h3 className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                   {t('editor.animatePresets.animationsHeading')}
+                 </h3>
+                 {presets.length === 0 ? (
+diff --git a/src/features/editor/components/media-sidebar.tsx b/src/features/editor/components/media-sidebar.tsx
+index e03d033..4e672ae 100644
+--- a/src/features/editor/components/media-sidebar.tsx
++++ b/src/features/editor/components/media-sidebar.tsx
+@@ -721,6 +721,12 @@ export const MediaSidebar = memo(function MediaSidebar() {
+               width: EDITOR_LAYOUT_CSS_VALUES.sidebarHeaderButtonSize,
+               height: EDITOR_LAYOUT_CSS_VALUES.sidebarHeaderButtonSize,
+             }}
++            aria-label={
++              leftSidebarOpen
++                ? t('editor.mediaSidebar.collapsePanel')
++                : t('editor.mediaSidebar.expandPanel')
++            }
++            aria-expanded={leftSidebarOpen}
+             data-tooltip={
+               leftSidebarOpen
+                 ? t('editor.mediaSidebar.collapsePanel')
+@@ -891,7 +897,7 @@ export const MediaSidebar = memo(function MediaSidebar() {
+                     aria-label={t(group.labelKey)}
+                     className="space-y-2"
+                   >
+-                    <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
++                    <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-[0.08em]">
+                       {t(group.labelKey)}
+                     </div>
+                     <div className="grid grid-cols-2 gap-3">
+@@ -920,7 +926,7 @@ export const MediaSidebar = memo(function MediaSidebar() {
+                   </section>
+                 ))}
+                 <section aria-label={t('editor.mediaSidebar.textGroupMore')} className="space-y-2">
+-                  <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
++                  <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-[0.08em]">
+                     {t('editor.mediaSidebar.textGroupMore')}
+                   </div>
+                   <div className="grid grid-cols-2 gap-3">
+@@ -1214,7 +1220,7 @@ export const MediaSidebar = memo(function MediaSidebar() {
+ 
+                 {/* Presets */}
+                 <div>
+-                  <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-1.5">
++                  <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-[0.08em] mb-1.5">
+                     {t('editor.mediaSidebar.presets')}
+                   </div>
+                   <div className="grid grid-cols-2 gap-3">
+@@ -1254,7 +1260,7 @@ export const MediaSidebar = memo(function MediaSidebar() {
+                 {/* GPU Effects by Category */}
+                 {gpuCategories.map(({ category, effects: catEffects }) => (
+                   <div key={category}>
+-                    <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-1.5">
++                    <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-[0.08em] mb-1.5">
+                       {category}
+                     </div>
+                     <div className="grid grid-cols-2 gap-3">
+diff --git a/src/features/editor/components/properties-sidebar/clip-panel/caption-style-controls.tsx b/src/features/editor/components/properties-sidebar/clip-panel/caption-style-controls.tsx
+index 4f6b836..ab25898 100644
+--- a/src/features/editor/components/properties-sidebar/clip-panel/caption-style-controls.tsx
++++ b/src/features/editor/components/properties-sidebar/clip-panel/caption-style-controls.tsx
+@@ -101,7 +101,7 @@ export const CaptionStyleControls = memo(function CaptionStyleControls({
+   return (
+     <div className="space-y-1">
+       <div>
+-        <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground pb-1.5">
++        <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground pb-1.5">
+           {t('editor.captionStyleControls.stylePreset')}
+         </p>
+         <div className="grid grid-cols-3 gap-1.5">
+diff --git a/src/features/editor/components/properties-sidebar/clip-panel/colour-match-section.tsx b/src/features/editor/components/properties-sidebar/clip-panel/colour-match-section.tsx
+index 624eb7a..10a4787 100644
+--- a/src/features/editor/components/properties-sidebar/clip-panel/colour-match-section.tsx
++++ b/src/features/editor/components/properties-sidebar/clip-panel/colour-match-section.tsx
+@@ -115,7 +115,7 @@ export function ColourMatchSection({ items }: { items: VideoItem[] }) {
+       </PropertyRow>
+       <PropertyRow label={t('editor.colourMatch.strength')}>
+         <div className="flex items-center gap-1 w-full">
+-          <Input type="number" className="h-7 min-w-0 flex-1 px-2 text-xs" min={0} max={100} step={5}
++          <Input type="number" className="h-[34px] min-w-0 flex-1 px-2 text-[13px]" min={0} max={100} step={5}
+             aria-label={t('editor.colourMatch.strength')} value={strength}
+             onChange={(event) => setStrength(Math.min(100, Math.max(0, Number(event.target.value))))} />
+           <span className="text-xs text-muted-foreground">%</span>
+diff --git a/src/features/editor/components/properties-sidebar/clip-panel/fill-section.tsx b/src/features/editor/components/properties-sidebar/clip-panel/fill-section.tsx
+index 4a5573f..916c703 100644
+--- a/src/features/editor/components/properties-sidebar/clip-panel/fill-section.tsx
++++ b/src/features/editor/components/properties-sidebar/clip-panel/fill-section.tsx
+@@ -284,7 +284,7 @@ export const FillSection = memo(function FillSection({
+           onValueChange={handleBlendModeChange}
+           disabled={hasShapeMask}
+         >
+-          <SelectTrigger className="h-7 text-xs flex-1 min-w-0">
++          <SelectTrigger className="h-[34px] text-[13px] flex-1 min-w-0">
+             <SelectValue
+               placeholder={
+                 hasShapeMask || blendMode !== 'mixed'
+diff --git a/src/features/editor/components/properties-sidebar/clip-panel/lottie-section.tsx b/src/features/editor/components/properties-sidebar/clip-panel/lottie-section.tsx
+index 6eff15d..1fd11ac 100644
+--- a/src/features/editor/components/properties-sidebar/clip-panel/lottie-section.tsx
++++ b/src/features/editor/components/properties-sidebar/clip-panel/lottie-section.tsx
+@@ -504,7 +504,7 @@ export function LottieSection({ items }: { items: TimelineItem[] }) {
+       {single && animations.length > 1 && (
+         <PropertyRow label={t('editor.lottieSection.animation')}>
+           <Select value={effectiveAnimationId} onValueChange={handleAnimationChange}>
+-            <SelectTrigger className="h-7 text-xs">
++            <SelectTrigger className="h-[34px] text-[13px]">
+               <SelectValue />
+             </SelectTrigger>
+             <SelectContent>
+@@ -521,7 +521,7 @@ export function LottieSection({ items }: { items: TimelineItem[] }) {
+       {single && themes.length > 0 && (
+         <PropertyRow label={t('editor.lottieSection.theme')}>
+           <Select value={single.themeId ?? NO_THEME} onValueChange={handleThemeChange}>
+-            <SelectTrigger className="h-7 text-xs">
++            <SelectTrigger className="h-[34px] text-[13px]">
+               <SelectValue />
+             </SelectTrigger>
+             <SelectContent>
+@@ -543,7 +543,7 @@ export function LottieSection({ items }: { items: TimelineItem[] }) {
+           {markers.length > 0 && (
+             <PropertyRow label={t('editor.lottieSection.marker')}>
+               <Select onValueChange={handleMarkerSelect}>
+-                <SelectTrigger className="h-7 text-xs">
++                <SelectTrigger className="h-[34px] text-[13px]">
+                   <SelectValue placeholder={t('editor.lottieSection.markerPlaceholder')} />
+                 </SelectTrigger>
+                 <SelectContent>
+diff --git a/src/features/editor/components/properties-sidebar/clip-panel/loudness-match-section.tsx b/src/features/editor/components/properties-sidebar/clip-panel/loudness-match-section.tsx
+index b4182fd..41c9c8f 100644
+--- a/src/features/editor/components/properties-sidebar/clip-panel/loudness-match-section.tsx
++++ b/src/features/editor/components/properties-sidebar/clip-panel/loudness-match-section.tsx
+@@ -104,7 +104,7 @@ export function LoudnessMatchSection({ items }: { items: TimelineItem[] }) {
+     <PropertySection title={t('editor.audioSection.loudness.title')} icon={Gauge} defaultOpen={false}>
+       <PropertyRow label={t('editor.audioSection.loudness.target')}>
+         <div className="flex items-center gap-1 w-full">
+-          <Input type="text" inputMode="decimal" className="h-7 min-w-0 flex-1 px-2 text-xs"
++          <Input type="text" inputMode="decimal" className="h-[34px] min-w-0 flex-1 px-2 text-[13px]"
+             aria-label={t('editor.audioSection.loudness.target')} value={targetText}
+             onChange={(event) => setTargetText(event.target.value)}
+             onBlur={() => { setTargetText(String(target)); save({ targetLufs: target }) }} />
+@@ -113,7 +113,7 @@ export function LoudnessMatchSection({ items }: { items: TimelineItem[] }) {
+       </PropertyRow>
+       <PropertyRow label={t('editor.audioSection.loudness.ceiling')}>
+         <div className="flex items-center gap-1 w-full">
+-          <Input type="text" inputMode="decimal" className="h-7 min-w-0 flex-1 px-2 text-xs"
++          <Input type="text" inputMode="decimal" className="h-[34px] min-w-0 flex-1 px-2 text-[13px]"
+             aria-label={t('editor.audioSection.loudness.ceiling')} value={ceilingText}
+             onChange={(event) => setCeilingText(event.target.value)}
+             onBlur={() => { setCeilingText(String(ceiling)); save({ ceilingDbtp: ceiling }) }} />
+diff --git a/src/features/editor/components/properties-sidebar/clip-panel/multicam-section.tsx b/src/features/editor/components/properties-sidebar/clip-panel/multicam-section.tsx
+index 206d1bb..c2dbf12 100644
+--- a/src/features/editor/components/properties-sidebar/clip-panel/multicam-section.tsx
++++ b/src/features/editor/components/properties-sidebar/clip-panel/multicam-section.tsx
+@@ -110,7 +110,7 @@ function CreateMulticam({ items, audioItems }: { items: TimelineItem[]; audioIte
+           <PropertyRow key={item.id} label={item.label}>
+             <div className="flex w-full flex-col gap-1">
+               <div className="flex items-center gap-1">
+-                <Input type="number" step={1} className="h-7 min-w-0 flex-1 px-2 text-xs" disabled={correcting}
++                <Input type="number" step={1} className="h-[34px] min-w-0 flex-1 px-2 text-[13px]" disabled={correcting}
+                   aria-label={t('editor.multicam.offset', { label: item.label })}
+                   value={offsets[item.id] ?? 0}
+                   onChange={(event) => setOffsets((current) => ({ ...current, [item.id]: Math.round(Number(event.target.value)) }))} />
+diff --git a/src/features/editor/components/properties-sidebar/clip-panel/shape-section.tsx b/src/features/editor/components/properties-sidebar/clip-panel/shape-section.tsx
+index 1648a64..b6a3805 100644
+--- a/src/features/editor/components/properties-sidebar/clip-panel/shape-section.tsx
++++ b/src/features/editor/components/properties-sidebar/clip-panel/shape-section.tsx
+@@ -703,7 +703,7 @@ export function ShapeSection({ items }: ShapeSectionProps) {
+       {/* Shape Type */}
+       <PropertyRow label={t('editor.shapeSection.type')}>
+         <Select value={sharedValues.shapeType} onValueChange={handleShapeTypeChange}>
+-          <SelectTrigger className="h-7 text-xs flex-1 min-w-0">
++          <SelectTrigger className="h-[34px] text-[13px] flex-1 min-w-0">
+             <SelectValue
+               placeholder={
+                 sharedValues.shapeType === undefined
+@@ -823,7 +823,7 @@ export function ShapeSection({ items }: ShapeSectionProps) {
+         <>
+           <PropertyRow label={t('editor.shapeSection.fillType')}>
+             <Select value={sharedValues.fillType} onValueChange={handleFillTypeChange}>
+-              <SelectTrigger className="h-7 text-xs flex-1 min-w-0">
++              <SelectTrigger className="h-[34px] text-[13px] flex-1 min-w-0">
+                 <SelectValue placeholder={t('editor.shapeSection.mixed')} />
+               </SelectTrigger>
+               <SelectContent>
+@@ -962,7 +962,7 @@ export function ShapeSection({ items }: ShapeSectionProps) {
+                   updateShapeItems({ strokeLineCap: value as ShapeItem['strokeLineCap'] })
+                 }
+               >
+-                <SelectTrigger className="h-7 text-xs flex-1">
++                <SelectTrigger className="h-[34px] text-[13px] flex-1">
+                   <SelectValue />
+                 </SelectTrigger>
+                 <SelectContent>
+@@ -981,7 +981,7 @@ export function ShapeSection({ items }: ShapeSectionProps) {
+                   updateShapeItems({ strokeLineJoin: value as ShapeItem['strokeLineJoin'] })
+                 }
+               >
+-                <SelectTrigger className="h-7 text-xs flex-1">
++                <SelectTrigger className="h-[34px] text-[13px] flex-1">
+                   <SelectValue />
+                 </SelectTrigger>
+                 <SelectContent>
+@@ -1081,7 +1081,7 @@ export function ShapeSection({ items }: ShapeSectionProps) {
+         <>
+           <div className="border-t border-border my-3" />
+ 
+-          <div className="px-1 pb-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
++          <div className="px-1 pb-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+             {t('editor.shapeSection.trimPaths')}
+           </div>
+           <PropertyRow label={t('editor.shapeSection.trimStart')}>
+@@ -1148,7 +1148,7 @@ export function ShapeSection({ items }: ShapeSectionProps) {
+         <>
+           <div className="border-t border-border my-3" />
+ 
+-          <div className="px-1 pb-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
++          <div className="px-1 pb-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+             {t('editor.shapeSection.taper')}
+           </div>
+           <PropertyRow label={t('editor.shapeSection.taperStartWidth')}>
+@@ -1260,7 +1260,7 @@ export function ShapeSection({ items }: ShapeSectionProps) {
+               onValueChange={handleMaskTypeChange}
+               disabled={sharedValues.isMask !== true}
+             >
+-              <SelectTrigger className="h-7 text-xs flex-1 min-w-0">
++              <SelectTrigger className="h-[34px] text-[13px] flex-1 min-w-0">
+                 <SelectValue
+                   placeholder={
+                     sharedValues.maskType === undefined
+diff --git a/src/features/editor/components/properties-sidebar/clip-panel/text-section.tsx b/src/features/editor/components/properties-sidebar/clip-panel/text-section.tsx
+index 856301d..788a14a 100644
+--- a/src/features/editor/components/properties-sidebar/clip-panel/text-section.tsx
++++ b/src/features/editor/components/properties-sidebar/clip-panel/text-section.tsx
+@@ -1183,7 +1183,7 @@ function TextSectionComposer({ items, canvas, slots }: TextSectionComposerProps)
+               value={sharedValues.textStylePresetId}
+               onValueChange={(value) => handleApplyTextStylePreset(value as TextStylePresetId)}
+             >
+-              <SelectTrigger className="h-7 text-xs w-full">
++              <SelectTrigger className="h-[34px] text-[13px] w-full">
+                 <SelectValue
+                   placeholder={
+                     sharedValues.textStylePresetId === undefined
+@@ -1249,7 +1249,7 @@ function TextSectionComposer({ items, canvas, slots }: TextSectionComposerProps)
+                               value={span.fontWeight ?? firstTextItem.fontWeight ?? 'normal'}
+                               onValueChange={(value) => handleSpanWeightChange(index, value)}
+                             >
+-                              <SelectTrigger className="h-7 text-xs min-w-0">
++                              <SelectTrigger className="h-[34px] text-[13px] min-w-0">
+                                 <SelectValue />
+                               </SelectTrigger>
+                               <SelectContent>
+@@ -1363,7 +1363,7 @@ function TextSectionComposer({ items, canvas, slots }: TextSectionComposerProps)
+           )}
+ 
+           {!hasStructuredSpanEditor && (
+-            <PropertyRow label={t('editor.textSection.font')} className="items-start">
++            <PropertyRow label={t('editor.textSection.font')}>
+               <FontPicker
+                 value={sharedValues.fontFamily}
+                 placeholder={
+@@ -1402,7 +1402,7 @@ function TextSectionComposer({ items, canvas, slots }: TextSectionComposerProps)
+           {!hasStructuredSpanEditor && (
+             <PropertyRow label={t('editor.textSection.weight')}>
+               <Select value={sharedValues.fontWeight} onValueChange={handleFontWeightChange}>
+-                <SelectTrigger className="h-7 text-xs flex-1 min-w-0">
++                <SelectTrigger className="h-[34px] text-[13px] flex-1 min-w-0">
+                   <SelectValue
+                     placeholder={
+                       sharedValues.fontWeight === undefined
+@@ -1643,7 +1643,7 @@ function TextSectionComposer({ items, canvas, slots }: TextSectionComposerProps)
+ 
+       {showEffectSection && (
+         <PropertySection title={t('editor.textSection.style')} icon={Palette} defaultOpen={true}>
+-          <PropertyRow label={t('editor.textSection.presets')} className="items-start">
++          <PropertyRow label={t('editor.textSection.presets')}>
+             <div className="grid w-full grid-cols-2 gap-1.5">
+               {TEXT_EFFECT_PRESETS.map((preset) => (
+                 <Button
+diff --git a/src/features/editor/components/settings-dialog.tsx b/src/features/editor/components/settings-dialog.tsx
+index 3a309a8..2c862a4 100644
+--- a/src/features/editor/components/settings-dialog.tsx
++++ b/src/features/editor/components/settings-dialog.tsx
+@@ -625,7 +625,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
+   ).length
+   return (
+     <Dialog open={open} onOpenChange={onOpenChange}>
+-      <DialogContent className="max-w-2xl gap-0 overflow-hidden p-0 sm:top-16 sm:max-h-[calc(100vh-4rem)] sm:translate-y-0 sm:origin-top">
++      <DialogContent className="max-w-2xl gap-0 overflow-hidden p-0 sm:top-16 sm:max-h-[calc(100vh-4rem)] sm:translate-y-0 sm:origin-top sm:rounded-[22px]">
+         <DialogHeader className="flex flex-row items-center justify-between border-b px-6 py-4 pr-14">
+           <DialogTitle>{t('settings.title')}</DialogTitle>
+           <Button
+@@ -640,7 +640,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
+         </DialogHeader>
+         <div className="flex min-h-0">
+           {/* Sidebar */}
+-          <nav className="flex w-44 shrink-0 flex-col gap-0.5 border-r border-white/6 p-2">
++          <nav className="flex w-44 shrink-0 flex-col gap-0.5 border-r border-border p-2">
+             {SETTINGS_SECTIONS.map((section) => {
+               const Icon = section.icon
+               return (
+@@ -653,7 +653,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
+                     'flex items-center gap-2 rounded-lg px-3 py-2 text-left text-[13px] transition-colors duration-150 ease-out motion-reduce:transition-none',
+                     activeSection === section.id
+                       ? 'bg-primary/15 text-primary'
+-                      : 'text-muted-foreground hover:bg-white/5 hover:text-foreground/80',
++                      : 'text-muted-foreground hover:bg-secondary hover:text-foreground/80',
+                   )}
+                 >
+                   <Icon className="h-3.5 w-3.5 shrink-0" />
+@@ -791,7 +791,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
+                                 type="button"
+                                 aria-label={t('settings.general.uiSoundPreview')}
+                                 onClick={() => previewUiSound(uiSoundVoice)}
+-                                className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-white/10 bg-white/5 text-muted-foreground transition-colors hover:bg-white/10 hover:text-foreground"
++                                className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border bg-secondary text-muted-foreground transition-colors hover:bg-white/10 hover:text-foreground"
+                               >
+                                 <Play className="h-3.5 w-3.5" />
+                               </button>
+@@ -1041,7 +1041,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
+                                   : t('settings.storage.upToDate')}
+                           </Button>
+                         </div>
+-                        <Separator className="bg-white/8" />
++                        <Separator className="bg-border" />
+                         <div className="flex items-center justify-between">
+                           <div>
+                             <Label className="text-sm">
+@@ -1169,7 +1169,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
+                                   : t('common.delete')}
+                           </Button>
+                         </div>
+-                        <Separator className="bg-white/8" />
++                        <Separator className="bg-border" />
+                         <div className="space-y-3">
+                           <div className="space-y-1">
+                             <Label className="text-sm">{t('settings.storage.localAi')}</Label>
+diff --git a/src/features/editor/components/transitions-panel.tsx b/src/features/editor/components/transitions-panel.tsx
+index a59bf02..19fd8e9 100644
+--- a/src/features/editor/components/transitions-panel.tsx
++++ b/src/features/editor/components/transitions-panel.tsx
+@@ -132,7 +132,7 @@ const CategorySection = memo(function CategorySection({
+ 
+   return (
+     <div className="space-y-2">
+-      <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
++      <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-[0.08em]">
+         {title}
+       </div>
+       <div className="grid grid-cols-2 gap-3">
+diff --git a/src/features/effects/components/panels/gpu-wheels-panel.tsx b/src/features/effects/components/panels/gpu-wheels-panel.tsx
+index 9a215ea..288d806 100644
+--- a/src/features/effects/components/panels/gpu-wheels-panel.tsx
++++ b/src/features/effects/components/panels/gpu-wheels-panel.tsx
+@@ -1146,8 +1146,6 @@ export const GpuWheelsPanel = memo(function GpuWheelsPanel({
+     return { header, fields }
+   }
+ 
+-  const tonalRowClass = '[&>span]:w-[84px] [&>span]:min-w-[84px]'
+-
+   const renderParamRows = (keys: readonly string[]) =>
+     keys.map((key) => {
+       const param = definition.params[key]
+@@ -1156,7 +1154,7 @@ export const GpuWheelsPanel = memo(function GpuWheelsPanel({
+       const keyframeProperty = getKeyframeProperty(effect.id, key)
+       const label = getEffectParamLabel(t, definition, key)
+       return (
+-        <PropertyRow key={key} label={label} className={tonalRowClass}>
++        <PropertyRow key={key} label={label}>
+           <div className="flex items-center gap-1 min-w-0 w-full">
+             <SliderInput
+               value={value}
+diff --git a/src/features/keyframes/components/dopesheet-editor/dopesheet-ruler-header.tsx b/src/features/keyframes/components/dopesheet-editor/dopesheet-ruler-header.tsx
+index 400f530..a78a1b8 100644
+--- a/src/features/keyframes/components/dopesheet-editor/dopesheet-ruler-header.tsx
++++ b/src/features/keyframes/components/dopesheet-editor/dopesheet-ruler-header.tsx
+@@ -34,7 +34,7 @@ export function DopesheetRulerHeader({
+   return (
+     <div className="grid border-b border-border bg-muted/25" style={propertyGridStyle}>
+       <div
+-        className="flex items-center justify-between gap-2 px-1.5 text-xs font-medium text-muted-foreground"
++        className="flex items-center justify-between gap-2 px-2 text-xs font-medium text-muted-foreground"
+         style={{ height: RULER_HEIGHT }}
+       >
+         <span>{t('timeline.keyframeEditor.property')}</span>
+diff --git a/src/features/media-library/components/media-library.tsx b/src/features/media-library/components/media-library.tsx
+index 286bbab..c0dad0e 100644
+--- a/src/features/media-library/components/media-library.tsx
++++ b/src/features/media-library/components/media-library.tsx
+@@ -701,7 +701,7 @@ export const MediaLibrary = memo(function MediaLibrary({ onMediaSelect }: MediaL
+             {isScanningMediaHealth && (
+               <HeaderActionTooltip label={t('media.library.checkingWorkspaceHealth')}>
+                 <div
+-                  className="flex items-center gap-1.5 h-7 px-2.5 rounded-md shrink-0 border
++                  className="flex items-center gap-1.5 h-8 px-2.5 rounded-md shrink-0 border
+                     bg-secondary border-border text-muted-foreground"
+                   aria-live="polite"
+                 >
+@@ -722,7 +722,7 @@ export const MediaLibrary = memo(function MediaLibrary({ onMediaSelect }: MediaL
+               >
+                 <button
+                   onClick={openMissingMediaDialog}
+-                  className="flex items-center gap-1.5 h-7 px-2.5 rounded-md shrink-0
++                  className="flex items-center gap-1.5 h-8 px-2.5 rounded-md shrink-0
+                     bg-destructive/10 border border-destructive/25 text-destructive
+                     hover:bg-destructive/20 hover:border-destructive/40
+                     transition-colors duration-150"
+@@ -743,7 +743,7 @@ export const MediaLibrary = memo(function MediaLibrary({ onMediaSelect }: MediaL
+                 <div className="h-4 w-px bg-border hidden @[300px]:block" />
+ 
+                 {/* Selection badge */}
+-                <div className="flex shrink-0 items-center gap-1 h-7 pl-2 pr-1 rounded-md bg-accent/50 border border-border min-w-0 max-w-full overflow-hidden">
++                <div className="flex shrink-0 items-center gap-1 h-8 pl-2 pr-1 rounded-md bg-accent/50 border border-border min-w-0 max-w-full overflow-hidden">
+                   <span
+                     className={cn(
+                       'tabular-nums shrink-0 whitespace-nowrap',
+@@ -780,7 +780,7 @@ export const MediaLibrary = memo(function MediaLibrary({ onMediaSelect }: MediaL
+                   >
+                     <button
+                       onClick={handleGenerateSelectedProxies}
+-                      className="flex items-center gap-1.5 h-7 px-2.5 rounded-md shrink-0 border
++                      className="flex items-center gap-1.5 h-8 px-2.5 rounded-md shrink-0 border
+                         bg-secondary border-border text-muted-foreground
+                         hover:text-primary hover:bg-primary/10 hover:border-primary/40
+                         transition-colors duration-150"
+@@ -799,7 +799,7 @@ export const MediaLibrary = memo(function MediaLibrary({ onMediaSelect }: MediaL
+                 <HeaderActionTooltip label={t('media.library.deleteSelectedAssets')}>
+                   <button
+                     onClick={handleDeleteSelected}
+-                    className="flex items-center gap-1.5 h-7 px-2.5 rounded-md shrink-0
++                    className="flex items-center gap-1.5 h-8 px-2.5 rounded-md shrink-0
+                       bg-destructive/10 border border-destructive/25 text-destructive
+                       hover:bg-destructive/20 hover:border-destructive/40
+                       transition-colors duration-150"
+@@ -956,7 +956,7 @@ export const MediaLibrary = memo(function MediaLibrary({ onMediaSelect }: MediaL
+           in Scene mode. The search input and the filter row below only scope
+           the media-library grid, so they're hidden when the Scene browser is
+           mounted (it has its own search). */}
+-      <div className="px-4 pt-3 pb-2 space-y-2 flex-shrink-0">
++      <div className="px-3 pt-3 pb-2 space-y-2 flex-shrink-0">
+         {/* Where the media comes from, on its own row (FL-1822): Library, Project, Scenes. */}
+         <div
+           role="group"
+@@ -1033,7 +1033,7 @@ export const MediaLibrary = memo(function MediaLibrary({ onMediaSelect }: MediaL
+         {!otherViewOpen && (
+           <>
+             {/* Filters and sort */}
+-            <div className="@container flex items-center gap-1.5 min-w-0">
++            <div className="@container flex items-center gap-2 min-w-0">
+               {/* Filter by type */}
+               <DropdownMenu>
+                 <DropdownMenuTrigger asChild>
+@@ -1059,40 +1059,40 @@ export const MediaLibrary = memo(function MediaLibrary({ onMediaSelect }: MediaL
+                     </span>
+                   </Button>
+                 </DropdownMenuTrigger>
+-                <DropdownMenuContent align="start" className="bg-popover border border-border">
++                <DropdownMenuContent align="start">
+                   <DropdownMenuItem
+                     onClick={() => setFilterByType(null)}
+-                    className="text-xs hover:bg-accent hover:text-accent-foreground"
++                    className="hover:bg-accent hover:text-accent-foreground"
+                   >
+                     {t('media.library.allTypes')}
+                   </DropdownMenuItem>
+                   <DropdownMenuSeparator className="bg-border" />
+                   <DropdownMenuItem
+                     onClick={() => setFilterByType('video')}
+-                    className="text-xs hover:bg-accent hover:text-accent-foreground"
++                    className="hover:bg-accent hover:text-accent-foreground"
+                   >
+-                    <Video className="w-3 h-3 mr-2" />
++                    <Video className="w-4 h-4 mr-2" />
+                     {t('media.library.typeShort.video')}
+                   </DropdownMenuItem>
+                   <DropdownMenuItem
+                     onClick={() => setFilterByType('audio')}
+-                    className="text-xs hover:bg-accent hover:text-accent-foreground"
++                    className="hover:bg-accent hover:text-accent-foreground"
+                   >
+-                    <FileAudio className="w-3 h-3 mr-2" />
++                    <FileAudio className="w-4 h-4 mr-2" />
+                     {t('media.library.typeShort.audio')}
+                   </DropdownMenuItem>
+                   <DropdownMenuItem
+                     onClick={() => setFilterByType('image')}
+-                    className="text-xs hover:bg-accent hover:text-accent-foreground"
++                    className="hover:bg-accent hover:text-accent-foreground"
+                   >
+-                    <ImageIcon className="w-3 h-3 mr-2" />
++                    <ImageIcon className="w-4 h-4 mr-2" />
+                     {t('media.library.typeShort.image')}
+                   </DropdownMenuItem>
+                   <DropdownMenuItem
+                     onClick={() => setFilterByType('lottie')}
+-                    className="text-xs hover:bg-accent hover:text-accent-foreground"
++                    className="hover:bg-accent hover:text-accent-foreground"
+                   >
+-                    <FileJson className="w-3 h-3 mr-2" />
++                    <FileJson className="w-4 h-4 mr-2" />
+                     {t('media.library.typeShort.lottie')}
+                   </DropdownMenuItem>
+                 </DropdownMenuContent>
+@@ -1113,22 +1113,22 @@ export const MediaLibrary = memo(function MediaLibrary({ onMediaSelect }: MediaL
+                     </span>
+                   </Button>
+                 </DropdownMenuTrigger>
+-                <DropdownMenuContent align="start" className="bg-popover border border-border">
++                <DropdownMenuContent align="start">
+                   <DropdownMenuItem
+                     onClick={() => setSortBy('date')}
+-                    className="text-xs hover:bg-accent hover:text-accent-foreground"
++                    className="hover:bg-accent hover:text-accent-foreground"
+                   >
+                     {t('media.library.sortDate')}
+                   </DropdownMenuItem>
+                   <DropdownMenuItem
+                     onClick={() => setSortBy('name')}
+-                    className="text-xs hover:bg-accent hover:text-accent-foreground"
++                    className="hover:bg-accent hover:text-accent-foreground"
+                   >
+                     {t('media.library.sortName')}
+                   </DropdownMenuItem>
+                   <DropdownMenuItem
+                     onClick={() => setSortBy('size')}
+-                    className="text-xs hover:bg-accent hover:text-accent-foreground"
++                    className="hover:bg-accent hover:text-accent-foreground"
+                   >
+                     {t('media.library.sortSize')}
+                   </DropdownMenuItem>
+@@ -1212,7 +1212,7 @@ export const MediaLibrary = memo(function MediaLibrary({ onMediaSelect }: MediaL
+         <div
+           ref={scrollContainerRef}
+           className={cn(
+-            'relative h-full overflow-y-auto px-4 pb-4 [scrollbar-gutter:stable]',
++            'relative h-full overflow-y-auto px-3 pb-4 [scrollbar-gutter:stable]',
+             otherViewOpen && 'hidden',
+           )}
+           onClick={handleScrollContentClick}
+diff --git a/src/features/preview/components/alignment-hud.tsx b/src/features/preview/components/alignment-hud.tsx
+index 5def06d..6b53aa1 100644
+--- a/src/features/preview/components/alignment-hud.tsx
++++ b/src/features/preview/components/alignment-hud.tsx
+@@ -248,7 +248,7 @@ const AlignmentToolbarCore = memo(function AlignmentToolbarCore({
+   // The inspector's Transform group (FL-1822): spacing evenly shows only once three clips are chosen.
+   return (
+     <PropertyRow label={t('preview.align.title')}>
+-      <div className="flex flex-wrap gap-1.5" role="group" aria-label={t('preview.align.title')}>
++      <div className="flex flex-wrap gap-2" role="group" aria-label={t('preview.align.title')}>
+         {ALIGNMENT_ACTIONS.filter((action) => itemCount >= action.minItems).map(renderButton)}
+         <Button
+           variant="ghost"
+diff --git a/src/features/preview/components/color-scopes-view.tsx b/src/features/preview/components/color-scopes-view.tsx
+index 9a50f20..262157a 100644
+--- a/src/features/preview/components/color-scopes-view.tsx
++++ b/src/features/preview/components/color-scopes-view.tsx
+@@ -1,4 +1,5 @@
+ import { memo, useCallback, useEffect, useRef, useState } from 'react'
++import { useTranslation } from 'react-i18next'
+ import { Activity, TriangleAlert } from 'lucide-react'
+ import { getResolvedPlaybackFrame, usePlaybackStore } from '@/shared/state/playback'
+ import { usePreviewBridgeStore, type PreviewScopeSample } from '@/shared/state/preview-bridge'
+@@ -499,6 +500,7 @@ export const ColorScopesView = memo(function ColorScopesView({
+   embedded = false,
+   embeddedLayout = 'grid',
+ }: ColorScopesViewProps) {
++  const { t } = useTranslation()
+   const [status, setStatus] = useState<'idle' | 'live' | 'error'>('idle')
+   const [gpuReady, setGpuReady] = useState<boolean | null>(null) // null = pending
+   const [waveformMode, setWaveformMode] = useState<ScopeViewMode>('luma')
+@@ -1189,8 +1191,8 @@ export const ColorScopesView = memo(function ColorScopesView({
+                 publishedOwner.mountGeneration !== measured.owner.mountGeneration ||
+                 publishedOwner.graphVersion !== measured.owner.graphVersion)
+             const warning = [
+-              measured.fallback ? 'Float capture unavailable: HDR readings may be clipped.' : null,
+-              stale ? 'These readings may not match the current frame.' : null,
++              measured.fallback ? t('preview.scopes.floatUnavailable') : null,
++              stale ? t('preview.scopes.stale') : null,
+             ]
+               .filter(Boolean)
+               .join(' ')
+diff --git a/src/features/settings/components/hotkey-editor.tsx b/src/features/settings/components/hotkey-editor.tsx
+index 79c6cb0..5cd6b90 100644
+--- a/src/features/settings/components/hotkey-editor.tsx
++++ b/src/features/settings/components/hotkey-editor.tsx
+@@ -239,7 +239,7 @@ function HotkeyBindingPill({
+               'min-w-8 rounded-lg border px-2.5 py-1 text-[11px] font-mono tracking-wide shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] transition-colors duration-150 ease-out motion-reduce:transition-none',
+               isActive
+                 ? 'border-primary/55 bg-primary/18 text-foreground'
+-                : 'border-white/8 bg-white/6 text-foreground/90',
++                : 'border-border bg-white/6 text-foreground/90',
+               isListening && 'border-primary/60 bg-primary/20 text-primary',
+             )}
+           >
+@@ -268,7 +268,7 @@ function HotkeyBindingPill({
+       onClick={onClick}
+       className={cn(
+         'rounded-xl p-1 transition-colors duration-150 ease-out motion-reduce:transition-none',
+-        isActive ? 'bg-primary/10' : 'hover:bg-white/5',
++        isActive ? 'bg-primary/10' : 'hover:bg-secondary',
+       )}
+     >
+       {content}
+@@ -287,7 +287,7 @@ const KEY_ACTIVE_CLASSES =
+   'border-primary/55 bg-primary/18 text-primary shadow-[inset_0_1px_0_rgba(255,255,255,0.12)]'
+ 
+ const KEY_IDLE_CLASSES =
+-  'border-white/6 bg-[linear-gradient(180deg,rgba(255,255,255,0.05),rgba(255,255,255,0.02))] text-foreground/78'
++  'border-border bg-[linear-gradient(180deg,rgba(255,255,255,0.05),rgba(255,255,255,0.02))] text-foreground/78'
+ 
+ function KeyCap({
+   keySpec,
+@@ -1010,7 +1010,7 @@ export function HotkeyEditor() {
+       />
+ 
+       {/* ── Header ── */}
+-      <div className="flex items-center gap-4 border-b border-white/6 px-5 py-2.5">
++      <div className="flex items-center gap-4 border-b border-border px-5 py-2.5">
+         <div className="flex flex-1 items-center gap-2.5">
+           <Keyboard className="h-4 w-4 shrink-0 text-muted-foreground" />
+           <span className="text-sm font-medium text-foreground">
+@@ -1036,7 +1036,7 @@ export function HotkeyEditor() {
+             ? t('projects.settings.hotkeys.hideKeyboard')
+             : t('projects.settings.hotkeys.showKeyboard')}
+         </Button>
+-        <DialogPrimitive.Close className="shrink-0 rounded-md border border-white/10 bg-white/5 p-1.5 text-muted-foreground transition-colors hover:bg-white/10 hover:text-foreground">
++        <DialogPrimitive.Close className="shrink-0 rounded-md border border-border bg-secondary p-1.5 text-muted-foreground transition-colors hover:bg-white/10 hover:text-foreground">
+           <X className="h-4 w-4" />
+           <span className="sr-only">{t('common.close')}</span>
+         </DialogPrimitive.Close>
+@@ -1051,14 +1051,14 @@ export function HotkeyEditor() {
+           )}
+         >
+           {/* Section layers sidebar */}
+-          <div className="flex w-44 shrink-0 flex-col gap-0.5 border-r border-white/6 p-2 xl:w-52">
++          <div className="flex w-44 shrink-0 flex-col gap-0.5 border-r border-border p-2 xl:w-52">
+             <div className="relative mb-2">
+               <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+               <Input
+                 value={searchQuery}
+                 onChange={(event) => setSearchQuery(event.target.value)}
+                 placeholder={t('projects.settings.hotkeys.searchPlaceholder')}
+-                className="h-8 border-white/10 bg-white/5 pl-8 pr-2 text-xs"
++                className="h-8 border-border bg-secondary pl-8 pr-2 text-xs"
+               />
+             </div>
+             {!hasSearchQuery ? (
+@@ -1077,7 +1077,7 @@ export function HotkeyEditor() {
+                       'rounded-md border px-2 py-1 text-xs font-medium transition-colors duration-150 ease-out motion-reduce:transition-none',
+                       filterMode === mode
+                         ? 'border-primary/45 bg-primary/15 text-primary'
+-                        : 'border-white/8 bg-white/4 text-muted-foreground hover:text-foreground/80',
++                        : 'border-border bg-white/4 text-muted-foreground hover:text-foreground/80',
+                     )}
+                   >
+                     {t(`projects.settings.hotkeys.filters.${mode}`)} {filterCounts[mode]}
+@@ -1107,7 +1107,7 @@ export function HotkeyEditor() {
+                               'w-full rounded-lg px-2.5 py-2 text-left transition-colors duration-150 ease-out motion-reduce:transition-none',
+                               isSelectedResult
+                                 ? 'bg-primary/15 text-primary'
+-                                : 'text-muted-foreground hover:bg-white/5 hover:text-foreground/80',
++                                : 'text-muted-foreground hover:bg-secondary hover:text-foreground/80',
+                             )}
+                           >
+                             <div className="text-[11px] font-medium leading-4 text-foreground">
+@@ -1129,7 +1129,7 @@ export function HotkeyEditor() {
+                       )
+                     })
+                   ) : (
+-                    <div className="rounded-lg border border-white/8 bg-white/4 px-2.5 py-2 text-xs leading-4 text-muted-foreground">
++                    <div className="rounded-lg border border-border bg-white/4 px-2.5 py-2 text-xs leading-4 text-muted-foreground">
+                       {t('projects.settings.hotkeys.noSearchResults')}
+                     </div>
+                   )}
+@@ -1148,12 +1148,12 @@ export function HotkeyEditor() {
+                     'rounded-lg px-3 py-2 text-left text-xs font-medium transition-colors duration-150 ease-out motion-reduce:transition-none',
+                     activeLayer === null
+                       ? 'bg-primary/15 text-primary'
+-                      : 'text-muted-foreground hover:bg-white/5 hover:text-foreground/80',
++                      : 'text-muted-foreground hover:bg-secondary hover:text-foreground/80',
+                   )}
+                 >
+                   {t('projects.settings.hotkeys.all')}
+                 </button>
+-                <div className="my-1 border-t border-white/6" />
++                <div className="my-1 border-t border-border" />
+                 {HOTKEY_EDITOR_SECTIONS.map((section) => (
+                   <button
+                     key={section.titleKey}
+@@ -1168,7 +1168,7 @@ export function HotkeyEditor() {
+                       'rounded-lg px-3 py-2 text-left text-xs font-medium transition-colors duration-150 ease-out motion-reduce:transition-none',
+                       activeLayer === section
+                         ? 'bg-primary/15 text-primary'
+-                        : 'text-muted-foreground hover:bg-white/5 hover:text-foreground/80',
++                        : 'text-muted-foreground hover:bg-secondary hover:text-foreground/80',
+                     )}
+                   >
+                     {t(section.titleKey)}
+@@ -1208,7 +1208,7 @@ export function HotkeyEditor() {
+             <div aria-live="polite" role="status" className="sr-only">
+               {liveMessage}
+             </div>
+-            <div className="border-b border-white/6 pb-3">
++            <div className="border-b border-border pb-3">
+               <div className="flex items-start justify-between gap-2">
+                 <div>
+                   <div className="text-xs text-muted-foreground">
+@@ -1225,7 +1225,7 @@ export function HotkeyEditor() {
+                 ) : null}
+               </div>
+               {selectedSection?.scopeKey ? (
+-                <div className="mt-2 flex items-center gap-1.5 rounded-md border border-white/8 bg-white/4 px-2 py-1 text-xs leading-4 text-muted-foreground">
++                <div className="mt-2 flex items-center gap-1.5 rounded-md border border-border bg-white/4 px-2 py-1 text-xs leading-4 text-muted-foreground">
+                   <span className="shrink-0 rounded-sm bg-primary/15 px-1.5 py-0.5 font-medium text-primary">
+                     {t('projects.settings.hotkeys.scopedBadge')}
+                   </span>
+@@ -1270,7 +1270,7 @@ export function HotkeyEditor() {
+                       'rounded-lg border p-2 transition-colors duration-150 ease-out motion-reduce:transition-none',
+                       selectedKey === key
+                         ? 'border-primary/35 bg-primary/8'
+-                        : 'border-white/6 bg-white/3',
++                        : 'border-border bg-white/3',
+                     )}
+                   >
+                     <div className="mb-1.5 flex items-center justify-between">
+@@ -1482,7 +1482,7 @@ export function HotkeyEditor() {
+               {t('projects.settings.hotkeys.importExportHint')}
+             </p>
+ 
+-            <div className="border-t border-white/6 pt-3">
++            <div className="border-t border-border pt-3">
+               <AlertDialog open={isResetAllDialogOpen} onOpenChange={setIsResetAllDialogOpen}>
+                 <Button
+                   variant="destructive"
+@@ -1522,7 +1522,7 @@ export function HotkeyEditor() {
+       {/* ── Command list — height animates to fit its content so the dialog
+           shrinks for short sections; tall content caps at 50vh and scrolls. ── */}
+       <motion.div
+-        className="min-h-0 overflow-hidden border-t border-white/8"
++        className="min-h-0 overflow-hidden border-t border-border"
+         initial={false}
+         animate={{ height: commandListHeight ?? 'auto' }}
+         transition={
+@@ -1625,7 +1625,7 @@ export function HotkeyEditor() {
+                     })}`
+                   : ''}
+               </div>
+-              <div className="max-h-56 space-y-1 overflow-y-auto rounded-md border border-white/8 bg-white/3 p-2">
++              <div className="max-h-56 space-y-1 overflow-y-auto rounded-md border border-border bg-white/3 p-2">
+                 {pendingImport.changes.map((change) => (
+                   <div key={change.key} className="flex items-center justify-between gap-2 text-xs">
+                     <span className="min-w-0 flex-1 truncate text-foreground/90">
+diff --git a/src/features/timeline/components/mic-record-control.tsx b/src/features/timeline/components/mic-record-control.tsx
+index 5e62e14..525284a 100644
+--- a/src/features/timeline/components/mic-record-control.tsx
++++ b/src/features/timeline/components/mic-record-control.tsx
+@@ -24,7 +24,6 @@ import {
+   DropdownMenuTrigger,
+ } from '@/components/ui/dropdown-menu'
+ import { onAudioInputDevicesChanged } from '@/infrastructure/audio/mic-recorder'
+-import { EDITOR_LAYOUT_CSS_VALUES } from '@/config/editor-layout'
+ import { useMicRecordingStore, isMicRecordingActive } from '@/shared/state/mic-recording-store'
+ import {
+   startMicRecording,
+@@ -134,7 +133,7 @@ const MicDevicePicker = memo(function MicDevicePicker({ disabled }: { disabled?:
+         <Button
+           variant="ghost"
+           size="icon"
+-          style={{ width: 20, height: EDITOR_LAYOUT_CSS_VALUES.toolbarButtonSize }}
++          className="h-8 w-5 shrink-0"
+           disabled={disabled}
+           aria-label={t('recording.chooseDevice')}
+           data-tooltip={t('recording.chooseDevice')}
+@@ -269,11 +268,6 @@ export const MicRecordControl = memo(function MicRecordControl() {
+     return null
+   }
+ 
+-  const btnSize = {
+-    width: EDITOR_LAYOUT_CSS_VALUES.toolbarButtonSize,
+-    height: EDITOR_LAYOUT_CSS_VALUES.toolbarButtonSize,
+-  } as const
+-
+   const active = isMicRecordingActive(status)
+   const isRecording = status === 'recording'
+   const isPaused = status === 'paused'
+@@ -327,32 +321,32 @@ export const MicRecordControl = memo(function MicRecordControl() {
+           <Button
+             variant="ghost"
+             size="icon"
+-            style={btnSize}
++            className="h-8 w-8 shrink-0"
+             onClick={() => (isPaused ? resumeMicRecording() : pauseMicRecording())}
+             aria-label={isPaused ? t('recording.resume') : t('recording.pause')}
+             data-tooltip={isPaused ? t('recording.resume') : t('recording.pause')}
+           >
+-            {isPaused ? <Play className="h-3.5 w-3.5" /> : <Pause className="h-3.5 w-3.5" />}
++            {isPaused ? <Play className="h-4 w-4" /> : <Pause className="h-4 w-4" />}
+           </Button>
+           <Button
+             variant="ghost"
+             size="icon"
+-            style={btnSize}
++            className="h-8 w-8 shrink-0"
+             onClick={() => void stopMicRecording()}
+             aria-label={t('recording.stop')}
+             data-tooltip={t('recording.stopTooltip')}
+           >
+-            <Square className="h-3.5 w-3.5" style={{ color: 'var(--color-destructive)' }} />
++            <Square className="h-4 w-4" style={{ color: 'var(--color-destructive)' }} />
+           </Button>
+           <Button
+             variant="ghost"
+             size="icon"
+-            style={btnSize}
++            className="h-8 w-8 shrink-0"
+             onClick={cancelMicRecording}
+             aria-label={t('recording.cancel')}
+             data-tooltip={t('recording.cancelTooltip')}
+           >
+-            <X className="h-3.5 w-3.5" />
++            <X className="h-4 w-4" />
+           </Button>
+         </>
+       )}
+diff --git a/src/features/timeline/components/timeline-header.tsx b/src/features/timeline/components/timeline-header.tsx
+index 7fe937a..312cb2b 100644
+--- a/src/features/timeline/components/timeline-header.tsx
++++ b/src/features/timeline/components/timeline-header.tsx
+@@ -133,11 +133,6 @@ const TimelineZoomControls = memo(function TimelineZoomControls({
+   const sliderZoomGestureHeldRef = useRef(false)
+   const liveZoomLevelRef = useRef(useZoomStore.getState().level)
+   const [, forceKeyboardSliderRender] = useReducer((revision: number) => revision + 1, 0)
+-  const btnSize = {
+-    width: EDITOR_LAYOUT_CSS_VALUES.toolbarButtonSize,
+-    height: EDITOR_LAYOUT_CSS_VALUES.toolbarButtonSize,
+-  } as const
+-
+   const applyZoom = useCallback(
+     (newZoom: number, synchronizeContent = false) => {
+       const clampedZoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, newZoom))
+@@ -368,12 +363,12 @@ const TimelineZoomControls = memo(function TimelineZoomControls({
+       <Button
+         variant="ghost"
+         size="icon"
+-        style={btnSize}
++        className="h-8 w-8 shrink-0"
+         onClick={onZoomOut ?? zoomOut}
+         aria-label={t('timeline.header.zoomOut')}
+         data-tooltip={t('timeline.header.zoomOutTooltip')}
+       >
+-        <ZoomOut className="w-3.5 h-3.5" />
++        <ZoomOut className="h-4 w-4" />
+       </Button>
+ 
+       <Slider
+@@ -410,23 +405,23 @@ const TimelineZoomControls = memo(function TimelineZoomControls({
+       <Button
+         variant="ghost"
+         size="icon"
+-        style={btnSize}
++        className="h-8 w-8 shrink-0"
+         onClick={onZoomIn ?? zoomIn}
+         aria-label={t('timeline.header.zoomIn')}
+         data-tooltip={t('timeline.header.zoomInTooltip')}
+       >
+-        <ZoomIn className="w-3.5 h-3.5" />
++        <ZoomIn className="h-4 w-4" />
+       </Button>
+ 
+       <Button
+         variant="ghost"
+         size="icon"
+-        style={btnSize}
++        className="h-8 w-8 shrink-0"
+         onClick={onZoomToFit}
+         aria-label={t('timeline.header.zoomToFit')}
+         data-tooltip={t('timeline.header.zoomToFitTooltip')}
+       >
+-        <Maximize2 className="w-3.5 h-3.5" />
++        <Maximize2 className="h-4 w-4" />
+       </Button>
+     </div>
+   )
+diff --git a/src/i18n/locales/en.json b/src/i18n/locales/en.json
+index 3107dc5..3b841ec 100644
+--- a/src/i18n/locales/en.json
++++ b/src/i18n/locales/en.json
+@@ -94,8 +94,6 @@
+     },
+     "general": {
+       "autoSave": "Auto-save",
+-      "interval": "Interval",
+-      "intervalMinutes": "{{count}}m",
+       "undoHistoryDepth": "Undo history",
+       "uiSounds": "Interface sounds",
+       "uiSoundVolume": "Sound volume",
+diff --git a/src/i18n/locales/partials/en/preview.json b/src/i18n/locales/partials/en/preview.json
+index b9a0260..fccc082 100644
+--- a/src/i18n/locales/partials/en/preview.json
++++ b/src/i18n/locales/partials/en/preview.json
+@@ -14,8 +14,6 @@
+       "bottom": "Align bottom",
+       "distributeH": "Space evenly across",
+       "distributeV": "Space evenly down",
+-      "disableCanvasSnap": "Snap to the frame and other clips",
+-      "enableCanvasSnap": "Snap to the frame and other clips",
+       "toggleCanvasSnap": "Snap to the frame and other clips",
+       "title": "Align in the frame"
+     },
+@@ -65,6 +63,10 @@
+       "unmute": "Unmute",
+       "volume": "Volume"
+     },
++    "scopes": {
++      "floatUnavailable": "Float capture unavailable: HDR readings may be clipped.",
++      "stale": "These readings may not match the current frame."
++    },
+     "stage": {
+       "loadingMedia": "Loading Media",
+       "videoPreview": "Video Preview",
