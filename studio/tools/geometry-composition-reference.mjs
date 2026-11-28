@@ -188,7 +188,9 @@ export function compositionSourcesFor(sourceSha256) {
     // FL-1822 the Audio, Captions and Transcript workspace tabs; changes no composition or raster producer.
     sourceSha256 === '6c5e608dea365d31407dc456b84d25e28b3ddaf8934ebd7f82dc73d7657ce677' ||
     // FL-1822 the Restore tab that opens the host's Restore panel; changes no composition or raster producer.
-    sourceSha256 === '55ddee801bdf97f445aa0ef49d0e141fdfbf2481a756e465c8f3c8fa80dbae34'
+    sourceSha256 === '55ddee801bdf97f445aa0ef49d0e141fdfbf2481a756e465c8f3c8fa80dbae34' ||
+    // FL-1822 Editor settings writes lengths in the host's locale; changes no composition or raster producer.
+    sourceSha256 === 'ef7de831f1c7ff414308192183bda29f3abb9b6d6793d1f1f7ae20ee2c2b5fec'
   )
     return {
       ...COMPOSITION_SOURCES,
