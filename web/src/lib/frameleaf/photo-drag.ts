@@ -3,14 +3,17 @@
  * the drag's data: a page may read that only on drop, and the album rows must know what is over them before.
  */
 let selection: (() => string[] | undefined) | undefined;
+let refused: (() => void) | undefined;
 let dragged: string[] | null = null;
 
 /** The grid on screen says what is selected; returns its undo, for when it leaves. */
-export const providePhotoSelection = (get: () => string[] | undefined) => {
+export const providePhotoSelection = (get: () => string[] | undefined, onRefused?: () => void) => {
   selection = get;
+  refused = onRefused;
   return () => {
     if (selection === get) {
       selection = undefined;
+      refused = undefined;
     }
   };
 };
@@ -22,6 +25,7 @@ export const startPhotoDrag = (event: DragEvent, assetId: string) => {
     // a selection that cannot be listed (every match, not all of them loaded): Add to album takes it whole
     event.preventDefault();
     dragged = null;
+    refused?.();
     return;
   }
   dragged = selected.includes(assetId) ? [...selected] : [assetId];
