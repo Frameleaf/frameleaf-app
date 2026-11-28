@@ -351,7 +351,7 @@ export function validateBaseRaster(capture, envelope, binding) {
             'e1ea739148d1305a8943d659bb67504b76764c1ab7d324cd5585126e24d68016' ||
           // FL-1822 Basic Color keeps the primaries' sliders; raster producer bytes unchanged.
           binding.sourceSha256 ===
-            'f15059d782410c013bf0de053265570b502e9a306b9fa1b6a5462cdfbd044794')),
+            'e541a40fbf2e404ace9df8dcef9a1c8d5fe7c02d4564dbcc43ff75dfb32b3c3b')),
     'SOURCE_BROWSER',
   )
   check(

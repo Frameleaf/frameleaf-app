@@ -1023,8 +1023,8 @@
     {
       "path": "patches/0225-studio-basic-color-sliders.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
-      "sha256": "9cd1066bd93cfb9d85a5e06ae8cab9d20c1e426a6e52393a1225d65cce1d7cba"
+      "sha256": "53d5a77b26fb3e42a2f19bebd65d4db3378783def06b0cb23922c065bd18683d"
     }
   ],
-  "sourceSha256": "f15059d782410c013bf0de053265570b502e9a306b9fa1b6a5462cdfbd044794"
+  "sourceSha256": "e541a40fbf2e404ace9df8dcef9a1c8d5fe7c02d4564dbcc43ff75dfb32b3c3b"
 }
