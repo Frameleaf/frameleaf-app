@@ -35,6 +35,7 @@ import {
 import { SHELL_STRINGS, type ShellString } from '@frameleaf/host/shell-strings'
 import { TIMELINE_STRINGS, type TimelineString } from '@frameleaf/host/timeline-strings'
 import { BIN_STRINGS, type BinString } from '@frameleaf/host/bin-strings'
+import { DIALOG_STRINGS, type DialogString } from '@frameleaf/host/dialog-strings'
 import {
   CLOUD_CAPTION_ENGINE_STRINGS,
   type CloudCaptionEngineString,
@@ -93,6 +94,10 @@ export const HOST_ENGINE_STRINGS = {
   ...(Object.fromEntries(
     Object.entries(BIN_STRINGS).map(([name, entry]) => [name, entry.engine]),
   ) as Record<BinString, string>),
+  // The editor's Keyboard shortcuts and Editor settings dialogs (FL-1822).
+  ...(Object.fromEntries(
+    Object.entries(DIALOG_STRINGS).map(([name, entry]) => [name, entry.engine]),
+  ) as Record<DialogString, string>),
 } as const
 
 export function applyHostEngineStrings(i18n: EngineI18n, strings: StudioHostContext['strings']): void {

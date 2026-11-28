@@ -8,6 +8,7 @@ import { ENGINE_CONTROLS_STRINGS } from '@frameleaf/host/engine-controls-strings
 import { SHELL_STRINGS } from '@frameleaf/host/shell-strings'
 import { TIMELINE_STRINGS } from '@frameleaf/host/timeline-strings'
 import { BIN_STRINGS } from '@frameleaf/host/bin-strings'
+import { DIALOG_STRINGS } from '@frameleaf/host/dialog-strings'
 import { applyHostEngineStrings } from '../src/host-engine-strings'
 
 describe('FL-450 host-translated engine messages', () => {
@@ -125,5 +126,10 @@ describe('FL-450 host-translated engine messages', () => {
   it('FL-1822: every bin string names an engine key that has English', async () => {
     await changeAppLanguage('en')
     for (const entry of Object.values(BIN_STRINGS)) expect(i18n.t(entry.engine), entry.engine).not.toBe(entry.engine)
+  })
+
+  it('FL-1822: every dialog string names an engine key that has English', async () => {
+    await changeAppLanguage('en')
+    for (const entry of Object.values(DIALOG_STRINGS)) expect(i18n.t(entry.engine), entry.engine).not.toBe(entry.engine)
   })
 })
