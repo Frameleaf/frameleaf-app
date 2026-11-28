@@ -1004,7 +1004,12 @@
       "path": "patches/0221-studio-number-locale.patch",
       "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
       "sha256": "ef0199787c818d77611d19f48d764cb65c34a9af4456d3ddc8edb63bcab0c984"
+    },
+    {
+      "path": "patches/0222-studio-title-styles.patch",
+      "upstreamCommit": "4d62e8082c5eb387a96275bcbd323d28f6e41a62",
+      "sha256": "4830f118d356eac31b4c147ef325323be6ffa152c8006b5c15f5d2e8182ce87b"
     }
   ],
-  "sourceSha256": "eb8bd3cad28c2c808ad2d64714b1e71224639d6e7006f4b9304b11d1ec697c46"
+  "sourceSha256": "fab442c9929363129ea2adc61295d7a633618aefbd8381324bbbf5b05271a5ab"
 }

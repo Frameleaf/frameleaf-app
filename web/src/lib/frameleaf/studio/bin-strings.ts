@@ -1,10 +1,10 @@
 /**
  * The words of the editor's media bin and Add panel (FL-1822): Add files and its menu, the web
  * address dialog, the Library, Project and Scenes switch, search, the type filter and sort, the view
- * toggles, the group headings, and the Add panel's chips and hints. Translated by the host, as for
- * the timeline strings (`timeline-strings.ts`): the engine speaks fewer languages than the host, so
- * the host sends its translation in `context.strings` and the adapter writes it over the engine
- * key. Several engine keys can share one host message.
+ * toggles, the group headings, and the Add panel's chips, hints and title styles. Translated by the
+ * host, as for the timeline strings (`timeline-strings.ts`): the engine speaks fewer languages than
+ * the host, so the host sends its translation in `context.strings` and the adapter writes it over
+ * the engine key. Several engine keys can share one host message.
  */
 export const BIN_STRINGS = {
   binAdd: { host: 'frameleaf_studio_bin_add', engine: 'media.library.import' },
@@ -65,6 +65,47 @@ export const BIN_STRINGS = {
   addPanelHintAnimations: {
     host: 'frameleaf_studio_add_panel_hint_animations',
     engine: 'editor.mediaSidebar.addHint.lottie',
+  },
+  addPanelTitlesSimple: {
+    host: 'frameleaf_studio_add_panel_titles_simple',
+    engine: 'editor.mediaSidebar.textGroupSimple',
+  },
+  addPanelTitlesTwoLines: {
+    host: 'frameleaf_studio_add_panel_titles_two_lines',
+    engine: 'editor.mediaSidebar.textGroupTwoLines',
+  },
+  addPanelTitlesMore: { host: 'frameleaf_studio_add_panel_titles_more', engine: 'editor.mediaSidebar.textGroupMore' },
+  addPanelTitlesLowerThird: {
+    host: 'frameleaf_studio_add_panel_titles_lower_third',
+    engine: 'editor.mediaSidebar.titleStyle.lowerThird',
+  },
+  addPanelTitlesCaptionBar: {
+    host: 'frameleaf_studio_add_panel_titles_caption_bar',
+    engine: 'editor.mediaSidebar.titleStyle.captionBar',
+  },
+  addPanelTitlesBigTitle: {
+    host: 'frameleaf_studio_add_panel_titles_big_title',
+    engine: 'editor.mediaSidebar.titleStyle.bigTitle',
+  },
+  addPanelTitlesMinimal: {
+    host: 'frameleaf_studio_add_panel_titles_minimal',
+    engine: 'editor.mediaSidebar.titleStyle.minimal',
+  },
+  addPanelTitlesNameAndPlace: {
+    host: 'frameleaf_studio_add_panel_titles_name_and_place',
+    engine: 'editor.mediaSidebar.titleStyle.nameAndPlace',
+  },
+  addPanelTitlesDateAndPlace: {
+    host: 'frameleaf_studio_add_panel_titles_date_and_place',
+    engine: 'editor.mediaSidebar.titleStyle.dateAndPlace',
+  },
+  addPanelTitlesQuote: {
+    host: 'frameleaf_studio_add_panel_titles_quote',
+    engine: 'editor.mediaSidebar.titleStyle.quote',
+  },
+  addPanelTitlesChapterCard: {
+    host: 'frameleaf_studio_add_panel_titles_chapter_card',
+    engine: 'editor.mediaSidebar.titleStyle.chapterCard',
   },
 } as const satisfies Record<string, { host: string; engine: string }>;
 

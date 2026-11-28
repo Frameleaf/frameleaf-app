@@ -1,0 +1,825 @@
+diff --git a/src/features/editor/components/media-sidebar.test.tsx b/src/features/editor/components/media-sidebar.test.tsx
+index e61cf30..a17945c 100644
+--- a/src/features/editor/components/media-sidebar.test.tsx
++++ b/src/features/editor/components/media-sidebar.test.tsx
+@@ -1,12 +1,15 @@
+ import { fireEvent, render, screen } from '@testing-library/react'
+ import { beforeEach, describe, expect, it, vi } from 'vite-plus/test'
+ import { useEditorStore } from '@/shared/state/editor'
++import { useTimelineStore } from '@/features/timeline/stores/timeline-store-facade'
+ 
+ vi.mock('@/features/editor/deps/media-library', async (importOriginal) => ({
+   ...(await importOriginal<typeof import('@/features/editor/deps/media-library')>()),
+   MediaLibrary: () => <div data-testid="media-library" />,
+ }))
+-vi.mock('./transitions-panel', () => ({ TransitionsPanel: () => <div data-testid="transitions" /> }))
++vi.mock('./transitions-panel', () => ({
++  TransitionsPanel: () => <div data-testid="transitions" />,
++}))
+ 
+ const { MediaSidebar } = await import('./media-sidebar')
+ 
+@@ -38,11 +41,16 @@ describe('Add panel (FL-1822)', () => {
+       'Animations',
+     ])
+     expect(screen.getByRole('button', { name: 'Titles' })).toHaveAttribute('aria-pressed', 'true')
+-    expect(screen.getByText('Drag a title onto the timeline, or click to add it at the playhead.')).toBeInTheDocument()
++    expect(
++      screen.getByText('Drag a title onto the timeline, or click to add it at the playhead.'),
++    ).toBeInTheDocument()
+ 
+     fireEvent.click(screen.getByRole('button', { name: 'Transitions' }))
+     expect(useEditorStore.getState().activeTab).toBe('transitions')
+-    expect(screen.getByRole('button', { name: 'Transitions' })).toHaveAttribute('aria-pressed', 'true')
++    expect(screen.getByRole('button', { name: 'Transitions' })).toHaveAttribute(
++      'aria-pressed',
++      'true',
++    )
+     expect(screen.getByTestId('transitions')).toBeInTheDocument()
+     expect(add).toHaveAttribute('aria-pressed', 'true')
+ 
+@@ -57,4 +65,36 @@ describe('Add panel (FL-1822)', () => {
+     fireEvent.click(screen.getByRole('button', { name: 'Add' }))
+     expect(useEditorStore.getState().activeTab).toBe('effects')
+   })
++  it("leads Titles with the approved Studio's calm styles and keeps every other style", () => {
++    useEditorStore.setState({ activeTab: 'text' })
++    render(<MediaSidebar />)
++    const tiles = (name: string) =>
++      [...screen.getByRole('region', { name }).querySelectorAll('button')].map(
++        (tile) => tile.lastElementChild?.textContent,
++      )
++    expect(tiles('Simple')).toEqual(['Lower third', 'Caption bar', 'Big title', 'Minimal'])
++    expect(tiles('Two lines')).toEqual([
++      'Name and place',
++      'Date and place',
++      'Quote',
++      'Chapter card',
++    ])
++    const more = tiles('More styles')
++    expect(more[0]).toBe('Add Text')
++    expect(more).toContain('Neon')
++    expect(more).not.toContain('Lower Third')
++    expect(more).not.toContain('Quote')
++    expect(more).toHaveLength(12)
++  })
++  it('names a clip added from a featured tile as the tile reads', () => {
++    useEditorStore.setState({ activeTab: 'text' })
++    render(<MediaSidebar />)
++    fireEvent.click(screen.getByRole('button', { name: 'Big title' }))
++    const added = useTimelineStore.getState().items.at(-1)
++    expect(added).toMatchObject({
++      type: 'text',
++      label: 'Big title',
++      textStylePresetId: 'big-title',
++    })
++  })
+ })
+diff --git a/src/features/editor/components/media-sidebar.tsx b/src/features/editor/components/media-sidebar.tsx
+index 0bf1199..e03d033 100644
+--- a/src/features/editor/components/media-sidebar.tsx
++++ b/src/features/editor/components/media-sidebar.tsx
+@@ -1,4 +1,4 @@
+-import { useCallback, useMemo, useRef, useEffect, memo, lazy, Suspense, useState } from 'react'
++import { useCallback, useRef, useEffect, memo, lazy, Suspense, useState } from 'react'
+ import { useTranslation } from 'react-i18next'
+ import {
+   ChevronDown,
+@@ -69,7 +69,7 @@ const LazyTranscriptEditorPanel = lazy(() =>
+ )
+ import {
+   TEXT_STYLE_PRESETS,
+-  type TextStylePresetLayout,
++  type TextStylePresetId,
+   type TextStylePreset,
+ } from '@/shared/typography/text-style-presets'
+ import {
+@@ -275,15 +275,105 @@ function renderTextTemplatePreview(preset?: TextStylePreset) {
+   )
+ }
+ 
+-const TEXT_TEMPLATE_GROUPS: ReadonlyArray<{
+-  key: TextStylePresetLayout
++// The approved Studio's titles (FL-1822): the calm styles come first, in the mock's two groups and
++// order, drawn like the other Add tiles in the clip colours; every other style follows under More
++// styles. The colours are the sample stills' (`transition-preview/frame-*.svg`).
++const FEATURED_TITLE_GROUPS: ReadonlyArray<{
+   labelKey: string
++  presets: ReadonlyArray<{ id: TextStylePresetId; labelKey: string }>
+ }> = [
+-  { key: 'single', labelKey: 'editor.mediaSidebar.textGroupSingle' },
+-  { key: 'two', labelKey: 'editor.mediaSidebar.textGroupTwoSpans' },
+-  { key: 'three', labelKey: 'editor.mediaSidebar.textGroupThreeSpans' },
++  {
++    labelKey: 'editor.mediaSidebar.textGroupSimple',
++    presets: [
++      { id: 'lower-third', labelKey: 'editor.mediaSidebar.titleStyle.lowerThird' },
++      { id: 'caption-bar', labelKey: 'editor.mediaSidebar.titleStyle.captionBar' },
++      { id: 'big-title', labelKey: 'editor.mediaSidebar.titleStyle.bigTitle' },
++      { id: 'minimal-title', labelKey: 'editor.mediaSidebar.titleStyle.minimal' },
++    ],
++  },
++  {
++    labelKey: 'editor.mediaSidebar.textGroupTwoLines',
++    presets: [
++      { id: 'name-and-place', labelKey: 'editor.mediaSidebar.titleStyle.nameAndPlace' },
++      { id: 'date-and-place', labelKey: 'editor.mediaSidebar.titleStyle.dateAndPlace' },
++      { id: 'quote', labelKey: 'editor.mediaSidebar.titleStyle.quote' },
++      { id: 'chapter-card', labelKey: 'editor.mediaSidebar.titleStyle.chapterCard' },
++    ],
++  },
+ ]
++const FEATURED_TITLE_IDS = new Set(
++  FEATURED_TITLE_GROUPS.flatMap((group) => group.presets.map((preset) => preset.id)),
++)
++const MORE_TITLE_PRESETS = TEXT_STYLE_PRESETS.filter((preset) => !FEATURED_TITLE_IDS.has(preset.id))
++
++const TITLE_ART_VIDEO = '#2a4d66'
++const TITLE_ART_TITLE = '#4f3f75'
++const TITLE_ART_INK = '#e8ecee'
+ 
++/** A featured title's tile: where its lines sit on a frame, as in the approved mock. */
++function TitleArt({ id }: { id: TextStylePresetId }) {
++  const bar = (x: number, y: number, width: number, height: number, opacity = 1) => (
++    <rect x={x} y={y} width={width} height={height} rx={1} fill={TITLE_ART_INK} opacity={opacity} />
++  )
++  const art: Partial<Record<TextStylePresetId, React.ReactNode>> = {
++    'lower-third': (
++      <>
++        {bar(8, 35, 40, 5)}
++        {bar(8, 44, 26, 3, 0.6)}
++      </>
++    ),
++    'caption-bar': (
++      <>
++        <rect y={39} width={96} height={15} fill="#000000" opacity={0.55} />
++        {bar(20, 45, 56, 3)}
++      </>
++    ),
++    'big-title': <rect x={16} y={21} width={64} height={11} rx={2} fill={TITLE_ART_INK} />,
++    'minimal-title': bar(30, 25, 36, 4),
++    'name-and-place': (
++      <>
++        {bar(8, 31, 46, 6)}
++        {bar(8, 42, 30, 3, 0.6)}
++      </>
++    ),
++    'date-and-place': (
++      <>
++        {bar(42, 31, 46, 6)}
++        {bar(58, 42, 30, 3, 0.6)}
++      </>
++    ),
++    quote: (
++      <>
++        {bar(20, 15, 56, 4)}
++        {bar(26, 24, 44, 4)}
++        {bar(36, 36, 24, 3, 0.6)}
++      </>
++    ),
++    'chapter-card': (
++      <>
++        <rect width={96} height={54} fill={TITLE_ART_TITLE} />
++        {bar(24, 21, 48, 6)}
++        {bar(34, 32, 28, 3, 0.6)}
++      </>
++    ),
++  }
++  return (
++    <svg
++      viewBox="0 0 96 54"
++      preserveAspectRatio="xMidYMid slice"
++      aria-hidden="true"
++      className="block w-full aspect-video rounded-[3px]"
++    >
++      <rect width={96} height={54} fill={TITLE_ART_VIDEO} />
++      {art[id]}
++    </svg>
++  )
++}
++
++const TITLE_TILE_CLASS =
++  'flex flex-col items-center gap-1 p-2 rounded-lg border border-border bg-secondary/30 hover:bg-secondary/50 hover:border-primary/50 transition-[transform,background-color,border-color,color] duration-150 active:scale-[0.98] group'
++const TITLE_TILE_LABEL_CLASS =
++  'text-xs leading-snug text-muted-foreground group-hover:text-foreground text-center w-full'
+ const DEFAULT_TEXT_TEMPLATE_LABEL = 'Text'
+ const ADD_TEXT_TEMPLATE_LABEL = 'Add Text'
+ 
+@@ -383,7 +473,7 @@ export const MediaSidebar = memo(function MediaSidebar() {
+   // Add text item on its own new layer at the playhead, matching what dragging
+   // the same preset onto the canvas does (minus the cursor-driven position).
+   const handleAddText = useCallback(
+-    (presetId?: (typeof TEXT_STYLE_PRESETS)[number]['id']) => {
++    (presetId?: (typeof TEXT_STYLE_PRESETS)[number]['id'], label?: string) => {
+       // Read all needed state from stores directly to avoid subscriptions
+       const { tracks, fps, addItemOnNewTrack } = useTimelineStore.getState()
+       const { activeTrackId, selectItems, setActiveTrack } = useSelectionStore.getState()
+@@ -414,7 +504,8 @@ export const MediaSidebar = memo(function MediaSidebar() {
+           canvasHeight,
+           fps,
+         },
+-        label: textStylePreset?.label,
++        // A featured tile names the clip as the tile reads, as its drag does.
++        label: label ?? textStylePreset?.label,
+         text: t('editor.textSection.defaultText'),
+         textStylePresetId: presetId,
+       })
+@@ -432,8 +523,7 @@ export const MediaSidebar = memo(function MediaSidebar() {
+     const { tracks, fps, addItemOnNewTrack } = useTimelineStore.getState()
+     const { activeTrackId, selectItems, setActiveTrack } = useSelectionStore.getState()
+     const currentProject = useProjectStore.getState().currentProject
+-    const activeCompositionId =
+-      useCompositionNavigationStore.getState().activeCompositionId
++    const activeCompositionId = useCompositionNavigationStore.getState().activeCompositionId
+     const activeComposition = activeCompositionId
+       ? useCompositionsStore.getState().getComposition(activeCompositionId)
+       : undefined
+@@ -520,28 +610,40 @@ export const MediaSidebar = memo(function MediaSidebar() {
+   const { gpuCategories, triggerPreviews } = useGpuEffectPreviewData()
+   // Which effect/preset tile is hovered — drives its live sweep animation.
+   const [hoveredEffectKey, setHoveredEffectKey] = useState<string | null>(null)
+-  const textTemplatesByLayout = useMemo(() => {
+-    const grouped = {
+-      single: [] as TextStylePreset[],
+-      two: [] as TextStylePreset[],
+-      three: [] as TextStylePreset[],
+-    }
+-
+-    for (const preset of TEXT_STYLE_PRESETS) {
+-      grouped[preset.layout].push(preset)
+-    }
+-
+-    return grouped
+-  }, [])
+ 
+   // The approved Studio's Add (FL-1822): titles, shapes, effects, transitions and animations sit
+   // behind one rail entry and switch with chips, instead of five icons of their own.
+   const addCategories = [
+-    { id: 'text' as const, icon: Type, label: t('editor.mediaSidebar.text'), hint: t('editor.mediaSidebar.addHint.text') },
+-    { id: 'shapes' as const, icon: Pentagon, label: t('editor.mediaSidebar.shapes'), hint: t('editor.mediaSidebar.addHint.shapes') },
+-    { id: 'effects' as const, icon: Layers, label: t('editor.mediaSidebar.effects'), hint: t('editor.mediaSidebar.addHint.effects') },
+-    { id: 'transitions' as const, icon: Blend, label: t('editor.mediaSidebar.transitions'), hint: t('editor.mediaSidebar.addHint.transitions') },
+-    { id: 'lottie' as const, icon: Sticker, label: t('lottieBrowser.tabLabel'), hint: t('editor.mediaSidebar.addHint.lottie') },
++    {
++      id: 'text' as const,
++      icon: Type,
++      label: t('editor.mediaSidebar.text'),
++      hint: t('editor.mediaSidebar.addHint.text'),
++    },
++    {
++      id: 'shapes' as const,
++      icon: Pentagon,
++      label: t('editor.mediaSidebar.shapes'),
++      hint: t('editor.mediaSidebar.addHint.shapes'),
++    },
++    {
++      id: 'effects' as const,
++      icon: Layers,
++      label: t('editor.mediaSidebar.effects'),
++      hint: t('editor.mediaSidebar.addHint.effects'),
++    },
++    {
++      id: 'transitions' as const,
++      icon: Blend,
++      label: t('editor.mediaSidebar.transitions'),
++      hint: t('editor.mediaSidebar.addHint.transitions'),
++    },
++    {
++      id: 'lottie' as const,
++      icon: Sticker,
++      label: t('lottieBrowser.tabLabel'),
++      hint: t('editor.mediaSidebar.addHint.lottie'),
++    },
+   ]
+   const activeAddCategory = addCategories.find((category) => category.id === activeTab)
+   const [lastAddTab, setLastAddTab] = useState<(typeof addCategories)[number]['id']>('text')
+@@ -637,20 +739,21 @@ export const MediaSidebar = memo(function MediaSidebar() {
+         {/* Category Icons */}
+         <div className="flex flex-col gap-1 py-1.5">
+           {categories.map(({ id, icon: Icon, label }) => {
+-            const isActive = (id === 'add' ? !!activeAddCategory : activeTab === id) && leftSidebarOpen
++            const isActive =
++              (id === 'add' ? !!activeAddCategory : activeTab === id) && leftSidebarOpen
+             return (
+-            <button
+-              key={id}
+-              onClick={() => {
+-                if (isActive) {
+-                  toggleLeftSidebar()
+-                } else {
+-                  if (id === 'add') openAddCategory(lastAddTab)
+-                  else setActiveTab(id)
+-                  if (!leftSidebarOpen) toggleLeftSidebar()
+-                }
+-              }}
+-              className={`
++              <button
++                key={id}
++                onClick={() => {
++                  if (isActive) {
++                    toggleLeftSidebar()
++                  } else {
++                    if (id === 'add') openAddCategory(lastAddTab)
++                    else setActiveTab(id)
++                    if (!leftSidebarOpen) toggleLeftSidebar()
++                  }
++                }}
++                className={`
+                 w-9 h-9 rounded-lg flex items-center justify-center transition-[transform,background-color,color] duration-150 active:scale-95
+                 ${
+                   isActive
+@@ -658,13 +761,13 @@ export const MediaSidebar = memo(function MediaSidebar() {
+                     : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50'
+                 }
+               `}
+-              aria-label={label}
+-              aria-pressed={isActive}
+-              data-tooltip={label}
+-              data-tooltip-side="right"
+-            >
+-              <Icon className="w-4 h-4" />
+-            </button>
++                aria-label={label}
++                aria-pressed={isActive}
++                data-tooltip={label}
++                data-tooltip-side="right"
++              >
++                <Icon className="w-4 h-4" />
++              </button>
+             )
+           })}
+         </div>
+@@ -742,7 +845,11 @@ export const MediaSidebar = memo(function MediaSidebar() {
+ 
+             {activeAddCategory && (
+               <div className="flex-shrink-0 border-b border-border px-3 pt-3 pb-3 space-y-2.5">
+-                <div className="flex flex-wrap gap-2" role="group" aria-label={t('editor.mediaSidebar.addWhat')}>
++                <div
++                  className="flex flex-wrap gap-2"
++                  role="group"
++                  aria-label={t('editor.mediaSidebar.addWhat')}
++                >
+                   {addCategories.map((category) => (
+                     <button
+                       key={category.id}
+@@ -760,7 +867,9 @@ export const MediaSidebar = memo(function MediaSidebar() {
+                     </button>
+                   ))}
+                 </div>
+-                <p className="text-xs leading-snug text-muted-foreground">{activeAddCategory.hint}</p>
++                <p className="text-xs leading-snug text-muted-foreground">
++                  {activeAddCategory.hint}
++                </p>
+               </div>
+             )}
+ 
+@@ -775,76 +884,86 @@ export const MediaSidebar = memo(function MediaSidebar() {
+             <div
+               className={`min-h-0 flex-1 overflow-y-auto p-3 ${activeTab === 'text' ? 'block' : 'hidden'}`}
+             >
+-              <div className="space-y-3">
+-                <div className="space-y-3">
++              <div className="space-y-4">
++                {FEATURED_TITLE_GROUPS.map((group) => (
++                  <section
++                    key={group.labelKey}
++                    aria-label={t(group.labelKey)}
++                    className="space-y-2"
++                  >
++                    <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
++                      {t(group.labelKey)}
++                    </div>
++                    <div className="grid grid-cols-2 gap-3">
++                      {group.presets.map(({ id, labelKey }) => (
++                        <button
++                          key={id}
++                          type="button"
++                          draggable={true}
++                          onDragStart={handleTemplateDragStart({
++                            itemType: 'text',
++                            label: t(labelKey),
++                            textStylePresetId: id,
++                          })}
++                          onDragEnd={handleTemplateDragEnd}
++                          onClick={() => {
++                            if (shouldSuppressGeneratedItemClick()) return
++                            handleAddText(id, t(labelKey))
++                          }}
++                          className={TITLE_TILE_CLASS}
++                        >
++                          <TitleArt id={id} />
++                          <span className={TITLE_TILE_LABEL_CLASS}>{t(labelKey)}</span>
++                        </button>
++                      ))}
++                    </div>
++                  </section>
++                ))}
++                <section aria-label={t('editor.mediaSidebar.textGroupMore')} className="space-y-2">
+                   <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
+-                    {t('editor.mediaSidebar.templates')}
++                    {t('editor.mediaSidebar.textGroupMore')}
+                   </div>
+-                  {TEXT_TEMPLATE_GROUPS.map((group) => {
+-                    const presets = textTemplatesByLayout[group.key]
+-                    const showAddText = group.key === 'single'
+-
+-                    if (!showAddText && presets.length === 0) {
+-                      return null
+-                    }
+-
+-                    return (
+-                      <div key={group.key} className="space-y-1.5">
+-                        <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
+-                          {t(group.labelKey)}
+-                        </div>
+-                        <div className="grid grid-cols-2 gap-3">
+-                          {showAddText ? (
+-                            <button
+-                              draggable={true}
+-                              onDragStart={handleTemplateDragStart({
+-                                itemType: 'text',
+-                                label: DEFAULT_TEXT_TEMPLATE_LABEL,
+-                              })}
+-                              onDragEnd={handleTemplateDragEnd}
+-                              onClick={() => {
+-                                if (shouldSuppressGeneratedItemClick()) return
+-                                handleAddText()
+-                              }}
+-                              className="flex flex-col items-center gap-1 p-1.5 rounded-md border border-border bg-secondary/30 hover:bg-secondary/50 hover:border-primary/50 transition-[transform,background-color,border-color,color] duration-150 active:scale-[0.98] group"
+-                            >
+-                              {renderTextTemplatePreview()}
+-                              <span className="text-xs text-muted-foreground group-hover:text-foreground text-center leading-tight w-full">
+-                                {ADD_TEXT_TEMPLATE_LABEL}
+-                              </span>
+-                            </button>
+-                          ) : null}
+-                          {presets.map((preset) => (
+-                            <button
+-                              key={preset.id}
+-                              draggable={true}
+-                              onDragStart={handleTemplateDragStart({
+-                                itemType: 'text',
+-                                label: preset.label,
+-                                textStylePresetId: preset.id,
+-                              })}
+-                              onDragEnd={handleTemplateDragEnd}
+-                              onClick={() => {
+-                                if (shouldSuppressGeneratedItemClick()) return
+-                                handleAddText(preset.id)
+-                              }}
+-                              className={cn(
+-                                'flex flex-col items-center gap-1 p-1.5 rounded-md border border-border',
+-                                'bg-secondary/30 hover:bg-secondary/50 hover:border-primary/50',
+-                                'transition-[transform,background-color,border-color,color] duration-150 active:scale-[0.98] group',
+-                              )}
+-                            >
+-                              {renderTextTemplatePreview(preset)}
+-                              <span className="text-xs text-muted-foreground group-hover:text-foreground text-center leading-tight w-full">
+-                                {preset.label}
+-                              </span>
+-                            </button>
+-                          ))}
+-                        </div>
+-                      </div>
+-                    )
+-                  })}
+-                </div>
++                  <div className="grid grid-cols-2 gap-3">
++                    <button
++                      type="button"
++                      draggable={true}
++                      onDragStart={handleTemplateDragStart({
++                        itemType: 'text',
++                        label: DEFAULT_TEXT_TEMPLATE_LABEL,
++                      })}
++                      onDragEnd={handleTemplateDragEnd}
++                      onClick={() => {
++                        if (shouldSuppressGeneratedItemClick()) return
++                        handleAddText()
++                      }}
++                      className={TITLE_TILE_CLASS}
++                    >
++                      {renderTextTemplatePreview()}
++                      <span className={TITLE_TILE_LABEL_CLASS}>{ADD_TEXT_TEMPLATE_LABEL}</span>
++                    </button>
++                    {MORE_TITLE_PRESETS.map((preset) => (
++                      <button
++                        key={preset.id}
++                        type="button"
++                        draggable={true}
++                        onDragStart={handleTemplateDragStart({
++                          itemType: 'text',
++                          label: preset.label,
++                          textStylePresetId: preset.id,
++                        })}
++                        onDragEnd={handleTemplateDragEnd}
++                        onClick={() => {
++                          if (shouldSuppressGeneratedItemClick()) return
++                          handleAddText(preset.id)
++                        }}
++                        className={TITLE_TILE_CLASS}
++                      >
++                        {renderTextTemplatePreview(preset)}
++                        <span className={TITLE_TILE_LABEL_CLASS}>{preset.label}</span>
++                      </button>
++                    ))}
++                  </div>
++                </section>
+               </div>
+             </div>
+ 
+diff --git a/src/i18n/locales/partials/en/editor.json b/src/i18n/locales/partials/en/editor.json
+index 6ea8262..9be735b 100644
+--- a/src/i18n/locales/partials/en/editor.json
++++ b/src/i18n/locales/partials/en/editor.json
+@@ -810,6 +810,19 @@
+       "textGroupSingle": "Single",
+       "textGroupTwoSpans": "2 spans",
+       "textGroupThreeSpans": "3 spans",
++      "textGroupSimple": "Simple",
++      "textGroupTwoLines": "Two lines",
++      "textGroupMore": "More styles",
++      "titleStyle": {
++        "lowerThird": "Lower third",
++        "captionBar": "Caption bar",
++        "bigTitle": "Big title",
++        "minimal": "Minimal",
++        "nameAndPlace": "Name and place",
++        "dateAndPlace": "Date and place",
++        "quote": "Quote",
++        "chapterCard": "Chapter card"
++      },
+       "addText": "Add text",
+       "pen": "Pen",
+       "penToolHint": "Draw a custom path shape with the pen tool",
+diff --git a/src/i18n/locales/partials/en/remaining-ui.json b/src/i18n/locales/partials/en/remaining-ui.json
+index 0dc4796..f00bc0e 100644
+--- a/src/i18n/locales/partials/en/remaining-ui.json
++++ b/src/i18n/locales/partials/en/remaining-ui.json
+@@ -16,6 +16,19 @@
+       "textGroupSingle": "Single",
+       "textGroupTwoSpans": "2 spans",
+       "textGroupThreeSpans": "3 spans",
++      "textGroupSimple": "Simple",
++      "textGroupTwoLines": "Two lines",
++      "textGroupMore": "More styles",
++      "titleStyle": {
++        "lowerThird": "Lower third",
++        "captionBar": "Caption bar",
++        "bigTitle": "Big title",
++        "minimal": "Minimal",
++        "nameAndPlace": "Name and place",
++        "dateAndPlace": "Date and place",
++        "quote": "Quote",
++        "chapterCard": "Chapter card"
++      },
+       "addText": "Add text",
+       "pen": "Pen",
+       "penToolHint": "Draw a custom path shape with the pen tool",
+diff --git a/src/shared/typography/text-style-preset-ids.ts b/src/shared/typography/text-style-preset-ids.ts
+index b385628..e049257 100644
+--- a/src/shared/typography/text-style-preset-ids.ts
++++ b/src/shared/typography/text-style-preset-ids.ts
+@@ -12,6 +12,13 @@ export const TEXT_STYLE_PRESET_IDS = [
+   'event-card',
+   'launch-stack',
+   'badge',
++  // The approved Studio's calmer titles (FL-1822), first in Add > Titles.
++  'caption-bar',
++  'big-title',
++  'minimal-title',
++  'name-and-place',
++  'date-and-place',
++  'chapter-card',
+ ] as const
+ 
+ export type TextStylePresetId = (typeof TEXT_STYLE_PRESET_IDS)[number]
+diff --git a/src/shared/typography/text-style-presets.ts b/src/shared/typography/text-style-presets.ts
+index 3e9f13f..d403725 100644
+--- a/src/shared/typography/text-style-presets.ts
++++ b/src/shared/typography/text-style-presets.ts
+@@ -19,6 +19,12 @@ export type TextStylePresetPreviewKind =
+   | 'launch'
+   | 'event'
+   | 'badge'
++  | 'caption-bar'
++  | 'big-title'
++  | 'minimal-title'
++  | 'name-and-place'
++  | 'date-and-place'
++  | 'chapter-card'
+ 
+ export type TextStylePresetLayout = 'single' | 'two' | 'three'
+ 
+@@ -455,6 +461,162 @@ const TEXT_STYLE_RECIPES: Record<TextStylePresetId, TextStyleRecipe> = {
+       },
+     },
+   },
++  'caption-bar': {
++    id: 'caption-bar',
++    label: 'Caption bar',
++    previewKind: 'caption-bar',
++    layout: 'single',
++    sample: { title: 'A caption for this moment' },
++    style: {
++      fontFamily: 'Inter',
++      fontWeight: 'medium',
++      fontStyle: 'normal',
++      underline: false,
++      size: { token: 'title', multiplier: 0.45 },
++      color: '#ffffff',
++      backgroundColor: '#0000008c',
++      backgroundRadius: 'none',
++      textAlign: 'center',
++      verticalAlign: 'middle',
++      lineHeight: 1.2,
++      letterSpacing: 'normal',
++      textPadding: 'md',
++      textShadow: undefined,
++      stroke: undefined,
++    },
++  },
++  'big-title': {
++    id: 'big-title',
++    label: 'Big title',
++    previewKind: 'big-title',
++    layout: 'single',
++    sample: { title: 'Our summer' },
++    style: {
++      fontFamily: 'Inter Tight',
++      fontWeight: 'bold',
++      fontStyle: 'normal',
++      underline: false,
++      size: { token: 'display' },
++      color: '#ffffff',
++      backgroundColor: undefined,
++      backgroundRadius: 'none',
++      textAlign: 'center',
++      verticalAlign: 'middle',
++      lineHeight: 0.95,
++      letterSpacing: 'tight',
++      textPadding: 'sm',
++      textShadow: {
++        token: 'md',
++        color: '#111827',
++      },
++      stroke: undefined,
++    },
++  },
++  'minimal-title': {
++    id: 'minimal-title',
++    label: 'Minimal',
++    previewKind: 'minimal-title',
++    layout: 'single',
++    sample: { title: 'A quiet moment' },
++    style: {
++      fontFamily: 'Inter',
++      fontWeight: 'normal',
++      fontStyle: 'normal',
++      underline: false,
++      size: { token: 'title', multiplier: 0.5 },
++      color: '#ffffff',
++      backgroundColor: undefined,
++      backgroundRadius: 'none',
++      textAlign: 'center',
++      verticalAlign: 'middle',
++      lineHeight: 1.1,
++      letterSpacing: 'wide',
++      textPadding: 'sm',
++      textShadow: {
++        token: 'sm',
++        color: '#000000',
++      },
++      stroke: undefined,
++    },
++  },
++  'name-and-place': {
++    id: 'name-and-place',
++    label: 'Name and place',
++    previewKind: 'name-and-place',
++    layout: 'two',
++    sample: { title: 'Name', subtitle: 'Place' },
++    style: {
++      fontFamily: 'Inter',
++      fontWeight: 'semibold',
++      fontStyle: 'normal',
++      underline: false,
++      size: { token: 'title', multiplier: 0.6 },
++      color: '#ffffff',
++      backgroundColor: undefined,
++      backgroundRadius: 'none',
++      textAlign: 'left',
++      verticalAlign: 'middle',
++      lineHeight: 1.1,
++      letterSpacing: 'normal',
++      textPadding: 'md',
++      textShadow: {
++        token: 'md',
++        color: '#030712',
++      },
++      stroke: undefined,
++    },
++  },
++  'date-and-place': {
++    id: 'date-and-place',
++    label: 'Date and place',
++    previewKind: 'date-and-place',
++    layout: 'two',
++    sample: { title: 'Date', subtitle: 'Place' },
++    style: {
++      fontFamily: 'Inter',
++      fontWeight: 'semibold',
++      fontStyle: 'normal',
++      underline: false,
++      size: { token: 'title', multiplier: 0.6 },
++      color: '#ffffff',
++      backgroundColor: undefined,
++      backgroundRadius: 'none',
++      textAlign: 'right',
++      verticalAlign: 'middle',
++      lineHeight: 1.1,
++      letterSpacing: 'normal',
++      textPadding: 'md',
++      textShadow: {
++        token: 'md',
++        color: '#030712',
++      },
++      stroke: undefined,
++    },
++  },
++  'chapter-card': {
++    id: 'chapter-card',
++    label: 'Chapter card',
++    previewKind: 'chapter-card',
++    layout: 'two',
++    sample: { title: 'Chapter one', subtitle: 'Where it begins' },
++    style: {
++      fontFamily: 'Inter Tight',
++      fontWeight: 'bold',
++      fontStyle: 'normal',
++      underline: false,
++      size: { token: 'title', multiplier: 0.7 },
++      color: '#ffffff',
++      backgroundColor: '#4f3f75',
++      backgroundRadius: 'md',
++      textAlign: 'center',
++      verticalAlign: 'middle',
++      lineHeight: 1.05,
++      letterSpacing: 'tight',
++      textPadding: 'xl',
++      textShadow: undefined,
++      stroke: undefined,
++    },
++  },
+ }
+ 
+ export const TEXT_STYLE_PRESETS: readonly TextStylePreset[] = Object.values(TEXT_STYLE_RECIPES).map(
+@@ -790,6 +952,48 @@ export function buildTextStylePresetTemplate(
+         textSpans: spans,
+       }
+     }
++    case 'name-and-place':
++    case 'date-and-place': {
++      const spans: TextSpan[] = [
++        {
++          text: preset.sample.title,
++          fontWeight: 'bold',
++        },
++        {
++          text: preset.sample.subtitle ?? 'Place',
++          fontSize: Math.max(20, Math.round(baseFontSize * 0.55)),
++          fontWeight: 'medium',
++          color: '#e5e7eb',
++        },
++      ]
++
++      return {
++        ...styles,
++        label: preset.label,
++        text: buildTemplateTextFromSpans(spans),
++        textSpans: spans,
++      }
++    }
++    case 'chapter-card': {
++      const spans: TextSpan[] = [
++        {
++          text: preset.sample.title,
++        },
++        {
++          text: preset.sample.subtitle ?? 'Where it begins',
++          fontSize: Math.max(20, Math.round(baseFontSize * 0.45)),
++          fontWeight: 'medium',
++          color: '#e5e7eb',
++        },
++      ]
++
++      return {
++        ...styles,
++        label: preset.label,
++        text: buildTemplateTextFromSpans(spans),
++        textSpans: spans,
++      }
++    }
+     case 'badge':
+       return {
+         ...styles,
