@@ -69,7 +69,7 @@ export const subfolderRulesOf = (choices: AlbumFolderChoices): Record<string, Su
 /** The folder directly inside `albumFolder` that holds `itemFolder`; '' when the item is in the album's folder itself. */
 export const subfolderOf = (itemFolder: string, albumFolder: string) => {
   const prefix = albumFolder === '/' ? '/' : `${albumFolder}/`;
-  return itemFolder.startsWith(prefix) ? itemFolder.slice(prefix.length).split('/')[0] : '';
+  return itemFolder.startsWith(prefix) ? itemFolder.slice(prefix.length).split('/', 1)[0] : '';
 };
 
 export type AlbumFolderItem = {
@@ -109,17 +109,23 @@ export const matchAlbumVersions = (items: AlbumFolderItem[], choices: AlbumFolde
     return display === 'with' || display === 'hidden';
   };
   const byName = new Map<string, AlbumFolderItem[]>();
-  for (const item of items.filter(shown)) {
+  for (const item of items) {
+    if (!shown(item)) {
+      continue;
+    }
     const key = `${item.isVideo ? 'v' : 'p'}:${fileStem(item.originalFileName)}`;
     byName.set(key, [...(byName.get(key) ?? []), item]);
   }
-  const groups = [...byName.values()].map((members) => ({ members, byTime: new Set<string>() }));
+  const groups = byName
+    .values()
+    .map((members) => ({ members, byTime: new Set<string>() }))
+    .toArray();
   // a single file whose name matched nothing joins the one group taken at the same second in another folder
   const moment = (item: AlbumFolderItem) =>
     `${item.isVideo ? 'v' : 'p'}:${Math.floor(new Date(item.takenAt).getTime() / 1000)}`;
   const atMoment = new Map<string, typeof groups>();
   for (const group of groups) {
-    for (const key of new Set(group.members.map(moment))) {
+    for (const key of new Set(group.members.map((item) => moment(item)))) {
       atMoment.set(key, [...(atMoment.get(key) ?? []), group]);
     }
   }

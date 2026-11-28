@@ -1,5 +1,4 @@
 import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
-import { chunk } from 'lodash-es';
 import {
   ExpressionBuilder,
   Kysely,
@@ -11,6 +10,7 @@ import {
   sql,
 } from 'kysely';
 import { jsonArrayFrom, jsonObjectFrom } from 'kysely/helpers/postgres';
+import { chunk } from 'lodash-es';
 import { InjectKysely } from 'nestjs-kysely';
 import type { Insertable } from 'kysely';
 import type { LockedVisibilityOptions } from 'src/utils/locked-visibility.js';
@@ -30,6 +30,7 @@ import { AlbumChangeRunStatus } from 'src/schema/tables/album-change-run.table.j
 import { AlbumTable } from 'src/schema/tables/album.table.js';
 import { AssetExifTable } from 'src/schema/tables/asset-exif.table.js';
 import { albumCoverCandidates } from 'src/utils/album-cover.js';
+import { type AlbumFolderChoices, subfolderSql } from 'src/utils/album-folders.js';
 import { albumCoverReplacement, albumNewestCover, getBestPhotoScoreTable } from 'src/utils/cover-references.js';
 import {
   anyUuid,
@@ -40,7 +41,6 @@ import {
   withHiddenContentFilter,
 } from 'src/utils/database.js';
 import { hasGoodDate } from 'src/utils/date-sanity.js';
-import { type AlbumFolderChoices, subfolderSql } from 'src/utils/album-folders.js';
 import { folderOf, isFolderPhoto } from 'src/utils/folder-albums.js';
 import { type HiddenContentQueryOptions, everyOwnersRules } from 'src/utils/hidden-content.js';
 import { libraryScopePredicate } from 'src/utils/library-scope.js';

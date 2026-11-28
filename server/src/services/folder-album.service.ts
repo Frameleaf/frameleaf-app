@@ -8,6 +8,12 @@ import { AlbumOriginField } from 'src/repositories/partner-origin.repository.js'
 import { BaseService } from 'src/services/base.service.js';
 import { queueAlbumCopies, recordAlbumEdit } from 'src/services/partner-copy.service.js';
 import {
+  type AlbumFolderChoices,
+  refreshAlbumFolderVersions,
+  resolveAlbumFolderChoices,
+  subfolderRulesOf,
+} from 'src/utils/album-folders.js';
+import {
   EVENT_FOLDER_ALBUM_OPTIONS,
   FolderAlbumOptions,
   FolderAlbumPlanNode,
@@ -19,12 +25,6 @@ import {
   planFolderAlbums,
   resolveFolderAlbumOptions,
 } from 'src/utils/folder-albums.js';
-import {
-  type AlbumFolderChoices,
-  refreshAlbumFolderVersions,
-  resolveAlbumFolderChoices,
-  subfolderRulesOf,
-} from 'src/utils/album-folders.js';
 import { isSameOrInside, normalizeImportPath } from 'src/utils/library-paths.js';
 import { getPreferences } from 'src/utils/preferences.js';
 

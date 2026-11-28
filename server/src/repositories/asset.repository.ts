@@ -18,7 +18,6 @@ import { createHash, randomUUID } from 'node:crypto';
 import type { Updateable } from 'kysely';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import type { SearchFilter } from 'src/dtos/search.dto.js';
-import { type AlbumFolderView, albumFolderPredicate, albumVersionCount } from 'src/utils/album-folders.js';
 import type { CameraIdentification } from 'src/utils/camera-identification.js';
 import type { FontFacts } from 'src/utils/font-file.js';
 import type { HiddenContentFilter, HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
@@ -64,6 +63,7 @@ import { AssetFileTable } from 'src/schema/tables/asset-file.table.js';
 import { AssetJobStatusTable } from 'src/schema/tables/asset-job-status.table.js';
 import { AssetMetadataTable } from 'src/schema/tables/asset-metadata.table.js';
 import { AssetTable } from 'src/schema/tables/asset.table.js';
+import { type AlbumFolderView, albumFolderPredicate, albumVersionCount } from 'src/utils/album-folders.js';
 import { getLivePhotoMotion } from 'src/utils/asset.util.js';
 import { releaseLockedCoverReferences } from 'src/utils/cover-references.js';
 import {

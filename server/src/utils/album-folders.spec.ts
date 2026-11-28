@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   AlbumFolderItem,
-  albumFolderView,
   DEFAULT_ALBUM_FOLDER_CHOICES,
+  albumFolderView,
   fileStem,
   folderDisplay,
   matchAlbumVersions,
@@ -10,7 +10,7 @@ import {
   subfolderOf,
   subfolderRulesOf,
 } from 'src/utils/album-folders.js';
-import { EVENT_FOLDER_ALBUM_OPTIONS, planFolderAlbums } from 'src/utils/folder-albums.js';
+import { EVENT_FOLDER_ALBUM_OPTIONS, type SubfolderRule, planFolderAlbums } from 'src/utils/folder-albums.js';
 
 const at = '2026-11-19T10:00:00.000Z';
 const item = (
@@ -128,9 +128,9 @@ describe('album folders', () => {
       { folderPath: '/p/B/Edits', photos: 2 },
       { folderPath: '/p/B/RAW', photos: 2 },
     ];
-    const rules = new Map([
-      ['/p/A', { edits: 'join' as const }],
-      ['/p/B', { raw: 'own' as const }],
+    const rules = new Map<string, Record<string, SubfolderRule>>([
+      ['/p/A', { edits: 'join' }],
+      ['/p/B', { raw: 'own' }],
     ]);
     const plan = planFolderAlbums(['/p'], counts, EVENT_FOLDER_ALBUM_OPTIONS, 'Lib', rules);
     expect(plan.get('/p/A')?.members.toSorted()).toEqual(['/p/A/Edits', '/p/A/Original']);

@@ -18,11 +18,9 @@ import { OnEvent } from 'src/decorators.js';
 import {
   ALBUM_FOLDER_SECTION_ITEMS,
   AddUsersDto,
+  AlbumDescendantCountResponseDto,
   AlbumFoldersResponseDto,
   AlbumFoldersUpdateDto,
-  AlbumVersionsDto,
-  AlbumVersionsResponseDto,
-  AlbumDescendantCountResponseDto,
   AlbumHierarchyResponseDto,
   AlbumIconCatalogueResponseDto,
   AlbumOrderDto,
@@ -35,6 +33,8 @@ import {
   AlbumStatsDto,
   AlbumStatsResponseDto,
   AlbumTreeResponseDto,
+  AlbumVersionsDto,
+  AlbumVersionsResponseDto,
   AlbumViewDto,
   AlbumsAddAssetsDto,
   AlbumsAddAssetsResponseDto,
@@ -72,6 +72,13 @@ import {
   recordAssetEdit,
 } from 'src/services/partner-copy.service.js';
 import {
+  folderDisplay,
+  refreshAlbumFolderVersions,
+  resolveAlbumFolderChoices,
+  subfolderOf,
+  subfolderRulesOf,
+} from 'src/utils/album-folders.js';
+import {
   AlbumTreeOf,
   albumOrderGroup,
   buildAlbumHierarchy,
@@ -79,17 +86,10 @@ import {
   flattenAlbumHierarchy,
   orderAlbumTree,
 } from 'src/utils/album-tree.js';
-import {
-  folderDisplay,
-  refreshAlbumFolderVersions,
-  resolveAlbumFolderChoices,
-  subfolderOf,
-  subfolderRulesOf,
-} from 'src/utils/album-folders.js';
-import { resolveFolderAlbumOptions } from 'src/utils/folder-albums.js';
 import { albumViewerKey } from 'src/utils/album-viewer-key.js';
 import { addAssets, removeAssets } from 'src/utils/asset.util.js';
 import { asDateTimeString } from 'src/utils/date.js';
+import { resolveFolderAlbumOptions } from 'src/utils/folder-albums.js';
 import {
   everyOwnersRules,
   getHiddenContentQueryOptions,

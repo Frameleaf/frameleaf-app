@@ -43,7 +43,6 @@ import { ActivityTable } from 'src/schema/tables/activity.table.js';
 import { AdminAuditEventTable } from 'src/schema/tables/admin-audit-event.table.js';
 import { AlbumAssetAuditTable } from 'src/schema/tables/album-asset-audit.table.js';
 import { AlbumAssetTable } from 'src/schema/tables/album-asset.table.js';
-import { AlbumFolderVersionTable } from 'src/schema/tables/album-folder-version.table.js';
 import { AlbumAuditTable } from 'src/schema/tables/album-audit.table.js';
 import { AlbumBookmarkTable } from 'src/schema/tables/album-bookmark.table.js';
 import { AlbumChangeRunTable } from 'src/schema/tables/album-change-run.table.js';
@@ -51,6 +50,7 @@ import { AlbumChangeTable } from 'src/schema/tables/album-change.table.js';
 import { AlbumCleanupApplyTable } from 'src/schema/tables/album-cleanup-apply.table.js';
 import { AlbumCleanupSnapshotTable } from 'src/schema/tables/album-cleanup-snapshot.table.js';
 import { AlbumClosureTable } from 'src/schema/tables/album-closure.table.js';
+import { AlbumFolderVersionTable } from 'src/schema/tables/album-folder-version.table.js';
 import { AlbumRecentUseTable } from 'src/schema/tables/album-recent-use.table.js';
 import {
   AlbumSuggestionAutoAddTable,

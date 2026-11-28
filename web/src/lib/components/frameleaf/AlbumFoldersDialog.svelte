@@ -47,7 +47,7 @@
   const preferOrder = (saved: string[]) => {
     const names = folders.folders.map(({ name }) => name);
     const known = saved.filter((name) => names.some((each) => each.toLowerCase() === name.toLowerCase()));
-    return [...known, ...names.filter((name) => !known.some((each) => each.toLowerCase() === name.toLowerCase()))];
+    return [...known, ...names.filter((name) => known.every((each) => each.toLowerCase() !== name.toLowerCase()))];
   };
 
   $effect(() => {
@@ -83,6 +83,19 @@
     { value: AlbumFolderDisplay.Section, label: $t('frameleaf_album_folders_section') },
     { value: AlbumFolderDisplay.Album, label: $t('frameleaf_album_folders_album') },
     { value: AlbumFolderDisplay.Hidden, label: $t('frameleaf_album_folders_hidden_option') },
+  ]);
+
+  const versionChoices = $derived([
+    {
+      id: AlbumFolderVersions.One,
+      label: $t('frameleaf_album_folders_once'),
+      body: $t('frameleaf_album_folders_once_body'),
+    },
+    {
+      id: AlbumFolderVersions.Each,
+      label: $t('frameleaf_album_folders_each'),
+      body: $t('frameleaf_album_folders_each_body'),
+    },
   ]);
 
   const move = (index: number, by: number) => {
@@ -151,12 +164,12 @@
         : $t('frameleaf_album_folders_matched_none')}
     </p>
     <div class="choices" role="radiogroup" aria-label={$t('frameleaf_album_folders_versions_title')}>
-      {#each [{ id: AlbumFolderVersions.One, label: 'frameleaf_album_folders_once', body: 'frameleaf_album_folders_once_body' }, { id: AlbumFolderVersions.Each, label: 'frameleaf_album_folders_each', body: 'frameleaf_album_folders_each_body' }] as choice (choice.id)}
+      {#each versionChoices as choice (choice.id)}
         <label class="choice" class:is-on={versions === choice.id}>
           <input type="radio" name={`${groupId}-versions`} value={choice.id} bind:group={versions} />
           <span>
-            <strong>{$t(choice.label)}</strong>
-            <small>{$t(choice.body)}</small>
+            <strong>{choice.label}</strong>
+            <small>{choice.body}</small>
           </span>
         </label>
       {/each}
