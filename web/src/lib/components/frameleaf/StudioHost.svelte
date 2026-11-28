@@ -57,7 +57,6 @@
   import {
     mdiAlertCircleOutline,
     mdiArrowLeft,
-    mdiAutoFix,
     mdiCheckCircle,
     mdiClose,
     mdiCloudOffOutline,
@@ -77,6 +76,7 @@
   import Skeleton from '$lib/components/frameleaf/Skeleton.svelte';
   import Spinner from '$lib/components/frameleaf/Spinner.svelte';
   import { pop, reveal } from '$lib/frameleaf/motion';
+  import { rovingFocus } from '$lib/frameleaf/roving-focus';
   import { ICON_SIZE } from '$lib/frameleaf/tokens';
   import {
     studioDockClearance,
@@ -183,7 +183,7 @@
     onCloudReceipts,
     onExport,
     onRename,
-    mode = 'basic',
+    mode = $bindable<StudioWorkspaceMode>('basic'),
     workspace,
     opening = null,
     exportJob = null,
@@ -361,10 +361,14 @@
     historyOpen = !historyOpen;
     restoreOpen = false;
   };
-  const toggleRestore = () => {
-    restoreOpen = !restoreOpen;
-    historyOpen = false;
-  };
+  /** Basic or Advanced (the approved Studio's header switch); the editor shows its advanced tools in Advanced. */
+  const modes: {
+    value: StudioWorkspaceMode;
+    label: 'frameleaf_studio_mode_basic' | 'frameleaf_studio_mode_advanced';
+  }[] = [
+    { value: 'basic', label: 'frameleaf_studio_mode_basic' },
+    { value: 'advanced', label: 'frameleaf_studio_mode_advanced' },
+  ];
   /** The note about edits waiting in the quick editor is said once; dismissing it lasts for this visit. */
   let quickEditNoteDismissed = $state(false);
   const showQuickEditNote = $derived(
@@ -949,6 +953,20 @@
       {/if}
 
       {#if editorUp}
+        <div class="fl-studio-mode" role="radiogroup" use:rovingFocus aria-label={$t('frameleaf_studio_mode_label')}>
+          {#each modes as item (item.value)}
+            <button
+              type="button"
+              role="radio"
+              aria-checked={mode === item.value}
+              class:is-on={mode === item.value}
+              onclick={() => (mode = item.value)}
+            >
+              {$t(item.label)}
+            </button>
+          {/each}
+        </div>
+
         <span class="fl-studio-editor-as">
           {#if auth.avatarUrl}
             <img class="fl-studio-avatar" src={auth.avatarUrl} alt="" />
@@ -990,18 +1008,7 @@
         </Button>
       {/if}
 
-      {#if editorUp && onUseRestoration && !accessLost}
-        <Button
-          variant="quiet"
-          pressed={restoreOpen}
-          label={$t('frameleaf_studio_restore_title')}
-          onclick={toggleRestore}
-        >
-          <Icon icon={mdiAutoFix} size={ICON_SIZE.md} />
-          <span class="fl-studio-label">{$t('frameleaf_studio_restore_title')}</span>
-        </Button>
-      {/if}
-
+      <!-- Restore is the editor's last tab (FL-1822), which opens the same panel. -->
       {#if editorUp && onExport && !accessLost}
         <Button variant="primary" onclick={onExport}>
           <Icon icon={mdiExportVariant} size={ICON_SIZE.md} />
@@ -1409,6 +1416,36 @@
     border-color: color-mix(in srgb, var(--fl-text) 28%, var(--fl-border));
   }
   /* A person's round avatar (people photos are the squircles), as `PersonAvatar` draws it. */
+  /* The approved Studio's `.fls-mode`: a two-segment control. */
+  .fl-studio-mode {
+    display: inline-flex;
+    flex-shrink: 0;
+    padding: 2px;
+    border: 1px solid var(--fl-border);
+    border-radius: 999px;
+    background: var(--fl-canvas);
+  }
+  .fl-studio-mode button {
+    min-height: 26px;
+    padding: 0 0.75rem;
+    border: 0;
+    border-radius: 999px;
+    background: transparent;
+    color: var(--fl-muted);
+    font: inherit;
+    font-size: 0.8125rem;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+  .fl-studio-mode button.is-on {
+    background: var(--fl-panel);
+    color: var(--fl-text);
+    box-shadow: var(--fl-shadow-1);
+  }
+  .fl-studio-mode button:focus-visible {
+    outline: var(--fl-focus-ring);
+    outline-offset: var(--fl-focus-offset);
+  }
   .fl-studio-avatar {
     display: inline-grid;
     place-items: center;

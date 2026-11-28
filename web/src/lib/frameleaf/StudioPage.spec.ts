@@ -227,11 +227,18 @@ describe('Studio header (September 24 prototype, Studio.jsx:2584-2647)', () => {
     expect(onOpenActivity).toHaveBeenCalled();
   });
 
-  it('offers no Basic and Advanced switch while the editor does not read it, and still hands the value on', async () => {
+  it('offers Basic and Advanced once the editor is up and hands the choice on (FL-1822)', async () => {
     const engine = await renderReady({ mode: 'advanced' });
-    expect(screen.queryByRole('radiogroup', { name: 'frameleaf_studio_mode_label' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('radio', { name: 'frameleaf_studio_mode_advanced' })).not.toBeInTheDocument();
+    expect(screen.getByRole('radiogroup', { name: 'frameleaf_studio_mode_label' })).toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: 'frameleaf_studio_mode_advanced' })).toHaveAttribute(
+      'aria-checked',
+      'true',
+    );
     expect(engine.contexts[0].mode).toBe('advanced');
+
+    await fireEvent.click(screen.getByRole('radio', { name: 'frameleaf_studio_mode_basic' }));
+    expect(screen.getByRole('radio', { name: 'frameleaf_studio_mode_basic' })).toHaveAttribute('aria-checked', 'true');
+    await waitFor(() => expect(engine.update).toHaveBeenLastCalledWith(expect.objectContaining({ mode: 'basic' })));
   });
 
   it('shows the project, its save state and who is editing once the editor is up', async () => {
@@ -462,24 +469,22 @@ describe('Studio route, engine absent', () => {
     expect(screen.queryByTestId('studio-unsupported-sources')).not.toBeInTheDocument();
   });
 
-  it('offers the Restore tab only when the route wires it, and opens it as a drawer (FL-115)', async () => {
-    const { unmount } = render(StudioHost, { ...baseProps(), loadEngine: loadStudioEngine });
+  it("opens Restore as a drawer from the editor's Restore tab, not a header button (FL-115, FL-1822)", async () => {
+    // The editor's Restore tab asks the route, which hands the drawer a request.
+    await renderReady({
+      onUseRestoration: vi.fn(),
+      restoreRequest: { assetId: null, focus: 'restore' as const, nonce: 1 },
+    });
+    // Restore is the editor's last tab; the header no longer repeats it.
     expect(screen.queryByRole('button', { name: 'frameleaf_studio_restore_title' })).not.toBeInTheDocument();
-    unmount();
-
-    await renderReady({ onUseRestoration: vi.fn() });
-    const toggle = screen.getByRole('button', { name: 'frameleaf_studio_restore_title' });
-    toggle.focus();
-    await fireEvent.click(toggle);
-    const panel = screen.getByTestId('studio-restore-panel');
+    const panel = await screen.findByTestId('studio-restore-panel');
     // this project has no library photo or video yet, so there is nothing to restore
     expect(panel).toHaveTextContent('frameleaf_studio_restore_no_sources');
 
-    // A drawer takes focus when it opens, closes on Escape, and gives focus back to its button.
+    // A drawer takes focus when it opens and closes on Escape.
     expect(panel).toContainElement(document.activeElement as HTMLElement);
     await fireEvent.keyDown(document.activeElement as HTMLElement, { key: 'Escape' });
     await waitFor(() => expect(screen.queryByTestId('studio-restore-panel')).not.toBeInTheDocument());
-    expect(toggle).toHaveFocus();
   });
 
   it('opens the Restore tab when a command sends a Frameleaf Cloud job there to confirm (FL-162)', () => {
@@ -492,9 +497,15 @@ describe('Studio route, engine absent', () => {
     expect(screen.getByTestId('studio-restore-panel')).toBeInTheDocument();
   });
 
-  it('withdraws the Restore tab once the session loses the project', () => {
-    render(StudioHost, { ...baseProps(), onUseRestoration: vi.fn(), accessLost: true, loadEngine: loadStudioEngine });
-    expect(screen.queryByRole('button', { name: 'frameleaf_studio_restore_title' })).not.toBeInTheDocument();
+  it('withdraws the Restore drawer once the session loses the project', () => {
+    render(StudioHost, {
+      ...baseProps(),
+      onUseRestoration: vi.fn(),
+      accessLost: true,
+      restoreRequest: { assetId: null, focus: 'restore' as const, nonce: 1 },
+      loadEngine: loadStudioEngine,
+    });
+    expect(screen.queryByTestId('studio-restore-panel')).not.toBeInTheDocument();
   });
 
   it('offers no Activity link while there is no Activity route to open', () => {

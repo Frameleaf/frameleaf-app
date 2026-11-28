@@ -50,7 +50,7 @@ test.describe('Studio', () => {
     // No render worker is admitted in the e2e stack; what is missing is listed for whoever runs the server.
     await page.getByText('Details for your administrator', { exact: true }).click();
     await expect(page.getByRole('list', { name: 'Details for your administrator' })).toBeVisible();
-    // The editor does not read a Basic or Advanced choice yet, so no switch is offered.
+    // Basic and Advanced belong to a running editor, so the unavailable state offers no switch.
     await expect(page.getByRole('radiogroup', { name: 'Editing mode' })).toHaveCount(0);
   });
 

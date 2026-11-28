@@ -54,6 +54,7 @@
   import {
     emptyStudioCapabilities,
     type StudioAuthContext,
+    type StudioWorkspaceMode,
     type StudioCommandEngine,
     type StudioDraftResult,
     type StudioHostServices,
@@ -708,6 +709,32 @@
    * the job is estimated and confirmed on its own; Use in Studio adds a finished version to the bin.
    */
   let restoreRequest = $state<{ assetId: string | null; focus: StudioRestoreFocus; nonce: number } | null>(null);
+  /**
+   * Basic or Advanced (the approved Studio's header switch, FL-1822), remembered per project in this
+   * browser. Basic is the start, as in the approved Studio; Advanced shows the editor's advanced tools.
+   */
+  const modeKey = $derived(`frameleaf.studio.mode.${project.id}`);
+  let mode = $state<StudioWorkspaceMode>('basic');
+  $effect(() => {
+    const key = modeKey;
+    untrack(() => {
+      try {
+        mode = globalThis.localStorage?.getItem(key) === 'advanced' ? 'advanced' : 'basic';
+      } catch {
+        mode = 'basic';
+      }
+    });
+  });
+  $effect(() => {
+    const value = mode;
+    const key = untrack(() => modeKey);
+    try {
+      globalThis.localStorage?.setItem(key, value);
+    } catch {
+      // A private window without storage keeps the choice for this page only.
+    }
+  });
+
   const openRestore = (assetId: string | null, focus: StudioRestoreFocus) => {
     restoreRequest = { assetId, focus, nonce: (restoreRequest?.nonce ?? 0) + 1 };
   };
@@ -2001,6 +2028,7 @@
   {unavailableRestorations}
   onUseRestoration={accessLost || forbidden ? undefined : onUseRestoration}
   {restoreRequest}
+  bind:mode
   unsupportedSources={sessionState?.resources?.unsupportedSources ?? []}
   {session}
   {saveStatus}
