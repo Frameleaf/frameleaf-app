@@ -1,0 +1,487 @@
+diff --git a/src/features/effects/components/color-grade-section.test.tsx b/src/features/effects/components/color-grade-section.test.tsx
+index 47bc4ee..ae91a1c 100644
+--- a/src/features/effects/components/color-grade-section.test.tsx
++++ b/src/features/effects/components/color-grade-section.test.tsx
+@@ -1,3 +1,4 @@
++import { getGpuEffectKeyframeProperty } from '../utils/effect-keyframes'
+ import { fireEvent, render, screen } from '@testing-library/react'
+ import { beforeEach, describe, expect, it, vi } from 'vite-plus/test'
+ import { useEditorStore } from '@/shared/state/editor'
+@@ -43,8 +44,9 @@ vi.mock('@/features/effects/deps/preview-contract', () => ({
+   useThrottledFrame: () => 12,
+ }))
+ 
++const keyframesByItemId = vi.hoisted(() => ({ current: new Map() }))
+ vi.mock('../hooks/use-keyframes-by-item-id', () => ({
+-  useKeyframesByItemId: () => new Map(),
++  useKeyframesByItemId: () => keyframesByItemId.current,
+ }))
+ 
+ vi.mock('../stores/user-presets-store', () => {
+@@ -57,14 +59,20 @@ vi.mock('../stores/user-presets-store', () => {
+ vi.mock('./panels', () => ({
+   GpuWheelsPanel: ({
+     effect,
++    hideWheels,
+     onParamsBatchChange,
+     onParamsBatchLiveChange,
+   }: {
+     effect: ItemEffect
++    hideWheels?: boolean
+     onParamsBatchChange: (effectId: string, updates: Record<string, number>) => void
+     onParamsBatchLiveChange: (effectId: string, updates: Record<string, number>) => void
+   }) => (
+-    <div data-testid="wheels-panel" data-effect-id={effect.id}>
++    <div
++      data-testid="wheels-panel"
++      data-effect-id={effect.id}
++      data-hide-wheels={hideWheels ? 'true' : 'false'}
++    >
+       <button type="button" onClick={() => onParamsBatchLiveChange(effect.id, { lift: 0.1 })}>
+         live wheels
+       </button>
+@@ -112,11 +120,11 @@ describe('ColorGradeSection', () => {
+     mocks.gizmoState.colorGradeComparisonMode = 'off'
+   })
+ 
+-  it("hides the wheels and curves in a host's Basic mode and keeps the grade actions (FL-1822)", () => {
++  it("keeps the sliders but hides the wheels and curves in a host's Basic mode (FL-1822)", () => {
+     useEditorStore.setState({ advancedTools: false })
+     try {
+       render(<ColorGradeSection items={[makeVideoItem()]} layout="dock" />)
+-      expect(screen.queryByTestId('wheels-panel')).toBeNull()
++      expect(screen.getByTestId('wheels-panel')).toHaveAttribute('data-hide-wheels', 'true')
+       expect(screen.queryByTestId('curves-panel')).toBeNull()
+       expect(screen.getByRole('button', { name: 'Copy grade' })).toBeInTheDocument()
+     } finally {
+@@ -131,17 +139,71 @@ describe('ColorGradeSection', () => {
+         {
+           id: 'wheels-1',
+           enabled: true,
+-          effect: { type: 'gpu-effect', gpuEffectType: 'gpu-color-wheels', params: {} },
++          effect: { type: 'gpu-effect', gpuEffectType: 'gpu-color-wheels', params: { lift: 0.1 } },
++        } as ItemEffect,
++        {
++          id: 'curves-1',
++          enabled: true,
++          effect: { type: 'gpu-effect', gpuEffectType: 'gpu-curves', params: {} },
+         } as ItemEffect,
+       ])
+       render(<ColorGradeSection items={[graded]} layout="dock" />)
+-      expect(screen.getByTestId('wheels-panel')).toBeInTheDocument()
++      expect(screen.getByTestId('wheels-panel')).toHaveAttribute('data-hide-wheels', 'false')
+       expect(screen.getByTestId('curves-panel')).toBeInTheDocument()
+     } finally {
+       useEditorStore.setState({ advancedTools: true })
+     }
+   })
+ 
++  it('keeps animated wheels in Basic even when their base value is the default (FL-1822)', () => {
++    useEditorStore.setState({ advancedTools: false })
++    const wheels = {
++      id: 'wheels-1',
++      enabled: true,
++      effect: { type: 'gpu-effect', gpuEffectType: 'gpu-color-wheels', params: {} },
++    } as ItemEffect
++    const animated = makeVideoItem([wheels])
++    const property = getGpuEffectKeyframeProperty(wheels, 'lift')
++    keyframesByItemId.current = new Map([
++      [
++        animated.id,
++        {
++          itemId: animated.id,
++          properties: [{ property, keyframes: [{ id: 'k1', frame: 0, value: 0.2 }] }],
++        },
++      ],
++    ])
++    try {
++      render(<ColorGradeSection items={[animated]} layout="dock" />)
++      expect(screen.getByTestId('wheels-panel')).toHaveAttribute('data-hide-wheels', 'false')
++    } finally {
++      keyframesByItemId.current = new Map()
++      useEditorStore.setState({ advancedTools: true })
++    }
++  })
++
++  it('keeps the wheels hidden in Basic when only a slider was moved (FL-1822)', () => {
++    useEditorStore.setState({ advancedTools: false })
++    try {
++      const warmed = makeVideoItem([
++        {
++          id: 'wheels-1',
++          enabled: true,
++          effect: {
++            type: 'gpu-effect',
++            gpuEffectType: 'gpu-color-wheels',
++            params: { temperature: 0.2 },
++          },
++        } as ItemEffect,
++      ])
++      render(<ColorGradeSection items={[warmed]} layout="dock" />)
++      expect(screen.getByTestId('wheels-panel')).toHaveAttribute('data-hide-wheels', 'true')
++      expect(screen.queryByTestId('curves-panel')).toBeNull()
++    } finally {
++      useEditorStore.setState({ advancedTools: true })
++    }
++  })
++
+   it('keeps copy and paste grade actions visible in the color panel', () => {
+     render(<ColorGradeSection items={[makeVideoItem()]} />)
+ 
+diff --git a/src/features/effects/components/color-grade-section.tsx b/src/features/effects/components/color-grade-section.tsx
+index d36e345..276fd30 100644
+--- a/src/features/effects/components/color-grade-section.tsx
++++ b/src/features/effects/components/color-grade-section.tsx
+@@ -21,6 +21,7 @@ import { useEditorStore } from '@/shared/state/editor'
+ import { PropertySection } from '@/shared/ui/property-controls'
+ import { cn } from '@/shared/ui/cn'
+ import { GpuWheelsPanel, GpuCurvesPanel } from './panels'
++import { COLOR_WHEEL_PARAM_KEYS } from './panels/color-wheel-param-keys'
+ import {
+   getGpuEffect,
+   getGpuEffectDefaultParams,
+@@ -130,8 +131,9 @@ function DockPane({ className, children }: { className?: string; children: React
+  * for the selected clip — no "Add Effect" ceremony. When the clip has no
+  * grade yet, the panels render at defaults and the underlying effect is
+  * created lazily on the first adjustment (live drags preview through the
+- * gizmo effects-preview path before the effect exists). The wheels and curves are advanced tools
+- * (FL-1822): in a host's Basic mode the section keeps compare, the grade actions and presets.
++ * gizmo effects-preview path before the effect exists). The colour wheels and curves are advanced
++ * tools (FL-1822): in a host's Basic mode the section keeps compare, the grade actions, presets and
++ * the primaries' sliders, and shows the wheels or curves only for a clip already using them.
+  */
+ export const ColorGradeSection = memo(function ColorGradeSection({
+   items,
+@@ -181,11 +183,33 @@ export const ColorGradeSection = memo(function ColorGradeSection({
+     return entries
+   }, [displayItem])
+ 
+-  // Basic hides the wheels and curves (FL-1822), except on a clip already graded with them, so a
+-  // grade made in Advanced can still be seen, changed or reset.
+-  const showGradePanels =
++  // Basic keeps the wheel panel's sliders, as the approved Studio's Basic keeps its Adjust sliders,
++  // and hides the colour wheels and curves (FL-1822), except on a clip already graded with them, so
++  // a grade made in Advanced can still be seen, changed or reset.
++  const existingWheels = displayItem ? findGradeEntry(displayItem, 'gpu-color-wheels') : undefined
++  const wheelDefaults = getGpuEffectDefaultParams('gpu-color-wheels')
++  const displayKeyframes = displayItem ? keyframesByItemId.get(displayItem.id) : undefined
++  // A wheel counts as used when its base value moved or it has a keyframe lane: animated edits go
++  // to the keyframes and leave the base value at its default.
++  const usesWheels =
++    existingWheels?.effect.type === 'gpu-effect' &&
++    COLOR_WHEEL_PARAM_KEYS.some((key) => {
++      if (existingWheels.effect.type !== 'gpu-effect') return false
++      const value = existingWheels.effect.params[key]
++      if (value !== undefined && value !== wheelDefaults[key]) return true
++      const property = getGpuEffectKeyframeProperty(existingWheels, key)
++      return (
++        property !== null &&
++        (displayKeyframes?.properties.some(
++          (lane) => lane.property === property && lane.keyframes.length > 0,
++        ) ??
++          false)
++      )
++    })
++  const showCurves =
+     advancedTools ||
+-    (displayItem !== null && GRADE_EFFECT_TYPES.some((type) => findGradeEntry(displayItem, type)))
++    (displayItem !== null && findGradeEntry(displayItem, 'gpu-curves') !== undefined)
++  const hideWheels = !advancedTools && !usesWheels
+ 
+   const resolveGradeType = useCallback(
+     (effectId: string): GradeEffectType | null => {
+@@ -674,6 +698,7 @@ export const ColorGradeSection = memo(function ColorGradeSection({
+       gpuEffect={wheelsGpuEffect}
+       definition={wheelsDefinition}
+       layout={layout}
++      hideWheels={hideWheels}
+       getKeyframeProperty={getKeyframeProperty}
+       onParamChange={handleParamChange}
+       onParamLiveChange={handleParamLiveChange}
+@@ -716,12 +741,17 @@ export const ColorGradeSection = memo(function ColorGradeSection({
+         </div>
+         {presetNameInput}
+         {gradeGallery}
+-        {showGradePanels && (
+-          <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1.5fr)_minmax(0,0.5fr)]">
+-            <DockPane className="border-r border-border/70">{wheelsPanel}</DockPane>
+-            <DockPane>{curvesPanel}</DockPane>
+-          </div>
+-        )}
++        <div
++          className={cn(
++            'grid min-h-0 flex-1',
++            showCurves ? 'grid-cols-[minmax(0,1.5fr)_minmax(0,0.5fr)]' : 'grid-cols-1',
++          )}
++        >
++          <DockPane className={cn(showCurves && 'border-r border-border/70')}>
++            {wheelsPanel}
++          </DockPane>
++          {showCurves && <DockPane>{curvesPanel}</DockPane>}
++        </div>
+       </div>
+     )
+   }
+@@ -736,12 +766,10 @@ export const ColorGradeSection = memo(function ColorGradeSection({
+ 
+       {gradeGallery}
+ 
+-      {showGradePanels && (
+-        <div className="space-y-0">
+-          {wheelsPanel}
+-          {curvesPanel}
+-        </div>
+-      )}
++      <div className="space-y-0">
++        {wheelsPanel}
++        {showCurves && curvesPanel}
++      </div>
+     </PropertySection>
+   )
+ })
+diff --git a/src/features/effects/components/panels/color-wheel-param-keys.ts b/src/features/effects/components/panels/color-wheel-param-keys.ts
+new file mode 100644
+index 0000000..c3b7f4b
+--- /dev/null
++++ b/src/features/effects/components/panels/color-wheel-param-keys.ts
+@@ -0,0 +1,18 @@
++/**
++ * The colour wheels' own parameters (lift, gamma, gain and offset: hue, amount and level). A clip
++ * that moved any of them keeps its wheels in Basic (FL-1822).
++ */
++export const COLOR_WHEEL_PARAM_KEYS = [
++  'shadowsHue',
++  'shadowsAmount',
++  'lift',
++  'midtonesHue',
++  'midtonesAmount',
++  'gamma',
++  'highlightsHue',
++  'highlightsAmount',
++  'gain',
++  'offsetHue',
++  'offsetAmount',
++  'offset',
++] as const
+diff --git a/src/features/effects/components/panels/gpu-wheels-panel.tsx b/src/features/effects/components/panels/gpu-wheels-panel.tsx
+index 39d9556..7693dbc 100644
+--- a/src/features/effects/components/panels/gpu-wheels-panel.tsx
++++ b/src/features/effects/components/panels/gpu-wheels-panel.tsx
+@@ -28,6 +28,8 @@ import type { GpuEffectDefinition } from '@/infrastructure/gpu-effects'
+ 
+ interface GpuWheelsPanelProps extends GpuKeyframePanelProps {
+   layout?: 'sidebar' | 'dock'
++  /** Basic shows the wheel panel's sliders without the colour wheels themselves (FL-1822). */
++  hideWheels?: boolean
+   onParamsBatchChange: (effectId: string, updates: GpuParamUpdates) => void
+   onParamsBatchLiveChange: (effectId: string, updates: GpuParamUpdates) => void
+ }
+@@ -817,6 +819,7 @@ export const GpuWheelsPanel = memo(function GpuWheelsPanel({
+   gpuEffect,
+   definition,
+   layout = 'sidebar',
++  hideWheels = false,
+   collapsible = false,
+   onEditInColor,
+   getKeyframeProperty,
+@@ -899,7 +902,8 @@ export const GpuWheelsPanel = memo(function GpuWheelsPanel({
+     const observer = new ResizeObserver(() => updateSize())
+     observer.observe(el)
+     return () => observer.disconnect()
+-  }, [isDock])
++    // Basic can hide the wheels and bring them back (FL-1822): re-measure the new grid.
++  }, [isDock, hideWheels])
+ 
+   // Ring gauge over the wheel's practical working span (param space) —
+   // Resolve's rings reflect a per-wheel range, not the full field range,
+@@ -1195,7 +1199,11 @@ export const GpuWheelsPanel = memo(function GpuWheelsPanel({
+       <EffectPanelHeaderRow
+         title={isDock}
+         label={
+-          isDock ? t('effects.wheels.primariesColorWheels') : getEffectDefinitionName(definition)
++          isDock
++            ? hideWheels
++              ? t('effects.wheels.primaries', { defaultValue: 'Primaries' })
++              : t('effects.wheels.primariesColorWheels')
++            : getEffectDefinitionName(definition)
+         }
+         effectId={effect.id}
+         enabled={effect.enabled}
+@@ -1282,54 +1290,59 @@ export const GpuWheelsPanel = memo(function GpuWheelsPanel({
+               </div>
+               {DOCK_TOP_PARAMS.map(renderDockNumberControl)}
+             </div>
+-            <div
+-              ref={wheelGridRef}
+-              className="min-h-0 flex-1 overflow-y-auto px-6 py-1.5 [scrollbar-gutter:stable]"
+-            >
+-              <div className="grid min-h-full grid-cols-[repeat(4,minmax(3rem,1fr))] items-center gap-4">
+-                {DOCK_WHEEL_DESCRIPTORS.map((desc) => {
+-                  const { header, fields } = renderDockWheelFields(desc, t(desc.labelKey))
+-                  return (
+-                    <WheelControl
+-                      key={desc.labelKey}
+-                      label={t(desc.labelKey)}
+-                      hue={(displayParams[desc.hueKey] as number) ?? 0}
+-                      amount={(displayParams[desc.amountKey] as number) ?? 0}
+-                      size={wheelSize}
+-                      disabled={!effect.enabled}
+-                      dock
+-                      masterRingFill={getMasterRingFill(desc)}
+-                      masterRingFromDeg={desc.ring.fromDeg}
+-                      dockFields={fields}
+-                      dockHeaderExtra={header}
+-                      onLiveChange={(hue, amount) => {
+-                        emitLiveBatch({
+-                          [desc.hueKey]: hue,
+-                          [desc.amountKey]: amount,
+-                        })
+-                      }}
+-                      onCommit={(hue, amount) => {
+-                        emitCommitBatch({
+-                          [desc.hueKey]: hue,
+-                          [desc.amountKey]: amount,
+-                        })
+-                      }}
+-                      onReset={() => {
+-                        // Reset the whole wheel: color push and its master level.
+-                        emitCommitBatch({
+-                          [desc.hueKey]: definition.params[desc.hueKey]?.default ?? 0,
+-                          [desc.amountKey]: definition.params[desc.amountKey]?.default ?? 0,
+-                          [desc.levelKey]:
+-                            (definition.params[desc.levelKey]?.default as number) ?? 0,
+-                        })
+-                      }}
+-                    />
+-                  )
+-                })}
++            {!hideWheels && (
++              <div
++                ref={wheelGridRef}
++                className="min-h-0 flex-1 overflow-y-auto px-6 py-1.5 [scrollbar-gutter:stable]"
++              >
++                <div className="grid min-h-full grid-cols-[repeat(4,minmax(3rem,1fr))] items-center gap-4">
++                  {DOCK_WHEEL_DESCRIPTORS.map((desc) => {
++                    const { header, fields } = renderDockWheelFields(desc, t(desc.labelKey))
++                    return (
++                      <WheelControl
++                        key={desc.labelKey}
++                        label={t(desc.labelKey)}
++                        hue={(displayParams[desc.hueKey] as number) ?? 0}
++                        amount={(displayParams[desc.amountKey] as number) ?? 0}
++                        size={wheelSize}
++                        disabled={!effect.enabled}
++                        dock
++                        masterRingFill={getMasterRingFill(desc)}
++                        masterRingFromDeg={desc.ring.fromDeg}
++                        dockFields={fields}
++                        dockHeaderExtra={header}
++                        onLiveChange={(hue, amount) => {
++                          emitLiveBatch({
++                            [desc.hueKey]: hue,
++                            [desc.amountKey]: amount,
++                          })
++                        }}
++                        onCommit={(hue, amount) => {
++                          emitCommitBatch({
++                            [desc.hueKey]: hue,
++                            [desc.amountKey]: amount,
++                          })
++                        }}
++                        onReset={() => {
++                          // Reset the whole wheel: color push and its master level.
++                          emitCommitBatch({
++                            [desc.hueKey]: definition.params[desc.hueKey]?.default ?? 0,
++                            [desc.amountKey]: definition.params[desc.amountKey]?.default ?? 0,
++                            [desc.levelKey]:
++                              (definition.params[desc.levelKey]?.default as number) ?? 0,
++                          })
++                        }}
++                      />
++                    )
++                  })}
++                </div>
+               </div>
+-            </div>
++            )}
+             <div
+-              className="grid shrink-0 items-center gap-x-3 border-t border-border/70 px-4 py-1.5"
++              className={cn(
++                'grid shrink-0 items-center gap-x-3 px-4 py-1.5',
++                !hideWheels && 'border-t border-border/70',
++              )}
+               style={{
+                 gridTemplateColumns: `repeat(${DOCK_BOTTOM_PARAMS.length}, minmax(0, 1fr))`,
+               }}
+@@ -1338,38 +1351,40 @@ export const GpuWheelsPanel = memo(function GpuWheelsPanel({
+             </div>
+           </div>
+         ) : (
+-          <div className="px-2 pb-2">
+-            <div ref={wheelGridRef} className="grid grid-cols-3 gap-1">
+-              {WHEEL_DESCRIPTORS.map((desc) => (
+-                <WheelControl
+-                  key={desc.labelKey}
+-                  label={t(desc.labelKey)}
+-                  hue={(displayParams[desc.hueKey] as number) ?? 0}
+-                  amount={(displayParams[desc.amountKey] as number) ?? 0}
+-                  size={wheelSize}
+-                  disabled={!effect.enabled}
+-                  onLiveChange={(hue, amount) => {
+-                    emitLiveBatch({
+-                      [desc.hueKey]: hue,
+-                      [desc.amountKey]: amount,
+-                    })
+-                  }}
+-                  onCommit={(hue, amount) => {
+-                    emitCommitBatch({
+-                      [desc.hueKey]: hue,
+-                      [desc.amountKey]: amount,
+-                    })
+-                  }}
+-                  onReset={() => {
+-                    emitCommitBatch({
+-                      [desc.hueKey]: definition.params[desc.hueKey]?.default ?? 0,
+-                      [desc.amountKey]: definition.params[desc.amountKey]?.default ?? 0,
+-                    })
+-                  }}
+-                />
+-              ))}
++          !hideWheels && (
++            <div className="px-2 pb-2">
++              <div ref={wheelGridRef} className="grid grid-cols-3 gap-1">
++                {WHEEL_DESCRIPTORS.map((desc) => (
++                  <WheelControl
++                    key={desc.labelKey}
++                    label={t(desc.labelKey)}
++                    hue={(displayParams[desc.hueKey] as number) ?? 0}
++                    amount={(displayParams[desc.amountKey] as number) ?? 0}
++                    size={wheelSize}
++                    disabled={!effect.enabled}
++                    onLiveChange={(hue, amount) => {
++                      emitLiveBatch({
++                        [desc.hueKey]: hue,
++                        [desc.amountKey]: amount,
++                      })
++                    }}
++                    onCommit={(hue, amount) => {
++                      emitCommitBatch({
++                        [desc.hueKey]: hue,
++                        [desc.amountKey]: amount,
++                      })
++                    }}
++                    onReset={() => {
++                      emitCommitBatch({
++                        [desc.hueKey]: definition.params[desc.hueKey]?.default ?? 0,
++                        [desc.amountKey]: definition.params[desc.amountKey]?.default ?? 0,
++                      })
++                    }}
++                  />
++                ))}
++              </div>
+             </div>
+-          </div>
++          )
+         ))}
+ 
+       {showBody && !isDock && (

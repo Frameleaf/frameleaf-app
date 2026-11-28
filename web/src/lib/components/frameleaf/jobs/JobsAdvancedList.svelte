@@ -904,7 +904,7 @@
     margin-top: 10px;
     padding: 10px 12px;
     border-radius: var(--fl-radius-sm);
-    background: var(--fl-bg);
+    background: var(--fl-canvas);
     border: 1px solid var(--fl-border);
     color: var(--fl-text);
     font-size: var(--fl-font-small);

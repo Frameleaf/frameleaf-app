@@ -102,9 +102,9 @@
 
 <style>
   .aesthetic-note {
-    max-width: 450px;
-    margin: 4px 0 0;
+    max-width: 40rem;
+    margin: var(--fl-space-2) 0 0;
     color: var(--fl-muted);
-    font-size: var(--fl-font-small);
+    font-size: var(--fl-font-callout);
   }
 </style>

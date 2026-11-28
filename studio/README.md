@@ -341,7 +341,7 @@ Simple (Lower third, Caption bar, Big title, Minimal) and Two lines (Name and pl
 Quote, Chapter card), drawn in the clip colours; six of them are new title styles, and every other
 style follows under More styles. Their names are host-translated (`bin-strings.ts`).
 
-Patch 0223 clears polish leftovers of the patches above without changing behaviour: the zoom and
+Patch 0226 clears polish leftovers of the patches above without changing behaviour: the zoom and
 voice-over buttons are 32px like the rest of the toolbar, the bin's remaining header buttons and its
 Type and Sort menus match Add files, the last inspector selects and number fields take 0208's 34px
 field and group headings its 11px heading, both dialogs use the theme's border and surface colours,

@@ -238,7 +238,7 @@
   .head h2 {
     margin: 0;
     font-size: 18px;
-    font-weight: var(--fl-weight-semibold);
+    font-weight: 600;
   }
   .head p {
     margin: 4px 0 0;
@@ -254,7 +254,7 @@
     margin: 0 0 12px;
     color: var(--fl-muted);
     font-size: 11px;
-    font-weight: var(--fl-weight-semibold);
+    font-weight: 600;
     letter-spacing: 0.08em;
     text-transform: uppercase;
   }
@@ -295,7 +295,7 @@
     min-width: 0;
   }
   .chip-main strong {
-    font-weight: var(--fl-weight-semibold);
+    font-weight: 600;
   }
   .chip-main small {
     color: var(--fl-muted);
@@ -317,7 +317,7 @@
   .chip-remove:hover,
   .chip-remove:focus-visible {
     color: var(--fl-text);
-    background: var(--fl-hover);
+    background: var(--fl-raised);
   }
   .status {
     margin-top: var(--fl-space-4);

@@ -216,7 +216,7 @@
     align-items: center;
     min-width: 0;
     color: var(--fl-muted);
-    font-size: var(--fl-font-lg);
+    font-size: var(--fl-font-headline);
     font-variant-numeric: tabular-nums;
     overflow-wrap: anywhere;
   }

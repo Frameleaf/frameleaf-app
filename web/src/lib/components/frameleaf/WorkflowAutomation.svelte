@@ -354,7 +354,7 @@
     padding: 0 var(--fl-space-3);
     border: 1px solid var(--fl-border);
     border-radius: var(--fl-radius-control);
-    background: var(--fl-surface);
+    background: var(--fl-panel);
     color: var(--fl-text);
     font: inherit;
   }

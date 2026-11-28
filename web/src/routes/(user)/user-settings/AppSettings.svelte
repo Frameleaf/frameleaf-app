@@ -390,7 +390,7 @@
     gap: 4px 12px;
     padding: 8px 12px;
     color: var(--fl-text);
-    font-size: var(--fl-font-base);
+    font-size: var(--fl-font-size);
     border: 1px solid var(--fl-border);
     border-radius: var(--fl-radius-control);
   }

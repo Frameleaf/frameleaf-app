@@ -28,7 +28,14 @@
     </h2>
     <div class="grid">
       {#each section.items as item (item.id)}
-        <button type="button" class="tile" onclick={() => onOpen(item.id)}>
+        <button
+          type="button"
+          class="tile"
+          aria-label={item.isVideo
+            ? `${$t('frameleaf_memories_open_item')}, ${$t('video')}`
+            : $t('frameleaf_memories_open_item')}
+          onclick={() => onOpen(item.id)}
+        >
           <!-- a thumbnail not made yet leaves the tile's surface, not a broken image -->
           <img
             src={getAssetMediaUrl({ id: item.id, size: AssetMediaSize.Thumbnail })}
@@ -38,7 +45,7 @@
             onerror={() => missing.add(item.id)}
           />
           {#if item.isVideo}
-            <span class="badge" aria-label={$t('video')}><Icon icon={mdiPlay} size="14" /></span>
+            <span class="badge" aria-hidden="true"><Icon icon={mdiPlay} size="14" /></span>
           {/if}
         </button>
       {/each}
@@ -61,7 +68,7 @@
     align-items: center;
     gap: 8px;
     margin: 0 0 12px;
-    font-size: var(--fl-font-large, 1.125rem);
+    font-size: var(--fl-font-headline);
     font-weight: 600;
     color: var(--fl-text);
   }

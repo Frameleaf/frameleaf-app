@@ -2391,7 +2391,7 @@
     padding: 10px 12px;
     border: 1px solid var(--fl-border);
     border-radius: var(--fl-radius-sm);
-    background: var(--fl-bg);
+    background: var(--fl-canvas);
     font-size: 12px;
     overflow-wrap: anywhere;
   }

@@ -186,7 +186,7 @@
     margin-top: 4px;
     padding: 8px;
     color: inherit;
-    background: var(--fl-viewer-surface);
+    background: var(--fl-viewer-panel);
     border: 1px solid currentColor;
     border-radius: 6px;
   }

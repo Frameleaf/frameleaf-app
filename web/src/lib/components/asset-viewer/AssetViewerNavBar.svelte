@@ -404,8 +404,8 @@
     border-radius: var(--fl-radius-pill);
     color: var(--fl-problem);
     background: color-mix(in srgb, var(--fl-problem) 16%, var(--fl-viewer-panel));
-    font-size: var(--fl-font-sm);
-    font-weight: var(--fl-weight-semibold);
+    font-size: var(--fl-font-small);
+    font-weight: 600;
     text-decoration: none;
     white-space: nowrap;
   }
