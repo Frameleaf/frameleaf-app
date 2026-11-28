@@ -1,9 +1,9 @@
 import { sql } from 'kysely';
 import type { AlbumRepository } from 'src/repositories/album.repository.js';
-import { TimelineDatesToCheck, hasDateToCheck, hasGoodDate } from 'src/utils/date-sanity.js';
 import type { HiddenContentQueryOptions } from 'src/utils/hidden-content.js';
 import { AssetType, AssetVisibility } from 'src/enum.js';
 import { getHiddenContentFilter, hiddenContentAssetIdExists, hiddenFromOthers } from 'src/utils/database.js';
+import { TimelineDatesToCheck, hasDateToCheck, hasGoodDate } from 'src/utils/date-sanity.js';
 import { type SubfolderRule, folderOf } from 'src/utils/folder-albums.js';
 import { isDefaultVisible, notLockedOrOwnedBy } from 'src/utils/locked.js';
 

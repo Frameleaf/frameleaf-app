@@ -976,7 +976,22 @@ select
       asset_lock
     where
       asset_lock."assetId" = "asset"."id"
-  ) as "isLocked"
+  ) as "isLocked",
+  (
+    "asset"."deletedAt" is null
+    and "asset"."type" in ('IMAGE', 'VIDEO')
+    and (
+      "asset"."visibility" in ('archive', 'timeline')
+      and not exists (
+        select
+          1
+        from
+          asset_lock
+        where
+          asset_lock."assetId" = "asset"."id"
+      )
+    )
+  ) as "visible"
 from
   "album_asset"
   inner join "asset" on "asset"."id" = "album_asset"."assetId"
@@ -1114,7 +1129,6 @@ where
   and "mine"."assetId" = $9::uuid
   and (
     "asset"."deletedAt" is null
-    and "asset"."isOffline" = false
     and "asset"."type" in ('IMAGE', 'VIDEO')
     and (
       "asset"."visibility" in ('archive', 'timeline')
