@@ -24,6 +24,7 @@
  * through the host port. That is a design rule, not a sandbox: this document is same-origin with the
  * session's cookies, and its media requests use them.
  */
+import { applyStudioMode } from './studio-mode'
 import { StrictMode, Suspense, lazy, useEffect, useState } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { RouterProvider, createMemoryHistory, createRouter } from '@tanstack/react-router'
@@ -1037,6 +1038,7 @@ let generatedRevoked = false
 
 async function mount(context: StudioHostContext): Promise<void> {
   applyTheme(context)
+  applyStudioMode(context)
   await i18nReady
   await changeAppLanguage(context.auth.locale).catch(() => undefined)
   applyHostEngineStrings(i18n, context.strings)
@@ -1164,6 +1166,7 @@ async function update(context: StudioHostContext): Promise<void> {
   }
   state.context = context
   applyTheme(context)
+  applyStudioMode(context)
   if (context.seekRequest && context.seekRequest.id !== previous.seekRequest?.id) {
     seekTo(context.seekRequest)
   }

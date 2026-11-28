@@ -1,0 +1,260 @@
+diff --git a/src/features/editor/components/preview-area.tsx b/src/features/editor/components/preview-area.tsx
+index 0f06e43..6cd7910 100644
+--- a/src/features/editor/components/preview-area.tsx
++++ b/src/features/editor/components/preview-area.tsx
+@@ -362,7 +362,9 @@ export const PreviewArea = memo(function PreviewArea({
+   const sourcePreviewMediaId = useEditorStore((s) => s.sourcePreviewMediaId)
+   const colorScopesOpen = useEditorStore((s) => s.colorScopesOpen)
+   const workspace = useEditorStore((s) => s.workspace)
+-  const scopesPanelOpen = workspace === 'color' && colorScopesOpen
++  const advancedTools = useEditorStore((s) => s.advancedTools)
++  // Scopes are an advanced tool (FL-1822): Basic keeps the picture full size.
++  const scopesPanelOpen = workspace === 'color' && colorScopesOpen && advancedTools
+ 
+   const [sourceSplitPercent, setSourceSplitPercent] = useState(PREVIEW_SOURCE_SPLIT_DEFAULT_PERCENT)
+   const [scopesSplitPercent, setScopesSplitPercent] = useState(PREVIEW_SCOPES_SPLIT_DEFAULT_PERCENT)
+diff --git a/src/features/editor/components/properties-sidebar/clip-panel/index.test.tsx b/src/features/editor/components/properties-sidebar/clip-panel/index.test.tsx
+index d6319c1..8685572 100644
+--- a/src/features/editor/components/properties-sidebar/clip-panel/index.test.tsx
++++ b/src/features/editor/components/properties-sidebar/clip-panel/index.test.tsx
+@@ -362,6 +362,17 @@ describe('ClipPanel inspector tabs', () => {
+     expect(useEditorStore.getState().clipInspectorTab).toBe('audio')
+   })
+ 
++  it("hides Transform's fields in a host's Basic mode (FL-1822)", () => {
++    useEditorStore.setState({ advancedTools: false })
++    try {
++      render(<ClipPanel />)
++      expect(screen.queryByText('Layout Body')).toBeNull()
++      expect(screen.getByText('Video Body')).toBeInTheDocument()
++    } finally {
++      useEditorStore.setState({ advancedTools: true })
++    }
++  })
++
+   it('shows visual media controls for a compound-only selection', () => {
+     resetStores([COMPOSITION_ITEM], [COMPOSITION_ITEM.id])
+ 
+@@ -375,10 +386,7 @@ describe('ClipPanel inspector tabs', () => {
+ 
+     render(<ClipPanel />)
+ 
+-    expect(screen.getByRole('tab', { name: 'Properties' })).toHaveAttribute(
+-      'data-state',
+-      'active',
+-    )
++    expect(screen.getByRole('tab', { name: 'Properties' })).toHaveAttribute('data-state', 'active')
+     expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual([
+       'Properties',
+       'Audio',
+diff --git a/src/features/editor/components/properties-sidebar/clip-panel/index.tsx b/src/features/editor/components/properties-sidebar/clip-panel/index.tsx
+index 4a1cdf6..13f89ac 100644
+--- a/src/features/editor/components/properties-sidebar/clip-panel/index.tsx
++++ b/src/features/editor/components/properties-sidebar/clip-panel/index.tsx
+@@ -404,11 +404,7 @@ const DeferredClipPanel = memo(function DeferredClipPanel({
+   // Controlled text fields must receive edits synchronously to retain the caret.
+   const textChanged = snapshot.selectedItems.some((item, index) => {
+     const deferredItem = deferredSnapshot.selectedItems[index]
+-    return (
+-      item.type === 'text' &&
+-      deferredItem?.type === 'text' &&
+-      item.text !== deferredItem.text
+-    )
++    return item.type === 'text' && deferredItem?.type === 'text' && item.text !== deferredItem.text
+   })
+   return (
+     <ClipPanelCore
+@@ -439,6 +435,8 @@ const ClipPanelCore = memo(function ClipPanelCore({
+   const workspace = useEditorStore((s) => s.workspace)
+   const setClipInspectorTab = useEditorStore((s) => s.setClipInspectorTab)
+   const setWorkspace = useEditorStore((s) => s.setWorkspace)
++  // Transform's fields are an advanced tool (FL-1822); in Basic the picture is placed by dragging it.
++  const advancedTools = useEditorStore((s) => s.advancedTools)
+   const handleEditInColor = useCallback(() => setWorkspace('color'), [setWorkspace])
+   const updateItemsTransform = useTimelineStore(
+     (s: TimelineState & TimelineActions) => s.updateItemsTransform,
+@@ -680,7 +678,7 @@ const ClipPanelCore = memo(function ClipPanelCore({
+         <TabsContent value="video" className="mt-3">
+           {showVideoTab && (
+             <div className="divide-y divide-border [&>*]:py-4 [&>*:first-child]:pt-0 [&>*:last-child]:pb-0">
+-              {showVideoTab && (
++              {advancedTools && (
+                 <LayoutSection
+                   items={layoutFillItems}
+                   mediaTransformItems={mediaTransformItems}
+diff --git a/src/features/editor/components/properties-sidebar/color-grade-panel/index.tsx b/src/features/editor/components/properties-sidebar/color-grade-panel/index.tsx
+index f186b1e..4be2a62 100644
+--- a/src/features/editor/components/properties-sidebar/color-grade-panel/index.tsx
++++ b/src/features/editor/components/properties-sidebar/color-grade-panel/index.tsx
+@@ -3,6 +3,8 @@ import { useTranslation } from 'react-i18next'
+ import { Palette } from 'lucide-react'
+ import { useShallow } from 'zustand/react/shallow'
+ import { useSelectionStore } from '@/shared/state/selection'
++import { useEditorStore } from '@/shared/state/editor'
++import { cn } from '@/shared/ui/cn'
+ import { useItemsStore } from '@/features/editor/deps/timeline-store'
+ import { useProjectIsHdr } from '@/features/editor/hooks/use-project-is-hdr'
+ import { KeyframeGraphPanel } from '@/features/editor/deps/timeline-keyframe-ui'
+@@ -39,6 +41,7 @@ export const ColorGradePanel = memo(function ColorGradePanel({
+   const { t } = useTranslation()
+   const selectedItemIds = useSelectionStore((s) => s.selectedItemIds)
+   const hdrProject = useProjectIsHdr()
++  const advancedTools = useEditorStore((s) => s.advancedTools)
+   const visualItems = useItemsStore(
+     useShallow(
+       useCallback(
+@@ -80,7 +83,15 @@ export const ColorGradePanel = memo(function ColorGradePanel({
+ 
+   if (layout === 'dock') {
+     return (
+-      <div className="grid h-full min-h-0 grid-cols-[minmax(0,10fr)_minmax(0,3fr)_minmax(0,7fr)] gap-3">
++      <div
++        className={cn(
++          'grid h-full min-h-0 gap-3',
++          // Basic (FL-1822) has no wheels or curves, so the grade column shrinks to its actions.
++          advancedTools
++            ? 'grid-cols-[minmax(0,10fr)_minmax(0,3fr)_minmax(0,7fr)]'
++            : 'grid-cols-[minmax(0,4fr)_minmax(0,5fr)_minmax(0,7fr)]',
++        )}
++      >
+         <Suspense fallback={null}>
+           <div className={sectionClassName}>
+             <LazyColorGradeSection
+diff --git a/src/features/effects/components/color-grade-section.test.tsx b/src/features/effects/components/color-grade-section.test.tsx
+index d174f25..186cf1f 100644
+--- a/src/features/effects/components/color-grade-section.test.tsx
++++ b/src/features/effects/components/color-grade-section.test.tsx
+@@ -1,5 +1,6 @@
+ import { fireEvent, render, screen } from '@testing-library/react'
+ import { beforeEach, describe, expect, it, vi } from 'vite-plus/test'
++import { useEditorStore } from '@/shared/state/editor'
+ import type { ItemEffect } from '@/types/effects'
+ import type { TimelineItem } from '@/types/timeline'
+ import { useGradeClipboardStore } from '@/shared/state/grade-clipboard'
+@@ -111,6 +112,18 @@ describe('ColorGradeSection', () => {
+     mocks.gizmoState.colorGradeComparisonMode = 'off'
+   })
+ 
++  it("hides the wheels and curves in a host's Basic mode and keeps the grade actions (FL-1822)", () => {
++    useEditorStore.setState({ advancedTools: false })
++    try {
++      render(<ColorGradeSection items={[makeVideoItem()]} layout="dock" />)
++      expect(screen.queryByTestId('wheels-panel')).toBeNull()
++      expect(screen.queryByTestId('curves-panel')).toBeNull()
++      expect(screen.getByRole('button', { name: 'Copy grade' })).toBeInTheDocument()
++    } finally {
++      useEditorStore.setState({ advancedTools: true })
++    }
++  })
++
+   it('keeps copy and paste grade actions visible in the color panel', () => {
+     render(<ColorGradeSection items={[makeVideoItem()]} />)
+ 
+diff --git a/src/features/effects/components/color-grade-section.tsx b/src/features/effects/components/color-grade-section.tsx
+index cb0ac11..fe2a511 100644
+--- a/src/features/effects/components/color-grade-section.tsx
++++ b/src/features/effects/components/color-grade-section.tsx
+@@ -17,6 +17,7 @@ import type { ItemEffect, GpuEffect } from '@/types/effects'
+ import { useTimelineStore } from '@/features/effects/deps/timeline-contract'
+ import { useGizmoStore, useThrottledFrame } from '@/features/effects/deps/preview-contract'
+ import { useGradeClipboardStore, type GradeClipboardEntry } from '@/shared/state/grade-clipboard'
++import { useEditorStore } from '@/shared/state/editor'
+ import { PropertySection } from '@/shared/ui/property-controls'
+ import { cn } from '@/shared/ui/cn'
+ import { GpuWheelsPanel, GpuCurvesPanel } from './panels'
+@@ -129,7 +130,8 @@ function DockPane({ className, children }: { className?: string; children: React
+  * for the selected clip — no "Add Effect" ceremony. When the clip has no
+  * grade yet, the panels render at defaults and the underlying effect is
+  * created lazily on the first adjustment (live drags preview through the
+- * gizmo effects-preview path before the effect exists).
++ * gizmo effects-preview path before the effect exists). The wheels and curves are advanced tools
++ * (FL-1822): in a host's Basic mode the section keeps compare, the grade actions and presets.
+  */
+ export const ColorGradeSection = memo(function ColorGradeSection({
+   items,
+@@ -137,6 +139,7 @@ export const ColorGradeSection = memo(function ColorGradeSection({
+   onCreateAdjustmentLayer,
+ }: ColorGradeSectionProps) {
+   const { t } = useTranslation()
++  const advancedTools = useEditorStore((s) => s.advancedTools)
+   const addEffects = useTimelineStore((s) => s.addEffects)
+   const setItemEffects = useTimelineStore((s) => s.setItemEffects)
+   const updateEffect = useTimelineStore((s) => s.updateEffect)
+@@ -701,10 +704,12 @@ export const ColorGradeSection = memo(function ColorGradeSection({
+         </div>
+         {presetNameInput}
+         {gradeGallery}
+-        <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1.5fr)_minmax(0,0.5fr)]">
+-          <DockPane className="border-r border-border/70">{wheelsPanel}</DockPane>
+-          <DockPane>{curvesPanel}</DockPane>
+-        </div>
++        {advancedTools && (
++          <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1.5fr)_minmax(0,0.5fr)]">
++            <DockPane className="border-r border-border/70">{wheelsPanel}</DockPane>
++            <DockPane>{curvesPanel}</DockPane>
++          </div>
++        )}
+       </div>
+     )
+   }
+@@ -719,10 +724,12 @@ export const ColorGradeSection = memo(function ColorGradeSection({
+ 
+       {gradeGallery}
+ 
+-      <div className="space-y-0">
+-        {wheelsPanel}
+-        {curvesPanel}
+-      </div>
++      {advancedTools && (
++        <div className="space-y-0">
++          {wheelsPanel}
++          {curvesPanel}
++        </div>
++      )}
+     </PropertySection>
+   )
+ })
+diff --git a/src/shared/state/editor/store.ts b/src/shared/state/editor/store.ts
+index 445c764..bcbb291 100644
+--- a/src/shared/state/editor/store.ts
++++ b/src/shared/state/editor/store.ts
+@@ -167,6 +167,7 @@ export const useEditorStore = create<EditorState & EditorActions>((set) => ({
+     }
+   })(),
+   trackSizePreset: loadTrackSizePreset(),
++  advancedTools: true,
+ 
+   // Actions
+   setActivePanel: (panel) => set({ activePanel: panel }),
+@@ -401,6 +402,7 @@ export const useEditorStore = create<EditorState & EditorActions>((set) => ({
+       saveEditorWorkspaceLayout(state.workspace, getEditorWorkspaceLayoutSnapshot(nextState))
+       return { propertiesFullColumn: next }
+     }),
++  setAdvancedTools: (advanced) => set({ advancedTools: advanced }),
+   toggleMediaFullColumn: () =>
+     set((state) => {
+       const next = !state.mediaFullColumn
+diff --git a/src/shared/state/editor/types.ts b/src/shared/state/editor/types.ts
+index 1fcaf4e..611dc4b 100644
+--- a/src/shared/state/editor/types.ts
++++ b/src/shared/state/editor/types.ts
+@@ -39,6 +39,11 @@ export interface EditorState {
+   propertiesFullColumn: boolean
+   mediaFullColumn: boolean
+   trackSizePreset: TrackSizePreset
++  /**
++   * Advanced tools (FL-1822): the Transform fields, colour scopes and the wheels and curves. A host
++   * with a Basic mode turns them off; on its own the editor shows them.
++   */
++  advancedTools: boolean
+ }
+ 
+ export interface EditorActions {
+@@ -80,6 +85,7 @@ export interface EditorActions {
+   toggleLinkedSelectionEnabled: () => void
+   setColorScopesOpen: (open: boolean) => void
+   toggleColorScopesOpen: () => void
++  setAdvancedTools: (advanced: boolean) => void
+   setMixerFloating: (floating: boolean) => void
+   toggleMixerFloating: () => void
+   togglePropertiesFullColumn: () => void
